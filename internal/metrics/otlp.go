@@ -125,7 +125,9 @@ func (p *OTLPPusher) push(ctx context.Context) error {
 		if _, err := w.Write(body); err != nil {
 			return fmt.Errorf("gzip compress: %w", err)
 		}
-		w.Close()
+		if err := w.Close(); err != nil {
+			return fmt.Errorf("gzip close: %w", err)
+		}
 		reqBody = bytes.NewReader(buf.Bytes())
 		contentEncoding = "gzip"
 	case OTLPCompressionZstd:
@@ -137,7 +139,9 @@ func (p *OTLPPusher) push(ctx context.Context) error {
 		if _, err := w.Write(body); err != nil {
 			return fmt.Errorf("zstd compress: %w", err)
 		}
-		w.Close()
+		if err := w.Close(); err != nil {
+			return fmt.Errorf("zstd close: %w", err)
+		}
 		reqBody = bytes.NewReader(buf.Bytes())
 		contentEncoding = "zstd"
 	default:
@@ -160,7 +164,7 @@ func (p *OTLPPusher) push(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("otlp request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("otlp endpoint returned %d", resp.StatusCode)

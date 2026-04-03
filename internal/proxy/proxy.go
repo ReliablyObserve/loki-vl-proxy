@@ -4,13 +4,15 @@ import (
 	"bufio"
 	"context"
 	"crypto/tls"
+	"sync"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"regexp"
+	"net"
 	"net/http"
+	"regexp"
 	"net/url"
 	"os"
 	"sort"
@@ -114,6 +116,7 @@ type Proxy struct {
 	coalescer      *mw.Coalescer
 	limiter        *mw.RateLimiter
 	breaker        *mw.CircuitBreaker
+	configMu       sync.RWMutex          // protects tenantMap and labelTranslator
 	tenantMap      map[string]TenantMapping
 	maxLines       int
 	forwardHeaders []string          // headers to copy from client request to VL
@@ -212,12 +215,16 @@ func (p *Proxy) Init() {
 
 // ReloadTenantMap hot-reloads tenant mappings (called on SIGHUP).
 func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
+	p.configMu.Lock()
 	p.tenantMap = m
+	p.configMu.Unlock()
 }
 
 // ReloadFieldMappings hot-reloads field mappings and rebuilds the label translator.
 func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
+	p.configMu.Lock()
 	p.labelTranslator = NewLabelTranslator(p.labelTranslator.style, mappings)
+	p.configMu.Unlock()
 }
 
 // GetMetrics returns the proxy's metrics instance for external telemetry exporters.
@@ -2031,6 +2038,21 @@ type statusCapture struct {
 func (sc *statusCapture) WriteHeader(code int) {
 	sc.code = code
 	sc.ResponseWriter.WriteHeader(code)
+}
+
+// Flush implements http.Flusher for chunked streaming support.
+func (sc *statusCapture) Flush() {
+	if f, ok := sc.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack implements http.Hijacker for WebSocket upgrade support.
+func (sc *statusCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := sc.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, fmt.Errorf("hijack not supported")
 }
 
 // requestLogger wraps a handler with structured logging and per-tenant metrics.

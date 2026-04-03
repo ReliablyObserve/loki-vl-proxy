@@ -70,6 +70,6 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 // RequestKey builds a cache/coalescing key from an HTTP request.
 func RequestKey(r *http.Request) string {
 	h := sha256.New()
-	fmt.Fprintf(h, "%s:%s:%s", r.Method, r.URL.Path, r.URL.RawQuery)
+	_, _ = fmt.Fprintf(h, "%s:%s:%s", r.Method, r.URL.Path, r.URL.RawQuery)
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }

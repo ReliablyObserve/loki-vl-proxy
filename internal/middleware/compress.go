@@ -27,7 +27,7 @@ func (w *gzipResponseWriter) WriteHeader(code int) {
 }
 
 func (w *gzipResponseWriter) Flush() {
-	w.writer.Flush()
+	_ = w.writer.Flush()
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -64,6 +64,6 @@ func GzipHandler(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(gzw, r)
-		gz.Close()
+		_ = gz.Close()
 	})
 }

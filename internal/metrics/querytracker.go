@@ -146,7 +146,7 @@ func (qt *QueryTracker) Handler(w http.ResponseWriter, r *http.Request) {
 		"top_by_errors":    qt.TopByErrors(n),
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	_ = json.NewEncoder(w).Encode(result)
 }
 
 func (qt *QueryTracker) size() int {

@@ -438,5 +438,5 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	m.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	w.Write([]byte(sb.String()))
+	_, _ = w.Write([]byte(sb.String()))
 }

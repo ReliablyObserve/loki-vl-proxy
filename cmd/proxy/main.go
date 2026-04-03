@@ -130,7 +130,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to open disk cache: %v", err)
 		}
-		defer dc.Close()
+		defer func() { _ = dc.Close() }()
 		c.SetL2(dc)
 		log.Printf("L2 disk cache enabled at %s (compress=%v, encrypted=%v, flush=%d/%s)",
 			*diskCachePath, *diskCacheCompress, len(encKey) > 0, *diskCacheFlushSize, *diskCacheFlushInterval)
