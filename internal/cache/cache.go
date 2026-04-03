@@ -22,6 +22,7 @@ type Cache struct {
 	maxBytes   int
 	curBytes   int
 	l2         *DiskCache // optional L2 disk cache
+	done       chan struct{} // signals cleanup goroutine to stop
 
 	// Stats
 	Hits   atomic.Int64
@@ -45,9 +46,19 @@ func NewWithMaxBytes(ttl time.Duration, maxEntries, maxBytes int) *Cache {
 		defaultTTL: ttl,
 		maxEntries: maxEntries,
 		maxBytes:   maxBytes,
+		done:       make(chan struct{}),
 	}
 	go c.cleanup()
 	return c
+}
+
+// Close stops the background cleanup goroutine.
+func (c *Cache) Close() {
+	select {
+	case <-c.done:
+	default:
+		close(c.done)
+	}
 }
 
 func (c *Cache) Get(key string) ([]byte, bool) {
@@ -172,7 +183,12 @@ func (c *Cache) evictIfNeeded(incomingSize int) {
 func (c *Cache) cleanup() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-ticker.C:
+		}
 		c.mu.Lock()
 		now := time.Now()
 		for k, v := range c.entries {

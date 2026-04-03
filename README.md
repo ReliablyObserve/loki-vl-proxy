@@ -89,6 +89,7 @@ flowchart LR
 - **OTLP telemetry**: Push proxy metrics to any OTLP HTTP endpoint (gzip/zstd compression, TLS)
 - **Observability**: Prometheus `/metrics`, structured JSON logs via `slog`
 - **Hardened HTTP**: Request body/header size limits, read/write/idle timeouts, security headers
+- **Concurrency-safe**: No shared mutable state — tenant IDs flow via request context, all goroutines are stoppable
 - **Single static binary**, ~10MB Docker image, zero external dependencies at runtime
 
 ## API Coverage
@@ -106,7 +107,7 @@ flowchart LR
 | `/loki/api/v1/index/volume_range` | Stub | — | — | 1 |
 | `/loki/api/v1/detected_fields` | Implemented | `/select/logsql/field_names` | 30s | 1 |
 | `/loki/api/v1/patterns` | Stub | — | — | 1 |
-| `/loki/api/v1/tail` | Not yet | `/select/logsql/tail` | — | 1 |
+| `/loki/api/v1/tail` | Implemented | `/select/logsql/tail` (WebSocket→NDJSON) | — | 2 |
 | `/ready` | Implemented | `/health` | — | 2 |
 | `/loki/api/v1/status/buildinfo` | Implemented | — | — | 1 |
 | `/metrics` | Implemented | — | — | 1 |

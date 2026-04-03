@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,6 +20,27 @@ import (
 	mw "github.com/szibis/Loki-VL-proxy/internal/middleware"
 	"github.com/szibis/Loki-VL-proxy/internal/translator"
 )
+
+type ctxKey int
+
+const orgIDKey ctxKey = iota
+
+// withOrgID stores the X-Scope-OrgID in the request context (request-scoped, no shared state).
+func withOrgID(r *http.Request) *http.Request {
+	orgID := r.Header.Get("X-Scope-OrgID")
+	if orgID == "" {
+		return r
+	}
+	return r.WithContext(context.WithValue(r.Context(), orgIDKey, orgID))
+}
+
+// getOrgID retrieves the org ID from context.
+func getOrgID(ctx context.Context) string {
+	if v, ok := ctx.Value(orgIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
 
 // TenantMapping maps a string org ID to VL's numeric AccountID and ProjectID.
 type TenantMapping struct {
@@ -64,8 +86,7 @@ type Proxy struct {
 	coalescer    *mw.Coalescer
 	limiter      *mw.RateLimiter
 	breaker      *mw.CircuitBreaker
-	currentOrgID string // set per-request from X-Scope-OrgID
-	tenantMap    map[string]TenantMapping
+	tenantMap map[string]TenantMapping
 }
 
 func New(cfg Config) (*Proxy, error) {
@@ -224,7 +245,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 // VL:   GET /select/logsql/field_names?query=*&start=...&end=...
 func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	p.setTenantFromRequest(r)
+	r = withOrgID(r)
 	cacheKey := "labels:" + r.URL.RawQuery
 
 	if cached, ok := p.cache.Get(cacheKey); ok {
@@ -246,7 +267,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		params.Set("end", e)
 	}
 
-	body, err := p.vlGetCoalesced("labels:"+params.Encode(), "/select/logsql/field_names", params)
+	body, err := p.vlGetCoalesced(r.Context(), "labels:"+params.Encode(), "/select/logsql/field_names", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		p.metrics.RecordRequest("labels", http.StatusBadGateway, time.Since(start))
@@ -317,7 +338,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		params.Set("limit", l)
 	}
 
-	resp, err := p.vlGet("/select/logsql/field_values", params)
+	resp, err := p.vlGet(r.Context(), "/select/logsql/field_values", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		p.metrics.RecordRequest("label_values", http.StatusBadGateway, time.Since(start))
@@ -373,7 +394,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 		params.Set("end", e)
 	}
 
-	resp, err := p.vlGet("/select/logsql/streams", params)
+	resp, err := p.vlGet(r.Context(), "/select/logsql/streams", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -429,7 +450,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 		params.Set("end", formatVLTimestamp(e))
 	}
 
-	resp, err := p.vlGet("/select/logsql/hits", params)
+	resp, err := p.vlGet(r.Context(), "/select/logsql/hits", params)
 	if err != nil {
 		// Fallback to zeros on error
 		p.writeJSON(w, map[string]interface{}{"streams": 0, "chunks": 0, "bytes": 0, "entries": 0})
@@ -475,7 +496,7 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 		params.Set("field", fields)
 	}
 
-	resp, err := p.vlGet("/select/logsql/hits", params)
+	resp, err := p.vlGet(r.Context(), "/select/logsql/hits", params)
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{
 			"status": "success",
@@ -515,7 +536,7 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 		params.Set("step", step)
 	}
 
-	resp, err := p.vlGet("/select/logsql/hits", params)
+	resp, err := p.vlGet(r.Context(), "/select/logsql/hits", params)
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{
 			"status": "success",
@@ -551,7 +572,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		params.Set("end", e)
 	}
 
-	resp, err := p.vlGet("/select/logsql/field_names", params)
+	resp, err := p.vlGet(r.Context(), "/select/logsql/field_names", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -620,7 +641,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		params.Set("end", e)
 	}
 
-	resp, err := p.vlGet("/select/logsql/field_values", params)
+	resp, err := p.vlGet(r.Context(), "/select/logsql/field_values", params)
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{"values": []string{}, "limit": 1000})
 		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
@@ -683,7 +704,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.setTenantFromRequest(r)
+	r = withOrgID(r)
 
 	// Upgrade to WebSocket
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
@@ -714,11 +735,30 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery)
 	p.metrics.RecordRequest("tail", http.StatusOK, time.Since(start))
 
+	// Start a read loop to detect client disconnect (WebSocket protocol requires it).
+	// When client closes, this goroutine exits and wsCtx is canceled.
+	wsCtx, wsCancel := context.WithCancel(r.Context())
+	defer wsCancel()
+	go func() {
+		defer wsCancel()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}()
+
 	// Read VL NDJSON stream and forward as Loki WebSocket frames
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB max line
 
 	for scanner.Scan() {
+		// Check if client disconnected
+		select {
+		case <-wsCtx.Done():
+			return
+		default:
+		}
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
@@ -815,7 +855,7 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 
 // --- Backend request helpers ---
 
-func (p *Proxy) vlGet(path string, params url.Values) (*http.Response, error) {
+func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	if !p.breaker.Allow() {
 		return nil, fmt.Errorf("circuit breaker open — backend unavailable")
 	}
@@ -825,11 +865,10 @@ func (p *Proxy) vlGet(path string, params url.Values) (*http.Response, error) {
 	u.RawQuery = params.Encode()
 
 	p.log.Debug("VL request", "method", "GET", "url", u.String())
-	req, err := http.NewRequest("GET", u.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	// Multitenancy: forward X-Scope-OrgID as VL AccountID
 	p.forwardTenantHeaders(req)
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -844,7 +883,7 @@ func (p *Proxy) vlGet(path string, params url.Values) (*http.Response, error) {
 	return resp, nil
 }
 
-func (p *Proxy) vlPost(path string, params url.Values) (*http.Response, error) {
+func (p *Proxy) vlPost(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	if !p.breaker.Allow() {
 		return nil, fmt.Errorf("circuit breaker open — backend unavailable")
 	}
@@ -853,11 +892,12 @@ func (p *Proxy) vlPost(path string, params url.Values) (*http.Response, error) {
 	u.Path = path
 
 	p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", params.Encode())
-	req, err := http.NewRequest("POST", u.String(), strings.NewReader(params.Encode()))
+	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), strings.NewReader(params.Encode()))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	p.forwardTenantHeaders(req)
 	resp, err := p.client.Do(req)
 	if err != nil {
 		p.breaker.RecordFailure()
@@ -872,9 +912,9 @@ func (p *Proxy) vlPost(path string, params url.Values) (*http.Response, error) {
 }
 
 // vlGetCoalesced wraps vlGet with request coalescing.
-func (p *Proxy) vlGetCoalesced(key, path string, params url.Values) ([]byte, error) {
+func (p *Proxy) vlGetCoalesced(ctx context.Context, key, path string, params url.Values) ([]byte, error) {
 	_, _, body, err := p.coalescer.Do(key, func() (*http.Response, error) {
-		return p.vlGet(path, params)
+		return p.vlGet(ctx, path, params)
 	})
 	return body, err
 }
@@ -894,7 +934,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		params.Set("step", step)
 	}
 
-	resp, err := p.vlPost("/select/logsql/stats_query_range", params)
+	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -916,7 +956,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 		params.Set("time", formatVLTimestamp(t))
 	}
 
-	resp, err := p.vlPost("/select/logsql/stats_query", params)
+	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -944,7 +984,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	}
 	params.Set("limit", limit)
 
-	resp, err := p.vlPost("/select/logsql/query", params)
+	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -1226,9 +1266,9 @@ func formatVLTimestamp(ts string) string {
 // --- Multitenancy ---
 
 // forwardTenantHeaders maps Loki's X-Scope-OrgID to VL's AccountID/ProjectID.
-// Called by vlGet/vlPost before sending requests to VL backend.
+// Reads orgID from the request context (set by withOrgID) — no shared mutable state.
 func (p *Proxy) forwardTenantHeaders(req *http.Request) {
-	orgID := p.currentOrgID
+	orgID := getOrgID(req.Context())
 	if orgID == "" {
 		return
 	}
@@ -1253,10 +1293,6 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 	}
 }
 
-// setTenantFromRequest extracts X-Scope-OrgID from the incoming request.
-func (p *Proxy) setTenantFromRequest(r *http.Request) {
-	p.currentOrgID = r.Header.Get("X-Scope-OrgID")
-}
 
 // --- Error / JSON helpers ---
 

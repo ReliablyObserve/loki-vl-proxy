@@ -40,7 +40,8 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 		}
 		defer resp.Body.Close()
 
-		body, err := io.ReadAll(resp.Body)
+		// Limit response body to 256MB to prevent unbounded memory allocation
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
 		if err != nil {
 			return nil, err
 		}

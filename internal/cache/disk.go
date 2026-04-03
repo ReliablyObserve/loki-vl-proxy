@@ -34,6 +34,7 @@ type DiskCache struct {
 	writeMu     sync.Mutex
 	flushSize   int // flush buffer after this many entries
 	log         *slog.Logger
+	done        chan struct{} // signals background flusher to stop
 
 	// Stats
 	Hits        atomic.Int64
@@ -93,6 +94,7 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		writeBuf:    make(map[string]diskEntry),
 		flushSize:   flushSize,
 		log:         logger,
+		done:        make(chan struct{}),
 	}
 
 	// Set up encryption if key provided
@@ -244,8 +246,13 @@ func (dc *DiskCache) Flush() {
 	dc.FlushCount.Add(1)
 }
 
-// Close flushes pending writes and closes the database.
+// Close stops the background flusher, flushes pending writes, and closes the database.
 func (dc *DiskCache) Close() error {
+	select {
+	case <-dc.done:
+	default:
+		close(dc.done)
+	}
 	dc.Flush()
 	return dc.db.Close()
 }
@@ -268,8 +275,13 @@ func (dc *DiskCache) Size() (entries int, bytes int64) {
 func (dc *DiskCache) backgroundFlush(interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	for range ticker.C {
-		dc.Flush()
+	for {
+		select {
+		case <-dc.done:
+			return
+		case <-ticker.C:
+			dc.Flush()
+		}
 	}
 }
 
