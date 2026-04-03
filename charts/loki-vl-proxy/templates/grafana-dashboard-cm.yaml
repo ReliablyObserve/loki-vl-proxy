@@ -1,0 +1,18 @@
+{{- if .Values.grafanaDashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "loki-vl-proxy.fullname" . }}-dashboard
+  namespace: {{ .Values.grafanaDashboard.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "loki-vl-proxy.labels" . | nindent 4 }}
+    {{- with .Values.grafanaDashboard.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: {{ .Values.grafanaDashboard.folder | default "Infrastructure" }}
+data:
+  loki-vl-proxy.json: |-
+    {{- .Files.Get "dashboards/loki-vl-proxy.json" | nindent 4 }}
+{{- end }}

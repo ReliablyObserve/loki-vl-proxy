@@ -200,6 +200,22 @@ func translatePipelineStage(stage string) string {
 		return "| fields _time, _msg, _stream, " + fields
 	}
 
+	// decolorize — strips ANSI color codes.
+	// VL doesn't have native ANSI stripping yet.
+	// Proxy applies this post-processing on response log lines.
+	// TODO: Replace with VL native pipe when available.
+	if stage == "decolorize" {
+		return "| decolorize" // proxy-side post-processing marker
+	}
+
+	// ip() label filter — CIDR matching on label values.
+	// VL doesn't have native IP range filtering yet.
+	// Proxy applies this post-processing on response labels.
+	// TODO: Replace with VL native filter when available.
+	if strings.HasPrefix(stage, "ip(") {
+		return "| " + stage // proxy-side post-processing marker
+	}
+
 	// Label filters: label op value
 	return translateLabelFilter(stage)
 }

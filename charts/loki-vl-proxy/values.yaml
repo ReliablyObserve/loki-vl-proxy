@@ -69,6 +69,21 @@ envFrom: []
   # - configMapRef:
   #     name: loki-vl-proxy-config
 
+# --- PrometheusRule (alert rules for Prometheus Operator) ---
+prometheusRule:
+  enabled: false
+  namespace: ""
+  labels: {}
+  additionalRules: []
+
+# --- Grafana Dashboard (auto-provisioned via ConfigMap) ---
+grafanaDashboard:
+  enabled: false
+  namespace: ""
+  folder: "Infrastructure"
+  labels:
+    grafana_dashboard: "1"
+
 # --- Service Account ---
 serviceAccount:
   create: true

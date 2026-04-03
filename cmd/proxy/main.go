@@ -6,6 +6,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -194,6 +195,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create proxy: %v", err)
 	}
+	p.Init()
 
 	// Start OTLP telemetry push
 	if *otlpEndpoint != "" {
@@ -212,6 +214,9 @@ func main() {
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
+	// pprof endpoints for production profiling
+	mux.HandleFunc("/debug/pprof/", http.DefaultServeMux.ServeHTTP)
+
 	// Middleware chain: body limit → gzip compression
 	var handler http.Handler = maxBodyHandler(*maxBodyBytes, mux)
 	if *enableGzip {
@@ -227,6 +232,33 @@ func main() {
 		IdleTimeout:    *idleTimeout,
 		MaxHeaderBytes: *maxHeaderBytes,
 	}
+
+	// SIGHUP config reload for tenant-map and field-mapping
+	reloadCh := make(chan os.Signal, 1)
+	signal.Notify(reloadCh, syscall.SIGHUP)
+	go func() {
+		for range reloadCh {
+			log.Println("SIGHUP received, reloading configuration...")
+			if v := os.Getenv("TENANT_MAP"); v != "" {
+				var newTenantMap map[string]proxy.TenantMapping
+				if err := json.Unmarshal([]byte(v), &newTenantMap); err != nil {
+					log.Printf("Failed to reload TENANT_MAP: %v", err)
+				} else {
+					p.ReloadTenantMap(newTenantMap)
+					log.Printf("Reloaded %d tenant mappings", len(newTenantMap))
+				}
+			}
+			if v := os.Getenv("FIELD_MAPPING"); v != "" {
+				var newMappings []proxy.FieldMapping
+				if err := json.Unmarshal([]byte(v), &newMappings); err != nil {
+					log.Printf("Failed to reload FIELD_MAPPING: %v", err)
+				} else {
+					p.ReloadFieldMappings(newMappings)
+					log.Printf("Reloaded %d field mappings", len(newMappings))
+				}
+			}
+		}
+	}()
 
 	// Graceful shutdown on SIGTERM/SIGINT
 	shutdownCh := make(chan os.Signal, 1)

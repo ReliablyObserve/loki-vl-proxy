@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -116,12 +117,20 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		clientID := ClientID(r)
 
 		if !rl.AllowClient(clientID) {
-			http.Error(w, `{"status":"error","error":"rate limit exceeded"}`, http.StatusTooManyRequests)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "1")
+			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", rl.ratePerSecond))
+			w.Header().Set("X-RateLimit-Remaining", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"status":"error","error":"rate limit exceeded"}`))
 			return
 		}
 
 		if !rl.AcquireConcurrent() {
-			http.Error(w, `{"status":"error","error":"too many concurrent queries"}`, http.StatusServiceUnavailable)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Retry-After", "5")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"status":"error","error":"too many concurrent queries"}`))
 			return
 		}
 		defer rl.ReleaseConcurrent()

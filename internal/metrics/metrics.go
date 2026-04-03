@@ -22,9 +22,20 @@ type Metrics struct {
 	tenantRequests   map[string]*atomic.Int64 // "tenant:endpoint:status" → count
 	tenantDurations  map[string]*histogram     // "tenant:endpoint" → duration histogram
 
-	// Cache stats
+	// Cache stats (global)
 	cacheHits   atomic.Int64
 	cacheMisses atomic.Int64
+
+	// Cache stats (per-endpoint)
+	endpointCacheHits   map[string]*atomic.Int64 // "endpoint" → hits
+	endpointCacheMisses map[string]*atomic.Int64 // "endpoint" → misses
+
+	// Backend latency (VL response time, separate from total proxy latency)
+	backendDurations map[string]*histogram // "endpoint" → VL duration histogram
+
+	// Singleflight coalescing stats
+	coalescedTotal atomic.Int64 // requests served from coalesced results
+	coalescedSaved atomic.Int64 // backend requests saved by coalescing
 
 	// Translation stats
 	translationsTotal  atomic.Int64
@@ -35,6 +46,9 @@ type Metrics struct {
 
 	// Active connections
 	activeRequests atomic.Int64
+
+	// Circuit breaker state function (injected)
+	cbStateFunc func() string
 
 	// Startup time
 	startTime time.Time
@@ -72,13 +86,21 @@ func (h *histogram) observe(v float64) {
 
 func NewMetrics() *Metrics {
 	return &Metrics{
-		requestsTotal:    make(map[string]*atomic.Int64),
-		requestDurations: make(map[string]*histogram),
-		tenantRequests:   make(map[string]*atomic.Int64),
-		tenantDurations:  make(map[string]*histogram),
-		clientErrors:     make(map[string]*atomic.Int64),
-		startTime:        time.Now(),
+		requestsTotal:      make(map[string]*atomic.Int64),
+		requestDurations:   make(map[string]*histogram),
+		tenantRequests:     make(map[string]*atomic.Int64),
+		tenantDurations:    make(map[string]*histogram),
+		clientErrors:       make(map[string]*atomic.Int64),
+		endpointCacheHits:  make(map[string]*atomic.Int64),
+		endpointCacheMisses: make(map[string]*atomic.Int64),
+		backendDurations:   make(map[string]*histogram),
+		startTime:          time.Now(),
 	}
+}
+
+// SetCircuitBreakerFunc sets the function to query CB state for metrics export.
+func (m *Metrics) SetCircuitBreakerFunc(fn func() string) {
+	m.cbStateFunc = fn
 }
 
 func (m *Metrics) RecordRequest(endpoint string, statusCode int, duration time.Duration) {
@@ -172,6 +194,65 @@ func (m *Metrics) RecordCacheHit()  { m.cacheHits.Add(1) }
 func (m *Metrics) RecordCacheMiss() { m.cacheMisses.Add(1) }
 func (m *Metrics) RecordTranslation()      { m.translationsTotal.Add(1) }
 func (m *Metrics) RecordTranslationError() { m.translationErrors.Add(1) }
+
+// RecordEndpointCacheHit records a cache hit for a specific endpoint.
+func (m *Metrics) RecordEndpointCacheHit(endpoint string) {
+	m.cacheHits.Add(1)
+	m.mu.RLock()
+	counter, ok := m.endpointCacheHits[endpoint]
+	m.mu.RUnlock()
+	if !ok {
+		m.mu.Lock()
+		counter, ok = m.endpointCacheHits[endpoint]
+		if !ok {
+			counter = &atomic.Int64{}
+			m.endpointCacheHits[endpoint] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+}
+
+// RecordEndpointCacheMiss records a cache miss for a specific endpoint.
+func (m *Metrics) RecordEndpointCacheMiss(endpoint string) {
+	m.cacheMisses.Add(1)
+	m.mu.RLock()
+	counter, ok := m.endpointCacheMisses[endpoint]
+	m.mu.RUnlock()
+	if !ok {
+		m.mu.Lock()
+		counter, ok = m.endpointCacheMisses[endpoint]
+		if !ok {
+			counter = &atomic.Int64{}
+			m.endpointCacheMisses[endpoint] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+}
+
+// RecordBackendDuration records VL backend response time for an endpoint.
+func (m *Metrics) RecordBackendDuration(endpoint string, d time.Duration) {
+	m.mu.RLock()
+	h, ok := m.backendDurations[endpoint]
+	m.mu.RUnlock()
+	if !ok {
+		m.mu.Lock()
+		h, ok = m.backendDurations[endpoint]
+		if !ok {
+			h = newHistogram()
+			m.backendDurations[endpoint] = h
+		}
+		m.mu.Unlock()
+	}
+	h.observe(d.Seconds())
+}
+
+// RecordCoalesced records a request that was served from a coalesced result.
+func (m *Metrics) RecordCoalesced() { m.coalescedTotal.Add(1) }
+
+// RecordCoalescedSaved records a backend request that was saved by coalescing.
+func (m *Metrics) RecordCoalescedSaved() { m.coalescedSaved.Add(1) }
 
 // Handler serves Prometheus metrics at /metrics.
 func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
@@ -297,6 +378,63 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&sb, "loki_vl_proxy_client_errors_total{endpoint=%q,reason=%q} %d\n",
 			parts[0], parts[1], count)
 	}
+	// Per-endpoint cache stats
+	sb.WriteString("# HELP loki_vl_proxy_cache_hits_by_endpoint Cache hits per endpoint.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_hits_by_endpoint counter\n")
+	for ep, counter := range m.endpointCacheHits {
+		fmt.Fprintf(&sb, "loki_vl_proxy_cache_hits_by_endpoint{endpoint=%q} %d\n", ep, counter.Load())
+	}
+	sb.WriteString("# HELP loki_vl_proxy_cache_misses_by_endpoint Cache misses per endpoint.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_misses_by_endpoint counter\n")
+	for ep, counter := range m.endpointCacheMisses {
+		fmt.Fprintf(&sb, "loki_vl_proxy_cache_misses_by_endpoint{endpoint=%q} %d\n", ep, counter.Load())
+	}
+
+	// Backend latency histogram
+	sb.WriteString("# HELP loki_vl_proxy_backend_duration_seconds VL backend response time.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_backend_duration_seconds histogram\n")
+	bdKeys := make([]string, 0, len(m.backendDurations))
+	for k := range m.backendDurations {
+		bdKeys = append(bdKeys, k)
+	}
+	sort.Strings(bdKeys)
+	for _, ep := range bdKeys {
+		h := m.backendDurations[ep]
+		h.mu.Lock()
+		for i, b := range h.buckets {
+			fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{endpoint=%q,le=\"%g\"} %d\n", ep, b, h.counts[i])
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{endpoint=%q,le=\"+Inf\"} %d\n", ep, h.count)
+		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_sum{endpoint=%q} %g\n", ep, h.sum)
+		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_count{endpoint=%q} %d\n", ep, h.count)
+		h.mu.Unlock()
+	}
+
+	// Singleflight coalescing stats
+	sb.WriteString("# HELP loki_vl_proxy_coalesced_total Requests served from coalesced results.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_coalesced_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_total %d\n", m.coalescedTotal.Load())
+	sb.WriteString("# HELP loki_vl_proxy_coalesced_saved_total Backend requests saved by coalescing.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_coalesced_saved_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_saved_total %d\n", m.coalescedSaved.Load())
+
+	// Circuit breaker state
+	if m.cbStateFunc != nil {
+		cbState := m.cbStateFunc()
+		cbVal := 0
+		switch cbState {
+		case "closed":
+			cbVal = 0
+		case "open":
+			cbVal = 1
+		case "half-open":
+			cbVal = 2
+		}
+		sb.WriteString("# HELP loki_vl_proxy_circuit_breaker_state Circuit breaker state (0=closed, 1=open, 2=half-open).\n")
+		sb.WriteString("# TYPE loki_vl_proxy_circuit_breaker_state gauge\n")
+		fmt.Fprintf(&sb, "loki_vl_proxy_circuit_breaker_state %d\n", cbVal)
+	}
+
 	m.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")

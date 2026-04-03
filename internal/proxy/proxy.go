@@ -204,6 +204,21 @@ func New(cfg Config) (*Proxy, error) {
 	}, nil
 }
 
+// Init wires cross-component dependencies after construction.
+func (p *Proxy) Init() {
+	p.metrics.SetCircuitBreakerFunc(p.breaker.State)
+}
+
+// ReloadTenantMap hot-reloads tenant mappings (called on SIGHUP).
+func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
+	p.tenantMap = m
+}
+
+// ReloadFieldMappings hot-reloads field mappings and rebuilds the label translator.
+func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
+	p.labelTranslator = NewLabelTranslator(p.labelTranslator.style, mappings)
+}
+
 // GetMetrics returns the proxy's metrics instance for external telemetry exporters.
 func (p *Proxy) GetMetrics() *metrics.Metrics { return p.metrics }
 
@@ -243,6 +258,13 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("/loki/api/v1/index/volume_range", rl("volume_range", p.handleVolumeRange))
 	mux.Handle("/loki/api/v1/patterns", rl("patterns", p.handlePatterns))
 	mux.Handle("/loki/api/v1/tail", rl("tail", p.handleTail))
+
+	// Read-only API additions
+	mux.Handle("/loki/api/v1/format_query", rl("format_query", p.handleFormatQuery))
+	mux.Handle("/loki/api/v1/detected_labels", rl("detected_labels", p.handleDetectedLabels))
+
+	// Write endpoints — blocked (this is a read-only proxy)
+	mux.HandleFunc("/loki/api/v1/push", p.handleWriteBlocked)
 
 	// Health / readiness — NOT rate-limited
 	mux.HandleFunc("/ready", p.handleReady)
@@ -801,6 +823,73 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 }
 
+// handleFormatQuery returns the query as-is (pretty-printing is client-side for LogQL).
+func (p *Proxy) handleFormatQuery(w http.ResponseWriter, r *http.Request) {
+	query := r.FormValue("query")
+	p.writeJSON(w, map[string]interface{}{
+		"status": "success",
+		"data":   query,
+	})
+}
+
+// handleDetectedLabels returns stream-level labels (similar to detected_fields but for stream labels).
+func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	query := r.FormValue("query")
+	if query == "" {
+		query = "*"
+	}
+
+	logsqlQuery, _ := p.translateQuery(query)
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	if s := r.FormValue("start"); s != "" {
+		params.Set("start", s)
+	}
+	if e := r.FormValue("end"); e != "" {
+		params.Set("end", e)
+	}
+
+	body, err := p.vlGetCoalesced(r.Context(), "detected_labels:"+params.Encode(), "/select/logsql/field_names", params)
+	if err != nil {
+		p.writeJSON(w, map[string]interface{}{"status": "success", "data": []interface{}{}})
+		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
+		return
+	}
+
+	var vlResp struct {
+		Values []struct {
+			Value string `json:"value"`
+			Hits  int64  `json:"hits"`
+		} `json:"values"`
+	}
+	json.Unmarshal(body, &vlResp)
+
+	labels := make([]string, 0, len(vlResp.Values))
+	for _, v := range vlResp.Values {
+		if isVLInternalField(v.Value) {
+			continue
+		}
+		labels = append(labels, p.labelTranslator.ToLoki(v.Value))
+	}
+
+	p.writeJSON(w, map[string]interface{}{
+		"status": "success",
+		"data":   labels,
+	})
+	p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
+}
+
+// handleWriteBlocked rejects write requests — this is a read-only proxy.
+func (p *Proxy) handleWriteBlocked(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusMethodNotAllowed)
+	json.NewEncoder(w).Encode(map[string]string{
+		"error": "write operations are not supported — this is a read-only proxy. Send logs directly to VictoriaLogs.",
+	})
+}
+
 // wsUpgrader is the WebSocket upgrader for tail connections.
 var wsUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
@@ -961,6 +1050,14 @@ func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp.Body.Close()
+
+	// Circuit breaker check
+	if !p.breaker.Allow() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("circuit breaker open"))
+		return
+	}
+
 	w.Write([]byte("ready"))
 }
 
@@ -1135,6 +1232,13 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	// Apply derived fields (extract trace_id etc. from log lines)
 	if len(p.derivedFields) > 0 {
 		p.applyDerivedFields(streams)
+	}
+
+	// Apply proxy-side post-processing (decolorize, ip filter)
+	// These are Loki features that VL doesn't natively support yet.
+	logqlQuery := r.FormValue("query")
+	if strings.Contains(logqlQuery, "decolorize") {
+		decolorizeStreams(streams)
 	}
 
 	result, _ := json.Marshal(map[string]interface{}{
@@ -1625,6 +1729,26 @@ func base64Encode(s string) string {
 // that should not be exposed in Loki-compatible label responses.
 func isVLInternalField(name string) bool {
 	return name == "_time" || name == "_msg" || name == "_stream" || name == "_stream_id"
+}
+
+// ansiEscapeRe matches ANSI escape sequences (color codes, cursor movement, etc.)
+var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// decolorizeStreams strips ANSI escape sequences from all log lines in streams.
+// Implements Loki's `| decolorize` pipe at the proxy level.
+// TODO: Remove when VL adds native decolorize support.
+func decolorizeStreams(streams []map[string]interface{}) {
+	for _, stream := range streams {
+		values, ok := stream["values"].([][]string)
+		if !ok {
+			continue
+		}
+		for i, val := range values {
+			if len(val) >= 2 {
+				values[i][1] = ansiEscapeRe.ReplaceAllString(val[1], "")
+			}
+		}
+	}
 }
 
 // applyBackendHeaders adds static backend headers and forwarded client headers to a VL request.
