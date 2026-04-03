@@ -99,6 +99,16 @@ flowchart LR
 - **Per-tenant metrics**: Request rate, latency, error rate broken down by tenant (X-Scope-OrgID)
 - **Request logging**: Structured JSON logs with tenant, query, status, latency, client IP per request
 - **Client error breakdown**: Categorized 4xx errors (bad_request, rate_limited, not_found, body_too_large)
+- **Write safeguard**: `/loki/api/v1/push` blocked with 405 — this is a read-only proxy
+- **Decolorize pipe**: `| decolorize` strips ANSI escape codes at proxy level (Loki parity)
+- **IP CIDR filter**: `| label = ip("10.0.0.0/8")` filters by IP range at proxy level (Loki parity)
+- **Line format templates**: Full Go `text/template` support (ToUpper, ToLower, default, etc.)
+- **pprof endpoint**: `/debug/pprof/` for production Go profiling
+- **SIGHUP config reload**: Hot-reload tenant-map and field-mapping without restart
+- **Rate limit headers**: `X-RateLimit-Limit`, `Retry-After` on 429 responses
+- **PrometheusRule CR**: Helm template with alert rules for Prometheus Operator auto-discovery
+- **Grafana dashboard ConfigMap**: Auto-provisioned via Helm with sidecar labels
+- **Fuzz testing**: LogQL translator fuzz-tested with 1.2M+ executions, no panics
 - **Single static binary**, ~10MB Docker image, zero external dependencies at runtime
 
 ## API Coverage
@@ -116,13 +126,16 @@ flowchart LR
 | `/loki/api/v1/index/volume_range` | Implemented | `/select/logsql/hits` (step) | — | 2 |
 | `/loki/api/v1/detected_fields` | Implemented | `/select/logsql/field_names` | 30s | 1 |
 | `/loki/api/v1/patterns` | Stub | — | — | 1 |
+| `/loki/api/v1/format_query` | Implemented | — (client-side) | — | 1 |
+| `/loki/api/v1/detected_labels` | Implemented | `/select/logsql/field_names` | — | 1 |
+| `/loki/api/v1/push` | **Blocked** (405) | — | — | 1 |
 | `/loki/api/v1/tail` | Implemented | `/select/logsql/tail` (WebSocket→NDJSON) | — | 2 |
 | `/ready` | Implemented | `/health` | — | 2 |
 | `/loki/api/v1/status/buildinfo` | Implemented | — | — | 1 |
 | `/metrics` | Implemented | — | — | 1 |
 | `/debug/queries` | Implemented | — | — | 1 |
 
-**310+ tests total** (263 unit + 50+ e2e, all at 100% compatibility)
+**390+ tests total** (340 unit + 50+ e2e, fuzz-tested with 1.2M+ executions)
 
 ## Protection Layers
 
@@ -478,6 +491,14 @@ go build -o loki-vl-proxy ./cmd/proxy
 - [x] Custom field remapping — `-field-mapping` for non-standard VL setups
 - [x] Per-tenant metrics — request rate, latency, error rate by `X-Scope-OrgID`
 - [x] Client error breakdown — categorized 4xx errors in metrics
-- [x] Grafana dashboard & alerting rules — pre-built examples
+- [x] Grafana dashboard & alerting rules — pre-built examples + Helm PrometheusRule CR
 - [x] Operational documentation — capacity planning, performance tuning, troubleshooting
+- [x] Write safeguard — `/loki/api/v1/push` blocked (read-only proxy)
+- [x] `| decolorize` — proxy-side ANSI stripping
+- [x] `| ip("CIDR")` — proxy-side IP range filtering
+- [x] `| line_format` full Go templates — ToUpper, ToLower, default, etc.
+- [x] pprof, SIGHUP reload, rate limit headers
+- [x] Per-endpoint cache metrics, backend latency, singleflight stats, CB state gauge
+- [x] Fuzz testing — 1.2M+ executions, no panics
 - [ ] `/loki/api/v1/patterns` — real implementation
+- [ ] Nested metric queries — `sum(rate(...)) / sum(rate(...))` outer arithmetic

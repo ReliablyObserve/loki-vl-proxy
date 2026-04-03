@@ -1234,11 +1234,18 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 		p.applyDerivedFields(streams)
 	}
 
-	// Apply proxy-side post-processing (decolorize, ip filter)
-	// These are Loki features that VL doesn't natively support yet.
+	// Apply proxy-side post-processing for Loki features VL doesn't natively support.
+	// These are applied after VL returns results, implementing Loki behavior at the proxy.
+	// TODO: Remove each when VL adds native equivalents.
 	logqlQuery := r.FormValue("query")
 	if strings.Contains(logqlQuery, "decolorize") {
 		decolorizeStreams(streams)
+	}
+	if label, cidr, ok := parseIPFilter(logqlQuery); ok {
+		streams = ipFilterStreams(streams, label, cidr)
+	}
+	if tmpl := extractLineFormatTemplate(logqlQuery); tmpl != "" {
+		applyLineFormatTemplate(streams, tmpl)
 	}
 
 	result, _ := json.Marshal(map[string]interface{}{
@@ -1729,26 +1736,6 @@ func base64Encode(s string) string {
 // that should not be exposed in Loki-compatible label responses.
 func isVLInternalField(name string) bool {
 	return name == "_time" || name == "_msg" || name == "_stream" || name == "_stream_id"
-}
-
-// ansiEscapeRe matches ANSI escape sequences (color codes, cursor movement, etc.)
-var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
-
-// decolorizeStreams strips ANSI escape sequences from all log lines in streams.
-// Implements Loki's `| decolorize` pipe at the proxy level.
-// TODO: Remove when VL adds native decolorize support.
-func decolorizeStreams(streams []map[string]interface{}) {
-	for _, stream := range streams {
-		values, ok := stream["values"].([][]string)
-		if !ok {
-			continue
-		}
-		for i, val := range values {
-			if len(val) >= 2 {
-				values[i][1] = ansiEscapeRe.ReplaceAllString(val[1], "")
-			}
-		}
-	}
 }
 
 // applyBackendHeaders adds static backend headers and forwarded client headers to a VL request.

@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-04-04
+
+### Features
+
+- **`| decolorize`**: Proxy-side ANSI escape stripping (Loki parity, ready for VL native replacement)
+- **`| ip("CIDR")`**: Proxy-side IP range filtering with `net.ParseCIDR` (Loki parity)
+- **`| line_format` full templates**: Go `text/template` with ToUpper, ToLower, default, TrimSpace, etc.
+- **`/loki/api/v1/format_query`**: Returns query as-is (client-side formatting)
+- **`/loki/api/v1/detected_labels`**: Stream-level labels endpoint (Loki 3.x)
+- **Write safeguard**: `/loki/api/v1/push` returns 405 (read-only proxy)
+
+### Tests
+
+- 340 unit tests, 60+ e2e tests
+- New e2e: decolorize, ip() filter, line_format, format_query, detected_labels, write blocked, buildinfo, ready, metrics validation, patterns
+- Fuzz testing: 1.2M+ executions, no panics
+
 ## [0.12.0] - 2026-04-04
 
 ### Features
