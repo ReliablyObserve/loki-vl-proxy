@@ -1,25 +1,21 @@
 version: "3.8"
 
-# E2E compatibility test: runs both Loki and VictoriaLogs with the proxy,
-# ingests identical logs into both, then compares API responses.
-services:
-  victorialogs:
-    image: victoriametrics/victoria-logs:v1.20.0-victorialogs
-    ports:
-      - "9428:9428"
-    command:
-      - "-storageDataPath=/vlogs"
-      - "-retentionPeriod=1d"
-    volumes:
-      - vl-data:/vlogs
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9428/health"]
-      interval: 3s
-      timeout: 2s
-      retries: 10
+# Full e2e compatibility stack:
+# - Real Loki (reference implementation)
+# - VictoriaLogs (backend)
+# - Loki-VL-proxy (translating proxy)
+# - Grafana with all 3 datasources configured
+#
+# Usage:
+#   docker-compose up -d --build
+#   go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
+#   # Or open Grafana at http://localhost:3000 for manual comparison
 
+services:
+  # Reference Loki instance (ground truth)
   loki:
     image: grafana/loki:3.4.3
+    container_name: e2e-loki
     ports:
       - "3101:3100"
     command: -config.file=/etc/loki/local-config.yaml
@@ -27,21 +23,60 @@ services:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
       interval: 3s
       timeout: 2s
-      retries: 10
+      retries: 15
+      start_period: 10s
 
+  # VictoriaLogs backend
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.20.0-victorialogs
+    container_name: e2e-victorialogs
+    ports:
+      - "9428:9428"
+    command:
+      - "-storageDataPath=/vlogs"
+      - "-retentionPeriod=1d"
+      - "-httpListenAddr=:9428"
+    volumes:
+      - vl-data:/vlogs
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9428/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  # Loki-VL-proxy (translating proxy under test)
   loki-vl-proxy:
     build:
       context: ../..
       dockerfile: Dockerfile
+    container_name: e2e-proxy
     ports:
       - "3100:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
       - "-log-level=debug"
+      - "-cache-ttl=5s"
     depends_on:
       victorialogs:
         condition: service_healthy
+
+  # Grafana with 3 datasources for manual side-by-side comparison
+  grafana:
+    image: grafana/grafana:12.4.2
+    container_name: e2e-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    depends_on:
+      - loki
+      - loki-vl-proxy
 
 volumes:
   vl-data:

@@ -1,0 +1,26 @@
+apiVersion: 1
+datasources:
+  # 1. Real Loki (ground truth reference)
+  - name: Loki (direct)
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    jsonData:
+      maxLines: 1000
+
+  # 2. VictoriaLogs via Loki-VL-proxy (under test)
+  - name: Loki (via VL proxy)
+    type: loki
+    access: proxy
+    url: http://loki-vl-proxy:3100
+    isDefault: true
+    jsonData:
+      maxLines: 1000
+
+  # 3. VictoriaLogs native datasource (for direct comparison)
+  - name: VictoriaLogs (direct)
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://victorialogs:9428
+    isDefault: false

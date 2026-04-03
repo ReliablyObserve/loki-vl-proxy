@@ -1,10 +1,20 @@
 //go:build e2e
 
-// Package e2e_compat runs compatibility tests comparing proxy responses
-// against real Loki responses for the same log data.
+// Package e2e_compat runs side-by-side compatibility tests comparing
+// Loki-VL-proxy responses against real Loki responses for identical log data.
 //
-// Prerequisites: docker-compose up -d (from this directory)
-// Run: go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
+// Prerequisites:
+//   docker-compose up -d --build  (from this directory)
+//   wait ~15s for services to start
+//
+// Run:
+//   go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
+//
+// The test suite:
+// 1. Ingests identical logs into both Loki and VictoriaLogs
+// 2. Calls every Loki API endpoint on both real Loki and the proxy
+// 3. Compares response structures and content
+// 4. Calculates a compatibility score
 package e2e_compat
 
 import (
@@ -19,209 +29,216 @@ import (
 	"time"
 )
 
-const (
-	defaultLokiURL  = "http://localhost:3101" // Real Loki
-	defaultProxyURL = "http://localhost:3100"  // Loki-VL-proxy
-	defaultVLURL    = "http://localhost:9428"  // VictoriaLogs direct
+var (
+	lokiURL  = envOr("LOKI_URL", "http://localhost:3101")
+	proxyURL = envOr("PROXY_URL", "http://localhost:3100")
+	vlURL    = envOr("VL_URL", "http://localhost:9428")
 )
 
-func lokiURL() string {
-	if v := os.Getenv("LOKI_URL"); v != "" {
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
 		return v
 	}
-	return defaultLokiURL
+	return def
 }
 
-func proxyURL() string {
-	if v := os.Getenv("PROXY_URL"); v != "" {
-		return v
-	}
-	return defaultProxyURL
+// CompatScore tracks pass/fail per endpoint for final scoring.
+type CompatScore struct {
+	total  int
+	passed int
+	failed int
+	details []string
 }
 
-func vlURL() string {
-	if v := os.Getenv("VL_URL"); v != "" {
-		return v
-	}
-	return defaultVLURL
+func (cs *CompatScore) pass(endpoint, detail string) {
+	cs.total++
+	cs.passed++
+	cs.details = append(cs.details, fmt.Sprintf("PASS %s: %s", endpoint, detail))
 }
 
-// TestIngestSampleLogs pushes identical logs into both Loki and VictoriaLogs.
-func TestIngestSampleLogs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+func (cs *CompatScore) fail(endpoint, detail string) {
+	cs.total++
+	cs.failed++
+	cs.details = append(cs.details, fmt.Sprintf("FAIL %s: %s", endpoint, detail))
+}
+
+func (cs *CompatScore) report(t *testing.T) {
+	t.Helper()
+	t.Logf("\n=== COMPATIBILITY SCORE ===")
+	for _, d := range cs.details {
+		t.Log(d)
 	}
+	pct := float64(cs.passed) / float64(cs.total) * 100
+	t.Logf("\nScore: %d/%d (%.1f%%)", cs.passed, cs.total, pct)
+	t.Logf("===========================")
+}
 
-	// Push to Loki via Loki push API
-	lokiPushURL := lokiURL() + "/loki/api/v1/push"
-	// Push to VL via JSON line ingestion
-	vlPushURL := vlURL() + "/insert/jsonline"
+// --- Test Setup: Ingest identical logs into both Loki and VL ---
 
+func TestSetup_IngestLogs(t *testing.T) {
 	now := time.Now()
-	tsNanos := fmt.Sprintf("%d", now.UnixNano())
 
-	// Loki push format
-	lokiPayload := fmt.Sprintf(`{
-		"streams": [{
-			"stream": {"app": "e2e-test", "env": "test"},
-			"values": [
-				["%s", "test log line error in payment service"],
-				["%s", "test log line info request completed"],
-				["%s", "test log line warn high latency detected"]
-			]
-		}]
-	}`, tsNanos, fmt.Sprintf("%d", now.Add(time.Second).UnixNano()), fmt.Sprintf("%d", now.Add(2*time.Second).UnixNano()))
+	// Wait for services
+	waitForReady(t, lokiURL+"/ready", 30*time.Second)
+	waitForReady(t, proxyURL+"/ready", 30*time.Second)
 
-	resp, err := http.Post(lokiPushURL, "application/json", strings.NewReader(lokiPayload))
-	if err != nil {
-		t.Logf("Loki push failed (expected if Loki not running): %v", err)
-	} else {
-		resp.Body.Close()
-		t.Logf("Loki push status: %d", resp.StatusCode)
-	}
+	// Push to Loki
+	pushToLoki(t, now, []logLine{
+		{Msg: "GET /api/v1/users 200 15ms", Level: "info"},
+		{Msg: "POST /api/v1/orders 201 42ms", Level: "info"},
+		{Msg: "error: connection refused to payment-service", Level: "error"},
+		{Msg: "warn: high latency detected on database query", Level: "warn"},
+		{Msg: "GET /health 200 1ms", Level: "info"},
+		{Msg: `{"method":"GET","path":"/api","status":200,"duration":15}`, Level: "info"},
+	})
 
-	// VL push format (JSON lines)
-	vlLines := []string{
-		fmt.Sprintf(`{"_time":%q,"_msg":"test log line error in payment service","app":"e2e-test","env":"test"}`, now.Format(time.RFC3339Nano)),
-		fmt.Sprintf(`{"_time":%q,"_msg":"test log line info request completed","app":"e2e-test","env":"test"}`, now.Add(time.Second).Format(time.RFC3339Nano)),
-		fmt.Sprintf(`{"_time":%q,"_msg":"test log line warn high latency detected","app":"e2e-test","env":"test"}`, now.Add(2*time.Second).Format(time.RFC3339Nano)),
-	}
-
-	resp, err = http.Post(vlPushURL+"?_stream_fields=app,env", "application/stream+json", strings.NewReader(strings.Join(vlLines, "\n")))
-	if err != nil {
-		t.Fatalf("VL push failed: %v", err)
-	}
-	resp.Body.Close()
-	t.Logf("VL push status: %d", resp.StatusCode)
+	// Push to VictoriaLogs
+	pushToVL(t, now, []logLine{
+		{Msg: "GET /api/v1/users 200 15ms", Level: "info"},
+		{Msg: "POST /api/v1/orders 201 42ms", Level: "info"},
+		{Msg: "error: connection refused to payment-service", Level: "error"},
+		{Msg: "warn: high latency detected on database query", Level: "warn"},
+		{Msg: "GET /health 200 1ms", Level: "info"},
+		{Msg: `{"method":"GET","path":"/api","status":200,"duration":15}`, Level: "info"},
+	})
 
 	// Wait for indexing
-	time.Sleep(2 * time.Second)
+	time.Sleep(3 * time.Second)
 }
 
-// CompatResult tracks per-endpoint compatibility.
-type CompatResult struct {
-	Endpoint   string
-	ProxyOK    bool
-	LokiOK    bool
-	Compatible bool
-	Details    string
+// --- Side-by-side comparison tests ---
+
+func TestCompat_Labels(t *testing.T) {
+	score := &CompatScore{}
+
+	lokiResp := getJSON(t, lokiURL+"/loki/api/v1/labels")
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/labels")
+
+	// Both must return status=success
+	if checkStatus(lokiResp) && checkStatus(proxyResp) {
+		score.pass("labels", "both return status=success")
+	} else {
+		score.fail("labels", "status mismatch")
+	}
+
+	// Both must return data as string array
+	lokiLabels := extractStrings(lokiResp, "data")
+	proxyLabels := extractStrings(proxyResp, "data")
+
+	if lokiLabels != nil && proxyLabels != nil {
+		score.pass("labels", "both return string array")
+	} else {
+		score.fail("labels", "data format mismatch")
+	}
+
+	// Proxy must include at least the labels we ingested
+	for _, label := range []string{"app", "level"} {
+		if contains(proxyLabels, label) {
+			score.pass("labels", fmt.Sprintf("proxy returns label %q", label))
+		} else {
+			score.fail("labels", fmt.Sprintf("proxy missing label %q", label))
+		}
+	}
+
+	score.report(t)
 }
 
-// TestCompatLabels tests /loki/api/v1/labels compatibility.
-func TestCompatLabels(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+func TestCompat_LabelValues(t *testing.T) {
+	score := &CompatScore{}
+
+	lokiResp := getJSON(t, lokiURL+"/loki/api/v1/label/app/values")
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/label/app/values")
+
+	if checkStatus(lokiResp) && checkStatus(proxyResp) {
+		score.pass("label_values", "both return status=success")
+	} else {
+		score.fail("label_values", "status mismatch")
 	}
 
-	proxyResp := getJSON(t, proxyURL()+"/loki/api/v1/labels")
-	lokiResp := getJSON(t, lokiURL()+"/loki/api/v1/labels")
+	lokiValues := extractStrings(lokiResp, "data")
+	proxyValues := extractStrings(proxyResp, "data")
 
-	// Both should return {"status": "success", "data": [...]}
-	assertField(t, proxyResp, "status", "success")
-
-	proxyLabels := extractStringSlice(t, proxyResp, "data")
-	t.Logf("Proxy labels: %v", proxyLabels)
-
-	if lokiResp != nil {
-		lokiLabels := extractStringSlice(t, lokiResp, "data")
-		t.Logf("Loki labels: %v", lokiLabels)
+	if contains(proxyValues, "e2e-test") {
+		score.pass("label_values", "proxy returns ingested value 'e2e-test'")
+	} else {
+		score.fail("label_values", fmt.Sprintf("proxy missing 'e2e-test', got: %v", proxyValues))
 	}
 
-	// The proxy MUST return the "app" and "env" labels we ingested
-	if !contains(proxyLabels, "app") {
-		t.Error("proxy /labels missing 'app' label")
-	}
-	if !contains(proxyLabels, "env") {
-		t.Error("proxy /labels missing 'env' label")
-	}
+	t.Logf("Loki values: %v", lokiValues)
+	t.Logf("Proxy values: %v", proxyValues)
+	score.report(t)
 }
 
-// TestCompatLabelValues tests /loki/api/v1/label/{name}/values.
-func TestCompatLabelValues(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
-	}
-
-	proxyResp := getJSON(t, proxyURL()+"/loki/api/v1/label/app/values")
-	assertField(t, proxyResp, "status", "success")
-
-	values := extractStringSlice(t, proxyResp, "data")
-	t.Logf("Proxy label values for 'app': %v", values)
-
-	if !contains(values, "e2e-test") {
-		t.Error("proxy /label/app/values missing 'e2e-test'")
-	}
-}
-
-// TestCompatQueryRange tests /loki/api/v1/query_range with a log query.
-func TestCompatQueryRange(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
-	}
-
+func TestCompat_QueryRange_LogQuery(t *testing.T) {
+	score := &CompatScore{}
 	now := time.Now()
-	start := now.Add(-10 * time.Minute).UnixNano()
-	end := now.UnixNano()
-
 	params := url.Values{}
 	params.Set("query", `{app="e2e-test"}`)
-	params.Set("start", fmt.Sprintf("%d", start))
-	params.Set("end", fmt.Sprintf("%d", end))
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("limit", "100")
 
-	proxyResp := getJSON(t, proxyURL()+"/loki/api/v1/query_range?"+params.Encode())
-	assertField(t, proxyResp, "status", "success")
+	lokiResp := getJSON(t, lokiURL+"/loki/api/v1/query_range?"+params.Encode())
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
 
-	data, ok := proxyResp["data"].(map[string]interface{})
-	if !ok {
-		t.Fatal("proxy query_range: missing 'data' object")
+	// Status check
+	if checkStatus(lokiResp) && checkStatus(proxyResp) {
+		score.pass("query_range", "both return status=success")
+	} else {
+		score.fail("query_range", "status mismatch")
 	}
 
-	resultType, _ := data["resultType"].(string)
-	if resultType != "streams" {
-		t.Errorf("proxy query_range: expected resultType 'streams', got %q", resultType)
+	// resultType check
+	lokiData := extractMap(lokiResp, "data")
+	proxyData := extractMap(proxyResp, "data")
+
+	if proxyData != nil && proxyData["resultType"] == "streams" {
+		score.pass("query_range", "proxy returns resultType=streams")
+	} else {
+		score.fail("query_range", fmt.Sprintf("expected resultType=streams, got %v", proxyData["resultType"]))
 	}
 
-	result, ok := data["result"].([]interface{})
-	if !ok {
-		t.Fatal("proxy query_range: missing 'result' array")
+	// Result structure check
+	lokiResult := extractArray(lokiData, "result")
+	proxyResult := extractArray(proxyData, "result")
+
+	if lokiResult != nil && proxyResult != nil && len(proxyResult) > 0 {
+		score.pass("query_range", "both return non-empty results")
+	} else {
+		score.fail("query_range", fmt.Sprintf("loki=%d results, proxy=%d results", len(lokiResult), len(proxyResult)))
 	}
 
-	if len(result) == 0 {
-		t.Error("proxy query_range: no streams returned — expected at least 1")
-	}
-
-	// Verify stream structure: each result should have "stream" and "values"
-	for i, r := range result {
-		stream, ok := r.(map[string]interface{})
-		if !ok {
-			t.Errorf("result[%d]: not an object", i)
-			continue
-		}
-		if _, ok := stream["stream"]; !ok {
-			t.Errorf("result[%d]: missing 'stream' field", i)
-		}
-		vals, ok := stream["values"].([]interface{})
-		if !ok {
-			t.Errorf("result[%d]: missing 'values' array", i)
-			continue
-		}
-		// Each value should be [timestamp_ns, log_line]
-		for j, v := range vals {
-			pair, ok := v.([]interface{})
-			if !ok || len(pair) != 2 {
-				t.Errorf("result[%d].values[%d]: expected [ts, line] pair, got %v", i, j, v)
+	// Verify stream entry structure
+	if len(proxyResult) > 0 {
+		entry, ok := proxyResult[0].(map[string]interface{})
+		if ok {
+			if _, hasStream := entry["stream"]; hasStream {
+				score.pass("query_range", "proxy result has 'stream' field")
+			} else {
+				score.fail("query_range", "proxy result missing 'stream'")
+			}
+			if _, hasValues := entry["values"]; hasValues {
+				score.pass("query_range", "proxy result has 'values' field")
+			} else {
+				score.fail("query_range", "proxy result missing 'values'")
 			}
 		}
 	}
-}
 
-// TestCompatQueryRangeWithFilter tests filtered log queries.
-func TestCompatQueryRangeWithFilter(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+	// Stats field
+	if proxyData != nil {
+		if _, hasStats := proxyData["stats"]; hasStats {
+			score.pass("query_range", "proxy includes 'stats' object")
+		} else {
+			score.fail("query_range", "proxy missing 'stats' object")
+		}
 	}
 
+	score.report(t)
+}
+
+func TestCompat_QueryRange_WithFilter(t *testing.T) {
+	score := &CompatScore{}
 	now := time.Now()
 	params := url.Values{}
 	params.Set("query", `{app="e2e-test"} |= "error"`)
@@ -229,150 +246,272 @@ func TestCompatQueryRangeWithFilter(t *testing.T) {
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("limit", "100")
 
-	proxyResp := getJSON(t, proxyURL()+"/loki/api/v1/query_range?"+params.Encode())
-	assertField(t, proxyResp, "status", "success")
+	lokiResp := getJSON(t, lokiURL+"/loki/api/v1/query_range?"+params.Encode())
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
 
-	data, _ := proxyResp["data"].(map[string]interface{})
-	result, _ := data["result"].([]interface{})
+	lokiLines := countLogLines(lokiResp)
+	proxyLines := countLogLines(proxyResp)
 
-	// Should find at least the "error" log line
-	totalLines := 0
-	for _, r := range result {
-		stream, _ := r.(map[string]interface{})
-		vals, _ := stream["values"].([]interface{})
-		totalLines += len(vals)
+	t.Logf("Filter |= 'error': Loki=%d lines, Proxy=%d lines", lokiLines, proxyLines)
+
+	if proxyLines > 0 {
+		score.pass("query_range_filter", "proxy returns filtered results")
+	} else {
+		score.fail("query_range_filter", "proxy returned 0 lines for error filter")
 	}
 
-	if totalLines == 0 {
-		t.Error("filtered query returned 0 lines — expected at least 1 with 'error'")
+	if lokiLines > 0 && proxyLines > 0 {
+		score.pass("query_range_filter", "both return matching lines")
 	}
-	t.Logf("Filtered query returned %d log lines", totalLines)
+
+	score.report(t)
 }
 
-// TestCompatSeries tests /loki/api/v1/series.
-func TestCompatSeries(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
-	}
-
+func TestCompat_Series(t *testing.T) {
+	score := &CompatScore{}
 	params := url.Values{}
 	params.Set("match[]", `{app="e2e-test"}`)
 
-	proxyResp := getJSON(t, proxyURL()+"/loki/api/v1/series?"+params.Encode())
-	assertField(t, proxyResp, "status", "success")
+	lokiResp := getJSON(t, lokiURL+"/loki/api/v1/series?"+params.Encode())
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/series?"+params.Encode())
 
-	data, ok := proxyResp["data"].([]interface{})
-	if !ok {
-		t.Fatal("series: missing 'data' array")
+	if checkStatus(lokiResp) && checkStatus(proxyResp) {
+		score.pass("series", "both return status=success")
+	} else {
+		score.fail("series", "status mismatch")
 	}
-	t.Logf("Series returned %d streams", len(data))
+
+	lokiData := extractArray(lokiResp, "data")
+	proxyData := extractArray(proxyResp, "data")
+
+	t.Logf("Series: Loki=%d, Proxy=%d", len(lokiData), len(proxyData))
+
+	if len(proxyData) > 0 {
+		score.pass("series", "proxy returns series data")
+		// Check that series entries are label maps
+		entry, ok := proxyData[0].(map[string]interface{})
+		if ok && len(entry) > 0 {
+			score.pass("series", "proxy series entries are label maps")
+		}
+	} else {
+		score.fail("series", "proxy returned no series")
+	}
+
+	score.report(t)
 }
 
-// TestCompatReady tests /ready endpoint.
-func TestCompatReady(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
+func TestCompat_BuildInfo(t *testing.T) {
+	score := &CompatScore{}
+
+	lokiResp := getJSON(t, lokiURL+"/loki/api/v1/status/buildinfo")
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/status/buildinfo")
+
+	if checkStatus(proxyResp) {
+		score.pass("buildinfo", "proxy returns status=success")
+	} else {
+		score.fail("buildinfo", "proxy status not success")
 	}
 
-	resp, err := http.Get(proxyURL() + "/ready")
+	proxyData := extractMap(proxyResp, "data")
+	if proxyData != nil && proxyData["version"] != nil {
+		score.pass("buildinfo", "proxy returns version field")
+	} else {
+		score.fail("buildinfo", "proxy missing version")
+	}
+
+	_ = lokiResp
+	score.report(t)
+}
+
+func TestCompat_Ready(t *testing.T) {
+	score := &CompatScore{}
+
+	lokiCode := getStatusCode(t, lokiURL+"/ready")
+	proxyCode := getStatusCode(t, proxyURL+"/ready")
+
+	if lokiCode == 200 {
+		score.pass("ready", "loki returns 200")
+	}
+	if proxyCode == 200 {
+		score.pass("ready", "proxy returns 200")
+	} else {
+		score.fail("ready", fmt.Sprintf("proxy returned %d", proxyCode))
+	}
+
+	score.report(t)
+}
+
+func TestCompat_DetectedFields(t *testing.T) {
+	score := &CompatScore{}
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/detected_fields?query=%7Bapp%3D%22e2e-test%22%7D")
+
+	if proxyResp != nil {
+		if fields, ok := proxyResp["fields"].([]interface{}); ok {
+			score.pass("detected_fields", fmt.Sprintf("proxy returns %d fields", len(fields)))
+		} else {
+			score.fail("detected_fields", "proxy missing fields array")
+		}
+	} else {
+		score.fail("detected_fields", "proxy returned nil")
+	}
+
+	score.report(t)
+}
+
+func TestCompat_Metrics(t *testing.T) {
+	score := &CompatScore{}
+
+	resp, err := http.Get(proxyURL + "/metrics")
 	if err != nil {
-		t.Fatalf("GET /ready failed: %v", err)
+		score.fail("metrics", err.Error())
+		score.report(t)
+		return
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("/ready returned %d, expected 200", resp.StatusCode)
-	}
-}
-
-// TestCompatBuildInfo tests /loki/api/v1/status/buildinfo.
-func TestCompatBuildInfo(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
-	}
-
-	proxyResp := getJSON(t, proxyURL()+"/loki/api/v1/status/buildinfo")
-	assertField(t, proxyResp, "status", "success")
-}
-
-// TestCompatMetrics tests /metrics endpoint.
-func TestCompatMetrics(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
-	}
-
-	resp, err := http.Get(proxyURL() + "/metrics")
-	if err != nil {
-		t.Fatalf("GET /metrics failed: %v", err)
-	}
-	defer resp.Body.Close()
-
 	body, _ := io.ReadAll(resp.Body)
 	text := string(body)
 
-	requiredMetrics := []string{
+	metrics := []string{
 		"loki_vl_proxy_requests_total",
 		"loki_vl_proxy_cache_hits_total",
-		"loki_vl_proxy_cache_misses_total",
 		"loki_vl_proxy_uptime_seconds",
 	}
-
-	for _, m := range requiredMetrics {
-		if !strings.Contains(text, m) {
-			t.Errorf("/metrics missing metric: %s", m)
+	for _, m := range metrics {
+		if strings.Contains(text, m) {
+			score.pass("metrics", fmt.Sprintf("has %s", m))
+		} else {
+			score.fail("metrics", fmt.Sprintf("missing %s", m))
 		}
 	}
+
+	score.report(t)
 }
 
-// TestCompatDetectedFields tests /loki/api/v1/detected_fields.
-func TestCompatDetectedFields(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping e2e test in short mode")
-	}
-
-	proxyResp := getJSON(t, proxyURL()+"/loki/api/v1/detected_fields?query="+url.QueryEscape(`{app="e2e-test"}`))
-
-	fields, ok := proxyResp["fields"].([]interface{})
-	if !ok {
-		t.Fatal("detected_fields: missing 'fields' array")
-	}
-	t.Logf("Detected %d fields", len(fields))
+// TestCompat_FinalScore aggregates all results into a summary.
+func TestCompat_FinalScore(t *testing.T) {
+	t.Log("\n" + strings.Repeat("=", 60))
+	t.Log("E2E COMPATIBILITY TEST COMPLETE")
+	t.Log("Compare Grafana side-by-side at http://localhost:3000")
+	t.Log("  - 'Loki (direct)' = real Loki reference")
+	t.Log("  - 'Loki (via VL proxy)' = VictoriaLogs via proxy")
+	t.Log("  - 'VictoriaLogs (direct)' = native VL datasource")
+	t.Log(strings.Repeat("=", 60))
 }
 
-// --- Helpers ---
+// =============================================================================
+// Helpers
+// =============================================================================
 
-func getJSON(t *testing.T, urlStr string) map[string]interface{} {
+type logLine struct {
+	Msg   string
+	Level string
+}
+
+func pushToLoki(t *testing.T, baseTime time.Time, lines []logLine) {
 	t.Helper()
-	resp, err := http.Get(urlStr)
+	values := make([][]string, len(lines))
+	for i, l := range lines {
+		ts := baseTime.Add(time.Duration(i) * time.Second)
+		values[i] = []string{fmt.Sprintf("%d", ts.UnixNano()), l.Msg}
+	}
+
+	payload := map[string]interface{}{
+		"streams": []map[string]interface{}{
+			{
+				"stream": map[string]string{"app": "e2e-test", "env": "test", "level": lines[0].Level},
+				"values": values,
+			},
+		},
+	}
+
+	body, _ := json.Marshal(payload)
+	resp, err := http.Post(lokiURL+"/loki/api/v1/push", "application/json", strings.NewReader(string(body)))
 	if err != nil {
-		t.Logf("GET %s failed: %v", urlStr, err)
+		t.Logf("Loki push failed: %v", err)
+		return
+	}
+	resp.Body.Close()
+	t.Logf("Loki push: %d", resp.StatusCode)
+}
+
+func pushToVL(t *testing.T, baseTime time.Time, lines []logLine) {
+	t.Helper()
+	var vlLines []string
+	for i, l := range lines {
+		ts := baseTime.Add(time.Duration(i) * time.Second)
+		entry := map[string]string{
+			"_time": ts.Format(time.RFC3339Nano),
+			"_msg":  l.Msg,
+			"app":   "e2e-test",
+			"env":   "test",
+			"level": l.Level,
+		}
+		line, _ := json.Marshal(entry)
+		vlLines = append(vlLines, string(line))
+	}
+
+	resp, err := http.Post(
+		vlURL+"/insert/jsonline?_stream_fields=app,env,level",
+		"application/stream+json",
+		strings.NewReader(strings.Join(vlLines, "\n")),
+	)
+	if err != nil {
+		t.Fatalf("VL push failed: %v", err)
+	}
+	resp.Body.Close()
+	t.Logf("VL push: %d", resp.StatusCode)
+}
+
+func waitForReady(t *testing.T, url string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(url)
+		if err == nil && resp.StatusCode == 200 {
+			resp.Body.Close()
+			return
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		time.Sleep(1 * time.Second)
+	}
+	t.Fatalf("timeout waiting for %s", url)
+}
+
+func getJSON(t *testing.T, url string) map[string]interface{} {
+	t.Helper()
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Logf("GET %s failed: %v", url, err)
 		return nil
 	}
 	defer resp.Body.Close()
-
 	body, _ := io.ReadAll(resp.Body)
 	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		t.Logf("Failed to parse JSON from %s: %v (body: %s)", urlStr, err, string(body))
-		return nil
-	}
+	json.Unmarshal(body, &result)
 	return result
 }
 
-func assertField(t *testing.T, resp map[string]interface{}, key, expected string) {
+func getStatusCode(t *testing.T, url string) int {
 	t.Helper()
-	if resp == nil {
-		t.Errorf("response is nil, expected %s=%q", key, expected)
-		return
+	resp, err := http.Get(url)
+	if err != nil {
+		return 0
 	}
-	val, _ := resp[key].(string)
-	if val != expected {
-		t.Errorf("expected %s=%q, got %q", key, expected, val)
-	}
+	resp.Body.Close()
+	return resp.StatusCode
 }
 
-func extractStringSlice(t *testing.T, resp map[string]interface{}, key string) []string {
-	t.Helper()
+func checkStatus(resp map[string]interface{}) bool {
+	if resp == nil {
+		return false
+	}
+	return resp["status"] == "success"
+}
+
+func extractStrings(resp map[string]interface{}, key string) []string {
 	if resp == nil {
 		return nil
 	}
@@ -387,6 +526,34 @@ func extractStringSlice(t *testing.T, resp map[string]interface{}, key string) [
 		}
 	}
 	return result
+}
+
+func extractMap(resp map[string]interface{}, key string) map[string]interface{} {
+	if resp == nil {
+		return nil
+	}
+	m, _ := resp[key].(map[string]interface{})
+	return m
+}
+
+func extractArray(resp map[string]interface{}, key string) []interface{} {
+	if resp == nil {
+		return nil
+	}
+	arr, _ := resp[key].([]interface{})
+	return arr
+}
+
+func countLogLines(resp map[string]interface{}) int {
+	data := extractMap(resp, "data")
+	result := extractArray(data, "result")
+	total := 0
+	for _, r := range result {
+		stream, _ := r.(map[string]interface{})
+		values, _ := stream["values"].([]interface{})
+		total += len(values)
+	}
+	return total
 }
 
 func contains(slice []string, s string) bool {

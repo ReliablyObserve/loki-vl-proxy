@@ -4,46 +4,74 @@ HTTP proxy that exposes a **Loki-compatible API** on the frontend and translates
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    subgraph Clients
+        G["Grafana<br/>(Loki datasource)"]
+        M["MCP Servers<br/>LLM Agents"]
+        D["Dashboards<br/>Explore / Drilldown"]
+    end
+
+    subgraph Proxy["Loki-VL-proxy :3100"]
+        RL["Rate Limiter<br/>per-client token bucket<br/>+ global concurrency"]
+        CO["Request Coalescer<br/>singleflight: N queries → 1"]
+        NM["Query Normalizer<br/>sort matchers, collapse ws"]
+        TR["LogQL → LogsQL<br/>Translator"]
+        CA["TTL Cache (L1)<br/>per-endpoint TTLs<br/>max 256MB"]
+        RC["Response Converter<br/>VL NDJSON → Loki streams<br/>VL stats → Prom matrix"]
+        CB["Circuit Breaker<br/>closed→open→half-open"]
+        OB["/metrics + JSON logs"]
+    end
+
+    VL["VictoriaLogs<br/>:9428"]
+
+    G --> RL
+    M --> RL
+    D --> RL
+    RL --> CO
+    CO --> NM
+    NM --> CA
+    CA -->|miss| TR
+    TR --> CB
+    CB --> VL
+    VL --> RC
+    RC --> CA
+    CA -->|hit| G
+
+    style Proxy fill:#1a1a2e,stroke:#e94560,color:#fff
+    style VL fill:#0f3460,stroke:#16213e,color:#fff
+    style RL fill:#533483,stroke:#e94560,color:#fff
+    style CO fill:#533483,stroke:#e94560,color:#fff
+    style CA fill:#0f3460,stroke:#16213e,color:#fff
+    style TR fill:#e94560,stroke:#fff,color:#fff
+    style CB fill:#533483,stroke:#e94560,color:#fff
 ```
-              Grafana (Loki datasource)
-              Explore / Drilldown / Dashboards
-              MCP servers / LLM agents
-                        │
-                        ▼
-         ┌──────────────────────────────┐
-         │        Loki-VL-proxy         │
-         │          :3100               │
-         │                              │
-         │  ┌────────────────────────┐  │
-         │  │   Rate Limiter         │  │  Per-client token bucket
-         │  │   (per-client + global)│  │  + global concurrent semaphore
-         │  ├────────────────────────┤  │
-         │  │   Request Coalescer    │  │  singleflight: N identical queries
-         │  │   (singleflight)       │  │  → 1 backend request
-         │  ├────────────────────────┤  │
-         │  │   Query Normalizer     │  │  Sort matchers, collapse whitespace
-         │  │                        │  │  → better cache hit rate
-         │  ├────────────────────────┤  │
-         │  │   LogQL → LogsQL       │  │  Stream selectors, line filters,
-         │  │   Translator           │  │  parsers, metric queries
-         │  ├────────────────────────┤  │
-         │  │   TTL Cache (L1)       │  │  Per-endpoint TTLs, max bytes,
-         │  │   In-memory            │  │  eviction tracking
-         │  ├────────────────────────┤  │
-         │  │   Response Converter   │  │  VL NDJSON → Loki streams format
-         │  │                        │  │  VL stats → Prometheus matrix
-         │  ├────────────────────────┤  │
-         │  │   Circuit Breaker      │  │  Closed→Open→HalfOpen→Closed
-         │  │                        │  │  Protects VL from cascading failure
-         │  ├────────────────────────┤  │
-         │  │   /metrics  (Prom)     │  │  Request counters, latency histograms,
-         │  │   JSON logs (slog)     │  │  cache stats, circuit breaker state
-         │  └────────────────────────┘  │
-         └──────────────┬───────────────┘
-                        │
-                        ▼
-                  VictoriaLogs
-                    :9428
+
+### E2E Test Architecture
+
+```mermaid
+flowchart LR
+    subgraph TestRunner["go test -tags=e2e"]
+        INGEST["Ingest identical<br/>logs to both"]
+        COMPARE["Compare responses<br/>endpoint by endpoint"]
+        SCORE["Calculate<br/>compatibility %"]
+    end
+
+    subgraph Stack
+        LOKI["Loki :3101<br/>(ground truth)"]
+        VLP["Loki-VL-proxy<br/>:3100"]
+        VL["VictoriaLogs<br/>:9428"]
+        GF["Grafana :3000<br/>3 datasources"]
+    end
+
+    INGEST -->|push| LOKI
+    INGEST -->|push| VL
+    COMPARE -->|GET /loki/api/v1/*| LOKI
+    COMPARE -->|GET /loki/api/v1/*| VLP
+    VLP --> VL
+    COMPARE --> SCORE
+    GF -.->|manual compare| LOKI
+    GF -.->|manual compare| VLP
 ```
 
 ## Features
