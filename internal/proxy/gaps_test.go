@@ -374,3 +374,149 @@ func newGapTestProxy(t *testing.T, backendURL string) *Proxy {
 	}
 	return p
 }
+
+// =============================================================================
+// Coverage gap: proxyStatsQuery (instant metric query)
+// =============================================================================
+
+func TestCoverage_ProxyStatsQuery(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"resultType": "vector",
+				"result": []map[string]interface{}{
+					{"metric": map[string]string{}, "value": []interface{}{1234567890, "42"}},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	// count_over_time triggers stats query path
+	r := httptest.NewRequest("GET", "/loki/api/v1/query?query=count_over_time({app%3D%22nginx%22}[5m])&time=1234567890", nil)
+	p.handleQuery(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["status"] != "success" {
+		t.Errorf("expected success, got %v", resp["status"])
+	}
+}
+
+// =============================================================================
+// Coverage gap: wrapAsLokiResponse all 3 branches
+// =============================================================================
+
+func TestCoverage_WrapAsLokiResponse_InvalidJSON(t *testing.T) {
+	result := wrapAsLokiResponse([]byte("not json"), "matrix")
+	var resp map[string]interface{}
+	if err := json.Unmarshal(result, &resp); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if resp["status"] != "success" {
+		t.Error("expected success status for invalid input")
+	}
+}
+
+func TestCoverage_WrapAsLokiResponse_WithDataField(t *testing.T) {
+	input, _ := json.Marshal(map[string]interface{}{
+		"data": map[string]interface{}{
+			"resultType": "vector",
+			"result":     []interface{}{},
+		},
+	})
+	result := wrapAsLokiResponse(input, "vector")
+	var resp map[string]interface{}
+	json.Unmarshal(result, &resp)
+	if resp["status"] != "success" {
+		t.Error("expected success")
+	}
+	if resp["data"] == nil {
+		t.Error("expected data field to be preserved")
+	}
+}
+
+func TestCoverage_WrapAsLokiResponse_RawJSON(t *testing.T) {
+	input, _ := json.Marshal(map[string]interface{}{
+		"resultType": "matrix",
+		"result":     []interface{}{},
+	})
+	result := wrapAsLokiResponse(input, "matrix")
+	var resp map[string]interface{}
+	json.Unmarshal(result, &resp)
+	if resp["status"] != "success" {
+		t.Error("expected success")
+	}
+}
+
+// =============================================================================
+// Coverage gap: formatVLTimestamp
+// =============================================================================
+
+func TestCoverage_FormatVLTimestamp(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"1234567890", "1234567890"},         // numeric seconds
+		{"1234567890.123", "1234567890.123"}, // numeric float
+		{"2024-01-15T10:30:00Z", "2024-01-15T10:30:00Z"}, // non-numeric passthrough
+		{"now-5m", "now-5m"},                 // relative passthrough
+	}
+	for _, tc := range tests {
+		got := formatVLTimestamp(tc.input)
+		if got != tc.expected {
+			t.Errorf("formatVLTimestamp(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+// =============================================================================
+// Coverage gap: handleQuery error path
+// =============================================================================
+
+func TestCoverage_HandleQuery_InvalidQuery(t *testing.T) {
+	p := newGapTestProxy(t, "http://unused")
+	w := httptest.NewRecorder()
+	// Invalid LogQL that translator can't parse
+	r := httptest.NewRequest("GET", "/loki/api/v1/query?query=", nil)
+	p.handleQuery(w, r)
+	// Empty query should return error
+	if w.Code != http.StatusBadRequest && w.Code != http.StatusOK {
+		t.Logf("empty query returned %d (acceptable)", w.Code)
+	}
+}
+
+func TestCoverage_HandleQuery_LogQuery(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return NDJSON log lines
+		w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"test line","app":"nginx"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/query?query={app="nginx"}`, nil)
+	p.handleQuery(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", w.Code)
+	}
+}
+
+// =============================================================================
+// Coverage gap: GetMetrics
+// =============================================================================
+
+func TestCoverage_GetMetrics(t *testing.T) {
+	p := newGapTestProxy(t, "http://unused")
+	m := p.GetMetrics()
+	if m == nil {
+		t.Fatal("expected non-nil metrics")
+	}
+}

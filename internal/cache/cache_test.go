@@ -229,3 +229,42 @@ func TestCache_ReplaceExistingKey(t *testing.T) {
 		t.Errorf("expected 3 bytes (len('new')), got %d", bytes)
 	}
 }
+
+func TestCache_SetL2_Fallback(t *testing.T) {
+	dc, err := NewDiskCache(DiskCacheConfig{Path: t.TempDir() + "/test.db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dc.Close()
+
+	// L1 has short TTL (50ms), L2 has long TTL (1h via DiskCache.Set)
+	c := New(50*time.Millisecond, 100)
+	defer c.Close()
+	c.SetL2(dc)
+
+	// Write directly to L2 with a long TTL to simulate L1 eviction
+	dc.Set("key1", []byte("hello"), 1*time.Hour)
+	dc.Flush()
+
+	// L1 doesn't have it, L2 should
+	v, ok := c.Get("key1")
+	if !ok {
+		t.Fatal("expected L2 fallback hit")
+	}
+	if string(v) != "hello" {
+		t.Errorf("expected hello, got %q", v)
+	}
+}
+
+func TestCache_Close(t *testing.T) {
+	c := New(1*time.Hour, 100)
+	c.Set("k", []byte("v"))
+	c.Close()
+	// After close, cache still works for reads (just cleanup goroutine stopped)
+	v, ok := c.Get("k")
+	if !ok || string(v) != "v" {
+		t.Error("expected cache to still be readable after Close")
+	}
+	// Double close should not panic
+	c.Close()
+}

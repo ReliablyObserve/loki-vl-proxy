@@ -156,3 +156,65 @@ func TestOTLPPusher_BuildPayload(t *testing.T) {
 		t.Errorf("payload too small (%d bytes), expected meaningful content", len(data))
 	}
 }
+
+func TestOTLPPusher_GzipCompression(t *testing.T) {
+	var mu sync.Mutex
+	var receivedEncoding string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		receivedEncoding = r.Header.Get("Content-Encoding")
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := NewMetrics()
+	pusher := NewOTLPPusher(OTLPConfig{
+		Endpoint:    srv.URL,
+		Interval:    50 * time.Millisecond,
+		Compression: OTLPCompressionGzip,
+	}, m)
+	pusher.Start()
+	defer pusher.Stop()
+
+	time.Sleep(120 * time.Millisecond)
+
+	mu.Lock()
+	enc := receivedEncoding
+	mu.Unlock()
+	if enc != "gzip" {
+		t.Errorf("expected Content-Encoding: gzip, got %q", enc)
+	}
+}
+
+func TestOTLPPusher_ZstdCompression(t *testing.T) {
+	var mu sync.Mutex
+	var receivedEncoding string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		receivedEncoding = r.Header.Get("Content-Encoding")
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := NewMetrics()
+	pusher := NewOTLPPusher(OTLPConfig{
+		Endpoint:    srv.URL,
+		Interval:    50 * time.Millisecond,
+		Compression: OTLPCompressionZstd,
+	}, m)
+	pusher.Start()
+	defer pusher.Stop()
+
+	time.Sleep(120 * time.Millisecond)
+
+	mu.Lock()
+	enc := receivedEncoding
+	mu.Unlock()
+	if enc != "zstd" {
+		t.Errorf("expected Content-Encoding: zstd, got %q", enc)
+	}
+}
