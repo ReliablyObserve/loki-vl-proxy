@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,11 +13,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/szibis/Loki-VL-proxy/internal/cache"
 	"github.com/szibis/Loki-VL-proxy/internal/metrics"
 	mw "github.com/szibis/Loki-VL-proxy/internal/middleware"
 	"github.com/szibis/Loki-VL-proxy/internal/translator"
 )
+
+// TenantMapping maps a string org ID to VL's numeric AccountID and ProjectID.
+type TenantMapping struct {
+	AccountID string `json:"account_id" yaml:"account_id"`
+	ProjectID string `json:"project_id" yaml:"project_id"`
+}
 
 type Config struct {
 	BackendURL       string
@@ -27,7 +35,15 @@ type Config struct {
 	RateBurst        int     // per-client burst size
 	CBFailThreshold  int     // circuit breaker failure threshold
 	CBOpenDuration   time.Duration // circuit breaker open duration
+	TenantMap        map[string]TenantMapping // string org ID → VL account/project
 }
+
+const (
+	// maxQueryLength limits the LogQL query string length to prevent abuse.
+	maxQueryLength = 65536 // 64KB
+	// maxLimitValue caps the number of results per query.
+	maxLimitValue = 10000
+)
 
 // CacheTTLs defines per-endpoint cache TTLs.
 var CacheTTLs = map[string]time.Duration{
@@ -49,6 +65,7 @@ type Proxy struct {
 	limiter      *mw.RateLimiter
 	breaker      *mw.CircuitBreaker
 	currentOrgID string // set per-request from X-Scope-OrgID
+	tenantMap    map[string]TenantMapping
 }
 
 func New(cfg Config) (*Proxy, error) {
@@ -101,13 +118,27 @@ func New(cfg Config) (*Proxy, error) {
 		coalescer: mw.NewCoalescer(),
 		limiter:   mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
 		breaker:   mw.NewCircuitBreaker(cbFail, 3, cbOpen),
+		tenantMap: cfg.TenantMap,
 	}, nil
 }
 
+// GetMetrics returns the proxy's metrics instance for external telemetry exporters.
+func (p *Proxy) GetMetrics() *metrics.Metrics { return p.metrics }
+
+// securityHeaders wraps a handler with security response headers.
+func securityHeaders(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Cache-Control", "no-store")
+		h.ServeHTTP(w, r)
+	})
+}
+
 func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
-	// Rate-limited endpoints (data queries)
+	// Rate-limited endpoints with security headers
 	rl := func(h http.HandlerFunc) http.Handler {
-		return p.limiter.Middleware(http.HandlerFunc(h))
+		return securityHeaders(p.limiter.Middleware(http.HandlerFunc(h)))
 	}
 
 	// Loki API endpoints — data queries are rate-limited
@@ -143,6 +174,9 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
+	if _, ok := p.validateQuery(w, logqlQuery, "query_range"); !ok {
+		return
+	}
 	p.log.Debug("query_range request", "logql", logqlQuery)
 
 	logsqlQuery, err := translator.TranslateLogQL(logqlQuery)
@@ -165,6 +199,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
+	if _, ok := p.validateQuery(w, logqlQuery, "query"); !ok {
+		return
+	}
 	p.log.Debug("query request", "logql", logqlQuery)
 
 	logsqlQuery, err := translator.TranslateLogQL(logqlQuery)
@@ -622,12 +659,132 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 }
 
-// handleTail handles live tailing (WebSocket → SSE bridge).
+// wsUpgrader is the WebSocket upgrader for tail connections.
+var wsUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool { return true },
+}
+
+// handleTail bridges Loki's WebSocket tail to VL's NDJSON streaming tail.
+// Loki: ws:///loki/api/v1/tail?query={...}&start=...&limit=...
+// VL:   GET /select/logsql/tail?query=...
 func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	// TODO: Implement WebSocket-to-SSE bridge for /select/logsql/tail
-	p.writeError(w, http.StatusNotImplemented, "tail not yet implemented")
-	p.metrics.RecordRequest("tail", http.StatusNotImplemented, time.Since(start))
+	logqlQuery := r.FormValue("query")
+	if logqlQuery == "" {
+		p.writeError(w, http.StatusBadRequest, "query parameter required")
+		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
+		return
+	}
+
+	logsqlQuery, err := translator.TranslateLogQL(logqlQuery)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
+		return
+	}
+
+	p.setTenantFromRequest(r)
+
+	// Upgrade to WebSocket
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		p.log.Error("websocket upgrade failed", "error", err)
+		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	defer conn.Close()
+
+	// Connect to VL tail endpoint (streaming NDJSON)
+	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s",
+		p.backend.String(), url.QueryEscape(logsqlQuery))
+	req, err := http.NewRequestWithContext(r.Context(), "GET", vlURL, nil)
+	if err != nil {
+		p.sendWSError(conn, "failed to create VL request")
+		return
+	}
+	p.forwardTenantHeaders(req)
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		p.sendWSError(conn, "VL tail connection failed: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery)
+	p.metrics.RecordRequest("tail", http.StatusOK, time.Since(start))
+
+	// Read VL NDJSON stream and forward as Loki WebSocket frames
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB max line
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		// Parse VL NDJSON line
+		var vlLine map[string]interface{}
+		if err := json.Unmarshal(line, &vlLine); err != nil {
+			continue
+		}
+
+		// Convert to Loki tail frame
+		frame := p.vlLineToTailFrame(vlLine)
+		frameJSON, err := json.Marshal(frame)
+		if err != nil {
+			continue
+		}
+
+		if err := conn.WriteMessage(websocket.TextMessage, frameJSON); err != nil {
+			p.log.Debug("websocket write failed, client disconnected", "error", err)
+			return
+		}
+	}
+}
+
+// vlLineToTailFrame converts a single VL NDJSON log line to a Loki tail WebSocket frame.
+func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}) map[string]interface{} {
+	ts := ""
+	msg := ""
+	labels := map[string]string{}
+
+	for k, v := range vlLine {
+		sv := fmt.Sprintf("%v", v)
+		switch k {
+		case "_time":
+			if t, err := time.Parse(time.RFC3339Nano, sv); err == nil {
+				ts = fmt.Sprintf("%d", t.UnixNano())
+			} else {
+				ts = sv
+			}
+		case "_msg":
+			msg = sv
+		case "_stream":
+			// Skip internal VL stream ID
+		default:
+			labels[k] = sv
+		}
+	}
+	if ts == "" {
+		ts = fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+
+	return map[string]interface{}{
+		"streams": []map[string]interface{}{
+			{
+				"stream": labels,
+				"values": [][]string{{ts, msg}},
+			},
+		},
+	}
+}
+
+// sendWSError sends an error message over the WebSocket before closing.
+func (p *Proxy) sendWSError(conn *websocket.Conn, msg string) {
+	errFrame, _ := json.Marshal(map[string]string{"error": msg})
+	conn.WriteMessage(websocket.TextMessage, errFrame)
 }
 
 // handleReady returns readiness status.
@@ -1076,12 +1233,21 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 		return
 	}
 
-	// Try numeric mapping: "42" → AccountID: 42
+	// Check tenant map first for string→int mapping
+	if p.tenantMap != nil {
+		if mapping, ok := p.tenantMap[orgID]; ok {
+			req.Header.Set("AccountID", mapping.AccountID)
+			req.Header.Set("ProjectID", mapping.ProjectID)
+			return
+		}
+	}
+
+	// Try numeric passthrough: "42" → AccountID: 42
 	if _, err := strconv.Atoi(orgID); err == nil {
 		req.Header.Set("AccountID", orgID)
 		req.Header.Set("ProjectID", "0")
 	} else {
-		// Non-numeric org ID → default tenant
+		// Unmapped non-numeric org ID → default tenant
 		req.Header.Set("AccountID", "0")
 		req.Header.Set("ProjectID", "0")
 	}
@@ -1093,6 +1259,31 @@ func (p *Proxy) setTenantFromRequest(r *http.Request) {
 }
 
 // --- Error / JSON helpers ---
+
+// validateQuery checks query string length and returns a sanitized version.
+func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
+	if len(query) > maxQueryLength {
+		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("query exceeds max length (%d > %d)", len(query), maxQueryLength))
+		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+		return "", false
+	}
+	return query, true
+}
+
+// sanitizeLimit caps and validates the limit parameter.
+func sanitizeLimit(limitStr string) string {
+	if limitStr == "" {
+		return "1000"
+	}
+	n, err := strconv.Atoi(limitStr)
+	if err != nil || n <= 0 {
+		return "1000"
+	}
+	if n > maxLimitValue {
+		return strconv.Itoa(maxLimitValue)
+	}
+	return limitStr
+}
 
 func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 	p.log.Error("request error", "code", code, "error", msg)

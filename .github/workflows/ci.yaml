@@ -64,6 +64,54 @@ jobs:
         run: |
           docker run --rm loki-vl-proxy:test -help 2>&1 || true
 
+  e2e-compat:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Start e2e stack
+        working-directory: test/e2e-compat
+        run: docker compose up -d --wait --wait-timeout 60
+
+      - name: Run compatibility tests
+        id: compat
+        run: |
+          set -o pipefail
+          OUTPUT=$(go test -v -tags=e2e -timeout=120s ./test/e2e-compat/ 2>&1) || true
+          echo "$OUTPUT"
+          # Extract all compatibility scores and compute overall
+          SCORES=$(echo "$OUTPUT" | grep -oP 'Score: \K\d+/\d+ \(\d+\.\d+%\)' || true)
+          TOTAL_PASS=0
+          TOTAL_ALL=0
+          while IFS= read -r line; do
+            PASS=$(echo "$line" | grep -oP '^\d+')
+            ALL=$(echo "$line" | grep -oP '/\K\d+')
+            TOTAL_PASS=$((TOTAL_PASS + PASS))
+            TOTAL_ALL=$((TOTAL_ALL + ALL))
+          done <<< "$SCORES"
+          if [ "$TOTAL_ALL" -gt 0 ]; then
+            PCT=$(echo "scale=1; $TOTAL_PASS * 100 / $TOTAL_ALL" | bc)
+            echo "COMPAT_PCT=${PCT}%" >> "$GITHUB_OUTPUT"
+            echo "COMPAT_DETAIL=${TOTAL_PASS}/${TOTAL_ALL}" >> "$GITHUB_OUTPUT"
+            echo "Compatibility: ${TOTAL_PASS}/${TOTAL_ALL} (${PCT}%)"
+          else
+            echo "COMPAT_PCT=N/A" >> "$GITHUB_OUTPUT"
+            echo "COMPAT_DETAIL=no tests ran" >> "$GITHUB_OUTPUT"
+          fi
+          # Fail if any test failed
+          echo "$OUTPUT" | grep -q "^FAIL" && exit 1 || true
+
+      - name: Tear down e2e stack
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose down -v
+
   helm:
     runs-on: ubuntu-latest
     steps:

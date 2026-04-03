@@ -13,6 +13,7 @@ type entry struct {
 }
 
 // Cache is an in-memory TTL cache with per-key TTL override, max entries, and max bytes.
+// Supports optional L2 disk cache for spillover persistence.
 type Cache struct {
 	mu         sync.RWMutex
 	entries    map[string]entry
@@ -20,11 +21,18 @@ type Cache struct {
 	maxEntries int
 	maxBytes   int
 	curBytes   int
+	l2         *DiskCache // optional L2 disk cache
 
 	// Stats
 	Hits   atomic.Int64
 	Misses atomic.Int64
 	Evictions atomic.Int64
+}
+
+// SetL2 attaches an L2 disk cache. On L1 miss, L2 is checked.
+// On L1 set, values are also written to L2.
+func (c *Cache) SetL2(dc *DiskCache) {
+	c.l2 = dc
 }
 
 func New(ttl time.Duration, maxEntries int) *Cache {
@@ -44,14 +52,25 @@ func NewWithMaxBytes(ttl time.Duration, maxEntries, maxBytes int) *Cache {
 
 func (c *Cache) Get(key string) ([]byte, bool) {
 	c.mu.RLock()
-	defer c.mu.RUnlock()
 	e, ok := c.entries[key]
-	if !ok || time.Now().After(e.expiresAt) {
-		c.Misses.Add(1)
-		return nil, false
+	c.mu.RUnlock()
+	if ok && !time.Now().After(e.expiresAt) {
+		c.Hits.Add(1)
+		return e.value, true
 	}
-	c.Hits.Add(1)
-	return e.value, true
+
+	// L2 fallback
+	if c.l2 != nil {
+		if v, ok := c.l2.Get(key); ok {
+			// Promote to L1
+			c.Set(key, v)
+			c.Hits.Add(1)
+			return v, true
+		}
+	}
+
+	c.Misses.Add(1)
+	return nil, false
 }
 
 // Set stores a value with the default TTL.
@@ -83,6 +102,11 @@ func (c *Cache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 		sizeBytes: size,
 	}
 	c.curBytes += size
+
+	// Write-through to L2
+	if c.l2 != nil {
+		c.l2.Set(key, value, ttl)
+	}
 }
 
 // Invalidate removes a specific key.

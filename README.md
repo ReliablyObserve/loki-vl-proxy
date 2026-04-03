@@ -83,7 +83,12 @@ flowchart LR
 - **Circuit breaker**: opens after consecutive failures, auto-recovers via half-open probing
 - **Query normalization**: sort label matchers, collapse whitespace for better cache hits
 - **Tiered cache**: per-endpoint TTLs (labels=60s, queries=10s), max bytes (256MB), eviction stats
+- **Multitenancy**: String→int tenant mapping for Loki `X-Scope-OrgID` → VL `AccountID`/`ProjectID`
+- **WebSocket tail**: `/loki/api/v1/tail` bridges Loki WebSocket to VL NDJSON streaming
+- **L2 disk cache**: bbolt-backed on-disk cache with gzip compression, AES-256 encryption, write-back buffer (AWS ST1 optimized)
+- **OTLP telemetry**: Push proxy metrics to any OTLP HTTP endpoint (gzip/zstd compression, TLS)
 - **Observability**: Prometheus `/metrics`, structured JSON logs via `slog`
+- **Hardened HTTP**: Request body/header size limits, read/write/idle timeouts, security headers
 - **Single static binary**, ~10MB Docker image, zero external dependencies at runtime
 
 ## API Coverage
@@ -106,7 +111,7 @@ flowchart LR
 | `/loki/api/v1/status/buildinfo` | Implemented | — | — | 1 |
 | `/metrics` | Implemented | — | — | 1 |
 
-**160 tests total** (106 unit + 54 e2e, all at 100% compatibility)
+**181 tests total** (127 unit + 54 e2e, all at 100% compatibility)
 
 ## Protection Layers
 
@@ -240,11 +245,74 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`):
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
+| **Server** | | | |
 | `-listen` | `LISTEN_ADDR` | `:3100` | Listen address |
 | `-backend` | `VL_BACKEND_URL` | `http://localhost:9428` | VictoriaLogs backend URL |
+| `-log-level` | — | `info` | Log level: debug, info, warn, error |
+| **Cache (L1 in-memory)** | | | |
 | `-cache-ttl` | — | `60s` | Default cache TTL |
 | `-cache-max` | — | `10000` | Maximum cache entries |
-| `-log-level` | — | `info` | Log level: debug, info, warn, error |
+| **Cache (L2 on-disk)** | | | |
+| `-disk-cache-path` | — | — | Path to bbolt DB file (empty = disabled) |
+| `-disk-cache-compress` | — | `true` | Gzip compression for disk cache |
+| `-disk-cache-flush-size` | — | `100` | Flush write buffer after N entries |
+| `-disk-cache-flush-interval` | — | `5s` | Write buffer flush interval |
+| `-disk-cache-encryption-key` | — | — | AES-256 key (32 bytes) for encryption at rest |
+| **Multitenancy** | | | |
+| `-tenant-map` | `TENANT_MAP` | — | JSON string→int tenant mapping (see below) |
+| **OTLP Telemetry** | | | |
+| `-otlp-endpoint` | `OTLP_ENDPOINT` | — | OTLP HTTP endpoint for proxy metrics |
+| `-otlp-interval` | — | `30s` | Push interval |
+| `-otlp-compression` | `OTLP_COMPRESSION` | `none` | Compression: `none`, `gzip`, `zstd` |
+| `-otlp-timeout` | — | `10s` | HTTP request timeout |
+| `-otlp-tls-skip-verify` | — | `false` | Skip TLS verification (self-signed certs) |
+| **HTTP Hardening** | | | |
+| `-http-read-timeout` | — | `30s` | Server read timeout |
+| `-http-write-timeout` | — | `120s` | Server write timeout |
+| `-http-idle-timeout` | — | `120s` | Server idle timeout |
+| `-http-max-header-bytes` | — | `1MB` | Maximum header size |
+| `-http-max-body-bytes` | — | `10MB` | Maximum request body size |
+
+## Multitenancy
+
+The proxy maps Loki's `X-Scope-OrgID` header to VictoriaLogs' `AccountID`/`ProjectID` headers.
+
+### Tenant Resolution Order
+
+1. **Tenant map lookup** — if `-tenant-map` is configured and the org ID matches a key, use the mapped `AccountID`/`ProjectID`
+2. **Numeric passthrough** — if the org ID is a number (e.g., `"42"`), pass it directly as `AccountID` with `ProjectID: 0`
+3. **Default** — unmapped non-numeric org IDs get `AccountID: 0`, `ProjectID: 0`
+
+### Configuration
+
+```bash
+# Via flag (JSON)
+./loki-vl-proxy -tenant-map='{"team-alpha":{"account_id":"100","project_id":"1"},"team-beta":{"account_id":"200","project_id":"2"}}'
+
+# Via environment variable
+export TENANT_MAP='{"ops-prod":{"account_id":"300","project_id":"0"}}'
+./loki-vl-proxy
+```
+
+### Helm values
+
+```yaml
+extraArgs:
+  tenant-map: '{"team-alpha":{"account_id":"100","project_id":"1"}}'
+```
+
+### Grafana Datasource per Tenant
+
+```yaml
+datasources:
+  - name: Logs (team-alpha)
+    type: loki
+    url: http://loki-vl-proxy:3100
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+    secureJsonData:
+      httpHeaderValue1: team-alpha
+```
 
 ## Structured Metadata Mapping
 
@@ -326,6 +394,11 @@ go build -o loki-vl-proxy ./cmd/proxy
 | LogQL translation (advanced) | 22 | Metric queries, unwrap, topk, sum by, complex pipelines |
 | Query normalization | 8 | Canonicalization for cache keys |
 | Cache behavior | 6 | Hit/miss/TTL/eviction/protection |
+| Multitenancy | 4 | String→int mapping, numeric passthrough, unmapped default |
+| WebSocket tail | 2 | Query validation, WebSocket frame structure |
+| Disk cache (L2) | 12 | Set/get, TTL, compression, AES encryption, persistence |
+| OTLP pusher | 4 | Push, custom headers, error handling, payload structure |
+| Hardening | 4 | Query length limit, limit sanitization, security headers |
 | Middleware | 12 | Coalescing, rate limiting, circuit breaker |
 | Benchmarks | 10 | Translation ~5μs, cache hit 42ns |
 | E2E basic (Loki vs proxy) | 11 | Side-by-side API response comparison |
@@ -334,9 +407,11 @@ go build -o loki-vl-proxy ./cmd/proxy
 
 ## Roadmap
 
-- [ ] `/loki/api/v1/tail` — WebSocket→SSE bridge for live tailing
-- [ ] L2 on-disk cache (bbolt/badger) for query result persistence
-- [ ] OTLP push for proxy's own telemetry
+- [x] String→int multitenancy mapping (`-tenant-map`)
+- [x] `/loki/api/v1/tail` — WebSocket→NDJSON bridge for live tailing
+- [x] L2 on-disk cache (bbolt) with compression + encryption + write-back buffer
+- [x] OTLP push for proxy telemetry (gzip/zstd, TLS, custom headers)
+- [x] HTTP hardening (timeouts, body limits, security headers)
 - [ ] `/loki/api/v1/index/stats` — real implementation via VL `/select/logsql/hits`
 - [ ] `/loki/api/v1/index/volume` — volume data via VL hits with field grouping
 - [ ] `/loki/api/v1/detected_field/{name}/values` endpoint

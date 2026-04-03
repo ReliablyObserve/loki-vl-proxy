@@ -2,12 +2,14 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/szibis/Loki-VL-proxy/internal/cache"
 )
 
@@ -440,14 +442,68 @@ func TestContract_Patterns_ResponseFormat(t *testing.T) {
 
 // --- /loki/api/v1/tail ---
 
-func TestContract_Tail_Returns501(t *testing.T) {
+func TestContract_Tail_RequiresQuery(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/tail?query=*", nil)
+	r := httptest.NewRequest("GET", "/loki/api/v1/tail", nil)
 	p.handleTail(w, r)
 
-	if w.Code != http.StatusNotImplemented {
-		t.Errorf("expected 501, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 without query param, got %d", w.Code)
+	}
+}
+
+func TestContract_Tail_WebSocketUpgrade(t *testing.T) {
+	// VL backend that streams NDJSON lines then closes
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected flusher")
+		}
+		fmt.Fprintf(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"test log line","app":"nginx"}`+"\n")
+		flusher.Flush()
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	srv := httptest.NewServer(http.HandlerFunc(p.handleTail))
+	defer srv.Close()
+
+	// Connect via WebSocket
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "?query={app%3D%22nginx%22}"
+	ws, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket dial failed: %v (resp: %v)", err, resp)
+	}
+	defer ws.Close()
+
+	// Read the tail frame
+	_, msg, err := ws.ReadMessage()
+	if err != nil {
+		t.Fatalf("websocket read failed: %v", err)
+	}
+
+	var frame map[string]interface{}
+	if err := json.Unmarshal(msg, &frame); err != nil {
+		t.Fatalf("invalid JSON frame: %v", err)
+	}
+
+	// Verify Loki-compatible tail frame structure
+	streams, ok := frame["streams"].([]interface{})
+	if !ok || len(streams) == 0 {
+		t.Fatalf("expected non-empty streams array, got %v", frame)
+	}
+	stream0, ok := streams[0].(map[string]interface{})
+	if !ok {
+		t.Fatal("expected stream object")
+	}
+	if _, ok := stream0["stream"]; !ok {
+		t.Error("expected 'stream' field in tail frame")
+	}
+	if _, ok := stream0["values"]; !ok {
+		t.Error("expected 'values' field in tail frame")
 	}
 }
 

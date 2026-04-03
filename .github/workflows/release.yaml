@@ -21,9 +21,54 @@ jobs:
       - name: Run tests with race detector
         run: go test ./... -count=1 -race
 
+  compat-check:
+    runs-on: ubuntu-latest
+    outputs:
+      compat_pct: ${{ steps.compat.outputs.COMPAT_PCT }}
+      compat_detail: ${{ steps.compat.outputs.COMPAT_DETAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Start e2e stack
+        working-directory: test/e2e-compat
+        run: docker compose up -d --wait --wait-timeout 60
+
+      - name: Run compatibility tests
+        id: compat
+        run: |
+          set -o pipefail
+          OUTPUT=$(go test -v -tags=e2e -timeout=120s ./test/e2e-compat/ 2>&1) || true
+          echo "$OUTPUT"
+          SCORES=$(echo "$OUTPUT" | grep -oP 'Score: \K\d+/\d+ \(\d+\.\d+%\)' || true)
+          TOTAL_PASS=0
+          TOTAL_ALL=0
+          while IFS= read -r line; do
+            PASS=$(echo "$line" | grep -oP '^\d+')
+            ALL=$(echo "$line" | grep -oP '/\K\d+')
+            TOTAL_PASS=$((TOTAL_PASS + PASS))
+            TOTAL_ALL=$((TOTAL_ALL + ALL))
+          done <<< "$SCORES"
+          if [ "$TOTAL_ALL" -gt 0 ]; then
+            PCT=$(echo "scale=1; $TOTAL_PASS * 100 / $TOTAL_ALL" | bc)
+            echo "COMPAT_PCT=${PCT}%" >> "$GITHUB_OUTPUT"
+            echo "COMPAT_DETAIL=${TOTAL_PASS}/${TOTAL_ALL}" >> "$GITHUB_OUTPUT"
+          else
+            echo "COMPAT_PCT=N/A" >> "$GITHUB_OUTPUT"
+            echo "COMPAT_DETAIL=no e2e tests ran" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tear down e2e stack
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose down -v
+
   release:
     runs-on: ubuntu-latest
-    needs: [test]
+    needs: [test, compat-check]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -116,6 +161,13 @@ jobs:
             TEST_COUNT=$(go test ./... -count=1 2>&1 | grep -oP '\d+ passed' | head -1 || echo "")
             if [ -n "$TEST_COUNT" ]; then
               echo "- ${TEST_COUNT} unit tests"
+            fi
+
+            # Compatibility score from e2e tests
+            COMPAT_PCT="${{ needs.compat-check.outputs.compat_pct }}"
+            COMPAT_DETAIL="${{ needs.compat-check.outputs.compat_detail }}"
+            if [ -n "$COMPAT_PCT" ] && [ "$COMPAT_PCT" != "N/A" ]; then
+              echo "- Loki API compatibility: ${COMPAT_DETAIL} (${COMPAT_PCT})"
             fi
 
             echo ""
