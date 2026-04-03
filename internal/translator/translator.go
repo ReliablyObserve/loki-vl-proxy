@@ -163,6 +163,12 @@ func translatePipelineStage(stage string) string {
 		return "NOT ~" + extractQuotedOrWord(stage[2:])
 	}
 
+	// Unwrap — VL doesn't need unwrap, stats functions take field names directly.
+	// | unwrap field_name → silently dropped (the field name is used in the stats function)
+	if strings.HasPrefix(stage, "unwrap ") {
+		return "" // drop — VL handles this implicitly
+	}
+
 	// Parsers
 	if stage == "json" || stage == "unpack" {
 		return "| unpack_json"
@@ -210,16 +216,17 @@ func translateLabelFilter(stage string) string {
 	ops := []struct {
 		logql  string
 		logsql string
+		isRe   bool
 	}{
-		{"==", ":="},
-		{"!=", "-:="},   // Will be prefixed with -
-		{"=~", ":~"},
-		{"!~", "-:~"},   // Will be prefixed with -
-		{">=", ":>="},
-		{"<=", ":<="},
-		{">", ":>"},
-		{"<", ":<"},
-		{"=", ":="},
+		{"==", ":=", false},
+		{"!=", "-:=", false},
+		{"=~", ":~", true},
+		{"!~", "-:~", true},
+		{">=", ":>=", false},
+		{"<=", ":<=", false},
+		{">", ":>", false},
+		{"<", ":<", false},
+		{"=", ":=", false},
 	}
 
 	for _, op := range ops {
@@ -229,6 +236,13 @@ func translateLabelFilter(stage string) string {
 			value := strings.TrimSpace(stage[idx+len(op.logql):])
 			value = strings.Trim(value, "\"")
 
+			if op.isRe {
+				// Regex values need quotes in VL
+				if strings.HasPrefix(op.logsql, "-") {
+					return fmt.Sprintf(`-%s%s"%s"`, label, op.logsql[1:], value)
+				}
+				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value)
+			}
 			if strings.HasPrefix(op.logsql, "-") {
 				return fmt.Sprintf("-%s%s%s", label, op.logsql[1:], value)
 			}
@@ -351,7 +365,26 @@ func isUnwrapFunc(name string) bool {
 }
 
 func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
-	// Match: sum|avg|max|min|count|topk|bottomk (...) by (labels)
+	// Match two forms:
+	// 1. sum(...) by (labels)     — by AFTER
+	// 2. sum by (labels) (...)    — by BEFORE
+	// 3. topk(K, sum by (labels) (...))  — nested
+
+	// Try form 2 first: sum by (labels) (...)
+	byBeforeRe := regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk)\s+by\s*\(([^)]+)\)\s*\(`)
+	bm := byBeforeRe.FindStringSubmatch(logql)
+	if bm != nil {
+		agg = bm[1]
+		byLabels = bm[2]
+		rest := logql[len(bm[0]):]
+		end := findLastMatchingParen(rest)
+		if end >= 0 {
+			inner = rest[:end]
+			return agg, inner, byLabels
+		}
+	}
+
+	// Form 1: sum(...) by (labels)
 	aggRe := regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk)\s*\(`)
 	m := aggRe.FindStringSubmatch(logql)
 	if m == nil {
@@ -361,6 +394,14 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	agg = m[1]
 	rest := logql[len(m[0]):]
 
+	// For topk/bottomk, skip the first numeric arg: topk(10, ...)
+	if agg == "topk" || agg == "bottomk" {
+		commaIdx := strings.Index(rest, ",")
+		if commaIdx >= 0 {
+			rest = strings.TrimSpace(rest[commaIdx+1:])
+		}
+	}
+
 	// Find matching paren
 	end := findLastMatchingParen(rest)
 	if end < 0 {
@@ -369,11 +410,11 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	inner = rest[:end]
 	rest = strings.TrimSpace(rest[end+1:])
 
-	// Extract by clause
+	// Extract by clause after: ... by (labels)
 	byRe := regexp.MustCompile(`^by\s*\(([^)]+)\)`)
-	bm := byRe.FindStringSubmatch(rest)
-	if bm != nil {
-		byLabels = bm[1]
+	bm2 := byRe.FindStringSubmatch(rest)
+	if bm2 != nil {
+		byLabels = bm2[1]
 	}
 
 	return agg, inner, byLabels
