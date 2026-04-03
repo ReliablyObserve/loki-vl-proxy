@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.20.0-victorialogs
+    container_name: vl-proxy-test
+    ports:
+      - "9428:9428"
+    command:
+      - "-storageDataPath=/vlogs"
+      - "-retentionPeriod=1d"
+      - "-httpListenAddr=:9428"
+    volumes:
+      - vl-data:/vlogs
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9428/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  loki-vl-proxy:
+    build: .
+    container_name: loki-vl-proxy
+    ports:
+      - "3100:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-log-level=debug"
+      - "-cache-ttl=30s"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+
+  grafana:
+    image: grafana/grafana:12.4.2
+    container_name: grafana-proxy-test
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./test/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    depends_on:
+      - loki-vl-proxy
+
+volumes:
+  vl-data:

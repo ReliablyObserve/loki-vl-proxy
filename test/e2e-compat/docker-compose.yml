@@ -1,0 +1,47 @@
+version: "3.8"
+
+# E2E compatibility test: runs both Loki and VictoriaLogs with the proxy,
+# ingests identical logs into both, then compares API responses.
+services:
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.20.0-victorialogs
+    ports:
+      - "9428:9428"
+    command:
+      - "-storageDataPath=/vlogs"
+      - "-retentionPeriod=1d"
+    volumes:
+      - vl-data:/vlogs
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9428/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  loki:
+    image: grafana/loki:3.4.3
+    ports:
+      - "3101:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  loki-vl-proxy:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    ports:
+      - "3100:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-log-level=debug"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+
+volumes:
+  vl-data:
