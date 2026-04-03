@@ -10,8 +10,20 @@ permissions:
   packages: write
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+      - name: Run tests with race detector
+        run: go test ./... -count=1 -race
+
   release:
     runs-on: ubuntu-latest
+    needs: [test]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,8 +34,126 @@ jobs:
           go-version: "1.25"
           cache: true
 
-      - name: Run tests
-        run: go test ./... -count=1 -race
+      - name: Extract version
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "TAG=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          # Find previous tag for changelog range
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | sed -n '2p')
+          echo "PREV_TAG=${PREV_TAG:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          TAG="${{ steps.version.outputs.TAG }}"
+          PREV_TAG="${{ steps.version.outputs.PREV_TAG }}"
+
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+
+          {
+            echo "CHANGELOG<<CHANGELOG_EOF"
+            echo "## What's Changed in v${VERSION}"
+            echo ""
+
+            # Features
+            FEATS=$(git log "$RANGE" --pretty=format:'- %s' --grep='^feat' 2>/dev/null || true)
+            if [ -n "$FEATS" ]; then
+              echo "### Features"
+              echo "$FEATS"
+              echo ""
+            fi
+
+            # Fixes
+            FIXES=$(git log "$RANGE" --pretty=format:'- %s' --grep='^fix' 2>/dev/null || true)
+            if [ -n "$FIXES" ]; then
+              echo "### Bug Fixes"
+              echo "$FIXES"
+              echo ""
+            fi
+
+            # Tests
+            TESTS=$(git log "$RANGE" --pretty=format:'- %s' --grep='^test' 2>/dev/null || true)
+            if [ -n "$TESTS" ]; then
+              echo "### Tests"
+              echo "$TESTS"
+              echo ""
+            fi
+
+            # Docs
+            DOCS=$(git log "$RANGE" --pretty=format:'- %s' --grep='^doc' 2>/dev/null || true)
+            if [ -n "$DOCS" ]; then
+              echo "### Documentation"
+              echo "$DOCS"
+              echo ""
+            fi
+
+            # Other commits
+            OTHER=$(git log "$RANGE" --pretty=format:'- %s' --grep='^feat' --grep='^fix' --grep='^test' --grep='^doc' --invert-grep 2>/dev/null || true)
+            if [ -n "$OTHER" ]; then
+              echo "### Other Changes"
+              echo "$OTHER"
+              echo ""
+            fi
+
+            # Stats
+            echo "### Stats"
+            COMMITS=$(git rev-list --count "$RANGE" 2>/dev/null || echo "0")
+            FILES=$(git diff --shortstat "$PREV_TAG" HEAD 2>/dev/null | sed 's/^ //' || echo "")
+            echo "- ${COMMITS} commits since ${PREV_TAG:-initial}"
+            if [ -n "$FILES" ]; then
+              echo "- ${FILES}"
+            fi
+            echo ""
+
+            # Test count
+            TEST_COUNT=$(go test ./... -count=1 2>&1 | grep -oP '\d+ passed' | head -1 || echo "")
+            if [ -n "$TEST_COUNT" ]; then
+              echo "- ${TEST_COUNT} unit tests"
+            fi
+
+            echo ""
+            echo "### Installation"
+            echo ""
+            echo '```bash'
+            echo "# Docker"
+            echo "docker pull ghcr.io/szibis/loki-vl-proxy:${VERSION}"
+            echo ""
+            echo "# Helm"
+            echo "helm install loki-vl-proxy ./charts/loki-vl-proxy \\"
+            echo "  --set image.tag=${VERSION} \\"
+            echo "  --set extraArgs.backend=http://victorialogs:9428"
+            echo ""
+            echo "# Binary"
+            echo "# Download from release assets below"
+            echo '```'
+
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build release binaries
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          mkdir -p dist
+
+          for GOOS_GOARCH in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            GOOS="${GOOS_GOARCH%/*}"
+            GOARCH="${GOOS_GOARCH#*/}"
+            OUT="dist/loki-vl-proxy-${GOOS}-${GOARCH}"
+            echo "Building ${OUT}..."
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+              go build -ldflags="-s -w -X main.version=${VERSION}" \
+              -o "$OUT" ./cmd/proxy
+          done
+
+          # Create checksums
+          cd dist && sha256sum loki-vl-proxy-* > checksums.txt
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -35,10 +165,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -48,23 +174,15 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/loki-vl-proxy:${{ steps.version.outputs.VERSION }}
             ghcr.io/${{ github.repository_owner }}/loki-vl-proxy:latest
-
-      - name: Build release binaries
-        run: |
-          mkdir -p dist
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/loki-vl-proxy-linux-amd64 ./cmd/proxy
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/loki-vl-proxy-linux-arm64 ./cmd/proxy
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/loki-vl-proxy-darwin-amd64 ./cmd/proxy
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${{ steps.version.outputs.VERSION }}" -o dist/loki-vl-proxy-darwin-arm64 ./cmd/proxy
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
+          name: "v${{ steps.version.outputs.VERSION }}"
+          body: ${{ steps.changelog.outputs.CHANGELOG }}
           files: |
             dist/loki-vl-proxy-*
-
-      - name: Update Helm chart version
-        run: |
-          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.version.outputs.VERSION }}\"/" charts/loki-vl-proxy/Chart.yaml
-          echo "Updated Chart.yaml appVersion to ${{ steps.version.outputs.VERSION }}"
+            dist/checksums.txt
