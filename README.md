@@ -106,7 +106,7 @@ flowchart LR
 | `/loki/api/v1/status/buildinfo` | Implemented | — | — | 1 |
 | `/metrics` | Implemented | — | — | 1 |
 
-**72 tests total** (contract tests + translation + cache + middleware)
+**160 tests total** (106 unit + 54 e2e, all at 100% compatibility)
 
 ## Protection Layers
 
@@ -152,11 +152,22 @@ Only **1** request reaches VictoriaLogs. All clients get the same response.
 | `\| keep a, b` | `\| fields a, b` |
 | `\| label == "val"` | `label:=val` |
 | `\| label != "val"` | `-label:=val` |
-| `rate({...}[5m])` | `{...} \| stats rate()` |
-| `count_over_time({...}[5m])` | `{...} \| stats count()` |
-| `sum(rate({...}[5m])) by (x)` | `{...} \| stats by (x) rate()` |
+| `rate({...}[5m])` | `... \| stats rate()` |
+| `count_over_time({...}[5m])` | `... \| stats count()` |
+| `sum(rate({...}[5m])) by (x)` | `... \| stats by (x) rate()` |
+| `bytes_over_time({...}[5m])` | `... \| stats sum(len(_msg))` |
+| `bytes_rate({...}[5m])` | `... \| stats rate_sum(len(_msg))` |
+| `avg_over_time({...} \| unwrap d [5m])` | `... \| stats avg(d)` |
+| `topk(10, rate({...}[5m]))` | `... \| stats rate()` |
+| `\| unwrap field` | *(silently dropped — VL stats take field names directly)* |
+| `\| label =~ "5.."` | `\| filter label:~"5.."` |
+| `\| label !~ "GET\|HEAD"` | `\| filter -label:~"GET\|HEAD"` |
+
+**Note**: Loki `\|= "text"` is **substring** match. Translated to VL `~"text"` (not `"text"` which is word-only).
 
 Full reference: https://docs.victoriametrics.com/victorialogs/logql-to-logsql/
+
+See also: [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) for VL compatibility gaps and limitations.
 
 ## Quick Start
 
@@ -219,7 +230,7 @@ Structured JSON to stdout via Go's `slog`:
 ## Testing
 
 ```bash
-# Unit + contract tests (72 tests)
+# Unit + contract + advanced tests (106 tests)
 go test ./...
 
 # Verbose with individual test names
@@ -238,12 +249,16 @@ go build -o loki-vl-proxy ./cmd/proxy
 
 | Category | Tests | What they verify |
 |---|---|---|
-| Loki API contracts | 25 | Exact response JSON structure per Loki spec |
-| LogQL translation | 26 | Query conversion correctness |
-| Cache behavior | 4 | Hit/miss/TTL/protection |
+| Loki API contracts | 30 | Exact response JSON structure per Loki spec |
+| LogQL translation (basic) | 30 | Stream selectors, line filters, parsers, label filters |
+| LogQL translation (advanced) | 22 | Metric queries, unwrap, topk, sum by, complex pipelines |
+| Query normalization | 8 | Canonicalization for cache keys |
+| Cache behavior | 6 | Hit/miss/TTL/eviction/protection |
 | Middleware | 12 | Coalescing, rate limiting, circuit breaker |
-| Normalization | 7 | Query canonicalization |
-| E2E (gated) | 10 | Full stack with real Loki + VL comparison |
+| Benchmarks | 10 | Translation ~5μs, cache hit 42ns |
+| E2E basic (Loki vs proxy) | 11 | Side-by-side API response comparison |
+| E2E complex (real-world) | 31 | Multi-label, chained filters, parsers, cross-service |
+| E2E edge cases (VL issues) | 12 | Large bodies, dotted labels, unicode, multiline |
 
 ## Roadmap
 
