@@ -14,21 +14,40 @@ import (
 
 	"github.com/szibis/Loki-VL-proxy/internal/cache"
 	"github.com/szibis/Loki-VL-proxy/internal/metrics"
+	mw "github.com/szibis/Loki-VL-proxy/internal/middleware"
 	"github.com/szibis/Loki-VL-proxy/internal/translator"
 )
 
 type Config struct {
-	BackendURL string
-	Cache      *cache.Cache
-	LogLevel   string
+	BackendURL       string
+	Cache            *cache.Cache
+	LogLevel         string
+	MaxConcurrent    int     // max concurrent backend queries (0=unlimited)
+	RatePerSecond    float64 // per-client rate limit (0=unlimited)
+	RateBurst        int     // per-client burst size
+	CBFailThreshold  int     // circuit breaker failure threshold
+	CBOpenDuration   time.Duration // circuit breaker open duration
+}
+
+// CacheTTLs defines per-endpoint cache TTLs.
+var CacheTTLs = map[string]time.Duration{
+	"labels":          60 * time.Second,
+	"label_values":    60 * time.Second,
+	"series":          30 * time.Second,
+	"detected_fields": 30 * time.Second,
+	"query_range":     10 * time.Second,
+	"query":           10 * time.Second,
 }
 
 type Proxy struct {
-	backend *url.URL
-	client  *http.Client
-	cache   *cache.Cache
-	log     *slog.Logger
-	metrics *metrics.Metrics
+	backend   *url.URL
+	client    *http.Client
+	cache     *cache.Cache
+	log       *slog.Logger
+	metrics   *metrics.Metrics
+	coalescer *mw.Coalescer
+	limiter   *mw.RateLimiter
+	breaker   *mw.CircuitBreaker
 }
 
 func New(cfg Config) (*Proxy, error) {
@@ -49,36 +68,69 @@ func New(cfg Config) (*Proxy, error) {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 
+	maxConcurrent := cfg.MaxConcurrent
+	if maxConcurrent == 0 {
+		maxConcurrent = 100 // sensible default
+	}
+	ratePerSec := cfg.RatePerSecond
+	if ratePerSec == 0 {
+		ratePerSec = 50 // 50 req/s per client default
+	}
+	rateBurst := cfg.RateBurst
+	if rateBurst == 0 {
+		rateBurst = 100
+	}
+	cbFail := cfg.CBFailThreshold
+	if cbFail == 0 {
+		cbFail = 5
+	}
+	cbOpen := cfg.CBOpenDuration
+	if cbOpen == 0 {
+		cbOpen = 10 * time.Second
+	}
+
 	return &Proxy{
 		backend: u,
 		client: &http.Client{
 			Timeout: 120 * time.Second,
 		},
-		cache:   cfg.Cache,
-		log:     logger,
-		metrics: metrics.NewMetrics(),
+		cache:     cfg.Cache,
+		log:       logger,
+		metrics:   metrics.NewMetrics(),
+		coalescer: mw.NewCoalescer(),
+		limiter:   mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
+		breaker:   mw.NewCircuitBreaker(cbFail, 3, cbOpen),
 	}, nil
 }
 
 func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
-	// Loki API endpoints
-	mux.HandleFunc("/loki/api/v1/query_range", p.handleQueryRange)
-	mux.HandleFunc("/loki/api/v1/query", p.handleQuery)
-	mux.HandleFunc("/loki/api/v1/labels", p.handleLabels)
-	mux.HandleFunc("/loki/api/v1/label/", p.handleLabelValues) // /label/{name}/values
-	mux.HandleFunc("/loki/api/v1/series", p.handleSeries)
-	mux.HandleFunc("/loki/api/v1/index/stats", p.handleIndexStats)
-	mux.HandleFunc("/loki/api/v1/index/volume", p.handleVolume)
-	mux.HandleFunc("/loki/api/v1/index/volume_range", p.handleVolumeRange)
-	mux.HandleFunc("/loki/api/v1/detected_fields", p.handleDetectedFields)
-	mux.HandleFunc("/loki/api/v1/patterns", p.handlePatterns)
-	mux.HandleFunc("/loki/api/v1/tail", p.handleTail)
+	// Rate-limited endpoints (data queries)
+	rl := func(h http.HandlerFunc) http.Handler {
+		return p.limiter.Middleware(http.HandlerFunc(h))
+	}
 
-	// Health / readiness
+	// Loki API endpoints — data queries are rate-limited
+	mux.Handle("/loki/api/v1/query_range", rl(p.handleQueryRange))
+	mux.Handle("/loki/api/v1/query", rl(p.handleQuery))
+	mux.Handle("/loki/api/v1/series", rl(p.handleSeries))
+
+	// Metadata endpoints — rate-limited but cached
+	mux.Handle("/loki/api/v1/labels", rl(p.handleLabels))
+	mux.Handle("/loki/api/v1/label/", rl(p.handleLabelValues))
+	mux.Handle("/loki/api/v1/detected_fields", rl(p.handleDetectedFields))
+
+	// Lighter endpoints — still rate-limited
+	mux.Handle("/loki/api/v1/index/stats", rl(p.handleIndexStats))
+	mux.Handle("/loki/api/v1/index/volume", rl(p.handleVolume))
+	mux.Handle("/loki/api/v1/index/volume_range", rl(p.handleVolumeRange))
+	mux.Handle("/loki/api/v1/patterns", rl(p.handlePatterns))
+	mux.Handle("/loki/api/v1/tail", rl(p.handleTail))
+
+	// Health / readiness — NOT rate-limited
 	mux.HandleFunc("/ready", p.handleReady)
 	mux.HandleFunc("/loki/api/v1/status/buildinfo", p.handleBuildInfo)
 
-	// Prometheus metrics endpoint
+	// Prometheus metrics endpoint — NOT rate-limited
 	mux.HandleFunc("/metrics", p.metrics.Handler)
 }
 
@@ -154,15 +206,12 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		params.Set("end", e)
 	}
 
-	resp, err := p.vlGet("/select/logsql/field_names", params)
+	body, err := p.vlGetCoalesced("labels:"+params.Encode(), "/select/logsql/field_names", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		p.metrics.RecordRequest("labels", http.StatusBadGateway, time.Since(start))
 		return
 	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
 
 	// VL returns: {"values": [{"value": "name", "hits": N}, ...]}
 	// Loki expects: {"status": "success", "data": ["name1", "name2", ...]}
@@ -184,7 +233,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := lokiLabelsResponse(labels)
-	p.cache.Set(cacheKey, result)
+	p.cache.SetWithTTL(cacheKey, result, CacheTTLs["labels"])
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
@@ -255,7 +304,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := lokiLabelsResponse(values)
-	p.cache.Set(cacheKey, result)
+	p.cache.SetWithTTL(cacheKey, result, CacheTTLs["label_values"])
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -460,6 +509,10 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 // --- Backend request helpers ---
 
 func (p *Proxy) vlGet(path string, params url.Values) (*http.Response, error) {
+	if !p.breaker.Allow() {
+		return nil, fmt.Errorf("circuit breaker open — backend unavailable")
+	}
+
 	u := *p.backend
 	u.Path = path
 	u.RawQuery = params.Encode()
@@ -469,10 +522,24 @@ func (p *Proxy) vlGet(path string, params url.Values) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	return p.client.Do(req)
+	resp, err := p.client.Do(req)
+	if err != nil {
+		p.breaker.RecordFailure()
+		return nil, err
+	}
+	if resp.StatusCode >= 500 {
+		p.breaker.RecordFailure()
+	} else {
+		p.breaker.RecordSuccess()
+	}
+	return resp, nil
 }
 
 func (p *Proxy) vlPost(path string, params url.Values) (*http.Response, error) {
+	if !p.breaker.Allow() {
+		return nil, fmt.Errorf("circuit breaker open — backend unavailable")
+	}
+
 	u := *p.backend
 	u.Path = path
 
@@ -482,7 +549,25 @@ func (p *Proxy) vlPost(path string, params url.Values) (*http.Response, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return p.client.Do(req)
+	resp, err := p.client.Do(req)
+	if err != nil {
+		p.breaker.RecordFailure()
+		return nil, err
+	}
+	if resp.StatusCode >= 500 {
+		p.breaker.RecordFailure()
+	} else {
+		p.breaker.RecordSuccess()
+	}
+	return resp, nil
+}
+
+// vlGetCoalesced wraps vlGet with request coalescing.
+func (p *Proxy) vlGetCoalesced(key, path string, params url.Values) ([]byte, error) {
+	_, _, body, err := p.coalescer.Do(key, func() (*http.Response, error) {
+		return p.vlGet(path, params)
+	})
+	return body, err
 }
 
 // --- Stats query proxying ---
