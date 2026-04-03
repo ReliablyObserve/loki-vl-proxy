@@ -235,7 +235,7 @@ func TestCache_SetL2_Fallback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc.Close()
+	defer func() { _ = dc.Close() }()
 
 	// L1 has short TTL (50ms), L2 has long TTL (1h via DiskCache.Set)
 	c := New(50*time.Millisecond, 100)

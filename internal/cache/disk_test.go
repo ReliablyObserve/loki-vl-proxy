@@ -22,7 +22,7 @@ func TestDiskCache_SetGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc.Close()
+	defer func() { _ = dc.Close() }()
 
 	dc.Set("key1", []byte("hello"), 10*time.Second)
 
@@ -54,7 +54,7 @@ func TestDiskCache_TTLExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc.Close()
+	defer func() { _ = dc.Close() }()
 
 	dc.Set("exp", []byte("data"), 50*time.Millisecond)
 	dc.Flush()
@@ -75,7 +75,7 @@ func TestDiskCache_Compression(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc.Close()
+	defer func() { _ = dc.Close() }()
 
 	// Large repetitive data compresses well
 	data := make([]byte, 10000)
@@ -118,7 +118,7 @@ func TestDiskCache_Encryption(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc.Close()
+	defer func() { _ = dc.Close() }()
 
 	dc.Set("secret", []byte("sensitive-data"), 10*time.Second)
 	dc.Flush()
@@ -144,7 +144,7 @@ func TestDiskCache_EncryptionWithCompression(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc.Close()
+	defer func() { _ = dc.Close() }()
 
 	dc.Set("both", []byte("encrypted-and-compressed"), 10*time.Second)
 	dc.Flush()
@@ -176,7 +176,7 @@ func TestDiskCache_WrongKeyFails(t *testing.T) {
 	}
 	dc1.Set("protected", []byte("data"), 10*time.Second)
 	dc1.Flush()
-	dc1.Close()
+	_ = dc1.Close()
 
 	// Try reading with key2
 	dc2, err := NewDiskCache(DiskCacheConfig{
@@ -186,7 +186,7 @@ func TestDiskCache_WrongKeyFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc2.Close()
+	defer func() { _ = dc2.Close() }()
 
 	_, ok := dc2.Get("protected")
 	if ok {
@@ -201,7 +201,7 @@ func TestDiskCache_Size(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc.Close()
+	defer func() { _ = dc.Close() }()
 
 	for i := range 10 {
 		dc.Set(string(rune('a'+i)), []byte("data"), 10*time.Second)
@@ -225,7 +225,7 @@ func TestDiskCache_FlushSize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc.Close()
+	defer func() { _ = dc.Close() }()
 
 	// Write 5 entries — should auto-flush
 	for i := range 5 {
@@ -246,7 +246,7 @@ func TestDiskCache_Stats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc.Close()
+	defer func() { _ = dc.Close() }()
 
 	dc.Set("k", []byte("v"), 10*time.Second)
 	dc.Get("k")          // hit
@@ -270,14 +270,14 @@ func TestDiskCache_Persistence(t *testing.T) {
 	}
 	dc1.Set("persist", []byte("survives-restart"), 1*time.Hour)
 	dc1.Flush()
-	dc1.Close()
+	_ = dc1.Close()
 
 	// Reopen and read
 	dc2, err := NewDiskCache(DiskCacheConfig{Path: path})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer dc2.Close()
+	defer func() { _ = dc2.Close() }()
 
 	v, ok := dc2.Get("persist")
 	if !ok {
@@ -318,7 +318,7 @@ func TestDiskCache_InvalidEncryptionKey(t *testing.T) {
 		if !ok || string(v) != "v" {
 			t.Error("expected unencrypted cache to work with short key")
 		}
-		dc.Close()
-		os.Remove(dc.db.Path())
+		_ = dc.Close()
+		_ = os.Remove(dc.db.Path())
 	}
 }

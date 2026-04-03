@@ -77,7 +77,7 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		_, err := tx.CreateBucketIfNotExists(dataBucket)
 		return err
 	}); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("create bucket: %w", err)
 	}
 
@@ -101,12 +101,12 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 	if len(cfg.EncryptionKey) == 32 {
 		block, err := aes.NewCipher(cfg.EncryptionKey)
 		if err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("aes cipher: %w", err)
 		}
 		gcm, err := cipher.NewGCM(block)
 		if err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("gcm cipher: %w", err)
 		}
 		dc.gcm = gcm
@@ -139,7 +139,7 @@ func (dc *DiskCache) Get(key string) ([]byte, bool) {
 
 	// Check disk
 	var raw []byte
-	dc.db.View(func(tx *bolt.Tx) error {
+	_ = dc.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(dataBucket)
 		if v := b.Get([]byte(key)); v != nil {
 			raw = make([]byte, len(v))
@@ -215,7 +215,7 @@ func (dc *DiskCache) Flush() {
 	dc.writeBuf = make(map[string]diskEntry)
 	dc.writeMu.Unlock()
 
-	dc.db.Update(func(tx *bolt.Tx) error {
+	_ = dc.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(dataBucket)
 		for key, entry := range buf {
 			// Encode: [8 bytes expiry][value]
@@ -237,7 +237,7 @@ func (dc *DiskCache) Flush() {
 				encoded = dc.encrypt(encoded)
 			}
 
-			b.Put([]byte(key), encoded)
+			_ = b.Put([]byte(key), encoded)
 			dc.Writes.Add(1)
 		}
 		return nil
@@ -259,7 +259,7 @@ func (dc *DiskCache) Close() error {
 
 // Size returns the number of entries and bytes on disk.
 func (dc *DiskCache) Size() (entries int, bytes int64) {
-	dc.db.View(func(tx *bolt.Tx) error {
+	_ = dc.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(dataBucket)
 		entries = b.Stats().KeyN
 		return nil
@@ -302,7 +302,7 @@ func decompress(data []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
+	defer func() { _ = r.Close() }()
 	return io.ReadAll(r)
 }
 
