@@ -39,7 +39,7 @@ services:
     volumes:
       - vl-data:/vlogs
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9428/health"]
+      test: ["CMD", "/victoria-logs-prod", "-version"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -67,7 +67,7 @@ services:
     image: grafana/grafana:12.4.2
     container_name: e2e-grafana
     ports:
-      - "3000:3000"
+      - "3002:3000"
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
