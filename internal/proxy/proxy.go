@@ -6,13 +6,14 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
-	"regexp"
 	"fmt"
 	"io"
 	"log/slog"
+	"regexp"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -296,7 +297,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	p.log.Debug("translated query", "logsql", logsqlQuery)
 
 	r = withOrgID(r)
-	if isStatsQuery(logsqlQuery) {
+
+	// Check for binary metric expression (e.g., sum(rate(...)) / sum(rate(...)))
+	if op, left, right, ok := translator.ParseBinaryMetricExpr(logsqlQuery); ok {
+		p.proxyBinaryMetricQueryRange(w, r, op, left, right)
+	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQueryRange(w, r, logsqlQuery)
 	} else {
 		p.proxyLogQuery(w, r, logsqlQuery)
@@ -323,7 +328,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r = withOrgID(r)
-	if isStatsQuery(logsqlQuery) {
+	if op, left, right, ok := translator.ParseBinaryMetricExpr(logsqlQuery); ok {
+		p.proxyBinaryMetricQuery(w, r, op, left, right)
+	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQuery(w, r, logsqlQuery)
 	} else {
 		p.proxyLogQuery(w, r, logsqlQuery)
@@ -1189,6 +1196,243 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	body, _ := io.ReadAll(resp.Body)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "vector"))
+}
+
+// proxyBinaryMetricQueryRange evaluates binary metric expressions for query_range.
+// Runs both sides against VL independently, then combines with arithmetic.
+func (p *Proxy) proxyBinaryMetricQueryRange(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL string) {
+	p.proxyBinaryMetric(w, r, op, leftQL, rightQL, "stats_query_range", "matrix")
+}
+
+// proxyBinaryMetricQuery evaluates binary metric expressions for instant queries.
+func (p *Proxy) proxyBinaryMetricQuery(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL string) {
+	p.proxyBinaryMetric(w, r, op, leftQL, rightQL, "stats_query", "vector")
+}
+
+func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL, vlEndpoint, resultType string) {
+	isRange := vlEndpoint == "stats_query_range"
+
+	buildParams := func(query string) url.Values {
+		params := url.Values{"query": {query}}
+		if isRange {
+			if s := r.FormValue("start"); s != "" {
+				params.Set("start", formatVLTimestamp(s))
+			}
+			if e := r.FormValue("end"); e != "" {
+				params.Set("end", formatVLTimestamp(e))
+			}
+			if step := r.FormValue("step"); step != "" {
+				params.Set("step", step)
+			}
+		} else {
+			if t := r.FormValue("time"); t != "" {
+				params.Set("time", formatVLTimestamp(t))
+			}
+		}
+		return params
+	}
+
+	// Check if either side is a scalar (number)
+	leftIsScalar := translator.IsScalar(leftQL)
+	rightIsScalar := translator.IsScalar(rightQL)
+
+	var leftBody, rightBody []byte
+
+	if leftIsScalar {
+		leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
+	} else {
+		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
+		if e != nil {
+			p.writeError(w, http.StatusBadGateway, "left query: "+e.Error())
+			return
+		}
+		defer resp.Body.Close()
+		leftBody, _ = io.ReadAll(resp.Body)
+	}
+
+	if rightIsScalar {
+		rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
+	} else {
+		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
+		if e != nil {
+			p.writeError(w, http.StatusBadGateway, "right query: "+e.Error())
+			return
+		}
+		defer resp.Body.Close()
+		rightBody, _ = io.ReadAll(resp.Body)
+	}
+
+	// Combine results with arithmetic at proxy level
+	result := combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
+// combineBinaryMetricResults applies arithmetic op to two VL stats results.
+func combineBinaryMetricResults(leftBody, rightBody []byte, op, resultType string, leftScalar, rightScalar bool, leftQL, rightQL string) []byte {
+	// For scalar operations (e.g., rate(...) * 100), apply to each value
+	if rightScalar {
+		scalar := parseScalar(rightQL)
+		return applyScalarOp(leftBody, op, scalar, resultType)
+	}
+	if leftScalar {
+		scalar := parseScalar(leftQL)
+		return applyScalarOpReverse(rightBody, op, scalar, resultType)
+	}
+
+	// Both sides are metric results — combine point-by-point
+	// This is a simplified implementation that handles the common case
+	// of matching time series (same labels, same timestamps)
+	return combineMetricResults(leftBody, rightBody, op, resultType)
+}
+
+func parseScalar(s string) float64 {
+	f, _ := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	return f
+}
+
+func applyScalarOp(body []byte, op string, scalar float64, resultType string) []byte {
+	var vlResp map[string]interface{}
+	if err := json.Unmarshal(body, &vlResp); err != nil {
+		return wrapAsLokiResponse(body, resultType)
+	}
+
+	// VL stats_query_range returns {"results": [{"metric":{}, "values": [[ts, val]...]}...]}
+	results, _ := vlResp["results"].([]interface{})
+	for _, r := range results {
+		rm, _ := r.(map[string]interface{})
+		values, _ := rm["values"].([]interface{})
+		for i, v := range values {
+			point, _ := v.([]interface{})
+			if len(point) >= 2 {
+				valStr, _ := point[1].(string)
+				val, _ := strconv.ParseFloat(valStr, 64)
+				newVal := applyOp(val, scalar, op)
+				point[1] = strconv.FormatFloat(newVal, 'f', -1, 64)
+				values[i] = point
+			}
+		}
+	}
+
+	result, _ := json.Marshal(vlResp)
+	return wrapAsLokiResponse(result, resultType)
+}
+
+func applyScalarOpReverse(body []byte, op string, scalar float64, resultType string) []byte {
+	var vlResp map[string]interface{}
+	if err := json.Unmarshal(body, &vlResp); err != nil {
+		return wrapAsLokiResponse(body, resultType)
+	}
+
+	results, _ := vlResp["results"].([]interface{})
+	for _, r := range results {
+		rm, _ := r.(map[string]interface{})
+		values, _ := rm["values"].([]interface{})
+		for i, v := range values {
+			point, _ := v.([]interface{})
+			if len(point) >= 2 {
+				valStr, _ := point[1].(string)
+				val, _ := strconv.ParseFloat(valStr, 64)
+				newVal := applyOp(scalar, val, op)
+				point[1] = strconv.FormatFloat(newVal, 'f', -1, 64)
+				values[i] = point
+			}
+		}
+	}
+
+	result, _ := json.Marshal(vlResp)
+	return wrapAsLokiResponse(result, resultType)
+}
+
+func combineMetricResults(leftBody, rightBody []byte, op, resultType string) []byte {
+	// Parse both results
+	var leftResp, rightResp map[string]interface{}
+	json.Unmarshal(leftBody, &leftResp)
+	json.Unmarshal(rightBody, &rightResp)
+
+	leftResults, _ := leftResp["results"].([]interface{})
+	rightResults, _ := rightResp["results"].([]interface{})
+
+	// Build a map of right results by metric labels for joining
+	rightMap := make(map[string][]interface{})
+	for _, r := range rightResults {
+		rm, _ := r.(map[string]interface{})
+		metric, _ := rm["metric"].(map[string]interface{})
+		key := metricKey(metric)
+		values, _ := rm["values"].([]interface{})
+		rightMap[key] = values
+	}
+
+	// Combine: for each left result, find matching right result and apply op
+	for _, r := range leftResults {
+		rm, _ := r.(map[string]interface{})
+		metric, _ := rm["metric"].(map[string]interface{})
+		key := metricKey(metric)
+		leftValues, _ := rm["values"].([]interface{})
+		rightValues := rightMap[key]
+
+		if len(rightValues) > 0 {
+			// Build timestamp→value index for right side
+			rightIdx := make(map[string]float64)
+			for _, v := range rightValues {
+				point, _ := v.([]interface{})
+				if len(point) >= 2 {
+					ts := fmt.Sprintf("%v", point[0])
+					valStr, _ := point[1].(string)
+					val, _ := strconv.ParseFloat(valStr, 64)
+					rightIdx[ts] = val
+				}
+			}
+
+			// Apply op point-by-point
+			for i, v := range leftValues {
+				point, _ := v.([]interface{})
+				if len(point) >= 2 {
+					ts := fmt.Sprintf("%v", point[0])
+					leftValStr, _ := point[1].(string)
+					leftVal, _ := strconv.ParseFloat(leftValStr, 64)
+					if rightVal, ok := rightIdx[ts]; ok {
+						newVal := applyOp(leftVal, rightVal, op)
+						point[1] = strconv.FormatFloat(newVal, 'f', -1, 64)
+					}
+					leftValues[i] = point
+				}
+			}
+		}
+	}
+
+	result, _ := json.Marshal(leftResp)
+	return wrapAsLokiResponse(result, resultType)
+}
+
+func applyOp(a, b float64, op string) float64 {
+	switch op {
+	case "/":
+		if b == 0 {
+			return 0 // avoid division by zero, return 0 like Prometheus
+		}
+		return a / b
+	case "*":
+		return a * b
+	case "+":
+		return a + b
+	case "-":
+		return a - b
+	}
+	return a
+}
+
+func metricKey(metric map[string]interface{}) string {
+	if metric == nil {
+		return "{}"
+	}
+	parts := make([]string, 0, len(metric))
+	for k, v := range metric {
+		parts = append(parts, fmt.Sprintf("%s=%v", k, v))
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ",")
 }
 
 // proxyLogQuery fetches log lines from VictoriaLogs.

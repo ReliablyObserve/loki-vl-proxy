@@ -32,6 +32,11 @@ func TranslateLogQLWithLabels(logql string, labelFn LabelTranslateFunc) (string,
 		return metricResult, nil
 	}
 
+	// Check if this is a binary metric expression: A / B, A + B, A - B, A * B
+	if binResult, ok := tryTranslateBinaryMetricExpr(logql); ok {
+		return binResult, nil
+	}
+
 	return translateLogQuery(logql, labelFn)
 }
 
@@ -363,6 +368,98 @@ func tryTranslateMetricQuery(logql string) (string, bool) {
 	}
 
 	return "", false
+}
+
+// BinaryMetricOp represents a binary arithmetic expression between two metric queries.
+// The proxy evaluates both sides against VL and combines the results.
+const BinaryMetricPrefix = "__binary__:"
+
+// tryTranslateBinaryMetricExpr handles expressions like:
+//
+//	sum(rate({app="x"}[5m])) / sum(rate({app="x",level="error"}[5m]))
+//	rate({app="x"}[5m]) * 100
+//
+// Returns a special string "__binary__:op:leftQuery|||rightQuery" that the proxy
+// parses and evaluates by running both queries independently.
+func tryTranslateBinaryMetricExpr(logql string) (string, bool) {
+	logql = strings.TrimSpace(logql)
+
+	// Find a binary operator at the top level (not inside parens)
+	ops := []string{" / ", " * ", " + ", " - "}
+	depth := 0
+	for i, ch := range logql {
+		switch ch {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+		if depth == 0 {
+			for _, op := range ops {
+				if i+len(op) <= len(logql) && logql[i:i+len(op)] == op {
+					left := strings.TrimSpace(logql[:i])
+					right := strings.TrimSpace(logql[i+len(op):])
+					operator := strings.TrimSpace(op)
+
+					// Both sides must be valid metric queries
+					leftQL, leftOK := tryTranslateMetricQuery(left)
+					rightQL, rightOK := tryTranslateMetricQuery(right)
+
+					if !leftOK || !rightOK {
+						// One side might be a scalar (e.g., `rate(...) * 100`)
+						if leftOK && IsScalar(right) {
+							return fmt.Sprintf("%s%s:%s|||%s", BinaryMetricPrefix, operator, leftQL, right), true
+						}
+						if rightOK && IsScalar(left) {
+							return fmt.Sprintf("%s%s:%s|||%s", BinaryMetricPrefix, operator, left, rightQL), true
+						}
+						continue
+					}
+
+					return fmt.Sprintf("%s%s:%s|||%s", BinaryMetricPrefix, operator, leftQL, rightQL), true
+				}
+			}
+		}
+	}
+	return "", false
+}
+
+// isScalar returns true if the string is a numeric constant.
+// IsScalar returns true if the string is a numeric constant.
+func IsScalar(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	for _, ch := range s {
+		if ch != '.' && (ch < '0' || ch > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+// ParseBinaryMetricExpr parses a "__binary__:op:left|||right" string.
+// Returns the operator, left query, right query, and whether it's a binary expression.
+func ParseBinaryMetricExpr(s string) (op, left, right string, ok bool) {
+	if !strings.HasPrefix(s, BinaryMetricPrefix) {
+		return "", "", "", false
+	}
+	rest := s[len(BinaryMetricPrefix):]
+	// Format: "op:left|||right"
+	colonIdx := strings.Index(rest, ":")
+	if colonIdx < 0 {
+		return "", "", "", false
+	}
+	op = rest[:colonIdx]
+	body := rest[colonIdx+1:]
+	sepIdx := strings.Index(body, "|||")
+	if sepIdx < 0 {
+		return "", "", "", false
+	}
+	left = body[:sepIdx]
+	right = body[sepIdx+3:]
+	return op, left, right, true
 }
 
 func isUnwrapFunc(name string) bool {

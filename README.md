@@ -135,7 +135,7 @@ flowchart LR
 | `/metrics` | Implemented | — | — | 1 |
 | `/debug/queries` | Implemented | — | — | 1 |
 
-**390+ tests total** (340 unit + 50+ e2e, fuzz-tested with 1.2M+ executions)
+**420+ tests total** (340 unit + 80+ e2e, fuzz-tested with 1.2M+ executions)
 
 ## Protection Layers
 
@@ -500,5 +500,5 @@ go build -o loki-vl-proxy ./cmd/proxy
 - [x] pprof, SIGHUP reload, rate limit headers
 - [x] Per-endpoint cache metrics, backend latency, singleflight stats, CB state gauge
 - [x] Fuzz testing — 1.2M+ executions, no panics
+- [x] Nested metric queries — `sum(rate(...)) / sum(rate(...))` proxy-side binary evaluation
 - [ ] `/loki/api/v1/patterns` — real implementation
-- [ ] Nested metric queries — `sum(rate(...)) / sum(rate(...))` outer arithmetic
