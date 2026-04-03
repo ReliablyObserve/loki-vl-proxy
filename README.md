@@ -88,6 +88,10 @@ flowchart LR
 - **L2 disk cache**: bbolt-backed on-disk cache with gzip compression, AES-256 encryption, write-back buffer (AWS ST1 optimized)
 - **OTLP telemetry**: Push proxy metrics to any OTLP HTTP endpoint (gzip/zstd compression, TLS)
 - **Observability**: Prometheus `/metrics`, structured JSON logs via `slog`
+- **Derived fields**: Regex extraction from log lines for trace linking (traceID, spanID → Tempo/Jaeger)
+- **Chunked streaming**: Stream large results via chunked transfer encoding (reduces TTFB)
+- **Gzip compression**: Transparent response compression for clients that accept it (pooled writers)
+- **TLS server**: HTTPS support via `-tls-cert-file` / `-tls-key-file`
 - **Hardened HTTP**: Request body/header size limits, read/write/idle timeouts, security headers
 - **Concurrency-safe**: No shared mutable state — tenant IDs flow via request context, all goroutines are stoppable
 - **Single static binary**, ~10MB Docker image, zero external dependencies at runtime

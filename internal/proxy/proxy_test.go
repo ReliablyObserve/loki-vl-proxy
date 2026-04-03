@@ -31,7 +31,7 @@ import (
 
 func TestContract_Labels_ResponseFormat(t *testing.T) {
 	vlBackend := mockVLFieldNames(t, []fieldHit{
-		{"app", 100}, {"env", 50}, {"_msg", 200}, {"level", 75},
+		{"app", 100}, {"env", 50}, {"_msg", 200}, {"level", 75}, {"_time", 300}, {"_stream", 100},
 	})
 	defer vlBackend.Close()
 
@@ -40,8 +40,9 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 	assertLokiSuccess(t, resp)
 	data := assertDataIsStringArray(t, resp)
 
-	if len(data) != 4 {
-		t.Errorf("expected 4 labels, got %d: %v", len(data), data)
+	// VL internal fields (_msg, _time, _stream, _stream_id) are filtered out
+	if len(data) != 3 {
+		t.Errorf("expected 3 labels (app, env, level — VL internals filtered), got %d: %v", len(data), data)
 	}
 }
 

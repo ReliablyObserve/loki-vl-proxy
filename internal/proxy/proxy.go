@@ -355,6 +355,10 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 
 	labels := make([]string, 0, len(vlResp.Values))
 	for _, v := range vlResp.Values {
+		// Filter out VL internal fields — Loki doesn't expose these
+		if isVLInternalField(v.Value) {
+			continue
+		}
 		labels = append(labels, v.Value)
 	}
 
@@ -514,6 +518,10 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	if e := r.FormValue("end"); e != "" {
 		params.Set("end", formatVLTimestamp(e))
 	}
+	// VL v1.49+ requires step for hits — use large step to get one bucket (total count)
+	if params.Get("step") == "" {
+		params.Set("step", "1h")
+	}
 
 	resp, err := p.vlGet(r.Context(), "/select/logsql/hits", params)
 	if err != nil {
@@ -528,7 +536,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	entries := sumHitsValues(body)
 	hits := parseHits(body)
 	streams := len(hits.Hits)
-	if streams == 0 {
+	if streams == 0 && entries > 0 {
 		streams = 1
 	}
 	result, _ := json.Marshal(map[string]interface{}{
@@ -1559,6 +1567,12 @@ func (p *Proxy) writeJSON(w http.ResponseWriter, data interface{}) {
 
 func base64Encode(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
+}
+
+// isVLInternalField returns true for VictoriaLogs internal field names
+// that should not be exposed in Loki-compatible label responses.
+func isVLInternalField(name string) bool {
+	return name == "_time" || name == "_msg" || name == "_stream" || name == "_stream_id"
 }
 
 // applyBackendHeaders adds static backend headers and forwarded client headers to a VL request.

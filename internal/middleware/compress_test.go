@@ -1,0 +1,116 @@
+package middleware
+
+import (
+	"compress/gzip"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+func TestGzipHandler_CompressesWhenAccepted(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"success","data":["app","level","namespace"]}`))
+	})
+
+	handler := GzipHandler(inner)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("Accept-Encoding", "gzip, deflate")
+
+	handler.ServeHTTP(w, r)
+
+	if w.Header().Get("Content-Encoding") != "gzip" {
+		t.Error("expected Content-Encoding: gzip")
+	}
+	if w.Header().Get("Vary") != "Accept-Encoding" {
+		t.Error("expected Vary: Accept-Encoding")
+	}
+
+	// Decompress and verify
+	gr, err := gzip.NewReader(w.Body)
+	if err != nil {
+		t.Fatalf("invalid gzip: %v", err)
+	}
+	defer gr.Close()
+	body, _ := io.ReadAll(gr)
+	if !strings.Contains(string(body), "success") {
+		t.Errorf("expected success in body, got %q", body)
+	}
+}
+
+func TestGzipHandler_NoCompressionWithoutAcceptHeader(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"success"}`))
+	})
+
+	handler := GzipHandler(inner)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/test", nil)
+	// No Accept-Encoding header
+
+	handler.ServeHTTP(w, r)
+
+	if w.Header().Get("Content-Encoding") == "gzip" {
+		t.Error("should not gzip without Accept-Encoding")
+	}
+	if w.Body.String() != `{"status":"success"}` {
+		t.Errorf("unexpected body: %q", w.Body.String())
+	}
+}
+
+func TestGzipHandler_LargeResponse(t *testing.T) {
+	// Large response should compress well
+	data := strings.Repeat(`{"stream":{"app":"nginx"},"values":[["1234","log line"]]},`, 1000)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(data))
+	})
+
+	handler := GzipHandler(inner)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+
+	handler.ServeHTTP(w, r)
+
+	// Compressed size should be much smaller
+	compressedSize := w.Body.Len()
+	originalSize := len(data)
+	ratio := float64(compressedSize) / float64(originalSize) * 100
+	t.Logf("Compression ratio: %d → %d bytes (%.1f%%)", originalSize, compressedSize, ratio)
+
+	if compressedSize >= originalSize {
+		t.Error("expected compressed size to be smaller than original")
+	}
+}
+
+func TestGzipHandler_FlushSupport(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("chunk1"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		w.Write([]byte("chunk2"))
+	})
+
+	handler := GzipHandler(inner)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/test", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+
+	handler.ServeHTTP(w, r)
+
+	// Should still produce valid gzip
+	gr, err := gzip.NewReader(w.Body)
+	if err != nil {
+		t.Fatalf("invalid gzip after flush: %v", err)
+	}
+	body, _ := io.ReadAll(gr)
+	gr.Close()
+	if string(body) != "chunk1chunk2" {
+		t.Errorf("expected chunk1chunk2, got %q", body)
+	}
+}

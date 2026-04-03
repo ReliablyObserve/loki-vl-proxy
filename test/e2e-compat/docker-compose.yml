@@ -14,7 +14,7 @@ version: "3.8"
 services:
   # Reference Loki instance (ground truth)
   loki:
-    image: grafana/loki:3.4.3
+    image: grafana/loki:3.7.1
     container_name: e2e-loki
     ports:
       - "3101:3100"
@@ -28,7 +28,7 @@ services:
 
   # VictoriaLogs backend
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.20.0-victorialogs
+    image: victoriametrics/victoria-logs:v1.49.0
     container_name: e2e-victorialogs
     ports:
       - "9428:9428"

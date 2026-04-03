@@ -14,6 +14,7 @@ import (
 
 	"github.com/szibis/Loki-VL-proxy/internal/cache"
 	"github.com/szibis/Loki-VL-proxy/internal/metrics"
+	mw "github.com/szibis/Loki-VL-proxy/internal/middleware"
 	"github.com/szibis/Loki-VL-proxy/internal/proxy"
 )
 
@@ -50,6 +51,13 @@ func main() {
 	idleTimeout := flag.Duration("http-idle-timeout", 120*time.Second, "HTTP server idle timeout")
 	maxHeaderBytes := flag.Int("http-max-header-bytes", 1<<20, "HTTP max header size (default: 1MB)")
 	maxBodyBytes := flag.Int64("http-max-body-bytes", 10<<20, "HTTP max request body size (default: 10MB)")
+
+	// TLS server
+	tlsCertFile := flag.String("tls-cert-file", "", "TLS certificate file for HTTPS server")
+	tlsKeyFile := flag.String("tls-key-file", "", "TLS private key file for HTTPS server")
+
+	// Response compression
+	enableGzip := flag.Bool("response-gzip", true, "Enable gzip response compression for clients that accept it")
 
 	// Grafana datasource compatibility
 	maxLines := flag.Int("max-lines", 1000, "Default max lines per query")
@@ -169,8 +177,11 @@ func main() {
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
-	// Wrap with request body size limiter
-	handler := maxBodyHandler(*maxBodyBytes, mux)
+	// Middleware chain: body limit → gzip compression
+	var handler http.Handler = maxBodyHandler(*maxBodyBytes, mux)
+	if *enableGzip {
+		handler = mw.GzipHandler(handler)
+	}
 
 	// Hardened HTTP server with timeouts
 	srv := &http.Server{
@@ -187,9 +198,16 @@ func main() {
 	signal.Notify(shutdownCh, syscall.SIGTERM, syscall.SIGINT)
 
 	go func() {
-		log.Printf("Loki-VL-proxy listening on %s, backend: %s", *listenAddr, *backendURL)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+		if *tlsCertFile != "" && *tlsKeyFile != "" {
+			log.Printf("Loki-VL-proxy listening on %s (TLS), backend: %s", *listenAddr, *backendURL)
+			if err := srv.ListenAndServeTLS(*tlsCertFile, *tlsKeyFile); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("TLS server failed: %v", err)
+			}
+		} else {
+			log.Printf("Loki-VL-proxy listening on %s, backend: %s", *listenAddr, *backendURL)
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("Server failed: %v", err)
+			}
 		}
 	}()
 
