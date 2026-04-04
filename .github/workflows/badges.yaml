@@ -5,10 +5,10 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  badge-info:
+  update-badges:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,17 +18,42 @@ jobs:
           go-version: "stable"
           cache: true
 
-      - name: Count tests and coverage
+      - name: Count tests
+        id: tests
         run: |
-          echo "=== Test Count ==="
-          TESTS=$(go test ./... -count=1 -json 2>/dev/null | jq -r 'select(.Action=="pass" and .Test != null) | .Test' | wc -l)
+          TESTS=$(go test ./... -count=1 -json 2>/dev/null | jq -r 'select(.Action=="pass" and .Test != null) | .Test' | wc -l | tr -d ' ')
+          echo "count=${TESTS}" >> "$GITHUB_OUTPUT"
           echo "Tests passed: ${TESTS}"
 
-          echo ""
-          echo "=== Coverage ==="
+      - name: Get coverage
+        id: coverage
+        run: |
           go test ./... -coverprofile=coverage.out -count=1 2>/dev/null
-          go tool cover -func=coverage.out | tail -1
+          PCT=$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')
+          echo "pct=${PCT}" >> "$GITHUB_OUTPUT"
+          echo "Coverage: ${PCT}"
 
-          echo ""
-          echo "=== Summary ==="
-          echo "Update README badge manually: tests-${TESTS}%20passed"
+      - name: Update README badges
+        run: |
+          TESTS="${{ steps.tests.outputs.count }}"
+          COV="${{ steps.coverage.outputs.pct }}"
+
+          # Update test count badge
+          sed -i "s|tests-[0-9]*%20passed|tests-${TESTS}%20passed|g" README.md
+
+          # Add or update coverage badge
+          if grep -q "coverage-" README.md; then
+            sed -i "s|coverage-[0-9.]*%25-[a-z]*|coverage-${COV//%/%25}-brightgreen|g" README.md
+          fi
+
+      - name: Commit badge updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git diff --quiet README.md && exit 0
+          git add README.md
+          git commit -m "ci: update badges — ${TESTS} tests, ${COV} coverage [skip ci]"
+          git push
+        env:
+          TESTS: ${{ steps.tests.outputs.count }}
+          COV: ${{ steps.coverage.outputs.pct }}
