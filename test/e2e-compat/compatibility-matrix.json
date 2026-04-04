@@ -1,0 +1,264 @@
+{
+  "stack": {
+    "loki": {
+      "image_repo": "grafana/loki",
+      "pinned_version": "3.7.1",
+      "support_window": {
+        "policy": "current_minor_plus_previous_minor",
+        "description": "Support the current Loki minor family and one minor family behind. Keep all patch releases in the supported families, and slide the window forward when a new minor becomes current.",
+        "current_family": "3.7.x",
+        "previous_family": "3.6.x"
+      },
+      "matrix_versions": [
+        "3.6.0",
+        "3.6.1",
+        "3.6.2",
+        "3.6.3",
+        "3.6.4",
+        "3.6.5",
+        "3.6.6",
+        "3.6.7",
+        "3.6.8",
+        "3.6.9",
+        "3.6.10",
+        "3.7.0",
+        "3.7.1"
+      ],
+      "role": "reference implementation"
+    },
+    "victorialogs": {
+      "image_repo": "victoriametrics/victoria-logs",
+      "pinned_version": "v1.49.0",
+      "support_window": {
+        "policy": "v1_3x_and_v1_4x",
+        "description": "Support VictoriaLogs releases in the v1.3x.x and v1.4x.x bands. This is intentionally broader than Loki because users commonly run older VictoriaLogs backends during migration windows.",
+        "current_family": "v1.4x.x",
+        "previous_family": "v1.3x.x"
+      },
+      "matrix_versions": [
+        "v1.30.0",
+        "v1.31.0",
+        "v1.32.0",
+        "v1.33.0",
+        "v1.34.0",
+        "v1.35.0",
+        "v1.36.0",
+        "v1.37.0",
+        "v1.38.0",
+        "v1.39.0",
+        "v1.40.0",
+        "v1.41.0",
+        "v1.42.0",
+        "v1.43.0",
+        "v1.44.0",
+        "v1.45.0",
+        "v1.46.0",
+        "v1.47.0",
+        "v1.48.0",
+        "v1.49.0"
+      ],
+      "role": "backend under translation"
+    },
+    "grafana": {
+      "image_repo": "grafana/grafana",
+      "pinned_version": "12.4.2",
+      "role": "runtime hosting the Loki datasource and bundled Drilldown app"
+    },
+    "logs_drilldown_contract": {
+      "repo": "https://github.com/grafana/logs-drilldown",
+      "pinned_version": "2.0.1",
+      "pinned_commit": "4463f56047de75da95251086d1906fb902ad53a7",
+      "support_window": {
+        "policy": "current_family_plus_previous_family",
+        "description": "Support the current Logs Drilldown release family and one family behind. The contract matrix moves forward as upstream releases advance; we do not keep an open-ended history of older families.",
+        "current_family": "2.0.x",
+        "previous_family": "1.0.x"
+      },
+      "matrix_versions": [
+        "2.0.1",
+        "2.0.0",
+        "1.0.41",
+        "1.0.40",
+        "1.0.39",
+        "1.0.38",
+        "1.0.37",
+        "1.0.36",
+        "1.0.35",
+        "1.0.34"
+      ],
+      "notes": [
+        "Service selection uses index/volume on the primary label",
+        "Service detail logs use a mixed parser selector: json + logfmt + drop __error__ stages",
+        "detected_fields is post-processed by the app datasource wrapper to drop detected_level, level, and level_extracted",
+        "Patterns are label-scoped; parsed fields, metadata, and line filters are not expected to constrain the pattern list"
+      ]
+    }
+  },
+  "tracks": {
+    "loki": {
+      "workflow": "compat-loki.yaml",
+      "score_test": "TestLokiTrackScore",
+      "runtime_matrix": true,
+      "edge_cases": [
+        {
+          "versions": [
+            "3.6.x"
+          ],
+          "focus": [
+            "range query matrix shape",
+            "detected_fields stability",
+            "series and label-value parity"
+          ]
+        },
+        {
+          "versions": [
+            "3.7.x"
+          ],
+          "focus": [
+            "query_range timestamp alignment",
+            "detected_level metric grouping",
+            "OTel underscore and dotted label parity"
+          ]
+        }
+      ]
+    },
+    "drilldown": {
+      "workflow": "compat-drilldown.yaml",
+      "score_test": "TestDrilldownTrackScore",
+      "runtime_matrix": false,
+      "edge_cases": [
+        {
+          "versions": [
+            "1.0.34",
+            "1.0.35",
+            "1.0.36",
+            "1.0.37",
+            "1.0.38",
+            "1.0.39",
+            "1.0.40",
+            "1.0.41"
+          ],
+          "focus": [
+            "service selection volume buckets",
+            "detected_fields filtering",
+            "labels field parsing in log frames"
+          ]
+        },
+        {
+          "versions": [
+            "2.0.0",
+            "2.0.1"
+          ],
+          "focus": [
+            "detected_level coloring series names",
+            "field values breakdowns",
+            "additional label values and service-detail panels"
+          ]
+        }
+      ]
+    },
+    "victorialogs": {
+      "workflow": "compat-vl.yaml",
+      "score_test": "TestVLTrackScore",
+      "runtime_matrix": true,
+      "edge_cases": [
+        {
+          "versions": [
+            "v1.30.x",
+            "v1.31.x",
+            "v1.32.x",
+            "v1.33.x",
+            "v1.34.x",
+            "v1.35.x",
+            "v1.36.x",
+            "v1.37.x",
+            "v1.38.x",
+            "v1.39.x"
+          ],
+          "focus": [
+            "_stream parsing and label synthesis",
+            "field_names and field_values behavior",
+            "hits-based volume endpoints"
+          ]
+        },
+        {
+          "versions": [
+            "v1.40.x",
+            "v1.41.x",
+            "v1.42.x",
+            "v1.43.x",
+            "v1.44.x",
+            "v1.45.x",
+            "v1.46.x",
+            "v1.47.x",
+            "v1.48.x",
+            "v1.49.x"
+          ],
+          "focus": [
+            "stats_query_range shape",
+            "structured metadata shaping",
+            "drilldown-derived labels and values"
+          ]
+        }
+      ]
+    }
+  },
+  "contracts": [
+    {
+      "name": "service_selection_volume",
+      "track": "drilldown",
+      "tests": [
+        "internal/proxy/drilldown_compat_test.go",
+        "test/e2e-compat/drilldown_compat_test.go",
+        "test/e2e-compat/track_scores_test.go"
+      ]
+    },
+    {
+      "name": "service_detail_detected_level_volume",
+      "track": "drilldown",
+      "tests": [
+        "internal/proxy/drilldown_compat_test.go",
+        "test/e2e-compat/drilldown_compat_test.go",
+        "test/e2e-compat/track_scores_test.go"
+      ]
+    },
+    {
+      "name": "detected_fields_and_field_values",
+      "track": "drilldown",
+      "tests": [
+        "internal/proxy/drilldown_compat_test.go",
+        "test/e2e-compat/drilldown_compat_test.go",
+        "test/e2e-ui/tests/logs-drilldown.spec.ts",
+        "test/e2e-compat/track_scores_test.go"
+      ]
+    },
+    {
+      "name": "loki_query_parity",
+      "track": "loki",
+      "tests": [
+        "test/e2e-compat/compat_test.go",
+        "test/e2e-compat/compat_extended_test.go",
+        "test/e2e-compat/complex_test.go",
+        "test/e2e-compat/track_scores_test.go"
+      ]
+    },
+    {
+      "name": "otel_label_parity",
+      "track": "loki",
+      "tests": [
+        "test/e2e-compat/otel_compat_test.go",
+        "test/e2e-compat/track_scores_test.go"
+      ]
+    },
+    {
+      "name": "victorialogs_backend_shape",
+      "track": "victorialogs",
+      "tests": [
+        "internal/proxy/proxy_test.go",
+        "internal/proxy/gaps_test.go",
+        "internal/proxy/drilldown_compat_test.go",
+        "test/e2e-compat/track_scores_test.go"
+      ]
+    }
+  ]
+}

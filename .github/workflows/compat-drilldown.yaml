@@ -1,0 +1,59 @@
+name: Logs Drilldown Compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "45 3 * * 1"
+
+jobs:
+  matrix-source:
+    runs-on: ubuntu-latest
+    outputs:
+      drilldown_versions: ${{ steps.matrix.outputs.drilldown_versions }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: matrix
+        run: echo "drilldown_versions=$(jq -c '.stack.logs_drilldown_contract.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
+
+  pinned-runtime:
+    if: github.event_name != 'schedule'
+    needs: matrix-source
+    runs-on: ubuntu-latest
+    env:
+      LOKI_IMAGE: grafana/loki:3.7.1
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
+      GRAFANA_IMAGE: grafana/grafana:12.4.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+      - name: Start pinned stack
+        working-directory: test/e2e-compat
+        run: |
+          docker compose up -d --build
+          sleep 30
+      - name: Run Drilldown compatibility score
+        run: go test -v -tags=e2e -run '^TestDrilldownTrackScore$' ./test/e2e-compat/
+      - name: Tear down pinned stack
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose down -v
+
+  contract-matrix:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: matrix-source
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        drilldown_version: ${{ fromJson(needs.matrix-source.outputs.drilldown_versions) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Drilldown app contracts
+        run: bash scripts/compat/check-drilldown-contracts.sh "${{ matrix.drilldown_version }}"

@@ -257,8 +257,8 @@ func TestChaining_SecurityHeaders(t *testing.T) {
 
 	headers := map[string]string{
 		"X-Content-Type-Options": "nosniff",
-		"X-Frame-Options":       "DENY",
-		"Cache-Control":         "no-store",
+		"X-Frame-Options":        "DENY",
+		"Cache-Control":          "no-store",
 	}
 	for name, want := range headers {
 		got := resp.Header.Get(name)

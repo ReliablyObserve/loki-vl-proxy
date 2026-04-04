@@ -5,9 +5,9 @@ import "testing"
 // Coverage gap: extractQuotedValue edge cases
 func TestCoverage_ExtractQuotedValue(t *testing.T) {
 	tests := []struct {
-		input     string
-		wantVal   string
-		wantRest  string
+		input    string
+		wantVal  string
+		wantRest string
 	}{
 		{`"hello" world`, `"hello"`, "world"},
 		{`unquoted rest`, `"unquoted"`, "rest"},
@@ -66,7 +66,7 @@ func TestCoverage_TranslateBareFilter(t *testing.T) {
 
 // Coverage gap: addByClause when no stats pipe exists
 func TestCoverage_AddByClause_NoStats(t *testing.T) {
-	got := addByClause("app:=nginx", "app")
+	got := addByClause("app:=nginx", "app", nil)
 	if got != "app:=nginx | stats by (app)" {
 		t.Errorf("got %q", got)
 	}

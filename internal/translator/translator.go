@@ -58,12 +58,12 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 
 	// Check binary metric expressions FIRST — they may contain metric sub-expressions.
 	// E.g., "rate({...}[5m]) > 0" is a binary expr, not just a metric query.
-	if binResult, ok := tryTranslateBinaryMetricExpr(logql); ok {
+	if binResult, ok := tryTranslateBinaryMetricExpr(logql, labelFn); ok {
 		return appendWithoutMarker(binResult, withoutLabels), nil
 	}
 
 	// Check if this is a plain metric query (no binary operator at top level)
-	if metricResult, ok := tryTranslateMetricQuery(logql); ok {
+	if metricResult, ok := tryTranslateMetricQuery(logql, labelFn); ok {
 		return appendWithoutMarker(metricResult, withoutLabels), nil
 	}
 
@@ -353,7 +353,8 @@ func translateLabelFilter(stage string) string {
 		if idx > 0 {
 			label := strings.TrimSpace(stage[:idx])
 			value := strings.TrimSpace(stage[idx+len(op.logql):])
-			value = strings.Trim(value, "\"")
+			value = strings.Trim(value, "\"`")
+			label = quoteLogsQLFieldNameIfNeeded(label)
 
 			if op.isRe {
 				// Regex values need quotes in VL
@@ -361,6 +362,12 @@ func translateLabelFilter(stage string) string {
 					return fmt.Sprintf(`-%s%s"%s"`, label, op.logsql[1:], value)
 				}
 				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value)
+			}
+			if value == "" {
+				if strings.HasPrefix(op.logsql, "-") {
+					return fmt.Sprintf(`%s:!""`, label)
+				}
+				return fmt.Sprintf(`%s:=""`, label)
 			}
 			if strings.HasPrefix(op.logsql, "-") {
 				return fmt.Sprintf("-%s%s%s", label, op.logsql[1:], value)
@@ -371,6 +378,19 @@ func translateLabelFilter(stage string) string {
 
 	// Unknown stage — pass through as-is with pipe
 	return "| " + stage
+}
+
+func quoteLogsQLFieldNameIfNeeded(label string) string {
+	if label == "" {
+		return label
+	}
+	for _, r := range label {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			continue
+		}
+		return `"` + label + `"`
+	}
+	return label
 }
 
 // translateLabelFormat converts label_format expressions.
@@ -428,25 +448,25 @@ func convertGoTemplate(tmpl string) string {
 }
 
 // tryTranslateMetricQuery attempts to translate a metric/aggregation query.
-func tryTranslateMetricQuery(logql string) (string, bool) {
+func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, bool) {
 	// Match patterns like: sum(rate({...}[5m])) by (label)
 	// or: count_over_time({...}[5m])
 	// or: rate({...}[5m])
 
 	metricFuncs := map[string]string{
-		"rate":                "rate()",
-		"count_over_time":    "count()",
-		"bytes_over_time":    "sum(len(_msg))",
-		"bytes_rate":         "rate_sum(len(_msg))",
-		"sum_over_time":      "sum",
-		"avg_over_time":      "avg",
-		"max_over_time":      "max",
-		"min_over_time":      "min",
-		"first_over_time":    "first",
-		"last_over_time":     "last",
-		"stddev_over_time":   "stddev",
-		"stdvar_over_time":   "stdvar",
-		"absent_over_time":   "count()",
+		"rate":             "rate()",
+		"count_over_time":  "count()",
+		"bytes_over_time":  "sum(len(_msg))",
+		"bytes_rate":       "rate_sum(len(_msg))",
+		"sum_over_time":    "sum",
+		"avg_over_time":    "avg",
+		"max_over_time":    "max",
+		"min_over_time":    "min",
+		"first_over_time":  "first",
+		"last_over_time":   "last",
+		"stddev_over_time": "stddev",
+		"stdvar_over_time": "stdvar",
+		"absent_over_time": "count()",
 	}
 
 	// Try to match outer aggregation: sum(...) by (labels)
@@ -458,7 +478,7 @@ func tryTranslateMetricQuery(logql string) (string, bool) {
 	}
 
 	// Special handling for quantile_over_time(phi, {query} | unwrap field [duration])
-	if result, ok := tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels); ok {
+	if result, ok := tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels, labelFn); ok {
 		return result, true
 	}
 
@@ -481,7 +501,7 @@ func tryTranslateMetricQuery(logql string) (string, bool) {
 		query, _ := extractQueryAndDuration(inner)
 
 		// Translate the inner log query part
-		logsqlQuery, err := translateLogQuery(query, nil)
+		logsqlQuery, err := translateLogQuery(query, labelFn)
 		if err != nil {
 			continue
 		}
@@ -503,7 +523,7 @@ func tryTranslateMetricQuery(logql string) (string, bool) {
 		// Add by labels
 		if byLabels != "" || outerAgg != "" {
 			if byLabels != "" {
-				result = addByClause(result, byLabels)
+				result = addByClause(result, byLabels, labelFn)
 			}
 		}
 
@@ -524,7 +544,7 @@ const BinaryMetricPrefix = "__binary__:"
 //
 // Returns a special string "__binary__:op:leftQuery|||rightQuery" that the proxy
 // parses and evaluates by running both queries independently.
-func tryTranslateBinaryMetricExpr(logql string) (string, bool) {
+func tryTranslateBinaryMetricExpr(logql string, labelFn LabelTranslateFunc) (string, bool) {
 	logql = strings.TrimSpace(logql)
 
 	// Strip the "bool" modifier from comparison operators.
@@ -568,8 +588,8 @@ func tryTranslateBinaryMetricExpr(logql string) (string, bool) {
 					operator := strings.TrimSpace(op)
 
 					// Both sides must be valid metric queries
-					leftQL, leftOK := tryTranslateMetricQuery(left)
-					rightQL, rightOK := tryTranslateMetricQuery(right)
+					leftQL, leftOK := tryTranslateMetricQuery(left, labelFn)
+					rightQL, rightOK := tryTranslateMetricQuery(right, labelFn)
 
 					vmSuffix := ""
 					if len(vectorMatchMeta) > 0 {
@@ -609,10 +629,10 @@ func IsScalar(s string) bool {
 
 // VectorMatchInfo holds vector matching modifiers for binary expressions.
 type VectorMatchInfo struct {
-	On           []string // on(labels) — match on these labels only
-	Ignoring     []string // ignoring(labels) — match ignoring these labels
-	GroupLeft    []string // group_left(extra_labels) — one-to-many, left side is "many"
-	GroupRight   []string // group_right(extra_labels) — one-to-many, right side is "many"
+	On         []string // on(labels) — match on these labels only
+	Ignoring   []string // ignoring(labels) — match ignoring these labels
+	GroupLeft  []string // group_left(extra_labels) — one-to-many, left side is "many"
+	GroupRight []string // group_right(extra_labels) — one-to-many, right side is "many"
 }
 
 // ParseBinaryMetricExpr parses a "__binary__:op:left|||right[@@@modifier:labels...]" string.
@@ -792,7 +812,7 @@ func extractUnwrapField(inner string) string {
 
 // tryTranslateQuantileOverTime handles quantile_over_time(phi, {query} | unwrap field [duration]).
 // Maps to VL: query | stats quantile(phi, field)
-func tryTranslateQuantileOverTime(innerExpr, _, byLabels string) (string, bool) {
+func tryTranslateQuantileOverTime(innerExpr, _, byLabels string, labelFn LabelTranslateFunc) (string, bool) {
 	prefix := "quantile_over_time("
 	if !strings.HasPrefix(innerExpr, prefix) {
 		return "", false
@@ -817,7 +837,7 @@ func tryTranslateQuantileOverTime(innerExpr, _, byLabels string) (string, bool) 
 	query, _ := extractQueryAndDuration(queryPart)
 
 	// Translate the inner log query
-	logsqlQuery, err := translateLogQuery(query, nil)
+	logsqlQuery, err := translateLogQuery(query, labelFn)
 	if err != nil {
 		return "", false
 	}
@@ -831,13 +851,24 @@ func tryTranslateQuantileOverTime(innerExpr, _, byLabels string) (string, bool) 
 	result := fmt.Sprintf("%s | stats quantile(%s, %s)", logsqlQuery, phi, unwrapField)
 
 	if byLabels != "" {
-		result = addByClause(result, byLabels)
+		result = addByClause(result, byLabels, labelFn)
 	}
 
 	return result, true
 }
 
-func addByClause(query, labels string) string {
+func addByClause(query, labels string, labelFn LabelTranslateFunc) string {
+	if labelFn != nil {
+		parts := strings.Split(labels, ",")
+		for i, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			parts[i] = labelFn(part)
+		}
+		labels = strings.Join(parts, ", ")
+	}
 	// Insert by(labels) into the stats pipe
 	idx := strings.Index(query, "| stats ")
 	if idx < 0 {
@@ -941,13 +972,17 @@ func extractQuotedValue(s string) (string, string) {
 // into individual matchers, respecting quotes.
 func splitStreamMatchers(s string) []string {
 	var matchers []string
-	inQuote := false
+	var quote rune
 	start := 0
 	for i, c := range s {
-		if c == '"' {
-			inQuote = !inQuote
+		if (c == '"' || c == '`') && (quote == 0 || quote == c) {
+			if quote == 0 {
+				quote = c
+			} else {
+				quote = 0
+			}
 		}
-		if c == ',' && !inQuote {
+		if c == ',' && quote == 0 {
 			m := strings.TrimSpace(s[start:i])
 			if m != "" {
 				matchers = append(matchers, m)
@@ -984,10 +1019,14 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 	for _, op := range ops {
 		idx := strings.Index(matcher, op.logql)
 		if idx > 0 {
-			label := strings.TrimSpace(matcher[:idx])
+			origLabel := strings.TrimSpace(matcher[:idx])
+			label := origLabel
 			value := strings.TrimSpace(matcher[idx+len(op.logql):])
 
 			// Apply label name translation (e.g., service_name → service.name)
+			if origLabel == "service_name" {
+				return serviceNameMatcherFilter(op.logsql, value, op.neg, op.isRe)
+			}
 			if labelFn != nil {
 				label = labelFn(label)
 			}
@@ -998,14 +1037,20 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 			}
 
 			if op.isRe {
-				value = strings.Trim(value, `"`)
+				value = strings.Trim(value, "\"`")
 				if op.neg {
 					return fmt.Sprintf(`-%s%s"%s"`, label, op.logsql, value)
 				}
 				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value)
 			}
 
-			value = strings.Trim(value, `"`)
+			value = strings.Trim(value, "\"`")
+			if value == "" {
+				if op.neg {
+					return fmt.Sprintf(`%s:!""`, label)
+				}
+				return fmt.Sprintf(`%s:=""`, label)
+			}
 			if op.neg {
 				return fmt.Sprintf("-%s%s%s", label, op.logsql, value)
 			}
@@ -1031,10 +1076,69 @@ func canUseStreamSelector(matcher string, streamFields map[string]bool, labelFn 
 		return false
 	}
 	label := strings.TrimSpace(matcher[:idx])
+	if label == "service_name" {
+		return false
+	}
 	if labelFn != nil {
 		label = labelFn(label)
 	}
 	return streamFields[label]
+}
+
+var syntheticServiceNameFields = []string{
+	"service_name",
+	"service.name",
+	"service",
+	"app",
+	"application",
+	"app_name",
+	"name",
+	"app_kubernetes_io_name",
+	"container",
+	"container_name",
+	"k8s.container.name",
+	"k8s_container_name",
+	"component",
+	"workload",
+	"job",
+	"k8s.job.name",
+	"k8s_job_name",
+}
+
+func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
+	value = strings.TrimSpace(strings.Trim(value, "\"`"))
+	parts := make([]string, 0, len(syntheticServiceNameFields))
+	for _, field := range syntheticServiceNameFields {
+		name := field
+		if strings.Contains(name, ".") {
+			name = `"` + name + `"`
+		}
+		if isRegex {
+			if neg {
+				parts = append(parts, fmt.Sprintf(`-%s%s"%s"`, name, op, value))
+			} else {
+				parts = append(parts, fmt.Sprintf(`%s%s"%s"`, name, op, value))
+			}
+			continue
+		}
+		if value == "" {
+			if neg {
+				parts = append(parts, fmt.Sprintf(`%s:!""`, name))
+			} else {
+				parts = append(parts, fmt.Sprintf(`%s:=""`, name))
+			}
+			continue
+		}
+		if neg {
+			parts = append(parts, fmt.Sprintf(`-%s%s%s`, name, op, value))
+		} else {
+			parts = append(parts, fmt.Sprintf(`%s%s%s`, name, op, value))
+		}
+	}
+	if neg {
+		return strings.Join(parts, " ")
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
 }
 
 func isParserStage(translated string) bool {
@@ -1043,9 +1147,9 @@ func isParserStage(translated string) bool {
 }
 
 func isFieldFilter(s string) bool {
-	// Field filters contain :=, :~, :>, :<, :>=, :<=
+	// Field filters contain :=, :!, :~, :>, :<, :>=, :<=
 	return strings.Contains(s, ":=") || strings.Contains(s, ":~") ||
-		strings.Contains(s, ":>") || strings.Contains(s, ":<")
+		strings.Contains(s, ":!") || strings.Contains(s, ":>") || strings.Contains(s, ":<")
 }
 
 func translateBareFilter(s string) string {

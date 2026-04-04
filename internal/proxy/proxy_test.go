@@ -40,10 +40,11 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 	assertLokiSuccess(t, resp)
 	data := assertDataIsStringArray(t, resp)
 
-	// VL internal fields (_msg, _time, _stream, _stream_id) are filtered out
-	if len(data) != 3 {
-		t.Errorf("expected 3 labels (app, env, level — VL internals filtered), got %d: %v", len(data), data)
+	// VL internal fields are filtered out, and Loki-style service_name is added.
+	if len(data) != 4 {
+		t.Errorf("expected 4 labels (app, env, level, service_name), got %d: %v", len(data), data)
 	}
+	assertContains(t, data, "service_name")
 }
 
 func TestContract_Labels_PassesTimeRange(t *testing.T) {
@@ -73,8 +74,8 @@ func TestContract_Labels_EmptyResult(t *testing.T) {
 	assertLokiSuccess(t, resp)
 
 	data := assertDataIsStringArray(t, resp)
-	if len(data) != 0 {
-		t.Errorf("expected empty array, got %v", data)
+	if len(data) != 1 || data[0] != "service_name" {
+		t.Errorf("expected synthetic service_name label, got %v", data)
 	}
 }
 
@@ -424,21 +425,30 @@ func TestContract_DetectedFields_ResponseFormat(t *testing.T) {
 // --- /loki/api/v1/patterns ---
 
 func TestContract_Patterns_ResponseFormat(t *testing.T) {
-	p := newTestProxy(t, "http://unused")
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		w.Write([]byte(`{"_time":"2026-04-04T10:00:01Z","_msg":"GET /api/users 200 22ms","app":"web","level":"info"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7B%7D&start=1&end=2", nil)
 	p.handlePatterns(w, r)
 
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for drilldown-compatible patterns endpoint, got %d", w.Code)
+	}
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
-	assertLokiSuccess(t, resp)
-
-	// data must be array (even if empty)
-	data, ok := resp["data"].([]interface{})
-	if !ok {
-		t.Fatalf("data must be array, got %T", resp["data"])
+	if resp["status"] != "success" {
+		t.Fatalf("expected status=success, got %v", resp)
 	}
-	_ = data // stub returns empty, that's fine
+	data, ok := resp["data"].([]interface{})
+	if !ok || len(data) == 0 {
+		t.Fatalf("expected at least one pattern, got %v", resp)
+	}
 }
 
 // --- /loki/api/v1/tail ---
@@ -896,15 +906,16 @@ func assertStreamEntry(t *testing.T, idx int, entry interface{}) {
 		}
 	}
 
-	// "values" must be array of [string, string] pairs
+	// "values" must be array of [string, string] pairs, optionally with
+	// a third metadata/parsing object like Loki query responses support.
 	values, ok := obj["values"].([]interface{})
 	if !ok {
 		t.Fatalf("result[%d].values must be array, got %T", idx, obj["values"])
 	}
 	for j, val := range values {
 		pair, ok := val.([]interface{})
-		if !ok || len(pair) != 2 {
-			t.Errorf("result[%d].values[%d] must be [ts, line] pair, got %v", idx, j, val)
+		if !ok || (len(pair) != 2 && len(pair) != 3) {
+			t.Errorf("result[%d].values[%d] must be [ts, line] or [ts, line, meta], got %v", idx, j, val)
 			continue
 		}
 		if _, ok := pair[0].(string); !ok {
@@ -912,6 +923,11 @@ func assertStreamEntry(t *testing.T, idx int, entry interface{}) {
 		}
 		if _, ok := pair[1].(string); !ok {
 			t.Errorf("result[%d].values[%d][1] line must be string, got %T", idx, j, pair[1])
+		}
+		if len(pair) == 3 {
+			if _, ok := pair[2].(map[string]interface{}); !ok {
+				t.Errorf("result[%d].values[%d][2] metadata must be object, got %T", idx, j, pair[2])
+			}
 		}
 	}
 }

@@ -1,6 +1,9 @@
 # Loki-VL-proxy
 
 [![CI](https://github.com/szibis/Loki-VL-proxy/actions/workflows/ci.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/ci.yaml)
+[![Loki Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-loki.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-loki.yaml)
+[![Logs Drilldown Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml)
+[![VictoriaLogs Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-vl.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-vl.yaml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/szibis/Loki-VL-proxy)](https://go.dev/)
 [![Release](https://img.shields.io/github/v/release/szibis/Loki-VL-proxy)](https://github.com/szibis/Loki-VL-proxy/releases)
 [![Tests](https://img.shields.io/badge/tests-887%20passed-brightgreen)](#tests)
@@ -213,6 +216,21 @@ If that setting is disabled, the workflow now keeps the run green, pushes the re
 
 **887 tests** (unit + fuzz + perf regression + race-safe)
 
+## Compatibility Tracks
+
+The repo now reports compatibility as three separate tracks instead of one blended percentage:
+
+| Track | Scope | Versions tracked |
+|---|---|---|
+| Loki | Loki API and LogQL behavior for Loki clients | `3.6.x`, `3.7.x` |
+| Logs Drilldown | Grafana Logs Drilldown app contracts and service-detail flows | `1.0.x`, `2.0.x` |
+| VictoriaLogs | Backend integration and translation behavior | `v1.3x.x`, `v1.4x.x` |
+
+The support window is deliberate. We do not try to carry unlimited historical compatibility. Loki tracks the current minor family plus one minor behind, Logs Drilldown tracks the current family plus one family behind, and VictoriaLogs currently tracks the `v1.3x.x` and `v1.4x.x` backend bands.
+Those compatibility workflows read their version matrices from the shared manifest in `test/e2e-compat/compatibility-matrix.json`, so one update moves CI and docs together.
+
+See [Compatibility Matrix](docs/compatibility-matrix.md), [Loki Compatibility](docs/compatibility-loki.md), [Logs Drilldown Compatibility](docs/compatibility-drilldown.md), and [VictoriaLogs Compatibility](docs/compatibility-victorialogs.md).
+
 ## LogQL Compatibility
 
 **100% of LogQL features handled** -- no errors, no silent failures. Every feature either translates natively to VL or is evaluated at the proxy layer.
@@ -253,6 +271,10 @@ All features produce correct results. Implementation details for advanced featur
 | [Scaling](docs/scaling.md) | Capacity planning, resource projections, per-tenant/client metrics, Helm sizing |
 | [Operations](docs/operations.md) | Deployment, performance tuning, troubleshooting |
 | [Testing](docs/testing.md) | Test categories, running tests, fuzz testing |
+| [Compatibility Matrix](docs/compatibility-matrix.md) | Separate Loki, Drilldown, and VictoriaLogs compatibility tracks |
+| [Loki Compatibility](docs/compatibility-loki.md) | Loki API and LogQL version matrix |
+| [Logs Drilldown Compatibility](docs/compatibility-drilldown.md) | Drilldown app version matrix and app contracts |
+| [VictoriaLogs Compatibility](docs/compatibility-victorialogs.md) | VictoriaLogs backend version matrix and translation focus |
 | [Known Issues](docs/KNOWN_ISSUES.md) | VL compatibility gaps, data model differences |
 | [Roadmap](docs/roadmap.md) | Completed features and planned work |
 | [Changelog](CHANGELOG.md) | Release history |

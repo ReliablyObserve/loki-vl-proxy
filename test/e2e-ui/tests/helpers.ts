@@ -6,6 +6,7 @@ export const LOKI_DS = "Loki (direct)";
 
 // Grafana URLs
 export const EXPLORE_URL = "/explore";
+export const DRILLDOWN_URL = "/a/grafana-lokiexplore-app/explore";
 
 /**
  * Navigate to Grafana Explore with a specific datasource selected.
@@ -22,6 +23,43 @@ export async function openExplore(page: Page, datasource: string) {
     await page.getByText(datasource, { exact: false }).first().click();
     await page.waitForTimeout(500);
   }
+}
+
+async function resolveDatasourceUid(page: Page, datasource: string): Promise<string> {
+  const response = await page.request.get(
+    `/api/datasources/name/${encodeURIComponent(datasource)}`
+  );
+  expect(response.ok()).toBeTruthy();
+  const body = await response.json();
+  return body.uid;
+}
+
+/**
+ * Navigate to Grafana Logs Drilldown with a specific datasource selected.
+ */
+export async function openLogsDrilldown(page: Page, datasource: string) {
+  const uid = await resolveDatasourceUid(page, datasource);
+  const params = new URLSearchParams({
+    patterns: "[]",
+    from: "now-2h",
+    to: "now",
+    timezone: "browser",
+    "var-lineFormat": "",
+    "var-ds": uid,
+    "var-filters": "",
+    "var-fields": "",
+    "var-levels": "",
+    "var-metadata": "",
+    "var-jsonFields": "",
+    "var-all-fields": "",
+    "var-patterns": "",
+    "var-lineFilterV2": "",
+    "var-lineFilters": "",
+    "var-primary_label": "service_name|=~|.+",
+  });
+
+  await page.goto(`${DRILLDOWN_URL}?${params.toString()}`);
+  await page.waitForLoadState("networkidle");
 }
 
 /**

@@ -258,15 +258,18 @@ func TestExtractLogPatterns(t *testing.T) {
 		`{"_time":"2026-04-04T10:00:03Z","_msg":"GET /api/users 404 3ms","app":"web"}`,
 	}, "\n"))
 
-	patterns := extractLogPatterns(vlBody)
+	patterns := extractLogPatterns(vlBody, "15s")
 	if len(patterns) == 0 {
 		t.Fatal("expected at least 1 pattern")
 	}
 
-	// Should group similar lines into patterns
-	t.Logf("found %d patterns", len(patterns))
-	for _, p := range patterns {
-		t.Logf("  pattern: %v", p["pattern"])
+	first := patterns[0]
+	if first["pattern"] == nil {
+		t.Fatalf("expected pattern string in first result: %v", first)
+	}
+	samples, ok := first["samples"].([][]interface{})
+	if !ok || len(samples) == 0 {
+		t.Fatalf("expected non-empty time-bucket samples, got %v", first["samples"])
 	}
 }
 

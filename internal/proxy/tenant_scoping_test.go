@@ -87,8 +87,29 @@ func TestTenantScoping_HandleDetectedFieldValues(t *testing.T) {
 }
 
 func TestTenantScoping_HandlePatterns(t *testing.T) {
-	testTenantForwarded(t, func(p *Proxy) http.HandlerFunc { return p.handlePatterns },
-		`/loki/api/v1/patterns?query={app="nginx"}&start=1&end=2`)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("AccountID"); got != "11" {
+			t.Fatalf("expected AccountID 11, got %q", got)
+		}
+		if got := r.Header.Get("ProjectID"); got != "22" {
+			t.Fatalf("expected ProjectID 22, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"nginx","level":"info"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	p.tenantMap = map[string]TenantMapping{
+		"team-a": {AccountID: "11", ProjectID: "22"},
+	}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/patterns?query={app="nginx"}&start=1&end=2`, nil)
+	r.Header.Set("X-Scope-OrgID", "team-a")
+	p.handlePatterns(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected patterns endpoint to preserve tenant scoping, got %d", w.Code)
+	}
 }
 
 // Test that cache keys include tenant — different tenants must not share cached labels.

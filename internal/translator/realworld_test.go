@@ -17,7 +17,7 @@ func TestRealWorld_ErrorHandling(t *testing.T) {
 		{
 			name:  "error filter after json parse",
 			logql: `{app="nginx"} | json | __error__ = ""`,
-			want:  `app:=nginx | unpack_json | filter __error__:=`,
+			want:  `app:=nginx | unpack_json | filter __error__:=""`,
 		},
 		{
 			name:  "error filter not JSONParserErr",
@@ -97,7 +97,7 @@ func TestRealWorld_ComplexKubernetes(t *testing.T) {
 		{
 			name:  "container restart correlation",
 			logql: `{namespace=~"prod.*",container!=""} |= "Back-off restarting failed container"`,
-			want:  `namespace:~"prod.*" -container:= ~"Back-off restarting failed container"`,
+			want:  `namespace:~"prod.*" container:!"" ~"Back-off restarting failed container"`,
 		},
 	}
 	for _, tt := range tests {

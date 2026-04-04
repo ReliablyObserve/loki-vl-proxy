@@ -260,11 +260,8 @@ func TestLokiFunctions_Metrics(t *testing.T) {
 	}
 }
 
-// TestLokiFunctions_Patterns verifies /loki/api/v1/patterns extracts log patterns.
+// TestLokiFunctions_Patterns verifies /loki/api/v1/patterns returns a Drilldown-compatible payload.
 func TestLokiFunctions_Patterns(t *testing.T) {
-	// Ingest data with repeating patterns
-	ingestPatternData(t)
-
 	params := url.Values{
 		"query": {`{app="pattern-test"}`},
 		"start": {time.Now().Add(-1 * time.Hour).Format(time.RFC3339Nano)},
@@ -277,31 +274,20 @@ func TestLokiFunctions_Patterns(t *testing.T) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+		t.Fatalf("expected 200 for patterns endpoint, got %d", resp.StatusCode)
 	}
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	if result["status"] != "success" {
-		t.Errorf("patterns should return status=success, got %v", result["status"])
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("patterns decode failed: %v", err)
 	}
-
-	data, _ := result["data"].([]interface{})
-	if len(data) == 0 {
-		t.Log("note: patterns may be empty if VL query returned no data for this time range")
-	} else {
-		t.Logf("found %d patterns", len(data))
-		for _, d := range data {
-			p, _ := d.(map[string]interface{})
-			t.Logf("  pattern: %v", p["pattern"])
-		}
+	if body["status"] != "success" {
+		t.Fatalf("expected patterns status=success, got %v", body)
 	}
 }
 
 // TestLokiFunctions_PatternsWithLoki compares patterns between Loki and proxy.
 func TestLokiFunctions_PatternsWithLoki(t *testing.T) {
-	ingestPatternData(t)
-
 	params := url.Values{
 		"query": {`{app="pattern-test"}`},
 		"start": {time.Now().Add(-1 * time.Hour).Format(time.RFC3339Nano)},
@@ -317,11 +303,6 @@ func TestLokiFunctions_PatternsWithLoki(t *testing.T) {
 		}
 		defer resp.Body.Close()
 
-		// Loki OSS may not support /patterns (returns 404) — tolerate
-		if resp.StatusCode == 404 {
-			t.Logf("%s: /patterns returned 404 (not supported in this Loki version)", base)
-			continue
-		}
 		if resp.StatusCode != 200 {
 			t.Logf("%s: expected 200, got %d (non-fatal)", base, resp.StatusCode)
 			continue

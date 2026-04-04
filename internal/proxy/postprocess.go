@@ -5,8 +5,10 @@ import (
 	"net"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"text/template"
+	"time"
 	"unicode"
 )
 
@@ -155,11 +157,26 @@ func extractLineFormatTemplate(query string) string {
 }
 
 // extractLogPatterns implements a simplified drain-like pattern extraction.
-// Groups log lines by their structural pattern, replacing variable tokens with <_>.
-// Returns Loki-compatible pattern objects with pattern string and sample count.
-func extractLogPatterns(vlBody []byte) []map[string]interface{} {
+// Groups log lines by structural pattern and time bucket, returning the response
+// shape expected by Grafana Logs Drilldown's patterns resource.
+func extractLogPatterns(vlBody []byte, step string) []map[string]interface{} {
+	stepSeconds := int64(60)
+	if step != "" {
+		if d, err := time.ParseDuration(step); err == nil && d > 0 {
+			stepSeconds = int64(d / time.Second)
+		} else if seconds, err := strconv.Atoi(step); err == nil && seconds > 0 {
+			stepSeconds = int64(seconds)
+		}
+	}
+
 	lines := strings.Split(string(vlBody), "\n")
-	patternCounts := make(map[string]int)
+	type patternBucket struct {
+		pattern string
+		level   string
+		buckets map[int64]int
+		total   int
+	}
+	patterns := make(map[string]*patternBucket)
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -175,22 +192,45 @@ func extractLogPatterns(vlBody []byte) []map[string]interface{} {
 		if msg == "" {
 			continue
 		}
+		timeStr, _ := entry["_time"].(string)
+		ts, err := time.Parse(time.RFC3339Nano, timeStr)
+		if err != nil {
+			if ts, err = time.Parse(time.RFC3339, timeStr); err != nil {
+				continue
+			}
+		}
 
 		pattern := tokenizeToPattern(msg)
-		patternCounts[pattern]++
+		labels := buildEntryLabels(entry)
+		level := strings.TrimSpace(labels["detected_level"])
+		if level == "" {
+			level = strings.TrimSpace(labels["level"])
+		}
+		bucket := ts.Unix()
+		if stepSeconds > 0 {
+			bucket = (bucket / stepSeconds) * stepSeconds
+		}
+		key := level + "\x00" + pattern
+		entryBucket := patterns[key]
+		if entryBucket == nil {
+			entryBucket = &patternBucket{
+				pattern: pattern,
+				level:   level,
+				buckets: map[int64]int{},
+			}
+			patterns[key] = entryBucket
+		}
+		entryBucket.buckets[bucket]++
+		entryBucket.total++
 	}
 
 	// Sort by count descending
-	type patternEntry struct {
-		pattern string
-		count   int
-	}
-	entries := make([]patternEntry, 0, len(patternCounts))
-	for p, c := range patternCounts {
-		entries = append(entries, patternEntry{p, c})
+	entries := make([]*patternBucket, 0, len(patterns))
+	for _, entry := range patterns {
+		entries = append(entries, entry)
 	}
 	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].count > entries[j].count
+		return entries[i].total > entries[j].total
 	})
 
 	// Cap at 50 patterns
@@ -200,10 +240,25 @@ func extractLogPatterns(vlBody []byte) []map[string]interface{} {
 
 	result := make([]map[string]interface{}, 0, len(entries))
 	for _, e := range entries {
-		result = append(result, map[string]interface{}{
+		sampleTimes := make([]int64, 0, len(e.buckets))
+		for bucket := range e.buckets {
+			sampleTimes = append(sampleTimes, bucket)
+		}
+		sort.Slice(sampleTimes, func(i, j int) bool { return sampleTimes[i] < sampleTimes[j] })
+
+		samples := make([][]interface{}, 0, len(sampleTimes))
+		for _, bucket := range sampleTimes {
+			samples = append(samples, []interface{}{bucket, e.buckets[bucket]})
+		}
+
+		item := map[string]interface{}{
 			"pattern": e.pattern,
-			"samples": [][]interface{}{{0, e.pattern}},
-		})
+			"samples": samples,
+		}
+		if e.level != "" {
+			item["level"] = e.level
+		}
+		result = append(result, item)
 	}
 	return result
 }

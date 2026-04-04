@@ -14,10 +14,23 @@ cd test/e2e-compat
 docker-compose up -d --build
 go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
 
+# Track-specific scores
+go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
+go test -v -tags=e2e -run '^TestDrilldownTrackScore$' ./test/e2e-compat/
+go test -v -tags=e2e -run '^TestVLTrackScore$' ./test/e2e-compat/
+
 # Playwright UI tests (Grafana Explore, drill-down, error handling)
 cd test/e2e-ui
 npm install && npx playwright install chromium
 npm test
+
+# macOS fallback: run the same UI tests inside Linux Playwright
+docker run --rm \
+  -v "$(pwd)/test/e2e-ui:/work" \
+  -w /work \
+  -e GRAFANA_URL=http://host.docker.internal:3002 \
+  mcr.microsoft.com/playwright:v1.52.0-jammy \
+  /bin/bash -lc 'npm ci && npx playwright test --grep "Grafana Logs Drilldown"'
 
 # Build binary
 go build -o loki-vl-proxy ./cmd/proxy
@@ -63,7 +76,44 @@ go build -o loki-vl-proxy ./cmd/proxy
 | `internal/cache/disk_test.go` | L2 disk cache |
 | `internal/middleware/middleware_test.go` | Rate limiter, circuit breaker |
 | `test/e2e-compat/` | Docker-based Loki vs proxy comparison |
+| `test/e2e-compat/drilldown_compat_test.go` | Grafana Logs Drilldown resource contracts via Grafana datasource proxy |
 | `test/e2e-ui/` | Playwright browser tests against Grafana |
+
+## Compatibility Tracks
+
+The repo now keeps three separate compatibility tracks:
+
+| Track | Local score test | Matrix coverage |
+|---|---|---|
+| Loki | `TestLokiTrackScore` | Loki `3.6.x` and `3.7.x` |
+| Logs Drilldown | `TestDrilldownTrackScore` | Logs Drilldown `1.0.x` and `2.0.x` families |
+| VictoriaLogs | `TestVLTrackScore` | VictoriaLogs `v1.3x.x` and `v1.4x.x` bands |
+
+The default local stack is pinned to:
+
+- Loki `3.7.1`
+- VictoriaLogs `v1.49.0`
+- Grafana `12.4.2`
+- Logs Drilldown contract `2.0.1` from `grafana/logs-drilldown` commit `4463f56047de75da95251086d1906fb902ad53a7`
+
+Support window policy:
+
+- Loki: current minor family plus one minor behind
+- Logs Drilldown: current family plus one family behind
+- VictoriaLogs: `v1.3x.x` and `v1.4x.x`
+
+The stack is version-parameterized through compose environment variables:
+
+```bash
+LOKI_IMAGE=grafana/loki:3.6.10 \
+VICTORIALOGS_IMAGE=victoriametrics/victoria-logs:v1.48.0 \
+GRAFANA_IMAGE=grafana/grafana:12.4.2 \
+docker compose -f test/e2e-compat/docker-compose.yml up -d --build
+```
+
+GitHub Actions uses the same manifest as the source of truth. The compatibility workflows load their version matrices from [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json) instead of duplicating version lists in workflow YAML.
+
+See [compatibility-matrix.md](/tmp/Loki-VL-proxy/docs/compatibility-matrix.md), [compatibility-loki.md](/tmp/Loki-VL-proxy/docs/compatibility-loki.md), [compatibility-drilldown.md](/tmp/Loki-VL-proxy/docs/compatibility-drilldown.md), [compatibility-victorialogs.md](/tmp/Loki-VL-proxy/docs/compatibility-victorialogs.md), and [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json).
 
 ## Running Specific Tests
 

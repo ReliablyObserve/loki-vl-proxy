@@ -559,6 +559,7 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	// Read-only API additions
 	mux.Handle("/loki/api/v1/format_query", rl("format_query", p.handleFormatQuery))
 	mux.Handle("/loki/api/v1/detected_labels", rl("detected_labels", p.handleDetectedLabels))
+	mux.Handle("/loki/api/v1/drilldown-limits", rl("drilldown_limits", p.handleDrilldownLimits))
 
 	// Write endpoints — blocked (this is a read-only proxy)
 	mux.HandleFunc("/loki/api/v1/push", p.handleWriteBlocked)
@@ -655,6 +656,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	p.log.Debug("query_range request", "logql", logqlQuery)
 
+	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
+
 	logsqlQuery, err := p.translateQuery(logqlQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
@@ -709,6 +712,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.log.Debug("query request", "logql", logqlQuery)
+
+	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
 	logsqlQuery, err := p.translateQuery(logqlQuery)
 	if err != nil {
@@ -822,6 +827,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 
 	// Apply label name translation (e.g., dots → underscores)
 	labels = p.labelTranslator.TranslateLabelsList(labels)
+	labels = appendSyntheticLabels(labels)
 
 	result := lokiLabelsResponse(labels)
 	p.cache.SetWithTTL(cacheKey, result, CacheTTLs["labels"])
@@ -843,11 +849,25 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	labelName := parts[5]
+	orgID := r.Header.Get("X-Scope-OrgID")
+	cacheKey := "label_values:" + orgID + ":" + labelName + ":" + r.URL.RawQuery
+	if labelName == "service_name" {
+		values, err := p.serviceNameValues(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
+		if err != nil {
+			p.writeError(w, http.StatusBadGateway, err.Error())
+			p.metrics.RecordRequest("label_values", http.StatusBadGateway, time.Since(start))
+			return
+		}
+		result := lokiLabelsResponse(values)
+		p.cache.SetWithTTL(cacheKey, result, CacheTTLs["label_values"])
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(result)
+		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+		return
+	}
 	// Translate Loki label name to VL field name for the backend query
 	vlFieldName := p.labelTranslator.ToVL(labelName)
 
-	orgID := r.Header.Get("X-Scope-OrgID")
-	cacheKey := "label_values:" + orgID + ":" + labelName + ":" + r.URL.RawQuery
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		p.log.Debug("label values cache hit", "label", labelName)
 		w.Header().Set("Content-Type", "application/json")
@@ -859,7 +879,16 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordCacheMiss()
 
 	params := url.Values{}
-	params.Set("query", "*")
+	if q := r.FormValue("query"); q != "" {
+		translated, terr := p.translateQuery(q)
+		if terr == nil {
+			params.Set("query", translated)
+		} else {
+			params.Set("query", "*")
+		}
+	} else {
+		params.Set("query", "*")
+	}
 	params.Set("field", vlFieldName)
 	if s := r.FormValue("start"); s != "" {
 		params.Set("start", s)
@@ -960,6 +989,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 		labels := parseStreamLabels(v.Value)
 		if len(labels) > 0 {
 			labels = p.labelTranslator.TranslateLabelsMap(labels)
+			ensureSyntheticServiceName(labels)
 			series = append(series, labels)
 		}
 	}
@@ -986,7 +1016,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	logsqlQuery, _ := p.translateQuery(query)
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery)
+	params.Set("query", logsqlQuery+" | sort by (_time desc)")
 	if s := r.FormValue("start"); s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}
@@ -1035,10 +1065,27 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	if query == "" {
 		query = "*"
 	}
+	targetLabels := r.FormValue("targetLabels")
+	if usesDerivedVolumeLabels(targetLabels) {
+		result, err := p.volumeByDerivedLabels(r.Context(), query, r.FormValue("start"), r.FormValue("end"), targetLabels, "")
+		if err == nil {
+			p.writeJSON(w, result)
+			p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
+			return
+		}
+	}
+	if targetLabels == "" && strings.Contains(query, "service_name") {
+		result, err := p.volumeByServiceName(r.Context(), query, r.FormValue("start"), r.FormValue("end"))
+		if err == nil {
+			p.writeJSON(w, result)
+			p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
+			return
+		}
+	}
 	logsqlQuery, _ := p.translateQuery(query)
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery)
+	params.Set("query", logsqlQuery+" | sort by (_time desc)")
 	if s := r.FormValue("start"); s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}
@@ -1050,8 +1097,12 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 		params.Set("step", "1h")
 	}
 	// Request field-level grouping
-	if fields := r.FormValue("targetLabels"); fields != "" {
-		params.Set("field", fields)
+	if targetLabels != "" {
+		mappedFields := make([]string, 0, len(splitTargetLabels(targetLabels)))
+		for _, field := range splitTargetLabels(targetLabels) {
+			mappedFields = append(mappedFields, p.labelTranslator.ToVL(field))
+		}
+		params.Set("field", strings.Join(mappedFields, ","))
 	}
 
 	resp, err := p.vlGet(r.Context(), "/select/logsql/hits", params)
@@ -1081,10 +1132,19 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	if query == "" {
 		query = "*"
 	}
+	targetLabels := r.FormValue("targetLabels")
+	if usesDerivedVolumeLabels(targetLabels) {
+		result, err := p.volumeByDerivedLabels(r.Context(), query, r.FormValue("start"), r.FormValue("end"), targetLabels, r.FormValue("step"))
+		if err == nil {
+			p.writeJSON(w, result)
+			p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
+			return
+		}
+	}
 	logsqlQuery, _ := p.translateQuery(query)
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery)
+	params.Set("query", logsqlQuery+" | sort by (_time desc)")
 	if s := r.FormValue("start"); s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}
@@ -1095,8 +1155,12 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 		params.Set("step", formatVLStep(step))
 	}
 	// Forward targetLabels for field-level grouping (same as /volume)
-	if fields := r.FormValue("targetLabels"); fields != "" {
-		params.Set("field", fields)
+	if targetLabels != "" {
+		mappedFields := make([]string, 0, len(splitTargetLabels(targetLabels)))
+		for _, field := range splitTargetLabels(targetLabels) {
+			mappedFields = append(mappedFields, p.labelTranslator.ToVL(field))
+		}
+		params.Set("field", strings.Join(mappedFields, ","))
 	}
 
 	resp, err := p.vlGet(r.Context(), "/select/logsql/hits", params)
@@ -1120,77 +1184,24 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	r = withOrgID(r)
-	query := r.FormValue("query")
-	if query == "" {
-		query = "*"
-	}
-
-	logsqlQuery, _ := p.translateQuery(query)
-
-	params := url.Values{}
-	params.Set("query", logsqlQuery)
-	if s := r.FormValue("start"); s != "" {
-		params.Set("start", s)
-	}
-	if e := r.FormValue("end"); e != "" {
-		params.Set("end", e)
-	}
-
-	resp, err := p.vlGet(r.Context(), "/select/logsql/field_names", params)
-	if err != nil || resp.StatusCode >= 400 {
-		// VL field_names may not support complex queries — fallback to wildcard
-		if resp != nil {
-			resp.Body.Close()
-		}
-		fallbackParams := url.Values{"query": {"*"}}
-		if s := params.Get("start"); s != "" {
-			fallbackParams.Set("start", s)
-		}
-		if e := params.Get("end"); e != "" {
-			fallbackParams.Set("end", e)
-		}
-		resp, err = p.vlGet(r.Context(), "/select/logsql/field_names", fallbackParams)
-		if err != nil {
-			p.writeJSON(w, map[string]interface{}{"status": "success", "fields": []interface{}{}})
-			p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
-			return
+	lineLimit := 1000
+	if value := r.FormValue("line_limit"); value != "" {
+		if n, err := strconv.Atoi(value); err == nil && n > 0 {
+			lineLimit = n
 		}
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-
-	var vlResp struct {
-		Values []struct {
-			Value string `json:"value"`
-			Hits  int64  `json:"hits"`
-		} `json:"values"`
-	}
-	json.Unmarshal(body, &vlResp)
-
-	fields := make([]map[string]interface{}, 0, len(vlResp.Values))
-	seen := make(map[string]bool)
-	for _, v := range vlResp.Values {
-		if isVLInternalField(v.Value) {
-			continue
+	if value := r.FormValue("limit"); value != "" {
+		if n, err := strconv.Atoi(value); err == nil && n > 0 {
+			lineLimit = n
 		}
-		translated := p.labelTranslator.ToLoki(v.Value)
-		if seen[translated] {
-			continue
-		}
-		seen[translated] = true
-		fields = append(fields, map[string]interface{}{
-			"label":       translated,
-			"type":        "string",
-			"cardinality": v.Hits,
-		})
 	}
-
-	result, _ := json.Marshal(map[string]interface{}{
-		"status": "success",
-		"fields": fields,
-	})
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(result)
+	fields, _, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
+	if err != nil {
+		p.writeJSON(w, map[string]interface{}{"fields": []interface{}{}, "limit": lineLimit})
+		p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
+		return
+	}
+	p.writeJSON(w, map[string]interface{}{"fields": fields, "limit": lineLimit})
 	p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
 }
 
@@ -1215,91 +1226,89 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	query := r.FormValue("query")
-	if query == "" {
-		query = "*"
+	lineLimit := 1000
+	if value := r.FormValue("line_limit"); value != "" {
+		if n, err := strconv.Atoi(value); err == nil && n > 0 {
+			lineLimit = n
+		}
 	}
-	logsqlQuery, _ := p.translateQuery(query)
-
-	params := url.Values{}
-	// Translate Loki field name to VL field name for the backend query
-	vlFieldName := p.labelTranslator.ToVL(fieldName)
-	params.Set("query", logsqlQuery)
-	params.Set("field", vlFieldName)
-	if s := r.FormValue("start"); s != "" {
-		params.Set("start", s)
-	}
-	if e := r.FormValue("end"); e != "" {
-		params.Set("end", e)
+	if value := r.FormValue("limit"); value != "" {
+		if n, err := strconv.Atoi(value); err == nil && n > 0 {
+			lineLimit = n
+		}
 	}
 
-	resp, err := p.vlGet(r.Context(), "/select/logsql/field_values", params)
+	_, fieldValues, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{"values": []string{}, "limit": 1000})
 		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 		return
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-
-	var vlResp struct {
-		Values []struct {
-			Value string `json:"value"`
-			Hits  int64  `json:"hits"`
-		} `json:"values"`
-	}
-	json.Unmarshal(body, &vlResp)
-
-	values := make([]string, 0, len(vlResp.Values))
-	for _, v := range vlResp.Values {
-		values = append(values, v.Value)
+	values := fieldValues[fieldName]
+	if values == nil && fieldName == "level" {
+		values = fieldValues["detected_level"]
 	}
 
 	p.writeJSON(w, map[string]interface{}{
 		"values": values,
-		"limit":  1000,
+		"limit":  lineLimit,
 	})
 	p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 }
 
-// handlePatterns returns log patterns (stub).
+// handlePatterns returns log patterns for Grafana Logs Drilldown.
 func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	r = withOrgID(r)
 	query := r.FormValue("query")
-	if query == "" {
-		query = `{}`
+	if strings.TrimSpace(query) == "" {
+		query = "*"
 	}
 
 	logsqlQuery, err := p.translateQuery(query)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{"status": "success", "data": []interface{}{}})
+		p.writeJSON(w, map[string]interface{}{
+			"status": "success",
+			"data":   []interface{}{},
+		})
 		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 		return
 	}
 
-	params := url.Values{"query": {logsqlQuery}, "limit": {"1000"}}
+	params := url.Values{}
+	params.Set("query", logsqlQuery+" | sort by (_time desc)")
 	if s := r.FormValue("start"); s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}
 	if e := r.FormValue("end"); e != "" {
 		params.Set("end", formatVLTimestamp(e))
 	}
+	params.Set("limit", "1000")
 
-	resp, err := p.vlGet(r.Context(), "/select/logsql/query", params)
+	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{"status": "success", "data": []interface{}{}})
+		p.writeJSON(w, map[string]interface{}{
+			"status": "success",
+			"data":   []interface{}{},
+		})
 		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 		return
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
 
-	patterns := extractLogPatterns(body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		p.writeJSON(w, map[string]interface{}{
+			"status": "success",
+			"data":   []interface{}{},
+		})
+		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
+		return
+	}
 
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
-		"data":   patterns,
+		"data":   extractLogPatterns(body, r.FormValue("step")),
 	})
 	p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 }
@@ -1313,51 +1322,92 @@ func (p *Proxy) handleFormatQuery(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleDrilldownLimits returns Grafana Logs Drilldown limits metadata.
+// Grafana uses this as a lightweight capability/bootstrap probe.
+func (p *Proxy) handleDrilldownLimits(w http.ResponseWriter, r *http.Request) {
+	p.writeJSON(w, map[string]interface{}{
+		"limits": map[string]interface{}{
+			"discover_log_levels":         true,
+			"discover_service_name":       []string{"service", "app", "application", "app_name", "name", "app_kubernetes_io_name", "container", "container_name", "k8s_container_name", "component", "workload", "job", "k8s_job_name"},
+			"log_level_fields":            []string{"level", "LEVEL", "Level", "log.level", "severity", "SEVERITY", "Severity", "SeverityText", "lvl", "LVL", "Lvl", "severity_text", "Severity_Text", "SEVERITY_TEXT"},
+			"max_entries_limit_per_query": maxLimitValue,
+			"max_line_size_truncate":      false,
+			"max_query_bytes_read":        "0B",
+			"max_query_length":            "30d1h",
+			"max_query_lookback":          "0s",
+			"max_query_range":             "0s",
+			"max_query_series":            500,
+			"metric_aggregation_enabled":  false,
+			"otlp_config": map[string]interface{}{
+				"resource_attributes": map[string]interface{}{
+					"attributes_config": []map[string]interface{}{
+						{
+							"action":     "index_label",
+							"attributes": []string{"service.name", "service.namespace", "service.instance.id", "deployment.environment", "deployment.environment.name", "cloud.region", "cloud.availability_zone", "k8s.cluster.name", "k8s.namespace.name", "k8s.pod.name", "k8s.container.name", "container.name", "k8s.replicaset.name", "k8s.deployment.name", "k8s.statefulset.name", "k8s.daemonset.name", "k8s.cronjob.name", "k8s.job.name"},
+						},
+					},
+				},
+			},
+			"pattern_persistence_enabled": false,
+			"query_timeout":               "1m",
+			"retention_period":            "0s",
+			"volume_enabled":              true,
+			"volume_max_series":           1000,
+		},
+		"pattern_ingester_enabled": false,
+		"version":                  "unknown",
+		"maxDetectedFields":        1000,
+		"maxDetectedValues":        1000,
+		"maxLabelValues":           1000,
+		"maxLines":                 p.maxLines,
+	})
+}
+
 // handleDetectedLabels returns stream-level labels (similar to detected_fields but for stream labels).
 func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	r = withOrgID(r)
 	query := r.FormValue("query")
 	if query == "" {
 		query = "*"
 	}
 
-	logsqlQuery, _ := p.translateQuery(query)
-
-	params := url.Values{}
-	params.Set("query", logsqlQuery)
-	if s := r.FormValue("start"); s != "" {
-		params.Set("start", s)
-	}
-	if e := r.FormValue("end"); e != "" {
-		params.Set("end", e)
-	}
-
-	body, err := p.vlGetCoalesced(r.Context(), "detected_labels:"+params.Encode(), "/select/logsql/field_names", params)
+	logsqlQuery, err := p.translateQuery(query)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{"status": "success", "data": []interface{}{}})
+		p.writeJSON(w, map[string]interface{}{"detectedLabels": []interface{}{}})
 		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 		return
 	}
 
-	var vlResp struct {
-		Values []struct {
-			Value string `json:"value"`
-			Hits  int64  `json:"hits"`
-		} `json:"values"`
+	params := url.Values{}
+	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	if s := r.FormValue("start"); s != "" {
+		params.Set("start", formatVLTimestamp(s))
 	}
-	json.Unmarshal(body, &vlResp)
+	if e := r.FormValue("end"); e != "" {
+		params.Set("end", formatVLTimestamp(e))
+	}
+	params.Set("limit", "1000")
 
-	labels := make([]string, 0, len(vlResp.Values))
-	for _, v := range vlResp.Values {
-		if isVLInternalField(v.Value) {
-			continue
-		}
-		labels = append(labels, p.labelTranslator.ToLoki(v.Value))
+	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
+	if err != nil {
+		p.writeJSON(w, map[string]interface{}{"detectedLabels": []interface{}{}})
+		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
+		return
 	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		p.writeJSON(w, map[string]interface{}{"detectedLabels": []interface{}{}})
+		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
+		return
+	}
+
+	detectedLabels, _ := scanDetectedLabels(body, p.labelTranslator)
 
 	p.writeJSON(w, map[string]interface{}{
-		"status": "success",
-		"data":   labels,
+		"detectedLabels": detectedLabels,
 	})
 	p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 }
@@ -1657,7 +1707,6 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}) map[string]interface{} {
 	ts := ""
 	msg := ""
-	labels := map[string]string{}
 
 	for k, v := range vlLine {
 		sv := fmt.Sprintf("%v", v)
@@ -1672,16 +1721,19 @@ func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}) map[string]inte
 			msg = sv
 		case "_stream":
 			// Skip internal VL stream ID
-		default:
-			labels[k] = sv
 		}
 	}
 	if ts == "" {
 		ts = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 
-	// Apply label name translation
-	translatedLabels := p.labelTranslator.TranslateLabelsMap(labels)
+	labels := buildEntryLabels(vlLine)
+	translatedLabels := labels
+	if !p.labelTranslator.IsPassthrough() {
+		translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
+	}
+	ensureDetectedLevel(translatedLabels)
+	ensureSyntheticServiceName(translatedLabels)
 
 	return map[string]interface{}{
 		"streams": []map[string]interface{}{
@@ -1860,7 +1912,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// VL stats_query_range returns Prometheus-compatible format.
 	// Just wrap it in Loki's envelope.
 	// Translate label names (e.g., dots → underscores) in metric labels.
-	body = p.translateStatsResponseLabels(body)
+	body = p.translateStatsResponseLabels(body, r.FormValue("query"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "matrix"))
 }
@@ -1887,7 +1939,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 		return
 	}
 
-	body = p.translateStatsResponseLabels(body)
+	body = p.translateStatsResponseLabels(body, r.FormValue("query"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "vector"))
 }
@@ -2287,10 +2339,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 
 	// VL returns newline-delimited JSON, each line is a log entry.
 	// Loki expects: {"status":"success","data":{"resultType":"streams","result":[...]}}
-	streams := vlLogsToLokiStreams(body)
-
-	// Apply label name translation (e.g., dots → underscores)
-	p.translateStreamLabels(streams)
+	streams := p.vlLogsToLokiStreams(body, r.FormValue("query"))
 
 	// Apply derived fields (extract trace_id etc. from log lines)
 	if len(p.derivedFields) > 0 {
@@ -2351,30 +2400,28 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response) {
 			continue
 		}
 
-		timeStr, _ := entry["_time"].(string)
-		msg, _ := entry["_msg"].(string)
-		if timeStr == "" {
+		timeStr, ok := stringifyEntryValue(entry["_time"])
+		if !ok || timeStr == "" {
+			continue
+		}
+		msg, _ := stringifyEntryValue(entry["_msg"])
+
+		tsNanos, ok := formatEntryTimestamp(timeStr)
+		if !ok {
 			continue
 		}
 
-		ts, err := time.Parse(time.RFC3339Nano, timeStr)
-		if err != nil {
-			continue
+		labels, metadata := p.classifyEntryFields(entry, "")
+		translatedLabels := labels
+		if !p.labelTranslator.IsPassthrough() {
+			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
 		}
-
-		labels := make(map[string]string)
-		for k, v := range entry {
-			if k == "_time" || k == "_msg" || k == "_stream" || k == "_stream_id" {
-				continue
-			}
-			if s, ok := v.(string); ok {
-				labels[p.labelTranslator.ToLoki(k)] = s
-			}
-		}
+		ensureDetectedLevel(translatedLabels)
+		ensureSyntheticServiceName(translatedLabels)
 
 		stream := map[string]interface{}{
-			"stream": labels,
-			"values": [][]string{{strconv.FormatInt(ts.UnixNano(), 10), msg}},
+			"stream": translatedLabels,
+			"values": buildStreamValues(tsNanos, msg, metadata),
 		}
 
 		chunk, _ := json.Marshal(stream)
@@ -2416,20 +2463,24 @@ func (p *Proxy) applyDerivedFields(streams []map[string]interface{}) {
 	}
 
 	for _, stream := range streams {
-		values, ok := stream["values"].([][]string)
+		values, ok := stream["values"].([]interface{})
 		if !ok {
 			continue
 		}
-		labels, _ := stream["stream"].(map[string]string)
+		labels := streamStringMap(stream["stream"])
 		if labels == nil {
 			continue
 		}
 
 		for _, val := range values {
-			if len(val) < 2 {
+			pair, ok := val.([]interface{})
+			if !ok || len(pair) < 2 {
 				continue
 			}
-			line := val[1]
+			line, ok := pair[1].(string)
+			if !ok {
+				continue
+			}
 			for _, cdf := range compiled {
 				matches := cdf.re.FindStringSubmatch(line)
 				if len(matches) > 1 {
@@ -2441,6 +2492,23 @@ func (p *Proxy) applyDerivedFields(streams []map[string]interface{}) {
 				}
 			}
 		}
+	}
+}
+
+func streamStringMap(value interface{}) map[string]string {
+	switch labels := value.(type) {
+	case map[string]string:
+		return labels
+	case map[string]interface{}:
+		result := make(map[string]string, len(labels))
+		for k, v := range labels {
+			if s, ok := v.(string); ok {
+				result[k] = s
+			}
+		}
+		return result
+	default:
+		return nil
 	}
 }
 
@@ -2505,8 +2573,6 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		// Extract _time, _msg, _stream, and remaining fields as labels
 		timeStr, _ := entry["_time"].(string)
 		msg, _ := entry["_msg"].(string)
-		streamStr, _ := entry["_stream"].(string)
-
 		if timeStr == "" {
 			vlEntryPool.Put(entry)
 			continue
@@ -2520,24 +2586,11 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		}
 		tsNanos := strconv.FormatInt(ts.UnixNano(), 10)
 
-		// Use _stream as the stream key, or build from labels
-		streamKey := streamStr
-		if streamKey == "" {
-			streamKey = "{}"
-		}
+		labels := buildEntryLabels(entry)
+		streamKey := canonicalLabelsKey(labels)
 
 		se, ok := streamMap[streamKey]
 		if !ok {
-			labels := parseStreamLabels(streamKey)
-			// Add non-stream fields as labels too
-			for k, v := range entry {
-				if k == "_time" || k == "_msg" || k == "_stream" || k == "_stream_id" {
-					continue
-				}
-				if s, ok := v.(string); ok {
-					labels[k] = s
-				}
-			}
 			se = &streamEntry{
 				Labels: labels,
 				Values: make([][]string, 0),
@@ -2559,6 +2612,172 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		})
 	}
 	return result
+}
+
+func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string) []map[string]interface{} {
+	type streamEntry struct {
+		Labels map[string]string
+		Values []interface{}
+	}
+
+	streamMap := make(map[string]*streamEntry, len(body)/256+1)
+	start := 0
+	for i := 0; i <= len(body); i++ {
+		if i < len(body) && body[i] != '\n' {
+			continue
+		}
+		line := body[start:i]
+		start = i + 1
+
+		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
+			line = line[1:]
+		}
+		for len(line) > 0 && (line[len(line)-1] == ' ' || line[len(line)-1] == '\t' || line[len(line)-1] == '\r') {
+			line = line[:len(line)-1]
+		}
+		if len(line) == 0 {
+			continue
+		}
+
+		entry := vlEntryPool.Get().(map[string]interface{})
+		for k := range entry {
+			delete(entry, k)
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			vlEntryPool.Put(entry)
+			continue
+		}
+
+		timeStr, ok := stringifyEntryValue(entry["_time"])
+		if !ok || timeStr == "" {
+			vlEntryPool.Put(entry)
+			continue
+		}
+		tsNanos, ok := formatEntryTimestamp(timeStr)
+		if !ok {
+			vlEntryPool.Put(entry)
+			continue
+		}
+		msg, _ := stringifyEntryValue(entry["_msg"])
+
+		labels, metadata := p.classifyEntryFields(entry, originalQuery)
+		streamKey := canonicalLabelsKey(labels)
+		se, ok := streamMap[streamKey]
+		if !ok {
+			translatedLabels := labels
+			if !p.labelTranslator.IsPassthrough() {
+				translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
+			}
+			ensureDetectedLevel(translatedLabels)
+			ensureSyntheticServiceName(translatedLabels)
+
+			se = &streamEntry{
+				Labels: translatedLabels,
+				Values: make([]interface{}, 0, 8),
+			}
+			streamMap[streamKey] = se
+		}
+		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, metadata))
+		vlEntryPool.Put(entry)
+	}
+
+	result := make([]map[string]interface{}, 0, len(streamMap))
+	for _, se := range streamMap {
+		result = append(result, map[string]interface{}{
+			"stream": se.Labels,
+			"values": se.Values,
+		})
+	}
+	return result
+}
+
+func stringifyEntryValue(value interface{}) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	switch v := value.(type) {
+	case string:
+		return v, true
+	default:
+		return fmt.Sprintf("%v", v), true
+	}
+}
+
+func formatEntryTimestamp(timeStr string) (string, bool) {
+	if parsed, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
+		return strconv.FormatInt(parsed.UnixNano(), 10), true
+	}
+	if parsed, err := time.Parse(time.RFC3339, timeStr); err == nil {
+		return strconv.FormatInt(parsed.UnixNano(), 10), true
+	}
+	if _, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
+		return timeStr, true
+	}
+	return "", false
+}
+
+func buildStreamValues(ts, msg string, metadata map[string]interface{}) []interface{} {
+	return []interface{}{buildStreamValue(ts, msg, metadata)}
+}
+
+func buildStreamValue(ts, msg string, metadata map[string]interface{}) interface{} {
+	// Current Grafana Loki datasource / Drilldown query paths still reject
+	// 3-tuple log values with metadata objects. Keep canonical 2-tuple values
+	// here and expose parsed fields through dedicated Drilldown resources.
+	_ = metadata
+	return []interface{}{ts, msg}
+}
+
+func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string) (map[string]string, map[string]interface{}) {
+	labels := parseStreamLabels(asString(entry["_stream"]))
+	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
+		labels["level"] = value
+	}
+	ensureDetectedLevel(labels)
+	ensureSyntheticServiceName(labels)
+
+	var (
+		parsedFields             map[string]string
+		structuredMetadataFields map[string]string
+	)
+	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
+
+	for key, value := range entry {
+		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+			continue
+		}
+		if _, exists := labels[key]; exists {
+			continue
+		}
+		stringValue, ok := stringifyEntryValue(value)
+		if !ok || strings.TrimSpace(stringValue) == "" {
+			continue
+		}
+		lokiKey := p.labelTranslator.ToLoki(key)
+		if lokiKey == "" {
+			continue
+		}
+		if classifyAsParsed {
+			if parsedFields == nil {
+				parsedFields = make(map[string]string, 4)
+			}
+			parsedFields[lokiKey] = stringValue
+			continue
+		}
+		if structuredMetadataFields == nil {
+			structuredMetadataFields = make(map[string]string, 4)
+		}
+		structuredMetadataFields[lokiKey] = stringValue
+	}
+
+	metadata := map[string]interface{}{}
+	if len(structuredMetadataFields) > 0 {
+		metadata["structuredMetadata"] = structuredMetadataFields
+	}
+	if len(parsedFields) > 0 {
+		metadata["parsed"] = parsedFields
+	}
+	return labels, metadata
 }
 
 // parseStreamLabels parses {key="value",key2="value2"} into a map.
@@ -2780,11 +2999,18 @@ func isStatsQuery(logsqlQuery string) bool {
 
 func formatVLTimestamp(ts string) string {
 	// Loki sends Unix timestamps (seconds or nanoseconds).
-	// VL accepts RFC3339 or relative timestamps.
-	// If it's a number, convert; otherwise pass through.
+	// Grafana drilldown resource endpoints send RFC3339 timestamps, while
+	// query endpoints usually send numeric Unix values. Normalize RFC3339 to
+	// Unix nanoseconds so every VL endpoint sees the same time format.
 	if _, err := strconv.ParseFloat(ts, 64); err == nil {
-		// Already a number — VL accepts Unix timestamps in seconds
+		// Already numeric — preserve caller precision.
 		return ts
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+		return strconv.FormatInt(parsed.UnixNano(), 10)
+	}
+	if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
+		return strconv.FormatInt(parsed.UnixNano(), 10)
 	}
 	return ts
 }
@@ -3065,39 +3291,148 @@ func truncateQuery(q string, maxLen int) string {
 
 // translateQuery translates a LogQL query to LogsQL, applying label name translation.
 func (p *Proxy) translateQuery(logql string) (string, error) {
+	normalized := strings.TrimSpace(logql)
+	switch normalized {
+	case "", "*", `"*"`, "`*`":
+		return "*", nil
+	}
+
+	labelFn := p.labelTranslator.ToVL
+	var (
+		translated string
+		err        error
+	)
 	if p.streamFieldsMap != nil {
-		var labelFn translator.LabelTranslateFunc
-		if !p.labelTranslator.IsPassthrough() {
-			labelFn = p.labelTranslator.ToVL
-		}
-		return translator.TranslateLogQLWithStreamFields(logql, labelFn, p.streamFieldsMap)
+		translated, err = translator.TranslateLogQLWithStreamFields(logql, labelFn, p.streamFieldsMap)
+	} else {
+		translated, err = translator.TranslateLogQLWithLabels(logql, labelFn)
 	}
-	if p.labelTranslator.IsPassthrough() {
-		return translator.TranslateLogQL(logql)
+	if err != nil {
+		return "", err
 	}
-	return translator.TranslateLogQLWithLabels(logql, p.labelTranslator.ToVL)
+	trimmed := strings.TrimSpace(translated)
+	if strings.HasPrefix(trimmed, "|") {
+		return "* " + trimmed, nil
+	}
+	return translated, nil
 }
 
-// translateStreamLabels applies label name translation to all streams in a Loki-format result.
-func (p *Proxy) translateStreamLabels(streams []map[string]interface{}) {
-	if p.labelTranslator.IsPassthrough() {
-		return
+var (
+	jsonParserStageRE   = regexp.MustCompile(`\|\s*json(?:\s+[^|]+)?`)
+	logfmtParserStageRE = regexp.MustCompile(`\|\s*logfmt(?:\s+[^|]+)?`)
+)
+
+func hasParserStage(logql, parser string) bool {
+	re := jsonParserStageRE
+	if parser == "logfmt" {
+		re = logfmtParserStageRE
 	}
-	for _, stream := range streams {
-		if labels, ok := stream["stream"].(map[string]string); ok {
-			stream["stream"] = p.labelTranslator.TranslateLabelsMap(labels)
+	return re.MatchString(logql)
+}
+
+func removeParserStage(logql, parser string) string {
+	re := jsonParserStageRE
+	if parser == "logfmt" {
+		re = logfmtParserStageRE
+	}
+	logql = re.ReplaceAllString(logql, "")
+	for strings.Contains(logql, "  ") {
+		logql = strings.ReplaceAll(logql, "  ", " ")
+	}
+	return strings.TrimSpace(logql)
+}
+
+func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end string) string {
+	if !hasParserStage(logql, "json") || !hasParserStage(logql, "logfmt") {
+		return logql
+	}
+
+	baseQuery := extractParserProbeQuery(logql)
+	if baseQuery == "" {
+		baseQuery = logql
+	}
+	baseQuery = stripFieldDetectionStages(defaultQuery(baseQuery))
+	logsqlQuery, err := p.translateQuery(baseQuery)
+	if err != nil {
+		return logql
+	}
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	params.Set("limit", "25")
+	if start != "" {
+		params.Set("start", formatVLTimestamp(start))
+	}
+	if end != "" {
+		params.Set("end", formatVLTimestamp(end))
+	}
+
+	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
+	if err != nil {
+		return logql
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil || len(body) == 0 {
+		return logql
+	}
+
+	jsonHits := 0
+	logfmtHits := 0
+	startIdx := 0
+	for i := 0; i <= len(body); i++ {
+		if i < len(body) && body[i] != '\n' {
+			continue
+		}
+		line := strings.TrimSpace(string(body[startIdx:i]))
+		startIdx = i + 1
+		if line == "" {
+			continue
+		}
+
+		var entry map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		msg, _ := entry["_msg"].(string)
+		if msg == "" {
+			continue
+		}
+
+		var parsedJSON map[string]interface{}
+		if json.Unmarshal([]byte(msg), &parsedJSON) == nil && len(parsedJSON) > 0 {
+			jsonHits++
+		}
+		if fields := parseLogfmtFields(msg); len(fields) > 0 {
+			logfmtHits++
 		}
 	}
+
+	switch {
+	case jsonHits == 0 && logfmtHits == 0:
+		return logql
+	case jsonHits >= logfmtHits:
+		return removeParserStage(logql, "logfmt")
+	default:
+		return removeParserStage(logql, "json")
+	}
+}
+
+var metricParserProbeRE = regexp.MustCompile(`(?s)(?:count_over_time|bytes_over_time|rate|bytes_rate|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time|quantile_over_time)\((.*?)\[[^][]+\]\)`)
+
+func extractParserProbeQuery(logql string) string {
+	matches := metricParserProbeRE.FindStringSubmatch(logql)
+	if len(matches) == 2 {
+		return strings.TrimSpace(matches[1])
+	}
+	return strings.TrimSpace(logql)
 }
 
 // translateStatsResponseLabels translates label names in VL stats responses
 // (both vector and matrix result types) from VL field names (dots) to
 // Loki-compatible label names (underscores).
-func (p *Proxy) translateStatsResponseLabels(body []byte) []byte {
-	if p.labelTranslator.IsPassthrough() {
-		return body
-	}
-
+func (p *Proxy) translateStatsResponseLabels(body []byte, originalQuery string) []byte {
 	var resp map[string]interface{}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return body
@@ -3131,7 +3466,22 @@ func (p *Proxy) translateStatsResponseLabels(body []byte) []byte {
 			if metric, ok := metricRaw.(map[string]interface{}); ok {
 				translated := make(map[string]interface{}, len(metric))
 				for k, v := range metric {
-					translated[p.labelTranslator.ToLoki(k)] = v
+					if k == "__name__" {
+						continue
+					}
+					lokiKey := k
+					if !p.labelTranslator.IsPassthrough() {
+						lokiKey = p.labelTranslator.ToLoki(k)
+					}
+					translated[lokiKey] = v
+				}
+				if strings.Contains(originalQuery, "detected_level") {
+					if _, ok := translated["detected_level"]; !ok {
+						if value, ok := translated["level"]; ok {
+							translated["detected_level"] = value
+							delete(translated, "level")
+						}
+					}
 				}
 				entry["metric"] = translated
 			}

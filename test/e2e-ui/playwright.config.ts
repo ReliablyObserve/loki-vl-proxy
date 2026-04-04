@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+const explicitExecutablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
+
 export default defineConfig({
   testDir: "./tests",
   timeout: 60_000,
@@ -15,7 +17,12 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { browserName: "chromium" },
+      use: {
+        browserName: "chromium",
+        ...(explicitExecutablePath
+          ? { launchOptions: { executablePath: explicitExecutablePath } }
+          : {}),
+      },
     },
   ],
 });

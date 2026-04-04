@@ -1,3 +1,13 @@
 loki-vl-proxy
 *.exe
 /dist/
+.gocache/
+.gomodcache/
+.gopath/
+.npm-cache/
+dist-check/
+test/e2e-ui/.playwright-browsers/
+test/e2e-ui/node_modules/
+test/e2e-ui/playwright-report/
+test/e2e-ui/test-results/
+.tmp_query_check.go

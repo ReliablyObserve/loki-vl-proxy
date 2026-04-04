@@ -85,8 +85,9 @@ func TestLabelTranslator_Underscores(t *testing.T) {
 		{"service_name", "service.name"},
 		{"k8s_pod_name", "k8s.pod.name"},
 		{"k8s_namespace_name", "k8s.namespace.name"},
-		{"level", "level"},                  // not in known map, passthrough
-		{"custom_field", "custom_field"},     // not in known map, passthrough
+		{"level", "level"}, // not in known map, passthrough
+		{"detected_level", "level"},
+		{"custom_field", "custom_field"}, // not in known map, passthrough
 		{"host_name", "host.name"},
 		{"container_name", "container.name"},
 	}
@@ -96,6 +97,13 @@ func TestLabelTranslator_Underscores(t *testing.T) {
 				t.Errorf("ToVL(%q) = %q, want %q", tt.lokiLabel, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestLabelTranslator_ToVL_DetectedLevelAliasInPassthrough(t *testing.T) {
+	lt := NewLabelTranslator(LabelStylePassthrough, nil)
+	if got := lt.ToVL("detected_level"); got != "level" {
+		t.Fatalf("ToVL(detected_level) = %q, want level", got)
 	}
 }
 
@@ -145,18 +153,18 @@ func TestLabelTranslator_TranslateLabelsMap(t *testing.T) {
 	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
 
 	input := map[string]string{
-		"service.name":       "auth",
-		"k8s.pod.name":       "auth-pod-123",
-		"level":              "error",
+		"service.name":           "auth",
+		"k8s.pod.name":           "auth-pod-123",
+		"level":                  "error",
 		"deployment.environment": "production",
 	}
 	result := lt.TranslateLabelsMap(input)
 
 	expected := map[string]string{
-		"service_name":            "auth",
-		"k8s_pod_name":            "auth-pod-123",
-		"level":                   "error",
-		"deployment_environment":  "production",
+		"service_name":           "auth",
+		"k8s_pod_name":           "auth-pod-123",
+		"level":                  "error",
+		"deployment_environment": "production",
 	}
 	for k, v := range expected {
 		if result[k] != v {

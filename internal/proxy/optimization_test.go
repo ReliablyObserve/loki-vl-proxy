@@ -26,8 +26,12 @@ func TestOptimization_VLLogsToLokiStreams_Basic(t *testing.T) {
 	if len(streams) == 0 {
 		t.Fatal("expected at least 1 stream")
 	}
+	if len(streams) != 2 {
+		t.Fatalf("expected level-aware stream split into 2 streams, got %d", len(streams))
+	}
 
-	// Check stream has correct labels
+	totalValues := 0
+	seenLevels := map[string]bool{}
 	for _, s := range streams {
 		labels, ok := s["stream"].(map[string]string)
 		if !ok {
@@ -36,14 +40,19 @@ func TestOptimization_VLLogsToLokiStreams_Basic(t *testing.T) {
 		if labels["app"] != "nginx" {
 			t.Errorf("expected app=nginx, got %q", labels["app"])
 		}
+		if labels["service_name"] != "nginx" {
+			t.Errorf("expected synthetic service_name=nginx, got %q", labels["service_name"])
+		}
+		seenLevels[labels["level"]] = true
 
 		values, ok := s["values"].([][]string)
 		if !ok {
 			t.Fatalf("expected values as [][]string, got %T", s["values"])
 		}
-		if len(values) != 2 {
-			t.Errorf("expected 2 values (2 lines), got %d", len(values))
+		if len(values) != 1 {
+			t.Errorf("expected 1 value per effective stream, got %d", len(values))
 		}
+		totalValues += len(values)
 		// First value should be nanosecond timestamp
 		if len(values[0]) != 2 {
 			t.Fatalf("expected [ts, line], got len=%d", len(values[0]))
@@ -51,12 +60,15 @@ func TestOptimization_VLLogsToLokiStreams_Basic(t *testing.T) {
 		if len(values[0][0]) < 19 {
 			t.Errorf("timestamp should be nanoseconds (19+ digits), got %q", values[0][0])
 		}
-		if values[0][1] != "hello world" {
-			t.Errorf("expected 'hello world', got %q", values[0][1])
+		if values[0][1] != "hello world" && values[0][1] != "goodbye" {
+			t.Errorf("unexpected log line %q", values[0][1])
 		}
-		if values[1][1] != "goodbye" {
-			t.Errorf("expected 'goodbye', got %q", values[1][1])
-		}
+	}
+	if totalValues != 2 {
+		t.Fatalf("expected 2 total log values, got %d", totalValues)
+	}
+	if !seenLevels["info"] || !seenLevels["error"] {
+		t.Fatalf("expected info and error streams, got %v", seenLevels)
 	}
 }
 
@@ -254,14 +266,14 @@ func TestOptimization_FormatVLStep(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"60", "60s"},       // bare number → append "s"
-		{"3600", "3600s"},   // large number
-		{"0.5", "0.5s"},     // float
-		{"1m", "1m"},        // already duration
-		{"5s", "5s"},        // already duration
-		{"1h30m", "1h30m"},  // complex duration
-		{"", ""},            // empty
-		{"  60  ", "60s"},   // whitespace trimmed
+		{"60", "60s"},      // bare number → append "s"
+		{"3600", "3600s"},  // large number
+		{"0.5", "0.5s"},    // float
+		{"1m", "1m"},       // already duration
+		{"5s", "5s"},       // already duration
+		{"1h30m", "1h30m"}, // complex duration
+		{"", ""},           // empty
+		{"  60  ", "60s"},  // whitespace trimmed
 	}
 
 	for _, tt := range tests {

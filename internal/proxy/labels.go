@@ -78,6 +78,9 @@ func (lt *LabelTranslator) ToVL(lokiLabel string) string {
 	if mapped, ok := lt.lokiToVL[lokiLabel]; ok {
 		return mapped
 	}
+	if lokiLabel == "detected_level" {
+		return "level"
+	}
 
 	switch lt.style {
 	case LabelStyleUnderscores:
@@ -151,34 +154,34 @@ func SanitizeLabelName(name string) string {
 // label-style=underscores and VL stores OTel-style dots.
 var knownUnderscoreToDot = map[string]string{
 	// OTel resource attributes
-	"service_name":                   "service.name",
-	"service_namespace":              "service.namespace",
-	"service_version":                "service.version",
-	"service_instance_id":            "service.instance.id",
-	"deployment_environment":         "deployment.environment",
-	"deployment_environment_name":    "deployment.environment.name",
-	"telemetry_sdk_name":             "telemetry.sdk.name",
-	"telemetry_sdk_language":         "telemetry.sdk.language",
-	"telemetry_sdk_version":          "telemetry.sdk.version",
+	"service_name":                "service.name",
+	"service_namespace":           "service.namespace",
+	"service_version":             "service.version",
+	"service_instance_id":         "service.instance.id",
+	"deployment_environment":      "deployment.environment",
+	"deployment_environment_name": "deployment.environment.name",
+	"telemetry_sdk_name":          "telemetry.sdk.name",
+	"telemetry_sdk_language":      "telemetry.sdk.language",
+	"telemetry_sdk_version":       "telemetry.sdk.version",
 
 	// Kubernetes attributes
-	"k8s_pod_name":        "k8s.pod.name",
-	"k8s_pod_uid":         "k8s.pod.uid",
-	"k8s_namespace_name":  "k8s.namespace.name",
-	"k8s_node_name":       "k8s.node.name",
-	"k8s_container_name":  "k8s.container.name",
-	"k8s_deployment_name": "k8s.deployment.name",
-	"k8s_daemonset_name":  "k8s.daemonset.name",
-	"k8s_statefulset_name":"k8s.statefulset.name",
-	"k8s_replicaset_name": "k8s.replicaset.name",
-	"k8s_job_name":        "k8s.job.name",
-	"k8s_cronjob_name":    "k8s.cronjob.name",
-	"k8s_cluster_name":    "k8s.cluster.name",
+	"k8s_pod_name":         "k8s.pod.name",
+	"k8s_pod_uid":          "k8s.pod.uid",
+	"k8s_namespace_name":   "k8s.namespace.name",
+	"k8s_node_name":        "k8s.node.name",
+	"k8s_container_name":   "k8s.container.name",
+	"k8s_deployment_name":  "k8s.deployment.name",
+	"k8s_daemonset_name":   "k8s.daemonset.name",
+	"k8s_statefulset_name": "k8s.statefulset.name",
+	"k8s_replicaset_name":  "k8s.replicaset.name",
+	"k8s_job_name":         "k8s.job.name",
+	"k8s_cronjob_name":     "k8s.cronjob.name",
+	"k8s_cluster_name":     "k8s.cluster.name",
 
 	// Cloud attributes
 	"cloud_provider":          "cloud.provider",
 	"cloud_platform":          "cloud.platform",
-	"cloud_region":             "cloud.region",
+	"cloud_region":            "cloud.region",
 	"cloud_availability_zone": "cloud.availability_zone",
 	"cloud_account_id":        "cloud.account.id",
 
@@ -212,9 +215,9 @@ var knownUnderscoreToDot = map[string]string{
 	"net_peer_port": "net.peer.port",
 
 	// Container
-	"container_id":      "container.id",
-	"container_name":    "container.name",
-	"container_runtime": "container.runtime",
+	"container_id":         "container.id",
+	"container_name":       "container.name",
+	"container_runtime":    "container.runtime",
 	"container_image_name": "container.image.name",
 	"container_image_tag":  "container.image.tag",
 }

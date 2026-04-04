@@ -310,7 +310,7 @@ func TestBinaryOps_Extended(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			result, ok := tryTranslateBinaryMetricExpr(tc.logql)
+			result, ok := tryTranslateBinaryMetricExpr(tc.logql, nil)
 			if !ok {
 				t.Errorf("expected binary expression to be recognized: %q", tc.logql)
 				return

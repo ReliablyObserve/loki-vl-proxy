@@ -81,26 +81,67 @@ func TestAdminStubs_FormatQuery(t *testing.T) {
 	}
 }
 
+func TestAdminStubs_DrilldownLimits(t *testing.T) {
+	p := newGapTestProxy(t, "http://unused")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/drilldown-limits", nil)
+	p.handleDrilldownLimits(w, r)
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("drilldown-limits should return JSON: %v", err)
+	}
+	if resp["maxLines"] == nil || resp["maxDetectedFields"] == nil {
+		t.Fatalf("drilldown-limits missing expected keys: %v", resp)
+	}
+	limits, ok := resp["limits"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("drilldown-limits must include Loki-style limits object: %v", resp)
+	}
+	if limits["retention_period"] == nil || limits["discover_service_name"] == nil || limits["log_level_fields"] == nil {
+		t.Fatalf("drilldown-limits missing Loki config fields required by Logs Drilldown: %v", resp)
+	}
+	if resp["pattern_ingester_enabled"] == nil || resp["version"] == nil {
+		t.Fatalf("drilldown-limits missing Loki config top-level fields: %v", resp)
+	}
+}
+
+func TestTranslateQuery_EmptySelectorWithParsersUsesWildcardBase(t *testing.T) {
+	p := newGapTestProxy(t, "http://unused")
+	got, err := p.translateQuery(`{} | json | logfmt | drop __error__, __error_details__`)
+	if err != nil {
+		t.Fatalf("translateQuery returned error: %v", err)
+	}
+	if !strings.HasPrefix(got, "* ") {
+		t.Fatalf("expected wildcard base before parser pipeline, got %q", got)
+	}
+}
+
+func TestTranslateQuery_ExplicitWildcardStaysWildcard(t *testing.T) {
+	p := newGapTestProxy(t, "http://unused")
+	for _, input := range []string{"*", `"*"`, "`*`"} {
+		got, err := p.translateQuery(input)
+		if err != nil {
+			t.Fatalf("translateQuery(%q) returned error: %v", input, err)
+		}
+		if got != "*" {
+			t.Fatalf("translateQuery(%q) = %q, want wildcard passthrough", input, got)
+		}
+	}
+}
+
 // =============================================================================
-// Priority 1: handleDetectedFields 4xx fallback to wildcard
+// Priority 1: handleDetectedFields parses queried log lines
 // =============================================================================
 
-func TestDetectedFields_VL4xx_FallsBackToWildcard(t *testing.T) {
+func TestDetectedFields_QueriesLogLines(t *testing.T) {
 	callCount := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
-		query := r.URL.Query().Get("query")
-		if query != "*" {
-			// First call with translated query → 400
-			w.WriteHeader(http.StatusBadRequest)
-			return
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("expected detected_fields to query log lines, got %s", r.URL.Path)
 		}
-		// Second call with wildcard → success
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"values": []map[string]interface{}{
-				{"value": "app", "hits": 10},
-			},
-		})
+		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"status\":200}","_stream":"{app=\"nginx\"}","app":"nginx"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -110,11 +151,11 @@ func TestDetectedFields_VL4xx_FallsBackToWildcard(t *testing.T) {
 	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?"+q.Encode(), nil)
 	p.handleDetectedFields(w, r)
 
-	if callCount < 2 {
-		t.Errorf("expected 2 VL calls (first 400, then wildcard fallback), got %d", callCount)
+	if callCount != 1 {
+		t.Errorf("expected 1 VL call, got %d", callCount)
 	}
 	if w.Code != 200 {
-		t.Errorf("expected 200 after wildcard fallback, got %d", w.Code)
+		t.Errorf("expected 200 after detected field scan, got %d", w.Code)
 	}
 }
 
@@ -130,10 +171,10 @@ func TestIsStatsQuery_Comprehensive(t *testing.T) {
 		{`app:=nginx | stats rate()`, true},
 		{`app:=nginx | rate(`, true},
 		{`app:=nginx | count(`, true},
-		{`app:=nginx ~"stats query"`, false},           // inside quotes
-		{`app:=nginx ~"| stats rate()"`, false},         // pipe inside quotes
-		{`app:=nginx`, false},                           // no stats
-		{`app:=nginx ~"error" | stats count()`, true},   // stats after filter
+		{`app:=nginx ~"stats query"`, false},          // inside quotes
+		{`app:=nginx ~"| stats rate()"`, false},       // pipe inside quotes
+		{`app:=nginx`, false},                         // no stats
+		{`app:=nginx ~"error" | stats count()`, true}, // stats after filter
 		{``, false},
 	}
 	for _, tt := range tests {
@@ -152,7 +193,7 @@ func TestIsStatsQuery_Comprehensive(t *testing.T) {
 
 func TestParseTimestampToUnix(t *testing.T) {
 	tests := []struct {
-		input    string
+		input      string
 		wantApprox float64
 	}{
 		{"2024-01-15T10:30:00Z", 1705314600},
@@ -251,26 +292,29 @@ func TestDelete_VLReturns500_PropagatesError(t *testing.T) {
 
 func TestPatterns_VLReturnsLines_ExtractsPatterns(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		for i := 0; i < 20; i++ {
-			fmt.Fprintf(w, `{"_time":"2024-01-15T10:30:%02d.000Z","_msg":"GET /api/v1/users 200 %dms","_stream":"{}","app":"nginx"}`+"\n", i, i*10)
-		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"nginx","level":"info"}` + "\n"))
+		w.Write([]byte(`{"_time":"2026-04-04T10:00:10Z","_msg":"GET /api/users 200 22ms","app":"nginx","level":"info"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
-	q := url.Values{"query": {`{app="nginx"}`}, "start": {"1"}, "end": {"2"}}
+	q := url.Values{"query": {`{app="nginx"}`}, "start": {"1"}, "end": {"2"}, "step": {"15s"}}
 	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?"+q.Encode(), nil)
 	p.handlePatterns(w, r)
 
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected patterns endpoint to return 200, got %d", w.Code)
+	}
 	var resp map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp["status"] != "success" {
-		t.Errorf("expected success, got %v", resp["status"])
+		t.Fatalf("expected status=success, got %v", resp)
 	}
-	data, _ := resp["data"].([]interface{})
-	if len(data) == 0 {
-		t.Error("expected extracted patterns from 20 log lines, got empty")
+	data, ok := resp["data"].([]interface{})
+	if !ok || len(data) == 0 {
+		t.Fatalf("expected extracted patterns, got %v", resp)
 	}
 }
 

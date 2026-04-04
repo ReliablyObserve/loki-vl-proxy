@@ -17,7 +17,7 @@ version: "3.8"
 services:
   # Reference Loki instance (ground truth)
   loki:
-    image: grafana/loki:3.7.1
+    image: ${LOKI_IMAGE:-grafana/loki:3.7.1}
     container_name: e2e-loki
     ports:
       - "3101:3100"
@@ -29,7 +29,7 @@ services:
 
   # VictoriaLogs backend
   victorialogs:
-    image: victoriametrics/victoria-logs:v1.49.0
+    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.49.0}
     container_name: e2e-victorialogs
     ports:
       - "9428:9428"
@@ -95,7 +95,7 @@ services:
 
   # Grafana with 3 datasources for manual side-by-side comparison
   grafana:
-    image: grafana/grafana:12.4.2
+    image: ${GRAFANA_IMAGE:-grafana/grafana:12.4.2}
     container_name: e2e-grafana
     ports:
       - "3002:3000"
@@ -108,6 +108,7 @@ services:
     depends_on:
       - loki
       - loki-vl-proxy
+      - loki-vl-proxy-underscore
 
 volumes:
   vl-data:

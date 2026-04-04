@@ -1,0 +1,81 @@
+name: Loki Compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "15 3 * * 1"
+
+jobs:
+  matrix-source:
+    runs-on: ubuntu-latest
+    outputs:
+      loki_versions: ${{ steps.matrix.outputs.loki_versions }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: matrix
+        run: echo "loki_versions=$(jq -c '.stack.loki.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
+
+  pinned:
+    if: github.event_name != 'schedule'
+    needs: matrix-source
+    runs-on: ubuntu-latest
+    env:
+      LOKI_IMAGE: grafana/loki:3.7.1
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
+      GRAFANA_IMAGE: grafana/grafana:12.4.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+      - name: Start pinned stack
+        working-directory: test/e2e-compat
+        run: |
+          docker compose up -d --build
+          sleep 30
+      - name: Run Loki compatibility score
+        run: go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
+      - name: Tear down pinned stack
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose down -v
+
+  matrix:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    needs: matrix-source
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        loki_version: ${{ fromJson(needs.matrix-source.outputs.loki_versions) }}
+    env:
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
+      GRAFANA_IMAGE: grafana/grafana:12.4.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+      - name: Start matrix stack
+        working-directory: test/e2e-compat
+        env:
+          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+        run: |
+          docker compose up -d --build
+          sleep 30
+      - name: Run Loki compatibility score
+        env:
+          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+        run: go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
+      - name: Tear down matrix stack
+        if: always()
+        working-directory: test/e2e-compat
+        env:
+          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+        run: docker compose down -v

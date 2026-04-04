@@ -20,6 +20,31 @@
 | `GET /loki/api/v1/format_query` | Implemented | - (passthrough) | - | 1 |
 | `WS /loki/api/v1/tail` | Implemented | `/select/logsql/tail` (WebSocket->NDJSON) | - | 2 |
 
+### Drilldown Response Shaping
+
+For Grafana Logs Drilldown, log query responses keep real stream labels in `stream` and emit per-entry VictoriaLogs fields as Loki-compatible entry metadata:
+
+- Query-time parsed fields are emitted in the third value element under `parsed`.
+- Non-stream entry fields from raw VictoriaLogs queries are emitted under `structuredMetadata`.
+- Synthetic Loki compatibility labels such as `service_name` and `detected_level` stay available on the stream.
+
+Example `query_range` log value:
+
+```json
+[
+  "1775325574231552000",
+  "{\"method\":\"GET\",\"path\":\"/metrics\",\"status\":200,\"duration_ms\":2}",
+  {
+    "parsed": {
+      "duration_ms": "2",
+      "method": "GET",
+      "path": "/metrics",
+      "status": "200"
+    }
+  }
+]
+```
+
 ## Delete Endpoint (Exception)
 
 | Endpoint | Method | VL Backend |

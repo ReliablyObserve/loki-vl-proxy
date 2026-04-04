@@ -201,17 +201,12 @@ func TestGap_VolumeRange_QueriesVLHits(t *testing.T) {
 
 func TestGap_DetectedFieldValues_Endpoint(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		field := r.URL.Query().Get("field")
-		if field != "level" {
-			t.Errorf("expected field=level, got %q", field)
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("expected detected field values to scan query results, got %s", r.URL.Path)
 		}
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"values": []map[string]interface{}{
-				{"value": "info", "hits": 1000},
-				{"value": "error", "hits": 50},
-				{"value": "warn", "hits": 200},
-			},
-		})
+		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"level=info msg=\"ok\"","_stream":"{app=\"test\"}","app":"test"}` + "\n"))
+		w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"level=error msg=\"boom\"","_stream":"{app=\"test\"}","app":"test"}` + "\n"))
+		w.Write([]byte(`{"_time":"2026-04-04T17:18:51.971082Z","_msg":"level=warn msg=\"slow\"","_stream":"{app=\"test\"}","app":"test"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -348,6 +343,7 @@ func TestCoverage_AllRoutesRegistered(t *testing.T) {
 		"/loki/api/v1/index/volume_range",
 		"/loki/api/v1/detected_fields",
 		"/loki/api/v1/detected_field/level/values",
+		"/loki/api/v1/drilldown-limits",
 		"/loki/api/v1/patterns",
 		"/loki/api/v1/tail",
 		"/loki/api/v1/status/buildinfo",
@@ -359,8 +355,8 @@ func TestCoverage_AllRoutesRegistered(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", ep, nil)
 		mux.ServeHTTP(w, r)
-		// Should not return 404 (mux default)
-		if w.Code == http.StatusNotFound {
+		// Should not return 404 (mux default), except for intentionally unsupported endpoints.
+		if w.Code == http.StatusNotFound && ep != "/loki/api/v1/patterns" {
 			t.Errorf("endpoint %s returned 404 — not registered", ep)
 		}
 	}
@@ -468,10 +464,11 @@ func TestCoverage_FormatVLTimestamp(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"1234567890", "1234567890"},                     // numeric seconds
-		{"1234567890.123", "1234567890.123"},             // numeric float
-		{"2024-01-15T10:30:00Z", "2024-01-15T10:30:00Z"}, // non-numeric passthrough
-		{"now-5m", "now-5m"},                             // relative passthrough
+		{"1234567890", "1234567890"},                              // numeric seconds
+		{"1234567890.123", "1234567890.123"},                      // numeric float
+		{"2024-01-15T10:30:00Z", "1705314600000000000"},           // RFC3339 → unix ns
+		{"2024-01-15T10:30:00.123456789Z", "1705314600123456789"}, // RFC3339Nano → unix ns
+		{"now-5m", "now-5m"},                                      // relative passthrough
 	}
 	for _, tc := range tests {
 		got := formatVLTimestamp(tc.input)
