@@ -5,6 +5,37 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-04-04
+
+### Performance
+
+- **Buffer pool for JSON encoding**: `marshalJSON()` uses `sync.Pool`-backed `bytes.Buffer` (64KB cap) for all JSON response encoding, reducing allocations across all handlers
+- **Pooled response body reads**: `readBodyPooled()` reuses buffers for `io.ReadAll` paths
+- **GOGC=200**: Helm chart sets `GOGC=200` (halves GC frequency for proxy workloads with short-lived allocations)
+- **sync.Pool for NDJSON**: Entry maps pooled and reused across log line parsing (49% less memory)
+- **Connection pool tuning**: `MaxIdleConnsPerHost=256` (was Go default 2), prevents port exhaustion at high concurrency
+- **Results**: 39K req/s at 200 concurrent (no-cache), up from 8K before optimizations (+388% total improvement)
+
+### Features
+
+- **Complete Helm chart**: 11 templates — deployment, service, HPA, PDB, ServiceMonitor, ingress, HTTPRoute (Gateway API), NetworkPolicy, PVC, headless service for peer cache
+- **GOMEMLIMIT auto-calc**: Calculates GOMEMLIMIT as configurable % of `resources.limits.memory` (default 70%)
+- **Go runtime metrics**: `/metrics` exposes `go_memstats_alloc_bytes`, `go_memstats_sys_bytes`, `go_goroutines`, `go_gc_cycles_total`
+- **Peer cache design**: Architecture doc for distributed L1.5 cache across replicas via headless service + consistent hashing
+
+### Security
+
+- **Rate limit bypass fixed**: `ClientID()` uses `RemoteAddr` (not spoofable `X-Forwarded-For`)
+- **SECURITY.md**: Vulnerability reporting policy, security features documented
+- **CONTRIBUTING.md**: Development workflow, code style, areas for contribution
+- **Issue templates**: Bug report and feature request templates
+
+### Tests
+
+- 529 total tests (30 new coverage gap tests covering admin stubs, fallback paths, VL error propagation, label round-trips, Unicode, metrics recording)
+- Performance regression tests: connection pool, memory leak detection, buffer pool safety
+- CI benchmark job with artifact upload and regression gate
+
 ## [0.18.0] - 2026-04-04
 
 ### Security Fixes

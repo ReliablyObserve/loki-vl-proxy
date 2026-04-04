@@ -25,7 +25,7 @@ Measured on Apple M3 Max (14 cores), Go 1.25, `-benchmem`.
 |---|---|---|---|---|---|---|---|
 | low (100 rps) | 1,000 | 10 | 8,062 req/s | 124 us | 136 MB | 0.9 MB | 0 |
 | medium (1K rps) | 5,000 | 50 | 12,465 req/s | 80 us | 572 MB | 1.3 MB | 0 |
-| high (10K rps) | 20,000 | 200 | 33,659 req/s | 30 us | 1,399 MB | 7.2 MB | 0 |
+| high (10K rps) | 20,000 | 200 | 39,057 req/s | 26 us | 1,331 MB | 8.7 MB | 0 |
 
 Key observations:
 - **Live heap stays <10 MB** even at 20K requests — GC keeps up
@@ -50,7 +50,7 @@ Measured from load tests (proxy overhead only, excludes network I/O):
 | 100 | <1% | ~10 MB | Idle, mostly cache hits |
 | 1,000 | ~8% | ~20 MB | Mix of cache hits/misses |
 | 10,000 | ~30% | ~50 MB | Significant cache miss rate, backend-bound |
-| 30,000+ | ~100% | ~100 MB | CPU-bound, needs horizontal scaling |
+| 40,000+ | ~100% | ~100 MB | CPU-bound, needs horizontal scaling |
 
 The proxy is CPU-bound at high load. Memory usage is stable — the cache has a fixed maximum size (configurable via `-cache-max`). Scaling strategy:
 
