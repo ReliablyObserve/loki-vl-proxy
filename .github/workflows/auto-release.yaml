@@ -38,9 +38,32 @@ jobs:
             exit 0
           fi
 
-          BUMP="patch"
-          echo "$COMMITS" | grep -qE "^feat(\(|:)" && BUMP="minor"
-          echo "$COMMITS" | grep -qE "BREAKING CHANGE|^feat.*!:|^fix.*!:" && BUMP="major"
+          # Smart version bump based on commit scope + impact
+          # - BREAKING CHANGE → major
+          # - feat touching translator/proxy/cache/middleware → minor (core functionality)
+          # - feat touching only docs/ci/helm → patch
+          # - fix → patch
+          # - docs/ci/chore only → no release
+          BUMP="none"
+          FILES_CHANGED=$(git diff --name-only "${LATEST_TAG}..HEAD" 2>/dev/null || git diff --name-only HEAD~1)
+          HAS_CORE_CHANGES=$(echo "$FILES_CHANGED" | grep -E "^(internal/|cmd/)" || true)
+          HAS_FEAT=$(echo "$COMMITS" | grep -qE "^feat(\(|:)" && echo "yes" || echo "no")
+
+          if echo "$COMMITS" | grep -qE "BREAKING CHANGE|^feat.*!:|^fix.*!:"; then
+            BUMP="major"
+          elif [ "$HAS_FEAT" = "yes" ] && [ -n "$HAS_CORE_CHANGES" ]; then
+            BUMP="minor"  # Feature touching core code
+          elif [ "$HAS_FEAT" = "yes" ]; then
+            BUMP="patch"  # Feature but only docs/ci/helm
+          elif echo "$COMMITS" | grep -qE "^fix(\(|:)|^perf(\(|:)"; then
+            BUMP="patch"
+          fi
+
+          if [ "$BUMP" = "none" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Only docs/ci/chore commits — skipping release"
+            exit 0
+          fi
 
           CURRENT="${LATEST_TAG#v}"
           IFS='.' read -r MAJ MIN PAT <<< "$CURRENT"

@@ -1,0 +1,87 @@
+name: PR Labeler
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Label PR by size and scope
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+
+          # --- Size labels ---
+          ADDITIONS=${{ github.event.pull_request.additions }}
+          DELETIONS=${{ github.event.pull_request.deletions }}
+          TOTAL=$((ADDITIONS + DELETIONS))
+
+          if [ "$TOTAL" -le 10 ]; then
+            SIZE="size/XS"
+          elif [ "$TOTAL" -le 50 ]; then
+            SIZE="size/S"
+          elif [ "$TOTAL" -le 200 ]; then
+            SIZE="size/M"
+          elif [ "$TOTAL" -le 500 ]; then
+            SIZE="size/L"
+          else
+            SIZE="size/XL"
+          fi
+
+          # Remove old size labels
+          for old in size/XS size/S size/M size/L size/XL; do
+            gh pr edit "$PR_NUMBER" --remove-label "$old" 2>/dev/null || true
+          done
+          gh pr edit "$PR_NUMBER" --add-label "$SIZE"
+
+          # --- Scope labels ---
+          FILES=$(gh pr diff "$PR_NUMBER" --name-only)
+
+          SCOPES=""
+          echo "$FILES" | grep -q "internal/translator" && SCOPES="$SCOPES,scope/translator"
+          echo "$FILES" | grep -q "internal/proxy" && SCOPES="$SCOPES,scope/proxy"
+          echo "$FILES" | grep -q "internal/cache" && SCOPES="$SCOPES,scope/cache"
+          echo "$FILES" | grep -q "internal/middleware" && SCOPES="$SCOPES,scope/middleware"
+          echo "$FILES" | grep -q "internal/metrics" && SCOPES="$SCOPES,scope/metrics"
+          echo "$FILES" | grep -q "charts/" && SCOPES="$SCOPES,scope/helm"
+          echo "$FILES" | grep -q ".github/" && SCOPES="$SCOPES,scope/ci"
+          echo "$FILES" | grep -q "docs/\|README\|CHANGELOG\|\.md$" && SCOPES="$SCOPES,scope/docs"
+          echo "$FILES" | grep -q "cmd/" && SCOPES="$SCOPES,scope/cli"
+          echo "$FILES" | grep -qE "_test\.go$" && SCOPES="$SCOPES,scope/tests"
+
+          # Apply scope labels
+          for scope in $(echo "$SCOPES" | tr ',' '\n' | grep -v '^$'); do
+            gh pr edit "$PR_NUMBER" --add-label "$scope" 2>/dev/null || true
+          done
+
+          # --- Impact label ---
+          TITLE="${{ github.event.pull_request.title }}"
+          if echo "$TITLE" | grep -qE "^feat.*(!:|BREAKING)"; then
+            gh pr edit "$PR_NUMBER" --add-label "breaking-change"
+          fi
+          if echo "$TITLE" | grep -qE "^feat(\(|:)"; then
+            gh pr edit "$PR_NUMBER" --add-label "feature"
+          elif echo "$TITLE" | grep -qE "^fix(\(|:)"; then
+            gh pr edit "$PR_NUMBER" --add-label "bugfix"
+          elif echo "$TITLE" | grep -qE "^docs?(\(|:)"; then
+            gh pr edit "$PR_NUMBER" --add-label "documentation"
+          elif echo "$TITLE" | grep -qE "^(ci|chore)(\(|:)"; then
+            gh pr edit "$PR_NUMBER" --add-label "maintenance"
+          elif echo "$TITLE" | grep -qE "^(perf|bench)(\(|:)"; then
+            gh pr edit "$PR_NUMBER" --add-label "performance"
+          elif echo "$TITLE" | grep -qE "^test(\(|:)"; then
+            gh pr edit "$PR_NUMBER" --add-label "tests"
+          fi
+
+          echo "Labels applied: $SIZE $SCOPES"
+        env:
+          GH_TOKEN: ${{ github.token }}
