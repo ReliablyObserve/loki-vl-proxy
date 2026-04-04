@@ -56,7 +56,7 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 | `-disk-cache-compress` | — | `true` | Gzip compression for disk cache |
 | `-disk-cache-flush-size` | — | `100` | Flush write buffer after N entries |
 | `-disk-cache-flush-interval` | — | `5s` | Write buffer flush interval |
-| `-disk-cache-encryption-key` | — | — | AES-256 key (32 bytes) for encryption at rest |
+
 
 ## Multitenancy
 

@@ -99,30 +99,6 @@ func ParseWithoutMarker(query string) (cleanQuery string, excludeLabels []string
 	return cleanQuery, excludeLabels
 }
 
-// rewriteWithoutToMarker strips without(labels) from the query and stores the excluded
-// labels as metadata. The proxy post-processes VL results to remove these labels.
-// without(pod, node) → remove clause, VL returns all labels, proxy strips pod+node after.
-func rewriteWithoutToMarker(logql string) string {
-	withoutRe := regexp.MustCompile(`\bwithout\s*\(([^)]+)\)`)
-	m := withoutRe.FindStringSubmatch(logql)
-	if m == nil {
-		return logql
-	}
-	// Check if "without" is inside quotes
-	idx := withoutRe.FindStringIndex(logql)
-	if idx != nil && isInsideQuotes(logql, idx[0]) {
-		return logql
-	}
-	// Strip the without() clause entirely — VL will return ungrouped results
-	// The proxy detects __without__ and strips the excluded labels from results
-	cleaned := withoutRe.ReplaceAllString(logql, "")
-	// Normalize extra spaces
-	for strings.Contains(cleaned, "  ") {
-		cleaned = strings.ReplaceAll(cleaned, "  ", " ")
-	}
-	return cleaned
-}
-
 // extractWithoutLabels extracts the excluded labels stored by rewriteWithoutToMarker.
 // Called by the translator to attach metadata to the translated query.
 func extractWithoutLabels(logql string) (cleaned string, labels []string) {
@@ -143,20 +119,6 @@ func extractWithoutLabels(logql string) (cleaned string, labels []string) {
 		cleaned = strings.ReplaceAll(cleaned, "  ", " ")
 	}
 	return cleaned, labels
-}
-
-func isInsideQuotes(s string, pos int) bool {
-	inQuote := false
-	for i := 0; i < pos && i < len(s); i++ {
-		if s[i] == '\\' && inQuote {
-			i++
-			continue
-		}
-		if s[i] == '"' {
-			inQuote = !inQuote
-		}
-	}
-	return inQuote
 }
 
 // translateLogQuery handles log queries (non-metric).

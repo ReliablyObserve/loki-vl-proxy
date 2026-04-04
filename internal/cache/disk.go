@@ -3,9 +3,6 @@ package cache
 import (
 	"bytes"
 	"compress/gzip"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -24,12 +21,10 @@ var dataBucket = []byte("cache")
 // Optimized for sequential I/O patterns (AWS ST1 HDD-friendly):
 //   - Write-back buffer: batches writes to reduce IOPS
 //   - Gzip compression: reduces disk I/O volume
-//   - Optional AES-256-GCM encryption at rest
 //   - Sequential B+ tree layout for disk-friendly access
 type DiskCache struct {
 	db          *bolt.DB
 	compression bool
-	gcm         cipher.AEAD // nil if encryption disabled
 	writeBuf    map[string]diskEntry
 	writeMu     sync.Mutex
 	flushSize   int // flush buffer after this many entries
@@ -57,7 +52,6 @@ type DiskCacheConfig struct {
 	FlushInterval time.Duration // How often to flush write buffer (default: 5s)
 	FlushSize     int           // Flush after N buffered writes (default: 100)
 	Compression   bool          // Gzip compress values (default: true)
-	EncryptionKey []byte        // 32-byte AES-256 key (nil = no encryption)
 }
 
 // NewDiskCache creates an L2 disk cache.
@@ -95,21 +89,6 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		flushSize:   flushSize,
 		log:         logger,
 		done:        make(chan struct{}),
-	}
-
-	// Set up encryption if key provided
-	if len(cfg.EncryptionKey) == 32 {
-		block, err := aes.NewCipher(cfg.EncryptionKey)
-		if err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("aes cipher: %w", err)
-		}
-		gcm, err := cipher.NewGCM(block)
-		if err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("gcm cipher: %w", err)
-		}
-		dc.gcm = gcm
 	}
 
 	// Start background flusher
@@ -151,16 +130,6 @@ func (dc *DiskCache) Get(key string) ([]byte, bool) {
 	if raw == nil {
 		dc.Misses.Add(1)
 		return nil, false
-	}
-
-	// Decrypt
-	if dc.gcm != nil {
-		var err error
-		raw, err = dc.decrypt(raw)
-		if err != nil {
-			dc.Misses.Add(1)
-			return nil, false
-		}
 	}
 
 	// Decompress
@@ -232,11 +201,6 @@ func (dc *DiskCache) Flush() {
 				}
 			}
 
-			// Encrypt
-			if dc.gcm != nil {
-				encoded = dc.encrypt(encoded)
-			}
-
 			_ = b.Put([]byte(key), encoded)
 			dc.Writes.Add(1)
 		}
@@ -306,17 +270,3 @@ func decompress(data []byte) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
-func (dc *DiskCache) encrypt(plaintext []byte) []byte {
-	nonce := make([]byte, dc.gcm.NonceSize())
-	rand.Read(nonce)
-	return dc.gcm.Seal(nonce, nonce, plaintext, nil)
-}
-
-func (dc *DiskCache) decrypt(ciphertext []byte) ([]byte, error) {
-	nonceSize := dc.gcm.NonceSize()
-	if len(ciphertext) < nonceSize {
-		return nil, fmt.Errorf("ciphertext too short")
-	}
-	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
-	return dc.gcm.Open(nil, nonce, ciphertext, nil)
-}

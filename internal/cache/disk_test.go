@@ -1,8 +1,6 @@
 package cache
 
 import (
-	"crypto/rand"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -103,94 +101,6 @@ func TestDiskCache_Compression(t *testing.T) {
 	_, diskBytes := dc.Size()
 	if diskBytes >= int64(len(data)) {
 		t.Logf("warning: compressed size %d >= raw size %d", diskBytes, len(data))
-	}
-}
-
-func TestDiskCache_Encryption(t *testing.T) {
-	key := make([]byte, 32)
-	rand.Read(key)
-
-	dc, err := NewDiskCache(DiskCacheConfig{
-		Path:          tempDBPath(t),
-		EncryptionKey: key,
-		Compression:   false,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = dc.Close() }()
-
-	dc.Set("secret", []byte("sensitive-data"), 10*time.Second)
-	dc.Flush()
-
-	v, ok := dc.Get("secret")
-	if !ok {
-		t.Fatal("expected hit")
-	}
-	if string(v) != "sensitive-data" {
-		t.Errorf("expected sensitive-data, got %q", v)
-	}
-}
-
-func TestDiskCache_EncryptionWithCompression(t *testing.T) {
-	key := make([]byte, 32)
-	rand.Read(key)
-
-	dc, err := NewDiskCache(DiskCacheConfig{
-		Path:          tempDBPath(t),
-		EncryptionKey: key,
-		Compression:   true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = dc.Close() }()
-
-	dc.Set("both", []byte("encrypted-and-compressed"), 10*time.Second)
-	dc.Flush()
-
-	v, ok := dc.Get("both")
-	if !ok {
-		t.Fatal("expected hit")
-	}
-	if string(v) != "encrypted-and-compressed" {
-		t.Errorf("expected encrypted-and-compressed, got %q", v)
-	}
-}
-
-func TestDiskCache_WrongKeyFails(t *testing.T) {
-	key1 := make([]byte, 32)
-	key2 := make([]byte, 32)
-	rand.Read(key1)
-	rand.Read(key2)
-
-	path := tempDBPath(t)
-
-	// Write with key1
-	dc1, err := NewDiskCache(DiskCacheConfig{
-		Path:          path,
-		EncryptionKey: key1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dc1.Set("protected", []byte("data"), 10*time.Second)
-	dc1.Flush()
-	_ = dc1.Close()
-
-	// Try reading with key2
-	dc2, err := NewDiskCache(DiskCacheConfig{
-		Path:          path,
-		EncryptionKey: key2,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = dc2.Close() }()
-
-	_, ok := dc2.Get("protected")
-	if ok {
-		t.Error("expected decryption failure with wrong key")
 	}
 }
 
@@ -297,28 +207,3 @@ func TestDiskCache_InvalidPath(t *testing.T) {
 	}
 }
 
-func TestDiskCache_InvalidEncryptionKey(t *testing.T) {
-	// Key must be exactly 32 bytes for AES-256
-	_, err := NewDiskCache(DiskCacheConfig{
-		Path:          tempDBPath(t),
-		EncryptionKey: []byte("too-short"),
-	})
-	if err != nil {
-		t.Error("short key should be ignored (no encryption), not fail")
-	}
-
-	// But accessing dc should still work (no encryption applied)
-	dc, _ := NewDiskCache(DiskCacheConfig{
-		Path:          tempDBPath(t) + "2",
-		EncryptionKey: []byte("too-short"),
-	})
-	if dc != nil {
-		dc.Set("k", []byte("v"), time.Second)
-		v, ok := dc.Get("k")
-		if !ok || string(v) != "v" {
-			t.Error("expected unencrypted cache to work with short key")
-		}
-		_ = dc.Close()
-		_ = os.Remove(dc.db.Path())
-	}
-}

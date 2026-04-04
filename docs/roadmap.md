@@ -11,7 +11,7 @@
 - [x] Tiered cache (per-endpoint TTLs, L1 in-memory, L2 bbolt on-disk)
 - [x] Multitenancy (string->int tenant mapping, numeric passthrough, SIGHUP reload)
 - [x] WebSocket tail (`/loki/api/v1/tail` -> VL NDJSON streaming)
-- [x] L2 disk cache with gzip compression, AES-256 encryption, write-back buffer
+- [x] L2 disk cache with gzip compression, write-back buffer (encryption via cloud provider)
 - [x] OTLP telemetry push (gzip/zstd compression, TLS)
 - [x] HTTP hardening (timeouts, body limits, security headers)
 - [x] Index stats, volume, volume_range via VL `/select/logsql/hits`

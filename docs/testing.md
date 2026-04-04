@@ -34,7 +34,7 @@ go build -o loki-vl-proxy ./cmd/proxy
 | Cache behavior | 6 | Hit/miss/TTL/eviction/protection |
 | Multitenancy | 4 | String->int mapping, numeric passthrough, unmapped default |
 | WebSocket tail | 2 | Query validation, WebSocket frame structure |
-| Disk cache (L2) | 12 | Set/get, TTL, compression, AES encryption, persistence |
+| Disk cache (L2) | 12 | Set/get, TTL, compression, persistence, stats |
 | OTLP pusher | 4 | Push, custom headers, error handling, payload structure |
 | Hardening | 4 | Query length limit, limit sanitization, security headers |
 | Middleware | 12 | Coalescing, rate limiting, circuit breaker |

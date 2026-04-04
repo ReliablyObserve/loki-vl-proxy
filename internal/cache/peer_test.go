@@ -364,6 +364,203 @@ func TestPeerCache_LBScenario_ThreePeers(t *testing.T) {
 	}
 }
 
+func TestPeerCache_Peers(t *testing.T) {
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "self:3100",
+		DiscoveryType: "static",
+		StaticPeers:   "self:3100,a:3100,b:3100",
+	})
+	defer pc.Close()
+
+	peers := pc.Peers()
+	if len(peers) != 3 {
+		t.Errorf("expected 3 peers, got %d", len(peers))
+	}
+}
+
+func TestPeerCache_SetIsNoop(t *testing.T) {
+	pc := NewPeerCache(PeerConfig{SelfAddr: "self"})
+	defer pc.Close()
+	pc.Set("key", []byte("val")) // should not panic
+}
+
+func TestPeerCache_GossipIsNoop(t *testing.T) {
+	pc := NewPeerCache(PeerConfig{SelfAddr: "self"})
+	defer pc.Close()
+	pc.GossipHaveKey("key") // should not panic
+}
+
+func TestPeerCache_MinUsableTTL(t *testing.T) {
+	// Owner has a key with only 2s remaining — below MinUsableTTL (5s)
+	ownerCache := NewWithMaxBytes(60*time.Second, 100, 1024*1024)
+	defer ownerCache.Close()
+	ownerCache.SetWithTTL("expiring", []byte("old"), 2*time.Second) // 2s < 5s threshold
+
+	peerPC := NewPeerCache(PeerConfig{SelfAddr: "peer"})
+	defer peerPC.Close()
+
+	peerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peerPC.ServeHTTP(w, r, ownerCache)
+	}))
+	defer peerServer.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "self:3100",
+		DiscoveryType: "static",
+		StaticPeers:   peerServer.Listener.Addr().String(),
+		Timeout:       2 * time.Second,
+	})
+	defer pc.Close()
+
+	// Find a key mapping to the peer
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("expiring-%d", i)
+		ownerCache.SetWithTTL(key, []byte("old"), 2*time.Second)
+
+		pc.mu.RLock()
+		owner := pc.ring.get(key)
+		pc.mu.RUnlock()
+
+		if owner == peerServer.Listener.Addr().String() {
+			_, _, found := pc.Get(key)
+			if found {
+				t.Errorf("key with TTL < 5s should be treated as miss (force refresh), but got hit")
+				return
+			}
+			t.Log("correctly treated near-expiry key as miss")
+			return
+		}
+	}
+	t.Log("no key mapped to peer — acceptable")
+}
+
+func TestPeerCache_TTLHeader(t *testing.T) {
+	ownerCache := NewWithMaxBytes(60*time.Second, 100, 1024*1024)
+	defer ownerCache.Close()
+	ownerCache.SetWithTTL("fresh", []byte("data"), 30*time.Second)
+
+	peerPC := NewPeerCache(PeerConfig{SelfAddr: "peer"})
+	defer peerPC.Close()
+
+	peerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peerPC.ServeHTTP(w, r, ownerCache)
+	}))
+	defer peerServer.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "self:3100",
+		DiscoveryType: "static",
+		StaticPeers:   peerServer.Listener.Addr().String(),
+		Timeout:       2 * time.Second,
+	})
+	defer pc.Close()
+
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("fresh-%d", i)
+		ownerCache.SetWithTTL(key, []byte("data"), 30*time.Second)
+
+		pc.mu.RLock()
+		owner := pc.ring.get(key)
+		pc.mu.RUnlock()
+
+		if owner == peerServer.Listener.Addr().String() {
+			_, ttl, found := pc.Get(key)
+			if found {
+				if ttl <= 0 || ttl > 31*time.Second {
+					t.Errorf("TTL should be ~30s, got %v", ttl)
+				} else {
+					t.Logf("TTL preserved from owner: %v", ttl)
+				}
+				return
+			}
+		}
+	}
+	t.Log("no key mapped to peer for TTL test")
+}
+
+func TestPeerCache_CircuitBreaker_Cooldown(t *testing.T) {
+	pc := NewPeerCache(PeerConfig{SelfAddr: "self"})
+	defer pc.Close()
+
+	// Trip breaker
+	for i := 0; i < 5; i++ {
+		pc.recordPeerFailure("bad-peer")
+	}
+	if pc.peerAllowed("bad-peer") {
+		t.Error("should be blocked")
+	}
+
+	// Success resets
+	pc.recordPeerSuccess("bad-peer")
+	// Need to manually reset failures since recordPeerSuccess sets to 0
+	if !pc.peerAllowed("bad-peer") {
+		t.Error("should be allowed after success")
+	}
+}
+
+func TestHashRing_MinimalRebalance(t *testing.T) {
+	// Adding a node should move ~1/N keys (minimal rebalancing)
+	ring2 := newHashRing(150)
+	ring2.add("a")
+	ring2.add("b")
+
+	ring3 := newHashRing(150)
+	ring3.add("a")
+	ring3.add("b")
+	ring3.add("c")
+
+	moved := 0
+	total := 1000
+	for i := 0; i < total; i++ {
+		key := fmt.Sprintf("key-%d", i)
+		if ring2.get(key) != ring3.get(key) {
+			moved++
+		}
+	}
+	// Adding 1 of 3 nodes should move ~33% of keys
+	pct := float64(moved) / float64(total) * 100
+	if pct > 50 {
+		t.Errorf("too many keys moved (%.1f%%) — consistent hashing should move ~33%%", pct)
+	}
+	t.Logf("%.1f%% keys moved when adding 3rd node (ideal: ~33%%)", pct)
+}
+
+// =============================================================================
+// Fuzz tests for cache
+// =============================================================================
+
+func FuzzHashRingGet(f *testing.F) {
+	f.Add("key-1")
+	f.Add("")
+	f.Add("a very long key with special chars: 日本語")
+	f.Fuzz(func(t *testing.T, key string) {
+		ring := newHashRing(150)
+		ring.add("node-1")
+		ring.add("node-2")
+		result := ring.get(key)
+		if result == "" {
+			t.Error("non-empty ring should always return a node")
+		}
+	})
+}
+
+func FuzzCacheGetSet(f *testing.F) {
+	f.Add("key", "value")
+	f.Add("", "")
+	f.Add("k with spaces", "v\x00null")
+	f.Fuzz(func(t *testing.T, key, value string) {
+		c := New(1*time.Second, 100)
+		defer c.Close()
+		c.Set(key, []byte(value))
+		if key != "" {
+			v, ok := c.Get(key)
+			if !ok || string(v) != value {
+				t.Errorf("Set/Get mismatch for key=%q", key)
+			}
+		}
+	})
+}
+
 func TestParsePeerList(t *testing.T) {
 	tests := []struct {
 		input string

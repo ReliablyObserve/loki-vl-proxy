@@ -140,7 +140,7 @@ HTTP handlers for all Loki API endpoints. Each handler: validates input, transla
 - **Circuit breaker**: 3-state (closed/open/half-open) with configurable thresholds
 
 ### Cache (`internal/cache/`)
-Two-tier: L1 in-memory (sync.Map + atomic counters) and optional L2 on-disk (bbolt with gzip compression and AES-256 encryption).
+Three-tier: L1 in-memory (sync.Map + atomic counters), optional L2 on-disk (bbolt with gzip compression), and optional L3 peer cache (consistent hash ring). Disk encryption is delegated to cloud provider (EBS, PD, etc.).
 
 ### Metrics (`internal/metrics/`)
 Prometheus text exposition at `/metrics`. Per-endpoint request counts, per-tenant breakdowns, cache stats, circuit breaker state gauge.

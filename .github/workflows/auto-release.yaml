@@ -169,6 +169,8 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Delete stale release branch if it exists from a previous run
+          git push origin --delete "$BRANCH" 2>/dev/null || true
           git checkout -b "$BRANCH"
           git add CHANGELOG.md README.md
           git diff --cached --quiet && { echo "No changes to release"; exit 0; }

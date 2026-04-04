@@ -188,7 +188,7 @@ func New(cfg Config) (*Proxy, error) {
 		level = slog.LevelError
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	logger := slog.New(NewRedactingHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
 
 	maxConcurrent := cfg.MaxConcurrent
 	if maxConcurrent == 0 {
@@ -1581,17 +1581,6 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	body = p.translateStatsResponseLabels(body)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "vector"))
-}
-
-// proxyBinaryMetricQueryRange evaluates binary metric expressions for query_range.
-// Runs both sides against VL independently, then combines with arithmetic.
-func (p *Proxy) proxyBinaryMetricQueryRange(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL string) {
-	p.proxyBinaryMetric(w, r, op, leftQL, rightQL, "stats_query_range", "matrix")
-}
-
-// proxyBinaryMetricQuery evaluates binary metric expressions for instant queries.
-func (p *Proxy) proxyBinaryMetricQuery(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL string) {
-	p.proxyBinaryMetric(w, r, op, leftQL, rightQL, "stats_query", "vector")
 }
 
 // proxyBinaryMetricQueryRangeVM evaluates with vector matching (on/ignoring/group_left/group_right).

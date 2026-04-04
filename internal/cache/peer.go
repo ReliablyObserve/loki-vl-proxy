@@ -219,9 +219,8 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	// Parse remaining TTL from owner's response
 	var remainingTTL time.Duration
 	if ttlMs := resp.Header.Get("X-Cache-TTL-Ms"); ttlMs != "" {
-		if ms, err := fmt.Sscanf(ttlMs, "%d", new(int64)); ms == 1 && err == nil {
-			var msVal int64
-			fmt.Sscanf(ttlMs, "%d", &msVal)
+		var msVal int64
+		if _, err := fmt.Sscanf(ttlMs, "%d", &msVal); err == nil {
 			remainingTTL = time.Duration(msVal) * time.Millisecond
 		}
 	}

@@ -34,8 +34,6 @@ func main() {
 	diskCacheCompress := flag.Bool("disk-cache-compress", true, "Gzip compression for disk cache")
 	diskCacheFlushSize := flag.Int("disk-cache-flush-size", 100, "Flush write buffer after N entries")
 	diskCacheFlushInterval := flag.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
-	diskCacheEncryptionKey := flag.String("disk-cache-encryption-key", "", "AES-256 key (32 bytes hex) for disk cache encryption at rest")
-
 	// Tenant mapping
 	tenantMapJSON := flag.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
 
@@ -118,29 +116,21 @@ func main() {
 	// L1 in-memory cache
 	c := cache.New(*cacheTTL, *cacheMax)
 
-	// L2 disk cache
+	// L2 disk cache (compression + write-back buffer)
 	if *diskCachePath != "" {
-		var encKey []byte
-		if *diskCacheEncryptionKey != "" {
-			encKey = []byte(*diskCacheEncryptionKey)
-			if len(encKey) != 32 {
-				log.Fatalf("disk-cache-encryption-key must be exactly 32 bytes, got %d", len(encKey))
-			}
-		}
 		dc, err := cache.NewDiskCache(cache.DiskCacheConfig{
 			Path:          *diskCachePath,
 			Compression:   *diskCacheCompress,
 			FlushSize:     *diskCacheFlushSize,
 			FlushInterval: *diskCacheFlushInterval,
-			EncryptionKey: encKey,
 		})
 		if err != nil {
 			log.Fatalf("Failed to open disk cache: %v", err)
 		}
 		defer func() { _ = dc.Close() }()
 		c.SetL2(dc)
-		log.Printf("L2 disk cache enabled at %s (compress=%v, encrypted=%v, flush=%d/%s)",
-			*diskCachePath, *diskCacheCompress, len(encKey) > 0, *diskCacheFlushSize, *diskCacheFlushInterval)
+		log.Printf("L2 disk cache enabled at %s (compress=%v, flush=%d/%s)",
+			*diskCachePath, *diskCacheCompress, *diskCacheFlushSize, *diskCacheFlushInterval)
 	}
 
 	// Parse forward headers
