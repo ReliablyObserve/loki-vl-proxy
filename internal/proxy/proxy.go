@@ -30,15 +30,21 @@ import (
 
 type ctxKey int
 
-const orgIDKey ctxKey = iota
+const (
+	orgIDKey ctxKey = iota
+	origRequestKey
+)
 
-// withOrgID stores the X-Scope-OrgID in the request context (request-scoped, no shared state).
+// withOrgID stores the X-Scope-OrgID and original request in the request context (request-scoped, no shared state).
 func withOrgID(r *http.Request) *http.Request {
+	ctx := r.Context()
+	// Store original request for header forwarding in vlGet/vlPost
+	ctx = context.WithValue(ctx, origRequestKey, r)
 	orgID := r.Header.Get("X-Scope-OrgID")
-	if orgID == "" {
-		return r
+	if orgID != "" {
+		ctx = context.WithValue(ctx, orgIDKey, orgID)
 	}
-	return r.WithContext(context.WithValue(r.Context(), orgIDKey, orgID))
+	return r.WithContext(ctx)
 }
 
 // getOrgID retrieves the org ID from context.
@@ -371,7 +377,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	r = withOrgID(r)
-	cacheKey := "labels:" + r.URL.RawQuery
+	orgID := r.Header.Get("X-Scope-OrgID")
+	cacheKey := "labels:" + orgID + ":" + r.URL.RawQuery
 
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		p.log.Debug("labels cache hit")
@@ -458,7 +465,8 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	// Translate Loki label name to VL field name for the backend query
 	vlFieldName := p.labelTranslator.ToVL(labelName)
 
-	cacheKey := "label_values:" + labelName + ":" + r.URL.RawQuery
+	orgID := r.Header.Get("X-Scope-OrgID")
+	cacheKey := "label_values:" + orgID + ":" + labelName + ":" + r.URL.RawQuery
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		p.log.Debug("label values cache hit", "label", labelName)
 		w.Header().Set("Content-Type", "application/json")
@@ -520,6 +528,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 // VL:   GET /select/logsql/streams?query={...}&start=...&end=...
 func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	r = withOrgID(r)
 	matchQueries := r.Form["match[]"]
 	query := "*"
 	if len(matchQueries) > 0 {
@@ -541,11 +550,19 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	resp, err := p.vlGet(r.Context(), "/select/logsql/streams", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.metrics.RecordRequest("series", http.StatusBadGateway, time.Since(start))
 		return
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+
+	// Propagate VL error status
+	if resp.StatusCode >= 400 {
+		p.writeError(w, resp.StatusCode, string(body))
+		p.metrics.RecordRequest("series", resp.StatusCode, time.Since(start))
+		return
+	}
 
 	// VL returns: {"values": [{"value": "{stream}", "hits": N}, ...]}
 	// Loki expects: {"status": "success", "data": [{"label": "value", ...}, ...]}
@@ -580,6 +597,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 // Response: {"streams":N, "chunks":N, "entries":N, "bytes":N}
 func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	r = withOrgID(r)
 	query := r.FormValue("query")
 	if query == "" {
 		query = "*"
@@ -631,6 +649,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 // Response: {"status":"success","data":{"resultType":"vector","result":[{"metric":{...},"value":[ts,"count"]}]}}
 func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	r = withOrgID(r)
 	query := r.FormValue("query")
 	if query == "" {
 		query = "*"
@@ -676,6 +695,7 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 // Response: {"status":"success","data":{"resultType":"matrix","result":[{"metric":{...},"values":[[ts,"count"],...]}]}}
 func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	r = withOrgID(r)
 	query := r.FormValue("query")
 	if query == "" {
 		query = "*"
@@ -718,6 +738,7 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 // handleDetectedFields returns detected field names.
 func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	r = withOrgID(r)
 	query := r.FormValue("query")
 	if query == "" {
 		query = "*"
@@ -797,6 +818,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 // Response: {"values":["debug","info","warn","error"],"limit":1000}
 func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	r = withOrgID(r)
 	// Extract field name from URL: /loki/api/v1/detected_field/{name}/values
 	path := r.URL.Path
 	parts := strings.Split(path, "/")
@@ -862,6 +884,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 // handlePatterns returns log patterns (stub).
 func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	r = withOrgID(r)
 	query := r.FormValue("query")
 	if query == "" {
 		query = `{}`
@@ -1262,12 +1285,17 @@ func (p *Proxy) sendWSError(conn *websocket.Conn, msg string) {
 func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 	// Probe VL backend health
 	resp, err := p.client.Get(p.backend.String() + "/health")
-	if err != nil || resp.StatusCode != http.StatusOK {
+	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte("backend not ready"))
 		return
 	}
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("backend not ready"))
+		return
+	}
 
 	// Circuit breaker check
 	if !p.breaker.Allow() {
@@ -2346,8 +2374,16 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 	for k, v := range p.backendHeaders {
 		vlReq.Header.Set(k, v)
 	}
-	// Forward client headers if configured (requires original request in context)
-	// Forwarded headers are set by the middleware before vlGet/vlPost
+	// Forward configured client headers from the original request
+	if len(p.forwardHeaders) > 0 {
+		if origReq, ok := vlReq.Context().Value(origRequestKey).(*http.Request); ok && origReq != nil {
+			for _, hdr := range p.forwardHeaders {
+				if val := origReq.Header.Get(hdr); val != "" {
+					vlReq.Header.Set(hdr, val)
+				}
+			}
+		}
+	}
 }
 
 // statusCapture wraps ResponseWriter to capture the status code.

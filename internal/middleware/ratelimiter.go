@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -22,6 +23,9 @@ type RateLimiter struct {
 	ratePerSecond float64
 	burstSize     int
 
+	// Shutdown signal for cleanup goroutine
+	done chan struct{}
+
 	// Stats
 	RejectedTotal atomic.Int64
 	ThrottledTotal atomic.Int64
@@ -40,9 +44,15 @@ func NewRateLimiter(maxConcurrent int, ratePerSecond float64, burstSize int) *Ra
 		maxConcurrent: maxConcurrent,
 		ratePerSecond: ratePerSecond,
 		burstSize:     burstSize,
+		done:          make(chan struct{}),
 	}
 	go rl.cleanupStaleClients()
 	return rl
+}
+
+// Stop shuts down the cleanup goroutine. Call on config reload before creating a new RateLimiter.
+func (rl *RateLimiter) Stop() {
+	close(rl.done)
 }
 
 // AcquireConcurrent tries to acquire a concurrent query slot.
@@ -103,12 +113,16 @@ func (rl *RateLimiter) AllowClient(clientID string) bool {
 }
 
 // ClientID extracts a client identifier from an HTTP request.
+// Uses RemoteAddr by default for security — X-Forwarded-For is attacker-controlled
+// and can be spoofed to bypass rate limiting entirely.
 func ClientID(r *http.Request) string {
-	// Prefer X-Forwarded-For, fall back to RemoteAddr
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return xff
+	// Use RemoteAddr (connection-level, not spoofable) as the authoritative identifier.
+	// Strip the port suffix for consistent bucketing (e.g., "10.0.1.42:5678" → "10.0.1.42").
+	addr := r.RemoteAddr
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
 	}
-	return r.RemoteAddr
+	return addr
 }
 
 // Middleware wraps an http.Handler with rate limiting and concurrency control.
@@ -142,14 +156,19 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 func (rl *RateLimiter) cleanupStaleClients() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		rl.mu.Lock()
-		cutoff := time.Now().Add(-10 * time.Minute)
-		for k, b := range rl.clients {
-			if b.lastTime.Before(cutoff) {
-				delete(rl.clients, k)
+	for {
+		select {
+		case <-rl.done:
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			cutoff := time.Now().Add(-10 * time.Minute)
+			for k, b := range rl.clients {
+				if b.lastTime.Before(cutoff) {
+					delete(rl.clients, k)
+				}
 			}
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }

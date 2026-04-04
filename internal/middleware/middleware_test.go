@@ -289,19 +289,28 @@ func TestRateLimiter_Middleware_Integration(t *testing.T) {
 }
 
 // TestRateLimiter_ClientID verifies client ID extraction.
+// Security: ClientID uses RemoteAddr (not X-Forwarded-For) to prevent rate limit bypass.
 func TestRateLimiter_ClientID(t *testing.T) {
-	// With X-Forwarded-For
+	// X-Forwarded-For is ignored — RemoteAddr is authoritative (anti-spoofing)
 	r1, _ := http.NewRequest("GET", "/", nil)
-	r1.Header.Set("X-Forwarded-For", "10.0.0.1")
-	if ClientID(r1) != "10.0.0.1" {
-		t.Errorf("expected X-Forwarded-For, got %q", ClientID(r1))
+	r1.RemoteAddr = "10.0.0.1:5678"
+	r1.Header.Set("X-Forwarded-For", "spoofed.ip")
+	if got := ClientID(r1); got != "10.0.0.1" {
+		t.Errorf("expected RemoteAddr IP (ignoring XFF), got %q", got)
 	}
 
-	// Without — falls back to RemoteAddr
+	// Port is stripped for consistent bucketing
 	r2, _ := http.NewRequest("GET", "/", nil)
 	r2.RemoteAddr = "192.168.1.1:12345"
-	if ClientID(r2) != "192.168.1.1:12345" {
-		t.Errorf("expected RemoteAddr, got %q", ClientID(r2))
+	if got := ClientID(r2); got != "192.168.1.1" {
+		t.Errorf("expected IP without port, got %q", got)
+	}
+
+	// RemoteAddr without port (e.g., Unix socket)
+	r3, _ := http.NewRequest("GET", "/", nil)
+	r3.RemoteAddr = "192.168.1.1"
+	if got := ClientID(r3); got != "192.168.1.1" {
+		t.Errorf("expected raw RemoteAddr, got %q", got)
 	}
 }
 

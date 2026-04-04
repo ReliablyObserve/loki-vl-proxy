@@ -49,6 +49,7 @@ func TranslateLogQLWithLabels(logql string, labelFn LabelTranslateFunc) (string,
 
 // containsWithoutClause detects the without() grouping clause in metric queries.
 // Only matches top-level "without" keyword, not the word inside quoted strings.
+// Handles backslash-escaped quotes inside strings (e.g., "foo\"without\"bar").
 func containsWithoutClause(logql string) bool {
 	withoutRe := regexp.MustCompile(`\bwithout\s*\(`)
 	// Quick check — if the word isn't there at all, skip deeper analysis
@@ -58,7 +59,13 @@ func containsWithoutClause(logql string) bool {
 	// Walk the string to ensure "without" is not inside quotes
 	inQuote := false
 	for i := 0; i < len(logql); i++ {
-		if logql[i] == '"' {
+		ch := logql[i]
+		// Handle backslash escapes inside quoted strings
+		if ch == '\\' && inQuote && i+1 < len(logql) {
+			i++ // skip escaped character
+			continue
+		}
+		if ch == '"' {
 			inQuote = !inQuote
 			continue
 		}
@@ -66,7 +73,7 @@ func containsWithoutClause(logql string) bool {
 			continue
 		}
 		rest := logql[i:]
-		if withoutRe.MatchString(rest) && strings.HasPrefix(rest, "without") {
+		if strings.HasPrefix(rest, "without") && withoutRe.MatchString(rest) {
 			return true
 		}
 	}
