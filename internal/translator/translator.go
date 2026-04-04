@@ -98,39 +98,6 @@ func rewriteWithoutToMarker(logql string) string {
 	})
 }
 
-// containsWithoutClause detects the without() grouping clause in metric queries.
-// Only matches top-level "without" keyword, not the word inside quoted strings.
-// Handles backslash-escaped quotes inside strings (e.g., "foo\"without\"bar").
-func containsWithoutClause(logql string) bool {
-	withoutRe := regexp.MustCompile(`\bwithout\s*\(`)
-	// Quick check — if the word isn't there at all, skip deeper analysis
-	if !withoutRe.MatchString(logql) {
-		return false
-	}
-	// Walk the string to ensure "without" is not inside quotes
-	inQuote := false
-	for i := 0; i < len(logql); i++ {
-		ch := logql[i]
-		// Handle backslash escapes inside quoted strings
-		if ch == '\\' && inQuote && i+1 < len(logql) {
-			i++ // skip escaped character
-			continue
-		}
-		if ch == '"' {
-			inQuote = !inQuote
-			continue
-		}
-		if inQuote {
-			continue
-		}
-		rest := logql[i:]
-		if strings.HasPrefix(rest, "without") && withoutRe.MatchString(rest) {
-			return true
-		}
-	}
-	return false
-}
-
 // translateLogQuery handles log queries (non-metric).
 func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ...map[string]bool) (string, error) {
 	var sf map[string]bool
@@ -1012,9 +979,6 @@ func translateBareFilter(s string) string {
 
 // SubqueryPrefix marks a translated subquery expression for proxy-side evaluation.
 const SubqueryPrefix = "__subquery__:"
-
-// subqueryRe matches the [range:step] suffix on a subquery.
-var subqueryRe = regexp.MustCompile(`\[(\d+[smhd]+):(\d+[smhd]+)\]\s*\)\s*$`)
 
 // tryTranslateSubquery detects and translates subquery syntax.
 // Input: max_over_time(rate({app="nginx"}[5m])[1h:5m])

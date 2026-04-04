@@ -285,7 +285,8 @@ func titleCase(s string) string {
 func isHexLike(s string) bool {
 	s = strings.TrimPrefix(s, "0x")
 	for _, ch := range s {
-		if !((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') || ch == '-') {
+		isHex := (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') || ch == '-'
+		if !isHex {
 			return false
 		}
 	}

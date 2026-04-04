@@ -39,20 +39,6 @@ var jsonBufPool = sync.Pool{
 	},
 }
 
-// readBodyPooled reads an HTTP response body using a pooled buffer for the initial allocation.
-// Returns a new []byte (safe to cache) but reduces the initial allocation growth.
-func readBodyPooled(body io.Reader) ([]byte, error) {
-	buf := jsonBufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	_, err := buf.ReadFrom(body)
-	result := make([]byte, buf.Len())
-	copy(result, buf.Bytes())
-	if buf.Cap() <= maxPooledBufSize {
-		jsonBufPool.Put(buf)
-	}
-	return result, err
-}
-
 // marshalJSON encodes v to JSON using a pooled buffer, then writes to w.
 // Reduces allocations vs json.NewEncoder(w).Encode() by reusing buffers.
 func marshalJSON(w http.ResponseWriter, v interface{}) {

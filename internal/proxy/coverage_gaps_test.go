@@ -212,9 +212,8 @@ func TestBinaryMetric_LeftSideVLError(t *testing.T) {
 	if w.Code == 200 {
 		var resp map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &resp)
-		if resp["status"] == "success" {
-			// acceptable — the left side 502 is reported as error
-		}
+		// acceptable — may succeed or fail depending on query execution path
+		_ = resp
 	}
 }
 
