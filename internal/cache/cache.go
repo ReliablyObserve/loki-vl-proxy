@@ -80,6 +80,26 @@ func (c *Cache) Close() {
 	}
 }
 
+// GetWithTTL returns the value and remaining TTL for a key.
+// Returns (nil, 0, false) on miss.
+func (c *Cache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
+	c.mu.Lock()
+	e, ok := c.entries[key]
+	if ok {
+		remaining := time.Until(e.expiresAt)
+		if remaining > 0 {
+			if elem, found := c.lruIndex[key]; found {
+				c.lruList.MoveToFront(elem)
+			}
+			c.mu.Unlock()
+			c.Hits.Add(1)
+			return e.value, remaining, true
+		}
+	}
+	c.mu.Unlock()
+	return nil, 0, false
+}
+
 func (c *Cache) Get(key string) ([]byte, bool) {
 	c.mu.Lock()
 	e, ok := c.entries[key]
@@ -105,11 +125,11 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 
 	// L3 fallback (peer fleet — sharded)
 	if c.l3 != nil {
-		if v, ok := c.l3.Get(key); ok {
-			// Store shadow copy with reduced TTL (don't extend original expiry).
-			// Shadow TTL = min(defaultTTL, 30s) to keep local copies short-lived.
-			shadowTTL := c.defaultTTL
-			if shadowTTL > 30*time.Second {
+		if v, remainingTTL, ok := c.l3.Get(key); ok {
+			// Use the owner's remaining TTL for the shadow copy — never extend.
+			// If TTL is unknown (0), use a short default.
+			shadowTTL := remainingTTL
+			if shadowTTL <= 0 {
 				shadowTTL = 30 * time.Second
 			}
 			c.SetWithTTL(key, v, shadowTTL)

@@ -63,7 +63,7 @@ func TestPeerCache_StaticDiscovery(t *testing.T) {
 func TestPeerCache_Disabled(t *testing.T) {
 	pc := NewPeerCache(PeerConfig{SelfAddr: "10.0.0.1:3100"})
 	defer pc.Close()
-	_, ok := pc.Get("any-key")
+	_, _, ok := pc.Get("any-key")
 	if ok {
 		t.Error("disabled peer cache should always miss")
 	}
@@ -158,7 +158,7 @@ func TestPeerCache_FetchFromPeer(t *testing.T) {
 		pc.mu.RUnlock()
 
 		if owner == peerServer.Listener.Addr().String() {
-			value, found := pc.Get(key)
+			value, _, found := pc.Get(key)
 			if found && string(value) == "peer-data" {
 				t.Logf("fetched from peer for key %q", key)
 				return
@@ -272,7 +272,7 @@ func TestPeerCache_Singleflight(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 10; i++ {
 		wg.Add(1)
-		go func() { defer wg.Done(); pc.Get(targetKey) }()
+		go func() { defer wg.Done(); _, _, _ = pc.Get(targetKey) }()
 	}
 	wg.Wait()
 

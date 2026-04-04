@@ -55,6 +55,7 @@ type PeerCache struct {
 type inflightEntry struct {
 	done   chan struct{}
 	result []byte
+	ttl    time.Duration
 	ok     bool
 }
 
@@ -138,23 +139,24 @@ func (pc *PeerCache) IsOwner(key string) bool {
 }
 
 // Get fetches a value from the owning peer.
-// Called only when local L1+L2 miss AND we're not the owner.
-func (pc *PeerCache) Get(key string) ([]byte, bool) {
+// Returns (value, remainingTTL, true) on hit.
+// The caller should use remainingTTL for the shadow copy — never extend the original.
+func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	pc.mu.RLock()
 	if len(pc.peers) == 0 {
 		pc.mu.RUnlock()
-		return nil, false
+		return nil, 0, false
 	}
 	owner := pc.ring.get(key)
 	pc.mu.RUnlock()
 
 	if owner == pc.selfAddr || owner == "" {
-		return nil, false
+		return nil, 0, false
 	}
 
 	if !pc.peerAllowed(owner) {
 		pc.PeerErrors.Add(1)
-		return nil, false
+		return nil, 0, false
 	}
 
 	// Singleflight: coalesce concurrent fetches for the same key
@@ -166,7 +168,7 @@ func (pc *PeerCache) Get(key string) ([]byte, bool) {
 		} else {
 			pc.PeerMisses.Add(1)
 		}
-		return inf.result, inf.ok
+		return inf.result, inf.ttl, inf.ok
 	}
 
 	inf := pc.getInflight(key)
@@ -184,14 +186,14 @@ func (pc *PeerCache) Get(key string) ([]byte, bool) {
 	if err != nil {
 		pc.recordPeerFailure(owner)
 		pc.PeerErrors.Add(1)
-		return nil, false
+		return nil, 0, false
 	}
 
 	resp, err := pc.client.Do(req)
 	if err != nil {
 		pc.recordPeerFailure(owner)
 		pc.PeerErrors.Add(1)
-		return nil, false
+		return nil, 0, false
 	}
 	defer resp.Body.Close()
 
@@ -199,26 +201,37 @@ func (pc *PeerCache) Get(key string) ([]byte, bool) {
 		pc.recordPeerSuccess(owner)
 		inf.ok = false
 		pc.PeerMisses.Add(1)
-		return nil, false
+		return nil, 0, false
 	}
 	if resp.StatusCode != http.StatusOK {
 		pc.recordPeerFailure(owner)
 		pc.PeerErrors.Add(1)
-		return nil, false
+		return nil, 0, false
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		pc.recordPeerFailure(owner)
 		pc.PeerErrors.Add(1)
-		return nil, false
+		return nil, 0, false
+	}
+
+	// Parse remaining TTL from owner's response
+	var remainingTTL time.Duration
+	if ttlMs := resp.Header.Get("X-Cache-TTL-Ms"); ttlMs != "" {
+		if ms, err := fmt.Sscanf(ttlMs, "%d", new(int64)); ms == 1 && err == nil {
+			var msVal int64
+			fmt.Sscanf(ttlMs, "%d", &msVal)
+			remainingTTL = time.Duration(msVal) * time.Millisecond
+		}
 	}
 
 	pc.recordPeerSuccess(owner)
 	inf.result = body
+	inf.ttl = remainingTTL
 	inf.ok = true
 	pc.PeerHits.Add(1)
-	return body, true
+	return body, remainingTTL, true
 }
 
 // Set is a no-op for the sharded model.
@@ -242,8 +255,13 @@ func (pc *PeerCache) getInflight(key string) *inflightEntry {
 	return v.(*inflightEntry)
 }
 
+// MinUsableTTL is the minimum remaining TTL to serve a cached value.
+// If the value expires in less than this, treat it as a miss (force refresh).
+const MinUsableTTL = 5 * time.Second
+
 // ServeHTTP handles incoming peer cache requests.
-// GET /_cache/get?key=... — return cached value from local L1 (or 404)
+// GET /_cache/get?key=... — return cached value with remaining TTL header (or 404)
+// Header X-Cache-TTL-Ms: remaining TTL in milliseconds (for shadow copy)
 func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCache *Cache) {
 	key := r.URL.Query().Get("key")
 	if key == "" {
@@ -251,13 +269,15 @@ func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCach
 		return
 	}
 
-	value, ok := localCache.Get(key)
-	if !ok {
+	value, remaining, ok := localCache.GetWithTTL(key)
+	if !ok || remaining < MinUsableTTL {
+		// Expired or about to expire — treat as miss (force refresh from VL)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Cache-TTL-Ms", fmt.Sprintf("%d", remaining.Milliseconds()))
 	w.Write(value)
 }
 
