@@ -47,14 +47,22 @@
 - [x] Circuit breaker half-open metrics fix
 - [x] Tenant map reload race condition fix
 
+- [x] `bool` modifier on comparison operators — stripped at translation (applyOp returns 1/0 for all comparisons)
+- [x] Field-specific parser `| json field1, field2` / `| logfmt field1, field2` — maps to full unpack (VL extracts all fields)
+- [x] Backslash-escaped quotes in stream selectors — findMatchingBrace handles `\"`
+- [x] Binary expression detection before metric query (fixes `rate(...) > 0` being misrouted)
+- [x] Peer cache design doc + headless service Helm template
+- [x] Performance: 39K req/s (buffer pools, sync.Pool, GOGC=200, connection pool)
+- [x] Complete Helm chart: 11 templates, GOMEMLIMIT auto-calc, HTTPRoute
+- [x] 542 tests, CI bench job, regression gates
+
 ## Planned
 
 - [ ] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching
-- [ ] `offset` and `@` timestamp modifiers
-- [ ] `unwrap duration()/bytes()` unit conversion post-processing
-- [ ] `bool` modifier on comparison operators
+- [ ] `@` timestamp modifier
+- [ ] `unwrap duration()/bytes()` unit conversion post-processing (value conversion, not stripping)
 - [ ] Subquery syntax `rate(...)[1h:5m]`
 - [ ] LRU cache eviction (replace random eviction)
-- [ ] Trusted proxy configuration for `X-Forwarded-For` rate limiting
-- [ ] Field-specific parser support (`| json field1, field2`)
+- [ ] Peer cache Phase 1 implementation (DNS discovery + peer fetch)
+- [ ] System metrics in /metrics (CPU, memory, IO, network via /proc)
 - [ ] Native VL stream selector optimization for known `_stream_fields`

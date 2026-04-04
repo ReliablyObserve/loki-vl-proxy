@@ -10,10 +10,8 @@ Last updated: v0.17.0
 | Cache random eviction (not LRU) | Known limitation | Hot entries may be evicted under pressure |
 | `on()`/`ignoring()`/`group_left()`/`group_right()` | Not supported | Complex dashboard joins fail |
 | `offset` and `@` modifiers | Not supported | Week-over-week queries fail |
-| Field-specific parser `| json field1, field2` | Ignored | Over-extraction, mostly cosmetic |
 | `X-Forwarded-For` spoofable for rate limiting | Known limitation | Security edge case behind trusted proxy |
-| `bool` modifier on comparisons | Ignored | Comparison returns 0/1 without filtering |
-| `unwrap duration()/bytes()` conversions | Wrapper stripped | Raw field value used (no unit conversion) |
+| `unwrap duration()/bytes()` unit conversion | Wrapper stripped | Raw field value used (no unit conversion at proxy) |
 
 ## Data Model Differences
 

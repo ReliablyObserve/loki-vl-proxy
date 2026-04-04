@@ -34,14 +34,21 @@ func TranslateLogQLWithLabels(logql string, labelFn LabelTranslateFunc) (string,
 		return "", fmt.Errorf("without() grouping clause is not supported; use by() with explicit labels instead")
 	}
 
-	// Check if this is a metric query (wrapping function like rate, count_over_time, etc.)
-	if metricResult, ok := tryTranslateMetricQuery(logql); ok {
-		return metricResult, nil
-	}
+	// Strip "bool" modifier from comparison operators before translation.
+	// Loki: "A > bool B" returns 1/0 instead of filtering. Our applyOp always
+	// returns 1/0 for comparisons, so "bool" is a no-op — just strip it.
+	boolRe := regexp.MustCompile(`\s+bool\s+`)
+	logql = boolRe.ReplaceAllString(logql, " ")
 
-	// Check if this is a binary metric expression: A / B, A + B, A - B, A * B
+	// Check binary metric expressions FIRST — they may contain metric sub-expressions.
+	// E.g., "rate({...}[5m]) > 0" is a binary expr, not just a metric query.
 	if binResult, ok := tryTranslateBinaryMetricExpr(logql); ok {
 		return binResult, nil
+	}
+
+	// Check if this is a plain metric query (no binary operator at top level)
+	if metricResult, ok := tryTranslateMetricQuery(logql); ok {
+		return metricResult, nil
 	}
 
 	return translateLogQuery(logql, labelFn)
@@ -209,11 +216,13 @@ func translatePipelineStage(stage string) string {
 		return "" // drop — VL handles this implicitly
 	}
 
-	// Parsers
-	if stage == "json" || stage == "unpack" {
+	// Parsers — handle both bare (| json) and field-specific (| json field1, field2)
+	// VL's unpack_json/unpack_logfmt always extracts all fields,
+	// so field-specific variants map to the same VL command.
+	if stage == "json" || stage == "unpack" || strings.HasPrefix(stage, "json ") || strings.HasPrefix(stage, "unpack ") {
 		return "| unpack_json"
 	}
-	if stage == "logfmt" {
+	if stage == "logfmt" || strings.HasPrefix(stage, "logfmt ") {
 		return "| unpack_logfmt"
 	}
 	if strings.HasPrefix(stage, "pattern ") {
@@ -464,6 +473,12 @@ const BinaryMetricPrefix = "__binary__:"
 func tryTranslateBinaryMetricExpr(logql string) (string, bool) {
 	logql = strings.TrimSpace(logql)
 
+	// Strip the "bool" modifier from comparison operators.
+	// Loki: "A > bool B" means return 1/0 instead of filtering.
+	// We strip "bool" and let applyOp return 1/0 for all comparisons (matching Loki behavior).
+	boolRe := regexp.MustCompile(`\s+bool\s+`)
+	logql = boolRe.ReplaceAllString(logql, " ")
+
 	// Find a binary operator at the top level (not inside parens)
 	// Includes: /, *, +, -, %, ^, ==, !=, >, <, >=, <=
 	ops := []string{" / ", " * ", " + ", " - ", " % ", " ^ ", " == ", " != ", " >= ", " <= ", " > ", " < "}
@@ -708,7 +723,13 @@ func addByClause(query, labels string) string {
 func findMatchingBrace(s string) int {
 	depth := 0
 	inQuote := false
-	for i, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := rune(s[i])
+		// Handle backslash escapes inside quotes
+		if c == '\\' && inQuote && i+1 < len(s) {
+			i++ // skip escaped character
+			continue
+		}
 		if c == '"' {
 			inQuote = !inQuote
 		}
