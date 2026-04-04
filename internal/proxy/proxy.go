@@ -129,6 +129,9 @@ type Config struct {
 	// Label translation
 	LabelStyle    LabelStyle     // how to translate VL field names to Loki labels
 	FieldMappings []FieldMapping // custom VL↔Loki field name mappings
+
+	// Stream optimization
+	StreamFields []string // VL _stream_fields labels — use native stream selectors for these (faster)
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -176,6 +179,7 @@ type Proxy struct {
 	derivedFields    []DerivedField
 	streamResponse   bool
 	labelTranslator  *LabelTranslator
+	streamFieldsMap  map[string]bool // known _stream_fields for VL stream selector optimization
 }
 
 func New(cfg Config) (*Proxy, error) {
@@ -264,7 +268,19 @@ func New(cfg Config) (*Proxy, error) {
 		derivedFields:    cfg.DerivedFields,
 		streamResponse:   cfg.StreamResponse,
 		labelTranslator:  NewLabelTranslator(cfg.LabelStyle, cfg.FieldMappings),
+		streamFieldsMap:  buildStreamFieldsMap(cfg.StreamFields),
 	}, nil
+}
+
+func buildStreamFieldsMap(fields []string) map[string]bool {
+	if len(fields) == 0 {
+		return nil
+	}
+	m := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		m[f] = true
+	}
+	return m
 }
 
 // Init wires cross-component dependencies after construction.
@@ -377,8 +393,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
-	// Check for binary metric expression (e.g., sum(rate(...)) / sum(rate(...)))
-	if op, left, right, ok := translator.ParseBinaryMetricExpr(logsqlQuery); ok {
+	// Check for subquery expression (e.g., max_over_time(rate(...)[1h:5m]))
+	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(logsqlQuery); ok {
+		p.proxySubqueryRange(sc, r, outerFunc, innerQL, rng, step)
+	} else if op, left, right, ok := translator.ParseBinaryMetricExpr(logsqlQuery); ok {
+		// Binary metric expression (e.g., sum(rate(...)) / sum(rate(...)))
 		p.proxyBinaryMetricQueryRange(sc, r, op, left, right)
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQueryRange(sc, r, logsqlQuery)
@@ -411,7 +430,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
-	if op, left, right, ok := translator.ParseBinaryMetricExpr(logsqlQuery); ok {
+	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(logsqlQuery); ok {
+		p.proxySubquery(sc, r, outerFunc, innerQL, rng, step)
+	} else if op, left, right, ok := translator.ParseBinaryMetricExpr(logsqlQuery); ok {
 		p.proxyBinaryMetricQuery(sc, r, op, left, right)
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQuery(sc, r, logsqlQuery)
@@ -2455,9 +2476,40 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":    "error",
-		"errorType": "bad_request",
+		"errorType": lokiErrorType(code),
 		"error":     msg,
 	})
+}
+
+// lokiErrorType returns the Loki/Prometheus-style errorType for an HTTP status code.
+// Matches the exact errorType strings from Loki's Prometheus API handler:
+// vendor/github.com/prometheus/prometheus/web/api/v1/api.go
+func lokiErrorType(code int) string {
+	switch code {
+	case 400:
+		return "bad_data"
+	case 404:
+		return "not_found"
+	case 406:
+		return "not_acceptable"
+	case 422:
+		return "execution"
+	case 499:
+		return "canceled"
+	case 500:
+		return "internal"
+	case 502:
+		return "unavailable"
+	case 503:
+		return "timeout" // Loki maps 503 to ErrQueryTimeout
+	case 504:
+		return "timeout"
+	default:
+		if code >= 400 && code < 500 {
+			return "bad_data"
+		}
+		return "internal"
+	}
 }
 
 func (p *Proxy) writeJSON(w http.ResponseWriter, data interface{}) {
@@ -2576,6 +2628,13 @@ func truncateQuery(q string, maxLen int) string {
 
 // translateQuery translates a LogQL query to LogsQL, applying label name translation.
 func (p *Proxy) translateQuery(logql string) (string, error) {
+	if p.streamFieldsMap != nil {
+		var labelFn translator.LabelTranslateFunc
+		if !p.labelTranslator.IsPassthrough() {
+			labelFn = p.labelTranslator.ToVL
+		}
+		return translator.TranslateLogQLWithStreamFields(logql, labelFn, p.streamFieldsMap)
+	}
 	if p.labelTranslator.IsPassthrough() {
 		return translator.TranslateLogQL(logql)
 	}

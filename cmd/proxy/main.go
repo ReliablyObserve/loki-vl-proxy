@@ -73,6 +73,7 @@ func main() {
   passthrough  - no translation, pass VL field names as-is (use when VL stores underscores)
   underscores  - convert dots to underscores (use when VL stores OTel-style dotted names like service.name)`)
 	fieldMappingJSON := flag.String("field-mapping", "", `JSON custom field mappings: [{"vl_field":"service.name","loki_label":"service_name"}]`)
+	streamFieldsCSV := flag.String("stream-fields", "", `Comma-separated VL _stream_fields labels for stream selector optimization (e.g., "app,env,namespace")`)
 
 	flag.Parse()
 
@@ -191,6 +192,7 @@ func main() {
 		StreamResponse:   *streamResponse,
 		LabelStyle:       ls,
 		FieldMappings:    fieldMappings,
+		StreamFields:     parseCSV(*streamFieldsCSV),
 	})
 	if err != nil {
 		log.Fatalf("Failed to create proxy: %v", err)
@@ -298,4 +300,18 @@ func maxBodyHandler(maxBytes int64, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func parseCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var result []string
+	for _, f := range strings.Split(s, ",") {
+		f = strings.TrimSpace(f)
+		if f != "" {
+			result = append(result, f)
+		}
+	}
+	return result
 }

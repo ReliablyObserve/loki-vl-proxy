@@ -58,11 +58,11 @@
 
 ## Planned
 
-- [ ] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching
-- [ ] `@` timestamp modifier
-- [ ] `unwrap duration()/bytes()` unit conversion post-processing (value conversion, not stripping)
-- [ ] Subquery syntax `rate(...)[1h:5m]`
-- [ ] LRU cache eviction (replace random eviction)
+- [x] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching (v0.22.0)
+- [x] `@` timestamp modifier (v0.19.0)
+- [x] `unwrap duration()/bytes()` unit conversion (v0.21.0)
+- [x] Subquery syntax `rate(...)[1h:5m]` — proxy-side evaluation (v0.23.0)
+- [x] LRU cache eviction (v0.21.0)
 - [ ] Peer cache Phase 1 implementation (DNS discovery + peer fetch)
-- [ ] System metrics in /metrics (CPU, memory, IO, network via /proc)
-- [ ] Native VL stream selector optimization for known `_stream_fields`
+- [x] System metrics in /metrics (CPU, memory, IO, network via /proc) (v0.19.0)
+- [x] Native VL stream selector optimization for known `_stream_fields` (v0.23.0)

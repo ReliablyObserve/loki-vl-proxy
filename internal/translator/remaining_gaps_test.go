@@ -63,16 +63,13 @@ func TestUnwrapBytes_FieldExtracted(t *testing.T) {
 }
 
 // =============================================================================
-// Subquery syntax — should return clear error (no VL equivalent)
+// Subquery syntax — proxy-side evaluation
 // =============================================================================
 
-func TestSubquery_ReturnsError(t *testing.T) {
+func TestSubquery_NestedRate_NoPanic(t *testing.T) {
 	logql := `rate(rate({app="nginx"}[5m])[1h:5m])`
-	_, err := TranslateLogQL(logql)
-	// This is a nested expression that VL can't handle.
-	// It may succeed (partial translation) or fail — either is acceptable.
-	// The key is it doesn't panic.
-	_ = err
+	// Nested subquery — may succeed or fail, key is no panic
+	_, _ = TranslateLogQL(logql)
 }
 
 // =============================================================================
@@ -120,17 +117,17 @@ func TestVectorMatching_GroupLeftStripped(t *testing.T) {
 }
 
 // =============================================================================
-// Subquery syntax — returns clear error
+// Subquery syntax — proxy-side evaluation (returns __subquery__ prefix)
 // =============================================================================
 
-func TestSubquery_ReturnsClearError(t *testing.T) {
+func TestSubquery_ReturnsSubqueryPrefix(t *testing.T) {
 	logql := `max_over_time(rate({app="nginx"}[5m])[1h:5m])`
-	_, err := TranslateLogQL(logql)
-	if err == nil {
-		t.Fatal("expected error for subquery syntax")
+	result, err := TranslateLogQL(logql)
+	if err != nil {
+		t.Fatalf("subquery should not error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "subquery") {
-		t.Errorf("error should mention subquery: %v", err)
+	if !strings.HasPrefix(result, SubqueryPrefix) {
+		t.Errorf("expected __subquery__ prefix, got %q", result)
 	}
 }
 

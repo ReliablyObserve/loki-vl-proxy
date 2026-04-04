@@ -1,6 +1,6 @@
 # Known Issues & VL Compatibility Gaps
 
-Last updated: v0.19.0
+Last updated: v0.23.0
 
 ## Remaining Behavioral Differences
 
@@ -11,13 +11,13 @@ All LogQL features are handled. No errors, no silent failures. Minor behavioral 
 | `without()` grouping | Converted to `by()` (labels inverted) | Native complement grouping |
 | `on()`/`ignoring()` | Stripped; exact metric key match | Label-subset matching |
 | `group_left()`/`group_right()` | Stripped; no cardinality enforcement | One-to-many join validation |
-| Subquery `rate(...)[1h:5m]` | Clear error with guidance | Nested sub-step evaluation |
+| Subquery `rate(...)[1h:5m]` | Proxy-side: runs inner query at sub-steps, aggregates | Native nested sub-step evaluation |
 
 ## Data Model Differences
 
 ### Stream Filter vs Field Filter Performance
 
-VL stream selectors `{label="value"}` only match `_stream_fields`. The proxy converts ALL Loki stream matchers to field filters for correctness. For known stream fields, stream selectors would be faster.
+VL stream selectors `{label="value"}` only match `_stream_fields`. By default, the proxy converts ALL Loki stream matchers to field filters for correctness. Use `-stream-fields=app,env,namespace` to enable VL native stream selectors for known `_stream_fields` (faster index path).
 
 ### Structured Metadata (Loki 3.x)
 
@@ -59,5 +59,5 @@ These were previously listed as gaps and have been resolved:
 - ~~Cache random eviction~~ -> Fixed: LRU eviction via container/list (v0.21.0)
 - ~~`unwrap duration()/bytes()` conversion~~ -> Fixed: proxy-side parsers for duration/byte strings (v0.21.0)
 - ~~`on()`/`ignoring()`/`group_left()`/`group_right()`~~ -> Fixed: stripped at translation, binary uses exact key match (v0.22.0)
-- ~~Subquery `rate(...)[1h:5m]`~~ -> Fixed: returns clear error message (v0.22.0)
+- ~~Subquery `rate(...)[1h:5m]`~~ -> Fixed: proxy-side evaluation — runs inner query at sub-steps, aggregates with outer function (v0.23.0)
 - ~~golangci-lint v2 config~~ -> Fixed: added version: "2" to .golangci.yml (v0.22.0)

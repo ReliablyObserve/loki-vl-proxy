@@ -20,19 +20,29 @@ func TranslateLogQL(logql string) (string, error) {
 	return TranslateLogQLWithLabels(logql, nil)
 }
 
+// TranslateLogQLWithStreamFields converts a LogQL query to LogsQL, using VL native stream
+// selectors for labels known to be _stream_fields (faster index path), and field filters
+// for everything else. If streamFields is nil or empty, all matchers use field filters.
+func TranslateLogQLWithStreamFields(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool) (string, error) {
+	return translateLogQLFull(logql, labelFn, streamFields)
+}
+
 // TranslateLogQLWithLabels converts a LogQL query to LogsQL, applying label name
 // translation in stream selectors and label filters.
 func TranslateLogQLWithLabels(logql string, labelFn LabelTranslateFunc) (string, error) {
+	return translateLogQLFull(logql, labelFn, nil)
+}
+
+func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool) (string, error) {
 	logql = strings.TrimSpace(logql)
 	if logql == "" {
 		return "*", nil
 	}
 
-	// Detect subquery syntax: rate(...)[1h:5m] — the [duration:step] with colon is the marker.
-	// VL has no nested sub-step evaluation; return a clear error.
-	subqueryRe := regexp.MustCompile(`\[[\d]+[smhd]+:[\d]+[smhd]+\]`)
-	if subqueryRe.MatchString(logql) {
-		return "", fmt.Errorf("subquery syntax (e.g., [1h:5m]) is not supported; VictoriaLogs has no sub-step evaluation. Use rate() with explicit step parameter instead")
+	// Detect subquery syntax: outer_func(inner_query[range:step])
+	// The proxy evaluates these by running the inner query at sub-step intervals.
+	if result, ok := tryTranslateSubquery(logql); ok {
+		return result, nil
 	}
 
 	// Convert without() to by() — VL has no native without().
@@ -59,7 +69,7 @@ func TranslateLogQLWithLabels(logql string, labelFn LabelTranslateFunc) (string,
 		return metricResult, nil
 	}
 
-	return translateLogQuery(logql, labelFn)
+	return translateLogQuery(logql, labelFn, streamFields)
 }
 
 // rewriteWithoutToMarker converts without(labels) to by() but passes excluded labels
@@ -122,8 +132,14 @@ func containsWithoutClause(logql string) bool {
 }
 
 // translateLogQuery handles log queries (non-metric).
-func translateLogQuery(logql string, labelFn LabelTranslateFunc) (string, error) {
+func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ...map[string]bool) (string, error) {
+	var sf map[string]bool
+	if len(streamFields) > 0 {
+		sf = streamFields[0]
+	}
+
 	var parts []string
+	var streamParts []string // VL native stream selectors for known _stream_fields
 
 	remaining := logql
 
@@ -133,9 +149,8 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc) (string, error)
 	// stream fields. If we pass {level="error"} to VL, the stream filter
 	// returns zero results.
 	//
-	// Solution: convert ALL Loki stream matchers to LogsQL field filters.
-	// This works regardless of whether the label is a stream field or not,
-	// because VL's field filters match all indexed fields.
+	// Optimization: if streamFields is configured, use VL native stream selectors
+	// for known _stream_fields (faster index path). Use field filters for the rest.
 	if strings.HasPrefix(remaining, "{") {
 		end := findMatchingBrace(remaining)
 		if end < 0 {
@@ -146,9 +161,13 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc) (string, error)
 
 		matchers := splitStreamMatchers(streamContent)
 		for _, m := range matchers {
-			ff := streamMatcherToFieldFilter(m, labelFn)
-			if ff != "" {
-				parts = append(parts, ff)
+			if sf != nil && canUseStreamSelector(m, sf, labelFn) {
+				streamParts = append(streamParts, m)
+			} else {
+				ff := streamMatcherToFieldFilter(m, labelFn)
+				if ff != "" {
+					parts = append(parts, ff)
+				}
 			}
 		}
 	}
@@ -231,6 +250,17 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc) (string, error)
 	}
 
 	result := strings.Join(parts, " ")
+
+	// Prepend VL native stream selector for known _stream_fields
+	if len(streamParts) > 0 {
+		streamSelector := "{" + strings.Join(streamParts, ", ") + "}"
+		if result == "" {
+			result = streamSelector
+		} else {
+			result = streamSelector + " " + result
+		}
+	}
+
 	if result == "" {
 		return "*", nil
 	}
@@ -933,6 +963,28 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 	return ""
 }
 
+// canUseStreamSelector returns true if a stream matcher can be converted to a VL native
+// stream selector (faster index path) instead of a field filter.
+// Only exact-match (=) on known _stream_fields qualifies.
+// Regex (=~, !~) and negation (!=) always use field filters.
+func canUseStreamSelector(matcher string, streamFields map[string]bool, labelFn LabelTranslateFunc) bool {
+	matcher = strings.TrimSpace(matcher)
+	// Only exact positive match qualifies for stream selectors
+	// Reject regex and negation operators
+	if strings.Contains(matcher, "!~") || strings.Contains(matcher, "=~") || strings.Contains(matcher, "!=") {
+		return false
+	}
+	idx := strings.Index(matcher, "=")
+	if idx <= 0 {
+		return false
+	}
+	label := strings.TrimSpace(matcher[:idx])
+	if labelFn != nil {
+		label = labelFn(label)
+	}
+	return streamFields[label]
+}
+
 func isParserStage(translated string) bool {
 	return translated == "| unpack_json" || translated == "| unpack_logfmt" ||
 		strings.HasPrefix(translated, "| extract ") || strings.HasPrefix(translated, "| extract_regexp ")
@@ -951,4 +1003,116 @@ func translateBareFilter(s string) string {
 	}
 	// Bare text after stream selector — treat as phrase filter
 	return `"` + s + `"`
+}
+
+// =============================================================================
+// Subquery support: outer_func(inner_metric_query[range:step])
+// Proxy evaluates inner query at sub-step intervals and aggregates.
+// =============================================================================
+
+// SubqueryPrefix marks a translated subquery expression for proxy-side evaluation.
+const SubqueryPrefix = "__subquery__:"
+
+// subqueryRe matches the [range:step] suffix on a subquery.
+var subqueryRe = regexp.MustCompile(`\[(\d+[smhd]+):(\d+[smhd]+)\]\s*\)\s*$`)
+
+// tryTranslateSubquery detects and translates subquery syntax.
+// Input: max_over_time(rate({app="nginx"}[5m])[1h:5m])
+// Output: __subquery__:max_over_time:<translated inner query>:1h:5m
+func tryTranslateSubquery(logql string) (string, bool) {
+	// Look for [range:step] pattern inside the expression
+	subqInlineRe := regexp.MustCompile(`\[(\d+[smhd]+):(\d+[smhd]+)\]`)
+	if !subqInlineRe.MatchString(logql) {
+		return "", false
+	}
+
+	// Extract the outer function: everything before the first "("
+	// E.g., "max_over_time(rate({app="nginx"}[5m])[1h:5m])" → "max_over_time"
+	parenIdx := strings.Index(logql, "(")
+	if parenIdx < 0 {
+		return "", false
+	}
+	outerFunc := strings.TrimSpace(logql[:parenIdx])
+
+	// Validate it's a known aggregation function
+	knownOuter := map[string]bool{
+		"max_over_time": true, "min_over_time": true,
+		"avg_over_time": true, "sum_over_time": true,
+		"count_over_time": true, "stddev_over_time": true,
+		"stdvar_over_time": true, "last_over_time": true,
+		"first_over_time": true, "quantile_over_time": true,
+	}
+	if !knownOuter[outerFunc] {
+		return "", false
+	}
+
+	// The body is everything inside the outer function's parens
+	body := logql[parenIdx+1:]
+	// Find the last closing paren
+	lastParen := strings.LastIndex(body, ")")
+	if lastParen < 0 {
+		return "", false
+	}
+	body = body[:lastParen]
+
+	// Find [range:step] at the end of body
+	loc := subqInlineRe.FindStringSubmatchIndex(body)
+	if loc == nil {
+		return "", false
+	}
+
+	// Check that this [range:step] is at the END of the body (after the inner query's closing paren)
+	// The inner query ends just before the [range:step]
+	rangeStepStart := loc[0]
+	rng := body[loc[2]:loc[3]]
+	step := body[loc[4]:loc[5]]
+
+	innerQuery := strings.TrimSpace(body[:rangeStepStart])
+
+	// The inner query should be a complete metric expression.
+	// Translate it as a normal metric query.
+	translatedInner, err := TranslateLogQL(innerQuery)
+	if err != nil {
+		return "", false
+	}
+
+	return fmt.Sprintf("%s%s:%s:%s:%s", SubqueryPrefix, outerFunc, translatedInner, rng, step), true
+}
+
+// ParseSubqueryExpr parses a "__subquery__:func:innerQuery:range:step" string.
+// Returns the outer function, inner translated query, range, step, and whether it's a subquery.
+func ParseSubqueryExpr(s string) (outerFunc, innerQuery, rng, step string, ok bool) {
+	if !strings.HasPrefix(s, SubqueryPrefix) {
+		return "", "", "", "", false
+	}
+	rest := s[len(SubqueryPrefix):]
+
+	// Format: "func:innerQuery:range:step"
+	// The innerQuery may contain colons (e.g., in field filters), so we parse from both ends.
+	// The last two colon-separated segments are range and step (simple duration strings).
+	// Find the step (last segment)
+	lastColon := strings.LastIndex(rest, ":")
+	if lastColon < 0 {
+		return "", "", "", "", false
+	}
+	step = rest[lastColon+1:]
+	rest = rest[:lastColon]
+
+	// Find the range (now last segment)
+	lastColon = strings.LastIndex(rest, ":")
+	if lastColon < 0 {
+		return "", "", "", "", false
+	}
+	rng = rest[lastColon+1:]
+	rest = rest[:lastColon]
+
+	// Find the outer function (first segment)
+	firstColon := strings.Index(rest, ":")
+	if firstColon < 0 {
+		return "", "", "", "", false
+	}
+	outerFunc = rest[:firstColon]
+	innerQuery = rest[firstColon+1:]
+
+	return outerFunc, innerQuery, rng, step, true
 }

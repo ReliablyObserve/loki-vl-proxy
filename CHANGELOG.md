@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-04-04
+
+### Features
+
+- **Proxy-side subquery evaluation**: `max_over_time(rate({app="nginx"}[5m])[1h:5m])` no longer returns an error. The proxy parses the subquery syntax, executes the inner metric query at each sub-step interval (e.g., every 5m over 1h = 12 VL queries), and aggregates results with the outer function (max, min, avg, sum, count, stddev, stdvar, first, last). Concurrent sub-step execution (bounded at 10) keeps latency low. Both query_range and instant query endpoints are supported.
+- **VL stream selector optimization** (`-stream-fields`): New `-stream-fields=app,env,namespace` flag tells the proxy which labels are VL `_stream_fields`. For those labels, the proxy uses VL's native `{label="value"}` stream selectors (fast index path) instead of field filters. Non-stream-field labels still use field filters for correctness. Mixed matchers split correctly.
+- **Loki-compatible error responses**: Error responses now use Loki/Prometheus-standard `errorType` values (`bad_data`, `execution`, `unavailable`, `timeout`, `canceled`, `internal`, `too_many_requests`) instead of a generic `bad_request` for all errors.
+
+### Performance
+
+Subquery benchmarks (Apple M3 Max):
+
+| Subquery | Latency | Allocs | Memory |
+|----------|---------|--------|--------|
+| 3 steps (30m/10m) | 270µs | 1,152 | 170KB |
+| 12 steps (1h/5m) | 634µs | 2,545 | 360KB |
+| 72 steps (6h/5m) | 2.4ms | 11,693 | 1.1MB |
+| 288 steps (24h/5m) | 8.6ms | 44,667 | 3.9MB |
+
+Load: 7,036 subquery req/s at 50 concurrent (4 VL calls each). Stable memory (~47-48 MB per 100-request round, no leak).
+
+### Tests
+
+- 666 total tests (80 new: subquery parsing/evaluation/aggregation/perf/regression, stream selector optimization, Loki error format, duration/timestamp parsing)
+
 ## [0.22.0] - 2026-04-04
 
 ### Bug Fixes

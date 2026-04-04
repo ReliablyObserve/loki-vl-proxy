@@ -113,10 +113,10 @@ Supported operators: `+`, `-`, `*`, `/`, `%`, `^`, `==`, `!=`, `>`, `<`, `>=`, `
 |---|---|---|
 | `without()` grouping | Returns error | Use `by()` with explicit labels |
 | `bool` modifier on comparisons | Ignored | - |
-| `on()`/`ignoring()`/`group_left()`/`group_right()` | Not supported | Simplify to single-metric queries |
-| `offset` modifier | Not supported | Adjust time range parameters |
-| `@` timestamp modifier | Not supported | - |
-| Subquery syntax `rate(...)[1h:5m]` | Not supported | No VL equivalent |
+| `on()`/`ignoring()`/`group_left()`/`group_right()` | Stripped; binary uses exact key match | - |
+| `offset` modifier | Stripped; time range unaffected | - |
+| `@` timestamp modifier | Stripped | - |
+| Subquery `rate(...)[1h:5m]` | Proxy-side: inner query at sub-steps, outer aggregation | - |
 | `unwrap duration()/bytes()` conversion | Wrapper stripped | Raw field value used |
 | Negative/scientific scalars | Supported | (Fixed in v0.17.0) |
 

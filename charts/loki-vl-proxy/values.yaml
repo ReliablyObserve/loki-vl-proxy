@@ -43,6 +43,8 @@ extraArgs:
   # Derived fields (trace linking)
   # derived-fields: '[{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]'
   # stream-response: "true"  # chunked transfer encoding for large results
+  # Stream selector optimization — list VL _stream_fields labels for fast index path
+  # stream-fields: "app,env,namespace"
 
 # Go runtime tuning — set GOMEMLIMIT to ~90% of memory limit for optimal GC
 # This prevents OOM while minimizing GC overhead. See docs/performance.md.
