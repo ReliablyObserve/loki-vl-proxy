@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.24.0] - 2026-04-04
+
+### Features
+
+- per-client identity metrics, scaling/capacity docs
+- secret redaction, encryption removal, lint fixes, fleet e2e
+- TTL-preserving shadow copies — never extend original expiry
+- gossip key directory for local-first cache — minimize hops behind LB
+- owner-affinity write-through, LB-aware fleet cache design
+- fleet-distributed peer cache with consistent hashing and circuit breakers
+- group_left/group_right one-to-many join, vector matching metadata passthrough
+- proper without() label exclusion and on()/ignoring() label-subset matching
+- smart PR labeling + scope-aware version bumping
+- auto-release pipeline — version bump, changelog, badges, tag via PRs
+
+### Bug Fixes
+
+- pass gh token to release pr step
+- remove unused websocket helper
+- harden proxy and release workflow
+- fix compat flakes, add disk cache e2e, cache sizing tests
+- badge workflow creates PR instead of direct push (respects branch rules)
+- re-enable badge auto-push, ruleset allows GHA bot
+- badges workflow read-only (no push), e2e continue-on-error
+- mark e2e-compat as continue-on-error (data ingestion timing flakes)
+- remove unused functions, fix staticcheck SA9003/QF1001
+- lint errcheck exclusions, staticcheck fix, e2e docker compose startup
+- move errcheck test exclusion to linters.exclusions.rules (golangci-lint v2)
+- simplify golangci-lint v2 config, add Apache 2.0 license
+- race detector fix, golangci-lint v2 config, fuzz tests, README badges
+
+### Tests
+
+- 920 total tests (82.2% coverage)
+
 ## [0.23.0] - 2026-04-04
 
 ### Features
