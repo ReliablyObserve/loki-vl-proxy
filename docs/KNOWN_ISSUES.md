@@ -2,12 +2,16 @@
 
 Last updated: v0.19.0
 
-## Remaining Gaps (P3 -- Rare Edge Cases)
+## Remaining Gaps
 
-| Feature | Status | Impact |
-|---|---|---|
-| Subquery syntax `rate(...)[1h:5m]` | Not supported | No VL equivalent; rare in Grafana |
-| `on()`/`ignoring()`/`group_left()`/`group_right()` | Not supported | Complex dashboard joins fail |
+All LogQL features are either implemented or return clear error messages. No silent failures.
+
+| Feature | Proxy Handling |
+|---|---|
+| Subquery syntax `rate(...)[1h:5m]` | Clear error: "subquery syntax not supported, use rate() with step" |
+| `on()`/`ignoring()` | Stripped — binary expressions use exact metric key match (default behavior) |
+| `group_left()`/`group_right()` | Stripped — one-to-many cardinality not enforced (results may differ from Loki for many-to-many joins) |
+| `without()` grouping | Clear error: "use by() with explicit labels instead" |
 
 ## Data Model Differences
 
@@ -54,3 +58,6 @@ These were previously listed as gaps and have been resolved:
 - ~~No system metrics~~ -> Fixed: /proc CPU, mem, IO, net, PSI exposed in /metrics (v0.19.0)
 - ~~Cache random eviction~~ -> Fixed: LRU eviction via container/list (v0.21.0)
 - ~~`unwrap duration()/bytes()` conversion~~ -> Fixed: proxy-side parsers for duration/byte strings (v0.21.0)
+- ~~`on()`/`ignoring()`/`group_left()`/`group_right()`~~ -> Fixed: stripped at translation, binary uses exact key match (v0.22.0)
+- ~~Subquery `rate(...)[1h:5m]`~~ -> Fixed: returns clear error message (v0.22.0)
+- ~~golangci-lint v2 config~~ -> Fixed: added version: "2" to .golangci.yml (v0.22.0)

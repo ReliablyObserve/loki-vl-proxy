@@ -28,6 +28,13 @@ func TranslateLogQLWithLabels(logql string, labelFn LabelTranslateFunc) (string,
 		return "*", nil
 	}
 
+	// Detect subquery syntax: rate(...)[1h:5m] — the [duration:step] with colon is the marker.
+	// VL has no nested sub-step evaluation; return a clear error.
+	subqueryRe := regexp.MustCompile(`\[[\d]+[smhd]+:[\d]+[smhd]+\]`)
+	if subqueryRe.MatchString(logql) {
+		return "", fmt.Errorf("subquery syntax (e.g., [1h:5m]) is not supported; VictoriaLogs has no sub-step evaluation. Use rate() with explicit step parameter instead")
+	}
+
 	// Reject without() clause — VL has no equivalent (it cannot compute the complement label set).
 	// Detect both forms: "sum without (...) (...)" and "sum(...) without (...)"
 	if containsWithoutClause(logql) {
@@ -478,6 +485,17 @@ func tryTranslateBinaryMetricExpr(logql string) (string, bool) {
 	// We strip "bool" and let applyOp return 1/0 for all comparisons (matching Loki behavior).
 	boolRe := regexp.MustCompile(`\s+bool\s+`)
 	logql = boolRe.ReplaceAllString(logql, " ")
+
+	// Strip vector matching modifiers: on(labels), ignoring(labels), group_left(labels), group_right(labels).
+	// These control how binary expression sides are joined by label.
+	// The proxy joins by exact metric key match (equivalent to default behavior).
+	// Stripping allows the binary expression to be parsed and evaluated.
+	vectorMatchRe := regexp.MustCompile(`\s+(on|ignoring|group_left|group_right)\s*\([^)]*\)`)
+	logql = vectorMatchRe.ReplaceAllString(logql, "")
+	// Normalize multiple spaces left by stripping
+	for strings.Contains(logql, "  ") {
+		logql = strings.ReplaceAll(logql, "  ", " ")
+	}
 
 	// Find a binary operator at the top level (not inside parens)
 	// Includes: /, *, +, -, %, ^, ==, !=, >, <, >=, <=

@@ -79,6 +79,61 @@ func TestSubquery_ReturnsError(t *testing.T) {
 // Multiple stream selectors in binary queries — normalize both
 // =============================================================================
 
+// =============================================================================
+// Vector matching: on()/ignoring()/group_left()/group_right() — stripped, binary works
+// =============================================================================
+
+func TestVectorMatching_OnStripped(t *testing.T) {
+	logql := `rate({app="a"}[5m]) / on(app) rate({app="b"}[5m])`
+	result, err := TranslateLogQL(logql)
+	if err != nil {
+		t.Fatalf("on() should not cause error: %v", err)
+	}
+	if !strings.HasPrefix(result, "__binary__:") {
+		t.Errorf("expected binary expression, got %q", result)
+	}
+	if strings.Contains(result, "on(") {
+		t.Errorf("on() should be stripped from output, got %q", result)
+	}
+}
+
+func TestVectorMatching_IgnoringStripped(t *testing.T) {
+	logql := `rate({app="a"}[5m]) / ignoring(pod) rate({app="b"}[5m])`
+	result, err := TranslateLogQL(logql)
+	if err != nil {
+		t.Fatalf("ignoring() should not cause error: %v", err)
+	}
+	if !strings.HasPrefix(result, "__binary__:") {
+		t.Errorf("expected binary expression, got %q", result)
+	}
+}
+
+func TestVectorMatching_GroupLeftStripped(t *testing.T) {
+	logql := `rate({app="a"}[5m]) * on(app) group_left(team) rate({app="b"}[5m])`
+	result, err := TranslateLogQL(logql)
+	if err != nil {
+		t.Fatalf("group_left() should not cause error: %v", err)
+	}
+	if !strings.HasPrefix(result, "__binary__:") {
+		t.Errorf("expected binary expression, got %q", result)
+	}
+}
+
+// =============================================================================
+// Subquery syntax — returns clear error
+// =============================================================================
+
+func TestSubquery_ReturnsClearError(t *testing.T) {
+	logql := `max_over_time(rate({app="nginx"}[5m])[1h:5m])`
+	_, err := TranslateLogQL(logql)
+	if err == nil {
+		t.Fatal("expected error for subquery syntax")
+	}
+	if !strings.Contains(err.Error(), "subquery") {
+		t.Errorf("error should mention subquery: %v", err)
+	}
+}
+
 func TestBinaryQuery_BothSelectorsTranslated(t *testing.T) {
 	logql := `rate({app="a"}[5m]) / rate({app="b"}[5m])`
 	result, err := TranslateLogQL(logql)
