@@ -51,6 +51,9 @@ type Metrics struct {
 	// Circuit breaker state function (injected)
 	cbStateFunc func() string
 
+	// System-level metrics (/proc)
+	system *SystemMetrics
+
 	// Startup time
 	startTime time.Time
 }
@@ -95,6 +98,7 @@ func NewMetrics() *Metrics {
 		endpointCacheHits:  make(map[string]*atomic.Int64),
 		endpointCacheMisses: make(map[string]*atomic.Int64),
 		backendDurations:   make(map[string]*histogram),
+		system:             NewSystemMetrics(),
 		startTime:          time.Now(),
 	}
 }
@@ -469,6 +473,9 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.mu.RUnlock()
+
+	// System-level metrics (/proc on Linux)
+	m.system.WritePrometheus(&sb)
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	_, _ = w.Write([]byte(sb.String()))
