@@ -2643,15 +2643,22 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 	}
 }
 
-// statusCapture wraps ResponseWriter to capture the status code.
+// statusCapture wraps ResponseWriter to capture the status code and bytes written.
 type statusCapture struct {
 	http.ResponseWriter
-	code int
+	code         int
+	bytesWritten int
 }
 
 func (sc *statusCapture) WriteHeader(code int) {
 	sc.code = code
 	sc.ResponseWriter.WriteHeader(code)
+}
+
+func (sc *statusCapture) Write(b []byte) (int, error) {
+	n, err := sc.ResponseWriter.Write(b)
+	sc.bytesWritten += n
+	return n, err
 }
 
 // Flush implements http.Flusher for chunked streaming support.
@@ -2683,6 +2690,10 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequest(tenant, endpoint, sc.code, elapsed)
+
+		// Per-client identity metrics (Grafana user > tenant > IP)
+		clientID := metrics.ResolveClientID(r)
+		p.metrics.RecordClientIdentity(clientID, endpoint, elapsed, int64(sc.bytesWritten))
 
 		// Client error categorization
 		if sc.code >= 400 && sc.code < 500 {

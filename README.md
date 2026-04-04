@@ -186,7 +186,8 @@ All features produce correct results. Implementation details for advanced featur
 | [Translation Reference](docs/translation-reference.md) | LogQL to LogsQL mapping table, supported/unsupported features |
 | [Performance](docs/performance.md) | Benchmarks, optimization techniques, scaling profile, CI regression gates |
 | [Benchmarks](docs/benchmarks.md) | Raw benchmark numbers, connection pool tuning, hot path analysis |
-| [Operations](docs/operations.md) | Deployment, capacity planning, performance tuning, troubleshooting |
+| [Scaling](docs/scaling.md) | Capacity planning, resource projections, per-tenant/client metrics, Helm sizing |
+| [Operations](docs/operations.md) | Deployment, performance tuning, troubleshooting |
 | [Testing](docs/testing.md) | Test categories, running tests, fuzz testing |
 | [Known Issues](docs/KNOWN_ISSUES.md) | VL compatibility gaps, data model differences |
 | [Roadmap](docs/roadmap.md) | Completed features and planned work |

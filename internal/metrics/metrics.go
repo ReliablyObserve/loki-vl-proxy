@@ -45,6 +45,11 @@ type Metrics struct {
 	// Client error tracking
 	clientErrors map[string]*atomic.Int64 // "endpoint:reason" → count
 
+	// Per-client identity metrics
+	clientRequests  map[string]*atomic.Int64 // "client:endpoint" → count
+	clientDurations map[string]*histogram    // "client:endpoint" → duration histogram
+	clientBytes     map[string]*atomic.Int64 // "client" → response bytes
+
 	// Active connections
 	activeRequests atomic.Int64
 
@@ -98,6 +103,9 @@ func NewMetrics() *Metrics {
 		endpointCacheHits:  make(map[string]*atomic.Int64),
 		endpointCacheMisses: make(map[string]*atomic.Int64),
 		backendDurations:   make(map[string]*histogram),
+		clientRequests:     make(map[string]*atomic.Int64),
+		clientDurations:    make(map[string]*histogram),
+		clientBytes:        make(map[string]*atomic.Int64),
 		system:             NewSystemMetrics(),
 		startTime:          time.Now(),
 	}
@@ -174,6 +182,88 @@ func (m *Metrics) RecordTenantRequest(tenant, endpoint string, statusCode int, d
 		m.mu.Unlock()
 	}
 	hist.observe(duration.Seconds())
+}
+
+// RecordClientIdentity records a request for a specific client identity.
+// Client is identified by: X-Grafana-User > tenant > basic auth user > IP.
+func (m *Metrics) RecordClientIdentity(clientID, endpoint string, duration time.Duration, responseBytes int64) {
+	if clientID == "" {
+		clientID = "__anonymous__"
+	}
+	// Limit cardinality: truncate to first 64 chars
+	if len(clientID) > 64 {
+		clientID = clientID[:64]
+	}
+
+	key := fmt.Sprintf("%s:%s", clientID, endpoint)
+	m.mu.RLock()
+	counter, ok := m.clientRequests[key]
+	hist, hok := m.clientDurations[key]
+	bytesCounter, bok := m.clientBytes[clientID]
+	m.mu.RUnlock()
+
+	if !ok {
+		m.mu.Lock()
+		counter, ok = m.clientRequests[key]
+		if !ok {
+			counter = &atomic.Int64{}
+			m.clientRequests[key] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+
+	if !hok {
+		m.mu.Lock()
+		hist, hok = m.clientDurations[key]
+		if !hok {
+			hist = newHistogram()
+			m.clientDurations[key] = hist
+		}
+		m.mu.Unlock()
+	}
+	hist.observe(duration.Seconds())
+
+	if !bok {
+		m.mu.Lock()
+		bytesCounter, bok = m.clientBytes[clientID]
+		if !bok {
+			bytesCounter = &atomic.Int64{}
+			m.clientBytes[clientID] = bytesCounter
+		}
+		m.mu.Unlock()
+	}
+	bytesCounter.Add(responseBytes)
+}
+
+// ResolveClientID extracts the client identity from an HTTP request.
+// Priority: X-Grafana-User > X-Scope-OrgID > basic auth user > IP.
+func ResolveClientID(r *http.Request) string {
+	// Grafana sets this header when proxying datasource requests
+	if user := r.Header.Get("X-Grafana-User"); user != "" {
+		return user
+	}
+	// Tenant ID (X-Scope-OrgID)
+	if tenant := r.Header.Get("X-Scope-OrgID"); tenant != "" {
+		return tenant
+	}
+	// Basic auth username
+	if user, _, ok := r.BasicAuth(); ok && user != "" {
+		return user
+	}
+	// Forwarded client IP
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		// Take first IP (original client)
+		if idx := strings.IndexByte(fwd, ','); idx > 0 {
+			return strings.TrimSpace(fwd[:idx])
+		}
+		return strings.TrimSpace(fwd)
+	}
+	// Remote address (IP:port → strip port)
+	if idx := strings.LastIndexByte(r.RemoteAddr, ':'); idx > 0 {
+		return r.RemoteAddr[:idx]
+	}
+	return r.RemoteAddr
 }
 
 // RecordClientError records a client-side error with a reason category.
@@ -454,6 +544,63 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_coalesced_saved_total Backend requests saved by coalescing.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_coalesced_saved_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_saved_total %d\n", m.coalescedSaved.Load())
+
+	// Per-client identity metrics
+	sb.WriteString("# HELP loki_vl_proxy_client_requests_total Requests by client identity.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_client_requests_total counter\n")
+	crKeys := make([]string, 0, len(m.clientRequests))
+	for k := range m.clientRequests {
+		crKeys = append(crKeys, k)
+	}
+	sort.Strings(crKeys)
+	for _, key := range crKeys {
+		parts := strings.SplitN(key, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_client_requests_total{client=%q,endpoint=%q} %d\n",
+			parts[0], parts[1], m.clientRequests[key].Load())
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_client_response_bytes_total Response bytes by client.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_client_response_bytes_total counter\n")
+	cbKeys := make([]string, 0, len(m.clientBytes))
+	for k := range m.clientBytes {
+		cbKeys = append(cbKeys, k)
+	}
+	sort.Strings(cbKeys)
+	for _, client := range cbKeys {
+		fmt.Fprintf(&sb, "loki_vl_proxy_client_response_bytes_total{client=%q} %d\n",
+			client, m.clientBytes[client].Load())
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_client_request_duration_seconds Per-client request duration.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_client_request_duration_seconds histogram\n")
+	cdKeys := make([]string, 0, len(m.clientDurations))
+	for k := range m.clientDurations {
+		cdKeys = append(cdKeys, k)
+	}
+	sort.Strings(cdKeys)
+	for _, key := range cdKeys {
+		parts := strings.SplitN(key, ":", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		client, ep := parts[0], parts[1]
+		h := m.clientDurations[key]
+		h.mu.Lock()
+		for i, b := range h.buckets {
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{client=%q,endpoint=%q,le=\"%g\"} %d\n",
+				client, ep, b, h.counts[i])
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{client=%q,endpoint=%q,le=\"+Inf\"} %d\n",
+			client, ep, h.count)
+		fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_sum{client=%q,endpoint=%q} %g\n",
+			client, ep, h.sum)
+		fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_count{client=%q,endpoint=%q} %d\n",
+			client, ep, h.count)
+		h.mu.Unlock()
+	}
 
 	// Circuit breaker state
 	if m.cbStateFunc != nil {
