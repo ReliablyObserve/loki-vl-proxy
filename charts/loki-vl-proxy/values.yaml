@@ -281,6 +281,22 @@ httpRoute:
     # - loki-vl-proxy.example.com
   weight: 100  # for canary/weighted routing
 
+# --- Peer Cache (distributed L1.5 cache across replicas) ---
+peerCache:
+  enabled: false
+  # Discovery: "dns" (headless service, recommended) or "static" (explicit peers list)
+  discovery: "dns"
+  # Headless service name (defaults to release-name + "-peers")
+  serviceName: ""
+  # Static peer URLs (if discovery=static)
+  peers: []
+    # - "http://proxy-0.proxy-peers:3100"
+    # - "http://proxy-1.proxy-peers:3100"
+  # Timeout for peer cache fetch (must be << VL query time)
+  timeout: "5ms"
+  # Max peers to query on miss (0 = consistent hash to 1 peer)
+  maxPeerQueries: 1
+
 # --- Disk cache persistent volume ---
 persistence:
   enabled: false
