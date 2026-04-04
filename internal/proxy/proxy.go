@@ -172,8 +172,15 @@ func New(cfg Config) (*Proxy, error) {
 		cbOpen = 10 * time.Second
 	}
 
-	// Build HTTP client with optional TLS skip for VL backend
+	// Build HTTP client optimized for high-concurrency single-backend proxying.
+	// Go defaults (MaxIdleConnsPerHost=2) cause ephemeral port exhaustion under load.
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 256                // total idle connections across all hosts
+	transport.MaxIdleConnsPerHost = 256          // VL is the only backend — all slots for it
+	transport.MaxConnsPerHost = 0                // unlimited concurrent connections to VL
+	transport.IdleConnTimeout = 90 * time.Second // reuse connections for 90s
+	transport.ResponseHeaderTimeout = 120 * time.Second
+	transport.DisableCompression = false         // accept gzip from VL if available
 	if cfg.BackendTLSSkip {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}

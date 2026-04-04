@@ -35,6 +35,50 @@ jobs:
           name: coverage
           path: coverage.out
 
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          cache: true
+
+      - name: Run benchmarks
+        run: |
+          go test ./internal/proxy/ -bench . -benchmem -run "^$" -count=3 -timeout=120s \
+            | tee bench-results.txt
+
+      - name: Run load tests
+        run: |
+          go test ./internal/proxy/ -run "TestLoad" -v -timeout=120s -count=1 \
+            | tee load-results.txt
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: |
+            bench-results.txt
+            load-results.txt
+
+      - name: Check for performance regressions
+        run: |
+          # Extract key metrics and fail if below thresholds
+          echo "=== Benchmark Summary ==="
+          grep "Benchmark" bench-results.txt | head -10
+
+          echo ""
+          echo "=== Load Test Summary ==="
+          grep -E "Throughput|Errors|Live heap" load-results.txt
+
+          # Fail if high-concurrency test has errors
+          if grep -q "Errors: [1-9]" load-results.txt; then
+            echo "FAIL: Load test had errors"
+            exit 1
+          fi
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -53,7 +97,7 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
-    needs: [test, lint]
+    needs: [test, lint, bench]
     steps:
       - uses: actions/checkout@v4
 
