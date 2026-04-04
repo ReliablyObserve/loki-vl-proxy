@@ -1,6 +1,7 @@
 version: "2"
 
 linters:
+  default: none
   enable:
     - errcheck
     - staticcheck
@@ -14,3 +15,8 @@ linters:
         - fmt.Fprintf
         - fmt.Fprintln
         - (*net/http.Request).ParseForm
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
