@@ -14,7 +14,8 @@ type entry struct {
 }
 
 // Cache is an in-memory TTL cache with per-key TTL override, max entries, and max bytes.
-// Supports optional L2 disk cache for spillover persistence.
+// Supports optional L2 disk cache and L3 peer cache for distributed fleet operation.
+// Lookup order: L1 (in-memory) → L2 (disk) → L3 (peer) → VL backend.
 type Cache struct {
 	mu         sync.RWMutex
 	entries    map[string]entry
@@ -22,7 +23,8 @@ type Cache struct {
 	maxEntries int
 	maxBytes   int
 	curBytes   int
-	l2         *DiskCache // optional L2 disk cache
+	l2         *DiskCache  // optional L2 disk cache
+	l3         *PeerCache  // optional L3 peer fleet cache
 	done       chan struct{} // signals cleanup goroutine to stop
 
 	// LRU ordering: front = most recently used, back = least recently used
@@ -43,6 +45,12 @@ type lruEntry struct {
 // On L1 set, values are also written to L2.
 func (c *Cache) SetL2(dc *DiskCache) {
 	c.l2 = dc
+}
+
+// SetL3 attaches an L3 peer cache for distributed fleet operation.
+// On L1+L2 miss, the owning peer is queried before hitting VL.
+func (c *Cache) SetL3(pc *PeerCache) {
+	c.l3 = pc
 }
 
 func New(ttl time.Duration, maxEntries int) *Cache {
@@ -86,11 +94,19 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	}
 	c.mu.Unlock()
 
-	// L2 fallback
+	// L2 fallback (disk)
 	if c.l2 != nil {
 		if v, ok := c.l2.Get(key); ok {
-			// Promote to L1
-			c.Set(key, v)
+			c.Set(key, v) // promote to L1
+			c.Hits.Add(1)
+			return v, true
+		}
+	}
+
+	// L3 fallback (peer fleet)
+	if c.l3 != nil {
+		if v, ok := c.l3.Get(key); ok {
+			c.Set(key, v) // promote to L1
 			c.Hits.Add(1)
 			return v, true
 		}

@@ -118,6 +118,9 @@ type Config struct {
 
 	// Stream optimization
 	StreamFields []string // VL _stream_fields labels — use native stream selectors for these (faster)
+
+	// Peer cache (fleet distribution)
+	PeerCache *cache.PeerCache // optional peer cache for distributed fleet
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -166,6 +169,7 @@ type Proxy struct {
 	streamResponse   bool
 	labelTranslator  *LabelTranslator
 	streamFieldsMap  map[string]bool // known _stream_fields for VL stream selector optimization
+	peerCache        *cache.PeerCache // L3 fleet peer cache
 }
 
 func New(cfg Config) (*Proxy, error) {
@@ -255,6 +259,7 @@ func New(cfg Config) (*Proxy, error) {
 		streamResponse:   cfg.StreamResponse,
 		labelTranslator:  NewLabelTranslator(cfg.LabelStyle, cfg.FieldMappings),
 		streamFieldsMap:  buildStreamFieldsMap(cfg.StreamFields),
+		peerCache:        cfg.PeerCache,
 	}, nil
 }
 
@@ -352,6 +357,13 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	// Prometheus metrics endpoint — NOT rate-limited
 	mux.HandleFunc("/metrics", p.metrics.Handler)
 	mux.HandleFunc("/debug/queries", p.queryTracker.Handler)
+
+	// Peer cache endpoint — internal, for fleet-distributed cache
+	if p.peerCache != nil {
+		mux.HandleFunc("/_cache/get", func(w http.ResponseWriter, r *http.Request) {
+			p.peerCache.ServeHTTP(w, r, p.cache)
+		})
+	}
 }
 
 // handleQueryRange translates Loki range queries.

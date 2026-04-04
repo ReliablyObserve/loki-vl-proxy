@@ -75,6 +75,12 @@ func main() {
 	fieldMappingJSON := flag.String("field-mapping", "", `JSON custom field mappings: [{"vl_field":"service.name","loki_label":"service_name"}]`)
 	streamFieldsCSV := flag.String("stream-fields", "", `Comma-separated VL _stream_fields labels for stream selector optimization (e.g., "app,env,namespace")`)
 
+	// Peer cache (fleet distribution)
+	peerSelf := flag.String("peer-self", "", `This instance's address for peer cache (e.g., "10.0.0.1:3100"). Empty disables peer cache.`)
+	peerDiscovery := flag.String("peer-discovery", "", `Peer discovery: "dns" (headless service) or "static" (comma-separated)`)
+	peerDNS := flag.String("peer-dns", "", `Headless service DNS name for peer discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
+	peerStatic := flag.String("peer-static", "", `Static peer list (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
+
 	flag.Parse()
 
 	// Environment variable overrides
@@ -178,6 +184,20 @@ func main() {
 		log.Printf("Loaded %d derived fields", len(derivedFields))
 	}
 
+	// Create peer cache if configured
+	var peerCache *cache.PeerCache
+	if *peerSelf != "" && *peerDiscovery != "" {
+		peerCache = cache.NewPeerCache(cache.PeerConfig{
+			SelfAddr:      *peerSelf,
+			DiscoveryType: *peerDiscovery,
+			DNSName:       *peerDNS,
+			StaticPeers:   *peerStatic,
+			Port:          3100,
+		})
+		c.SetL3(peerCache)
+		log.Printf("Peer cache enabled: self=%s discovery=%s", *peerSelf, *peerDiscovery)
+	}
+
 	// Create proxy
 	p, err := proxy.New(proxy.Config{
 		BackendURL:       *backendURL,
@@ -193,6 +213,7 @@ func main() {
 		LabelStyle:       ls,
 		FieldMappings:    fieldMappings,
 		StreamFields:     parseCSV(*streamFieldsCSV),
+		PeerCache:        peerCache,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create proxy: %v", err)
