@@ -1638,12 +1638,6 @@ func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}) map[string]inte
 	}
 }
 
-// sendWSError sends an error message over the WebSocket before closing.
-func (p *Proxy) sendWSError(conn *websocket.Conn, msg string) {
-	errFrame, _ := json.Marshal(map[string]string{"error": msg})
-	_ = conn.WriteMessage(websocket.TextMessage, errFrame)
-}
-
 // handleReady returns readiness status.
 func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 	// Probe VL backend health
