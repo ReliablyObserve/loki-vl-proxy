@@ -42,7 +42,7 @@ services:
     volumes:
       - vl-data:/vlogs
     healthcheck:
-      test: ["CMD", "/victoria-logs-prod", "-version"]
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9428/health"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -64,6 +64,12 @@ services:
     depends_on:
       victorialogs:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
 
   # Loki-VL-proxy with label-style=underscores (for OTel dot→underscore tests)
   loki-vl-proxy-underscore:
@@ -82,6 +88,12 @@ services:
     depends_on:
       victorialogs:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
 
   # Grafana with 3 datasources for manual side-by-side comparison
   grafana:

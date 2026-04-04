@@ -196,10 +196,8 @@ func TestLabelTranslator_PassthroughNoAllocation(t *testing.T) {
 	input := map[string]string{"a": "1", "b": "2"}
 	result := lt.TranslateLabelsMap(input)
 
-	// In passthrough mode, should return the same map (no copy)
-	if &result != &input {
-		// This is fine either way, but passthrough should be fast
-	}
+	// In passthrough mode, should return the same map (no copy).
+	// We verify this by checking values are preserved (pointer identity is implementation detail).
 	if result["a"] != "1" || result["b"] != "2" {
 		t.Error("passthrough should preserve values")
 	}

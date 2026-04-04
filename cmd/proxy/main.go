@@ -218,7 +218,7 @@ func main() {
 	mux.HandleFunc("/debug/pprof/", http.DefaultServeMux.ServeHTTP)
 
 	// Middleware chain: body limit → gzip compression
-	var handler http.Handler = maxBodyHandler(*maxBodyBytes, mux)
+	handler := maxBodyHandler(*maxBodyBytes, mux)
 	if *enableGzip {
 		handler = mw.GzipHandler(handler)
 	}

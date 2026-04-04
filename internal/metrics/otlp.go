@@ -197,13 +197,9 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 		p.gaugeDP("loki_vl_proxy_active_requests", float64(p.metrics.activeRequests.Load()), now),
 	}
 
-	metrics := []map[string]interface{}{}
-	for _, dp := range dataPoints {
-		metrics = append(metrics, dp)
-	}
-	for _, dp := range gaugePoints {
-		metrics = append(metrics, dp)
-	}
+	metrics := make([]map[string]interface{}, 0, len(dataPoints)+len(gaugePoints))
+	metrics = append(metrics, dataPoints...)
+	metrics = append(metrics, gaugePoints...)
 
 	return map[string]interface{}{
 		"resourceMetrics": []map[string]interface{}{

@@ -90,7 +90,7 @@ func applyLineFormatTemplate(streams []map[string]interface{}, tmplStr string) {
 	funcMap := template.FuncMap{
 		"ToUpper":    strings.ToUpper,
 		"ToLower":    strings.ToLower,
-		"Title":      strings.Title,
+		"Title":      titleCase,
 		"Replace":    strings.Replace,
 		"TrimSpace":  strings.TrimSpace,
 		"TrimPrefix": strings.TrimPrefix,
@@ -267,6 +267,19 @@ func isVariableToken(token string) bool {
 	}
 
 	return false
+}
+
+// titleCase uppercases the first letter of each word (simple ASCII replacement for deprecated strings.Title).
+func titleCase(s string) string {
+	prev := ' '
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(rune(prev)) || prev == ' ' {
+			prev = r
+			return unicode.ToTitle(r)
+		}
+		prev = r
+		return r
+	}, s)
 }
 
 func isHexLike(s string) bool {

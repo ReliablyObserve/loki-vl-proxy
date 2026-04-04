@@ -16,6 +16,13 @@ import (
 	"github.com/szibis/Loki-VL-proxy/internal/cache"
 )
 
+// Ensure imports are used
+var (
+	_ = url.Values{}
+	_ = strings.Contains
+)
+
+
 // =============================================================================
 // CRITICAL: Data race — concurrent reads + SIGHUP reload of tenantMap
 // =============================================================================
@@ -389,34 +396,23 @@ func TestP2_VolumeRange_ForwardsTargetLabels(t *testing.T) {
 // P2: IsScalar must handle negatives and scientific notation
 // =============================================================================
 
-func TestP2_IsScalar_NegativeAndScientific(t *testing.T) {
+func TestP2_ParseScalar_NegativeAndScientific(t *testing.T) {
 	tests := []struct {
 		input string
-		want  bool
+		want  float64
 	}{
-		{"42", true},
-		{"3.14", true},
-		{"-1", true},
-		{"-3.14", true},
-		{"1e5", true},
-		{"1.5e-3", true},
-		{"-1e5", true},
-		{"", false},
-		{"abc", false},
-		{"1.2.3", false},
+		{"42", 42},
+		{"3.14", 3.14},
+		{"-1", -1},
+		{"1e5", 1e5},
+		{"0", 0},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			// We test via parseScalar + check if result is valid
-			// The actual IsScalar is in the translator package
-			// This tests the proxy-level behavior
-			if tt.want {
-				v := parseScalar(tt.input)
-				if v == 0 && tt.input != "0" && !strings.HasPrefix(tt.input, "0.") {
-					// parseScalar returns 0 on error, but 0 is also valid
-					// This is OK for now — the main fix is in translator.IsScalar
-				}
+			got := parseScalar(tt.input)
+			if math.Abs(got-tt.want) > 1e-9 {
+				t.Errorf("parseScalar(%q) = %f, want %f", tt.input, got, tt.want)
 			}
 		})
 	}
@@ -529,25 +525,3 @@ func TestRegression_PushStillBlocked(t *testing.T) {
 	}
 }
 
-// =============================================================================
-// Helpers
-// =============================================================================
-
-func newDeleteTestProxy(t *testing.T, backendURL string, tenantMap map[string]TenantMapping) *Proxy {
-	t.Helper()
-	c := cache.New(60*time.Second, 1000)
-	cfg := Config{
-		BackendURL: backendURL,
-		Cache:      c,
-		LogLevel:   "error",
-		TenantMap:  tenantMap,
-	}
-	p, err := New(cfg)
-	if err != nil {
-		t.Fatalf("failed to create proxy: %v", err)
-	}
-	return p
-}
-
-// Ensure url import is used
-var _ = url.Values{}
