@@ -124,8 +124,8 @@ jobs:
         working-directory: test/e2e-compat
         run: |
           docker compose up -d --build
-          # Wait for services (loki has no healthcheck, just sleep)
-          sleep 20
+          # Wait for services (Loki has no healthcheck; VL needs indexing time)
+          sleep 30
           docker compose ps
 
       - name: Run compatibility tests

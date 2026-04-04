@@ -1,6 +1,6 @@
 version: "3.8"
 
-# Fleet cache e2e test: 3 proxy instances with peer discovery
+# Fleet cache e2e test: 3 proxy instances with peer discovery + disk cache
 # Usage:
 #   docker compose up -d --build
 #   go test -v -tags=e2e -timeout=120s ./test/e2e-fleet/
@@ -36,9 +36,16 @@ services:
       - "-backend=http://victorialogs:9428"
       - "-log-level=debug"
       - "-cache-ttl=30s"
+      - "-cache-max=1000"
+      - "-disk-cache-path=/cache/proxy-a.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-flush-size=10"
+      - "-disk-cache-flush-interval=1s"
       - "-peer-self=proxy-a:3100"
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
+    volumes:
+      - cache-a:/cache
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -61,9 +68,16 @@ services:
       - "-backend=http://victorialogs:9428"
       - "-log-level=debug"
       - "-cache-ttl=30s"
+      - "-cache-max=1000"
+      - "-disk-cache-path=/cache/proxy-b.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-flush-size=10"
+      - "-disk-cache-flush-interval=1s"
       - "-peer-self=proxy-b:3100"
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
+    volumes:
+      - cache-b:/cache
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -86,9 +100,16 @@ services:
       - "-backend=http://victorialogs:9428"
       - "-log-level=debug"
       - "-cache-ttl=30s"
+      - "-cache-max=1000"
+      - "-disk-cache-path=/cache/proxy-c.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-flush-size=10"
+      - "-disk-cache-flush-interval=1s"
       - "-peer-self=proxy-c:3100"
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
+    volumes:
+      - cache-c:/cache
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -101,3 +122,6 @@ services:
 
 volumes:
   vl-data:
+  cache-a:
+  cache-b:
+  cache-c:
