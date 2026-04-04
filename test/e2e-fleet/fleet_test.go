@@ -143,9 +143,15 @@ func TestFleet_CacheGetEndpoint(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	// 404 is expected for a non-existent key (just verifying endpoint exists)
-	if resp.StatusCode != 404 && resp.StatusCode != 200 {
-		t.Errorf("unexpected status: %d (expected 200 or 404)", resp.StatusCode)
+	// The peer cache endpoint should not be publicly callable from outside the fleet.
+	// Hardened builds return 403 here; older builds might expose a 404/200.
+	switch resp.StatusCode {
+	case http.StatusForbidden:
+		t.Log("peer cache endpoint is protected from external access")
+	case http.StatusNotFound, http.StatusOK:
+		t.Logf("peer cache endpoint responded with %d", resp.StatusCode)
+	default:
+		t.Errorf("unexpected status: %d (expected 403, 404, or 200)", resp.StatusCode)
 	}
 }
 

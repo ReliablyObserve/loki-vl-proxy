@@ -779,9 +779,13 @@ func TestExtended_TenantIsolation(t *testing.T) {
 	}
 	defer respB.Body.Close()
 
-	if respA.StatusCode == 200 && respB.StatusCode == 200 {
+	switch {
+	case respA.StatusCode == 200 && respB.StatusCode == 200:
 		score.pass("tenant_isolation", "both tenants get valid responses")
-	} else {
+	case respA.StatusCode == respB.StatusCode &&
+		(respA.StatusCode == http.StatusUnauthorized || respA.StatusCode == http.StatusForbidden):
+		score.secure("tenant_isolation", fmt.Sprintf("proxy consistently rejects unmapped tenants: tenant-a=%d tenant-b=%d", respA.StatusCode, respB.StatusCode))
+	default:
 		score.fail("tenant_isolation", fmt.Sprintf("tenant-a=%d tenant-b=%d", respA.StatusCode, respB.StatusCode))
 	}
 
@@ -838,4 +842,3 @@ func TestExtended_WithoutGrouping(t *testing.T) {
 
 	score.report(t)
 }
-

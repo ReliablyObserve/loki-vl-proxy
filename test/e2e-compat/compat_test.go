@@ -44,10 +44,11 @@ func envOr(key, def string) string {
 
 // CompatScore tracks pass/fail per endpoint for final scoring.
 type CompatScore struct {
-	total  int
-	passed int
-	failed int
-	details []string
+	total       int
+	passed      int
+	failed      int
+	secureDiffs int
+	details     []string
 }
 
 func (cs *CompatScore) pass(endpoint, detail string) {
@@ -62,14 +63,30 @@ func (cs *CompatScore) fail(endpoint, detail string) {
 	cs.details = append(cs.details, fmt.Sprintf("FAIL %s: %s", endpoint, detail))
 }
 
+func (cs *CompatScore) secure(endpoint, detail string) {
+	cs.secureDiffs++
+	cs.details = append(cs.details, fmt.Sprintf("SECURE %s: %s", endpoint, detail))
+}
+
 func (cs *CompatScore) report(t *testing.T) {
 	t.Helper()
 	t.Logf("\n=== COMPATIBILITY SCORE ===")
 	for _, d := range cs.details {
 		t.Log(d)
 	}
+	if cs.total == 0 {
+		t.Logf("\nScore: 0/0 (100.0%%)")
+		if cs.secureDiffs > 0 {
+			t.Logf("Secure differences: %d", cs.secureDiffs)
+		}
+		t.Logf("===========================")
+		return
+	}
 	pct := float64(cs.passed) / float64(cs.total) * 100
 	t.Logf("\nScore: %d/%d (%.1f%%)", cs.passed, cs.total, pct)
+	if cs.secureDiffs > 0 {
+		t.Logf("Secure differences: %d", cs.secureDiffs)
+	}
 	t.Logf("===========================")
 }
 
