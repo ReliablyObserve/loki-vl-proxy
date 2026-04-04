@@ -1,0 +1,24 @@
+linters:
+  enable:
+    - errcheck
+    - staticcheck
+    - unused
+    - govet
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      # HTTP response helpers — error handling is at the transport level
+      - (net/http.ResponseWriter).Write
+      - (*encoding/json.Encoder).Encode
+      - fmt.Fprintf
+      - fmt.Fprintln
+      # Test-only patterns
+      - (*net/http.Request).ParseForm
+
+issues:
+  exclude-rules:
+    # Relax errcheck in test files — test assertions catch failures
+    - path: _test\.go
+      linters:
+        - errcheck

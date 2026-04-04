@@ -571,7 +571,7 @@ func TestLoad_WithCache_ScalingProfile(t *testing.T) {
 				100*(1-float64(backendCalls.Load())/float64(prof.requests)))
 			t.Logf("  Live heap: %.1f MB", liveMem)
 
-			_ = backendCalls // backend counting would need instrumentation in the handler
+			backendCalls.Load() // keep compiler happy; backend counting needs handler instrumentation
 		})
 	}
 }

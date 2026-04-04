@@ -1216,7 +1216,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Connect to VL tail endpoint (streaming NDJSON)
 	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s",
@@ -1330,7 +1330,7 @@ func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}) map[string]inte
 // sendWSError sends an error message over the WebSocket before closing.
 func (p *Proxy) sendWSError(conn *websocket.Conn, msg string) {
 	errFrame, _ := json.Marshal(map[string]string{"error": msg})
-	conn.WriteMessage(websocket.TextMessage, errFrame)
+	_ = conn.WriteMessage(websocket.TextMessage, errFrame)
 }
 
 // handleReady returns readiness status.
