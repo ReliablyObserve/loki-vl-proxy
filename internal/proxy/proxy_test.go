@@ -614,7 +614,8 @@ func TestTranslation_LineFilterForwarded(t *testing.T) {
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bapp%3D%22nginx%22%7D+%7C%3D+%22error%22&start=1&end=2&limit=10`)
 
 	// |= "error" must become ~"error" (substring, not word match)
-	if receivedQuery != `app:=nginx ~"error"` {
+	// proxyLogQuery appends sort by _time desc by default (Loki backward direction)
+	if receivedQuery != `app:=nginx ~"error" | sort by (_time desc)` {
 		t.Errorf("expected translated query, got %q", receivedQuery)
 	}
 }
@@ -630,7 +631,7 @@ func TestTranslation_NegativeFilter(t *testing.T) {
 
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bapp%3D%22nginx%22%7D+%21%3D+%22debug%22&start=1&end=2&limit=10`)
 
-	if receivedQuery != `app:=nginx NOT ~"debug"` {
+	if receivedQuery != `app:=nginx NOT ~"debug" | sort by (_time desc)` {
 		t.Errorf("expected translated negative filter, got %q", receivedQuery)
 	}
 }
@@ -646,7 +647,7 @@ func TestTranslation_JSONParser(t *testing.T) {
 
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bapp%3D%22x%22%7D+%7C+json&start=1&end=2&limit=10`)
 
-	if receivedQuery != `app:=x | unpack_json` {
+	if receivedQuery != `app:=x | unpack_json | sort by (_time desc)` {
 		t.Errorf("expected json→unpack_json translation, got %q", receivedQuery)
 	}
 }
@@ -929,5 +930,252 @@ func mustUnmarshal(t *testing.T, data []byte, v interface{}) {
 	t.Helper()
 	if err := json.Unmarshal(data, v); err != nil {
 		t.Fatalf("failed to unmarshal JSON: %v\nbody: %s", err, string(data))
+	}
+}
+
+// =============================================================================
+// P0: Metrics must record actual status codes, not always 200
+// =============================================================================
+
+func TestContract_QueryRange_MetricsRecordActualStatus(t *testing.T) {
+	// Backend returns 502
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte(`{"error":"backend overloaded"}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2`, nil)
+	p.handleQueryRange(w, r)
+
+	// The response should NOT be 200 when backend fails
+	// (writeError sets appropriate error code)
+	if w.Code == http.StatusOK {
+		t.Error("expected non-200 status when backend returns error, got 200")
+	}
+}
+
+// =============================================================================
+// Direction parameter — forward and backward sorting
+// =============================================================================
+
+func TestContract_QueryRange_DirectionForward(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"test","app":"nginx"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&direction=forward`, nil)
+	p.handleQueryRange(w, r)
+
+	if !strings.Contains(receivedQuery, "| sort by (_time)") {
+		t.Errorf("expected sort by (_time) for direction=forward, got %q", receivedQuery)
+	}
+	if strings.Contains(receivedQuery, "desc") {
+		t.Errorf("direction=forward should not have desc, got %q", receivedQuery)
+	}
+}
+
+func TestContract_QueryRange_DirectionBackward(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"test","app":"nginx"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&direction=backward`, nil)
+	p.handleQueryRange(w, r)
+
+	if !strings.Contains(receivedQuery, "| sort by (_time desc)") {
+		t.Errorf("expected sort by (_time desc) for direction=backward, got %q", receivedQuery)
+	}
+}
+
+func TestContract_QueryRange_DirectionDefault(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"test","app":"nginx"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	// No direction param — should default to backward (newest first)
+	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2`, nil)
+	p.handleQueryRange(w, r)
+
+	if !strings.Contains(receivedQuery, "| sort by (_time desc)") {
+		t.Errorf("expected default direction=backward (desc), got %q", receivedQuery)
+	}
+}
+
+// =============================================================================
+// Labels with query param — scoped labels
+// =============================================================================
+
+func TestContract_Labels_ForwardsQueryParam(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedQuery = r.URL.Query().Get("query")
+		writeVLFieldNames(w, []fieldHit{{"app", 1}, {"level", 1}})
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	// Query param should be translated and forwarded
+	r := httptest.NewRequest("GET", `/loki/api/v1/labels?query={app="nginx"}`, nil)
+	p.handleLabels(w, r)
+
+	// Should have translated the query, not just "*"
+	if receivedQuery == "*" {
+		t.Error("expected query param to be forwarded, got *")
+	}
+	if !strings.Contains(receivedQuery, "app") {
+		t.Errorf("expected translated query to contain 'app', got %q", receivedQuery)
+	}
+}
+
+func TestContract_Labels_DefaultsToWildcard(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedQuery = r.URL.Query().Get("query")
+		writeVLFieldNames(w, []fieldHit{{"app", 1}})
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	// No query param — should default to *
+	r := httptest.NewRequest("GET", `/loki/api/v1/labels`, nil)
+	p.handleLabels(w, r)
+
+	if receivedQuery != "*" {
+		t.Errorf("expected default query=*, got %q", receivedQuery)
+	}
+}
+
+// =============================================================================
+// VL error message mapping
+// =============================================================================
+
+func TestContract_WrapAsLokiResponse_VLError(t *testing.T) {
+	// VL error format: {"error":"some message"}
+	vlBody := []byte(`{"error":"query syntax error at position 42"}`)
+	result := wrapAsLokiResponse(vlBody, "matrix")
+
+	var resp map[string]interface{}
+	json.Unmarshal(result, &resp)
+
+	if resp["status"] != "error" {
+		t.Errorf("expected status=error, got %v", resp["status"])
+	}
+	if resp["error"] != "query syntax error at position 42" {
+		t.Errorf("expected error message preserved, got %v", resp["error"])
+	}
+}
+
+func TestContract_WrapAsLokiResponse_VLStatusError(t *testing.T) {
+	// VL may also return: {"status":"error","msg":"message"}
+	vlBody := []byte(`{"status":"error","msg":"invalid LogsQL expression"}`)
+	result := wrapAsLokiResponse(vlBody, "vector")
+
+	var resp map[string]interface{}
+	json.Unmarshal(result, &resp)
+
+	if resp["status"] != "error" {
+		t.Errorf("expected status=error, got %v", resp["status"])
+	}
+	if resp["error"] != "invalid LogsQL expression" {
+		t.Errorf("expected msg mapped to error field, got %v", resp["error"])
+	}
+}
+
+func TestContract_Query_MetricsRecordActualStatus(t *testing.T) {
+	// Backend returns 502
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte(`{"error":"backend overloaded"}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/query?query={app="nginx"}`, nil)
+	p.handleQuery(w, r)
+
+	if w.Code == http.StatusOK {
+		t.Error("expected non-200 status when backend returns error, got 200")
+	}
+}
+
+// =============================================================================
+// isStatsQuery — must not false-positive on quoted log content
+// =============================================================================
+
+func TestIsStatsQuery(t *testing.T) {
+	tests := []struct {
+		name   string
+		query  string
+		expect bool
+	}{
+		{"actual stats pipe", `app:="nginx" | stats count()`, true},
+		{"actual rate pipe", `app:="nginx" | rate()`, true},
+		{"actual count pipe", `app:="nginx" | count()`, true},
+		{"stats by labels", `app:="nginx" | stats by (level) count()`, true},
+		{"log filter with stats in content", `app:="nginx" ~"stats query failed"`, false},
+		{"log filter with pipe stats in quotes", `app:="nginx" ~"| stats "`, false},
+		{"log filter containing rate in log line", `app:="nginx" ~"rate limit exceeded"`, false},
+		{"log filter with count in message", `app:="nginx" ~"count is wrong"`, false},
+		{"no stats at all", `app:="nginx" level:="error"`, false},
+		{"empty query", `*`, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isStatsQuery(tc.query)
+			if got != tc.expect {
+				t.Errorf("isStatsQuery(%q) = %v, want %v", tc.query, got, tc.expect)
+			}
+		})
+	}
+}
+
+// TestContract_QueryRange_StatsInLogContent verifies that a query containing "stats"
+// in the log content filter does NOT get routed to the stats query handler.
+func TestContract_QueryRange_StatsInLogContent(t *testing.T) {
+	var receivedPath string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		// Return NDJSON log lines
+		w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"stats query failed","app":"nginx"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	// URL-encode the query properly to avoid malformed request
+	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query=%7Bapp%3D%22nginx%22%7D+%7C%3D+%22stats+query%22&start=1&end=2`, nil)
+	p.handleQueryRange(w, r)
+
+	// Should go to log query path, not stats_query_range
+	if receivedPath == "/select/logsql/stats_query_range" {
+		t.Error("query with 'stats' in log content was incorrectly routed to stats handler")
+	}
+	if receivedPath != "/select/logsql/query" {
+		t.Errorf("expected log query path /select/logsql/query, got %q", receivedPath)
 	}
 }

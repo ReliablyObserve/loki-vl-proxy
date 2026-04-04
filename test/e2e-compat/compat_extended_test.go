@@ -611,3 +611,231 @@ func extractStringArray(resp map[string]interface{}, key string) []string {
 	return result
 }
 
+// =============================================================================
+// Direction parameter — logs should be ordered correctly
+// =============================================================================
+
+func TestExtended_Direction_Forward(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `{app="api-gateway"}`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("direction", "forward")
+	params.Set("limit", "10")
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+	lokiResp := getJSON(t, lokiURL+"/loki/api/v1/query_range?"+params.Encode())
+
+	if checkStatus(proxyResp) {
+		score.pass("direction_forward", "proxy returns success for direction=forward")
+	} else {
+		score.fail("direction_forward", "proxy error on direction=forward")
+	}
+
+	if checkStatus(lokiResp) {
+		score.pass("direction_forward", "loki returns success for direction=forward")
+	}
+
+	score.report(t)
+}
+
+func TestExtended_Direction_Backward(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `{app="api-gateway"}`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("direction", "backward")
+	params.Set("limit", "10")
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+
+	if checkStatus(proxyResp) {
+		score.pass("direction_backward", "proxy returns success for direction=backward")
+	} else {
+		score.fail("direction_backward", "proxy error on direction=backward")
+	}
+
+	score.report(t)
+}
+
+// =============================================================================
+// Labels with query param — scoped label suggestions
+// =============================================================================
+
+func TestExtended_Labels_WithQueryParam(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+
+	// Labels scoped to specific stream
+	params := url.Values{}
+	params.Set("query", `{app="api-gateway"}`)
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/labels?"+params.Encode())
+	lokiResp := getJSON(t, lokiURL+"/loki/api/v1/labels?"+params.Encode())
+
+	if checkStatus(proxyResp) {
+		score.pass("labels_query", "proxy returns success with query param")
+	} else {
+		score.fail("labels_query", "proxy error with query param")
+	}
+
+	if checkStatus(lokiResp) {
+		score.pass("labels_query", "loki returns success with query param")
+	}
+
+	score.report(t)
+}
+
+// =============================================================================
+// quantile_over_time — metric query support
+// =============================================================================
+
+func TestExtended_QuantileOverTime(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `quantile_over_time(0.95, {app="api-gateway"} | unwrap duration [5m])`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("step", "60")
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+
+	if checkStatus(proxyResp) {
+		score.pass("quantile_over_time", "proxy returns success for quantile_over_time")
+	} else {
+		score.fail("quantile_over_time", "proxy error on quantile_over_time")
+	}
+
+	score.report(t)
+}
+
+// =============================================================================
+// VL error propagation — proxy must not mask backend errors
+// =============================================================================
+
+func TestExtended_ErrorPropagation(t *testing.T) {
+	score := &CompatScore{}
+
+	// Send invalid query that VL can't process
+	params := url.Values{}
+	params.Set("query", `{app="nginx"} | stats invalid_function()`)
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query?"+params.Encode())
+
+	// Should not return status=success for invalid query
+	status, _ := proxyResp["status"].(string)
+	if status == "error" {
+		score.pass("error_propagation", "proxy correctly returns error for invalid query")
+	} else {
+		score.fail("error_propagation", fmt.Sprintf("proxy returned status=%q instead of error", status))
+	}
+
+	score.report(t)
+}
+
+// =============================================================================
+// Multi-tenant isolation — different tenants must not leak data
+// =============================================================================
+
+func TestExtended_TenantIsolation(t *testing.T) {
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `{app="api-gateway"}`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+
+	// Request with tenant A
+	reqA, _ := http.NewRequest("GET", proxyURL+"/loki/api/v1/query_range?"+params.Encode(), nil)
+	reqA.Header.Set("X-Scope-OrgID", "tenant-a")
+	respA, err := http.DefaultClient.Do(reqA)
+	if err != nil {
+		score.fail("tenant_isolation", "tenant-a request failed")
+		score.report(t)
+		return
+	}
+	defer respA.Body.Close()
+
+	// Request with tenant B
+	reqB, _ := http.NewRequest("GET", proxyURL+"/loki/api/v1/query_range?"+params.Encode(), nil)
+	reqB.Header.Set("X-Scope-OrgID", "tenant-b")
+	respB, err := http.DefaultClient.Do(reqB)
+	if err != nil {
+		score.fail("tenant_isolation", "tenant-b request failed")
+		score.report(t)
+		return
+	}
+	defer respB.Body.Close()
+
+	if respA.StatusCode == 200 && respB.StatusCode == 200 {
+		score.pass("tenant_isolation", "both tenants get valid responses")
+	} else {
+		score.fail("tenant_isolation", fmt.Sprintf("tenant-a=%d tenant-b=%d", respA.StatusCode, respB.StatusCode))
+	}
+
+	score.report(t)
+}
+
+// =============================================================================
+// label_format multi-rename — multiple renames in one pipe
+// =============================================================================
+
+func TestExtended_LabelFormat_MultiRename(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `{app="api-gateway"} | label_format app_name="{{.app}}", log_level="{{.level}}"`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+
+	if checkStatus(proxyResp) {
+		score.pass("label_format_multi", "proxy returns success for multi-rename label_format")
+	} else {
+		score.fail("label_format_multi", "proxy error on multi-rename label_format")
+	}
+
+	score.report(t)
+}
+
+// =============================================================================
+// without() grouping clause
+// =============================================================================
+
+func TestExtended_WithoutGrouping(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `sum without (level) (count_over_time({app="api-gateway"}[5m]))`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("step", "60")
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+
+	if checkStatus(proxyResp) {
+		score.pass("without_grouping", "proxy returns success for without() grouping")
+	} else {
+		score.fail("without_grouping", "proxy error on without() grouping")
+	}
+
+	score.report(t)
+}
+

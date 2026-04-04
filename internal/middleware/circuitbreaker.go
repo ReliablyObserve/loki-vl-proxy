@@ -11,11 +11,12 @@ import (
 type CircuitBreaker struct {
 	mu sync.Mutex
 
-	state       cbState
-	failures    int
-	successes   int
-	lastFailure time.Time
-	openUntil   time.Time
+	state          cbState
+	failures       int
+	successes      int
+	halfOpenProbes int // number of probes allowed in half-open
+	lastFailure    time.Time
+	openUntil      time.Time
 
 	// Config
 	failureThreshold int           // failures before opening
@@ -55,11 +56,17 @@ func (cb *CircuitBreaker) Allow() bool {
 		if time.Now().After(cb.openUntil) {
 			cb.state = cbHalfOpen
 			cb.successes = 0
-			return true // allow probe request
+			cb.halfOpenProbes = 1 // first probe already counted
+			return true           // allow first probe request
 		}
 		return false
 	case cbHalfOpen:
-		return true // allow probe requests
+		// Only allow up to successThreshold probe requests
+		if cb.halfOpenProbes < cb.successThreshold {
+			cb.halfOpenProbes++
+			return true
+		}
+		return false // reject excess requests during probe phase
 	}
 	return true
 }

@@ -5,11 +5,14 @@ version: "3.8"
 # - VictoriaLogs (backend)
 # - Loki-VL-proxy (translating proxy)
 # - Grafana with all 3 datasources configured
+# - Playwright for UI testing
 #
 # Usage:
 #   docker-compose up -d --build
 #   go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
-#   # Or open Grafana at http://localhost:3000 for manual comparison
+#   # UI tests:
+#   cd ../e2e-ui && npm install && npx playwright install chromium && npm test
+#   # Or open Grafana at http://localhost:3002 for manual comparison
 
 services:
   # Reference Loki instance (ground truth)

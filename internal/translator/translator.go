@@ -271,21 +271,55 @@ func translateLabelFilter(stage string) string {
 }
 
 // translateLabelFormat converts label_format expressions.
+// Supports multiple renames: label_format a="{{.x}}", b="{{.y}}"
 func translateLabelFormat(expr string) string {
-	// label_name="{{.other}}" → | format "<other>" as label_name
-	parts := strings.SplitN(expr, "=", 2)
-	if len(parts) != 2 {
+	// Split by comma, respecting quotes
+	assignments := splitLabelFormatAssignments(expr)
+	var pipes []string
+	for _, assign := range assignments {
+		parts := strings.SplitN(assign, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		labelName := strings.TrimSpace(parts[0])
+		template := strings.TrimSpace(parts[1])
+		pipes = append(pipes, fmt.Sprintf("| format %s as %s", convertGoTemplate(template), labelName))
+	}
+	if len(pipes) == 0 {
 		return "| " + expr
 	}
-	labelName := strings.TrimSpace(parts[0])
-	template := strings.TrimSpace(parts[1])
-	return fmt.Sprintf("| format %s as %s", convertGoTemplate(template), labelName)
+	return strings.Join(pipes, " ")
+}
+
+// splitLabelFormatAssignments splits "a=X, b=Y" respecting quoted values.
+func splitLabelFormatAssignments(s string) []string {
+	var result []string
+	inQuote := false
+	start := 0
+	for i, c := range s {
+		if c == '"' {
+			inQuote = !inQuote
+		}
+		if c == ',' && !inQuote {
+			part := strings.TrimSpace(s[start:i])
+			if part != "" {
+				result = append(result, part)
+			}
+			start = i + 1
+		}
+	}
+	part := strings.TrimSpace(s[start:])
+	if part != "" {
+		result = append(result, part)
+	}
+	return result
 }
 
 // convertGoTemplate converts Go template syntax {{.label}} to LogsQL <label> syntax.
+// Handles dotted field names like {{.service.name}} → <service.name>.
 func convertGoTemplate(tmpl string) string {
 	tmpl = strings.Trim(tmpl, "\"")
-	re := regexp.MustCompile(`\{\{\s*\.(\w+)\s*\}\}`)
+	re := regexp.MustCompile(`\{\{\s*\.([\w.]+)\s*\}\}`)
 	result := re.ReplaceAllString(tmpl, "<$1>")
 	return `"` + result + `"`
 }
@@ -309,6 +343,7 @@ func tryTranslateMetricQuery(logql string) (string, bool) {
 		"last_over_time":     "last",
 		"stddev_over_time":   "stddev",
 		"stdvar_over_time":   "stdvar",
+		"absent_over_time":   "count()",
 	}
 
 	// Try to match outer aggregation: sum(...) by (labels)
@@ -317,6 +352,11 @@ func tryTranslateMetricQuery(logql string) (string, bool) {
 	// If no outer aggregation, work with the raw expression
 	if innerExpr == "" {
 		innerExpr = logql
+	}
+
+	// Special handling for quantile_over_time(phi, {query} | unwrap field [duration])
+	if result, ok := tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels); ok {
+		return result, true
 	}
 
 	// Try to match metric function: func({...} | pipeline [duration])
@@ -385,7 +425,8 @@ func tryTranslateBinaryMetricExpr(logql string) (string, bool) {
 	logql = strings.TrimSpace(logql)
 
 	// Find a binary operator at the top level (not inside parens)
-	ops := []string{" / ", " * ", " + ", " - "}
+	// Includes: /, *, +, -, %, ^, ==, !=, >, <, >=, <=
+	ops := []string{" / ", " * ", " + ", " - ", " % ", " ^ ", " == ", " != ", " >= ", " <= ", " > ", " < "}
 	depth := 0
 	for i, ch := range logql {
 		switch ch {
@@ -468,6 +509,7 @@ func isUnwrapFunc(name string) bool {
 		"max_over_time": true, "min_over_time": true,
 		"first_over_time": true, "last_over_time": true,
 		"stddev_over_time": true, "stdvar_over_time": true,
+		"quantile_over_time": true,
 	}
 	return unwrapFuncs[name]
 }
@@ -478,8 +520,10 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	// 2. sum by (labels) (...)    — by BEFORE
 	// 3. topk(K, sum by (labels) (...))  — nested
 
-	// Try form 2 first: sum by (labels) (...)
-	byBeforeRe := regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk)\s+by\s*\(([^)]+)\)\s*\(`)
+	aggList := `sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc`
+
+	// Try form 2 first: sum by (labels) (...) or sum without (labels) (...)
+	byBeforeRe := regexp.MustCompile(`^(` + aggList + `)\s+(?:by|without)\s*\(([^)]+)\)\s*\(`)
 	bm := byBeforeRe.FindStringSubmatch(logql)
 	if bm != nil {
 		agg = bm[1]
@@ -492,8 +536,8 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 		}
 	}
 
-	// Form 1: sum(...) by (labels)
-	aggRe := regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk)\s*\(`)
+	// Form 1: sum(...) by (labels) or sum(...) without (labels)
+	aggRe := regexp.MustCompile(`^(` + aggList + `)\s*\(`)
 	m := aggRe.FindStringSubmatch(logql)
 	if m == nil {
 		return "", "", ""
@@ -518,8 +562,8 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	inner = rest[:end]
 	rest = strings.TrimSpace(rest[end+1:])
 
-	// Extract by clause after: ... by (labels)
-	byRe := regexp.MustCompile(`^by\s*\(([^)]+)\)`)
+	// Extract by or without clause after: ... by (labels) or ... without (labels)
+	byRe := regexp.MustCompile(`^(?:by|without)\s*\(([^)]+)\)`)
 	bm2 := byRe.FindStringSubmatch(rest)
 	if bm2 != nil {
 		byLabels = bm2[1]
@@ -543,7 +587,7 @@ func extractQueryAndDuration(inner string) (query, duration string) {
 }
 
 func extractUnwrapField(inner string) string {
-	// Find | unwrap field_name
+	// Find | unwrap field_name or | unwrap duration(field) or | unwrap bytes(field)
 	idx := strings.Index(inner, "| unwrap ")
 	if idx < 0 {
 		return ""
@@ -552,9 +596,66 @@ func extractUnwrapField(inner string) string {
 	// Field name is everything before the next | or [
 	end := strings.IndexAny(rest, "|[")
 	if end >= 0 {
-		return strings.TrimSpace(rest[:end])
+		rest = strings.TrimSpace(rest[:end])
+	} else {
+		rest = strings.TrimSpace(rest)
 	}
-	return strings.TrimSpace(rest)
+
+	// Strip conversion wrappers: duration(field) → field, bytes(field) → field
+	for _, wrapper := range []string{"duration(", "bytes("} {
+		if strings.HasPrefix(rest, wrapper) && strings.HasSuffix(rest, ")") {
+			rest = rest[len(wrapper) : len(rest)-1]
+		}
+	}
+
+	return rest
+}
+
+// tryTranslateQuantileOverTime handles quantile_over_time(phi, {query} | unwrap field [duration]).
+// Maps to VL: query | stats quantile(phi, field)
+func tryTranslateQuantileOverTime(innerExpr, _, byLabels string) (string, bool) {
+	prefix := "quantile_over_time("
+	if !strings.HasPrefix(innerExpr, prefix) {
+		return "", false
+	}
+
+	rest := innerExpr[len(prefix):]
+	end := findLastMatchingParen(rest)
+	if end < 0 {
+		return "", false
+	}
+	body := rest[:end]
+
+	// Extract phi (first arg before comma): quantile_over_time(0.95, ...)
+	commaIdx := strings.Index(body, ",")
+	if commaIdx < 0 {
+		return "", false
+	}
+	phi := strings.TrimSpace(body[:commaIdx])
+	queryPart := strings.TrimSpace(body[commaIdx+1:])
+
+	// Extract query and duration
+	query, _ := extractQueryAndDuration(queryPart)
+
+	// Translate the inner log query
+	logsqlQuery, err := translateLogQuery(query, nil)
+	if err != nil {
+		return "", false
+	}
+
+	// Extract unwrap field
+	unwrapField := extractUnwrapField(queryPart)
+	if unwrapField == "" {
+		unwrapField = "_msg"
+	}
+
+	result := fmt.Sprintf("%s | stats quantile(%s, %s)", logsqlQuery, phi, unwrapField)
+
+	if byLabels != "" {
+		result = addByClause(result, byLabels)
+	}
+
+	return result, true
 }
 
 func addByClause(query, labels string) string {

@@ -274,6 +274,13 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	// Write endpoints — blocked (this is a read-only proxy)
 	mux.HandleFunc("/loki/api/v1/push", p.handleWriteBlocked)
 
+	// Admin endpoints — stubs for Grafana Alerting ruler mode compatibility
+	mux.HandleFunc("/loki/api/v1/rules", p.handleRulesStub)
+	mux.HandleFunc("/api/prom/rules", p.handleRulesStub)
+	mux.HandleFunc("/loki/api/v1/alerts", p.handleAlertsStub)
+	mux.HandleFunc("/api/prom/alerts", p.handleAlertsStub)
+	mux.HandleFunc("/config", p.handleConfigStub)
+
 	// Health / readiness — NOT rate-limited
 	mux.HandleFunc("/ready", p.handleReady)
 	mux.HandleFunc("/loki/api/v1/status/buildinfo", p.handleBuildInfo)
@@ -305,16 +312,19 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 
 	r = withOrgID(r)
 
+	// Wrap writer to capture actual status code for metrics
+	sc := &statusCapture{ResponseWriter: w, code: 200}
+
 	// Check for binary metric expression (e.g., sum(rate(...)) / sum(rate(...)))
 	if op, left, right, ok := translator.ParseBinaryMetricExpr(logsqlQuery); ok {
-		p.proxyBinaryMetricQueryRange(w, r, op, left, right)
+		p.proxyBinaryMetricQueryRange(sc, r, op, left, right)
 	} else if isStatsQuery(logsqlQuery) {
-		p.proxyStatsQueryRange(w, r, logsqlQuery)
+		p.proxyStatsQueryRange(sc, r, logsqlQuery)
 	} else {
-		p.proxyLogQuery(w, r, logsqlQuery)
+		p.proxyLogQuery(sc, r, logsqlQuery)
 	}
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+	p.metrics.RecordRequest("query_range", sc.code, elapsed)
 	p.queryTracker.Record("query_range", logqlQuery, elapsed, false)
 }
 
@@ -335,15 +345,19 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r = withOrgID(r)
+
+	// Wrap writer to capture actual status code for metrics
+	sc := &statusCapture{ResponseWriter: w, code: 200}
+
 	if op, left, right, ok := translator.ParseBinaryMetricExpr(logsqlQuery); ok {
-		p.proxyBinaryMetricQuery(w, r, op, left, right)
+		p.proxyBinaryMetricQuery(sc, r, op, left, right)
 	} else if isStatsQuery(logsqlQuery) {
-		p.proxyStatsQuery(w, r, logsqlQuery)
+		p.proxyStatsQuery(sc, r, logsqlQuery)
 	} else {
-		p.proxyLogQuery(w, r, logsqlQuery)
+		p.proxyLogQuery(sc, r, logsqlQuery)
 	}
 	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query", http.StatusOK, elapsed)
+	p.metrics.RecordRequest("query", sc.code, elapsed)
 	p.queryTracker.Record("query", logqlQuery, elapsed, false)
 }
 
@@ -366,7 +380,17 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordCacheMiss()
 
 	params := url.Values{}
-	params.Set("query", "*")
+	// Forward the query param if provided (Loki uses it to scope label suggestions)
+	if q := r.FormValue("query"); q != "" {
+		translated, terr := p.translateQuery(q)
+		if terr == nil {
+			params.Set("query", translated)
+		} else {
+			params.Set("query", "*")
+		}
+	} else {
+		params.Set("query", "*")
+	}
 	if s := r.FormValue("start"); s != "" {
 		params.Set("start", s)
 	}
@@ -1106,6 +1130,32 @@ func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ready"))
 }
 
+// handleRulesStub returns an empty rules response for Grafana Alerting compatibility.
+func (p *Proxy) handleRulesStub(w http.ResponseWriter, r *http.Request) {
+	p.writeJSON(w, map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"groups": []interface{}{},
+		},
+	})
+}
+
+// handleAlertsStub returns an empty alerts response for Grafana Alerting compatibility.
+func (p *Proxy) handleAlertsStub(w http.ResponseWriter, r *http.Request) {
+	p.writeJSON(w, map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"alerts": []interface{}{},
+		},
+	})
+}
+
+// handleConfigStub returns a minimal config response.
+func (p *Proxy) handleConfigStub(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/yaml")
+	w.Write([]byte("# loki-vl-proxy\n"))
+}
+
 // handleBuildInfo returns fake build info for Grafana datasource detection.
 func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 	p.writeJSON(w, map[string]interface{}{
@@ -1211,8 +1261,16 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 
 	body, _ := io.ReadAll(resp.Body)
 
+	// Propagate VL error status
+	if resp.StatusCode >= 400 {
+		p.writeError(w, resp.StatusCode, string(body))
+		return
+	}
+
 	// VL stats_query_range returns Prometheus-compatible format.
 	// Just wrap it in Loki's envelope.
+	// Translate label names (e.g., dots → underscores) in metric labels.
+	body = p.translateStatsResponseLabels(body)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "matrix"))
 }
@@ -1232,6 +1290,14 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+
+	// Propagate VL error status
+	if resp.StatusCode >= 400 {
+		p.writeError(w, resp.StatusCode, string(body))
+		return
+	}
+
+	body = p.translateStatsResponseLabels(body)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "vector"))
 }
@@ -1475,6 +1541,14 @@ func metricKey(metric map[string]interface{}) string {
 
 // proxyLogQuery fetches log lines from VictoriaLogs.
 func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	// Loki direction param: "forward" = oldest first, "backward" (default) = newest first
+	direction := r.FormValue("direction")
+	if direction == "forward" {
+		logsqlQuery += " | sort by (_time)"
+	} else {
+		logsqlQuery += " | sort by (_time desc)"
+	}
+
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if s := r.FormValue("start"); s != "" {
@@ -1495,6 +1569,17 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 		return
 	}
 	defer resp.Body.Close()
+
+	// Propagate VL error status to the client
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		errMsg := string(body)
+		if errMsg == "" {
+			errMsg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
+		}
+		p.writeError(w, resp.StatusCode, errMsg)
+		return
+	}
 
 	// Chunked streaming: flush partial results as they arrive from VL
 	if p.streamResponse {
@@ -1805,6 +1890,33 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 		return result
 	}
 
+	// Check for VL error responses and translate to Loki error format.
+	// VL may return: {"error":"message"} or {"status":"error","msg":"message"}
+	if errMsg, ok := promResp["error"].(string); ok {
+		result, _ := json.Marshal(map[string]interface{}{
+			"status":    "error",
+			"errorType": "bad_request",
+			"error":     errMsg,
+		})
+		return result
+	}
+	if promResp["status"] == "error" {
+		errMsg := ""
+		if msg, ok := promResp["msg"].(string); ok {
+			errMsg = msg
+		} else if msg, ok := promResp["message"].(string); ok {
+			errMsg = msg
+		} else if msg, ok := promResp["error"].(string); ok {
+			errMsg = msg
+		}
+		result, _ := json.Marshal(map[string]interface{}{
+			"status":    "error",
+			"errorType": "bad_request",
+			"error":     errMsg,
+		})
+		return result
+	}
+
 	// If VL already returned status/data format, pass through
 	if _, ok := promResp["data"]; ok {
 		result, _ := json.Marshal(map[string]interface{}{
@@ -1913,10 +2025,28 @@ func hitsToVolumeMatrix(body []byte) map[string]interface{} {
 	}
 }
 
+// isStatsQuery returns true if the LogsQL query contains a stats pipe.
+// It only matches top-level pipes, not strings inside quoted filter values
+// (e.g., ~"stats query" must NOT trigger this).
 func isStatsQuery(logsqlQuery string) bool {
-	return strings.Contains(logsqlQuery, "| stats ") ||
-		strings.Contains(logsqlQuery, "| rate(") ||
-		strings.Contains(logsqlQuery, "| count(")
+	// Walk the query, skipping quoted regions
+	inQuote := false
+	for i := 0; i < len(logsqlQuery); i++ {
+		if logsqlQuery[i] == '"' {
+			inQuote = !inQuote
+			continue
+		}
+		if inQuote {
+			continue
+		}
+		rest := logsqlQuery[i:]
+		if strings.HasPrefix(rest, "| stats ") ||
+			strings.HasPrefix(rest, "| rate(") ||
+			strings.HasPrefix(rest, "| count(") {
+			return true
+		}
+	}
+	return false
 }
 
 func formatVLTimestamp(ts string) string {
@@ -2130,4 +2260,59 @@ func (p *Proxy) translateStreamLabels(streams []map[string]interface{}) {
 			stream["stream"] = p.labelTranslator.TranslateLabelsMap(labels)
 		}
 	}
+}
+
+// translateStatsResponseLabels translates label names in VL stats responses
+// (both vector and matrix result types) from VL field names (dots) to
+// Loki-compatible label names (underscores).
+func (p *Proxy) translateStatsResponseLabels(body []byte) []byte {
+	if p.labelTranslator.IsPassthrough() {
+		return body
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return body
+	}
+
+	// Handle both direct results and nested data.result
+	var results []interface{}
+	if data, ok := resp["data"].(map[string]interface{}); ok {
+		if r, ok := data["result"].([]interface{}); ok {
+			results = r
+		}
+	}
+	if r, ok := resp["result"].([]interface{}); ok {
+		results = r
+	}
+	if r, ok := resp["results"].([]interface{}); ok {
+		results = r
+	}
+
+	if len(results) == 0 {
+		return body
+	}
+
+	for _, r := range results {
+		entry, ok := r.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		// Translate "metric" labels map
+		if metricRaw, ok := entry["metric"]; ok {
+			if metric, ok := metricRaw.(map[string]interface{}); ok {
+				translated := make(map[string]interface{}, len(metric))
+				for k, v := range metric {
+					translated[p.labelTranslator.ToLoki(k)] = v
+				}
+				entry["metric"] = translated
+			}
+		}
+	}
+
+	result, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return result
 }

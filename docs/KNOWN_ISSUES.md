@@ -1,78 +1,42 @@
 # Known Issues & VL Compatibility Gaps
 
-Based on research of VictoriaLogs GitHub issues, community reports, and VL team discussions.
+Last updated: v0.16.0
 
-## Critical: Silent Correctness Issues
+## Remaining Gaps (P3 — Rare Edge Cases)
 
-### 1. Substring vs Word Matching (MUST FIX)
-
-Loki's `|= "err"` matches any substring: "error", "stderr", "erroneous".
-VL's word filter `"err"` matches only the exact word "err".
-
-**Impact**: Queries return fewer results through the proxy than through Loki.
-**Fix**: Convert `|= "text"` to VL's `~"text"` (substring regexp) instead of `"text"` (word filter).
-
-Reference: [VL docs](https://docs.victoriametrics.com/victorialogs/logql-to-logsql/#line-filter)
-
-### 2. Stream Filter vs Field Filter Performance Gap
-
-VL stream selectors `{label="value"}` only match `_stream_fields`. Regular field filters
-`label:="value"` are slower but match all fields.
-
-**Impact**: Our proxy converts ALL Loki stream matchers to field filters. This is correct but
-suboptimal. For known stream fields, using stream selectors would be 10-1000x faster.
-
-**Mitigation**: Configurable list of stream fields to keep in `{...}` selectors.
-
-Reference: [VL Issue #1077](https://github.com/VictoriaMetrics/VictoriaLogs/issues/1077)
-
-## Grafana Integration Gaps
-
-### 3. Volume API Missing (VL Issue #454)
-
-`/loki/api/v1/index/volume` and `/index/volume_range` — Grafana Drilldown calls these
-for log volume histograms. VL has no direct equivalent. Currently stubbed.
-
-### 4. Tail WebSocket Not Implemented
-
-`/loki/api/v1/tail` — Grafana Explore "Live" mode. VL has `/select/logsql/tail` (SSE),
-but WebSocket bridge not implemented.
-
-### 5. Detected Fields Response Format
-
-Loki 3.x returns field type, cardinality, parsers. Our proxy returns simplified format
-from VL's `/select/logsql/field_names`.
+| Feature | Status | Impact |
+|---|---|---|
+| Subquery syntax `rate(...)[1h:5m]` | Not supported | No VL equivalent; rare in Grafana |
+| Cache random eviction (not LRU) | Known limitation | Hot entries may be evicted under pressure |
+| `on()`/`ignoring()`/`group_left()`/`group_right()` | Not supported | Complex dashboard joins fail |
+| `offset` and `@` modifiers | Not supported | Week-over-week queries fail |
+| Field-specific parser `\| json field1, field2` | Ignored | Over-extraction, mostly cosmetic |
+| `X-Forwarded-For` spoofable for rate limiting | Known limitation | Security edge case behind trusted proxy |
 
 ## Data Model Differences
 
-### 6. Multitenancy Header Mismatch
+### Stream Filter vs Field Filter Performance
+VL stream selectors `{label="value"}` only match `_stream_fields`. The proxy converts ALL Loki stream matchers to field filters for correctness. For known stream fields, stream selectors would be faster.
 
-Loki: `X-Scope-OrgID: my-tenant-name` (string)
-VL: `AccountID: 123` + `ProjectID: 456` (numeric)
+### Structured Metadata (Loki 3.x)
+Loki 3.x has stream labels vs structured metadata vs parsed labels. VL treats all fields equally. The mapping is natural but not identical — Grafana Explore handles both transparently.
 
-No string-based tenant names in VL. Proxy needs tenant mapping config.
+### Large Body Fields
+VL may silently drop log records with very large body fields (50KB+). See [VL Issue #91](https://github.com/VictoriaMetrics/victorialogs-datasource/issues/91).
 
-Reference: [VL Issue #1251](https://github.com/VictoriaMetrics/VictoriaLogs/issues/1251)
+## Previously Fixed (for reference)
 
-### 7. Structured Metadata (Loki 3.x)
+These were previously listed as gaps and have been resolved:
 
-Loki 3.x supports structured metadata (key-value pairs per log entry, separate from labels).
-VL ingests all fields as regular fields. The mapping is natural but not identical.
-
-### 8. Large Body Fields (VL Issue #91)
-
-VL may silently drop log records with very large body fields (50KB+).
-
-Reference: [VL Datasource Issue #91](https://github.com/VictoriaMetrics/victorialogs-datasource/issues/91)
-
-## LogQL Features with No VL Equivalent
-
-| Feature | Status |
-|---|---|
-| `\| decolorize` | Not in LogsQL |
-| `absent_over_time()` | No VL equivalent |
-| Subqueries `rate(sum_over_time(...)[5m:1m])` | Not supported |
-| Vector matching (`A / B` between queries) | Not in LogsQL |
-| Complex Go templates in `line_format` | Partial (no conditionals/loops) |
-| `bytes_over_time()` | Use `sum(len(_msg))` approximation |
-| Cross-tenant queries (`org1\|org2`) | Not supported in VL |
+- ~~Substring vs word matching~~ → Fixed: `|= "text"` → VL `~"text"` (substring)
+- ~~Volume API missing~~ → Fixed: implemented via VL `/select/logsql/hits`
+- ~~Tail WebSocket~~ → Fixed: WebSocket→NDJSON bridge
+- ~~Multitenancy header mismatch~~ → Fixed: `-tenant-map` string→int mapping
+- ~~`| decolorize`~~ → Fixed: proxy-side ANSI stripping
+- ~~`absent_over_time()`~~ → Fixed: mapped to `count()`
+- ~~Binary metric expressions~~ → Fixed: proxy-side evaluation
+- ~~`quantile_over_time()`~~ → Fixed: mapped to VL `quantile(phi, field)`
+- ~~Admin endpoints (`/rules`, `/alerts`)~~ → Fixed: stubs for Grafana Alerting compatibility
+- ~~Coalescer cross-tenant data leak~~ → Fixed: tenant included in coalescing key
+- ~~Stats detection false-positive~~ → Fixed: quote-aware parsing
+- ~~Metrics always recording 200~~ → Fixed: actual status code captured

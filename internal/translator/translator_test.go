@@ -214,6 +214,139 @@ func TestMetricQueryTranslation(t *testing.T) {
 			logql: `sum(rate({app="nginx"}[5m])) by (host)`,
 			want:  `app:=nginx | stats by (host) rate()`,
 		},
+		{
+			name:  "stddev outer aggregation",
+			logql: `stddev(rate({app="nginx"}[5m])) by (host)`,
+			want:  `app:=nginx | stats by (host) rate()`,
+		},
+		{
+			name:  "stdvar outer aggregation",
+			logql: `stdvar(rate({app="nginx"}[5m])) by (host)`,
+			want:  `app:=nginx | stats by (host) rate()`,
+		},
+		{
+			name:  "without clause treated as by",
+			logql: `sum(rate({app="nginx"}[5m])) without (pod)`,
+			want:  `app:=nginx | stats by (pod) rate()`,
+		},
+		{
+			name:  "without before inner",
+			logql: `sum without (pod) (rate({app="nginx"}[5m]))`,
+			want:  `app:=nginx | stats by (pod) rate()`,
+		},
+		{
+			name:  "quantile_over_time",
+			logql: `quantile_over_time(0.95, {app="nginx"} | unwrap duration [5m])`,
+			want:  `app:=nginx | stats quantile(0.95, duration)`,
+		},
+		{
+			name:  "quantile_over_time with by",
+			logql: `sum(quantile_over_time(0.99, {app="nginx"} | unwrap latency [5m])) by (host)`,
+			want:  `app:=nginx | stats by (host) quantile(0.99, latency)`,
+		},
+		{
+			name:  "absent_over_time",
+			logql: `absent_over_time({app="nginx"}[5m])`,
+			want:  `app:=nginx | stats count()`,
+		},
+		{
+			name:  "avg_over_time with unwrap",
+			logql: `avg_over_time({app="nginx"} | unwrap response_time [5m])`,
+			want:  `app:=nginx | stats avg(response_time)`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := TranslateLogQL(tt.logql)
+			if err != nil {
+				t.Fatalf("TranslateLogQL() error = %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("TranslateLogQL()\n  got  = %q\n  want = %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConvertGoTemplate_DottedFieldNames(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`"{{.name}}"`, `"<name>"`},
+		{`"{{.service.name}}"`, `"<service.name>"`},
+		{`"{{.k8s.pod.name}} {{.level}}"`, `"<k8s.pod.name> <level>"`},
+	}
+	for _, tc := range tests {
+		got := convertGoTemplate(tc.input)
+		if got != tc.want {
+			t.Errorf("convertGoTemplate(%s) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestExtractUnwrapField_ConversionWrappers(t *testing.T) {
+	tests := []struct {
+		name  string
+		inner string
+		want  string
+	}{
+		{"plain field", `{app="x"} | unwrap latency [5m]`, "latency"},
+		{"duration wrapper", `{app="x"} | unwrap duration(response_time) [5m]`, "response_time"},
+		{"bytes wrapper", `{app="x"} | unwrap bytes(body_size) [5m]`, "body_size"},
+		{"no unwrap", `{app="x"} [5m]`, ""},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := extractUnwrapField(tc.inner)
+			if got != tc.want {
+				t.Errorf("extractUnwrapField(%q) = %q, want %q", tc.inner, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBinaryOps_Extended(t *testing.T) {
+	tests := []struct {
+		name  string
+		logql string
+	}{
+		{"modulo", `rate({app="x"}[5m]) % 10`},
+		{"power", `rate({app="x"}[5m]) ^ 2`},
+		{"comparison", `rate({app="x"}[5m]) > 100`},
+		{"equality", `rate({app="x"}[5m]) == 0`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result, ok := tryTranslateBinaryMetricExpr(tc.logql)
+			if !ok {
+				t.Errorf("expected binary expression to be recognized: %q", tc.logql)
+				return
+			}
+			if result == "" {
+				t.Error("expected non-empty result")
+			}
+		})
+	}
+}
+
+func TestTranslateLabelFormat_MultiRename(t *testing.T) {
+	tests := []struct {
+		name  string
+		logql string
+		want  string
+	}{
+		{
+			name:  "single rename",
+			logql: `{app="x"} | label_format level="{{.severity}}"`,
+			want:  `app:=x | format "<severity>" as level`,
+		},
+		{
+			name:  "multi rename",
+			logql: `{app="x"} | label_format level="{{.severity}}", status="{{.code}}"`,
+			want:  `app:=x | format "<severity>" as level | format "<code>" as status`,
+		},
 	}
 
 	for _, tt := range tests {

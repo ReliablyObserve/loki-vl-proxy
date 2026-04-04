@@ -134,8 +134,11 @@ flowchart LR
 | `/loki/api/v1/status/buildinfo` | Implemented | — | — | 1 |
 | `/metrics` | Implemented | — | — | 1 |
 | `/debug/queries` | Implemented | — | — | 1 |
+| `/loki/api/v1/rules` | Stub | — | — | 1 |
+| `/loki/api/v1/alerts` | Stub | — | — | 1 |
+| `/config` | Stub | — | — | 1 |
 
-**430+ tests total** (349 unit + 80+ e2e, fuzz-tested with 1.2M+ executions)
+**470+ tests total** (395+ unit + 80+ e2e + UI tests, fuzz-tested with 1.2M+ executions)
 
 ## Protection Layers
 
@@ -189,8 +192,14 @@ Only **1** request reaches VictoriaLogs. All clients get the same response.
 | `avg_over_time({...} \| unwrap d [5m])` | `... \| stats avg(d)` |
 | `topk(10, rate({...}[5m]))` | `... \| stats rate()` |
 | `\| unwrap field` | *(silently dropped — VL stats take field names directly)* |
+| `\| unwrap duration(field)` | *(wrapper stripped, field name extracted)* |
+| `\| unwrap bytes(field)` | *(wrapper stripped, field name extracted)* |
+| `quantile_over_time(0.95, ... \| unwrap f [5m])` | `... \| stats quantile(0.95, f)` |
+| `absent_over_time({...}[5m])` | `... \| stats count()` |
 | `\| label =~ "5.."` | `\| filter label:~"5.."` |
 | `\| label !~ "GET\|HEAD"` | `\| filter -label:~"GET\|HEAD"` |
+| `\| label_format a="{{.x}}", b="{{.y}}"` | `\| format "<x>" as a \| format "<y>" as b` |
+| `sum ... without (pod)` | `... \| stats by (pod) ...` *(treated as by)* |
 
 **Note**: Loki `\|= "text"` is **substring** match. Translated to VL `~"text"` (not `"text"` which is word-only).
 
@@ -437,16 +446,18 @@ Every request log includes: endpoint, method, HTTP status, duration, tenant, que
 ## Testing
 
 ```bash
-# Unit + contract + advanced tests (106 tests)
+# Unit tests (395+ tests)
 go test ./...
-
-# Verbose with individual test names
-go test ./... -v
 
 # E2E compatibility tests (requires docker-compose)
 cd test/e2e-compat
-docker-compose up -d
+docker-compose up -d --build
 go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
+
+# Playwright UI tests (Grafana Explore, drill-down, error handling)
+cd test/e2e-ui
+npm install && npx playwright install chromium
+npm test
 
 # Build binary
 go build -o loki-vl-proxy ./cmd/proxy
@@ -502,3 +513,11 @@ go build -o loki-vl-proxy ./cmd/proxy
 - [x] Fuzz testing — 1.2M+ executions, no panics
 - [x] Nested metric queries — `sum(rate(...)) / sum(rate(...))` proxy-side binary evaluation
 - [x] `/loki/api/v1/patterns` — proxy-side drain-like pattern extraction
+- [x] `direction` parameter — `| sort by (_time)` / `| sort by (_time desc)`
+- [x] `without()` grouping — treated as `by()` for VL stats
+- [x] `quantile_over_time()` — mapped to VL `quantile(phi, field)`
+- [x] `label_format` multi-rename — comma-separated assignments
+- [x] `unwrap duration()/bytes()` — conversion wrapper stripping
+- [x] Extended binary ops — `%`, `^`, `==`, `!=`, `>`, `<`, `>=`, `<=`
+- [x] Admin endpoint stubs — `/rules`, `/alerts`, `/config` for Grafana Alerting
+- [x] Playwright UI e2e tests — Grafana Explore, drill-down, error handling

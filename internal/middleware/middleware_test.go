@@ -385,6 +385,28 @@ func TestRateLimiter_NoLimits(t *testing.T) {
 	}
 }
 
+// TestCircuitBreaker_HalfOpenLimitsProbes verifies that half-open state
+// only allows successThreshold probe requests, not unlimited.
+func TestCircuitBreaker_HalfOpenLimitsProbes(t *testing.T) {
+	cb := NewCircuitBreaker(1, 2, 50*time.Millisecond)
+	cb.RecordFailure() // opens
+
+	time.Sleep(60 * time.Millisecond)
+
+	// First Allow() transitions to half-open and allows probe 1
+	if !cb.Allow() {
+		t.Fatal("expected first probe to be allowed")
+	}
+	// Second probe allowed (successThreshold=2)
+	if !cb.Allow() {
+		t.Fatal("expected second probe to be allowed")
+	}
+	// Third probe should be rejected (only 2 probes allowed)
+	if cb.Allow() {
+		t.Error("expected third probe to be rejected in half-open (limit=2)")
+	}
+}
+
 // TestCircuitBreaker_AllowOpenTimeout verifies requests rejected while open.
 func TestCircuitBreaker_AllowOpenTimeout(t *testing.T) {
 	cb := NewCircuitBreaker(1, 1, 100*time.Millisecond)
@@ -413,5 +435,76 @@ func TestRequestKey(t *testing.T) {
 	}
 	if k1 == k3 {
 		t.Error("different requests should produce different keys")
+	}
+}
+
+// TestRequestKey_TenantIsolation verifies different tenants produce different keys
+// even with identical queries, preventing cross-tenant data leaks.
+func TestRequestKey_TenantIsolation(t *testing.T) {
+	r1, _ := http.NewRequest("GET", "/loki/api/v1/query_range?query={app%3D%22nginx%22}", nil)
+	r1.Header.Set("X-Scope-OrgID", "tenant-a")
+
+	r2, _ := http.NewRequest("GET", "/loki/api/v1/query_range?query={app%3D%22nginx%22}", nil)
+	r2.Header.Set("X-Scope-OrgID", "tenant-b")
+
+	r3, _ := http.NewRequest("GET", "/loki/api/v1/query_range?query={app%3D%22nginx%22}", nil)
+	r3.Header.Set("X-Scope-OrgID", "tenant-a")
+
+	k1 := RequestKey(r1)
+	k2 := RequestKey(r2)
+	k3 := RequestKey(r3)
+
+	if k1 == k2 {
+		t.Error("different tenants with same query must produce different keys")
+	}
+	if k1 != k3 {
+		t.Errorf("same tenant + same query should produce same key: %s != %s", k1, k3)
+	}
+}
+
+// TestCoalescer_TenantIsolation verifies concurrent requests from different tenants
+// are NOT coalesced together — each gets its own backend call.
+func TestCoalescer_TenantIsolation(t *testing.T) {
+	c := NewCoalescer()
+	var tenantACalls, tenantBCalls atomic.Int32
+	var wg sync.WaitGroup
+
+	wg.Add(2)
+
+	// Tenant A
+	go func() {
+		defer wg.Done()
+		c.Do("tenant-a:query", func() (*http.Response, error) {
+			tenantACalls.Add(1)
+			time.Sleep(50 * time.Millisecond)
+			return &http.Response{
+				StatusCode: 200,
+				Header:     http.Header{},
+				Body:       http.NoBody,
+			}, nil
+		})
+	}()
+
+	// Tenant B — different key, must get separate backend call
+	go func() {
+		defer wg.Done()
+		c.Do("tenant-b:query", func() (*http.Response, error) {
+			tenantBCalls.Add(1)
+			time.Sleep(50 * time.Millisecond)
+			return &http.Response{
+				StatusCode: 200,
+				Header:     http.Header{},
+				Body:       http.NoBody,
+			}, nil
+		})
+	}()
+
+	wg.Wait()
+
+	if tenantACalls.Load() != 1 {
+		t.Errorf("expected 1 backend call for tenant-a, got %d", tenantACalls.Load())
+	}
+	if tenantBCalls.Load() != 1 {
+		t.Errorf("expected 1 backend call for tenant-b, got %d", tenantBCalls.Load())
 	}
 }

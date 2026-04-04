@@ -68,8 +68,10 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 }
 
 // RequestKey builds a cache/coalescing key from an HTTP request.
+// Includes X-Scope-OrgID to prevent cross-tenant data leaks.
 func RequestKey(r *http.Request) string {
 	h := sha256.New()
-	_, _ = fmt.Fprintf(h, "%s:%s:%s", r.Method, r.URL.Path, r.URL.RawQuery)
+	tenant := r.Header.Get("X-Scope-OrgID")
+	_, _ = fmt.Fprintf(h, "%s:%s:%s:%s", r.Method, r.URL.Path, r.URL.RawQuery, tenant)
 	return fmt.Sprintf("%x", h.Sum(nil))[:16]
 }
