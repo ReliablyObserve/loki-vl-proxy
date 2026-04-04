@@ -112,6 +112,39 @@ go test ./internal/proxy/ -bench BenchmarkVLLogsToLokiStreams -memprofile=mem.pr
 go tool pprof mem.prof
 ```
 
+## Go Runtime Tuning
+
+### GOMEMLIMIT
+
+The Helm chart auto-calculates `GOMEMLIMIT` as a percentage of `resources.limits.memory`:
+
+```yaml
+# Default: 70% of memory limit
+goMemLimitPercent: 70   # 256Mi * 70% = 179MiB
+
+# Override with explicit value
+goMemLimit: "500MiB"    # ignores goMemLimitPercent
+```
+
+This tells Go's GC the soft memory limit, reducing OOM kills while allowing efficient memory use.
+
+### GOGC
+
+`GOGC=100` (Go default) is set explicitly. Increase for less CPU overhead at the cost of more memory, or decrease for tighter memory control.
+
+### Go Runtime Metrics Exposed
+
+The `/metrics` endpoint exposes Go runtime and GC statistics:
+
+```
+go_memstats_alloc_bytes      # current heap allocation
+go_memstats_sys_bytes        # total OS memory
+go_memstats_heap_inuse_bytes # heap in use
+go_memstats_heap_idle_bytes  # heap idle
+go_goroutines                # active goroutines
+go_gc_cycles_total           # completed GC cycles
+```
+
 ## CI Integration
 
 The `bench` job in `.github/workflows/ci.yaml` runs all benchmarks and load tests on every push. It:

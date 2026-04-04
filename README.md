@@ -46,7 +46,8 @@ See [docs/architecture.md](docs/architecture.md) for detailed component design, 
 - **OTel label translation** -- bidirectional dot/underscore conversion for 50+ semantic convention fields
 - **WebSocket tail** -- live log tailing via Loki's WebSocket protocol
 - **Delete with safeguards** -- confirmation header, tenant scoping, time range limits, audit logging
-- **Observability** -- Prometheus `/metrics`, structured JSON logs, per-tenant breakdowns
+- **Observability** -- Prometheus `/metrics` with Go runtime/GC stats, structured JSON logs, per-tenant breakdowns
+- **GOMEMLIMIT auto-tuning** -- Helm chart calculates Go memory limit as % of k8s resource limits (default 70%)
 
 ## Quick Start
 
@@ -94,7 +95,7 @@ datasources:
 | Write | `push` (blocked 405), `delete` (safeguarded) |
 | Admin | `rules`, `alerts`, `config` (stubs), `buildinfo`, `ready` |
 
-**460+ tests** (unit + e2e + UI + fuzz)
+**499+ tests** (unit + e2e + UI + fuzz + perf regression)
 
 ## Documentation
 
