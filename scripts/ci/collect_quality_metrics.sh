@@ -9,12 +9,6 @@ fi
 OUTPUT_JSON="$1"
 ROOT_DIR="$(pwd)"
 TMP_DIR="$(mktemp -d)"
-TIMEOUT_BIN=""
-if command -v timeout >/dev/null 2>&1; then
-  TIMEOUT_BIN="timeout"
-elif command -v gtimeout >/dev/null 2>&1; then
-  TIMEOUT_BIN="gtimeout"
-fi
 cleanup() {
   if [ -d "$ROOT_DIR/test/e2e-compat" ]; then
     (cd "$ROOT_DIR/test/e2e-compat" && docker compose down -v >/dev/null 2>&1) || true
@@ -27,16 +21,6 @@ log_step() {
   echo "[quality] $*" >&2
 }
 
-run_with_timeout() {
-  local seconds="$1"
-  shift
-  if [ -n "$TIMEOUT_BIN" ]; then
-    "$TIMEOUT_BIN" "$seconds" "$@"
-    return $?
-  fi
-  "$@"
-}
-
 capture_or_default() {
   local label="$1"
   local fallback="$2"
@@ -44,16 +28,38 @@ capture_or_default() {
   shift 3
 
   log_step "starting ${label}"
-  local output
-  if output="$(run_with_timeout "$timeout_seconds" "$@" 2>"$TMP_DIR/${label}.stderr")"; then
+  local out_file="$TMP_DIR/${label}.stdout"
+  local err_file="$TMP_DIR/${label}.stderr"
+  rm -f "$out_file" "$err_file"
+
+  (
+    "$@" >"$out_file" 2>"$err_file"
+  ) &
+  local pid=$!
+  local elapsed=0
+  local status=0
+  while kill -0 "$pid" 2>/dev/null; do
+    if [ "$elapsed" -ge "$timeout_seconds" ]; then
+      kill "$pid" >/dev/null 2>&1 || true
+      wait "$pid" >/dev/null 2>&1 || true
+      log_step "${label} timed out after ${timeout_seconds}s; using fallback"
+      cat "$err_file" >&2 || true
+      printf '%s' "$fallback"
+      return 0
+    fi
+    sleep 1
+    elapsed=$((elapsed+1))
+  done
+
+  if wait "$pid"; then
     log_step "completed ${label}"
-    printf '%s' "$output"
+    cat "$out_file"
     return 0
   fi
 
-  local status=$?
+  status=$?
   log_step "${label} failed or timed out (exit=${status}); using fallback"
-  cat "$TMP_DIR/${label}.stderr" >&2 || true
+  cat "$err_file" >&2 || true
   printf '%s' "$fallback"
   return 0
 }
