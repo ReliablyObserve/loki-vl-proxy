@@ -186,7 +186,7 @@ jobs:
           git add CHANGELOG.md README.md
           git add -f charts/loki-vl-proxy/Chart.yaml
           git diff --cached --quiet && { echo "No changes to release"; exit 0; }
-          git commit -m "chore: release v${VERSION} [skip ci]"
+          git commit -m "chore: release v${VERSION}"
           git push origin "$BRANCH"
 
           echo "release_branch=${BRANCH}" >> "$GITHUB_OUTPUT"
