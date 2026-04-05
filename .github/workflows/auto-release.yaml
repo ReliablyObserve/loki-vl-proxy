@@ -16,7 +16,7 @@ jobs:
   prepare-release:
     runs-on: ubuntu-latest
     # Skip if this push is from a release PR merge or badge update
-    if: github.event_name == 'workflow_dispatch' || (!contains(github.event.head_commit.message, '[skip ci]') && !startsWith(github.event.head_commit.message, 'chore: release'))
+    if: "github.event_name == 'workflow_dispatch' || (!contains(github.event.head_commit.message, '[skip ci]') && !startsWith(github.event.head_commit.message, 'chore: release'))"
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       next_version: ${{ steps.check.outputs.next_version }}
