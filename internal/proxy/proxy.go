@@ -2019,7 +2019,7 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 			"version":   "2.9.0",
 			"revision":  "loki-vl-proxy",
 			"branch":    "main",
-			"goVersion": "go1.23",
+			"goVersion": "go1.26.1",
 		},
 	})
 }

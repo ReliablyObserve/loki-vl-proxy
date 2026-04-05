@@ -1,8 +1,6 @@
 module github.com/szibis/Loki-VL-proxy
 
-go 1.25.0
-
-toolchain go1.26.1
+go 1.26.1
 
 require (
 	github.com/gorilla/websocket v1.5.3

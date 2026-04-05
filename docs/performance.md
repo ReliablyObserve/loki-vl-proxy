@@ -36,7 +36,7 @@ When multiple clients send identical queries simultaneously, only 1 request reac
 
 ## Benchmark Results
 
-Measured on Apple M3 Max (14 cores), Go 1.25, `-benchmem`.
+Measured on Apple M3 Max (14 cores), Go 1.26.1, `-benchmem`.
 
 ### Per-Request Latency
 
