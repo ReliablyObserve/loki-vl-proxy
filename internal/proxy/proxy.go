@@ -1199,11 +1199,21 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	}
 	fields, _, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{"fields": []interface{}{}, "limit": lineLimit})
+		p.writeJSON(w, map[string]interface{}{
+			"status": "success",
+			"data":   []interface{}{},
+			"fields": []interface{}{},
+			"limit":  lineLimit,
+		})
 		p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
 		return
 	}
-	p.writeJSON(w, map[string]interface{}{"fields": fields, "limit": lineLimit})
+	p.writeJSON(w, map[string]interface{}{
+		"status": "success",
+		"data":   fields,
+		"fields": fields,
+		"limit":  lineLimit,
+	})
 	p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
 }
 
@@ -1242,7 +1252,12 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 
 	_, fieldValues, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{"values": []string{}, "limit": 1000})
+		p.writeJSON(w, map[string]interface{}{
+			"status": "success",
+			"data":   []string{},
+			"values": []string{},
+			"limit":  lineLimit,
+		})
 		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 		return
 	}
@@ -1252,6 +1267,8 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 	}
 
 	p.writeJSON(w, map[string]interface{}{
+		"status": "success",
+		"data":   values,
 		"values": values,
 		"limit":  lineLimit,
 	})
@@ -1376,7 +1393,11 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 
 	logsqlQuery, err := p.translateQuery(query)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{"detectedLabels": []interface{}{}})
+		p.writeJSON(w, map[string]interface{}{
+			"status":         "success",
+			"data":           []interface{}{},
+			"detectedLabels": []interface{}{},
+		})
 		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 		return
 	}
@@ -1393,7 +1414,11 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{"detectedLabels": []interface{}{}})
+		p.writeJSON(w, map[string]interface{}{
+			"status":         "success",
+			"data":           []interface{}{},
+			"detectedLabels": []interface{}{},
+		})
 		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 		return
 	}
@@ -1401,7 +1426,11 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{"detectedLabels": []interface{}{}})
+		p.writeJSON(w, map[string]interface{}{
+			"status":         "success",
+			"data":           []interface{}{},
+			"detectedLabels": []interface{}{},
+		})
 		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 		return
 	}
@@ -1409,6 +1438,8 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	detectedLabels, _ := scanDetectedLabels(body, p.labelTranslator)
 
 	p.writeJSON(w, map[string]interface{}{
+		"status":         "success",
+		"data":           detectedLabels,
 		"detectedLabels": detectedLabels,
 	})
 	p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
@@ -1583,43 +1614,26 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if origin := strings.TrimSpace(r.Header.Get("Origin")); origin != "" && !p.isAllowedTailOrigin(origin) {
+		p.writeError(w, http.StatusForbidden, "tail origin not allowed")
+		p.metrics.RecordRequest("tail", http.StatusForbidden, time.Since(start))
+		return
+	}
+
 	r = withOrgID(r)
 
 	tailCtx, tailCancel := context.WithCancel(r.Context())
 	defer tailCancel()
 
-	// Connect to VL tail endpoint before upgrading the client connection so
-	// upstream auth and readiness failures are returned as normal HTTP errors.
-	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s",
-		p.backend.String(), url.QueryEscape(logsqlQuery))
-	req, err := http.NewRequestWithContext(tailCtx, "GET", vlURL, nil)
-	if err != nil {
-		p.writeError(w, http.StatusInternalServerError, "failed to create VL request")
-		p.metrics.RecordRequest("tail", http.StatusInternalServerError, time.Since(start))
-		return
-	}
-	p.applyBackendHeaders(req)
-	p.forwardTenantHeaders(req)
-	resp, err := p.tailClient.Do(req)
-	if err != nil {
-		p.writeError(w, http.StatusBadGateway, "VL tail connection failed: "+err.Error())
-		p.metrics.RecordRequest("tail", http.StatusBadGateway, time.Since(start))
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = http.StatusText(resp.StatusCode)
-		}
-		p.writeError(w, resp.StatusCode, msg)
-		p.metrics.RecordRequest("tail", resp.StatusCode, time.Since(start))
+	if statusCode, msg, ok := p.preflightTailAccess(tailCtx, logsqlQuery, r.FormValue("start")); ok {
+		p.writeError(w, statusCode, msg)
+		p.metrics.RecordRequest("tail", statusCode, time.Since(start))
 		return
 	}
 
-	// Upgrade to WebSocket only after the backend stream is confirmed.
+	// Upgrade immediately after local validation so slow or blocking native tail
+	// headers do not break the client handshake. Native tail remains a best-effort
+	// path; if it stalls or isn't available, synthetic polling takes over.
 	upgrader := p.tailUpgrader()
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -1628,8 +1642,6 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = conn.Close() }()
-
-	p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery)
 	p.metrics.RecordRequest("tail", http.StatusOK, time.Since(start))
 
 	// Start a read loop to detect client disconnect (WebSocket protocol requires it).
@@ -1647,6 +1659,14 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 
 	pingTicker := time.NewTicker(time.Second)
 	defer pingTicker.Stop()
+
+	resp, nativeTail, fallbackReason := p.openNativeTailStream(wsCtx, logsqlQuery)
+	p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery, "native", nativeTail, "fallback", fallbackReason)
+	if !nativeTail {
+		p.streamSyntheticTail(wsCtx, conn, logqlQuery, r.FormValue("start"))
+		return
+	}
+	defer resp.Body.Close()
 
 	// Read VL NDJSON stream and forward as Loki WebSocket frames
 	lineCh := make(chan []byte)
@@ -1703,6 +1723,156 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHint string) (int, string, bool) {
+	ctx, cancel := context.WithTimeout(parent, 2*time.Second)
+	defer cancel()
+
+	windowStart := time.Now().Add(-5 * time.Second)
+	if parsed, ok := parseEntryTime(startHint); ok {
+		windowStart = parsed
+	}
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
+	params.Set("end", formatVLTimestamp(time.Now().UTC().Format(time.RFC3339Nano)))
+	params.Set("limit", "1")
+
+	resp, err := p.vlGet(ctx, "/select/logsql/query", params)
+	if err != nil {
+		p.log.Debug("tail preflight skipped", "error", err)
+		return 0, "", false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 400 {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return 0, "", false
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	msg := strings.TrimSpace(string(body))
+	if msg == "" {
+		msg = http.StatusText(resp.StatusCode)
+	}
+	return resp.StatusCode, msg, true
+}
+
+func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string) (*http.Response, bool, string) {
+	ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
+	defer cancel()
+
+	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s",
+		p.backend.String(), url.QueryEscape(logsqlQuery))
+	req, err := http.NewRequestWithContext(ctx, "GET", vlURL, nil)
+	if err != nil {
+		return nil, false, "failed to create native tail request"
+	}
+	p.applyBackendHeaders(req)
+	p.forwardTenantHeaders(req)
+
+	resp, err := p.tailClient.Do(req)
+	if err != nil {
+		return nil, false, err.Error()
+	}
+	if resp.StatusCode == http.StatusOK {
+		return resp, true, ""
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	msg := strings.TrimSpace(string(body))
+	if msg == "" {
+		msg = http.StatusText(resp.StatusCode)
+	}
+	return nil, false, fmt.Sprintf("backend tail unavailable: %s", msg)
+}
+
+func (p *Proxy) streamSyntheticTail(ctx context.Context, conn *websocket.Conn, logqlQuery, startHint string) {
+	lastSeen := make(map[string]struct{}, 128)
+	windowStart := time.Now().Add(-5 * time.Second)
+	if parsed, ok := parseEntryTime(startHint); ok {
+		windowStart = parsed
+	}
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		if err := p.writeSyntheticTailBatch(ctx, conn, logqlQuery, &windowStart, lastSeen); err != nil {
+			p.log.Debug("synthetic tail batch failed", "error", err)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn *websocket.Conn, logqlQuery string, windowStart *time.Time, lastSeen map[string]struct{}) error {
+	params := url.Values{}
+	params.Set("query", logqlQuery+" | sort by (_time)")
+	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
+	params.Set("end", formatVLTimestamp(time.Now().UTC().Format(time.RFC3339Nano)))
+	params.Set("limit", "200")
+
+	resp, err := p.vlGet(ctx, "/select/logsql/query", params)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("synthetic tail query failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	newest := *windowStart
+	for scanner.Scan() {
+		line := append([]byte(nil), scanner.Bytes()...)
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+
+		var vlLine map[string]interface{}
+		if err := json.Unmarshal(line, &vlLine); err != nil {
+			continue
+		}
+		timeStr, _ := stringifyEntryValue(vlLine["_time"])
+		msgStr, _ := stringifyEntryValue(vlLine["_msg"])
+		streamStr, _ := stringifyEntryValue(vlLine["_stream"])
+		seenKey := timeStr + "\x00" + streamStr + "\x00" + msgStr
+		if _, ok := lastSeen[seenKey]; ok {
+			continue
+		}
+		lastSeen[seenKey] = struct{}{}
+
+		if entryTime, ok := parseEntryTime(timeStr); ok && entryTime.After(newest) {
+			newest = entryTime
+		}
+
+		frameJSON, err := json.Marshal(p.vlLineToTailFrame(vlLine))
+		if err != nil {
+			continue
+		}
+		if err := conn.WriteMessage(websocket.TextMessage, frameJSON); err != nil {
+			return err
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+
+	*windowStart = newest.Add(time.Nanosecond)
+	if len(lastSeen) > 1024 {
+		clear(lastSeen)
+	}
+	return nil
 }
 
 // vlLineToTailFrame converts a single VL NDJSON log line to a Loki tail WebSocket frame.

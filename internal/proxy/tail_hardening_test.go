@@ -14,7 +14,9 @@ import (
 )
 
 func TestTailHardening_RejectsBrowserOriginsByDefault(t *testing.T) {
+	var backendCalls int
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendCalls++
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"test log line","app":"nginx"}`)
@@ -39,6 +41,9 @@ func TestTailHardening_RejectsBrowserOriginsByDefault(t *testing.T) {
 	}
 	if resp == nil || resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 for untrusted origin, got resp=%v err=%v", resp, err)
+	}
+	if backendCalls != 0 {
+		t.Fatalf("expected origin rejection before backend call, got %d backend calls", backendCalls)
 	}
 }
 
@@ -122,5 +127,99 @@ func TestTailHardening_UsesDedicatedStreamingClient(t *testing.T) {
 	}
 	if p.client.Timeout == 0 {
 		t.Fatal("expected regular backend client to retain bounded timeout")
+	}
+}
+
+func TestTailHardening_FallsBackWhenNativeTailUnavailable(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/tail":
+			http.NotFound(w, r)
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"test log line","app":"nginx"}`)
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(p.handleTail))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "?query={app%3D%22nginx%22}"
+	dialer := websocket.Dialer{HandshakeTimeout: 3 * time.Second}
+	ws, resp, err := dialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket dial failed: %v (resp=%v)", err, resp)
+	}
+	defer ws.Close()
+	_ = ws.SetReadDeadline(time.Now().Add(3 * time.Second))
+
+	_, msg, err := ws.ReadMessage()
+	if err != nil {
+		t.Fatalf("websocket read failed: %v", err)
+	}
+
+	var frame map[string]interface{}
+	if err := json.Unmarshal(msg, &frame); err != nil {
+		t.Fatalf("invalid JSON frame: %v", err)
+	}
+	if _, ok := frame["streams"]; !ok {
+		t.Fatalf("expected Loki tail frame from synthetic fallback, got %v", frame)
+	}
+}
+
+func TestTailHardening_UpgradeDoesNotWaitForNativeTailHeaders(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/tail":
+			time.Sleep(3 * time.Second)
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.WriteHeader(http.StatusOK)
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"test log line","app":"nginx"}`)
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(p.handleTail))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "?query={app%3D%22nginx%22}"
+	dialer := websocket.Dialer{HandshakeTimeout: 1 * time.Second}
+	ws, resp, err := dialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("websocket dial failed: %v (resp=%v)", err, resp)
+	}
+	defer ws.Close()
+	_ = ws.SetReadDeadline(time.Now().Add(3 * time.Second))
+
+	_, msg, err := ws.ReadMessage()
+	if err != nil {
+		t.Fatalf("websocket read failed: %v", err)
+	}
+
+	var frame map[string]interface{}
+	if err := json.Unmarshal(msg, &frame); err != nil {
+		t.Fatalf("invalid JSON frame: %v", err)
+	}
+	if _, ok := frame["streams"]; !ok {
+		t.Fatalf("expected Loki tail frame from synthetic fallback, got %v", frame)
 	}
 }

@@ -458,8 +458,12 @@ func queryRange(t *testing.T, baseURL, query string) []interface{} {
 }
 
 func getDetectedFields(t *testing.T, baseURL string) []string {
+	return getDetectedFieldsForQuery(t, baseURL, "*")
+}
+
+func getDetectedFieldsForQuery(t *testing.T, baseURL, query string) []string {
 	t.Helper()
-	resp, err := http.Get(baseURL + "/loki/api/v1/detected_fields?query=*")
+	resp, err := http.Get(baseURL + "/loki/api/v1/detected_fields?query=" + url.QueryEscape(query))
 	if err != nil {
 		t.Fatalf("detected_fields failed: %v", err)
 	}
@@ -506,8 +510,12 @@ func getSeries(t *testing.T, baseURL, matchQuery string) []map[string]interface{
 }
 
 func getDetectedFieldValues(t *testing.T, baseURL, fieldName string) []string {
+	return getDetectedFieldValuesForQuery(t, baseURL, fieldName, "*")
+}
+
+func getDetectedFieldValuesForQuery(t *testing.T, baseURL, fieldName, query string) []string {
 	t.Helper()
-	resp, err := http.Get(baseURL + "/loki/api/v1/detected_field/" + fieldName + "/values?query=*")
+	resp, err := http.Get(baseURL + "/loki/api/v1/detected_field/" + fieldName + "/values?query=" + url.QueryEscape(query))
 	if err != nil {
 		t.Fatalf("detected_field values failed: %v", err)
 	}
@@ -1176,11 +1184,15 @@ func TestGrafanaDrilldown_UnderscoreProxy(t *testing.T) {
 		if len(fields) == 0 {
 			t.Log("note: detected_fields for specific query returned empty (may need wildcard fallback)")
 		}
+		seen := map[string]bool{}
 		for _, f := range fields {
 			field, _ := f.(map[string]interface{})
 			label, _ := field["label"].(string)
-			if strings.Contains(label, ".") {
-				t.Errorf("Drilldown detected field %q contains dots", label)
+			seen[label] = true
+		}
+		for _, want := range []string{"service.name", "service_name"} {
+			if !seen[want] {
+				t.Errorf("Drilldown hybrid detected fields missing %q", want)
 			}
 		}
 	})
@@ -1382,16 +1394,13 @@ func TestOTelCompatibilityScore(t *testing.T) {
 
 	// Detected fields
 	fields := getDetectedFields(t, proxyUnderscoreURL)
-	fieldHasDots := false
-	for _, f := range fields {
-		if strings.Contains(f, ".") {
-			fieldHasDots = true
+	fieldSet := toSet(fields)
+	for _, want := range []string{"service.name", "service_name", "k8s.pod.name", "k8s_pod_name"} {
+		if fieldSet[want] {
+			score.pass("detected_fields/"+want, "present")
+		} else {
+			score.fail("detected_fields/"+want, "missing")
 		}
-	}
-	if !fieldHasDots {
-		score.pass("detected_fields", "no dots")
-	} else {
-		score.fail("detected_fields", "has dots")
 	}
 
 	// Series

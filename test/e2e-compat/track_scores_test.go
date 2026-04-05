@@ -241,7 +241,7 @@ func TestVLTrackScore(t *testing.T) {
 		score.fail("stream_translation", "query_range returned no translated streams")
 	}
 
-	rawFields := getDetectedFields(t, proxyURL)
+	rawFields := getDetectedFieldsForQuery(t, proxyURL, `{service_name="api-gateway"}`)
 	for _, want := range []string{"method", "path", "status", "duration_ms"} {
 		if contains(rawFields, want) {
 			score.pass("detected_fields", fmt.Sprintf("VictoriaLogs field %s exposed via proxy", want))
@@ -279,7 +279,7 @@ func TestVLTrackScore(t *testing.T) {
 		score.fail("volume_range", "volume_range returned no series")
 	}
 
-	methods := getDetectedFieldValues(t, proxyURL, "method")
+	methods := getDetectedFieldValuesForQuery(t, proxyURL, "method", `{service_name="api-gateway"}`)
 	for _, want := range []string{"GET", "POST", "DELETE"} {
 		if contains(methods, want) {
 			score.pass("field_values", fmt.Sprintf("field value %s present", want))

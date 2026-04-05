@@ -123,6 +123,7 @@ func TestDrilldown_DetectedFieldsMatchStructuredLogs(t *testing.T) {
 func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 	ensureDataIngested(t)
 	ingestPatternData(t)
+	ensureOTelData(t)
 	now := time.Now()
 	start := now.Add(-2 * time.Hour).Format(time.RFC3339Nano)
 	end := now.Format(time.RFC3339Nano)
@@ -250,7 +251,6 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 	})
 
 	t.Run("structured_metadata_fields_and_values", func(t *testing.T) {
-		ensureOTelData(t)
 		params := url.Values{}
 		params.Set("query", `{service_name="otel-auth-service"}`)
 		params.Set("start", start)

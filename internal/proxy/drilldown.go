@@ -320,68 +320,6 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 	return values, nil
 }
 
-func (p *Proxy) volumeByServiceName(ctx context.Context, query, start, end string) (map[string]interface{}, error) {
-	logsqlQuery, err := p.translateQuery(defaultQuery(query))
-	if err != nil {
-		return nil, err
-	}
-
-	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time desc)")
-	if start != "" {
-		params.Set("start", start)
-	}
-	if end != "" {
-		params.Set("end", end)
-	}
-
-	resp, err := p.vlGet(ctx, "/select/logsql/streams", params)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	var vlResp struct {
-		Values []struct {
-			Value string `json:"value"`
-			Hits  int64  `json:"hits"`
-		} `json:"values"`
-	}
-	if err := json.Unmarshal(body, &vlResp); err != nil {
-		return nil, err
-	}
-
-	grouped := make(map[string]int64, len(vlResp.Values))
-	for _, item := range vlResp.Values {
-		labels := parseStreamLabels(item.Value)
-		grouped[deriveServiceName(labels)] += item.Hits
-	}
-
-	names := make([]string, 0, len(grouped))
-	for name := range grouped {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	nowTS := float64(time.Now().Unix())
-	result := make([]map[string]interface{}, 0, len(names))
-	for _, name := range names {
-		result = append(result, map[string]interface{}{
-			"metric": map[string]string{"service_name": name},
-			"value":  []interface{}{nowTS, strconv.FormatInt(grouped[name], 10)},
-		})
-	}
-
-	return map[string]interface{}{
-		"status": "success",
-		"data": map[string]interface{}{
-			"resultType": "vector",
-			"result":     result,
-		},
-	}, nil
-}
-
 func splitTargetLabels(targetLabels string) []string {
 	parts := strings.Split(targetLabels, ",")
 	labels := make([]string, 0, len(parts))

@@ -210,7 +210,8 @@ func TestFeature_Tail_WebSocketConnection(t *testing.T) {
 	params := url.Values{}
 	params.Set("query", `{app="api-gateway"}`)
 
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL+"?"+params.Encode(), nil)
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, resp, err := dialer.Dial(wsURL+"?"+params.Encode(), nil)
 	if err != nil {
 		if resp != nil {
 			score.fail("tail", fmt.Sprintf("WebSocket upgrade failed: %d", resp.StatusCode))
@@ -252,7 +253,8 @@ func TestFeature_Tail_BrowserOriginRejectedByDefault(t *testing.T) {
 	headers := http.Header{}
 	headers.Set("Origin", "https://grafana.example.com")
 
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL+"?"+params.Encode(), headers)
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, resp, err := dialer.Dial(wsURL+"?"+params.Encode(), headers)
 	if err == nil {
 		conn.Close()
 		score.fail("tail_origin", "expected browser origin to be rejected by default")

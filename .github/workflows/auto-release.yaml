@@ -183,7 +183,8 @@ jobs:
           # Delete stale release branch if it exists from a previous run
           git push origin --delete "$BRANCH" 2>/dev/null || true
           git checkout -b "$BRANCH"
-          git add CHANGELOG.md README.md charts/loki-vl-proxy/Chart.yaml
+          git add CHANGELOG.md README.md
+          git add -f charts/loki-vl-proxy/Chart.yaml
           git diff --cached --quiet && { echo "No changes to release"; exit 0; }
           git commit -m "chore: release v${VERSION} [skip ci]"
           git push origin "$BRANCH"

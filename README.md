@@ -101,27 +101,36 @@ See [Architecture](docs/architecture.md) for component design and [Fleet Cache](
 ## Key Features
 
 ### Query Translation
+See [Architecture](docs/architecture.md), [API Reference](docs/api-reference.md), and [Loki Compatibility](docs/compatibility-loki.md).
+
 - **100% LogQL coverage** -- stream selectors, line filters, parsers, metric queries, binary expressions, subqueries
 - **Proxy-side evaluation** for features VL doesn't support natively: `without()`, `on()`/`ignoring()`, `group_left()`/`group_right()`, subquery `[range:step]`, `bool` modifier, `| decolorize`, `| line_format`
 - **OTel label translation** -- bidirectional dot/underscore conversion for 50+ semantic convention fields
+- **Hybrid metadata fields by default** -- keep Loki-compatible labels while exposing both dotted OTel fields and underscore aliases for Drilldown, Explore, and correlation paths
 - **VL stream selector optimization** -- known `_stream_fields` bypass full-text scan for native performance
 
 ### Caching & Performance
+See [Fleet Cache](docs/fleet-cache.md), [Performance Guide](docs/performance.md), and [Scaling](docs/scaling.md).
+
 - **3-tier cache**: L1 in-memory (LRU + TTL) → L2 on-disk (bbolt + gzip) → L3 peer (consistent hash ring)
 - **Fleet-distributed cache** -- consistent hashing across proxy replicas, shadow copies with TTL preservation, per-peer circuit breakers ([details](docs/fleet-cache.md))
 - **Request coalescing** -- N identical queries become 1 backend request (singleflight)
 - **Query normalization** -- sort matchers, collapse whitespace for better cache hit rates
 
 ### Protection & Security
+See [Security](docs/security.md), [Configuration](docs/configuration.md), and [Known Issues](docs/KNOWN_ISSUES.md).
+
 - **6-layer protection** -- rate limiting, concurrency cap, coalescing, normalization, cache, circuit breaker
 - **Secret redaction** -- all log output passes through a redacting handler that masks API keys, bearer tokens, passwords, AWS credentials, and URL-embedded secrets
 - **Delete with safeguards** -- confirmation header, tenant scoping, time range limits, audit logging
 - **TLS support** -- server-side HTTPS, backend TLS, OTLP TLS
 
 ### Operations
+See [Configuration](docs/configuration.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), and [Logs Drilldown Compatibility](docs/compatibility-drilldown.md).
+
 - **Multitenancy** -- Loki `X-Scope-OrgID` mapped to VL `AccountID`/`ProjectID`, SIGHUP hot-reload
 - **Observability** -- Prometheus `/metrics`, structured JSON logs, per-tenant breakdowns, per-client offender metrics, fleet peer-cache metrics, OTLP push
-- **WebSocket tail** -- live log tailing via Loki's WebSocket protocol
+- **WebSocket tail** -- live log tailing via Loki's WebSocket protocol with fast handshake, origin controls, and synthetic fallback when native VL tail streaming is unavailable
 - **GOMEMLIMIT auto-tuning** -- Helm chart calculates Go memory limit as % of k8s resource limits
 
 ## Quick Start

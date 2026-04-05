@@ -478,6 +478,7 @@ func TestExtended_Drilldown_LabelValuesWithTimeRange(t *testing.T) {
 	score := &CompatScore{}
 	now := time.Now()
 	params := url.Values{}
+	params.Set("query", `{namespace="prod"}`)
 	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 
@@ -493,18 +494,23 @@ func TestExtended_Drilldown_LabelValuesWithTimeRange(t *testing.T) {
 		score.fail("drilldown_labels", "no values in time range")
 	}
 
-	// All Loki values should be in proxy
+	// Use a stable namespace-scoped subset so the score isn't distorted by
+	// residual app names from other test ingestions in a reused local stack.
+	expected := []string{"api-gateway", "payment-service"}
 	missing := 0
-	for _, v := range lokiVals {
+	for _, v := range expected {
+		if !contains(lokiVals, v) {
+			t.Fatalf("loki missing expected namespace-scoped app value %q: %v", v, lokiVals)
+		}
 		if !contains(proxyVals, v) {
 			missing++
-			t.Logf("proxy missing label value: %q", v)
+			t.Logf("proxy missing namespace-scoped label value: %q", v)
 		}
 	}
 	if missing == 0 {
-		score.pass("drilldown_labels", "all Loki values present in proxy")
+		score.pass("drilldown_labels", "stable namespace-scoped Loki values present in proxy")
 	} else {
-		score.fail("drilldown_labels", fmt.Sprintf("%d Loki values missing from proxy", missing))
+		score.fail("drilldown_labels", fmt.Sprintf("%d namespace-scoped Loki values missing from proxy", missing))
 	}
 
 	score.report(t)
