@@ -721,6 +721,42 @@ func TestCache_LabelValuesHitOnRepeat(t *testing.T) {
 	}
 }
 
+func TestCache_QueryRangeHitOnRepeat(t *testing.T) {
+	callCount := 0
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/stream+json")
+		_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"cache me","_stream":"{app=\"nginx\"}"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	r1 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&limit=10`, nil)
+	w1 := httptest.NewRecorder()
+	p.handleQueryRange(w1, r1)
+	if callCount != 1 {
+		t.Fatalf("expected 1 backend call, got %d", callCount)
+	}
+
+	r2 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&limit=10`, nil)
+	w2 := httptest.NewRecorder()
+	p.handleQueryRange(w2, r2)
+	if callCount != 1 {
+		t.Fatalf("expected cache hit on second query_range call, got %d backend calls", callCount)
+	}
+	if w1.Body.String() != w2.Body.String() {
+		t.Fatalf("expected cached query_range body to match original response")
+	}
+
+	r3 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=3&end=4&limit=10`, nil)
+	w3 := httptest.NewRecorder()
+	p.handleQueryRange(w3, r3)
+	if callCount != 2 {
+		t.Fatalf("expected new backend call for different time range, got %d", callCount)
+	}
+}
+
 // =============================================================================
 // POST Support Tests — Loki allows POST for all query endpoints
 // =============================================================================
