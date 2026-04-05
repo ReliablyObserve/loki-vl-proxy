@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -304,6 +305,113 @@ func TestNormalizeMetricsEndpoint(t *testing.T) {
 	}
 }
 
+func TestOTLPPusher_SpecializedMetricFamilies(t *testing.T) {
+	m := NewMetrics()
+	m.RecordClientError("query_range", "timeout")
+	m.RecordClientError("query_range", "timeout")
+	m.RecordEndpointCacheHit("query_range")
+	m.RecordEndpointCacheMiss("query")
+	m.RecordBackendDuration("query_range", 25*time.Millisecond)
+	m.SetCircuitBreakerFunc(func() string { return "half-open" })
+
+	pusher := NewOTLPPusher(OTLPConfig{Endpoint: "http://unused"}, m)
+	now := time.Now().UnixNano()
+
+	clientErrors := pusher.clientErrorMetrics(now)
+	if len(clientErrors) != 1 {
+		t.Fatalf("expected one client error metric family, got %d", len(clientErrors))
+	}
+	points := metricPointsByType(t, clientErrors[0], "sum")
+	if len(points) != 1 {
+		t.Fatalf("expected one client error datapoint, got %d", len(points))
+	}
+	point0, ok := points[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected client error datapoint map, got %#v", points[0])
+	}
+	attrs := flattenAnyAttrs(t, point0["attributes"])
+	if attrs["endpoint"] != "query_range" || attrs["reason"] != "timeout" {
+		t.Fatalf("unexpected client error attrs: %#v", attrs)
+	}
+
+	endpointFamilies := append(pusher.endpointCacheMetrics(now), pusher.backendDurationMetrics(now)...)
+	names := metricNamesFromMaps(endpointFamilies)
+	for _, required := range []string{
+		"loki_vl_proxy_cache_hits_by_endpoint",
+		"loki_vl_proxy_cache_misses_by_endpoint",
+		"loki_vl_proxy_backend_duration_seconds",
+	} {
+		if !names[required] {
+			t.Fatalf("expected %s in specialized families, names=%v", required, names)
+		}
+	}
+
+	cb := pusher.circuitBreakerMetric(now)
+	if cb == nil {
+		t.Fatal("expected circuit breaker metric")
+	}
+	cbPoints := metricPointsByType(t, cb, "gauge")
+	if len(cbPoints) != 1 {
+		t.Fatalf("expected one circuit breaker datapoint, got %d", len(cbPoints))
+	}
+	cbPoint, ok := cbPoints[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected circuit breaker datapoint map, got %#v", cbPoints[0])
+	}
+	if got := cbPoint["asDouble"]; got != float64(2) {
+		t.Fatalf("expected half-open circuit breaker value 2, got %#v", got)
+	}
+}
+
+func TestOTLPPusher_CircuitBreakerMetricStates(t *testing.T) {
+	pusher := NewOTLPPusher(OTLPConfig{Endpoint: "http://unused"}, NewMetrics())
+	now := time.Now().UnixNano()
+
+	if metric := pusher.circuitBreakerMetric(now); metric != nil {
+		t.Fatal("expected nil metric when no callback is configured")
+	}
+
+	cases := map[string]float64{
+		"closed":    0,
+		"open":      1,
+		"half_open": 2,
+	}
+	for state, want := range cases {
+		t.Run(state, func(t *testing.T) {
+			pusher.metrics.SetCircuitBreakerFunc(func() string { return state })
+			metric := pusher.circuitBreakerMetric(now)
+			points := metricPointsByType(t, metric, "gauge")
+			point0, ok := points[0].(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected circuit breaker datapoint map, got %#v", points[0])
+			}
+			if got := point0["asDouble"]; got != want {
+				t.Fatalf("circuit breaker state %q encoded as %#v, want %v", state, got, want)
+			}
+		})
+	}
+}
+
+func TestOTLPPusher_SystemMetrics(t *testing.T) {
+	pusher := NewOTLPPusher(OTLPConfig{Endpoint: "http://unused"}, NewMetrics())
+	names := metricNamesFromMaps(pusher.systemMetrics(time.Now().UnixNano()))
+	if !names["process_resident_memory_bytes"] {
+		t.Fatalf("expected process_resident_memory_bytes, names=%v", names)
+	}
+	if runtime.GOOS == "linux" {
+		for _, required := range []string{
+			"node_disk_read_bytes_total",
+			"node_disk_written_bytes_total",
+			"node_network_receive_bytes_total",
+			"node_network_transmit_bytes_total",
+		} {
+			if !names[required] {
+				t.Fatalf("expected linux system metric %s, names=%v", required, names)
+			}
+		}
+	}
+}
+
 func flattenAttrs(t *testing.T, attrs []interface{}) map[string]string {
 	t.Helper()
 	flat := make(map[string]string, len(attrs))
@@ -326,6 +434,23 @@ func flattenAttrs(t *testing.T, attrs []interface{}) map[string]string {
 	return flat
 }
 
+func flattenAnyAttrs(t *testing.T, raw interface{}) map[string]string {
+	t.Helper()
+	switch attrs := raw.(type) {
+	case []interface{}:
+		return flattenAttrs(t, attrs)
+	case []map[string]interface{}:
+		items := make([]interface{}, 0, len(attrs))
+		for _, attr := range attrs {
+			items = append(items, attr)
+		}
+		return flattenAttrs(t, items)
+	default:
+		t.Fatalf("unsupported attribute shape: %#v", raw)
+		return nil
+	}
+}
+
 func metricNames(metrics []interface{}) map[string]bool {
 	names := make(map[string]bool, len(metrics))
 	for _, raw := range metrics {
@@ -339,4 +464,36 @@ func metricNames(metrics []interface{}) map[string]bool {
 		}
 	}
 	return names
+}
+
+func metricNamesFromMaps(metrics []map[string]interface{}) map[string]bool {
+	names := make(map[string]bool, len(metrics))
+	for _, metric := range metrics {
+		name, _ := metric["name"].(string)
+		if strings.TrimSpace(name) != "" {
+			names[name] = true
+		}
+	}
+	return names
+}
+
+func metricPointsByType(t *testing.T, metric map[string]interface{}, typ string) []interface{} {
+	t.Helper()
+	body, ok := metric[typ].(map[string]interface{})
+	if !ok {
+		t.Fatalf("metric %q missing %s body: %#v", metric["name"], typ, metric)
+	}
+	switch points := body["dataPoints"].(type) {
+	case []interface{}:
+		return points
+	case []map[string]interface{}:
+		out := make([]interface{}, 0, len(points))
+		for _, point := range points {
+			out = append(out, point)
+		}
+		return out
+	default:
+		t.Fatalf("metric %q missing datapoints: %#v", metric["name"], body)
+		return nil
+	}
 }

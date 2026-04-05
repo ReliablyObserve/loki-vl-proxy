@@ -9,6 +9,12 @@ fi
 OUTPUT_JSON="$1"
 ROOT_DIR="$(pwd)"
 TMP_DIR="$(mktemp -d)"
+TIMEOUT_BIN=""
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  TIMEOUT_BIN="gtimeout"
+fi
 cleanup() {
   if [ -d "$ROOT_DIR/test/e2e-compat" ]; then
     (cd "$ROOT_DIR/test/e2e-compat" && docker compose down -v >/dev/null 2>&1) || true
@@ -16,6 +22,41 @@ cleanup() {
   rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT
+
+log_step() {
+  echo "[quality] $*" >&2
+}
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if [ -n "$TIMEOUT_BIN" ]; then
+    "$TIMEOUT_BIN" "$seconds" "$@"
+    return $?
+  fi
+  "$@"
+}
+
+capture_or_default() {
+  local label="$1"
+  local fallback="$2"
+  local timeout_seconds="$3"
+  shift 3
+
+  log_step "starting ${label}"
+  local output
+  if output="$(run_with_timeout "$timeout_seconds" "$@" 2>"$TMP_DIR/${label}.stderr")"; then
+    log_step "completed ${label}"
+    printf '%s' "$output"
+    return 0
+  fi
+
+  local status=$?
+  log_step "${label} failed or timed out (exit=${status}); using fallback"
+  cat "$TMP_DIR/${label}.stderr" >&2 || true
+  printf '%s' "$fallback"
+  return 0
+}
 
 count_tests() {
   go test ./... -count=1 -json 2>/dev/null \
@@ -32,7 +73,7 @@ coverage_pct() {
 run_score() {
   local test_name="$1"
   local output
-  output="$(go test -v -tags=e2e -run "^${test_name}$" ./test/e2e-compat/ 2>&1)"
+  output="$(go test -v -tags=e2e -run "^${test_name}$" ./test/e2e-compat/ -timeout=180s 2>&1)"
   echo "$output" >"$TMP_DIR/${test_name}.log"
   local score
   score="$(echo "$output" | grep -oE 'Score: [0-9]+/[0-9]+ \([0-9.]+%\)' | tail -1)"
@@ -52,8 +93,7 @@ start_compat_stack() {
   (
     cd "$ROOT_DIR/test/e2e-compat"
     docker compose down -v >&2 || true
-    docker compose up -d --build >&2
-    sleep 30 >&2
+    docker compose up -d --build --wait --wait-timeout 180 >&2
   )
 }
 
@@ -94,11 +134,11 @@ collect_load() {
     '{high_concurrency_req_per_s:$throughput,high_concurrency_memory_growth_mb:$memory_growth}'
 }
 
-TEST_COUNT="$(count_tests)"
-COVERAGE="$(coverage_pct)"
-COMPAT="$(collect_compat)"
-BENCHMARKS="$(collect_benchmarks)"
-LOAD="$(collect_load)"
+TEST_COUNT="$(capture_or_default tests 0 600 count_tests)"
+COVERAGE="$(capture_or_default coverage 0 900 coverage_pct)"
+COMPAT="$(capture_or_default compat '{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}' 1800 collect_compat)"
+BENCHMARKS="$(capture_or_default benchmarks '{"query_range_cache_hit_ns_per_op":0,"labels_cache_hit_ns_per_op":0}' 900 collect_benchmarks)"
+LOAD="$(capture_or_default load '{"high_concurrency_req_per_s":0,"high_concurrency_memory_growth_mb":0}' 600 collect_load)"
 
 jq -n \
   --argjson tests "$TEST_COUNT" \
