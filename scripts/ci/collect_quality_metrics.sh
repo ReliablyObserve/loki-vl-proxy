@@ -119,13 +119,28 @@ collect_compat() {
 collect_benchmarks() {
   local out="$TMP_DIR/bench.txt"
   go test ./internal/proxy -run '^$' -bench 'BenchmarkProxy_(QueryRange_CacheHit|Labels_CacheHit)$' -benchmem -count=1 >"$out"
-  local query_ns labels_ns
+  local query_ns query_bytes query_allocs labels_ns labels_bytes labels_allocs
   query_ns="$(awk '/BenchmarkProxy_QueryRange_CacheHit/ {print $(NF-5); exit}' "$out")"
+  query_bytes="$(awk '/BenchmarkProxy_QueryRange_CacheHit/ {print $(NF-3); exit}' "$out")"
+  query_allocs="$(awk '/BenchmarkProxy_QueryRange_CacheHit/ {print $(NF-1); exit}' "$out")"
   labels_ns="$(awk '/BenchmarkProxy_Labels_CacheHit/ {print $(NF-5); exit}' "$out")"
+  labels_bytes="$(awk '/BenchmarkProxy_Labels_CacheHit/ {print $(NF-3); exit}' "$out")"
+  labels_allocs="$(awk '/BenchmarkProxy_Labels_CacheHit/ {print $(NF-1); exit}' "$out")"
   jq -n \
     --argjson query_ns "${query_ns:-0}" \
+    --argjson query_bytes "${query_bytes:-0}" \
+    --argjson query_allocs "${query_allocs:-0}" \
     --argjson labels_ns "${labels_ns:-0}" \
-    '{query_range_cache_hit_ns_per_op:$query_ns,labels_cache_hit_ns_per_op:$labels_ns}'
+    --argjson labels_bytes "${labels_bytes:-0}" \
+    --argjson labels_allocs "${labels_allocs:-0}" \
+    '{
+      query_range_cache_hit_ns_per_op:$query_ns,
+      query_range_cache_hit_bytes_per_op:$query_bytes,
+      query_range_cache_hit_allocs_per_op:$query_allocs,
+      labels_cache_hit_ns_per_op:$labels_ns,
+      labels_cache_hit_bytes_per_op:$labels_bytes,
+      labels_cache_hit_allocs_per_op:$labels_allocs
+    }'
 }
 
 collect_load() {
@@ -143,7 +158,7 @@ collect_load() {
 TEST_COUNT="$(capture_or_default tests 0 600 count_tests)"
 COVERAGE="$(capture_or_default coverage 0 900 coverage_pct)"
 COMPAT="$(capture_or_default compat '{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}' 1800 collect_compat)"
-BENCHMARKS="$(capture_or_default benchmarks '{"query_range_cache_hit_ns_per_op":0,"labels_cache_hit_ns_per_op":0}' 900 collect_benchmarks)"
+BENCHMARKS="$(capture_or_default benchmarks '{"query_range_cache_hit_ns_per_op":0,"query_range_cache_hit_bytes_per_op":0,"query_range_cache_hit_allocs_per_op":0,"labels_cache_hit_ns_per_op":0,"labels_cache_hit_bytes_per_op":0,"labels_cache_hit_allocs_per_op":0}' 900 collect_benchmarks)"
 LOAD="$(capture_or_default load '{"high_concurrency_req_per_s":0,"high_concurrency_memory_growth_mb":0}' 600 collect_load)"
 
 jq -n \

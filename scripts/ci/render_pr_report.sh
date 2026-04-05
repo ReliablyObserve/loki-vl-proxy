@@ -67,8 +67,16 @@ BASE_VL_PCT="$(json_field "$BASE_JSON" '.compatibility.vl.pct')"
 
 HEAD_QUERY_NS="$(json_field "$HEAD_JSON" '.performance.benchmarks.query_range_cache_hit_ns_per_op')"
 BASE_QUERY_NS="$(json_field "$BASE_JSON" '.performance.benchmarks.query_range_cache_hit_ns_per_op')"
+HEAD_QUERY_BYTES="$(json_field "$HEAD_JSON" '.performance.benchmarks.query_range_cache_hit_bytes_per_op')"
+BASE_QUERY_BYTES="$(json_field "$BASE_JSON" '.performance.benchmarks.query_range_cache_hit_bytes_per_op')"
+HEAD_QUERY_ALLOCS="$(json_field "$HEAD_JSON" '.performance.benchmarks.query_range_cache_hit_allocs_per_op')"
+BASE_QUERY_ALLOCS="$(json_field "$BASE_JSON" '.performance.benchmarks.query_range_cache_hit_allocs_per_op')"
 HEAD_LABELS_NS="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_hit_ns_per_op')"
 BASE_LABELS_NS="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_hit_ns_per_op')"
+HEAD_LABELS_BYTES="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_hit_bytes_per_op')"
+BASE_LABELS_BYTES="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_hit_bytes_per_op')"
+HEAD_LABELS_ALLOCS="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_hit_allocs_per_op')"
+BASE_LABELS_ALLOCS="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_hit_allocs_per_op')"
 HEAD_THROUGHPUT="$(json_field "$HEAD_JSON" '.performance.load.high_concurrency_req_per_s')"
 BASE_THROUGHPUT="$(json_field "$BASE_JSON" '.performance.load.high_concurrency_req_per_s')"
 HEAD_MEM_GROWTH="$(json_field "$HEAD_JSON" '.performance.load.high_concurrency_memory_growth_mb')"
@@ -79,7 +87,11 @@ LOKI_DELTA="$(format_delta "$HEAD_LOKI_PCT" "$BASE_LOKI_PCT" higher)"
 DRILL_DELTA="$(format_delta "$HEAD_DRILL_PCT" "$BASE_DRILL_PCT" higher)"
 VL_DELTA="$(format_delta "$HEAD_VL_PCT" "$BASE_VL_PCT" higher)"
 QUERY_DELTA="$(format_delta "$HEAD_QUERY_NS" "$BASE_QUERY_NS" lower)"
+QUERY_BYTES_DELTA="$(format_delta "$HEAD_QUERY_BYTES" "$BASE_QUERY_BYTES" lower)"
+QUERY_ALLOCS_DELTA="$(format_delta "$HEAD_QUERY_ALLOCS" "$BASE_QUERY_ALLOCS" lower)"
 LABELS_DELTA="$(format_delta "$HEAD_LABELS_NS" "$BASE_LABELS_NS" lower)"
+LABELS_BYTES_DELTA="$(format_delta "$HEAD_LABELS_BYTES" "$BASE_LABELS_BYTES" lower)"
+LABELS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_ALLOCS" "$BASE_LABELS_ALLOCS" lower)"
 THROUGHPUT_DELTA="$(format_delta "$HEAD_THROUGHPUT" "$BASE_THROUGHPUT" higher)"
 MEMORY_DELTA="$(format_delta "$HEAD_MEM_GROWTH" "$BASE_MEM_GROWTH" lower)"
 
@@ -106,12 +118,16 @@ Compared against base branch \`main\`.
 
 ### Performance smoke
 
-Lower \`ns/op\` is better. Higher throughput is better. Lower memory growth is better.
+Lower CPU cost (\`ns/op\`) is better. Lower benchmark memory cost (\`B/op\`, \`allocs/op\`) is better. Higher throughput is better. Lower load-test memory growth is better.
 
 | Signal | Base | PR | Delta |
 |---|---:|---:|---:|
-| QueryRange cache-hit benchmark | ${BASE_QUERY_NS} ns/op | ${HEAD_QUERY_NS} ns/op | ${QUERY_DELTA} |
-| Labels cache-hit benchmark | ${BASE_LABELS_NS} ns/op | ${HEAD_LABELS_NS} ns/op | ${LABELS_DELTA} |
+| QueryRange cache-hit CPU cost | ${BASE_QUERY_NS} ns/op | ${HEAD_QUERY_NS} ns/op | ${QUERY_DELTA} |
+| QueryRange cache-hit memory | ${BASE_QUERY_BYTES} B/op | ${HEAD_QUERY_BYTES} B/op | ${QUERY_BYTES_DELTA} |
+| QueryRange cache-hit allocations | ${BASE_QUERY_ALLOCS} allocs/op | ${HEAD_QUERY_ALLOCS} allocs/op | ${QUERY_ALLOCS_DELTA} |
+| Labels cache-hit CPU cost | ${BASE_LABELS_NS} ns/op | ${HEAD_LABELS_NS} ns/op | ${LABELS_DELTA} |
+| Labels cache-hit memory | ${BASE_LABELS_BYTES} B/op | ${HEAD_LABELS_BYTES} B/op | ${LABELS_BYTES_DELTA} |
+| Labels cache-hit allocations | ${BASE_LABELS_ALLOCS} allocs/op | ${HEAD_LABELS_ALLOCS} allocs/op | ${LABELS_ALLOCS_DELTA} |
 | High-concurrency throughput | ${BASE_THROUGHPUT} req/s | ${HEAD_THROUGHPUT} req/s | ${THROUGHPUT_DELTA} |
 | High-concurrency memory growth | ${BASE_MEM_GROWTH} MB | ${HEAD_MEM_GROWTH} MB | ${MEMORY_DELTA} |
 
