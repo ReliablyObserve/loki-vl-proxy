@@ -1,6 +1,6 @@
 # Known Issues & VL Compatibility Gaps
 
-Last updated: v0.23.0
+Last updated: v0.26.0
 
 ## Remaining Behavioral Differences
 
@@ -22,6 +22,27 @@ The proxy now supports datasource-facing headers, cookie forwarding, backend tim
 | Alerting / ruler APIs | `/rules` and `/alerts` are compatibility stubs only, not a full Loki ruler implementation |
 | Browser-origin tailing | `/loki/api/v1/tail` rejects browser `Origin` headers unless explicitly allowlisted via `-tail.allowed-origins` |
 
+## Release Automation Gaps
+
+The project now uses PR-based release automation:
+
+`main merge -> Auto Release -> release/vX.Y.Z PR -> auto-merge -> tag -> GitHub release`
+
+The remaining limitation is repository signature policy:
+
+| Area | Current State |
+|---|---|
+| Automated release commit signatures | Release PR commits created by `github-actions[bot]` are still unsigned unless workflow signing is configured |
+| Fully automatic release PR merge under required signatures | Requires either workflow commit signing or a repo ruleset exception for release automation |
+
+The workflow already handles:
+
+- changelog-backed release PR bodies
+- changelog-backed GitHub release notes
+- lightweight release-PR validation dispatch
+- Helm chart version bumps
+- binary, Helm package, and container-image publishing after tag creation
+
 ## Data Model Differences
 
 ### Stream Filter vs Field Filter Performance
@@ -31,6 +52,15 @@ VL stream selectors `{label="value"}` only match `_stream_fields`. By default, t
 ### Structured Metadata (Loki 3.x)
 
 Loki 3.x has stream labels vs structured metadata vs parsed labels. VL treats all fields equally. The mapping is natural but not identical -- Grafana Explore handles both transparently.
+
+### Labels vs OTel Dotted Fields
+
+When `-label-style=underscores` and `-metadata-field-mode=hybrid` are used together, the proxy intentionally exposes:
+
+- Loki-compatible underscore labels on the label surface
+- both dotted OTel names and translated aliases on field-oriented APIs
+
+This is the expected compatibility model for Drilldown and Explore. It is not a bug if `service_name` appears in label pickers while `service.name` appears in fields/details.
 
 ### Large Body Fields
 
@@ -64,7 +94,7 @@ These were previously listed as gaps and have been resolved:
 - ~~`bool` modifier~~ -> Fixed: stripped at translation, comparisons return 1/0 (v0.19.0)
 - ~~Field-specific parser `| json f1, f2`~~ -> Fixed: maps to full unpack (v0.19.0)
 - ~~Backslash quotes in selectors~~ -> Fixed: findMatchingBrace handles `\"` (v0.19.0)
-- ~~No system metrics~~ -> Fixed: /proc CPU, mem, IO, net, PSI exposed in /metrics (v0.19.0)
+- ~~No system metrics~~ -> Fixed: process + Linux runtime metrics exposed, with container-scoped cgroup metrics replacing old node-style naming in the latest observability docs
 - ~~Cache random eviction~~ -> Fixed: LRU eviction via container/list (v0.21.0)
 - ~~`unwrap duration()/bytes()` conversion~~ -> Fixed: proxy-side parsers for duration/byte strings (v0.21.0)
 - ~~`on()`/`ignoring()`/`group_left()`/`group_right()`~~ -> Fixed: stripped at translation, binary uses exact key match (v0.22.0)

@@ -264,11 +264,8 @@ jobs:
         run: |
           set -euo pipefail
           BRANCH="${{ steps.create_release_pr.outputs.release_branch }}"
-          gh workflow run ci.yaml --ref "$BRANCH"
+          gh workflow run release-pr-validation.yaml --ref "$BRANCH"
           gh workflow run codeql.yaml --ref "$BRANCH"
-          gh workflow run compat-loki.yaml --ref "$BRANCH"
-          gh workflow run compat-drilldown.yaml --ref "$BRANCH"
-          gh workflow run compat-vl.yaml --ref "$BRANCH"
         env:
           GH_TOKEN: ${{ github.token }}
 

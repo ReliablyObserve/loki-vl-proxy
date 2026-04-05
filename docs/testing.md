@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-# Unit tests (460+ tests)
+# Unit tests
 go test ./...
 
 # With race detector
@@ -37,6 +37,8 @@ go build -o loki-vl-proxy ./cmd/proxy
 ```
 
 ## Test Coverage by Category
+
+Exact counts move often. Treat the categories below as the stable map of what is covered; the PR quality workflow and release workflow publish current counts and deltas.
 
 | Category | Tests | What they verify |
 |---|---|---|
@@ -127,6 +129,23 @@ Pull requests also get a dedicated `pr-quality-report.yaml` workflow. It compare
 - sampled benchmark and load-test deltas
 
 That report is informational by design. It highlights regressions early, but merge gating still comes from the required check set in repository settings.
+
+Release PRs use a lighter validation path than normal feature PRs. The `Auto Release` workflow dispatches:
+
+- `release-pr-validation`
+- `CodeQL`
+
+against the generated `release/vX.Y.Z` branch so the release PR can be validated before tag creation and publishing.
+
+That release-specific validation intentionally checks only release artifacts and publishability:
+
+- changelog section exists for the target version
+- chart version and appVersion match the release version
+- versioned observability examples were updated
+- Helm chart still lints cleanly
+- CodeQL still runs on the release branch
+
+Normal PRs continue to run the full CI, compatibility, and PR quality workflows.
 
 See [compatibility-matrix.md](/tmp/Loki-VL-proxy/docs/compatibility-matrix.md), [compatibility-loki.md](/tmp/Loki-VL-proxy/docs/compatibility-loki.md), [compatibility-drilldown.md](/tmp/Loki-VL-proxy/docs/compatibility-drilldown.md), [compatibility-victorialogs.md](/tmp/Loki-VL-proxy/docs/compatibility-victorialogs.md), and [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json).
 
