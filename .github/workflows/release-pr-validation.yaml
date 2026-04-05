@@ -1,0 +1,75 @@
+name: Release PR Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract release version from branch
+        id: version
+        run: |
+          set -euo pipefail
+          BRANCH="${GITHUB_REF_NAME}"
+          VERSION="$(printf '%s' "$BRANCH" | sed -n 's/^release\/v\([0-9][0-9.]*\)$/\1/p')"
+          if [ -z "$VERSION" ]; then
+            echo "expected release branch like release/v0.26.0, got: $BRANCH"
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release diff is limited to release artifacts
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          CHANGED="$(git diff --name-only origin/main...HEAD)"
+          echo "$CHANGED"
+          if [ -z "$CHANGED" ]; then
+            echo "release branch must contain release metadata changes"
+            exit 1
+          fi
+
+          while IFS= read -r path; do
+            case "$path" in
+              CHANGELOG.md|README.md|docs/observability.md|charts/loki-vl-proxy/Chart.yaml)
+                ;;
+              *)
+                echo "unexpected file in release PR: $path"
+                exit 1
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+      - name: Verify changelog section exists
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci/extract_changelog_section.sh
+          scripts/ci/extract_changelog_section.sh "${{ steps.version.outputs.version }}" CHANGELOG.md >/tmp/release-section.md
+          test -s /tmp/release-section.md
+
+      - name: Verify chart version matches release
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          grep -q "^version: ${VERSION}$" charts/loki-vl-proxy/Chart.yaml
+          grep -q "^appVersion: \"${VERSION}\"$" charts/loki-vl-proxy/Chart.yaml
+
+      - name: Verify observability doc example version matches release
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          grep -q "\"service.version\": \"${VERSION}\"" docs/observability.md
+
+      - name: Helm lint
+        uses: azure/setup-helm@v4
+
+      - name: Run Helm lint
+        run: helm lint charts/loki-vl-proxy/
