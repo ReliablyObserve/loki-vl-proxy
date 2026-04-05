@@ -8,6 +8,10 @@ on:
       - "CHANGELOG.md"
   workflow_dispatch:
 
+concurrency:
+  group: auto-release-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
@@ -210,12 +214,13 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "${BRANCH}:${BRANCH}" || true
           git checkout -B "$BRANCH"
           git add CHANGELOG.md README.md docs/observability.md
           git add -f charts/loki-vl-proxy/Chart.yaml
           git diff --cached --quiet && { echo "No changes to release"; exit 0; }
           git commit -m "chore: release v${VERSION}"
-          git push --force-with-lease origin "$BRANCH"
+          git push --force origin "$BRANCH"
 
           echo "release_branch=${BRANCH}" >> "$GITHUB_OUTPUT"
           echo "pr_created=false" >> "$GITHUB_OUTPUT"
