@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - expanded OTLP exporter and observability configuration coverage
 
+## [0.26.1] - 2026-04-05
+
+### Bug Fixes
+
+- trigger release from auto release completion
+
+### Tests
+
+- 1023 total tests (86.3% coverage)
+
 ## [0.26.0] - 2026-04-05
 
 ### Features
