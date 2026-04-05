@@ -51,9 +51,9 @@ run_score() {
 start_compat_stack() {
   (
     cd "$ROOT_DIR/test/e2e-compat"
-    docker compose down -v >/dev/null 2>&1 || true
-    docker compose up -d --build
-    sleep 30
+    docker compose down -v >&2 || true
+    docker compose up -d --build >&2
+    sleep 30 >&2
   )
 }
 
