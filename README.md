@@ -220,6 +220,8 @@ Proxy-side datasource helpers:
 
 The `Auto Release` workflow opens a release PR from a generated `release/vX.Y.Z` branch. Full automation requires the repository setting `Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests`.
 
+The release PR updates the versioned changelog section, README badges, Helm chart metadata, and versioned observability examples. After the release PR merges, a tag is created from the merged commit and the `Release` workflow publishes binaries, the Helm package, the container image, and the GitHub release using that exact changelog section as the release notes.
+
 If that setting is disabled, the workflow now keeps the run green, pushes the release branch, and writes a manual PR link into the job summary instead of failing.
 
 ## API Coverage

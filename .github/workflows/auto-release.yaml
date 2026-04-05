@@ -173,6 +173,30 @@ jobs:
           sed -i "s|tests-[0-9]*%20passed|tests-${TESTS}%20passed|g" README.md
           sed -i "s/^version: .*/version: ${VERSION}/" charts/loki-vl-proxy/Chart.yaml
           sed -i "s/^appVersion: .*/appVersion: \"${VERSION}\"/" charts/loki-vl-proxy/Chart.yaml
+          sed -i "s/\"service.version\": \".*\"/\"service.version\": \"${VERSION}\"/" docs/observability.md
+
+      - name: Render release PR body
+        id: pr_body
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci/extract_changelog_section.sh
+          VERSION="${{ needs.prepare-release.outputs.next_version }}"
+          TESTS="${{ steps.metrics.outputs.tests }}"
+          COV="${{ steps.metrics.outputs.coverage }}"
+          SECTION="$(scripts/ci/extract_changelog_section.sh "$VERSION" CHANGELOG.md)"
+          BODY_FILE="$(mktemp)"
+          {
+            echo "## Release v${VERSION}"
+            echo ""
+            echo "${SECTION}"
+            echo ""
+            echo "### Release Validation"
+            echo ""
+            echo "- ${TESTS} total tests"
+            echo "- ${COV} coverage"
+            echo "- Release workflow will build binaries, package the Helm chart, publish the container image, and create the GitHub release from this changelog section."
+          } > "$BODY_FILE"
+          echo "body_file=${BODY_FILE}" >> "$GITHUB_OUTPUT"
 
       - name: Create release PR
         id: create_release_pr
@@ -181,15 +205,13 @@ jobs:
 
           VERSION="${{ needs.prepare-release.outputs.next_version }}"
           BRANCH="release/v${VERSION}"
-          TESTS="${{ steps.metrics.outputs.tests }}"
-          COV="${{ steps.metrics.outputs.coverage }}"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Delete stale release branch if it exists from a previous run
           git push origin --delete "$BRANCH" 2>/dev/null || true
           git checkout -b "$BRANCH"
-          git add CHANGELOG.md README.md
+          git add CHANGELOG.md README.md docs/observability.md
           git add -f charts/loki-vl-proxy/Chart.yaml
           git diff --cached --quiet && { echo "No changes to release"; exit 0; }
           git commit -m "chore: release v${VERSION}"
@@ -200,18 +222,7 @@ jobs:
 
           if PR_URL=$(gh pr create \
             --title "chore: release v${VERSION}" \
-            --body "$(cat <<PRBODY
-          ## Release v${VERSION}
-
-          Auto-generated from conventional commits.
-
-          ${{ steps.changelog.outputs.ENTRY }}
-
-          **Stats**: ${TESTS} tests, ${COV} coverage
-
-          > After merge, tag \`v${VERSION}\` will be created and the release workflow will build binaries + Docker images.
-          PRBODY
-          )" \
+            --body-file "${{ steps.pr_body.outputs.body_file }}" \
             --base main \
             --head "$BRANCH" \
             --label "release" 2>pr_create.err); then
