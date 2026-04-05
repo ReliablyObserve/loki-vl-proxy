@@ -119,6 +119,15 @@ docker compose -f test/e2e-compat/docker-compose.yml up -d --build
 
 GitHub Actions uses the same manifest as the source of truth. The compatibility workflows load their version matrices from [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json) instead of duplicating version lists in workflow YAML.
 
+Pull requests also get a dedicated `pr-quality-report.yaml` workflow. It compares the PR branch against the base branch and posts a sticky PR comment with:
+
+- total test count delta
+- coverage delta
+- Loki / Logs Drilldown / VictoriaLogs compatibility deltas
+- sampled benchmark and load-test deltas
+
+That report is informational by design. It highlights regressions early, but merge gating still comes from the required check set in repository settings.
+
 See [compatibility-matrix.md](/tmp/Loki-VL-proxy/docs/compatibility-matrix.md), [compatibility-loki.md](/tmp/Loki-VL-proxy/docs/compatibility-loki.md), [compatibility-drilldown.md](/tmp/Loki-VL-proxy/docs/compatibility-drilldown.md), [compatibility-victorialogs.md](/tmp/Loki-VL-proxy/docs/compatibility-victorialogs.md), and [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json).
 
 ## Running Specific Tests

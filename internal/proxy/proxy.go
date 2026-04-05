@@ -222,7 +222,11 @@ func New(cfg Config) (*Proxy, error) {
 		level = slog.LevelError
 	}
 
-	logger := slog.New(NewRedactingHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})))
+	baseLogger := slog.Default()
+	if baseLogger == nil {
+		baseLogger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	}
+	logger := slog.New(NewRedactingHandler(baseLogger.Handler())).With("component", "proxy")
 
 	maxConcurrent := cfg.MaxConcurrent
 	if maxConcurrent == 0 {
@@ -3457,15 +3461,15 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 			logLevel = p.log.Warn
 		}
 		logLevel("request",
-			"endpoint", endpoint,
-			"method", r.Method,
-			"status", sc.code,
-			"duration_ms", elapsed.Milliseconds(),
-			"tenant", tenant,
-			"query", truncateQuery(query, 200),
-			"client", r.RemoteAddr,
-			"client_id", clientID,
-			"client_source", clientSource,
+			"http.route", endpoint,
+			"http.request.method", r.Method,
+			"http.response.status_code", sc.code,
+			"event.duration_ms", elapsed.Milliseconds(),
+			"loki.tenant.id", tenant,
+			"loki.query", truncateQuery(query, 200),
+			"client.address", r.RemoteAddr,
+			"enduser.id", clientID,
+			"loki.client.source", clientSource,
 		)
 	})
 }

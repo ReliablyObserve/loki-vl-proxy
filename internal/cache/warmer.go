@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"log/slog"
-	"os"
 	"sync/atomic"
 	"time"
 )
@@ -45,7 +44,7 @@ func NewWarmer(c *Cache, topN func(int) []string, warmFn WarmFunc, cfg WarmerCon
 		warmFn:   warmFn,
 		interval: cfg.Interval,
 		count:    cfg.Count,
-		log:      slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
+		log:      slog.Default().With("component", "cache_warmer"),
 		done:     make(chan struct{}),
 	}
 }

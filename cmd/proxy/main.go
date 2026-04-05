@@ -5,9 +5,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -19,8 +20,27 @@ import (
 	"github.com/szibis/Loki-VL-proxy/internal/cache"
 	"github.com/szibis/Loki-VL-proxy/internal/metrics"
 	mw "github.com/szibis/Loki-VL-proxy/internal/middleware"
+	"github.com/szibis/Loki-VL-proxy/internal/observability"
 	"github.com/szibis/Loki-VL-proxy/internal/proxy"
 )
+
+var version = "dev"
+
+type envConfig struct {
+	listenAddr        string
+	backendURL        string
+	tenantMapJSON     string
+	otlpEndpoint      string
+	otlpCompression   string
+	otlpHeaders       string
+	labelStyle        string
+	fieldMappingJSON  string
+	metadataFieldMode string
+	serviceName       string
+	serviceNamespace  string
+	serviceInstanceID string
+	deploymentEnv     string
+}
 
 func main() {
 	// Server flags
@@ -46,6 +66,11 @@ func main() {
 	otlpCompression := flag.String("otlp-compression", "none", "OTLP compression: none, gzip, zstd")
 	otlpTimeout := flag.Duration("otlp-timeout", 10*time.Second, "OTLP HTTP request timeout")
 	otlpTLSSkipVerify := flag.Bool("otlp-tls-skip-verify", false, "Skip TLS verification for OTLP endpoint")
+	otlpHeaders := flag.String("otlp-headers", "", "Comma-separated OTLP HTTP headers in key=value form")
+	otelServiceName := flag.String("otel-service-name", "loki-vl-proxy", "OpenTelemetry service.name for logs and OTLP metrics")
+	otelServiceNamespace := flag.String("otel-service-namespace", "", "OpenTelemetry service.namespace for logs and OTLP metrics")
+	otelServiceInstanceID := flag.String("otel-service-instance-id", "", "OpenTelemetry service.instance.id for logs and OTLP metrics")
+	deploymentEnvironment := flag.String("deployment-environment", "", "OpenTelemetry deployment.environment.name for logs and OTLP metrics")
 
 	// HTTP server hardening
 	readTimeout := flag.Duration("http-read-timeout", 30*time.Second, "HTTP server read timeout")
@@ -105,39 +130,56 @@ func main() {
 
 	flag.Parse()
 
-	// Environment variable overrides
-	if v := os.Getenv("LISTEN_ADDR"); v != "" {
-		*listenAddr = v
-	}
-	if v := os.Getenv("VL_BACKEND_URL"); v != "" {
-		*backendURL = v
-	}
-	if v := os.Getenv("TENANT_MAP"); v != "" && *tenantMapJSON == "" {
-		*tenantMapJSON = v
-	}
-	if v := os.Getenv("OTLP_ENDPOINT"); v != "" && *otlpEndpoint == "" {
-		*otlpEndpoint = v
-	}
-	if v := os.Getenv("OTLP_COMPRESSION"); v != "" && *otlpCompression == "none" {
-		*otlpCompression = v
-	}
-	if v := os.Getenv("LABEL_STYLE"); v != "" && *labelStyle == "passthrough" {
-		*labelStyle = v
-	}
-	if v := os.Getenv("FIELD_MAPPING"); v != "" && *fieldMappingJSON == "" {
-		*fieldMappingJSON = v
-	}
-	if v := os.Getenv("METADATA_FIELD_MODE"); v != "" && *metadataFieldMode == "hybrid" {
-		*metadataFieldMode = v
+	envCfg := applyEnvOverrides(envConfig{
+		listenAddr:        *listenAddr,
+		backendURL:        *backendURL,
+		tenantMapJSON:     *tenantMapJSON,
+		otlpEndpoint:      *otlpEndpoint,
+		otlpCompression:   *otlpCompression,
+		otlpHeaders:       *otlpHeaders,
+		labelStyle:        *labelStyle,
+		fieldMappingJSON:  *fieldMappingJSON,
+		metadataFieldMode: *metadataFieldMode,
+		serviceName:       *otelServiceName,
+		serviceNamespace:  *otelServiceNamespace,
+		serviceInstanceID: *otelServiceInstanceID,
+		deploymentEnv:     *deploymentEnvironment,
+	}, os.Getenv)
+	*listenAddr = envCfg.listenAddr
+	*backendURL = envCfg.backendURL
+	*tenantMapJSON = envCfg.tenantMapJSON
+	*otlpEndpoint = envCfg.otlpEndpoint
+	*otlpCompression = envCfg.otlpCompression
+	*otlpHeaders = envCfg.otlpHeaders
+	*labelStyle = envCfg.labelStyle
+	*fieldMappingJSON = envCfg.fieldMappingJSON
+	*metadataFieldMode = envCfg.metadataFieldMode
+	*otelServiceName = envCfg.serviceName
+	*otelServiceNamespace = envCfg.serviceNamespace
+	*otelServiceInstanceID = envCfg.serviceInstanceID
+	*deploymentEnvironment = envCfg.deploymentEnv
+
+	logger := observability.NewLogger(os.Stdout, observability.LoggerConfig{
+		Level:                 *logLevel,
+		ServiceName:           *otelServiceName,
+		ServiceNamespace:      *otelServiceNamespace,
+		ServiceVersion:        version,
+		ServiceInstanceID:     *otelServiceInstanceID,
+		DeploymentEnvironment: *deploymentEnvironment,
+	})
+	slog.SetDefault(logger)
+	fatal := func(msg string, args ...any) {
+		logger.Error(msg, args...)
+		os.Exit(1)
 	}
 
 	// Parse tenant map
-	var tenantMap map[string]proxy.TenantMapping
-	if *tenantMapJSON != "" {
-		if err := json.Unmarshal([]byte(*tenantMapJSON), &tenantMap); err != nil {
-			log.Fatalf("Failed to parse -tenant-map JSON: %v", err)
-		}
-		log.Printf("Loaded %d tenant mappings", len(tenantMap))
+	tenantMap, err := parseTenantMapJSON(*tenantMapJSON)
+	if err != nil {
+		fatal("failed to parse tenant map json", "error", err)
+	}
+	if tenantMap != nil {
+		logger.Info("loaded tenant mappings", "count", len(tenantMap))
 	}
 
 	// L1 in-memory cache
@@ -152,12 +194,16 @@ func main() {
 			FlushInterval: *diskCacheFlushInterval,
 		})
 		if err != nil {
-			log.Fatalf("Failed to open disk cache: %v", err)
+			fatal("failed to open disk cache", "error", err)
 		}
 		defer func() { _ = dc.Close() }()
 		c.SetL2(dc)
-		log.Printf("L2 disk cache enabled at %s (compress=%v, flush=%d/%s)",
-			*diskCachePath, *diskCacheCompress, *diskCacheFlushSize, *diskCacheFlushInterval)
+		logger.Info("disk cache enabled",
+			"path", *diskCachePath,
+			"compress", *diskCacheCompress,
+			"flush_size", *diskCacheFlushSize,
+			"flush_interval", diskCacheFlushInterval.String(),
+		)
 	}
 
 	// Parse forward headers
@@ -172,39 +218,30 @@ func main() {
 	}
 
 	// Parse field mappings
-	var fieldMappings []proxy.FieldMapping
-	if *fieldMappingJSON != "" {
-		if err := json.Unmarshal([]byte(*fieldMappingJSON), &fieldMappings); err != nil {
-			log.Fatalf("Failed to parse -field-mapping JSON: %v", err)
-		}
-		log.Printf("Loaded %d custom field mappings", len(fieldMappings))
+	fieldMappings, err := parseFieldMappingsJSON(*fieldMappingJSON)
+	if err != nil {
+		fatal("failed to parse field mapping json", "error", err)
+	}
+	if fieldMappings != nil {
+		logger.Info("loaded field mappings", "count", len(fieldMappings))
 	}
 
 	// Validate label style
-	ls := proxy.LabelStyle(*labelStyle)
-	switch ls {
-	case proxy.LabelStylePassthrough, proxy.LabelStyleUnderscores:
-		// valid
-	default:
-		log.Fatalf("Invalid -label-style: %q (must be 'passthrough' or 'underscores')", *labelStyle)
+	ls, mfm, err := parseLabelModes(*labelStyle, *metadataFieldMode)
+	if err != nil {
+		fatal("invalid label mode configuration", "error", err)
 	}
 	if ls == proxy.LabelStyleUnderscores {
-		log.Printf("Label style: underscores (VL dotted field names → Loki underscore labels)")
-	}
-	mfm := proxy.MetadataFieldMode(*metadataFieldMode)
-	switch mfm {
-	case proxy.MetadataFieldModeNative, proxy.MetadataFieldModeTranslated, proxy.MetadataFieldModeHybrid:
-	default:
-		log.Fatalf("Invalid -metadata-field-mode: %q (must be 'native', 'translated', or 'hybrid')", *metadataFieldMode)
+		logger.Info("label translation enabled", "label_style", "underscores", "metadata_field_mode", string(mfm))
 	}
 
 	// Parse derived fields
-	var derivedFields []proxy.DerivedField
-	if *derivedFieldsJSON != "" {
-		if err := json.Unmarshal([]byte(*derivedFieldsJSON), &derivedFields); err != nil {
-			log.Fatalf("Failed to parse -derived-fields JSON: %v", err)
-		}
-		log.Printf("Loaded %d derived fields", len(derivedFields))
+	derivedFields, err := parseDerivedFieldsJSON(*derivedFieldsJSON)
+	if err != nil {
+		fatal("failed to parse derived fields json", "error", err)
+	}
+	if derivedFields != nil {
+		logger.Info("loaded derived fields", "count", len(derivedFields))
 	}
 
 	// Create peer cache if configured
@@ -218,7 +255,7 @@ func main() {
 			Port:          3100,
 		})
 		c.SetL3(peerCache)
-		log.Printf("Peer cache enabled: self=%s discovery=%s", *peerSelf, *peerDiscovery)
+		logger.Info("peer cache enabled", "self", *peerSelf, "discovery", *peerDiscovery)
 	}
 
 	// Create proxy
@@ -253,22 +290,32 @@ func main() {
 		PeerAuthToken:            *peerAuthToken,
 	})
 	if err != nil {
-		log.Fatalf("Failed to create proxy: %v", err)
+		fatal("failed to create proxy", "error", err)
 	}
 	p.Init()
 
 	// Start OTLP telemetry push
 	if *otlpEndpoint != "" {
 		pusher := metrics.NewOTLPPusher(metrics.OTLPConfig{
-			Endpoint:      *otlpEndpoint,
-			Interval:      *otlpInterval,
-			Compression:   metrics.OTLPCompression(*otlpCompression),
-			Timeout:       *otlpTimeout,
-			TLSSkipVerify: *otlpTLSSkipVerify,
+			Endpoint:              *otlpEndpoint,
+			Interval:              *otlpInterval,
+			Headers:               parseHeaderMapCSV(*otlpHeaders),
+			Compression:           metrics.OTLPCompression(*otlpCompression),
+			Timeout:               *otlpTimeout,
+			TLSSkipVerify:         *otlpTLSSkipVerify,
+			ServiceName:           *otelServiceName,
+			ServiceNamespace:      *otelServiceNamespace,
+			ServiceVersion:        version,
+			ServiceInstanceID:     *otelServiceInstanceID,
+			DeploymentEnvironment: *deploymentEnvironment,
 		}, p.GetMetrics())
 		pusher.Start()
 		defer pusher.Stop()
-		log.Printf("OTLP push → %s (every %s, compression=%s)", *otlpEndpoint, *otlpInterval, *otlpCompression)
+		logger.Info("otlp metrics push enabled",
+			"endpoint", *otlpEndpoint,
+			"interval", otlpInterval.String(),
+			"compression", *otlpCompression,
+		)
 	}
 
 	mux := http.NewServeMux()
@@ -292,7 +339,7 @@ func main() {
 	if *tlsClientCAFile != "" || *tlsRequireClientCert {
 		tlsCfg, err := buildServerTLSConfig(*tlsClientCAFile, *tlsRequireClientCert)
 		if err != nil {
-			log.Fatalf("Failed to configure server TLS client authentication: %v", err)
+			fatal("failed to configure server tls client authentication", "error", err)
 		}
 		srv.TLSConfig = tlsCfg
 	}
@@ -302,23 +349,23 @@ func main() {
 	signal.Notify(reloadCh, syscall.SIGHUP)
 	go func() {
 		for range reloadCh {
-			log.Println("SIGHUP received, reloading configuration...")
+			logger.Info("received sighup, reloading configuration")
 			if v := os.Getenv("TENANT_MAP"); v != "" {
 				var newTenantMap map[string]proxy.TenantMapping
 				if err := json.Unmarshal([]byte(v), &newTenantMap); err != nil {
-					log.Printf("Failed to reload TENANT_MAP: %v", err)
+					logger.Error("failed to reload tenant map", "error", err)
 				} else {
 					p.ReloadTenantMap(newTenantMap)
-					log.Printf("Reloaded %d tenant mappings", len(newTenantMap))
+					logger.Info("reloaded tenant mappings", "count", len(newTenantMap))
 				}
 			}
 			if v := os.Getenv("FIELD_MAPPING"); v != "" {
 				var newMappings []proxy.FieldMapping
 				if err := json.Unmarshal([]byte(v), &newMappings); err != nil {
-					log.Printf("Failed to reload FIELD_MAPPING: %v", err)
+					logger.Error("failed to reload field mappings", "error", err)
 				} else {
 					p.ReloadFieldMappings(newMappings)
-					log.Printf("Reloaded %d field mappings", len(newMappings))
+					logger.Info("reloaded field mappings", "count", len(newMappings))
 				}
 			}
 		}
@@ -330,28 +377,28 @@ func main() {
 
 	go func() {
 		if *tlsCertFile != "" && *tlsKeyFile != "" {
-			log.Printf("Loki-VL-proxy listening on %s (TLS), backend: %s", *listenAddr, *backendURL)
+			logger.Info("proxy listening", "listen_address", *listenAddr, "backend_url", *backendURL, "tls", true)
 			if err := srv.ListenAndServeTLS(*tlsCertFile, *tlsKeyFile); err != nil && err != http.ErrServerClosed {
-				log.Fatalf("TLS server failed: %v", err)
+				fatal("tls server failed", "error", err)
 			}
 		} else {
-			log.Printf("Loki-VL-proxy listening on %s, backend: %s", *listenAddr, *backendURL)
+			logger.Info("proxy listening", "listen_address", *listenAddr, "backend_url", *backendURL, "tls", false)
 			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				log.Fatalf("Server failed: %v", err)
+				fatal("server failed", "error", err)
 			}
 		}
 	}()
 
 	sig := <-shutdownCh
-	log.Printf("Received %v, shutting down gracefully...", sig)
+	logger.Info("shutdown requested", "signal", sig.String())
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("HTTP shutdown error: %v", err)
+		logger.Error("http shutdown error", "error", err)
 	}
-	log.Println("Shutdown complete")
+	logger.Info("shutdown complete")
 }
 
 // maxBodyHandler limits the request body size to prevent resource exhaustion.
@@ -378,6 +425,125 @@ func parseCSV(s string) []string {
 	return result
 }
 
+func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
+	if v := getenv("LISTEN_ADDR"); v != "" {
+		cfg.listenAddr = v
+	}
+	if v := getenv("VL_BACKEND_URL"); v != "" {
+		cfg.backendURL = v
+	}
+	if v := getenv("TENANT_MAP"); v != "" && cfg.tenantMapJSON == "" {
+		cfg.tenantMapJSON = v
+	}
+	if v := getenv("OTLP_ENDPOINT"); v != "" && cfg.otlpEndpoint == "" {
+		cfg.otlpEndpoint = v
+	}
+	if v := getenv("OTLP_COMPRESSION"); v != "" && cfg.otlpCompression == "none" {
+		cfg.otlpCompression = v
+	}
+	if v := getenv("OTLP_HEADERS"); v != "" && cfg.otlpHeaders == "" {
+		cfg.otlpHeaders = v
+	}
+	if v := getenv("LABEL_STYLE"); v != "" && cfg.labelStyle == "passthrough" {
+		cfg.labelStyle = v
+	}
+	if v := getenv("FIELD_MAPPING"); v != "" && cfg.fieldMappingJSON == "" {
+		cfg.fieldMappingJSON = v
+	}
+	if v := getenv("METADATA_FIELD_MODE"); v != "" && cfg.metadataFieldMode == "hybrid" {
+		cfg.metadataFieldMode = v
+	}
+	if v := getenv("OTEL_SERVICE_NAME"); v != "" && (cfg.serviceName == "" || cfg.serviceName == "loki-vl-proxy") {
+		cfg.serviceName = v
+	}
+	if v := getenv("OTEL_SERVICE_NAMESPACE"); v != "" && cfg.serviceNamespace == "" {
+		cfg.serviceNamespace = v
+	}
+	if v := getenv("OTEL_SERVICE_INSTANCE_ID"); v != "" && cfg.serviceInstanceID == "" {
+		cfg.serviceInstanceID = v
+	}
+	if v := getenv("DEPLOYMENT_ENVIRONMENT"); v != "" && cfg.deploymentEnv == "" {
+		cfg.deploymentEnv = v
+	}
+	return cfg
+}
+
+func parseTenantMapJSON(raw string) (map[string]proxy.TenantMapping, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var tenantMap map[string]proxy.TenantMapping
+	if err := json.Unmarshal([]byte(raw), &tenantMap); err != nil {
+		return nil, err
+	}
+	return tenantMap, nil
+}
+
+func parseFieldMappingsJSON(raw string) ([]proxy.FieldMapping, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var fieldMappings []proxy.FieldMapping
+	if err := json.Unmarshal([]byte(raw), &fieldMappings); err != nil {
+		return nil, err
+	}
+	return fieldMappings, nil
+}
+
+func parseDerivedFieldsJSON(raw string) ([]proxy.DerivedField, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	var derivedFields []proxy.DerivedField
+	if err := json.Unmarshal([]byte(raw), &derivedFields); err != nil {
+		return nil, err
+	}
+	return derivedFields, nil
+}
+
+func parseLabelModes(labelStyle, metadataFieldMode string) (proxy.LabelStyle, proxy.MetadataFieldMode, error) {
+	ls := proxy.LabelStyle(labelStyle)
+	switch ls {
+	case proxy.LabelStylePassthrough, proxy.LabelStyleUnderscores:
+	default:
+		return "", "", fmt.Errorf("invalid -label-style: %q (must be 'passthrough' or 'underscores')", labelStyle)
+	}
+	mfm := proxy.MetadataFieldMode(metadataFieldMode)
+	switch mfm {
+	case proxy.MetadataFieldModeNative, proxy.MetadataFieldModeTranslated, proxy.MetadataFieldModeHybrid:
+	default:
+		return "", "", fmt.Errorf("invalid -metadata-field-mode: %q (must be 'native', 'translated', or 'hybrid')", metadataFieldMode)
+	}
+	return ls, mfm, nil
+}
+
+func parseHeaderMapCSV(s string) map[string]string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	headers := make(map[string]string)
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		k, v, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k == "" || v == "" {
+			continue
+		}
+		headers[k] = v
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	return headers
+}
+
 func buildServerTLSConfig(clientCAFile string, requireClientCert bool) (*tls.Config, error) {
 	if clientCAFile == "" {
 		if requireClientCert {
@@ -393,7 +559,7 @@ func buildServerTLSConfig(clientCAFile string, requireClientCert bool) (*tls.Con
 
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("failed to parse client CA PEM")
+		return nil, errors.New("failed to parse client CA PEM")
 	}
 
 	clientAuth := tls.VerifyClientCertIfGiven

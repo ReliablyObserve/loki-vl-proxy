@@ -63,7 +63,9 @@
 - [x] `unwrap duration()/bytes()` unit conversion (v0.21.0)
 - [x] Subquery syntax `rate(...)[1h:5m]` — proxy-side evaluation (v0.23.0)
 - [x] LRU cache eviction (v0.21.0)
-- [ ] Peer cache Phase 1 implementation (DNS discovery + peer fetch)
+- [x] Peer cache Phase 1 implementation (DNS discovery + peer fetch) (v0.24.0)
 - [x] System metrics in /metrics (CPU, memory, IO, network via /proc) (v0.19.0)
 - [x] Native VL stream selector optimization for known `_stream_fields` (v0.23.0)
 - [ ] Full Loki ruler / alerting API semantics beyond datasource compatibility stubs
+- [x] PR quality report workflow with coverage, compatibility, and performance delta comments (v0.26.0)
+- [ ] Raise total repository coverage toward 95%+ by extracting `main()` and remaining low-level system readers into smaller testable units

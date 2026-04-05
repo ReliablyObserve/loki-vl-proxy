@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Features
+
+- observability guide with metrics catalog, JSON log schema, and collector/agent integration examples
+- OTLP metrics export now carries the same core proxy metric names as `/metrics`
+- OTel-friendly JSON logging is now used consistently across proxy, disk cache, cache warmer, and OTLP export paths
+
+### Tests
+
+- expanded OTLP exporter and observability configuration coverage
+
 ## [0.25.0] - 2026-04-05
 
 ### Features
@@ -12,26 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - improve hybrid drilldown compatibility
 - expand drilldown and compatibility coverage
 - improve tenant defaults and observability
+- **Single-tenant VictoriaLogs migration mode**: `X-Scope-OrgID: "0"` and `X-Scope-OrgID: "*"` now use VictoriaLogs' default tenant (`AccountID=0`, `ProjectID=0`) when no tenant map is configured. This keeps Grafana Loki datasources simple for single-tenant backends while preserving strict mapped multitenancy.
+- **Optional global bypass in mapped mode**: New `-tenant.allow-global` flag allows `0` and `*` to keep using the backend default tenant even when a tenant map is configured, making staged migrations from Loki string tenants to VictoriaLogs numeric tenants easier.
+- **Client identity propagation**: The proxy now derives client identity from trusted Grafana headers, tenant, basic auth, or remote address and forwards `X-Loki-VL-Client-ID` and `X-Loki-VL-Client-Source` to the backend. When `-metrics.trust-proxy-headers=true`, `X-Grafana-User` is also forwarded.
+- **Client-centric observability**: `/metrics` now exports per-client request counters, per-client status breakdowns, in-flight request gauges, response bytes, and LogQL query length histograms to identify the real users driving load.
+- **Fleet peer-cache observability**: Added peer-cache metrics for remote peers, total ring members, peer hits, misses, and errors so fleet behavior can be diagnosed without relying only on logs.
 
 ### Bug Fixes
 
 - stabilize compatibility and release automation
 - repair auto release workflow
 - backfill changelog and release tagging
-
-### Tests
-
-- 974 total tests (82.9% coverage)
-
-## [Unreleased]
-
-### Features
-
-- **Single-tenant VictoriaLogs migration mode**: `X-Scope-OrgID: "0"` and `X-Scope-OrgID: "*"` now use VictoriaLogs' default tenant (`AccountID=0`, `ProjectID=0`) when no tenant map is configured. This keeps Grafana Loki datasources simple for single-tenant backends while preserving strict mapped multitenancy.
-- **Optional global bypass in mapped mode**: New `-tenant.allow-global` flag allows `0` and `*` to keep using the backend default tenant even when a tenant map is configured, making staged migrations from Loki string tenants to VictoriaLogs numeric tenants easier.
-- **Client identity propagation**: The proxy now derives client identity from trusted Grafana headers, tenant, basic auth, or remote address and forwards `X-Loki-VL-Client-ID` and `X-Loki-VL-Client-Source` to the backend. When `-metrics.trust-proxy-headers=true`, `X-Grafana-User` is also forwarded.
-- **Client-centric observability**: `/metrics` now exports per-client request counters, per-client status breakdowns, in-flight request gauges, response bytes, and LogQL query length histograms to identify the real users driving load.
-- **Fleet peer-cache observability**: Added peer-cache metrics for remote peers, total ring members, peer hits, misses, and errors so fleet behavior can be diagnosed without relying only on logs.
 
 ### Security
 
@@ -52,9 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
-- Added unit coverage for global tenant fallback, mapped-mode global bypass, trusted Grafana user forwarding, client-centric metrics, and peer-cache metrics exposure.
-- Updated Loki e2e compatibility tests to cover the single-tenant default-tenant flow for `X-Scope-OrgID: 0` and `*`.
-- Verified locally with `go test ./...`, `go test ./... -race`, `golangci-lint run --timeout=5m`, `helm lint charts/loki-vl-proxy/`, `go test -v -tags=e2e -timeout=180s ./test/e2e-compat/...`, and `go test -v -tags=e2e -timeout=180s ./test/e2e-fleet/...`.
+- 974 total tests (82.9% coverage)
 
 ## [0.24.0] - 2026-04-04
 

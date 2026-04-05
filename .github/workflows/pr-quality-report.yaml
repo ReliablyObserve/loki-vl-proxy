@@ -1,0 +1,96 @@
+name: PR Quality Report
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+
+      - name: Collect base and PR quality snapshots
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+
+          git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
+
+          bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-head-quality.json
+          (
+            cd /tmp/loki-vl-proxy-base
+            bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-quality.json
+          )
+
+          bash "$WORKSPACE/scripts/ci/render_pr_report.sh" \
+            /tmp/pr-base-quality.json \
+            /tmp/pr-head-quality.json \
+            /tmp/pr-quality-report.md
+
+          cat /tmp/pr-quality-report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload quality artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-quality-report
+          path: |
+            /tmp/pr-base-quality.json
+            /tmp/pr-head-quality.json
+            /tmp/pr-quality-report.md
+
+      - name: Publish sticky PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const issue_number = context.issue.number;
+            const body = fs.readFileSync('/tmp/pr-quality-report.md', 'utf8');
+            const marker = '<!-- pr-quality-report -->';
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find(comment =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Clean up base worktree
+        if: always()
+        run: git worktree remove --force /tmp/loki-vl-proxy-base || true

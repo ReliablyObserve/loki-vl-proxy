@@ -165,6 +165,8 @@ extraArgs:
 
 ## Monitoring
 
+See the dedicated [Observability Guide](observability.md) for the full metrics catalog, JSON log schema, OTLP push configuration, and collector/agent integration examples.
+
 ### Metrics
 
 The proxy exposes Prometheus metrics at `/metrics`:
@@ -194,6 +196,8 @@ Push metrics to an OTLP collector:
 -otlp-interval=30s
 -otlp-compression=gzip
 ```
+
+The OTLP exporter reuses the same core proxy metric names that `/metrics` exposes, so dashboards and alert logic can stay aligned across scrape and push modes.
 
 ---
 

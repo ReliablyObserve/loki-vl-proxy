@@ -151,11 +151,17 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
-          # Insert into CHANGELOG.md after header
+          # Keep Unreleased at the top and place the new version under it.
           TEMP=$(mktemp)
           awk -v entry="$(cat "$ENTRY")" '
-            /^## \[/ && !done { print entry; print ""; done=1 }
+            /^## \[[0-9]/ && !done { print entry; print ""; done=1 }
             { print }
+            END {
+              if (!done) {
+                print ""
+                print entry
+              }
+            }
           ' CHANGELOG.md > "$TEMP"
           mv "$TEMP" CHANGELOG.md
 

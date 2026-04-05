@@ -96,7 +96,7 @@ flowchart TD
     style CB fill:#533483,stroke:#e94560,color:#fff
 ```
 
-See [Architecture](docs/architecture.md) for component design and [Fleet Cache](docs/fleet-cache.md) for distributed caching.
+See [Architecture](docs/architecture.md) for component design, [Observability](docs/observability.md) for metrics/logging/integration guidance, and [Fleet Cache](docs/fleet-cache.md) for distributed caching.
 
 ## Key Features
 
@@ -126,10 +126,10 @@ See [Security](docs/security.md), [Configuration](docs/configuration.md), and [K
 - **TLS support** -- server-side HTTPS, backend TLS, OTLP TLS
 
 ### Operations
-See [Configuration](docs/configuration.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), and [Logs Drilldown Compatibility](docs/compatibility-drilldown.md).
+See [Configuration](docs/configuration.md), [Observability](docs/observability.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), and [Logs Drilldown Compatibility](docs/compatibility-drilldown.md).
 
 - **Multitenancy** -- Loki `X-Scope-OrgID` mapped to VL `AccountID`/`ProjectID`, SIGHUP hot-reload
-- **Observability** -- Prometheus `/metrics`, structured JSON logs, per-tenant breakdowns, per-client offender metrics, fleet peer-cache metrics, OTLP push
+- **Observability** -- Prometheus `/metrics`, OTLP push with matching core metric names, OTel-friendly JSON logs, per-tenant breakdowns, per-client offender metrics, fleet peer-cache metrics
 - **WebSocket tail** -- live log tailing via Loki's WebSocket protocol with fast handshake, origin controls, and synthetic fallback when native VL tail streaming is unavailable
 - **GOMEMLIMIT auto-tuning** -- Helm chart calculates Go memory limit as % of k8s resource limits
 
@@ -204,6 +204,17 @@ Proxy-side datasource helpers:
 - `-tenant.allow-global` to let `X-Scope-OrgID: 0` or `*` use VL's default `0:0` tenant during single-tenant migrations
 - `-tls-client-ca-file` and `-tls-require-client-cert` for HTTPS client auth
 - `-tail.allowed-origins` when Grafana or another browser client must use `/tail`
+
+## Docs
+
+- [Observability](docs/observability.md)
+- [Configuration](docs/configuration.md)
+- [API Reference](docs/api-reference.md)
+- [Architecture](docs/architecture.md)
+- [Fleet Cache](docs/fleet-cache.md)
+- [Performance](docs/performance.md)
+- [Compatibility Matrix](docs/compatibility-matrix.md)
+- [Testing](docs/testing.md)
 
 ## Release Automation
 

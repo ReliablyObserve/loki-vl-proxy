@@ -57,8 +57,8 @@ type DiskCacheConfig struct {
 // NewDiskCache creates an L2 disk cache.
 func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 	opts := bolt.DefaultOptions
-	opts.NoSync = true        // Async sync — faster writes, safe with write buffer
-	opts.NoGrowSync = true    // Skip grow sync for sequential write performance
+	opts.NoSync = true     // Async sync — faster writes, safe with write buffer
+	opts.NoGrowSync = true // Skip grow sync for sequential write performance
 	opts.FreelistType = bolt.FreelistMapType
 
 	db, err := bolt.Open(cfg.Path, 0600, opts)
@@ -80,7 +80,7 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		flushSize = 100
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger := slog.Default().With("component", "disk_cache")
 
 	dc := &DiskCache{
 		db:          db,
@@ -269,4 +269,3 @@ func decompress(data []byte) ([]byte, error) {
 	defer func() { _ = r.Close() }()
 	return io.ReadAll(r)
 }
-

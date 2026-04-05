@@ -143,8 +143,13 @@ kill -HUP $(pidof loki-vl-proxy)
 | `-otlp-endpoint` | `OTLP_ENDPOINT` | — | OTLP HTTP endpoint for proxy metrics |
 | `-otlp-interval` | — | `30s` | Push interval |
 | `-otlp-compression` | `OTLP_COMPRESSION` | `none` | `none`, `gzip`, `zstd` |
+| `-otlp-headers` | `OTLP_HEADERS` | — | Comma-separated OTLP HTTP headers in `key=value` form |
 | `-otlp-timeout` | — | `10s` | HTTP request timeout |
 | `-otlp-tls-skip-verify` | — | `false` | Skip TLS verification |
+| `-otel-service-name` | `OTEL_SERVICE_NAME` | `loki-vl-proxy` | `service.name` for OTLP metrics and JSON logs |
+| `-otel-service-namespace` | `OTEL_SERVICE_NAMESPACE` | — | `service.namespace` for OTLP metrics and JSON logs |
+| `-otel-service-instance-id` | `OTEL_SERVICE_INSTANCE_ID` | — | `service.instance.id` for OTLP metrics and JSON logs |
+| `-deployment-environment` | `DEPLOYMENT_ENVIRONMENT` | — | `deployment.environment.name` for OTLP metrics and JSON logs |
 
 ## HTTP Hardening
 
