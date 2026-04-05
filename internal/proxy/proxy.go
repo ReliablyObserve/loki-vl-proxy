@@ -662,6 +662,21 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if _, ok := p.validateQuery(w, logqlQuery, "query_range"); !ok {
 		return
 	}
+	cacheKey := ""
+	cacheable := !p.streamResponse
+	if cacheable {
+		cacheKey = p.queryRangeCacheKey(r, logqlQuery)
+		if cached, ok := p.cache.Get(cacheKey); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(cached)
+			elapsed := time.Since(start)
+			p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+			p.metrics.RecordCacheHit()
+			p.queryTracker.Record("query_range", logqlQuery, elapsed, false)
+			return
+		}
+		p.metrics.RecordCacheMiss()
+	}
 	p.log.Debug("query_range request", "logql", logqlQuery)
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
@@ -678,14 +693,14 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 
 	r = withOrgID(r)
 
-	// Wrap writer to capture actual status code for metrics
-	sc := &statusCapture{ResponseWriter: w, code: 200}
-
-	// If without() labels present, use a buffered writer for post-processing
-	var bw *bufferedResponseWriter
-	if len(withoutLabels) > 0 {
-		bw = &bufferedResponseWriter{header: w.Header()}
-		sc = &statusCapture{ResponseWriter: bw, code: 200}
+	var (
+		sc       = &statusCapture{ResponseWriter: w, code: 200}
+		capture  *bufferedResponseWriter
+		cacheOut []byte
+	)
+	if len(withoutLabels) > 0 || cacheable {
+		capture = &bufferedResponseWriter{header: make(http.Header)}
+		sc = &statusCapture{ResponseWriter: capture, code: 200}
 	}
 
 	// Check for subquery expression (e.g., max_over_time(rate(...)[1h:5m]))
@@ -700,16 +715,38 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.proxyLogQuery(sc, r, logsqlQuery)
 	}
 
-	// Apply without() post-processing: strip excluded labels from metric results
-	if bw != nil && len(withoutLabels) > 0 {
-		result := applyWithoutGrouping(bw.body, withoutLabels)
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(result)
+	if capture != nil {
+		cacheOut = capture.body
+		if len(withoutLabels) > 0 {
+			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels)
+		}
+		copyHeaders(w.Header(), capture.Header())
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		if sc.code != http.StatusOK {
+			w.WriteHeader(sc.code)
+		}
+		_, _ = w.Write(cacheOut)
+		if cacheable && sc.code == http.StatusOK {
+			p.cache.SetWithTTL(cacheKey, cacheOut, CacheTTLs["query_range"])
+		}
 	}
 
 	elapsed := time.Since(start)
 	p.metrics.RecordRequest("query_range", sc.code, elapsed)
 	p.queryTracker.Record("query_range", logqlQuery, elapsed, sc.code >= 400)
+}
+
+func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
+	values := url.Values{}
+	values.Set("query", logqlQuery)
+	for _, key := range []string{"start", "end", "step", "limit", "direction"} {
+		if value := r.FormValue(key); value != "" {
+			values.Set(key, value)
+		}
+	}
+	return "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + values.Encode()
 }
 
 // handleQuery translates Loki instant queries.
@@ -770,7 +807,6 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 // VL:   GET /select/logsql/field_names?query=*&start=...&end=...
 func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	r = withOrgID(r)
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := "labels:" + orgID + ":" + r.URL.RawQuery
 
@@ -783,6 +819,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.metrics.RecordCacheMiss()
+	r = withOrgID(r)
 
 	params := url.Values{}
 	// Forward the query param if provided (Loki uses it to scope label suggestions)
@@ -3343,6 +3380,15 @@ func (p *Proxy) writeJSON(w http.ResponseWriter, data interface{}) {
 
 func base64Encode(s string) string {
 	return base64.StdEncoding.EncodeToString([]byte(s))
+}
+
+func copyHeaders(dst, src http.Header) {
+	for key, values := range src {
+		dst.Del(key)
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
 }
 
 // isVLInternalField returns true for VictoriaLogs internal field names
