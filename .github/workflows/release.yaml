@@ -183,7 +183,7 @@ jobs:
 
             # Test count and coverage
             TEST_COUNT=$(go test ./... -count=1 -json 2>/dev/null | jq -r 'select(.Action=="pass" and .Test != null) | .Test' | wc -l | tr -d ' ' || echo "0")
-            go test ./... -coverprofile=coverage.out -count=1 2>/dev/null || true
+            go test ./... -coverprofile=coverage.out -count=1 >/dev/null 2>&1 || true
             COV=$(go tool cover -func=coverage.out 2>/dev/null | tail -1 | awk '{print $NF}' || echo "N/A")
             echo "- ${TEST_COUNT} tests (${COV} coverage)"
 
@@ -267,6 +267,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.TAG }}
           name: "v${{ steps.version.outputs.VERSION }}"
           body: ${{ steps.changelog.outputs.CHANGELOG }}
           files: |
