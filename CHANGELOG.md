@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.25.0] - 2026-04-05
+
+### Features
+
+- improve hybrid drilldown compatibility
+- expand drilldown and compatibility coverage
+- improve tenant defaults and observability
+
+### Bug Fixes
+
+- stabilize compatibility and release automation
+- repair auto release workflow
+- backfill changelog and release tagging
+
+### Tests
+
+- 974 total tests (82.9% coverage)
+
 ## [Unreleased]
 
 ### Features
