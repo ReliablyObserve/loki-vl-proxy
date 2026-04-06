@@ -848,3 +848,70 @@ func TestExtended_WithoutGrouping(t *testing.T) {
 
 	score.report(t)
 }
+
+// =============================================================================
+// on()/ignoring()/group_left() live compatibility smoke
+// =============================================================================
+
+func TestExtended_OnGrouping(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `sum by (app, pod) (count_over_time({cluster="us-east-1"}[5m])) / on(app) sum by (app) (count_over_time({cluster="us-east-1", level="error"}[5m]))`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("step", "60")
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+	if checkStatus(proxyResp) {
+		score.pass("on_grouping", "proxy returns success for on() grouping")
+	} else {
+		score.fail("on_grouping", "proxy error on on() grouping")
+	}
+
+	score.report(t)
+}
+
+func TestExtended_IgnoringGrouping(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `sum by (app, level) (count_over_time({app="api-gateway"}[5m])) / ignoring(level) sum by (app) (count_over_time({app="api-gateway"}[5m]))`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("step", "60")
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+	if checkStatus(proxyResp) {
+		score.pass("ignoring_grouping", "proxy returns success for ignoring() grouping")
+	} else {
+		score.fail("ignoring_grouping", "proxy error on ignoring() grouping")
+	}
+
+	score.report(t)
+}
+
+func TestExtended_GroupLeftJoin(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `sum by (app, pod) (count_over_time({cluster="us-east-1"}[5m])) * on(app) group_left(level) sum by (app, level) (count_over_time({cluster="us-east-1", level="error"}[5m]))`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("step", "60")
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+	if checkStatus(proxyResp) {
+		score.pass("group_left", "proxy returns success for group_left() join")
+	} else {
+		score.fail("group_left", "proxy error on group_left() join")
+	}
+
+	score.report(t)
+}
