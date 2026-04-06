@@ -324,6 +324,52 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("detected_labels_resource_exposes_loki_surface_only", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="otel-auth-service"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_labels?"+params.Encode())
+		items, _ := resp["data"].([]interface{})
+		if len(items) == 0 {
+			t.Fatalf("expected detected_labels entries, got %v", resp)
+		}
+		seen := map[string]bool{}
+		for _, item := range items {
+			obj, _ := item.(map[string]interface{})
+			label, _ := obj["label"].(string)
+			if label != "" {
+				seen[label] = true
+			}
+		}
+		for _, want := range []string{"service_name", "service_namespace", "k8s_pod_name", "level"} {
+			if !seen[want] {
+				t.Fatalf("expected detected_labels to include %q, got %v", want, resp)
+			}
+		}
+		for _, forbidden := range []string{"service.name", "service.namespace", "k8s.pod.name"} {
+			if seen[forbidden] {
+				t.Fatalf("detected_labels must not expose dotted metadata label %q, got %v", forbidden, resp)
+			}
+		}
+	})
+
+	t.Run("labels_resource_supports_additional_tabs", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/labels?"+params.Encode())
+		values := extractStrings(resp, "data")
+		for _, want := range []string{"service_name", "cluster", "namespace", "app"} {
+			if !contains(values, want) {
+				t.Fatalf("expected labels resource to include %q for Drilldown tabs, got %v", want, resp)
+			}
+		}
+	})
+
 	t.Run("additional_label_tab_volume_buckets", func(t *testing.T) {
 		params := url.Values{}
 		params.Set("query", `{cluster=~`+"`.+`"+`}`)
@@ -349,6 +395,34 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("expected cluster bucket us-east-1, got %v", result)
+		}
+	})
+
+	t.Run("detected_field_values_honor_limit", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("limit", "1")
+
+		valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/method/values?"+params.Encode())
+		values, _ := valuesResp["values"].([]interface{})
+		if len(values) != 1 {
+			t.Fatalf("expected detected_field values limit=1 to return one value, got %v", valuesResp)
+		}
+	})
+
+	t.Run("label_values_honor_limit", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("limit", "1")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/cluster/values?"+params.Encode())
+		values := extractStrings(resp, "data")
+		if len(values) != 1 {
+			t.Fatalf("expected label values limit=1 to return one value, got %v", resp)
 		}
 	})
 
@@ -399,6 +473,24 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 		if !foundGET {
 			t.Fatalf("expected GET request pattern in payload, got %v", data)
+		}
+	})
+
+	t.Run("patterns_resource_honors_limit", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{app="pattern-test", level="info"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("step", "60s")
+		params.Set("limit", "1")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/patterns?"+params.Encode())
+		data, ok := resp["data"].([]interface{})
+		if !ok {
+			t.Fatalf("expected patterns data array, got %v", resp)
+		}
+		if len(data) != 1 {
+			t.Fatalf("expected one limited pattern result, got %v", resp)
 		}
 	})
 }

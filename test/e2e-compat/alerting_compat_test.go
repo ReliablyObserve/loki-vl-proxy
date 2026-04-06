@@ -213,3 +213,51 @@ func TestAlertingCompat_PromAliasRoutes(t *testing.T) {
 		t.Fatalf("expected alerts alias parity direct=%d alias=%d", len(directAlerts), len(aliasAlerts))
 	}
 }
+
+func TestAlertingCompat_LegacyNamespaceAndGroupFiltering(t *testing.T) {
+	ensureDataIngested(t)
+	waitForReady(t, vmalertURL+"/api/v1/rules?datasource_type=vlogs", 30*time.Second)
+	waitForAlertingData(t)
+
+	namespaceResp, err := http.Get(proxyURL + "/loki/api/v1/rules/compat.rules")
+	if err != nil {
+		t.Fatalf("legacy namespace rules request failed: %v", err)
+	}
+	defer namespaceResp.Body.Close()
+	if namespaceResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(namespaceResp.Body)
+		t.Fatalf("expected 200, got %d body=%s", namespaceResp.StatusCode, string(body))
+	}
+	namespaceBody, _ := io.ReadAll(namespaceResp.Body)
+	namespaceText := string(namespaceBody)
+	if !strings.Contains(namespaceText, "name: loki-vl-e2e-alerts") {
+		t.Fatalf("expected namespace filtered YAML to contain the alerting group, got %s", namespaceText)
+	}
+
+	groupResp, err := http.Get(proxyURL + "/loki/api/v1/rules/compat.rules/loki-vl-e2e-alerts")
+	if err != nil {
+		t.Fatalf("legacy group rules request failed: %v", err)
+	}
+	defer groupResp.Body.Close()
+	if groupResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(groupResp.Body)
+		t.Fatalf("expected 200, got %d body=%s", groupResp.StatusCode, string(body))
+	}
+	groupBody, _ := io.ReadAll(groupResp.Body)
+	groupText := string(groupBody)
+	if !strings.Contains(groupText, "alert: ApiGatewayErrorsPresent") || strings.Contains(groupText, "compat.rules:") {
+		t.Fatalf("expected single-group YAML payload, got %s", groupText)
+	}
+}
+
+func TestAlertingCompat_LegacyRulesRejectTraversal(t *testing.T) {
+	resp, err := http.Get(proxyURL + "/loki/api/v1/rules/%2e%2e/escape")
+	if err != nil {
+		t.Fatalf("legacy traversal request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 400 for traversal attempt, got %d body=%s", resp.StatusCode, string(body))
+	}
+}

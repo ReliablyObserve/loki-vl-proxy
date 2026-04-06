@@ -76,7 +76,7 @@ test.describe("Grafana Datasource Health & Config", () => {
     expect(resp.status()).toBe(200);
     expect(resp.headers()["content-type"]).toContain("application/yaml");
     const body = await resp.text();
-    expect(body.trim()).toBe("{}");
+    expect(body).toContain("loki-vl-e2e-alerts");
   });
 
   test("alerts endpoint returns valid compatibility response", async ({ request }) => {
@@ -87,5 +87,6 @@ test.describe("Grafana Datasource Health & Config", () => {
     const body = await resp.json();
     expect(body.status).toBe("success");
     expect(body.data.alerts).toBeDefined();
+    expect(Array.isArray(body.data.alerts)).toBeTruthy();
   });
 });
