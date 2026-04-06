@@ -2,6 +2,7 @@ import { Page, expect } from "@playwright/test";
 
 // Grafana datasource names matching grafana-datasources.yaml
 export const PROXY_DS = "Loki (via VL proxy)";
+export const PROXY_MULTI_DS = "Loki (via VL proxy multi-tenant)";
 export const LOKI_DS = "Loki (direct)";
 
 // Grafana URLs

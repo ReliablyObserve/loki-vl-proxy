@@ -134,6 +134,11 @@ func TestRealWorld_MultiStage(t *testing.T) {
 			logql: `{job="nginx"} | pattern "<ip> - - <_> <method> <uri> <status>" | status >= 400 | drop ip`,
 			want:  `job:=nginx | extract "<ip> - - <_> <method> <uri> <status>" | filter status:>=400 | delete ip`,
 		},
+		{
+			name:  "drilldown multi-level filter after parser chain",
+			logql: `{cluster="us-east-1"} | detected_level="error" or detected_level="info" or detected_level="warn" | json | logfmt | drop __error__, __error_details__`,
+			want:  `cluster:=us-east-1 (level:=error or level:=info or level:=warn) | unpack_json | unpack_logfmt | delete __error__, __error_details__`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

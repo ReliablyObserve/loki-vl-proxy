@@ -513,6 +513,28 @@ func getJSON(t *testing.T, url string) map[string]interface{} {
 	return result
 }
 
+func getJSONWithHeaders(t *testing.T, url string, headers map[string]string) map[string]interface{} {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Logf("build request %s failed: %v", url, err)
+		return nil
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("GET %s failed: %v", url, err)
+		return nil
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var result map[string]interface{}
+	json.Unmarshal(body, &result)
+	return result
+}
+
 func getStatusCode(t *testing.T, url string) int {
 	t.Helper()
 	resp, err := http.Get(url)

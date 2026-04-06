@@ -44,6 +44,12 @@ jobs:
 
           cat /tmp/pr-quality-report.md >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Enforce quality gate
+        run: |
+          python3 scripts/ci/check_quality_gate.py \
+            /tmp/pr-base-quality.json \
+            /tmp/pr-head-quality.json
+
       - name: Upload quality artifacts
         uses: actions/upload-artifact@v4
         with:

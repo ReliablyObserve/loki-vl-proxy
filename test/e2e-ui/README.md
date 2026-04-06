@@ -29,7 +29,8 @@ docker run --rm \
   -v "$(pwd):/work" \
   -w /work \
   -e GRAFANA_URL=http://host.docker.internal:3002 \
-  mcr.microsoft.com/playwright:v1.52.0-jammy \
+  -e PROXY_URL=http://host.docker.internal:3100 \
+  mcr.microsoft.com/playwright:v1.59.1-noble \
   /bin/bash -lc 'npm ci && npx playwright test --grep "Grafana Logs Drilldown"'
 ```
 
@@ -39,7 +40,7 @@ docker run --rm \
 |------|----------|
 | `explore.spec.ts` | Basic queries, filters, parsers, metric queries, side-by-side proxy vs Loki |
 | `logs-drilldown.spec.ts` | Service list, service detail drill-down, fields, label values, proxy vs direct Loki |
-| `datasource.spec.ts` | Health check, buildinfo, ready, admin stubs (rules/alerts) |
+| `datasource.spec.ts` | Health check, buildinfo, ready, rules/alerts compatibility surface |
 
 ## Debug
 

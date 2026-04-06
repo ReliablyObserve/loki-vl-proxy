@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,6 +19,42 @@ import (
 // =============================================================================
 // Performance: high-concurrency request handling
 // =============================================================================
+
+type benchmarkResponseWriter struct {
+	header http.Header
+}
+
+func newBenchmarkResponseWriter() *benchmarkResponseWriter {
+	return &benchmarkResponseWriter{header: make(http.Header)}
+}
+
+func (w *benchmarkResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *benchmarkResponseWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (w *benchmarkResponseWriter) WriteHeader(statusCode int) {}
+
+func (w *benchmarkResponseWriter) reset() {
+	for k := range w.header {
+		delete(w.header, k)
+	}
+}
+
+func benchmarkRequest(rawURL string) *http.Request {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		panic(err)
+	}
+	return &http.Request{
+		Method: "GET",
+		URL:    u,
+		Header: make(http.Header),
+	}
+}
 
 func BenchmarkProxy_QueryRange_CacheHit(b *testing.B) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -34,9 +72,10 @@ func BenchmarkProxy_QueryRange_CacheHit(b *testing.B) {
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
+		w := newBenchmarkResponseWriter()
+		r := benchmarkRequest(`/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&step=1`)
 		for pb.Next() {
-			w := httptest.NewRecorder()
-			r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&step=1`, nil)
+			w.reset()
 			p.handleQueryRange(w, r)
 		}
 	})
@@ -63,9 +102,155 @@ func BenchmarkProxy_Labels_CacheHit(b *testing.B) {
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {
+		w := newBenchmarkResponseWriter()
+		r := benchmarkRequest("/loki/api/v1/labels")
 		for pb.Next() {
-			w := httptest.NewRecorder()
-			r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+			w.reset()
+			p.handleLabels(w, r)
+		}
+	})
+}
+
+func BenchmarkProxy_QueryRange_CacheBypass(b *testing.B) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"test","app":"nginx"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, _ := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+
+	urls := make([]string, 1024)
+	for i := range urls {
+		urls[i] = `/loki/api/v1/query_range?query={app="nginx"}&start=` + strconv.Itoa(i+1) + `&end=` + strconv.Itoa(i+2) + `&step=1`
+	}
+	requests := make([]*http.Request, len(urls))
+	for i, rawURL := range urls {
+		requests[i] = benchmarkRequest(rawURL)
+	}
+	var idx atomic.Uint64
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		w := newBenchmarkResponseWriter()
+		for pb.Next() {
+			r := requests[int(idx.Add(1)-1)%len(requests)]
+			w.reset()
+			p.handleQueryRange(w, r)
+		}
+	})
+}
+
+func BenchmarkProxy_Labels_CacheBypass(b *testing.B) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"values": []map[string]interface{}{
+				{"value": "app", "hits": 100},
+				{"value": "namespace", "hits": 50},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, _ := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+
+	urls := make([]string, 1024)
+	for i := range urls {
+		urls[i] = "/loki/api/v1/labels?start=" + strconv.Itoa(i+1) + "&end=" + strconv.Itoa(i+2)
+	}
+	requests := make([]*http.Request, len(urls))
+	for i, rawURL := range urls {
+		requests[i] = benchmarkRequest(rawURL)
+	}
+	var idx atomic.Uint64
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		w := newBenchmarkResponseWriter()
+		for pb.Next() {
+			r := requests[int(idx.Add(1)-1)%len(requests)]
+			w.reset()
+			p.handleLabels(w, r)
+		}
+	})
+}
+
+func BenchmarkProxy_MultiTenantQueryRange_CacheHit(b *testing.B) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("AccountID") {
+		case "10":
+			w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"test-a","app":"nginx"}` + "\n"))
+		case "20":
+			w.Write([]byte(`{"_time":"2024-01-15T10:30:01Z","_msg":"test-b","app":"nginx"}` + "\n"))
+		default:
+			b.Fatalf("unexpected AccountID %q", r.Header.Get("AccountID"))
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, _ := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		TenantMap: map[string]TenantMapping{
+			"tenant-a": {AccountID: "10", ProjectID: "0"},
+			"tenant-b": {AccountID: "20", ProjectID: "0"},
+		},
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&step=1`, nil)
+	r.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+	p.handleQueryRange(w, r)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		w := newBenchmarkResponseWriter()
+		r := benchmarkRequest(`/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&step=1`)
+		r.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+		for pb.Next() {
+			w.reset()
+			p.handleQueryRange(w, r)
+		}
+	})
+}
+
+func BenchmarkProxy_MultiTenantLabels_CacheHit(b *testing.B) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"values": []map[string]interface{}{
+				{"value": "app", "hits": 100},
+				{"value": "namespace", "hits": 50},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, _ := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		TenantMap: map[string]TenantMapping{
+			"tenant-a": {AccountID: "10", ProjectID: "0"},
+			"tenant-b": {AccountID: "20", ProjectID: "0"},
+		},
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	r.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+	p.handleLabels(w, r)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		w := newBenchmarkResponseWriter()
+		r := benchmarkRequest("/loki/api/v1/labels")
+		r.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+		for pb.Next() {
+			w.reset()
 			p.handleLabels(w, r)
 		}
 	})

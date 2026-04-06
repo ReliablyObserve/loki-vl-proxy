@@ -126,10 +126,11 @@ See [Security](docs/security.md), [Configuration](docs/configuration.md), and [K
 - **TLS support** -- server-side HTTPS, backend TLS, OTLP TLS
 
 ### Operations
-See [Configuration](docs/configuration.md), [Observability](docs/observability.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), and [Logs Drilldown Compatibility](docs/compatibility-drilldown.md).
+See [Configuration](docs/configuration.md), [Observability](docs/observability.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), [Logs Drilldown Compatibility](docs/compatibility-drilldown.md), and [Rules And Alerts Migration](docs/rules-alerts-migration.md).
 
 - **Multitenancy** -- Loki `X-Scope-OrgID` mapped to VL `AccountID`/`ProjectID`, SIGHUP hot-reload
 - **Observability** -- Prometheus `/metrics`, OTLP push with matching core metric names, OTel-friendly JSON logs, per-tenant breakdowns, per-client offender metrics, fleet peer-cache metrics
+- **Rules and alerts migration tool** -- convert Loki-style rule files into `vmalert` `type: vlogs` rule files for read-compatible Grafana alert visibility through the proxy
 - **WebSocket tail** -- live log tailing via Loki's WebSocket protocol with fast handshake, origin controls, and synthetic fallback when native VL tail streaming is unavailable
 - **GOMEMLIMIT auto-tuning** -- Helm chart calculates Go memory limit as % of k8s resource limits
 
@@ -201,28 +202,46 @@ Proxy-side datasource helpers:
 - `-forward-headers` and `-forward-cookies` for backend auth/context passthrough
 - `-metrics.trust-proxy-headers` to trust `X-Grafana-User` and surface per-user client metrics/log context
 - `-metadata-field-mode=hybrid` by default, so field APIs expose both dotted OTel names and Loki-style aliases without changing the label surface
-- `-tenant.allow-global` to let `X-Scope-OrgID: 0` or `*` use VL's default `0:0` tenant during single-tenant migrations
+- built-in default-tenant aliases `0`, `fake`, and `default` for VL's `0:0` tenant during single-tenant migrations
+- explicit Loki-style multi-tenant fanout on read/query endpoints with `X-Scope-OrgID: tenant-a|tenant-b`
+- synthetic `__tenant_id__` labels in merged query results so Explore and Drilldown filters can narrow multi-tenant reads back down
+- multi-tenant Drilldown and Explore level filters such as `detected_level="error" or detected_level="info"` are translated and regression-tested against the live Grafana stack
+- `-tenant.allow-global` to let `X-Scope-OrgID: *` use VL's default `0:0` tenant as a proxy-specific wildcard bypass
 - `-tls-client-ca-file` and `-tls-require-client-cert` for HTTPS client auth
 - `-tail.allowed-origins` when Grafana or another browser client must use `/tail`
+
+### Grafana Datasource for Multi-Tenant Read Fanout
+
+```yaml
+datasources:
+  - name: Loki (VL multi-tenant)
+    type: loki
+    access: proxy
+    url: http://loki-vl-proxy:3100
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+    secureJsonData:
+      httpHeaderValue1: team-a|team-b
+```
+
+Use `__tenant_id__` in Explore or Drilldown-compatible queries when you want to narrow a multi-tenant datasource back to a single tenant:
+
+```logql
+{app="api-gateway", __tenant_id__="team-b"}
+{service_name="api-gateway", __tenant_id__=~"team-.*"}
+```
 
 ## Docs
 
 - [Observability](docs/observability.md)
 - [Configuration](docs/configuration.md)
+- [Rules And Alerts Migration](docs/rules-alerts-migration.md)
 - [API Reference](docs/api-reference.md)
 - [Architecture](docs/architecture.md)
 - [Fleet Cache](docs/fleet-cache.md)
 - [Performance](docs/performance.md)
 - [Compatibility Matrix](docs/compatibility-matrix.md)
 - [Testing](docs/testing.md)
-
-## Release Automation
-
-The `Auto Release` workflow opens a release PR from a generated `release/vX.Y.Z` branch. Full automation requires the repository setting `Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests`.
-
-The release PR updates the versioned changelog section, README badges, Helm chart metadata, and versioned observability examples. After the release PR merges, a tag is created from the merged commit and the `Release` workflow publishes binaries, the Helm package, the container image, and the GitHub release using that exact changelog section as the release notes.
-
-If that setting is disabled, the workflow now keeps the run green, pushes the release branch, and writes a manual PR link into the job summary instead of failing.
 
 ## API Coverage
 
@@ -235,7 +254,7 @@ If that setting is disabled, the workflow now keeps the run green, pushes the re
 | Metadata | `detected_fields`, `detected_labels`, `detected_field/{name}/values` |
 | Streaming | `tail` (WebSocket), `format_query` |
 | Write | `push` (blocked 405), `delete` (safeguarded) |
-| Admin | `rules`, `alerts`, `config` (stubs), `buildinfo`, `ready` |
+| Admin | `rules`, `alerts`, `config`, `buildinfo`, `ready` |
 
 **887 tests** (unit + fuzz + perf regression + race-safe)
 

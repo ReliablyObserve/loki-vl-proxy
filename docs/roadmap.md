@@ -39,7 +39,7 @@
 - [x] `quantile_over_time()` mapped to VL quantile
 - [x] `label_format` multi-rename (comma-separated)
 - [x] Extended binary ops (`%`, `^`, `==`, `!=`, `>`, `<`, `>=`, `<=`)
-- [x] Datasource compatibility stubs (`/rules`, `/alerts`, `/config`)
+- [x] Datasource compatibility handlers (`/rules`, `/alerts`, `/config`)
 - [x] Playwright UI e2e tests
 - [x] Delete API endpoint with safeguards (confirmation, tenant scoping, audit logging)
 - [x] `without()` clause detection and clear error message
@@ -66,6 +66,6 @@
 - [x] Peer cache Phase 1 implementation (DNS discovery + peer fetch) (v0.24.0)
 - [x] System metrics in /metrics (CPU, memory, IO, network via /proc) (v0.19.0)
 - [x] Native VL stream selector optimization for known `_stream_fields` (v0.23.0)
-- [ ] Full Loki ruler / alerting API semantics beyond datasource compatibility stubs
+- [ ] Full Loki ruler / alerting API semantics beyond read-path compatibility and backend passthrough
 - [x] PR quality report workflow with coverage, compatibility, and performance delta comments (v0.26.0)
 - [ ] Raise total repository coverage toward 95%+ by extracting `main()` and remaining low-level system readers into smaller testable units

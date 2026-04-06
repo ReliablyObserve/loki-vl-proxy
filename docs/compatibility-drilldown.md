@@ -41,6 +41,7 @@ The Drilldown matrix is also a moving window. We support the current app family 
 - In hybrid field mode, `detected_fields` may expose both native dotted fields and translated aliases such as `service.name` and `service_name`
 - Label-value resources for additional filters such as `cluster` must return real values
 - `patterns` must return non-empty grouped pattern payloads with sample buckets for Drilldown
+- Multi-tenant Drilldown queries with repeated `var-levels=detected_level|=|...` selections must stay valid and return logs instead of backend parse errors
 
 ## Edge Cases Covered
 
@@ -48,4 +49,5 @@ The Drilldown matrix is also a moving window. We support the current app family 
 - Labels object parsing in returned log frames
 - App-level field suppression for `detected_level`, `level`, and `level_extracted`
 - Service-detail field breakdowns and additional label filters
+- Multi-tenant Drilldown log views filtered by `cluster` plus multiple selected `detected_level` values
 - Patterns grouping across repeated request shapes

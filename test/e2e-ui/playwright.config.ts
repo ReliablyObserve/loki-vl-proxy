@@ -7,7 +7,7 @@ export default defineConfig({
   timeout: 60_000,
   retries: 1,
   use: {
-    baseURL: process.env.GRAFANA_URL || "http://localhost:3002",
+    baseURL: process.env.GRAFANA_URL || "http://127.0.0.1:3002",
     screenshot: "only-on-failure",
     trace: "on-first-retry",
     // Grafana anonymous auth — no login needed

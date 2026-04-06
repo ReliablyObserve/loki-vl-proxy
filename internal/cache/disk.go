@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -187,10 +188,10 @@ func (dc *DiskCache) Flush() {
 	_ = dc.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(dataBucket)
 		for key, entry := range buf {
-			// Encode: [8 bytes expiry][value]
-			encoded := make([]byte, 8+len(entry.Value))
-			binary.BigEndian.PutUint64(encoded[:8], uint64(entry.ExpiresAt))
-			copy(encoded[8:], entry.Value)
+			encoded, ok := encodeDiskEntry(entry)
+			if !ok {
+				continue
+			}
 
 			// Compress
 			if dc.compression {
@@ -208,6 +209,16 @@ func (dc *DiskCache) Flush() {
 	})
 
 	dc.FlushCount.Add(1)
+}
+
+func encodeDiskEntry(entry diskEntry) ([]byte, bool) {
+	if len(entry.Value) > math.MaxInt-8 {
+		return nil, false
+	}
+	encoded := make([]byte, 8+len(entry.Value))
+	binary.BigEndian.PutUint64(encoded[:8], uint64(entry.ExpiresAt))
+	copy(encoded[8:], entry.Value)
+	return encoded, true
 }
 
 // Close stops the background flusher, flushes pending writes, and closes the database.

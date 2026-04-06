@@ -330,6 +330,125 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 
 // translateLabelFilter handles label comparison filters.
 func translateLabelFilter(stage string, labelFn LabelTranslateFunc) string {
+	if chained, ok := translateLogicalLabelFilterChain(stage, labelFn); ok {
+		return chained
+	}
+
+	if translated, ok := translateSingleLabelFilter(stage, labelFn); ok {
+		return translated
+	}
+
+	// Unknown stage — pass through as-is with pipe
+	return "| " + stage
+}
+
+func translateLogicalLabelFilterChain(stage string, labelFn LabelTranslateFunc) (string, bool) {
+	parts, ops, ok := splitLogicalStage(stage)
+	if !ok || len(parts) < 2 {
+		return "", false
+	}
+
+	translated := make([]string, 0, len(parts))
+	for _, part := range parts {
+		item, ok := translateSingleLabelFilter(part, labelFn)
+		if !ok {
+			return "", false
+		}
+		translated = append(translated, item)
+	}
+
+	var b strings.Builder
+	b.WriteString("(")
+	for i, item := range translated {
+		if i > 0 {
+			b.WriteByte(' ')
+			b.WriteString(ops[i-1])
+			b.WriteByte(' ')
+		}
+		b.WriteString(item)
+	}
+	b.WriteString(")")
+	return b.String(), true
+}
+
+func splitLogicalStage(stage string) ([]string, []string, bool) {
+	var (
+		parts   []string
+		ops     []string
+		start   int
+		depth   int
+		inQuote rune
+	)
+
+	flush := func(end int) bool {
+		part := strings.TrimSpace(stage[start:end])
+		if part == "" {
+			return false
+		}
+		parts = append(parts, part)
+		start = end
+		return true
+	}
+
+	for i := 0; i < len(stage); i++ {
+		ch := rune(stage[i])
+		if inQuote != 0 {
+			if ch == '\\' {
+				i++
+				continue
+			}
+			if ch == inQuote {
+				inQuote = 0
+			}
+			continue
+		}
+
+		switch ch {
+		case '"', '`':
+			inQuote = ch
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		}
+		if depth != 0 {
+			continue
+		}
+
+		if strings.HasPrefix(stage[i:], " or ") {
+			if !flush(i) {
+				return nil, nil, false
+			}
+			ops = append(ops, "or")
+			i += len(" or ") - 1
+			start = i + 1
+			continue
+		}
+		if strings.HasPrefix(stage[i:], " and ") {
+			if !flush(i) {
+				return nil, nil, false
+			}
+			ops = append(ops, "and")
+			i += len(" and ") - 1
+			start = i + 1
+			continue
+		}
+	}
+
+	last := strings.TrimSpace(stage[start:])
+	if last == "" {
+		return nil, nil, false
+	}
+	parts = append(parts, last)
+	if len(parts) != len(ops)+1 {
+		return nil, nil, false
+	}
+	return parts, ops, len(parts) > 1
+}
+
+func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (string, bool) {
 	// Try: label == "value", label = "value", label != "value",
 	//      label =~ "value", label !~ "value", label > value, etc.
 	ops := []struct {
@@ -353,34 +472,37 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc) string {
 		if idx > 0 {
 			label := strings.TrimSpace(stage[:idx])
 			value := strings.TrimSpace(stage[idx+len(op.logql):])
-			value = strings.Trim(value, "\"`")
+			if label == "detected_level" {
+				label = "level"
+			}
 			if labelFn != nil {
 				label = labelFn(label)
 			}
+
+			value = strings.Trim(value, "\"`")
 			label = quoteLogsQLFieldNameIfNeeded(label)
 
 			if op.isRe {
 				// Regex values need quotes in VL
 				if strings.HasPrefix(op.logsql, "-") {
-					return fmt.Sprintf(`-%s%s"%s"`, label, op.logsql[1:], value)
+					return fmt.Sprintf(`-%s%s"%s"`, label, op.logsql[1:], value), true
 				}
-				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value)
+				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value), true
 			}
 			if value == "" {
 				if strings.HasPrefix(op.logsql, "-") {
-					return fmt.Sprintf(`%s:!""`, label)
+					return fmt.Sprintf(`%s:!""`, label), true
 				}
-				return fmt.Sprintf(`%s:=""`, label)
+				return fmt.Sprintf(`%s:=""`, label), true
 			}
 			if strings.HasPrefix(op.logsql, "-") {
-				return fmt.Sprintf("-%s%s%s", label, op.logsql[1:], value)
+				return fmt.Sprintf("-%s%s%s", label, op.logsql[1:], value), true
 			}
-			return fmt.Sprintf("%s%s%s", label, op.logsql, value)
+			return fmt.Sprintf("%s%s%s", label, op.logsql, value), true
 		}
 	}
 
-	// Unknown stage — pass through as-is with pipe
-	return "| " + stage
+	return "", false
 }
 
 func quoteLogsQLFieldNameIfNeeded(label string) string {

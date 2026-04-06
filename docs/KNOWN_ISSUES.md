@@ -1,6 +1,6 @@
 # Known Issues & VL Compatibility Gaps
 
-Last updated: v0.26.0
+Last updated: v0.26.1
 
 ## Remaining Behavioral Differences
 
@@ -19,29 +19,8 @@ The proxy now supports datasource-facing headers, cookie forwarding, backend tim
 
 | Area | Current State |
 |---|---|
-| Alerting / ruler APIs | `/rules` and `/alerts` are compatibility stubs only, not a full Loki ruler implementation |
+| Alerting / ruler APIs | Read-path compatibility covers legacy Loki YAML rules routes plus Prometheus-style JSON rules and alerts, but Loki ruler write APIs and full rule lifecycle semantics are still incomplete |
 | Browser-origin tailing | `/loki/api/v1/tail` rejects browser `Origin` headers unless explicitly allowlisted via `-tail.allowed-origins` |
-
-## Release Automation Gaps
-
-The project now uses PR-based release automation:
-
-`main merge -> Auto Release -> release/vX.Y.Z PR -> auto-merge -> tag -> GitHub release`
-
-The remaining limitation is repository signature policy:
-
-| Area | Current State |
-|---|---|
-| Automated release commit signatures | Release PR commits created by `github-actions[bot]` are still unsigned unless workflow signing is configured |
-| Fully automatic release PR merge under required signatures | Requires either workflow commit signing or a repo ruleset exception for release automation |
-
-The workflow already handles:
-
-- changelog-backed release PR bodies
-- changelog-backed GitHub release notes
-- lightweight release-PR validation dispatch
-- Helm chart version bumps
-- binary, Helm package, and container-image publishing after tag creation
 
 ## Data Model Differences
 
@@ -78,7 +57,7 @@ These were previously listed as gaps and have been resolved:
 - ~~`absent_over_time()`~~ -> Fixed: mapped to `count()`
 - ~~Binary metric expressions~~ -> Fixed: proxy-side evaluation
 - ~~`quantile_over_time()`~~ -> Fixed: mapped to VL `quantile(phi, field)`
-- ~~Admin endpoints (`/rules`, `/alerts`)~~ -> Partially fixed: datasource-compatible stubs exist, but full ruler semantics remain a roadmap item
+- ~~Admin endpoints (`/rules`, `/alerts`)~~ -> Partially fixed: read-path compatibility exists for legacy Loki YAML rules plus Prometheus-style JSON rules and alerts, but full ruler write semantics remain a roadmap item
 - ~~Coalescer cross-tenant data leak~~ -> Fixed: tenant included in coalescing key
 - ~~Stats detection false-positive~~ -> Fixed: quote-aware parsing
 - ~~Metrics always recording 200~~ -> Fixed: actual status code captured

@@ -148,7 +148,7 @@ func TestFeature_Multitenancy_DefaultTenantBypassUsesVLGlobalTenantWithoutMappin
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("limit", "10")
 
-	for _, orgID := range []string{"0", "*"} {
+	for _, orgID := range []string{"0", "fake", "default", "*"} {
 		req, _ := http.NewRequest("GET", proxyURL+"/loki/api/v1/query_range?"+params.Encode(), nil)
 		req.Header.Set("X-Scope-OrgID", orgID)
 		resp, err := http.DefaultClient.Do(req)
@@ -177,6 +177,176 @@ func TestFeature_Multitenancy_DefaultTenantBypassUsesVLGlobalTenantWithoutMappin
 	}
 
 	score.report(t)
+}
+
+func TestFeature_Multitenancy_QueryEndpointsSupportExplicitMultiTenantFanout(t *testing.T) {
+	score := &CompatScore{}
+
+	params := url.Values{}
+	params.Set("query", `{app="api-gateway"}`)
+	params.Set("start", fmt.Sprintf("%d", time.Now().Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", time.Now().UnixNano()))
+	params.Set("limit", "10")
+
+	req, _ := http.NewRequest("GET", proxyURL+"/loki/api/v1/query_range?"+params.Encode(), nil)
+	req.Header.Set("X-Scope-OrgID", "0|fake")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		score.fail("multitenancy", "multi-tenant query_range request failed: "+err.Error())
+		score.report(t)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		score.fail("multitenancy", fmt.Sprintf("expected 200 for multi-tenant query_range, got %d", resp.StatusCode))
+		score.report(t)
+		return
+	}
+
+	var decoded struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Stream map[string]string `json:"stream"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		score.fail("multitenancy", "failed to decode multi-tenant query_range response: "+err.Error())
+		score.report(t)
+		return
+	}
+	if decoded.Status == "success" && decoded.Data.ResultType == "streams" {
+		score.pass("multitenancy", "multi-tenant query_range returns Loki streams response")
+	} else {
+		score.fail("multitenancy", fmt.Sprintf("unexpected multi-tenant response shape: status=%q resultType=%q", decoded.Status, decoded.Data.ResultType))
+	}
+
+	seenTenantLabel := false
+	for _, item := range decoded.Data.Result {
+		if item.Stream["__tenant_id__"] != "" {
+			seenTenantLabel = true
+			break
+		}
+	}
+	if seenTenantLabel {
+		score.pass("multitenancy", "multi-tenant query_range injects __tenant_id__ label")
+	} else {
+		score.fail("multitenancy", "multi-tenant query_range missing __tenant_id__ label")
+	}
+
+	filterParams := url.Values{}
+	filterParams.Set("query", `{app="api-gateway",__tenant_id__="fake"}`)
+	filterParams.Set("start", params.Get("start"))
+	filterParams.Set("end", params.Get("end"))
+	filterParams.Set("limit", "10")
+	filterReq, _ := http.NewRequest("GET", proxyURL+"/loki/api/v1/query_range?"+filterParams.Encode(), nil)
+	filterReq.Header.Set("X-Scope-OrgID", "0|fake")
+	filterResp, err := http.DefaultClient.Do(filterReq)
+	if err != nil {
+		score.fail("multitenancy", "tenant-filtered query_range request failed: "+err.Error())
+	} else {
+		defer filterResp.Body.Close()
+		var filtered struct {
+			Data struct {
+				Result []struct {
+					Stream map[string]string `json:"stream"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if err := json.NewDecoder(filterResp.Body).Decode(&filtered); err != nil {
+			score.fail("multitenancy", "failed to decode tenant-filtered query_range response: "+err.Error())
+		} else if len(filtered.Data.Result) > 0 && filtered.Data.Result[0].Stream["__tenant_id__"] == "fake" {
+			score.pass("multitenancy", "__tenant_id__ selector narrows multi-tenant fanout")
+		} else {
+			score.fail("multitenancy", fmt.Sprintf("expected __tenant_id__ filter to narrow to fake, got %+v", filtered.Data.Result))
+		}
+	}
+
+	labelResp := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/label/__tenant_id__/values", map[string]string{"X-Scope-OrgID": "0|fake"})
+	values, _ := labelResp["data"].([]interface{})
+	if len(values) == 2 {
+		score.pass("multitenancy", "__tenant_id__ label values reflect requested tenants")
+	} else {
+		score.fail("multitenancy", fmt.Sprintf("expected __tenant_id__ values for 2 tenants, got %v", labelResp))
+	}
+
+	tailReq, _ := http.NewRequest("GET", proxyURL+"/loki/api/v1/tail?query=%7Bapp%3D%22api-gateway%22%7D", nil)
+	tailReq.Header.Set("X-Scope-OrgID", "0|fake")
+	tailResp, err := http.DefaultClient.Do(tailReq)
+	if err != nil {
+		score.fail("multitenancy", "multi-tenant tail request failed: "+err.Error())
+	} else {
+		defer tailResp.Body.Close()
+		if tailResp.StatusCode == http.StatusBadRequest {
+			score.pass("multitenancy", "tail rejects multi-tenant headers like upstream Loki")
+		} else {
+			score.fail("multitenancy", fmt.Sprintf("expected tail multi-tenant rejection, got %d", tailResp.StatusCode))
+		}
+	}
+
+	score.report(t)
+}
+
+func TestFeature_Multitenancy_FilteredLabelsSeriesAndDetectedFields(t *testing.T) {
+	ensureDataIngested(t)
+	headers := map[string]string{"X-Scope-OrgID": "0|fake"}
+	now := time.Now()
+	start := fmt.Sprintf("%d", now.Add(-15*time.Minute).UnixNano())
+	end := fmt.Sprintf("%d", now.UnixNano())
+
+	labelsResp := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/labels", headers)
+	data := extractArray(labelsResp, "data")
+	if len(data) == 0 {
+		t.Fatalf("expected labels for multi-tenant request, got %v", labelsResp)
+	}
+	foundTenantID := false
+	for _, item := range data {
+		if item == "__tenant_id__" {
+			foundTenantID = true
+			break
+		}
+	}
+	if !foundTenantID {
+		t.Fatalf("expected synthetic __tenant_id__ in labels response, got %v", labelsResp)
+	}
+
+	seriesParams := url.Values{}
+	seriesParams.Add("match[]", `{app="api-gateway",__tenant_id__="fake"}`)
+	seriesResp := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/series?"+seriesParams.Encode(), headers)
+	series := extractArray(seriesResp, "data")
+	if len(series) == 0 {
+		t.Fatalf("expected series data for multi-tenant filtered request, got %v", seriesResp)
+	}
+	for _, item := range series {
+		labels, _ := item.(map[string]interface{})
+		if labels["__tenant_id__"] != "fake" {
+			t.Fatalf("expected series __tenant_id__=fake, got %v", item)
+		}
+	}
+
+	singleFields := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/detected_fields?query="+url.QueryEscape(`{app="api-gateway"}`)+"&start="+start+"&end="+end, map[string]string{"X-Scope-OrgID": "0"})
+	multiFields := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/detected_fields?query="+url.QueryEscape(`{app="api-gateway"}`)+"&start="+start+"&end="+end, headers)
+	singleFieldItems := extractArray(singleFields, "fields")
+	multiFieldItems := extractArray(multiFields, "fields")
+	if len(singleFieldItems) == 0 || len(multiFieldItems) == 0 {
+		t.Fatalf("expected detected_fields data in both single and multi tenant responses, single=%v multi=%v", singleFields, multiFields)
+	}
+	singleCards := map[string]float64{}
+	for _, item := range singleFieldItems {
+		field := item.(map[string]interface{})
+		singleCards[field["label"].(string)], _ = field["cardinality"].(float64)
+	}
+	for _, item := range multiFieldItems {
+		field := item.(map[string]interface{})
+		label := field["label"].(string)
+		if label == "method" || label == "status" || label == "path" {
+			if field["cardinality"] != singleCards[label] {
+				t.Fatalf("expected exact union cardinality for %s, single=%v multi=%v", label, singleCards[label], field["cardinality"])
+			}
+		}
+	}
 }
 
 func TestFeature_AdminDebugEndpoints_DefaultClosed(t *testing.T) {
@@ -443,6 +613,60 @@ func TestEdge_CombinedFilterTypes(t *testing.T) {
 	}
 
 	score.report(t)
+}
+
+func TestFeature_DrilldownClusterLevelOrFilters(t *testing.T) {
+	score := &CompatScore{}
+
+	query := `{cluster="us-east-1"} | detected_level="error" or detected_level="info" or detected_level="warn" | json | logfmt | drop __error__, __error_details__`
+
+	proxyResult := queryProxy(t, query)
+	lokiResult := queryLoki(t, query)
+
+	if checkStatus(proxyResult) {
+		score.pass("drilldown_level_filters", "proxy returns success")
+	} else {
+		score.fail("drilldown_level_filters", fmt.Sprintf("proxy error: %v", proxyResult))
+	}
+
+	if checkStatus(lokiResult) {
+		score.pass("drilldown_level_filters", "loki returns success")
+	} else {
+		score.fail("drilldown_level_filters", fmt.Sprintf("loki error: %v", lokiResult))
+	}
+
+	proxyLines := countLogLines(proxyResult)
+	lokiLines := countLogLines(lokiResult)
+	if proxyLines > 0 {
+		score.pass("drilldown_level_filters", fmt.Sprintf("proxy returns %d lines", proxyLines))
+	} else {
+		score.fail("drilldown_level_filters", "proxy returned no log lines")
+	}
+	if lokiLines == proxyLines {
+		score.pass("drilldown_level_filters", fmt.Sprintf("line count matches Loki (%d)", proxyLines))
+	} else {
+		score.fail("drilldown_level_filters", fmt.Sprintf("line count mismatch: loki=%d proxy=%d", lokiLines, proxyLines))
+	}
+
+	score.report(t)
+}
+
+func TestFeature_MultitenantDrilldownClusterLevelOrFilters(t *testing.T) {
+	headers := map[string]string{"X-Scope-OrgID": "0|fake"}
+	now := time.Now()
+	params := url.Values{}
+	params.Set("query", `{cluster="us-east-1"} | detected_level="error" or detected_level="info" or detected_level="warn" | json | logfmt | drop __error__, __error_details__`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-3*time.Hour).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("limit", "1000")
+
+	resp := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode(), headers)
+	if !checkStatus(resp) {
+		t.Fatalf("expected multitenant drilldown level filters to succeed, got %v", resp)
+	}
+	if lines := countLogLines(resp); lines == 0 {
+		t.Fatalf("expected multitenant drilldown level filters to return logs, got %v", resp)
+	}
 }
 
 // =============================================================================
@@ -753,6 +977,52 @@ func TestFeature_QueryRange_vs_Query_Consistency(t *testing.T) {
 	}
 	if instantData["resultType"] == "streams" {
 		score.pass("consistency", "query returns streams")
+	}
+
+	score.report(t)
+}
+
+func TestFeature_InstantVectorExpression_Compatibility(t *testing.T) {
+	score := &CompatScore{}
+	params := url.Values{}
+	params.Set("query", `vector(1)+vector(1)`)
+	params.Set("time", "4")
+
+	lokiResult := getJSON(t, lokiURL+"/loki/api/v1/query?"+params.Encode())
+	proxyResult := getJSON(t, proxyURL+"/loki/api/v1/query?"+params.Encode())
+
+	if checkStatus(proxyResult) && checkStatus(lokiResult) {
+		score.pass("instant_vector", "both instant queries return success")
+	} else {
+		score.fail("instant_vector", "instant vector query failed")
+		score.report(t)
+		return
+	}
+
+	lokiData, _ := lokiResult["data"].(map[string]interface{})
+	proxyData, _ := proxyResult["data"].(map[string]interface{})
+	if proxyData["resultType"] == "vector" && lokiData["resultType"] == "vector" {
+		score.pass("instant_vector", "resultType=vector parity")
+	} else {
+		score.fail("instant_vector", fmt.Sprintf("resultType mismatch loki=%v proxy=%v", lokiData["resultType"], proxyData["resultType"]))
+	}
+
+	lokiSamples, _ := lokiData["result"].([]interface{})
+	proxySamples, _ := proxyData["result"].([]interface{})
+	if len(lokiSamples) == 1 && len(proxySamples) == 1 {
+		score.pass("instant_vector", "single sample parity")
+	} else {
+		score.fail("instant_vector", fmt.Sprintf("sample count mismatch loki=%d proxy=%d", len(lokiSamples), len(proxySamples)))
+	}
+
+	if len(proxySamples) == 1 {
+		sample, _ := proxySamples[0].(map[string]interface{})
+		value, _ := sample["value"].([]interface{})
+		if len(value) == 2 && value[1] == "2" {
+			score.pass("instant_vector", "proxy returns computed value 2")
+		} else {
+			score.fail("instant_vector", fmt.Sprintf("unexpected proxy sample value %v", value))
+		}
 	}
 
 	score.report(t)

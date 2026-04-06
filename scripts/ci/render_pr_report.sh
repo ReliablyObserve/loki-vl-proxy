@@ -71,12 +71,24 @@ HEAD_QUERY_BYTES="$(json_field "$HEAD_JSON" '.performance.benchmarks.query_range
 BASE_QUERY_BYTES="$(json_field "$BASE_JSON" '.performance.benchmarks.query_range_cache_hit_bytes_per_op')"
 HEAD_QUERY_ALLOCS="$(json_field "$HEAD_JSON" '.performance.benchmarks.query_range_cache_hit_allocs_per_op')"
 BASE_QUERY_ALLOCS="$(json_field "$BASE_JSON" '.performance.benchmarks.query_range_cache_hit_allocs_per_op')"
+HEAD_QUERY_BYPASS_NS="$(json_field "$HEAD_JSON" '.performance.benchmarks.query_range_cache_bypass_ns_per_op')"
+BASE_QUERY_BYPASS_NS="$(json_field "$BASE_JSON" '.performance.benchmarks.query_range_cache_bypass_ns_per_op')"
+HEAD_QUERY_BYPASS_BYTES="$(json_field "$HEAD_JSON" '.performance.benchmarks.query_range_cache_bypass_bytes_per_op')"
+BASE_QUERY_BYPASS_BYTES="$(json_field "$BASE_JSON" '.performance.benchmarks.query_range_cache_bypass_bytes_per_op')"
+HEAD_QUERY_BYPASS_ALLOCS="$(json_field "$HEAD_JSON" '.performance.benchmarks.query_range_cache_bypass_allocs_per_op')"
+BASE_QUERY_BYPASS_ALLOCS="$(json_field "$BASE_JSON" '.performance.benchmarks.query_range_cache_bypass_allocs_per_op')"
 HEAD_LABELS_NS="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_hit_ns_per_op')"
 BASE_LABELS_NS="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_hit_ns_per_op')"
 HEAD_LABELS_BYTES="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_hit_bytes_per_op')"
 BASE_LABELS_BYTES="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_hit_bytes_per_op')"
 HEAD_LABELS_ALLOCS="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_hit_allocs_per_op')"
 BASE_LABELS_ALLOCS="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_hit_allocs_per_op')"
+HEAD_LABELS_BYPASS_NS="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_bypass_ns_per_op')"
+BASE_LABELS_BYPASS_NS="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_bypass_ns_per_op')"
+HEAD_LABELS_BYPASS_BYTES="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_bypass_bytes_per_op')"
+BASE_LABELS_BYPASS_BYTES="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_bypass_bytes_per_op')"
+HEAD_LABELS_BYPASS_ALLOCS="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_bypass_allocs_per_op')"
+BASE_LABELS_BYPASS_ALLOCS="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_bypass_allocs_per_op')"
 HEAD_THROUGHPUT="$(json_field "$HEAD_JSON" '.performance.load.high_concurrency_req_per_s')"
 BASE_THROUGHPUT="$(json_field "$BASE_JSON" '.performance.load.high_concurrency_req_per_s')"
 HEAD_MEM_GROWTH="$(json_field "$HEAD_JSON" '.performance.load.high_concurrency_memory_growth_mb')"
@@ -89,9 +101,15 @@ VL_DELTA="$(format_delta "$HEAD_VL_PCT" "$BASE_VL_PCT" higher)"
 QUERY_DELTA="$(format_delta "$HEAD_QUERY_NS" "$BASE_QUERY_NS" lower)"
 QUERY_BYTES_DELTA="$(format_delta "$HEAD_QUERY_BYTES" "$BASE_QUERY_BYTES" lower)"
 QUERY_ALLOCS_DELTA="$(format_delta "$HEAD_QUERY_ALLOCS" "$BASE_QUERY_ALLOCS" lower)"
+QUERY_BYPASS_DELTA="$(format_delta "$HEAD_QUERY_BYPASS_NS" "$BASE_QUERY_BYPASS_NS" lower)"
+QUERY_BYPASS_BYTES_DELTA="$(format_delta "$HEAD_QUERY_BYPASS_BYTES" "$BASE_QUERY_BYPASS_BYTES" lower)"
+QUERY_BYPASS_ALLOCS_DELTA="$(format_delta "$HEAD_QUERY_BYPASS_ALLOCS" "$BASE_QUERY_BYPASS_ALLOCS" lower)"
 LABELS_DELTA="$(format_delta "$HEAD_LABELS_NS" "$BASE_LABELS_NS" lower)"
 LABELS_BYTES_DELTA="$(format_delta "$HEAD_LABELS_BYTES" "$BASE_LABELS_BYTES" lower)"
 LABELS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_ALLOCS" "$BASE_LABELS_ALLOCS" lower)"
+LABELS_BYPASS_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_NS" "$BASE_LABELS_BYPASS_NS" lower)"
+LABELS_BYPASS_BYTES_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_BYTES" "$BASE_LABELS_BYPASS_BYTES" lower)"
+LABELS_BYPASS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_ALLOCS" "$BASE_LABELS_BYPASS_ALLOCS" lower)"
 THROUGHPUT_DELTA="$(format_delta "$HEAD_THROUGHPUT" "$BASE_THROUGHPUT" higher)"
 MEMORY_DELTA="$(format_delta "$HEAD_MEM_GROWTH" "$BASE_MEM_GROWTH" lower)"
 
@@ -125,9 +143,15 @@ Lower CPU cost (\`ns/op\`) is better. Lower benchmark memory cost (\`B/op\`, \`a
 | QueryRange cache-hit CPU cost | ${BASE_QUERY_NS} ns/op | ${HEAD_QUERY_NS} ns/op | ${QUERY_DELTA} |
 | QueryRange cache-hit memory | ${BASE_QUERY_BYTES} B/op | ${HEAD_QUERY_BYTES} B/op | ${QUERY_BYTES_DELTA} |
 | QueryRange cache-hit allocations | ${BASE_QUERY_ALLOCS} allocs/op | ${HEAD_QUERY_ALLOCS} allocs/op | ${QUERY_ALLOCS_DELTA} |
+| QueryRange cache-bypass CPU cost | ${BASE_QUERY_BYPASS_NS} ns/op | ${HEAD_QUERY_BYPASS_NS} ns/op | ${QUERY_BYPASS_DELTA} |
+| QueryRange cache-bypass memory | ${BASE_QUERY_BYPASS_BYTES} B/op | ${HEAD_QUERY_BYPASS_BYTES} B/op | ${QUERY_BYPASS_BYTES_DELTA} |
+| QueryRange cache-bypass allocations | ${BASE_QUERY_BYPASS_ALLOCS} allocs/op | ${HEAD_QUERY_BYPASS_ALLOCS} allocs/op | ${QUERY_BYPASS_ALLOCS_DELTA} |
 | Labels cache-hit CPU cost | ${BASE_LABELS_NS} ns/op | ${HEAD_LABELS_NS} ns/op | ${LABELS_DELTA} |
 | Labels cache-hit memory | ${BASE_LABELS_BYTES} B/op | ${HEAD_LABELS_BYTES} B/op | ${LABELS_BYTES_DELTA} |
 | Labels cache-hit allocations | ${BASE_LABELS_ALLOCS} allocs/op | ${HEAD_LABELS_ALLOCS} allocs/op | ${LABELS_ALLOCS_DELTA} |
+| Labels cache-bypass CPU cost | ${BASE_LABELS_BYPASS_NS} ns/op | ${HEAD_LABELS_BYPASS_NS} ns/op | ${LABELS_BYPASS_DELTA} |
+| Labels cache-bypass memory | ${BASE_LABELS_BYPASS_BYTES} B/op | ${HEAD_LABELS_BYPASS_BYTES} B/op | ${LABELS_BYPASS_BYTES_DELTA} |
+| Labels cache-bypass allocations | ${BASE_LABELS_BYPASS_ALLOCS} allocs/op | ${HEAD_LABELS_BYPASS_ALLOCS} allocs/op | ${LABELS_BYPASS_ALLOCS_DELTA} |
 | High-concurrency throughput | ${BASE_THROUGHPUT} req/s | ${HEAD_THROUGHPUT} req/s | ${THROUGHPUT_DELTA} |
 | High-concurrency memory growth | ${BASE_MEM_GROWTH} MB | ${HEAD_MEM_GROWTH} MB | ${MEMORY_DELTA} |
 

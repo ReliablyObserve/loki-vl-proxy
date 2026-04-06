@@ -17,6 +17,7 @@ import (
 	_ "net/http/pprof"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 	"github.com/szibis/Loki-VL-proxy/internal/metrics"
 	mw "github.com/szibis/Loki-VL-proxy/internal/middleware"
 	"github.com/szibis/Loki-VL-proxy/internal/translator"
+	"gopkg.in/yaml.v3"
 )
 
 // jsonBufPool pools bytes.Buffer for JSON encoding to reduce allocations.
@@ -96,6 +98,8 @@ type TenantMapping struct {
 
 type Config struct {
 	BackendURL        string
+	RulerBackendURL   string
+	AlertsBackendURL  string
 	Cache             *cache.Cache
 	LogLevel          string
 	MaxConcurrent     int                      // max concurrent backend queries (0=unlimited)
@@ -174,6 +178,8 @@ var CacheTTLs = map[string]time.Duration{
 
 type Proxy struct {
 	backend                  *url.URL
+	rulerBackend             *url.URL
+	alertsBackend            *url.URL
 	client                   *http.Client
 	tailClient               *http.Client
 	cache                    *cache.Cache
@@ -210,6 +216,20 @@ func New(cfg Config) (*Proxy, error) {
 	u, err := url.Parse(cfg.BackendURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL: %w", err)
+	}
+	var rulerURL *url.URL
+	if strings.TrimSpace(cfg.RulerBackendURL) != "" {
+		rulerURL, err = url.Parse(cfg.RulerBackendURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ruler backend URL: %w", err)
+		}
+	}
+	var alertsURL *url.URL
+	if strings.TrimSpace(cfg.AlertsBackendURL) != "" {
+		alertsURL, err = url.Parse(cfg.AlertsBackendURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid alerts backend URL: %w", err)
+		}
 	}
 
 	level := slog.LevelInfo
@@ -304,7 +324,9 @@ func New(cfg Config) (*Proxy, error) {
 	metadataFieldMode := normalizeMetadataFieldMode(cfg.MetadataFieldMode)
 
 	return &Proxy{
-		backend: u,
+		backend:       u,
+		rulerBackend:  rulerURL,
+		alertsBackend: alertsURL,
 		client: &http.Client{
 			Timeout:   backendTimeout,
 			Transport: transport,
@@ -409,24 +431,36 @@ func (p *Proxy) validateTenantHeader(r *http.Request) error {
 		return nil
 	}
 	if strings.Contains(orgID, "|") {
-		return &requestPolicyError{
-			status: http.StatusBadRequest,
-			msg:    "multi-tenant X-Scope-OrgID values are not supported by this proxy",
+		if !isMultiTenantQueryPath(r.URL.Path) {
+			return &requestPolicyError{
+				status: http.StatusBadRequest,
+				msg:    "multi-tenant X-Scope-OrgID values are only supported on query endpoints",
+			}
 		}
-	}
-	if orgID == "*" || orgID == "0" {
-		if p.globalTenantAllowed() {
-			return nil
+		tenantIDs := splitMultiTenantOrgIDs(orgID)
+		if len(tenantIDs) < 2 {
+			return &requestPolicyError{
+				status: http.StatusBadRequest,
+				msg:    "multi-tenant X-Scope-OrgID must include at least two tenant IDs",
+			}
 		}
-		return &requestPolicyError{
-			status: http.StatusForbidden,
-			msg:    `global tenant bypass ("*" or "0") is disabled`,
+		for _, tenantID := range tenantIDs {
+			if tenantID == "*" {
+				return &requestPolicyError{
+					status: http.StatusBadRequest,
+					msg:    `wildcard "*" is not supported inside multi-tenant X-Scope-OrgID values`,
+				}
+			}
+			if err := p.validateSingleTenantOrgID(tenantID); err != nil {
+				return err
+			}
 		}
-	}
-	if _, err := strconv.Atoi(orgID); err == nil {
 		return nil
 	}
+	return p.validateSingleTenantOrgID(orgID)
+}
 
+func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
 	p.configMu.RLock()
 	_, ok := p.tenantMap[orgID]
 	p.configMu.RUnlock()
@@ -434,9 +468,87 @@ func (p *Proxy) validateTenantHeader(r *http.Request) error {
 		return nil
 	}
 
+	if isDefaultTenantAlias(orgID) {
+		return nil
+	}
+	if orgID == "*" {
+		if p.globalTenantAllowed() {
+			return nil
+		}
+		return &requestPolicyError{
+			status: http.StatusForbidden,
+			msg:    `global tenant bypass ("*") is disabled`,
+		}
+	}
+	if _, err := strconv.Atoi(orgID); err == nil {
+		return nil
+	}
+
 	return &requestPolicyError{
 		status: http.StatusForbidden,
 		msg:    fmt.Sprintf("unknown tenant %q", orgID),
+	}
+}
+
+func splitMultiTenantOrgIDs(orgID string) []string {
+	parts := strings.Split(orgID, "|")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		out = append(out, part)
+	}
+	return out
+}
+
+func hasMultiTenantOrgID(orgID string) bool {
+	return strings.IndexByte(orgID, '|') >= 0
+}
+
+func isMultiTenantQueryPath(path string) bool {
+	switch {
+	case path == "/loki/api/v1/query":
+		return true
+	case path == "/loki/api/v1/query_range":
+		return true
+	case path == "/loki/api/v1/series":
+		return true
+	case path == "/loki/api/v1/labels":
+		return true
+	case strings.HasPrefix(path, "/loki/api/v1/label/"):
+		return true
+	case path == "/loki/api/v1/index/stats":
+		return true
+	case path == "/loki/api/v1/index/volume":
+		return true
+	case path == "/loki/api/v1/index/volume_range":
+		return true
+	case path == "/loki/api/v1/detected_fields":
+		return true
+	case strings.HasPrefix(path, "/loki/api/v1/detected_field/"):
+		return true
+	case path == "/loki/api/v1/detected_labels":
+		return true
+	case path == "/loki/api/v1/patterns":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDefaultTenantAlias(orgID string) bool {
+	switch orgID {
+	case "0", "fake", "default":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -545,6 +657,9 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	rl := func(endpoint string, h http.HandlerFunc) http.Handler {
 		return securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, h))))
 	}
+	rlNoTenant := func(endpoint string, h http.HandlerFunc) http.Handler {
+		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, h)))
+	}
 
 	// Loki API endpoints — data queries are rate-limited
 	mux.Handle("/loki/api/v1/query_range", rl("query_range", p.handleQueryRange))
@@ -567,7 +682,7 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	// Read-only API additions
 	mux.Handle("/loki/api/v1/format_query", rl("format_query", p.handleFormatQuery))
 	mux.Handle("/loki/api/v1/detected_labels", rl("detected_labels", p.handleDetectedLabels))
-	mux.Handle("/loki/api/v1/drilldown-limits", rl("drilldown_limits", p.handleDrilldownLimits))
+	mux.Handle("/loki/api/v1/drilldown-limits", rlNoTenant("drilldown_limits", p.handleDrilldownLimits))
 
 	// Write endpoints — blocked (this is a read-only proxy)
 	mux.HandleFunc("/loki/api/v1/push", p.handleWriteBlocked)
@@ -575,11 +690,18 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	// Delete endpoint — exception to read-only with strict safeguards
 	mux.Handle("/loki/api/v1/delete", rl("delete", p.handleDelete))
 
-	// Admin endpoints — stubs for Grafana Alerting ruler mode compatibility
-	mux.HandleFunc("/loki/api/v1/rules", p.handleRulesStub)
-	mux.HandleFunc("/api/prom/rules", p.handleRulesStub)
-	mux.HandleFunc("/loki/api/v1/alerts", p.handleAlertsStub)
-	mux.HandleFunc("/api/prom/alerts", p.handleAlertsStub)
+	// Alerting / ruler read endpoints
+	alertRead := func(endpoint string, h http.HandlerFunc) http.Handler {
+		return securityHeaders(p.tenantMiddleware(p.requestLogger(endpoint, h)))
+	}
+	mux.Handle("/loki/api/v1/rules", alertRead("rules", p.handleRules))
+	mux.Handle("/loki/api/v1/rules/", alertRead("rules_nested", p.handleRules))
+	mux.Handle("/api/prom/rules", alertRead("rules_prom", p.handleRules))
+	mux.Handle("/api/prom/rules/", alertRead("rules_prom_nested", p.handleRules))
+	mux.Handle("/prometheus/api/v1/rules", alertRead("rules_prometheus", p.handleRules))
+	mux.Handle("/loki/api/v1/alerts", alertRead("alerts", p.handleAlerts))
+	mux.Handle("/api/prom/alerts", alertRead("alerts_prom", p.handleAlerts))
+	mux.Handle("/prometheus/api/v1/alerts", alertRead("alerts_prometheus", p.handleAlerts))
 	mux.HandleFunc("/config", p.handleConfigStub)
 
 	// Health / readiness — NOT rate-limited
@@ -662,6 +784,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if _, ok := p.validateQuery(w, logqlQuery, "query_range"); !ok {
 		return
 	}
+	if p.handleMultiTenantFanout(w, r, "query_range", p.handleQueryRange) {
+		return
+	}
 	cacheKey := ""
 	cacheable := !p.streamResponse
 	if cacheable {
@@ -739,14 +864,23 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
-	values := url.Values{}
-	values.Set("query", logqlQuery)
-	for _, key := range []string{"start", "end", "step", "limit", "direction"} {
-		if value := r.FormValue(key); value != "" {
-			values.Set(key, value)
+	rawQuery := r.URL.RawQuery
+	if rawQuery == "" {
+		var b strings.Builder
+		b.Grow(len(logqlQuery) + 64)
+		b.WriteString("query=")
+		b.WriteString(url.QueryEscape(logqlQuery))
+		for _, key := range []string{"start", "end", "step", "limit", "direction"} {
+			if value := r.FormValue(key); value != "" {
+				b.WriteByte('&')
+				b.WriteString(key)
+				b.WriteByte('=')
+				b.WriteString(url.QueryEscape(value))
+			}
 		}
+		rawQuery = b.String()
 	}
-	return "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + values.Encode()
+	return "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + rawQuery
 }
 
 // handleQuery translates Loki instant queries.
@@ -757,6 +891,18 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.log.Debug("query request", "logql", logqlQuery)
+
+	if body, ok := evaluateConstantInstantVectorQuery(logqlQuery, r.FormValue("time")); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+		elapsed := time.Since(start)
+		p.metrics.RecordRequest("query", http.StatusOK, elapsed)
+		p.queryTracker.Record("query", logqlQuery, elapsed, false)
+		return
+	}
+	if p.handleMultiTenantFanout(w, r, "query", p.handleQuery) {
+		return
+	}
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
@@ -802,11 +948,110 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	p.queryTracker.Record("query", logqlQuery, elapsed, sc.code >= 400)
 }
 
+var (
+	vectorLiteralRE = regexp.MustCompile(`^\s*vector\(\s*([^)]+?)\s*\)\s*$`)
+	vectorBinaryRE  = regexp.MustCompile(`^\s*vector\(\s*([^)]+?)\s*\)\s*([+\-*/])\s*vector\(\s*([^)]+?)\s*\)\s*$`)
+)
+
+func evaluateConstantInstantVectorQuery(expr, timeParam string) ([]byte, bool) {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return nil, false
+	}
+
+	if matches := vectorLiteralRE.FindStringSubmatch(expr); len(matches) == 2 {
+		value, err := strconv.ParseFloat(strings.TrimSpace(matches[1]), 64)
+		if err != nil {
+			return nil, false
+		}
+		return buildConstantVectorResponse(timeParam, value), true
+	}
+
+	if matches := vectorBinaryRE.FindStringSubmatch(expr); len(matches) == 4 {
+		left, err := strconv.ParseFloat(strings.TrimSpace(matches[1]), 64)
+		if err != nil {
+			return nil, false
+		}
+		right, err := strconv.ParseFloat(strings.TrimSpace(matches[3]), 64)
+		if err != nil {
+			return nil, false
+		}
+		value, ok := applyConstantBinaryOp(left, right, matches[2])
+		if !ok {
+			return nil, false
+		}
+		return buildConstantVectorResponse(timeParam, value), true
+	}
+
+	return nil, false
+}
+
+func buildConstantVectorResponse(timeParam string, value float64) []byte {
+	ts := parseInstantVectorTime(timeParam)
+	result, _ := json.Marshal(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "vector",
+			"result": []map[string]interface{}{
+				{
+					"metric": map[string]string{},
+					"value":  []interface{}{ts, strconv.FormatFloat(value, 'f', -1, 64)},
+				},
+			},
+			"stats": map[string]interface{}{},
+		},
+	})
+	return result
+}
+
+func parseInstantVectorTime(timeParam string) int64 {
+	if timeParam == "" {
+		return time.Now().UnixNano()
+	}
+	if t, err := time.Parse(time.RFC3339Nano, timeParam); err == nil {
+		return t.UnixNano()
+	}
+	if i, err := strconv.ParseInt(timeParam, 10, 64); err == nil {
+		if i < 1_000_000_000_000 {
+			return i * int64(time.Second)
+		}
+		return i
+	}
+	if f, err := strconv.ParseFloat(timeParam, 64); err == nil {
+		if f < 1_000_000_000_000 {
+			return int64(f * float64(time.Second))
+		}
+		return int64(f)
+	}
+	return time.Now().UnixNano()
+}
+
+func applyConstantBinaryOp(left, right float64, op string) (float64, bool) {
+	switch op {
+	case "+":
+		return left + right, true
+	case "-":
+		return left - right, true
+	case "*":
+		return left * right, true
+	case "/":
+		if right == 0 {
+			return 0, false
+		}
+		return left / right, true
+	default:
+		return 0, false
+	}
+}
+
 // handleLabels returns label names.
 // Loki: GET /loki/api/v1/labels?start=...&end=...
 // VL:   GET /select/logsql/field_names?query=*&start=...&end=...
 func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	if p.handleMultiTenantFanout(w, r, "labels", p.handleLabels) {
+		return
+	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := "labels:" + orgID + ":" + r.URL.RawQuery
 
@@ -824,7 +1069,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	params := url.Values{}
 	// Forward the query param if provided (Loki uses it to scope label suggestions)
 	if q := r.FormValue("query"); q != "" {
-		translated, terr := p.translateQuery(q)
+		translated, terr := p.translateQuery(defaultQuery(q))
 		if terr == nil {
 			params.Set("query", translated)
 		} else {
@@ -894,6 +1139,17 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	labelName := parts[5]
+	if strings.Contains(r.Header.Get("X-Scope-OrgID"), "|") && labelName == "__tenant_id__" {
+		values := splitMultiTenantOrgIDs(r.Header.Get("X-Scope-OrgID"))
+		result := lokiLabelsResponse(values)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(result)
+		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
+		return
+	}
+	if p.handleMultiTenantFanout(w, r, "label_values", p.handleLabelValues) {
+		return
+	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := "label_values:" + orgID + ":" + labelName + ":" + r.URL.RawQuery
 	if labelName == "service_name" {
@@ -925,7 +1181,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 
 	params := url.Values{}
 	if q := r.FormValue("query"); q != "" {
-		translated, terr := p.translateQuery(q)
+		translated, terr := p.translateQuery(defaultQuery(q))
 		if terr == nil {
 			params.Set("query", translated)
 		} else {
@@ -983,6 +1239,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 // VL:   GET /select/logsql/streams?query={...}&start=...&end=...
 func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	if p.handleMultiTenantFanout(w, r, "series", p.handleSeries) {
+		return
+	}
 	r = withOrgID(r)
 	matchQueries := r.Form["match[]"]
 	query := "*"
@@ -1053,6 +1312,9 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 // Response: {"streams":N, "chunks":N, "entries":N, "bytes":N}
 func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	if p.handleMultiTenantFanout(w, r, "index_stats", p.handleIndexStats) {
+		return
+	}
 	r = withOrgID(r)
 	query := r.FormValue("query")
 	if query == "" {
@@ -1105,6 +1367,9 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 // Response: {"status":"success","data":{"resultType":"vector","result":[{"metric":{...},"value":[ts,"count"]}]}}
 func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	if p.handleMultiTenantFanout(w, r, "volume", p.handleVolume) {
+		return
+	}
 	r = withOrgID(r)
 	query := r.FormValue("query")
 	if query == "" {
@@ -1167,6 +1432,9 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 // Response: {"status":"success","data":{"resultType":"matrix","result":[{"metric":{...},"values":[[ts,"count"],...]}]}}
 func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	if p.handleMultiTenantFanout(w, r, "volume_range", p.handleVolumeRange) {
+		return
+	}
 	r = withOrgID(r)
 	query := r.FormValue("query")
 	if query == "" {
@@ -1226,18 +1494,11 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 // handleDetectedFields returns detected field names.
 func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	if p.handleMultiTenantFanout(w, r, "detected_fields", p.handleDetectedFields) {
+		return
+	}
 	r = withOrgID(r)
-	lineLimit := 1000
-	if value := r.FormValue("line_limit"); value != "" {
-		if n, err := strconv.Atoi(value); err == nil && n > 0 {
-			lineLimit = n
-		}
-	}
-	if value := r.FormValue("limit"); value != "" {
-		if n, err := strconv.Atoi(value); err == nil && n > 0 {
-			lineLimit = n
-		}
-	}
+	lineLimit := parseDetectedLineLimit(r)
 	fields, _, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{
@@ -1263,6 +1524,9 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 // Response: {"values":["debug","info","warn","error"],"limit":1000}
 func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	if p.handleMultiTenantFanout(w, r, "detected_field_values", p.handleDetectedFieldValues) {
+		return
+	}
 	r = withOrgID(r)
 	// Extract field name from URL: /loki/api/v1/detected_field/{name}/values
 	path := r.URL.Path
@@ -1279,17 +1543,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	lineLimit := 1000
-	if value := r.FormValue("line_limit"); value != "" {
-		if n, err := strconv.Atoi(value); err == nil && n > 0 {
-			lineLimit = n
-		}
-	}
-	if value := r.FormValue("limit"); value != "" {
-		if n, err := strconv.Atoi(value); err == nil && n > 0 {
-			lineLimit = n
-		}
-	}
+	lineLimit := parseDetectedLineLimit(r)
 
 	_, fieldValues, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
@@ -1319,6 +1573,9 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 // handlePatterns returns log patterns for Grafana Logs Drilldown.
 func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	if p.handleMultiTenantFanout(w, r, "patterns", p.handlePatterns) {
+		return
+	}
 	r = withOrgID(r)
 	query := r.FormValue("query")
 	if strings.TrimSpace(query) == "" {
@@ -1345,6 +1602,13 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	params.Set("limit", "1000")
 
+	patternLimit := 50
+	if raw := strings.TrimSpace(r.FormValue("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			patternLimit = n
+		}
+	}
+
 	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{
@@ -1368,7 +1632,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
-		"data":   extractLogPatterns(body, r.FormValue("step")),
+		"data":   extractLogPatterns(body, r.FormValue("step"), patternLimit),
 	})
 	p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 }
@@ -1426,62 +1690,28 @@ func (p *Proxy) handleDrilldownLimits(w http.ResponseWriter, r *http.Request) {
 // handleDetectedLabels returns stream-level labels (similar to detected_fields but for stream labels).
 func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	if p.handleMultiTenantFanout(w, r, "detected_labels", p.handleDetectedLabels) {
+		return
+	}
 	r = withOrgID(r)
-	query := r.FormValue("query")
-	if query == "" {
-		query = "*"
-	}
-
-	logsqlQuery, err := p.translateQuery(query)
+	lineLimit := parseDetectedLineLimit(r)
+	detectedLabels, _, err := p.detectLabels(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{
 			"status":         "success",
 			"data":           []interface{}{},
 			"detectedLabels": []interface{}{},
+			"limit":          lineLimit,
 		})
 		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 		return
 	}
-
-	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time desc)")
-	if s := r.FormValue("start"); s != "" {
-		params.Set("start", formatVLTimestamp(s))
-	}
-	if e := r.FormValue("end"); e != "" {
-		params.Set("end", formatVLTimestamp(e))
-	}
-	params.Set("limit", "1000")
-
-	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
-	if err != nil {
-		p.writeJSON(w, map[string]interface{}{
-			"status":         "success",
-			"data":           []interface{}{},
-			"detectedLabels": []interface{}{},
-		})
-		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
-		return
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		p.writeJSON(w, map[string]interface{}{
-			"status":         "success",
-			"data":           []interface{}{},
-			"detectedLabels": []interface{}{},
-		})
-		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
-		return
-	}
-
-	detectedLabels, _ := scanDetectedLabels(body, p.labelTranslator)
 
 	p.writeJSON(w, map[string]interface{}{
 		"status":         "success",
 		"data":           detectedLabels,
 		"detectedLabels": detectedLabels,
+		"limit":          lineLimit,
 	})
 	p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 }
@@ -1985,8 +2215,7 @@ func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ready"))
 }
 
-// handleRulesStub returns an empty rules response for Grafana Alerting compatibility.
-func (p *Proxy) handleRulesStub(w http.ResponseWriter, r *http.Request) {
+func (p *Proxy) writeEmptyRules(w http.ResponseWriter) {
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
@@ -1995,14 +2224,47 @@ func (p *Proxy) handleRulesStub(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleAlertsStub returns an empty alerts response for Grafana Alerting compatibility.
-func (p *Proxy) handleAlertsStub(w http.ResponseWriter, r *http.Request) {
+func (p *Proxy) writeEmptyLegacyRules(w http.ResponseWriter) {
+	data, err := yaml.Marshal(map[string][]legacyRuleGroup{})
+	if err != nil {
+		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/yaml")
+	_, _ = w.Write(data)
+}
+
+func (p *Proxy) writeEmptyAlerts(w http.ResponseWriter) {
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
 			"alerts": []interface{}{},
 		},
 	})
+}
+
+func (p *Proxy) handleRules(w http.ResponseWriter, r *http.Request) {
+	if isLegacyRulesPath(r.URL.Path) {
+		if p.rulerBackend != nil {
+			p.handleLegacyRules(w, r)
+			return
+		}
+		p.writeEmptyLegacyRules(w)
+		return
+	}
+	if p.rulerBackend == nil {
+		p.writeEmptyRules(w)
+		return
+	}
+	p.proxyAlertingRead(w, r, p.rulerBackend, "/api/v1/rules")
+}
+
+func (p *Proxy) handleAlerts(w http.ResponseWriter, r *http.Request) {
+	if p.alertsBackend == nil {
+		p.writeEmptyAlerts(w)
+		return
+	}
+	p.proxyAlertingRead(w, r, p.alertsBackend, "/api/v1/alerts")
 }
 
 // handleConfigStub returns a minimal config response.
@@ -2025,6 +2287,213 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Backend request helpers ---
+
+func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backend *url.URL, path string) {
+	resp, err := p.alertingBackendGet(withOrgID(r), backend, path)
+	if err != nil {
+		p.writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	copyHeaders(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (p *Proxy) alertingBackendGet(r *http.Request, backend *url.URL, path string) (*http.Response, error) {
+	return p.alertingBackendGetWithParams(r, backend, path, r.URL.Query())
+}
+
+func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, path string, params url.Values) (*http.Response, error) {
+	if backend == nil {
+		return nil, fmt.Errorf("alerting backend not configured")
+	}
+
+	u := *backend
+	u.Path = path
+	u.RawQuery = params.Encode()
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	p.forwardTenantHeaders(req)
+	p.applyBackendHeaders(req)
+	return p.client.Do(req)
+}
+
+type alertingRulesResponse struct {
+	Status string `json:"status"`
+	Data   struct {
+		Groups []alertingRuleGroup `json:"groups"`
+	} `json:"data"`
+}
+
+type alertingRuleGroup struct {
+	Name     string                `json:"name"`
+	File     string                `json:"file"`
+	Interval float64               `json:"interval"`
+	Rules    []alertingBackendRule `json:"rules"`
+}
+
+type alertingBackendRule struct {
+	Name        string            `json:"name"`
+	Query       string            `json:"query"`
+	Type        string            `json:"type"`
+	Duration    float64           `json:"duration"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+type legacyRuleGroup struct {
+	Name     string            `yaml:"name"`
+	Interval string            `yaml:"interval,omitempty"`
+	Rules    []legacyRuleEntry `yaml:"rules"`
+}
+
+type legacyRuleEntry struct {
+	Alert       string            `yaml:"alert,omitempty"`
+	Record      string            `yaml:"record,omitempty"`
+	Expr        string            `yaml:"expr"`
+	For         string            `yaml:"for,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
+}
+
+func isLegacyRulesPath(path string) bool {
+	return path == "/loki/api/v1/rules" ||
+		strings.HasPrefix(path, "/loki/api/v1/rules/") ||
+		path == "/api/prom/rules" ||
+		strings.HasPrefix(path, "/api/prom/rules/")
+}
+
+func parseLegacyRulesPath(path string) (namespace, group string, err error) {
+	var suffix string
+	switch {
+	case strings.HasPrefix(path, "/loki/api/v1/rules/"):
+		suffix = strings.TrimPrefix(path, "/loki/api/v1/rules/")
+	case strings.HasPrefix(path, "/api/prom/rules/"):
+		suffix = strings.TrimPrefix(path, "/api/prom/rules/")
+	default:
+		return "", "", nil
+	}
+	if suffix == "" {
+		return "", "", nil
+	}
+	parts := strings.Split(suffix, "/")
+	if len(parts) > 2 {
+		return "", "", fmt.Errorf("invalid legacy rules path")
+	}
+	namespace, err = url.PathUnescape(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("invalid namespace: %w", err)
+	}
+	if !filepath.IsLocal(namespace) {
+		return "", "", fmt.Errorf("invalid namespace: path traversal not allowed")
+	}
+	if len(parts) == 2 {
+		group, err = url.PathUnescape(parts[1])
+		if err != nil {
+			return "", "", fmt.Errorf("invalid group name: %w", err)
+		}
+		if !filepath.IsLocal(group) {
+			return "", "", fmt.Errorf("invalid group name: path traversal not allowed")
+		}
+	}
+	return namespace, group, nil
+}
+
+func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
+	namespace, group, err := parseLegacyRulesPath(r.URL.Path)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	params := r.URL.Query()
+	if namespace != "" {
+		params["file[]"] = []string{namespace}
+	}
+	if group != "" {
+		params["rule_group[]"] = []string{group}
+	}
+
+	resp, err := p.alertingBackendGetWithParams(withOrgID(r), p.rulerBackend, "/api/v1/rules", params)
+	if err != nil {
+		p.writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		copyHeaders(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+		return
+	}
+
+	var decoded alertingRulesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		p.writeError(w, http.StatusBadGateway, fmt.Sprintf("invalid ruler backend response: %v", err))
+		return
+	}
+
+	if group != "" {
+		if len(decoded.Data.Groups) == 0 {
+			p.writeError(w, http.StatusNotFound, "no rule groups found")
+			return
+		}
+		out := legacyRuleGroupFromBackend(decoded.Data.Groups[0])
+		data, err := yaml.Marshal(out)
+		if err != nil {
+			p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml")
+		_, _ = w.Write(data)
+		return
+	}
+
+	formatted := make(map[string][]legacyRuleGroup)
+	for _, g := range decoded.Data.Groups {
+		formatted[g.File] = append(formatted[g.File], legacyRuleGroupFromBackend(g))
+	}
+	data, err := yaml.Marshal(formatted)
+	if err != nil {
+		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/yaml")
+	_, _ = w.Write(data)
+}
+
+func legacyRuleGroupFromBackend(g alertingRuleGroup) legacyRuleGroup {
+	out := legacyRuleGroup{
+		Name:  g.Name,
+		Rules: make([]legacyRuleEntry, 0, len(g.Rules)),
+	}
+	if g.Interval > 0 {
+		out.Interval = (time.Duration(g.Interval * float64(time.Second))).String()
+	}
+	for _, r := range g.Rules {
+		entry := legacyRuleEntry{
+			Expr:        r.Query,
+			Labels:      r.Labels,
+			Annotations: r.Annotations,
+		}
+		switch r.Type {
+		case "alerting":
+			entry.Alert = r.Name
+		default:
+			entry.Record = r.Name
+		}
+		if r.Duration > 0 {
+			entry.For = (time.Duration(r.Duration * float64(time.Second))).String()
+		}
+		out.Rules = append(out.Rules, entry)
+	}
+	return out
+}
 
 func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	if !p.breaker.Allow() {
@@ -3265,6 +3734,860 @@ func formatVLStep(step string) string {
 	return step
 }
 
+func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string, single func(http.ResponseWriter, *http.Request)) bool {
+	orgID := strings.TrimSpace(r.Header.Get("X-Scope-OrgID"))
+	if !hasMultiTenantOrgID(orgID) {
+		return false
+	}
+	tenantIDs := splitMultiTenantOrgIDs(orgID)
+	if len(tenantIDs) < 2 {
+		return false
+	}
+	filteredReq, filteredTenants, err := p.applyTenantSelectorFilter(r, tenantIDs)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		return true
+	}
+	if len(filteredTenants) == 0 {
+		p.writeJSON(w, emptyMultiTenantResponse(endpoint))
+		return true
+	}
+
+	if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable {
+		if cached, ok := p.cache.Get(cacheKey); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(cached)
+			return true
+		}
+	}
+
+	switch endpoint {
+	case "detected_fields":
+		body, contentType, err := p.multiTenantDetectedFieldsResponse(filteredReq, filteredTenants)
+		if err != nil {
+			p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
+			return true
+		}
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write(body)
+		if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable {
+			p.cache.SetWithTTL(cacheKey, body, CacheTTLs[endpoint])
+		}
+		return true
+	case "detected_labels":
+		body, contentType, err := p.multiTenantDetectedLabelsResponse(filteredReq, filteredTenants)
+		if err != nil {
+			p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
+			return true
+		}
+		w.Header().Set("Content-Type", contentType)
+		_, _ = w.Write(body)
+		if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable {
+			p.cache.SetWithTTL(cacheKey, body, CacheTTLs[endpoint])
+		}
+		return true
+	}
+
+	recorders := make([]*httptest.ResponseRecorder, 0, len(filteredTenants))
+	for _, tenantID := range filteredTenants {
+		subReq := filteredReq.Clone(filteredReq.Context())
+		subReq.Header = filteredReq.Header.Clone()
+		subReq.Header.Set("X-Scope-OrgID", tenantID)
+
+		rec := httptest.NewRecorder()
+		single(rec, subReq)
+		if rec.Code >= 400 {
+			copyHeaders(w.Header(), rec.Header())
+			if w.Header().Get("Content-Type") == "" {
+				w.Header().Set("Content-Type", "application/json")
+			}
+			w.WriteHeader(rec.Code)
+			_, _ = w.Write(rec.Body.Bytes())
+			return true
+		}
+		recorders = append(recorders, rec)
+	}
+
+	body, contentType, err := mergeMultiTenantResponses(endpoint, filteredTenants, recorders)
+	if err != nil {
+		p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
+		return true
+	}
+	if contentType == "" {
+		contentType = "application/json"
+	}
+	w.Header().Set("Content-Type", contentType)
+	_, _ = w.Write(body)
+	if cacheKey, cacheable := p.multiTenantCacheKey(filteredReq, endpoint); cacheable {
+		p.cache.SetWithTTL(cacheKey, body, CacheTTLs[endpoint])
+	}
+	return true
+}
+
+func parseDetectedLineLimit(r *http.Request) int {
+	lineLimit := 1000
+	if value := strings.TrimSpace(r.FormValue("line_limit")); value != "" {
+		if n, err := strconv.Atoi(value); err == nil && n > 0 {
+			lineLimit = n
+		}
+	}
+	if value := strings.TrimSpace(r.FormValue("limit")); value != "" {
+		if n, err := strconv.Atoi(value); err == nil && n > 0 {
+			lineLimit = n
+		}
+	}
+	return lineLimit
+}
+
+func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, bool) {
+	if r.Method != http.MethodGet {
+		return "", false
+	}
+	if endpoint == "patterns" || endpoint == "index_stats" || endpoint == "volume" || endpoint == "volume_range" || endpoint == "detected_labels" || endpoint == "detected_fields" || endpoint == "detected_field_values" || endpoint == "series" || endpoint == "labels" || endpoint == "label_values" || endpoint == "query" || endpoint == "query_range" {
+		return "mt:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.RawQuery, true
+	}
+	return "", false
+}
+
+func emptyMultiTenantResponse(endpoint string) map[string]interface{} {
+	switch endpoint {
+	case "labels", "label_values":
+		return map[string]interface{}{"status": "success", "data": []string{}}
+	case "series":
+		return map[string]interface{}{"status": "success", "data": []interface{}{}}
+	case "query":
+		return map[string]interface{}{"status": "success", "data": map[string]interface{}{"resultType": "streams", "result": []interface{}{}, "stats": map[string]interface{}{}}}
+	case "query_range":
+		return map[string]interface{}{"status": "success", "data": map[string]interface{}{"resultType": "streams", "result": []interface{}{}, "stats": map[string]interface{}{}}}
+	case "index_stats":
+		return map[string]interface{}{"streams": 0, "chunks": 0, "bytes": 0, "entries": 0}
+	case "volume":
+		return map[string]interface{}{"status": "success", "data": map[string]interface{}{"resultType": "vector", "result": []interface{}{}}}
+	case "volume_range":
+		return map[string]interface{}{"status": "success", "data": map[string]interface{}{"resultType": "matrix", "result": []interface{}{}}}
+	case "detected_fields":
+		return map[string]interface{}{"status": "success", "data": []interface{}{}, "fields": []interface{}{}}
+	case "detected_field_values":
+		return map[string]interface{}{"status": "success", "data": []string{}, "values": []string{}}
+	case "detected_labels":
+		return map[string]interface{}{"status": "success", "data": []interface{}{}, "detectedLabels": []interface{}{}}
+	case "patterns":
+		return map[string]interface{}{"status": "success", "data": []interface{}{}}
+	default:
+		return map[string]interface{}{"status": "success"}
+	}
+}
+
+func (p *Proxy) applyTenantSelectorFilter(r *http.Request, tenantIDs []string) (*http.Request, []string, error) {
+	filteredReq := r.Clone(r.Context())
+	filteredReq.Header = r.Header.Clone()
+	queryValues := filteredReq.URL.Query()
+
+	switch {
+	case queryValues.Get("query") != "":
+		query, filtered, err := filterTenantMatchers(queryValues.Get("query"), tenantIDs)
+		if err != nil {
+			return nil, nil, err
+		}
+		queryValues.Set("query", query)
+		filteredReq.URL.RawQuery = queryValues.Encode()
+		filteredReq.Form = queryValues
+		filteredReq.PostForm = queryValues
+		filteredReq.Header.Set("X-Scope-OrgID", strings.Join(filtered, "|"))
+		return filteredReq, filtered, nil
+	case len(queryValues["match[]"]) > 0:
+		filtered := tenantIDs
+		matchers := queryValues["match[]"]
+		for i, expr := range matchers {
+			updated, narrowed, err := filterTenantMatchers(expr, filtered)
+			if err != nil {
+				return nil, nil, err
+			}
+			matchers[i] = updated
+			filtered = narrowed
+		}
+		queryValues["match[]"] = matchers
+		filteredReq.URL.RawQuery = queryValues.Encode()
+		filteredReq.Form = queryValues
+		filteredReq.PostForm = queryValues
+		filteredReq.Header.Set("X-Scope-OrgID", strings.Join(filtered, "|"))
+		return filteredReq, filtered, nil
+	default:
+		return filteredReq, tenantIDs, nil
+	}
+}
+
+func filterTenantMatchers(query string, tenantIDs []string) (string, []string, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return query, tenantIDs, nil
+	}
+	selector, rest, ok := splitLeadingSelector(query)
+	if !ok {
+		return query, tenantIDs, nil
+	}
+	matchers := splitSelectorMatchers(selector[1 : len(selector)-1])
+	filteredMatchers := make([]string, 0, len(matchers))
+	filteredTenants := append([]string(nil), tenantIDs...)
+	for _, matcher := range matchers {
+		nextTenants, handled, err := filterTenantsByMatcher(filteredTenants, matcher)
+		if err != nil {
+			return "", nil, err
+		}
+		if handled {
+			filteredTenants = nextTenants
+			continue
+		}
+		filteredMatchers = append(filteredMatchers, matcher)
+	}
+	var rebuilt string
+	switch {
+	case len(filteredMatchers) == 0 && strings.TrimSpace(rest) == "":
+		rebuilt = "*"
+	case len(filteredMatchers) == 0:
+		rebuilt = "* " + strings.TrimSpace(rest)
+	case strings.TrimSpace(rest) == "":
+		rebuilt = "{" + strings.Join(filteredMatchers, ",") + "}"
+	default:
+		rebuilt = "{" + strings.Join(filteredMatchers, ",") + "} " + strings.TrimSpace(rest)
+	}
+	return strings.TrimSpace(rebuilt), filteredTenants, nil
+}
+
+func splitLeadingSelector(query string) (selector, rest string, ok bool) {
+	query = strings.TrimSpace(query)
+	if query == "" || query[0] != '{' {
+		return "", "", false
+	}
+	end := findMatchingBraceLocal(query)
+	if end < 0 {
+		return "", "", false
+	}
+	return query[:end+1], strings.TrimSpace(query[end+1:]), true
+}
+
+func findMatchingBraceLocal(s string) int {
+	depth := 0
+	inQuote := false
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			if inQuote && i+1 < len(s) {
+				i++
+			}
+		case '"':
+			inQuote = !inQuote
+		case '{':
+			if !inQuote {
+				depth++
+			}
+		case '}':
+			if !inQuote {
+				depth--
+				if depth == 0 {
+					return i
+				}
+			}
+		}
+	}
+	return -1
+}
+
+func splitSelectorMatchers(s string) []string {
+	var matchers []string
+	inQuote := false
+	start := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\\':
+			if inQuote && i+1 < len(s) {
+				i++
+			}
+		case '"':
+			inQuote = !inQuote
+		case ',':
+			if !inQuote {
+				part := strings.TrimSpace(s[start:i])
+				if part != "" {
+					matchers = append(matchers, part)
+				}
+				start = i + 1
+			}
+		}
+	}
+	part := strings.TrimSpace(s[start:])
+	if part != "" {
+		matchers = append(matchers, part)
+	}
+	return matchers
+}
+
+func filterTenantsByMatcher(tenantIDs []string, matcher string) ([]string, bool, error) {
+	for _, op := range []string{"!~", "=~", "!=", "="} {
+		if idx := strings.Index(matcher, op); idx > 0 {
+			label := strings.TrimSpace(matcher[:idx])
+			if label != "__tenant_id__" {
+				return tenantIDs, false, nil
+			}
+			raw := strings.TrimSpace(matcher[idx+len(op):])
+			raw = strings.Trim(raw, "\"`")
+			return applyTenantMatch(tenantIDs, op, raw)
+		}
+	}
+	return tenantIDs, false, nil
+}
+
+func applyTenantMatch(tenantIDs []string, op, raw string) ([]string, bool, error) {
+	out := make([]string, 0, len(tenantIDs))
+	switch op {
+	case "=":
+		for _, tenantID := range tenantIDs {
+			if tenantID == raw {
+				out = append(out, tenantID)
+			}
+		}
+	case "!=":
+		for _, tenantID := range tenantIDs {
+			if tenantID != raw {
+				out = append(out, tenantID)
+			}
+		}
+	case "=~":
+		re, err := regexp.Compile(raw)
+		if err != nil {
+			return nil, true, fmt.Errorf("invalid __tenant_id__ regex: %w", err)
+		}
+		for _, tenantID := range tenantIDs {
+			if re.MatchString(tenantID) {
+				out = append(out, tenantID)
+			}
+		}
+	case "!~":
+		re, err := regexp.Compile(raw)
+		if err != nil {
+			return nil, true, fmt.Errorf("invalid __tenant_id__ regex: %w", err)
+		}
+		for _, tenantID := range tenantIDs {
+			if !re.MatchString(tenantID) {
+				out = append(out, tenantID)
+			}
+		}
+	default:
+		return tenantIDs, false, nil
+	}
+	return out, true, nil
+}
+
+func mergeMultiTenantResponses(endpoint string, tenantIDs []string, recorders []*httptest.ResponseRecorder) ([]byte, string, error) {
+	switch endpoint {
+	case "labels":
+		values := make([]string, 0)
+		for _, rec := range recorders {
+			var resp struct {
+				Data []string `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				return nil, "", err
+			}
+			values = append(values, resp.Data...)
+		}
+		values = append(values, "__tenant_id__")
+		return lokiLabelsResponse(uniqueSortedStrings(values)), "application/json", nil
+	case "label_values":
+		values := make([]string, 0)
+		for _, rec := range recorders {
+			var resp struct {
+				Data []string `json:"data"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				return nil, "", err
+			}
+			values = append(values, resp.Data...)
+		}
+		return lokiLabelsResponse(uniqueSortedStrings(values)), "application/json", nil
+	case "series":
+		return mergeSeriesResponses(tenantIDs, recorders)
+	case "query", "query_range", "volume", "volume_range":
+		return mergeLokiQueryResponses(tenantIDs, recorders)
+	case "index_stats":
+		return mergeIndexStatsResponses(recorders)
+	case "detected_fields":
+		return mergeDetectedFieldsResponses(recorders)
+	case "detected_field_values":
+		return mergeDetectedFieldValuesResponses(recorders)
+	case "detected_labels":
+		return mergeDetectedLabelsResponses(tenantIDs, recorders)
+	case "patterns":
+		return mergePatternsResponses(recorders)
+	default:
+		return nil, "", fmt.Errorf("unsupported multi-tenant endpoint %q", endpoint)
+	}
+}
+
+func uniqueSortedStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func injectTenantLabel(labels map[string]string, tenantID string) map[string]string {
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	if existing, ok := labels["__tenant_id__"]; ok {
+		if _, exists := labels["original___tenant_id__"]; !exists {
+			labels["original___tenant_id__"] = existing
+		}
+	}
+	labels["__tenant_id__"] = tenantID
+	return labels
+}
+
+func interfaceStringMap(v interface{}) map[string]string {
+	switch m := v.(type) {
+	case map[string]string:
+		out := make(map[string]string, len(m))
+		for k, val := range m {
+			out[k] = val
+		}
+		return out
+	case map[string]interface{}:
+		out := make(map[string]string, len(m))
+		for k, val := range m {
+			out[k] = fmt.Sprintf("%v", val)
+		}
+		return out
+	default:
+		return map[string]string{}
+	}
+}
+
+func mergeSeriesResponses(tenantIDs []string, recorders []*httptest.ResponseRecorder) ([]byte, string, error) {
+	seen := map[string]map[string]string{}
+	for i, rec := range recorders {
+		var resp struct {
+			Status string                   `json:"status"`
+			Data   []map[string]interface{} `json:"data"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			return nil, "", err
+		}
+		for _, item := range resp.Data {
+			labels := injectTenantLabel(interfaceStringMap(item), tenantIDs[i])
+			seen[canonicalLabelsKey(labels)] = labels
+		}
+	}
+	keys := make([]string, 0, len(seen))
+	for key := range seen {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	result := make([]map[string]string, 0, len(keys))
+	for _, key := range keys {
+		result = append(result, seen[key])
+	}
+	body, err := json.Marshal(map[string]interface{}{"status": "success", "data": result})
+	return body, "application/json", err
+}
+
+func mergeLokiQueryResponses(tenantIDs []string, recorders []*httptest.ResponseRecorder) ([]byte, string, error) {
+	var (
+		resultType string
+		stats      interface{} = map[string]interface{}{}
+		merged     []interface{}
+	)
+	for i, rec := range recorders {
+		var resp map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			return nil, "", err
+		}
+		data, _ := resp["data"].(map[string]interface{})
+		if rt, _ := data["resultType"].(string); rt != "" {
+			if resultType == "" {
+				resultType = rt
+			}
+		}
+		if st, ok := data["stats"]; ok {
+			stats = st
+		}
+		items, _ := data["result"].([]interface{})
+		for _, item := range items {
+			obj, _ := item.(map[string]interface{})
+			switch resultType {
+			case "streams":
+				obj["stream"] = injectTenantLabel(interfaceStringMap(obj["stream"]), tenantIDs[i])
+			case "vector", "matrix":
+				obj["metric"] = injectTenantLabel(interfaceStringMap(obj["metric"]), tenantIDs[i])
+			}
+			merged = append(merged, obj)
+		}
+	}
+	if resultType == "streams" {
+		sort.SliceStable(merged, func(i, j int) bool {
+			left, _ := merged[i].(map[string]interface{})
+			right, _ := merged[j].(map[string]interface{})
+			leftValues, _ := left["values"].([]interface{})
+			rightValues, _ := right["values"].([]interface{})
+			return latestStreamTimestamp(leftValues) > latestStreamTimestamp(rightValues)
+		})
+	}
+	body, err := json.Marshal(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": resultType,
+			"result":     merged,
+			"stats":      stats,
+		},
+	})
+	return body, "application/json", err
+}
+
+func latestStreamTimestamp(values []interface{}) string {
+	if len(values) == 0 {
+		return ""
+	}
+	pair, _ := values[0].([]interface{})
+	if len(pair) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%v", pair[0])
+}
+
+func mergeIndexStatsResponses(recorders []*httptest.ResponseRecorder) ([]byte, string, error) {
+	totals := map[string]int{"streams": 0, "chunks": 0, "bytes": 0, "entries": 0}
+	for _, rec := range recorders {
+		var resp map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			return nil, "", err
+		}
+		for key := range totals {
+			switch v := resp[key].(type) {
+			case float64:
+				totals[key] += int(v)
+			case int:
+				totals[key] += v
+			}
+		}
+	}
+	body, err := json.Marshal(totals)
+	return body, "application/json", err
+}
+
+func mergeDetectedFieldsResponses(recorders []*httptest.ResponseRecorder) ([]byte, string, error) {
+	type mergedField struct {
+		Label       string
+		Type        string
+		Cardinality int
+		Parsers     map[string]struct{}
+		JSONPath    []interface{}
+	}
+	merged := map[string]*mergedField{}
+	for _, rec := range recorders {
+		var resp map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			return nil, "", err
+		}
+		items, _ := resp["fields"].([]interface{})
+		for _, item := range items {
+			obj, _ := item.(map[string]interface{})
+			label, _ := obj["label"].(string)
+			if label == "" {
+				continue
+			}
+			mf := merged[label]
+			if mf == nil {
+				mf = &mergedField{Label: label, Type: fmt.Sprintf("%v", obj["type"]), Parsers: map[string]struct{}{}}
+				if jp, ok := obj["jsonPath"].([]interface{}); ok {
+					mf.JSONPath = jp
+				}
+				merged[label] = mf
+			}
+			if card, ok := obj["cardinality"].(float64); ok {
+				mf.Cardinality += int(card)
+			}
+			if parsers, ok := obj["parsers"].([]interface{}); ok {
+				for _, parser := range parsers {
+					mf.Parsers[fmt.Sprintf("%v", parser)] = struct{}{}
+				}
+			}
+		}
+	}
+	labels := make([]string, 0, len(merged))
+	for label := range merged {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+	out := make([]map[string]interface{}, 0, len(labels))
+	for _, label := range labels {
+		mf := merged[label]
+		parsers := make([]string, 0, len(mf.Parsers))
+		for parser := range mf.Parsers {
+			parsers = append(parsers, parser)
+		}
+		sort.Strings(parsers)
+		item := map[string]interface{}{
+			"label":       mf.Label,
+			"type":        mf.Type,
+			"cardinality": mf.Cardinality,
+			"parsers":     parsers,
+		}
+		if len(mf.JSONPath) > 0 {
+			item["jsonPath"] = mf.JSONPath
+		}
+		out = append(out, item)
+	}
+	body, err := json.Marshal(map[string]interface{}{"status": "success", "data": out, "fields": out})
+	return body, "application/json", err
+}
+
+func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []string) ([]byte, string, error) {
+	lineLimit := parseDetectedLineLimit(r)
+	type mergedField struct {
+		Label    string
+		Type     string
+		Parsers  map[string]struct{}
+		JSONPath []interface{}
+		Values   map[string]struct{}
+	}
+	merged := map[string]*mergedField{}
+	for _, tenantID := range tenantIDs {
+		subReq := r.Clone(r.Context())
+		subReq.Header = r.Header.Clone()
+		subReq.Header.Set("X-Scope-OrgID", tenantID)
+		subReq = withOrgID(subReq)
+
+		fields, fieldValues, err := p.detectFields(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
+		if err != nil {
+			return nil, "", err
+		}
+		for _, item := range fields {
+			label, _ := item["label"].(string)
+			if label == "" {
+				continue
+			}
+			mf := merged[label]
+			if mf == nil {
+				mf = &mergedField{
+					Label:   label,
+					Type:    fmt.Sprintf("%v", item["type"]),
+					Parsers: map[string]struct{}{},
+					Values:  map[string]struct{}{},
+				}
+				if jp, ok := item["jsonPath"].([]interface{}); ok {
+					mf.JSONPath = jp
+				}
+				merged[label] = mf
+			}
+			if parsers, ok := item["parsers"].([]interface{}); ok {
+				for _, parser := range parsers {
+					mf.Parsers[fmt.Sprintf("%v", parser)] = struct{}{}
+				}
+			}
+			for _, value := range fieldValues[label] {
+				mf.Values[value] = struct{}{}
+			}
+		}
+	}
+
+	labels := make([]string, 0, len(merged))
+	for label := range merged {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+
+	out := make([]map[string]interface{}, 0, len(labels))
+	for _, label := range labels {
+		mf := merged[label]
+		parsers := make([]string, 0, len(mf.Parsers))
+		for parser := range mf.Parsers {
+			parsers = append(parsers, parser)
+		}
+		sort.Strings(parsers)
+		item := map[string]interface{}{
+			"label":       mf.Label,
+			"type":        mf.Type,
+			"cardinality": len(mf.Values),
+			"parsers":     parsers,
+		}
+		if len(mf.JSONPath) > 0 {
+			item["jsonPath"] = mf.JSONPath
+		}
+		out = append(out, item)
+	}
+	body, err := json.Marshal(map[string]interface{}{"status": "success", "data": out, "fields": out, "limit": lineLimit})
+	return body, "application/json", err
+}
+
+func mergeDetectedFieldValuesResponses(recorders []*httptest.ResponseRecorder) ([]byte, string, error) {
+	values := make([]string, 0)
+	for _, rec := range recorders {
+		var resp struct {
+			Values []string `json:"values"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			return nil, "", err
+		}
+		values = append(values, resp.Values...)
+	}
+	values = uniqueSortedStrings(values)
+	body, err := json.Marshal(map[string]interface{}{"status": "success", "data": values, "values": values})
+	return body, "application/json", err
+}
+
+func (p *Proxy) multiTenantDetectedLabelsResponse(r *http.Request, tenantIDs []string) ([]byte, string, error) {
+	lineLimit := parseDetectedLineLimit(r)
+	merged := map[string]*detectedLabelSummary{
+		"__tenant_id__": {
+			label:  "__tenant_id__",
+			values: map[string]struct{}{},
+		},
+	}
+	for _, tenantID := range tenantIDs {
+		merged["__tenant_id__"].values[tenantID] = struct{}{}
+
+		subReq := r.Clone(r.Context())
+		subReq.Header = r.Header.Clone()
+		subReq.Header.Set("X-Scope-OrgID", tenantID)
+		subReq = withOrgID(subReq)
+
+		_, summaries, err := p.detectLabels(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
+		if err != nil {
+			return nil, "", err
+		}
+		for label, summary := range summaries {
+			existing := merged[label]
+			if existing == nil {
+				existing = &detectedLabelSummary{
+					label:  summary.label,
+					values: map[string]struct{}{},
+				}
+				merged[label] = existing
+			}
+			for value := range summary.values {
+				existing.values[value] = struct{}{}
+			}
+		}
+	}
+
+	out := formatDetectedLabelSummaries(merged)
+	body, err := json.Marshal(map[string]interface{}{"status": "success", "data": out, "detectedLabels": out, "limit": lineLimit})
+	return body, "application/json", err
+}
+
+func mergeDetectedLabelsResponses(tenantIDs []string, recorders []*httptest.ResponseRecorder) ([]byte, string, error) {
+	cardinality := map[string]int{"__tenant_id__": len(tenantIDs)}
+	for _, rec := range recorders {
+		var resp map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			return nil, "", err
+		}
+		items, _ := resp["detectedLabels"].([]interface{})
+		for _, item := range items {
+			obj, _ := item.(map[string]interface{})
+			label, _ := obj["label"].(string)
+			if label == "" {
+				continue
+			}
+			if card, ok := obj["cardinality"].(float64); ok {
+				cardinality[label] += int(card)
+			}
+		}
+	}
+	labels := make([]string, 0, len(cardinality))
+	for label := range cardinality {
+		labels = append(labels, label)
+	}
+	sort.Slice(labels, func(i, j int) bool {
+		if labels[i] == "service_name" {
+			return true
+		}
+		if labels[j] == "service_name" {
+			return false
+		}
+		return labels[i] < labels[j]
+	})
+	out := make([]map[string]interface{}, 0, len(labels))
+	for _, label := range labels {
+		out = append(out, map[string]interface{}{"label": label, "cardinality": cardinality[label]})
+	}
+	body, err := json.Marshal(map[string]interface{}{"status": "success", "data": out, "detectedLabels": out})
+	return body, "application/json", err
+}
+
+func mergePatternsResponses(recorders []*httptest.ResponseRecorder) ([]byte, string, error) {
+	type bucket struct {
+		level   string
+		pattern string
+		samples map[int64]int
+		total   int
+	}
+	merged := map[string]*bucket{}
+	for _, rec := range recorders {
+		var resp map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			return nil, "", err
+		}
+		items, _ := resp["data"].([]interface{})
+		for _, item := range items {
+			obj, _ := item.(map[string]interface{})
+			pattern, _ := obj["pattern"].(string)
+			level, _ := obj["level"].(string)
+			key := level + "\x00" + pattern
+			b := merged[key]
+			if b == nil {
+				b = &bucket{level: level, pattern: pattern, samples: map[int64]int{}}
+				merged[key] = b
+			}
+			samples, _ := obj["samples"].([]interface{})
+			for _, sample := range samples {
+				pair, _ := sample.([]interface{})
+				if len(pair) < 2 {
+					continue
+				}
+				ts, _ := pair[0].(float64)
+				count, _ := pair[1].(float64)
+				b.samples[int64(ts)] += int(count)
+				b.total += int(count)
+			}
+		}
+	}
+	items := make([]*bucket, 0, len(merged))
+	for _, item := range merged {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].total > items[j].total })
+	out := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		timestamps := make([]int64, 0, len(item.samples))
+		for ts := range item.samples {
+			timestamps = append(timestamps, ts)
+		}
+		sort.Slice(timestamps, func(i, j int) bool { return timestamps[i] < timestamps[j] })
+		samples := make([][]interface{}, 0, len(timestamps))
+		for _, ts := range timestamps {
+			samples = append(samples, []interface{}{ts, item.samples[ts]})
+		}
+		respItem := map[string]interface{}{"pattern": item.pattern, "samples": samples}
+		if item.level != "" {
+			respItem["level"] = item.level
+		}
+		out = append(out, respItem)
+	}
+	body, err := json.Marshal(map[string]interface{}{"status": "success", "data": out})
+	return body, "application/json", err
+}
+
 // --- Multitenancy ---
 
 // forwardTenantHeaders maps Loki's X-Scope-OrgID to VL's AccountID/ProjectID.
@@ -3274,14 +4597,6 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 	orgID := getOrgID(req.Context())
 	if orgID == "" {
 		// No tenant header → default VL tenant (0:0), serves all data
-		return
-	}
-
-	// Wildcard: "*" or "0" → skip tenant headers, let VL serve all data
-	if orgID == "*" || orgID == "0" {
-		if p.globalTenantAllowed() {
-			return
-		}
 		return
 	}
 
@@ -3296,6 +4611,20 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 			req.Header.Set("ProjectID", mapping.ProjectID)
 			return
 		}
+	}
+
+	// Default-tenant aliases keep Loki single-tenant compatibility while still
+	// targeting VictoriaLogs' built-in 0:0 tenant.
+	if isDefaultTenantAlias(orgID) {
+		return
+	}
+
+	// Wildcard bypass is proxy-specific and remains opt-in.
+	if orgID == "*" {
+		if p.globalTenantAllowed() {
+			return
+		}
+		return
 	}
 
 	// Try numeric passthrough: "42" → AccountID: 42
@@ -3589,7 +4918,7 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	if baseQuery == "" {
 		baseQuery = logql
 	}
-	baseQuery = stripFieldDetectionStages(defaultQuery(baseQuery))
+	baseQuery = defaultFieldDetectionQuery(baseQuery)
 	logsqlQuery, err := p.translateQuery(baseQuery)
 	if err != nil {
 		return logql

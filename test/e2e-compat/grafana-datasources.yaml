@@ -7,7 +7,10 @@ datasources:
     url: http://loki:3100
     isDefault: false
     jsonData:
+      httpHeaderName1: X-Scope-OrgID
       maxLines: 1000
+    secureJsonData:
+      httpHeaderValue1: "0"
 
   # 2. VictoriaLogs via Loki-VL-proxy (under test)
   - name: Loki (via VL proxy)
@@ -16,7 +19,21 @@ datasources:
     url: http://loki-vl-proxy-underscore:3100
     isDefault: true
     jsonData:
+      httpHeaderName1: X-Scope-OrgID
       maxLines: 1000
+    secureJsonData:
+      httpHeaderValue1: "0"
+
+  - name: Loki (via VL proxy multi-tenant)
+    type: loki
+    access: proxy
+    url: http://loki-vl-proxy-underscore:3100
+    isDefault: false
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+      maxLines: 1000
+    secureJsonData:
+      httpHeaderValue1: "0|fake"
 
   # 3. VictoriaLogs native datasource (for direct comparison)
   - name: VictoriaLogs (direct)

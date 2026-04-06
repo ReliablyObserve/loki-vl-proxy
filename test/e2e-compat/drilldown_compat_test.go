@@ -16,22 +16,24 @@ const grafanaURL = "http://localhost:3002"
 
 func grafanaDatasourceUID(t *testing.T, name string) string {
 	t.Helper()
-	resp, err := http.Get(grafanaURL + "/api/datasources/name/" + url.PathEscape(name))
-	if err != nil {
-		t.Fatalf("grafana datasource lookup failed: %v", err)
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		resp, err := http.Get(grafanaURL + "/api/datasources/name/" + url.PathEscape(name))
+		if err == nil {
+			var body struct {
+				UID string `json:"uid"`
+			}
+			err = json.NewDecoder(resp.Body).Decode(&body)
+			resp.Body.Close()
+			if err == nil && body.UID != "" {
+				return body.UID
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("grafana datasource %q missing uid", name)
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
-	defer resp.Body.Close()
-
-	var body struct {
-		UID string `json:"uid"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		t.Fatalf("grafana datasource decode failed: %v", err)
-	}
-	if body.UID == "" {
-		t.Fatalf("grafana datasource %q missing uid", name)
-	}
-	return body.UID
 }
 
 func TestDrilldown_ServiceVolumeAndQueryCompatibility(t *testing.T) {
@@ -128,6 +130,7 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 	start := now.Add(-2 * time.Hour).Format(time.RFC3339Nano)
 	end := now.Format(time.RFC3339Nano)
 	dsUID := grafanaDatasourceUID(t, "Loki (via VL proxy)")
+	multiUID := grafanaDatasourceUID(t, "Loki (via VL proxy multi-tenant)")
 
 	t.Run("service_buckets", func(t *testing.T) {
 		params := url.Values{}
@@ -324,6 +327,52 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("detected_labels_resource_exposes_loki_surface_only", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="otel-auth-service"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_labels?"+params.Encode())
+		items, _ := resp["data"].([]interface{})
+		if len(items) == 0 {
+			t.Fatalf("expected detected_labels entries, got %v", resp)
+		}
+		seen := map[string]bool{}
+		for _, item := range items {
+			obj, _ := item.(map[string]interface{})
+			label, _ := obj["label"].(string)
+			if label != "" {
+				seen[label] = true
+			}
+		}
+		for _, want := range []string{"service_name", "service_namespace", "k8s_pod_name", "level"} {
+			if !seen[want] {
+				t.Fatalf("expected detected_labels to include %q, got %v", want, resp)
+			}
+		}
+		for _, forbidden := range []string{"service.name", "service.namespace", "k8s.pod.name"} {
+			if seen[forbidden] {
+				t.Fatalf("detected_labels must not expose dotted metadata label %q, got %v", forbidden, resp)
+			}
+		}
+	})
+
+	t.Run("labels_resource_supports_additional_tabs", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/labels?"+params.Encode())
+		values := extractStrings(resp, "data")
+		for _, want := range []string{"service_name", "cluster", "namespace", "app"} {
+			if !contains(values, want) {
+				t.Fatalf("expected labels resource to include %q for Drilldown tabs, got %v", want, resp)
+			}
+		}
+	})
+
 	t.Run("additional_label_tab_volume_buckets", func(t *testing.T) {
 		params := url.Values{}
 		params.Set("query", `{cluster=~`+"`.+`"+`}`)
@@ -349,6 +398,34 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("expected cluster bucket us-east-1, got %v", result)
+		}
+	})
+
+	t.Run("detected_field_values_honor_limit", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("limit", "1")
+
+		valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/method/values?"+params.Encode())
+		values, _ := valuesResp["values"].([]interface{})
+		if len(values) != 1 {
+			t.Fatalf("expected detected_field values limit=1 to return one value, got %v", valuesResp)
+		}
+	})
+
+	t.Run("label_values_honor_limit", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("limit", "1")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/cluster/values?"+params.Encode())
+		values := extractStrings(resp, "data")
+		if len(values) != 1 {
+			t.Fatalf("expected label values limit=1 to return one value, got %v", resp)
 		}
 	})
 
@@ -399,6 +476,65 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 		if !foundGET {
 			t.Fatalf("expected GET request pattern in payload, got %v", data)
+		}
+	})
+
+	t.Run("patterns_resource_honors_limit", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{app="pattern-test", level="info"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("step", "60s")
+		params.Set("limit", "1")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/patterns?"+params.Encode())
+		data, ok := resp["data"].([]interface{})
+		if !ok {
+			t.Fatalf("expected patterns data array, got %v", resp)
+		}
+		if len(data) != 1 {
+			t.Fatalf("expected one limited pattern result, got %v", resp)
+		}
+	})
+
+	t.Run("multi_tenant_resources_respect___tenant_id___filters", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{app="api-gateway",__tenant_id__="fake"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		fieldsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/detected_fields?"+params.Encode())
+		fields, _ := fieldsResp["fields"].([]interface{})
+		if len(fields) == 0 {
+			t.Fatalf("expected multi-tenant detected_fields through Grafana resource, got %v", fieldsResp)
+		}
+
+		labelsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/detected_labels?"+params.Encode())
+		labels, _ := labelsResp["detectedLabels"].([]interface{})
+		if len(labels) == 0 {
+			t.Fatalf("expected multi-tenant detected_labels through Grafana resource, got %v", labelsResp)
+		}
+		foundTenantID := false
+		for _, item := range labels {
+			label := item.(map[string]interface{})["label"].(string)
+			if label == "__tenant_id__" {
+				foundTenantID = true
+				break
+			}
+		}
+		if !foundTenantID {
+			t.Fatalf("expected synthetic __tenant_id__ in multi-tenant detected_labels, got %v", labelsResp)
+		}
+
+		valueParams := url.Values{}
+		valueParams.Set("query", `{app="api-gateway",__tenant_id__="fake"}`)
+		valueParams.Set("start", start)
+		valueParams.Set("end", end)
+		valueParams.Set("targetLabels", "cluster")
+		volumeResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/index/volume?"+valueParams.Encode())
+		data := extractMap(volumeResp, "data")
+		if data == nil || len(extractArray(data, "result")) == 0 {
+			t.Fatalf("expected multi-tenant index/volume through Grafana resource, got %v", volumeResp)
 		}
 	})
 }

@@ -159,7 +159,7 @@ func extractLineFormatTemplate(query string) string {
 // extractLogPatterns implements a simplified drain-like pattern extraction.
 // Groups log lines by structural pattern and time bucket, returning the response
 // shape expected by Grafana Logs Drilldown's patterns resource.
-func extractLogPatterns(vlBody []byte, step string) []map[string]interface{} {
+func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]interface{} {
 	stepSeconds := int64(60)
 	if step != "" {
 		if d, err := time.ParseDuration(step); err == nil && d > 0 {
@@ -233,9 +233,11 @@ func extractLogPatterns(vlBody []byte, step string) []map[string]interface{} {
 		return entries[i].total > entries[j].total
 	})
 
-	// Cap at 50 patterns
-	if len(entries) > 50 {
-		entries = entries[:50]
+	if limit <= 0 {
+		limit = 50
+	}
+	if len(entries) > limit {
+		entries = entries[:limit]
 	}
 
 	result := make([]map[string]interface{}, 0, len(entries))

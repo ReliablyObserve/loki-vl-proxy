@@ -1,0 +1,21 @@
+groups:
+  - name: loki-vl-e2e-alerts
+    type: vlogs
+    interval: 5s
+    rules:
+      - alert: ApiGatewayErrorsPresent
+        expr: 'app: "api-gateway" AND level: "error" | stats by (app, cluster) count(*) as error_logs | filter error_logs:>0'
+        for: 0s
+        labels:
+          severity: page
+          team: platform
+        annotations:
+          summary: "api-gateway error logs detected"
+      - alert: PaymentServiceErrorsPresent
+        expr: 'app: "payment-service" AND level: "error" | stats by (app) count(*) as error_logs | filter error_logs:>0'
+        for: 0s
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "payment-service error logs detected"

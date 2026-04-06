@@ -62,17 +62,27 @@ curl -X POST 'http://proxy:3100/loki/api/v1/delete' \
 
 This is a read-only proxy. Log ingestion should go directly to VictoriaLogs.
 
-## Admin Stubs
+## Alerting and Config Compatibility
 
 | Endpoint | Response | Purpose |
 |---|---|---|
-| `GET /loki/api/v1/rules` | Empty rules | Grafana datasource compatibility stub |
-| `GET /api/prom/rules` | Empty rules | Grafana datasource compatibility stub |
-| `GET /loki/api/v1/alerts` | Empty alerts | Grafana datasource compatibility stub |
-| `GET /api/prom/alerts` | Empty alerts | Grafana datasource compatibility stub |
+| `GET /loki/api/v1/rules` | Legacy Loki YAML rules view when `-ruler-backend` is configured, otherwise empty YAML rules map | Loki/Grafana compatibility |
+| `GET /loki/api/v1/rules/{namespace}` | Legacy Loki YAML rules view filtered to a namespace when `-ruler-backend` is configured | Loki compatibility |
+| `GET /loki/api/v1/rules/{namespace}/{group}` | Legacy Loki YAML single-rule-group view when `-ruler-backend` is configured | Loki compatibility |
+| `GET /api/prom/rules` | Legacy Loki YAML alias for `/loki/api/v1/rules` when `-ruler-backend` is configured, otherwise empty YAML rules map | Loki/Grafana compatibility |
+| `GET /api/prom/rules/{namespace}` | Legacy Loki YAML alias for namespace-filtered rules | Loki compatibility |
+| `GET /api/prom/rules/{namespace}/{group}` | Legacy Loki YAML alias for single-rule-group lookups | Loki compatibility |
+| `GET /prometheus/api/v1/rules` | Prometheus-style JSON passthrough when `-ruler-backend` is configured, otherwise empty rules JSON stub | Grafana alerting compatibility |
+| `GET /loki/api/v1/alerts` | JSON passthrough when `-alerts-backend` or `-ruler-backend` is configured, otherwise empty alerts | Loki/Grafana compatibility |
+| `GET /api/prom/alerts` | JSON alias for `/loki/api/v1/alerts` | Loki/Grafana compatibility |
+| `GET /prometheus/api/v1/alerts` | Prometheus-style JSON passthrough when `-alerts-backend` or `-ruler-backend` is configured | Grafana alerting compatibility |
 | `GET /config` | YAML stub | Configuration endpoint |
 
-These endpoints are placeholders for Grafana compatibility. They are not a full Loki ruler or alertmanager API.
+Read-path alerting compatibility follows Loki-facing routes and query parameters, including legacy YAML responses on the classic Loki rules endpoints. Write-path ruler APIs are still not implemented. If you configure a backend such as `vmalert`, the proxy forwards tenant context using VictoriaLogs-style `AccountID` and `ProjectID` headers after applying the normal tenant mapping logic.
+
+Query endpoints also support Loki-style explicit multi-tenant headers such as `X-Scope-OrgID: team-a|team-b`. The proxy fans those requests out per tenant, merges the Loki-shaped responses, and injects synthetic `__tenant_id__` labels in merged results. Leading-selector `__tenant_id__` matchers such as `{app="api",__tenant_id__="team-b"}` narrow the fanout set before backend requests are issued. `/tail`, delete, and write endpoints remain single-tenant.
+
+`/loki/api/v1/drilldown-limits` is a bootstrap/capability endpoint for Grafana Logs Drilldown and does not require a tenant header, even when `-auth.enabled=true`.
 
 ## Infrastructure Endpoints
 

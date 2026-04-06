@@ -1,9 +1,11 @@
 package cache
 
 import (
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 func tempDBPath(t *testing.T) string {
@@ -78,7 +80,7 @@ func TestDiskCache_Compression(t *testing.T) {
 	// Large repetitive data compresses well
 	data := make([]byte, 10000)
 	for i := range data {
-		data[i] = byte(i % 26) + 'a'
+		data[i] = byte(i%26) + 'a'
 	}
 
 	dc.Set("big", data, 10*time.Second)
@@ -159,7 +161,7 @@ func TestDiskCache_Stats(t *testing.T) {
 	defer func() { _ = dc.Close() }()
 
 	dc.Set("k", []byte("v"), 10*time.Second)
-	dc.Get("k")          // hit
+	dc.Get("k")           // hit
 	dc.Get("nonexistent") // miss
 
 	if dc.Hits.Load() != 1 {
@@ -207,3 +209,19 @@ func TestDiskCache_InvalidPath(t *testing.T) {
 	}
 }
 
+func TestEncodeDiskEntryRejectsOverflowSizedValue(t *testing.T) {
+	entry := diskEntry{
+		Value:     make([]byte, 0),
+		ExpiresAt: time.Now().UnixNano(),
+	}
+	headerSize := 8
+	hugeLen := math.MaxInt - headerSize + 1
+
+	valueHeader := (*[3]uintptr)(unsafe.Pointer(&entry.Value))
+	valueHeader[1] = uintptr(hugeLen)
+	valueHeader[2] = uintptr(hugeLen)
+
+	if encoded, ok := encodeDiskEntry(entry); ok || encoded != nil {
+		t.Fatalf("expected overflow-sized entry to be rejected, got ok=%v len=%d", ok, len(encoded))
+	}
+}
