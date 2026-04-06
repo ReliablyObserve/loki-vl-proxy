@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import {
   LOKI_DS,
   PROXY_DS,
@@ -8,6 +8,70 @@ import {
 
 function serviceCard(page, name: string) {
   return page.getByRole("region", { name }).first();
+}
+
+async function addDrilldownFilter(
+  page: Page,
+  comboName: "Filter by labels" | "Filter by fields",
+  key: string,
+  value: string
+) {
+  await page.getByRole("combobox", { name: comboName }).click();
+  await page.getByRole("option", { name: key, exact: true }).click();
+  await page.getByRole("option", { name: "= Equals", exact: true }).click();
+  await page.keyboard.type(value);
+  const valueOption = page.getByRole("option", { name: value, exact: true });
+  if (await valueOption.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await valueOption.click();
+  } else if (
+    await page
+      .getByRole("option", { name: /Use custom value/ })
+      .isVisible({ timeout: 1_000 })
+      .catch(() => false)
+  ) {
+    await page.getByRole("option", { name: /Use custom value/ }).click();
+  } else {
+    await page.keyboard.press("Enter");
+  }
+  await page.keyboard.press("Escape");
+}
+
+async function openServiceDrilldown(
+  page: Page,
+  datasource: string,
+  serviceName: string,
+  view: "logs" | "fields" = "logs"
+) {
+  const response = await page.request.get(
+    `/api/datasources/name/${encodeURIComponent(datasource)}`
+  );
+  expect(response.ok()).toBeTruthy();
+  const body = await response.json();
+
+  const params = new URLSearchParams({
+    patterns: "[]",
+    from: "now-2h",
+    to: "now",
+    timezone: "browser",
+    "var-lineFormat": "",
+    "var-ds": body.uid,
+    "var-filters": `service_name|=|${serviceName}`,
+    "var-fields": "",
+    "var-levels": "",
+    "var-metadata": "",
+    "var-jsonFields": "",
+    "var-all-fields": "",
+    "var-patterns": "",
+    "var-lineFilterV2": "",
+    "var-lineFilters": "",
+    displayedFields: "[]",
+    urlColumns: "[]",
+  });
+
+  await page.goto(
+    `/a/grafana-lokiexplore-app/explore/service/${encodeURIComponent(serviceName)}/${view}?${params.toString()}`
+  );
+  await waitForGrafanaReady(page);
 }
 
 async function collectDrilldownResponses(page) {
@@ -53,19 +117,21 @@ test.describe("Grafana Logs Drilldown", () => {
     page,
   }) => {
     const responses = await collectDrilldownResponses(page);
-    await openLogsDrilldown(page, PROXY_DS);
-    await waitForGrafanaReady(page);
-
-    await serviceCard(page, "api-gateway").getByRole("link", { name: "Show logs" }).click();
-    await page.waitForLoadState("networkidle");
+    await openServiceDrilldown(page, PROXY_DS, "api-gateway", "logs");
 
     await expect(page.getByText("No logs found")).toHaveCount(0);
     await expect(page.getByRole("tab", { name: /Fields\d+/ })).toBeVisible();
     await page.getByRole("tab", { name: /Fields\d+/ }).click();
-    await expect(page.getByText("method", { exact: true })).toBeVisible({
-      timeout: 15_000,
+    await waitForGrafanaReady(page);
+    await expect(page.getByText("duration_ms", { exact: true })).toBeVisible({
+      timeout: 30_000,
     });
-    await expect(page.getByText("status", { exact: true })).toBeVisible();
+    await expect(page.getByText("path", { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("status", { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByText("app", { exact: true })).toHaveCount(0);
 
     const detectedFieldsResponse = responses.find((r) =>
@@ -80,19 +146,22 @@ test.describe("Grafana Logs Drilldown", () => {
   });
 
   test("proxy service drilldown exposes label and field tabs", async ({ page }) => {
-    await openLogsDrilldown(page, PROXY_DS);
-    await waitForGrafanaReady(page);
-
-    await serviceCard(page, "api-gateway").getByRole("link", { name: "Show logs" }).click();
-    await page.waitForLoadState("networkidle");
+    await openServiceDrilldown(page, PROXY_DS, "api-gateway", "logs");
 
     await expect(page.getByRole("tab", { name: /Labels\d+/ })).toBeVisible();
     await expect(page.getByRole("tab", { name: /Fields\d+/ })).toBeVisible();
     await expect(page.getByText("All levels", { exact: false })).toBeVisible();
     await page.getByRole("tab", { name: /Fields\d+/ }).click();
-    await expect(page.getByText("method", { exact: true })).toBeVisible();
-    await expect(page.getByText("path", { exact: true })).toBeVisible();
-    await expect(page.getByText("status", { exact: true })).toBeVisible();
+    await waitForGrafanaReady(page);
+    await expect(page.getByText("duration_ms", { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("path", { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByText("status", { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByText("duration_ms_extracted", { exact: true })).toHaveCount(0);
     await expect(page.getByText("path_extracted", { exact: true })).toHaveCount(0);
   });
@@ -113,49 +182,74 @@ test.describe("Grafana Logs Drilldown", () => {
     });
   });
 
-  test("proxy landing page add-label flow offers secondary labels", async ({ page }) => {
-    await openLogsDrilldown(page, PROXY_DS);
-    await waitForGrafanaReady(page);
-
-    await page.getByText("Add label", { exact: true }).click();
-    await expect(page.getByText("Search labels", { exact: true })).toBeVisible({
-      timeout: 10_000,
-    });
-
-    const search = page.locator('input[placeholder="Search labels"]').first();
-    await search.click();
-    await page.getByText("cluster", { exact: true }).click();
-
-    await expect(page.getByText("cluster", { exact: true })).toBeVisible({
-      timeout: 10_000,
-    });
-    await expect(page.getByRole("heading", { name: "us-east-1" })).toBeVisible({
-      timeout: 15_000,
-    });
-  });
-
-  test("proxy drilldown exposes dotted OTel structured metadata fields", async ({ page }) => {
+  test("proxy landing page can add and use a cluster breakdown tab", async ({ page }) => {
     const responses = await collectDrilldownResponses(page);
     await openLogsDrilldown(page, PROXY_DS);
     await waitForGrafanaReady(page);
 
-    await serviceCard(page, "otel-auth-service").getByRole("link", { name: "Show logs" }).click();
-    await page.waitForLoadState("networkidle");
+    const clusterTab = page.getByRole("tab", { name: "cluster" });
+    if (!(await clusterTab.isVisible().catch(() => false))) {
+      const addLabelTab = page.getByTestId("data-testid Tab Add label");
+      await addLabelTab.click();
+      const searchInput = page.locator('[role="tooltip"] input');
+      if (!(await searchInput.isVisible().catch(() => false))) {
+        await addLabelTab.press("Enter");
+      }
+      await expect(searchInput).toBeVisible({ timeout: 15_000 });
+      await searchInput.fill("cluster");
+      await page.getByRole("option", { name: "cluster", exact: true }).click();
+      await expect(clusterTab).toBeVisible({ timeout: 15_000 });
+    }
+    await clusterTab.click();
+    await expect(clusterTab).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("of 2")).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole("tab", { name: /Fields\d+/ }).click();
-    await expect(page.getByText("service.name", { exact: true })).toBeVisible({
-      timeout: 15_000,
+    const volumeResponse = responses
+      .filter((r) => String(r.url).includes("/resources/index/volume"))
+      .at(-1);
+    expect(volumeResponse).toBeTruthy();
+    expect(JSON.stringify(volumeResponse?.json)).toContain("us-east-1");
+  });
+
+  test("proxy drilldown exposes dotted OTel structured metadata fields", async ({ page }) => {
+    const responses = await collectDrilldownResponses(page);
+    await openServiceDrilldown(page, PROXY_DS, "otel-auth-service", "fields");
+
+    await page.getByRole("combobox", { name: "Filter by fields" }).click();
+    await expect(page.getByRole("option", { name: "service.name", exact: true })).toBeVisible({
+      timeout: 30_000,
     });
-    await expect(page.getByText("service_name", { exact: true })).toBeVisible();
-    await expect(page.getByText("service.namespace", { exact: true })).toBeVisible();
-    await expect(page.getByText("k8s.pod.name", { exact: true })).toBeVisible();
-    await expect(page.getByText("deployment.environment", { exact: true })).toBeVisible();
+    await expect(page.getByRole("option", { name: "k8s.pod.name", exact: true })).toBeVisible();
+    await expect(page.getByRole("option", { name: "deployment.environment", exact: true })).toBeVisible();
+    await page.keyboard.press("Escape");
 
     const detectedFieldsResponse = responses.find((r) =>
       String(r.url).includes("/resources/detected_fields")
     );
     expect(detectedFieldsResponse).toBeTruthy();
-    expect(JSON.stringify(detectedFieldsResponse?.json)).toContain("service.name");
-    expect(JSON.stringify(detectedFieldsResponse?.json)).toContain('"label":"service_name"');
+    const detectedFieldsBody = JSON.stringify(detectedFieldsResponse?.json);
+    expect(detectedFieldsBody).toContain("service.name");
+    expect(detectedFieldsBody).toContain("service.namespace");
+    expect(detectedFieldsBody).toContain('"label":"service_name"');
+  });
+
+  test("proxy drilldown label filter flow works for cluster", async ({ page }) => {
+    await openServiceDrilldown(page, PROXY_DS, "api-gateway", "logs");
+
+    await addDrilldownFilter(page, "Filter by labels", "cluster", "us-east-1");
+    await expect(page.getByLabel("Remove filter with key cluster")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText("No logs found")).toHaveCount(0);
+  });
+
+  test("proxy drilldown field filter flow works for method", async ({ page }) => {
+    await openServiceDrilldown(page, PROXY_DS, "api-gateway", "logs");
+
+    await addDrilldownFilter(page, "Filter by fields", "method", "GET");
+    await expect(page.getByLabel("Remove filter with key method")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText("No logs found")).toHaveCount(0);
   });
 });

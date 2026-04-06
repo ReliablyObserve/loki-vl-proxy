@@ -261,3 +261,43 @@ func TestAlertingCompat_LegacyRulesRejectTraversal(t *testing.T) {
 		t.Fatalf("expected 400 for traversal attempt, got %d body=%s", resp.StatusCode, string(body))
 	}
 }
+
+func TestAlertingCompat_LegacyMissingRuleGroupReturnsNotFound(t *testing.T) {
+	ensureDataIngested(t)
+	waitForReady(t, vmalertURL+"/api/v1/rules?datasource_type=vlogs", 30*time.Second)
+	waitForAlertingData(t)
+
+	resp, err := http.Get(proxyURL + "/loki/api/v1/rules/compat.rules/does-not-exist")
+	if err != nil {
+		t.Fatalf("legacy missing rule-group request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 404 for missing rule group, got %d body=%s", resp.StatusCode, string(body))
+	}
+}
+
+func TestAlertingCompat_LegacyMissingNamespaceReturnsEmptyYAML(t *testing.T) {
+	ensureDataIngested(t)
+	waitForReady(t, vmalertURL+"/api/v1/rules?datasource_type=vlogs", 30*time.Second)
+	waitForAlertingData(t)
+
+	resp, err := http.Get(proxyURL + "/loki/api/v1/rules/does-not-exist")
+	if err != nil {
+		t.Fatalf("legacy missing namespace request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200 for missing namespace, got %d body=%s", resp.StatusCode, string(body))
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read missing namespace body: %v", err)
+	}
+	text := strings.TrimSpace(string(body))
+	if text != "{}" {
+		t.Fatalf("expected empty YAML map for missing namespace, got %q", text)
+	}
+}

@@ -29,7 +29,8 @@ docker run --rm \
   -v "$(pwd):/work" \
   -w /work \
   -e GRAFANA_URL=http://host.docker.internal:3002 \
-  mcr.microsoft.com/playwright:v1.52.0-jammy \
+  -e PROXY_URL=http://host.docker.internal:3100 \
+  mcr.microsoft.com/playwright:v1.59.1-noble \
   /bin/bash -lc 'npm ci && npx playwright test --grep "Grafana Logs Drilldown"'
 ```
 

@@ -206,6 +206,19 @@ func asString(value interface{}) string {
 }
 
 func scanDetectedLabels(body []byte, lt *LabelTranslator) ([]map[string]interface{}, map[string]struct{}) {
+	summaries := scanDetectedLabelSummaries(body, lt)
+
+	labelSet := make(map[string]struct{}, len(summaries))
+	result := formatDetectedLabelSummaries(summaries)
+	for _, item := range result {
+		if label, _ := item["label"].(string); label != "" {
+			labelSet[label] = struct{}{}
+		}
+	}
+	return result, labelSet
+}
+
+func scanDetectedLabelSummaries(body []byte, lt *LabelTranslator) map[string]*detectedLabelSummary {
 	summaries := map[string]*detectedLabelSummary{}
 
 	startIdx := 0
@@ -243,15 +256,16 @@ func scanDetectedLabels(body []byte, lt *LabelTranslator) ([]map[string]interfac
 			summary.values[value] = struct{}{}
 		}
 	}
+	return summaries
+}
 
-	labelSet := make(map[string]struct{}, len(summaries))
+func formatDetectedLabelSummaries(summaries map[string]*detectedLabelSummary) []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(summaries))
 	if summary := summaries["service_name"]; summary != nil {
 		result = append(result, map[string]interface{}{
 			"label":       summary.label,
 			"cardinality": len(summary.values),
 		})
-		labelSet[summary.label] = struct{}{}
 		delete(summaries, "service_name")
 	}
 
@@ -267,10 +281,8 @@ func scanDetectedLabels(body []byte, lt *LabelTranslator) ([]map[string]interfac
 			"label":       summary.label,
 			"cardinality": len(summary.values),
 		})
-		labelSet[summary.label] = struct{}{}
 	}
-
-	return result, labelSet
+	return result
 }
 
 func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string) ([]string, error) {
@@ -675,8 +687,27 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 }
 
 func defaultQuery(query string) string {
-	if strings.TrimSpace(query) == "" {
+	query = strings.TrimSpace(query)
+	if query == "" {
 		return "*"
+	}
+	return normalizeBareSelectorQuery(query)
+}
+
+func defaultFieldDetectionQuery(query string) string {
+	return defaultQuery(stripFieldDetectionStages(query))
+}
+
+func normalizeBareSelectorQuery(query string) string {
+	query = strings.TrimSpace(query)
+	if query == "" || query == "*" || strings.HasPrefix(query, "{") {
+		return query
+	}
+	if strings.Contains(query, "|") || strings.Contains(query, "(") || strings.Contains(query, ")") || strings.Contains(query, "[") || strings.Contains(query, "]") {
+		return query
+	}
+	if strings.Contains(query, "=~") || strings.Contains(query, "!~") || strings.Contains(query, "!=") || strings.Contains(query, "=") {
+		return "{" + query + "}"
 	}
 	return query
 }
@@ -767,7 +798,7 @@ func parseLogfmtFields(line string) map[string]string {
 }
 
 func (p *Proxy) detectFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, error) {
-	logsqlQuery, err := p.translateQuery(stripFieldDetectionStages(defaultQuery(query)))
+	logsqlQuery, err := p.translateQuery(defaultFieldDetectionQuery(query))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -789,6 +820,16 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
+	fieldList, fieldValues := p.detectFieldsFromBody(body)
+	return fieldList, fieldValues, nil
+}
+
+func (p *Proxy) detectFieldsFromBody(body []byte) ([]map[string]interface{}, map[string][]string) {
+	fieldList, fieldValues, _ := p.detectFieldSummaries(body)
+	return fieldList, fieldValues
+}
+
+func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map[string][]string, map[string]*detectedFieldSummary) {
 	_, labelNames := scanDetectedLabels(body, p.labelTranslator)
 	fields := make(map[string]*detectedFieldSummary)
 
@@ -904,7 +945,34 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		fieldList = append(fieldList, field)
 	}
 
-	return fieldList, fieldValues, nil
+	return fieldList, fieldValues, fields
+}
+
+func (p *Proxy) detectLabels(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string]*detectedLabelSummary, error) {
+	logsqlQuery, err := p.translateQuery(defaultQuery(query))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	params.Set("limit", strconv.Itoa(lineLimit))
+	if start != "" {
+		params.Set("start", formatVLTimestamp(start))
+	}
+	if end != "" {
+		params.Set("end", formatVLTimestamp(end))
+	}
+
+	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	summaries := scanDetectedLabelSummaries(body, p.labelTranslator)
+	return formatDetectedLabelSummaries(summaries), summaries, nil
 }
 
 func formatDetectedValue(value interface{}) string {

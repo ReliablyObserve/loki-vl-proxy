@@ -71,6 +71,84 @@ func BenchmarkProxy_Labels_CacheHit(b *testing.B) {
 	})
 }
 
+func BenchmarkProxy_MultiTenantQueryRange_CacheHit(b *testing.B) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("AccountID") {
+		case "10":
+			w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"test-a","app":"nginx"}` + "\n"))
+		case "20":
+			w.Write([]byte(`{"_time":"2024-01-15T10:30:01Z","_msg":"test-b","app":"nginx"}` + "\n"))
+		default:
+			b.Fatalf("unexpected AccountID %q", r.Header.Get("AccountID"))
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, _ := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		TenantMap: map[string]TenantMapping{
+			"tenant-a": {AccountID: "10", ProjectID: "0"},
+			"tenant-b": {AccountID: "20", ProjectID: "0"},
+		},
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&step=1`, nil)
+	r.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+	p.handleQueryRange(w, r)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&step=1`, nil)
+			r.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+			p.handleQueryRange(w, r)
+		}
+	})
+}
+
+func BenchmarkProxy_MultiTenantLabels_CacheHit(b *testing.B) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"values": []map[string]interface{}{
+				{"value": "app", "hits": 100},
+				{"value": "namespace", "hits": 50},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, _ := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		TenantMap: map[string]TenantMapping{
+			"tenant-a": {AccountID: "10", ProjectID: "0"},
+			"tenant-b": {AccountID: "20", ProjectID: "0"},
+		},
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	r.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+	p.handleLabels(w, r)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+			r.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+			p.handleLabels(w, r)
+		}
+	})
+}
+
 // =============================================================================
 // Load test: sustained high-concurrency with resource monitoring
 // =============================================================================

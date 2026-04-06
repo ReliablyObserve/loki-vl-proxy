@@ -38,7 +38,7 @@ go build -o loki-vl-proxy ./cmd/proxy
 
 ## Test Coverage by Category
 
-Exact counts move often. Treat the categories below as the stable map of what is covered; the PR quality workflow and release workflow publish current counts and deltas.
+Exact counts move often. Treat the categories below as the stable map of what is covered; CI and PR reporting publish current counts and deltas.
 
 | Category | Tests | What they verify |
 |---|---|---|
@@ -129,13 +129,6 @@ Pull requests also get a dedicated `pr-quality-report.yaml` workflow. It compare
 - sampled benchmark and load-test deltas
 
 That report is informational by design. It highlights regressions early, but merge gating still comes from the required check set in repository settings.
-
-Releases are now published directly from protected `main` after normal PRs merge. There is no separate bot-authored release PR in the default flow anymore. Release safety comes from:
-
-- required checks on the code-changing PR before merge
-- protected `main`
-- the release job reusing the changelog content already merged to `main`
-- build, package, and publish steps running from the exact tagged `main` commit
 
 See [compatibility-matrix.md](/tmp/Loki-VL-proxy/docs/compatibility-matrix.md), [compatibility-loki.md](/tmp/Loki-VL-proxy/docs/compatibility-loki.md), [compatibility-drilldown.md](/tmp/Loki-VL-proxy/docs/compatibility-drilldown.md), [compatibility-victorialogs.md](/tmp/Loki-VL-proxy/docs/compatibility-victorialogs.md), and [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json).
 

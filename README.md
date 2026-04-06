@@ -202,9 +202,33 @@ Proxy-side datasource helpers:
 - `-forward-headers` and `-forward-cookies` for backend auth/context passthrough
 - `-metrics.trust-proxy-headers` to trust `X-Grafana-User` and surface per-user client metrics/log context
 - `-metadata-field-mode=hybrid` by default, so field APIs expose both dotted OTel names and Loki-style aliases without changing the label surface
-- `-tenant.allow-global` to let `X-Scope-OrgID: 0` or `*` use VL's default `0:0` tenant during single-tenant migrations
+- built-in default-tenant aliases `0`, `fake`, and `default` for VL's `0:0` tenant during single-tenant migrations
+- explicit Loki-style multi-tenant fanout on read/query endpoints with `X-Scope-OrgID: tenant-a|tenant-b`
+- synthetic `__tenant_id__` labels in merged query results so Explore and Drilldown filters can narrow multi-tenant reads back down
+- `-tenant.allow-global` to let `X-Scope-OrgID: *` use VL's default `0:0` tenant as a proxy-specific wildcard bypass
 - `-tls-client-ca-file` and `-tls-require-client-cert` for HTTPS client auth
 - `-tail.allowed-origins` when Grafana or another browser client must use `/tail`
+
+### Grafana Datasource for Multi-Tenant Read Fanout
+
+```yaml
+datasources:
+  - name: Loki (VL multi-tenant)
+    type: loki
+    access: proxy
+    url: http://loki-vl-proxy:3100
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+    secureJsonData:
+      httpHeaderValue1: team-a|team-b
+```
+
+Use `__tenant_id__` in Explore or Drilldown-compatible queries when you want to narrow a multi-tenant datasource back to a single tenant:
+
+```logql
+{app="api-gateway", __tenant_id__="team-b"}
+{service_name="api-gateway", __tenant_id__=~"team-.*"}
+```
 
 ## Docs
 
@@ -217,12 +241,6 @@ Proxy-side datasource helpers:
 - [Performance](docs/performance.md)
 - [Compatibility Matrix](docs/compatibility-matrix.md)
 - [Testing](docs/testing.md)
-
-## Release Automation
-
-The `Auto Release` workflow publishes directly from protected `main` after a reviewed PR merges. It materializes the current `Unreleased` changelog section into the release notes, tags the exact `main` commit, and publishes binaries, the Helm package, the container image, and the GitHub release from that tag.
-
-This keeps release automation out of the code-commit path, so repository signature rules still protect code changes on `main` without requiring bot-authored signed commits.
 
 ## API Coverage
 

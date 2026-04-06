@@ -160,6 +160,45 @@ func TestDetectedFields_QueriesLogLines(t *testing.T) {
 	}
 }
 
+func TestDetectedFields_BareSelectorWithParserStagesStillFindsFields(t *testing.T) {
+	callCount := 0
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("expected detected_fields to query log lines, got %s", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		got := r.Form.Get("query")
+		if !strings.Contains(got, `service_name:=otel-auth-service`) {
+			t.Fatalf("expected translated bare selector after parser stripping, got %q", got)
+		}
+		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"msg\":\"ok\"}","_stream":"{service.name=\"otel-auth-service\",service_name=\"otel-auth-service\"}","service.name":"otel-auth-service","service_name":"otel-auth-service"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	q := url.Values{
+		"query": {`service_name="otel-auth-service" | json | logfmt | drop __error__, __error_details__`},
+		"start": {"1"},
+		"end":   {"2"},
+	}
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?"+q.Encode(), nil)
+	p.handleDetectedFields(w, r)
+
+	if callCount != 1 {
+		t.Fatalf("expected 1 VL call, got %d", callCount)
+	}
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"msg"`) {
+		t.Fatalf("expected detected fields in response after normalizing stripped selector, got %s", w.Body.String())
+	}
+}
+
 // =============================================================================
 // Priority 1: isStatsQuery quote-aware exclusion
 // =============================================================================
@@ -215,6 +254,118 @@ func TestParseTimestampToUnix(t *testing.T) {
 	got := parseTimestampToUnix("garbage")
 	if got < 1000000000 {
 		t.Errorf("parseTimestampToUnix(garbage) should return ~now, got %f", got)
+	}
+}
+
+func TestEvaluateConstantInstantVectorQuery(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		timeParam  string
+		wantValue  string
+		wantTS     float64
+		expectEval bool
+	}{
+		{name: "vector literal", query: `vector(1)`, timeParam: "4", wantValue: "1", wantTS: 4_000_000_000, expectEval: true},
+		{name: "binary add", query: `vector(1)+vector(1)`, timeParam: "4", wantValue: "2", wantTS: 4_000_000_000, expectEval: true},
+		{name: "binary divide", query: `vector(9) / vector(3)`, timeParam: "4", wantValue: "3", wantTS: 4_000_000_000, expectEval: true},
+		{name: "divide by zero", query: `vector(1)/vector(0)`, timeParam: "4", expectEval: false},
+		{name: "non vector", query: `{app="api"}`, timeParam: "4", expectEval: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, ok := evaluateConstantInstantVectorQuery(tt.query, tt.timeParam)
+			if ok != tt.expectEval {
+				t.Fatalf("evaluateConstantInstantVectorQuery(%q) ok=%v, want %v", tt.query, ok, tt.expectEval)
+			}
+			if !tt.expectEval {
+				return
+			}
+
+			var resp map[string]interface{}
+			if err := json.Unmarshal(body, &resp); err != nil {
+				t.Fatalf("invalid JSON response: %v", err)
+			}
+			if resp["status"] != "success" {
+				t.Fatalf("expected success status, got %v", resp["status"])
+			}
+			data, _ := resp["data"].(map[string]interface{})
+			if data["resultType"] != "vector" {
+				t.Fatalf("expected resultType=vector, got %v", data["resultType"])
+			}
+			result, _ := data["result"].([]interface{})
+			if len(result) != 1 {
+				t.Fatalf("expected 1 vector sample, got %v", result)
+			}
+			sample, _ := result[0].(map[string]interface{})
+			value, _ := sample["value"].([]interface{})
+			if got := value[1]; got != tt.wantValue {
+				t.Fatalf("expected value %q, got %v", tt.wantValue, got)
+			}
+			if got := value[0]; got != tt.wantTS {
+				t.Fatalf("expected timestamp %v, got %v", tt.wantTS, got)
+			}
+		})
+	}
+}
+
+func TestNormalizeBareSelectorQuery(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "empty to wildcard", input: "", want: "*"},
+		{name: "already selector", input: `{service_name=~".+"}`, want: `{service_name=~".+"}`},
+		{name: "bare regex matcher", input: `service_name=~".+"`, want: `{service_name=~".+"}`},
+		{name: "bare equality matcher", input: `service_name="otel-auth-service"`, want: `{service_name="otel-auth-service"}`},
+		{name: "multiple matchers", input: `service_name="api-gateway",cluster="us-east-1"`, want: `{service_name="api-gateway",cluster="us-east-1"}`},
+		{name: "pipeline query untouched", input: `{service_name="api-gateway"} | json`, want: `{service_name="api-gateway"} | json`},
+		{name: "function query untouched", input: `vector(1)+vector(1)`, want: `vector(1)+vector(1)`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := defaultQuery(tt.input); got != tt.want {
+				t.Fatalf("defaultQuery(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaultFieldDetectionQuery_NormalizesAfterStrippingStages(t *testing.T) {
+	got := defaultFieldDetectionQuery(`service_name="otel-auth-service" | json | logfmt | drop __error__, __error_details__`)
+	want := `{service_name="otel-auth-service"}`
+	if got != want {
+		t.Fatalf("defaultFieldDetectionQuery() = %q, want %q", got, want)
+	}
+}
+
+func TestHandleLabels_BareSelectorQuery(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.URL.Query().Get("query")
+		if strings.Contains(got, `{`) || strings.Contains(got, `}`) {
+			t.Fatalf("bare selector should be translated before hitting VL, got %q", got)
+		}
+		if !strings.Contains(got, `service_name:=api-gateway`) {
+			t.Fatalf("expected service_name matcher in translated query, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[{"value":"cluster","hits":1},{"value":"service_name","hits":1}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/labels?query=service_name%3D%22api-gateway%22`, nil)
+	p.handleLabels(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("handleLabels returned %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), `"cluster"`) {
+		t.Fatalf("expected translated labels response, got %s", w.Body.String())
 	}
 }
 

@@ -22,26 +22,6 @@ The proxy now supports datasource-facing headers, cookie forwarding, backend tim
 | Alerting / ruler APIs | Read-path compatibility covers legacy Loki YAML rules routes plus Prometheus-style JSON rules and alerts, but Loki ruler write APIs and full rule lifecycle semantics are still incomplete |
 | Browser-origin tailing | `/loki/api/v1/tail` rejects browser `Origin` headers unless explicitly allowlisted via `-tail.allowed-origins` |
 
-## Release Automation Gaps
-
-The project now releases directly from protected `main` after human-reviewed PRs merge:
-
-`reviewed PR -> signed merge to main -> Auto Release -> tag -> GitHub release`
-
-This keeps bot-authored code commits out of the critical path, but there are still a few deliberate constraints:
-
-| Area | Current State |
-|---|---|
-| `CHANGELOG.md` sync after release | Versioned changelog sections are synchronized after release rather than by a bot-authored release PR commit |
-| Release notes source of truth | GitHub release notes are published from the materialized `Unreleased` section on `main` |
-
-The workflow already handles:
-
-- changelog-backed GitHub release notes
-- changelog materialization from `Unreleased`
-- Helm chart version bumps
-- binary, Helm package, and container-image publishing after tag creation
-
 ## Data Model Differences
 
 ### Stream Filter vs Field Filter Performance

@@ -80,6 +80,8 @@ This is a read-only proxy. Log ingestion should go directly to VictoriaLogs.
 
 Read-path alerting compatibility follows Loki-facing routes and query parameters, including legacy YAML responses on the classic Loki rules endpoints. Write-path ruler APIs are still not implemented. If you configure a backend such as `vmalert`, the proxy forwards tenant context using VictoriaLogs-style `AccountID` and `ProjectID` headers after applying the normal tenant mapping logic.
 
+Query endpoints also support Loki-style explicit multi-tenant headers such as `X-Scope-OrgID: team-a|team-b`. The proxy fans those requests out per tenant, merges the Loki-shaped responses, and injects synthetic `__tenant_id__` labels in merged results. Leading-selector `__tenant_id__` matchers such as `{app="api",__tenant_id__="team-b"}` narrow the fanout set before backend requests are issued. `/tail`, delete, and write endpoints remain single-tenant.
+
 ## Infrastructure Endpoints
 
 | Endpoint | Purpose |

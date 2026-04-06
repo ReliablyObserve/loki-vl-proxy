@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import {
   PROXY_DS,
+  PROXY_MULTI_DS,
   LOKI_DS,
   openExplore,
   typeQuery,
@@ -123,6 +124,19 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await runQuery(page);
 
     await assertNoErrors(page);
+    expect(errors).toHaveLength(0);
+  });
+
+  test("multi-tenant query respects __tenant_id__ filter in Explore", async ({ page }) => {
+    await openExplore(page, PROXY_MULTI_DS);
+    await waitForGrafanaReady(page);
+
+    const errors = collectLokiErrors(page);
+    await typeQuery(page, '{app="api-gateway", __tenant_id__="fake"}');
+    await runQuery(page);
+
+    await assertNoErrors(page);
+    await assertLogsVisible(page);
     expect(errors).toHaveLength(0);
   });
 });

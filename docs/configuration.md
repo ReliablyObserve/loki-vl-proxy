@@ -79,16 +79,28 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 |---|---|---|---|
 | `-tenant-map` | `TENANT_MAP` | — | JSON string→int tenant mapping |
 | `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests |
-| `-tenant.allow-global` | — | `false` | Allow `X-Scope-OrgID` of `0` or `*` to use the backend default tenant even when a tenant map is configured |
+| `-tenant.allow-global` | — | `false` | Allow `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant even when a tenant map is configured |
 
 ### Tenant Resolution Order
 
 1. **No header** — when `-auth.enabled=false`, requests without `X-Scope-OrgID` use VictoriaLogs' backend default tenant, which is `AccountID=0` and `ProjectID=0`
 2. **Tenant map lookup** — if `-tenant-map` is configured and the org ID matches a key, use the mapped `AccountID`/`ProjectID`
-3. **Single-tenant global bypass** — if no tenant map is configured, `X-Scope-OrgID` values `0` and `*` also use the backend default tenant without rewriting headers
-4. **Numeric passthrough** — if the org ID is a number other than the global-bypass cases (e.g., `"42"`), pass it directly as `AccountID` with `ProjectID: 0`
-5. **Fail closed** — unmapped non-numeric org IDs are rejected with `403 Forbidden`
-6. **Optional mapped-mode global bypass** — when a tenant map is configured, `0` and `*` stay rejected unless `-tenant.allow-global=true`
+3. **Explicit tenant map override** — if a tenant map contains an exact key such as `"0"` or `"fake"`, that explicit mapping wins
+4. **Default-tenant aliases** — `X-Scope-OrgID` values `0`, `fake`, and `default` map to VictoriaLogs' built-in `0:0` tenant without rewriting headers
+5. **Wildcard global bypass** — `X-Scope-OrgID: *` is a proxy-specific convenience. It uses the backend default tenant only when no tenant map is configured, or when `-tenant.allow-global=true`
+6. **Numeric passthrough** — if the org ID is a number other than the default-tenant alias case (for example `"42"`), pass it directly as `AccountID` with `ProjectID: 0`
+7. **Fail closed** — unmapped non-numeric org IDs are rejected with `403 Forbidden`
+
+### Multi-Tenant Query Headers
+
+The proxy accepts Loki-style multi-tenant query headers on read/query endpoints by separating tenant IDs with `|`, for example `X-Scope-OrgID: team-a|team-b`.
+
+- Supported on query-style endpoints such as `/query`, `/query_range`, `/labels`, `/label/.../values`, `/series`, `/index/*`, and Drilldown metadata endpoints
+- Rejected on `/tail`, delete, and write paths
+- Query results inject a synthetic `__tenant_id__` label per tenant, matching Loki's documented query behavior
+- `__tenant_id__` matchers in the leading selector narrow the tenant fanout set before backend requests are sent
+- multi-tenant `detected_fields` and `detected_labels` use exact merged value unions, so cardinality does not double-count identical values across tenants
+- Wildcard `*` is not allowed inside a multi-tenant header; use explicit tenant IDs
 
 ### Configuration Examples
 
@@ -114,6 +126,26 @@ datasources:
       httpHeaderValue1: team-alpha
 ```
 
+### Grafana Datasource for Explicit Multi-Tenant Reads
+
+```yaml
+datasources:
+  - name: Logs (team-a + team-b)
+    type: loki
+    url: http://loki-vl-proxy:3100
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+    secureJsonData:
+      httpHeaderValue1: team-a|team-b
+```
+
+Use `__tenant_id__` in LogQL when the datasource fans out to more than one tenant:
+
+```logql
+{app="api-gateway", __tenant_id__="team-b"}
+{service_name="checkout", __tenant_id__=~"team-(a|b)"}
+```
+
 ### Grafana Datasource for Single-Tenant VictoriaLogs
 
 If the backend only uses VictoriaLogs' default tenant, you can keep Grafana simple:
@@ -129,7 +161,7 @@ datasources:
       httpHeaderValue1: "0"
 ```
 
-`X-Scope-OrgID: "0"` and `X-Scope-OrgID: "*"` both resolve to VL's default `0:0` tenant when no tenant map is configured. If you later introduce a tenant map, keep that behavior only by explicitly setting `-tenant.allow-global=true`.
+`X-Scope-OrgID: "0"`, `X-Scope-OrgID: "fake"`, and `X-Scope-OrgID: "default"` resolve to VL's default `0:0` tenant in Loki-compatible single-tenant mode. `X-Scope-OrgID: "*"` remains a proxy-specific wildcard convenience, and if you later introduce a tenant map you keep that wildcard behavior only by explicitly setting `-tenant.allow-global=true`.
 
 ### Hot Reload
 
