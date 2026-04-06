@@ -135,6 +135,16 @@ func TestBuildServerTLSConfig_VerifyIfGivenWhenOptional(t *testing.T) {
 	}
 }
 
+func TestBuildServerTLSConfig_MissingFile(t *testing.T) {
+	cfg, err := buildServerTLSConfig(filepath.Join(t.TempDir(), "missing.pem"), false)
+	if err == nil {
+		t.Fatal("expected missing file error")
+	}
+	if cfg != nil {
+		t.Fatal("expected nil config on missing file")
+	}
+}
+
 func TestParseCSV(t *testing.T) {
 	got := parseCSV(" foo,bar ,, baz ")
 	want := []string{"foo", "bar", "baz"}
@@ -164,6 +174,13 @@ func TestParseHeaderMapCSV(t *testing.T) {
 	}
 	if parseHeaderMapCSV("") != nil {
 		t.Fatal("expected nil for empty header map")
+	}
+}
+
+func TestParseHeaderMapCSV_DuplicateKeysLastWins(t *testing.T) {
+	got := parseHeaderMapCSV("X-Scope-OrgID=team-a, X-Scope-OrgID=team-b")
+	if got["X-Scope-OrgID"] != "team-b" {
+		t.Fatalf("expected last duplicate header value to win, got %+v", got)
 	}
 }
 
@@ -751,6 +768,50 @@ func TestRunServerLoop_IgnoresServerClosed(t *testing.T) {
 
 	if fatalCalls != 0 {
 		t.Fatalf("expected http.ErrServerClosed to be ignored, got %d fatal calls", fatalCalls)
+	}
+}
+
+func TestRunServerLoop_IgnoresTLSServerClosed(t *testing.T) {
+	srv := &fakeHTTPServer{listenTLSErr: http.ErrServerClosed}
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	var fatalCalls int
+
+	runServerLoop(srv, serverLoopOptions{
+		listenAddr:  ":3100",
+		backendURL:  "http://backend",
+		tlsCertFile: "server.crt",
+		tlsKeyFile:  "server.key",
+	}, logger, func(string, ...any) {
+		fatalCalls++
+	})
+
+	if fatalCalls != 0 {
+		t.Fatalf("expected tls http.ErrServerClosed to be ignored, got %d fatal calls", fatalCalls)
+	}
+}
+
+func TestBuildSignalChannels(t *testing.T) {
+	type notifyCall struct {
+		ch      chan<- os.Signal
+		signals []os.Signal
+	}
+	var calls []notifyCall
+
+	reloadCh, shutdownCh := buildSignalChannels(func(ch chan<- os.Signal, sigs ...os.Signal) {
+		calls = append(calls, notifyCall{ch: ch, signals: sigs})
+	})
+
+	if reloadCh == nil || shutdownCh == nil {
+		t.Fatal("expected signal channels")
+	}
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 notify calls, got %d", len(calls))
+	}
+	if len(calls[0].signals) != 1 || calls[0].signals[0] != syscall.SIGHUP {
+		t.Fatalf("unexpected reload signals: %+v", calls[0].signals)
+	}
+	if len(calls[1].signals) != 2 || calls[1].signals[0] != syscall.SIGTERM || calls[1].signals[1] != syscall.SIGINT {
+		t.Fatalf("unexpected shutdown signals: %+v", calls[1].signals)
 	}
 }
 

@@ -156,6 +156,19 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
+  test("multi-tenant metric query with __tenant_id__ renders graph", async ({ page }) => {
+    await openExplore(page, PROXY_MULTI_DS);
+    await waitForGrafanaReady(page);
+
+    const errors = collectLokiErrors(page);
+    await typeQuery(page, 'sum(rate({app="api-gateway", __tenant_id__=~"f.*"}[5m])) by (level)');
+    await runQuery(page);
+
+    await assertNoErrors(page);
+    await assertGraphVisible(page);
+    expect(errors).toHaveLength(0);
+  });
+
   test("live tail works through the browser-allowed synthetic datasource", async ({
     page,
   }) => {

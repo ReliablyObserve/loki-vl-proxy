@@ -386,6 +386,22 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(errors).toHaveLength(0);
   });
 
+  test("multi-tenant service drilldown supports combined label and field filters", async ({ page }) => {
+    const errors = collectLokiErrors(page);
+    await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "logs");
+
+    await addDrilldownFilter(page, "Filter by labels", "cluster", "us-east-1");
+    await addDrilldownFilter(page, "Filter by fields", "method", "GET");
+    await expect(page.getByLabel("Remove filter with key cluster")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByLabel("Remove filter with key method")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText("No logs found")).toHaveCount(0);
+    expect(errors).toHaveLength(0);
+  });
+
   test("multi-tenant landing page can add and use a cluster breakdown tab", async ({ page }) => {
     const responses = await collectDrilldownResponses(page);
     const errors = collectLokiErrors(page);

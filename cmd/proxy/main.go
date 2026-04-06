@@ -131,6 +131,8 @@ type reloadableProxy interface {
 	ReloadFieldMappings([]proxy.FieldMapping)
 }
 
+type signalNotifier func(chan<- os.Signal, ...os.Signal)
+
 func main() {
 	// Server flags
 	listenAddr := flag.String("listen", ":3100", "Address to listen on (Loki-compatible frontend)")
@@ -367,14 +369,10 @@ func main() {
 	}
 
 	// SIGHUP config reload for tenant-map and field-mapping
-	reloadCh := make(chan os.Signal, 1)
-	signal.Notify(reloadCh, syscall.SIGHUP)
+	reloadCh, shutdownCh := buildSignalChannels(signal.Notify)
 	go watchReloadSignals(reloadCh, p, os.Getenv, logger)
 
 	// Graceful shutdown on SIGTERM/SIGINT
-	shutdownCh := make(chan os.Signal, 1)
-	signal.Notify(shutdownCh, syscall.SIGTERM, syscall.SIGINT)
-
 	go runServerLoop(srv, serverLoopOptions{
 		listenAddr:  *listenAddr,
 		backendURL:  *backendURL,
@@ -412,6 +410,14 @@ func buildCacheLayer(ttl time.Duration, maxEntries int, diskCfg cache.DiskCacheC
 		"flush_interval", diskCfg.FlushInterval.String(),
 	)
 	return c, func() { _ = dc.Close() }, nil
+}
+
+func buildSignalChannels(notify signalNotifier) (chan os.Signal, chan os.Signal) {
+	reloadCh := make(chan os.Signal, 1)
+	notify(reloadCh, syscall.SIGHUP)
+	shutdownCh := make(chan os.Signal, 1)
+	notify(shutdownCh, syscall.SIGTERM, syscall.SIGINT)
+	return reloadCh, shutdownCh
 }
 
 func watchReloadSignals(reloadCh <-chan os.Signal, p reloadableProxy, getenv func(string) string, logger *slog.Logger) {
