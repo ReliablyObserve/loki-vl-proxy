@@ -597,6 +597,82 @@ func TestFeature_Tail_ReverseProxyIngressStreamsLiveData(t *testing.T) {
 	}
 }
 
+func TestFeature_Tail_ReverseProxyIngressSurvivesIdleWindow(t *testing.T) {
+	now := time.Now()
+	app := fmt.Sprintf("tail-ingress-idle-%d", now.UnixNano())
+	msg := "ingress idle tail frame " + app
+
+	params := url.Values{}
+	params.Set("query", fmt.Sprintf(`{app="%s"}`, app))
+	params.Set("start", fmt.Sprintf("%d", now.UnixNano()))
+
+	headers := http.Header{}
+	headers.Set("Origin", "http://127.0.0.1:3002")
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, resp, err := dialer.Dial("ws"+strings.TrimPrefix(tailIngressURL, "http")+"/loki/api/v1/tail?"+params.Encode(), headers)
+	if err != nil {
+		t.Fatalf("ingress websocket dial failed: %v (resp=%v)", err, resp)
+	}
+	defer conn.Close()
+
+	time.Sleep(4 * time.Second)
+	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "info",
+	}, []logLine{{Msg: msg, Level: "info"}}, []string{"app", "env", "level"})
+
+	frame := readTailFrame(t, conn, msg, 10*time.Second)
+	streams, ok := frame["streams"].([]interface{})
+	if !ok || len(streams) == 0 {
+		t.Fatalf("expected ingress tail frame after idle window, got %v", frame)
+	}
+}
+
+func TestFeature_Tail_SyntheticProxyReconnectsCleanly(t *testing.T) {
+	app := fmt.Sprintf("tail-reconnect-%d", time.Now().UnixNano())
+
+	connect := func(start time.Time) *websocket.Conn {
+		t.Helper()
+		params := url.Values{}
+		params.Set("query", fmt.Sprintf(`{app="%s"}`, app))
+		params.Set("start", fmt.Sprintf("%d", start.UnixNano()))
+
+		headers := http.Header{}
+		headers.Set("Origin", "http://127.0.0.1:3002")
+		dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+		conn, resp, err := dialer.Dial("ws"+strings.TrimPrefix(tailProxyURL, "http")+"/loki/api/v1/tail?"+params.Encode(), headers)
+		if err != nil {
+			t.Fatalf("synthetic proxy websocket dial failed: %v (resp=%v)", err, resp)
+		}
+		return conn
+	}
+
+	firstConn := connect(time.Now())
+	firstMsg := "tail reconnect frame one " + app
+	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "info",
+	}, []logLine{{Msg: firstMsg, Level: "info"}}, []string{"app", "env", "level"})
+	_ = readTailFrame(t, firstConn, firstMsg, 10*time.Second)
+	_ = firstConn.Close()
+
+	secondConn := connect(time.Now())
+	defer secondConn.Close()
+	secondMsg := "tail reconnect frame two " + app
+	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "warn",
+	}, []logLine{{Msg: secondMsg, Level: "warn"}}, []string{"app", "env", "level"})
+	frame := readTailFrame(t, secondConn, secondMsg, 10*time.Second)
+	streams, ok := frame["streams"].([]interface{})
+	if !ok || len(streams) == 0 {
+		t.Fatalf("expected reconnect tail frame with streams, got %v", frame)
+	}
+}
+
 func TestFeature_Tail_NativeModeClosesWhenBackendTailUnavailable(t *testing.T) {
 	params := url.Values{}
 	params.Set("query", `{app="api-gateway"}`)

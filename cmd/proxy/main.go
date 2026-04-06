@@ -262,29 +262,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	// L1 in-memory cache
-	c := cache.New(*cacheTTL, *cacheMax)
-
-	// L2 disk cache (compression + write-back buffer)
-	if *diskCachePath != "" {
-		dc, err := cache.NewDiskCache(cache.DiskCacheConfig{
-			Path:          *diskCachePath,
-			Compression:   *diskCacheCompress,
-			FlushSize:     *diskCacheFlushSize,
-			FlushInterval: *diskCacheFlushInterval,
-		})
-		if err != nil {
-			fatal("failed to open disk cache", "error", err)
-		}
-		defer func() { _ = dc.Close() }()
-		c.SetL2(dc)
-		logger.Info("disk cache enabled",
-			"path", *diskCachePath,
-			"compress", *diskCacheCompress,
-			"flush_size", *diskCacheFlushSize,
-			"flush_interval", diskCacheFlushInterval.String(),
-		)
+	c, cacheCleanup, err := buildCacheLayer(*cacheTTL, *cacheMax, cache.DiskCacheConfig{
+		Path:          *diskCachePath,
+		Compression:   *diskCacheCompress,
+		FlushSize:     *diskCacheFlushSize,
+		FlushInterval: *diskCacheFlushInterval,
+	}, logger)
+	if err != nil {
+		fatal("failed to open disk cache", "error", err)
 	}
+	defer cacheCleanup()
 
 	proxyCfg, err := buildProxyConfig(proxyRuntimeConfig{
 		backendURL:               *backendURL,
@@ -382,12 +369,7 @@ func main() {
 	// SIGHUP config reload for tenant-map and field-mapping
 	reloadCh := make(chan os.Signal, 1)
 	signal.Notify(reloadCh, syscall.SIGHUP)
-	go func() {
-		for range reloadCh {
-			logger.Info("received sighup, reloading configuration")
-			reloadDynamicConfig(p, os.Getenv, logger)
-		}
-	}()
+	go watchReloadSignals(reloadCh, p, os.Getenv, logger)
 
 	// Graceful shutdown on SIGTERM/SIGINT
 	shutdownCh := make(chan os.Signal, 1)
@@ -410,6 +392,33 @@ func main() {
 		logger.Error("http shutdown error", "error", err)
 	}
 	logger.Info("shutdown complete")
+}
+
+func buildCacheLayer(ttl time.Duration, maxEntries int, diskCfg cache.DiskCacheConfig, logger *slog.Logger) (*cache.Cache, func(), error) {
+	c := cache.New(ttl, maxEntries)
+	if diskCfg.Path == "" {
+		return c, func() {}, nil
+	}
+
+	dc, err := cache.NewDiskCache(diskCfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	c.SetL2(dc)
+	logger.Info("disk cache enabled",
+		"path", diskCfg.Path,
+		"compress", diskCfg.Compression,
+		"flush_size", diskCfg.FlushSize,
+		"flush_interval", diskCfg.FlushInterval.String(),
+	)
+	return c, func() { _ = dc.Close() }, nil
+}
+
+func watchReloadSignals(reloadCh <-chan os.Signal, p reloadableProxy, getenv func(string) string, logger *slog.Logger) {
+	for range reloadCh {
+		logger.Info("received sighup, reloading configuration")
+		reloadDynamicConfig(p, getenv, logger)
+	}
 }
 
 // maxBodyHandler limits the request body size to prevent resource exhaustion.

@@ -17,8 +17,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -545,6 +547,63 @@ func TestBuildHTTPServer_WithTLSClientCA(t *testing.T) {
 	}
 }
 
+func TestBuildCacheLayer_WithoutDiskCache(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+
+	c, cleanup, err := buildCacheLayer(15*time.Second, 123, cache.DiskCacheConfig{}, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer cleanup()
+
+	if c == nil {
+		t.Fatal("expected in-memory cache")
+	}
+	if got := buf.String(); strings.Contains(got, "disk cache enabled") {
+		t.Fatalf("did not expect disk cache log, got %s", got)
+	}
+}
+
+func TestBuildCacheLayer_WithDiskCache(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+
+	c, cleanup, err := buildCacheLayer(15*time.Second, 123, cache.DiskCacheConfig{
+		Path:          filepath.Join(t.TempDir(), "cache.db"),
+		Compression:   true,
+		FlushSize:     7,
+		FlushInterval: 2 * time.Second,
+	}, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer cleanup()
+
+	if c == nil {
+		t.Fatal("expected cache with disk layer")
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "disk cache enabled") || !strings.Contains(logs, "\"flush_size\":7") {
+		t.Fatalf("expected disk cache startup log, got %s", logs)
+	}
+}
+
+func TestBuildCacheLayer_InvalidDiskCache(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	if _, cleanup, err := buildCacheLayer(15*time.Second, 123, cache.DiskCacheConfig{
+		Path:          t.TempDir(),
+		Compression:   true,
+		FlushSize:     7,
+		FlushInterval: 2 * time.Second,
+	}, logger); err == nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		t.Fatal("expected invalid disk cache path error")
+	}
+}
+
 func TestRunServerLoop_UsesPlainHTTPByDefault(t *testing.T) {
 	srv := &fakeHTTPServer{}
 	buf := &bytes.Buffer{}
@@ -626,6 +685,48 @@ func TestRunServerLoop_IgnoresServerClosed(t *testing.T) {
 
 	if fatalCalls != 0 {
 		t.Fatalf("expected http.ErrServerClosed to be ignored, got %d fatal calls", fatalCalls)
+	}
+}
+
+func TestWatchReloadSignals(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+	fake := &fakeReloadableProxy{}
+	reloadCh := make(chan os.Signal, 1)
+	done := make(chan struct{})
+
+	go func() {
+		watchReloadSignals(reloadCh, fake, func(key string) string {
+			switch key {
+			case "TENANT_MAP":
+				return `{"team-a":{"account_id":"1","project_id":"2"}}`
+			case "FIELD_MAPPING":
+				return `[{"vl_field":"service.name","loki_label":"service_name"}]`
+			default:
+				return ""
+			}
+		}, logger)
+		close(done)
+	}()
+
+	reloadCh <- syscall.SIGHUP
+	time.Sleep(50 * time.Millisecond)
+	signal.Stop(reloadCh)
+	close(reloadCh)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("watchReloadSignals did not stop")
+	}
+
+	if fake.tenantMap["team-a"] != (proxy.TenantMapping{AccountID: "1", ProjectID: "2"}) {
+		t.Fatalf("unexpected tenant map reload: %+v", fake.tenantMap)
+	}
+	if len(fake.fieldMappings) != 1 || fake.fieldMappings[0].VLField != "service.name" {
+		t.Fatalf("unexpected field mapping reload: %+v", fake.fieldMappings)
+	}
+	if !strings.Contains(buf.String(), "received sighup, reloading configuration") {
+		t.Fatalf("expected reload signal log, got %s", buf.String())
 	}
 }
 

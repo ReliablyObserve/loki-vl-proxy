@@ -373,4 +373,16 @@ test.describe("Grafana Logs Drilldown", () => {
     await expect(page.getByText("No logs found")).toHaveCount(0);
     expect(errors).toHaveLength(0);
   });
+
+  test("multi-tenant service drilldown keeps method field filter working", async ({ page }) => {
+    const errors = collectLokiErrors(page);
+    await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "logs");
+
+    await addDrilldownFilter(page, "Filter by fields", "method", "GET");
+    await expect(page.getByLabel("Remove filter with key method")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText("No logs found")).toHaveCount(0);
+    expect(errors).toHaveLength(0);
+  });
 });
