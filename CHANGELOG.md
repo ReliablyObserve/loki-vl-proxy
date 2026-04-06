@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- configurable `tail.mode` with explicit `auto`, `native`, and `synthetic` streaming modes for Loki-compatible `/tail`
+
+### CI
+
+- require releasable PRs to update `CHANGELOG.md` `Unreleased` via a dedicated changelog gate workflow
+
+### Tests
+
+- compose-backed `/tail` coverage now verifies native live frames, forced synthetic tail streaming, and browser-origin behavior against the real stack
+- Grafana Explore UI coverage now includes a live-tail regression against the browser-allowed synthetic-tail datasource
+
 ## [0.26.1] - 2026-04-06
 
 ### Features

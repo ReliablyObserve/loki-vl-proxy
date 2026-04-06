@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import {
   PROXY_DS,
   PROXY_MULTI_DS,
+  PROXY_TAIL_DS,
   LOKI_DS,
   openExplore,
   typeQuery,
@@ -138,6 +139,50 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await assertNoErrors(page);
     await assertLogsVisible(page);
     expect(errors).toHaveLength(0);
+  });
+
+  test("live tail works through the browser-allowed synthetic datasource", async ({
+    page,
+  }) => {
+    const app = `ui-tail-${Date.now()}`;
+    const msg = `ui tail frame ${app}`;
+    const errors = collectLokiErrors(page);
+    const websockets: string[] = [];
+
+    page.on("websocket", (ws) => {
+      websockets.push(ws.url());
+    });
+
+    await openExplore(page, PROXY_TAIL_DS);
+    await waitForGrafanaReady(page);
+    await typeQuery(page, `{app="${app}"}`);
+
+    const liveButton = page.getByRole("button", { name: /live/i }).first();
+    await expect(liveButton).toBeVisible({ timeout: 15_000 });
+    await liveButton.click();
+
+    const payload = JSON.stringify({
+      _time: new Date().toISOString(),
+      _msg: msg,
+      app,
+      env: "test",
+      level: "info",
+    });
+    const pushResp = await page.request.post(
+      "http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,env,level",
+      {
+        headers: { "Content-Type": "application/stream+json" },
+        data: `${payload}\n`,
+      }
+    );
+    expect(pushResp.ok()).toBeTruthy();
+
+    await expect(page.getByText(msg, { exact: false })).toBeVisible({
+      timeout: 15_000,
+    });
+    await assertNoErrors(page);
+    expect(errors).toHaveLength(0);
+    expect(websockets.some((u) => u.includes("/tail") || u.includes("/api/live/ws"))).toBeTruthy();
   });
 });
 

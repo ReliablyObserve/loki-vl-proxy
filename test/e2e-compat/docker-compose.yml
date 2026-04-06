@@ -82,7 +82,7 @@ services:
       - "-backend=http://victorialogs:9428"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
-      - "-log-level=info"
+      - "-log-level=debug"
       - "-cache-ttl=5s"
     depends_on:
       victorialogs:
@@ -124,6 +124,36 @@ services:
       retries: 10
       start_period: 5s
 
+  # Loki-VL-proxy with synthetic tail and browser origin allowlist for real UI /tail tests
+  loki-vl-proxy-tail:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-tail
+    ports:
+      - "3103:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
+      - "-log-level=info"
+      - "-cache-ttl=5s"
+      - "-label-style=underscores"
+      - "-tail.mode=synthetic"
+      - "-tail.allowed-origins=http://grafana:3000,http://127.0.0.1:3002,http://localhost:3002"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      vmalert:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
   # Grafana with 3 datasources for manual side-by-side comparison
   grafana:
     image: ${GRAFANA_IMAGE:-grafana/grafana:12.4.2}
@@ -141,6 +171,7 @@ services:
       - loki
       - loki-vl-proxy
       - loki-vl-proxy-underscore
+      - loki-vl-proxy-tail
 
 volumes:
   vl-data:

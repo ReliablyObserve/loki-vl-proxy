@@ -17,6 +17,25 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+func readTailFrame(t *testing.T, conn *websocket.Conn, wantSubstring string, timeout time.Duration) map[string]interface{} {
+	t.Helper()
+	_ = conn.SetReadDeadline(time.Now().Add(timeout))
+	for {
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			t.Fatalf("tail read failed: %v", err)
+		}
+		if wantSubstring != "" && !strings.Contains(string(msg), wantSubstring) {
+			continue
+		}
+		var frame map[string]interface{}
+		if err := json.Unmarshal(msg, &frame); err != nil {
+			t.Fatalf("invalid tail JSON frame: %v", err)
+		}
+		return frame
+	}
+}
+
 // =============================================================================
 // Index Stats (real implementation via VL /select/logsql/hits)
 // =============================================================================
@@ -414,6 +433,50 @@ func TestFeature_Tail_WebSocketConnection(t *testing.T) {
 	score.report(t)
 }
 
+func TestFeature_Tail_WebSocketStreamsLiveData_ProxyMatchesLoki(t *testing.T) {
+	now := time.Now()
+	app := fmt.Sprintf("tail-live-%d", now.UnixNano())
+	msg := "tail live frame " + app
+
+	params := url.Values{}
+	params.Set("query", fmt.Sprintf(`{app="%s"}`, app))
+	params.Set("start", fmt.Sprintf("%d", now.UnixNano()))
+
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	proxyConn, proxyResp, err := dialer.Dial("ws"+strings.TrimPrefix(proxyURL, "http")+"/loki/api/v1/tail?"+params.Encode(), nil)
+	if err != nil {
+		t.Fatalf("proxy websocket dial failed: %v (resp=%v)", err, proxyResp)
+	}
+	defer proxyConn.Close()
+
+	lokiConn, lokiResp, err := dialer.Dial("ws"+strings.TrimPrefix(lokiURL, "http")+"/loki/api/v1/tail?"+params.Encode(), nil)
+	if err != nil {
+		t.Fatalf("loki websocket dial failed: %v (resp=%v)", err, lokiResp)
+	}
+	defer lokiConn.Close()
+
+	pushCustomToVL(t, now.Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "info",
+	}, []logLine{{Msg: msg, Level: "info"}}, []string{"app", "env", "level"})
+	pushCustomToLoki(t, now.Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "info",
+	}, []logLine{{Msg: msg, Level: "info"}})
+
+	proxyFrame := readTailFrame(t, proxyConn, msg, 10*time.Second)
+	lokiFrame := readTailFrame(t, lokiConn, msg, 10*time.Second)
+
+	if _, ok := proxyFrame["streams"]; !ok {
+		t.Fatalf("expected proxy tail frame to contain streams, got %v", proxyFrame)
+	}
+	if _, ok := lokiFrame["streams"]; !ok {
+		t.Fatalf("expected loki tail frame to contain streams, got %v", lokiFrame)
+	}
+}
+
 func TestFeature_Tail_BrowserOriginRejectedByDefault(t *testing.T) {
 	score := &CompatScore{}
 
@@ -438,6 +501,37 @@ func TestFeature_Tail_BrowserOriginRejectedByDefault(t *testing.T) {
 	}
 
 	score.report(t)
+}
+
+func TestFeature_Tail_SyntheticProxyAllowsConfiguredOriginAndStreamsLiveData(t *testing.T) {
+	now := time.Now()
+	app := fmt.Sprintf("tail-synth-%d", now.UnixNano())
+	msg := "synthetic tail frame " + app
+
+	params := url.Values{}
+	params.Set("query", fmt.Sprintf(`{app="%s"}`, app))
+	params.Set("start", fmt.Sprintf("%d", now.UnixNano()))
+
+	headers := http.Header{}
+	headers.Set("Origin", "http://127.0.0.1:3002")
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, resp, err := dialer.Dial("ws"+strings.TrimPrefix(tailProxyURL, "http")+"/loki/api/v1/tail?"+params.Encode(), headers)
+	if err != nil {
+		t.Fatalf("synthetic proxy websocket dial failed: %v (resp=%v)", err, resp)
+	}
+	defer conn.Close()
+
+	pushCustomToVL(t, now.Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "warn",
+	}, []logLine{{Msg: msg, Level: "warn"}}, []string{"app", "env", "level"})
+
+	frame := readTailFrame(t, conn, msg, 10*time.Second)
+	streams, ok := frame["streams"].([]interface{})
+	if !ok || len(streams) == 0 {
+		t.Fatalf("expected synthetic tail frame with streams, got %v", frame)
+	}
 }
 
 // =============================================================================

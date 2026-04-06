@@ -1,0 +1,33 @@
+name: Changelog PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Unit test changelog gate
+        run: python -m unittest scripts.ci.tests.test_check_changelog_pr
+
+      - name: Enforce changelog updates for releasable PRs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python scripts/ci/check_changelog_pr.py \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA"

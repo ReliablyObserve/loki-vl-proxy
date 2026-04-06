@@ -397,6 +397,7 @@ func TestBuildProxyConfig(t *testing.T) {
 		enableQueryAnalytics:     true,
 		adminAuthToken:           "secret",
 		tailAllowedOrigins:       "https://grafana.example.com",
+		tailMode:                 "synthetic",
 		metricsMaxTenants:        11,
 		metricsMaxClients:        12,
 		metricsTrustProxyHeaders: true,
@@ -441,6 +442,9 @@ func TestBuildProxyConfig(t *testing.T) {
 	if len(got.StreamFields) != 2 || got.StreamFields[0] != "app" {
 		t.Fatalf("unexpected stream fields: %+v", got.StreamFields)
 	}
+	if got.TailMode != proxy.TailModeSynthetic {
+		t.Fatalf("unexpected tail mode: %v", got.TailMode)
+	}
 	if got.PeerCache == nil {
 		t.Fatal("expected peer cache to be created")
 	}
@@ -476,6 +480,7 @@ func TestBuildProxyConfig_InvalidInputs(t *testing.T) {
 		{derivedFieldsJSON: "{", labelStyle: "passthrough", metadataFieldMode: "hybrid"},
 		{labelStyle: "bad", metadataFieldMode: "hybrid"},
 		{labelStyle: "passthrough", metadataFieldMode: "bad"},
+		{labelStyle: "passthrough", metadataFieldMode: "hybrid", tailMode: "bad"},
 	}
 	for _, tc := range cases {
 		if _, err := buildProxyConfig(tc); err == nil {

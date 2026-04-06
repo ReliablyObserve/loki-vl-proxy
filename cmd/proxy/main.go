@@ -66,6 +66,7 @@ type proxyRuntimeConfig struct {
 	enableQueryAnalytics     bool
 	adminAuthToken           string
 	tailAllowedOrigins       string
+	tailMode                 string
 	metricsMaxTenants        int
 	metricsMaxClients        int
 	metricsTrustProxyHeaders bool
@@ -175,6 +176,7 @@ func main() {
 	enableQueryAnalytics := flag.Bool("server.enable-query-analytics", false, "Expose /debug/queries query analytics")
 	adminAuthToken := flag.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set")
 	tailAllowedOrigins := flag.String("tail.allowed-origins", "", "Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins.")
+	tailMode := flag.String("tail.mode", "auto", "Tail streaming mode: auto (native with synthetic fallback), native, or synthetic")
 	metricsMaxTenants := flag.Int("metrics.max-tenants", 256, "Maximum unique tenant labels retained in exported metrics before collapsing into __overflow__")
 	metricsMaxClients := flag.Int("metrics.max-clients", 256, "Maximum unique client labels retained in exported metrics before collapsing into __overflow__")
 	metricsTrustProxyHeaders := flag.Bool("metrics.trust-proxy-headers", false, "Trust X-Grafana-User and X-Forwarded-For when deriving per-client metrics labels")
@@ -293,6 +295,7 @@ func main() {
 		enableQueryAnalytics:     *enableQueryAnalytics,
 		adminAuthToken:           *adminAuthToken,
 		tailAllowedOrigins:       *tailAllowedOrigins,
+		tailMode:                 *tailMode,
 		metricsMaxTenants:        *metricsMaxTenants,
 		metricsMaxClients:        *metricsMaxClients,
 		metricsTrustProxyHeaders: *metricsTrustProxyHeaders,
@@ -597,6 +600,14 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if err != nil {
 		return proxy.Config{}, fmt.Errorf("parse derived fields: %w", err)
 	}
+	tailMode := proxy.TailMode(cfg.tailMode)
+	switch tailMode {
+	case "", proxy.TailModeAuto:
+		tailMode = proxy.TailModeAuto
+	case proxy.TailModeNative, proxy.TailModeSynthetic:
+	default:
+		return proxy.Config{}, fmt.Errorf("invalid -tail.mode: %q (must be 'auto', 'native', or 'synthetic')", cfg.tailMode)
+	}
 
 	var peerCache *cache.PeerCache
 	if cfg.peerSelf != "" && cfg.peerDiscovery != "" {
@@ -631,6 +642,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		EnableQueryAnalytics:     cfg.enableQueryAnalytics,
 		AdminAuthToken:           cfg.adminAuthToken,
 		TailAllowedOrigins:       parseCSV(cfg.tailAllowedOrigins),
+		TailMode:                 tailMode,
 		MetricsMaxTenants:        cfg.metricsMaxTenants,
 		MetricsMaxClients:        cfg.metricsMaxClients,
 		MetricsTrustProxyHeaders: cfg.metricsTrustProxyHeaders,

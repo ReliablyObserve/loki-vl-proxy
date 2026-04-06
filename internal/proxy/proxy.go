@@ -96,6 +96,14 @@ type TenantMapping struct {
 	ProjectID string `json:"project_id" yaml:"project_id"`
 }
 
+type TailMode string
+
+const (
+	TailModeAuto      TailMode = "auto"
+	TailModeNative    TailMode = "native"
+	TailModeSynthetic TailMode = "synthetic"
+)
+
 type Config struct {
 	BackendURL        string
 	RulerBackendURL   string
@@ -142,6 +150,7 @@ type Config struct {
 
 	// Tail/WebSocket hardening
 	TailAllowedOrigins []string
+	TailMode           TailMode
 
 	// Metrics/export hardening
 	MetricsMaxTenants        int
@@ -209,6 +218,7 @@ type Proxy struct {
 	enableQueryAnalytics     bool
 	adminAuthToken           string
 	tailAllowedOrigins       map[string]struct{}
+	tailMode                 TailMode
 	metricsTrustProxyHeaders bool
 }
 
@@ -322,6 +332,15 @@ func New(cfg Config) (*Proxy, error) {
 		tailAllowedOrigins[origin] = struct{}{}
 	}
 	metadataFieldMode := normalizeMetadataFieldMode(cfg.MetadataFieldMode)
+	tailMode := cfg.TailMode
+	if tailMode == "" {
+		tailMode = TailModeAuto
+	}
+	switch tailMode {
+	case TailModeAuto, TailModeNative, TailModeSynthetic:
+	default:
+		return nil, fmt.Errorf("invalid tail mode %q", tailMode)
+	}
 
 	return &Proxy{
 		backend:       u,
@@ -360,6 +379,7 @@ func New(cfg Config) (*Proxy, error) {
 		enableQueryAnalytics:     cfg.EnableQueryAnalytics,
 		adminAuthToken:           cfg.AdminAuthToken,
 		tailAllowedOrigins:       tailAllowedOrigins,
+		tailMode:                 tailMode,
 		metricsTrustProxyHeaders: cfg.MetricsTrustProxyHeaders,
 	}, nil
 }
@@ -1931,10 +1951,20 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	pingTicker := time.NewTicker(time.Second)
 	defer pingTicker.Stop()
 
+	if p.tailMode == TailModeSynthetic {
+		p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery, "native", false, "fallback", "forced synthetic tail mode")
+		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, r.FormValue("start"))
+		return
+	}
+
 	resp, nativeTail, fallbackReason := p.openNativeTailStream(wsCtx, logsqlQuery)
 	p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery, "native", nativeTail, "fallback", fallbackReason)
 	if !nativeTail {
-		p.streamSyntheticTail(wsCtx, conn, logqlQuery, r.FormValue("start"))
+		if p.tailMode == TailModeNative {
+			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, fallbackReason), time.Now().Add(time.Second))
+			return
+		}
+		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, r.FormValue("start"))
 		return
 	}
 	defer resp.Body.Close()
@@ -2061,7 +2091,7 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	return nil, false, fmt.Sprintf("backend tail unavailable: %s", msg)
 }
 
-func (p *Proxy) streamSyntheticTail(ctx context.Context, conn *websocket.Conn, logqlQuery, startHint string) {
+func (p *Proxy) streamSyntheticTail(ctx context.Context, conn *websocket.Conn, logsqlQuery, startHint string) {
 	lastSeen := make(map[string]struct{}, 128)
 	windowStart := time.Now().Add(-5 * time.Second)
 	if parsed, ok := parseEntryTime(startHint); ok {
@@ -2072,7 +2102,7 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn *websocket.Conn, l
 	defer ticker.Stop()
 
 	for {
-		if err := p.writeSyntheticTailBatch(ctx, conn, logqlQuery, &windowStart, lastSeen); err != nil {
+		if err := p.writeSyntheticTailBatch(ctx, conn, logsqlQuery, &windowStart, lastSeen); err != nil {
 			p.log.Debug("synthetic tail batch failed", "error", err)
 		}
 
@@ -2084,9 +2114,9 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn *websocket.Conn, l
 	}
 }
 
-func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn *websocket.Conn, logqlQuery string, windowStart *time.Time, lastSeen map[string]struct{}) error {
+func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn *websocket.Conn, logsqlQuery string, windowStart *time.Time, lastSeen map[string]struct{}) error {
 	params := url.Values{}
-	params.Set("query", logqlQuery+" | sort by (_time)")
+	params.Set("query", logsqlQuery+" | sort by (_time)")
 	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
 	params.Set("end", formatVLTimestamp(time.Now().UTC().Format(time.RFC3339Nano)))
 	params.Set("limit", "200")

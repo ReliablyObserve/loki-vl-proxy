@@ -4,11 +4,13 @@
 // Loki-VL-proxy responses against real Loki responses for identical log data.
 //
 // Prerequisites:
-//   docker-compose up -d --build  (from this directory)
-//   wait ~15s for services to start
+//
+//	docker-compose up -d --build  (from this directory)
+//	wait ~15s for services to start
 //
 // Run:
-//   go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
+//
+//	go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
 //
 // The test suite:
 // 1. Ingests identical logs into both Loki and VictoriaLogs
@@ -30,9 +32,10 @@ import (
 )
 
 var (
-	lokiURL  = envOr("LOKI_URL", "http://localhost:3101")
-	proxyURL = envOr("PROXY_URL", "http://localhost:3100")
-	vlURL    = envOr("VL_URL", "http://localhost:9428")
+	lokiURL      = envOr("LOKI_URL", "http://localhost:3101")
+	proxyURL     = envOr("PROXY_URL", "http://localhost:3100")
+	tailProxyURL = envOr("TAIL_PROXY_URL", "http://localhost:3103")
+	vlURL        = envOr("VL_URL", "http://localhost:9428")
 )
 
 func envOr(key, def string) string {
@@ -429,6 +432,11 @@ type logLine struct {
 
 func pushToLoki(t *testing.T, baseTime time.Time, lines []logLine) {
 	t.Helper()
+	pushCustomToLoki(t, baseTime, map[string]string{"app": "e2e-test", "env": "test", "level": lines[0].Level}, lines)
+}
+
+func pushCustomToLoki(t *testing.T, baseTime time.Time, stream map[string]string, lines []logLine) {
+	t.Helper()
 	values := make([][]string, len(lines))
 	for i, l := range lines {
 		ts := baseTime.Add(time.Duration(i) * time.Second)
@@ -438,7 +446,7 @@ func pushToLoki(t *testing.T, baseTime time.Time, lines []logLine) {
 	payload := map[string]interface{}{
 		"streams": []map[string]interface{}{
 			{
-				"stream": map[string]string{"app": "e2e-test", "env": "test", "level": lines[0].Level},
+				"stream": stream,
 				"values": values,
 			},
 		},
@@ -456,22 +464,28 @@ func pushToLoki(t *testing.T, baseTime time.Time, lines []logLine) {
 
 func pushToVL(t *testing.T, baseTime time.Time, lines []logLine) {
 	t.Helper()
+	pushCustomToVL(t, baseTime, map[string]string{"app": "e2e-test", "env": "test", "level": lines[0].Level}, lines, []string{"app", "env", "level"})
+}
+
+func pushCustomToVL(t *testing.T, baseTime time.Time, fields map[string]string, lines []logLine, streamFields []string) {
+	t.Helper()
 	var vlLines []string
 	for i, l := range lines {
 		ts := baseTime.Add(time.Duration(i) * time.Second)
 		entry := map[string]string{
 			"_time": ts.Format(time.RFC3339Nano),
 			"_msg":  l.Msg,
-			"app":   "e2e-test",
-			"env":   "test",
-			"level": l.Level,
+		}
+		for k, v := range fields {
+			entry[k] = v
 		}
 		line, _ := json.Marshal(entry)
 		vlLines = append(vlLines, string(line))
 	}
+	streamFieldsQS := strings.Join(streamFields, ",")
 
 	resp, err := http.Post(
-		vlURL+"/insert/jsonline?_stream_fields=app,env,level",
+		vlURL+"/insert/jsonline?_stream_fields="+url.QueryEscape(streamFieldsQS),
 		"application/stream+json",
 		strings.NewReader(strings.Join(vlLines, "\n")),
 	)
