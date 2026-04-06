@@ -121,6 +121,7 @@ collect_benchmarks() {
   go test ./internal/proxy -run '^$' -bench 'BenchmarkProxy_(QueryRange|Labels)_(CacheHit|CacheBypass)$' -benchmem -benchtime=1s -count=5 >"$out"
   python3 - "$out" <<'PY'
 import json
+import re
 import statistics
 import sys
 
@@ -153,7 +154,7 @@ with open(path, "r", encoding="utf-8") as fh:
         parts = raw.split()
         if len(parts) < 7:
             continue
-        name = parts[0]
+        name = re.sub(r"-\d+$", "", parts[0])
         if name not in metrics:
             continue
         try:
