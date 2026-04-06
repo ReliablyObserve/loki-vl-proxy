@@ -6,6 +6,7 @@
 [![VictoriaLogs Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-vl.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-vl.yaml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/szibis/Loki-VL-proxy)](https://go.dev/)
 [![Release](https://img.shields.io/github/v/release/szibis/Loki-VL-proxy)](https://github.com/szibis/Loki-VL-proxy/releases)
+[![Lines of Code](https://sloc.xyz/github/szibis/Loki-VL-proxy/?category=code)](https://github.com/szibis/Loki-VL-proxy)
 [![Tests](https://img.shields.io/badge/tests-1023%20passed-brightgreen)](#tests)
 [![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/szibis/Loki-VL-proxy)](LICENSE)

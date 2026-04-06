@@ -109,7 +109,7 @@ test.describe("Grafana Datasource Health & Config", () => {
 
   test("direct Loki drilldown bootstrap endpoint works with tenant header", async ({ request }) => {
     const directLokiUrl =
-      process.env.DIRECT_LOKI_URL || "http://host.docker.internal:3101";
+      process.env.DIRECT_LOKI_URL || "http://127.0.0.1:3101";
     const limitsResponse = await request.get(
       `${directLokiUrl}/loki/api/v1/drilldown-limits`,
       {

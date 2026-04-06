@@ -142,97 +142,152 @@ type reloadableProxy interface {
 }
 
 type signalNotifier func(chan<- os.Signal, ...os.Signal)
+type runtimeBuilder func(runtimeOptions, *slog.Logger, signalNotifier, otlpPusherFactory) (*runtimeState, error)
+type serverRunner func(httpServer, serverLoopOptions, *slog.Logger, func(string, ...any))
+type shutdownHandlerFunc func(<-chan os.Signal, httpServer, time.Duration, *slog.Logger)
+
+type runtimeOptions struct {
+	cacheTTL     time.Duration
+	cacheMax     int
+	diskCfg      cache.DiskCacheConfig
+	proxyCfg     proxyRuntimeConfig
+	otlpCfg      otlpRuntimeConfig
+	maxBodyBytes int64
+	enableGzip   bool
+	serverOpts   serverRuntimeOptions
+}
+
+type runtimeState struct {
+	proxy        *proxy.Proxy
+	server       httpServer
+	cacheCleanup func()
+	stopOTLP     func()
+	reloadCh     chan os.Signal
+	shutdownCh   chan os.Signal
+}
 
 func main() {
+	if err := run(
+		os.Args[1:],
+		os.Getenv,
+		os.Stdout,
+		signal.Notify,
+		func(cfg metrics.OTLPConfig, m *metrics.Metrics) otlpMetricsPusher {
+			return metrics.NewOTLPPusher(cfg, m)
+		},
+		buildRuntime,
+		runServerLoop,
+		handleShutdown,
+	); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(
+	args []string,
+	getenv func(string) string,
+	logWriter io.Writer,
+	notify signalNotifier,
+	newPusher otlpPusherFactory,
+	buildRuntimeFn runtimeBuilder,
+	runServerLoopFn serverRunner,
+	handleShutdownFn shutdownHandlerFunc,
+) error {
+	fs := flag.NewFlagSet("loki-vl-proxy", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
 	// Server flags
-	listenAddr := flag.String("listen", ":3100", "Address to listen on (Loki-compatible frontend)")
-	backendURL := flag.String("backend", "http://localhost:9428", "VictoriaLogs backend URL")
-	rulerBackendURL := flag.String("ruler-backend", "", "Optional alert/ruler backend URL for /rules passthrough (for example vmalert)")
-	alertsBackendURL := flag.String("alerts-backend", "", "Optional alert backend URL for /alerts passthrough (defaults to -ruler-backend when unset)")
-	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
+	listenAddr := fs.String("listen", ":3100", "Address to listen on (Loki-compatible frontend)")
+	backendURL := fs.String("backend", "http://localhost:9428", "VictoriaLogs backend URL")
+	rulerBackendURL := fs.String("ruler-backend", "", "Optional alert/ruler backend URL for /rules passthrough (for example vmalert)")
+	alertsBackendURL := fs.String("alerts-backend", "", "Optional alert backend URL for /alerts passthrough (defaults to -ruler-backend when unset)")
+	logLevel := fs.String("log-level", "info", "Log level: debug, info, warn, error")
 
 	// Cache flags
-	cacheTTL := flag.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
-	cacheMax := flag.Int("cache-max", 10000, "Maximum cache entries")
+	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
+	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
 
 	// Disk cache flags
-	diskCachePath := flag.String("disk-cache-path", "", "Path to L2 disk cache (bbolt). Empty disables.")
-	diskCacheCompress := flag.Bool("disk-cache-compress", true, "Gzip compression for disk cache")
-	diskCacheFlushSize := flag.Int("disk-cache-flush-size", 100, "Flush write buffer after N entries")
-	diskCacheFlushInterval := flag.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
+	diskCachePath := fs.String("disk-cache-path", "", "Path to L2 disk cache (bbolt). Empty disables.")
+	diskCacheCompress := fs.Bool("disk-cache-compress", true, "Gzip compression for disk cache")
+	diskCacheFlushSize := fs.Int("disk-cache-flush-size", 100, "Flush write buffer after N entries")
+	diskCacheFlushInterval := fs.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
 	// Tenant mapping
-	tenantMapJSON := flag.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
+	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
 
 	// OTLP telemetry flags
-	otlpEndpoint := flag.String("otlp-endpoint", "", "OTLP HTTP endpoint (e.g., http://otel-collector:4318/v1/metrics)")
-	otlpInterval := flag.Duration("otlp-interval", 30*time.Second, "OTLP push interval")
-	otlpCompression := flag.String("otlp-compression", "none", "OTLP compression: none, gzip, zstd")
-	otlpTimeout := flag.Duration("otlp-timeout", 10*time.Second, "OTLP HTTP request timeout")
-	otlpTLSSkipVerify := flag.Bool("otlp-tls-skip-verify", false, "Skip TLS verification for OTLP endpoint")
-	otlpHeaders := flag.String("otlp-headers", "", "Comma-separated OTLP HTTP headers in key=value form")
-	otelServiceName := flag.String("otel-service-name", "loki-vl-proxy", "OpenTelemetry service.name for logs and OTLP metrics")
-	otelServiceNamespace := flag.String("otel-service-namespace", "", "OpenTelemetry service.namespace for logs and OTLP metrics")
-	otelServiceInstanceID := flag.String("otel-service-instance-id", "", "OpenTelemetry service.instance.id for logs and OTLP metrics")
-	deploymentEnvironment := flag.String("deployment-environment", "", "OpenTelemetry deployment.environment.name for logs and OTLP metrics")
+	otlpEndpoint := fs.String("otlp-endpoint", "", "OTLP HTTP endpoint (e.g., http://otel-collector:4318/v1/metrics)")
+	otlpInterval := fs.Duration("otlp-interval", 30*time.Second, "OTLP push interval")
+	otlpCompression := fs.String("otlp-compression", "none", "OTLP compression: none, gzip, zstd")
+	otlpTimeout := fs.Duration("otlp-timeout", 10*time.Second, "OTLP HTTP request timeout")
+	otlpTLSSkipVerify := fs.Bool("otlp-tls-skip-verify", false, "Skip TLS verification for OTLP endpoint")
+	otlpHeaders := fs.String("otlp-headers", "", "Comma-separated OTLP HTTP headers in key=value form")
+	otelServiceName := fs.String("otel-service-name", "loki-vl-proxy", "OpenTelemetry service.name for logs and OTLP metrics")
+	otelServiceNamespace := fs.String("otel-service-namespace", "", "OpenTelemetry service.namespace for logs and OTLP metrics")
+	otelServiceInstanceID := fs.String("otel-service-instance-id", "", "OpenTelemetry service.instance.id for logs and OTLP metrics")
+	deploymentEnvironment := fs.String("deployment-environment", "", "OpenTelemetry deployment.environment.name for logs and OTLP metrics")
 
 	// HTTP server hardening
-	readTimeout := flag.Duration("http-read-timeout", 30*time.Second, "HTTP server read timeout")
-	writeTimeout := flag.Duration("http-write-timeout", 120*time.Second, "HTTP server write timeout")
-	idleTimeout := flag.Duration("http-idle-timeout", 120*time.Second, "HTTP server idle timeout")
-	maxHeaderBytes := flag.Int("http-max-header-bytes", 1<<20, "HTTP max header size (default: 1MB)")
-	maxBodyBytes := flag.Int64("http-max-body-bytes", 10<<20, "HTTP max request body size (default: 10MB)")
+	readTimeout := fs.Duration("http-read-timeout", 30*time.Second, "HTTP server read timeout")
+	writeTimeout := fs.Duration("http-write-timeout", 120*time.Second, "HTTP server write timeout")
+	idleTimeout := fs.Duration("http-idle-timeout", 120*time.Second, "HTTP server idle timeout")
+	maxHeaderBytes := fs.Int("http-max-header-bytes", 1<<20, "HTTP max header size (default: 1MB)")
+	maxBodyBytes := fs.Int64("http-max-body-bytes", 10<<20, "HTTP max request body size (default: 10MB)")
 
 	// TLS server
-	tlsCertFile := flag.String("tls-cert-file", "", "TLS certificate file for HTTPS server")
-	tlsKeyFile := flag.String("tls-key-file", "", "TLS private key file for HTTPS server")
-	tlsClientCAFile := flag.String("tls-client-ca-file", "", "CA certificate file used to verify HTTPS client certificates")
-	tlsRequireClientCert := flag.Bool("tls-require-client-cert", false, "Require and verify HTTPS client certificates")
+	tlsCertFile := fs.String("tls-cert-file", "", "TLS certificate file for HTTPS server")
+	tlsKeyFile := fs.String("tls-key-file", "", "TLS private key file for HTTPS server")
+	tlsClientCAFile := fs.String("tls-client-ca-file", "", "CA certificate file used to verify HTTPS client certificates")
+	tlsRequireClientCert := fs.Bool("tls-require-client-cert", false, "Require and verify HTTPS client certificates")
 
 	// Response compression
-	enableGzip := flag.Bool("response-gzip", true, "Enable gzip response compression for clients that accept it")
+	enableGzip := fs.Bool("response-gzip", true, "Enable gzip response compression for clients that accept it")
 
 	// Grafana datasource compatibility
-	maxLines := flag.Int("max-lines", 1000, "Default max lines per query")
-	backendTimeout := flag.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend")
-	backendBasicAuth := flag.String("backend-basic-auth", "", "Basic auth for VL backend (user:password)")
-	backendTLSSkip := flag.Bool("backend-tls-skip-verify", false, "Skip TLS verification for VL backend")
-	forwardHeaders := flag.String("forward-headers", "", "Comma-separated list of HTTP headers to forward to VL backend")
-	forwardCookies := flag.String("forward-cookies", "", "Comma-separated list of cookie names to forward to VL backend")
-	derivedFieldsJSON := flag.String("derived-fields", "", `JSON derived fields: [{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]`)
-	streamResponse := flag.Bool("stream-response", false, "Stream log responses via chunked transfer encoding")
+	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
+	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend")
+	backendBasicAuth := fs.String("backend-basic-auth", "", "Basic auth for VL backend (user:password)")
+	backendTLSSkip := fs.Bool("backend-tls-skip-verify", false, "Skip TLS verification for VL backend")
+	forwardHeaders := fs.String("forward-headers", "", "Comma-separated list of HTTP headers to forward to VL backend")
+	forwardCookies := fs.String("forward-cookies", "", "Comma-separated list of cookie names to forward to VL backend")
+	derivedFieldsJSON := fs.String("derived-fields", "", `JSON derived fields: [{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]`)
+	streamResponse := fs.Bool("stream-response", false, "Stream log responses via chunked transfer encoding")
 
 	// Loki-style auth / instrumentation controls
-	authEnabled := flag.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
-	registerInstrumentation := flag.Bool("server.register-instrumentation", true, "Register instrumentation handlers such as /metrics")
-	enablePprof := flag.Bool("server.enable-pprof", false, "Expose /debug/pprof/* handlers")
-	enableQueryAnalytics := flag.Bool("server.enable-query-analytics", false, "Expose /debug/queries query analytics")
-	adminAuthToken := flag.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set")
-	tailAllowedOrigins := flag.String("tail.allowed-origins", "", "Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins.")
-	tailMode := flag.String("tail.mode", "auto", "Tail streaming mode: auto (native with synthetic fallback), native, or synthetic")
-	metricsMaxTenants := flag.Int("metrics.max-tenants", 256, "Maximum unique tenant labels retained in exported metrics before collapsing into __overflow__")
-	metricsMaxClients := flag.Int("metrics.max-clients", 256, "Maximum unique client labels retained in exported metrics before collapsing into __overflow__")
-	metricsTrustProxyHeaders := flag.Bool("metrics.trust-proxy-headers", false, "Trust X-Grafana-User and X-Forwarded-For when deriving per-client metrics labels")
+	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
+	registerInstrumentation := fs.Bool("server.register-instrumentation", true, "Register instrumentation handlers such as /metrics")
+	enablePprof := fs.Bool("server.enable-pprof", false, "Expose /debug/pprof/* handlers")
+	enableQueryAnalytics := fs.Bool("server.enable-query-analytics", false, "Expose /debug/queries query analytics")
+	adminAuthToken := fs.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set")
+	tailAllowedOrigins := fs.String("tail.allowed-origins", "", "Comma-separated WebSocket Origin allowlist for /loki/api/v1/tail. Empty denies browser origins.")
+	tailMode := fs.String("tail.mode", "auto", "Tail streaming mode: auto (native with synthetic fallback), native, or synthetic")
+	metricsMaxTenants := fs.Int("metrics.max-tenants", 256, "Maximum unique tenant labels retained in exported metrics before collapsing into __overflow__")
+	metricsMaxClients := fs.Int("metrics.max-clients", 256, "Maximum unique client labels retained in exported metrics before collapsing into __overflow__")
+	metricsTrustProxyHeaders := fs.Bool("metrics.trust-proxy-headers", false, "Trust X-Grafana-User and X-Forwarded-For when deriving per-client metrics labels")
 
 	// Label translation
-	labelStyle := flag.String("label-style", "passthrough", `Label name translation mode:
+	labelStyle := fs.String("label-style", "passthrough", `Label name translation mode:
   passthrough  - no translation, pass VL field names as-is (use when VL stores underscores)
   underscores  - convert dots to underscores (use when VL stores OTel-style dotted names like service.name)`)
-	metadataFieldMode := flag.String("metadata-field-mode", "hybrid", `Field exposure mode for detected_fields and structured metadata:
+	metadataFieldMode := fs.String("metadata-field-mode", "hybrid", `Field exposure mode for detected_fields and structured metadata:
   native      - expose VictoriaLogs field names as-is
   translated  - expose only Loki-compatible translated aliases
   hybrid      - expose both native VL field names and translated aliases when they differ`)
-	fieldMappingJSON := flag.String("field-mapping", "", `JSON custom field mappings: [{"vl_field":"service.name","loki_label":"service_name"}]`)
-	streamFieldsCSV := flag.String("stream-fields", "", `Comma-separated VL _stream_fields labels for stream selector optimization (e.g., "app,env,namespace")`)
-	allowGlobalTenant := flag.Bool("tenant.allow-global", false, `Allow X-Scope-OrgID "*" to bypass AccountID/ProjectID scoping and use the backend default tenant`)
+	fieldMappingJSON := fs.String("field-mapping", "", `JSON custom field mappings: [{"vl_field":"service.name","loki_label":"service_name"}]`)
+	streamFieldsCSV := fs.String("stream-fields", "", `Comma-separated VL _stream_fields labels for stream selector optimization (e.g., "app,env,namespace")`)
+	allowGlobalTenant := fs.Bool("tenant.allow-global", false, `Allow X-Scope-OrgID "*" to bypass AccountID/ProjectID scoping and use the backend default tenant`)
 
 	// Peer cache (fleet distribution)
-	peerSelf := flag.String("peer-self", "", `This instance's address for peer cache (e.g., "10.0.0.1:3100"). Empty disables peer cache.`)
-	peerDiscovery := flag.String("peer-discovery", "", `Peer discovery: "dns" (headless service) or "static" (comma-separated)`)
-	peerDNS := flag.String("peer-dns", "", `Headless service DNS name for peer discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
-	peerStatic := flag.String("peer-static", "", `Static peer list (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
-	peerAuthToken := flag.String("peer-auth-token", "", "Shared token required on /_cache/get peer-cache requests when set")
+	peerSelf := fs.String("peer-self", "", `This instance's address for peer cache (e.g., "10.0.0.1:3100"). Empty disables peer cache.`)
+	peerDiscovery := fs.String("peer-discovery", "", `Peer discovery: "dns" (headless service) or "static" (comma-separated)`)
+	peerDNS := fs.String("peer-dns", "", `Headless service DNS name for peer discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
+	peerStatic := fs.String("peer-static", "", `Static peer list (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
+	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get peer-cache requests when set")
 
-	flag.Parse()
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 
 	envCfg := applyEnvOverrides(envConfig{
 		listenAddr:        *listenAddr,
@@ -250,9 +305,9 @@ func main() {
 		serviceNamespace:  *otelServiceNamespace,
 		serviceInstanceID: *otelServiceInstanceID,
 		deploymentEnv:     *deploymentEnvironment,
-	}, os.Getenv)
+	}, getenv)
 
-	logger := buildLogger(os.Stdout, loggerConfig{
+	logger := buildLogger(logWriter, loggerConfig{
 		level:                 *logLevel,
 		serviceName:           envCfg.serviceName,
 		serviceNamespace:      envCfg.serviceNamespace,
@@ -260,131 +315,95 @@ func main() {
 		serviceInstanceID:     envCfg.serviceInstanceID,
 		deploymentEnvironment: envCfg.deploymentEnv,
 	})
-	slog.SetDefault(logger)
 	fatal := func(msg string, args ...any) {
 		logger.Error(msg, args...)
 		os.Exit(1)
 	}
 
-	c, cacheCleanup, err := buildCacheLayer(*cacheTTL, *cacheMax, cache.DiskCacheConfig{
-		Path:          *diskCachePath,
-		Compression:   *diskCacheCompress,
-		FlushSize:     *diskCacheFlushSize,
-		FlushInterval: *diskCacheFlushInterval,
-	}, logger)
+	runtime, err := buildRuntimeFn(runtimeOptions{
+		cacheTTL: *cacheTTL,
+		cacheMax: *cacheMax,
+		diskCfg: cache.DiskCacheConfig{
+			Path:          *diskCachePath,
+			Compression:   *diskCacheCompress,
+			FlushSize:     *diskCacheFlushSize,
+			FlushInterval: *diskCacheFlushInterval,
+		},
+		proxyCfg: proxyRuntimeConfig{
+			backendURL:               envCfg.backendURL,
+			rulerBackendURL:          envCfg.rulerBackendURL,
+			alertsBackendURL:         envCfg.alertsBackendURL,
+			logLevel:                 *logLevel,
+			tenantMapJSON:            envCfg.tenantMapJSON,
+			maxLines:                 *maxLines,
+			backendTimeout:           *backendTimeout,
+			backendBasicAuth:         *backendBasicAuth,
+			backendTLSSkip:           *backendTLSSkip,
+			forwardHeaders:           *forwardHeaders,
+			forwardCookies:           *forwardCookies,
+			derivedFieldsJSON:        *derivedFieldsJSON,
+			streamResponse:           *streamResponse,
+			authEnabled:              *authEnabled,
+			allowGlobalTenant:        *allowGlobalTenant,
+			registerInstrumentation:  registerInstrumentation,
+			enablePprof:              *enablePprof,
+			enableQueryAnalytics:     *enableQueryAnalytics,
+			adminAuthToken:           *adminAuthToken,
+			tailAllowedOrigins:       *tailAllowedOrigins,
+			tailMode:                 *tailMode,
+			metricsMaxTenants:        *metricsMaxTenants,
+			metricsMaxClients:        *metricsMaxClients,
+			metricsTrustProxyHeaders: *metricsTrustProxyHeaders,
+			labelStyle:               envCfg.labelStyle,
+			metadataFieldMode:        envCfg.metadataFieldMode,
+			fieldMappingJSON:         envCfg.fieldMappingJSON,
+			streamFieldsCSV:          *streamFieldsCSV,
+			peerSelf:                 *peerSelf,
+			peerDiscovery:            *peerDiscovery,
+			peerDNS:                  *peerDNS,
+			peerStatic:               *peerStatic,
+			peerAuthToken:            *peerAuthToken,
+		},
+		otlpCfg: otlpRuntimeConfig{
+			endpoint:              envCfg.otlpEndpoint,
+			interval:              *otlpInterval,
+			headers:               envCfg.otlpHeaders,
+			compression:           envCfg.otlpCompression,
+			timeout:               *otlpTimeout,
+			tlsSkipVerify:         *otlpTLSSkipVerify,
+			serviceName:           envCfg.serviceName,
+			serviceNamespace:      envCfg.serviceNamespace,
+			serviceVersion:        version,
+			serviceInstanceID:     envCfg.serviceInstanceID,
+			deploymentEnvironment: envCfg.deploymentEnv,
+		},
+		maxBodyBytes: *maxBodyBytes,
+		enableGzip:   *enableGzip,
+		serverOpts: serverRuntimeOptions{
+			listenAddr:           envCfg.listenAddr,
+			readTimeout:          *readTimeout,
+			writeTimeout:         *writeTimeout,
+			idleTimeout:          *idleTimeout,
+			maxHeaderBytes:       *maxHeaderBytes,
+			tlsClientCAFile:      *tlsClientCAFile,
+			tlsRequireClientCert: *tlsRequireClientCert,
+		},
+	}, logger, notify, newPusher)
 	if err != nil {
-		fatal("failed to open disk cache", "error", err)
+		return fmt.Errorf("failed to initialize runtime: %w", err)
 	}
-	defer cacheCleanup()
+	defer runtime.cacheCleanup()
+	defer runtime.stopOTLP()
 
-	proxyCfg, err := buildProxyConfig(proxyRuntimeConfig{
-		backendURL:               envCfg.backendURL,
-		rulerBackendURL:          envCfg.rulerBackendURL,
-		alertsBackendURL:         envCfg.alertsBackendURL,
-		cache:                    c,
-		logLevel:                 *logLevel,
-		tenantMapJSON:            envCfg.tenantMapJSON,
-		maxLines:                 *maxLines,
-		backendTimeout:           *backendTimeout,
-		backendBasicAuth:         *backendBasicAuth,
-		backendTLSSkip:           *backendTLSSkip,
-		forwardHeaders:           *forwardHeaders,
-		forwardCookies:           *forwardCookies,
-		derivedFieldsJSON:        *derivedFieldsJSON,
-		streamResponse:           *streamResponse,
-		authEnabled:              *authEnabled,
-		allowGlobalTenant:        *allowGlobalTenant,
-		registerInstrumentation:  registerInstrumentation,
-		enablePprof:              *enablePprof,
-		enableQueryAnalytics:     *enableQueryAnalytics,
-		adminAuthToken:           *adminAuthToken,
-		tailAllowedOrigins:       *tailAllowedOrigins,
-		tailMode:                 *tailMode,
-		metricsMaxTenants:        *metricsMaxTenants,
-		metricsMaxClients:        *metricsMaxClients,
-		metricsTrustProxyHeaders: *metricsTrustProxyHeaders,
-		labelStyle:               envCfg.labelStyle,
-		metadataFieldMode:        envCfg.metadataFieldMode,
-		fieldMappingJSON:         envCfg.fieldMappingJSON,
-		streamFieldsCSV:          *streamFieldsCSV,
-		peerSelf:                 *peerSelf,
-		peerDiscovery:            *peerDiscovery,
-		peerDNS:                  *peerDNS,
-		peerStatic:               *peerStatic,
-		peerAuthToken:            *peerAuthToken,
-	})
-	if err != nil {
-		fatal("failed to build proxy configuration", "error", err)
-	}
-	logProxyStartup(logger, proxyCfg, *peerSelf, *peerDiscovery, c)
-
-	// Create proxy
-	p, err := proxy.New(proxyCfg)
-	if err != nil {
-		fatal("failed to create proxy", "error", err)
-	}
-	p.Init()
-
-	stopOTLP := startOTLPMetricsPusher(otlpRuntimeConfig{
-		endpoint:              envCfg.otlpEndpoint,
-		interval:              *otlpInterval,
-		headers:               envCfg.otlpHeaders,
-		compression:           envCfg.otlpCompression,
-		timeout:               *otlpTimeout,
-		tlsSkipVerify:         *otlpTLSSkipVerify,
-		serviceName:           envCfg.serviceName,
-		serviceNamespace:      envCfg.serviceNamespace,
-		serviceVersion:        version,
-		serviceInstanceID:     envCfg.serviceInstanceID,
-		deploymentEnvironment: envCfg.deploymentEnv,
-	}, p.GetMetrics(), logger, func(cfg metrics.OTLPConfig, m *metrics.Metrics) otlpMetricsPusher {
-		return metrics.NewOTLPPusher(cfg, m)
-	})
-	defer stopOTLP()
-
-	mux := http.NewServeMux()
-	p.RegisterRoutes(mux)
-
-	// Middleware chain: body limit → gzip compression
-	handler := wrapHandler(mux, *maxBodyBytes, *enableGzip)
-
-	// Hardened HTTP server with timeouts
-	srv, err := buildHTTPServer(serverRuntimeOptions{
-		listenAddr:           envCfg.listenAddr,
-		handler:              handler,
-		readTimeout:          *readTimeout,
-		writeTimeout:         *writeTimeout,
-		idleTimeout:          *idleTimeout,
-		maxHeaderBytes:       *maxHeaderBytes,
-		tlsClientCAFile:      *tlsClientCAFile,
-		tlsRequireClientCert: *tlsRequireClientCert,
-	})
-	if err != nil {
-		fatal("failed to configure server tls client authentication", "error", err)
-	}
-
-	// SIGHUP config reload for tenant-map and field-mapping
-	reloadCh, shutdownCh := buildSignalChannels(signal.Notify)
-	go watchReloadSignals(reloadCh, p, os.Getenv, logger)
-
-	// Graceful shutdown on SIGTERM/SIGINT
-	go runServerLoop(srv, serverLoopOptions{
+	go watchReloadSignals(runtime.reloadCh, runtime.proxy, getenv, logger)
+	go runServerLoopFn(runtime.server, serverLoopOptions{
 		listenAddr:  envCfg.listenAddr,
 		backendURL:  envCfg.backendURL,
 		tlsCertFile: *tlsCertFile,
 		tlsKeyFile:  *tlsKeyFile,
 	}, logger, fatal)
-
-	sig := <-shutdownCh
-	logger.Info("shutdown requested", "signal", sig.String())
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.Error("http shutdown error", "error", err)
-	}
-	logger.Info("shutdown complete")
+	handleShutdownFn(runtime.shutdownCh, runtime.server, 30*time.Second, logger)
+	return nil
 }
 
 func buildCacheLayer(ttl time.Duration, maxEntries int, diskCfg cache.DiskCacheConfig, logger *slog.Logger) (*cache.Cache, func(), error) {
@@ -407,6 +426,52 @@ func buildCacheLayer(ttl time.Duration, maxEntries int, diskCfg cache.DiskCacheC
 	return c, func() { _ = dc.Close() }, nil
 }
 
+func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifier, newPusher otlpPusherFactory) (*runtimeState, error) {
+	cacheLayer, cacheCleanup, err := buildCacheLayer(opts.cacheTTL, opts.cacheMax, opts.diskCfg, logger)
+	if err != nil {
+		return nil, fmt.Errorf("open disk cache: %w", err)
+	}
+
+	proxyCfg := opts.proxyCfg
+	proxyCfg.cache = cacheLayer
+	builtProxyCfg, err := buildProxyConfig(proxyCfg)
+	if err != nil {
+		cacheCleanup()
+		return nil, fmt.Errorf("build proxy config: %w", err)
+	}
+	logProxyStartup(logger, builtProxyCfg, proxyCfg.peerSelf, proxyCfg.peerDiscovery, cacheLayer)
+
+	p, err := proxy.New(builtProxyCfg)
+	if err != nil {
+		cacheCleanup()
+		return nil, fmt.Errorf("create proxy: %w", err)
+	}
+	p.Init()
+
+	stopOTLP := startOTLPMetricsPusher(opts.otlpCfg, p.GetMetrics(), logger, newPusher)
+
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	serverOpts := opts.serverOpts
+	serverOpts.handler = wrapHandler(mux, opts.maxBodyBytes, opts.enableGzip)
+	srv, err := buildHTTPServer(serverOpts)
+	if err != nil {
+		stopOTLP()
+		cacheCleanup()
+		return nil, fmt.Errorf("build http server: %w", err)
+	}
+
+	reloadCh, shutdownCh := buildSignalChannels(notify)
+	return &runtimeState{
+		proxy:        p,
+		server:       srv,
+		cacheCleanup: cacheCleanup,
+		stopOTLP:     stopOTLP,
+		reloadCh:     reloadCh,
+		shutdownCh:   shutdownCh,
+	}, nil
+}
+
 func buildLogger(w io.Writer, cfg loggerConfig) *slog.Logger {
 	logger := observability.NewLogger(w, observability.LoggerConfig{
 		Level:                 cfg.level,
@@ -426,6 +491,19 @@ func buildSignalChannels(notify signalNotifier) (chan os.Signal, chan os.Signal)
 	shutdownCh := make(chan os.Signal, 1)
 	notify(shutdownCh, syscall.SIGTERM, syscall.SIGINT)
 	return reloadCh, shutdownCh
+}
+
+func handleShutdown(shutdownCh <-chan os.Signal, srv httpServer, timeout time.Duration, logger *slog.Logger) {
+	sig := <-shutdownCh
+	logger.Info("shutdown requested", "signal", sig.String())
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error("http shutdown error", "error", err)
+	}
+	logger.Info("shutdown complete")
 }
 
 func watchReloadSignals(reloadCh <-chan os.Signal, p reloadableProxy, getenv func(string) string, logger *slog.Logger) {

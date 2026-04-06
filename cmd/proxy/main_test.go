@@ -37,13 +37,22 @@ type fakeReloadableProxy struct {
 type fakeHTTPServer struct {
 	listenErr      error
 	listenTLSErr   error
+	shutdownErr    error
 	listenCalls    int
 	listenTLSCalls int
+	shutdownCalls  int
 }
 
 type fakeOTLPPusher struct {
 	started bool
 	stopped bool
+}
+
+type runtimeRecorder struct {
+	options runtimeOptions
+	called  bool
+	runtime *runtimeState
+	err     error
 }
 
 func (f *fakeReloadableProxy) ReloadTenantMap(m map[string]proxy.TenantMapping) {
@@ -65,12 +74,18 @@ func (f *fakeHTTPServer) ListenAndServeTLS(_, _ string) error {
 }
 
 func (f *fakeHTTPServer) Shutdown(context.Context) error {
-	return nil
+	f.shutdownCalls++
+	return f.shutdownErr
 }
 
 func (f *fakeOTLPPusher) Start() { f.started = true }
 
 func (f *fakeOTLPPusher) Stop() { f.stopped = true }
+
+func (r *runtimeRecorder) build(_ runtimeOptions, _ *slog.Logger, _ signalNotifier, _ otlpPusherFactory) (*runtimeState, error) {
+	r.called = true
+	return r.runtime, r.err
+}
 
 func TestBuildLogger(t *testing.T) {
 	buf := &bytes.Buffer{}
@@ -91,6 +106,111 @@ func TestBuildLogger(t *testing.T) {
 		if !strings.Contains(logs, want) {
 			t.Fatalf("expected %q in %s", want, logs)
 		}
+	}
+}
+
+func TestRun_Success(t *testing.T) {
+	reloadCh := make(chan os.Signal)
+	close(reloadCh)
+	shutdownCh := make(chan os.Signal, 1)
+	shutdownCh <- syscall.SIGTERM
+	srv := &fakeHTTPServer{}
+	recorder := &runtimeRecorder{
+		runtime: &runtimeState{
+			proxy:        &proxy.Proxy{},
+			server:       srv,
+			cacheCleanup: func() {},
+			stopOTLP:     func() {},
+			reloadCh:     reloadCh,
+			shutdownCh:   shutdownCh,
+		},
+	}
+	var gotLoopOpts serverLoopOptions
+	var shutdownCalled bool
+	loopDone := make(chan struct{})
+
+	err := run([]string{
+		"-listen", ":9999",
+		"-backend", "http://backend.test",
+		"-response-gzip=false",
+		"-tail.mode=synthetic",
+	}, func(key string) string {
+		if key == "OTEL_SERVICE_NAME" {
+			return "custom-proxy"
+		}
+		return ""
+	}, io.Discard, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+		return &fakeOTLPPusher{}
+	}, func(opts runtimeOptions, logger *slog.Logger, notify signalNotifier, newPusher otlpPusherFactory) (*runtimeState, error) {
+		recorder.options = opts
+		return recorder.build(opts, logger, notify, newPusher)
+	}, func(_ httpServer, opts serverLoopOptions, _ *slog.Logger, _ func(string, ...any)) {
+		gotLoopOpts = opts
+		close(loopDone)
+	}, func(ch <-chan os.Signal, _ httpServer, _ time.Duration, _ *slog.Logger) {
+		shutdownCalled = true
+		<-ch
+	})
+	if err != nil {
+		t.Fatalf("unexpected run error: %v", err)
+	}
+	if !recorder.called {
+		t.Fatal("expected runtime builder to be called")
+	}
+	if recorder.options.proxyCfg.backendURL != "http://backend.test" {
+		t.Fatalf("unexpected backend URL: %+v", recorder.options.proxyCfg)
+	}
+	if recorder.options.proxyCfg.tailMode != "synthetic" || recorder.options.enableGzip {
+		t.Fatalf("unexpected parsed runtime options: %+v", recorder.options)
+	}
+	if recorder.options.serverOpts.listenAddr != ":9999" {
+		t.Fatalf("unexpected listen addr: %+v", recorder.options.serverOpts)
+	}
+	if recorder.options.otlpCfg.serviceName != "custom-proxy" {
+		t.Fatalf("expected env override to apply, got %+v", recorder.options.otlpCfg)
+	}
+	select {
+	case <-loopDone:
+	case <-time.After(time.Second):
+		t.Fatal("expected server loop to be invoked")
+	}
+	if gotLoopOpts.listenAddr != ":9999" || gotLoopOpts.backendURL != "http://backend.test" {
+		t.Fatalf("unexpected server loop options: %+v", gotLoopOpts)
+	}
+	if !shutdownCalled {
+		t.Fatal("expected shutdown handler to be called")
+	}
+}
+
+func TestRun_ParseError(t *testing.T) {
+	err := run([]string{"-unknown-flag"}, func(string) string { return "" }, io.Discard, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+		return &fakeOTLPPusher{}
+	}, func(runtimeOptions, *slog.Logger, signalNotifier, otlpPusherFactory) (*runtimeState, error) {
+		t.Fatal("runtime builder should not be called on parse error")
+		return nil, nil
+	}, func(httpServer, serverLoopOptions, *slog.Logger, func(string, ...any)) {
+		t.Fatal("server loop should not be called on parse error")
+	}, func(<-chan os.Signal, httpServer, time.Duration, *slog.Logger) {
+		t.Fatal("shutdown handler should not be called on parse error")
+	})
+	if err == nil {
+		t.Fatal("expected parse error")
+	}
+}
+
+func TestRun_RuntimeInitError(t *testing.T) {
+	wantErr := errors.New("boom")
+	err := run([]string{}, func(string) string { return "" }, io.Discard, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+		return &fakeOTLPPusher{}
+	}, func(runtimeOptions, *slog.Logger, signalNotifier, otlpPusherFactory) (*runtimeState, error) {
+		return nil, wantErr
+	}, func(httpServer, serverLoopOptions, *slog.Logger, func(string, ...any)) {
+		t.Fatal("server loop should not run when runtime init fails")
+	}, func(<-chan os.Signal, httpServer, time.Duration, *slog.Logger) {
+		t.Fatal("shutdown handler should not run when runtime init fails")
+	})
+	if err == nil || !strings.Contains(err.Error(), "failed to initialize runtime") {
+		t.Fatalf("expected wrapped runtime init error, got %v", err)
 	}
 }
 
@@ -837,6 +957,174 @@ func TestBuildSignalChannels(t *testing.T) {
 	}
 }
 
+func TestBuildRuntime_Success(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+	var notifyCalls int
+	fake := &fakeOTLPPusher{}
+
+	rt, err := buildRuntime(runtimeOptions{
+		cacheTTL: 10 * time.Second,
+		cacheMax: 50,
+		proxyCfg: proxyRuntimeConfig{
+			backendURL:               "http://example.com",
+			logLevel:                 "info",
+			registerInstrumentation:  boolPtr(true),
+			labelStyle:               "passthrough",
+			metadataFieldMode:        "hybrid",
+			metricsMaxTenants:        10,
+			metricsMaxClients:        10,
+			metricsTrustProxyHeaders: false,
+		},
+		otlpCfg: otlpRuntimeConfig{
+			endpoint:    "http://collector:4318/v1/metrics",
+			interval:    5 * time.Second,
+			compression: "gzip",
+			serviceName: "proxy",
+		},
+		maxBodyBytes: 1024,
+		enableGzip:   true,
+		serverOpts: serverRuntimeOptions{
+			listenAddr:     ":0",
+			readTimeout:    time.Second,
+			writeTimeout:   2 * time.Second,
+			idleTimeout:    3 * time.Second,
+			maxHeaderBytes: 4096,
+		},
+	}, logger, func(ch chan<- os.Signal, _ ...os.Signal) {
+		notifyCalls++
+	}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+		return fake
+	})
+	if err != nil {
+		t.Fatalf("unexpected buildRuntime error: %v", err)
+	}
+	defer rt.cacheCleanup()
+	defer rt.stopOTLP()
+
+	if rt.proxy == nil || rt.server == nil {
+		t.Fatalf("expected initialized runtime, got %+v", rt)
+	}
+	if rt.reloadCh == nil || rt.shutdownCh == nil {
+		t.Fatalf("expected signal channels, got %+v", rt)
+	}
+	if notifyCalls != 2 {
+		t.Fatalf("expected 2 signal registrations, got %d", notifyCalls)
+	}
+	if !fake.started {
+		t.Fatal("expected OTLP pusher to be started")
+	}
+	if !strings.Contains(buf.String(), "proxy listening") && !strings.Contains(buf.String(), "otlp metrics push enabled") {
+		t.Fatalf("expected startup logs, got %s", buf.String())
+	}
+}
+
+func TestBuildRuntime_ProxyConfigError(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	_, err := buildRuntime(runtimeOptions{
+		cacheTTL: 10 * time.Second,
+		cacheMax: 50,
+		proxyCfg: proxyRuntimeConfig{
+			backendURL:        "http://example.com",
+			labelStyle:        "bad",
+			metadataFieldMode: "hybrid",
+		},
+		serverOpts: serverRuntimeOptions{listenAddr: ":0"},
+	}, logger, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+		return &fakeOTLPPusher{}
+	})
+	if err == nil || !strings.Contains(err.Error(), "build proxy config") {
+		t.Fatalf("expected build proxy config error, got %v", err)
+	}
+}
+
+func TestBuildRuntime_HTTPServerErrorStopsOTLP(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	fake := &fakeOTLPPusher{}
+
+	_, err := buildRuntime(runtimeOptions{
+		cacheTTL: 10 * time.Second,
+		cacheMax: 50,
+		proxyCfg: proxyRuntimeConfig{
+			backendURL:               "http://example.com",
+			logLevel:                 "info",
+			registerInstrumentation:  boolPtr(true),
+			labelStyle:               "passthrough",
+			metadataFieldMode:        "hybrid",
+			metricsMaxTenants:        10,
+			metricsMaxClients:        10,
+			metricsTrustProxyHeaders: false,
+		},
+		otlpCfg: otlpRuntimeConfig{
+			endpoint: "http://collector:4318/v1/metrics",
+		},
+		serverOpts: serverRuntimeOptions{
+			listenAddr:           ":0",
+			tlsRequireClientCert: true,
+		},
+	}, logger, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+		return fake
+	})
+	if err == nil || !strings.Contains(err.Error(), "build http server") {
+		t.Fatalf("expected build http server error, got %v", err)
+	}
+	if !fake.started || !fake.stopped {
+		t.Fatalf("expected OTLP pusher start+stop on server build error, got started=%v stopped=%v", fake.started, fake.stopped)
+	}
+}
+
+func TestHandleShutdown(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+	srv := &fakeHTTPServer{}
+	shutdownCh := make(chan os.Signal, 1)
+	done := make(chan struct{})
+
+	go func() {
+		handleShutdown(shutdownCh, srv, time.Second, logger)
+		close(done)
+	}()
+
+	shutdownCh <- syscall.SIGTERM
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("handleShutdown did not return")
+	}
+
+	if srv.shutdownCalls != 1 {
+		t.Fatalf("expected shutdown to be called once, got %d", srv.shutdownCalls)
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "shutdown requested") || !strings.Contains(logs, "shutdown complete") {
+		t.Fatalf("expected shutdown logs, got %s", logs)
+	}
+}
+
+func TestHandleShutdown_LogsShutdownError(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+	srv := &fakeHTTPServer{shutdownErr: errors.New("boom")}
+	shutdownCh := make(chan os.Signal, 1)
+	done := make(chan struct{})
+
+	go func() {
+		handleShutdown(shutdownCh, srv, time.Second, logger)
+		close(done)
+	}()
+
+	shutdownCh <- syscall.SIGINT
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("handleShutdown did not return")
+	}
+
+	if !strings.Contains(buf.String(), "http shutdown error") {
+		t.Fatalf("expected shutdown error log, got %s", buf.String())
+	}
+}
+
 func TestWatchReloadSignals(t *testing.T) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
@@ -946,3 +1234,5 @@ func writeTestCA(t *testing.T) string {
 	}
 	return path
 }
+
+func boolPtr(v bool) *bool { return &v }
