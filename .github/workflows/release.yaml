@@ -1,17 +1,10 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
-  workflow_run:
-    workflows: ["Auto Release"]
-    types:
-      - completed
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to publish, for example v0.25.0
+        description: Release tag to publish, for example v0.26.0
         required: true
         type: string
 
@@ -20,19 +13,14 @@ permissions:
   packages: write
 
 jobs:
-  test:
-    if: >-
-      github.event_name != 'workflow_run' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      startsWith(github.event.workflow_run.head_commit.message, 'chore: release v'))
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref) }}
+          ref: ${{ inputs.tag }}
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.1"
@@ -40,185 +28,61 @@ jobs:
 
       - name: Install Helm
         uses: azure/setup-helm@v4
-      - name: Run tests with race detector
-        run: go test ./... -count=1 -race
-
-  compat-check:
-    if: >-
-      github.event_name != 'workflow_run' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      startsWith(github.event.workflow_run.head_commit.message, 'chore: release v'))
-    runs-on: ubuntu-latest
-    outputs:
-      loki_detail: ${{ steps.compat.outputs.LOKI_DETAIL }}
-      loki_pct: ${{ steps.compat.outputs.LOKI_PCT }}
-      drilldown_detail: ${{ steps.compat.outputs.DRILLDOWN_DETAIL }}
-      drilldown_pct: ${{ steps.compat.outputs.DRILLDOWN_PCT }}
-      vl_detail: ${{ steps.compat.outputs.VL_DETAIL }}
-      vl_pct: ${{ steps.compat.outputs.VL_PCT }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref) }}
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.1"
-          cache: true
-
-      - name: Start e2e stack
-        working-directory: test/e2e-compat
-        run: |
-          docker compose up -d --build
-          sleep 20
-          docker compose ps
-
-      - name: Run compatibility tests
-        id: compat
-        run: |
-          set -o pipefail
-          run_score() {
-            local test_name="$1"
-            local output line
-            output=$(go test -v -tags=e2e -timeout=120s -run "^${test_name}$" ./test/e2e-compat/ 2>&1) || true
-            echo "$output"
-            line=$(printf '%s\n' "$output" | grep -oE 'Score: [0-9]+/[0-9]+ \([0-9.]+%\)' | tail -1 || true)
-            if [ -z "$line" ]; then
-              echo "0|0|0.0"
-              return
-            fi
-            printf '%s\n' "$line" | sed -E 's/.*Score: ([0-9]+)\/([0-9]+) \(([0-9.]+)%\).*/\1|\2|\3/'
-          }
-
-          IFS='|' read -r LOKI_PASS LOKI_TOTAL LOKI_PCT <<< "$(run_score TestLokiTrackScore)"
-          IFS='|' read -r DRILL_PASS DRILL_TOTAL DRILL_PCT <<< "$(run_score TestDrilldownTrackScore)"
-          IFS='|' read -r VL_PASS VL_TOTAL VL_PCT <<< "$(run_score TestVLTrackScore)"
-
-          {
-            echo "LOKI_DETAIL=${LOKI_PASS}/${LOKI_TOTAL}"
-            echo "LOKI_PCT=${LOKI_PCT}%"
-            echo "DRILLDOWN_DETAIL=${DRILL_PASS}/${DRILL_TOTAL}"
-            echo "DRILLDOWN_PCT=${DRILL_PCT}%"
-            echo "VL_DETAIL=${VL_PASS}/${VL_TOTAL}"
-            echo "VL_PCT=${VL_PCT}%"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Tear down e2e stack
-        if: always()
-        working-directory: test/e2e-compat
-        run: docker compose down -v
-
-  release:
-    runs-on: ubuntu-latest
-    needs: [test, compat-check]
-    if: >-
-      (github.event_name != 'workflow_run' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      startsWith(github.event.workflow_run.head_commit.message, 'chore: release v'))) &&
-      always() &&
-      needs.test.result == 'success'
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || (github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref) }}
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.26.1"
-          cache: true
 
       - name: Extract version
         id: version
         run: |
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
-          elif [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
-            TAG="$(printf '%s' "$WORKFLOW_RUN_HEAD_COMMIT_MESSAGE" | sed -n 's/^chore: release v\([0-9][0-9.]*\).*/v\1/p')"
-          else
-            TAG="${GITHUB_REF_NAME}"
-          fi
-          if [ -z "$TAG" ]; then
-            echo "Could not determine release tag for event ${GITHUB_EVENT_NAME}"
-            exit 1
-          fi
+          set -euo pipefail
+          TAG="${{ inputs.tag }}"
           VERSION="${TAG#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "TAG=$TAG" >> "$GITHUB_OUTPUT"
-          # Find previous tag for changelog range
-          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | grep -vx "$TAG" | head -1)
-          echo "PREV_TAG=${PREV_TAG:-}" >> "$GITHUB_OUTPUT"
-        env:
-          WORKFLOW_RUN_HEAD_COMMIT_MESSAGE: ${{ github.event.workflow_run.head_commit.message }}
+          PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | grep -vx "$TAG" | head -1 || true)
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "prev_tag=${PREV_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Render release notes
         id: release_notes
         run: |
+          set -euo pipefail
           chmod +x scripts/ci/extract_changelog_section.sh
-          VERSION="${{ steps.version.outputs.VERSION }}"
-          SECTION_FILE="$(mktemp)"
-          scripts/ci/extract_changelog_section.sh "$VERSION" CHANGELOG.md > "$SECTION_FILE"
-          TEST_COUNT=$(go test ./... -count=1 -json 2>/dev/null | jq -r 'select(.Action=="pass" and .Test != null) | .Test' | wc -l | tr -d ' ' || echo "0")
-          go test ./... -coverprofile=coverage.out -count=1 >/dev/null 2>&1 || true
-          COV=$(go tool cover -func=coverage.out 2>/dev/null | tail -1 | awk '{print $NF}' || echo "N/A")
+          VERSION="${{ steps.version.outputs.version }}"
           NOTES_FILE="$(mktemp)"
-          {
-            cat "$SECTION_FILE"
-            echo ""
-            echo "### Release Validation"
-            echo ""
-            echo "- Tests: ${TEST_COUNT}"
-            echo "- Coverage: ${COV}"
-            echo "- Loki compatibility: ${{ needs.compat-check.outputs.loki_detail }} (${{ needs.compat-check.outputs.loki_pct }})"
-            echo "- Logs Drilldown compatibility: ${{ needs.compat-check.outputs.drilldown_detail }} (${{ needs.compat-check.outputs.drilldown_pct }})"
-            echo "- VictoriaLogs compatibility: ${{ needs.compat-check.outputs.vl_detail }} (${{ needs.compat-check.outputs.vl_pct }})"
-            echo ""
-            echo "### Installation"
-            echo ""
-            echo '```bash'
-            echo "# Docker"
-            echo "docker pull ghcr.io/${{ github.repository_owner }}/loki-vl-proxy:${VERSION}"
-            echo ""
-            echo "# Helm"
-            echo "helm install loki-vl-proxy ./charts/loki-vl-proxy \\"
-            echo "  --set image.tag=${VERSION} \\"
-            echo "  --set extraArgs.backend=http://victorialogs:9428"
-            echo '```'
-            echo ""
-            echo "### Release Assets"
-            echo ""
-            echo "- Linux and macOS binaries for amd64 and arm64"
-            echo "- SHA256 checksums"
-            echo "- Versioned Helm chart package"
-            echo "- Multi-arch GHCR image"
-          } > "$NOTES_FILE"
+          if scripts/ci/extract_changelog_section.sh "${VERSION}" CHANGELOG.md > "$NOTES_FILE" 2>/dev/null; then
+            :
+          else
+            PREV_TAG="${{ steps.version.outputs.prev_tag }}"
+            {
+              echo "## [${VERSION}]"
+              echo ""
+              echo "### Changes"
+              echo ""
+              if [ -n "$PREV_TAG" ]; then
+                git log "${PREV_TAG}..${{ steps.version.outputs.tag }}" --pretty=format:'- %s'
+              else
+                git log "${{ steps.version.outputs.tag }}" --pretty=format:'- %s'
+              fi
+            } > "$NOTES_FILE"
+          fi
           echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
 
       - name: Build release binaries
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
           mkdir -p dist
-
           for GOOS_GOARCH in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             GOOS="${GOOS_GOARCH%/*}"
             GOARCH="${GOOS_GOARCH#*/}"
             OUT="dist/loki-vl-proxy-${GOOS}-${GOARCH}"
-            echo "Building ${OUT}..."
             CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
               go build -ldflags="-s -w -X main.version=${VERSION}" \
               -o "$OUT" ./cmd/proxy
           done
-
-          # Create checksums
           cd dist && sha256sum loki-vl-proxy-* > checksums.txt
 
       - name: Package Helm chart
         run: |
-          VERSION="${{ steps.version.outputs.VERSION }}"
+          VERSION="${{ steps.version.outputs.version }}"
           helm package charts/loki-vl-proxy \
             --version "${VERSION}" \
             --app-version "${VERSION}" \
@@ -241,16 +105,16 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/loki-vl-proxy:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/loki-vl-proxy:${{ steps.version.outputs.version }}
           labels: |
-            org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.TAG }}
-          name: "v${{ steps.version.outputs.VERSION }}"
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
           body_path: ${{ steps.release_notes.outputs.notes_file }}
           files: |
             dist/loki-vl-proxy-*

@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths-ignore:
       - "README.md"
-      - "CHANGELOG.md"
   workflow_dispatch:
 
 concurrency:
@@ -14,16 +13,16 @@ concurrency:
 
 permissions:
   contents: write
-  pull-requests: write
+  packages: write
 
 jobs:
   prepare-release:
     runs-on: ubuntu-latest
-    # Skip if this push is from a release PR merge or badge update
-    if: "github.event_name == 'workflow_dispatch' || (!contains(github.event.head_commit.message, '[skip ci]') && !startsWith(github.event.head_commit.message, 'chore: release'))"
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       next_version: ${{ steps.check.outputs.next_version }}
+      latest_tag: ${{ steps.check.outputs.latest_tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,41 +31,37 @@ jobs:
       - name: Determine version bump
         id: check
         run: |
+          set -euo pipefail
           LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | head -1 || echo "v0.0.0")
+          echo "latest_tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
           echo "Latest tag: $LATEST_TAG"
 
           COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
-          REAL=$(echo "$COMMITS" | grep -v "^ci:" | grep -v "\[skip ci\]" | grep -v "^Merge" | grep -v "^chore: release" || true)
+          REAL=$(echo "$COMMITS" | grep -v '^ci:' | grep -v '^docs:' | grep -v '\[skip ci\]' | grep -v '^Merge' || true)
 
           if [ -z "$REAL" ]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Smart version bump based on commit scope + impact
-          # - BREAKING CHANGE → major
-          # - feat touching translator/proxy/cache/middleware → minor (core functionality)
-          # - feat touching only docs/ci/helm → patch
-          # - fix → patch
-          # - docs/ci/chore only → no release
           BUMP="none"
           FILES_CHANGED=$(git diff --name-only "${LATEST_TAG}..HEAD" 2>/dev/null || git diff --name-only HEAD~1)
-          HAS_CORE_CHANGES=$(echo "$FILES_CHANGED" | grep -E "^(internal/|cmd/)" || true)
-          HAS_FEAT=$(echo "$COMMITS" | grep -qE "^feat(\(|:)" && echo "yes" || echo "no")
+          HAS_CORE_CHANGES=$(echo "$FILES_CHANGED" | grep -E '^(internal/|cmd/|pkg/)' || true)
+          HAS_FEAT=$(echo "$COMMITS" | grep -qE '^feat(\(|:)' && echo "yes" || echo "no")
 
-          if echo "$COMMITS" | grep -qE "BREAKING CHANGE|^feat.*!:|^fix.*!:"; then
+          if echo "$COMMITS" | grep -qE 'BREAKING CHANGE|^feat.*!:|^fix.*!:'; then
             BUMP="major"
           elif [ "$HAS_FEAT" = "yes" ] && [ -n "$HAS_CORE_CHANGES" ]; then
-            BUMP="minor"  # Feature touching core code
+            BUMP="minor"
           elif [ "$HAS_FEAT" = "yes" ]; then
-            BUMP="patch"  # Feature but only docs/ci/helm
-          elif echo "$COMMITS" | grep -qE "^fix(\(|:)|^perf(\(|:)"; then
+            BUMP="patch"
+          elif echo "$COMMITS" | grep -qE '^fix(\(|:)|^perf(\(|:)'; then
             BUMP="patch"
           fi
 
           if [ "$BUMP" = "none" ]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Only docs/ci/chore commits — skipping release"
+            echo "Only docs/ci/chore commits detected; skipping release"
             exit 0
           fi
 
@@ -80,16 +75,15 @@ jobs:
 
           echo "should_release=true" >> "$GITHUB_OUTPUT"
           echo "next_version=${MAJ}.${MIN}.${PAT}" >> "$GITHUB_OUTPUT"
-          echo "Bump: $BUMP → v${MAJ}.${MIN}.${PAT}"
+          echo "Bump: $BUMP -> v${MAJ}.${MIN}.${PAT}"
 
-  create-release-pr:
+  validate-release:
     needs: prepare-release
     if: needs.prepare-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     outputs:
-      pr_created: ${{ steps.create_release_pr.outputs.pr_created }}
-      release_branch: ${{ steps.create_release_pr.outputs.release_branch }}
-      pr_url: ${{ steps.create_release_pr.outputs.pr_url }}
+      test_count: ${{ steps.metrics.outputs.tests }}
+      coverage: ${{ steps.metrics.outputs.coverage }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -100,214 +94,158 @@ jobs:
           go-version: "1.26.1"
           cache: true
 
-      - name: Collect metrics
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Verify unreleased changelog section exists
+        run: |
+          set -euo pipefail
+          chmod +x scripts/ci/extract_changelog_section.sh
+          scripts/ci/extract_changelog_section.sh Unreleased CHANGELOG.md > /tmp/release-section.md
+          test -s /tmp/release-section.md
+          if ! grep -qE '^(### |- )' /tmp/release-section.md; then
+            echo "Unreleased changelog section is empty"
+            exit 1
+          fi
+
+      - name: Run release validation tests
+        run: go test ./... -count=1
+
+      - name: Collect validation metrics
         id: metrics
         run: |
+          set -euo pipefail
           TESTS=$(go test ./... -count=1 -json 2>/dev/null | jq -r 'select(.Action=="pass" and .Test != null) | .Test' | wc -l | tr -d ' ')
-          go test ./... -coverprofile=coverage.out -count=1 2>/dev/null
+          go test ./... -coverprofile=coverage.out -count=1 >/dev/null 2>&1
           COV=$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}')
           echo "tests=${TESTS}" >> "$GITHUB_OUTPUT"
           echo "coverage=${COV}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate changelog entry
-        id: changelog
-        run: |
-          VERSION="${{ needs.prepare-release.outputs.next_version }}"
-          LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | head -1 || echo "v0.0.0")
-          DATE=$(date +%Y-%m-%d)
-          RANGE="${LATEST_TAG}..HEAD"
+      - name: Helm lint
+        run: helm lint charts/loki-vl-proxy/
 
-          ENTRY=$(mktemp)
-          FEATS=$(git log "$RANGE" --pretty=format:'%s' --grep='^feat' | sed 's/^feat([^)]*): //' | sed 's/^feat: //' || true)
-          FIXES=$(git log "$RANGE" --pretty=format:'%s' --grep='^fix' | sed 's/^fix([^)]*): //' | sed 's/^fix: //' || true)
-          {
-            echo "## [${VERSION}] - ${DATE}"
-            echo ""
-
-            if [ -n "$FEATS" ]; then
-              echo "### Features"
-              echo ""
-              printf '%s\n' "$FEATS" | while read -r line; do
-                echo "- $line"
-              done
-              echo ""
-            fi
-
-            if [ -n "$FIXES" ]; then
-              echo "### Bug Fixes"
-              echo ""
-              printf '%s\n' "$FIXES" | while read -r line; do
-                echo "- $line"
-              done
-              echo ""
-            fi
-
-            echo "### Tests"
-            echo ""
-            echo "- ${{ steps.metrics.outputs.tests }} total tests (${{ steps.metrics.outputs.coverage }} coverage)"
-            echo ""
-          } > "$ENTRY"
-
-          cat "$ENTRY"
-          # Save for PR body
-          {
-            echo "ENTRY<<EOF"
-            cat "$ENTRY"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-          # Keep Unreleased at the top and place the new version under it.
-          TEMP=$(mktemp)
-          awk -v entry="$(cat "$ENTRY")" '
-            /^## \[[0-9]/ && !done { print entry; print ""; done=1 }
-            { print }
-            END {
-              if (!done) {
-                print ""
-                print entry
-              }
-            }
-          ' CHANGELOG.md > "$TEMP"
-          mv "$TEMP" CHANGELOG.md
-
-      - name: Update README badges
-        run: |
-          TESTS="${{ steps.metrics.outputs.tests }}"
-          VERSION="${{ needs.prepare-release.outputs.next_version }}"
-
-          sed -i "s|tests-[0-9]*%20passed|tests-${TESTS}%20passed|g" README.md
-          sed -i "s/^version: .*/version: ${VERSION}/" charts/loki-vl-proxy/Chart.yaml
-          sed -i "s/^appVersion: .*/appVersion: \"${VERSION}\"/" charts/loki-vl-proxy/Chart.yaml
-          sed -i "s/\"service.version\": \".*\"/\"service.version\": \"${VERSION}\"/" docs/observability.md
-
-      - name: Render release PR body
-        id: pr_body
-        run: |
-          set -euo pipefail
-          chmod +x scripts/ci/extract_changelog_section.sh
-          VERSION="${{ needs.prepare-release.outputs.next_version }}"
-          TESTS="${{ steps.metrics.outputs.tests }}"
-          COV="${{ steps.metrics.outputs.coverage }}"
-          SECTION="$(scripts/ci/extract_changelog_section.sh "$VERSION" CHANGELOG.md)"
-          BODY_FILE="$(mktemp)"
-          {
-            echo "## Release v${VERSION}"
-            echo ""
-            echo "${SECTION}"
-            echo ""
-            echo "### Release Validation"
-            echo ""
-            echo "- ${TESTS} total tests"
-            echo "- ${COV} coverage"
-            echo "- Release workflow will build binaries, package the Helm chart, publish the container image, and create the GitHub release from this changelog section."
-          } > "$BODY_FILE"
-          echo "body_file=${BODY_FILE}" >> "$GITHUB_OUTPUT"
-
-      - name: Create release PR
-        id: create_release_pr
-        run: |
-          set -euo pipefail
-
-          VERSION="${{ needs.prepare-release.outputs.next_version }}"
-          BRANCH="release/v${VERSION}"
-          EXISTING_PR_URL="$(gh pr list --state open --base main --head "$BRANCH" --json url --jq '.[0].url // empty')"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin "${BRANCH}:${BRANCH}" || true
-          git checkout -B "$BRANCH"
-          git add CHANGELOG.md README.md docs/observability.md
-          git add -f charts/loki-vl-proxy/Chart.yaml
-          git diff --cached --quiet && { echo "No changes to release"; exit 0; }
-          git commit -m "chore: release v${VERSION}"
-          git push --force origin "$BRANCH"
-
-          echo "release_branch=${BRANCH}" >> "$GITHUB_OUTPUT"
-          echo "pr_created=false" >> "$GITHUB_OUTPUT"
-
-          if [ -n "$EXISTING_PR_URL" ]; then
-            gh pr edit "$EXISTING_PR_URL" \
-              --title "chore: release v${VERSION}" \
-              --body-file "${{ steps.pr_body.outputs.body_file }}" \
-              --add-label "release"
-            echo "pr_created=true" >> "$GITHUB_OUTPUT"
-            echo "pr_url=${EXISTING_PR_URL}" >> "$GITHUB_OUTPUT"
-            echo "Updated existing release PR: ${EXISTING_PR_URL}"
-          elif PR_URL=$(gh pr create \
-            --title "chore: release v${VERSION}" \
-            --body-file "${{ steps.pr_body.outputs.body_file }}" \
-            --base main \
-            --head "$BRANCH" \
-            --label "release" 2>pr_create.err); then
-            echo "pr_created=true" >> "$GITHUB_OUTPUT"
-            echo "pr_url=${PR_URL}" >> "$GITHUB_OUTPUT"
-            echo "Created release PR: ${PR_URL}"
-          else
-            ERR_MSG=$(cat pr_create.err)
-            if echo "$ERR_MSG" | grep -q "GitHub Actions is not permitted to create or approve pull requests"; then
-              echo "::warning::GitHub policy blocked automatic release PR creation. Enable 'Allow GitHub Actions to create and approve pull requests' or create a PR manually from ${BRANCH}."
-              {
-                echo "## Auto Release manual handoff"
-                echo ""
-                echo "GitHub rejected \`gh pr create\` for \`${BRANCH}\` because this repository does not allow \`GITHUB_TOKEN\` to create pull requests."
-                echo ""
-                echo "- Branch pushed: \`${BRANCH}\`"
-                echo "- Create PR manually: https://github.com/${{ github.repository }}/pull/new/${BRANCH}"
-                echo "- Repo setting to enable full automation: Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests"
-              } >> "$GITHUB_STEP_SUMMARY"
-              exit 0
-            fi
-
-            echo "$ERR_MSG"
-            exit 1
-          fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Dispatch release PR validation workflows
-        if: steps.create_release_pr.outputs.pr_created == 'true'
-        run: |
-          set -euo pipefail
-          BRANCH="${{ steps.create_release_pr.outputs.release_branch }}"
-          gh workflow run release-pr-validation.yaml --ref "$BRANCH"
-          gh workflow run codeql.yaml --ref "$BRANCH"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Enable auto-merge for release PR
-        if: steps.create_release_pr.outputs.pr_created == 'true'
-        run: |
-          set -euo pipefail
-          sleep 5
-          gh pr merge "${{ steps.create_release_pr.outputs.release_branch }}" --squash --auto --delete-branch
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-  tag-release:
-    if: "startsWith(github.event.head_commit.message, 'chore: release v')"
+  publish-release:
+    needs: [prepare-release, validate-release]
+    if: needs.prepare-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Tag merged release commit
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Extract release metadata
+        id: meta
         run: |
-          VERSION=$(printf '%s' "$HEAD_COMMIT_MESSAGE" | sed -n 's/^chore: release v\([0-9][0-9.]*\).*/\1/p')
-          if [ -z "$VERSION" ]; then
-            echo "Could not parse release version from commit message: $HEAD_COMMIT_MESSAGE"
-            exit 1
+          set -euo pipefail
+          VERSION="${{ needs.prepare-release.outputs.next_version }}"
+          TAG="v${VERSION}"
+          PREV_TAG="${{ needs.prepare-release.outputs.latest_tag }}"
+          chmod +x scripts/ci/extract_changelog_section.sh
+          NOTES_FILE="$(mktemp)"
+          scripts/ci/extract_changelog_section.sh Unreleased CHANGELOG.md > "$NOTES_FILE"
+          {
+            echo ""
+            echo "### Release Validation"
+            echo ""
+            echo "- Tests: ${{ needs.validate-release.outputs.test_count }}"
+            echo "- Coverage: ${{ needs.validate-release.outputs.coverage }}"
+            echo ""
+            echo "### Installation"
+            echo ""
+            echo '```bash'
+            echo "# Docker"
+            echo "docker pull ghcr.io/${{ github.repository_owner }}/loki-vl-proxy:${VERSION}"
+            echo ""
+            echo "# Helm"
+            echo "helm install loki-vl-proxy ./charts/loki-vl-proxy \\"
+            echo "  --set image.tag=${VERSION} \\"
+            echo "  --set extraArgs.backend=http://victorialogs:9428"
+            echo '```'
+            echo ""
+            echo "### Release Assets"
+            echo ""
+            echo "- Linux and macOS binaries for amd64 and arm64"
+            echo "- SHA256 checksums"
+            echo "- Versioned Helm chart package"
+            echo "- Multi-arch GHCR image"
+          } >> "$NOTES_FILE"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "prev_tag=${PREV_TAG}" >> "$GITHUB_OUTPUT"
+          echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release tag
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.meta.outputs.tag }}"
+          git fetch --tags origin
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists"
+          else
+            git tag "${TAG}" "${GITHUB_SHA}"
+            git push origin "${TAG}"
           fi
 
-          git fetch origin --tags
-          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
-            echo "Tag v${VERSION} already exists; nothing to do."
-            exit 0
-          fi
+      - name: Build release binaries
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.meta.outputs.version }}"
+          mkdir -p dist
+          for GOOS_GOARCH in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            GOOS="${GOOS_GOARCH%/*}"
+            GOARCH="${GOOS_GOARCH#*/}"
+            OUT="dist/loki-vl-proxy-${GOOS}-${GOARCH}"
+            CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
+              go build -ldflags="-s -w -X main.version=${VERSION}" \
+              -o "$OUT" ./cmd/proxy
+          done
+          cd dist && sha256sum loki-vl-proxy-* > checksums.txt
 
-          git tag "v${VERSION}" "${GITHUB_SHA}"
-          git push origin "v${VERSION}"
-          echo "Tagged v${VERSION} from merged release commit ${GITHUB_SHA}"
-        env:
-          HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-          GH_TOKEN: ${{ github.token }}
+      - name: Package Helm chart
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          helm package charts/loki-vl-proxy \
+            --version "${VERSION}" \
+            --app-version "${VERSION}" \
+            --destination dist
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/loki-vl-proxy:${{ steps.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.tag }}
+          body_path: ${{ steps.meta.outputs.notes_file }}
+          files: |
+            dist/loki-vl-proxy-*
+            dist/checksums.txt
+            dist/loki-vl-proxy-*.tgz
