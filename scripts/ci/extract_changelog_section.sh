@@ -2,11 +2,11 @@
 set -euo pipefail
 
 if [ $# -lt 1 ] || [ $# -gt 2 ]; then
-  echo "usage: $0 <version> [changelog-file]" >&2
+  echo "usage: $0 <version-or-section> [changelog-file]" >&2
   exit 1
 fi
 
-VERSION="${1#v}"
+TARGET="$1"
 CHANGELOG_FILE="${2:-CHANGELOG.md}"
 
 if [ ! -f "$CHANGELOG_FILE" ]; then
@@ -14,12 +14,16 @@ if [ ! -f "$CHANGELOG_FILE" ]; then
   exit 1
 fi
 
+if [ "$TARGET" = "Unreleased" ] || [ "$TARGET" = "[Unreleased]" ]; then
+  HEADER="## [Unreleased]"
+else
+  VERSION="${TARGET#v}"
+  HEADER="## [${VERSION}]"
+fi
+
 SECTION="$(
-  awk -v version="$VERSION" '
-    BEGIN {
-      header = "## [" version "]"
-      in_section = 0
-    }
+  awk -v header="$HEADER" '
+    BEGIN { in_section = 0 }
     index($0, header) == 1 {
       in_section = 1
       found = 1
@@ -37,7 +41,7 @@ SECTION="$(
     }
   ' "$CHANGELOG_FILE"
 )" || {
-  echo "version section not found in $CHANGELOG_FILE: $VERSION" >&2
+  echo "section not found in $CHANGELOG_FILE: $TARGET" >&2
   exit 1
 }
 

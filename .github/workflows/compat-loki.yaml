@@ -10,7 +10,7 @@ on:
     - cron: "15 3 * * 1"
 
 jobs:
-  matrix-source:
+  loki-matrix-source:
     runs-on: ubuntu-latest
     outputs:
       loki_versions: ${{ steps.matrix.outputs.loki_versions }}
@@ -19,9 +19,9 @@ jobs:
       - id: matrix
         run: echo "loki_versions=$(jq -c '.stack.loki.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
 
-  pinned:
+  loki-pinned:
     if: github.event_name != 'schedule'
-    needs: matrix-source
+    needs: loki-matrix-source
     runs-on: ubuntu-latest
     env:
       LOKI_IMAGE: grafana/loki:3.7.1
@@ -45,14 +45,14 @@ jobs:
         working-directory: test/e2e-compat
         run: docker compose down -v
 
-  matrix:
+  loki-matrix:
     if: github.event_name == 'schedule'
-    needs: matrix-source
+    needs: loki-matrix-source
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        loki_version: ${{ fromJson(needs.matrix-source.outputs.loki_versions) }}
+        loki_version: ${{ fromJson(needs.loki-matrix-source.outputs.loki_versions) }}
     env:
       VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
       GRAFANA_IMAGE: grafana/grafana:12.4.2

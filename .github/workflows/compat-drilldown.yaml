@@ -10,7 +10,7 @@ on:
     - cron: "45 3 * * 1"
 
 jobs:
-  matrix-source:
+  drilldown-matrix-source:
     runs-on: ubuntu-latest
     outputs:
       drilldown_versions: ${{ steps.matrix.outputs.drilldown_versions }}
@@ -19,9 +19,9 @@ jobs:
       - id: matrix
         run: echo "drilldown_versions=$(jq -c '.stack.logs_drilldown_contract.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
 
-  pinned-runtime:
+  drilldown-pinned-runtime:
     if: github.event_name != 'schedule'
-    needs: matrix-source
+    needs: drilldown-matrix-source
     runs-on: ubuntu-latest
     env:
       LOKI_IMAGE: grafana/loki:3.7.1
@@ -45,14 +45,14 @@ jobs:
         working-directory: test/e2e-compat
         run: docker compose down -v
 
-  contract-matrix:
+  drilldown-contract-matrix:
     if: github.event_name == 'schedule'
-    needs: matrix-source
+    needs: drilldown-matrix-source
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        drilldown_version: ${{ fromJson(needs.matrix-source.outputs.drilldown_versions) }}
+        drilldown_version: ${{ fromJson(needs.drilldown-matrix-source.outputs.drilldown_versions) }}
     steps:
       - uses: actions/checkout@v4
       - name: Check Drilldown app contracts
