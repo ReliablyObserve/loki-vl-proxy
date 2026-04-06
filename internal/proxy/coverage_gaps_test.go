@@ -11,10 +11,11 @@ import (
 	"time"
 
 	"github.com/szibis/Loki-VL-proxy/internal/cache"
+	"gopkg.in/yaml.v3"
 )
 
 // =============================================================================
-// Priority 1: Admin stubs (zero coverage)
+// Priority 1: Alerting/config compatibility handlers
 // =============================================================================
 
 func TestAdminStubs_Rules(t *testing.T) {
@@ -26,15 +27,15 @@ func TestAdminStubs_Rules(t *testing.T) {
 	r := httptest.NewRequest("GET", "/loki/api/v1/rules", nil)
 	mux.ServeHTTP(w, r)
 
-	var resp map[string]interface{}
-	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["status"] != "success" {
-		t.Errorf("rules stub: expected success, got %v", resp["status"])
+	if ct := w.Header().Get("Content-Type"); ct != "application/yaml" {
+		t.Fatalf("rules stub: expected application/yaml, got %q", ct)
 	}
-	data := resp["data"].(map[string]interface{})
-	groups := data["groups"].([]interface{})
-	if len(groups) != 0 {
-		t.Errorf("rules stub: expected empty groups, got %d", len(groups))
+	var resp map[string][]legacyRuleGroup
+	if err := yaml.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("rules stub: expected valid YAML, got %v", err)
+	}
+	if len(resp) != 0 {
+		t.Errorf("rules stub: expected empty group map, got %v", resp)
 	}
 }
 

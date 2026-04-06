@@ -130,22 +130,12 @@ Pull requests also get a dedicated `pr-quality-report.yaml` workflow. It compare
 
 That report is informational by design. It highlights regressions early, but merge gating still comes from the required check set in repository settings.
 
-Release PRs use a lighter validation path than normal feature PRs. The `Auto Release` workflow dispatches:
+Releases are now published directly from protected `main` after normal PRs merge. There is no separate bot-authored release PR in the default flow anymore. Release safety comes from:
 
-- `release-pr-validation`
-- `CodeQL`
-
-against the generated `release/vX.Y.Z` branch so the release PR can be validated before tag creation and publishing.
-
-That release-specific validation intentionally checks only release artifacts and publishability:
-
-- changelog section exists for the target version
-- chart version and appVersion match the release version
-- versioned observability examples were updated
-- Helm chart still lints cleanly
-- CodeQL still runs on the release branch
-
-Normal PRs continue to run the full CI, compatibility, and PR quality workflows.
+- required checks on the code-changing PR before merge
+- protected `main`
+- the release job reusing the changelog content already merged to `main`
+- build, package, and publish steps running from the exact tagged `main` commit
 
 See [compatibility-matrix.md](/tmp/Loki-VL-proxy/docs/compatibility-matrix.md), [compatibility-loki.md](/tmp/Loki-VL-proxy/docs/compatibility-loki.md), [compatibility-drilldown.md](/tmp/Loki-VL-proxy/docs/compatibility-drilldown.md), [compatibility-victorialogs.md](/tmp/Loki-VL-proxy/docs/compatibility-victorialogs.md), and [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json).
 

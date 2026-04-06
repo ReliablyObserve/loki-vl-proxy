@@ -126,10 +126,11 @@ See [Security](docs/security.md), [Configuration](docs/configuration.md), and [K
 - **TLS support** -- server-side HTTPS, backend TLS, OTLP TLS
 
 ### Operations
-See [Configuration](docs/configuration.md), [Observability](docs/observability.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), and [Logs Drilldown Compatibility](docs/compatibility-drilldown.md).
+See [Configuration](docs/configuration.md), [Observability](docs/observability.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), [Logs Drilldown Compatibility](docs/compatibility-drilldown.md), and [Rules And Alerts Migration](docs/rules-alerts-migration.md).
 
 - **Multitenancy** -- Loki `X-Scope-OrgID` mapped to VL `AccountID`/`ProjectID`, SIGHUP hot-reload
 - **Observability** -- Prometheus `/metrics`, OTLP push with matching core metric names, OTel-friendly JSON logs, per-tenant breakdowns, per-client offender metrics, fleet peer-cache metrics
+- **Rules and alerts migration tool** -- convert Loki-style rule files into `vmalert` `type: vlogs` rule files for read-compatible Grafana alert visibility through the proxy
 - **WebSocket tail** -- live log tailing via Loki's WebSocket protocol with fast handshake, origin controls, and synthetic fallback when native VL tail streaming is unavailable
 - **GOMEMLIMIT auto-tuning** -- Helm chart calculates Go memory limit as % of k8s resource limits
 
@@ -209,6 +210,7 @@ Proxy-side datasource helpers:
 
 - [Observability](docs/observability.md)
 - [Configuration](docs/configuration.md)
+- [Rules And Alerts Migration](docs/rules-alerts-migration.md)
 - [API Reference](docs/api-reference.md)
 - [Architecture](docs/architecture.md)
 - [Fleet Cache](docs/fleet-cache.md)
@@ -218,11 +220,9 @@ Proxy-side datasource helpers:
 
 ## Release Automation
 
-The `Auto Release` workflow opens a release PR from a generated `release/vX.Y.Z` branch. Full automation requires the repository setting `Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests`.
+The `Auto Release` workflow publishes directly from protected `main` after a reviewed PR merges. It materializes the current `Unreleased` changelog section into the release notes, tags the exact `main` commit, and publishes binaries, the Helm package, the container image, and the GitHub release from that tag.
 
-The release PR updates the versioned changelog section, README badges, Helm chart metadata, and versioned observability examples. After the release PR merges, a tag is created from the merged commit and the `Release` workflow publishes binaries, the Helm package, the container image, and the GitHub release using that exact changelog section as the release notes.
-
-If that setting is disabled, the workflow now keeps the run green, pushes the release branch, and writes a manual PR link into the job summary instead of failing.
+This keeps release automation out of the code-commit path, so repository signature rules still protect code changes on `main` without requiring bot-authored signed commits.
 
 ## API Coverage
 
@@ -235,7 +235,7 @@ If that setting is disabled, the workflow now keeps the run green, pushes the re
 | Metadata | `detected_fields`, `detected_labels`, `detected_field/{name}/values` |
 | Streaming | `tail` (WebSocket), `format_query` |
 | Write | `push` (blocked 405), `delete` (safeguarded) |
-| Admin | `rules`, `alerts`, `config` (stubs), `buildinfo`, `ready` |
+| Admin | `rules`, `alerts`, `config`, `buildinfo`, `ready` |
 
 **887 tests** (unit + fuzz + perf regression + race-safe)
 

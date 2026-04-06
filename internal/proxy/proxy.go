@@ -17,6 +17,7 @@ import (
 	_ "net/http/pprof"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 	"github.com/szibis/Loki-VL-proxy/internal/metrics"
 	mw "github.com/szibis/Loki-VL-proxy/internal/middleware"
 	"github.com/szibis/Loki-VL-proxy/internal/translator"
+	"gopkg.in/yaml.v3"
 )
 
 // jsonBufPool pools bytes.Buffer for JSON encoding to reduce allocations.
@@ -96,6 +98,8 @@ type TenantMapping struct {
 
 type Config struct {
 	BackendURL        string
+	RulerBackendURL   string
+	AlertsBackendURL  string
 	Cache             *cache.Cache
 	LogLevel          string
 	MaxConcurrent     int                      // max concurrent backend queries (0=unlimited)
@@ -174,6 +178,8 @@ var CacheTTLs = map[string]time.Duration{
 
 type Proxy struct {
 	backend                  *url.URL
+	rulerBackend             *url.URL
+	alertsBackend            *url.URL
 	client                   *http.Client
 	tailClient               *http.Client
 	cache                    *cache.Cache
@@ -210,6 +216,20 @@ func New(cfg Config) (*Proxy, error) {
 	u, err := url.Parse(cfg.BackendURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid backend URL: %w", err)
+	}
+	var rulerURL *url.URL
+	if strings.TrimSpace(cfg.RulerBackendURL) != "" {
+		rulerURL, err = url.Parse(cfg.RulerBackendURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid ruler backend URL: %w", err)
+		}
+	}
+	var alertsURL *url.URL
+	if strings.TrimSpace(cfg.AlertsBackendURL) != "" {
+		alertsURL, err = url.Parse(cfg.AlertsBackendURL)
+		if err != nil {
+			return nil, fmt.Errorf("invalid alerts backend URL: %w", err)
+		}
 	}
 
 	level := slog.LevelInfo
@@ -304,7 +324,9 @@ func New(cfg Config) (*Proxy, error) {
 	metadataFieldMode := normalizeMetadataFieldMode(cfg.MetadataFieldMode)
 
 	return &Proxy{
-		backend: u,
+		backend:       u,
+		rulerBackend:  rulerURL,
+		alertsBackend: alertsURL,
 		client: &http.Client{
 			Timeout:   backendTimeout,
 			Transport: transport,
@@ -575,11 +597,18 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	// Delete endpoint — exception to read-only with strict safeguards
 	mux.Handle("/loki/api/v1/delete", rl("delete", p.handleDelete))
 
-	// Admin endpoints — stubs for Grafana Alerting ruler mode compatibility
-	mux.HandleFunc("/loki/api/v1/rules", p.handleRulesStub)
-	mux.HandleFunc("/api/prom/rules", p.handleRulesStub)
-	mux.HandleFunc("/loki/api/v1/alerts", p.handleAlertsStub)
-	mux.HandleFunc("/api/prom/alerts", p.handleAlertsStub)
+	// Alerting / ruler read endpoints
+	alertRead := func(endpoint string, h http.HandlerFunc) http.Handler {
+		return securityHeaders(p.tenantMiddleware(p.requestLogger(endpoint, h)))
+	}
+	mux.Handle("/loki/api/v1/rules", alertRead("rules", p.handleRules))
+	mux.Handle("/loki/api/v1/rules/", alertRead("rules_nested", p.handleRules))
+	mux.Handle("/api/prom/rules", alertRead("rules_prom", p.handleRules))
+	mux.Handle("/api/prom/rules/", alertRead("rules_prom_nested", p.handleRules))
+	mux.Handle("/prometheus/api/v1/rules", alertRead("rules_prometheus", p.handleRules))
+	mux.Handle("/loki/api/v1/alerts", alertRead("alerts", p.handleAlerts))
+	mux.Handle("/api/prom/alerts", alertRead("alerts_prom", p.handleAlerts))
+	mux.Handle("/prometheus/api/v1/alerts", alertRead("alerts_prometheus", p.handleAlerts))
 	mux.HandleFunc("/config", p.handleConfigStub)
 
 	// Health / readiness — NOT rate-limited
@@ -1345,6 +1374,13 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	params.Set("limit", "1000")
 
+	patternLimit := 50
+	if raw := strings.TrimSpace(r.FormValue("limit")); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			patternLimit = n
+		}
+	}
+
 	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{
@@ -1368,7 +1404,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
-		"data":   extractLogPatterns(body, r.FormValue("step")),
+		"data":   extractLogPatterns(body, r.FormValue("step"), patternLimit),
 	})
 	p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 }
@@ -1985,8 +2021,7 @@ func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("ready"))
 }
 
-// handleRulesStub returns an empty rules response for Grafana Alerting compatibility.
-func (p *Proxy) handleRulesStub(w http.ResponseWriter, r *http.Request) {
+func (p *Proxy) writeEmptyRules(w http.ResponseWriter) {
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
@@ -1995,14 +2030,47 @@ func (p *Proxy) handleRulesStub(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleAlertsStub returns an empty alerts response for Grafana Alerting compatibility.
-func (p *Proxy) handleAlertsStub(w http.ResponseWriter, r *http.Request) {
+func (p *Proxy) writeEmptyLegacyRules(w http.ResponseWriter) {
+	data, err := yaml.Marshal(map[string][]legacyRuleGroup{})
+	if err != nil {
+		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/yaml")
+	_, _ = w.Write(data)
+}
+
+func (p *Proxy) writeEmptyAlerts(w http.ResponseWriter) {
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
 			"alerts": []interface{}{},
 		},
 	})
+}
+
+func (p *Proxy) handleRules(w http.ResponseWriter, r *http.Request) {
+	if isLegacyRulesPath(r.URL.Path) {
+		if p.rulerBackend != nil {
+			p.handleLegacyRules(w, r)
+			return
+		}
+		p.writeEmptyLegacyRules(w)
+		return
+	}
+	if p.rulerBackend == nil {
+		p.writeEmptyRules(w)
+		return
+	}
+	p.proxyAlertingRead(w, r, p.rulerBackend, "/api/v1/rules")
+}
+
+func (p *Proxy) handleAlerts(w http.ResponseWriter, r *http.Request) {
+	if p.alertsBackend == nil {
+		p.writeEmptyAlerts(w)
+		return
+	}
+	p.proxyAlertingRead(w, r, p.alertsBackend, "/api/v1/alerts")
 }
 
 // handleConfigStub returns a minimal config response.
@@ -2025,6 +2093,213 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- Backend request helpers ---
+
+func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backend *url.URL, path string) {
+	resp, err := p.alertingBackendGet(withOrgID(r), backend, path)
+	if err != nil {
+		p.writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	copyHeaders(w.Header(), resp.Header)
+	w.WriteHeader(resp.StatusCode)
+	_, _ = io.Copy(w, resp.Body)
+}
+
+func (p *Proxy) alertingBackendGet(r *http.Request, backend *url.URL, path string) (*http.Response, error) {
+	return p.alertingBackendGetWithParams(r, backend, path, r.URL.Query())
+}
+
+func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, path string, params url.Values) (*http.Response, error) {
+	if backend == nil {
+		return nil, fmt.Errorf("alerting backend not configured")
+	}
+
+	u := *backend
+	u.Path = path
+	u.RawQuery = params.Encode()
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, u.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	p.forwardTenantHeaders(req)
+	p.applyBackendHeaders(req)
+	return p.client.Do(req)
+}
+
+type alertingRulesResponse struct {
+	Status string `json:"status"`
+	Data   struct {
+		Groups []alertingRuleGroup `json:"groups"`
+	} `json:"data"`
+}
+
+type alertingRuleGroup struct {
+	Name     string                `json:"name"`
+	File     string                `json:"file"`
+	Interval float64               `json:"interval"`
+	Rules    []alertingBackendRule `json:"rules"`
+}
+
+type alertingBackendRule struct {
+	Name        string            `json:"name"`
+	Query       string            `json:"query"`
+	Type        string            `json:"type"`
+	Duration    float64           `json:"duration"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+}
+
+type legacyRuleGroup struct {
+	Name     string            `yaml:"name"`
+	Interval string            `yaml:"interval,omitempty"`
+	Rules    []legacyRuleEntry `yaml:"rules"`
+}
+
+type legacyRuleEntry struct {
+	Alert       string            `yaml:"alert,omitempty"`
+	Record      string            `yaml:"record,omitempty"`
+	Expr        string            `yaml:"expr"`
+	For         string            `yaml:"for,omitempty"`
+	Labels      map[string]string `yaml:"labels,omitempty"`
+	Annotations map[string]string `yaml:"annotations,omitempty"`
+}
+
+func isLegacyRulesPath(path string) bool {
+	return path == "/loki/api/v1/rules" ||
+		strings.HasPrefix(path, "/loki/api/v1/rules/") ||
+		path == "/api/prom/rules" ||
+		strings.HasPrefix(path, "/api/prom/rules/")
+}
+
+func parseLegacyRulesPath(path string) (namespace, group string, err error) {
+	var suffix string
+	switch {
+	case strings.HasPrefix(path, "/loki/api/v1/rules/"):
+		suffix = strings.TrimPrefix(path, "/loki/api/v1/rules/")
+	case strings.HasPrefix(path, "/api/prom/rules/"):
+		suffix = strings.TrimPrefix(path, "/api/prom/rules/")
+	default:
+		return "", "", nil
+	}
+	if suffix == "" {
+		return "", "", nil
+	}
+	parts := strings.Split(suffix, "/")
+	if len(parts) > 2 {
+		return "", "", fmt.Errorf("invalid legacy rules path")
+	}
+	namespace, err = url.PathUnescape(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("invalid namespace: %w", err)
+	}
+	if !filepath.IsLocal(namespace) {
+		return "", "", fmt.Errorf("invalid namespace: path traversal not allowed")
+	}
+	if len(parts) == 2 {
+		group, err = url.PathUnescape(parts[1])
+		if err != nil {
+			return "", "", fmt.Errorf("invalid group name: %w", err)
+		}
+		if !filepath.IsLocal(group) {
+			return "", "", fmt.Errorf("invalid group name: path traversal not allowed")
+		}
+	}
+	return namespace, group, nil
+}
+
+func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
+	namespace, group, err := parseLegacyRulesPath(r.URL.Path)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	params := r.URL.Query()
+	if namespace != "" {
+		params["file[]"] = []string{namespace}
+	}
+	if group != "" {
+		params["rule_group[]"] = []string{group}
+	}
+
+	resp, err := p.alertingBackendGetWithParams(withOrgID(r), p.rulerBackend, "/api/v1/rules", params)
+	if err != nil {
+		p.writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		copyHeaders(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+		return
+	}
+
+	var decoded alertingRulesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		p.writeError(w, http.StatusBadGateway, fmt.Sprintf("invalid ruler backend response: %v", err))
+		return
+	}
+
+	if group != "" {
+		if len(decoded.Data.Groups) == 0 {
+			p.writeError(w, http.StatusNotFound, "no rule groups found")
+			return
+		}
+		out := legacyRuleGroupFromBackend(decoded.Data.Groups[0])
+		data, err := yaml.Marshal(out)
+		if err != nil {
+			p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+			return
+		}
+		w.Header().Set("Content-Type", "application/yaml")
+		_, _ = w.Write(data)
+		return
+	}
+
+	formatted := make(map[string][]legacyRuleGroup)
+	for _, g := range decoded.Data.Groups {
+		formatted[g.File] = append(formatted[g.File], legacyRuleGroupFromBackend(g))
+	}
+	data, err := yaml.Marshal(formatted)
+	if err != nil {
+		p.writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to marshal rules response: %v", err))
+		return
+	}
+	w.Header().Set("Content-Type", "application/yaml")
+	_, _ = w.Write(data)
+}
+
+func legacyRuleGroupFromBackend(g alertingRuleGroup) legacyRuleGroup {
+	out := legacyRuleGroup{
+		Name:  g.Name,
+		Rules: make([]legacyRuleEntry, 0, len(g.Rules)),
+	}
+	if g.Interval > 0 {
+		out.Interval = (time.Duration(g.Interval * float64(time.Second))).String()
+	}
+	for _, r := range g.Rules {
+		entry := legacyRuleEntry{
+			Expr:        r.Query,
+			Labels:      r.Labels,
+			Annotations: r.Annotations,
+		}
+		switch r.Type {
+		case "alerting":
+			entry.Alert = r.Name
+		default:
+			entry.Record = r.Name
+		}
+		if r.Duration > 0 {
+			entry.For = (time.Duration(r.Duration * float64(time.Second))).String()
+		}
+		out.Rules = append(out.Rules, entry)
+	}
+	return out
+}
 
 func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	if !p.breaker.Allow() {

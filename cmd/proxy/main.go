@@ -29,6 +29,8 @@ var version = "dev"
 type envConfig struct {
 	listenAddr        string
 	backendURL        string
+	rulerBackendURL   string
+	alertsBackendURL  string
 	tenantMapJSON     string
 	otlpEndpoint      string
 	otlpCompression   string
@@ -44,6 +46,8 @@ type envConfig struct {
 
 type proxyRuntimeConfig struct {
 	backendURL               string
+	rulerBackendURL          string
+	alertsBackendURL         string
 	cache                    *cache.Cache
 	logLevel                 string
 	tenantMapJSON            string
@@ -76,10 +80,42 @@ type proxyRuntimeConfig struct {
 	peerAuthToken            string
 }
 
+type otlpRuntimeConfig struct {
+	endpoint              string
+	interval              time.Duration
+	headers               string
+	compression           string
+	timeout               time.Duration
+	tlsSkipVerify         bool
+	serviceName           string
+	serviceNamespace      string
+	serviceVersion        string
+	serviceInstanceID     string
+	deploymentEnvironment string
+}
+
+type serverRuntimeOptions struct {
+	listenAddr           string
+	handler              http.Handler
+	readTimeout          time.Duration
+	writeTimeout         time.Duration
+	idleTimeout          time.Duration
+	maxHeaderBytes       int
+	tlsClientCAFile      string
+	tlsRequireClientCert bool
+}
+
+type reloadableProxy interface {
+	ReloadTenantMap(map[string]proxy.TenantMapping)
+	ReloadFieldMappings([]proxy.FieldMapping)
+}
+
 func main() {
 	// Server flags
 	listenAddr := flag.String("listen", ":3100", "Address to listen on (Loki-compatible frontend)")
 	backendURL := flag.String("backend", "http://localhost:9428", "VictoriaLogs backend URL")
+	rulerBackendURL := flag.String("ruler-backend", "", "Optional alert/ruler backend URL for /rules passthrough (for example vmalert)")
+	alertsBackendURL := flag.String("alerts-backend", "", "Optional alert backend URL for /alerts passthrough (defaults to -ruler-backend when unset)")
 	logLevel := flag.String("log-level", "info", "Log level: debug, info, warn, error")
 
 	// Cache flags
@@ -167,6 +203,8 @@ func main() {
 	envCfg := applyEnvOverrides(envConfig{
 		listenAddr:        *listenAddr,
 		backendURL:        *backendURL,
+		rulerBackendURL:   *rulerBackendURL,
+		alertsBackendURL:  *alertsBackendURL,
 		tenantMapJSON:     *tenantMapJSON,
 		otlpEndpoint:      *otlpEndpoint,
 		otlpCompression:   *otlpCompression,
@@ -181,6 +219,8 @@ func main() {
 	}, os.Getenv)
 	*listenAddr = envCfg.listenAddr
 	*backendURL = envCfg.backendURL
+	*rulerBackendURL = envCfg.rulerBackendURL
+	*alertsBackendURL = envCfg.alertsBackendURL
 	*tenantMapJSON = envCfg.tenantMapJSON
 	*otlpEndpoint = envCfg.otlpEndpoint
 	*otlpCompression = envCfg.otlpCompression
@@ -233,6 +273,8 @@ func main() {
 
 	proxyCfg, err := buildProxyConfig(proxyRuntimeConfig{
 		backendURL:               *backendURL,
+		rulerBackendURL:          *rulerBackendURL,
+		alertsBackendURL:         *alertsBackendURL,
 		cache:                    c,
 		logLevel:                 *logLevel,
 		tenantMapJSON:            *tenantMapJSON,
@@ -267,22 +309,7 @@ func main() {
 	if err != nil {
 		fatal("failed to build proxy configuration", "error", err)
 	}
-	if proxyCfg.TenantMap != nil {
-		logger.Info("loaded tenant mappings", "count", len(proxyCfg.TenantMap))
-	}
-	if proxyCfg.FieldMappings != nil {
-		logger.Info("loaded field mappings", "count", len(proxyCfg.FieldMappings))
-	}
-	if proxyCfg.LabelStyle == proxy.LabelStyleUnderscores {
-		logger.Info("label translation enabled", "label_style", "underscores", "metadata_field_mode", string(proxyCfg.MetadataFieldMode))
-	}
-	if proxyCfg.DerivedFields != nil {
-		logger.Info("loaded derived fields", "count", len(proxyCfg.DerivedFields))
-	}
-	if proxyCfg.PeerCache != nil {
-		c.SetL3(proxyCfg.PeerCache)
-		logger.Info("peer cache enabled", "self", *peerSelf, "discovery", *peerDiscovery)
-	}
+	logProxyStartup(logger, proxyCfg, *peerSelf, *peerDiscovery, c)
 
 	// Create proxy
 	p, err := proxy.New(proxyCfg)
@@ -293,19 +320,19 @@ func main() {
 
 	// Start OTLP telemetry push
 	if *otlpEndpoint != "" {
-		pusher := metrics.NewOTLPPusher(metrics.OTLPConfig{
-			Endpoint:              *otlpEndpoint,
-			Interval:              *otlpInterval,
-			Headers:               parseHeaderMapCSV(*otlpHeaders),
-			Compression:           metrics.OTLPCompression(*otlpCompression),
-			Timeout:               *otlpTimeout,
-			TLSSkipVerify:         *otlpTLSSkipVerify,
-			ServiceName:           *otelServiceName,
-			ServiceNamespace:      *otelServiceNamespace,
-			ServiceVersion:        version,
-			ServiceInstanceID:     *otelServiceInstanceID,
-			DeploymentEnvironment: *deploymentEnvironment,
-		}, p.GetMetrics())
+		pusher := metrics.NewOTLPPusher(buildOTLPConfig(otlpRuntimeConfig{
+			endpoint:              *otlpEndpoint,
+			interval:              *otlpInterval,
+			headers:               *otlpHeaders,
+			compression:           *otlpCompression,
+			timeout:               *otlpTimeout,
+			tlsSkipVerify:         *otlpTLSSkipVerify,
+			serviceName:           *otelServiceName,
+			serviceNamespace:      *otelServiceNamespace,
+			serviceVersion:        version,
+			serviceInstanceID:     *otelServiceInstanceID,
+			deploymentEnvironment: *deploymentEnvironment,
+		}), p.GetMetrics())
 		pusher.Start()
 		defer pusher.Stop()
 		logger.Info("otlp metrics push enabled",
@@ -319,26 +346,21 @@ func main() {
 	p.RegisterRoutes(mux)
 
 	// Middleware chain: body limit → gzip compression
-	handler := maxBodyHandler(*maxBodyBytes, mux)
-	if *enableGzip {
-		handler = mw.GzipHandler(handler)
-	}
+	handler := wrapHandler(mux, *maxBodyBytes, *enableGzip)
 
 	// Hardened HTTP server with timeouts
-	srv := &http.Server{
-		Addr:           *listenAddr,
-		Handler:        handler,
-		ReadTimeout:    *readTimeout,
-		WriteTimeout:   *writeTimeout,
-		IdleTimeout:    *idleTimeout,
-		MaxHeaderBytes: *maxHeaderBytes,
-	}
-	if *tlsClientCAFile != "" || *tlsRequireClientCert {
-		tlsCfg, err := buildServerTLSConfig(*tlsClientCAFile, *tlsRequireClientCert)
-		if err != nil {
-			fatal("failed to configure server tls client authentication", "error", err)
-		}
-		srv.TLSConfig = tlsCfg
+	srv, err := buildHTTPServer(serverRuntimeOptions{
+		listenAddr:           *listenAddr,
+		handler:              handler,
+		readTimeout:          *readTimeout,
+		writeTimeout:         *writeTimeout,
+		idleTimeout:          *idleTimeout,
+		maxHeaderBytes:       *maxHeaderBytes,
+		tlsClientCAFile:      *tlsClientCAFile,
+		tlsRequireClientCert: *tlsRequireClientCert,
+	})
+	if err != nil {
+		fatal("failed to configure server tls client authentication", "error", err)
 	}
 
 	// SIGHUP config reload for tenant-map and field-mapping
@@ -347,24 +369,7 @@ func main() {
 	go func() {
 		for range reloadCh {
 			logger.Info("received sighup, reloading configuration")
-			if v := os.Getenv("TENANT_MAP"); v != "" {
-				var newTenantMap map[string]proxy.TenantMapping
-				if err := json.Unmarshal([]byte(v), &newTenantMap); err != nil {
-					logger.Error("failed to reload tenant map", "error", err)
-				} else {
-					p.ReloadTenantMap(newTenantMap)
-					logger.Info("reloaded tenant mappings", "count", len(newTenantMap))
-				}
-			}
-			if v := os.Getenv("FIELD_MAPPING"); v != "" {
-				var newMappings []proxy.FieldMapping
-				if err := json.Unmarshal([]byte(v), &newMappings); err != nil {
-					logger.Error("failed to reload field mappings", "error", err)
-				} else {
-					p.ReloadFieldMappings(newMappings)
-					logger.Info("reloaded field mappings", "count", len(newMappings))
-				}
-			}
+			reloadDynamicConfig(p, os.Getenv, logger)
 		}
 	}()
 
@@ -408,6 +413,14 @@ func maxBodyHandler(maxBytes int64, next http.Handler) http.Handler {
 	})
 }
 
+func wrapHandler(next http.Handler, maxBodyBytes int64, enableGzip bool) http.Handler {
+	handler := maxBodyHandler(maxBodyBytes, next)
+	if enableGzip {
+		handler = mw.GzipHandler(handler)
+	}
+	return handler
+}
+
 func parseCSV(s string) []string {
 	if s == "" {
 		return nil
@@ -428,6 +441,12 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	}
 	if v := getenv("VL_BACKEND_URL"); v != "" {
 		cfg.backendURL = v
+	}
+	if v := getenv("RULER_BACKEND_URL"); v != "" && cfg.rulerBackendURL == "" {
+		cfg.rulerBackendURL = v
+	}
+	if v := getenv("ALERTS_BACKEND_URL"); v != "" && cfg.alertsBackendURL == "" {
+		cfg.alertsBackendURL = v
 	}
 	if v := getenv("TENANT_MAP"); v != "" && cfg.tenantMapJSON == "" {
 		cfg.tenantMapJSON = v
@@ -541,7 +560,27 @@ func parseHeaderMapCSV(s string) map[string]string {
 	return headers
 }
 
+func buildOTLPConfig(cfg otlpRuntimeConfig) metrics.OTLPConfig {
+	return metrics.OTLPConfig{
+		Endpoint:              cfg.endpoint,
+		Interval:              cfg.interval,
+		Headers:               parseHeaderMapCSV(cfg.headers),
+		Compression:           metrics.OTLPCompression(cfg.compression),
+		Timeout:               cfg.timeout,
+		TLSSkipVerify:         cfg.tlsSkipVerify,
+		ServiceName:           cfg.serviceName,
+		ServiceNamespace:      cfg.serviceNamespace,
+		ServiceVersion:        cfg.serviceVersion,
+		ServiceInstanceID:     cfg.serviceInstanceID,
+		DeploymentEnvironment: cfg.deploymentEnvironment,
+	}
+}
+
 func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
+	alertsBackendURL := cfg.alertsBackendURL
+	if alertsBackendURL == "" {
+		alertsBackendURL = cfg.rulerBackendURL
+	}
 	tenantMap, err := parseTenantMapJSON(cfg.tenantMapJSON)
 	if err != nil {
 		return proxy.Config{}, fmt.Errorf("parse tenant map: %w", err)
@@ -572,6 +611,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 
 	return proxy.Config{
 		BackendURL:               cfg.backendURL,
+		RulerBackendURL:          cfg.rulerBackendURL,
+		AlertsBackendURL:         alertsBackendURL,
 		Cache:                    cfg.cache,
 		LogLevel:                 cfg.logLevel,
 		TenantMap:                tenantMap,
@@ -630,4 +671,63 @@ func buildServerTLSConfig(clientCAFile string, requireClientCert bool) (*tls.Con
 		ClientCAs:  pool,
 		ClientAuth: clientAuth,
 	}, nil
+}
+
+func buildHTTPServer(opts serverRuntimeOptions) (*http.Server, error) {
+	srv := &http.Server{
+		Addr:           opts.listenAddr,
+		Handler:        opts.handler,
+		ReadTimeout:    opts.readTimeout,
+		WriteTimeout:   opts.writeTimeout,
+		IdleTimeout:    opts.idleTimeout,
+		MaxHeaderBytes: opts.maxHeaderBytes,
+	}
+	if opts.tlsClientCAFile != "" || opts.tlsRequireClientCert {
+		tlsCfg, err := buildServerTLSConfig(opts.tlsClientCAFile, opts.tlsRequireClientCert)
+		if err != nil {
+			return nil, err
+		}
+		srv.TLSConfig = tlsCfg
+	}
+	return srv, nil
+}
+
+func reloadDynamicConfig(p reloadableProxy, getenv func(string) string, logger *slog.Logger) {
+	if v := getenv("TENANT_MAP"); v != "" {
+		var newTenantMap map[string]proxy.TenantMapping
+		if err := json.Unmarshal([]byte(v), &newTenantMap); err != nil {
+			logger.Error("failed to reload tenant map", "error", err)
+		} else {
+			p.ReloadTenantMap(newTenantMap)
+			logger.Info("reloaded tenant mappings", "count", len(newTenantMap))
+		}
+	}
+	if v := getenv("FIELD_MAPPING"); v != "" {
+		var newMappings []proxy.FieldMapping
+		if err := json.Unmarshal([]byte(v), &newMappings); err != nil {
+			logger.Error("failed to reload field mappings", "error", err)
+		} else {
+			p.ReloadFieldMappings(newMappings)
+			logger.Info("reloaded field mappings", "count", len(newMappings))
+		}
+	}
+}
+
+func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerDiscovery string, c *cache.Cache) {
+	if proxyCfg.TenantMap != nil {
+		logger.Info("loaded tenant mappings", "count", len(proxyCfg.TenantMap))
+	}
+	if proxyCfg.FieldMappings != nil {
+		logger.Info("loaded field mappings", "count", len(proxyCfg.FieldMappings))
+	}
+	if proxyCfg.LabelStyle == proxy.LabelStyleUnderscores {
+		logger.Info("label translation enabled", "label_style", "underscores", "metadata_field_mode", string(proxyCfg.MetadataFieldMode))
+	}
+	if proxyCfg.DerivedFields != nil {
+		logger.Info("loaded derived fields", "count", len(proxyCfg.DerivedFields))
+	}
+	if proxyCfg.PeerCache != nil {
+		c.SetL3(proxyCfg.PeerCache)
+		logger.Info("peer cache enabled", "self", peerSelf, "discovery", peerDiscovery)
+	}
 }

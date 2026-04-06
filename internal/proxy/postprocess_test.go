@@ -258,7 +258,7 @@ func TestExtractLogPatterns(t *testing.T) {
 		`{"_time":"2026-04-04T10:00:03Z","_msg":"GET /api/users 404 3ms","app":"web"}`,
 	}, "\n"))
 
-	patterns := extractLogPatterns(vlBody, "15s")
+	patterns := extractLogPatterns(vlBody, "15s", 50)
 	if len(patterns) == 0 {
 		t.Fatal("expected at least 1 pattern")
 	}
@@ -270,6 +270,19 @@ func TestExtractLogPatterns(t *testing.T) {
 	samples, ok := first["samples"].([][]interface{})
 	if !ok || len(samples) == 0 {
 		t.Fatalf("expected non-empty time-bucket samples, got %v", first["samples"])
+	}
+}
+
+func TestExtractLogPatternsRespectsLimit(t *testing.T) {
+	vlBody := []byte(strings.Join([]string{
+		`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","level":"info"}`,
+		`{"_time":"2026-04-04T10:00:01Z","_msg":"POST /api/orders 201 142ms","level":"info"}`,
+		`{"_time":"2026-04-04T10:00:02Z","_msg":"DELETE /api/orders/123 403 3ms","level":"error"}`,
+	}, "\n"))
+
+	patterns := extractLogPatterns(vlBody, "15s", 1)
+	if len(patterns) != 1 {
+		t.Fatalf("expected a single pattern with limit=1, got %d", len(patterns))
 	}
 }
 

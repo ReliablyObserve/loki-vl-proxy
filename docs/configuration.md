@@ -8,6 +8,8 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 |---|---|---|---|
 | `-listen` | `LISTEN_ADDR` | `:3100` | Listen address |
 | `-backend` | `VL_BACKEND_URL` | `http://localhost:9428` | VictoriaLogs backend URL |
+| `-ruler-backend` | `RULER_BACKEND_URL` | — | Optional rules backend for legacy Loki YAML rules routes and Prometheus-style `/prometheus/api/v1/rules` passthrough |
+| `-alerts-backend` | `ALERTS_BACKEND_URL` | — | Optional alerts backend for Loki and Prometheus-style alerts endpoints (defaults to `-ruler-backend`) |
 | `-log-level` | — | `info` | Log level: debug, info, warn, error |
 | `-tls-cert-file` | — | — | TLS certificate file for HTTPS |
 | `-tls-key-file` | — | — | TLS key file for HTTPS |
@@ -206,4 +208,4 @@ These Grafana Loki datasource settings now have a direct proxy-side mapping:
 
 When `-metrics.trust-proxy-headers=true`, the proxy also forwards `X-Grafana-User` plus derived `X-Loki-VL-Client-ID` and `X-Loki-VL-Client-Source` headers to the backend so downstream logs and stats can attribute expensive queries to real Grafana users instead of only source IPs.
 
-Alerting datasource integration is still partial: the proxy exposes empty rules/alerts stubs for datasource compatibility, but it does not implement a full Loki ruler API.
+Alerting datasource integration is still partial: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend, but it does not yet implement the full Loki ruler write API surface.

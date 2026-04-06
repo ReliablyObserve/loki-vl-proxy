@@ -46,6 +46,31 @@ services:
       retries: 10
       start_period: 5s
 
+  # vmalert alert/rule backend against VictoriaLogs
+  vmalert:
+    image: ${VMALERT_IMAGE:-victoriametrics/vmalert:v1.139.0}
+    container_name: e2e-vmalert
+    working_dir: /rules
+    ports:
+      - "8880:8880"
+    command:
+      - "-httpListenAddr=:8880"
+      - "-datasource.url=http://victorialogs:9428"
+      - "-notifier.blackhole"
+      - "-rule=compat.rules"
+      - "-configCheckInterval=5s"
+    volumes:
+      - ./vmalert-rules.yml:/rules/compat.rules:ro
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8880/api/v1/rules?datasource_type=vlogs"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
   # Loki-VL-proxy (translating proxy under test)
   loki-vl-proxy:
     build:
@@ -57,10 +82,14 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
       - "-log-level=debug"
       - "-cache-ttl=5s"
     depends_on:
       victorialogs:
+        condition: service_healthy
+      vmalert:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
@@ -80,11 +109,15 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
       - "-log-level=debug"
       - "-cache-ttl=5s"
       - "-label-style=underscores"
     depends_on:
       victorialogs:
+        condition: service_healthy
+      vmalert:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]

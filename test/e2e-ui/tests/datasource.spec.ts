@@ -70,17 +70,16 @@ test.describe("Grafana Datasource Health & Config", () => {
     expect(resp.status()).toBe(200);
   });
 
-  test("rules stub returns valid response", async ({ request }) => {
+  test("rules endpoint returns valid compatibility response", async ({ request }) => {
     const proxyUrl = process.env.PROXY_URL || "http://localhost:3100";
     const resp = await request.get(`${proxyUrl}/loki/api/v1/rules`);
     expect(resp.status()).toBe(200);
-
-    const body = await resp.json();
-    expect(body.status).toBe("success");
-    expect(body.data.groups).toBeDefined();
+    expect(resp.headers()["content-type"]).toContain("application/yaml");
+    const body = await resp.text();
+    expect(body.trim()).toBe("{}");
   });
 
-  test("alerts stub returns valid response", async ({ request }) => {
+  test("alerts endpoint returns valid compatibility response", async ({ request }) => {
     const proxyUrl = process.env.PROXY_URL || "http://localhost:3100";
     const resp = await request.get(`${proxyUrl}/loki/api/v1/alerts`);
     expect(resp.status()).toBe(200);

@@ -39,7 +39,7 @@ docker run --rm \
 |------|----------|
 | `explore.spec.ts` | Basic queries, filters, parsers, metric queries, side-by-side proxy vs Loki |
 | `logs-drilldown.spec.ts` | Service list, service detail drill-down, fields, label values, proxy vs direct Loki |
-| `datasource.spec.ts` | Health check, buildinfo, ready, admin stubs (rules/alerts) |
+| `datasource.spec.ts` | Health check, buildinfo, ready, rules/alerts compatibility surface |
 
 ## Debug
 

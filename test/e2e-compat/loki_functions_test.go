@@ -214,6 +214,49 @@ func TestLokiFunctions_Ready(t *testing.T) {
 	}
 }
 
+func TestLokiFunctions_RulesCompatibilityShapes(t *testing.T) {
+	resp, err := http.Get(proxyURL + "/loki/api/v1/rules")
+	if err != nil {
+		t.Fatalf("legacy rules request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("expected 200 from legacy rules endpoint, got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "application/yaml") {
+		t.Fatalf("expected YAML legacy rules response, got %q", ct)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read legacy rules response: %v", err)
+	}
+	if !strings.Contains(string(body), "loki-vl-e2e-alerts") {
+		t.Fatalf("expected YAML legacy rules response to contain alert group, got %q", string(body))
+	}
+
+	promResp, err := http.Get(proxyURL + "/prometheus/api/v1/rules")
+	if err != nil {
+		t.Fatalf("prometheus rules request failed: %v", err)
+	}
+	defer promResp.Body.Close()
+	if promResp.StatusCode != 200 {
+		t.Fatalf("expected 200 from prometheus rules endpoint, got %d", promResp.StatusCode)
+	}
+	var result map[string]interface{}
+	if err := json.NewDecoder(promResp.Body).Decode(&result); err != nil {
+		t.Fatalf("failed to decode prometheus rules JSON: %v", err)
+	}
+	status, _ := result["status"].(string)
+	if status != "success" {
+		t.Fatalf("expected status=success, got %q", status)
+	}
+	data, _ := result["data"].(map[string]interface{})
+	groups, _ := data["groups"].([]interface{})
+	if len(groups) == 0 {
+		t.Fatal("expected prometheus rules endpoint to return backend groups")
+	}
+}
+
 // TestLokiFunctions_Metrics verifies /metrics endpoint returns valid Prometheus exposition.
 func TestLokiFunctions_Metrics(t *testing.T) {
 	resp, err := http.Get(proxyURL + "/metrics")
@@ -316,6 +359,64 @@ func TestLokiFunctions_PatternsWithLoki(t *testing.T) {
 
 		data, _ := result["data"].([]interface{})
 		t.Logf("%s: returned %d patterns", base, len(data))
+	}
+}
+
+func TestLokiFunctions_PatternsHonorLimitAndCounts(t *testing.T) {
+	ingestPatternData(t)
+
+	params := url.Values{
+		"query": {`{app="pattern-test", level="info"}`},
+		"start": {time.Now().Add(-1 * time.Hour).Format(time.RFC3339Nano)},
+		"end":   {time.Now().Add(time.Hour).Format(time.RFC3339Nano)},
+		"limit": {"1"},
+		"step":  {"1m"},
+	}
+	resp, err := http.Get(proxyURL + "/loki/api/v1/patterns?" + params.Encode())
+	if err != nil {
+		t.Fatalf("patterns failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for patterns endpoint, got %d", resp.StatusCode)
+	}
+
+	var body map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("patterns decode failed: %v", err)
+	}
+	data, _ := body["data"].([]interface{})
+	if len(data) != 1 {
+		t.Fatalf("expected exactly one grouped pattern with limit=1, got %d", len(data))
+	}
+	first, _ := data[0].(map[string]interface{})
+	samples, _ := first["samples"].([]interface{})
+	total := 0
+	for _, sample := range samples {
+		pair, _ := sample.([]interface{})
+		if len(pair) != 2 {
+			t.Fatalf("expected bucket pair, got %v", sample)
+		}
+		value, _ := pair[1].(float64)
+		total += int(value)
+	}
+	if total <= 0 {
+		t.Fatalf("expected pattern bucket totals > 0, got %d", total)
+	}
+}
+
+func TestLokiFunctions_PatternsFilteredLevelsRemainNonEmpty(t *testing.T) {
+	ingestPatternData(t)
+
+	params := url.Values{
+		"query": {`{app="pattern-test", level="info"}`},
+		"start": {time.Now().Add(-1 * time.Hour).Format(time.RFC3339Nano)},
+		"end":   {time.Now().Add(time.Hour).Format(time.RFC3339Nano)},
+	}
+	resp := getJSON(t, proxyURL+"/loki/api/v1/patterns?"+params.Encode())
+	data, _ := resp["data"].([]interface{})
+	if len(data) == 0 {
+		t.Fatalf("expected non-empty patterns for filtered info logs, got %v", resp)
 	}
 }
 

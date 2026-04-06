@@ -13,7 +13,7 @@ This project tracks compatibility on three separate layers. They are intentional
 The tracked versions live in [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json).
 The GitHub Actions compatibility workflows read their matrix lists directly from that manifest, so the repo has a single source of truth for supported versions.
 
-For normal pull requests, these tracks run as PR checks. Generated release PRs intentionally use a lighter validation path and do not rerun the full compatibility matrix, because the release branch only carries release metadata changes.
+For normal pull requests, these tracks run as PR checks. Releases are published directly from protected `main`, so there is no separate release-PR matrix anymore.
 
 ## Support Window Policy
 
