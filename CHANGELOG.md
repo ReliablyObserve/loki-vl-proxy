@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- add ingress-backed and native-only `/tail` compatibility coverage for Grafana Explore and compose e2e
+- extend multi-tenant Explore and Logs Drilldown coverage for `__tenant_id__`, label breakdowns, and service drilldowns
+
+### CI
+
+- make the PR labeler fail-soft when optional repository labels are missing
+
+### Tests
+
+- add `/tail` ingress, idle-window, and native-failure regressions against the live compose stack
+- add browser-level Explore live-tail and multi-tenant Logs Drilldown regressions
+- raise `cmd/proxy` startup/server-loop coverage with more direct unit tests
+
 ## [0.27.0] - 2026-04-06
 
 ### Features

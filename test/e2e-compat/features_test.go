@@ -534,6 +534,38 @@ func TestFeature_Tail_SyntheticProxyAllowsConfiguredOriginAndStreamsLiveData(t *
 	}
 }
 
+func TestFeature_Tail_SyntheticProxySurvivesIdleWindow(t *testing.T) {
+	now := time.Now()
+	app := fmt.Sprintf("tail-idle-%d", now.UnixNano())
+	msg := "idle tail frame " + app
+
+	params := url.Values{}
+	params.Set("query", fmt.Sprintf(`{app="%s"}`, app))
+	params.Set("start", fmt.Sprintf("%d", now.UnixNano()))
+
+	headers := http.Header{}
+	headers.Set("Origin", "http://127.0.0.1:3002")
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, resp, err := dialer.Dial("ws"+strings.TrimPrefix(tailProxyURL, "http")+"/loki/api/v1/tail?"+params.Encode(), headers)
+	if err != nil {
+		t.Fatalf("synthetic proxy websocket dial failed: %v (resp=%v)", err, resp)
+	}
+	defer conn.Close()
+
+	time.Sleep(4 * time.Second)
+	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "info",
+	}, []logLine{{Msg: msg, Level: "info"}}, []string{"app", "env", "level"})
+
+	frame := readTailFrame(t, conn, msg, 10*time.Second)
+	streams, ok := frame["streams"].([]interface{})
+	if !ok || len(streams) == 0 {
+		t.Fatalf("expected idle tail frame with streams, got %v", frame)
+	}
+}
+
 func TestFeature_Tail_ReverseProxyIngressStreamsLiveData(t *testing.T) {
 	now := time.Now()
 	app := fmt.Sprintf("tail-ingress-%d", now.UnixNano())
@@ -562,6 +594,28 @@ func TestFeature_Tail_ReverseProxyIngressStreamsLiveData(t *testing.T) {
 	streams, ok := frame["streams"].([]interface{})
 	if !ok || len(streams) == 0 {
 		t.Fatalf("expected ingress tail frame with streams, got %v", frame)
+	}
+}
+
+func TestFeature_Tail_NativeModeClosesWhenBackendTailUnavailable(t *testing.T) {
+	params := url.Values{}
+	params.Set("query", `{app="api-gateway"}`)
+
+	headers := http.Header{}
+	headers.Set("Origin", "http://127.0.0.1:3002")
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, resp, err := dialer.Dial("ws"+strings.TrimPrefix(tailNativeURL, "http")+"/loki/api/v1/tail?"+params.Encode(), headers)
+	if err != nil {
+		t.Fatalf("native-only proxy websocket dial failed: %v (resp=%v)", err, resp)
+	}
+	defer conn.Close()
+
+	_, _, err = conn.ReadMessage()
+	if err == nil {
+		t.Fatal("expected native-only tail to close when backend native tail is unavailable")
+	}
+	if !websocket.IsCloseError(err, websocket.CloseInternalServerErr) {
+		t.Fatalf("expected internal server close for native-only tail fallback denial, got %v", err)
 	}
 }
 

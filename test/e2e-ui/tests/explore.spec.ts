@@ -3,6 +3,8 @@ import {
   PROXY_DS,
   PROXY_MULTI_DS,
   PROXY_TAIL_DS,
+  PROXY_TAIL_INGRESS_DS,
+  PROXY_TAIL_NATIVE_DS,
   LOKI_DS,
   openExplore,
   typeQuery,
@@ -183,6 +185,56 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await assertNoErrors(page);
     expect(errors).toHaveLength(0);
     expect(websockets.some((u) => u.includes("/tail") || u.includes("/api/live/ws"))).toBeTruthy();
+  });
+
+  test("live tail also works through the ingress datasource", async ({ page }) => {
+    const app = `ui-tail-ingress-${Date.now()}`;
+    const msg = `ui ingress tail frame ${app}`;
+    const errors = collectLokiErrors(page);
+
+    await openExplore(page, PROXY_TAIL_INGRESS_DS);
+    await waitForGrafanaReady(page);
+    await typeQuery(page, `{app="${app}"}`);
+
+    const liveButton = page.getByRole("button", { name: /live/i }).first();
+    await expect(liveButton).toBeVisible({ timeout: 15_000 });
+    await liveButton.click();
+
+    const payload = JSON.stringify({
+      _time: new Date().toISOString(),
+      _msg: msg,
+      app,
+      env: "test",
+      level: "info",
+    });
+    const pushResp = await page.request.post(
+      "http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,env,level",
+      {
+        headers: { "Content-Type": "application/stream+json" },
+        data: `${payload}\n`,
+      }
+    );
+    expect(pushResp.ok()).toBeTruthy();
+
+    await expect(page.getByText(msg, { exact: false })).toBeVisible({
+      timeout: 15_000,
+    });
+    await assertNoErrors(page);
+    expect(errors).toHaveLength(0);
+  });
+
+  test("native-only tail datasource fails without crashing the UI", async ({ page }) => {
+    await openExplore(page, PROXY_TAIL_NATIVE_DS);
+    await waitForGrafanaReady(page);
+    await typeQuery(page, '{app="api-gateway"}');
+
+    const liveButton = page.getByRole("button", { name: /live/i }).first();
+    await expect(liveButton).toBeVisible({ timeout: 15_000 });
+    await liveButton.click();
+
+    await expect(page.getByText(/error|failed|unable/i).first()).toBeVisible({
+      timeout: 15_000,
+    });
   });
 });
 

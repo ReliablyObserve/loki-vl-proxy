@@ -41,7 +41,7 @@ jobs:
           for old in size/XS size/S size/M size/L size/XL; do
             gh pr edit "$PR_NUMBER" --remove-label "$old" 2>/dev/null || true
           done
-          gh pr edit "$PR_NUMBER" --add-label "$SIZE"
+          gh pr edit "$PR_NUMBER" --add-label "$SIZE" 2>/dev/null || true
 
           # --- Scope labels ---
           FILES=$(gh pr diff "$PR_NUMBER" --name-only)
@@ -64,24 +64,25 @@ jobs:
           done
 
           # --- Impact label ---
-          TITLE="${{ github.event.pull_request.title }}"
+          TITLE="$PR_TITLE"
           if echo "$TITLE" | grep -qE "^feat.*(!:|BREAKING)"; then
-            gh pr edit "$PR_NUMBER" --add-label "breaking-change"
+            gh pr edit "$PR_NUMBER" --add-label "breaking-change" 2>/dev/null || true
           fi
           if echo "$TITLE" | grep -qE "^feat(\(|:)"; then
-            gh pr edit "$PR_NUMBER" --add-label "feature"
+            gh pr edit "$PR_NUMBER" --add-label "feature" 2>/dev/null || true
           elif echo "$TITLE" | grep -qE "^fix(\(|:)"; then
-            gh pr edit "$PR_NUMBER" --add-label "bugfix"
+            gh pr edit "$PR_NUMBER" --add-label "bugfix" 2>/dev/null || true
           elif echo "$TITLE" | grep -qE "^docs?(\(|:)"; then
-            gh pr edit "$PR_NUMBER" --add-label "documentation"
+            gh pr edit "$PR_NUMBER" --add-label "documentation" 2>/dev/null || true
           elif echo "$TITLE" | grep -qE "^(ci|chore)(\(|:)"; then
-            gh pr edit "$PR_NUMBER" --add-label "maintenance"
+            gh pr edit "$PR_NUMBER" --add-label "maintenance" 2>/dev/null || true
           elif echo "$TITLE" | grep -qE "^(perf|bench)(\(|:)"; then
-            gh pr edit "$PR_NUMBER" --add-label "performance"
+            gh pr edit "$PR_NUMBER" --add-label "performance" 2>/dev/null || true
           elif echo "$TITLE" | grep -qE "^test(\(|:)"; then
-            gh pr edit "$PR_NUMBER" --add-label "tests"
+            gh pr edit "$PR_NUMBER" --add-label "tests" 2>/dev/null || true
           fi
 
           echo "Labels applied: $SIZE $SCOPES"
         env:
           GH_TOKEN: ${{ github.token }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
