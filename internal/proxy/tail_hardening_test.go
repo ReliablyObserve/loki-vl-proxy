@@ -14,6 +14,36 @@ import (
 	"github.com/szibis/Loki-VL-proxy/internal/cache"
 )
 
+type fakeTailConn struct {
+	deadline        time.Time
+	setDeadlineErr  error
+	writeMessageErr error
+	writeControlErr error
+	writeType       int
+	writePayload    []byte
+	controlType     int
+	controlPayload  []byte
+	controlDeadline time.Time
+}
+
+func (f *fakeTailConn) SetWriteDeadline(t time.Time) error {
+	f.deadline = t
+	return f.setDeadlineErr
+}
+
+func (f *fakeTailConn) WriteMessage(messageType int, data []byte) error {
+	f.writeType = messageType
+	f.writePayload = append([]byte(nil), data...)
+	return f.writeMessageErr
+}
+
+func (f *fakeTailConn) WriteControl(messageType int, data []byte, deadline time.Time) error {
+	f.controlType = messageType
+	f.controlPayload = append([]byte(nil), data...)
+	f.controlDeadline = deadline
+	return f.writeControlErr
+}
+
 func TestTailHardening_RejectsBrowserOriginsByDefault(t *testing.T) {
 	var backendCalls int
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -320,5 +350,91 @@ func TestTailHardening_NativeModeReturnsBackendFailureReason(t *testing.T) {
 	}
 	if !strings.Contains(closeErr.Text, "upstream tail forbidden") {
 		t.Fatalf("expected backend failure reason in close message, got %q", closeErr.Text)
+	}
+}
+
+func TestTailHardening_WriteTailMessageSetsDeadline(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	conn := &fakeTailConn{}
+
+	if err := p.writeTailMessage(conn, websocket.TextMessage, []byte("payload")); err != nil {
+		t.Fatalf("unexpected writeTailMessage error: %v", err)
+	}
+	if conn.writeType != websocket.TextMessage {
+		t.Fatalf("expected text message, got %d", conn.writeType)
+	}
+	if string(conn.writePayload) != "payload" {
+		t.Fatalf("unexpected payload %q", string(conn.writePayload))
+	}
+	if conn.deadline.IsZero() {
+		t.Fatal("expected write deadline to be set")
+	}
+	if time.Until(conn.deadline) <= 0 {
+		t.Fatalf("expected future write deadline, got %v", conn.deadline)
+	}
+}
+
+func TestTailHardening_WriteTailControlSetsDeadline(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	conn := &fakeTailConn{}
+
+	if err := p.writeTailControl(conn, websocket.CloseMessage, []byte("bye")); err != nil {
+		t.Fatalf("unexpected writeTailControl error: %v", err)
+	}
+	if conn.controlType != websocket.CloseMessage {
+		t.Fatalf("expected close control frame, got %d", conn.controlType)
+	}
+	if string(conn.controlPayload) != "bye" {
+		t.Fatalf("unexpected control payload %q", string(conn.controlPayload))
+	}
+	if conn.deadline.IsZero() || conn.controlDeadline.IsZero() {
+		t.Fatal("expected control deadlines to be set")
+	}
+}
+
+func TestTailHardening_WriteTailMessagePropagatesDeadlineError(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	conn := &fakeTailConn{setDeadlineErr: errors.New("deadline failed")}
+
+	if err := p.writeTailMessage(conn, websocket.TextMessage, []byte("payload")); err == nil {
+		t.Fatal("expected deadline error")
+	}
+}
+
+func TestTailHardening_WriteTailControlPropagatesWriteError(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	conn := &fakeTailConn{writeControlErr: errors.New("slow control writer")}
+
+	err := p.writeTailControl(conn, websocket.CloseMessage, []byte("bye"))
+	if err == nil || !strings.Contains(err.Error(), "slow control writer") {
+		t.Fatalf("expected control write error, got %v", err)
+	}
+	if conn.deadline.IsZero() || conn.controlDeadline.IsZero() {
+		t.Fatal("expected deadlines to be set before control write")
+	}
+}
+
+func TestTailHardening_WriteSyntheticTailBatchPropagatesSlowWriterError(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"test log line","app":"nginx"}`)
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	conn := &fakeTailConn{writeMessageErr: errors.New("slow writer")}
+	windowStart := time.Date(2024, 1, 15, 10, 29, 0, 0, time.UTC)
+
+	err := p.writeSyntheticTailBatch(t.Context(), conn, `{app="nginx"}`, &windowStart, map[string]struct{}{})
+	if err == nil || !strings.Contains(err.Error(), "slow writer") {
+		t.Fatalf("expected slow writer error, got %v", err)
+	}
+	if conn.deadline.IsZero() {
+		t.Fatal("expected write deadline to be set before synthetic tail write")
 	}
 }

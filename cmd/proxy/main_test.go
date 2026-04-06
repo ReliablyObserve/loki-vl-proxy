@@ -9,8 +9,8 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"errors"
 	"encoding/pem"
+	"errors"
 	"io"
 	"log/slog"
 	"math/big"
@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/szibis/Loki-VL-proxy/internal/cache"
+	"github.com/szibis/Loki-VL-proxy/internal/metrics"
 	"github.com/szibis/Loki-VL-proxy/internal/proxy"
 )
 
@@ -34,10 +35,15 @@ type fakeReloadableProxy struct {
 }
 
 type fakeHTTPServer struct {
-	listenErr     error
-	listenTLSErr  error
-	listenCalls   int
+	listenErr      error
+	listenTLSErr   error
+	listenCalls    int
 	listenTLSCalls int
+}
+
+type fakeOTLPPusher struct {
+	started bool
+	stopped bool
 }
 
 func (f *fakeReloadableProxy) ReloadTenantMap(m map[string]proxy.TenantMapping) {
@@ -61,6 +67,10 @@ func (f *fakeHTTPServer) ListenAndServeTLS(_, _ string) error {
 func (f *fakeHTTPServer) Shutdown(context.Context) error {
 	return nil
 }
+
+func (f *fakeOTLPPusher) Start() { f.started = true }
+
+func (f *fakeOTLPPusher) Stop() { f.stopped = true }
 
 func TestBuildServerTLSConfig_RequiresCAWhenClientCertsRequired(t *testing.T) {
 	cfg, err := buildServerTLSConfig("", true)
@@ -230,6 +240,62 @@ func TestBuildOTLPConfig(t *testing.T) {
 	}
 	if cfg.ServiceName != "proxy" || cfg.ServiceNamespace != "platform" || cfg.ServiceVersion != "v1.2.3" || cfg.ServiceInstanceID != "proxy-1" || cfg.DeploymentEnvironment != "prod" {
 		t.Fatalf("unexpected resource attributes: %+v", cfg)
+	}
+}
+
+func TestStartOTLPMetricsPusher_NoEndpointIsNoop(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	called := false
+
+	stop := startOTLPMetricsPusher(otlpRuntimeConfig{}, metrics.NewMetrics(), logger, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+		called = true
+		return &fakeOTLPPusher{}
+	})
+	stop()
+
+	if called {
+		t.Fatal("expected no pusher to be created when OTLP endpoint is empty")
+	}
+}
+
+func TestStartOTLPMetricsPusher_StartsAndStops(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+	m := metrics.NewMetrics()
+	var gotCfg metrics.OTLPConfig
+	fake := &fakeOTLPPusher{}
+
+	stop := startOTLPMetricsPusher(otlpRuntimeConfig{
+		endpoint:              "http://collector:4318/v1/metrics",
+		interval:              12 * time.Second,
+		headers:               "Authorization=Bearer abc",
+		compression:           "gzip",
+		timeout:               5 * time.Second,
+		tlsSkipVerify:         true,
+		serviceName:           "proxy",
+		serviceNamespace:      "platform",
+		serviceVersion:        "v1.2.3",
+		serviceInstanceID:     "proxy-1",
+		deploymentEnvironment: "prod",
+	}, m, logger, func(cfg metrics.OTLPConfig, gotM *metrics.Metrics) otlpMetricsPusher {
+		gotCfg = cfg
+		if gotM != m {
+			t.Fatalf("expected metrics pointer to be preserved")
+		}
+		return fake
+	})
+	if !fake.started {
+		t.Fatal("expected OTLP pusher to start")
+	}
+	stop()
+	if !fake.stopped {
+		t.Fatal("expected OTLP pusher stop func to stop the pusher")
+	}
+	if gotCfg.Endpoint != "http://collector:4318/v1/metrics" || gotCfg.Compression != "gzip" {
+		t.Fatalf("unexpected OTLP config: %+v", gotCfg)
+	}
+	if !strings.Contains(buf.String(), "otlp metrics push enabled") {
+		t.Fatalf("expected OTLP startup log, got %s", buf.String())
 	}
 }
 

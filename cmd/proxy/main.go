@@ -112,6 +112,13 @@ type httpServer interface {
 	Shutdown(ctx context.Context) error
 }
 
+type otlpMetricsPusher interface {
+	Start()
+	Stop()
+}
+
+type otlpPusherFactory func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher
+
 type serverLoopOptions struct {
 	listenAddr  string
 	backendURL  string
@@ -321,29 +328,22 @@ func main() {
 	}
 	p.Init()
 
-	// Start OTLP telemetry push
-	if *otlpEndpoint != "" {
-		pusher := metrics.NewOTLPPusher(buildOTLPConfig(otlpRuntimeConfig{
-			endpoint:              *otlpEndpoint,
-			interval:              *otlpInterval,
-			headers:               *otlpHeaders,
-			compression:           *otlpCompression,
-			timeout:               *otlpTimeout,
-			tlsSkipVerify:         *otlpTLSSkipVerify,
-			serviceName:           *otelServiceName,
-			serviceNamespace:      *otelServiceNamespace,
-			serviceVersion:        version,
-			serviceInstanceID:     *otelServiceInstanceID,
-			deploymentEnvironment: *deploymentEnvironment,
-		}), p.GetMetrics())
-		pusher.Start()
-		defer pusher.Stop()
-		logger.Info("otlp metrics push enabled",
-			"endpoint", *otlpEndpoint,
-			"interval", otlpInterval.String(),
-			"compression", *otlpCompression,
-		)
-	}
+	stopOTLP := startOTLPMetricsPusher(otlpRuntimeConfig{
+		endpoint:              *otlpEndpoint,
+		interval:              *otlpInterval,
+		headers:               *otlpHeaders,
+		compression:           *otlpCompression,
+		timeout:               *otlpTimeout,
+		tlsSkipVerify:         *otlpTLSSkipVerify,
+		serviceName:           *otelServiceName,
+		serviceNamespace:      *otelServiceNamespace,
+		serviceVersion:        version,
+		serviceInstanceID:     *otelServiceInstanceID,
+		deploymentEnvironment: *deploymentEnvironment,
+	}, p.GetMetrics(), logger, func(cfg metrics.OTLPConfig, m *metrics.Metrics) otlpMetricsPusher {
+		return metrics.NewOTLPPusher(cfg, m)
+	})
+	defer stopOTLP()
 
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
@@ -592,6 +592,20 @@ func buildOTLPConfig(cfg otlpRuntimeConfig) metrics.OTLPConfig {
 		ServiceInstanceID:     cfg.serviceInstanceID,
 		DeploymentEnvironment: cfg.deploymentEnvironment,
 	}
+}
+
+func startOTLPMetricsPusher(cfg otlpRuntimeConfig, m *metrics.Metrics, logger *slog.Logger, newPusher otlpPusherFactory) func() {
+	if strings.TrimSpace(cfg.endpoint) == "" {
+		return func() {}
+	}
+	pusher := newPusher(buildOTLPConfig(cfg), m)
+	pusher.Start()
+	logger.Info("otlp metrics push enabled",
+		"endpoint", cfg.endpoint,
+		"interval", cfg.interval.String(),
+		"compression", cfg.compression,
+	)
+	return pusher.Stop
 }
 
 func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {

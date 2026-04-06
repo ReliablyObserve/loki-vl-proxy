@@ -172,7 +172,8 @@ const (
 	// maxQueryLength limits the LogQL query string length to prevent abuse.
 	maxQueryLength = 65536 // 64KB
 	// maxLimitValue caps the number of results per query.
-	maxLimitValue = 10000
+	maxLimitValue    = 10000
+	tailWriteTimeout = 2 * time.Second
 )
 
 // CacheTTLs defines per-endpoint cache TTLs.
@@ -220,6 +221,12 @@ type Proxy struct {
 	tailAllowedOrigins       map[string]struct{}
 	tailMode                 TailMode
 	metricsTrustProxyHeaders bool
+}
+
+type tailConn interface {
+	SetWriteDeadline(time.Time) error
+	WriteMessage(int, []byte) error
+	WriteControl(int, []byte, time.Time) error
 }
 
 func New(cfg Config) (*Proxy, error) {
@@ -1961,7 +1968,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery, "native", nativeTail, "fallback", fallbackReason)
 	if !nativeTail {
 		if p.tailMode == TailModeNative {
-			_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, fallbackReason), time.Now().Add(time.Second))
+			_ = p.writeTailControl(conn, websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, fallbackReason))
 			return
 		}
 		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, r.FormValue("start"))
@@ -1991,7 +1998,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		case <-wsCtx.Done():
 			return
 		case <-pingTicker.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := p.writeTailMessage(conn, websocket.PingMessage, nil); err != nil {
 				p.log.Debug("websocket ping failed, client disconnected", "error", err)
 				return
 			}
@@ -2018,7 +2025,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			if err := conn.WriteMessage(websocket.TextMessage, frameJSON); err != nil {
+			if err := p.writeTailMessage(conn, websocket.TextMessage, frameJSON); err != nil {
 				p.log.Debug("websocket write failed, client disconnected", "error", err)
 				return
 			}
@@ -2091,7 +2098,7 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	return nil, false, fmt.Sprintf("backend tail unavailable: %s", msg)
 }
 
-func (p *Proxy) streamSyntheticTail(ctx context.Context, conn *websocket.Conn, logsqlQuery, startHint string) {
+func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQuery, startHint string) {
 	lastSeen := make(map[string]struct{}, 128)
 	windowStart := time.Now().Add(-5 * time.Second)
 	if parsed, ok := parseEntryTime(startHint); ok {
@@ -2114,7 +2121,7 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn *websocket.Conn, l
 	}
 }
 
-func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn *websocket.Conn, logsqlQuery string, windowStart *time.Time, lastSeen map[string]struct{}) error {
+func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logsqlQuery string, windowStart *time.Time, lastSeen map[string]struct{}) error {
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time)")
 	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
@@ -2161,7 +2168,7 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn *websocket.Con
 		if err != nil {
 			continue
 		}
-		if err := conn.WriteMessage(websocket.TextMessage, frameJSON); err != nil {
+		if err := p.writeTailMessage(conn, websocket.TextMessage, frameJSON); err != nil {
 			return err
 		}
 	}
@@ -2174,6 +2181,21 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn *websocket.Con
 		clear(lastSeen)
 	}
 	return nil
+}
+
+func (p *Proxy) writeTailMessage(conn tailConn, messageType int, data []byte) error {
+	if err := conn.SetWriteDeadline(time.Now().Add(tailWriteTimeout)); err != nil {
+		return err
+	}
+	return conn.WriteMessage(messageType, data)
+}
+
+func (p *Proxy) writeTailControl(conn tailConn, messageType int, data []byte) error {
+	deadline := time.Now().Add(tailWriteTimeout)
+	if err := conn.SetWriteDeadline(deadline); err != nil {
+		return err
+	}
+	return conn.WriteControl(messageType, data, deadline)
 }
 
 // vlLineToTailFrame converts a single VL NDJSON log line to a Loki tail WebSocket frame.

@@ -172,9 +172,9 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await waitForGrafanaReady(page);
     await typeQuery(page, `{app="${app}"}`);
 
-    const liveButton = page.getByRole("button", { name: /live/i }).first();
-    await expect(liveButton).toBeVisible({ timeout: 15_000 });
-    await liveButton.click();
+    const recoveryLiveButton = page.getByRole("button", { name: /live/i }).first();
+    await expect(recoveryLiveButton).toBeVisible({ timeout: 15_000 });
+    await recoveryLiveButton.click();
 
     const payload = JSON.stringify({
       _time: new Date().toISOString(),
@@ -209,9 +209,9 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await waitForGrafanaReady(page);
     await typeQuery(page, `{app="${app}"}`);
 
-    const liveButton = page.getByRole("button", { name: /live/i }).first();
-    await expect(liveButton).toBeVisible({ timeout: 15_000 });
-    await liveButton.click();
+    const recoveryLiveButton = page.getByRole("button", { name: /live/i }).first();
+    await expect(recoveryLiveButton).toBeVisible({ timeout: 15_000 });
+    await recoveryLiveButton.click();
 
     const payload = JSON.stringify({
       _time: new Date().toISOString(),
@@ -249,10 +249,35 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
       timeout: 15_000,
     });
 
-    await openExplore(page, PROXY_DS);
+    const recoveryApp = `ui-tail-recovery-${Date.now()}`;
+    const recoveryMsg = `ui tail recovery frame ${recoveryApp}`;
+
+    await openExplore(page, PROXY_TAIL_DS);
     await waitForGrafanaReady(page);
-    await typeQuery(page, '{app="api-gateway"}');
-    await runQuery(page);
+    await typeQuery(page, `{app="${recoveryApp}"}`);
+
+    const recoveryLiveButton = page.getByRole("button", { name: /live/i }).first();
+    await expect(recoveryLiveButton).toBeVisible({ timeout: 15_000 });
+    await recoveryLiveButton.click();
+
+    const pushResp = await page.request.post(
+      "http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,env,level",
+      {
+        headers: { "Content-Type": "application/stream+json" },
+        data: `${JSON.stringify({
+          _time: new Date().toISOString(),
+          _msg: recoveryMsg,
+          app: recoveryApp,
+          env: "test",
+          level: "info",
+        })}\n`,
+      }
+    );
+    expect(pushResp.ok()).toBeTruthy();
+
+    await expect(page.getByText(recoveryMsg, { exact: false })).toBeVisible({
+      timeout: 15_000,
+    });
     await assertNoErrors(page);
   });
 });

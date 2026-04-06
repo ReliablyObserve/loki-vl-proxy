@@ -850,7 +850,7 @@ func TestExtended_WithoutGrouping(t *testing.T) {
 }
 
 // =============================================================================
-// on()/ignoring()/group_left() live compatibility smoke
+// on()/ignoring()/group_left()/group_right() live compatibility smoke
 // =============================================================================
 
 func TestExtended_OnGrouping(t *testing.T) {
@@ -911,6 +911,27 @@ func TestExtended_GroupLeftJoin(t *testing.T) {
 		score.pass("group_left", "proxy returns success for group_left() join")
 	} else {
 		score.fail("group_left", "proxy error on group_left() join")
+	}
+
+	score.report(t)
+}
+
+func TestExtended_GroupRightJoin(t *testing.T) {
+	ensureDataIngested(t)
+	score := &CompatScore{}
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `sum by (app, level) (count_over_time({cluster="us-east-1", level="error"}[5m])) * on(app) group_right(pod) sum by (app, pod) (count_over_time({cluster="us-east-1"}[5m]))`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("step", "60")
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+	if checkStatus(proxyResp) {
+		score.pass("group_right", "proxy returns success for group_right() join")
+	} else {
+		score.fail("group_right", "proxy error on group_right() join")
 	}
 
 	score.report(t)
