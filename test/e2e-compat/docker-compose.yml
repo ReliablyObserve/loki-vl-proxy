@@ -82,7 +82,7 @@ services:
       - "-backend=http://victorialogs:9428"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
-      - "-log-level=debug"
+      - "-log-level=info"
       - "-cache-ttl=5s"
     depends_on:
       victorialogs:
@@ -137,7 +137,7 @@ services:
       - "-backend=http://victorialogs:9428"
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
-      - "-log-level=info"
+      - "-log-level=debug"
       - "-cache-ttl=5s"
       - "-label-style=underscores"
       - "-tail.mode=synthetic"
