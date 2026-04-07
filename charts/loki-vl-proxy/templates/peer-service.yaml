@@ -1,4 +1,4 @@
-{{- if and .Values.peerCache.enabled (eq .Values.peerCache.discovery "dns") }}
+{{- if or (eq (include "loki-vl-proxy.workloadKind" .) "StatefulSet") (and .Values.peerCache.enabled (eq .Values.peerCache.discovery "dns")) }}
 apiVersion: v1
 kind: Service
 metadata:

@@ -1,8 +1,8 @@
-{{- if .Values.persistence.enabled }}
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet") }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "loki-vl-proxy.fullname" . }}-cache
+  name: {{ include "loki-vl-proxy.persistenceClaimName" . }}
   labels:
     {{- include "loki-vl-proxy.labels" . | nindent 4 }}
   {{- with .Values.persistence.annotations }}

@@ -3,6 +3,16 @@
 
 replicaCount: 1
 
+workload:
+  kind: Deployment
+  deploymentStrategy: {}
+  statefulSet:
+    serviceName: ""
+    podManagementPolicy: Parallel
+    updateStrategy:
+      type: RollingUpdate
+    persistentVolumeClaimRetentionPolicy: {}
+
 image:
   repository: ghcr.io/szibis/loki-vl-proxy
   tag: ""  # defaults to Chart.appVersion
@@ -303,8 +313,11 @@ peerCache:
 # --- Disk cache persistent volume ---
 persistence:
   enabled: false
+  existingClaim: ""
   accessMode: ReadWriteOnce
   size: 10Gi
   storageClass: ""  # e.g., "gp3", "st1" for AWS
+  mountPath: /cache
+  fileName: proxy.db
   annotations: {}
-  # mountPath defaults to /cache, used with disk-cache-path=/cache/data.db
+  extraVolumeClaimTemplates: []
