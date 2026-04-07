@@ -35,18 +35,42 @@ jobs:
           cache-from: type=gha,scope=pr-quality-proxy
           cache-to: type=gha,mode=max,scope=pr-quality-proxy
 
+      - name: Detect perf-sensitive scope
+        id: perf-scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "${BASE_SHA}"
+          FILES="$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}")"
+          RUN_PERF=false
+          if echo "$FILES" | grep -Eq '^(cmd/|internal/|pkg/|go\.mod|go\.sum|Dockerfile|test/e2e-compat/|scripts/ci/(collect_quality_metrics\.sh|check_quality_gate\.py|render_pr_report\.sh)|\.github/workflows/pr-quality-report\.yaml)'; then
+            RUN_PERF=true
+          fi
+          echo "run_perf=${RUN_PERF}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### PR quality scope"
+            if [ "${RUN_PERF}" = "true" ]; then
+              echo "- perf smoke: enabled"
+            else
+              echo "- perf smoke: skipped (no perf-sensitive files changed)"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Restore cached base quality snapshot
         id: base-quality-cache
         uses: actions/cache@v4
         with:
           path: .cache/pr-quality/base-quality.json
-          key: ${{ runner.os }}-pr-quality-base-${{ github.event.pull_request.base.sha }}
+          key: ${{ runner.os }}-pr-quality-base-${{ github.event.pull_request.base.sha }}-perf-${{ steps.perf-scope.outputs.run_perf }}
 
       - name: Collect base and PR quality snapshots
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           WORKSPACE: ${{ github.workspace }}
           PROXY_IMAGE: ${{ env.PROXY_IMAGE }}
+          QUALITY_SKIP_PERF: ${{ steps.perf-scope.outputs.run_perf == 'true' && '0' || '1' }}
         run: |
           set -euo pipefail
 

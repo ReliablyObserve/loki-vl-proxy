@@ -3,6 +3,7 @@ import unittest
 from scripts.ci.check_changelog_pr import (
     extract_unreleased_section,
     has_meaningful_changelog_content,
+    is_release_metadata_sync,
     should_require_changelog,
 )
 
@@ -43,6 +44,20 @@ class CheckChangelogPRTests(unittest.TestCase):
     def test_should_require_for_ci_and_tests_changes(self):
         self.assertTrue(should_require_changelog(["ci: tune workflow"], [".github/workflows/ci.yaml"]))
         self.assertTrue(should_require_changelog(["test: add coverage"], ["test/e2e-compat/features_test.go"]))
+
+    def test_release_metadata_sync_detection(self):
+        self.assertTrue(
+            is_release_metadata_sync(
+                [
+                    "CHANGELOG.md",
+                    "README.md",
+                    "docs/observability.md",
+                    "charts/loki-vl-proxy/Chart.yaml",
+                ]
+            )
+        )
+        self.assertFalse(is_release_metadata_sync(["README.md", "docs/observability.md"]))
+        self.assertFalse(is_release_metadata_sync(["CHANGELOG.md", "internal/proxy/proxy.go"]))
 
 
 if __name__ == "__main__":

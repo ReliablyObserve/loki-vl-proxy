@@ -185,10 +185,12 @@ jobs:
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      HAS_RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
 
       - uses: actions/setup-go@v5
         with:
@@ -329,6 +331,9 @@ jobs:
           CODE_LINES: ${{ needs.validate-release.outputs.code_lines }}
         run: |
           set -euo pipefail
+          if [ "${HAS_RELEASE_PR_TOKEN}" != "true" ]; then
+            echo "::warning::RELEASE_PR_TOKEN is not configured. Metadata PRs created by github-actions may not trigger pull_request checks automatically."
+          fi
           chmod +x scripts/ci/sync_release_metadata.sh
           scripts/ci/sync_release_metadata.sh "${VERSION}" "$(date +%Y-%m-%d)" "${TEST_COUNT}" "${COVERAGE_PCT}" "${CODE_LINES}" .
 
@@ -353,7 +358,7 @@ jobs:
         id: metadata-pr
         if: steps.metadata.outputs.has_changes == 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
           BRANCH: ${{ steps.metadata.outputs.branch }}
         run: |
@@ -378,7 +383,7 @@ jobs:
       - name: Enable auto-merge for release metadata PR
         if: steps.metadata-pr.outputs.number != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
         run: |
           set -euo pipefail
           gh pr merge "${{ steps.metadata-pr.outputs.number }}" \

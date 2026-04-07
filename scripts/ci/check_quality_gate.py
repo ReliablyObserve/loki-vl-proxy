@@ -25,6 +25,11 @@ def check_non_decreasing(failures, label, base, head, epsilon=0.0):
         failures.append(f"{label} regressed: base={base}, head={head}")
 
 
+def check_minimum(failures, label, head, minimum, epsilon=0.0):
+    if head < (minimum - epsilon - 1e-9):
+        failures.append(f"{label} below minimum: minimum={minimum}, head={head}")
+
+
 def check_threshold(
     failures,
     label,
@@ -86,6 +91,14 @@ def main():
             float(base["compatibility"][key]["pct"]),
             float(head["compatibility"][key]["pct"]),
         )
+
+    check_minimum(
+        failures,
+        "Loki compatibility",
+        float(head["compatibility"]["loki"]["pct"]),
+        100.0,
+        epsilon=0.1,
+    )
 
     mem_pct_threshold = 20.0
     alloc_pct_threshold = 25.0

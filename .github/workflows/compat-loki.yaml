@@ -54,7 +54,29 @@ jobs:
           docker compose up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 180
       - name: Run Loki compatibility score
-        run: go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
+        run: |
+          set -euo pipefail
+          go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/ | tee /tmp/loki-track-score.log
+          python3 - <<'PY'
+import pathlib
+import re
+import sys
+
+log = pathlib.Path("/tmp/loki-track-score.log").read_text(encoding="utf-8")
+matches = re.findall(r"Score:\s+(\d+)/(\d+)\s+\(([0-9.]+)%\)", log)
+if not matches:
+    print("Loki track score missing from test output", file=sys.stderr)
+    raise SystemExit(1)
+passed, total, pct = matches[-1]
+pct_val = float(pct)
+if pct_val < 99.9:
+    print(
+        f"Loki compatibility score must be 100%, got {passed}/{total} ({pct_val:.1f}%)",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+print(f"Loki compatibility score: {passed}/{total} ({pct_val:.1f}%)")
+PY
       - name: Tear down pinned stack
         if: always()
         working-directory: test/e2e-compat
@@ -97,7 +119,29 @@ jobs:
       - name: Run Loki compatibility score
         env:
           LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
-        run: go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
+        run: |
+          set -euo pipefail
+          go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/ | tee /tmp/loki-track-score.log
+          python3 - <<'PY'
+import pathlib
+import re
+import sys
+
+log = pathlib.Path("/tmp/loki-track-score.log").read_text(encoding="utf-8")
+matches = re.findall(r"Score:\s+(\d+)/(\d+)\s+\(([0-9.]+)%\)", log)
+if not matches:
+    print("Loki track score missing from test output", file=sys.stderr)
+    raise SystemExit(1)
+passed, total, pct = matches[-1]
+pct_val = float(pct)
+if pct_val < 99.9:
+    print(
+        f"Loki compatibility score must be 100%, got {passed}/{total} ({pct_val:.1f}%)",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+print(f"Loki compatibility score: {passed}/{total} ({pct_val:.1f}%)")
+PY
       - name: Tear down matrix stack
         if: always()
         working-directory: test/e2e-compat

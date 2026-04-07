@@ -68,6 +68,22 @@ else:
 PY
 }
 
+format_kilo_lines() {
+  local lines="$1"
+  python3 - "$lines" <<'PY'
+import sys
+try:
+    value = int(sys.argv[1])
+except ValueError:
+    print(sys.argv[1])
+    raise SystemExit
+if value >= 1000:
+    print(f"{value/1000:.1f}k")
+else:
+    print(str(value))
+PY
+}
+
 if [ -n "$TEST_COUNT" ]; then
   TESTS_MESSAGE="$(badge_message "${TEST_COUNT} passed")"
   TESTS_BADGE="https://img.shields.io/badge/tests-${TESTS_MESSAGE}-brightgreen"
@@ -98,7 +114,8 @@ if [ -n "$COVERAGE_PCT" ]; then
 fi
 
 if [ -n "$GO_LINES" ]; then
-  LINES_MESSAGE="$(badge_message "${GO_LINES}")"
+  LINES_KILO="$(format_kilo_lines "${GO_LINES}")"
+  LINES_MESSAGE="$(badge_message "${LINES_KILO}")"
   LOC_BADGE="https://img.shields.io/badge/go%20loc-${LINES_MESSAGE}-blue"
   awk -v badge="$LOC_BADGE" '
     /^\[!\[Lines of Code\]\(/ { print "[![Lines of Code](" badge ")](https://github.com/szibis/Loki-VL-proxy)"; next }

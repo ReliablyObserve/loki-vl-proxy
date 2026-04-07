@@ -43,6 +43,13 @@ NON_RELEASE_FILES = {
     "LICENSE",
 }
 
+RELEASE_METADATA_FILES = {
+    "CHANGELOG.md",
+    "README.md",
+    "docs/observability.md",
+    "charts/loki-vl-proxy/Chart.yaml",
+}
+
 
 def run_git(*args: str) -> str:
     result = subprocess.run(
@@ -118,6 +125,13 @@ def should_require_changelog(commits: Iterable[str], files: Iterable[str]) -> bo
     return len(file_list) > 0 and len(non_release) != len(file_list)
 
 
+def is_release_metadata_sync(files: Iterable[str]) -> bool:
+    file_list = [f for f in files if f.strip()]
+    if not file_list or "CHANGELOG.md" not in file_list:
+        return False
+    return all(path in RELEASE_METADATA_FILES for path in file_list)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True)
@@ -126,6 +140,21 @@ def main() -> int:
 
     files = run_git("diff", "--name-only", f"{args.base}..{args.head}").splitlines()
     commits = run_git("log", "--pretty=format:%s", f"{args.base}..{args.head}").splitlines()
+
+    base_text = run_git("show", f"{args.base}:CHANGELOG.md")
+    head_text = CHANGELOG.read_text(encoding="utf-8")
+    base_unreleased = extract_unreleased_section(base_text)
+    head_unreleased = extract_unreleased_section(head_text)
+
+    if is_release_metadata_sync(files):
+        if head_unreleased.strip() == base_unreleased.strip():
+            print(
+                "changelog gate: release metadata sync must materialize Unreleased into a version section",
+                file=sys.stderr,
+            )
+            return 1
+        print("changelog gate: ok (release metadata sync)")
+        return 0
 
     if not should_require_changelog(commits, files):
         print("changelog gate: skipped (no releasable changes detected)")
@@ -137,11 +166,6 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-
-    base_text = run_git("show", f"{args.base}:CHANGELOG.md")
-    head_text = CHANGELOG.read_text(encoding="utf-8")
-    base_unreleased = extract_unreleased_section(base_text)
-    head_unreleased = extract_unreleased_section(head_text)
 
     if not has_meaningful_changelog_content(head_unreleased):
         print(
