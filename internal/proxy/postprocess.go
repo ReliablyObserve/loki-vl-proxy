@@ -235,7 +235,11 @@ func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]inte
 	if limit > maxPatternResponseLimit {
 		limit = maxPatternResponseLimit
 	}
-	entries := make([]*patternBucket, 0, min(limit, len(patterns)))
+	entryCap := len(patterns)
+	if entryCap > maxPatternResponseLimit {
+		entryCap = maxPatternResponseLimit
+	}
+	entries := make([]*patternBucket, 0, entryCap)
 	if len(patterns) <= limit {
 		for _, entry := range patterns {
 			entries = append(entries, entry)

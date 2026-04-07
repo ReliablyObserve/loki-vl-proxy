@@ -154,6 +154,62 @@ func TestMergePatternsResponses(t *testing.T) {
 	}
 }
 
+func TestMergePatternsResponses_SkipsInvalidSamples(t *testing.T) {
+	body, _, err := mergePatternsResponses([]*httptest.ResponseRecorder{
+		recorderWithJSON(`{"data":[{"pattern":"p","samples":[["bad",2],[1,"bad"],[2,3]],"level":"warn"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("mergePatternsResponses failed: %v", err)
+	}
+	var resp struct {
+		Data []struct {
+			Pattern string          `json:"pattern"`
+			Samples [][]interface{} `json:"samples"`
+			Level   string          `json:"level"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Data) != 1 || len(resp.Data[0].Samples) != 1 {
+		t.Fatalf("expected only valid samples to remain, got %#v", resp.Data)
+	}
+}
+
+func TestNumberConversions(t *testing.T) {
+	if got, ok := numberToInt64(float64(12)); !ok || got != 12 {
+		t.Fatalf("float64 to int64 failed: got=%d ok=%v", got, ok)
+	}
+	if got, ok := numberToInt64(int64(13)); !ok || got != 13 {
+		t.Fatalf("int64 passthrough failed: got=%d ok=%v", got, ok)
+	}
+	if got, ok := numberToInt64(int(14)); !ok || got != 14 {
+		t.Fatalf("int to int64 failed: got=%d ok=%v", got, ok)
+	}
+	if got, ok := numberToInt64(json.Number("15")); !ok || got != 15 {
+		t.Fatalf("json.Number to int64 failed: got=%d ok=%v", got, ok)
+	}
+	if _, ok := numberToInt64("nope"); ok {
+		t.Fatal("expected invalid int64 conversion to fail")
+	}
+
+	if got, ok := numberToInt(float64(21)); !ok || got != 21 {
+		t.Fatalf("float64 to int failed: got=%d ok=%v", got, ok)
+	}
+	if got, ok := numberToInt(int(22)); !ok || got != 22 {
+		t.Fatalf("int passthrough failed: got=%d ok=%v", got, ok)
+	}
+	if got, ok := numberToInt(int64(23)); !ok || got != 23 {
+		t.Fatalf("int64 to int failed: got=%d ok=%v", got, ok)
+	}
+	if got, ok := numberToInt(json.Number("24")); !ok || got != 24 {
+		t.Fatalf("json.Number to int failed: got=%d ok=%v", got, ok)
+	}
+	if _, ok := numberToInt("nope"); ok {
+		t.Fatal("expected invalid int conversion to fail")
+	}
+}
+
 func TestMergeMultiTenantResponsesForSeries(t *testing.T) {
 	body, _, err := mergeMultiTenantResponses("series", []string{"tenant-a", "tenant-b"}, []*httptest.ResponseRecorder{
 		recorderWithJSON(`{"status":"success","data":[{"app":"api"}]}`),
@@ -353,6 +409,81 @@ func TestMergeMultiTenantResponsesQueryInjectsTenantLabel(t *testing.T) {
 	}
 	if resp.Data.Result[1].Stream["original___tenant_id__"] != "backend" {
 		t.Fatalf("expected original tenant id to be preserved: %#v", resp.Data.Result[1].Stream)
+	}
+}
+
+func TestMergeMultiTenantResponsesQueryVectorInjectsTenantLabel(t *testing.T) {
+	body, _, err := mergeMultiTenantResponses("query", []string{"tenant-a", "tenant-b"}, []*httptest.ResponseRecorder{
+		recorderWithJSON(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"api"},"value":[1,"2"]}],"stats":{"summary":"ok"}}}`),
+		recorderWithJSON(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"api","__tenant_id__":"backend"},"value":[1,"3"]}]}}`),
+	})
+	if err != nil {
+		t.Fatalf("mergeMultiTenantResponses failed: %v", err)
+	}
+	var resp struct {
+		Data struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []interface{}     `json:"value"`
+			} `json:"result"`
+			Stats map[string]string `json:"stats"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Data.ResultType != "vector" || len(resp.Data.Result) != 2 {
+		t.Fatalf("unexpected merged vector response: %#v", resp.Data)
+	}
+	if resp.Data.Result[0].Metric["__tenant_id__"] == "" || resp.Data.Result[1].Metric["__tenant_id__"] == "" {
+		t.Fatalf("expected synthetic tenant labels in vector results: %#v", resp.Data.Result)
+	}
+	if resp.Data.Result[1].Metric["original___tenant_id__"] != "backend" {
+		t.Fatalf("expected original tenant label to be preserved: %#v", resp.Data.Result[1].Metric)
+	}
+	if resp.Data.Stats["summary"] != "ok" {
+		t.Fatalf("expected stats payload to survive merge, got %#v", resp.Data.Stats)
+	}
+}
+
+func TestMergeMultiTenantResponsesQueryMatrixInjectsTenantLabel(t *testing.T) {
+	body, _, err := mergeMultiTenantResponses("query_range", []string{"tenant-a", "tenant-b"}, []*httptest.ResponseRecorder{
+		recorderWithJSON(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api"},"values":[[1,"2"]]}]}}`),
+		recorderWithJSON(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api","__tenant_id__":"backend"},"values":[[1,"3"]]}]}}`),
+	})
+	if err != nil {
+		t.Fatalf("mergeMultiTenantResponses failed: %v", err)
+	}
+	var resp struct {
+		Data struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Data.ResultType != "matrix" || len(resp.Data.Result) != 2 {
+		t.Fatalf("unexpected merged matrix response: %#v", resp.Data)
+	}
+	if resp.Data.Result[0].Metric["__tenant_id__"] == "" || resp.Data.Result[1].Metric["__tenant_id__"] == "" {
+		t.Fatalf("expected synthetic tenant labels in matrix results: %#v", resp.Data.Result)
+	}
+}
+
+func TestLatestStreamTimestampStrings(t *testing.T) {
+	if got := latestStreamTimestampStrings(nil); got != "" {
+		t.Fatalf("expected empty timestamp for nil input, got %q", got)
+	}
+	if got := latestStreamTimestampStrings([][]string{{}}); got != "" {
+		t.Fatalf("expected empty timestamp for empty pair, got %q", got)
+	}
+	if got := latestStreamTimestampStrings([][]string{{"42", "line"}}); got != "42" {
+		t.Fatalf("expected first timestamp, got %q", got)
 	}
 }
 

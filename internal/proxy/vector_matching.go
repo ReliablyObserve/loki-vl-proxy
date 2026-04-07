@@ -1,20 +1,12 @@
 package proxy
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 )
-
-var responseBodyPool = sync.Pool{
-	New: func() interface{} {
-		return bytes.NewBuffer(make([]byte, 0, 4096))
-	},
-}
 
 // bufferedResponseWriter captures the response body for post-processing.
 type bufferedResponseWriter struct {
@@ -35,47 +27,6 @@ func (w *bufferedResponseWriter) Write(b []byte) (int, error) {
 }
 func (w *bufferedResponseWriter) WriteHeader(code int) {
 	w.code = code
-}
-
-type cacheTeeResponseWriter struct {
-	http.ResponseWriter
-	buf  *bytes.Buffer
-	code int
-}
-
-func newCacheTeeResponseWriter(w http.ResponseWriter) *cacheTeeResponseWriter {
-	buf := responseBodyPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	return &cacheTeeResponseWriter{ResponseWriter: w, buf: buf, code: http.StatusOK}
-}
-
-func (w *cacheTeeResponseWriter) WriteHeader(code int) {
-	w.code = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *cacheTeeResponseWriter) Write(b []byte) (int, error) {
-	if _, err := w.buf.Write(b); err != nil {
-		return 0, err
-	}
-	return w.ResponseWriter.Write(b)
-}
-
-func (w *cacheTeeResponseWriter) CachedBody() []byte {
-	out := make([]byte, w.buf.Len())
-	copy(out, w.buf.Bytes())
-	return out
-}
-
-func (w *cacheTeeResponseWriter) Release() {
-	if w.buf == nil {
-		return
-	}
-	if w.buf.Cap() <= maxPooledBufSize {
-		w.buf.Reset()
-		responseBodyPool.Put(w.buf)
-	}
-	w.buf = nil
 }
 
 // applyWithoutGrouping removes excluded labels from metric results and re-aggregates.

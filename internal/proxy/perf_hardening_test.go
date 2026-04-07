@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -149,5 +150,78 @@ func TestSyntheticTailSeenBoundsMemory(t *testing.T) {
 		if !seen.Contains(key) {
 			t.Fatalf("expected key %s to remain in bounded dedup set", key)
 		}
+	}
+}
+
+func TestHandlePatterns_InvalidQueryReturnsEmptySuccess(t *testing.T) {
+	var backendCalls int
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendCalls++
+		t.Fatalf("backend should not be called for invalid query")
+	}))
+	defer backend.Close()
+
+	p := newTestProxy(t, backend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"&step=1m`, nil)
+
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	if backendCalls != 0 {
+		t.Fatalf("expected no backend calls, got %d", backendCalls)
+	}
+	var resp struct {
+		Status string        `json:"status"`
+		Data   []interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != "success" || len(resp.Data) != 0 {
+		t.Fatalf("expected empty success response, got %#v", resp)
+	}
+}
+
+func TestHandlePatterns_BackendFailureReturnsEmptySuccess(t *testing.T) {
+	backend := httptest.NewServer(http.NotFoundHandler())
+	backendURL := backend.URL
+	backend.Close()
+
+	p := newTestProxy(t, backendURL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&step=1m`, nil)
+
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Status string        `json:"status"`
+		Data   []interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != "success" || len(resp.Data) != 0 {
+		t.Fatalf("expected empty success response, got %#v", resp)
+	}
+}
+
+func TestBufferedResponseWriterInitializesHeaderAndCapturesBody(t *testing.T) {
+	bw := &bufferedResponseWriter{}
+	bw.Header().Set("Content-Type", "application/json")
+	if _, err := bw.Write([]byte(`{"status":"success"}`)); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	if got := bw.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("expected content type to be preserved, got %q", got)
+	}
+	if got := string(bw.body); got != `{"status":"success"}` {
+		t.Fatalf("unexpected buffered body %q", got)
 	}
 }

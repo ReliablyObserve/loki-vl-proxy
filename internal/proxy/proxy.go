@@ -865,16 +865,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	var (
 		sc       = &statusCapture{ResponseWriter: w, code: 200}
 		capture  *bufferedResponseWriter
-		tee      *cacheTeeResponseWriter
 		cacheOut []byte
 	)
-	if len(withoutLabels) > 0 {
+	if len(withoutLabels) > 0 || cacheable {
 		capture = &bufferedResponseWriter{header: make(http.Header)}
 		sc = &statusCapture{ResponseWriter: capture, code: 200}
-	} else if cacheable {
-		tee = newCacheTeeResponseWriter(w)
-		defer tee.Release()
-		sc = &statusCapture{ResponseWriter: tee, code: 200}
 	}
 
 	// Check for subquery expression (e.g., max_over_time(rate(...)[1h:5m]))
@@ -890,7 +885,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if capture != nil {
-		cacheOut = capture.body
+		cacheOut = append([]byte(nil), capture.body...)
 		if len(withoutLabels) > 0 {
 			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels)
 		}
@@ -905,8 +900,6 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if cacheable && sc.code == http.StatusOK {
 			p.cache.SetWithTTL(cacheKey, cacheOut, CacheTTLs["query_range"])
 		}
-	} else if tee != nil && cacheable && sc.code == http.StatusOK {
-		p.cache.SetWithTTL(cacheKey, tee.CachedBody(), CacheTTLs["query_range"])
 	}
 
 	elapsed := time.Since(start)
