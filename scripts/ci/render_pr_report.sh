@@ -107,20 +107,20 @@ COVERAGE_DELTA="$(format_delta "$HEAD_COVERAGE" "$BASE_COVERAGE" higher 0.1 0.1 
 LOKI_DELTA="$(format_delta "$HEAD_LOKI_PCT" "$BASE_LOKI_PCT" higher 0.1 0.1 1)"
 DRILL_DELTA="$(format_delta "$HEAD_DRILL_PCT" "$BASE_DRILL_PCT" higher 0.1 0.1 1)"
 VL_DELTA="$(format_delta "$HEAD_VL_PCT" "$BASE_VL_PCT" higher 0.1 0.1 1)"
-QUERY_DELTA="$(format_delta "$HEAD_QUERY_NS" "$BASE_QUERY_NS" lower 15 300 1000)"
-QUERY_BYTES_DELTA="$(format_delta "$HEAD_QUERY_BYTES" "$BASE_QUERY_BYTES" lower 20 32 64)"
-QUERY_ALLOCS_DELTA="$(format_delta "$HEAD_QUERY_ALLOCS" "$BASE_QUERY_ALLOCS" lower 15 1 1)"
-QUERY_BYPASS_DELTA="$(format_delta "$HEAD_QUERY_BYPASS_NS" "$BASE_QUERY_BYPASS_NS" lower 15 400 1000)"
-QUERY_BYPASS_BYTES_DELTA="$(format_delta "$HEAD_QUERY_BYPASS_BYTES" "$BASE_QUERY_BYPASS_BYTES" lower 20 32 64)"
-QUERY_BYPASS_ALLOCS_DELTA="$(format_delta "$HEAD_QUERY_BYPASS_ALLOCS" "$BASE_QUERY_BYPASS_ALLOCS" lower 15 1 1)"
-LABELS_DELTA="$(format_delta "$HEAD_LABELS_NS" "$BASE_LABELS_NS" lower 15 250 1000)"
-LABELS_BYTES_DELTA="$(format_delta "$HEAD_LABELS_BYTES" "$BASE_LABELS_BYTES" lower 20 32 64)"
-LABELS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_ALLOCS" "$BASE_LABELS_ALLOCS" lower 15 1 1)"
-LABELS_BYPASS_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_NS" "$BASE_LABELS_BYPASS_NS" lower 15 300 1000)"
-LABELS_BYPASS_BYTES_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_BYTES" "$BASE_LABELS_BYPASS_BYTES" lower 20 32 64)"
-LABELS_BYPASS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_ALLOCS" "$BASE_LABELS_BYPASS_ALLOCS" lower 15 1 1)"
-THROUGHPUT_DELTA="$(format_delta "$HEAD_THROUGHPUT" "$BASE_THROUGHPUT" higher 8 1000 5000)"
-MEMORY_DELTA="$(format_delta "$HEAD_MEM_GROWTH" "$BASE_MEM_GROWTH" lower 20 0.5 1)"
+QUERY_DELTA="$(format_delta "$HEAD_QUERY_NS" "$BASE_QUERY_NS" lower 35 5000 1000)"
+QUERY_BYTES_DELTA="$(format_delta "$HEAD_QUERY_BYTES" "$BASE_QUERY_BYTES" lower 20 512 256)"
+QUERY_ALLOCS_DELTA="$(format_delta "$HEAD_QUERY_ALLOCS" "$BASE_QUERY_ALLOCS" lower 25 4 1)"
+QUERY_BYPASS_DELTA="$(format_delta "$HEAD_QUERY_BYPASS_NS" "$BASE_QUERY_BYPASS_NS" lower 35 5000 1000)"
+QUERY_BYPASS_BYTES_DELTA="$(format_delta "$HEAD_QUERY_BYPASS_BYTES" "$BASE_QUERY_BYPASS_BYTES" lower 20 512 256)"
+QUERY_BYPASS_ALLOCS_DELTA="$(format_delta "$HEAD_QUERY_BYPASS_ALLOCS" "$BASE_QUERY_BYPASS_ALLOCS" lower 25 4 1)"
+LABELS_DELTA="$(format_delta "$HEAD_LABELS_NS" "$BASE_LABELS_NS" lower 35 5000 1000)"
+LABELS_BYTES_DELTA="$(format_delta "$HEAD_LABELS_BYTES" "$BASE_LABELS_BYTES" lower 20 512 256)"
+LABELS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_ALLOCS" "$BASE_LABELS_ALLOCS" lower 25 4 1)"
+LABELS_BYPASS_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_NS" "$BASE_LABELS_BYPASS_NS" lower 35 5000 1000)"
+LABELS_BYPASS_BYTES_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_BYTES" "$BASE_LABELS_BYPASS_BYTES" lower 20 512 256)"
+LABELS_BYPASS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_ALLOCS" "$BASE_LABELS_BYPASS_ALLOCS" lower 25 4 1)"
+THROUGHPUT_DELTA="$(format_delta "$HEAD_THROUGHPUT" "$BASE_THROUGHPUT" higher 25 2000 5000)"
+MEMORY_DELTA="$(format_delta "$HEAD_MEM_GROWTH" "$BASE_MEM_GROWTH" lower 300 5 5)"
 
 cat >"$OUTPUT_MD" <<EOF
 <!-- pr-quality-report -->
@@ -169,5 +169,5 @@ Lower CPU cost (\`ns/op\`) is better. Lower benchmark memory cost (\`B/op\`, \`a
 - Coverage, compatibility, and sampled performance are reported here from the same PR workflow.
 - This is a delta report, not a release gate by itself. Required checks still decide merge safety.
 - Performance is a smoke comparison, not a full benchmark lab run.
-- Delta states apply noise guards (percent and absolute thresholds), so small runner jitter is reported as \`stable\`.
+- Delta states use the same noise guards as the quality gate (percent + absolute + low-baseline checks), so report labels match merge-gate behavior.
 EOF

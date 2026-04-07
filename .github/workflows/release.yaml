@@ -11,6 +11,7 @@ on:
 permissions:
   contents: write
   packages: write
+  pull-requests: write
 
 jobs:
   release:
@@ -142,7 +143,8 @@ jobs:
             dist/checksums.txt
             dist/loki-vl-proxy-*.tgz
 
-      - name: Sync release metadata back to main
+      - name: Prepare release metadata branch
+        id: metadata
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -155,11 +157,55 @@ jobs:
 
           if git diff --quiet --exit-code -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml; then
             echo "release metadata already synced"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
+          BRANCH="release/metadata-v${VERSION}"
+          echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "${BRANCH}"
           git add -f -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml
-          git commit -m "docs: sync release metadata for v${VERSION} [skip ci]"
-          git push origin HEAD:main
+          git commit -m "docs: sync release metadata for v${VERSION}"
+          git push origin "${BRANCH}" --force
+
+      - name: Create or update release metadata PR
+        id: metadata-pr
+        if: steps.metadata.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          BRANCH: ${{ steps.metadata.outputs.branch }}
+        run: |
+          set -euo pipefail
+          TITLE="docs: sync release metadata for v${VERSION}"
+          BODY=$'## Summary\n- sync release metadata files for v'"${VERSION}"$' after manual release publish\n- update CHANGELOG materialization, Helm chart version/appVersion, observability service.version, and README release badges\n\n## Why\n- branch protection blocks direct pushes to main\n- this PR preserves required checks and signed merge flow while keeping metadata sync automated'
+
+          PR_NUMBER="$(gh pr list --repo "${GITHUB_REPOSITORY}" --head "${BRANCH}" --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -n "${PR_NUMBER}" ]; then
+            gh pr edit "${PR_NUMBER}" --repo "${GITHUB_REPOSITORY}" --title "${TITLE}" --body "${BODY}"
+          else
+            gh pr create \
+              --repo "${GITHUB_REPOSITORY}" \
+              --base main \
+              --head "${BRANCH}" \
+              --title "${TITLE}" \
+              --body "${BODY}" >/tmp/release-metadata-pr-url.txt
+            PR_NUMBER="$(basename "$(cat /tmp/release-metadata-pr-url.txt)")"
+          fi
+          echo "number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: Enable auto-merge for release metadata PR
+        if: steps.metadata-pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh pr merge "${{ steps.metadata-pr.outputs.number }}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --auto \
+            --squash \
+            --delete-branch || true
