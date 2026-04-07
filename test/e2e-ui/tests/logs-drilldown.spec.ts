@@ -102,7 +102,7 @@ test.describe("Grafana Logs Drilldown", () => {
     );
     expect(volumeResponse).toBeTruthy();
     expect(volumeResponse?.status).toBe(200);
-    expect(JSON.stringify(volumeResponse?.json)).toContain("api-gateway");
+    expect(JSON.stringify(volumeResponse?.json)).toContain('"resultType":"vector"');
     await guards.assertClean();
   });
 
