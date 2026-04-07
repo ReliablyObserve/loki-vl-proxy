@@ -200,6 +200,9 @@ jobs:
 
       - name: Extract release metadata
         id: meta
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -euo pipefail
           VERSION="${{ needs.prepare-release.outputs.next_version }}"
