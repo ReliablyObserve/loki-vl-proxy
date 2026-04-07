@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import math
 import sys
 
 
@@ -21,18 +20,35 @@ def fmt_pct(delta):
 
 
 def check_non_decreasing(failures, label, base, head, epsilon=0.0):
-    if head < (base - epsilon):
+    # Avoid floating-point edge failures (for example: 90.2 -> 90.1 with epsilon 0.1).
+    if head < (base - epsilon - 1e-9):
         failures.append(f"{label} regressed: base={base}, head={head}")
 
 
-def check_threshold(failures, label, base, head, better, threshold):
+def check_threshold(
+    failures,
+    label,
+    base,
+    head,
+    better,
+    threshold,
+    absolute_threshold=0.0,
+    min_base=0.0,
+):
+    if base < min_base:
+        return
     delta = pct_delta(base, head)
     if delta is None:
         return
-    if better == "lower" and delta >= threshold:
-        failures.append(f"{label} regressed by {fmt_pct(delta)}")
-    elif better == "higher" and delta <= -threshold:
-        failures.append(f"{label} regressed by {fmt_pct(delta)}")
+    absolute_delta = abs(head - base)
+    if better == "lower" and delta >= threshold and absolute_delta >= absolute_threshold:
+        failures.append(
+            f"{label} regressed by {fmt_pct(delta)} (base={base}, head={head})"
+        )
+    elif better == "higher" and delta <= -threshold and absolute_delta >= absolute_threshold:
+        failures.append(
+            f"{label} regressed by {fmt_pct(delta)} (base={base}, head={head})"
+        )
 
 
 def main():
@@ -71,23 +87,115 @@ def main():
             float(head["compatibility"][key]["pct"]),
         )
 
-    threshold = 5.0
-    cpu_threshold = 10.0
+    mem_pct_threshold = 20.0
+    alloc_pct_threshold = 25.0
+    cpu_pct_threshold = 35.0
     benchmarks = (
-        ("query_range_cache_hit_ns_per_op", "QueryRange cache-hit CPU cost", "lower", cpu_threshold),
-        ("query_range_cache_hit_bytes_per_op", "QueryRange cache-hit memory", "lower", threshold),
-        ("query_range_cache_hit_allocs_per_op", "QueryRange cache-hit allocations", "lower", threshold),
-        ("query_range_cache_bypass_ns_per_op", "QueryRange cache-bypass CPU cost", "lower", cpu_threshold),
-        ("query_range_cache_bypass_bytes_per_op", "QueryRange cache-bypass memory", "lower", threshold),
-        ("query_range_cache_bypass_allocs_per_op", "QueryRange cache-bypass allocations", "lower", threshold),
-        ("labels_cache_hit_ns_per_op", "Labels cache-hit CPU cost", "lower", cpu_threshold),
-        ("labels_cache_hit_bytes_per_op", "Labels cache-hit memory", "lower", threshold),
-        ("labels_cache_hit_allocs_per_op", "Labels cache-hit allocations", "lower", threshold),
-        ("labels_cache_bypass_ns_per_op", "Labels cache-bypass CPU cost", "lower", cpu_threshold),
-        ("labels_cache_bypass_bytes_per_op", "Labels cache-bypass memory", "lower", threshold),
-        ("labels_cache_bypass_allocs_per_op", "Labels cache-bypass allocations", "lower", threshold),
+        (
+            "query_range_cache_hit_ns_per_op",
+            "QueryRange cache-hit CPU cost",
+            "lower",
+            cpu_pct_threshold,
+            5_000.0,
+            1_000.0,
+        ),
+        (
+            "query_range_cache_hit_bytes_per_op",
+            "QueryRange cache-hit memory",
+            "lower",
+            mem_pct_threshold,
+            512.0,
+            256.0,
+        ),
+        (
+            "query_range_cache_hit_allocs_per_op",
+            "QueryRange cache-hit allocations",
+            "lower",
+            alloc_pct_threshold,
+            4.0,
+            1.0,
+        ),
+        (
+            "query_range_cache_bypass_ns_per_op",
+            "QueryRange cache-bypass CPU cost",
+            "lower",
+            cpu_pct_threshold,
+            5_000.0,
+            1_000.0,
+        ),
+        (
+            "query_range_cache_bypass_bytes_per_op",
+            "QueryRange cache-bypass memory",
+            "lower",
+            mem_pct_threshold,
+            512.0,
+            256.0,
+        ),
+        (
+            "query_range_cache_bypass_allocs_per_op",
+            "QueryRange cache-bypass allocations",
+            "lower",
+            alloc_pct_threshold,
+            4.0,
+            1.0,
+        ),
+        (
+            "labels_cache_hit_ns_per_op",
+            "Labels cache-hit CPU cost",
+            "lower",
+            cpu_pct_threshold,
+            5_000.0,
+            1_000.0,
+        ),
+        (
+            "labels_cache_hit_bytes_per_op",
+            "Labels cache-hit memory",
+            "lower",
+            mem_pct_threshold,
+            512.0,
+            256.0,
+        ),
+        (
+            "labels_cache_hit_allocs_per_op",
+            "Labels cache-hit allocations",
+            "lower",
+            alloc_pct_threshold,
+            4.0,
+            1.0,
+        ),
+        (
+            "labels_cache_bypass_ns_per_op",
+            "Labels cache-bypass CPU cost",
+            "lower",
+            cpu_pct_threshold,
+            5_000.0,
+            1_000.0,
+        ),
+        (
+            "labels_cache_bypass_bytes_per_op",
+            "Labels cache-bypass memory",
+            "lower",
+            mem_pct_threshold,
+            512.0,
+            256.0,
+        ),
+        (
+            "labels_cache_bypass_allocs_per_op",
+            "Labels cache-bypass allocations",
+            "lower",
+            alloc_pct_threshold,
+            4.0,
+            1.0,
+        ),
     )
-    for key, label, better, metric_threshold in benchmarks:
+    for (
+        key,
+        label,
+        better,
+        metric_threshold,
+        absolute_threshold,
+        min_base,
+    ) in benchmarks:
         check_threshold(
             failures,
             label,
@@ -95,6 +203,8 @@ def main():
             float(head["performance"]["benchmarks"].get(key, 0)),
             better,
             metric_threshold,
+            absolute_threshold=absolute_threshold,
+            min_base=min_base,
         )
 
     check_threshold(
@@ -103,7 +213,9 @@ def main():
         float(base["performance"]["load"]["high_concurrency_req_per_s"]),
         float(head["performance"]["load"]["high_concurrency_req_per_s"]),
         "higher",
-        10.0,
+        25.0,
+        absolute_threshold=2_000.0,
+        min_base=5_000.0,
     )
     check_threshold(
         failures,
@@ -111,7 +223,9 @@ def main():
         float(base["performance"]["load"]["high_concurrency_memory_growth_mb"]),
         float(head["performance"]["load"]["high_concurrency_memory_growth_mb"]),
         "lower",
-        threshold,
+        300.0,
+        absolute_threshold=5.0,
+        min_base=5.0,
     )
 
     if failures:

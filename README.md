@@ -136,6 +136,7 @@ See [Performance Guide](docs/performance.md), [Scaling](docs/scaling.md), [Fleet
 - **Bounded fanout and merge safety** -- multi-tenant query fanout, merged response size, synthetic-tail dedup state, and expensive metadata scans all have explicit safety caps
 - **Cache-hit and bypass regression gates** -- PR quality checks track CPU, memory, allocations, throughput, and memory growth across hot and uncached paths
 - **Faster PR quality snapshots** -- base/head quality metrics are collected in parallel with bounded per-metric timeouts so required report gating stays informative without stalling whole PR checks
+- **CI noise-tolerant report gate** -- base/head quality comparisons use relative plus absolute thresholds with low-baseline guards, so small runner jitter does not block PRs
 
 ### Operations
 See [Getting Started](docs/getting-started.md), [Configuration](docs/configuration.md), [Scaling](docs/scaling.md), [Observability](docs/observability.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), and [Rules And Alerts Migration](docs/rules-alerts-migration.md).

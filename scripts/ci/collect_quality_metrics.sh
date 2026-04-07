@@ -115,7 +115,10 @@ start_compat_stack() {
     cd "$ROOT_DIR/test/e2e-compat"
     docker compose down -v >&2 || true
     if [ -n "${PROXY_IMAGE:-}" ] && docker image inspect "${PROXY_IMAGE}" >/dev/null 2>&1; then
-      docker compose up -d --no-build >&2
+      if ! docker compose up -d --no-build >&2; then
+        log_step "compat stack --no-build failed; retrying with --build"
+        docker compose up -d --build >&2
+      fi
     else
       docker compose up -d --build >&2
     fi
