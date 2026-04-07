@@ -145,6 +145,7 @@ type signalNotifier func(chan<- os.Signal, ...os.Signal)
 type runtimeBuilder func(runtimeOptions, *slog.Logger, signalNotifier, otlpPusherFactory) (*runtimeState, error)
 type serverRunner func(httpServer, serverLoopOptions, *slog.Logger, func(string, ...any))
 type shutdownHandlerFunc func(<-chan os.Signal, httpServer, time.Duration, *slog.Logger)
+type exitFunc func(int)
 
 type runtimeOptions struct {
 	cacheTTL     time.Duration
@@ -167,20 +168,37 @@ type runtimeState struct {
 }
 
 func main() {
-	if err := run(
+	runMain(
 		os.Args[1:],
 		os.Getenv,
 		os.Stdout,
+		os.Stderr,
 		signal.Notify,
+		os.Exit,
 		func(cfg metrics.OTLPConfig, m *metrics.Metrics) otlpMetricsPusher {
 			return metrics.NewOTLPPusher(cfg, m)
 		},
 		buildRuntime,
 		runServerLoop,
 		handleShutdown,
-	); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	)
+}
+
+func runMain(
+	args []string,
+	getenv func(string) string,
+	stdout io.Writer,
+	stderr io.Writer,
+	notify signalNotifier,
+	exit exitFunc,
+	newPusher otlpPusherFactory,
+	buildRuntimeFn runtimeBuilder,
+	runServerLoopFn serverRunner,
+	handleShutdownFn shutdownHandlerFunc,
+) {
+	if err := run(args, getenv, stdout, notify, newPusher, buildRuntimeFn, runServerLoopFn, handleShutdownFn); err != nil {
+		fmt.Fprintln(stderr, err)
+		exit(1)
 	}
 }
 

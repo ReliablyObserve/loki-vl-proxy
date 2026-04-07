@@ -1,11 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+type exitRecorder struct {
+	code  int
+	calls int
+}
+
+func (r *exitRecorder) exit(code int) {
+	r.calls++
+	r.code = code
+}
 
 func TestReadInputFromFile(t *testing.T) {
 	dir := t.TempDir()
@@ -145,5 +156,23 @@ func TestRunReturnsReadErrorForMissingFile(t *testing.T) {
 	}
 	if !strings.Contains(stderr, "read input:") {
 		t.Fatalf("expected read error, got %q", stderr)
+	}
+}
+
+func TestRunMain_ExitsWithRunCode(t *testing.T) {
+	exits := &exitRecorder{}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	runMain([]string{"-does-not-exist"}, strings.NewReader(""), &stdout, &stderr, exits.exit)
+
+	if exits.calls != 1 || exits.code != 2 {
+		t.Fatalf("expected one exit(2), got calls=%d code=%d", exits.calls, exits.code)
+	}
+	if !strings.Contains(stderr.String(), "flag provided but not defined") {
+		t.Fatalf("expected parse error on stderr, got %q", stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected empty stdout, got %q", stdout.String())
 	}
 }

@@ -1,10 +1,15 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/szibis/Loki-VL-proxy/internal/cache"
 )
 
 func TestParseInstantVectorTimeVariants(t *testing.T) {
@@ -171,4 +176,169 @@ func TestDrilldownHelpers(t *testing.T) {
 	if string(mustJSON(map[string]string{"app": "api"})) != `{"app":"api"}` {
 		t.Fatalf("unexpected mustJSON output: %s", string(mustJSON(map[string]string{"app": "api"})))
 	}
+}
+
+func TestInferDetectedTypeVariants(t *testing.T) {
+	tests := []struct {
+		name string
+		in   interface{}
+		want string
+	}{
+		{name: "bool", in: true, want: "boolean"},
+		{name: "int_like_float", in: 12.0, want: "int"},
+		{name: "float", in: 12.5, want: "float"},
+		{name: "duration", in: "5m", want: "duration"},
+		{name: "string", in: "hello", want: "string"},
+		{name: "fallback", in: map[string]string{"k": "v"}, want: "string"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := inferDetectedType(tt.in); got != tt.want {
+				t.Fatalf("inferDetectedType(%v) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDetectedFieldsCacheRoundTripAndInvalidPayload(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	ctx := context.WithValue(context.Background(), orgIDKey, "tenant-a")
+	fields := []map[string]interface{}{
+		{"label": "method", "type": "string", "cardinality": 2},
+	}
+	values := map[string][]string{"method": {"GET", "POST"}}
+
+	p.setCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50, fields, values)
+	gotFields, gotValues, ok := p.getCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50)
+	if !ok {
+		t.Fatal("expected detected fields cache hit")
+	}
+	if len(gotFields) != 1 || gotFields[0]["label"] != "method" {
+		t.Fatalf("unexpected cached fields: %#v", gotFields)
+	}
+	if len(gotValues["method"]) != 2 || gotValues["method"][0] != "GET" {
+		t.Fatalf("unexpected cached values: %#v", gotValues)
+	}
+
+	cacheKey := p.detectedFieldsCacheKey(ctx, `{app="api"}`, "1", "2", 50)
+	p.cache.Set(cacheKey, []byte("{invalid-json"))
+	if gotFields, gotValues, ok := p.getCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50); ok || gotFields != nil || gotValues != nil {
+		t.Fatalf("expected invalid payload to miss cache, got %#v %#v %v", gotFields, gotValues, ok)
+	}
+}
+
+func TestDetectedFieldsCache_NoCacheConfigured(t *testing.T) {
+	p := &Proxy{}
+	ctx := context.Background()
+	if gotFields, gotValues, ok := p.getCachedDetectedFields(ctx, "*", "1", "2", 10); ok || gotFields != nil || gotValues != nil {
+		t.Fatalf("expected miss without cache, got %#v %#v %v", gotFields, gotValues, ok)
+	}
+	p.setCachedDetectedFields(ctx, "*", "1", "2", 10, nil, nil)
+}
+
+func TestWriteEmptyLegacyRules(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	w := httptest.NewRecorder()
+	p.writeEmptyLegacyRules(w)
+
+	if got := w.Code; got != http.StatusOK {
+		t.Fatalf("expected 200, got %d", got)
+	}
+	if got := w.Header().Get("Content-Type"); got != "application/yaml" {
+		t.Fatalf("unexpected content type %q", got)
+	}
+	if body := w.Body.String(); body != "{}\n" {
+		t.Fatalf("unexpected yaml body %q", body)
+	}
+}
+
+func TestPeerCacheMiddleware(t *testing.T) {
+	t.Run("allows_configured_peer_host", func(t *testing.T) {
+		pc := cache.NewPeerCache(cache.PeerConfig{
+			SelfAddr:      "10.0.0.1:3100",
+			DiscoveryType: "static",
+			StaticPeers:   "10.0.0.2:3100",
+			Timeout:       50 * time.Millisecond,
+		})
+		defer pc.Close()
+		p := newTestProxy(t, "http://unused")
+		p.peerCache = pc
+
+		var called bool
+		handler := p.peerCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/_cache/get?key=x", nil)
+		req.RemoteAddr = "10.0.0.2:1234"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if !called || w.Code != http.StatusNoContent {
+			t.Fatalf("expected known peer to be allowed, called=%v code=%d", called, w.Code)
+		}
+	})
+
+	t.Run("rejects_unknown_peer_host", func(t *testing.T) {
+		pc := cache.NewPeerCache(cache.PeerConfig{
+			SelfAddr:      "10.0.0.1:3100",
+			DiscoveryType: "static",
+			StaticPeers:   "10.0.0.2:3100",
+			Timeout:       50 * time.Millisecond,
+		})
+		defer pc.Close()
+		p := newTestProxy(t, "http://unused")
+		p.peerCache = pc
+		handler := p.peerCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("unexpected next handler call")
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/_cache/get?key=x", nil)
+		req.RemoteAddr = "10.0.0.9:1234"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", w.Code)
+		}
+	})
+
+	t.Run("peer_token_overrides_host_check", func(t *testing.T) {
+		p := newTestProxy(t, "http://unused")
+		p.peerAuthToken = "shared-secret"
+		var called bool
+		handler := p.peerCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/_cache/get?key=x", nil)
+		req.Header.Set("X-Peer-Token", "shared-secret")
+		req.RemoteAddr = "10.0.0.99:1234"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if !called || w.Code != http.StatusNoContent {
+			t.Fatalf("expected authenticated peer to be allowed, called=%v code=%d", called, w.Code)
+		}
+	})
+
+	t.Run("rejects_missing_peer_token", func(t *testing.T) {
+		p := newTestProxy(t, "http://unused")
+		p.peerAuthToken = "shared-secret"
+		handler := p.peerCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("unexpected next handler call")
+		}))
+		req := httptest.NewRequest(http.MethodGet, "/_cache/get?key=x", nil)
+		req.RemoteAddr = "10.0.0.2:1234"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d", w.Code)
+		}
+	})
 }

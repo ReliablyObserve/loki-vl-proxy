@@ -140,6 +140,37 @@ func TestPeerCache_ServeHTTP_Miss(t *testing.T) {
 	}
 }
 
+func TestPeerCache_ServeHTTP_MissingKey(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost"})
+	defer pc.Close()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/_cache/get", nil)
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing key, got %d", w.Code)
+	}
+}
+
+func TestPeerCache_ServeHTTP_RejectsNearExpiryEntry(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+	localCache.SetWithTTL("near-expiry", []byte("hello"), time.Second)
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost"})
+	defer pc.Close()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/_cache/get?key=near-expiry", nil)
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected near-expiry cache entry to be treated as miss, got %d", w.Code)
+	}
+}
+
 func TestPeerCache_FetchFromPeer(t *testing.T) {
 	// Peer server with data
 	peerCache := New(60*time.Second, 1000)

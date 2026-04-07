@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+var (
+	rateLimiterCleanupInterval = 5 * time.Minute
+	rateLimiterStaleAfter      = 10 * time.Minute
+)
+
 // RateLimiter provides per-client token bucket rate limiting
 // and a global concurrent query semaphore.
 type RateLimiter struct {
@@ -27,7 +32,7 @@ type RateLimiter struct {
 	done chan struct{}
 
 	// Stats
-	RejectedTotal atomic.Int64
+	RejectedTotal  atomic.Int64
 	ThrottledTotal atomic.Int64
 }
 
@@ -154,7 +159,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 }
 
 func (rl *RateLimiter) cleanupStaleClients() {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(rateLimiterCleanupInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -162,7 +167,7 @@ func (rl *RateLimiter) cleanupStaleClients() {
 			return
 		case <-ticker.C:
 			rl.mu.Lock()
-			cutoff := time.Now().Add(-10 * time.Minute)
+			cutoff := time.Now().Add(-rateLimiterStaleAfter)
 			for k, b := range rl.clients {
 				if b.lastTime.Before(cutoff) {
 					delete(rl.clients, k)

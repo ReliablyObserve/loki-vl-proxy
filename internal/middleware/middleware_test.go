@@ -380,6 +380,43 @@ func TestRateLimiter_Middleware_RateLimitResponse(t *testing.T) {
 	}
 }
 
+func TestRateLimiter_StopAndCleanupStaleClients(t *testing.T) {
+	oldCleanupInterval := rateLimiterCleanupInterval
+	oldStaleAfter := rateLimiterStaleAfter
+	rateLimiterCleanupInterval = 5 * time.Millisecond
+	rateLimiterStaleAfter = 100 * time.Millisecond
+	t.Cleanup(func() {
+		rateLimiterCleanupInterval = oldCleanupInterval
+		rateLimiterStaleAfter = oldStaleAfter
+	})
+
+	rl := NewRateLimiter(1, 10, 10)
+	rl.mu.Lock()
+	rl.clients["stale"] = &tokenBucket{
+		tokens:    1,
+		lastTime:  time.Now().Add(-time.Second),
+		rate:      10,
+		burstSize: 10,
+	}
+	rl.clients["fresh"] = &tokenBucket{
+		tokens:    1,
+		lastTime:  time.Now(),
+		rate:      10,
+		burstSize: 10,
+	}
+	rl.mu.Unlock()
+
+	requireEventuallyMiddleware(t, 200*time.Millisecond, func() bool {
+		rl.mu.Lock()
+		defer rl.mu.Unlock()
+		_, staleExists := rl.clients["stale"]
+		_, freshExists := rl.clients["fresh"]
+		return !staleExists && freshExists
+	})
+
+	rl.Stop()
+}
+
 // TestRateLimiter_NoLimits verifies zero limits disable limiting.
 func TestRateLimiter_NoLimits(t *testing.T) {
 	rl := NewRateLimiter(0, 0, 0)
@@ -392,6 +429,19 @@ func TestRateLimiter_NoLimits(t *testing.T) {
 			t.Fatal("expected no concurrent limit when maxConcurrent=0")
 		}
 	}
+}
+
+func requireEventuallyMiddleware(t *testing.T, timeout time.Duration, cond func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("condition not satisfied before timeout")
 }
 
 // TestCircuitBreaker_HalfOpenLimitsProbes verifies that half-open state

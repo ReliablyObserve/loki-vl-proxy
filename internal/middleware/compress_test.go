@@ -151,3 +151,58 @@ func TestGzipHandler_SkipsWebSocketUpgrades(t *testing.T) {
 		t.Fatalf("expected websocket upgrade to skip gzip, got %q", got)
 	}
 }
+
+func TestGzipResponseWriter_WriteHeaderDeletesContentLength(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	recorder.Header().Set("Content-Length", "123")
+	gz := gzip.NewWriter(io.Discard)
+	defer gz.Close()
+
+	writer := &gzipResponseWriter{
+		ResponseWriter: recorder,
+		writer:         gz,
+	}
+	writer.WriteHeader(http.StatusAccepted)
+
+	if writer.statusCode != http.StatusAccepted {
+		t.Fatalf("expected status code to be tracked, got %d", writer.statusCode)
+	}
+	if got := recorder.Header().Get("Content-Length"); got != "" {
+		t.Fatalf("expected content length to be removed, got %q", got)
+	}
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("expected recorder status 202, got %d", recorder.Code)
+	}
+}
+
+func TestGzipResponseWriter_Hijack(t *testing.T) {
+	gz := gzip.NewWriter(io.Discard)
+	defer gz.Close()
+
+	t.Run("supported", func(t *testing.T) {
+		recorder := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+		writer := &gzipResponseWriter{
+			ResponseWriter: recorder,
+			writer:         gz,
+		}
+
+		_, _, err := writer.Hijack()
+		if err != nil {
+			t.Fatalf("expected hijack to succeed, got %v", err)
+		}
+		if !recorder.hijacked {
+			t.Fatal("expected underlying hijacker to be used")
+		}
+	})
+
+	t.Run("unsupported", func(t *testing.T) {
+		writer := &gzipResponseWriter{
+			ResponseWriter: httptest.NewRecorder(),
+			writer:         gz,
+		}
+
+		if _, _, err := writer.Hijack(); err == nil {
+			t.Fatal("expected hijack to fail when unsupported")
+		}
+	})
+}
