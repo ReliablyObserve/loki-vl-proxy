@@ -218,12 +218,28 @@ compat_file="$TMP_DIR/compat.json"
 benchmarks_file="$TMP_DIR/benchmarks.json"
 load_file="$TMP_DIR/load.json"
 
+BENCHMARKS_DEFAULT='{"query_range_cache_hit_ns_per_op":0,"query_range_cache_hit_bytes_per_op":0,"query_range_cache_hit_allocs_per_op":0,"query_range_cache_bypass_ns_per_op":0,"query_range_cache_bypass_bytes_per_op":0,"query_range_cache_bypass_allocs_per_op":0,"labels_cache_hit_ns_per_op":0,"labels_cache_hit_bytes_per_op":0,"labels_cache_hit_allocs_per_op":0,"labels_cache_bypass_ns_per_op":0,"labels_cache_bypass_bytes_per_op":0,"labels_cache_bypass_allocs_per_op":0}'
+LOAD_DEFAULT='{"high_concurrency_req_per_s":0,"high_concurrency_memory_growth_mb":0}'
+PERF_MODE="full"
+if [ "${QUALITY_SKIP_PERF:-0}" = "1" ]; then
+  PERF_MODE="skipped"
+fi
+
 capture_async tests_and_coverage '{"count":0,"coverage_pct":0}' 900 "$tests_file" tests_pid collect_tests_and_coverage
 capture_async compat '{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}' 1800 "$compat_file" compat_pid collect_compat
-capture_async benchmarks '{"query_range_cache_hit_ns_per_op":0,"query_range_cache_hit_bytes_per_op":0,"query_range_cache_hit_allocs_per_op":0,"query_range_cache_bypass_ns_per_op":0,"query_range_cache_bypass_bytes_per_op":0,"query_range_cache_bypass_allocs_per_op":0,"labels_cache_hit_ns_per_op":0,"labels_cache_hit_bytes_per_op":0,"labels_cache_hit_allocs_per_op":0,"labels_cache_bypass_ns_per_op":0,"labels_cache_bypass_bytes_per_op":0,"labels_cache_bypass_allocs_per_op":0}' 900 "$benchmarks_file" benchmarks_pid collect_benchmarks
-capture_async load '{"high_concurrency_req_per_s":0,"high_concurrency_memory_growth_mb":0}' 600 "$load_file" load_pid collect_load
 
-for pid in "$tests_pid" "$compat_pid" "$benchmarks_pid" "$load_pid"; do
+PIDS=("$tests_pid" "$compat_pid")
+if [ "$PERF_MODE" = "full" ]; then
+  capture_async benchmarks "$BENCHMARKS_DEFAULT" 900 "$benchmarks_file" benchmarks_pid collect_benchmarks
+  capture_async load "$LOAD_DEFAULT" 600 "$load_file" load_pid collect_load
+  PIDS+=("$benchmarks_pid" "$load_pid")
+else
+  log_step "skipping performance smoke collection (QUALITY_SKIP_PERF=1)"
+  printf '%s\n' "$BENCHMARKS_DEFAULT" >"$benchmarks_file"
+  printf '%s\n' "$LOAD_DEFAULT" >"$load_file"
+fi
+
+for pid in "${PIDS[@]}"; do
   wait "$pid"
 done
 
@@ -237,10 +253,12 @@ jq -n \
   --argjson compat "$COMPAT" \
   --argjson benchmarks "$BENCHMARKS" \
   --argjson load "$LOAD" \
+  --arg perf_mode "$PERF_MODE" \
   '{
     tests: $tests,
     compatibility: $compat,
     performance: {
+      mode: $perf_mode,
       benchmarks: $benchmarks,
       load: $load
     }

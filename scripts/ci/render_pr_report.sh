@@ -102,6 +102,7 @@ HEAD_THROUGHPUT="$(json_field "$HEAD_JSON" '.performance.load.high_concurrency_r
 BASE_THROUGHPUT="$(json_field "$BASE_JSON" '.performance.load.high_concurrency_req_per_s')"
 HEAD_MEM_GROWTH="$(json_field "$HEAD_JSON" '.performance.load.high_concurrency_memory_growth_mb')"
 BASE_MEM_GROWTH="$(json_field "$BASE_JSON" '.performance.load.high_concurrency_memory_growth_mb')"
+HEAD_PERF_MODE="$(json_field "$HEAD_JSON" '.performance.mode // "full"')"
 
 COVERAGE_DELTA="$(format_delta "$HEAD_COVERAGE" "$BASE_COVERAGE" higher 0.1 0.1 1)"
 LOKI_DELTA="$(format_delta "$HEAD_LOKI_PCT" "$BASE_LOKI_PCT" higher 0.1 0.1 1)"
@@ -121,6 +122,41 @@ LABELS_BYPASS_BYTES_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_BYTES" "$BASE_LAB
 LABELS_BYPASS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_ALLOCS" "$BASE_LABELS_BYPASS_ALLOCS" lower 25 4 1)"
 THROUGHPUT_DELTA="$(format_delta "$HEAD_THROUGHPUT" "$BASE_THROUGHPUT" higher 25 2000 5000)"
 MEMORY_DELTA="$(format_delta "$HEAD_MEM_GROWTH" "$BASE_MEM_GROWTH" lower 300 5 5)"
+
+if [ "$HEAD_PERF_MODE" = "skipped" ]; then
+  PERFORMANCE_SECTION="$(cat <<'EOF'
+### Performance smoke
+
+Performance smoke was skipped for this PR because no perf-sensitive paths changed.
+EOF
+)"
+  PERFORMANCE_STATE_NOTE="- Performance smoke was intentionally skipped because no perf-sensitive paths changed in this PR."
+else
+  PERFORMANCE_SECTION="$(cat <<EOF
+### Performance smoke
+
+Lower CPU cost (\`ns/op\`) is better. Lower benchmark memory cost (\`B/op\`, \`allocs/op\`) is better. Higher throughput is better. Lower load-test memory growth is better. Benchmark rows are medians from repeated samples.
+
+| Signal | Base | PR | Delta |
+|---|---:|---:|---:|
+| QueryRange cache-hit CPU cost | ${BASE_QUERY_NS} ns/op | ${HEAD_QUERY_NS} ns/op | ${QUERY_DELTA} |
+| QueryRange cache-hit memory | ${BASE_QUERY_BYTES} B/op | ${HEAD_QUERY_BYTES} B/op | ${QUERY_BYTES_DELTA} |
+| QueryRange cache-hit allocations | ${BASE_QUERY_ALLOCS} allocs/op | ${HEAD_QUERY_ALLOCS} allocs/op | ${QUERY_ALLOCS_DELTA} |
+| QueryRange cache-bypass CPU cost | ${BASE_QUERY_BYPASS_NS} ns/op | ${HEAD_QUERY_BYPASS_NS} ns/op | ${QUERY_BYPASS_DELTA} |
+| QueryRange cache-bypass memory | ${BASE_QUERY_BYPASS_BYTES} B/op | ${HEAD_QUERY_BYPASS_BYTES} B/op | ${QUERY_BYPASS_BYTES_DELTA} |
+| QueryRange cache-bypass allocations | ${BASE_QUERY_BYPASS_ALLOCS} allocs/op | ${HEAD_QUERY_BYPASS_ALLOCS} allocs/op | ${QUERY_BYPASS_ALLOCS_DELTA} |
+| Labels cache-hit CPU cost | ${BASE_LABELS_NS} ns/op | ${HEAD_LABELS_NS} ns/op | ${LABELS_DELTA} |
+| Labels cache-hit memory | ${BASE_LABELS_BYTES} B/op | ${HEAD_LABELS_BYTES} B/op | ${LABELS_BYTES_DELTA} |
+| Labels cache-hit allocations | ${BASE_LABELS_ALLOCS} allocs/op | ${HEAD_LABELS_ALLOCS} allocs/op | ${LABELS_ALLOCS_DELTA} |
+| Labels cache-bypass CPU cost | ${BASE_LABELS_BYPASS_NS} ns/op | ${HEAD_LABELS_BYPASS_NS} ns/op | ${LABELS_BYPASS_DELTA} |
+| Labels cache-bypass memory | ${BASE_LABELS_BYPASS_BYTES} B/op | ${HEAD_LABELS_BYPASS_BYTES} B/op | ${LABELS_BYPASS_BYTES_DELTA} |
+| Labels cache-bypass allocations | ${BASE_LABELS_BYPASS_ALLOCS} allocs/op | ${HEAD_LABELS_BYPASS_ALLOCS} allocs/op | ${LABELS_BYPASS_ALLOCS_DELTA} |
+| High-concurrency throughput | ${BASE_THROUGHPUT} req/s | ${HEAD_THROUGHPUT} req/s | ${THROUGHPUT_DELTA} |
+| High-concurrency memory growth | ${BASE_MEM_GROWTH} MB | ${HEAD_MEM_GROWTH} MB | ${MEMORY_DELTA} |
+EOF
+)"
+  PERFORMANCE_STATE_NOTE="- Performance is a smoke comparison, not a full benchmark lab run."
+fi
 
 cat >"$OUTPUT_MD" <<EOF
 <!-- pr-quality-report -->
@@ -143,31 +179,12 @@ Compared against base branch \`main\`.
 | Logs Drilldown | ${BASE_DRILL_PCT}% | ${HEAD_DRILL_PASS}/${HEAD_DRILL_TOTAL} (${HEAD_DRILL_PCT}%) | ${DRILL_DELTA} |
 | VictoriaLogs | ${BASE_VL_PCT}% | ${HEAD_VL_PASS}/${HEAD_VL_TOTAL} (${HEAD_VL_PCT}%) | ${VL_DELTA} |
 
-### Performance smoke
-
-Lower CPU cost (\`ns/op\`) is better. Lower benchmark memory cost (\`B/op\`, \`allocs/op\`) is better. Higher throughput is better. Lower load-test memory growth is better. Benchmark rows are medians from repeated samples.
-
-| Signal | Base | PR | Delta |
-|---|---:|---:|---:|
-| QueryRange cache-hit CPU cost | ${BASE_QUERY_NS} ns/op | ${HEAD_QUERY_NS} ns/op | ${QUERY_DELTA} |
-| QueryRange cache-hit memory | ${BASE_QUERY_BYTES} B/op | ${HEAD_QUERY_BYTES} B/op | ${QUERY_BYTES_DELTA} |
-| QueryRange cache-hit allocations | ${BASE_QUERY_ALLOCS} allocs/op | ${HEAD_QUERY_ALLOCS} allocs/op | ${QUERY_ALLOCS_DELTA} |
-| QueryRange cache-bypass CPU cost | ${BASE_QUERY_BYPASS_NS} ns/op | ${HEAD_QUERY_BYPASS_NS} ns/op | ${QUERY_BYPASS_DELTA} |
-| QueryRange cache-bypass memory | ${BASE_QUERY_BYPASS_BYTES} B/op | ${HEAD_QUERY_BYPASS_BYTES} B/op | ${QUERY_BYPASS_BYTES_DELTA} |
-| QueryRange cache-bypass allocations | ${BASE_QUERY_BYPASS_ALLOCS} allocs/op | ${HEAD_QUERY_BYPASS_ALLOCS} allocs/op | ${QUERY_BYPASS_ALLOCS_DELTA} |
-| Labels cache-hit CPU cost | ${BASE_LABELS_NS} ns/op | ${HEAD_LABELS_NS} ns/op | ${LABELS_DELTA} |
-| Labels cache-hit memory | ${BASE_LABELS_BYTES} B/op | ${HEAD_LABELS_BYTES} B/op | ${LABELS_BYTES_DELTA} |
-| Labels cache-hit allocations | ${BASE_LABELS_ALLOCS} allocs/op | ${HEAD_LABELS_ALLOCS} allocs/op | ${LABELS_ALLOCS_DELTA} |
-| Labels cache-bypass CPU cost | ${BASE_LABELS_BYPASS_NS} ns/op | ${HEAD_LABELS_BYPASS_NS} ns/op | ${LABELS_BYPASS_DELTA} |
-| Labels cache-bypass memory | ${BASE_LABELS_BYPASS_BYTES} B/op | ${HEAD_LABELS_BYPASS_BYTES} B/op | ${LABELS_BYPASS_BYTES_DELTA} |
-| Labels cache-bypass allocations | ${BASE_LABELS_BYPASS_ALLOCS} allocs/op | ${HEAD_LABELS_BYPASS_ALLOCS} allocs/op | ${LABELS_BYPASS_ALLOCS_DELTA} |
-| High-concurrency throughput | ${BASE_THROUGHPUT} req/s | ${HEAD_THROUGHPUT} req/s | ${THROUGHPUT_DELTA} |
-| High-concurrency memory growth | ${BASE_MEM_GROWTH} MB | ${HEAD_MEM_GROWTH} MB | ${MEMORY_DELTA} |
+${PERFORMANCE_SECTION}
 
 ### State
 
 - Coverage, compatibility, and sampled performance are reported here from the same PR workflow.
 - This is a delta report, not a release gate by itself. Required checks still decide merge safety.
-- Performance is a smoke comparison, not a full benchmark lab run.
+${PERFORMANCE_STATE_NOTE}
 - Delta states use the same noise guards as the quality gate (percent + absolute + low-baseline checks), so report labels match merge-gate behavior.
 EOF
