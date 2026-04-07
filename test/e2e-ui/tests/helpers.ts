@@ -1,4 +1,5 @@
-import { Page, expect } from "@playwright/test";
+import { Page, Locator, expect } from "@playwright/test";
+import { buildExploreUrl, buildLogsDrilldownUrl } from "./url-state";
 
 // Grafana datasource names matching grafana-datasources.yaml
 export const PROXY_DS = "Loki (via VL proxy)";
@@ -8,34 +9,54 @@ export const PROXY_TAIL_INGRESS_DS = "Loki (via ingress tail)";
 export const PROXY_TAIL_NATIVE_DS = "Loki (via VL proxy live tail native)";
 export const LOKI_DS = "Loki (direct)";
 
-// Grafana URLs
-export const EXPLORE_URL = "/explore";
-export const DRILLDOWN_URL = "/a/grafana-lokiexplore-app/explore";
-
 /**
  * Navigate to Grafana Explore with a specific datasource selected.
  */
-export async function openExplore(page: Page, datasource: string) {
-  // Grafana Explore URL format with datasource
-  await page.goto(EXPLORE_URL);
-  await page.waitForLoadState("networkidle");
-
-  // Select datasource from picker if not already selected
-  const dsSelector = page.getByTestId("data-source-picker");
-  if (await dsSelector.isVisible()) {
-    await dsSelector.click();
-    await page.getByText(datasource, { exact: false }).first().click();
-    await page.waitForTimeout(500);
-  }
+export async function openExplore(page: Page, datasource: string, expr = "") {
+  const uid = await resolveDatasourceUid(page, datasource);
+  await page.goto(buildExploreUrl(uid, expr));
+  await waitForGrafanaReady(page);
+  await expect(exploreQueryEditor(page)).toBeVisible({ timeout: 15_000 });
 }
 
-async function resolveDatasourceUid(page: Page, datasource: string): Promise<string> {
-  const response = await page.request.get(
-    `/api/datasources/name/${encodeURIComponent(datasource)}`
+export async function resolveDatasourceUid(page: Page, datasource: string): Promise<string> {
+  const deadline = Date.now() + 30_000;
+  let lastStatus = "unreachable";
+
+  while (Date.now() < deadline) {
+    try {
+      const response = await page.request.get(
+        `/api/datasources/name/${encodeURIComponent(datasource)}`
+      );
+      lastStatus = String(response.status());
+      if (response.ok()) {
+        const body = await response.json();
+        if (body.uid) {
+          return body.uid;
+        }
+      }
+    } catch {
+      lastStatus = "unreachable";
+    }
+
+    await page.waitForTimeout(1_000);
+  }
+
+  let available: string[] = [];
+  try {
+    const listResponse = await page.request.get("/api/datasources");
+    if (listResponse.ok()) {
+      available = (await listResponse.json())
+        .map((ds: { name?: string }) => ds.name)
+        .filter(Boolean);
+    }
+  } catch {
+    available = [];
+  }
+
+  throw new Error(
+    `failed to resolve datasource "${datasource}" (lastStatus=${lastStatus}); available=${available.join(", ")}`
   );
-  expect(response.ok()).toBeTruthy();
-  const body = await response.json();
-  return body.uid;
 }
 
 /**
@@ -43,27 +64,14 @@ async function resolveDatasourceUid(page: Page, datasource: string): Promise<str
  */
 export async function openLogsDrilldown(page: Page, datasource: string) {
   const uid = await resolveDatasourceUid(page, datasource);
-  const params = new URLSearchParams({
-    patterns: "[]",
-    from: "now-2h",
-    to: "now",
-    timezone: "browser",
-    "var-lineFormat": "",
-    "var-ds": uid,
-    "var-filters": "",
-    "var-fields": "",
-    "var-levels": "",
-    "var-metadata": "",
-    "var-jsonFields": "",
-    "var-all-fields": "",
-    "var-patterns": "",
-    "var-lineFilterV2": "",
-    "var-lineFilters": "",
-    "var-primary_label": "service_name|=~|.+",
+  await page.goto(buildLogsDrilldownUrl(uid));
+  await waitForGrafanaReady(page);
+  await expect(page.getByRole("combobox", { name: "Filter by labels" })).toBeVisible({
+    timeout: 30_000,
   });
-
-  await page.goto(`${DRILLDOWN_URL}?${params.toString()}`);
-  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("tab", { name: "service" })).toBeVisible({
+    timeout: 30_000,
+  });
 }
 
 /**
@@ -71,11 +79,12 @@ export async function openLogsDrilldown(page: Page, datasource: string) {
  */
 export async function typeQuery(page: Page, query: string) {
   // Grafana's Monaco editor for Loki queries
-  const editor = page.locator('[data-testid="query-editor-rows"]').first();
+  const editor = exploreQueryEditor(page);
+  await expect(editor).toBeVisible({ timeout: 15_000 });
   await editor.click();
 
   // Clear existing query
-  await page.keyboard.press("Meta+a");
+  await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.press("Backspace");
 
   // Type new query
@@ -86,30 +95,28 @@ export async function typeQuery(page: Page, query: string) {
  * Click the Run Query button in Explore.
  */
 export async function runQuery(page: Page) {
-  const runBtn = page.getByRole("button", { name: /run query/i });
-  await runBtn.click();
-  // Wait for results to load
-  await page.waitForTimeout(2000);
+  await clickExploreToolbarAction(page, /run query/i);
+  await waitForGrafanaReady(page);
+  await page.waitForTimeout(1000);
+}
+
+export async function clickLiveStream(page: Page) {
+  await clickExploreToolbarAction(page, /live/i);
 }
 
 /**
  * Check that no Grafana error alerts/toasts are visible.
  */
-export async function assertNoErrors(page: Page) {
-  // Check for Grafana error alert banners
+export async function assertNoErrors(page: Page, allowedAlertErrors: RegExp[] = []) {
   const errorAlerts = page.locator('[data-testid="data-testid Alert error"]');
-  const errorCount = await errorAlerts.count();
-
-  // Also check for error toasts
   const toasts = page.locator(".page-alert-list .alert-error, [class*='alertError']");
-  const toastCount = await toasts.count();
+  const alertTexts = await unexpectedVisibleTexts(errorAlerts, allowedAlertErrors);
+  const toastTexts = await unexpectedVisibleTexts(toasts, allowedAlertErrors);
 
-  if (errorCount > 0 || toastCount > 0) {
-    const errorText = errorCount > 0 ? await errorAlerts.first().textContent() : "";
-    const toastText = toastCount > 0 ? await toasts.first().textContent() : "";
+  if (alertTexts.length > 0 || toastTexts.length > 0) {
     throw new Error(
-      `Grafana errors detected: alerts=${errorCount} toasts=${toastCount} ` +
-        `alertText="${errorText}" toastText="${toastText}"`
+      `Grafana errors detected: alerts=${alertTexts.length} toasts=${toastTexts.length} ` +
+        `alertTexts=${JSON.stringify(alertTexts)} toastTexts=${JSON.stringify(toastTexts)}`
     );
   }
 }
@@ -166,6 +173,41 @@ export async function waitForGrafanaReady(page: Page) {
   }
 }
 
+function exploreQueryEditor(page: Page): Locator {
+  return page
+    .locator('[data-testid="query-editor-rows"], [data-testid="query-editor-row"]')
+    .first();
+}
+
+async function clickExploreToolbarAction(page: Page, name: RegExp) {
+  const directButton = page.getByRole("button", { name }).first();
+  if (await directButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await directButton.click();
+    return;
+  }
+
+  const overflowButton = page.getByRole("button", { name: /show more items/i });
+  if (!(await overflowButton.isVisible({ timeout: 2_000 }).catch(() => false))) {
+    throw new Error(`missing Explore toolbar action matching ${name}`);
+  }
+
+  await overflowButton.click();
+
+  const menuAction = page.getByRole("menuitem", { name }).first();
+  if (await menuAction.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await menuAction.click();
+    return;
+  }
+
+  const menuButton = page.getByRole("button", { name }).first();
+  if (await menuButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await menuButton.click();
+    return;
+  }
+
+  throw new Error(`Explore overflow menu missing action matching ${name}`);
+}
+
 /**
  * Capture all network errors from Loki datasource requests.
  */
@@ -178,4 +220,92 @@ export function collectLokiErrors(page: Page): string[] {
     }
   });
   return errors;
+}
+
+function matchesAny(value: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+function isRelevantGrafanaRequest(url: string) {
+  return (
+    url.includes("/loki/api/v1/") ||
+    url.includes("/api/datasources/") ||
+    url.includes("/api/ds/") ||
+    url.includes("/api/live/ws") ||
+    url.includes("/resources/")
+  );
+}
+
+export type GrafanaGuardOptions = {
+  allowedAlertErrors?: RegExp[];
+  allowedConsoleErrors?: RegExp[];
+  allowedRequestFailures?: RegExp[];
+  allowedResponseErrors?: RegExp[];
+};
+
+export function installGrafanaGuards(page: Page, options: GrafanaGuardOptions = {}) {
+  const allowedAlertErrors = options.allowedAlertErrors ?? [];
+  const allowedConsoleErrors = options.allowedConsoleErrors ?? [];
+  const allowedRequestFailures = options.allowedRequestFailures ?? [];
+  const allowedResponseErrors = options.allowedResponseErrors ?? [];
+  const consoleErrors: string[] = [];
+  const requestFailures: string[] = [];
+  const responseErrors: string[] = [];
+
+  page.on("console", (message) => {
+    if (message.type() !== "error") {
+      return;
+    }
+    const text = message.text();
+    if (!matchesAny(text, allowedConsoleErrors)) {
+      consoleErrors.push(text);
+    }
+  });
+
+  page.on("requestfailed", (request) => {
+    if (!isRelevantGrafanaRequest(request.url())) {
+      return;
+    }
+    const failure = `${request.failure()?.errorText ?? "request failed"} ${request.url()}`;
+    if (!matchesAny(failure, allowedRequestFailures)) {
+      requestFailures.push(failure);
+    }
+  });
+
+  page.on("response", (response) => {
+    if (response.status() < 400 || !isRelevantGrafanaRequest(response.url())) {
+      return;
+    }
+    const summary = `${response.status()} ${response.url()}`;
+    if (!matchesAny(summary, allowedResponseErrors)) {
+      responseErrors.push(summary);
+    }
+  });
+
+  return {
+    async assertClean() {
+      await assertNoErrors(page, allowedAlertErrors);
+      expect(consoleErrors, "unexpected browser console errors").toEqual([]);
+      expect(requestFailures, "unexpected request failures").toEqual([]);
+      expect(responseErrors, "unexpected HTTP error responses").toEqual([]);
+    },
+  };
+}
+
+async function unexpectedVisibleTexts(locator: Locator, allowedPatterns: RegExp[]) {
+  const count = await locator.count();
+  const unexpected: string[] = [];
+
+  for (let index = 0; index < count; index++) {
+    const item = locator.nth(index);
+    if (!(await item.isVisible().catch(() => false))) {
+      continue;
+    }
+    const text = (await item.textContent())?.trim() ?? "";
+    if (!matchesAny(text, allowedPatterns)) {
+      unexpected.push(text);
+    }
+  }
+
+  return unexpected;
 }

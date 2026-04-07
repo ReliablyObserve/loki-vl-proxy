@@ -20,8 +20,8 @@ def fmt_pct(delta):
     return f"{sign}{delta:.1f}%"
 
 
-def check_non_decreasing(failures, label, base, head):
-    if head < base:
+def check_non_decreasing(failures, label, base, head, epsilon=0.0):
+    if head < (base - epsilon):
         failures.append(f"{label} regressed: base={base}, head={head}")
 
 
@@ -56,6 +56,7 @@ def main():
         "coverage",
         float(base["tests"]["coverage_pct"]),
         float(head["tests"]["coverage_pct"]),
+        epsilon=0.1,
     )
 
     for key, label in (

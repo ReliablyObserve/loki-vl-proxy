@@ -36,6 +36,16 @@ func grafanaDatasourceUID(t *testing.T, name string) string {
 	}
 }
 
+func grafanaRuntimeVersion(t *testing.T) string {
+	t.Helper()
+	resp := getJSON(t, grafanaURL+"/api/health")
+	version, _ := resp["version"].(string)
+	if version == "" {
+		t.Fatalf("grafana /api/health missing version: %v", resp)
+	}
+	return version
+}
+
 func TestDrilldown_ServiceVolumeAndQueryCompatibility(t *testing.T) {
 	ensureDataIngested(t)
 	now := time.Now()
@@ -429,6 +439,72 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("label_filters_apply_to_resource_values", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway",cluster="us-east-1"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/namespace/values?"+params.Encode())
+		values := extractStrings(resp, "data")
+		if len(values) != 1 || values[0] != "prod" {
+			t.Fatalf("expected label filter to narrow namespace values to prod, got %v", resp)
+		}
+	})
+
+	t.Run("field_filters_apply_to_detected_field_values", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"} | detected_level="error"`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/status/values?"+params.Encode())
+		values := extractStrings(resp, "values")
+		if len(values) != 3 || !contains(values, "404") || !contains(values, "500") || !contains(values, "502") {
+			t.Fatalf("expected detected_level filter to narrow status values to error statuses, got %v", resp)
+		}
+	})
+
+	t.Run("combined_label_and_field_filters_apply", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway",cluster="us-east-1"} | detected_level="error"`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("targetLabels", "detected_level")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume?"+params.Encode())
+		data := extractMap(resp, "data")
+		result := extractArray(data, "result")
+		if len(result) != 1 {
+			t.Fatalf("expected combined filters to narrow Drilldown volume to one detected_level bucket, got %v", resp)
+		}
+		metric := result[0].(map[string]interface{})["metric"].(map[string]interface{})
+		if metric["detected_level"] != "error" {
+			t.Fatalf("expected combined filters to keep only detected_level=error, got %v", resp)
+		}
+	})
+
+	t.Run("empty_result_filters_keep_success_shape", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway",namespace="staging"} | detected_level="error"`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		volumeResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume?"+params.Encode())
+		volumeData := extractMap(volumeResp, "data")
+		if volumeData == nil {
+			t.Fatalf("expected success payload for empty volume query, got %v", volumeResp)
+		}
+		if len(extractArray(volumeData, "result")) != 0 {
+			t.Fatalf("expected empty volume result set, got %v", volumeResp)
+		}
+
+		valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/status/values?"+params.Encode())
+		if len(extractStrings(valuesResp, "values")) != 0 {
+			t.Fatalf("expected empty detected_field values payload for empty query, got %v", valuesResp)
+		}
+	})
+
 	t.Run("labels_surface_stays_loki_compatible", func(t *testing.T) {
 		ensureOTelData(t)
 		params := url.Values{}
@@ -494,6 +570,36 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 		if len(data) != 1 {
 			t.Fatalf("expected one limited pattern result, got %v", resp)
+		}
+	})
+
+	t.Run("unknown_detected_field_keeps_empty_success_shape", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/does_not_exist/values?"+params.Encode())
+		if _, ok := resp["values"]; !ok {
+			t.Fatalf("expected values key for unknown detected_field response, got %v", resp)
+		}
+		if len(extractStrings(resp, "values")) != 0 {
+			t.Fatalf("expected empty success payload for unknown detected_field values, got %v", resp)
+		}
+	})
+
+	t.Run("unknown_label_keeps_empty_success_shape", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/does_not_exist/values?"+params.Encode())
+		if _, ok := resp["data"]; !ok {
+			t.Fatalf("expected data key for unknown label response, got %v", resp)
+		}
+		if resp["status"] != "success" {
+			t.Fatalf("expected success status for unknown label response, got %v", resp)
 		}
 	})
 
@@ -566,4 +672,228 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("multi_tenant_negative_regex_filter_keeps_other_tenants", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{app="api-gateway",__tenant_id__!~"f.*"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("targetLabels", "__tenant_id__")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/index/volume?"+params.Encode())
+		data := extractMap(resp, "data")
+		result := extractArray(data, "result")
+		if len(result) == 0 {
+			t.Fatalf("expected non-empty multi-tenant result for negative regex filter, got %v", resp)
+		}
+		for _, item := range result {
+			metric := item.(map[string]interface{})["metric"].(map[string]interface{})
+			if metric["__tenant_id__"] == "fake" {
+				t.Fatalf("expected negative regex tenant filter to exclude fake tenant, got %v", resp)
+			}
+		}
+	})
+
+	t.Run("multi_tenant_missing_tenant_keeps_empty_success_shape", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{app="api-gateway",__tenant_id__="missing"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("targetLabels", "cluster")
+
+		volumeResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/index/volume?"+params.Encode())
+		volumeData := extractMap(volumeResp, "data")
+		if volumeData == nil {
+			t.Fatalf("expected success payload for missing tenant volume query, got %v", volumeResp)
+		}
+		if len(extractArray(volumeData, "result")) != 0 {
+			t.Fatalf("expected empty multi-tenant volume result for missing tenant, got %v", volumeResp)
+		}
+
+		labelValuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/label/cluster/values?"+params.Encode())
+		if len(extractStrings(labelValuesResp, "data")) != 0 {
+			t.Fatalf("expected empty multi-tenant label values for missing tenant, got %v", labelValuesResp)
+		}
+	})
+
+	t.Run("parsed_only_fields_refresh_after_new_logs_arrive", func(t *testing.T) {
+		serviceName := fmt.Sprintf("drilldown-fresh-%d", time.Now().UnixNano())
+		streamFields := []string{"app", "service_name", "cluster", "namespace"}
+		stream := map[string]string{
+			"app":          serviceName,
+			"service_name": serviceName,
+			"cluster":      "fresh-east-1",
+			"namespace":    "prod",
+			"level":        "info",
+		}
+
+		pushCustomToVL(t, time.Now().Add(500*time.Millisecond), stream, []logLine{
+			{Msg: `{"stable":"yes","method":"GET"}`, Level: "info"},
+		}, streamFields)
+		time.Sleep(3 * time.Second)
+
+		buildParams := func() url.Values {
+			params := url.Values{}
+			params.Set("query", fmt.Sprintf(`{service_name="%s"}`, serviceName))
+			params.Set("start", time.Now().Add(-10*time.Minute).Format(time.RFC3339Nano))
+			params.Set("end", time.Now().Add(time.Minute).Format(time.RFC3339Nano))
+			return params
+		}
+
+		firstResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_fields?"+buildParams().Encode())
+		seen := map[string]bool{}
+		for _, field := range extractArray(firstResp, "fields") {
+			label := field.(map[string]interface{})["label"].(string)
+			seen[label] = true
+		}
+		if !seen["stable"] {
+			t.Fatalf("expected initial parsed field to be visible, got %v", firstResp)
+		}
+		if seen["new_field"] {
+			t.Fatalf("did not expect new_field before second ingest, got %v", firstResp)
+		}
+
+		pushCustomToVL(t, time.Now().Add(500*time.Millisecond), stream, []logLine{
+			{Msg: `{"stable":"yes","method":"GET","new_field":"fresh"}`, Level: "info"},
+		}, streamFields)
+
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			fieldsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_fields?"+buildParams().Encode())
+			seen = map[string]bool{}
+			for _, field := range extractArray(fieldsResp, "fields") {
+				label := field.(map[string]interface{})["label"].(string)
+				seen[label] = true
+			}
+			if seen["new_field"] {
+				valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/new_field/values?"+buildParams().Encode())
+				values := extractStrings(valuesResp, "values")
+				if !contains(values, "fresh") {
+					t.Fatalf("expected refreshed field values to include fresh, got %v", valuesResp)
+				}
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("expected parsed-only field freshness update, last payload=%v", fieldsResp)
+			}
+			time.Sleep(1 * time.Second)
+		}
+	})
+}
+
+func TestDrilldown_RuntimeFamilyContracts(t *testing.T) {
+	ensureDataIngested(t)
+	now := time.Now()
+	start := now.Add(-2 * time.Hour).Format(time.RFC3339Nano)
+	end := now.Format(time.RFC3339Nano)
+	dsUID := grafanaDatasourceUID(t, "Loki (via VL proxy)")
+	version := grafanaRuntimeVersion(t)
+
+	switch {
+	case strings.HasPrefix(version, "11."):
+		params := url.Values{}
+		params.Set("query", "{service_name=~`.+`}")
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("targetLabels", "service_name")
+
+		volumeResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume?"+params.Encode())
+		volumeData := extractMap(volumeResp, "data")
+		result := extractArray(volumeData, "result")
+		foundService := false
+		for _, item := range result {
+			metric := item.(map[string]interface{})["metric"].(map[string]interface{})
+			if metric["service_name"] == "api-gateway" {
+				foundService = true
+				break
+			}
+		}
+		if !foundService {
+			t.Fatalf("grafana %s expected 1.x-style service buckets, got %v", version, volumeResp)
+		}
+
+		fieldParams := url.Values{}
+		fieldParams.Set("query", `{service_name="api-gateway"}`)
+		fieldParams.Set("start", start)
+		fieldParams.Set("end", end)
+
+		fieldsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_fields?"+fieldParams.Encode())
+		fields, _ := fieldsResp["fields"].([]interface{})
+		seen := map[string]bool{}
+		for _, field := range fields {
+			seen[field.(map[string]interface{})["label"].(string)] = true
+		}
+		if !seen["method"] || seen["service_name"] || seen["cluster"] {
+			t.Fatalf("grafana %s expected 1.x detected_fields filtering, got %v", version, fieldsResp)
+		}
+
+		clusterResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/cluster/values?"+fieldParams.Encode())
+		clusterValues := extractStrings(clusterResp, "data")
+		if !contains(clusterValues, "us-east-1") {
+			t.Fatalf("grafana %s expected 1.x additional label values for cluster, got %v", version, clusterResp)
+		}
+
+		labelsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_labels?"+fieldParams.Encode())
+		labels, _ := labelsResp["data"].([]interface{})
+		seenLabels := map[string]bool{}
+		for _, item := range labels {
+			obj := item.(map[string]interface{})
+			if label, _ := obj["label"].(string); label != "" {
+				seenLabels[label] = true
+			}
+		}
+		if !seenLabels["level"] || seenLabels["detected_level"] {
+			t.Fatalf("grafana %s expected 1.x Loki-style detected_labels surface, got %v", version, labelsResp)
+		}
+
+	case strings.HasPrefix(version, "12."):
+		levelParams := url.Values{}
+		levelParams.Set("query", `{service_name="api-gateway"}`)
+		levelParams.Set("start", start)
+		levelParams.Set("end", end)
+		levelParams.Set("step", "60")
+		levelParams.Set("targetLabels", "detected_level")
+
+		levelResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume_range?"+levelParams.Encode())
+		levelData := extractMap(levelResp, "data")
+		levelResult := extractArray(levelData, "result")
+		levels := map[string]bool{}
+		for _, item := range levelResult {
+			metric := item.(map[string]interface{})["metric"].(map[string]interface{})
+			if level, _ := metric["detected_level"].(string); level != "" {
+				levels[level] = true
+			}
+		}
+		if !levels["info"] || !levels["error"] {
+			t.Fatalf("grafana %s expected 2.x detected_level volume series, got %v", version, levelResp)
+		}
+
+		fieldParams := url.Values{}
+		fieldParams.Set("query", `{service_name="api-gateway"}`)
+		fieldParams.Set("start", start)
+		fieldParams.Set("end", end)
+
+		methodValuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/method/values?"+fieldParams.Encode())
+		methodValues := extractStrings(methodValuesResp, "values")
+		if !contains(methodValues, "GET") {
+			t.Fatalf("grafana %s expected 2.x field-values breakdown contract for method values, got %v", version, methodValuesResp)
+		}
+
+		clusterResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/cluster/values?"+fieldParams.Encode())
+		clusterValues := extractStrings(clusterResp, "data")
+		if !contains(clusterValues, "us-east-1") {
+			t.Fatalf("grafana %s expected 2.x additional label values for cluster, got %v", version, clusterResp)
+		}
+
+		labelsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/labels?"+fieldParams.Encode())
+		labelValues := extractStrings(labelsResp, "data")
+		for _, want := range []string{"cluster", "namespace", "app"} {
+			if !contains(labelValues, want) {
+				t.Fatalf("grafana %s expected 2.x additional label tab %q, got %v", version, want, labelsResp)
+			}
+		}
+
+	default:
+		t.Fatalf("unsupported grafana runtime family for Drilldown contracts: %s", version)
+	}
 }

@@ -12,25 +12,33 @@ go test -race ./...
 # E2E compatibility tests (requires docker-compose)
 cd test/e2e-compat
 docker-compose up -d --build
-go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
+go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
 
 # Track-specific scores
 go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
 go test -v -tags=e2e -run '^TestDrilldownTrackScore$' ./test/e2e-compat/
 go test -v -tags=e2e -run '^TestVLTrackScore$' ./test/e2e-compat/
 
-# Playwright UI tests (Grafana Explore, drill-down, live tail, error handling)
+# Playwright UI tests (browser-only Grafana smoke flows)
 cd test/e2e-ui
-npm install && npx playwright install chromium
+npm ci && npx playwright install chromium
 npm test
+
+# Run the same shards used in CI
+npx playwright test tests/datasource.spec.ts
+npx playwright test --grep @explore-core
+npx playwright test --grep @explore-tail
+npx playwright test --grep @drilldown-core
+npx playwright test --grep @drilldown-mt
 
 # macOS fallback: run the same UI tests inside Linux Playwright
 docker run --rm \
   -v "$(pwd)/test/e2e-ui:/work" \
   -w /work \
   -e GRAFANA_URL=http://host.docker.internal:3002 \
-  mcr.microsoft.com/playwright:v1.52.0-jammy \
-  /bin/bash -lc 'npm ci && npx playwright test --grep "Grafana Logs Drilldown"'
+  -e PROXY_URL=http://host.docker.internal:3100 \
+  mcr.microsoft.com/playwright:v1.59.1-noble \
+  /bin/bash -lc "npm ci && npx playwright test --grep @drilldown-core"
 
 # Build binary
 go build -o loki-vl-proxy ./cmd/proxy
@@ -79,8 +87,89 @@ Exact counts move often. Treat the categories below as the stable map of what is
 | `internal/middleware/middleware_test.go` | Rate limiter, circuit breaker |
 | `test/e2e-compat/` | Docker-based Loki vs proxy comparison |
 | `test/e2e-compat/drilldown_compat_test.go` | Grafana Logs Drilldown resource contracts via Grafana datasource proxy |
-| `test/e2e-compat/features_test.go` | Live Grafana-facing edge cases including multi-tenant `__tenant_id__` and Drilldown level-filter regressions |
-| `test/e2e-ui/` | Playwright browser tests against Grafana Explore and Logs Drilldown |
+| `test/e2e-compat/explore_contract_test.go` | HTTP-level Explore contracts for line filters, parsers, direction, metric shape, `label_format`, invalid-query handling |
+| `test/e2e-compat/grafana_surface_test.go` | Grafana datasource catalog, datasource health, proxy bootstrap/control-plane surface |
+| `test/e2e-compat/features_test.go` | Live Grafana-facing edge cases including multi-tenant `__tenant_id__`, long-lived tail sessions, and Drilldown level-filter regressions |
+| `test/e2e-ui/tests/url-state.spec.ts` | Pure URL/state builder tests for Explore and Logs Drilldown reloadable state |
+| `test/e2e-ui/` | Playwright browser smoke tests for datasource UI, Explore, and Logs Drilldown with console/request guardrails |
+
+## Playwright UI Matrix
+
+The browser suite now keeps only browser-only smoke paths. Query parity, Drilldown resource contracts, datasource bootstrap, and most tail protocol coverage live in `test/e2e-compat` or lower-level Go tests so CI does not keep paying Chromium cost for them.
+
+CI prefers the runner's existing Chrome/Chromium binary for these shards and falls back to `npx playwright install chromium` only when no system browser is available. That removes the repeated `apt` dependency install from the common GitHub-hosted path.
+
+### CI Shards
+
+| Shard | Command | Primary focus |
+|---|---|---|
+| `datasource` | `npx playwright test tests/datasource.spec.ts` | Grafana datasource settings smoke |
+| `explore-core` | `npx playwright test --grep @explore-core` | one default Explore browser smoke |
+| `explore-tail` | `npx playwright test --grep @explore-tail` | browser-only multi-tenant and live-tail recovery |
+| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke and single-tenant Logs Drilldown smoke |
+| `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | one multi-tenant Logs Drilldown service smoke |
+
+## E2E Compatibility Matrix
+
+The Docker-backed `test/e2e-compat` suite now runs as four functional PR shards instead of one monolithic job. Each shard builds the stack, waits on explicit HTTP readiness checks, and runs only its own test family.
+
+| Shard | Primary scope |
+|---|---|
+| `e2e-compat (core)` | Loki/VL surface parity, alerting, chaining, Explore HTTP contracts, control-plane endpoints |
+| `e2e-compat (drilldown)` | Drilldown contracts, Drilldown runtime-family checks, track-score summaries |
+| `e2e-compat (otel-edge)` | OTel label translation, complex queries, edge-case payloads and parser behavior |
+| `e2e-compat (tail-multitenancy)` | multi-tenant behavior, tail transport semantics, response/security edge checks |
+
+Stack startup now uses [`wait_e2e_stack.sh`](../scripts/ci/wait_e2e_stack.sh) instead of `docker compose --wait` or fixed sleeps. That avoids false failures from services without Docker healthchecks and lets UI and compat jobs share the same readiness logic.
+
+### `datasource` shard
+
+| Test | Purpose |
+|---|---|
+| `datasource health check succeeds` | Grafana can Save & Test the proxy datasource |
+
+Moved out of Playwright:
+`test/e2e-compat/grafana_surface_test.go` now covers datasource catalog, direct datasource health, `/ready`, `/buildinfo`, `/rules`, `/alerts`, and direct Loki Drilldown bootstrap.
+
+### `explore-core` shard
+
+| Test | Purpose |
+|---|---|
+| `basic log query returns results without errors` | baseline Explore log query |
+
+Moved out of Playwright:
+`internal/proxy/proxy_test.go`, `internal/proxy/gaps_test.go`, and `test/e2e-compat/chaining_test.go` cover query translation, response shape, parser pipelines, line filters, direction handling, and metric-query parity faster than the browser can.
+`test/e2e-compat/explore_contract_test.go` now adds the browser-removed HTTP contracts for line filters, `json`, `logfmt`, `direction=forward`, metric matrices, `label_format`, and invalid-query `4xx` handling.
+
+### `explore-tail` shard
+
+| Test | Purpose |
+|---|---|
+| `multi-tenant query respects __tenant_id__ filter in Explore` | tenant narrowing in Explore |
+| `live tail works through the browser-allowed synthetic datasource` | browser-safe synthetic live tail |
+| `native-tail failure can recover through ingress live tail` | failure recovery after native-tail path breaks |
+
+Moved out of Playwright:
+`test/e2e-compat/features_test.go` and `internal/proxy/*tail*test.go` cover tenant-header fanout, websocket protocol behavior, fallback selection, origin policy, and native-tail failure semantics without Chromium.
+
+### `drilldown-core` shard
+
+| Test | Purpose |
+|---|---|
+| `clicking a log row expands details without error` | log row expansion path |
+| `label filter drill-down for app label` | label filter action from Explore logs |
+| `buildLogsDrilldownUrl` and `buildServiceDrilldownUrl` state tests | pure URL/state coverage without launching Chromium |
+| `proxy shows service buckets on landing page` | Logs Drilldown landing volumes |
+| `service drilldown field filter survives reload from URL state` | Drilldown URL state persists across reloads |
+
+Moved out of Playwright:
+`test/e2e-compat/drilldown_compat_test.go` now owns detected-fields contracts, dotted metadata exposure, filtered labels/fields resource behavior, parsed-field freshness, unknown field/label empty-success behavior, Grafana datasource resource parity, and multi-tenant Drilldown resource behavior including regex and no-match tenant filters.
+
+### `drilldown-multitenant` shard
+
+| Test | Purpose |
+|---|---|
+| `multi-tenant service drilldown loads without browser errors` | multi-tenant service browser smoke |
 
 ## Compatibility Tracks
 
@@ -108,8 +197,20 @@ Field-surface defaults in the pinned stack:
 Support window policy:
 
 - Loki: current minor family plus one minor behind
+- Grafana runtime: pinned current family gets the fuller Drilldown runtime contract, and pull requests also run smaller current-family and previous-family smoke profiles; the full runtime matrix stays on scheduled/manual coverage
 - Logs Drilldown: current family plus one family behind
 - VictoriaLogs: `v1.3x.x` and `v1.4x.x`
+
+Grafana runtime profiles from the manifest:
+
+- `12.4.2` runs the full Drilldown runtime score on scheduled and manual compatibility checks
+- `12.4.1` runs a smaller current-family datasource-plus-Drilldown smoke profile on pull requests, and it must include the runtime-family contract checks
+- `11.6.6` runs a smaller previous-family datasource-plus-Drilldown smoke profile on pull requests, and it must include the runtime-family contract checks
+
+Logs Drilldown family assertions are explicit in the contract matrix:
+
+- `1.0.x` checks service-selection volume buckets, detected-fields filtering, and labels-field parsing behavior
+- `2.0.x` checks detected-level default columns, field-values breakdown scenes, and additional label-tab wiring
 
 The stack is version-parameterized through compose environment variables:
 
@@ -120,7 +221,7 @@ GRAFANA_IMAGE=grafana/grafana:12.4.2 \
 docker compose -f test/e2e-compat/docker-compose.yml up -d --build
 ```
 
-GitHub Actions uses the same manifest as the source of truth. The compatibility workflows load their version matrices from [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json) instead of duplicating version lists in workflow YAML.
+GitHub Actions uses the same manifest as the source of truth. The compatibility workflows load their version matrices from `test/e2e-compat/compatibility-matrix.json` instead of duplicating version lists in workflow YAML.
 
 Pull requests also get a dedicated `pr-quality-report.yaml` workflow. It compares the PR branch against the base branch and posts a sticky PR comment with:
 
@@ -128,6 +229,8 @@ Pull requests also get a dedicated `pr-quality-report.yaml` workflow. It compare
 - coverage delta
 - Loki / Logs Drilldown / VictoriaLogs compatibility deltas
 - sampled benchmark and load-test deltas
+
+The report job now collects test count and coverage from the same Go test pass, uses a shallow checkout plus explicit base-SHA fetch, and uses 3-sample benchmark medians to keep the PR gate faster without dropping the tracked signals.
 
 That report is part of the required PR gate. It is still a smoke signal rather than a full benchmark lab run, but it now blocks obvious regressions in coverage, compatibility, and the tracked performance signals.
 

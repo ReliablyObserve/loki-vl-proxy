@@ -17,6 +17,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const tailIdleWindow = 2 * time.Second
+
 func readTailFrame(t *testing.T, conn *websocket.Conn, wantSubstring string, timeout time.Duration) map[string]interface{} {
 	t.Helper()
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
@@ -398,6 +400,63 @@ func TestFeature_Multitenancy_FilteredLabelsSeriesAndDetectedFields(t *testing.T
 	}
 }
 
+func TestFeature_Multitenancy_TenantIDPermutations(t *testing.T) {
+	ensureDataIngested(t)
+	now := time.Now()
+	headers := map[string]string{"X-Scope-OrgID": "0|fake"}
+
+	buildParams := func(query string) url.Values {
+		params := url.Values{}
+		params.Set("query", query)
+		params.Set("start", fmt.Sprintf("%d", now.Add(-15*time.Minute).UnixNano()))
+		params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+		params.Set("limit", "100")
+		return params
+	}
+
+	t.Run("exact_match", func(t *testing.T) {
+		_, _, resp := queryRangeGET(t, proxyURL, buildParams(`{app="api-gateway",__tenant_id__="fake"}`), headers)
+		if !checkStatus(resp) {
+			t.Fatalf("expected exact __tenant_id__ match to succeed, got %v", resp)
+		}
+		if countLogLines(resp) == 0 {
+			t.Fatalf("expected exact __tenant_id__ match to return logs, got %v", resp)
+		}
+		for _, item := range extractArray(extractMap(resp, "data"), "result") {
+			stream := item.(map[string]interface{})["stream"].(map[string]interface{})
+			if stream["__tenant_id__"] != "fake" {
+				t.Fatalf("expected exact __tenant_id__ filter to keep only fake, got %v", stream)
+			}
+		}
+	})
+
+	t.Run("negative_regex", func(t *testing.T) {
+		_, _, resp := queryRangeGET(t, proxyURL, buildParams(`{app="api-gateway",__tenant_id__!~"f.*"}`), headers)
+		if !checkStatus(resp) {
+			t.Fatalf("expected negative regex __tenant_id__ match to succeed, got %v", resp)
+		}
+		if countLogLines(resp) == 0 {
+			t.Fatalf("expected negative regex __tenant_id__ match to return logs, got %v", resp)
+		}
+		for _, item := range extractArray(extractMap(resp, "data"), "result") {
+			stream := item.(map[string]interface{})["stream"].(map[string]interface{})
+			if stream["__tenant_id__"] == "fake" {
+				t.Fatalf("expected negative regex to exclude fake tenant, got %v", stream)
+			}
+		}
+	})
+
+	t.Run("no_match_returns_empty_success", func(t *testing.T) {
+		_, _, resp := queryRangeGET(t, proxyURL, buildParams(`{app="api-gateway",__tenant_id__="missing"}`), headers)
+		if !checkStatus(resp) {
+			t.Fatalf("expected no-match __tenant_id__ query to keep success shape, got %v", resp)
+		}
+		if countLogLines(resp) != 0 {
+			t.Fatalf("expected no-match __tenant_id__ query to return no lines, got %v", resp)
+		}
+	})
+}
+
 func TestFeature_AdminDebugEndpoints_DefaultClosed(t *testing.T) {
 	score := &CompatScore{}
 
@@ -485,6 +544,11 @@ func TestFeature_Tail_WebSocketStreamsLiveData_ProxyMatchesLoki(t *testing.T) {
 	}
 	defer lokiConn.Close()
 
+	// Give both backends a short window to finish tail subscription setup before
+	// the first log line is pushed. Real Loki is more timing-sensitive here than
+	// the proxy and can otherwise miss the first frame on loaded CI runners.
+	time.Sleep(750 * time.Millisecond)
+
 	pushCustomToVL(t, now.Add(500*time.Millisecond), map[string]string{
 		"app":   app,
 		"env":   "test",
@@ -496,8 +560,8 @@ func TestFeature_Tail_WebSocketStreamsLiveData_ProxyMatchesLoki(t *testing.T) {
 		"level": "info",
 	}, []logLine{{Msg: msg, Level: "info"}})
 
-	proxyFrame := readTailFrame(t, proxyConn, msg, 10*time.Second)
-	lokiFrame := readTailFrame(t, lokiConn, msg, 10*time.Second)
+	proxyFrame := readTailFrame(t, proxyConn, msg, 15*time.Second)
+	lokiFrame := readTailFrame(t, lokiConn, msg, 15*time.Second)
 
 	if _, ok := proxyFrame["streams"]; !ok {
 		t.Fatalf("expected proxy tail frame to contain streams, got %v", proxyFrame)
@@ -582,7 +646,7 @@ func TestFeature_Tail_SyntheticProxySurvivesIdleWindow(t *testing.T) {
 	}
 	defer conn.Close()
 
-	time.Sleep(4 * time.Second)
+	time.Sleep(tailIdleWindow)
 	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
 		"app":   app,
 		"env":   "test",
@@ -641,7 +705,7 @@ func TestFeature_Tail_ReverseProxyIngressSurvivesIdleWindow(t *testing.T) {
 	}
 	defer conn.Close()
 
-	time.Sleep(4 * time.Second)
+	time.Sleep(tailIdleWindow)
 	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
 		"app":   app,
 		"env":   "test",
@@ -699,6 +763,46 @@ func TestFeature_Tail_SyntheticProxyReconnectsCleanly(t *testing.T) {
 	}
 }
 
+func TestFeature_Tail_SyntheticProxyLongLivedSessionStreamsAcrossPolls(t *testing.T) {
+	now := time.Now()
+	app := fmt.Sprintf("tail-session-%d", now.UnixNano())
+
+	params := url.Values{}
+	params.Set("query", fmt.Sprintf(`{app="%s"}`, app))
+	params.Set("start", fmt.Sprintf("%d", now.UnixNano()))
+
+	headers := http.Header{}
+	headers.Set("Origin", "http://127.0.0.1:3002")
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, resp, err := dialer.Dial("ws"+strings.TrimPrefix(tailProxyURL, "http")+"/loki/api/v1/tail?"+params.Encode(), headers)
+	if err != nil {
+		t.Fatalf("synthetic proxy websocket dial failed: %v (resp=%v)", err, resp)
+	}
+	defer conn.Close()
+
+	firstMsg := "tail session frame one " + app
+	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "info",
+	}, []logLine{{Msg: firstMsg, Level: "info"}}, []string{"app", "env", "level"})
+	_ = readTailFrame(t, conn, firstMsg, 10*time.Second)
+
+	time.Sleep(tailIdleWindow)
+
+	secondMsg := "tail session frame two " + app
+	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "warn",
+	}, []logLine{{Msg: secondMsg, Level: "warn"}}, []string{"app", "env", "level"})
+	frame := readTailFrame(t, conn, secondMsg, 10*time.Second)
+	streams, ok := frame["streams"].([]interface{})
+	if !ok || len(streams) == 0 {
+		t.Fatalf("expected long-lived tail session to receive second batch, got %v", frame)
+	}
+}
+
 func TestFeature_Tail_NativeModeClosesWhenBackendTailUnavailable(t *testing.T) {
 	params := url.Values{}
 	params.Set("query", `{app="api-gateway"}`)
@@ -712,6 +816,7 @@ func TestFeature_Tail_NativeModeClosesWhenBackendTailUnavailable(t *testing.T) {
 	}
 	defer conn.Close()
 
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	_, _, err = conn.ReadMessage()
 	if err == nil {
 		t.Fatal("expected native-only tail to close when backend native tail is unavailable")

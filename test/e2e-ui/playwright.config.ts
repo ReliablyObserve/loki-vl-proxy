@@ -5,9 +5,15 @@ const explicitExecutablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH;
 export default defineConfig({
   testDir: "./tests",
   timeout: 60_000,
-  retries: 1,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 1 : 0,
+  workers: process.env.CI ? 1 : undefined,
   use: {
     baseURL: process.env.GRAFANA_URL || "http://127.0.0.1:3002",
+    viewport: {
+      width: 1600,
+      height: 1200,
+    },
     screenshot: "only-on-failure",
     trace: "on-first-retry",
     // Grafana anonymous auth — no login needed

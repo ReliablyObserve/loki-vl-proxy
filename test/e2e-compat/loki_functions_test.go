@@ -10,9 +10,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+var patternDataOnce sync.Once
 
 // TestLokiFunctions_Decolorize verifies | decolorize strips ANSI codes.
 func TestLokiFunctions_Decolorize(t *testing.T) {
@@ -422,21 +425,40 @@ func TestLokiFunctions_PatternsFilteredLevelsRemainNonEmpty(t *testing.T) {
 
 func ingestPatternData(t *testing.T) {
 	t.Helper()
-	now := time.Now()
-	pushStream(t, now, streamDef{
-		Labels: map[string]string{"app": "pattern-test", "level": "info"},
-		Lines: []string{
-			"GET /api/v1/users 200 15ms",
-			"GET /api/v1/users 200 22ms",
-			"GET /api/v1/users 200 18ms",
-			"POST /api/v1/orders 201 142ms",
-			"POST /api/v1/orders 201 155ms",
-			"GET /api/v1/products 200 8ms",
-			"DELETE /api/v1/orders/123 403 3ms",
-			"DELETE /api/v1/orders/456 403 2ms",
-		},
+	patternDataOnce.Do(func() {
+		now := time.Now()
+		pushStream(t, now, streamDef{
+			Labels: map[string]string{"app": "pattern-test", "level": "info"},
+			Lines: []string{
+				"GET /api/v1/users 200 15ms",
+				"GET /api/v1/users 200 22ms",
+				"GET /api/v1/users 200 18ms",
+				"POST /api/v1/orders 201 142ms",
+				"POST /api/v1/orders 201 155ms",
+				"GET /api/v1/products 200 8ms",
+				"DELETE /api/v1/orders/123 403 3ms",
+				"DELETE /api/v1/orders/456 403 2ms",
+			},
+		})
 	})
-	time.Sleep(2 * time.Second)
+
+	params := url.Values{
+		"query": {`{app="pattern-test", level="info"}`},
+		"start": {time.Now().Add(-1 * time.Hour).Format(time.RFC3339Nano)},
+		"end":   {time.Now().Add(time.Hour).Format(time.RFC3339Nano)},
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		resp := getJSON(t, proxyURL+"/loki/api/v1/patterns?"+params.Encode())
+		data, _ := resp["data"].([]interface{})
+		if len(data) > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected non-empty pattern data after ingestion, got %v", resp)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
 }
 
 // ─── Test Data Ingestion ─────────────────────────────────────────────────────

@@ -10,54 +10,102 @@ permissions:
   pull-requests: write
 
 jobs:
-  report:
+  head-snapshot:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.1"
           cache: true
 
-      - name: Collect base and PR quality snapshots
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          WORKSPACE: ${{ github.workspace }}
+      - name: Collect PR quality snapshot
+        run: bash scripts/ci/collect_quality_metrics.sh /tmp/pr-head-quality.json
+
+      - name: Upload PR quality snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-head-quality
+          path: /tmp/pr-head-quality.json
+
+  base-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+
+      - name: Restore cached base quality snapshot
+        id: base-quality-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/pr-quality/base-quality.json
+          key: ${{ runner.os }}-pr-quality-base-${{ github.event.pull_request.base.sha }}
+
+      - name: Collect base quality snapshot
+        if: steps.base-quality-cache.outputs.cache-hit != 'true'
         run: |
-          set -euo pipefail
+          mkdir -p .cache/pr-quality
+          bash scripts/ci/collect_quality_metrics.sh .cache/pr-quality/base-quality.json
 
-          git worktree add /tmp/loki-vl-proxy-base "$BASE_SHA"
+      - name: Upload base quality snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-base-quality
+          path: .cache/pr-quality/base-quality.json
 
-          bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-head-quality.json
-          (
-            cd /tmp/loki-vl-proxy-base
-            bash "$WORKSPACE/scripts/ci/collect_quality_metrics.sh" /tmp/pr-base-quality.json
-          )
+  report:
+    runs-on: ubuntu-latest
+    needs: [head-snapshot, base-snapshot]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
-          bash "$WORKSPACE/scripts/ci/render_pr_report.sh" \
-            /tmp/pr-base-quality.json \
-            /tmp/pr-head-quality.json \
-            /tmp/pr-quality-report.md
+      - name: Download base quality snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-base-quality
+          path: /tmp/pr-quality
 
-          cat /tmp/pr-quality-report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Download PR quality snapshot
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-head-quality
+          path: /tmp/pr-quality
+
+      - name: Render report summary
+        run: |
+          bash scripts/ci/render_pr_report.sh \
+            /tmp/pr-quality/base-quality.json \
+            /tmp/pr-quality/pr-head-quality.json \
+            /tmp/pr-quality/pr-quality-report.md
+
+          cat /tmp/pr-quality/pr-quality-report.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Enforce quality gate
         run: |
           python3 scripts/ci/check_quality_gate.py \
-            /tmp/pr-base-quality.json \
-            /tmp/pr-head-quality.json
+            /tmp/pr-quality/base-quality.json \
+            /tmp/pr-quality/pr-head-quality.json
 
       - name: Upload quality artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pr-quality-report
           path: |
-            /tmp/pr-base-quality.json
-            /tmp/pr-head-quality.json
-            /tmp/pr-quality-report.md
+            /tmp/pr-quality/base-quality.json
+            /tmp/pr-quality/pr-head-quality.json
+            /tmp/pr-quality/pr-quality-report.md
 
       - name: Publish sticky PR comment
         uses: actions/github-script@v7
@@ -67,7 +115,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const issue_number = context.issue.number;
-            const body = fs.readFileSync('/tmp/pr-quality-report.md', 'utf8');
+            const body = fs.readFileSync('/tmp/pr-quality/pr-quality-report.md', 'utf8');
             const marker = '<!-- pr-quality-report -->';
 
             const { data: comments } = await github.rest.issues.listComments({
@@ -96,7 +144,3 @@ jobs:
                 body,
               });
             }
-
-      - name: Clean up base worktree
-        if: always()
-        run: git worktree remove --force /tmp/loki-vl-proxy-base || true

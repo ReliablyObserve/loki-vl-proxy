@@ -7,7 +7,7 @@
 #
 # Usage:
 #   docker-compose up -d --build
-#   go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
+#   go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
 #   # UI tests:
 #   cd ../e2e-ui && npm install && npx playwright install chromium && npm test
 #   # Or open Grafana at http://localhost:3002 for manual comparison

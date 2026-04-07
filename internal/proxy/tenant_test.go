@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -703,6 +704,37 @@ func TestTenant_MultiTenantHeaderRejectedForTail(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "query endpoints") {
 		t.Fatalf("expected multi-tenant rejection message, got %s", w.Body.String())
+	}
+}
+
+func TestTenant_MultiTenantQueryRangeRejectsExcessiveTenantCount(t *testing.T) {
+	tenantMap := make(map[string]TenantMapping, maxMultiTenantFanout+1)
+	tenants := make([]string, 0, maxMultiTenantFanout+1)
+	for i := 0; i < maxMultiTenantFanout+1; i++ {
+		tenantID := fmt.Sprintf("tenant-%02d", i)
+		tenantMap[tenantID] = TenantMapping{AccountID: fmt.Sprintf("%d", i+1), ProjectID: "0"}
+		tenants = append(tenants, tenantID)
+	}
+
+	p, _ := New(Config{
+		BackendURL: "http://example.com",
+		Cache:      cache.New(60*time.Second, 1000),
+		LogLevel:   "error",
+		TenantMap:  tenantMap,
+	})
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="api"}&start=1&end=2&limit=10`, nil)
+	r.Header.Set("X-Scope-OrgID", strings.Join(tenants, "|"))
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized query_range fanout, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "fanout exceeds limit") {
+		t.Fatalf("expected fanout limit message, got %s", w.Body.String())
 	}
 }
 

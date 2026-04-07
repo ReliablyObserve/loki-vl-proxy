@@ -42,7 +42,7 @@ go test ./internal/proxy/ -run "TestLoad" -v
 
 # E2E (requires Docker)
 cd test/e2e-compat && docker compose up -d --build
-go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
+go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
 ```
 
 ## Areas for Contribution

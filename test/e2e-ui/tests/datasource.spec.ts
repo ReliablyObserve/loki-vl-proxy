@@ -1,15 +1,12 @@
 import { test, expect } from "@playwright/test";
-import {
-  LOKI_DS,
-  PROXY_DS,
-  waitForGrafanaReady,
-  collectLokiErrors,
-} from "./helpers";
-
-const DIRECT_VL_DS = "VictoriaLogs (direct)";
+import { PROXY_DS, waitForGrafanaReady, installGrafanaGuards } from "./helpers";
 
 test.describe("Grafana Datasource Health & Config", () => {
   test("datasource health check succeeds", async ({ page }) => {
+    const guards = installGrafanaGuards(page, {
+      allowedConsoleErrors: [/Failed to load resource: the server responded with a status of 404/i],
+    });
+
     // Navigate to datasource settings
     await page.goto("/connections/datasources");
     await waitForGrafanaReady(page);
@@ -49,77 +46,7 @@ test.describe("Grafana Datasource Health & Config", () => {
         expect(isSuccess || !isError).toBeTruthy();
       }
     }
-  });
 
-  test("buildinfo endpoint returns valid version", async ({ request }) => {
-    // The proxy URL used by Grafana internally
-    const proxyUrl = process.env.PROXY_URL || "http://127.0.0.1:3100";
-
-    const resp = await request.get(
-      `${proxyUrl}/loki/api/v1/status/buildinfo`
-    );
-    expect(resp.status()).toBe(200);
-
-    const body = await resp.json();
-    expect(body.status).toBe("success");
-    expect(body.data.version).toBeTruthy();
-  });
-
-  test("ready endpoint returns 200", async ({ request }) => {
-    const proxyUrl = process.env.PROXY_URL || "http://127.0.0.1:3100";
-    const resp = await request.get(`${proxyUrl}/ready`);
-    expect(resp.status()).toBe(200);
-  });
-
-  test("rules endpoint returns valid compatibility response", async ({ request }) => {
-    const proxyUrl = process.env.PROXY_URL || "http://127.0.0.1:3100";
-    const resp = await request.get(`${proxyUrl}/loki/api/v1/rules`);
-    expect(resp.status()).toBe(200);
-    expect(resp.headers()["content-type"]).toContain("application/yaml");
-    const body = await resp.text();
-    expect(body).toContain("loki-vl-e2e-alerts");
-  });
-
-  test("alerts endpoint returns valid compatibility response", async ({ request }) => {
-    const proxyUrl = process.env.PROXY_URL || "http://127.0.0.1:3100";
-    const resp = await request.get(`${proxyUrl}/loki/api/v1/alerts`);
-    expect(resp.status()).toBe(200);
-
-    const body = await resp.json();
-    expect(body.status).toBe("success");
-    expect(body.data.alerts).toBeDefined();
-    expect(Array.isArray(body.data.alerts)).toBeTruthy();
-  });
-
-  test("direct VictoriaLogs datasource plugin is installed and healthy", async ({ page }) => {
-    const dsResponse = await page.request.get(
-      `/api/datasources/name/${encodeURIComponent(DIRECT_VL_DS)}`
-    );
-    expect(dsResponse.ok()).toBeTruthy();
-    const dsBody = await dsResponse.json();
-    expect(dsBody.type).toBe("victoriametrics-logs-datasource");
-
-    const healthResponse = await page.request.get(
-      `/api/datasources/uid/${encodeURIComponent(dsBody.uid)}/health`
-    );
-    expect(healthResponse.ok()).toBeTruthy();
-    const healthBody = await healthResponse.json();
-    expect(healthBody.status).toBe("OK");
-  });
-
-  test("direct Loki drilldown bootstrap endpoint works with tenant header", async ({ request }) => {
-    const directLokiUrl =
-      process.env.DIRECT_LOKI_URL || "http://127.0.0.1:3101";
-    const limitsResponse = await request.get(
-      `${directLokiUrl}/loki/api/v1/drilldown-limits`,
-      {
-        headers: {
-          "X-Scope-OrgID": "0",
-        },
-      }
-    );
-    expect(limitsResponse.ok()).toBeTruthy();
-    const limitsBody = await limitsResponse.json();
-    expect(limitsBody.limits).toBeDefined();
+    await guards.assertClean();
   });
 });

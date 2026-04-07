@@ -64,16 +64,17 @@ capture_or_default() {
   return 0
 }
 
-count_tests() {
-  go test ./... -count=1 -json 2>/dev/null \
-    | jq -r 'select(.Action=="pass" and .Test != null) | .Test' \
-    | wc -l | tr -d ' '
-}
-
-coverage_pct() {
+collect_tests_and_coverage() {
   local cover_file="$TMP_DIR/coverage.out"
-  go test ./... -coverprofile="$cover_file" -count=1 >/dev/null
-  go tool cover -func="$cover_file" | tail -1 | awk '{print substr($3, 1, length($3)-1)}'
+  local events_file="$TMP_DIR/go-test-events.json"
+  go test ./... -coverprofile="$cover_file" -count=1 -json >"$events_file"
+  local test_count coverage
+  test_count="$(jq -r 'select(.Action=="pass" and .Test != null) | .Test' "$events_file" | wc -l | tr -d ' ')"
+  coverage="$(go tool cover -func="$cover_file" | tail -1 | awk '{print substr($3, 1, length($3)-1)}')"
+  jq -n \
+    --argjson count "${test_count:-0}" \
+    --argjson coverage_pct "${coverage:-0}" \
+    '{count:$count,coverage_pct:$coverage_pct}'
 }
 
 run_score() {
@@ -99,7 +100,8 @@ start_compat_stack() {
   (
     cd "$ROOT_DIR/test/e2e-compat"
     docker compose down -v >&2 || true
-    docker compose up -d --build --wait --wait-timeout 180 >&2
+    docker compose up -d --build >&2
+    "$ROOT_DIR/scripts/ci/wait_e2e_stack.sh" 180 >&2
   )
 }
 
@@ -118,7 +120,7 @@ collect_compat() {
 
 collect_benchmarks() {
   local out="$TMP_DIR/bench.txt"
-  go test ./internal/proxy -run '^$' -bench 'BenchmarkProxy_(QueryRange|Labels)_(CacheHit|CacheBypass)$' -benchmem -benchtime=1s -count=5 >"$out"
+  go test ./internal/proxy -run '^$' -bench 'BenchmarkProxy_(QueryRange|Labels)_(CacheHit|CacheBypass)$' -benchmem -benchtime=1s -count=3 >"$out"
   python3 - "$out" <<'PY'
 import json
 import re
@@ -190,20 +192,18 @@ collect_load() {
     '{high_concurrency_req_per_s:$throughput,high_concurrency_memory_growth_mb:$memory_growth}'
 }
 
-TEST_COUNT="$(capture_or_default tests 0 600 count_tests)"
-COVERAGE="$(capture_or_default coverage 0 900 coverage_pct)"
+TESTS_AND_COVERAGE="$(capture_or_default tests_and_coverage '{"count":0,"coverage_pct":0}' 900 collect_tests_and_coverage)"
 COMPAT="$(capture_or_default compat '{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}' 1800 collect_compat)"
 BENCHMARKS="$(capture_or_default benchmarks '{"query_range_cache_hit_ns_per_op":0,"query_range_cache_hit_bytes_per_op":0,"query_range_cache_hit_allocs_per_op":0,"query_range_cache_bypass_ns_per_op":0,"query_range_cache_bypass_bytes_per_op":0,"query_range_cache_bypass_allocs_per_op":0,"labels_cache_hit_ns_per_op":0,"labels_cache_hit_bytes_per_op":0,"labels_cache_hit_allocs_per_op":0,"labels_cache_bypass_ns_per_op":0,"labels_cache_bypass_bytes_per_op":0,"labels_cache_bypass_allocs_per_op":0}' 900 collect_benchmarks)"
 LOAD="$(capture_or_default load '{"high_concurrency_req_per_s":0,"high_concurrency_memory_growth_mb":0}' 600 collect_load)"
 
 jq -n \
-  --argjson tests "$TEST_COUNT" \
-  --argjson coverage "$COVERAGE" \
+  --argjson tests "$TESTS_AND_COVERAGE" \
   --argjson compat "$COMPAT" \
   --argjson benchmarks "$BENCHMARKS" \
   --argjson load "$LOAD" \
   '{
-    tests: {count:$tests, coverage_pct:$coverage},
+    tests: $tests,
     compatibility: $compat,
     performance: {
       benchmarks: $benchmarks,

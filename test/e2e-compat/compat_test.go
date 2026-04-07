@@ -10,7 +10,7 @@
 //
 // Run:
 //
-//	go test -v -tags=e2e -timeout=120s ./test/e2e-compat/
+//	go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
 //
 // The test suite:
 // 1. Ingests identical logs into both Loki and VictoriaLogs
