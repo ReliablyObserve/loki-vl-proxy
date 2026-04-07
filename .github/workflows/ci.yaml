@@ -109,13 +109,13 @@ jobs:
         run: |
           docker run --rm loki-vl-proxy:test -help 2>&1 || true
 
-  e2e-compat-shard:
+  e2e-compat-group:
     runs-on: ubuntu-latest
     needs: [test]
     strategy:
       fail-fast: false
       matrix:
-        shard:
+        group:
           - name: core
             pattern: '^(TestSetup_IngestLogs|TestCompat_.*|TestExtended_.*|TestChaining_.*|TestAlertingCompat_.*|TestExplore_HTTPQueryRangeContracts|TestLokiFunctions_.*|TestGrafanaDatasourceCatalogAndHealth|TestProxyCompatibilitySurface|TestPinnedCompatibilityMatrixMatchesCompose)$'
           - name: drilldown
@@ -124,7 +124,7 @@ jobs:
             pattern: '^(TestSetup_IngestEdgeCaseData|TestSetup_IngestRichData|TestOTel.*|TestQueryDirection_UnderscoreProxy|TestDetectedFields_UnderscoreProxy|TestSeries_UnderscoreProxy|TestMixedLabels_UnderscoreProxy|TestLokiVsProxy_LabelParity|TestGrafanaDrilldown_UnderscoreProxy|TestLabelDeduplication|TestLabelTranslation_EdgeCases|TestOTelCompatibilityScore|TestEdge_.*|TestComplex_.*)$'
           - name: tail-multitenancy
             pattern: '^(TestSetup_IngestLogs|TestFeature_Multitenancy_.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_Tail_.*|TestFeature_QueryAnalytics_Endpoint|TestFeature_SecurityHeaders|TestFeature_MetricsEndpoint|TestFeature_GzipCompression|TestFeature_NoGzipWithoutAccept|TestFeature_DerivedFields_TraceIDInJSON|TestFeature_ResponseStructureConsistency|TestFeature_QueryRange_vs_Query_Consistency|TestFeature_InstantVectorExpression_Compatibility|TestEdge_ConcurrentIdenticalQueries|TestEdge_LongQueryString|TestEdge_CombinedFilterTypes|TestEdge_EmptyResults|TestEdge_RapidSequentialQueries|TestEdge_InstantQuery)$'
-    name: e2e-compat (${{ matrix.shard.name }})
+    name: e2e-compat (${{ matrix.group.name }})
     steps:
       - uses: actions/checkout@v4
 
@@ -141,11 +141,10 @@ jobs:
 
       - name: Run compatibility tests
         id: compat
-        env:
-          E2E_COMPAT_PATTERN: ${{ matrix.shard.pattern }}
         run: |
-          set -o pipefail
-          OUTPUT=$(go test -v -tags=e2e -timeout=150s -run "$E2E_COMPAT_PATTERN" ./test/e2e-compat/ 2>&1) || true
+          set -euo pipefail
+          OUTPUT="$(go test -v -tags=e2e -timeout=150s -count=1 -run '${{ matrix.group.pattern }}' ./test/e2e-compat/ 2>&1)" || status=$?
+          status="${status:-0}"
           echo "$OUTPUT"
           # Extract all compatibility scores and compute overall
           SCORES=$(echo "$OUTPUT" | grep -oP 'Score: \K\d+/\d+ \(\d+\.\d+%\)' || true)
@@ -166,8 +165,7 @@ jobs:
             echo "COMPAT_PCT=N/A" >> "$GITHUB_OUTPUT"
             echo "COMPAT_DETAIL=no tests ran" >> "$GITHUB_OUTPUT"
           fi
-          # Fail if any test failed
-          echo "$OUTPUT" | grep -q "^FAIL" && exit 1 || true
+          exit "$status"
 
       - name: Tear down e2e stack
         if: always()
@@ -176,13 +174,13 @@ jobs:
 
   e2e-compat:
     runs-on: ubuntu-latest
-    needs: [e2e-compat-shard]
+    needs: [e2e-compat-group]
     if: always()
     steps:
-      - name: Check compat shard status
+      - name: Aggregate grouped compat result
         run: |
-          if [ "${{ needs.e2e-compat-shard.result }}" != "success" ]; then
-            echo "One or more e2e-compat shards failed"
+          if [ "${{ needs.e2e-compat-group.result }}" != "success" ]; then
+            echo "One or more grouped e2e-compat checks failed"
             exit 1
           fi
 
