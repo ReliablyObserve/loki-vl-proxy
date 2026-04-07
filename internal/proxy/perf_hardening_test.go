@@ -87,6 +87,70 @@ func TestHandleDetectedLabelsReuseCachedScan(t *testing.T) {
 	}
 }
 
+func TestHandleDetectedLabels_BackendErrorReturnsEmptySuccess(t *testing.T) {
+	backend := httptest.NewServer(http.NotFoundHandler())
+	backendURL := backend.URL
+	backend.Close()
+
+	p := newTestProxy(t, backendURL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, `/loki/api/v1/detected_labels?query={service_name="api"}&limit=17`, nil)
+
+	p.handleDetectedLabels(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Status         string        `json:"status"`
+		Data           []interface{} `json:"data"`
+		DetectedLabels []interface{} `json:"detectedLabels"`
+		Limit          int           `json:"limit"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != "success" || len(resp.Data) != 0 || len(resp.DetectedLabels) != 0 || resp.Limit != 17 {
+		t.Fatalf("expected empty detected_labels success response, got %#v", resp)
+	}
+}
+
+func TestHandleDetectedFieldValues_LevelFallsBackToDetectedLevel(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `{"values":[]}`)
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"level=error","detected_level":"error"}`)
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer backend.Close()
+
+	p := newTestProxy(t, backend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, `/loki/api/v1/detected_field/level/values?query={app="api"}&limit=9`, nil)
+
+	p.handleDetectedFieldValues(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Values []string `json:"values"`
+		Limit  int      `json:"limit"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Values) != 1 || resp.Values[0] != "error" || resp.Limit != 9 {
+		t.Fatalf("expected detected_level fallback, got %#v", resp)
+	}
+}
+
 func TestHandlePatternsReuseCachedResponse(t *testing.T) {
 	var backendCalls int
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -223,5 +287,27 @@ func TestBufferedResponseWriterInitializesHeaderAndCapturesBody(t *testing.T) {
 	}
 	if got := string(bw.body); got != `{"status":"success"}` {
 		t.Fatalf("unexpected buffered body %q", got)
+	}
+}
+
+func TestParseDetectedLineLimit(t *testing.T) {
+	cases := []struct {
+		name string
+		url  string
+		want int
+	}{
+		{name: "default", url: "/loki/api/v1/detected_fields", want: 1000},
+		{name: "line_limit", url: "/loki/api/v1/detected_fields?line_limit=25", want: 25},
+		{name: "limit_overrides", url: "/loki/api/v1/detected_fields?line_limit=25&limit=11", want: 11},
+		{name: "invalid_values", url: "/loki/api/v1/detected_fields?line_limit=bad&limit=-1", want: 1000},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, tc.url, nil)
+			if got := parseDetectedLineLimit(r); got != tc.want {
+				t.Fatalf("parseDetectedLineLimit() = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
