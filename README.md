@@ -243,6 +243,24 @@ In measured benchmarks on this branch:
 | `detected_field_values` | `2.76 ms` | `0.71 us` | Drilldown metadata becomes effectively instant after warm-up |
 | fleet peer-cache reuse | network/backend path | `52 ns` local shadow-copy hit | A 3-node fleet can reuse hot results instead of refetching them |
 
+How to read benchmark labels:
+
+| Benchmark label | Plain-English meaning |
+|---|---|
+| `query_range` primary-cache hit | The normal internal cache path already satisfied the handler |
+| `query_range` Tier0 compat hit | Final Loki-shaped response was served from Tier0 at the compatibility edge |
+| `detected_fields` primary-cache hit | Normal in-handler cache path |
+| `detected_fields` Tier0 compat hit | Final response returned before most handler work |
+| `detected_field_values` no compat cache | Full metadata path executed |
+| `detected_field_values` Tier0 compat hit | Tier0 short-circuited the compatibility path |
+
+Short interpretation:
+
+- Primary cache is the regular internal cache pipeline.
+- Tier0 is the compatibility-edge final-response cache.
+- Biggest Tier0 wins show up on metadata and Drilldown-style endpoints, where there is more compatibility work to skip.
+- On hot `query_range` paths, the normal cache is already highly optimized, so Tier0 mostly preserves that win instead of multiplying it.
+
 The practical outcome is simple: the proxy does not just make VictoriaLogs look like Loki, it keeps common Grafana read paths fast enough to feel native even when the backend path is more complex.
 
 Current scope boundaries and follow-up hardening are tracked in [Known Issues](docs/KNOWN_ISSUES.md):
