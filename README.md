@@ -208,7 +208,15 @@ Proxy-side datasource helpers:
 - `-tail.mode=auto|native|synthetic` to choose native tail, forced synthetic tail, or the default native-with-fallback behavior
 - `-tail.allowed-origins` when Grafana or another browser client must use `/tail`
 
-Current remaining gaps are tracked in [Known Issues](docs/KNOWN_ISSUES.md). The main active work areas are `/tail` browser/ingress parity, deeper multi-tenant Explore and Drilldown coverage, and further startup-path coverage in `cmd/proxy`.
+Current remaining gaps are tracked in [Known Issues](docs/KNOWN_ISSUES.md):
+
+- Loki ruler write semantics still incomplete
+- `/tail` parity gaps still remain
+- deeper multi-tenant Explore and Drilldown coverage is still needed
+- some merged-tenant Drilldown metadata remains approximate
+- coverage and test hardening is still open
+- `*` tenant bypass remains proxy-specific
+- `/tail` remains single-tenant
 
 ### Grafana Datasource for Multi-Tenant Read Fanout
 
