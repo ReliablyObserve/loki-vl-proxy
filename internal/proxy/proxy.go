@@ -109,6 +109,7 @@ type Config struct {
 	RulerBackendURL   string
 	AlertsBackendURL  string
 	Cache             *cache.Cache
+	CompatCache       *cache.Cache
 	LogLevel          string
 	MaxConcurrent     int                      // max concurrent backend queries (0=unlimited)
 	RatePerSecond     float64                  // per-client rate limit (0=unlimited)
@@ -182,14 +183,18 @@ const (
 
 // CacheTTLs defines per-endpoint cache TTLs.
 var CacheTTLs = map[string]time.Duration{
-	"labels":          60 * time.Second,
-	"label_values":    60 * time.Second,
-	"series":          30 * time.Second,
-	"detected_fields": 30 * time.Second,
-	"detected_labels": 30 * time.Second,
-	"patterns":        20 * time.Second,
-	"query_range":     10 * time.Second,
-	"query":           10 * time.Second,
+	"labels":                60 * time.Second,
+	"label_values":          60 * time.Second,
+	"series":                30 * time.Second,
+	"detected_fields":       30 * time.Second,
+	"detected_field_values": 30 * time.Second,
+	"detected_labels":       30 * time.Second,
+	"patterns":              20 * time.Second,
+	"query_range":           10 * time.Second,
+	"query":                 10 * time.Second,
+	"index_stats":           10 * time.Second,
+	"volume":                10 * time.Second,
+	"volume_range":          10 * time.Second,
 }
 
 type Proxy struct {
@@ -199,6 +204,7 @@ type Proxy struct {
 	client                   *http.Client
 	tailClient               *http.Client
 	cache                    *cache.Cache
+	compatCache              *cache.Cache
 	log                      *slog.Logger
 	metrics                  *metrics.Metrics
 	queryTracker             *metrics.QueryTracker
@@ -374,6 +380,7 @@ func New(cfg Config) (*Proxy, error) {
 			Transport: tailTransport,
 		},
 		cache:                    cfg.Cache,
+		compatCache:              cfg.CompatCache,
 		log:                      logger,
 		metrics:                  metrics.NewMetricsWithLimits(cfg.MetricsMaxTenants, cfg.MetricsMaxClients),
 		queryTracker:             metrics.NewQueryTracker(10000),
@@ -425,6 +432,9 @@ func (p *Proxy) Init() {
 func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
 	p.configMu.Lock()
 	p.tenantMap = m
+	if p.compatCache != nil {
+		p.compatCache.InvalidatePrefix("")
+	}
 	p.configMu.Unlock()
 }
 
@@ -434,6 +444,9 @@ func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
 	p.labelTranslator = NewLabelTranslator(p.labelTranslator.style, mappings)
 	if p.translationCache != nil {
 		p.translationCache.InvalidatePrefix("")
+	}
+	if p.compatCache != nil {
+		p.compatCache.InvalidatePrefix("")
 	}
 	p.configMu.Unlock()
 }
@@ -696,10 +709,95 @@ func (p *Proxy) tailUpgrader() websocket.Upgrader {
 	}
 }
 
+func compatCacheableEndpoint(endpoint string) bool {
+	switch endpoint {
+	case "query", "query_range", "series", "labels", "label_values", "index_stats", "volume", "volume_range", "detected_fields", "detected_field_values", "detected_labels", "patterns":
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *Proxy) shouldUseCompatCache(endpoint string, r *http.Request) bool {
+	if p.compatCache == nil || r.Method != http.MethodGet || !compatCacheableEndpoint(endpoint) {
+		return false
+	}
+	if (endpoint == "query" || endpoint == "query_range") && p.streamResponse {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket") {
+		return false
+	}
+	return true
+}
+
+func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) {
+	if !p.shouldUseCompatCache(endpoint, r) {
+		return "", false
+	}
+	return "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + r.URL.RawQuery, true
+}
+
+func compatCacheResponseAllowed(rec *httptest.ResponseRecorder) bool {
+	if rec == nil || rec.Code != http.StatusOK || rec.Flushed {
+		return false
+	}
+	if len(rec.Result().Cookies()) > 0 {
+		return false
+	}
+	contentType := strings.ToLower(strings.TrimSpace(rec.Header().Get("Content-Type")))
+	return contentType == "" || strings.Contains(contentType, "application/json")
+}
+
+func (p *Proxy) compatCacheMiddleware(endpoint string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		cacheKey, cacheable := p.compatCacheKey(endpoint, r)
+		if !cacheable {
+			next(w, r)
+			return
+		}
+		ttl := CacheTTLs[endpoint]
+		if ttl <= 0 {
+			next(w, r)
+			return
+		}
+		if cached, ok := p.compatCache.Get(cacheKey); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(cached)
+			elapsed := time.Since(start)
+			p.metrics.RecordRequest(endpoint, http.StatusOK, elapsed)
+			p.metrics.RecordCacheHit()
+			if endpoint == "query" || endpoint == "query_range" {
+				p.queryTracker.Record(endpoint, r.FormValue("query"), elapsed, false)
+			}
+			return
+		}
+
+		rec := httptest.NewRecorder()
+		next(rec, r)
+		copyHeaders(w.Header(), rec.Header())
+		if rec.Code != http.StatusOK {
+			w.WriteHeader(rec.Code)
+			_, _ = w.Write(rec.Body.Bytes())
+			return
+		}
+
+		body := rec.Body.Bytes()
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		_, _ = w.Write(body)
+		if compatCacheResponseAllowed(rec) {
+			p.compatCache.SetWithTTL(cacheKey, append([]byte(nil), body...), ttl)
+		}
+	}
+}
+
 func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	// Rate-limited endpoints with security headers + request logging
 	rl := func(endpoint string, h http.HandlerFunc) http.Handler {
-		return securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, h))))
+		return securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, p.compatCacheMiddleware(endpoint, h)))))
 	}
 	rlNoTenant := func(endpoint string, h http.HandlerFunc) http.Handler {
 		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, h)))

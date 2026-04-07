@@ -483,6 +483,86 @@ func TestPeerCache_LBScenario_ThreePeers(t *testing.T) {
 	}
 }
 
+func TestPeerCache_ThreePeers_ShadowCopiesAvoidRepeatedOwnerFetches(t *testing.T) {
+	caches := make([]*Cache, 3)
+	pcs := make([]*PeerCache, 3)
+	servers := make([]*httptest.Server, 3)
+	serverCalls := make([]atomic.Int64, 3)
+
+	for i := range caches {
+		caches[i] = New(60*time.Second, 1000)
+	}
+
+	for i := range servers {
+		idx := i
+		servers[i] = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			serverCalls[idx].Add(1)
+			pcs[idx].ServeHTTP(w, r, caches[idx])
+		}))
+	}
+
+	addrs := make([]string, len(servers))
+	for i := range servers {
+		addrs[i] = servers[i].Listener.Addr().String()
+	}
+	peerList := strings.Join(addrs, ",")
+
+	for i := range pcs {
+		pcs[i] = NewPeerCache(PeerConfig{
+			SelfAddr:      addrs[i],
+			DiscoveryType: "static",
+			StaticPeers:   peerList,
+			Timeout:       2 * time.Second,
+		})
+		caches[i].SetL3(pcs[i])
+	}
+
+	defer func() {
+		for i := range servers {
+			servers[i].Close()
+			pcs[i].Close()
+			caches[i].Close()
+		}
+	}()
+
+	testKey := "query_range:team-a:{app=\"api\"}:1:2:15"
+	owner := pcs[0].ring.get(testKey)
+	ownerIdx := -1
+	for i, addr := range addrs {
+		if addr == owner {
+			ownerIdx = i
+			break
+		}
+	}
+	if ownerIdx < 0 {
+		t.Fatal("failed to resolve cache owner")
+	}
+
+	caches[ownerIdx].Set(testKey, []byte("vl-response-data"))
+
+	for round := 0; round < 30; round++ {
+		for i := range caches {
+			value, ok := caches[i].Get(testKey)
+			if !ok || string(value) != "vl-response-data" {
+				t.Fatalf("round %d peer %d failed cache lookup: ok=%v value=%q", round, i, ok, string(value))
+			}
+		}
+	}
+
+	if got := serverCalls[ownerIdx].Load(); got > 2 {
+		t.Fatalf("expected at most one peer fetch per non-owner after shadow copies warm, owner saw %d peer requests", got)
+	}
+
+	for i := range caches {
+		if i == ownerIdx {
+			continue
+		}
+		if _, ok := caches[i].Get(testKey); !ok {
+			t.Fatalf("expected peer %d to retain a shadow copy after warm-up", i)
+		}
+	}
+}
+
 func TestPeerCache_Peers(t *testing.T) {
 	pc := NewPeerCache(PeerConfig{
 		SelfAddr:      "self:3100",

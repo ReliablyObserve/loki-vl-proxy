@@ -34,6 +34,17 @@ Result: **49% memory reduction** and **9.6% faster** parsing vs original impleme
 
 When multiple clients send identical queries simultaneously, only 1 request reaches VL. Others wait for the shared result. Keys include tenant ID to prevent cross-tenant data sharing.
 
+### Cache Topology
+
+The proxy now has two cache layers in front of the backend execution path:
+
+| Layer | Scope | Primary goal |
+|---|---|---|
+| Tier0 compatibility-edge cache | Final Loki-shaped `GET` responses on safe read endpoints | Bypass translation and backend work for hot repeated reads |
+| L1/L2/L3 cache stack | Local memory, optional disk, optional peer fleet reuse | Reduce backend load and share results across replicas |
+
+Tier0 is intentionally small and bounded as a percentage of the primary L1 memory budget. The deeper L1/L2/L3 stack still handles broader reuse, peer sharing, and persistent cache warming.
+
 ## Benchmark Results
 
 Measured on Apple M3 Max (14 cores), Go 1.26.1, `-benchmem`.
@@ -81,6 +92,9 @@ Under sustained load (10K requests, no cache):
 | Test | What it verifies |
 |---|---|
 | `TestOptimization_VLLogsToLokiStreams_*` (7 tests) | Correctness of byte-scanned NDJSON parser |
+| `BenchmarkProxy_Series_CompatCacheHit` / `BenchmarkProxy_Series_NoCompatCache` | Tier0 hit-path cost versus the uncached route-execution path |
+| `TestPeerCache_ThreePeers_ShadowCopiesAvoidRepeatedOwnerFetches` | 3-node fleet reuses one owner fetch per non-owner after warm-up |
+| `BenchmarkPeerCache_ThreePeers_ShadowCopyHit` | Warm non-owner reads stay local after the first peer shadow copy |
 | `TestOptimization_SyncPool_NoStateLeak` | Pool doesn't leak labels between invocations |
 | `TestOptimization_SyncPool_ConcurrentSafety` | 50 goroutines x 100 iterations, correct results |
 | `TestOptimization_ConnectionPool_HighConcurrency` | 200 concurrent, 0 errors (port exhaustion regression) |
@@ -96,6 +110,12 @@ Under sustained load (10K requests, no cache):
 ```bash
 # All proxy benchmarks
 go test ./internal/proxy/ -bench . -benchmem -run "^$" -count=3
+
+# Focus on the new Tier0 path
+go test ./internal/proxy/ -bench 'BenchmarkProxy_Series_(CompatCacheHit|NoCompatCache)$' -benchmem -run "^$" -count=3
+
+# Focus on fleet cache warm shadow-copy behavior
+go test ./internal/cache/ -bench 'BenchmarkPeerCache_ThreePeers_ShadowCopyHit$' -benchmem -run "^$" -count=3
 
 # Load tests
 go test ./internal/proxy/ -run "TestLoad" -v -timeout=120s
@@ -152,5 +172,7 @@ The `bench` job in `.github/workflows/ci.yaml` runs all benchmarks and load test
 2. Runs load tests at all concurrency tiers
 3. Fails the build if load tests produce errors (regression gate)
 4. Uploads results as CI artifacts for historical tracking
+
+The next CI step is to add compose-backed e2e cache/fleet smoke runs for pull requests and post-merge `main` builds, so Tier0 behavior and 3-node peer-cache gains are validated against the full Grafana + proxy + VictoriaLogs stack rather than only unit/load environments.
 
 For `TestLoad_HighConcurrency_MemoryStability`, the throughput expectation is `>10k req/s` in local environments and `>5k req/s` on shared CI runners (`CI=true`) to reduce race-mode noise while still catching major regressions.

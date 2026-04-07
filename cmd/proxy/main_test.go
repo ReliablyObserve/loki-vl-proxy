@@ -854,7 +854,7 @@ func TestBuildCacheLayer_WithoutDiskCache(t *testing.T) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
-	c, cleanup, err := buildCacheLayer(15*time.Second, 123, cache.DiskCacheConfig{}, logger)
+	c, cleanup, err := buildCacheLayer(15*time.Second, 123, defaultCacheMaxBytes, cache.DiskCacheConfig{}, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -872,7 +872,7 @@ func TestBuildCacheLayer_WithDiskCache(t *testing.T) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
-	c, cleanup, err := buildCacheLayer(15*time.Second, 123, cache.DiskCacheConfig{
+	c, cleanup, err := buildCacheLayer(15*time.Second, 123, defaultCacheMaxBytes, cache.DiskCacheConfig{
 		Path:          filepath.Join(t.TempDir(), "cache.db"),
 		Compression:   true,
 		FlushSize:     7,
@@ -894,7 +894,7 @@ func TestBuildCacheLayer_WithDiskCache(t *testing.T) {
 
 func TestBuildCacheLayer_InvalidDiskCache(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	if _, cleanup, err := buildCacheLayer(15*time.Second, 123, cache.DiskCacheConfig{
+	if _, cleanup, err := buildCacheLayer(15*time.Second, 123, defaultCacheMaxBytes, cache.DiskCacheConfig{
 		Path:          t.TempDir(),
 		Compression:   true,
 		FlushSize:     7,
@@ -1042,8 +1042,11 @@ func TestBuildRuntime_Success(t *testing.T) {
 	fake := &fakeOTLPPusher{}
 
 	rt, err := buildRuntime(runtimeOptions{
-		cacheTTL: 10 * time.Second,
-		cacheMax: 50,
+		cacheTTL:              10 * time.Second,
+		cacheMax:              50,
+		cacheMaxBytes:         defaultCacheMaxBytes,
+		compatCacheEnabled:    true,
+		compatCacheMaxPercent: defaultCompatCachePercent,
 		proxyCfg: proxyRuntimeConfig{
 			backendURL:               "http://example.com",
 			logLevel:                 "info",
@@ -1100,8 +1103,9 @@ func TestBuildRuntime_Success(t *testing.T) {
 func TestBuildRuntime_ProxyConfigError(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	_, err := buildRuntime(runtimeOptions{
-		cacheTTL: 10 * time.Second,
-		cacheMax: 50,
+		cacheTTL:      10 * time.Second,
+		cacheMax:      50,
+		cacheMaxBytes: defaultCacheMaxBytes,
 		proxyCfg: proxyRuntimeConfig{
 			backendURL:        "http://example.com",
 			labelStyle:        "bad",
@@ -1121,8 +1125,11 @@ func TestBuildRuntime_HTTPServerErrorStopsOTLP(t *testing.T) {
 	fake := &fakeOTLPPusher{}
 
 	_, err := buildRuntime(runtimeOptions{
-		cacheTTL: 10 * time.Second,
-		cacheMax: 50,
+		cacheTTL:              10 * time.Second,
+		cacheMax:              50,
+		cacheMaxBytes:         defaultCacheMaxBytes,
+		compatCacheEnabled:    true,
+		compatCacheMaxPercent: defaultCompatCachePercent,
 		proxyCfg: proxyRuntimeConfig{
 			backendURL:               "http://example.com",
 			logLevel:                 "info",
@@ -1249,6 +1256,9 @@ func TestLogProxyStartup(t *testing.T) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 	c := cache.New(30*time.Second, 100)
+	compat := cache.New(30*time.Second, 10)
+	defer c.Close()
+	defer compat.Close()
 	pc := cache.NewPeerCache(cache.PeerConfig{
 		SelfAddr:      "10.0.0.1:3100",
 		DiscoveryType: "static",
@@ -1264,7 +1274,7 @@ func TestLogProxyStartup(t *testing.T) {
 		PeerCache:         pc,
 	}
 
-	logProxyStartup(logger, cfg, "10.0.0.1:3100", "static", c)
+	logProxyStartup(logger, cfg, "10.0.0.1:3100", "static", c, compat)
 
 	logs := buf.String()
 	for _, want := range []string{
@@ -1273,6 +1283,7 @@ func TestLogProxyStartup(t *testing.T) {
 		"label translation enabled",
 		"loaded derived fields",
 		"peer cache enabled",
+		"compatibility edge cache active",
 	} {
 		if !strings.Contains(logs, want) {
 			t.Fatalf("expected log %q in %s", want, logs)

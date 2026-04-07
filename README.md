@@ -1,7 +1,7 @@
 # Loki-VL-proxy
 
 [![CI](https://github.com/szibis/Loki-VL-proxy/actions/workflows/ci.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/ci.yaml)
-[![Loki Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-loki.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-loki.yaml)
+[![Loki Compatibility Layer](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-loki.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-loki.yaml)
 [![Logs Drilldown Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml)
 [![VictoriaLogs Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-vl.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-vl.yaml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/szibis/Loki-VL-proxy)](https://go.dev/)
@@ -30,12 +30,14 @@ flowchart TD
     subgraph L2["Loki Compatibility Layer"]
         API["Loki HTTP + WebSocket API<br/>query / labels / detected_* / tail / rules / alerts"]
         GUARD["Security headers + tenant validation<br/>auth checks + rate limits + request logging"]
+        EDGE["Tier0 compatibility cache<br/>safe GET Loki-shaped responses only"]
     end
 
     subgraph L3["Route Execution Paths"]
-        Q["Query + metadata path<br/>fanout / cache / translation / shaping"]
+        Q["Query + metadata path<br/>fanout / translation / shaping"]
         T["/tail path<br/>origin checks + native/synthetic streaming"]
         R["Rules + alerts read path<br/>Loki / Prom-compatible views"]
+        RESP["Loki-shaped response"]
     end
 
     subgraph L4["Cache Layer"]
@@ -54,7 +56,9 @@ flowchart TD
     M --> API
     C --> API
     API --> GUARD
-    GUARD --> Q
+    GUARD --> EDGE
+    EDGE -->|miss| Q
+    EDGE -->|hit| RESP
     GUARD --> T
     GUARD --> R
     Q --> MEM
@@ -62,6 +66,7 @@ flowchart TD
     DISK -->|miss| PEER
     PEER -->|miss| VL
     VL --> Q
+    Q --> RESP
     T --> VL
     R --> RULES
     GUARD --> OBS
@@ -87,6 +92,7 @@ See [Getting Started](docs/getting-started.md), [Architecture](docs/architecture
 - **OTel-aware label and metadata translation** -- bidirectional dot/underscore conversion plus hybrid field exposure keeps Loki labels usable while preserving dotted OTel-style metadata for field-oriented flows
 - **Read-path rules and alerts compatibility** -- surface `vmalert` rules and alerts on Loki-compatible read endpoints and migrate Loki-style rule files with the built-in converter
 - **Indexed fast path where possible** -- known VictoriaLogs `_stream_fields` can stay on native stream selectors instead of dropping to slower field scans
+- **Tier0 safe response cache** -- a dedicated compatibility-edge microcache can short-circuit repeated safe GET reads after tenant validation without bypassing translation, auth, or route policy on misses
 
 ### Security & Hardening
 See [Security](docs/security.md), [Configuration](docs/configuration.md), [Observability](docs/observability.md), and [Known Issues](docs/KNOWN_ISSUES.md).
@@ -100,9 +106,9 @@ See [Security](docs/security.md), [Configuration](docs/configuration.md), [Obser
 ### Performance & Scale
 See [Performance Guide](docs/performance.md), [Scaling](docs/scaling.md), [Fleet Cache](docs/fleet-cache.md), and [Observability](docs/observability.md).
 
-- **Three cache tiers** -- in-memory LRU + TTL, disk-backed bbolt cache, and fleet peer-cache provide progressively wider reuse before a VictoriaLogs miss
+- **Tier0 plus tiered caches** -- a small compatibility-edge response cache fronts the existing in-memory LRU + TTL, optional disk-backed bbolt, and fleet peer-cache layers
 - **Fleet-aware scaling** -- consistent hashing, shadow copies with TTL preservation, headless-service peer discovery, and per-peer circuit breakers keep multi-replica fleets efficient under HPA churn
-- **Hot-path backend reduction** -- request coalescing, query normalization, and cached Loki-shaped query-range responses reduce duplicate backend work for repeated dashboards and shared reads
+- **Hot-path backend reduction** -- request coalescing, Tier0 cache hits, query normalization, and cached Loki-shaped responses reduce duplicate backend work for repeated dashboards and shared reads
 - **Bounded expensive paths** -- multi-tenant fanout, merge size, synthetic-tail dedup state, and metadata/discovery fallbacks all have explicit safety caps
 - **Graceful fallback behavior** -- native-first metadata discovery and synthetic tail fallback keep user-facing flows working when backend-native paths are absent or incomplete
 - **Measured regression control** -- compatibility, performance, and quality gates track cache-hit versus bypass behavior, throughput, allocations, and memory growth across hot paths
@@ -199,6 +205,9 @@ datasources:
 
 Proxy-side datasource helpers:
 
+- `-cache-max-bytes` to set the primary L1 in-memory cache budget explicitly
+- `-compat-cache-enabled` to keep the Tier0 compatibility-edge cache on or off
+- `-compat-cache-max-percent` to reserve a bounded share of the L1 memory budget for Tier0, defaulting to 10% and capped at 50%
 - `-backend-timeout` for long Grafana queries against VL
 - `-forward-headers` and `-forward-cookies` for backend auth/context passthrough
 - `-metrics.trust-proxy-headers` to trust `X-Grafana-User` and surface per-user client metrics/log context
@@ -209,6 +218,7 @@ Proxy-side datasource helpers:
 - multi-tenant Drilldown and Explore level filters such as `detected_level="error" or detected_level="info"` are translated and regression-tested against the live Grafana stack
 - `-tenant.allow-global` to let `X-Scope-OrgID: *` use VL's default `0:0` tenant as a proxy-specific wildcard bypass
 - native-first Drilldown field and label discovery that keeps slower-changing metadata hot in cache while leaving live query and tail paths conservative
+- safe Tier0 response caching only on cacheable GET reads such as `query`, `query_range`, `series`, labels, volume, and Drilldown metadata endpoints; `/tail`, writes, and websocket paths stay outside it
 - `-tls-client-ca-file` and `-tls-require-client-cert` for HTTPS client auth
 - `-tail.mode=auto|native|synthetic` to choose native tail, forced synthetic tail, or the default native-with-fallback behavior
 - `-tail.allowed-origins` when Grafana or another browser client must use `/tail`
@@ -220,6 +230,8 @@ Current scope boundaries and follow-up hardening are tracked in [Known Issues](d
 - `/tail` remains single-tenant
 - `X-Scope-OrgID: *` remains a proxy-specific default/global convenience
 - coverage and test hardening is still open
+
+Tier0 and fleet-cache performance validation is covered by targeted benchmarks and load-style tests now, and the next CI step is to promote the compose-backed e2e cache/performance smoke flows into GitHub Actions on pull requests and post-merge `main` runs.
 
 ### Grafana Datasource for Multi-Tenant Read Fanout
 

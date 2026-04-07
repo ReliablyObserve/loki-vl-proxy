@@ -177,6 +177,74 @@ func BenchmarkProxy_Labels_CacheBypass(b *testing.B) {
 	})
 }
 
+func BenchmarkProxy_Series_CompatCacheHit(b *testing.B) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[{"value":"{app=\"api\",cluster=\"ops\"}","hits":1}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p, _ := New(Config{
+		BackendURL:  vlBackend.URL,
+		Cache:       cache.New(60*time.Second, 10000),
+		CompatCache: cache.New(60*time.Second, 1000),
+		LogLevel:    "error",
+		TenantMap: map[string]TenantMapping{
+			"team-a": {AccountID: "10", ProjectID: "0"},
+		},
+	})
+
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+
+	warmReq := httptest.NewRequest("GET", `/loki/api/v1/series?match[]=%7Bapp%3D%22api%22%7D&start=1&end=2`, nil)
+	warmReq.Header.Set("X-Scope-OrgID", "team-a")
+	warm := httptest.NewRecorder()
+	mux.ServeHTTP(warm, warmReq)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		w := newBenchmarkResponseWriter()
+		r := benchmarkRequest(`/loki/api/v1/series?match[]=%7Bapp%3D%22api%22%7D&start=1&end=2`)
+		r.Header.Set("X-Scope-OrgID", "team-a")
+		for pb.Next() {
+			w.reset()
+			mux.ServeHTTP(w, r)
+		}
+	})
+}
+
+func BenchmarkProxy_Series_NoCompatCache(b *testing.B) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[{"value":"{app=\"api\",cluster=\"ops\"}","hits":1}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p, _ := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      cache.New(60*time.Second, 10000),
+		LogLevel:   "error",
+		TenantMap: map[string]TenantMapping{
+			"team-a": {AccountID: "10", ProjectID: "0"},
+		},
+	})
+
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		w := newBenchmarkResponseWriter()
+		r := benchmarkRequest(`/loki/api/v1/series?match[]=%7Bapp%3D%22api%22%7D&start=1&end=2`)
+		r.Header.Set("X-Scope-OrgID", "team-a")
+		for pb.Next() {
+			w.reset()
+			mux.ServeHTTP(w, r)
+		}
+	})
+}
+
 func BenchmarkProxy_MultiTenantQueryRange_CacheHit(b *testing.B) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Header.Get("AccountID") {

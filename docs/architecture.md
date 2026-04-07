@@ -18,6 +18,7 @@ flowchart TD
         API["Loki HTTP + WebSocket surface<br/>query / labels / detected_* / tail / rules / alerts"]
         GUARD["Security headers + tenant validation<br/>auth checks + rate limits + request logging"]
         ROUTE["Route-specific execution"]
+        EDGE["Tier0 compatibility-edge cache<br/>safe GET Loki-shaped responses only"]
     end
 
     subgraph Query["Query + Metadata Path"]
@@ -49,9 +50,11 @@ flowchart TD
     M --> API
     C --> API
     API --> GUARD --> ROUTE
-    ROUTE --> FAN --> CACHE
+    ROUTE --> FAN --> EDGE
+    EDGE -->|miss| CACHE
     CACHE -->|miss| CO --> TR --> VL
     VL --> SHAPE --> CACHE
+    SHAPE --> EDGE
     ROUTE --> ORIGIN --> MODE
     MODE --> NATIVE --> VL
     MODE --> SYN --> VL
@@ -75,6 +78,7 @@ flowchart TD
 | Global concurrent limit | Cap total backend load | 100 concurrent queries |
 | Request coalescing | Deduplicate identical queries | Automatic (singleflight) |
 | Query normalization | Improve cache hit rate | Sort matchers, collapse whitespace |
+| Tier0 response cache | Short-circuit repeated safe GET reads after tenant validation | Enabled, 10% of L1 memory budget, safe GET read endpoints only |
 | Tiered cache | Reduce backend calls with local, disk, and peer reuse | L1 memory, optional L2 disk, optional L3 peer cache |
 | Circuit breaker | Protect VL from cascading failure | Opens after 5 failures, 10s backoff |
 | Tail origin allowlist | Reject browser websocket origins unless explicitly trusted | Deny browser origins by default |
@@ -107,16 +111,27 @@ flowchart TD
     WRAP --> FAN{"Multi-tenant<br/>query path?"}
     FAN -->|yes| MT["Fan out per tenant<br/>apply __tenant_id__ narrowing<br/>merge Loki-shaped responses"]
     FAN -->|no| ONE["Single-tenant request"]
-    MT --> CACHE
-    ONE --> CACHE["L1 memory -> optional L2 disk<br/>-> optional L3 peer cache"]
-    CACHE -->|hit| RESP["Return cached Loki-shaped response"]
+    MT --> EDGE
+    ONE --> EDGE["Tier0 compatibility-edge cache<br/>cacheable GET reads only"]
+    EDGE -->|hit| RESP["Return cached Loki-shaped response"]
+    EDGE -->|miss| CACHE["L1 memory -> optional L2 disk<br/>-> optional L3 peer cache"]
+    CACHE -->|hit| RESP
     CACHE -->|miss| CO["Coalesce identical backend reads"]
     CO --> TR["Translate LogQL / selectors / metadata queries"]
     TR --> VL["VictoriaLogs"]
     VL --> SHAPE["Shape response<br/>streams / labels / stats / drilldown"]
-    SHAPE --> STORE["Store cacheable result"]
+    SHAPE --> STORE["Store cacheable result in Tier0 and deeper caches"]
     STORE --> RESP
 ```
+
+### Tier0 Cache Guardrails
+
+- Tier0 is a separate cache instance that reuses the same cache implementation, but not the same keyspace, as the deeper L1/L2/L3 caches.
+- It runs only after tenant validation, auth checks, request logging setup, and route classification.
+- It only serves cacheable `GET` read endpoints such as `query`, `query_range`, `series`, labels, volume, patterns, and Drilldown metadata.
+- It never covers `/tail`, write/delete/admin paths, websocket upgrades, or non-JSON responses.
+- Its memory budget is derived from `-cache-max-bytes` through `-compat-cache-max-percent`, defaulting to 10% and capped at 50%.
+- Tenant-map and field-mapping reloads invalidate Tier0 immediately so label translation and metadata exposure changes cannot go stale.
 
 ## Tail Flow
 

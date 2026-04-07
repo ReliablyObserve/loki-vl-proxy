@@ -63,7 +63,7 @@ Exact counts move often. Treat the categories below as the stable map of what is
 | Hardening | 4 | Query length limit, limit sanitization, security headers |
 | Middleware | 12 | Coalescing, rate limiting, circuit breaker |
 | Critical fixes | 30+ | Data race, binary operators, delete safeguards, without() |
-| Benchmarks | 10 | Translation ~5us, cache hit 42ns |
+| Benchmarks | 10+ | Translation hot paths, Tier0 response-cache hits, and warm fleet shadow-copy reads |
 | E2E basic (Loki vs proxy) | 11 | Side-by-side API response comparison |
 | E2E complex (real-world) | 31 | Multi-label, chained filters, parsers, cross-service |
 | E2E edge cases (VL issues) | 12 | Large bodies, dotted labels, unicode, multiline |
@@ -84,6 +84,8 @@ Exact counts move often. Treat the categories below as the stable map of what is
 | `internal/translator/fuzz_test.go` | Fuzz testing harness |
 | `internal/translator/fixes_test.go` | IsScalar, without() clause tests |
 | `internal/cache/cache_test.go` | L1 cache behavior |
+| `internal/cache/cache_bench_test.go` | L1 benchmarks and warm 3-peer shadow-copy benchmark |
+| `internal/cache/peer_test.go` | L3 peer cache behavior, distribution, and 3-peer shadow-copy efficiency |
 | `internal/cache/disk_test.go` | L2 disk cache |
 | `internal/middleware/middleware_test.go` | Rate limiter, circuit breaker |
 | `test/e2e-compat/` | Docker-based Loki vs proxy comparison |
@@ -124,6 +126,9 @@ The Docker-backed `test/e2e-compat` suite now runs as four functional PR shards 
 Stack startup now uses [`wait_e2e_stack.sh`](../scripts/ci/wait_e2e_stack.sh) instead of `docker compose --wait` or fixed sleeps. That avoids false failures from services without Docker healthchecks and lets UI and compat jobs share the same readiness logic.
 
 The GitHub-hosted Docker jobs now also prebuild the proxy image once per job through BuildKit cache and start compose stacks with `--no-build`. That keeps the grouped compat shards and UI shards parallel without paying the full Docker rebuild cost every time a stack starts inside the same job.
+
+Next step:
+promote compose-backed e2e cache and fleet-smoke coverage into GitHub Actions for both pull requests and post-merge `main` runs, so the Tier0 compatibility cache and 3-node peer-cache behavior are exercised against the full stack automatically.
 
 ### `datasource` shard
 

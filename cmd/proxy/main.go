@@ -50,6 +50,7 @@ type proxyRuntimeConfig struct {
 	rulerBackendURL          string
 	alertsBackendURL         string
 	cache                    *cache.Cache
+	compatCache              *cache.Cache
 	logLevel                 string
 	tenantMapJSON            string
 	maxLines                 int
@@ -148,14 +149,17 @@ type shutdownHandlerFunc func(<-chan os.Signal, httpServer, time.Duration, *slog
 type exitFunc func(int)
 
 type runtimeOptions struct {
-	cacheTTL     time.Duration
-	cacheMax     int
-	diskCfg      cache.DiskCacheConfig
-	proxyCfg     proxyRuntimeConfig
-	otlpCfg      otlpRuntimeConfig
-	maxBodyBytes int64
-	enableGzip   bool
-	serverOpts   serverRuntimeOptions
+	cacheTTL              time.Duration
+	cacheMax              int
+	cacheMaxBytes         int
+	compatCacheEnabled    bool
+	compatCacheMaxPercent int
+	diskCfg               cache.DiskCacheConfig
+	proxyCfg              proxyRuntimeConfig
+	otlpCfg               otlpRuntimeConfig
+	maxBodyBytes          int64
+	enableGzip            bool
+	serverOpts            serverRuntimeOptions
 }
 
 type runtimeState struct {
@@ -166,6 +170,12 @@ type runtimeState struct {
 	reloadCh     chan os.Signal
 	shutdownCh   chan os.Signal
 }
+
+const (
+	defaultCacheMaxBytes      = 256 * 1024 * 1024
+	defaultCompatCachePercent = 10
+	maxCompatCachePercent     = 50
+)
 
 func main() {
 	runMain(
@@ -225,6 +235,9 @@ func run(
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
+	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
+	compatCacheEnabled := fs.Bool("compat-cache-enabled", true, "Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints")
+	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Percent of -cache-max-bytes reserved for the Tier0 compatibility-edge cache (0 disables, max 50)")
 
 	// Disk cache flags
 	diskCachePath := fs.String("disk-cache-path", "", "Path to L2 disk cache (bbolt). Empty disables.")
@@ -339,8 +352,11 @@ func run(
 	}
 
 	runtime, err := buildRuntimeFn(runtimeOptions{
-		cacheTTL: *cacheTTL,
-		cacheMax: *cacheMax,
+		cacheTTL:              *cacheTTL,
+		cacheMax:              *cacheMax,
+		cacheMaxBytes:         *cacheMaxBytes,
+		compatCacheEnabled:    *compatCacheEnabled,
+		compatCacheMaxPercent: *compatCacheMaxPercent,
 		diskCfg: cache.DiskCacheConfig{
 			Path:          *diskCachePath,
 			Compression:   *diskCacheCompress,
@@ -424,14 +440,22 @@ func run(
 	return nil
 }
 
-func buildCacheLayer(ttl time.Duration, maxEntries int, diskCfg cache.DiskCacheConfig, logger *slog.Logger) (*cache.Cache, func(), error) {
-	c := cache.New(ttl, maxEntries)
+func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, diskCfg cache.DiskCacheConfig, logger *slog.Logger) (*cache.Cache, func(), error) {
+	if maxEntries <= 0 {
+		return nil, nil, fmt.Errorf("cache-max must be greater than 0")
+	}
+	if maxBytes <= 0 {
+		return nil, nil, fmt.Errorf("cache-max-bytes must be greater than 0")
+	}
+
+	c := cache.NewWithMaxBytes(ttl, maxEntries, maxBytes)
 	if diskCfg.Path == "" {
-		return c, func() {}, nil
+		return c, func() { c.Close() }, nil
 	}
 
 	dc, err := cache.NewDiskCache(diskCfg)
 	if err != nil {
+		c.Close()
 		return nil, nil, err
 	}
 	c.SetL2(dc)
@@ -441,27 +465,71 @@ func buildCacheLayer(ttl time.Duration, maxEntries int, diskCfg cache.DiskCacheC
 		"flush_size", diskCfg.FlushSize,
 		"flush_interval", diskCfg.FlushInterval.String(),
 	)
-	return c, func() { _ = dc.Close() }, nil
+	return c, func() {
+		c.Close()
+		_ = dc.Close()
+	}, nil
+}
+
+func buildCompatCacheLayer(ttl time.Duration, maxEntries, primaryMaxBytes int, enabled bool, percent int, logger *slog.Logger) (*cache.Cache, func(), error) {
+	if !enabled || percent <= 0 {
+		return nil, func() {}, nil
+	}
+	if percent > maxCompatCachePercent {
+		return nil, nil, fmt.Errorf("compat-cache-max-percent must be between 0 and %d", maxCompatCachePercent)
+	}
+	if maxEntries <= 0 {
+		return nil, nil, fmt.Errorf("cache-max must be greater than 0 when compat cache is enabled")
+	}
+	if primaryMaxBytes <= 0 {
+		return nil, nil, fmt.Errorf("cache-max-bytes must be greater than 0 when compat cache is enabled")
+	}
+
+	compatMaxBytes := primaryMaxBytes * percent / 100
+	if compatMaxBytes <= 0 {
+		return nil, nil, fmt.Errorf("compat-cache-max-percent=%d yields zero bytes; increase cache-max-bytes or percent", percent)
+	}
+	compatMaxEntries := maxEntries * percent / 100
+	if compatMaxEntries <= 0 {
+		compatMaxEntries = 1
+	}
+
+	c := cache.NewWithMaxBytes(ttl, compatMaxEntries, compatMaxBytes)
+	logger.Info("compatibility edge cache enabled",
+		"tier", "tier0",
+		"max_entries", compatMaxEntries,
+		"max_bytes", compatMaxBytes,
+		"share_of_l1_percent", percent,
+	)
+	return c, func() { c.Close() }, nil
 }
 
 func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifier, newPusher otlpPusherFactory) (*runtimeState, error) {
-	cacheLayer, cacheCleanup, err := buildCacheLayer(opts.cacheTTL, opts.cacheMax, opts.diskCfg, logger)
+	cacheLayer, cacheCleanup, err := buildCacheLayer(opts.cacheTTL, opts.cacheMax, opts.cacheMaxBytes, opts.diskCfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("open disk cache: %w", err)
+	}
+	compatCacheLayer, compatCleanup, err := buildCompatCacheLayer(opts.cacheTTL, opts.cacheMax, opts.cacheMaxBytes, opts.compatCacheEnabled, opts.compatCacheMaxPercent, logger)
+	if err != nil {
+		cacheCleanup()
+		return nil, fmt.Errorf("build compatibility cache: %w", err)
 	}
 
 	proxyCfg := opts.proxyCfg
 	proxyCfg.cache = cacheLayer
+	proxyCfg.compatCache = compatCacheLayer
 	builtProxyCfg, err := buildProxyConfig(proxyCfg)
 	if err != nil {
 		cacheCleanup()
+		compatCleanup()
 		return nil, fmt.Errorf("build proxy config: %w", err)
 	}
-	logProxyStartup(logger, builtProxyCfg, proxyCfg.peerSelf, proxyCfg.peerDiscovery, cacheLayer)
+	logProxyStartup(logger, builtProxyCfg, proxyCfg.peerSelf, proxyCfg.peerDiscovery, cacheLayer, compatCacheLayer)
 
 	p, err := proxy.New(builtProxyCfg)
 	if err != nil {
 		cacheCleanup()
+		compatCleanup()
 		return nil, fmt.Errorf("create proxy: %w", err)
 	}
 	p.Init()
@@ -476,17 +544,21 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	if err != nil {
 		stopOTLP()
 		cacheCleanup()
+		compatCleanup()
 		return nil, fmt.Errorf("build http server: %w", err)
 	}
 
 	reloadCh, shutdownCh := buildSignalChannels(notify)
 	return &runtimeState{
-		proxy:        p,
-		server:       srv,
-		cacheCleanup: cacheCleanup,
-		stopOTLP:     stopOTLP,
-		reloadCh:     reloadCh,
-		shutdownCh:   shutdownCh,
+		proxy:  p,
+		server: srv,
+		cacheCleanup: func() {
+			cacheCleanup()
+			compatCleanup()
+		},
+		stopOTLP:   stopOTLP,
+		reloadCh:   reloadCh,
+		shutdownCh: shutdownCh,
 	}, nil
 }
 
@@ -764,6 +836,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		RulerBackendURL:          cfg.rulerBackendURL,
 		AlertsBackendURL:         alertsBackendURL,
 		Cache:                    cfg.cache,
+		CompatCache:              cfg.compatCache,
 		LogLevel:                 cfg.logLevel,
 		TenantMap:                tenantMap,
 		MaxLines:                 cfg.maxLines,
@@ -879,7 +952,7 @@ func reloadDynamicConfig(p reloadableProxy, getenv func(string) string, logger *
 	}
 }
 
-func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerDiscovery string, c *cache.Cache) {
+func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerDiscovery string, c, compat *cache.Cache) {
 	if proxyCfg.TenantMap != nil {
 		logger.Info("loaded tenant mappings", "count", len(proxyCfg.TenantMap))
 	}
@@ -895,5 +968,8 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 	if proxyCfg.PeerCache != nil {
 		c.SetL3(proxyCfg.PeerCache)
 		logger.Info("peer cache enabled", "self", peerSelf, "discovery", peerDiscovery)
+	}
+	if compat != nil {
+		logger.Info("compatibility edge cache active", "tier", "tier0")
 	}
 }
