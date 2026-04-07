@@ -1,8 +1,10 @@
 package middleware
 
 import (
+	"bufio"
 	"compress/gzip"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -112,5 +114,40 @@ func TestGzipHandler_FlushSupport(t *testing.T) {
 	gr.Close()
 	if string(body) != "chunk1chunk2" {
 		t.Errorf("expected chunk1chunk2, got %q", body)
+	}
+}
+
+type hijackableRecorder struct {
+	*httptest.ResponseRecorder
+	hijacked bool
+}
+
+func (r *hijackableRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	r.hijacked = true
+	return nil, bufio.NewReadWriter(bufio.NewReader(strings.NewReader("")), bufio.NewWriter(io.Discard)), nil
+}
+
+func TestGzipHandler_SkipsWebSocketUpgrades(t *testing.T) {
+	recorder := &hijackableRecorder{ResponseRecorder: httptest.NewRecorder()}
+	var sawHijacker bool
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, sawHijacker = w.(http.Hijacker)
+		w.WriteHeader(http.StatusSwitchingProtocols)
+	})
+
+	handler := GzipHandler(inner)
+	req := httptest.NewRequest(http.MethodGet, "/tail", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+
+	handler.ServeHTTP(recorder, req)
+
+	if !sawHijacker {
+		t.Fatal("expected websocket upgrade request to preserve Hijacker support")
+	}
+	if got := recorder.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("expected websocket upgrade to skip gzip, got %q", got)
 	}
 }

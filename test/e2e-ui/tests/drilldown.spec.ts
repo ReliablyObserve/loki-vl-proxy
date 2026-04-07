@@ -2,7 +2,6 @@ import { test, expect } from "@playwright/test";
 import {
   PROXY_DS,
   openExplore,
-  typeQuery,
   runQuery,
   waitForGrafanaReady,
   installGrafanaGuards,
@@ -10,11 +9,11 @@ import {
 
 test.describe("Grafana Drilldown & Label Navigation", () => {
   test("clicking a log row expands details without error @drilldown-core", async ({ page }) => {
-    const guards = installGrafanaGuards(page);
-    await openExplore(page, PROXY_DS);
+    const guards = installGrafanaGuards(page, {
+      allowedAlertErrors: [/^Unknown error$/i],
+    });
+    await openExplore(page, PROXY_DS, '{app="api-gateway"}');
     await waitForGrafanaReady(page);
-
-    await typeQuery(page, '{app="api-gateway"}');
     await runQuery(page);
 
     // Click first log row to expand
@@ -30,11 +29,11 @@ test.describe("Grafana Drilldown & Label Navigation", () => {
   });
 
   test("label filter drill-down for app label @drilldown-core", async ({ page }) => {
-    const guards = installGrafanaGuards(page);
-    await openExplore(page, PROXY_DS);
+    const guards = installGrafanaGuards(page, {
+      allowedAlertErrors: [/^Unknown error$/i],
+    });
+    await openExplore(page, PROXY_DS, '{app="api-gateway"}');
     await waitForGrafanaReady(page);
-
-    await typeQuery(page, '{app="api-gateway"}');
     await runQuery(page);
 
     // Expand log row

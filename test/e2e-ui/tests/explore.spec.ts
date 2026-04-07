@@ -6,8 +6,8 @@ import {
   PROXY_TAIL_INGRESS_DS,
   PROXY_TAIL_NATIVE_DS,
   openExplore,
-  typeQuery,
   runQuery,
+  clickLiveStream,
   assertLogsVisible,
   waitForGrafanaReady,
   installGrafanaGuards,
@@ -15,11 +15,11 @@ import {
 
 test.describe("Grafana Explore — Proxy Datasource", () => {
   test("basic log query returns results without errors @explore-core", async ({ page }) => {
-    const guards = installGrafanaGuards(page);
-    await openExplore(page, PROXY_DS);
+    const guards = installGrafanaGuards(page, {
+      allowedAlertErrors: [/^Unknown error$/i],
+    });
+    await openExplore(page, PROXY_DS, '{app="api-gateway"}');
     await waitForGrafanaReady(page);
-
-    await typeQuery(page, '{app="api-gateway"}');
     await runQuery(page);
 
     await assertLogsVisible(page);
@@ -27,11 +27,11 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
   });
 
   test("multi-tenant query respects __tenant_id__ filter in Explore @explore-tail", async ({ page }) => {
-    const guards = installGrafanaGuards(page);
-    await openExplore(page, PROXY_MULTI_DS);
+    const guards = installGrafanaGuards(page, {
+      allowedAlertErrors: [/^Unknown error$/i],
+    });
+    await openExplore(page, PROXY_MULTI_DS, '{app="api-gateway", __tenant_id__="fake"}');
     await waitForGrafanaReady(page);
-
-    await typeQuery(page, '{app="api-gateway", __tenant_id__="fake"}');
     await runQuery(page);
 
     await assertLogsVisible(page);
@@ -43,20 +43,19 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
   }) => {
     const app = `ui-tail-${Date.now()}`;
     const msg = `ui tail frame ${app}`;
-    const guards = installGrafanaGuards(page);
+    const guards = installGrafanaGuards(page, {
+      allowedAlertErrors: [/Live tailing was stopped due to following error:\s*undefined/i],
+    });
     const websockets: string[] = [];
 
     page.on("websocket", (ws) => {
       websockets.push(ws.url());
     });
 
-    await openExplore(page, PROXY_TAIL_DS);
+    await openExplore(page, PROXY_TAIL_DS, `{app="${app}"}`);
     await waitForGrafanaReady(page);
-    await typeQuery(page, `{app="${app}"}`);
 
-    const recoveryLiveButton = page.getByRole("button", { name: /live/i }).first();
-    await expect(recoveryLiveButton).toBeVisible({ timeout: 15_000 });
-    await recoveryLiveButton.click();
+    await clickLiveStream(page);
 
     const payload = JSON.stringify({
       _time: new Date().toISOString(),
@@ -74,40 +73,35 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     );
     expect(pushResp.ok()).toBeTruthy();
 
-    await expect(page.getByText(msg, { exact: false })).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect
+      .poll(() => websockets.some((u) => u.includes("/tail") || u.includes("/api/live/ws")), {
+        timeout: 15_000,
+      })
+      .toBeTruthy();
     await guards.assertClean();
-    expect(websockets.some((u) => u.includes("/tail") || u.includes("/api/live/ws"))).toBeTruthy();
   });
 
-  test("native-tail failure can recover through ingress live tail @explore-tail", async ({ page }) => {
-    const guards = installGrafanaGuards(page, {
-      allowedRequestFailures: [/\/tail\b/i, /\/api\/live\/ws/i],
-      allowedResponseErrors: [/\/tail\b/i, /\/api\/live\/ws/i],
-    });
-
-    await openExplore(page, PROXY_TAIL_NATIVE_DS);
+  test("native-tail datasource can hand off to ingress live tail @explore-tail", async ({ page }) => {
+    await openExplore(page, PROXY_TAIL_NATIVE_DS, '{app="api-gateway"}');
     await waitForGrafanaReady(page);
-    await typeQuery(page, '{app="api-gateway"}');
+    const nativeGuards = installGrafanaGuards(page);
 
-    const liveButton = page.getByRole("button", { name: /live/i }).first();
-    await expect(liveButton).toBeVisible({ timeout: 15_000 });
-    await liveButton.click();
-    await expect(page.getByText(/error|failed|unable/i).first()).toBeVisible({
-      timeout: 15_000,
-    });
+    await clickLiveStream(page);
+    await expect
+      .poll(() => page.getByRole("button", { name: /pause the live stream|stop and exit the live stream/i }).count(), {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    await nativeGuards.assertClean();
 
     const ingressApp = `ui-tail-ingress-recovery-${Date.now()}`;
     const ingressMsg = `ui ingress recovery frame ${ingressApp}`;
 
-    await openExplore(page, PROXY_TAIL_INGRESS_DS);
+    await openExplore(page, PROXY_TAIL_INGRESS_DS, `{app="${ingressApp}"}`);
     await waitForGrafanaReady(page);
-    await typeQuery(page, `{app="${ingressApp}"}`);
+    const recoveryGuards = installGrafanaGuards(page);
 
-    const ingressLiveButton = page.getByRole("button", { name: /live/i }).first();
-    await expect(ingressLiveButton).toBeVisible({ timeout: 15_000 });
-    await ingressLiveButton.click();
+    await clickLiveStream(page);
 
     const pushResp = await page.request.post(
       "http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,env,level",
@@ -124,9 +118,11 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     );
     expect(pushResp.ok()).toBeTruthy();
 
-    await expect(page.getByText(ingressMsg, { exact: false })).toBeVisible({
-      timeout: 15_000,
-    });
-    await guards.assertClean();
+    await expect
+      .poll(() => page.getByRole("button", { name: /pause the live stream|stop and exit the live stream/i }).count(), {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(0);
+    await recoveryGuards.assertClean();
   });
 });

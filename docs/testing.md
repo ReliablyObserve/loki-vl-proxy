@@ -184,14 +184,19 @@ Field-surface defaults in the pinned stack:
 Support window policy:
 
 - Loki: current minor family plus one minor behind
-- Grafana runtime: pinned current family gets the fuller Drilldown runtime contract, previous family gets a scheduled smoke profile
+- Grafana runtime: pinned current family gets the fuller Drilldown runtime contract, previous family gets a PR-time smoke plus scheduled/manual matrix coverage
 - Logs Drilldown: current family plus one family behind
 - VictoriaLogs: `v1.3x.x` and `v1.4x.x`
 
 Grafana runtime profiles from the manifest:
 
-- `12.4.2` runs the full Drilldown runtime score on scheduled compatibility checks
-- `11.6.6` runs a smaller datasource-plus-Drilldown smoke profile on the same schedule
+- `12.4.2` runs the full Drilldown runtime score on scheduled and manual compatibility checks
+- `11.6.6` runs a smaller datasource-plus-Drilldown smoke profile on pull requests, pushes, and the scheduled/manual matrix
+
+Logs Drilldown family assertions are explicit in the contract matrix:
+
+- `1.0.x` checks service-selection volume buckets, detected-fields filtering, and labels-field parsing behavior
+- `2.0.x` checks detected-level default columns, field-values breakdown scenes, and additional label-tab wiring
 
 The stack is version-parameterized through compose environment variables:
 

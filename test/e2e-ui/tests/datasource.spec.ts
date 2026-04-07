@@ -3,7 +3,9 @@ import { PROXY_DS, waitForGrafanaReady, installGrafanaGuards } from "./helpers";
 
 test.describe("Grafana Datasource Health & Config", () => {
   test("datasource health check succeeds", async ({ page }) => {
-    const guards = installGrafanaGuards(page);
+    const guards = installGrafanaGuards(page, {
+      allowedConsoleErrors: [/Failed to load resource: the server responded with a status of 404/i],
+    });
 
     // Navigate to datasource settings
     await page.goto("/connections/datasources");

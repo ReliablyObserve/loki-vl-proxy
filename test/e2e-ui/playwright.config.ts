@@ -10,6 +10,10 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   use: {
     baseURL: process.env.GRAFANA_URL || "http://127.0.0.1:3002",
+    viewport: {
+      width: 1600,
+      height: 1200,
+    },
     screenshot: "only-on-failure",
     trace: "on-first-retry",
     // Grafana anonymous auth — no login needed

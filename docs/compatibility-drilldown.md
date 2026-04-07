@@ -12,7 +12,7 @@ This track measures compatibility with the Grafana Logs Drilldown app, not gener
 
 - Workflow: `compat-drilldown.yaml`
 - Score test: `TestDrilldownTrackScore`
-- Runtime coverage: pinned Grafana runtime plus proxy e2e
+- Runtime coverage: pinned Grafana runtime on PRs plus previous-family Grafana smoke on PRs, with the fuller Grafana matrix kept for scheduled/manual runs
 - Version matrix: source-contract checks across the current Drilldown family and one family behind
 
 The Drilldown matrix is also a moving window. We support the current app family and one family behind, with the contract list sliding forward as upstream releases move. We do not keep an open-ended tail of older app families.
@@ -21,16 +21,16 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Logs Drilldown version | Coverage path | Version-specific focus |
 |---|---|---|
-| `2.0.1` | PR and main pinned runtime + contract matrix | Current pinned contract |
+| `2.0.1` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract |
 | `2.0.0` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
-| `1.0.41` | Scheduled and manual contract matrix | Field filtering, labels field parsing |
-| `1.0.40` | Scheduled and manual contract matrix | Field filtering, labels field parsing |
-| `1.0.39` | Scheduled and manual contract matrix | Field filtering, labels field parsing |
-| `1.0.38` | Scheduled and manual contract matrix | Field filtering, labels field parsing |
-| `1.0.37` | Scheduled and manual contract matrix | Field filtering, labels field parsing |
-| `1.0.36` | Scheduled and manual contract matrix | Field filtering, labels field parsing |
-| `1.0.35` | Scheduled and manual contract matrix | Field filtering, labels field parsing |
-| `1.0.34` | Scheduled and manual contract matrix | Field filtering, labels field parsing |
+| `1.0.41` | PR/main previous-family Grafana smoke + scheduled/manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
+| `1.0.40` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
+| `1.0.39` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
+| `1.0.38` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
+| `1.0.37` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
+| `1.0.36` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
+| `1.0.35` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
+| `1.0.34` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
 
 ## Contracts We Enforce
 
@@ -49,6 +49,8 @@ The Drilldown matrix is also a moving window. We support the current app family 
 - Mixed parser query path: `| json ... | logfmt | drop __error__, __error_details__`
 - Labels object parsing in returned log frames
 - App-level field suppression for `detected_level`, `level`, and `level_extracted`
+- `1.x` service-selection buckets, detected-fields filtering, and labels field parsing stay explicit in the source-contract checks
+- `2.x` detected-level default columns, field-values breakdown scenes, and additional label-tab wiring stay explicit in the source-contract checks
 - Service-detail field breakdowns and additional label filters
 - Multi-tenant Drilldown log views filtered by `cluster` plus multiple selected `detected_level` values
 - Native field-value discovery for indexed metadata such as `service.name`, with parser-stage stripping before the backend lookup

@@ -23,20 +23,20 @@ function baseDrilldownState(datasourceUid: string): Record<string, string> {
   };
 }
 
-export function buildExploreUrl(datasourceUid: string): string {
+export function buildExploreUrl(datasourceUid: string, expr = ""): string {
   const paneState = {
     A: {
       datasource: datasourceUid,
       queries: [
         {
           refId: "A",
-          expr: "",
+          expr,
           queryType: "range",
           datasource: {
             type: "loki",
             uid: datasourceUid,
           },
-          editorMode: "builder",
+          editorMode: expr ? "code" : "builder",
           direction: "backward",
         },
       ],
