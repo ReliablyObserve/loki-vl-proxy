@@ -1,0 +1,201 @@
+apiVersion: apps/v1
+kind: {{ include "loki-vl-proxy.workloadKind" . }}
+metadata:
+  name: {{ include "loki-vl-proxy.fullname" . }}
+  labels:
+    {{- include "loki-vl-proxy.labels" . | nindent 4 }}
+spec:
+  {{- if eq (include "loki-vl-proxy.workloadKind" .) "StatefulSet" }}
+  serviceName: {{ include "loki-vl-proxy.peerServiceName" . }}
+  podManagementPolicy: {{ .Values.workload.statefulSet.podManagementPolicy }}
+  updateStrategy:
+    {{- toYaml .Values.workload.statefulSet.updateStrategy | nindent 4 }}
+  {{- with .Values.workload.statefulSet.persistentVolumeClaimRetentionPolicy }}
+  persistentVolumeClaimRetentionPolicy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- else }}
+  {{- with .Values.workload.deploymentStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  {{- if not .Values.horizontalPodAutoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "loki-vl-proxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "loki-vl-proxy.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "loki-vl-proxy.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      {{- with .Values.initContainers }}
+      initContainers:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: loki-vl-proxy
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          args:
+            {{- range $key, $value := .Values.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+            {{- if and .Values.persistence.enabled (not (hasKey .Values.extraArgs "disk-cache-path")) }}
+            - "-disk-cache-path={{ include "loki-vl-proxy.diskCachePath" . }}"
+            {{- end }}
+            {{- if .Values.peerCache.enabled }}
+            - "-peer-self=$(POD_IP):3100"
+            - "-peer-discovery={{ .Values.peerCache.discovery }}"
+            {{- if eq .Values.peerCache.discovery "dns" }}
+            - "-peer-dns={{ include "loki-vl-proxy.peerServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+            {{- else if eq .Values.peerCache.discovery "static" }}
+            - "-peer-static={{ join "," .Values.peerCache.peers }}"
+            {{- end }}
+            {{- end }}
+          {{- if or .Values.peerCache.enabled .Values.env }}
+          env:
+            {{- if .Values.peerCache.enabled }}
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            {{- end }}
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- with .Values.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 3100
+              protocol: TCP
+          {{- if .Values.probe.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: {{ .Values.probe.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probe.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probe.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probe.liveness.failureThreshold }}
+            successThreshold: {{ .Values.probe.liveness.successThreshold }}
+          {{- end }}
+          {{- if .Values.probe.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: {{ .Values.probe.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probe.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probe.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probe.readiness.failureThreshold }}
+            successThreshold: {{ .Values.probe.readiness.successThreshold }}
+          {{- end }}
+          {{- if .Values.probe.startup.enabled }}
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: {{ .Values.probe.startup.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probe.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.probe.startup.timeoutSeconds }}
+            failureThreshold: {{ .Values.probe.startup.failureThreshold }}
+          {{- end }}
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if or .Values.persistence.enabled .Values.extraVolumeMounts }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: cache-data
+              mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+        {{- with .Values.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- if or .Values.extraVolumes (and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet"))) }}
+      volumes:
+        {{- if and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet")) }}
+        - name: cache-data
+          persistentVolumeClaim:
+            claimName: {{ include "loki-vl-proxy.persistenceClaimName" . }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+  {{- if and (eq (include "loki-vl-proxy.workloadKind" .) "StatefulSet") (or (and .Values.persistence.enabled (not .Values.persistence.existingClaim)) .Values.persistence.extraVolumeClaimTemplates) }}
+  volumeClaimTemplates:
+    {{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) }}
+    - metadata:
+        name: cache-data
+        labels:
+          {{- include "loki-vl-proxy.labels" . | nindent 10 }}
+        {{- with .Values.persistence.annotations }}
+        annotations:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+      spec:
+        accessModes:
+          - {{ .Values.persistence.accessMode }}
+        {{- if .Values.persistence.storageClass }}
+        storageClassName: {{ .Values.persistence.storageClass | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+    {{- end }}
+    {{- with .Values.persistence.extraVolumeClaimTemplates }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}

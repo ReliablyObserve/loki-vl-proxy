@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - extend multi-tenant Explore and Logs Drilldown coverage for `__tenant_id__`, label breakdowns, and service drilldowns
 - prefer native VictoriaLogs field names, field values, and streams metadata for Drilldown discovery, with bounded fallback scanning for parsed and derived fields
 - harden Loki label and Drilldown metadata resolution so stream metadata is preferred, exact native names win, and ambiguous translated aliases avoid silent wrong-field fallback
+- complete the upstream Helm distribution surface with deployable runtime templates, peer-cache DNS service wiring, optional Gateway API routing, and OCI chart publication from release workflows
+- add chart-native StatefulSet support, PVC-backed disk-cache defaults, and extra claim templates for persistent cache deployments
 
 ### Performance
 

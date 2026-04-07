@@ -1,0 +1,19 @@
+{{- if .Values.horizontalPodAutoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "loki-vl-proxy.fullname" . }}
+  labels:
+    {{- include "loki-vl-proxy.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: {{ include "loki-vl-proxy.workloadKind" . }}
+    name: {{ include "loki-vl-proxy.fullname" . }}
+  minReplicas: {{ .Values.horizontalPodAutoscaling.minReplicas }}
+  maxReplicas: {{ .Values.horizontalPodAutoscaling.maxReplicas }}
+  {{- with .Values.horizontalPodAutoscaling.metrics }}
+  metrics:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -167,7 +167,22 @@ docker-compose up -d
 ### Helm (Kubernetes)
 
 ```bash
+helm install loki-vl-proxy oci://ghcr.io/szibis/charts/loki-vl-proxy \
+  --version <release> \
+  --set extraArgs.backend=http://victorialogs:9428
+
+# Local chart (development)
 helm install loki-vl-proxy ./charts/loki-vl-proxy \
+  --set extraArgs.backend=http://victorialogs:9428
+```
+
+For persistent cache, switch the workload to `StatefulSet` and enable `persistence`. The chart will mount the PVC and inject `-disk-cache-path` automatically unless you override it explicitly:
+
+```bash
+helm install loki-vl-proxy ./charts/loki-vl-proxy \
+  --set workload.kind=StatefulSet \
+  --set persistence.enabled=true \
+  --set persistence.size=10Gi \
   --set extraArgs.backend=http://victorialogs:9428
 ```
 
@@ -177,10 +192,10 @@ helm install loki-vl-proxy ./charts/loki-vl-proxy \
 # Kubernetes (DNS discovery via headless service)
 helm install loki-vl-proxy ./charts/loki-vl-proxy \
   --set replicaCount=3 \
-  --set extraArgs.peer-self='$(POD_IP):3100' \
-  --set extraArgs.peer-discovery=dns \
-  --set extraArgs.peer-dns=loki-vl-proxy-headless.default.svc.cluster.local
+  --set peerCache.enabled=true
 ```
+
+When `peerCache.enabled=true`, the chart provisions a headless service and injects `-peer-self`, `-peer-discovery=dns`, and `-peer-dns` automatically. The proxy refreshes peers from DNS on a timer, so HPA-driven pod churn does not require a static replica list. The same headless service is also used automatically when `workload.kind=StatefulSet`.
 
 ### Grafana Datasource
 

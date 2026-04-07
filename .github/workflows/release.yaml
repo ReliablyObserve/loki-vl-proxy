@@ -88,6 +88,12 @@ jobs:
             --app-version "${VERSION}" \
             --destination dist
 
+      - name: Login Helm to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -109,6 +115,11 @@ jobs:
           labels: |
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Publish Helm chart to GHCR
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

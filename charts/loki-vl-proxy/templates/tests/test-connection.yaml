@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "loki-vl-proxy.fullname" . }}-test-connection
+  labels:
+    {{- include "loki-vl-proxy.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: test-ready
+      image: busybox:1.36
+      securityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+      command: ['wget']
+      args:
+        - '--spider'
+        - '--timeout=5'
+        - 'http://{{ include "loki-vl-proxy.fullname" . }}:{{ .Values.service.port }}/ready'
+    - name: test-labels
+      image: busybox:1.36
+      securityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+      command: ['wget']
+      args:
+        - '-qO-'
+        - '--timeout=10'
+        - 'http://{{ include "loki-vl-proxy.fullname" . }}:{{ .Values.service.port }}/loki/api/v1/labels'
+    - name: test-metrics
+      image: busybox:1.36
+      securityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+      command: ['wget']
+      args:
+        - '-qO-'
+        - '--timeout=5'
+        - 'http://{{ include "loki-vl-proxy.fullname" . }}:{{ .Values.service.port }}/metrics'

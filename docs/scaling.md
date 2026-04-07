@@ -109,6 +109,8 @@ Bottleneck: Balanced CPU/memory/network
 
 ```yaml
 replicaCount: 1
+workload:
+  kind: StatefulSet
 resources:
   requests:
     cpu: 100m
@@ -130,6 +132,8 @@ persistence:
 
 ```yaml
 replicaCount: 3
+workload:
+  kind: StatefulSet
 resources:
   requests:
     cpu: 250m
@@ -148,17 +152,25 @@ extraArgs:
 persistence:
   enabled: true
   size: 5Gi
-autoscaling:
+horizontalPodAutoscaling:
   enabled: true
   minReplicas: 2
   maxReplicas: 6
-  targetCPUUtilizationPercentage: 70
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
 ```
 
 ### Large (1,000-10,000 req/s)
 
 ```yaml
 replicaCount: 8
+workload:
+  kind: StatefulSet
 resources:
   requests:
     cpu: 500m
@@ -182,11 +194,17 @@ persistence:
   enabled: true
   size: 10Gi
   storageClass: gp3  # high IOPS SSD
-autoscaling:
+horizontalPodAutoscaling:
   enabled: true
   minReplicas: 4
   maxReplicas: 20
-  targetCPUUtilizationPercentage: 60
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
 podDisruptionBudget:
   minAvailable: 2
 ```

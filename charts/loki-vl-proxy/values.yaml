@@ -1,7 +1,36 @@
 # Loki-VL-proxy Helm values
 # VictoriaMetrics-style: all proxy flags exposed as extraArgs
+# Default install shape:
+# - 1 replica
+# - Deployment workload
+# - ClusterIP service on port 3100
+# - in-memory cache only
+# - no ingress / ServiceMonitor / HPA / persistence unless explicitly enabled
 
 replicaCount: 1
+
+# Workload controller for the proxy pods.
+# Default is Deployment for stateless installs.
+# Set workload.kind=StatefulSet when you want stable pod identity and per-pod PVCs
+# for the disk cache.
+workload:
+  kind: Deployment
+  # Deployment-only rollout strategy. Leave empty to use the Kubernetes default.
+  deploymentStrategy: {}
+  statefulSet:
+    # Headless service name used by StatefulSet network identity.
+    # Empty = <release>-headless.
+    serviceName: ""
+    # Parallel is usually fine for horizontally scaled proxy replicas.
+    podManagementPolicy: Parallel
+    updateStrategy:
+      type: RollingUpdate
+    # Optional native StatefulSet PVC retention policy.
+    # Example:
+    # persistentVolumeClaimRetentionPolicy:
+    #   whenDeleted: Retain
+    #   whenScaled: Delete
+    persistentVolumeClaimRetentionPolicy: {}
 
 image:
   repository: ghcr.io/szibis/loki-vl-proxy
@@ -14,6 +43,13 @@ fullnameOverride: ""
 
 # VictoriaMetrics-style: pass any CLI flag via extraArgs
 # These map directly to the binary's -flag arguments.
+# Defaults here are intentionally conservative:
+# - backend points at an in-cluster VictoriaLogs service
+# - memory cache is enabled
+# - HTTP hardening limits are enabled
+# If persistence.enabled=true and you do NOT set extraArgs.disk-cache-path,
+# the chart injects -disk-cache-path automatically as:
+#   <persistence.mountPath>/<persistence.fileName>
 extraArgs:
   listen: ":3100"
   backend: "http://victorialogs:9428"
@@ -37,6 +73,10 @@ extraArgs:
   # otlp-interval: "30s"
   # otlp-compression: "gzip"
   # otlp-timeout: "10s"
+  # Backend auth to VictoriaLogs
+  # backend-basic-auth: "user:password"
+  # forward-headers: "Authorization"
+  # forward-cookies: "vmui_session"
   # Label translation (OTel compatibility)
   # label-style: "underscores"  # convert VL dotted fields (service.name) to Loki underscores (service_name)
   # field-mapping: '[{"vl_field":"custom.field","loki_label":"custom_label"}]'
@@ -55,6 +95,8 @@ goMemLimitPercent: 70  # percentage of resources.limits.memory
 goMemLimit: ""         # explicit override; if set, goMemLimitPercent is ignored
 
 # Environment variables (alternative to flags, also for secrets)
+# Use this for secrets or env-based integration config when you don't want
+# sensitive values embedded directly in extraArgs.
 env: []
   # - name: VL_BACKEND_URL
   #   value: "http://victorialogs:9428"
@@ -102,6 +144,8 @@ serviceAccount:
   automountServiceAccountToken: false
 
 # --- Service ---
+# Frontend service exposed to Grafana / clients.
+# The proxy itself always listens on container port 3100 by default.
 service:
   type: ClusterIP
   port: 3100
@@ -109,9 +153,11 @@ service:
   labels: {}
 
 # --- ServiceMonitor (Prometheus Operator) ---
+# Disabled by default to keep the chart generic outside Prometheus-Operator clusters.
 serviceMonitor:
   enabled: false
   namespace: ""
+  annotations: {}
   interval: "30s"
   scrapeTimeout: "10s"
   labels: {}
@@ -119,6 +165,9 @@ serviceMonitor:
   metricRelabelings: []
 
 # --- Ingress ---
+# Optional ingress for the Loki-compatible HTTP API.
+# Disabled by default because many fleets use internal service discovery,
+# Gateway API, or platform-specific ingress composition.
 ingress:
   enabled: false
   className: ""
@@ -136,6 +185,8 @@ ingress:
     #     - loki-vl-proxy.local
 
 # --- Resources ---
+# Defaults are small and intended for development or light shared use.
+# For production, raise both memory and cpu based on request rate and cache size.
 resources:
   requests:
     cpu: 50m
@@ -145,6 +196,9 @@ resources:
     memory: 256Mi
 
 # --- Probes ---
+# All probes hit /ready.
+# Startup probe is disabled by default because the proxy starts quickly in the
+# common in-memory-cache case; enable it for slower cold starts.
 probe:
   liveness:
     enabled: true
@@ -168,12 +222,16 @@ probe:
     failureThreshold: 30
 
 # --- Pod Disruption Budget ---
+# Recommended whenever replicaCount > 1 or HPA is enabled.
 podDisruptionBudget:
   enabled: false
   minAvailable: 1
   # maxUnavailable: 1
 
 # --- Horizontal Pod Autoscaler ---
+# When enabled, the chart omits spec.replicas from the workload and HPA becomes
+# the source of truth for desired pod count.
+# Works with both Deployment and StatefulSet modes.
 horizontalPodAutoscaling:
   enabled: false
   minReplicas: 2
@@ -213,6 +271,8 @@ networkPolicy:
           protocol: TCP
 
 # --- Pod Security ---
+# Secure-by-default baseline.
+# Override only if your platform requires different UID/GID/fsGroup handling.
 securityContext:
   runAsNonRoot: true
   runAsUser: 65534
@@ -230,6 +290,8 @@ containerSecurityContext:
   runAsUser: 65534
 
 # --- Scheduling ---
+# Empty by default so the chart remains portable.
+# Fill these in from the platform repo when you need dedicated nodes or spread rules.
 nodeSelector: {}
 
 tolerations: []
@@ -255,6 +317,8 @@ topologySpreadConstraints: []
 priorityClassName: ""
 
 # --- Labels & Annotations ---
+# podAnnotations/podLabels apply to pods only.
+# extraLabels are chart-wide object labels added to most rendered resources.
 podAnnotations: {}
 podLabels: {}
 extraLabels: {}
@@ -267,12 +331,15 @@ lifecycle: {}
   #     command: ["/bin/sh", "-c", "sleep 5"]
 
 # --- Additional containers/volumes ---
+# Escape hatches for sidecars, init containers, extra config volumes, and
+# custom mounts. Keep these empty unless your platform needs them.
 initContainers: []
 extraContainers: []
 extraVolumes: []
 extraVolumeMounts: []
 
 # --- Gateway API HTTPRoute (traffic distribution) ---
+# Optional Gateway API exposure instead of Ingress.
 httpRoute:
   enabled: false
   annotations: {}
@@ -284,26 +351,43 @@ httpRoute:
   weight: 100  # for canary/weighted routing
 
 # --- Peer Cache (distributed L1.5 cache across replicas) ---
+# Disabled by default.
+# Enable this when you run multiple replicas and want cache sharing across pods.
+# With discovery=dns, the chart creates a headless service and injects the
+# peer-discovery flags automatically. This is the preferred mode for HPA.
 peerCache:
   enabled: false
   # Discovery: "dns" (headless service, recommended) or "static" (explicit peers list)
   discovery: "dns"
-  # Headless service name (defaults to release-name + "-peers")
+  # Headless service name (defaults to release-name + "-headless")
   serviceName: ""
-  # Static peer URLs (if discovery=static)
+  # Static peer addresses in host:port form (if discovery=static)
   peers: []
-    # - "http://proxy-0.proxy-peers:3100"
-    # - "http://proxy-1.proxy-peers:3100"
-  # Timeout for peer cache fetch (must be << VL query time)
-  timeout: "5ms"
-  # Max peers to query on miss (0 = consistent hash to 1 peer)
-  maxPeerQueries: 1
+    # - "proxy-0.proxy-peers:3100"
+    # - "proxy-1.proxy-peers:3100"
 
 # --- Disk cache persistent volume ---
+# Persistence is off by default.
+# Behavior by mode:
+# - Deployment + persistence.enabled=true:
+#   creates one PVC (or mounts persistence.existingClaim if set)
+# - StatefulSet + persistence.enabled=true:
+#   creates volumeClaimTemplates for per-pod cache storage
+# If extraArgs.disk-cache-path is not set, the chart injects one automatically
+# using mountPath + fileName.
 persistence:
   enabled: false
+  # Existing PVC to mount instead of creating a new one.
+  # Primarily useful for Deployment mode.
+  existingClaim: ""
   accessMode: ReadWriteOnce
   size: 10Gi
   storageClass: ""  # e.g., "gp3", "st1" for AWS
+  # Cache directory mounted into the container.
+  mountPath: /cache
+  # File used for the proxy's bbolt disk cache inside mountPath.
+  fileName: proxy.db
   annotations: {}
-  # mountPath defaults to /cache, used with disk-cache-path=/cache/data.db
+  # Extra claim templates appended only in StatefulSet mode.
+  # Useful for separate WAL/buffer/storage volumes managed by the same chart.
+  extraVolumeClaimTemplates: []

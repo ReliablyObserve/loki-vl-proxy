@@ -15,10 +15,18 @@ The proxy is stateless (except optional disk cache). Scale horizontally without 
 ### Helm Deployment
 
 ```bash
+helm install loki-vl-proxy oci://ghcr.io/szibis/charts/loki-vl-proxy \
+  --version <release> \
+  --set extraArgs.backend=http://victorialogs:9428 \
+  --set extraArgs.label-style=underscores
+
+# Local chart (development)
 helm install loki-vl-proxy ./charts/loki-vl-proxy \
   --set extraArgs.backend=http://victorialogs:9428 \
   --set extraArgs.label-style=underscores
 ```
+
+For multi-replica fleets with HPA, prefer `peerCache.enabled=true` over static peer lists. The chart creates a headless service and the proxy refreshes DNS-discovered peers automatically, so scaling events do not require manual replica or peer updates.
 
 ### Required Configuration
 

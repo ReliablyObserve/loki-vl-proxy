@@ -1,0 +1,18 @@
+{{- if or (eq (include "loki-vl-proxy.workloadKind" .) "StatefulSet") (and .Values.peerCache.enabled (eq .Values.peerCache.discovery "dns")) }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "loki-vl-proxy.peerServiceName" . }}
+  labels:
+    {{- include "loki-vl-proxy.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "loki-vl-proxy.selectorLabels" . | nindent 4 }}
+{{- end }}
