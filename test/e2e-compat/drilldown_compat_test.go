@@ -429,6 +429,72 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("label_filters_apply_to_resource_values", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway",cluster="us-east-1"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/label/namespace/values?"+params.Encode())
+		values := extractStrings(resp, "data")
+		if len(values) != 1 || values[0] != "prod" {
+			t.Fatalf("expected label filter to narrow namespace values to prod, got %v", resp)
+		}
+	})
+
+	t.Run("field_filters_apply_to_detected_field_values", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway"} | detected_level="error"`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/status/values?"+params.Encode())
+		values := extractStrings(resp, "values")
+		if len(values) != 3 || !contains(values, "404") || !contains(values, "500") || !contains(values, "502") {
+			t.Fatalf("expected detected_level filter to narrow status values to error statuses, got %v", resp)
+		}
+	})
+
+	t.Run("combined_label_and_field_filters_apply", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway",cluster="us-east-1"} | detected_level="error"`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("targetLabels", "detected_level")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume?"+params.Encode())
+		data := extractMap(resp, "data")
+		result := extractArray(data, "result")
+		if len(result) != 1 {
+			t.Fatalf("expected combined filters to narrow Drilldown volume to one detected_level bucket, got %v", resp)
+		}
+		metric := result[0].(map[string]interface{})["metric"].(map[string]interface{})
+		if metric["detected_level"] != "error" {
+			t.Fatalf("expected combined filters to keep only detected_level=error, got %v", resp)
+		}
+	})
+
+	t.Run("empty_result_filters_keep_success_shape", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{service_name="api-gateway",namespace="staging"} | detected_level="error"`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		volumeResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/index/volume?"+params.Encode())
+		volumeData := extractMap(volumeResp, "data")
+		if volumeData == nil {
+			t.Fatalf("expected success payload for empty volume query, got %v", volumeResp)
+		}
+		if len(extractArray(volumeData, "result")) != 0 {
+			t.Fatalf("expected empty volume result set, got %v", volumeResp)
+		}
+
+		valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/status/values?"+params.Encode())
+		if len(extractStrings(valuesResp, "values")) != 0 {
+			t.Fatalf("expected empty detected_field values payload for empty query, got %v", valuesResp)
+		}
+	})
+
 	t.Run("labels_surface_stays_loki_compatible", func(t *testing.T) {
 		ensureOTelData(t)
 		params := url.Values{}
@@ -564,6 +630,70 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 			if !seenLabels[want] {
 				t.Fatalf("expected multi-tenant labels resource to include %q, got %v", want, labelsListResp)
 			}
+		}
+	})
+
+	t.Run("parsed_only_fields_refresh_after_new_logs_arrive", func(t *testing.T) {
+		serviceName := fmt.Sprintf("drilldown-fresh-%d", time.Now().UnixNano())
+		streamFields := []string{"app", "service_name", "cluster", "namespace"}
+		stream := map[string]string{
+			"app":          serviceName,
+			"service_name": serviceName,
+			"cluster":      "fresh-east-1",
+			"namespace":    "prod",
+			"level":        "info",
+		}
+
+		pushCustomToVL(t, time.Now().Add(500*time.Millisecond), stream, []logLine{
+			{Msg: `{"stable":"yes","method":"GET"}`, Level: "info"},
+		}, streamFields)
+		time.Sleep(3 * time.Second)
+
+		buildParams := func() url.Values {
+			params := url.Values{}
+			params.Set("query", fmt.Sprintf(`{service_name="%s"}`, serviceName))
+			params.Set("start", time.Now().Add(-10*time.Minute).Format(time.RFC3339Nano))
+			params.Set("end", time.Now().Add(time.Minute).Format(time.RFC3339Nano))
+			return params
+		}
+
+		firstResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_fields?"+buildParams().Encode())
+		seen := map[string]bool{}
+		for _, field := range extractArray(firstResp, "fields") {
+			label := field.(map[string]interface{})["label"].(string)
+			seen[label] = true
+		}
+		if !seen["stable"] {
+			t.Fatalf("expected initial parsed field to be visible, got %v", firstResp)
+		}
+		if seen["new_field"] {
+			t.Fatalf("did not expect new_field before second ingest, got %v", firstResp)
+		}
+
+		pushCustomToVL(t, time.Now().Add(500*time.Millisecond), stream, []logLine{
+			{Msg: `{"stable":"yes","method":"GET","new_field":"fresh"}`, Level: "info"},
+		}, streamFields)
+
+		deadline := time.Now().Add(20 * time.Second)
+		for {
+			fieldsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_fields?"+buildParams().Encode())
+			seen = map[string]bool{}
+			for _, field := range extractArray(fieldsResp, "fields") {
+				label := field.(map[string]interface{})["label"].(string)
+				seen[label] = true
+			}
+			if seen["new_field"] {
+				valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/new_field/values?"+buildParams().Encode())
+				values := extractStrings(valuesResp, "values")
+				if !contains(values, "fresh") {
+					t.Fatalf("expected refreshed field values to include fresh, got %v", valuesResp)
+				}
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("expected parsed-only field freshness update, last payload=%v", fieldsResp)
+			}
+			time.Sleep(1 * time.Second)
 		}
 	})
 }

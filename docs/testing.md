@@ -87,9 +87,11 @@ Exact counts move often. Treat the categories below as the stable map of what is
 | `internal/middleware/middleware_test.go` | Rate limiter, circuit breaker |
 | `test/e2e-compat/` | Docker-based Loki vs proxy comparison |
 | `test/e2e-compat/drilldown_compat_test.go` | Grafana Logs Drilldown resource contracts via Grafana datasource proxy |
+| `test/e2e-compat/explore_contract_test.go` | HTTP-level Explore contracts for line filters, parsers, direction, metric shape, `label_format`, invalid-query handling |
 | `test/e2e-compat/grafana_surface_test.go` | Grafana datasource catalog, datasource health, proxy bootstrap/control-plane surface |
-| `test/e2e-compat/features_test.go` | Live Grafana-facing edge cases including multi-tenant `__tenant_id__` and Drilldown level-filter regressions |
-| `test/e2e-ui/` | Playwright browser smoke tests for datasource UI, Explore, and Logs Drilldown |
+| `test/e2e-compat/features_test.go` | Live Grafana-facing edge cases including multi-tenant `__tenant_id__`, long-lived tail sessions, and Drilldown level-filter regressions |
+| `test/e2e-ui/tests/url-state.spec.ts` | Pure URL/state builder tests for Explore and Logs Drilldown reloadable state |
+| `test/e2e-ui/` | Playwright browser smoke tests for datasource UI, Explore, and Logs Drilldown with console/request guardrails |
 
 ## Playwright UI Matrix
 
@@ -122,6 +124,7 @@ Moved out of Playwright:
 
 Moved out of Playwright:
 `internal/proxy/proxy_test.go`, `internal/proxy/gaps_test.go`, and `test/e2e-compat/chaining_test.go` cover query translation, response shape, parser pipelines, line filters, direction handling, and metric-query parity faster than the browser can.
+`test/e2e-compat/explore_contract_test.go` now adds the browser-removed HTTP contracts for line filters, `json`, `logfmt`, `direction=forward`, metric matrices, `label_format`, and invalid-query `4xx` handling.
 
 ### `explore-tail` shard
 
@@ -140,12 +143,14 @@ Moved out of Playwright:
 |---|---|
 | `clicking a log row expands details without error` | log row expansion path |
 | `label filter drill-down for app label` | label filter action from Explore logs |
+| `buildLogsDrilldownUrl` and `buildServiceDrilldownUrl` state tests | pure URL/state coverage without launching Chromium |
 | `proxy shows service buckets on landing page` | Logs Drilldown landing volumes |
 | `proxy landing page can add and use a cluster breakdown tab` | dynamic breakdown tabs work |
 | `proxy drilldown field filter flow works for method` | field filter chips work |
+| `service drilldown field filter survives reload from URL state` | Drilldown URL state persists across reloads |
 
 Moved out of Playwright:
-`test/e2e-compat/drilldown_compat_test.go` now owns detected-fields contracts, dotted metadata exposure, labels/values resources, Grafana datasource resource parity, and multi-tenant Drilldown resource behavior.
+`test/e2e-compat/drilldown_compat_test.go` now owns detected-fields contracts, dotted metadata exposure, filtered labels/fields resource behavior, parsed-field freshness, Grafana datasource resource parity, and multi-tenant Drilldown resource behavior.
 
 ### `drilldown-multitenant` shard
 
@@ -179,8 +184,14 @@ Field-surface defaults in the pinned stack:
 Support window policy:
 
 - Loki: current minor family plus one minor behind
+- Grafana runtime: pinned current family gets the fuller Drilldown runtime contract, previous family gets a scheduled smoke profile
 - Logs Drilldown: current family plus one family behind
 - VictoriaLogs: `v1.3x.x` and `v1.4x.x`
+
+Grafana runtime profiles from the manifest:
+
+- `12.4.2` runs the full Drilldown runtime score on scheduled compatibility checks
+- `11.6.6` runs a smaller datasource-plus-Drilldown smoke profile on the same schedule
 
 The stack is version-parameterized through compose environment variables:
 

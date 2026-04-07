@@ -14,10 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       drilldown_versions: ${{ steps.matrix.outputs.drilldown_versions }}
+      grafana_runtime_profiles: ${{ steps.matrix.outputs.grafana_runtime_profiles }}
     steps:
       - uses: actions/checkout@v4
       - id: matrix
-        run: echo "drilldown_versions=$(jq -c '.stack.logs_drilldown_contract.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "drilldown_versions=$(jq -c '.stack.logs_drilldown_contract.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
+          echo "grafana_runtime_profiles=$(jq -c '.stack.grafana.runtime_profiles' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
 
   drilldown-pinned-runtime:
     if: github.event_name != 'schedule'
@@ -57,3 +60,33 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check Drilldown app contracts
         run: bash scripts/compat/check-drilldown-contracts.sh "${{ matrix.drilldown_version }}"
+
+  drilldown-grafana-runtime-matrix:
+    if: github.event_name == 'schedule'
+    needs: drilldown-matrix-source
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.drilldown-matrix-source.outputs.grafana_runtime_profiles) }}
+    env:
+      LOKI_IMAGE: grafana/loki:3.7.1
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
+      GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+      - name: Start Grafana runtime stack (${{ matrix.profile }})
+        working-directory: test/e2e-compat
+        run: |
+          docker compose up -d --build
+          sleep 30
+      - name: Run Grafana runtime compatibility profile
+        run: go test -v -tags=e2e -run '${{ matrix.test_regex }}' ./test/e2e-compat/
+      - name: Tear down Grafana runtime stack
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose down -v

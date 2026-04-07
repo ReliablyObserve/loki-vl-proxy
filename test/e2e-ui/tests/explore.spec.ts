@@ -8,38 +8,34 @@ import {
   openExplore,
   typeQuery,
   runQuery,
-  assertNoErrors,
   assertLogsVisible,
   waitForGrafanaReady,
-  collectLokiErrors,
+  installGrafanaGuards,
 } from "./helpers";
 
 test.describe("Grafana Explore — Proxy Datasource", () => {
-  test.beforeEach(async ({ page }) => {
+  test("basic log query returns results without errors @explore-core", async ({ page }) => {
+    const guards = installGrafanaGuards(page);
     await openExplore(page, PROXY_DS);
     await waitForGrafanaReady(page);
-  });
 
-  test("basic log query returns results without errors @explore-core", async ({ page }) => {
-    const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway"}');
     await runQuery(page);
 
-    await assertNoErrors(page);
-    expect(errors).toHaveLength(0);
+    await assertLogsVisible(page);
+    await guards.assertClean();
   });
 
   test("multi-tenant query respects __tenant_id__ filter in Explore @explore-tail", async ({ page }) => {
+    const guards = installGrafanaGuards(page);
     await openExplore(page, PROXY_MULTI_DS);
     await waitForGrafanaReady(page);
 
-    const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway", __tenant_id__="fake"}');
     await runQuery(page);
 
-    await assertNoErrors(page);
     await assertLogsVisible(page);
-    expect(errors).toHaveLength(0);
+    await guards.assertClean();
   });
 
   test("live tail works through the browser-allowed synthetic datasource @explore-tail", async ({
@@ -47,7 +43,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
   }) => {
     const app = `ui-tail-${Date.now()}`;
     const msg = `ui tail frame ${app}`;
-    const errors = collectLokiErrors(page);
+    const guards = installGrafanaGuards(page);
     const websockets: string[] = [];
 
     page.on("websocket", (ws) => {
@@ -81,12 +77,16 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await expect(page.getByText(msg, { exact: false })).toBeVisible({
       timeout: 15_000,
     });
-    await assertNoErrors(page);
-    expect(errors).toHaveLength(0);
+    await guards.assertClean();
     expect(websockets.some((u) => u.includes("/tail") || u.includes("/api/live/ws"))).toBeTruthy();
   });
 
   test("native-tail failure can recover through ingress live tail @explore-tail", async ({ page }) => {
+    const guards = installGrafanaGuards(page, {
+      allowedRequestFailures: [/\/tail\b/i, /\/api\/live\/ws/i],
+      allowedResponseErrors: [/\/tail\b/i, /\/api\/live\/ws/i],
+    });
+
     await openExplore(page, PROXY_TAIL_NATIVE_DS);
     await waitForGrafanaReady(page);
     await typeQuery(page, '{app="api-gateway"}');
@@ -127,6 +127,6 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await expect(page.getByText(ingressMsg, { exact: false })).toBeVisible({
       timeout: 15_000,
     });
-    await assertNoErrors(page);
+    await guards.assertClean();
   });
 });

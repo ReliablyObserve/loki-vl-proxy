@@ -1,4 +1,5 @@
 import { Page, expect } from "@playwright/test";
+import { buildExploreUrl, buildLogsDrilldownUrl } from "./url-state";
 
 // Grafana datasource names matching grafana-datasources.yaml
 export const PROXY_DS = "Loki (via VL proxy)";
@@ -7,43 +8,6 @@ export const PROXY_TAIL_DS = "Loki (via VL proxy live tail)";
 export const PROXY_TAIL_INGRESS_DS = "Loki (via ingress tail)";
 export const PROXY_TAIL_NATIVE_DS = "Loki (via VL proxy live tail native)";
 export const LOKI_DS = "Loki (direct)";
-
-// Grafana URLs
-export const EXPLORE_URL = "/explore";
-export const DRILLDOWN_URL = "/a/grafana-lokiexplore-app/explore";
-
-function buildExploreUrl(datasourceUid: string) {
-  const paneState = {
-    A: {
-      datasource: datasourceUid,
-      queries: [
-        {
-          refId: "A",
-          expr: "",
-          queryType: "range",
-          datasource: {
-            type: "loki",
-            uid: datasourceUid,
-          },
-          editorMode: "builder",
-          direction: "backward",
-        },
-      ],
-      range: {
-        from: "now-1h",
-        to: "now",
-      },
-      compact: false,
-    },
-  };
-
-  const params = new URLSearchParams({
-    schemaVersion: "1",
-    panes: JSON.stringify(paneState),
-    orgId: "1",
-  });
-  return `${EXPLORE_URL}?${params.toString()}`;
-}
 
 /**
  * Navigate to Grafana Explore with a specific datasource selected.
@@ -79,26 +43,7 @@ async function resolveDatasourceUid(page: Page, datasource: string): Promise<str
  */
 export async function openLogsDrilldown(page: Page, datasource: string) {
   const uid = await resolveDatasourceUid(page, datasource);
-  const params = new URLSearchParams({
-    patterns: "[]",
-    from: "now-2h",
-    to: "now",
-    timezone: "browser",
-    "var-lineFormat": "",
-    "var-ds": uid,
-    "var-filters": "",
-    "var-fields": "",
-    "var-levels": "",
-    "var-metadata": "",
-    "var-jsonFields": "",
-    "var-all-fields": "",
-    "var-patterns": "",
-    "var-lineFilterV2": "",
-    "var-lineFilters": "",
-    "var-primary_label": "service_name|=~|.+",
-  });
-
-  await page.goto(`${DRILLDOWN_URL}?${params.toString()}`);
+  await page.goto(buildLogsDrilldownUrl(uid));
   await waitForGrafanaReady(page);
   await expect(page.getByRole("combobox", { name: "Filter by labels" })).toBeVisible({
     timeout: 30_000,
@@ -222,4 +167,72 @@ export function collectLokiErrors(page: Page): string[] {
     }
   });
   return errors;
+}
+
+function matchesAny(value: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+function isRelevantGrafanaRequest(url: string) {
+  return (
+    url.includes("/loki/api/v1/") ||
+    url.includes("/api/datasources/") ||
+    url.includes("/api/ds/") ||
+    url.includes("/api/live/ws") ||
+    url.includes("/resources/")
+  );
+}
+
+export type GrafanaGuardOptions = {
+  allowedConsoleErrors?: RegExp[];
+  allowedRequestFailures?: RegExp[];
+  allowedResponseErrors?: RegExp[];
+};
+
+export function installGrafanaGuards(page: Page, options: GrafanaGuardOptions = {}) {
+  const allowedConsoleErrors = options.allowedConsoleErrors ?? [];
+  const allowedRequestFailures = options.allowedRequestFailures ?? [];
+  const allowedResponseErrors = options.allowedResponseErrors ?? [];
+  const consoleErrors: string[] = [];
+  const requestFailures: string[] = [];
+  const responseErrors: string[] = [];
+
+  page.on("console", (message) => {
+    if (message.type() !== "error") {
+      return;
+    }
+    const text = message.text();
+    if (!matchesAny(text, allowedConsoleErrors)) {
+      consoleErrors.push(text);
+    }
+  });
+
+  page.on("requestfailed", (request) => {
+    if (!isRelevantGrafanaRequest(request.url())) {
+      return;
+    }
+    const failure = `${request.failure()?.errorText ?? "request failed"} ${request.url()}`;
+    if (!matchesAny(failure, allowedRequestFailures)) {
+      requestFailures.push(failure);
+    }
+  });
+
+  page.on("response", (response) => {
+    if (response.status() < 400 || !isRelevantGrafanaRequest(response.url())) {
+      return;
+    }
+    const summary = `${response.status()} ${response.url()}`;
+    if (!matchesAny(summary, allowedResponseErrors)) {
+      responseErrors.push(summary);
+    }
+  });
+
+  return {
+    async assertClean() {
+      await assertNoErrors(page);
+      expect(consoleErrors, "unexpected browser console errors").toEqual([]);
+      expect(requestFailures, "unexpected request failures").toEqual([]);
+      expect(responseErrors, "unexpected HTTP error responses").toEqual([]);
+    },
+  };
 }

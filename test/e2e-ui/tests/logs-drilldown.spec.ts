@@ -2,10 +2,11 @@ import { test, expect, type Page } from "@playwright/test";
 import {
   PROXY_DS,
   PROXY_MULTI_DS,
-  collectLokiErrors,
+  installGrafanaGuards,
   openLogsDrilldown,
   waitForGrafanaReady,
 } from "./helpers";
+import { buildServiceDrilldownUrl } from "./url-state";
 
 function serviceCard(page, name: string) {
   return page.getByRole("region", { name }).first();
@@ -128,29 +129,7 @@ async function openServiceDrilldown(
   expect(response.ok()).toBeTruthy();
   const body = await response.json();
 
-  const params = new URLSearchParams({
-    patterns: "[]",
-    from: "now-2h",
-    to: "now",
-    timezone: "browser",
-    "var-lineFormat": "",
-    "var-ds": body.uid,
-    "var-filters": `service_name|=|${serviceName}`,
-    "var-fields": "",
-    "var-levels": "",
-    "var-metadata": "",
-    "var-jsonFields": "",
-    "var-all-fields": "",
-    "var-patterns": "",
-    "var-lineFilterV2": "",
-    "var-lineFilters": "",
-    displayedFields: "[]",
-    urlColumns: "[]",
-  });
-
-  await page.goto(
-    `/a/grafana-lokiexplore-app/explore/service/${encodeURIComponent(serviceName)}/${view}?${params.toString()}`
-  );
+  await page.goto(buildServiceDrilldownUrl(body.uid, serviceName, view));
   await waitForDrilldownDetails(page);
 }
 
@@ -176,6 +155,7 @@ async function collectDrilldownResponses(page) {
 
 test.describe("Grafana Logs Drilldown", () => {
   test("proxy shows service buckets on landing page @drilldown-core", async ({ page }) => {
+    const guards = installGrafanaGuards(page);
     const responses = await collectDrilldownResponses(page);
     await openLogsDrilldown(page, PROXY_DS);
     await waitForDrilldownLanding(page);
@@ -191,9 +171,11 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(volumeResponse).toBeTruthy();
     expect(volumeResponse?.status).toBe(200);
     expect(JSON.stringify(volumeResponse?.json)).toContain("api-gateway");
+    await guards.assertClean();
   });
 
   test("proxy landing page can add and use a cluster breakdown tab @drilldown-core", async ({ page }) => {
+    const guards = installGrafanaGuards(page);
     const responses = await collectDrilldownResponses(page);
     await openLogsDrilldown(page, PROXY_DS);
     await waitForDrilldownLanding(page);
@@ -220,21 +202,41 @@ test.describe("Grafana Logs Drilldown", () => {
       .at(-1);
     expect(volumeResponse).toBeTruthy();
     expect(JSON.stringify(volumeResponse?.json)).toContain("us-east-1");
+    await guards.assertClean();
   });
 
   test("proxy drilldown field filter flow works for method @drilldown-core", async ({ page }) => {
+    const guards = installGrafanaGuards(page);
     await openServiceDrilldown(page, PROXY_DS, "api-gateway", "logs");
 
     await addDrilldownFilter(page, "Filter by fields", "method", "GET");
     await expect(page.getByText("No logs found")).toHaveCount(0);
+    await guards.assertClean();
+  });
+
+  test("service drilldown field filter survives reload from URL state @drilldown-core", async ({
+    page,
+  }) => {
+    const guards = installGrafanaGuards(page);
+    await openServiceDrilldown(page, PROXY_DS, "api-gateway", "logs");
+
+    await addDrilldownFilter(page, "Filter by fields", "method", "GET");
+    const urlBeforeReload = decodeURIComponent(page.url());
+    expect(urlBeforeReload).toContain("var-fields=method|=|GET");
+
+    await page.reload();
+    await waitForDrilldownDetails(page);
+    await expectFilterKeyApplied(page, "method");
+    await expect(page.getByText("No logs found")).toHaveCount(0);
+    await guards.assertClean();
   });
 
   test("multi-tenant service drilldown keeps cluster label filter working @drilldown-mt", async ({ page }) => {
-    const errors = collectLokiErrors(page);
+    const guards = installGrafanaGuards(page);
     await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "logs");
 
     await addDrilldownFilter(page, "Filter by labels", "cluster", "us-east-1");
     await expect(page.getByText("No logs found")).toHaveCount(0);
-    expect(errors).toHaveLength(0);
+    await guards.assertClean();
   });
 });

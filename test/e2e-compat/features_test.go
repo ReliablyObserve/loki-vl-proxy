@@ -398,6 +398,63 @@ func TestFeature_Multitenancy_FilteredLabelsSeriesAndDetectedFields(t *testing.T
 	}
 }
 
+func TestFeature_Multitenancy_TenantIDPermutations(t *testing.T) {
+	ensureDataIngested(t)
+	now := time.Now()
+	headers := map[string]string{"X-Scope-OrgID": "0|fake"}
+
+	buildParams := func(query string) url.Values {
+		params := url.Values{}
+		params.Set("query", query)
+		params.Set("start", fmt.Sprintf("%d", now.Add(-15*time.Minute).UnixNano()))
+		params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+		params.Set("limit", "100")
+		return params
+	}
+
+	t.Run("exact_match", func(t *testing.T) {
+		_, _, resp := queryRangeGET(t, proxyURL, buildParams(`{app="api-gateway",__tenant_id__="fake"}`), headers)
+		if !checkStatus(resp) {
+			t.Fatalf("expected exact __tenant_id__ match to succeed, got %v", resp)
+		}
+		if countLogLines(resp) == 0 {
+			t.Fatalf("expected exact __tenant_id__ match to return logs, got %v", resp)
+		}
+		for _, item := range extractArray(extractMap(resp, "data"), "result") {
+			stream := item.(map[string]interface{})["stream"].(map[string]interface{})
+			if stream["__tenant_id__"] != "fake" {
+				t.Fatalf("expected exact __tenant_id__ filter to keep only fake, got %v", stream)
+			}
+		}
+	})
+
+	t.Run("negative_regex", func(t *testing.T) {
+		_, _, resp := queryRangeGET(t, proxyURL, buildParams(`{app="api-gateway",__tenant_id__!~"f.*"}`), headers)
+		if !checkStatus(resp) {
+			t.Fatalf("expected negative regex __tenant_id__ match to succeed, got %v", resp)
+		}
+		if countLogLines(resp) == 0 {
+			t.Fatalf("expected negative regex __tenant_id__ match to return logs, got %v", resp)
+		}
+		for _, item := range extractArray(extractMap(resp, "data"), "result") {
+			stream := item.(map[string]interface{})["stream"].(map[string]interface{})
+			if stream["__tenant_id__"] == "fake" {
+				t.Fatalf("expected negative regex to exclude fake tenant, got %v", stream)
+			}
+		}
+	})
+
+	t.Run("no_match_returns_empty_success", func(t *testing.T) {
+		_, _, resp := queryRangeGET(t, proxyURL, buildParams(`{app="api-gateway",__tenant_id__="missing"}`), headers)
+		if !checkStatus(resp) {
+			t.Fatalf("expected no-match __tenant_id__ query to keep success shape, got %v", resp)
+		}
+		if countLogLines(resp) != 0 {
+			t.Fatalf("expected no-match __tenant_id__ query to return no lines, got %v", resp)
+		}
+	})
+}
+
 func TestFeature_AdminDebugEndpoints_DefaultClosed(t *testing.T) {
 	score := &CompatScore{}
 
@@ -696,6 +753,46 @@ func TestFeature_Tail_SyntheticProxyReconnectsCleanly(t *testing.T) {
 	streams, ok := frame["streams"].([]interface{})
 	if !ok || len(streams) == 0 {
 		t.Fatalf("expected reconnect tail frame with streams, got %v", frame)
+	}
+}
+
+func TestFeature_Tail_SyntheticProxyLongLivedSessionStreamsAcrossPolls(t *testing.T) {
+	now := time.Now()
+	app := fmt.Sprintf("tail-session-%d", now.UnixNano())
+
+	params := url.Values{}
+	params.Set("query", fmt.Sprintf(`{app="%s"}`, app))
+	params.Set("start", fmt.Sprintf("%d", now.UnixNano()))
+
+	headers := http.Header{}
+	headers.Set("Origin", "http://127.0.0.1:3002")
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, resp, err := dialer.Dial("ws"+strings.TrimPrefix(tailProxyURL, "http")+"/loki/api/v1/tail?"+params.Encode(), headers)
+	if err != nil {
+		t.Fatalf("synthetic proxy websocket dial failed: %v (resp=%v)", err, resp)
+	}
+	defer conn.Close()
+
+	firstMsg := "tail session frame one " + app
+	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "info",
+	}, []logLine{{Msg: firstMsg, Level: "info"}}, []string{"app", "env", "level"})
+	_ = readTailFrame(t, conn, firstMsg, 10*time.Second)
+
+	time.Sleep(3 * time.Second)
+
+	secondMsg := "tail session frame two " + app
+	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"env":   "test",
+		"level": "warn",
+	}, []logLine{{Msg: secondMsg, Level: "warn"}}, []string{"app", "env", "level"})
+	frame := readTailFrame(t, conn, secondMsg, 10*time.Second)
+	streams, ok := frame["streams"].([]interface{})
+	if !ok || len(streams) == 0 {
+		t.Fatalf("expected long-lived tail session to receive second batch, got %v", frame)
 	}
 }
 

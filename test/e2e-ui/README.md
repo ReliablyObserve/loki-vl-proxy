@@ -42,9 +42,11 @@ docker run --rm \
 | `explore.spec.ts` | `@explore-core` default Explore smoke plus `@explore-tail` multi-tenant and live-tail browser flows |
 | `drilldown.spec.ts` | `@drilldown-core` Explore detail-panel smoke |
 | `logs-drilldown.spec.ts` | `@drilldown-core` Logs Drilldown landing/service smoke plus `@drilldown-mt` one multi-tenant filter smoke |
+| `url-state.spec.ts` | pure URL/state builder tests for reloadable Explore and Drilldown URLs |
 
 Most non-browser assertions moved out of Playwright:
 - `test/e2e-compat/grafana_surface_test.go` covers datasource catalog, health, and proxy bootstrap/control-plane endpoints
+- `test/e2e-compat/explore_contract_test.go` covers HTTP-level Explore contracts for filters, parser pipelines, direction handling, metric matrices, `label_format`, and invalid-query handling
 - `test/e2e-compat/drilldown_compat_test.go` covers Grafana datasource resource contracts for Drilldown
 - `test/e2e-compat/features_test.go` plus `internal/proxy/*tail*test.go` cover most tail protocol and fallback behavior
 - `internal/proxy/proxy_test.go` and `test/e2e-compat/chaining_test.go` cover query parity and translation paths faster than the browser
@@ -58,7 +60,7 @@ The GitHub Actions `e2e-ui` job runs as five shards:
 | `datasource` | `npx playwright test tests/datasource.spec.ts` | datasource settings smoke |
 | `explore-core` | `npx playwright test --grep @explore-core` | one default Explore smoke |
 | `explore-tail` | `npx playwright test --grep @explore-tail` | multi-tenant Explore plus browser live-tail recovery |
-| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke and single-tenant Logs Drilldown smoke |
+| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke, URL-state unit coverage, and single-tenant Logs Drilldown smoke |
 | `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | one multi-tenant Logs Drilldown filter smoke |
 
 Run any shard locally with the same command CI uses:
@@ -74,6 +76,14 @@ npx playwright test --grep @drilldown-mt
 ## Scenario Matrix
 
 See [`docs/testing.md`](../../docs/testing.md) for the per-test UI matrix with each Playwright scenario mapped to its shard and purpose.
+
+The remaining browser tests now install page guardrails by default:
+
+- unexpected browser `console.error` messages fail the test
+- unexpected request failures fail the test
+- unexpected `4xx`/`5xx` datasource/runtime responses fail the test
+
+Only the native-tail recovery smoke allows the specific tail/live-websocket failures it intentionally triggers before switching to the ingress datasource.
 
 ## Debug
 

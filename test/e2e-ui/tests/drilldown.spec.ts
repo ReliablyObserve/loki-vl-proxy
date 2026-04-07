@@ -4,19 +4,16 @@ import {
   openExplore,
   typeQuery,
   runQuery,
-  assertNoErrors,
   waitForGrafanaReady,
-  collectLokiErrors,
+  installGrafanaGuards,
 } from "./helpers";
 
 test.describe("Grafana Drilldown & Label Navigation", () => {
-  test.beforeEach(async ({ page }) => {
+  test("clicking a log row expands details without error @drilldown-core", async ({ page }) => {
+    const guards = installGrafanaGuards(page);
     await openExplore(page, PROXY_DS);
     await waitForGrafanaReady(page);
-  });
 
-  test("clicking a log row expands details without error @drilldown-core", async ({ page }) => {
-    const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway"}');
     await runQuery(page);
 
@@ -27,14 +24,16 @@ test.describe("Grafana Drilldown & Label Navigation", () => {
     if (await logRow.isVisible({ timeout: 5000 }).catch(() => false)) {
       await logRow.click();
       await page.waitForTimeout(500);
-      await assertNoErrors(page);
     }
 
-    expect(errors).toHaveLength(0);
+    await guards.assertClean();
   });
 
   test("label filter drill-down for app label @drilldown-core", async ({ page }) => {
-    const errors = collectLokiErrors(page);
+    const guards = installGrafanaGuards(page);
+    await openExplore(page, PROXY_DS);
+    await waitForGrafanaReady(page);
+
     await typeQuery(page, '{app="api-gateway"}');
     await runQuery(page);
 
@@ -53,11 +52,9 @@ test.describe("Grafana Drilldown & Label Navigation", () => {
       if (await filterBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
         await filterBtn.click();
         await page.waitForTimeout(1000);
-        await assertNoErrors(page);
       }
     }
 
-    const fatalErrors = errors.filter((e) => e.startsWith("5"));
-    expect(fatalErrors).toHaveLength(0);
+    await guards.assertClean();
   });
 });

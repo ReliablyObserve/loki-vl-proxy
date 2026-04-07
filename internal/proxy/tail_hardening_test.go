@@ -307,49 +307,63 @@ func TestTailHardening_ForcedSyntheticModeSkipsNativeTail(t *testing.T) {
 }
 
 func TestTailHardening_NativeModeReturnsBackendFailureReason(t *testing.T) {
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/select/logsql/tail":
-			http.Error(w, "upstream tail forbidden", http.StatusForbidden)
-		case "/select/logsql/query":
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
-		}
-	}))
-	defer vlBackend.Close()
-
-	c := cache.New(60*time.Second, 1000)
-	p, err := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error", TailMode: TailModeNative})
-	if err != nil {
-		t.Fatalf("failed to create proxy: %v", err)
+	cases := []struct {
+		name       string
+		statusCode int
+		body       string
+	}{
+		{name: "unauthorized", statusCode: http.StatusUnauthorized, body: "upstream tail unauthorized"},
+		{name: "forbidden", statusCode: http.StatusForbidden, body: "upstream tail forbidden"},
+		{name: "upstream_5xx", statusCode: http.StatusServiceUnavailable, body: "upstream tail overloaded"},
 	}
 
-	srv := httptest.NewServer(http.HandlerFunc(p.handleTail))
-	defer srv.Close()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/select/logsql/tail":
+					http.Error(w, tc.body, tc.statusCode)
+				case "/select/logsql/query":
+					w.WriteHeader(http.StatusNoContent)
+				default:
+					t.Fatalf("unexpected backend path %s", r.URL.Path)
+				}
+			}))
+			defer vlBackend.Close()
 
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "?query={app%3D%22nginx%22}"
-	dialer := websocket.Dialer{HandshakeTimeout: 3 * time.Second}
-	ws, resp, err := dialer.Dial(wsURL, nil)
-	if err != nil {
-		t.Fatalf("websocket dial failed: %v (resp=%v)", err, resp)
-	}
-	defer ws.Close()
-	_ = ws.SetReadDeadline(time.Now().Add(3 * time.Second))
+			c := cache.New(60*time.Second, 1000)
+			p, err := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error", TailMode: TailModeNative})
+			if err != nil {
+				t.Fatalf("failed to create proxy: %v", err)
+			}
 
-	_, _, err = ws.ReadMessage()
-	if err == nil {
-		t.Fatal("expected websocket close on native backend failure")
-	}
-	var closeErr *websocket.CloseError
-	if !errors.As(err, &closeErr) {
-		t.Fatalf("expected websocket close error, got %v", err)
-	}
-	if closeErr.Code != websocket.CloseInternalServerErr {
-		t.Fatalf("expected internal server close code, got %d", closeErr.Code)
-	}
-	if !strings.Contains(closeErr.Text, "upstream tail forbidden") {
-		t.Fatalf("expected backend failure reason in close message, got %q", closeErr.Text)
+			srv := httptest.NewServer(http.HandlerFunc(p.handleTail))
+			defer srv.Close()
+
+			wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "?query={app%3D%22nginx%22}"
+			dialer := websocket.Dialer{HandshakeTimeout: 3 * time.Second}
+			ws, resp, err := dialer.Dial(wsURL, nil)
+			if err != nil {
+				t.Fatalf("websocket dial failed: %v (resp=%v)", err, resp)
+			}
+			defer ws.Close()
+			_ = ws.SetReadDeadline(time.Now().Add(3 * time.Second))
+
+			_, _, err = ws.ReadMessage()
+			if err == nil {
+				t.Fatal("expected websocket close on native backend failure")
+			}
+			var closeErr *websocket.CloseError
+			if !errors.As(err, &closeErr) {
+				t.Fatalf("expected websocket close error, got %v", err)
+			}
+			if closeErr.Code != websocket.CloseInternalServerErr {
+				t.Fatalf("expected internal server close code, got %d", closeErr.Code)
+			}
+			if !strings.Contains(closeErr.Text, tc.body) {
+				t.Fatalf("expected backend failure reason in close message, got %q", closeErr.Text)
+			}
+		})
 	}
 }
 
@@ -398,6 +412,19 @@ func TestTailHardening_WriteTailMessagePropagatesDeadlineError(t *testing.T) {
 
 	if err := p.writeTailMessage(conn, websocket.TextMessage, []byte("payload")); err == nil {
 		t.Fatal("expected deadline error")
+	}
+}
+
+func TestTailHardening_WriteTailMessagePropagatesWriteError(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	conn := &fakeTailConn{writeMessageErr: errors.New("slow writer")}
+
+	err := p.writeTailMessage(conn, websocket.TextMessage, []byte("payload"))
+	if err == nil || !strings.Contains(err.Error(), "slow writer") {
+		t.Fatalf("expected write error, got %v", err)
+	}
+	if conn.deadline.IsZero() {
+		t.Fatal("expected deadline to be set before write")
 	}
 }
 

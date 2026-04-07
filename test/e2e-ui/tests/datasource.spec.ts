@@ -1,8 +1,10 @@
-import { test } from "@playwright/test";
-import { PROXY_DS, waitForGrafanaReady } from "./helpers";
+import { test, expect } from "@playwright/test";
+import { PROXY_DS, waitForGrafanaReady, installGrafanaGuards } from "./helpers";
 
 test.describe("Grafana Datasource Health & Config", () => {
   test("datasource health check succeeds", async ({ page }) => {
+    const guards = installGrafanaGuards(page);
+
     // Navigate to datasource settings
     await page.goto("/connections/datasources");
     await waitForGrafanaReady(page);
@@ -42,5 +44,7 @@ test.describe("Grafana Datasource Health & Config", () => {
         expect(isSuccess || !isError).toBeTruthy();
       }
     }
+
+    await guards.assertClean();
   });
 });
