@@ -999,10 +999,34 @@ func (p *Proxy) detectLabels(ctx context.Context, query, start, end string, line
 		if err != nil {
 			return nil, nil, err
 		}
+	} else if needsDetectedLabelScanSupplement(summaries) {
+		scanned, scanErr := p.detectScannedLabels(ctx, query, start, end, lineLimit)
+		if scanErr == nil {
+			mergeDetectedLabelSupplements(summaries, scanned)
+		}
 	}
 	labels := formatDetectedLabelSummaries(summaries)
 	p.setCachedDetectedLabels(ctx, query, start, end, lineLimit, labels, summaries)
 	return labels, summaries, nil
+}
+
+func needsDetectedLabelScanSupplement(summaries map[string]*detectedLabelSummary) bool {
+	if len(summaries) == 0 {
+		return true
+	}
+	_, ok := summaries["level"]
+	return !ok
+}
+
+func mergeDetectedLabelSupplements(dst, scanned map[string]*detectedLabelSummary) {
+	for _, label := range []string{"level"} {
+		if _, ok := dst[label]; ok {
+			continue
+		}
+		if summary := scanned[label]; summary != nil {
+			dst[label] = summary
+		}
+	}
 }
 
 func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string) (map[string]*detectedFieldSummary, error) {

@@ -47,13 +47,18 @@ func TestHandleDetectedFieldsAndValuesReuseCachedScan(t *testing.T) {
 }
 
 func TestHandleDetectedLabelsReuseCachedScan(t *testing.T) {
-	var backendCalls int
+	var streamCalls int
+	var scanCalls int
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/streams":
-			backendCalls++
+			streamCalls++
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintln(w, `{"values":[{"value":"{cluster=\"eu\",service.name=\"api\"}","hits":1}]}`)
+		case "/select/logsql/query":
+			scanCalls++
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"ok","_stream":"{cluster=\"eu\",service.name=\"api\"}","level":"info"}`)
 		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
@@ -76,8 +81,8 @@ func TestHandleDetectedLabelsReuseCachedScan(t *testing.T) {
 		t.Fatalf("detected_labels cached code=%d body=%s", w2.Code, w2.Body.String())
 	}
 
-	if backendCalls != 1 {
-		t.Fatalf("expected detected_labels cache reuse, got %d backend calls", backendCalls)
+	if streamCalls != 1 || scanCalls != 1 {
+		t.Fatalf("expected detected_labels cache reuse after one native call and one scan supplement, got streamCalls=%d scanCalls=%d", streamCalls, scanCalls)
 	}
 }
 

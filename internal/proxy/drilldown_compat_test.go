@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -150,6 +151,83 @@ func TestDrilldown_QueryRange_RawVLFieldsDoNotPolluteStreamLabels(t *testing.T) 
 	pair := values[0].([]interface{})
 	if len(pair) != 2 {
 		t.Fatalf("expected canonical 2-tuple Loki values for Grafana compatibility, got %v", pair)
+	}
+}
+
+func TestDrilldown_DetectLabels_SupplementsLevelFromScannedLogs(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/streams":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"values": []map[string]interface{}{
+					{"value": `{service.name="otel-auth-service",service.namespace="prod",k8s.pod.name="otel-auth-0"}`},
+				},
+			})
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"auth ok","_stream":"{service.name=\"otel-auth-service\",service.namespace=\"prod\",k8s.pod.name=\"otel-auth-0\"}","level":"info"}` + "\n"))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	labels, summaries, err := p.detectLabels(context.Background(), `{service_name="otel-auth-service"}`, "1", "2", 50)
+	if err != nil {
+		t.Fatalf("detectLabels returned error: %v", err)
+	}
+	if summaries["level"] == nil {
+		t.Fatalf("expected detected label summaries to include level, got %v", summaries)
+	}
+	seen := map[string]bool{}
+	for _, item := range labels {
+		label, _ := item["label"].(string)
+		seen[label] = true
+	}
+	if !seen["service_name"] {
+		t.Fatalf("expected detectLabels output to include service_name, got %v", labels)
+	}
+	if !seen["level"] {
+		t.Fatalf("expected detectLabels output to include level, got %v", labels)
+	}
+	if !(seen["service_namespace"] || seen["service.namespace"]) {
+		t.Fatalf("expected detectLabels output to include service namespace label, got %v", labels)
+	}
+	if !(seen["k8s_pod_name"] || seen["k8s.pod.name"]) {
+		t.Fatalf("expected detectLabels output to include pod label, got %v", labels)
+	}
+}
+
+func TestDrilldown_DetectedLabelSupplementHelpers(t *testing.T) {
+	if !needsDetectedLabelScanSupplement(nil) {
+		t.Fatal("nil summaries should require scan supplement")
+	}
+	if !needsDetectedLabelScanSupplement(map[string]*detectedLabelSummary{
+		"service_name": {label: "service_name", values: map[string]struct{}{"svc": {}}},
+	}) {
+		t.Fatal("summaries without level should require scan supplement")
+	}
+	if needsDetectedLabelScanSupplement(map[string]*detectedLabelSummary{
+		"level": {label: "level", values: map[string]struct{}{"info": {}}},
+	}) {
+		t.Fatal("summaries with level should not require scan supplement")
+	}
+
+	dst := map[string]*detectedLabelSummary{
+		"service_name": {label: "service_name", values: map[string]struct{}{"svc": {}}},
+	}
+	scanned := map[string]*detectedLabelSummary{
+		"level":        {label: "level", values: map[string]struct{}{"info": {}}},
+		"service_name": {label: "service_name", values: map[string]struct{}{"other": {}}},
+	}
+	mergeDetectedLabelSupplements(dst, scanned)
+	if dst["level"] == nil {
+		t.Fatalf("expected mergeDetectedLabelSupplements to backfill level, got %v", dst)
+	}
+	if len(dst["service_name"].values) != 1 {
+		t.Fatalf("expected existing non-derived labels to remain unchanged, got %v", dst["service_name"].values)
 	}
 }
 
