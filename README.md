@@ -106,6 +106,7 @@ See [Security](docs/security.md), [Configuration](docs/configuration.md), [Obser
 ### Performance & Scale
 See [Performance Guide](docs/performance.md), [Scaling](docs/scaling.md), [Fleet Cache](docs/fleet-cache.md), and [Observability](docs/observability.md).
 
+- **Fast where Grafana feels it** -- the proxy keeps repeated dashboard refreshes, Explore reads, and Drilldown metadata calls on warm cache paths measured in nanoseconds to sub-microseconds instead of milliseconds
 - **Tier0 plus tiered caches** -- a small compatibility-edge response cache fronts the existing in-memory LRU + TTL, optional disk-backed bbolt, and fleet peer-cache layers
 - **Fleet-aware scaling** -- consistent hashing, shadow copies with TTL preservation, headless-service peer discovery, and per-peer circuit breakers keep multi-replica fleets efficient under HPA churn
 - **Hot-path backend reduction** -- request coalescing, Tier0 cache hits, query normalization, and cached Loki-shaped responses reduce duplicate backend work for repeated dashboards and shared reads
@@ -222,6 +223,27 @@ Proxy-side datasource helpers:
 - `-tls-client-ca-file` and `-tls-require-client-cert` for HTTPS client auth
 - `-tail.mode=auto|native|synthetic` to choose native tail, forced synthetic tail, or the default native-with-fallback behavior
 - `-tail.allowed-origins` when Grafana or another browser client must use `/tail`
+
+### Why The Cache Stack Matters
+
+You do not need to understand the implementation details to understand the operational value:
+
+| Layer | Plain-English role | Operator benefit |
+|---|---|---|
+| `Tier0` | Instant answer cache at the Loki-compatible frontend | Repeated Grafana reads can return before most proxy work even starts |
+| `L1` memory | Hot local RAM cache on one proxy pod | The fastest path for repeated dashboard and Explore traffic |
+| `L2` disk | Local persistent cache on the same pod or node | Keeps useful cached results available beyond memory pressure and across larger working sets |
+| `L3` fleet peer cache | Cache sharing between proxy replicas | One warm pod can help the rest of the fleet instead of every pod hitting VictoriaLogs separately |
+
+In measured benchmarks on this branch:
+
+| Example path | Cold or uncached path | Warm cached path | Why it matters |
+|---|---|---|---|
+| `query_range` | `4.58 ms` | `0.64-0.67 us` | Repeated dashboard refreshes stop behaving like backend work |
+| `detected_field_values` | `2.76 ms` | `0.71 us` | Drilldown metadata becomes effectively instant after warm-up |
+| fleet peer-cache reuse | network/backend path | `52 ns` local shadow-copy hit | A 3-node fleet can reuse hot results instead of refetching them |
+
+The practical outcome is simple: the proxy does not just make VictoriaLogs look like Loki, it keeps common Grafana read paths fast enough to feel native even when the backend path is more complex.
 
 Current scope boundaries and follow-up hardening are tracked in [Known Issues](docs/KNOWN_ISSUES.md):
 

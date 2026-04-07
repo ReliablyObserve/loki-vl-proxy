@@ -45,6 +45,19 @@ The proxy now has two cache layers in front of the backend execution path:
 
 Tier0 is intentionally small and bounded as a percentage of the primary L1 memory budget. The deeper L1/L2/L3 stack still handles broader reuse, peer sharing, and persistent cache warming.
 
+### What This Means For Operators
+
+The simplest way to understand the cache stack is by operational outcome:
+
+| Layer | Plain-English role | What it buys you |
+|---|---|---|
+| `Tier0` | Fast answer cache at the Loki-compatible frontend | Repeated Grafana reads can return before most proxy logic runs |
+| `L1` memory | Hot cache inside the local process | Best-case latency for repeated dashboards and Explore refreshes |
+| `L2` disk | Persistent local cache | Useful cache survives beyond RAM pressure and supports larger working sets |
+| `L3` peer cache | Fleet-wide cache reuse between replicas | One warm pod can make the rest of the fleet faster and cheaper |
+
+This is the difference between “it speaks Loki” and “it feels like Loki at runtime.” The project is designed to preserve Loki-compatible UX while reducing repeated backend work aggressively.
+
 ## Benchmark Results
 
 Measured on Apple M3 Max (14 cores), Go 1.26.1, `-benchmem`.
@@ -58,6 +71,20 @@ Measured on Apple M3 Max (14 cores), Go 1.26.1, `-benchmem`.
 | wrapAsLokiResponse | 2.8 us | 58 | 2.6 KB |
 | VL NDJSON to Loki streams (100 lines) | 170 us | 3118 | 70 KB |
 | LogQL translation | ~5 us | ~20 | ~2 KB |
+
+### Cache Story In One Table
+
+These are the numbers that matter most when you want to judge the value of the cache stack rather than the implementation details:
+
+| Path | Slow path | Fast path | What it means |
+|---|---|---|---|
+| `query_range` | `4.58 ms` cold miss with delayed backend | `0.64-0.67 us` warm cache hit | Repeated dashboards stop behaving like backend-bound requests |
+| `detected_field_values` | `2.76 ms` without Tier0 | `0.71 us` with Tier0 | Drilldown metadata becomes effectively instant after warm-up |
+| `L1` memory cache | full handler/backend path | `45 ns` hit | Local hot cache is essentially free |
+| `L2` disk cache | backend refill | `0.45 us` uncompressed read, `3.9 us` compressed read | Persistent cache is still cheap enough for hot-path reuse |
+| `L3` peer cache | backend or owner re-fetch | `52 ns` warm shadow-copy hit | A warm 3-node fleet can reuse results instead of refetching them |
+
+Tier0 is most valuable on metadata-style and Drilldown-style endpoints where the proxy still has meaningful compatibility work to skip. On `query_range`, the deeper primary cache is already so effective that Tier0 mostly preserves that win rather than multiplying it.
 
 ### Throughput
 
