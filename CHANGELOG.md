@@ -21,16 +21,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### CI
 
 - make the PR labeler fail-soft when optional repository labels are missing
+- split Grafana UI smoke coverage into stable shards, add scheduled Grafana runtime smoke/full compatibility profiles, and move browser-independent Grafana checks into cheaper non-browser gates
 
 ### Tests
 
 - add `/tail` ingress, idle-window, and native-failure regressions against the live compose stack
 - add browser-level Explore live-tail and multi-tenant Logs Drilldown regressions
 - raise `cmd/proxy` startup/server-loop coverage with more direct unit tests
+- add HTTP-level Explore compatibility contracts, Drilldown filtered/freshness resource contracts, explicit oversized multi-tenant fanout coverage, and stronger native tail failure propagation coverage
+- extract pure Grafana Explore/Drilldown URL builders, test them directly, and add browser console/request guardrails plus reload-persistence smoke coverage
 
 ### Documentation
 
 - document native-first Drilldown discovery, multi-tenant safety caps, metadata-vs-live cache freshness, and tail mode behavior across README and operator docs
+- document the Playwright shard matrix, browser-vs-non-browser coverage split, and Grafana runtime compatibility profiles
 
 ## [0.27.0] - 2026-04-06
 
