@@ -136,13 +136,19 @@ func TestTranslateQuery_ExplicitWildcardStaysWildcard(t *testing.T) {
 // =============================================================================
 
 func TestDetectedFields_QueriesLogLines(t *testing.T) {
-	callCount := 0
+	var sawFieldNames, sawQuery bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		if r.URL.Path != "/select/logsql/query" {
-			t.Fatalf("expected detected_fields to query log lines, got %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			sawFieldNames = true
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":1}]}`))
+		case "/select/logsql/query":
+			sawQuery = true
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"status\":200}","_stream":"{app=\"nginx\"}","app":"nginx"}` + "\n"))
+		default:
+			t.Fatalf("expected detected_fields to query field names or log lines, got %s", r.URL.Path)
 		}
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"status\":200}","_stream":"{app=\"nginx\"}","app":"nginx"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -152,8 +158,8 @@ func TestDetectedFields_QueriesLogLines(t *testing.T) {
 	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?"+q.Encode(), nil)
 	p.handleDetectedFields(w, r)
 
-	if callCount != 1 {
-		t.Errorf("expected 1 VL call, got %d", callCount)
+	if !sawFieldNames || !sawQuery {
+		t.Errorf("expected native field names and log-line scan paths, got field_names=%v query=%v", sawFieldNames, sawQuery)
 	}
 	if w.Code != 200 {
 		t.Errorf("expected 200 after detected field scan, got %d", w.Code)
@@ -161,20 +167,33 @@ func TestDetectedFields_QueriesLogLines(t *testing.T) {
 }
 
 func TestDetectedFields_BareSelectorWithParserStagesStillFindsFields(t *testing.T) {
-	callCount := 0
+	var sawFieldNames, sawQuery bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		if r.URL.Path != "/select/logsql/query" {
-			t.Fatalf("expected detected_fields to query log lines, got %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			sawFieldNames = true
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			got := r.Form.Get("query")
+			if !strings.Contains(got, `service_name:=otel-auth-service`) {
+				t.Fatalf("expected translated bare selector after parser stripping, got %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"service.name","hits":1}]}`))
+		case "/select/logsql/query":
+			sawQuery = true
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			got := r.Form.Get("query")
+			if !strings.Contains(got, `service_name:=otel-auth-service`) {
+				t.Fatalf("expected translated bare selector after parser stripping, got %q", got)
+			}
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"msg\":\"ok\"}","_stream":"{service.name=\"otel-auth-service\",service_name=\"otel-auth-service\"}","service.name":"otel-auth-service","service_name":"otel-auth-service"}` + "\n"))
+		default:
+			t.Fatalf("expected detected_fields to query field names or log lines, got %s", r.URL.Path)
 		}
-		if err := r.ParseForm(); err != nil {
-			t.Fatalf("parse form: %v", err)
-		}
-		got := r.Form.Get("query")
-		if !strings.Contains(got, `service_name:=otel-auth-service`) {
-			t.Fatalf("expected translated bare selector after parser stripping, got %q", got)
-		}
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"msg\":\"ok\"}","_stream":"{service.name=\"otel-auth-service\",service_name=\"otel-auth-service\"}","service.name":"otel-auth-service","service_name":"otel-auth-service"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -188,8 +207,8 @@ func TestDetectedFields_BareSelectorWithParserStagesStillFindsFields(t *testing.
 	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?"+q.Encode(), nil)
 	p.handleDetectedFields(w, r)
 
-	if callCount != 1 {
-		t.Fatalf("expected 1 VL call, got %d", callCount)
+	if !sawFieldNames || !sawQuery {
+		t.Fatalf("expected native field names and log-line scan paths, got field_names=%v query=%v", sawFieldNames, sawQuery)
 	}
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())

@@ -201,12 +201,20 @@ func TestGap_VolumeRange_QueriesVLHits(t *testing.T) {
 
 func TestGap_DetectedFieldValues_Endpoint(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
-			t.Fatalf("expected detected field values to scan query results, got %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"level","hits":3}]}`))
+		case "/select/logsql/field_values":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"error","hits":1},{"value":"info","hits":1},{"value":"warn","hits":1}]}`))
+		case "/select/logsql/query":
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"level=info msg=\"ok\"","_stream":"{app=\"test\"}","app":"test"}` + "\n"))
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"level=error msg=\"boom\"","_stream":"{app=\"test\"}","app":"test"}` + "\n"))
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:51.971082Z","_msg":"level=warn msg=\"slow\"","_stream":"{app=\"test\"}","app":"test"}` + "\n"))
+		default:
+			t.Fatalf("expected detected field values to use native discovery or scan fallback, got %s", r.URL.Path)
 		}
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"level=info msg=\"ok\"","_stream":"{app=\"test\"}","app":"test"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"level=error msg=\"boom\"","_stream":"{app=\"test\"}","app":"test"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:51.971082Z","_msg":"level=warn msg=\"slow\"","_stream":"{app=\"test\"}","app":"test"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 

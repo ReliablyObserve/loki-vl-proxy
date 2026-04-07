@@ -13,6 +13,7 @@ import (
 )
 
 const unknownServiceName = "unknown_service"
+const detectedFieldsSampleLimit = 500
 
 var serviceNameSourceFields = []string{
 	"service_name",
@@ -797,12 +798,41 @@ func parseLogfmtFields(line string) map[string]string {
 	return fields
 }
 
+type vlFieldNamesResponse struct {
+	Values []struct {
+		Value string `json:"value"`
+		Hits  int64  `json:"hits"`
+	} `json:"values"`
+}
+
+type vlFieldValuesResponse struct {
+	Values []struct {
+		Value string `json:"value"`
+		Hits  int64  `json:"hits"`
+	} `json:"values"`
+}
+
+type vlStreamsResponse struct {
+	Values []struct {
+		Value string `json:"value"`
+		Hits  int64  `json:"hits"`
+	} `json:"values"`
+}
+
 func (p *Proxy) detectFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, error) {
 	if lineLimit > maxDetectedScanLines {
 		lineLimit = maxDetectedScanLines
 	}
 	if cachedFields, cachedValues, ok := p.getCachedDetectedFields(ctx, query, start, end, lineLimit); ok {
 		return cachedFields, cachedValues, nil
+	}
+	nativeFields, err := p.detectNativeFields(ctx, query, start, end)
+	if err != nil {
+		nativeFields = nil
+	}
+	scanLimit := lineLimit
+	if len(nativeFields) > 0 && scanLimit > detectedFieldsSampleLimit {
+		scanLimit = detectedFieldsSampleLimit
 	}
 	logsqlQuery, err := p.translateQuery(defaultFieldDetectionQuery(query))
 	if err != nil {
@@ -811,7 +841,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time desc)")
-	params.Set("limit", strconv.Itoa(lineLimit))
+	params.Set("limit", strconv.Itoa(scanLimit))
 	if start != "" {
 		params.Set("start", formatVLTimestamp(start))
 	}
@@ -827,6 +857,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 
 	body, _ := io.ReadAll(resp.Body)
 	fieldList, fieldValues := p.detectFieldsFromBody(body)
+	fieldList, fieldValues = mergeNativeDetectedFields(fieldList, fieldValues, nativeFields)
 	p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
 	return fieldList, fieldValues, nil
 }
@@ -962,9 +993,224 @@ func (p *Proxy) detectLabels(ctx context.Context, query, start, end string, line
 	if cachedLabels, cachedSummaries, ok := p.getCachedDetectedLabels(ctx, query, start, end, lineLimit); ok {
 		return cachedLabels, cachedSummaries, nil
 	}
+	summaries, err := p.detectNativeLabels(ctx, query, start, end)
+	if err != nil {
+		summaries, err = p.detectScannedLabels(ctx, query, start, end, lineLimit)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	labels := formatDetectedLabelSummaries(summaries)
+	p.setCachedDetectedLabels(ctx, query, start, end, lineLimit, labels, summaries)
+	return labels, summaries, nil
+}
+
+func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string) (map[string]*detectedFieldSummary, error) {
+	fieldNames, err := p.fetchNativeFieldNames(ctx, query, start, end)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*detectedFieldSummary, len(fieldNames))
+	for _, field := range fieldNames {
+		streamLabels := map[string]string{field: "1"}
+		if !shouldExposeStructuredField(field, streamLabels, p.labelTranslator) {
+			continue
+		}
+		for _, exposure := range p.metadataFieldExposures(field) {
+			out[exposure.name] = &detectedFieldSummary{
+				label:       exposure.name,
+				typ:         "string",
+				values:      map[string]struct{}{},
+				cardinality: 1,
+			}
+		}
+	}
+	return out, nil
+}
+
+func mergeNativeDetectedFields(scanned []map[string]interface{}, scannedValues map[string][]string, native map[string]*detectedFieldSummary) ([]map[string]interface{}, map[string][]string) {
+	if len(native) == 0 {
+		return scanned, scannedValues
+	}
+	outValues := make(map[string][]string, len(scannedValues))
+	for k, v := range scannedValues {
+		outValues[k] = append([]string(nil), v...)
+	}
+	merged := make(map[string]map[string]interface{}, len(scanned)+len(native))
+	for _, item := range scanned {
+		label, _ := item["label"].(string)
+		if label == "" {
+			continue
+		}
+		copied := make(map[string]interface{}, len(item))
+		for k, v := range item {
+			copied[k] = v
+		}
+		merged[label] = copied
+	}
+	for label, summary := range native {
+		if existing, ok := merged[label]; ok {
+			if card, ok := existing["cardinality"].(int); ok && card > 0 {
+				continue
+			}
+			if card, ok := existing["cardinality"].(float64); ok && card > 0 {
+				continue
+			}
+		}
+		merged[label] = map[string]interface{}{
+			"label":       summary.label,
+			"type":        summary.typ,
+			"cardinality": summary.cardinality,
+			"parsers":     []string{},
+		}
+		if _, ok := outValues[label]; !ok {
+			outValues[label] = []string{}
+		}
+	}
+	labels := make([]string, 0, len(merged))
+	for label := range merged {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+	out := make([]map[string]interface{}, 0, len(labels))
+	for _, label := range labels {
+		out = append(out, merged[label])
+	}
+	return out, outValues
+}
+
+func (p *Proxy) fetchNativeFieldNames(ctx context.Context, query, start, end string) ([]string, error) {
+	logsqlQuery, err := p.translateQuery(defaultFieldDetectionQuery(query))
+	if err != nil {
+		return nil, err
+	}
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	if start != "" {
+		params.Set("start", start)
+	}
+	if end != "" {
+		params.Set("end", end)
+	}
+	body, err := p.vlGetCoalesced(ctx, "native_fields:"+params.Encode(), "/select/logsql/field_names", params)
+	if err != nil {
+		return nil, err
+	}
+	var resp vlFieldNamesResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(resp.Values))
+	for _, item := range resp.Values {
+		out = append(out, item.Value)
+	}
+	return out, nil
+}
+
+func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, field string, limit int) ([]string, error) {
+	logsqlQuery, err := p.translateQuery(defaultFieldDetectionQuery(query))
+	if err != nil {
+		return nil, err
+	}
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	params.Set("field", field)
+	if start != "" {
+		params.Set("start", start)
+	}
+	if end != "" {
+		params.Set("end", end)
+	}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	}
+	resp, err := p.vlGet(ctx, "/select/logsql/field_values", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var parsed vlFieldValuesResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+	values := make([]string, 0, len(parsed.Values))
+	for _, item := range parsed.Values {
+		values = append(values, item.Value)
+	}
+	sort.Strings(values)
+	return values, nil
+}
+
+func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, end, fieldName string) (string, bool, error) {
+	fieldNames, err := p.fetchNativeFieldNames(ctx, query, start, end)
+	if err != nil {
+		return "", false, err
+	}
+	for _, field := range fieldNames {
+		streamLabels := map[string]string{field: "1"}
+		if !shouldExposeStructuredField(field, streamLabels, p.labelTranslator) {
+			continue
+		}
+		for _, exposure := range p.metadataFieldExposures(field) {
+			if exposure.name == fieldName {
+				return field, true, nil
+			}
+		}
+	}
+	return "", false, nil
+}
+
+func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string) (map[string]*detectedLabelSummary, error) {
+	logsqlQuery, err := p.translateQuery(defaultFieldDetectionQuery(query))
+	if err != nil {
+		return nil, err
+	}
+	params := url.Values{}
+	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	if start != "" {
+		params.Set("start", start)
+	}
+	if end != "" {
+		params.Set("end", end)
+	}
+	resp, err := p.vlGet(ctx, "/select/logsql/streams", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var parsed vlStreamsResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+	summaries := map[string]*detectedLabelSummary{}
+	for _, item := range parsed.Values {
+		labels := parseStreamLabels(item.Value)
+		ensureSyntheticServiceName(labels)
+		for key, value := range labels {
+			if key == "detected_level" {
+				continue
+			}
+			lokiLabel := p.labelTranslator.ToLoki(key)
+			if lokiLabel == "" {
+				continue
+			}
+			summary := summaries[lokiLabel]
+			if summary == nil {
+				summary = &detectedLabelSummary{label: lokiLabel, values: map[string]struct{}{}}
+				summaries[lokiLabel] = summary
+			}
+			summary.values[value] = struct{}{}
+		}
+	}
+	return summaries, nil
+}
+
+func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end string, lineLimit int) (map[string]*detectedLabelSummary, error) {
 	logsqlQuery, err := p.translateQuery(defaultQuery(query))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	params := url.Values{}
@@ -979,15 +1225,12 @@ func (p *Proxy) detectLabels(ctx context.Context, query, start, end string, line
 
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	summaries := scanDetectedLabelSummaries(body, p.labelTranslator)
-	labels := formatDetectedLabelSummaries(summaries)
-	p.setCachedDetectedLabels(ctx, query, start, end, lineLimit, labels, summaries)
-	return labels, summaries, nil
+	return scanDetectedLabelSummaries(body, p.labelTranslator), nil
 }
 
 type detectedFieldsCachePayload struct {

@@ -402,12 +402,17 @@ func TestDrilldown_LabelValues_ServiceNameDerivedFromStreams(t *testing.T) {
 
 func TestDrilldown_DetectedFields_ParseStructuredLogsInsteadOfIndexedLabels(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":2},{"value":"cluster","hits":2}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users\",\"status\":200,\"duration_ms\":15,\"trace_id\":\"abc123\"}","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\"}","app":"api-gateway","cluster":"us-east-1","level":"info"}` + "\n"))
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"level=error msg=\"database timeout\" trace_id=err002 upstream=payment-service","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\"}","app":"api-gateway","cluster":"us-east-1","level":"error"}` + "\n"))
+		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users\",\"status\":200,\"duration_ms\":15,\"trace_id\":\"abc123\"}","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\"}","app":"api-gateway","cluster":"us-east-1","level":"info"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"level=error msg=\"database timeout\" trace_id=err002 upstream=payment-service","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\"}","app":"api-gateway","cluster":"us-east-1","level":"error"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -445,11 +450,16 @@ func TestDrilldown_DetectedFields_ParseStructuredLogsInsteadOfIndexedLabels(t *t
 
 func TestDrilldown_DetectedFields_ExposeStructuredMetadataWithDottedNames(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":1},{"value":"cluster","hits":1},{"value":"service.name","hits":1},{"value":"service.namespace","hits":1},{"value":"k8s.pod.name","hits":1},{"value":"deployment.environment","hits":1},{"value":"trace_id","hits":1}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"token validated","_stream":"{app=\"otel-auth-service\",cluster=\"us-east-1\",service.name=\"otel-auth-service\"}","app":"otel-auth-service","cluster":"us-east-1","service.name":"otel-auth-service","service.namespace":"auth","k8s.pod.name":"auth-svc-123","deployment.environment":"prod","trace_id":"abc123"}` + "\n"))
+		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"token validated","_stream":"{app=\"otel-auth-service\",cluster=\"us-east-1\",service.name=\"otel-auth-service\"}","app":"otel-auth-service","cluster":"us-east-1","service.name":"otel-auth-service","service.namespace":"auth","k8s.pod.name":"auth-svc-123","deployment.environment":"prod","trace_id":"abc123"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -509,11 +519,16 @@ func TestDrilldown_DetectedFields_ExposeStructuredMetadataWithDottedNames(t *tes
 
 func TestDrilldown_DetectedFields_TranslatedModeExposesOnlyAliases(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":1},{"value":"cluster","hits":1},{"value":"service.name","hits":1},{"value":"service.namespace","hits":1},{"value":"k8s.pod.name","hits":1}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"token validated","_stream":"{app=\"otel-auth-service\",cluster=\"us-east-1\",service.name=\"otel-auth-service\"}","app":"otel-auth-service","cluster":"us-east-1","service.name":"otel-auth-service","service.namespace":"auth","k8s.pod.name":"auth-svc-123"}` + "\n"))
+		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"token validated","_stream":"{app=\"otel-auth-service\",cluster=\"us-east-1\",service.name=\"otel-auth-service\"}","app":"otel-auth-service","cluster":"us-east-1","service.name":"otel-auth-service","service.namespace":"auth","k8s.pod.name":"auth-svc-123"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -560,12 +575,11 @@ func TestDrilldown_DetectedFields_TranslatedModeExposesOnlyAliases(t *testing.T)
 
 func TestDrilldown_DetectedLabels_ReturnDirectLikeShapeAndCardinality(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		if r.URL.Path != "/select/logsql/streams" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users\",\"status\":200}","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\",namespace=\"prod\",pod=\"api-1\",container=\"api-gateway\"}","app":"api-gateway","cluster":"us-east-1","namespace":"prod","pod":"api-1","container":"api-gateway","env":"production","level":"info"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users/999\",\"status\":404}","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\",namespace=\"prod\",pod=\"api-2\",container=\"api-gateway\"}","app":"api-gateway","cluster":"us-east-1","namespace":"prod","pod":"api-2","container":"api-gateway","env":"production","level":"error"}` + "\n"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"values":[{"value":"{app=\"api-gateway\",cluster=\"us-east-1\",namespace=\"prod\",pod=\"api-1\",container=\"api-gateway\",level=\"info\"}","hits":1},{"value":"{app=\"api-gateway\",cluster=\"us-east-1\",namespace=\"prod\",pod=\"api-2\",container=\"api-gateway\",level=\"error\"}","hits":1}]}`))
 	}))
 	defer vlBackend.Close()
 
@@ -597,11 +611,11 @@ func TestDrilldown_DetectedLabels_ReturnDirectLikeShapeAndCardinality(t *testing
 
 func TestDrilldown_DetectedLabels_ExcludeRawStructuredMetadata(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		if r.URL.Path != "/select/logsql/streams" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"token validated","_stream":"{app=\"otel-auth-service\",cluster=\"us-east-1\",service.name=\"otel-auth-service\"}","app":"otel-auth-service","cluster":"us-east-1","service.name":"otel-auth-service","service.namespace":"auth","k8s.pod.name":"auth-svc-123","trace_id":"abc123","user_id":"usr-42","level":"info"}` + "\n"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"values":[{"value":"{app=\"otel-auth-service\",cluster=\"us-east-1\",service.name=\"otel-auth-service\",level=\"info\"}","hits":1}]}`))
 	}))
 	defer vlBackend.Close()
 
@@ -649,12 +663,17 @@ func TestDrilldown_DetectedLabels_ExcludeRawStructuredMetadata(t *testing.T) {
 
 func TestDrilldown_DetectedFieldValues_ReturnParsedValues(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":2}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users\",\"status\":200}","_stream":"{app=\"api-gateway\"}","app":"api-gateway"}` + "\n"))
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"{\"method\":\"POST\",\"path\":\"/api/v1/orders\",\"status\":201}","_stream":"{app=\"api-gateway\"}","app":"api-gateway"}` + "\n"))
+		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users\",\"status\":200}","_stream":"{app=\"api-gateway\"}","app":"api-gateway"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"{\"method\":\"POST\",\"path\":\"/api/v1/orders\",\"status\":201}","_stream":"{app=\"api-gateway\"}","app":"api-gateway"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -673,13 +692,22 @@ func TestDrilldown_DetectedFieldValues_ReturnParsedValues(t *testing.T) {
 }
 
 func TestDrilldown_DetectedFieldValues_ReturnStructuredMetadataValues(t *testing.T) {
+	var sawFieldValues bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"service.name","hits":2}]}`))
+		case "/select/logsql/field_values":
+			sawFieldValues = true
+			if got := r.URL.Query().Get("field"); got != "service.name" {
+				t.Fatalf("expected native service.name field lookup, got %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"otel-auth-service","hits":2}]}`))
+		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"token validated","_stream":"{app=\"otel-auth-service\",service.name=\"otel-auth-service\"}","app":"otel-auth-service","service.name":"otel-auth-service","service.namespace":"auth","deployment.environment":"prod"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:50.971082Z","_msg":"token refreshed","_stream":"{app=\"otel-auth-service\",service.name=\"otel-auth-service\"}","app":"otel-auth-service","service.name":"otel-auth-service","service.namespace":"auth","deployment.environment":"prod"}` + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -706,6 +734,9 @@ func TestDrilldown_DetectedFieldValues_ReturnStructuredMetadataValues(t *testing
 	}
 	if len(values) != 1 || values[0].(string) != "otel-auth-service" {
 		t.Fatalf("expected structured metadata values for service.name, got %v", values)
+	}
+	if !sawFieldValues {
+		t.Fatalf("expected native field_values fast path to be used")
 	}
 }
 

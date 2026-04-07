@@ -172,12 +172,12 @@ const (
 	// maxQueryLength limits the LogQL query string length to prevent abuse.
 	maxQueryLength = 65536 // 64KB
 	// maxLimitValue caps the number of results per query.
-	maxLimitValue    = 10000
-	tailWriteTimeout = 2 * time.Second
-	maxMultiTenantFanout = 64
+	maxLimitValue                     = 10000
+	tailWriteTimeout                  = 2 * time.Second
+	maxMultiTenantFanout              = 64
 	maxMultiTenantMergedResponseBytes = 32 << 20
-	maxDetectedScanLines = 2000
-	maxSyntheticTailSeenEntries = 4096
+	maxDetectedScanLines              = 2000
+	maxSyntheticTailSeenEntries       = 4096
 )
 
 // CacheTTLs defines per-endpoint cache TTLs.
@@ -1593,6 +1593,18 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 	}
 
 	lineLimit := parseDetectedLineLimit(r)
+	if nativeField, ok, err := p.resolveNativeDetectedField(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), fieldName); err == nil && ok {
+		if values, valuesErr := p.fetchNativeFieldValues(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), nativeField, lineLimit); valuesErr == nil {
+			p.writeJSON(w, map[string]interface{}{
+				"status": "success",
+				"data":   values,
+				"values": values,
+				"limit":  lineLimit,
+			})
+			p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
+			return
+		}
+	}
 
 	_, fieldValues, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {

@@ -11,12 +11,17 @@ import (
 func TestHandleDetectedFieldsAndValuesReuseCachedScan(t *testing.T) {
 	var backendCalls int
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `{"values":[{"value":"service.name","hits":1}]}`)
+		case "/select/logsql/query":
+			backendCalls++
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"{\"method\":\"GET\"}","service.name":"api"}`)
+		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		backendCalls++
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"{\"method\":\"GET\"}","service.name":"api"}`)
 	}))
 	defer backend.Close()
 
@@ -44,12 +49,14 @@ func TestHandleDetectedFieldsAndValuesReuseCachedScan(t *testing.T) {
 func TestHandleDetectedLabelsReuseCachedScan(t *testing.T) {
 	var backendCalls int
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		switch r.URL.Path {
+		case "/select/logsql/streams":
+			backendCalls++
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `{"values":[{"value":"{cluster=\"eu\",service.name=\"api\"}","hits":1}]}`)
+		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		backendCalls++
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"hello","_stream":"{cluster=\"eu\",service_name=\"api\"}"}`)
 	}))
 	defer backend.Close()
 
