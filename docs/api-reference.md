@@ -7,8 +7,8 @@
 | `POST /loki/api/v1/query_range` (logs) | Implemented | `/select/logsql/query` | 10s | 6 |
 | `POST /loki/api/v1/query_range` (metrics) | Implemented | `/select/logsql/stats_query_range` | 10s | 1 |
 | `GET /loki/api/v1/query` | Implemented | `/select/logsql/query` or `stats_query` | 10s | 1 |
-| `GET /loki/api/v1/labels` | Implemented | `/select/logsql/field_names` | 60s | 3 |
-| `GET /loki/api/v1/label/{name}/values` | Implemented | `/select/logsql/field_values` | 60s | 3 |
+| `GET /loki/api/v1/labels` | Implemented | `/select/logsql/stream_field_names` with fallback to `/select/logsql/field_names` | 60s | 3 |
+| `GET /loki/api/v1/label/{name}/values` | Implemented | `/select/logsql/stream_field_values` with fallback to `/select/logsql/field_values` | 60s | 3 |
 | `GET /loki/api/v1/series` | Implemented | `/select/logsql/streams` | 30s | 2 |
 | `GET /loki/api/v1/index/stats` | Implemented | `/select/logsql/hits` | - | 2 |
 | `GET /loki/api/v1/index/volume` | Implemented | `/select/logsql/hits` (field grouping) | - | 2 |
@@ -26,6 +26,7 @@ For Grafana Logs Drilldown and Explore compatibility:
 
 - Query results still use canonical Loki 2-tuples: `[timestamp, line]`.
 - Stream labels stay Loki-compatible on the `stream` object.
+- Label APIs prefer VictoriaLogs stream metadata so parsed fields do not leak into Loki label pickers when the backend supports the stream-only endpoints.
 - Parsed fields and structured metadata are surfaced through `detected_fields` and `detected_field/{name}/values`.
 - With `-metadata-field-mode=hybrid` (the default), field-oriented APIs expose both native VictoriaLogs dotted names and translated Loki aliases when they differ, for example `service.name` and `service_name`.
 - Synthetic compatibility labels such as `service_name` and `detected_level` stay available on the stream and label APIs.

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - add ingress-backed and native-only `/tail` compatibility coverage for Grafana Explore and compose e2e
 - extend multi-tenant Explore and Logs Drilldown coverage for `__tenant_id__`, label breakdowns, and service drilldowns
 - prefer native VictoriaLogs field names, field values, and streams metadata for Drilldown discovery, with bounded fallback scanning for parsed and derived fields
+- harden Loki label and Drilldown metadata resolution so stream metadata is preferred, exact native names win, and ambiguous translated aliases avoid silent wrong-field fallback
 - complete the upstream Helm distribution surface with deployable runtime templates, peer-cache DNS service wiring, optional Gateway API routing, and OCI chart publication from release workflows
 - add chart-native StatefulSet support, PVC-backed disk-cache defaults, and extra claim templates for persistent cache deployments
 
@@ -24,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - make the PR labeler fail-soft when optional repository labels are missing
 - split Grafana UI smoke coverage into stable shards, add PR-time current-family and previous-family Grafana smoke plus scheduled/manual runtime profiles, and move browser-independent Grafana checks into cheaper non-browser gates
+- prebuild and cache proxy images in Docker-backed CI jobs, run compose stacks with `--no-build`, and keep grouped compatibility gates with a legacy `e2e-compat` aggregate shim for required-check compatibility
 
 ### Tests
 
@@ -35,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - extract pure Grafana Explore/Drilldown URL builders, test them directly, and add browser console/request guardrails plus reload-persistence smoke coverage
 - make Logs Drilldown `1.x` and `2.x` contract assertions explicit in the source matrix, and harden Playwright smokes against toolbar overflow and in-place URL state updates
 - add explicit Grafana runtime-family assertions so `11.x` keeps the `1.x` Drilldown expectations and `12.x` keeps the `2.x` expectations
+- add resolver and handler coverage for stream-metadata preference, native-name precedence, and alias-collision behavior in label and Drilldown paths
 
 ### Documentation
 

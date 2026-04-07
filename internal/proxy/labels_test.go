@@ -272,3 +272,121 @@ func TestLabelTranslator_MetadataFieldExposures(t *testing.T) {
 		})
 	}
 }
+
+func TestLabelTranslator_ResolveLabelCandidates(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, []FieldMapping{
+		{VLField: "custom.dotted.field", LokiLabel: "custom_label"},
+	})
+
+	tests := []struct {
+		name      string
+		label     string
+		available []string
+		want      []string
+		ambiguous bool
+	}{
+		{
+			name:      "explicit mapping wins",
+			label:     "custom_label",
+			available: []string{"custom.dotted.field", "custom_label"},
+			want:      []string{"custom.dotted.field"},
+		},
+		{
+			name:      "exact native wins over semconv alias",
+			label:     "service_name",
+			available: []string{"service_name", "service.name"},
+			want:      []string{"service_name"},
+		},
+		{
+			name:      "known semconv alias resolves when exact native missing",
+			label:     "service_name",
+			available: []string{"service.name"},
+			want:      []string{"service.name"},
+		},
+		{
+			name:      "unique dynamic alias resolves custom dotted field",
+			label:     "com_acme_shop_order_id",
+			available: []string{"com.acme.shop.order_id"},
+			want:      []string{"com.acme.shop.order_id"},
+		},
+		{
+			name:      "ambiguous dynamic alias returns all candidates",
+			label:     "foo_bar",
+			available: []string{"foo.bar", "foo-bar"},
+			want:      []string{"foo.bar", "foo-bar"},
+			ambiguous: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := lt.ResolveLabelCandidates(tt.label, tt.available)
+			if got.ambiguous != tt.ambiguous {
+				t.Fatalf("ResolveLabelCandidates(%q).ambiguous = %v, want %v", tt.label, got.ambiguous, tt.ambiguous)
+			}
+			if len(got.candidates) != len(tt.want) {
+				t.Fatalf("ResolveLabelCandidates(%q) len = %d, want %d (%v)", tt.label, len(got.candidates), len(tt.want), got.candidates)
+			}
+			for i := range tt.want {
+				if got.candidates[i] != tt.want[i] {
+					t.Fatalf("ResolveLabelCandidates(%q)[%d] = %q, want %q", tt.label, i, got.candidates[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestLabelTranslator_ResolveMetadataCandidates(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+
+	tests := []struct {
+		name      string
+		field     string
+		available []string
+		want      []string
+		ambiguous bool
+	}{
+		{
+			name:      "exact native wins for underscore field",
+			field:     "service_name",
+			available: []string{"service.name", "service_name"},
+			want:      []string{"service_name"},
+		},
+		{
+			name:      "hybrid metadata alias resolves dotted field",
+			field:     "service_name",
+			available: []string{"service.name"},
+			want:      []string{"service.name"},
+		},
+		{
+			name:      "custom dotted metadata alias resolves uniquely",
+			field:     "com_acme_shop_order_id",
+			available: []string{"com.acme.shop.order_id"},
+			want:      []string{"com.acme.shop.order_id"},
+		},
+		{
+			name:      "colliding metadata aliases stay ambiguous",
+			field:     "foo_bar",
+			available: []string{"foo.bar", "foo-bar"},
+			want:      []string{"foo.bar", "foo-bar"},
+			ambiguous: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := lt.ResolveMetadataCandidates(tt.field, tt.available, MetadataFieldModeHybrid)
+			if got.ambiguous != tt.ambiguous {
+				t.Fatalf("ResolveMetadataCandidates(%q).ambiguous = %v, want %v", tt.field, got.ambiguous, tt.ambiguous)
+			}
+			if len(got.candidates) != len(tt.want) {
+				t.Fatalf("ResolveMetadataCandidates(%q) len = %d, want %d (%v)", tt.field, len(got.candidates), len(tt.want), got.candidates)
+			}
+			for i := range tt.want {
+				if got.candidates[i] != tt.want[i] {
+					t.Fatalf("ResolveMetadataCandidates(%q)[%d] = %q, want %q", tt.field, i, got.candidates[i], tt.want[i])
+				}
+			}
+		})
+	}
+}

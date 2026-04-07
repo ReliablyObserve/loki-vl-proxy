@@ -152,3 +152,5 @@ The `bench` job in `.github/workflows/ci.yaml` runs all benchmarks and load test
 2. Runs load tests at all concurrency tiers
 3. Fails the build if load tests produce errors (regression gate)
 4. Uploads results as CI artifacts for historical tracking
+
+For `TestLoad_HighConcurrency_MemoryStability`, the throughput expectation is `>10k req/s` in local environments and `>5k req/s` on shared CI runners (`CI=true`) to reduce race-mode noise while still catching major regressions.

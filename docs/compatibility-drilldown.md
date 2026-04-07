@@ -49,7 +49,9 @@ The Drilldown matrix is also a moving window. We support the current app family 
 - `detected_fields` must show parsed fields like `method`, `path`, `status`, `duration_ms`
 - `detected_fields` must not leak indexed labels like `app`, `cluster`, or `namespace`
 - In hybrid field mode, `detected_fields` may expose both native dotted fields and translated aliases such as `service.name` and `service_name`
+- `labels` and `label/{name}/values` should stay stream-shaped; they should prefer VictoriaLogs stream metadata endpoints and only fall back to generic field endpoints for older backend versions
 - `detected_fields`, `detected_labels`, and `detected_field/{name}/values` should prefer native VictoriaLogs metadata lookups where they map cleanly, then fall back to bounded raw-log sampling for parsed and derived fields
+- Alias resolution must keep exact native matches working, allow unique translated aliases to resolve automatically, and avoid silently choosing the wrong native field when multiple dotted names collapse to the same Loki-safe alias
 - Label-value resources for additional filters such as `cluster` must return real values
 - Unknown label and detected-field lookups should keep a success payload shape instead of flipping into transport errors
 - `patterns` must return non-empty grouped pattern payloads with sample buckets for Drilldown

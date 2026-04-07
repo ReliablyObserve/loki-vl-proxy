@@ -12,6 +12,7 @@ go test -race ./...
 # E2E compatibility tests (requires docker-compose)
 cd test/e2e-compat
 docker-compose up -d --build
+../../scripts/ci/wait_e2e_stack.sh 180
 go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
 
 # Track-specific scores
@@ -122,6 +123,8 @@ The Docker-backed `test/e2e-compat` suite now runs as four functional PR shards 
 
 Stack startup now uses [`wait_e2e_stack.sh`](../scripts/ci/wait_e2e_stack.sh) instead of `docker compose --wait` or fixed sleeps. That avoids false failures from services without Docker healthchecks and lets UI and compat jobs share the same readiness logic.
 
+The GitHub-hosted Docker jobs now also prebuild the proxy image once per job through BuildKit cache and start compose stacks with `--no-build`. That keeps the grouped compat shards and UI shards parallel without paying the full Docker rebuild cost every time a stack starts inside the same job.
+
 ### `datasource` shard
 
 | Test | Purpose |
@@ -231,6 +234,14 @@ Pull requests also get a dedicated `pr-quality-report.yaml` workflow. It compare
 - sampled benchmark and load-test deltas
 
 The report job now collects test count and coverage from the same Go test pass, uses a shallow checkout plus explicit base-SHA fetch, and uses 3-sample benchmark medians to keep the PR gate faster without dropping the tracked signals.
+The collector runs test/coverage, compatibility scores, benchmark medians, and load metrics in parallel with bounded fallbacks so a single slow signal does not block the whole report gate.
+The quality gate compares base/head with relative and absolute regression thresholds and ignores low-baseline noise, so tiny shared-runner jitter does not fail required checks.
+The high-concurrency load threshold remains strict locally (`>10k req/s`) and uses a CI floor (`>5k req/s`) on shared race-enabled runners to avoid flaky non-regression failures.
+
+Required-check note:
+
+- The repo now exposes the grouped compat jobs directly: `e2e-compat (core)`, `e2e-compat (drilldown)`, `e2e-compat (otel-edge)`, and `e2e-compat (tail-multitenancy)`.
+- The legacy umbrella `e2e-compat` job remains as a compatibility shim until branch protection is updated to require the grouped checks directly.
 
 That report is part of the required PR gate. It is still a smoke signal rather than a full benchmark lab run, but it now blocks obvious regressions in coverage, compatibility, and the tracked performance signals.
 

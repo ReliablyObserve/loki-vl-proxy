@@ -32,17 +32,27 @@ jobs:
       LOKI_IMAGE: grafana/loki:3.7.1
       VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
       GRAFANA_IMAGE: grafana/grafana:12.4.2
+      PROXY_IMAGE: loki-vl-proxy:compat-loki
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.1"
           cache: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=compat-proxy
+          cache-to: type=gha,mode=max,scope=compat-proxy
       - name: Start pinned stack
         working-directory: test/e2e-compat
         run: |
-          docker compose up -d --build
-          sleep 30
+          docker compose up -d --no-build
+          ../../scripts/ci/wait_e2e_stack.sh 180
       - name: Run Loki compatibility score
         run: go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
       - name: Tear down pinned stack
@@ -61,19 +71,29 @@ jobs:
     env:
       VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
       GRAFANA_IMAGE: grafana/grafana:12.4.2
+      PROXY_IMAGE: loki-vl-proxy:compat-loki
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.1"
           cache: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=compat-proxy
+          cache-to: type=gha,mode=max,scope=compat-proxy
       - name: Start matrix stack
         working-directory: test/e2e-compat
         env:
           LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
         run: |
-          docker compose up -d --build
-          sleep 30
+          docker compose up -d --no-build
+          ../../scripts/ci/wait_e2e_stack.sh 180
       - name: Run Loki compatibility score
         env:
           LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}

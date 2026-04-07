@@ -1088,9 +1088,141 @@ func applyConstantBinaryOp(left, right float64, op string) (float64, bool) {
 	}
 }
 
+type vlAPIError struct {
+	status int
+	body   string
+}
+
+func (e *vlAPIError) Error() string {
+	if strings.TrimSpace(e.body) == "" {
+		return fmt.Sprintf("victorialogs api error: status %d", e.status)
+	}
+	return strings.TrimSpace(e.body)
+}
+
+func shouldFallbackToGenericMetadata(err error) bool {
+	apiErr, ok := err.(*vlAPIError)
+	if !ok {
+		return false
+	}
+	return apiErr.status >= 400 && apiErr.status < 500
+}
+
+func decodeVLFieldHits(body []byte) ([]string, error) {
+	var resp struct {
+		Values []struct {
+			Value string `json:"value"`
+			Hits  int64  `json:"hits"`
+		} `json:"values"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	values := make([]string, 0, len(resp.Values))
+	for _, item := range resp.Values {
+		values = append(values, item.Value)
+	}
+	return values, nil
+}
+
+func (p *Proxy) fetchVLFieldNames(ctx context.Context, path string, params url.Values) ([]string, error) {
+	resp, err := p.vlGet(ctx, path, params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, &vlAPIError{status: resp.StatusCode, body: string(body)}
+	}
+	return decodeVLFieldHits(body)
+}
+
+func (p *Proxy) fetchVLFieldValues(ctx context.Context, path string, params url.Values) ([]string, error) {
+	resp, err := p.vlGet(ctx, path, params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, &vlAPIError{status: resp.StatusCode, body: string(body)}
+	}
+	return decodeVLFieldHits(body)
+}
+
+func (p *Proxy) fetchPreferredLabelNames(ctx context.Context, params url.Values) ([]string, error) {
+	labels, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
+	if err == nil {
+		return labels, nil
+	}
+	if shouldFallbackToGenericMetadata(err) {
+		return p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
+	}
+	return nil, err
+}
+
+func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string, params url.Values) ([]string, error) {
+	streamFields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
+	useStreamEndpoint := err == nil
+	if err != nil && !shouldFallbackToGenericMetadata(err) {
+		return nil, err
+	}
+
+	resolution := p.labelTranslator.ResolveLabelCandidates(labelName, streamFields)
+	if len(resolution.candidates) == 0 && useStreamEndpoint {
+		useStreamEndpoint = false
+	}
+	if len(resolution.candidates) == 0 && !useStreamEndpoint {
+		resolution = fieldResolution{candidates: []string{p.labelTranslator.ToVL(labelName)}}
+	}
+	if len(resolution.candidates) == 0 {
+		return []string{}, nil
+	}
+
+	endpoint := "/select/logsql/field_values"
+	if useStreamEndpoint {
+		endpoint = "/select/logsql/stream_field_values"
+	}
+
+	seen := make(map[string]struct{}, 16)
+	values := make([]string, 0, 16)
+	for _, candidate := range resolution.candidates {
+		queryParams := url.Values{}
+		for key, items := range params {
+			for _, item := range items {
+				queryParams.Add(key, item)
+			}
+		}
+		queryParams.Set("field", candidate)
+
+		fieldValues, fieldErr := p.fetchVLFieldValues(ctx, endpoint, queryParams)
+		if fieldErr != nil && endpoint == "/select/logsql/stream_field_values" && shouldFallbackToGenericMetadata(fieldErr) {
+			endpoint = "/select/logsql/field_values"
+			fieldValues, fieldErr = p.fetchVLFieldValues(ctx, endpoint, queryParams)
+		}
+		if fieldErr != nil {
+			return nil, fieldErr
+		}
+		for _, value := range fieldValues {
+			if _, ok := seen[value]; ok {
+				continue
+			}
+			seen[value] = struct{}{}
+			values = append(values, value)
+		}
+	}
+	sort.Strings(values)
+	return values, nil
+}
+
 // handleLabels returns label names.
 // Loki: GET /loki/api/v1/labels?start=...&end=...
-// VL:   GET /select/logsql/field_names?query=*&start=...&end=...
+// VL:   GET /select/logsql/stream_field_names?query=*&start=...&end=...
+//
+//	fallback /select/logsql/field_names for older backends
 func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if p.handleMultiTenantFanout(w, r, "labels", p.handleLabels) {
@@ -1128,38 +1260,24 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		params.Set("end", e)
 	}
 
-	body, err := p.vlGetCoalesced(r.Context(), "labels:"+params.Encode(), "/select/logsql/field_names", params)
+	labels, err := p.fetchPreferredLabelNames(r.Context(), params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		p.metrics.RecordRequest("labels", http.StatusBadGateway, time.Since(start))
 		return
 	}
 
-	// VL returns: {"values": [{"value": "name", "hits": N}, ...]}
-	// Loki expects: {"status": "success", "data": ["name1", "name2", ...]}
-	var vlResp struct {
-		Values []struct {
-			Value string `json:"value"`
-			Hits  int64  `json:"hits"`
-		} `json:"values"`
-	}
-	if err := json.Unmarshal(body, &vlResp); err != nil {
-		p.writeError(w, http.StatusInternalServerError, "failed to parse VL response: "+err.Error())
-		p.metrics.RecordRequest("labels", http.StatusInternalServerError, time.Since(start))
-		return
-	}
-
-	labels := make([]string, 0, len(vlResp.Values))
-	for _, v := range vlResp.Values {
+	filtered := make([]string, 0, len(labels))
+	for _, v := range labels {
 		// Filter out VL internal fields — Loki doesn't expose these
-		if isVLInternalField(v.Value) {
+		if isVLInternalField(v) {
 			continue
 		}
-		labels = append(labels, v.Value)
+		filtered = append(filtered, v)
 	}
 
 	// Apply label name translation (e.g., dots → underscores)
-	labels = p.labelTranslator.TranslateLabelsList(labels)
+	labels = p.labelTranslator.TranslateLabelsList(filtered)
 	labels = appendSyntheticLabels(labels)
 
 	result := lokiLabelsResponse(labels)
@@ -1171,7 +1289,9 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 
 // handleLabelValues returns values for a specific label.
 // Loki: GET /loki/api/v1/label/{name}/values?start=...&end=...
-// VL:   GET /select/logsql/field_values?query=*&field={name}&start=...&end=...
+// VL:   GET /select/logsql/stream_field_values?query=*&field={name}&start=...&end=...
+//
+//	fallback /select/logsql/field_values for older backends
 func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	// Extract label name from URL: /loki/api/v1/label/{name}/values
@@ -1209,8 +1329,6 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
 		return
 	}
-	// Translate Loki label name to VL field name for the backend query
-	vlFieldName := p.labelTranslator.ToVL(labelName)
 
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
@@ -1232,7 +1350,6 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	} else {
 		params.Set("query", "*")
 	}
-	params.Set("field", vlFieldName)
 	if s := r.FormValue("start"); s != "" {
 		params.Set("start", s)
 	}
@@ -1243,30 +1360,11 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		params.Set("limit", l)
 	}
 
-	resp, err := p.vlGet(r.Context(), "/select/logsql/field_values", params)
+	values, err := p.fetchPreferredLabelValues(r.Context(), labelName, params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		p.metrics.RecordRequest("label_values", http.StatusBadGateway, time.Since(start))
 		return
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	var vlResp struct {
-		Values []struct {
-			Value string `json:"value"`
-			Hits  int64  `json:"hits"`
-		} `json:"values"`
-	}
-	if err := json.Unmarshal(body, &vlResp); err != nil {
-		p.writeError(w, http.StatusInternalServerError, "failed to parse VL response")
-		return
-	}
-
-	values := make([]string, 0, len(vlResp.Values))
-	for _, v := range vlResp.Values {
-		values = append(values, v.Value)
 	}
 
 	result := lokiLabelsResponse(values)

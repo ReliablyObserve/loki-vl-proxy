@@ -64,6 +64,20 @@ capture_or_default() {
   return 0
 }
 
+capture_async() {
+  local name="$1"
+  local fallback="$2"
+  local timeout_seconds="$3"
+  local output_file="$4"
+  local pid_var="$5"
+  shift 5
+
+  (
+    capture_or_default "$name" "$fallback" "$timeout_seconds" "$@"
+  ) >"$output_file" &
+  printf -v "$pid_var" '%s' "$!"
+}
+
 collect_tests_and_coverage() {
   local cover_file="$TMP_DIR/coverage.out"
   local events_file="$TMP_DIR/go-test-events.json"
@@ -100,7 +114,14 @@ start_compat_stack() {
   (
     cd "$ROOT_DIR/test/e2e-compat"
     docker compose down -v >&2 || true
-    docker compose up -d --build >&2
+    if [ -n "${PROXY_IMAGE:-}" ] && docker image inspect "${PROXY_IMAGE}" >/dev/null 2>&1; then
+      if ! docker compose up -d --no-build >&2; then
+        log_step "compat stack --no-build failed; retrying with --build"
+        docker compose up -d --build >&2
+      fi
+    else
+      docker compose up -d --build >&2
+    fi
     "$ROOT_DIR/scripts/ci/wait_e2e_stack.sh" 180 >&2
   )
 }
@@ -192,10 +213,24 @@ collect_load() {
     '{high_concurrency_req_per_s:$throughput,high_concurrency_memory_growth_mb:$memory_growth}'
 }
 
-TESTS_AND_COVERAGE="$(capture_or_default tests_and_coverage '{"count":0,"coverage_pct":0}' 900 collect_tests_and_coverage)"
-COMPAT="$(capture_or_default compat '{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}' 1800 collect_compat)"
-BENCHMARKS="$(capture_or_default benchmarks '{"query_range_cache_hit_ns_per_op":0,"query_range_cache_hit_bytes_per_op":0,"query_range_cache_hit_allocs_per_op":0,"query_range_cache_bypass_ns_per_op":0,"query_range_cache_bypass_bytes_per_op":0,"query_range_cache_bypass_allocs_per_op":0,"labels_cache_hit_ns_per_op":0,"labels_cache_hit_bytes_per_op":0,"labels_cache_hit_allocs_per_op":0,"labels_cache_bypass_ns_per_op":0,"labels_cache_bypass_bytes_per_op":0,"labels_cache_bypass_allocs_per_op":0}' 900 collect_benchmarks)"
-LOAD="$(capture_or_default load '{"high_concurrency_req_per_s":0,"high_concurrency_memory_growth_mb":0}' 600 collect_load)"
+tests_file="$TMP_DIR/tests_and_coverage.json"
+compat_file="$TMP_DIR/compat.json"
+benchmarks_file="$TMP_DIR/benchmarks.json"
+load_file="$TMP_DIR/load.json"
+
+capture_async tests_and_coverage '{"count":0,"coverage_pct":0}' 900 "$tests_file" tests_pid collect_tests_and_coverage
+capture_async compat '{"loki":{"passed":0,"total":0,"pct":0},"drilldown":{"passed":0,"total":0,"pct":0},"vl":{"passed":0,"total":0,"pct":0}}' 1800 "$compat_file" compat_pid collect_compat
+capture_async benchmarks '{"query_range_cache_hit_ns_per_op":0,"query_range_cache_hit_bytes_per_op":0,"query_range_cache_hit_allocs_per_op":0,"query_range_cache_bypass_ns_per_op":0,"query_range_cache_bypass_bytes_per_op":0,"query_range_cache_bypass_allocs_per_op":0,"labels_cache_hit_ns_per_op":0,"labels_cache_hit_bytes_per_op":0,"labels_cache_hit_allocs_per_op":0,"labels_cache_bypass_ns_per_op":0,"labels_cache_bypass_bytes_per_op":0,"labels_cache_bypass_allocs_per_op":0}' 900 "$benchmarks_file" benchmarks_pid collect_benchmarks
+capture_async load '{"high_concurrency_req_per_s":0,"high_concurrency_memory_growth_mb":0}' 600 "$load_file" load_pid collect_load
+
+for pid in "$tests_pid" "$compat_pid" "$benchmarks_pid" "$load_pid"; do
+  wait "$pid"
+done
+
+TESTS_AND_COVERAGE="$(cat "$tests_file")"
+COMPAT="$(cat "$compat_file")"
+BENCHMARKS="$(cat "$benchmarks_file")"
+LOAD="$(cat "$load_file")"
 
 jq -n \
   --argjson tests "$TESTS_AND_COVERAGE" \

@@ -25,6 +25,7 @@ services:
       start_period: 5s
 
   proxy-a:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:fleet-local}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -57,6 +58,7 @@ services:
       start_period: 5s
 
   proxy-b:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:fleet-local}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -89,6 +91,7 @@ services:
       start_period: 5s
 
   proxy-c:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:fleet-local}
     build:
       context: ../..
       dockerfile: Dockerfile

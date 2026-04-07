@@ -7,7 +7,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/szibis/Loki-VL-proxy)](https://go.dev/)
 [![Release](https://img.shields.io/github/v/release/szibis/Loki-VL-proxy)](https://github.com/szibis/Loki-VL-proxy/releases)
 [![Lines of Code](https://sloc.xyz/github/szibis/Loki-VL-proxy/?category=code)](https://github.com/szibis/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-1023%20passed-brightgreen)](#tests)
+[![Tests](https://img.shields.io/github/actions/workflow/status/szibis/Loki-VL-proxy/ci.yaml?label=tests)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/ci.yaml)
 [![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/szibis/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/szibis/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -135,6 +135,8 @@ See [Performance Guide](docs/performance.md), [Scaling](docs/scaling.md), [Fleet
 - **Synthetic live tail fallback** -- keep `/tail` usable when native backend tail support is missing or disabled
 - **Bounded fanout and merge safety** -- multi-tenant query fanout, merged response size, synthetic-tail dedup state, and expensive metadata scans all have explicit safety caps
 - **Cache-hit and bypass regression gates** -- PR quality checks track CPU, memory, allocations, throughput, and memory growth across hot and uncached paths
+- **Faster PR quality snapshots** -- base/head quality metrics are collected in parallel with bounded per-metric timeouts so required report gating stays informative without stalling whole PR checks
+- **CI noise-tolerant report gate** -- base/head quality comparisons use relative plus absolute thresholds with low-baseline guards, so small runner jitter does not block PRs
 
 ### Operations
 See [Getting Started](docs/getting-started.md), [Configuration](docs/configuration.md), [Scaling](docs/scaling.md), [Observability](docs/observability.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), and [Rules And Alerts Migration](docs/rules-alerts-migration.md).
@@ -329,6 +331,17 @@ See [Compatibility Matrix](docs/compatibility-matrix.md), [Loki Compatibility](d
 | `\| line_format` / `\| label_format` | Proxy | Template evaluation |
 
 All features produce correct results. Implementation details for advanced features in [Known Issues](docs/KNOWN_ISSUES.md).
+
+## Release Automation
+
+`Auto Release` on `main` now uses a precedence order aligned with common OSS patterns:
+
+1. explicit release labels on merged PR: `release:major`, `release:minor`, `release:patch`, `no-release`
+2. semantic PR labels: `breaking-change`, `feature`, `bugfix`, `performance`
+3. conventional commit subjects (`feat`, `fix`, `perf`, `refactor`, `revert`, breaking markers)
+4. fallback patch bump for non-doc/non-ci changes when no explicit signal is present
+
+Release is skipped only when the change-set since the latest tag is docs/metadata/CI only (`README`, `CHANGELOG`, `docs/`, `.github/`). Helm chart changes are treated as releasable, and metadata sync commits are loop-protected with `[skip ci]`.
 
 ## Documentation
 

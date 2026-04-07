@@ -769,6 +769,57 @@ func TestDrilldown_DetectedFieldValues_ReturnParsedValues(t *testing.T) {
 	}
 }
 
+func TestDrilldown_DetectedFieldValues_AmbiguousAliasFallsBackToScan(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"foo.bar","hits":1},{"value":"foo-bar","hits":1}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"status\":\"ok\"}","_stream":"{app=\"api-gateway\"}","app":"api-gateway","foo.bar":"alpha","foo-bar":"beta"}` + "\n"))
+		case "/select/logsql/field_values":
+			t.Fatalf("ambiguous alias must not use native field_values fast path")
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/foo_bar/values?query=%7Bapp%3D%22api-gateway%22%7D", nil)
+	p.handleDetectedFieldValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	values, ok := resp["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array, got %v", resp)
+	}
+	if len(values) != 2 {
+		t.Fatalf("expected merged values from ambiguous alias scan fallback, got %v", resp)
+	}
+
+	got := map[string]bool{}
+	for _, value := range values {
+		got[value.(string)] = true
+	}
+	if !got["alpha"] || !got["beta"] {
+		t.Fatalf("expected alpha and beta values, got %v", resp)
+	}
+}
+
 func TestDrilldown_DetectedFieldValues_ReturnStructuredMetadataValues(t *testing.T) {
 	var sawFieldValues bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

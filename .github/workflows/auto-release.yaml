@@ -6,7 +6,6 @@ on:
     paths-ignore:
       - "CHANGELOG.md"
       - "docs/observability.md"
-      - "charts/loki-vl-proxy/Chart.yaml"
       - "README.md"
   workflow_dispatch:
 
@@ -34,6 +33,10 @@ jobs:
 
       - name: Determine version bump
         id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
           LATEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | head -1 || echo "v0.0.0")
@@ -41,32 +44,76 @@ jobs:
           echo "Latest tag: $LATEST_TAG"
 
           COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
-          REAL=$(echo "$COMMITS" | grep -v '^ci:' | grep -v '^docs:' | grep -v '\[skip ci\]' | grep -v '^Merge' || true)
+          FILES_CHANGED=$(git diff --name-only "${LATEST_TAG}..HEAD" 2>/dev/null || git diff --name-only HEAD~1)
 
-          if [ -z "$REAL" ]; then
+          if echo "${HEAD_COMMIT_MSG:-}" | grep -qE '^docs: sync release metadata for v[0-9]'; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping metadata sync commit"
+            exit 0
+          fi
+
+          DOCS_OR_CI_ONLY="yes"
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            if ! echo "$file" | grep -Eq '^(README\.md|CHANGELOG\.md|docs/|\.github/)$'; then
+              DOCS_OR_CI_ONLY="no"
+              break
+            fi
+          done <<< "$FILES_CHANGED"
+
+          if [ "$DOCS_OR_CI_ONLY" = "yes" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Only docs/ci/metadata files changed; skipping release"
             exit 0
           fi
 
           BUMP="none"
-          FILES_CHANGED=$(git diff --name-only "${LATEST_TAG}..HEAD" 2>/dev/null || git diff --name-only HEAD~1)
-          HAS_CORE_CHANGES=$(echo "$FILES_CHANGED" | grep -E '^(internal/|cmd/|pkg/)' || true)
-          HAS_FEAT=$(echo "$COMMITS" | grep -qE '^feat(\(|:)' && echo "yes" || echo "no")
+          PR_NUMBER="$(echo "${HEAD_COMMIT_MSG:-}" | grep -oE '#[0-9]+' | tail -1 | tr -d '#' || true)"
 
-          if echo "$COMMITS" | grep -qE 'BREAKING CHANGE|^feat.*!:|^fix.*!:'; then
-            BUMP="major"
-          elif [ "$HAS_FEAT" = "yes" ] && [ -n "$HAS_CORE_CHANGES" ]; then
-            BUMP="minor"
-          elif [ "$HAS_FEAT" = "yes" ]; then
-            BUMP="patch"
-          elif echo "$COMMITS" | grep -qE '^fix(\(|:)|^perf(\(|:)'; then
-            BUMP="patch"
+          if [ -n "${PR_NUMBER}" ]; then
+            PR_JSON="$(curl -fsSL \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}" || true)"
+            if [ -n "$PR_JSON" ]; then
+              PR_LABELS="$(echo "$PR_JSON" | jq -r '.labels[]?.name' || true)"
+              echo "PR #${PR_NUMBER} labels: ${PR_LABELS:-<none>}"
+
+              if echo "$PR_LABELS" | grep -qE '^no-release$'; then
+                echo "should_release=false" >> "$GITHUB_OUTPUT"
+                echo "PR has no-release label; skipping release"
+                exit 0
+              fi
+
+              if echo "$PR_LABELS" | grep -qE '^release:major$'; then
+                BUMP="major"
+              elif echo "$PR_LABELS" | grep -qE '^release:minor$'; then
+                BUMP="minor"
+              elif echo "$PR_LABELS" | grep -qE '^release:patch$'; then
+                BUMP="patch"
+              elif echo "$PR_LABELS" | grep -qE '^(breaking-change)$'; then
+                BUMP="major"
+              elif echo "$PR_LABELS" | grep -qE '^(feature)$'; then
+                BUMP="minor"
+              elif echo "$PR_LABELS" | grep -qE '^(bugfix|performance)$'; then
+                BUMP="patch"
+              fi
+            fi
           fi
 
           if [ "$BUMP" = "none" ]; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "Only docs/ci/chore commits detected; skipping release"
-            exit 0
+            if echo "$COMMITS" | grep -qE 'BREAKING CHANGE|^feat.*!:|^fix.*!:'; then
+              BUMP="major"
+            elif echo "$COMMITS" | grep -qE '^feat(\(|:)'; then
+              BUMP="minor"
+            elif echo "$COMMITS" | grep -qE '^(fix|perf|refactor|revert)(\(|:)'; then
+              BUMP="patch"
+            fi
+          fi
+
+          if [ "$BUMP" = "none" ]; then
+            BUMP="patch"
+            echo "No explicit release signal found; defaulting to patch bump for non-doc/ci changes"
           fi
 
           CURRENT="${LATEST_TAG#v}"

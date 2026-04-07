@@ -46,6 +46,11 @@ type metadataFieldExposure struct {
 	isAlias bool
 }
 
+type fieldResolution struct {
+	candidates []string
+	ambiguous  bool
+}
+
 // labelSanitizeRe matches characters not allowed in Prometheus/Loki label names.
 var labelSanitizeRe = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 
@@ -112,6 +117,122 @@ func (lt *LabelTranslator) ToVL(lokiLabel string) string {
 		return lokiLabel
 	default:
 		return lokiLabel
+	}
+}
+
+func appendUniqueString(values []string, value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return values
+	}
+	for _, existing := range values {
+		if existing == value {
+			return values
+		}
+	}
+	return append(values, value)
+}
+
+func containsString(values []string, value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	for _, existing := range values {
+		if existing == value {
+			return true
+		}
+	}
+	return false
+}
+
+// ResolveLabelCandidates resolves a Loki label name to one or more VL native field names
+// using runtime field inventory when available. Exact native matches win for backward
+// compatibility; translated aliases are only used automatically when they are unique.
+func (lt *LabelTranslator) ResolveLabelCandidates(lokiLabel string, available []string) fieldResolution {
+	label := strings.TrimSpace(lokiLabel)
+	if label == "" {
+		return fieldResolution{}
+	}
+
+	if len(available) == 0 {
+		if lt == nil {
+			return fieldResolution{candidates: []string{label}}
+		}
+		return fieldResolution{candidates: []string{lt.ToVL(label)}}
+	}
+
+	var candidates []string
+	addIfAvailable := func(name string) bool {
+		if !containsString(available, name) {
+			return false
+		}
+		candidates = appendUniqueString(candidates, name)
+		return true
+	}
+
+	if lt != nil {
+		if mapped, ok := lt.lokiToVL[label]; ok && addIfAvailable(mapped) {
+			return fieldResolution{candidates: candidates}
+		}
+	}
+	if label == "detected_level" && addIfAvailable("level") {
+		return fieldResolution{candidates: candidates}
+	}
+	if addIfAvailable(label) {
+		return fieldResolution{candidates: candidates}
+	}
+	if lt != nil {
+		if dotted, ok := knownUnderscoreToDot[label]; ok && addIfAvailable(dotted) {
+			return fieldResolution{candidates: candidates}
+		}
+	}
+
+	for _, field := range available {
+		translated := field
+		if lt != nil {
+			translated = lt.ToLoki(field)
+		}
+		if translated == label {
+			candidates = appendUniqueString(candidates, field)
+		}
+	}
+	return fieldResolution{
+		candidates: candidates,
+		ambiguous:  len(candidates) > 1,
+	}
+}
+
+// ResolveMetadataCandidates resolves a detected field name to one or more native VL field
+// names while preserving the current metadata exposure mode. Exact native matches win;
+// otherwise translated metadata aliases are only used when uniquely resolvable.
+func (lt *LabelTranslator) ResolveMetadataCandidates(fieldName string, available []string, mode MetadataFieldMode) fieldResolution {
+	name := strings.TrimSpace(fieldName)
+	if name == "" {
+		return fieldResolution{}
+	}
+	if len(available) == 0 {
+		return fieldResolution{}
+	}
+	if containsString(available, name) {
+		return fieldResolution{candidates: []string{name}}
+	}
+	if lt == nil {
+		return fieldResolution{}
+	}
+
+	var candidates []string
+	for _, field := range available {
+		for _, exposure := range lt.metadataFieldExposures(field, mode) {
+			if exposure.name == name {
+				candidates = appendUniqueString(candidates, field)
+				break
+			}
+		}
+	}
+	return fieldResolution{
+		candidates: candidates,
+		ambiguous:  len(candidates) > 1,
 	}
 }
 

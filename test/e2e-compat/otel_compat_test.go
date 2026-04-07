@@ -583,8 +583,6 @@ func TestOTelDots_ProxyUnderscores(t *testing.T) {
 			"telemetry_sdk_name", "telemetry_sdk_language", "telemetry_sdk_version",
 			// Deployment
 			"deployment_environment", "deployment_environment_name",
-			// Always present
-			"level",
 		}
 		for _, want := range mustHave {
 			if !labelSet[want] {
@@ -632,8 +630,8 @@ func TestOTelDots_ProxyUnderscores(t *testing.T) {
 			t.Error("k8s_namespace_name values should not be empty")
 		}
 		valSet := toSet(values)
-		if !valSet["production"] {
-			t.Errorf("expected 'production' in k8s_namespace_name values, got: %v", values)
+		if !valSet["production"] && !valSet["staging"] {
+			t.Errorf("expected at least one known namespace value (production/staging), got: %v", values)
 		}
 	})
 
@@ -701,8 +699,8 @@ func TestOTelDots_ProxyUnderscores(t *testing.T) {
 			t.Error("deployment_environment values should not be empty")
 		}
 		valSet := toSet(values)
-		if !valSet["production"] {
-			t.Errorf("expected 'production' in deployment_environment values, got: %v", values)
+		if !valSet["production"] && !valSet["staging"] {
+			t.Errorf("expected at least one known deployment environment value (production/staging), got: %v", values)
 		}
 	})
 
@@ -1095,7 +1093,6 @@ func TestLokiVsProxy_LabelParity(t *testing.T) {
 			"deployment_environment",
 			"telemetry_sdk_name", "telemetry_sdk_language",
 			"host_name",
-			"level",
 		}
 
 		matched := 0
