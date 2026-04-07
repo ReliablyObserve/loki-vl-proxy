@@ -22,7 +22,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await waitForGrafanaReady(page);
   });
 
-  test("basic log query returns results without errors", async ({ page }) => {
+  test("basic log query returns results without errors @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway"}');
     await runQuery(page);
@@ -31,7 +31,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("line filter query works", async ({ page }) => {
+  test("line filter query works @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway"} |= "error"');
     await runQuery(page);
@@ -40,7 +40,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("metric query (count_over_time) renders graph", async ({ page }) => {
+  test("metric query (count_over_time) renders graph @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, 'count_over_time({app="api-gateway"}[5m])');
     await runQuery(page);
@@ -49,7 +49,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("rate query renders graph", async ({ page }) => {
+  test("rate query renders graph @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, 'rate({app="api-gateway"}[5m])');
     await runQuery(page);
@@ -58,7 +58,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("sum by label renders graph", async ({ page }) => {
+  test("sum by label renders graph @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, 'sum(rate({app="api-gateway"}[5m])) by (level)');
     await runQuery(page);
@@ -67,7 +67,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("json parser query works", async ({ page }) => {
+  test("json parser query works @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway"} | json');
     await runQuery(page);
@@ -76,7 +76,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("logfmt parser query works", async ({ page }) => {
+  test("logfmt parser query works @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway"} | logfmt');
     await runQuery(page);
@@ -85,7 +85,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("negative filter works", async ({ page }) => {
+  test("negative filter works @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway"} != "health"');
     await runQuery(page);
@@ -94,7 +94,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("direction=forward works", async ({ page }) => {
+  test("direction=forward works @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     // In Explore, direction is controlled via the UI sort button
     // but we can test via query_range API directly
@@ -105,7 +105,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("quantile_over_time renders", async ({ page }) => {
+  test("quantile_over_time renders @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(
       page,
@@ -118,7 +118,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(fatalErrors).toHaveLength(0);
   });
 
-  test("label_format multi-rename works", async ({ page }) => {
+  test("label_format multi-rename works @explore-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(
       page,
@@ -130,7 +130,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("multi-tenant query respects __tenant_id__ filter in Explore", async ({ page }) => {
+  test("multi-tenant query respects __tenant_id__ filter in Explore @explore-tail", async ({ page }) => {
     await openExplore(page, PROXY_MULTI_DS);
     await waitForGrafanaReady(page);
 
@@ -143,7 +143,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("multi-tenant line filter with __tenant_id__ works in Explore", async ({ page }) => {
+  test("multi-tenant line filter with __tenant_id__ works in Explore @explore-tail", async ({ page }) => {
     await openExplore(page, PROXY_MULTI_DS);
     await waitForGrafanaReady(page);
 
@@ -156,7 +156,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("multi-tenant metric query with __tenant_id__ renders graph", async ({ page }) => {
+  test("multi-tenant metric query with __tenant_id__ renders graph @explore-tail", async ({ page }) => {
     await openExplore(page, PROXY_MULTI_DS);
     await waitForGrafanaReady(page);
 
@@ -169,7 +169,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("multi-tenant json parser query with __tenant_id__ works in Explore", async ({ page }) => {
+  test("multi-tenant json parser query with __tenant_id__ works in Explore @explore-tail", async ({ page }) => {
     await openExplore(page, PROXY_MULTI_DS);
     await waitForGrafanaReady(page);
 
@@ -182,7 +182,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("live tail works through the browser-allowed synthetic datasource", async ({
+  test("live tail works through the browser-allowed synthetic datasource @explore-tail", async ({
     page,
   }) => {
     const app = `ui-tail-${Date.now()}`;
@@ -226,7 +226,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(websockets.some((u) => u.includes("/tail") || u.includes("/api/live/ws"))).toBeTruthy();
   });
 
-  test("live tail also works through the ingress datasource", async ({ page }) => {
+  test("live tail also works through the ingress datasource @explore-tail", async ({ page }) => {
     const app = `ui-tail-ingress-${Date.now()}`;
     const msg = `ui ingress tail frame ${app}`;
     const errors = collectLokiErrors(page);
@@ -262,7 +262,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("native-only tail datasource fails without crashing the UI", async ({ page }) => {
+  test("native-only tail datasource fails without crashing the UI @explore-tail", async ({ page }) => {
     await openExplore(page, PROXY_TAIL_NATIVE_DS);
     await waitForGrafanaReady(page);
     await typeQuery(page, '{app="api-gateway"}');
@@ -307,7 +307,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await assertNoErrors(page);
   });
 
-  test("native-tail failure can recover through ingress live tail", async ({ page }) => {
+  test("native-tail failure can recover through ingress live tail @explore-tail", async ({ page }) => {
     await openExplore(page, PROXY_TAIL_NATIVE_DS);
     await waitForGrafanaReady(page);
     await typeQuery(page, '{app="api-gateway"}');
@@ -362,7 +362,7 @@ test.describe("Grafana Explore — Side-by-side Comparison", () => {
   ];
 
   for (const query of queries) {
-    test(`proxy matches Loki for: ${query.slice(0, 50)}`, async ({ page }) => {
+    test(`proxy matches Loki for: ${query.slice(0, 50)} @explore-core`, async ({ page }) => {
       // Query proxy
       const proxyErrors: string[] = [];
       page.on("response", (r) => {

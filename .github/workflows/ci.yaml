@@ -192,6 +192,21 @@ jobs:
   e2e-ui:
     runs-on: ubuntu-latest
     needs: [test]
+    strategy:
+      fail-fast: false
+      matrix:
+        shard:
+          - name: datasource
+            command: tests/datasource.spec.ts
+          - name: explore-core
+            command: --grep @explore-core
+          - name: explore-tail
+            command: --grep @explore-tail
+          - name: drilldown-core
+            command: --grep @drilldown-core
+          - name: drilldown-multitenant
+            command: --grep @drilldown-mt
+    name: e2e-ui (${{ matrix.shard.name }})
     steps:
       - uses: actions/checkout@v4
 
@@ -224,13 +239,13 @@ jobs:
         env:
           GRAFANA_URL: http://127.0.0.1:3002
           PROXY_URL: http://127.0.0.1:3100
-        run: npx playwright test
+        run: npx playwright test ${{ matrix.shard.command }}
 
       - name: Upload Playwright artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shard.name }}
           path: |
             test/e2e-ui/playwright-report
             test/e2e-ui/test-results

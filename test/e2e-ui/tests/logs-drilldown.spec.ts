@@ -184,7 +184,7 @@ async function collectDrilldownResponses(page) {
 }
 
 test.describe("Grafana Logs Drilldown", () => {
-  test("proxy shows service buckets on landing page", async ({ page }) => {
+  test("proxy shows service buckets on landing page @drilldown-core", async ({ page }) => {
     const responses = await collectDrilldownResponses(page);
     await openLogsDrilldown(page, PROXY_DS);
     await waitForGrafanaReady(page);
@@ -202,7 +202,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(JSON.stringify(volumeResponse?.json)).toContain("api-gateway");
   });
 
-  test("proxy drilldown shows logs and parsed fields for api-gateway", async ({
+  test("proxy drilldown shows logs and parsed fields for api-gateway @drilldown-core", async ({
     page,
   }) => {
     const responses = await collectDrilldownResponses(page);
@@ -234,7 +234,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(detectedFieldsBody).not.toContain('"label":"app"');
   });
 
-  test("proxy service drilldown exposes label and field tabs", async ({ page }) => {
+  test("proxy service drilldown exposes label and field tabs @drilldown-core", async ({ page }) => {
     await openServiceDrilldown(page, PROXY_DS, "api-gateway", "logs");
 
     await expect(page.getByRole("tab", { name: /Labels\d+/ })).toBeVisible();
@@ -255,7 +255,7 @@ test.describe("Grafana Logs Drilldown", () => {
     await expect(page.getByText("path_extracted", { exact: true })).toHaveCount(0);
   });
 
-  test("proxy and direct Loki both expose api-gateway in logs drilldown", async ({
+  test("proxy and direct Loki both expose api-gateway in logs drilldown @drilldown-core", async ({
     page,
   }) => {
     await openLogsDrilldown(page, LOKI_DS);
@@ -271,7 +271,7 @@ test.describe("Grafana Logs Drilldown", () => {
     });
   });
 
-  test("proxy landing page can add and use a cluster breakdown tab", async ({ page }) => {
+  test("proxy landing page can add and use a cluster breakdown tab @drilldown-core", async ({ page }) => {
     const responses = await collectDrilldownResponses(page);
     await openLogsDrilldown(page, PROXY_DS);
     await waitForGrafanaReady(page);
@@ -300,7 +300,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(JSON.stringify(volumeResponse?.json)).toContain("us-east-1");
   });
 
-  test("proxy drilldown exposes dotted OTel structured metadata fields", async ({ page }) => {
+  test("proxy drilldown exposes dotted OTel structured metadata fields @drilldown-core", async ({ page }) => {
     const responses = await collectDrilldownResponses(page);
     await openServiceDrilldown(page, PROXY_DS, "otel-auth-service", "fields");
 
@@ -322,7 +322,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(detectedFieldsBody).toContain('"label":"service_name"');
   });
 
-  test("proxy drilldown label filter flow works for cluster", async ({ page }) => {
+  test("proxy drilldown label filter flow works for cluster @drilldown-core", async ({ page }) => {
     await openServiceDrilldown(page, PROXY_DS, "api-gateway", "logs");
 
     await addDrilldownFilter(page, "Filter by labels", "cluster", "us-east-1");
@@ -332,7 +332,7 @@ test.describe("Grafana Logs Drilldown", () => {
     await expect(page.getByText("No logs found")).toHaveCount(0);
   });
 
-  test("proxy drilldown field filter flow works for method", async ({ page }) => {
+  test("proxy drilldown field filter flow works for method @drilldown-core", async ({ page }) => {
     await openServiceDrilldown(page, PROXY_DS, "api-gateway", "logs");
 
     await addDrilldownFilter(page, "Filter by fields", "method", "GET");
@@ -342,7 +342,7 @@ test.describe("Grafana Logs Drilldown", () => {
     await expect(page.getByText("No logs found")).toHaveCount(0);
   });
 
-  test("proxy drilldown cluster logs handle multiple selected levels", async ({ page }) => {
+  test("proxy drilldown cluster logs handle multiple selected levels @drilldown-mt", async ({ page }) => {
     const errors = collectLokiErrors(page);
     const datasourceErrors: string[] = [];
     page.on("response", (response) => {
@@ -362,7 +362,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(datasourceErrors).toHaveLength(0);
   });
 
-  test("multi-tenant service drilldown keeps cluster label filter working", async ({ page }) => {
+  test("multi-tenant service drilldown keeps cluster label filter working @drilldown-mt", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "logs");
 
@@ -374,7 +374,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("multi-tenant service drilldown keeps method field filter working", async ({ page }) => {
+  test("multi-tenant service drilldown keeps method field filter working @drilldown-mt", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "logs");
 
@@ -386,7 +386,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("multi-tenant service drilldown supports combined label and field filters", async ({ page }) => {
+  test("multi-tenant service drilldown supports combined label and field filters @drilldown-mt", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "logs");
 
@@ -402,7 +402,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("multi-tenant landing page can add and use a cluster breakdown tab", async ({ page }) => {
+  test("multi-tenant landing page can add and use a cluster breakdown tab @drilldown-mt", async ({ page }) => {
     const responses = await collectDrilldownResponses(page);
     const errors = collectLokiErrors(page);
     await openLogsDrilldown(page, PROXY_MULTI_DS);
@@ -426,7 +426,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(JSON.stringify(volumeResponse?.json)).toContain("us-east-1");
   });
 
-  test("multi-tenant cluster drilldown keeps multiple selected levels working", async ({ page }) => {
+  test("multi-tenant cluster drilldown keeps multiple selected levels working @drilldown-mt", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await openLabelDrilldown(page, PROXY_MULTI_DS, "cluster", "us-east-1", [
       "error",
@@ -439,7 +439,7 @@ test.describe("Grafana Logs Drilldown", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("multi-tenant cluster drilldown supports follow-up field filtering", async ({ page }) => {
+  test("multi-tenant cluster drilldown supports follow-up field filtering @drilldown-mt", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await openLabelDrilldown(page, PROXY_MULTI_DS, "cluster", "us-east-1", [
       "error",

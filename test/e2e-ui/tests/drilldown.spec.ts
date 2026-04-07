@@ -15,7 +15,7 @@ test.describe("Grafana Drilldown & Label Navigation", () => {
     await waitForGrafanaReady(page);
   });
 
-  test("clicking a log row expands details without error", async ({ page }) => {
+  test("clicking a log row expands details without error @drilldown-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway"}');
     await runQuery(page);
@@ -33,7 +33,7 @@ test.describe("Grafana Drilldown & Label Navigation", () => {
     expect(errors).toHaveLength(0);
   });
 
-  test("label filter drill-down for app label", async ({ page }) => {
+  test("label filter drill-down for app label @drilldown-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, '{app="api-gateway"}');
     await runQuery(page);
@@ -61,7 +61,7 @@ test.describe("Grafana Drilldown & Label Navigation", () => {
     expect(fatalErrors).toHaveLength(0);
   });
 
-  test("multi-label drill-down through app → level", async ({ page }) => {
+  test("multi-label drill-down through app → level @drilldown-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
 
     // Step 1: Query by app
@@ -78,7 +78,7 @@ test.describe("Grafana Drilldown & Label Navigation", () => {
     expect(fatalErrors).toHaveLength(0);
   });
 
-  test("drill-down from metric to logs", async ({ page }) => {
+  test("drill-down from metric to logs @drilldown-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
 
     // Start with metric query
@@ -94,7 +94,7 @@ test.describe("Grafana Drilldown & Label Navigation", () => {
     expect(fatalErrors).toHaveLength(0);
   });
 
-  test("drill-down with complex filter chain", async ({ page }) => {
+  test("drill-down with complex filter chain @drilldown-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
 
     // Multi-filter query
@@ -108,7 +108,7 @@ test.describe("Grafana Drilldown & Label Navigation", () => {
     expect(fatalErrors).toHaveLength(0);
   });
 
-  test("label values dropdown loads without error", async ({ page }) => {
+  test("label values dropdown loads without error @drilldown-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
 
     // Type a partial query with stream selector
@@ -128,7 +128,7 @@ test.describe("Grafana Error Handling", () => {
     await waitForGrafanaReady(page);
   });
 
-  test("invalid query shows user-friendly error", async ({ page }) => {
+  test("invalid query shows user-friendly error @drilldown-core", async ({ page }) => {
     // Intentionally invalid LogQL
     await typeQuery(page, "{{{invalid}}}");
     await runQuery(page);
@@ -144,7 +144,7 @@ test.describe("Grafana Error Handling", () => {
     });
   });
 
-  test("empty query returns valid response", async ({ page }) => {
+  test("empty query returns valid response @drilldown-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(page, "{}");
     await runQuery(page);
@@ -155,7 +155,7 @@ test.describe("Grafana Error Handling", () => {
     expect(fatalErrors).toHaveLength(0);
   });
 
-  test("very long query does not crash", async ({ page }) => {
+  test("very long query does not crash @drilldown-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     // Long but valid query
     const longFilter = Array(20)
@@ -169,7 +169,7 @@ test.describe("Grafana Error Handling", () => {
     expect(fatalErrors).toHaveLength(0);
   });
 
-  test("binary expression does not crash UI", async ({ page }) => {
+  test("binary expression does not crash UI @drilldown-core", async ({ page }) => {
     const errors = collectLokiErrors(page);
     await typeQuery(
       page,
