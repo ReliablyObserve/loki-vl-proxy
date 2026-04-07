@@ -1,6 +1,6 @@
 # Playwright Grafana UI E2E Tests
 
-Validates the Loki-VL-proxy through Grafana's UI: datasource setup, Explore, Drilldown, multi-tenant flows, and live-tail recovery.
+Validates the Loki-VL-proxy through Grafana's UI: datasource settings smoke, Explore smoke, Logs Drilldown smoke, multi-tenant browser flow, and live-tail recovery.
 
 ## Prerequisites
 
@@ -38,10 +38,16 @@ docker run --rm \
 
 | File | Coverage |
 |------|----------|
-| `datasource.spec.ts` | Datasource health, proxy bootstrap endpoints, rules and alerts compatibility, direct datasource health |
-| `explore.spec.ts` | `@explore-core` query parity plus `@explore-tail` multi-tenant and live-tail browser flows |
-| `drilldown.spec.ts` | `@drilldown-core` Explore drilldown and error-handling coverage |
-| `logs-drilldown.spec.ts` | `@drilldown-core` service-detail flows plus `@drilldown-mt` multi-tenant Logs Drilldown coverage |
+| `datasource.spec.ts` | Grafana datasource Save & Test smoke |
+| `explore.spec.ts` | `@explore-core` default Explore smoke plus `@explore-tail` multi-tenant and live-tail browser flows |
+| `drilldown.spec.ts` | `@drilldown-core` Explore detail-panel smoke |
+| `logs-drilldown.spec.ts` | `@drilldown-core` Logs Drilldown landing/service smoke plus `@drilldown-mt` one multi-tenant filter smoke |
+
+Most non-browser assertions moved out of Playwright:
+- `test/e2e-compat/grafana_surface_test.go` covers datasource catalog, health, and proxy bootstrap/control-plane endpoints
+- `test/e2e-compat/drilldown_compat_test.go` covers Grafana datasource resource contracts for Drilldown
+- `test/e2e-compat/features_test.go` plus `internal/proxy/*tail*test.go` cover most tail protocol and fallback behavior
+- `internal/proxy/proxy_test.go` and `test/e2e-compat/chaining_test.go` cover query parity and translation paths faster than the browser
 
 ## CI Shards
 
@@ -49,11 +55,11 @@ The GitHub Actions `e2e-ui` job runs as five shards:
 
 | Shard | Command | Coverage |
 |------|---------|----------|
-| `datasource` | `npx playwright test tests/datasource.spec.ts` | datasource setup and proxy bootstrap surface |
-| `explore-core` | `npx playwright test --grep @explore-core` | Explore query rendering and proxy-vs-Loki parity |
-| `explore-tail` | `npx playwright test --grep @explore-tail` | multi-tenant Explore and live-tail recovery |
-| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore drilldown and single-tenant Logs Drilldown |
-| `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | multi-tenant Logs Drilldown filters and level flows |
+| `datasource` | `npx playwright test tests/datasource.spec.ts` | datasource settings smoke |
+| `explore-core` | `npx playwright test --grep @explore-core` | one default Explore smoke |
+| `explore-tail` | `npx playwright test --grep @explore-tail` | multi-tenant Explore plus browser live-tail recovery |
+| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke and single-tenant Logs Drilldown smoke |
+| `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | one multi-tenant Logs Drilldown filter smoke |
 
 Run any shard locally with the same command CI uses:
 

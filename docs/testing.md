@@ -19,7 +19,7 @@ go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
 go test -v -tags=e2e -run '^TestDrilldownTrackScore$' ./test/e2e-compat/
 go test -v -tags=e2e -run '^TestVLTrackScore$' ./test/e2e-compat/
 
-# Playwright UI tests (Grafana Explore, drill-down, live tail, error handling)
+# Playwright UI tests (browser-only Grafana smoke flows)
 cd test/e2e-ui
 npm ci && npx playwright install chromium
 npm test
@@ -87,68 +87,52 @@ Exact counts move often. Treat the categories below as the stable map of what is
 | `internal/middleware/middleware_test.go` | Rate limiter, circuit breaker |
 | `test/e2e-compat/` | Docker-based Loki vs proxy comparison |
 | `test/e2e-compat/drilldown_compat_test.go` | Grafana Logs Drilldown resource contracts via Grafana datasource proxy |
+| `test/e2e-compat/grafana_surface_test.go` | Grafana datasource catalog, datasource health, proxy bootstrap/control-plane surface |
 | `test/e2e-compat/features_test.go` | Live Grafana-facing edge cases including multi-tenant `__tenant_id__` and Drilldown level-filter regressions |
-| `test/e2e-ui/` | Playwright browser tests against Grafana Explore and Logs Drilldown, split into datasource, Explore core/tail, and Drilldown core/multi-tenant shards |
+| `test/e2e-ui/` | Playwright browser smoke tests for datasource UI, Explore, and Logs Drilldown |
 
 ## Playwright UI Matrix
 
-The browser suite is split by user workflow rather than by file halves so shard names stay stable as the suite grows.
+The browser suite now keeps only browser-only smoke paths. Query parity, Drilldown resource contracts, datasource bootstrap, and most tail protocol coverage live in `test/e2e-compat` or lower-level Go tests so CI does not keep paying Chromium cost for them.
 
 ### CI Shards
 
 | Shard | Command | Primary focus |
 |---|---|---|
-| `datasource` | `npx playwright test tests/datasource.spec.ts` | Grafana datasource setup and proxy bootstrap endpoints |
-| `explore-core` | `npx playwright test --grep @explore-core` | Explore queries, rendering, and proxy-vs-Loki parity |
-| `explore-tail` | `npx playwright test --grep @explore-tail` | Explore multi-tenant flows and browser live-tail recovery |
-| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore drilldown, error handling, and single-tenant Logs Drilldown |
-| `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | Multi-tenant Logs Drilldown filters, breakdowns, and level handling |
+| `datasource` | `npx playwright test tests/datasource.spec.ts` | Grafana datasource settings smoke |
+| `explore-core` | `npx playwright test --grep @explore-core` | one default Explore browser smoke |
+| `explore-tail` | `npx playwright test --grep @explore-tail` | browser-only multi-tenant and live-tail recovery |
+| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke and single-tenant Logs Drilldown smoke |
+| `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | one multi-tenant Logs Drilldown filter smoke |
 
 ### `datasource` shard
 
 | Test | Purpose |
 |---|---|
 | `datasource health check succeeds` | Grafana can Save & Test the proxy datasource |
-| `buildinfo endpoint returns valid version` | Loki-compatible buildinfo bootstrap works |
-| `ready endpoint returns 200` | readiness endpoint stays healthy |
-| `rules endpoint returns valid compatibility response` | rule export surface stays compatible |
-| `alerts endpoint returns valid compatibility response` | alert listing surface stays compatible |
-| `direct VictoriaLogs datasource plugin is installed and healthy` | direct VL control datasource is present |
-| `direct Loki drilldown bootstrap endpoint works with tenant header` | direct Loki drilldown bootstrap remains reachable |
+
+Moved out of Playwright:
+`test/e2e-compat/grafana_surface_test.go` now covers datasource catalog, direct datasource health, `/ready`, `/buildinfo`, `/rules`, `/alerts`, and direct Loki Drilldown bootstrap.
 
 ### `explore-core` shard
 
 | Test | Purpose |
 |---|---|
 | `basic log query returns results without errors` | baseline Explore log query |
-| `line filter query works` | line filters render cleanly |
-| `metric query (count_over_time) renders graph` | metric graph rendering |
-| `rate query renders graph` | rate metric rendering |
-| `sum by label renders graph` | grouped metric rendering |
-| `json parser query works` | parsed JSON results work |
-| `logfmt parser query works` | parsed logfmt results work |
-| `negative filter works` | negative line filter handling |
-| `direction=forward works` | forward query path stays stable |
-| `quantile_over_time renders` | unwrap quantile query avoids fatal failures |
-| `label_format multi-rename works` | label rewriting path works |
-| `proxy matches Loki for: {app="api-gateway"}` | proxy parity for baseline logs query |
-| `proxy matches Loki for: {app="api-gateway"} |= "error"` | proxy parity for filtered logs query |
-| `proxy matches Loki for: count_over_time({app="api-gateway"}[5m])` | proxy parity for count metric query |
-| `proxy matches Loki for: rate({app="api-gateway"}[5m])` | proxy parity for rate metric query |
-| `proxy matches Loki for: sum(rate({app="api-gateway"}[5m])) by (level)` | proxy parity for grouped rate metric query |
+
+Moved out of Playwright:
+`internal/proxy/proxy_test.go`, `internal/proxy/gaps_test.go`, and `test/e2e-compat/chaining_test.go` cover query translation, response shape, parser pipelines, line filters, direction handling, and metric-query parity faster than the browser can.
 
 ### `explore-tail` shard
 
 | Test | Purpose |
 |---|---|
 | `multi-tenant query respects __tenant_id__ filter in Explore` | tenant narrowing in Explore |
-| `multi-tenant line filter with __tenant_id__ works in Explore` | tenant-aware filtered log query |
-| `multi-tenant metric query with __tenant_id__ renders graph` | tenant-aware metric rendering |
-| `multi-tenant json parser query with __tenant_id__ works in Explore` | tenant-aware parsed query |
 | `live tail works through the browser-allowed synthetic datasource` | browser-safe synthetic live tail |
-| `live tail also works through the ingress datasource` | ingress-backed live tail |
-| `native-only tail datasource fails without crashing the UI` | native-tail failure is user-visible but safe |
 | `native-tail failure can recover through ingress live tail` | failure recovery after native-tail path breaks |
+
+Moved out of Playwright:
+`test/e2e-compat/features_test.go` and `internal/proxy/*tail*test.go` cover tenant-header fanout, websocket protocol behavior, fallback selection, origin policy, and native-tail failure semantics without Chromium.
 
 ### `drilldown-core` shard
 
@@ -156,34 +140,18 @@ The browser suite is split by user workflow rather than by file halves so shard 
 |---|---|
 | `clicking a log row expands details without error` | log row expansion path |
 | `label filter drill-down for app label` | label filter action from Explore logs |
-| `multi-label drill-down through app → level` | chained label narrowing |
-| `drill-down from metric to logs` | metric-to-logs pivot |
-| `drill-down with complex filter chain` | parser and filter pipeline drilldown |
-| `label values dropdown loads without error` | label value autocomplete path |
-| `invalid query shows user-friendly error` | invalid query failure stays non-fatal |
-| `empty query returns valid response` | empty selector path stays clean |
-| `very long query does not crash` | long-query robustness |
-| `binary expression does not crash UI` | binary metric expression robustness |
 | `proxy shows service buckets on landing page` | Logs Drilldown landing volumes |
-| `proxy drilldown shows logs and parsed fields for api-gateway` | service-detail logs and field extraction |
-| `proxy service drilldown exposes label and field tabs` | tabs and field surfaces render |
-| `proxy and direct Loki both expose api-gateway in logs drilldown` | proxy-vs-direct Drilldown parity |
 | `proxy landing page can add and use a cluster breakdown tab` | dynamic breakdown tabs work |
-| `proxy drilldown exposes dotted OTel structured metadata fields` | dotted metadata field visibility |
-| `proxy drilldown label filter flow works for cluster` | label filter chips work |
 | `proxy drilldown field filter flow works for method` | field filter chips work |
+
+Moved out of Playwright:
+`test/e2e-compat/drilldown_compat_test.go` now owns detected-fields contracts, dotted metadata exposure, labels/values resources, Grafana datasource resource parity, and multi-tenant Drilldown resource behavior.
 
 ### `drilldown-multitenant` shard
 
 | Test | Purpose |
 |---|---|
-| `proxy drilldown cluster logs handle multiple selected levels` | multi-tenant cluster logs with repeated levels |
 | `multi-tenant service drilldown keeps cluster label filter working` | multi-tenant label filter flow |
-| `multi-tenant service drilldown keeps method field filter working` | multi-tenant field filter flow |
-| `multi-tenant service drilldown supports combined label and field filters` | combined filter flow survives tenant merge |
-| `multi-tenant landing page can add and use a cluster breakdown tab` | multi-tenant landing breakdown flow |
-| `multi-tenant cluster drilldown keeps multiple selected levels working` | multi-tenant cluster level handling |
-| `multi-tenant cluster drilldown supports follow-up field filtering` | multi-tenant follow-up field filtering |
 
 ## Compatibility Tracks
 

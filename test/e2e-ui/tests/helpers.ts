@@ -12,28 +12,64 @@ export const LOKI_DS = "Loki (direct)";
 export const EXPLORE_URL = "/explore";
 export const DRILLDOWN_URL = "/a/grafana-lokiexplore-app/explore";
 
+function buildExploreUrl(datasourceUid: string) {
+  const paneState = {
+    A: {
+      datasource: datasourceUid,
+      queries: [
+        {
+          refId: "A",
+          expr: "",
+          queryType: "range",
+          datasource: {
+            type: "loki",
+            uid: datasourceUid,
+          },
+          editorMode: "builder",
+          direction: "backward",
+        },
+      ],
+      range: {
+        from: "now-1h",
+        to: "now",
+      },
+      compact: false,
+    },
+  };
+
+  const params = new URLSearchParams({
+    schemaVersion: "1",
+    panes: JSON.stringify(paneState),
+    orgId: "1",
+  });
+  return `${EXPLORE_URL}?${params.toString()}`;
+}
+
 /**
  * Navigate to Grafana Explore with a specific datasource selected.
  */
 export async function openExplore(page: Page, datasource: string) {
-  // Grafana Explore URL format with datasource
-  await page.goto(EXPLORE_URL);
-  await page.waitForLoadState("networkidle");
-
-  // Select datasource from picker if not already selected
-  const dsSelector = page.getByTestId("data-source-picker");
-  if (await dsSelector.isVisible()) {
-    await dsSelector.click();
-    await page.getByText(datasource, { exact: false }).first().click();
-    await page.waitForTimeout(500);
-  }
+  const uid = await resolveDatasourceUid(page, datasource);
+  await page.goto(buildExploreUrl(uid));
+  await waitForGrafanaReady(page);
+  await expect(page.getByRole("button", { name: /run query/i })).toBeVisible({
+    timeout: 15_000,
+  });
 }
 
 async function resolveDatasourceUid(page: Page, datasource: string): Promise<string> {
   const response = await page.request.get(
     `/api/datasources/name/${encodeURIComponent(datasource)}`
   );
-  expect(response.ok()).toBeTruthy();
+  if (!response.ok()) {
+    const listResponse = await page.request.get("/api/datasources");
+    const available = listResponse.ok()
+      ? (await listResponse.json()).map((ds: { name?: string }) => ds.name).filter(Boolean)
+      : [];
+    throw new Error(
+      `failed to resolve datasource "${datasource}" (status=${response.status()}); available=${available.join(", ")}`
+    );
+  }
   const body = await response.json();
   return body.uid;
 }
@@ -63,7 +99,13 @@ export async function openLogsDrilldown(page: Page, datasource: string) {
   });
 
   await page.goto(`${DRILLDOWN_URL}?${params.toString()}`);
-  await page.waitForLoadState("networkidle");
+  await waitForGrafanaReady(page);
+  await expect(page.getByRole("combobox", { name: "Filter by labels" })).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByRole("tab", { name: "service" })).toBeVisible({
+    timeout: 30_000,
+  });
 }
 
 /**
@@ -72,6 +114,7 @@ export async function openLogsDrilldown(page: Page, datasource: string) {
 export async function typeQuery(page: Page, query: string) {
   // Grafana's Monaco editor for Loki queries
   const editor = page.locator('[data-testid="query-editor-rows"]').first();
+  await expect(editor).toBeVisible({ timeout: 15_000 });
   await editor.click();
 
   // Clear existing query
@@ -87,9 +130,10 @@ export async function typeQuery(page: Page, query: string) {
  */
 export async function runQuery(page: Page) {
   const runBtn = page.getByRole("button", { name: /run query/i });
+  await expect(runBtn).toBeVisible({ timeout: 15_000 });
   await runBtn.click();
-  // Wait for results to load
-  await page.waitForTimeout(2000);
+  await waitForGrafanaReady(page);
+  await page.waitForTimeout(1000);
 }
 
 /**
