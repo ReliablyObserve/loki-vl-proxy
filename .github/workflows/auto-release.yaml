@@ -6,7 +6,6 @@ on:
     paths-ignore:
       - "CHANGELOG.md"
       - "docs/observability.md"
-      - "charts/loki-vl-proxy/Chart.yaml"
       - "README.md"
   workflow_dispatch:
 
@@ -46,22 +45,21 @@ jobs:
 
           COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
           FILES_CHANGED=$(git diff --name-only "${LATEST_TAG}..HEAD" 2>/dev/null || git diff --name-only HEAD~1)
-          REAL=$(echo "$COMMITS" | grep -v '^ci:' | grep -v '^docs:' | grep -v '^chore:' | grep -v '\[skip ci\]' | grep -v '^Merge' || true)
+
+          if echo "${HEAD_COMMIT_MSG:-}" | grep -qE '^docs: sync release metadata for v[0-9]'; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping metadata sync commit"
+            exit 0
+          fi
 
           DOCS_OR_CI_ONLY="yes"
           while IFS= read -r file; do
             [ -z "$file" ] && continue
-            if ! echo "$file" | grep -Eq '^(README\.md|CHANGELOG\.md|docs/|\.github/|charts/loki-vl-proxy/Chart\.yaml)$'; then
+            if ! echo "$file" | grep -Eq '^(README\.md|CHANGELOG\.md|docs/|\.github/)$'; then
               DOCS_OR_CI_ONLY="no"
               break
             fi
           done <<< "$FILES_CHANGED"
-
-          if [ -z "$REAL" ]; then
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
-            echo "No releasable commit subjects detected; skipping release"
-            exit 0
-          fi
 
           if [ "$DOCS_OR_CI_ONLY" = "yes" ]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
@@ -70,7 +68,7 @@ jobs:
           fi
 
           BUMP="none"
-          PR_NUMBER="$(echo "${HEAD_COMMIT_MSG:-}" | grep -oE '#[0-9]+' | tail -1 | tr -d '#')"
+          PR_NUMBER="$(echo "${HEAD_COMMIT_MSG:-}" | grep -oE '#[0-9]+' | tail -1 | tr -d '#' || true)"
 
           if [ -n "${PR_NUMBER}" ]; then
             PR_JSON="$(curl -fsSL \

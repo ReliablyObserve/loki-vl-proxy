@@ -7,7 +7,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/szibis/Loki-VL-proxy)](https://go.dev/)
 [![Release](https://img.shields.io/github/v/release/szibis/Loki-VL-proxy)](https://github.com/szibis/Loki-VL-proxy/releases)
 [![Lines of Code](https://sloc.xyz/github/szibis/Loki-VL-proxy/?category=code)](https://github.com/szibis/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-1023%20passed-brightgreen)](#tests)
+[![Tests](https://img.shields.io/github/actions/workflow/status/szibis/Loki-VL-proxy/ci.yaml?label=tests)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/ci.yaml)
 [![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/szibis/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/szibis/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -326,7 +326,7 @@ All features produce correct results. Implementation details for advanced featur
 3. conventional commit subjects (`feat`, `fix`, `perf`, `refactor`, `revert`, breaking markers)
 4. fallback patch bump for non-doc/non-ci changes when no explicit signal is present
 
-Release is skipped when the change-set since the latest tag is docs/metadata/CI only (`README`, `CHANGELOG`, `docs/`, `.github/`, chart metadata file), which prevents recursive release loops from metadata sync commits.
+Release is skipped only when the change-set since the latest tag is docs/metadata/CI only (`README`, `CHANGELOG`, `docs/`, `.github/`). Helm chart changes are treated as releasable, and metadata sync commits are loop-protected with `[skip ci]`.
 
 ## Documentation
 
