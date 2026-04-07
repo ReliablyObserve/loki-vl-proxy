@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.4] - 2026-04-07
+
 ### Features
 
 - add ingress-backed and native-only `/tail` compatibility coverage for Grafana Explore and compose e2e
