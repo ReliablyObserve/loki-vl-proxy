@@ -334,6 +334,6 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml
+          git add -f -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml
           git commit -m "docs: sync release metadata for v${VERSION} [skip ci]"
           git push origin HEAD:main
