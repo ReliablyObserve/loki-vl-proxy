@@ -1171,16 +1171,16 @@ func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, en
 	if err != nil {
 		return "", false, err
 	}
+	candidates := make([]string, 0, len(fieldNames))
 	for _, field := range fieldNames {
 		streamLabels := map[string]string{field: "1"}
-		if !shouldExposeStructuredField(field, streamLabels, p.labelTranslator) {
-			continue
+		if shouldExposeStructuredField(field, streamLabels, p.labelTranslator) {
+			candidates = append(candidates, field)
 		}
-		for _, exposure := range p.metadataFieldExposures(field) {
-			if exposure.name == fieldName {
-				return field, true, nil
-			}
-		}
+	}
+	resolution := p.labelTranslator.ResolveMetadataCandidates(fieldName, candidates, p.metadataFieldMode)
+	if len(resolution.candidates) == 1 {
+		return resolution.candidates[0], true, nil
 	}
 	return "", false, nil
 }

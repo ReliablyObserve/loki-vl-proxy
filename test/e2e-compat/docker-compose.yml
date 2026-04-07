@@ -71,6 +71,7 @@ services:
 
   # Loki-VL-proxy (translating proxy under test)
   loki-vl-proxy:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -98,6 +99,7 @@ services:
 
   # Loki-VL-proxy with label-style=underscores (for OTel dot→underscore tests)
   loki-vl-proxy-underscore:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -126,6 +128,7 @@ services:
 
   # Loki-VL-proxy with synthetic tail and browser origin allowlist for real UI /tail tests
   loki-vl-proxy-tail:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -155,6 +158,7 @@ services:
       start_period: 5s
 
   loki-vl-proxy-tail-native:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
     build:
       context: ../..
       dockerfile: Dockerfile

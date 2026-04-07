@@ -112,6 +112,8 @@ jobs:
   e2e-compat-group:
     runs-on: ubuntu-latest
     needs: [test]
+    env:
+      PROXY_IMAGE: loki-vl-proxy:e2e-ci
     strategy:
       fail-fast: false
       matrix:
@@ -133,10 +135,21 @@ jobs:
           go-version: "1.26.1"
           cache: true
 
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=e2e-proxy
+          cache-to: type=gha,mode=max,scope=e2e-proxy
+
       - name: Start e2e stack
         working-directory: test/e2e-compat
         run: |
-          docker compose up -d --build
+          docker compose up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 180
 
       - name: Run compatibility tests
@@ -188,6 +201,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     continue-on-error: true  # Fleet tests are informational
+    env:
+      PROXY_IMAGE: loki-vl-proxy:fleet-ci
     steps:
       - uses: actions/checkout@v4
 
@@ -196,11 +211,21 @@ jobs:
           go-version: "1.26.1"
           cache: true
 
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=fleet-proxy
+          cache-to: type=gha,mode=max,scope=fleet-proxy
+
       - name: Start 3-proxy fleet
         working-directory: test/e2e-fleet
         run: |
-          docker compose up -d --build
-          sleep 15
+          docker compose up -d --no-build --wait --wait-timeout 180
           docker compose ps
 
       - name: Run fleet cache tests
@@ -214,6 +239,8 @@ jobs:
   e2e-ui:
     runs-on: ubuntu-latest
     needs: [test]
+    env:
+      PROXY_IMAGE: loki-vl-proxy:e2e-ui
     strategy:
       fail-fast: false
       matrix:
@@ -250,10 +277,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-ms-playwright-
 
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=e2e-proxy
+          cache-to: type=gha,mode=max,scope=e2e-proxy
+
       - name: Start e2e stack
         working-directory: test/e2e-compat
         run: |
-          docker compose up -d --build
+          docker compose up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 180
 
       - name: Resolve UI browser

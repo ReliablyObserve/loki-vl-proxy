@@ -12,6 +12,8 @@ permissions:
 jobs:
   report:
     runs-on: ubuntu-latest
+    env:
+      PROXY_IMAGE: loki-vl-proxy:pr-quality
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,6 +23,17 @@ jobs:
         with:
           go-version: "1.26.1"
           cache: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=pr-quality-proxy
+          cache-to: type=gha,mode=max,scope=pr-quality-proxy
 
       - name: Restore cached base quality snapshot
         id: base-quality-cache
@@ -33,6 +46,7 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           WORKSPACE: ${{ github.workspace }}
+          PROXY_IMAGE: ${{ env.PROXY_IMAGE }}
         run: |
           set -euo pipefail
 

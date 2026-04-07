@@ -113,7 +113,11 @@ start_compat_stack() {
   (
     cd "$ROOT_DIR/test/e2e-compat"
     docker compose down -v >&2 || true
-    docker compose up -d --build >&2
+    if [ -n "${PROXY_IMAGE:-}" ] && docker image inspect "${PROXY_IMAGE}" >/dev/null 2>&1; then
+      docker compose up -d --no-build >&2
+    else
+      docker compose up -d --build >&2
+    fi
     "$ROOT_DIR/scripts/ci/wait_e2e_stack.sh" 180 >&2
   )
 }

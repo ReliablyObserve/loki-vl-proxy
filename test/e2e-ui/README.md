@@ -8,9 +8,7 @@ Validates the Loki-VL-proxy through Grafana's UI: datasource settings smoke, Exp
 # Start the full e2e stack
 cd ../e2e-compat
 docker-compose up -d --build
-
-# Wait for Grafana to be ready (~20s)
-curl -s http://localhost:3002/api/health | jq .
+../../scripts/ci/wait_e2e_stack.sh 180
 ```
 
 ## Run Tests
@@ -64,6 +62,8 @@ The GitHub Actions `e2e-ui` job runs as five shards:
 | `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | one multi-tenant Logs Drilldown service smoke |
 
 CI prefers the runner's existing Chrome/Chromium binary and only falls back to `npx playwright install chromium` if no system browser is present. That avoids repeated `apt` dependency downloads on normal GitHub-hosted runners while keeping a safe fallback path.
+
+The CI jobs also prebuild the proxy image once per job and then start the compose stack with `--no-build`, so the five browser shards keep their parallelism without redoing the proxy Docker build inside the same job.
 
 Run any shard locally with the same command CI uses:
 

@@ -126,6 +126,154 @@ func TestContract_LabelValues_EmptyResult(t *testing.T) {
 	}
 }
 
+func TestContract_Labels_PrefersStreamFieldNames(t *testing.T) {
+	var streamCalls, genericCalls int
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			streamCalls++
+			writeVLFieldNames(w, []fieldHit{{"service.name", 1}, {"app", 1}})
+		case "/select/logsql/field_names":
+			genericCalls++
+			writeVLFieldNames(w, []fieldHit{{"service.name", 1}, {"app", 1}, {"method", 1}})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	p.handleLabels(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsStringArray(t, resp)
+	assertContains(t, data, "service_name")
+	assertContains(t, data, "app")
+	assertNotContains(t, data, "method")
+	if streamCalls != 1 || genericCalls != 0 {
+		t.Fatalf("expected stream_field_names only, got stream=%d generic=%d", streamCalls, genericCalls)
+	}
+}
+
+func TestContract_Labels_FallsBackToGenericFieldNames(t *testing.T) {
+	var streamCalls, genericCalls int
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			streamCalls++
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"missing endpoint"}`))
+		case "/select/logsql/field_names":
+			genericCalls++
+			writeVLFieldNames(w, []fieldHit{{"service.name", 1}, {"app", 1}})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	p.handleLabels(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	assertLokiSuccess(t, resp)
+	if streamCalls != 1 || genericCalls != 1 {
+		t.Fatalf("expected fallback to generic field_names, got stream=%d generic=%d", streamCalls, genericCalls)
+	}
+}
+
+func TestContract_LabelValues_PrefersStreamFieldValues(t *testing.T) {
+	var streamNameCalls, streamValueCalls, genericValueCalls int
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			streamNameCalls++
+			writeVLFieldNames(w, []fieldHit{{"k8s.namespace.name", 1}, {"app", 1}})
+		case "/select/logsql/stream_field_values":
+			streamValueCalls++
+			if got := r.URL.Query().Get("field"); got != "k8s.namespace.name" {
+				t.Fatalf("expected stream field k8s.namespace.name, got %q", got)
+			}
+			writeVLFieldValues(w, []fieldHit{{"prod", 1}})
+		case "/select/logsql/field_values":
+			genericValueCalls++
+			writeVLFieldValues(w, []fieldHit{{"wrong", 1}})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      cache.New(60*time.Second, 1000),
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/label/k8s_namespace_name/values", nil)
+	p.handleLabelValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsStringArray(t, resp)
+	assertContains(t, data, "prod")
+	if streamNameCalls != 1 || streamValueCalls != 1 || genericValueCalls != 0 {
+		t.Fatalf("expected stream metadata path only, got names=%d streamValues=%d genericValues=%d", streamNameCalls, streamValueCalls, genericValueCalls)
+	}
+}
+
+func TestContract_LabelValues_JoinsAmbiguousStreamAliases(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			writeVLFieldNames(w, []fieldHit{{"foo.bar", 1}, {"foo-bar", 1}})
+		case "/select/logsql/stream_field_values":
+			switch r.URL.Query().Get("field") {
+			case "foo.bar":
+				writeVLFieldValues(w, []fieldHit{{"alpha", 1}})
+			case "foo-bar":
+				writeVLFieldValues(w, []fieldHit{{"beta", 1}})
+			default:
+				t.Fatalf("unexpected field %q", r.URL.Query().Get("field"))
+			}
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      cache.New(60*time.Second, 1000),
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/label/foo_bar/values", nil)
+	p.handleLabelValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsStringArray(t, resp)
+	assertContains(t, data, "alpha")
+	assertContains(t, data, "beta")
+}
+
 // --- /loki/api/v1/query_range (streams / log query) ---
 
 func TestContract_QueryRange_StreamsFormat(t *testing.T) {
@@ -710,13 +858,13 @@ func TestCache_LabelValuesHitOnRepeat(t *testing.T) {
 
 	w1 := httptest.NewRecorder()
 	p.handleLabelValues(w1, httptest.NewRequest("GET", "/loki/api/v1/label/app/values?start=1&end=2", nil))
-	if callCount != 1 {
-		t.Fatalf("expected 1 backend call, got %d", callCount)
+	if callCount != 2 {
+		t.Fatalf("expected metadata lookup plus value lookup on miss, got %d calls", callCount)
 	}
 
 	w2 := httptest.NewRecorder()
 	p.handleLabelValues(w2, httptest.NewRequest("GET", "/loki/api/v1/label/app/values?start=1&end=2", nil))
-	if callCount != 1 {
+	if callCount != 2 {
 		t.Errorf("expected cache hit, got %d calls", callCount)
 	}
 }
@@ -976,6 +1124,16 @@ func assertContains(t *testing.T, slice []string, s string) {
 		}
 	}
 	t.Errorf("expected slice to contain %q, got %v", s, slice)
+}
+
+func assertNotContains(t *testing.T, slice []string, s string) {
+	t.Helper()
+	for _, v := range slice {
+		if v == s {
+			t.Errorf("expected slice not to contain %q, got %v", s, slice)
+			return
+		}
+	}
 }
 
 func mustUnmarshal(t *testing.T, data []byte, v interface{}) {
