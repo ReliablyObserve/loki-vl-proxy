@@ -389,17 +389,6 @@ See [Compatibility Matrix](docs/compatibility-matrix.md), [Loki Compatibility](d
 
 For edge semantics and intentional boundaries, see [Known Issues](docs/KNOWN_ISSUES.md). For the full mapping table, see [Translation Reference](docs/translation-reference.md).
 
-## Release Automation
-
-`Auto Release` on `main` now uses a precedence order aligned with common OSS patterns:
-
-1. explicit release labels on merged PR: `release:major`, `release:minor`, `release:patch`, `no-release`
-2. semantic PR labels: `breaking-change`, `feature`, `bugfix`, `performance`
-3. conventional commit subjects (`feat`, `fix`, `perf`, `refactor`, `revert`, breaking markers)
-4. fallback patch bump for non-doc/non-ci changes when no explicit signal is present
-
-Release is skipped only when the change-set since the latest tag is docs/metadata/CI only (`README`, `CHANGELOG`, `docs/`, `.github/`). Helm chart changes are treated as releasable, and metadata sync commits are loop-protected with `[skip ci]`.
-
 ## Documentation
 
 | Document | Contents |
