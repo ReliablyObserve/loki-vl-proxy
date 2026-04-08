@@ -76,6 +76,7 @@ extraArgs:
   # Backend auth to VictoriaLogs
   # backend-basic-auth: "user:password"
   # forward-headers: "Authorization"
+  # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
   # Label translation (OTel compatibility)
   # label-style: "underscores"  # convert VL dotted fields (service.name) to Loki underscores (service_name)

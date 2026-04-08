@@ -58,6 +58,7 @@ type proxyRuntimeConfig struct {
 	backendBasicAuth         string
 	backendTLSSkip           bool
 	forwardHeaders           string
+	forwardAuthorization     bool
 	forwardCookies           string
 	derivedFieldsJSON        string
 	streamResponse           bool
@@ -281,6 +282,7 @@ func run(
 	backendBasicAuth := fs.String("backend-basic-auth", "", "Basic auth for VL backend (user:password)")
 	backendTLSSkip := fs.Bool("backend-tls-skip-verify", false, "Skip TLS verification for VL backend")
 	forwardHeaders := fs.String("forward-headers", "", "Comma-separated list of HTTP headers to forward to VL backend")
+	forwardAuthorization := fs.Bool("forward-authorization", false, "Forward Authorization header to VL backend (equivalent to including Authorization in -forward-headers)")
 	forwardCookies := fs.String("forward-cookies", "", "Comma-separated list of cookie names to forward to VL backend")
 	derivedFieldsJSON := fs.String("derived-fields", "", `JSON derived fields: [{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]`)
 	streamResponse := fs.Bool("stream-response", false, "Stream log responses via chunked transfer encoding")
@@ -374,6 +376,7 @@ func run(
 			backendBasicAuth:         *backendBasicAuth,
 			backendTLSSkip:           *backendTLSSkip,
 			forwardHeaders:           *forwardHeaders,
+			forwardAuthorization:     *forwardAuthorization,
 			forwardCookies:           *forwardCookies,
 			derivedFieldsJSON:        *derivedFieldsJSON,
 			streamResponse:           *streamResponse,
@@ -635,6 +638,34 @@ func parseCSV(s string) []string {
 	return result
 }
 
+func parseForwardHeaders(csv string, includeAuthorization bool) []string {
+	headers := parseCSV(csv)
+	if includeAuthorization {
+		headers = append(headers, "Authorization")
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(headers))
+	out := make([]string, 0, len(headers))
+	for _, h := range headers {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			continue
+		}
+		key := strings.ToLower(h)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, h)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	if v := getenv("LISTEN_ADDR"); v != "" {
 		cfg.listenAddr = v
@@ -843,7 +874,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendTimeout:           cfg.backendTimeout,
 		BackendBasicAuth:         cfg.backendBasicAuth,
 		BackendTLSSkip:           cfg.backendTLSSkip,
-		ForwardHeaders:           parseCSV(cfg.forwardHeaders),
+		ForwardHeaders:           parseForwardHeaders(cfg.forwardHeaders, cfg.forwardAuthorization),
 		ForwardCookies:           parseCSV(cfg.forwardCookies),
 		DerivedFields:            derivedFields,
 		StreamResponse:           cfg.streamResponse,

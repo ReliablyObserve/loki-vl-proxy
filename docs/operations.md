@@ -38,6 +38,24 @@ For multi-replica fleets with HPA, prefer `peerCache.enabled=true` over static p
 
 ---
 
+### Backend Auth Forwarding
+
+If VictoriaLogs authentication is delegated from upstream clients, you can forward client `Authorization` to backend explicitly:
+
+```bash
+-forward-authorization=true
+```
+
+Equivalent manual mode:
+
+```bash
+-forward-headers=Authorization
+```
+
+Use this only in trusted topologies (for example Grafana/auth-proxy -> Loki-VL-proxy -> VictoriaLogs).
+
+---
+
 ## Operational Assets
 
 Treat these as one versioned operational package:

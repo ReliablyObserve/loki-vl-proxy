@@ -104,6 +104,7 @@ See [Security](docs/security.md), [Configuration](docs/configuration.md), [Obser
 - **Layered request protection** -- rate limiting, concurrency caps, request coalescing, normalization, cache boundaries, and circuit breaking all apply before backend pressure cascades
 - **Origin, delete, and secret safeguards** -- browser-origin checks for `/tail`, confirmation-gated deletes, tenant-scoped destructive paths, and log redaction for sensitive values
 - **TLS and identity passthrough support** -- server-side HTTPS, backend TLS, OTLP TLS, optional client cert auth, and controlled header/cookie forwarding to the backend
+- **Backend auth passthrough option** -- enable `-forward-authorization=true` (or `-forward-headers=Authorization`) when upstream identity must be forwarded to VictoriaLogs
 
 ### Performance & Scale
 See [Performance Guide](docs/performance.md), [Scaling](docs/scaling.md), [Fleet Cache](docs/fleet-cache.md), and [Observability](docs/observability.md).

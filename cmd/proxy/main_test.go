@@ -714,7 +714,8 @@ func TestBuildProxyConfig(t *testing.T) {
 		backendTimeout:           5 * time.Second,
 		backendBasicAuth:         "user:pass",
 		backendTLSSkip:           true,
-		forwardHeaders:           "Authorization, X-Scope-OrgID",
+		forwardHeaders:           "X-Scope-OrgID",
+		forwardAuthorization:     true,
 		forwardCookies:           "session, csrf",
 		derivedFieldsJSON:        `[{"name":"traceID","matcherRegex":"trace_id=(\\w+)","url":"http://tempo/${__value.raw}"}]`,
 		streamResponse:           true,
@@ -752,7 +753,7 @@ func TestBuildProxyConfig(t *testing.T) {
 	if len(got.TenantMap) != 1 || got.TenantMap["team-a"].AccountID != "1" {
 		t.Fatalf("unexpected tenant map: %+v", got.TenantMap)
 	}
-	if len(got.ForwardHeaders) != 2 || got.ForwardHeaders[0] != "Authorization" {
+	if len(got.ForwardHeaders) != 2 || got.ForwardHeaders[0] != "X-Scope-OrgID" || got.ForwardHeaders[1] != "Authorization" {
 		t.Fatalf("unexpected forward headers: %+v", got.ForwardHeaders)
 	}
 	if len(got.ForwardCookies) != 2 || got.ForwardCookies[1] != "csrf" {
@@ -778,6 +779,16 @@ func TestBuildProxyConfig(t *testing.T) {
 	}
 	if got.PeerAuthToken != "peer-secret" {
 		t.Fatalf("unexpected peer auth token: %q", got.PeerAuthToken)
+	}
+}
+
+func TestParseForwardHeaders(t *testing.T) {
+	got := parseForwardHeaders("authorization, X-Scope-OrgID, Authorization", true)
+	if len(got) != 2 {
+		t.Fatalf("expected deduplicated forward headers, got %+v", got)
+	}
+	if got[0] != "authorization" || got[1] != "X-Scope-OrgID" {
+		t.Fatalf("unexpected forward header order/content: %+v", got)
 	}
 }
 
