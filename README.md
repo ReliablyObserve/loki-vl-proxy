@@ -409,6 +409,7 @@ For edge semantics and intentional boundaries, see [Known Issues](docs/KNOWN_ISS
 | [Alert Runbooks](docs/runbooks/alerts.md) | SRE incident runbooks linked from alert annotations |
 | [Deployment Best Practices](docs/runbooks/deployment-best-practices.md) | Scaling/deployment defaults that prevent latency, error, and availability incidents |
 | [Testing](docs/testing.md) | Test categories, running tests, fuzz testing |
+| [Release Info](docs/release-info.md) | Release precedence, skip rules, and metadata-sync behavior |
 | [Rules And Alerts Migration](docs/rules-alerts-migration.md) | Converting Loki rule files and exposing vmalert reads via Loki-compatible endpoints |
 | [Compatibility Matrix](docs/compatibility-matrix.md) | Separate Loki, Drilldown, and VictoriaLogs compatibility tracks |
 | [Loki Compatibility](docs/compatibility-loki.md) | Loki API and LogQL version matrix |
