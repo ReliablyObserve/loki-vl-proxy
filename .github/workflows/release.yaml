@@ -167,7 +167,7 @@ jobs:
           git checkout -B main origin/main
 
           chmod +x scripts/ci/sync_release_metadata.sh
-          scripts/ci/sync_release_metadata.sh "${VERSION}" "$(date +%Y-%m-%d)" "" "" "" . "${GITHUB_REPOSITORY}"
+          scripts/ci/sync_release_metadata.sh "${VERSION}" "$(date +%Y-%m-%d)" "" "" "" .
 
           CHART_VERSION="$(awk -F: '/^version:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
           CHART_APP_VERSION="$(awk -F: '/^appVersion:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
