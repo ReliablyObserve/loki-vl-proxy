@@ -52,7 +52,7 @@ curl -X POST 'http://proxy:3100/loki/api/v1/delete' \
 
 This is a read-only proxy. Log ingestion should go directly to VictoriaLogs-side ingestion paths, for example:
 
-- `vagent` pipelines targeting VictoriaLogs
+- `vlagent` pipelines targeting VictoriaLogs ([docs](https://docs.victoriametrics.com/victorialogs/data-ingestion/))
 - Loki-push-compatible ingestion endpoints handled on the VictoriaLogs side
 - OTLP log ingestion into VictoriaLogs
 - native JSON / OTel-shaped log ingestion into VictoriaLogs
@@ -83,7 +83,7 @@ Behavior and scope notes for these endpoints live in:
 Write-surface boundary for rules and alerts:
 
 - These routes expose read compatibility only (Loki YAML views and Prometheus-style JSON views).
-- Rule and alert write/lifecycle operations remain on `vmalert` / VictoriaLogs backend systems.
+- Rule and alert write/lifecycle operations remain on [`vmalert`](https://docs.victoriametrics.com/vmalert/) and VictoriaLogs backend systems ([VictoriaLogs docs](https://docs.victoriametrics.com/victorialogs/)).
 - The proxy does not implement Loki ruler write APIs.
 
 ## Infrastructure Endpoints

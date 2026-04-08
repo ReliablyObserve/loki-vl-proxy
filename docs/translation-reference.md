@@ -107,17 +107,31 @@ Supported: `sum`, `avg`, `max`, `min`, `count`, `topk`, `bottomk`, `stddev`, `st
 
 Supported operators: `+`, `-`, `*`, `/`, `%`, `^`, `==`, `!=`, `>`, `<`, `>=`, `<=`.
 
-## Not Supported
+## Proxy Compatibility Layer
 
-| Feature | Status | Workaround |
-|---|---|---|
-| `without()` grouping | Returns error | Use `by()` with explicit labels |
-| `bool` modifier on comparisons | Ignored | - |
-| `on()`/`ignoring()`/`group_left()`/`group_right()` | Stripped; binary uses exact key match | - |
-| `offset` modifier | Stripped; time range unaffected | - |
-| `@` timestamp modifier | Stripped | - |
-| Subquery `rate(...)[1h:5m]` | Proxy-side: inner query at sub-steps, outer aggregation | - |
-| `unwrap duration()/bytes()` conversion | Wrapper stripped | Raw field value used |
-| Negative/scientific scalars | Supported | (Fixed in v0.17.0) |
+The following Loki semantics are implemented in the proxy to bridge gaps where VictoriaLogs primitives do not directly match Loki behavior.
 
-Full VL reference: https://docs.victoriametrics.com/victorialogs/logql-to-logsql/
+### Time and Subquery Semantics
+
+| LogQL feature | Proxy behavior |
+|---|---|
+| `offset` modifier | Normalized in translation; query time bounds handled by the proxy request path |
+| `@ <timestamp>` modifier | Normalized/stripped in translation for VictoriaLogs backend requests |
+| Subquery `rate(...)[1h:5m]` | Proxy runs inner query across sub-steps and applies outer aggregation |
+
+### Formatting and Normalization
+
+| LogQL feature | Proxy behavior |
+|---|---|
+| `line_format` / `label_format` templates | Go-template based compatibility formatting in response pipeline |
+| `decolorize` | ANSI escape sequence stripping |
+| `unwrap duration()/bytes()` helpers | Unit-aware unwrap compatibility logic before aggregation |
+| `bool` modifier on comparisons | Compatibility normalization to Loki-style boolean vector output |
+| `without()` grouping | Compatibility label projection after backend aggregation |
+| `on()` / `ignoring()` / `group_left()` / `group_right()` | Loki-style vector matching and join cardinality handling in proxy evaluation |
+
+## VictoriaLogs References
+
+- LogQL to LogsQL mapping: https://docs.victoriametrics.com/victorialogs/logql-to-logsql/
+- LogSQL reference: https://docs.victoriametrics.com/victorialogs/logsql/
+- Querying guide: https://docs.victoriametrics.com/victorialogs/querying/

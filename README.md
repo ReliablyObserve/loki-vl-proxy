@@ -17,7 +17,7 @@ HTTP proxy that exposes a **Loki-compatible read API** on the frontend and trans
 
 **Single static binary**, ~10MB Docker image, zero external runtime dependencies.
 
-This project is intentionally a **read/query proxy**. Ingestion stays on VictoriaLogs-side pipelines (`vagent`, Loki-push ingestion to VictoriaLogs, OTLP, or native JSON/OTel log ingestion). Data written through those paths is then queryable through the proxy's Loki-compatible read endpoints.
+This project is intentionally a **read/query proxy**. Ingestion stays on VictoriaLogs-side pipelines (`vlagent`, Loki-push ingestion to VictoriaLogs, OTLP, or native JSON/OTel log ingestion). Data written through those paths is then queryable through the proxy's Loki-compatible read endpoints.
 
 ## Architecture
 
@@ -328,9 +328,9 @@ Use `__tenant_id__` in Explore or Drilldown-compatible queries when you want to 
 | Admin | `rules`, `alerts`, `config`, `buildinfo`, `ready` |
 
 Write-surface boundary:
-- `POST /loki/api/v1/push` is intentionally not implemented by this proxy (`405`); send log ingestion to VictoriaLogs or `vagent`.
+- `POST /loki/api/v1/push` is intentionally not implemented by this proxy (`405`); send log ingestion to VictoriaLogs or `vlagent` ([VictoriaMetrics ingestion docs](https://docs.victoriametrics.com/victorialogs/data-ingestion/)).
 - `POST /loki/api/v1/delete` is the only proxy write exception and stays heavily safeguarded.
-- Rules and alerts are exposed as Loki-compatible **read views** from configured `vmalert` backends; rule/alert write and lifecycle APIs are not implemented on this proxy.
+- Rules and alerts are exposed as Loki-compatible **read views** from configured [`vmalert`](https://docs.victoriametrics.com/vmalert/) backends; rule/alert write and lifecycle APIs are not implemented on this proxy and remain on the VictoriaMetrics control plane ([vmalert docs](https://docs.victoriametrics.com/vmalert/), [VictoriaLogs docs](https://docs.victoriametrics.com/victorialogs/)).
 
 **887 tests** (unit + fuzz + perf regression + race-safe)
 
@@ -351,29 +351,29 @@ See [Compatibility Matrix](docs/compatibility-matrix.md), [Loki Compatibility](d
 
 ## LogQL Compatibility
 
-**100% of LogQL features handled** -- no errors, no silent failures. Every feature either translates natively to VL or is evaluated at the proxy layer.
+**100% of the supported LogQL surface is handled**. Features are either native in VictoriaLogs or completed by a proxy compatibility layer where Loki semantics diverge from VictoriaLogs primitives.
 
-| Feature | Status | Implementation |
-|---------|--------|----------------|
-| Stream selectors `{app="x"}` | Native | Field filters (or VL stream selectors with `-stream-fields`) |
-| Line filters `\|= "text"` | Native | Substring match via `~"text"` |
-| Parsers `\| json`, `\| logfmt`, `\| pattern`, `\| regexp` | Native | VL `unpack_json`, `unpack_logfmt`, `extract`, `extract_regexp` |
-| Label filters `\| level="error"` | Native | VL field filters |
-| Metric queries `rate()`, `count_over_time()`, etc. | Native | VL `stats` pipeline |
-| Binary expressions `A / B`, `A * 100` | Proxy | Parallel VL queries + arithmetic |
-| `quantile_over_time()` | Native | VL `quantile(phi, field)` |
-| `without()` grouping | Proxy | VL returns all labels, proxy strips excluded labels |
-| `on()`/`ignoring()` | Proxy | Label-subset matching with join semantics |
-| `group_left()`/`group_right()` | Proxy | One-to-many join with label inclusion |
-| `bool` modifier | Proxy | Stripped; comparisons return 1/0 |
-| `offset` / `@` modifiers | Proxy | Stripped at translation |
-| Subquery `rate(...)[1h:5m]` | Proxy | Concurrent sub-step evaluation + aggregation |
-| `unwrap duration()/bytes()` | Proxy | Unit conversion parsers |
-| `\| decolorize` | Proxy | ANSI stripping |
-| `absent_over_time()` | Native | Mapped to `count()` |
-| `\| line_format` / `\| label_format` | Proxy | Template evaluation |
+### Native In VictoriaLogs
 
-All features produce correct results. Implementation details for advanced features in [Known Issues](docs/KNOWN_ISSUES.md).
+| Capability | Examples | Implementation path | VictoriaLogs docs |
+|---|---|---|---|
+| Selector + line filtering | `{app="api"} \|= "error"` | Loki matchers map to LogsQL filters | [LogQL->LogsQL mapping](https://docs.victoriametrics.com/victorialogs/logql-to-logsql/) |
+| Parser stages | `\| json`, `\| logfmt`, `\| pattern`, `\| regexp` | `unpack_json`, `unpack_logfmt`, `extract`, `extract_regexp` | [LogSQL reference](https://docs.victoriametrics.com/victorialogs/logsql/) |
+| Label/field filtering | `\| level="error"` | Native field filters and parser-aware filter wrapping | [LogSQL reference](https://docs.victoriametrics.com/victorialogs/logsql/) |
+| Metric/range functions | `rate`, `count_over_time`, `sum_over_time`, `quantile_over_time` | Native `stats` pipeline / quantile ops | [Querying guide](https://docs.victoriametrics.com/victorialogs/querying/) |
+| Metadata and series paths | `labels`, `label_values`, `series`, index/volume endpoints | Native `stream_field_*`, `field_*`, `streams`, `hits` APIs | [Querying guide](https://docs.victoriametrics.com/victorialogs/querying/) |
+
+### Proxy Compatibility Layer
+
+| Capability gap vs native VL | Loki examples | Proxy implementation | Implementation docs |
+|---|---|---|---|
+| Binary expression joins and math | `A / B`, `A * 100`, comparisons | Execute sides independently and combine with Loki vector semantics | [Proxy compatibility layer](docs/translation-reference.md#proxy-compatibility-layer) |
+| Vector matching semantics | `on()`, `ignoring()`, `group_left()`, `group_right()`, `without()` | Label-subset matching and one-to-many join behavior implemented in proxy evaluation | [Vector matching details](docs/translation-reference.md#binary-expressions) |
+| Time modifiers and subqueries | `offset`, `@`, `rate(...)[1h:5m]` | Modifier normalization and concurrent sub-step evaluation with outer aggregation | [Time/subquery behavior](docs/translation-reference.md#time-and-subquery-semantics) |
+| Template/formatting behavior | `line_format`, `label_format` templates | Go-template evaluation + field shaping in response path | [Formatting behavior](docs/translation-reference.md#formatting-and-normalization) |
+| Non-native stage semantics | `decolorize`, unwrap unit helpers | ANSI stripping and unit-aware unwrap compatibility logic | [Proxy stage coverage](docs/translation-reference.md#proxy-side-stages) |
+
+For edge semantics and intentional boundaries, see [Known Issues](docs/KNOWN_ISSUES.md). For the full mapping table, see [Translation Reference](docs/translation-reference.md).
 
 ## Release Automation
 
@@ -390,8 +390,12 @@ Release is skipped only when the change-set since the latest tag is docs/metadat
 
 | Document | Contents |
 |---|---|
+| [Getting Started](docs/getting-started.md) | Fast bootstrap for binary, Docker, Helm, and first datasource checks |
 | [Architecture](docs/architecture.md) | Component design, data flow, protection layers, data model mapping |
+| [Security](docs/security.md) | Security model, tenant/isolation controls, hardening baseline |
+| [Observability](docs/observability.md) | Metrics, logs, OTLP export, dashboard and alert guidance |
 | [Fleet Cache](docs/fleet-cache.md) | Distributed cache: hash ring, shadow copies, TTL preservation, circuit breakers |
+| [Peer Cache Design](docs/peer-cache-design.md) | Design deep dive for peer cache behavior and consistency tradeoffs |
 | [Configuration](docs/configuration.md) | All flags, environment variables, cache, tenancy, TLS, OTLP |
 | [API Reference](docs/api-reference.md) | Endpoint table, delete safeguards, metrics, observability |
 | [Translation Reference](docs/translation-reference.md) | LogQL to LogsQL mapping table, supported/unsupported features |
@@ -400,6 +404,7 @@ Release is skipped only when the change-set since the latest tag is docs/metadat
 | [Scaling](docs/scaling.md) | Capacity planning, resource projections, per-tenant/client metrics, Helm sizing |
 | [Operations](docs/operations.md) | Deployment, performance tuning, troubleshooting |
 | [Testing](docs/testing.md) | Test categories, running tests, fuzz testing |
+| [Rules And Alerts Migration](docs/rules-alerts-migration.md) | Converting Loki rule files and exposing vmalert reads via Loki-compatible endpoints |
 | [Compatibility Matrix](docs/compatibility-matrix.md) | Separate Loki, Drilldown, and VictoriaLogs compatibility tracks |
 | [Loki Compatibility](docs/compatibility-loki.md) | Loki API and LogQL version matrix |
 | [Logs Drilldown Compatibility](docs/compatibility-drilldown.md) | Drilldown app version matrix and app contracts |
