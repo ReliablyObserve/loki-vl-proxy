@@ -86,11 +86,12 @@ extraArgs:
   # Stream selector optimization — list VL _stream_fields labels for fast index path
   # stream-fields: "app,env,namespace"
 
-# Go runtime tuning — set GOMEMLIMIT to ~90% of memory limit for optimal GC
+# Go runtime tuning — set GOMEMLIMIT to a bounded share of the pod memory limit
 # This prevents OOM while minimizing GC overhead. See docs/performance.md.
-# Go runtime tuning:
-# GOMEMLIMIT is auto-calculated as goMemLimitPercent% of resources.limits.memory.
+# The chart injects GOMEMLIMIT automatically into the container env.
+# GOMEMLIMIT is calculated as goMemLimitPercent% of resources.limits.memory.
 # Override with goMemLimit to set an explicit value (e.g., "500MiB").
+# Prefer goMemLimit/goMemLimitPercent over setting env.GOMEMLIMIT directly.
 goMemLimitPercent: 70  # percentage of resources.limits.memory
 goMemLimit: ""         # explicit override; if set, goMemLimitPercent is ignored
 

@@ -165,6 +165,23 @@ helm install loki-vl-proxy ./charts/loki-vl-proxy \
   --set extraArgs.backend=http://victorialogs:9428
 ```
 
+For autoscaled installs, use the chart-native HPA block and let the chart derive `GOMEMLIMIT` from the pod memory limit:
+
+```bash
+helm install loki-vl-proxy ./charts/loki-vl-proxy \
+  --set extraArgs.backend=http://victorialogs:9428 \
+  --set resources.requests.cpu=250m \
+  --set resources.requests.memory=256Mi \
+  --set resources.limits.cpu=1 \
+  --set resources.limits.memory=512Mi \
+  --set horizontalPodAutoscaling.enabled=true \
+  --set horizontalPodAutoscaling.minReplicas=2 \
+  --set horizontalPodAutoscaling.maxReplicas=6 \
+  --set goMemLimitPercent=80
+```
+
+This renders `GOMEMLIMIT` into the pod env automatically. If you need an exact value instead of a percentage, set `goMemLimit` directly.
+
 ### Fleet Cache (Multi-Replica)
 
 ```bash

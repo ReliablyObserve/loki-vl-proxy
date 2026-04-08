@@ -166,8 +166,8 @@ go tool pprof mem.prof
 The Helm chart auto-calculates `GOMEMLIMIT` as a percentage of `resources.limits.memory`:
 
 ```yaml
-# Default: 70% of memory limit
-goMemLimitPercent: 70   # 256Mi * 70% = 179MiB
+# Default: 70% of memory limit, injected as GOMEMLIMIT
+goMemLimitPercent: 70   # 256Mi -> 187904819 bytes
 
 # Override with explicit value
 goMemLimit: "500MiB"    # ignores goMemLimitPercent

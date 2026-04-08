@@ -5,6 +5,7 @@ metadata:
   labels:
     {{- include "loki-vl-proxy.labels" . | nindent 4 }}
 spec:
+  {{- $goMemLimit := include "loki-vl-proxy.goMemLimit" . | trim }}
   {{- if eq (include "loki-vl-proxy.workloadKind" .) "StatefulSet" }}
   serviceName: {{ include "loki-vl-proxy.peerServiceName" . }}
   podManagementPolicy: {{ .Values.workload.statefulSet.podManagementPolicy }}
@@ -92,8 +93,14 @@ spec:
             - "-peer-static={{ join "," .Values.peerCache.peers }}"
             {{- end }}
             {{- end }}
-          {{- if or .Values.peerCache.enabled .Values.env }}
+          {{- if or .Values.peerCache.enabled .Values.env $goMemLimit }}
           env:
+            # Keep the runtime memory budget aligned with the chart memory limit.
+            # Explicit goMemLimit wins; otherwise we derive bytes from limits.memory.
+            {{- if $goMemLimit }}
+            - name: GOMEMLIMIT
+              value: {{ $goMemLimit | quote }}
+            {{- end }}
             {{- if .Values.peerCache.enabled }}
             - name: POD_IP
               valueFrom:

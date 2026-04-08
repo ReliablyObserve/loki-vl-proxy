@@ -163,7 +163,10 @@ horizontalPodAutoscaling:
         target:
           type: Utilization
           averageUtilization: 70
+goMemLimitPercent: 80
 ```
+
+With the chart defaults, this also injects `GOMEMLIMIT` into the pod env based on `resources.limits.memory`, so GC pressure tracks the memory envelope used by the HPA target.
 
 ### Large (1,000-10,000 req/s)
 
@@ -205,6 +208,7 @@ horizontalPodAutoscaling:
         target:
           type: Utilization
           averageUtilization: 60
+goMemLimitPercent: 80
 podDisruptionBudget:
   minAvailable: 2
 ```
