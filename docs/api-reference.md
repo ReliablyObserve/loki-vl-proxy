@@ -50,7 +50,14 @@ curl -X POST 'http://proxy:3100/loki/api/v1/delete' \
 |---|---|
 | `POST /loki/api/v1/push` | 405 Method Not Allowed |
 
-This is a read-only proxy. Log ingestion should go directly to VictoriaLogs.
+This is a read-only proxy. Log ingestion should go directly to VictoriaLogs-side ingestion paths, for example:
+
+- `vagent` pipelines targeting VictoriaLogs
+- Loki-push-compatible ingestion endpoints handled on the VictoriaLogs side
+- OTLP log ingestion into VictoriaLogs
+- native JSON / OTel-shaped log ingestion into VictoriaLogs
+
+After ingestion, data is queryable through the proxy's Loki-compatible read API.
 
 ## Alerting and Config Compatibility
 
@@ -72,6 +79,12 @@ This is a read-only proxy. Log ingestion should go directly to VictoriaLogs.
 Behavior and scope notes for these endpoints live in:
 - [Configuration](configuration.md) for flags, tenant fanout behavior, and backend mapping
 - [Known Issues](KNOWN_ISSUES.md) for intentional compatibility boundaries
+
+Write-surface boundary for rules and alerts:
+
+- These routes expose read compatibility only (Loki YAML views and Prometheus-style JSON views).
+- Rule and alert write/lifecycle operations remain on `vmalert` / VictoriaLogs backend systems.
+- The proxy does not implement Loki ruler write APIs.
 
 ## Infrastructure Endpoints
 

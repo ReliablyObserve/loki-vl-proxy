@@ -17,6 +17,8 @@ HTTP proxy that exposes a **Loki-compatible read API** on the frontend and trans
 
 **Single static binary**, ~10MB Docker image, zero external runtime dependencies.
 
+This project is intentionally a **read/query proxy**. Ingestion stays on VictoriaLogs-side pipelines (`vagent`, Loki-push ingestion to VictoriaLogs, OTLP, or native JSON/OTel log ingestion). Data written through those paths is then queryable through the proxy's Loki-compatible read endpoints.
+
 ## Architecture
 
 ```mermaid
@@ -324,6 +326,11 @@ Use `__tenant_id__` in Explore or Drilldown-compatible queries when you want to 
 | Streaming | `tail` (WebSocket), `format_query` |
 | Write | `push` (blocked 405), `delete` (safeguarded) |
 | Admin | `rules`, `alerts`, `config`, `buildinfo`, `ready` |
+
+Write-surface boundary:
+- `POST /loki/api/v1/push` is intentionally not implemented by this proxy (`405`); send log ingestion to VictoriaLogs or `vagent`.
+- `POST /loki/api/v1/delete` is the only proxy write exception and stays heavily safeguarded.
+- Rules and alerts are exposed as Loki-compatible **read views** from configured `vmalert` backends; rule/alert write and lifecycle APIs are not implemented on this proxy.
 
 **887 tests** (unit + fuzz + perf regression + race-safe)
 
