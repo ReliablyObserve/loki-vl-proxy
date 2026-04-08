@@ -113,7 +113,7 @@ jobs:
             echo "tags<<EOF"
             echo "ghcr.io/${{ github.repository_owner }}/loki-vl-proxy:${VERSION}"
             if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
-              echo "docker.io/slaskoss/loki-vl-proxy:${VERSION}"
+              echo "docker.io/reliablyobserve/loki-vl-proxy:${VERSION}"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/szibis/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 func TestParseInstantVectorTimeVariants(t *testing.T) {

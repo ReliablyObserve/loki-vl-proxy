@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
-- enforce Helm chart `version` and `appVersion` validation after release metadata sync in both auto and manual release workflows, and publish Docker Hub images to the canonical `docker.io/slaskoss/loki-vl-proxy` repository when credentials are configured
+- enforce Helm chart `version` and `appVersion` validation after release metadata sync in both auto and manual release workflows, and publish Docker Hub images to the canonical `docker.io/reliablyobserve/loki-vl-proxy` repository when credentials are configured
 
 ### Documentation
 

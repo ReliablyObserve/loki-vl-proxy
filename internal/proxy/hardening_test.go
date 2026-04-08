@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/szibis/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 func TestHardening_QueryLengthLimit(t *testing.T) {

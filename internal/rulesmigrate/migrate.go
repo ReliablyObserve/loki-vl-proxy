@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/szibis/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"gopkg.in/yaml.v3"
 )
 

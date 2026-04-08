@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	cachepkg "github.com/szibis/Loki-VL-proxy/internal/cache"
+	cachepkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 var proxyAddrs = []string{

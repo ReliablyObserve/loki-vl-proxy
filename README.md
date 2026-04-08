@@ -136,7 +136,7 @@ docker run -p 3100:3100 loki-vl-proxy -backend=http://victorialogs:9428
 
 # Pull published release images
 docker pull ghcr.io/reliablyobserve/loki-vl-proxy:<release>
-docker pull docker.io/slaskoss/loki-vl-proxy:<release>
+docker pull docker.io/reliablyobserve/loki-vl-proxy:<release>
 
 # Docker Compose (dev/test with Grafana)
 docker-compose up -d
@@ -146,7 +146,7 @@ docker-compose up -d
 Image publication model:
 
 - `ghcr.io/reliablyobserve/loki-vl-proxy:<release>` is always published by release workflows.
-- `docker.io/slaskoss/loki-vl-proxy:<release>` is published when Docker Hub credentials are configured in repo secrets.
+- `docker.io/reliablyobserve/loki-vl-proxy:<release>` is published when Docker Hub credentials are configured in repo secrets.
 - Helm charts are published to `oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy:<release>`.
 
 ### Helm (Kubernetes)

@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/szibis/Loki-VL-proxy/internal/cache"
-	"github.com/szibis/Loki-VL-proxy/internal/metrics"
-	"github.com/szibis/Loki-VL-proxy/internal/proxy"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 )
 
 type fakeReloadableProxy struct {

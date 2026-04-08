@@ -25,7 +25,7 @@ docker run --rm -p 3100:3100 ghcr.io/reliablyobserve/loki-vl-proxy:<release> \
 Docker image sources:
 
 - Primary: `ghcr.io/reliablyobserve/loki-vl-proxy:<release>`
-- Mirror (when enabled in release secrets): `docker.io/slaskoss/loki-vl-proxy:<release>`
+- Mirror (when enabled in release secrets): `docker.io/reliablyobserve/loki-vl-proxy:<release>`
 
 ## Install With Helm
 
@@ -40,7 +40,7 @@ The chart defaults to image `ghcr.io/reliablyobserve/loki-vl-proxy`. If you need
 ```bash
 helm install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \
   --version <release> \
-  --set image.repository=docker.io/slaskoss/loki-vl-proxy \
+  --set image.repository=docker.io/reliablyobserve/loki-vl-proxy \
   --set extraArgs.backend=http://victorialogs:9428
 ```
 

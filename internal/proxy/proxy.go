@@ -26,10 +26,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/szibis/Loki-VL-proxy/internal/cache"
-	"github.com/szibis/Loki-VL-proxy/internal/metrics"
-	mw "github.com/szibis/Loki-VL-proxy/internal/middleware"
-	"github.com/szibis/Loki-VL-proxy/internal/translator"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
+	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"gopkg.in/yaml.v3"
 )
 

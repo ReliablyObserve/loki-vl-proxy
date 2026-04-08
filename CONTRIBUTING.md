@@ -3,7 +3,7 @@
 ## Getting Started
 
 ```bash
-git clone https://github.com/szibis/Loki-VL-proxy.git
+git clone https://github.com/ReliablyObserve/Loki-VL-proxy.git
 cd Loki-VL-proxy
 go build ./...
 go test ./...

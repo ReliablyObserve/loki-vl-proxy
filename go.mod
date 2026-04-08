@@ -1,4 +1,4 @@
-module github.com/szibis/Loki-VL-proxy
+module github.com/ReliablyObserve/Loki-VL-proxy
 
 go 1.26.1
 

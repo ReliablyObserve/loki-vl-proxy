@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/szibis/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 func TestDrilldown_QueryRange_ServiceNameSelectorAndSyntheticLabel(t *testing.T) {

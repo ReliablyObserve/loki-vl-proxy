@@ -18,11 +18,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/szibis/Loki-VL-proxy/internal/cache"
-	"github.com/szibis/Loki-VL-proxy/internal/metrics"
-	mw "github.com/szibis/Loki-VL-proxy/internal/middleware"
-	"github.com/szibis/Loki-VL-proxy/internal/observability"
-	"github.com/szibis/Loki-VL-proxy/internal/proxy"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
+	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 )
 
 var version = "dev"

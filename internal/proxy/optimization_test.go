@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/szibis/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // =============================================================================

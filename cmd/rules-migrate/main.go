@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/szibis/Loki-VL-proxy/internal/rulesmigrate"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/rulesmigrate"
 )
 
 type exitFunc func(int)

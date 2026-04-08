@@ -10,7 +10,7 @@
 ## Reporting a Vulnerability
 
 Please report security vulnerabilities via GitHub Security Advisories:
-https://github.com/szibis/Loki-VL-proxy/security/advisories/new
+https://github.com/ReliablyObserve/Loki-VL-proxy/security/advisories/new
 
 Do NOT open a public issue for security vulnerabilities.
 
