@@ -1,17 +1,17 @@
 # Loki-VL-proxy
 
-[![CI](https://github.com/szibis/Loki-VL-proxy/actions/workflows/ci.yaml/badge.svg?branch=main&event=push)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/ci.yaml)
-[![Loki Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-loki.yaml/badge.svg?branch=main&event=push)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-loki.yaml)
-[![Drilldown Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml/badge.svg?branch=main&event=push)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml)
-[![VictoriaLogs Compatibility](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-vl.yaml/badge.svg?branch=main&event=push)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/compat-vl.yaml)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/szibis/Loki-VL-proxy)](https://go.dev/)
-[![Release](https://img.shields.io/github/v/release/szibis/Loki-VL-proxy)](https://github.com/szibis/Loki-VL-proxy/releases)
-[![Lines](https://sloc.xyz/github/szibis/Loki-VL-proxy/?category=lines)](https://github.com/szibis/Loki-VL-proxy)
+[![CI](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/ci.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/ci.yaml)
+[![Loki Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-loki.yaml/badge.svg?event=pull_request)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-loki.yaml)
+[![Drilldown Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml/badge.svg?event=pull_request)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml)
+[![VictoriaLogs Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml/badge.svg?event=pull_request)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ReliablyObserve/Loki-VL-proxy)](https://go.dev/)
+[![Release](https://img.shields.io/github/v/release/ReliablyObserve/Loki-VL-proxy)](https://github.com/ReliablyObserve/Loki-VL-proxy/releases)
+[![Lines of Code](https://img.shields.io/badge/go%20loc-45.5k-blue)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Tests](https://img.shields.io/badge/tests-1227%20passed-brightgreen)](#tests)
 [![Coverage](https://img.shields.io/badge/coverage-90.0%25-brightgreen)](#tests)
 [![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
-[![License](https://img.shields.io/github/license/szibis/Loki-VL-proxy)](LICENSE)
-[![CodeQL](https://github.com/szibis/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/szibis/Loki-VL-proxy/actions/workflows/codeql.yaml)
+[![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
+[![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
 
 HTTP proxy that exposes a **Loki-compatible read API** on the frontend and translates requests to **VictoriaLogs** on the backend. Use Grafana's native Loki datasource (Explore, Drilldown, dashboards) with VictoriaLogs -- no custom datasource plugin needed.
 
@@ -135,18 +135,24 @@ docker build -t loki-vl-proxy .
 docker run -p 3100:3100 loki-vl-proxy -backend=http://victorialogs:9428
 
 # Pull published release images
-docker pull ghcr.io/szibis/loki-vl-proxy:<release>
-docker pull docker.io/<dockerhub-user>/loki-vl-proxy:<release>
+docker pull ghcr.io/reliablyobserve/loki-vl-proxy:<release>
+docker pull docker.io/slaskoss/loki-vl-proxy:<release>
 
 # Docker Compose (dev/test with Grafana)
 docker-compose up -d
 # Grafana at http://localhost:3000
 ```
 
+Image publication model:
+
+- `ghcr.io/reliablyobserve/loki-vl-proxy:<release>` is always published by release workflows.
+- `docker.io/slaskoss/loki-vl-proxy:<release>` is published when Docker Hub credentials are configured in repo secrets.
+- Helm charts are published to `oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy:<release>`.
+
 ### Helm (Kubernetes)
 
 ```bash
-helm install loki-vl-proxy oci://ghcr.io/szibis/charts/loki-vl-proxy \
+helm install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \
   --version <release> \
   --set extraArgs.backend=http://victorialogs:9428
 

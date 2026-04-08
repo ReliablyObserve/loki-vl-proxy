@@ -4,9 +4,9 @@ description: HTTP proxy translating Loki API to VictoriaLogs
 type: application
 version: 0.27.6
 appVersion: "0.27.6"
-home: https://github.com/szibis/Loki-VL-proxy
+home: https://github.com/ReliablyObserve/Loki-VL-proxy
 sources:
-  - https://github.com/szibis/Loki-VL-proxy
+  - https://github.com/ReliablyObserve/Loki-VL-proxy
 keywords:
   - loki
   - victorialogs
@@ -14,4 +14,4 @@ keywords:
   - logs
   - observability
 maintainers:
-  - name: szibis
+  - name: ReliablyObserve

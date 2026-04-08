@@ -290,7 +290,7 @@ jobs:
             echo "tags<<EOF"
             echo "ghcr.io/${{ github.repository_owner }}/loki-vl-proxy:${VERSION}"
             if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
-              echo "docker.io/${DOCKERHUB_USERNAME}/loki-vl-proxy:${VERSION}"
+              echo "docker.io/slaskoss/loki-vl-proxy:${VERSION}"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
@@ -335,7 +335,14 @@ jobs:
             echo "::warning::RELEASE_PR_TOKEN is not configured. Metadata PRs created by github-actions may not trigger pull_request checks automatically."
           fi
           chmod +x scripts/ci/sync_release_metadata.sh
-          scripts/ci/sync_release_metadata.sh "${VERSION}" "$(date +%Y-%m-%d)" "${TEST_COUNT}" "${COVERAGE_PCT}" "${CODE_LINES}" .
+          scripts/ci/sync_release_metadata.sh "${VERSION}" "$(date +%Y-%m-%d)" "${TEST_COUNT}" "${COVERAGE_PCT}" "${CODE_LINES}" . "${GITHUB_REPOSITORY}"
+
+          CHART_VERSION="$(awk -F: '/^version:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
+          CHART_APP_VERSION="$(awk -F: '/^appVersion:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' charts/loki-vl-proxy/Chart.yaml)"
+          if [ "${CHART_VERSION}" != "${VERSION}" ] || [ "${CHART_APP_VERSION}" != "${VERSION}" ]; then
+            echo "::error::Chart.yaml version/appVersion mismatch after metadata sync: version=${CHART_VERSION} appVersion=${CHART_APP_VERSION} expected=${VERSION}"
+            exit 1
+          fi
 
           if git diff --quiet --exit-code -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml; then
             echo "release metadata already synced"

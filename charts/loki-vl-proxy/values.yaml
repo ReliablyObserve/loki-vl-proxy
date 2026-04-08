@@ -33,7 +33,7 @@ workload:
     persistentVolumeClaimRetentionPolicy: {}
 
 image:
-  repository: ghcr.io/szibis/loki-vl-proxy
+  repository: ghcr.io/reliablyobserve/loki-vl-proxy
   tag: ""  # defaults to Chart.appVersion
   pullPolicy: IfNotPresent
   pullSecrets: []

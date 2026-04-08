@@ -6,11 +6,11 @@ This project tracks compatibility on three separate layers. They are intentional
 
 | Track | What it answers | Workflow | Score test | Doc |
 |---|---|---|---|---|
-| Loki | Does the proxy behave like Loki for Loki clients and LogQL? | `compat-loki.yaml` | `TestLokiTrackScore` | [compatibility-loki.md](/tmp/Loki-VL-proxy/docs/compatibility-loki.md) |
-| Logs Drilldown | Does Grafana Logs Drilldown still work through the Loki datasource proxy path? | `compat-drilldown.yaml` | `TestDrilldownTrackScore` | [compatibility-drilldown.md](/tmp/Loki-VL-proxy/docs/compatibility-drilldown.md) |
-| VictoriaLogs | Does the proxy keep VictoriaLogs backend behavior stable while translating to Loki semantics? | `compat-vl.yaml` | `TestVLTrackScore` | [compatibility-victorialogs.md](/tmp/Loki-VL-proxy/docs/compatibility-victorialogs.md) |
+| Loki | Does the proxy behave like Loki for Loki clients and LogQL? | `compat-loki.yaml` | `TestLokiTrackScore` | [compatibility-loki.md](compatibility-loki.md) |
+| Logs Drilldown | Does Grafana Logs Drilldown still work through the Loki datasource proxy path? | `compat-drilldown.yaml` | `TestDrilldownTrackScore` | [compatibility-drilldown.md](compatibility-drilldown.md) |
+| VictoriaLogs | Does the proxy keep VictoriaLogs backend behavior stable while translating to Loki semantics? | `compat-vl.yaml` | `TestVLTrackScore` | [compatibility-victorialogs.md](compatibility-victorialogs.md) |
 
-The tracked versions live in [compatibility-matrix.json](/tmp/Loki-VL-proxy/test/e2e-compat/compatibility-matrix.json).
+The tracked versions live in [compatibility-matrix.json](../test/e2e-compat/compatibility-matrix.json).
 The GitHub Actions compatibility workflows read their matrix lists directly from that manifest, so the repo has a single source of truth for supported versions.
 
 ## Support Window Policy

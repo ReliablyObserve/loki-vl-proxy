@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [ "$#" -lt 3 ] || [ "$#" -gt 6 ]; then
-  echo "usage: $0 <version> <release-date> <tests-count> [coverage-pct] [go-lines] [repo-root]" >&2
+if [ "$#" -lt 3 ] || [ "$#" -gt 7 ]; then
+  echo "usage: $0 <version> <release-date> <tests-count> [coverage-pct] [go-lines] [repo-root] [repo-slug]" >&2
   exit 1
 fi
 
@@ -12,6 +12,7 @@ TEST_COUNT="$3"
 COVERAGE_PCT="${4:-}"
 GO_LINES="${5:-}"
 REPO_ROOT="${6:-.}"
+REPO_SLUG="${7:-ReliablyObserve/Loki-VL-proxy}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 cd "$REPO_ROOT"
@@ -36,6 +37,13 @@ awk -v version="$VERSION" '
   { print }
 ' "$CHART_FILE" > "$CHART_FILE.tmp"
 mv "$CHART_FILE.tmp" "$CHART_FILE"
+
+CHART_VERSION="$(awk -F: '/^version:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' "$CHART_FILE")"
+CHART_APP_VERSION="$(awk -F: '/^appVersion:/ {v=$2; gsub(/[ "]/, "", v); print v; exit}' "$CHART_FILE")"
+if [ "$CHART_VERSION" != "$VERSION" ] || [ "$CHART_APP_VERSION" != "$VERSION" ]; then
+  echo "chart metadata mismatch after sync: version=${CHART_VERSION} appVersion=${CHART_APP_VERSION} expected=${VERSION}" >&2
+  exit 1
+fi
 
 perl -0pi -e 's/"service\.version":\s*"[^"]+"/"service.version": "'"$VERSION"'"/' "$OBSERVABILITY_FILE"
 
@@ -118,7 +126,7 @@ if [ -n "$GO_LINES" ]; then
   LINES_MESSAGE="$(badge_message "${LINES_KILO}")"
   LOC_BADGE="https://img.shields.io/badge/go%20loc-${LINES_MESSAGE}-blue"
   awk -v badge="$LOC_BADGE" '
-    /^\[!\[Lines of Code\]\(/ { print "[![Lines of Code](" badge ")](https://github.com/szibis/Loki-VL-proxy)"; next }
+    /^\[!\[Lines( of Code)?\]\(/ { print "[![Lines of Code](" badge ")](https://github.com/'"$REPO_SLUG"')"; next }
     { print }
   ' "$README_FILE" > "$README_FILE.tmp"
   mv "$README_FILE.tmp" "$README_FILE"
