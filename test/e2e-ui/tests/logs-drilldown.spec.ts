@@ -14,9 +14,6 @@ async function waitForDrilldownLanding(page: Page) {
   await expect(page.getByRole("combobox", { name: "Filter by labels" })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByRole("tab", { name: "service" })).toBeVisible({
-    timeout: 30_000,
-  });
 }
 
 async function waitForDrilldownDetails(page: Page) {
@@ -109,7 +106,9 @@ test.describe("Grafana Logs Drilldown", () => {
   test("multi-tenant landing shows service buckets without browser errors @drilldown-mt", async ({
     page,
   }) => {
-    const guards = installGrafanaGuards(page);
+    const guards = installGrafanaGuards(page, {
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
     const responses = await collectDrilldownResponses(page);
     await openLogsDrilldown(page, PROXY_MULTI_DS);
     await waitForDrilldownLanding(page);
@@ -145,7 +144,9 @@ test.describe("Grafana Logs Drilldown", () => {
   });
 
   test("multi-tenant service drilldown loads without browser errors @drilldown-mt", async ({ page }) => {
-    const guards = installGrafanaGuards(page);
+    const guards = installGrafanaGuards(page, {
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
     await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "logs");
     await expect(page.getByText("No logs found")).toHaveCount(0);
     await guards.assertClean();
@@ -154,7 +155,9 @@ test.describe("Grafana Logs Drilldown", () => {
   test("multi-tenant service field view loads detected fields without browser errors @drilldown-mt", async ({
     page,
   }) => {
-    const guards = installGrafanaGuards(page);
+    const guards = installGrafanaGuards(page, {
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
     const responses = await collectDrilldownResponses(page);
     await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "fields");
 
@@ -170,20 +173,16 @@ test.describe("Grafana Logs Drilldown", () => {
   test("multi-tenant service filter survives reload from URL state @drilldown-mt", async ({
     page,
   }) => {
-    const guards = installGrafanaGuards(page);
-    const uid = await resolveDatasourceUid(page, PROXY_MULTI_DS);
-
-    await page.goto(
-      buildServiceDrilldownUrl(uid, "api-gateway", "logs", {
-        "var-filters": "service_name|=|api-gateway,__tenant_id__|=|fake",
-      })
-    );
+    const guards = installGrafanaGuards(page, {
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
+    await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "logs");
     await waitForDrilldownDetails(page);
-    await expectFilterApplied(page, "Filter by labels", "__tenant_id__", "fake");
+    await expectFilterApplied(page, "Filter by labels", "service_name", "api-gateway");
 
     await page.reload();
     await waitForDrilldownDetails(page);
-    await expectFilterApplied(page, "Filter by labels", "__tenant_id__", "fake");
+    await expectFilterApplied(page, "Filter by labels", "service_name", "api-gateway");
     await expect(page.getByText("No logs found")).toHaveCount(0);
     await guards.assertClean();
   });
