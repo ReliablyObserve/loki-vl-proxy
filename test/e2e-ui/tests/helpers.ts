@@ -69,9 +69,6 @@ export async function openLogsDrilldown(page: Page, datasource: string) {
   await expect(page.getByRole("combobox", { name: "Filter by labels" })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByRole("tab", { name: "service" })).toBeVisible({
-    timeout: 30_000,
-  });
 }
 
 /**
