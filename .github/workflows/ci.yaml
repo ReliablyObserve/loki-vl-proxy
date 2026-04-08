@@ -18,6 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Verify dashboard and alerting assets are synced to chart
+        run: ./scripts/ci/sync_observability_assets.sh --check
+
       - uses: actions/setup-go@v5
         with:
           go-version: "1.26.1"

@@ -76,6 +76,7 @@ extraArgs:
   # Backend auth to VictoriaLogs
   # backend-basic-auth: "user:password"
   # forward-headers: "Authorization"
+  # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
   # Label translation (OTel compatibility)
   # label-style: "underscores"  # convert VL dotted fields (service.name) to Loki underscores (service_name)
@@ -129,13 +130,30 @@ envFrom: []
   #     name: loki-vl-proxy-config
 
 # --- PrometheusRule (alert rules for Prometheus Operator) ---
+# Base rules source:
+# - canonical repo asset: /alerting/loki-vl-proxy-prometheusrule.yaml
+# - chart copy consumed by templates: charts/loki-vl-proxy/alerting/loki-vl-proxy-prometheusrule.yaml
+# Keep both files aligned with: ./scripts/ci/sync_observability_assets.sh
 prometheusRule:
   enabled: false
   namespace: ""
   labels: {}
+  # Base URL used by alert annotations.runbook_url.
+  # Each alert appends its own runbook filename.
+  runbookBaseUrl: "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks"
+  # Standardized labels merged directly into each base rule for Alertmanager/vmalert routing.
+  standardLabels:
+    team: "sre"
+    owner: "reliablyobserve"
+    source: "vmalert"
+    managedBy: "helm"
   additionalRules: []
 
 # --- Grafana Dashboard (auto-provisioned via ConfigMap) ---
+# Dashboard sources:
+# - canonical repo assets: /dashboard/*.json
+# - chart copies consumed by templates: charts/loki-vl-proxy/dashboards/*.json
+# Keep both files aligned with: ./scripts/ci/sync_observability_assets.sh
 grafanaDashboard:
   enabled: false
   namespace: ""

@@ -186,6 +186,7 @@ jobs:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
       HAS_RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
+      HAS_GHCR_PACKAGE_ADMIN_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -312,6 +313,22 @@ jobs:
           VERSION="${{ steps.meta.outputs.version }}"
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://ghcr.io/${OWNER_LC}/charts"
+
+      - name: Ensure GHCR Helm chart package is public
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN }}
+        run: |
+          set -euo pipefail
+          OWNER="${GITHUB_REPOSITORY_OWNER}"
+          OWNER_LC="$(echo "${OWNER}" | tr '[:upper:]' '[:lower:]')"
+          PKG="charts%2Floki-vl-proxy"
+          if [ "${HAS_GHCR_PACKAGE_ADMIN_TOKEN}" != "true" ]; then
+            echo "::warning::GHCR_PACKAGE_ADMIN_TOKEN not configured. Helm chart visibility cannot be enforced automatically."
+            echo "::warning::Set package visibility to public manually: ghcr.io/${OWNER_LC}/charts/loki-vl-proxy"
+            exit 0
+          fi
+          gh api -X PATCH "/orgs/${OWNER}/packages/container/${PKG}/visibility" -f visibility=public >/dev/null
+          echo "Ensured public visibility for ghcr.io/${OWNER_LC}/charts/loki-vl-proxy"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

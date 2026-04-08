@@ -1,4 +1,5 @@
 {{- if .Values.prometheusRule.enabled }}
+{{- $baseRules := tpl (.Files.Get "alerting/loki-vl-proxy-prometheusrule.yaml") . | fromYaml }}
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -11,67 +12,10 @@ metadata:
     {{- end }}
 spec:
   groups:
-    - name: loki-vl-proxy
-      interval: 30s
+    - name: {{ $baseRules.groupName | default "loki-vl-proxy" }}
+      interval: {{ $baseRules.interval | default "30s" }}
       rules:
-        - alert: LokiVLProxyDown
-          expr: up{job="{{ include "loki-vl-proxy.fullname" . }}"} == 0
-          for: 1m
-          labels:
-            severity: critical
-          annotations:
-            summary: "Loki-VL-proxy is down"
-            description: "Instance {{`{{ $labels.instance }}`}} has been down for >1m."
-        - alert: LokiVLProxyHighErrorRate
-          expr: |
-            100 * sum(rate(loki_vl_proxy_requests_total{job="{{ include "loki-vl-proxy.fullname" . }}",status=~"5.."}[5m]))
-            / sum(rate(loki_vl_proxy_requests_total{job="{{ include "loki-vl-proxy.fullname" . }}"}[5m])) > 5
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: "High 5xx error rate ({{`{{ $value | printf \"%.1f\" }}`}}%)"
-        - alert: LokiVLProxyHighLatency
-          expr: |
-            histogram_quantile(0.99,
-              sum(rate(loki_vl_proxy_request_duration_seconds_bucket{job="{{ include "loki-vl-proxy.fullname" . }}",endpoint="query_range"}[5m])) by (le)
-            ) > 10
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: "P99 query_range latency >10s"
-        - alert: LokiVLProxyBackendUnreachable
-          expr: |
-            sum(rate(loki_vl_proxy_requests_total{job="{{ include "loki-vl-proxy.fullname" . }}",status="502"}[5m])) > 0.5
-          for: 2m
-          labels:
-            severity: critical
-          annotations:
-            summary: "VictoriaLogs backend unreachable"
-        - alert: LokiVLProxyCircuitBreakerOpen
-          expr: loki_vl_proxy_circuit_breaker_state{job="{{ include "loki-vl-proxy.fullname" . }}"} == 1
-          for: 1m
-          labels:
-            severity: critical
-          annotations:
-            summary: "Circuit breaker is open"
-        - alert: LokiVLProxyTenantHighErrorRate
-          expr: |
-            100 * sum(rate(loki_vl_proxy_tenant_requests_total{status=~"5.."}[5m])) by (tenant)
-            / sum(rate(loki_vl_proxy_tenant_requests_total[5m])) by (tenant) > 10
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: "Tenant {{`{{ $labels.tenant }}`}} high error rate"
-        - alert: LokiVLProxyRateLimiting
-          expr: sum(rate(loki_vl_proxy_client_errors_total{reason="rate_limited"}[5m])) > 0.5
-          for: 5m
-          labels:
-            severity: warning
-          annotations:
-            summary: "Rate limiting active"
+        {{- toYaml ($baseRules.rules | default (list)) | nindent 8 }}
         {{- with .Values.prometheusRule.additionalRules }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

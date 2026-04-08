@@ -189,6 +189,33 @@ The proxy also exports a lightweight built-in set of runtime and host health met
 | `node_network_*_bytes_total` | network I/O counters |
 | `node_pressure_*` | Linux PSI gauges when available |
 
+### PromQL Drilldowns For Slowness And Client Errors
+
+Use these queries to quickly isolate backend slowness vs proxy/client-side failures:
+
+| Goal | Query |
+|---|---|
+| Backend p95 latency by endpoint | `histogram_quantile(0.95, sum(rate(loki_vl_proxy_backend_duration_seconds_bucket[5m])) by (le, endpoint))` |
+| Proxy p99 end-to-end latency by endpoint | `histogram_quantile(0.99, sum(rate(loki_vl_proxy_request_duration_seconds_bucket[5m])) by (le, endpoint))` |
+| Tenant p99 latency | `histogram_quantile(0.99, sum(rate(loki_vl_proxy_tenant_request_duration_seconds_bucket[5m])) by (le, tenant, endpoint))` |
+| 5xx rate by endpoint | `sum(rate(loki_vl_proxy_requests_total{status=~"5.."}[5m])) by (endpoint)` |
+| Client bad_request by client+endpoint | `sum(rate(loki_vl_proxy_client_errors_total{reason="bad_request"}[5m])) by (client, endpoint)` |
+| Client rate_limited by client+endpoint | `sum(rate(loki_vl_proxy_client_errors_total{reason="rate_limited"}[5m])) by (client, endpoint)` |
+
+For latency histograms, keep dashboards on `p50`, `p95`, and `p99` rather than averages. Averages hide tail latency incidents.
+
+### Active Backend E2E Healthchecks
+
+`/ready` confirms backend reachability, but production health should also include synthetic end-to-end probes with real query traffic shape.
+
+Recommended pattern:
+
+1. Probe `/ready` every 15-30s for hard availability.
+2. Run a lightweight synthetic `query_range` every 1-5m from inside the cluster.
+3. Alert when synthetic query latency or error ratio breaches SLO even if `/ready` is green.
+
+This catches backend partial degradation (slow scans, storage pressure, auth drift) earlier than readiness alone.
+
 ## Choosing Client Identity
 
 Per-client metrics and request logs can use trusted upstream identity instead of only remote IP:
@@ -317,6 +344,15 @@ Start with:
 - circuit breaker state
 - process RSS and open file descriptors
 
+### Dashboard Catalog
+
+| Dashboard | Source | Primary use |
+|---|---|---|
+| [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | Prometheus metrics | Service health, SLOs, cache and endpoint latency trends |
+| [`dashboard/loki-vl-proxy-offenders.json`](../dashboard/loki-vl-proxy-offenders.json) | Native VictoriaLogs datasource | Offender triage with built-in `tenant`, `client`, `cluster`, and `env` filters for route/status load and error analysis |
+
+Use the offenders dashboard during Loki/proxy incidents to keep visibility on raw operator/client behavior directly from stored logs.
+
 High-signal alert ideas:
 
 - `5xx` rate rising on query endpoints
@@ -324,6 +360,11 @@ High-signal alert ideas:
 - backend latency p95 breaching SLO
 - a single `client` dominating bytes or query length
 - circuit breaker opening repeatedly
+
+The packaged alert set and incident procedures live in:
+
+- [`alerting/loki-vl-proxy-prometheusrule.yaml`](../alerting/loki-vl-proxy-prometheusrule.yaml)
+- [`docs/runbooks/alerts.md`](runbooks/alerts.md)
 
 ## Notes
 

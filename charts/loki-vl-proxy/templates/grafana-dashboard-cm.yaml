@@ -13,6 +13,8 @@ metadata:
   annotations:
     grafana_folder: {{ .Values.grafanaDashboard.folder | default "Infrastructure" }}
 data:
-  loki-vl-proxy.json: |-
-    {{- .Files.Get "dashboards/loki-vl-proxy.json" | nindent 4 }}
+  {{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+  {{ base $path }}: |-
+    {{- $.Files.Get $path | nindent 4 }}
+  {{- end }}
 {{- end }}

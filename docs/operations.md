@@ -38,6 +38,62 @@ For multi-replica fleets with HPA, prefer `peerCache.enabled=true` over static p
 
 ---
 
+### Backend Auth Forwarding
+
+If VictoriaLogs authentication is delegated from upstream clients, you can forward client `Authorization` to backend explicitly:
+
+```bash
+-forward-authorization=true
+```
+
+Equivalent manual mode:
+
+```bash
+-forward-headers=Authorization
+```
+
+Use this only in trusted topologies (for example Grafana/auth-proxy -> Loki-VL-proxy -> VictoriaLogs).
+
+---
+
+## Operational Assets
+
+Treat these as one versioned operational package:
+
+| Asset | Canonical source | Purpose |
+|------|------------------|---------|
+| Grafana operations dashboard | [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | SLO and troubleshooting views for request, cache, tenant, and backend signals from proxy metrics |
+| Grafana offenders dashboard (native VL) | [`dashboard/loki-vl-proxy-offenders.json`](../dashboard/loki-vl-proxy-offenders.json) | Tenant/client/query offender analytics with `tenant`, `client`, `cluster`, and `env` filters when Loki/proxy query paths are degraded |
+| Alert rules | [`alerting/loki-vl-proxy-prometheusrule.yaml`](../alerting/loki-vl-proxy-prometheusrule.yaml) | PrometheusRule/vmalert-oriented alert set with standardized labels and annotations |
+| SRE runbooks | [`docs/runbooks/alerts.md`](runbooks/alerts.md) | Index plus per-alert runbook files referenced directly from alert `runbook_url` |
+
+When using the Helm chart, the runtime templates consume synced copies in `charts/loki-vl-proxy/{dashboards,alerting}`. Keep canonical and chart copies aligned with:
+
+```bash
+./scripts/ci/sync_observability_assets.sh sync
+./scripts/ci/sync_observability_assets.sh --check
+```
+
+`--check` is already enforced in CI to prevent drift.
+
+---
+
+## Preventive Scaling And Deployment
+
+Use the dedicated guide for prevention-oriented operations hardening:
+
+- [`docs/runbooks/deployment-best-practices.md`](runbooks/deployment-best-practices.md)
+
+Critical defaults to reduce incident frequency:
+
+- run at least 2 replicas with PDB enabled
+- enable HPA with conservative downscale
+- tune cache TTLs differently for query paths vs metadata paths
+- monitor backend p95 and proxy p99 histograms, not averages
+- add synthetic in-cluster e2e query probes in addition to `/ready`
+
+---
+
 ## Label Translation
 
 ### When to Use Each Mode
