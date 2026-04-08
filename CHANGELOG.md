@@ -19,9 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - extend proxy, middleware, cache, metrics, and e2e fleet/ui coverage to harden cache behavior, race-prone paths, and runtime regressions
 
+### CI
+
+- enforce Helm chart `version` and `appVersion` validation after release metadata sync in both auto and manual release workflows, and publish Docker Hub images to the canonical `docker.io/slaskoss/loki-vl-proxy` repository when credentials are configured
+
 ### Documentation
 
 - refresh README, architecture, and performance guidance with clearer operator-facing cache topology, Tier0 mapping, and value-focused messaging
+- update repository links, chart metadata references, image examples, and testing/compatibility doc links to the `ReliablyObserve/Loki-VL-proxy` org namespace and current docs structure
 
 ## [0.27.6] - 2026-04-07
 
