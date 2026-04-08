@@ -117,13 +117,26 @@ See [Performance Guide](docs/performance.md), [Scaling](docs/scaling.md), [Fleet
 - **Measured regression control** -- compatibility, performance, and quality gates track cache-hit versus bypass behavior, throughput, allocations, and memory growth across hot paths
 
 ### Operations
-See [Getting Started](docs/getting-started.md), [Configuration](docs/configuration.md), [Scaling](docs/scaling.md), [Observability](docs/observability.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), and [Rules And Alerts Migration](docs/rules-alerts-migration.md).
+See [Getting Started](docs/getting-started.md), [Configuration](docs/configuration.md), [Scaling](docs/scaling.md), [Operations](docs/operations.md), [Observability](docs/observability.md), [Alert Runbooks](docs/runbooks/alerts.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md), and [Rules And Alerts Migration](docs/rules-alerts-migration.md).
 
 - **Multitenant deployment model** -- Loki tenant headers map to VictoriaLogs `AccountID` and `ProjectID`, with hot-reloadable tenant configuration
 - **Operational observability** -- Prometheus `/metrics`, OTLP export, structured JSON logs, per-tenant and per-client breakdowns, and peer-cache metrics are available out of the box
+- **Operational pack included** -- versioned dashboard JSON, PrometheusRule alert set, and SRE runbooks are maintained together so alert annotations point to concrete incident procedures
 - **Rules migration support** -- convert Loki-style rule files into `vmalert` `type: vlogs` definitions for read-compatible Grafana alert visibility
 - **Production Helm support** -- OCI chart publishing, `Deployment` or `StatefulSet` modes, persistent disk cache, headless peer discovery, HPA support, and GOMEMLIMIT auto-tuning
 - **Versioned compatibility tracks** -- Loki, VictoriaLogs, and Logs Drilldown are validated as separate compatibility tracks with dedicated CI signals
+
+## Operational Pack
+
+Loki-VL-proxy ships a production-ready operations pack so teams can deploy, observe, and respond without building custom assets first.
+
+| Asset | Location | Why it matters |
+|---|---|---|
+| Dashboard | [`dashboard/loki-vl-proxy.json`](dashboard/loki-vl-proxy.json) | Fast visibility for availability, latency, cache efficiency, tenant load, and backend pressure |
+| Alert rules | [`alerting/loki-vl-proxy-prometheusrule.yaml`](alerting/loki-vl-proxy-prometheusrule.yaml) | Standardized SRE labels and actionable annotations with per-alert runbook links |
+| SRE runbooks | [`docs/runbooks/alerts.md`](docs/runbooks/alerts.md) | Concrete incident steps for each shipped alert, from triage to recovery verification |
+
+Chart templates consume synced copies of these assets from `charts/loki-vl-proxy/{dashboards,alerting}` and CI verifies they stay aligned.
 
 ## Quick Start
 
@@ -403,6 +416,7 @@ Release is skipped only when the change-set since the latest tag is docs/metadat
 | [Benchmarks](docs/benchmarks.md) | Raw benchmark numbers, connection pool tuning, hot path analysis |
 | [Scaling](docs/scaling.md) | Capacity planning, resource projections, per-tenant/client metrics, Helm sizing |
 | [Operations](docs/operations.md) | Deployment, performance tuning, troubleshooting |
+| [Alert Runbooks](docs/runbooks/alerts.md) | SRE incident runbooks linked from alert annotations |
 | [Testing](docs/testing.md) | Test categories, running tests, fuzz testing |
 | [Rules And Alerts Migration](docs/rules-alerts-migration.md) | Converting Loki rule files and exposing vmalert reads via Loki-compatible endpoints |
 | [Compatibility Matrix](docs/compatibility-matrix.md) | Separate Loki, Drilldown, and VictoriaLogs compatibility tracks |

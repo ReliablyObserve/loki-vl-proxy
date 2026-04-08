@@ -38,6 +38,27 @@ For multi-replica fleets with HPA, prefer `peerCache.enabled=true` over static p
 
 ---
 
+## Operational Assets
+
+Treat these as one versioned operational package:
+
+| Asset | Canonical source | Purpose |
+|------|------------------|---------|
+| Grafana dashboard | [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | SLO and troubleshooting views for request, cache, tenant, and backend signals |
+| Alert rules | [`alerting/loki-vl-proxy-prometheusrule.yaml`](../alerting/loki-vl-proxy-prometheusrule.yaml) | PrometheusRule/vmalert-oriented alert set with standardized labels and annotations |
+| SRE runbooks | [`docs/runbooks/alerts.md`](runbooks/alerts.md) | Incident playbooks referenced directly from alert `runbook_url` |
+
+When using the Helm chart, the runtime templates consume synced copies in `charts/loki-vl-proxy/{dashboards,alerting}`. Keep canonical and chart copies aligned with:
+
+```bash
+./scripts/ci/sync_observability_assets.sh sync
+./scripts/ci/sync_observability_assets.sh --check
+```
+
+`--check` is already enforced in CI to prevent drift.
+
+---
+
 ## Label Translation
 
 ### When to Use Each Mode

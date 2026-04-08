@@ -1,0 +1,143 @@
+groupName: loki-vl-proxy
+interval: 30s
+rules:
+  - alert: LokiVLProxyDown
+    expr: 'up{job="{{ include "loki-vl-proxy.fullname" . }}"} == 0'
+    for: 1m
+    labels:
+      severity: critical
+      service: loki-vl-proxy
+      component: availability
+      category: platform
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "Loki-VL-proxy is down"
+      description: 'Instance {{`{{ $labels.instance }}`}} has been down for >1m.'
+      impact: "All Loki-compatible read paths through this instance are unavailable."
+      action: "Check pod health, readiness endpoint, and backend connectivity."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks/alerts.md" }}#lokivlproxydown'
+
+  - alert: LokiVLProxyHighErrorRate
+    expr: |
+      100 * sum(rate(loki_vl_proxy_requests_total{job="{{ include "loki-vl-proxy.fullname" . }}",status=~"5.."}[5m]))
+      / sum(rate(loki_vl_proxy_requests_total{job="{{ include "loki-vl-proxy.fullname" . }}"}[5m])) > 5
+    for: 5m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: request-path
+      category: reliability
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: 'High 5xx error rate ({{`{{ $value | printf "%.1f" }}`}}%)'
+      description: "Proxy 5xx response ratio is above 5% for 5 minutes."
+      impact: "Grafana users may see intermittent query failures."
+      action: "Inspect proxy logs and backend status for failing endpoints."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks/alerts.md" }}#lokivlproxyhigherrorrate'
+
+  - alert: LokiVLProxyHighLatency
+    expr: |
+      histogram_quantile(0.99,
+        sum(rate(loki_vl_proxy_request_duration_seconds_bucket{job="{{ include "loki-vl-proxy.fullname" . }}",endpoint="query_range"}[5m])) by (le)
+      ) > 10
+    for: 5m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: query-range
+      category: performance
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "P99 query_range latency >10s"
+      description: "P99 query_range latency has exceeded 10s for 5 minutes."
+      impact: "Dashboards and Explore become slow for most users."
+      action: "Check backend latency, cache hit ratio, and query volume spikes."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks/alerts.md" }}#lokivlproxyhighlatency'
+
+  - alert: LokiVLProxyBackendUnreachable
+    expr: |
+      sum(rate(loki_vl_proxy_requests_total{job="{{ include "loki-vl-proxy.fullname" . }}",status="502"}[5m])) > 0.5
+    for: 2m
+    labels:
+      severity: critical
+      service: loki-vl-proxy
+      component: backend
+      category: dependency
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "VictoriaLogs backend unreachable"
+      description: "Proxy sees sustained 502 responses while querying VictoriaLogs."
+      impact: "Read-path compatibility is degraded or unavailable."
+      action: "Check VictoriaLogs health, network paths, and auth headers."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks/alerts.md" }}#lokivlproxybackendunreachable'
+
+  - alert: LokiVLProxyCircuitBreakerOpen
+    expr: loki_vl_proxy_circuit_breaker_state{job="{{ include "loki-vl-proxy.fullname" . }}"} == 1
+    for: 1m
+    labels:
+      severity: critical
+      service: loki-vl-proxy
+      component: resiliency
+      category: dependency
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "Circuit breaker is open"
+      description: "Circuit breaker has opened due to repeated upstream failures."
+      impact: "Requests are temporarily short-circuited to protect the backend."
+      action: "Investigate backend stability and recent 5xx bursts."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks/alerts.md" }}#lokivlproxycircuitbreakeropen'
+
+  - alert: LokiVLProxyTenantHighErrorRate
+    expr: |
+      100 * sum(rate(loki_vl_proxy_tenant_requests_total{status=~"5.."}[5m])) by (tenant)
+      / sum(rate(loki_vl_proxy_tenant_requests_total[5m])) by (tenant) > 10
+    for: 5m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: multitenancy
+      category: tenant
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: 'Tenant {{`{{ $labels.tenant }}`}} high error rate'
+      description: 'Tenant {{`{{ $labels.tenant }}`}} exceeded 10% 5xx ratio for 5 minutes.'
+      impact: "Tenant-scoped dashboards and queries are failing."
+      action: "Inspect tenant-specific query patterns and backend limits."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks/alerts.md" }}#lokivlproxytenanthigherrorrate'
+
+  - alert: LokiVLProxyRateLimiting
+    expr: sum(rate(loki_vl_proxy_client_errors_total{reason="rate_limited"}[5m])) > 0.5
+    for: 5m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: protection
+      category: traffic
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "Rate limiting active"
+      description: "Rate-limited client errors are sustained above threshold."
+      impact: "Some clients are throttled and may observe partial failures."
+      action: "Review client request bursts and adjust rate limiter settings if needed."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks/alerts.md" }}#lokivlproxyratelimiting'

@@ -129,13 +129,30 @@ envFrom: []
   #     name: loki-vl-proxy-config
 
 # --- PrometheusRule (alert rules for Prometheus Operator) ---
+# Base rules source:
+# - canonical repo asset: /alerting/loki-vl-proxy-prometheusrule.yaml
+# - chart copy consumed by templates: charts/loki-vl-proxy/alerting/loki-vl-proxy-prometheusrule.yaml
+# Keep both files aligned with: ./scripts/ci/sync_observability_assets.sh
 prometheusRule:
   enabled: false
   namespace: ""
   labels: {}
+  # Base URL used by alert annotations.runbook_url.
+  # Each alert appends its own section anchor (for example #lokivlproxydown).
+  runbookBaseUrl: "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks/alerts.md"
+  # Standardized labels merged directly into each base rule for Alertmanager/vmalert routing.
+  standardLabels:
+    team: "sre"
+    owner: "reliablyobserve"
+    source: "vmalert"
+    managedBy: "helm"
   additionalRules: []
 
 # --- Grafana Dashboard (auto-provisioned via ConfigMap) ---
+# Dashboard source:
+# - canonical repo asset: /dashboard/loki-vl-proxy.json
+# - chart copy consumed by templates: charts/loki-vl-proxy/dashboards/loki-vl-proxy.json
+# Keep both files aligned with: ./scripts/ci/sync_observability_assets.sh
 grafanaDashboard:
   enabled: false
   namespace: ""

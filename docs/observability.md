@@ -325,6 +325,11 @@ High-signal alert ideas:
 - a single `client` dominating bytes or query length
 - circuit breaker opening repeatedly
 
+The packaged alert set and incident procedures live in:
+
+- [`alerting/loki-vl-proxy-prometheusrule.yaml`](../alerting/loki-vl-proxy-prometheusrule.yaml)
+- [`docs/runbooks/alerts.md`](runbooks/alerts.md)
+
 ## Notes
 
 - OTLP push and Prometheus scrape share the same important proxy metrics and metric names.
