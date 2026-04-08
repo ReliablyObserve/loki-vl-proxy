@@ -53,7 +53,14 @@ jobs:
           chmod +x scripts/ci/extract_changelog_section.sh
           VERSION="${{ steps.version.outputs.version }}"
           NOTES_FILE="$(mktemp)"
-          scripts/ci/extract_changelog_section.sh "${VERSION}" CHANGELOG.md > "$NOTES_FILE"
+          if ! scripts/ci/extract_changelog_section.sh "${VERSION}" CHANGELOG.md > "$NOTES_FILE"; then
+            echo "::warning::No changelog section found for ${VERSION}; using fallback release notes"
+            {
+              echo "## ${VERSION}"
+              echo
+              echo "- republish release artifacts and container images for existing tag ${VERSION}"
+            } > "$NOTES_FILE"
+          fi
           echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
 
       - name: Build release binaries
