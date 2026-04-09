@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.10] - 2026-04-09
+
 ### Features
 
 - add native VictoriaLogs offenders dashboard with tenant/client/cluster/env filtering for incident analysis independent of Loki-proxy query health
