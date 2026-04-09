@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### CI
 
 - enforce canonical dashboard/alert asset sync in CI and support syncing multiple dashboard JSON files into chart assets
+- add auto-release tag push fallback to retry with the workflow token when checkout credentials cannot create tags
 
 ## [0.27.8] - 2026-04-08
 
