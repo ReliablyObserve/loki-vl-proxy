@@ -60,7 +60,12 @@ Default logs are emitted as JSON and already use OTel-friendly top-level keys:
   "loki.query": "{service_name=\"api\"} |= \"error\"",
   "client.address": "10.0.0.12:51884",
   "enduser.id": "grafana-user@example.com",
-  "loki.client.source": "x-grafana-user"
+  "loki.client.source": "grafana_user",
+  "cache.result": "miss",
+  "upstream.calls": 1,
+  "upstream.status_code": 200,
+  "upstream.duration_ms": 31,
+  "proxy.overhead_ms": 11
 }
 ```
 
@@ -93,6 +98,9 @@ The proxy writes structured logs for:
 | `http.*` | request semantics |
 | `client.address` | remote address |
 | `enduser.id` | trusted user/client identity when available |
+| `auth.*` | datasource/auth principal context (separate from `enduser.id`) |
+| `cache.result` | compatibility cache result (`hit`, `miss`, `bypass`) |
+| `upstream.*` | backend call count, status, and latency |
 | `loki.*` | Loki/proxy-specific attributes |
 
 ## Metrics
@@ -226,12 +234,13 @@ Per-client metrics and request logs can use trusted upstream identity instead of
 
 When enabled, the proxy prefers:
 
-1. `X-Grafana-User`
+1. Trusted user headers (`X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User`, `X-Auth-Request-User`)
 2. tenant
-3. basic-auth user
+3. trusted forwarded client IP (`X-Forwarded-For`)
 4. remote IP
 
-Only enable this when the proxy sits behind a trusted auth proxy or Grafana instance.
+Datasource/basic-auth credentials are reported separately under `auth.*` and are not used as end-user identity.
+Only enable trusted proxy headers when the proxy sits behind a trusted auth proxy or Grafana instance.
 
 ## Integration Examples
 

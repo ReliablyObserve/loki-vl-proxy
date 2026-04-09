@@ -100,3 +100,46 @@ func TestDatasourceCompat_ForwardsTrustedGrafanaUserContext(t *testing.T) {
 		t.Fatalf("expected client source to describe trusted grafana user, got %q", gotClientSource)
 	}
 }
+
+func TestDatasourceCompat_ForwardsTrustedUserAndProxyChainHeadersAndSeparatesAuthUser(t *testing.T) {
+	var gotForwardedUser, gotForwardedFor, gotAuthUser, gotAuthSource string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotForwardedUser = r.Header.Get("X-Forwarded-User")
+		gotForwardedFor = r.Header.Get("X-Forwarded-For")
+		gotAuthUser = r.Header.Get("X-Loki-VL-Auth-User")
+		gotAuthSource = r.Header.Get("X-Loki-VL-Auth-Source")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"values": []map[string]interface{}{},
+		})
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL:               vlBackend.URL,
+		Cache:                    c,
+		LogLevel:                 "error",
+		MetricsTrustProxyHeaders: true,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	req := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	req.Header.Set("X-Forwarded-User", "idp-user@example.com")
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	req.Header.Set("Authorization", "Basic ZGF0YXNvdXJjZS11c2VyOnNlY3JldA==")
+	req.RemoteAddr = "198.51.100.20:1234"
+	w := httptest.NewRecorder()
+	p.handleLabels(w, req)
+
+	if gotForwardedUser != "idp-user@example.com" {
+		t.Fatalf("expected trusted forwarded user header to be passed upstream, got %q", gotForwardedUser)
+	}
+	if gotForwardedFor != "203.0.113.10" {
+		t.Fatalf("expected trusted forwarded-for header to be passed upstream, got %q", gotForwardedFor)
+	}
+	if gotAuthUser != "datasource-user" || gotAuthSource != "basic_auth" {
+		t.Fatalf("expected datasource auth principal to be forwarded separately, got user=%q source=%q", gotAuthUser, gotAuthSource)
+	}
+}

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- separate datasource/basic-auth credentials from end-user attribution: `enduser.id` now resolves from trusted user headers/tenant/client IP, while auth principals are reported separately via `auth.*` logs and `X-Loki-VL-Auth-*` upstream headers
+- make emitted 3-tuple stream metadata parser-safe by default (flat key/value third element), and emit nested Loki categorized metadata (`structuredMetadata`/`parsed`) only when clients request `X-Loki-Response-Encoding-Flags: categorize-labels`
+- enrich request logs with proxy context diagnostics, including cache result (`hit|miss|bypass`), upstream call count/status/latency, and proxy-overhead timing
+
 ## [0.27.10] - 2026-04-09
 
 ### Features

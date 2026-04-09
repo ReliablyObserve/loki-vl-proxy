@@ -215,7 +215,7 @@ func (m *Metrics) RecordTenantRequest(tenant, endpoint string, statusCode int, d
 }
 
 // RecordClientIdentity records a request for a specific client identity.
-// Client is identified by: X-Grafana-User > tenant > basic auth user > IP.
+// Client is identified by trusted user header > tenant > client IP.
 func (m *Metrics) RecordClientIdentity(clientID, endpoint string, duration time.Duration, responseBytes int64) {
 	clientID = m.canonicalClientLabel(clientID)
 
@@ -261,22 +261,32 @@ func (m *Metrics) RecordClientIdentity(clientID, endpoint string, duration time.
 }
 
 // ResolveClientContext extracts the client identity from an HTTP request and describes its source.
-// Priority with trusted proxy headers: X-Grafana-User > X-Scope-OrgID > basic auth user > X-Forwarded-For > remote IP.
-// Priority without trusted proxy headers: X-Scope-OrgID > basic auth user > remote IP.
+// Priority with trusted proxy headers: Grafana/auth-proxy user headers > X-Scope-OrgID > X-Forwarded-For > remote IP.
+// Priority without trusted proxy headers: X-Scope-OrgID > remote IP.
+//
+// Intentionally does not use datasource/basic-auth credentials as client identity.
+// Those credentials authenticate backend access and should not be attributed as the
+// end user in per-client telemetry.
 func ResolveClientContext(r *http.Request, trustProxyHeaders bool) (string, string) {
-	// Grafana sets this header when proxying datasource requests
 	if trustProxyHeaders {
-		if user := strings.TrimSpace(r.Header.Get("X-Grafana-User")); user != "" {
-			return user, "grafana_user"
+		type candidate struct {
+			header string
+			source string
+		}
+		for _, c := range []candidate{
+			{header: "X-Grafana-User", source: "grafana_user"},
+			{header: "X-Forwarded-User", source: "forwarded_user"},
+			{header: "X-Webauth-User", source: "webauth_user"},
+			{header: "X-Auth-Request-User", source: "auth_request_user"},
+		} {
+			if user := strings.TrimSpace(r.Header.Get(c.header)); user != "" {
+				return user, c.source
+			}
 		}
 	}
 	// Tenant ID (X-Scope-OrgID)
 	if tenant := strings.TrimSpace(r.Header.Get("X-Scope-OrgID")); tenant != "" {
 		return tenant, "tenant"
-	}
-	// Basic auth username
-	if user, _, ok := r.BasicAuth(); ok && user != "" {
-		return user, "basic_auth"
 	}
 	// Forwarded client IP
 	if trustProxyHeaders {
@@ -294,6 +304,15 @@ func ResolveClientContext(r *http.Request, trustProxyHeaders bool) (string, stri
 		return host, "remote_addr"
 	}
 	return strings.TrimSpace(r.RemoteAddr), "remote_addr"
+}
+
+// ResolveAuthContext extracts the request authentication principal (if available)
+// and describes its source. This is intentionally separate from ResolveClientContext.
+func ResolveAuthContext(r *http.Request) (string, string) {
+	if user, _, ok := r.BasicAuth(); ok && strings.TrimSpace(user) != "" {
+		return user, "basic_auth"
+	}
+	return "", ""
 }
 
 // ResolveClientID extracts the client identity from an HTTP request.
