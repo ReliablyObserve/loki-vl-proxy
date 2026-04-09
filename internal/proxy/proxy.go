@@ -25,11 +25,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/gorilla/websocket"
 	"gopkg.in/yaml.v3"
 )
 
@@ -68,7 +68,74 @@ type ctxKey int
 const (
 	orgIDKey ctxKey = iota
 	origRequestKey
+	requestTelemetryKey
 )
+
+type requestTelemetry struct {
+	mu sync.Mutex
+
+	cacheResult       string
+	upstreamCalls     int
+	upstreamDuration  time.Duration
+	upstreamLastCode  int
+	upstreamErrorSeen bool
+}
+
+type requestTelemetrySnapshot struct {
+	cacheResult       string
+	upstreamCalls     int
+	upstreamDuration  time.Duration
+	upstreamLastCode  int
+	upstreamErrorSeen bool
+}
+
+func newRequestTelemetry() *requestTelemetry {
+	return &requestTelemetry{cacheResult: "bypass"}
+}
+
+func getRequestTelemetry(ctx context.Context) *requestTelemetry {
+	rt, _ := ctx.Value(requestTelemetryKey).(*requestTelemetry)
+	return rt
+}
+
+func setCacheResult(ctx context.Context, result string) {
+	rt := getRequestTelemetry(ctx)
+	if rt == nil {
+		return
+	}
+	rt.mu.Lock()
+	rt.cacheResult = result
+	rt.mu.Unlock()
+}
+
+func recordUpstreamCall(ctx context.Context, statusCode int, duration time.Duration, hadError bool) {
+	rt := getRequestTelemetry(ctx)
+	if rt == nil {
+		return
+	}
+	rt.mu.Lock()
+	rt.upstreamCalls++
+	rt.upstreamDuration += duration
+	rt.upstreamLastCode = statusCode
+	rt.upstreamErrorSeen = rt.upstreamErrorSeen || hadError
+	rt.mu.Unlock()
+}
+
+func snapshotTelemetry(ctx context.Context) requestTelemetrySnapshot {
+	rt := getRequestTelemetry(ctx)
+	if rt == nil {
+		return requestTelemetrySnapshot{cacheResult: "bypass"}
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return requestTelemetrySnapshot{
+		cacheResult:       rt.cacheResult,
+		upstreamCalls:     rt.upstreamCalls,
+		upstreamDuration:  rt.upstreamDuration,
+		upstreamLastCode:  rt.upstreamLastCode,
+		upstreamErrorSeen: rt.upstreamErrorSeen,
+	}
+}
 
 // withOrgID stores the X-Scope-OrgID and original request in the request context (request-scoped, no shared state).
 func withOrgID(r *http.Request) *http.Request {
@@ -759,15 +826,18 @@ func (p *Proxy) compatCacheMiddleware(endpoint string, next http.HandlerFunc) ht
 		start := time.Now()
 		cacheKey, cacheable := p.compatCacheKey(endpoint, r)
 		if !cacheable {
+			setCacheResult(r.Context(), "bypass")
 			next(w, r)
 			return
 		}
 		ttl := CacheTTLs[endpoint]
 		if ttl <= 0 {
+			setCacheResult(r.Context(), "bypass")
 			next(w, r)
 			return
 		}
 		if cached, ok := p.compatCache.Get(cacheKey); ok {
+			setCacheResult(r.Context(), "hit")
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cached)
 			elapsed := time.Since(start)
@@ -779,6 +849,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint string, next http.HandlerFunc) ht
 			return
 		}
 
+		setCacheResult(r.Context(), "miss")
 		rec := httptest.NewRecorder()
 		next(rec, r)
 		copyHeaders(w.Header(), rec.Header())
@@ -2837,11 +2908,15 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 	}
 	p.forwardTenantHeaders(req)
 	p.applyBackendHeaders(req)
+	start := time.Now()
 	resp, err := p.client.Do(req)
+	duration := time.Since(start)
 	if err != nil {
+		recordUpstreamCall(ctx, 0, duration, true)
 		p.breaker.RecordFailure()
 		return nil, err
 	}
+	recordUpstreamCall(ctx, resp.StatusCode, duration, false)
 	if resp.StatusCode >= 500 {
 		p.breaker.RecordFailure()
 	} else {
@@ -2866,11 +2941,15 @@ func (p *Proxy) vlPost(ctx context.Context, path string, params url.Values) (*ht
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	p.forwardTenantHeaders(req)
 	p.applyBackendHeaders(req)
+	start := time.Now()
 	resp, err := p.client.Do(req)
+	duration := time.Since(start)
 	if err != nil {
+		recordUpstreamCall(ctx, 0, duration, true)
 		p.breaker.RecordFailure()
 		return nil, err
 	}
+	recordUpstreamCall(ctx, resp.StatusCode, duration, false)
 	if resp.StatusCode >= 500 {
 		p.breaker.RecordFailure()
 	} else {
@@ -3338,8 +3417,9 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	}
 
 	// Chunked streaming: flush partial results as they arrive from VL
+	categorizedLabels := requestWantsCategorizedLabels(r)
 	if p.streamResponse {
-		p.streamLogQuery(w, resp)
+		p.streamLogQuery(w, resp, r.FormValue("query"), categorizedLabels)
 		return
 	}
 
@@ -3347,7 +3427,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 
 	// VL returns newline-delimited JSON, each line is a log entry.
 	// Loki expects: {"status":"success","data":{"resultType":"streams","result":[...]}}
-	streams := p.vlLogsToLokiStreams(body, r.FormValue("query"))
+	streams := p.vlLogsToLokiStreams(body, r.FormValue("query"), categorizedLabels)
 
 	// Apply derived fields (extract trace_id etc. from log lines)
 	if len(p.derivedFields) > 0 {
@@ -3381,7 +3461,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 }
 
 // streamLogQuery streams VL NDJSON response as chunked Loki-compatible JSON.
-func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response) {
+func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, originalQuery string, categorizedLabels bool) {
 	flusher, canFlush := w.(http.Flusher)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -3419,7 +3499,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response) {
 			continue
 		}
 
-		labels, metadata := p.classifyEntryFields(entry, "")
+		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery)
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
@@ -3429,7 +3509,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response) {
 
 		stream := map[string]interface{}{
 			"stream": translatedLabels,
-			"values": buildStreamValues(tsNanos, msg, metadata, p.emitStructuredMetadata),
+			"values": buildStreamValues(tsNanos, msg, structuredMetadata, parsedFields, p.emitStructuredMetadata, categorizedLabels),
 		}
 
 		chunk, _ := json.Marshal(stream)
@@ -3622,7 +3702,7 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 	return result
 }
 
-func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string) []map[string]interface{} {
+func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string, categorizedLabels bool) []map[string]interface{} {
 	type streamEntry struct {
 		Labels map[string]string
 		Values []interface{}
@@ -3668,7 +3748,7 @@ func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string) []map[str
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
 
-		labels, metadata := p.classifyEntryFields(entry, originalQuery)
+		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery)
 		streamKey := canonicalLabelsKey(labels)
 		se, ok := streamMap[streamKey]
 		if !ok {
@@ -3685,7 +3765,7 @@ func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string) []map[str
 			}
 			streamMap[streamKey] = se
 		}
-		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, metadata, p.emitStructuredMetadata))
+		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, structuredMetadata, parsedFields, p.emitStructuredMetadata, categorizedLabels))
 		vlEntryPool.Put(entry)
 	}
 
@@ -3724,18 +3804,43 @@ func formatEntryTimestamp(timeStr string) (string, bool) {
 	return "", false
 }
 
-func buildStreamValues(ts, msg string, metadata map[string]interface{}, emitStructuredMetadata bool) []interface{} {
-	return []interface{}{buildStreamValue(ts, msg, metadata, emitStructuredMetadata)}
+func buildStreamValues(ts, msg string, structuredMetadata map[string]string, parsedFields map[string]string, emitStructuredMetadata bool, categorizedLabels bool) []interface{} {
+	return []interface{}{buildStreamValue(ts, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels)}
 }
 
-func buildStreamValue(ts, msg string, metadata map[string]interface{}, emitStructuredMetadata bool) interface{} {
-	if emitStructuredMetadata && len(metadata) > 0 {
-		return []interface{}{ts, msg, metadata}
+func buildStreamValue(ts, msg string, structuredMetadata map[string]string, parsedFields map[string]string, emitStructuredMetadata bool, categorizedLabels bool) interface{} {
+	if !emitStructuredMetadata {
+		return []interface{}{ts, msg}
+	}
+	if categorizedLabels {
+		payload := make(map[string]interface{}, 2)
+		if len(structuredMetadata) > 0 {
+			payload["structuredMetadata"] = structuredMetadata
+		}
+		if len(parsedFields) > 0 {
+			payload["parsed"] = parsedFields
+		}
+		if len(payload) > 0 {
+			return []interface{}{ts, msg, payload}
+		}
+		return []interface{}{ts, msg}
+	}
+
+	// Legacy-safe fallback: flatten metadata into a simple map[string]string.
+	flat := make(map[string]string, len(structuredMetadata)+len(parsedFields))
+	for key, value := range structuredMetadata {
+		flat[key] = value
+	}
+	for key, value := range parsedFields {
+		flat[key] = value
+	}
+	if len(flat) > 0 {
+		return []interface{}{ts, msg, flat}
 	}
 	return []interface{}{ts, msg}
 }
 
-func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string) (map[string]string, map[string]interface{}) {
+func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string) (map[string]string, map[string]string, map[string]string) {
 	labels := parseStreamLabels(asString(entry["_stream"]))
 	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
 		labels["level"] = value
@@ -3778,17 +3883,7 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 		}
 	}
 
-	metadata := map[string]interface{}{}
-	if len(structuredMetadataFields) > 0 {
-		// Keep canonical Loki query-response shape while exposing a snake_case alias
-		// for clients that still read structured metadata under that key.
-		metadata["structuredMetadata"] = structuredMetadataFields
-		metadata["structured_metadata"] = structuredMetadataFields
-	}
-	if len(parsedFields) > 0 {
-		metadata["parsed"] = parsedFields
-	}
-	return labels, metadata
+	return labels, structuredMetadataFields, parsedFields
 }
 
 // parseStreamLabels parses {key="value",key2="value2"} into a map.
@@ -4060,6 +4155,22 @@ func formatVLStep(step string) string {
 		return step + "s"
 	}
 	return step
+}
+
+func requestWantsCategorizedLabels(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	raw := strings.TrimSpace(r.Header.Get("X-Loki-Response-Encoding-Flags"))
+	if raw == "" {
+		return false
+	}
+	for _, part := range strings.Split(raw, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), "categorize-labels") {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string, single func(http.ResponseWriter, *http.Request)) bool {
@@ -5173,6 +5284,21 @@ func copyHeaders(dst, src http.Header) {
 	}
 }
 
+var trustedIdentityHeaders = []string{
+	"X-Grafana-User",
+	"X-Forwarded-User",
+	"X-Webauth-User",
+	"X-Auth-Request-User",
+}
+
+var trustedProxyForwardHeaders = []string{
+	"X-Forwarded-For",
+	"X-Forwarded-Proto",
+	"X-Forwarded-Host",
+	"X-Real-Ip",
+	"Forwarded",
+}
+
 // isVLInternalField returns true for VictoriaLogs internal field names
 // that should not be exposed in Loki-compatible label responses.
 func isVLInternalField(name string) bool {
@@ -5188,9 +5314,20 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 		clientID, clientSource := metrics.ResolveClientContext(origReq, p.metricsTrustProxyHeaders)
 		vlReq.Header.Set("X-Loki-VL-Client-ID", clientID)
 		vlReq.Header.Set("X-Loki-VL-Client-Source", clientSource)
+		if authUser, authSource := metrics.ResolveAuthContext(origReq); authUser != "" {
+			vlReq.Header.Set("X-Loki-VL-Auth-User", authUser)
+			vlReq.Header.Set("X-Loki-VL-Auth-Source", authSource)
+		}
 		if p.metricsTrustProxyHeaders {
-			if grafanaUser := strings.TrimSpace(origReq.Header.Get("X-Grafana-User")); grafanaUser != "" {
-				vlReq.Header.Set("X-Grafana-User", grafanaUser)
+			for _, headerName := range trustedIdentityHeaders {
+				if value := strings.TrimSpace(origReq.Header.Get(headerName)); value != "" {
+					vlReq.Header.Set(headerName, value)
+				}
+			}
+			for _, headerName := range trustedProxyForwardHeaders {
+				if value := strings.TrimSpace(origReq.Header.Get(headerName)); value != "" {
+					vlReq.Header.Set(headerName, value)
+				}
 			}
 		}
 		// Forward configured client headers from the original request
@@ -5248,14 +5385,22 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 		start := time.Now()
 		tenant := r.Header.Get("X-Scope-OrgID")
 		query := r.FormValue("query")
+		authUser, authSource := metrics.ResolveAuthContext(r)
 		clientID, clientSource := metrics.ResolveClientContext(r, p.metricsTrustProxyHeaders)
 		p.metrics.RecordClientInflight(clientID, 1)
 		defer p.metrics.RecordClientInflight(clientID, -1)
 
+		rt := newRequestTelemetry()
+		reqWithTelemetry := r.WithContext(context.WithValue(r.Context(), requestTelemetryKey, rt))
 		sc := &statusCapture{ResponseWriter: w, code: 200}
-		next.ServeHTTP(sc, r)
+		next.ServeHTTP(sc, reqWithTelemetry)
 
 		elapsed := time.Since(start)
+		telemetry := snapshotTelemetry(reqWithTelemetry.Context())
+		proxyOverhead := elapsed - telemetry.upstreamDuration
+		if proxyOverhead < 0 {
+			proxyOverhead = 0
+		}
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequest(tenant, endpoint, sc.code, elapsed)
@@ -5288,7 +5433,7 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 		} else if sc.code >= 400 {
 			logLevel = p.log.Warn
 		}
-		logLevel("request",
+		logAttrs := []interface{}{
 			"http.route", endpoint,
 			"http.request.method", r.Method,
 			"http.response.status_code", sc.code,
@@ -5298,7 +5443,21 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 			"client.address", r.RemoteAddr,
 			"enduser.id", clientID,
 			"loki.client.source", clientSource,
-		)
+			"cache.result", telemetry.cacheResult,
+			"proxy.duration_ms", elapsed.Milliseconds(),
+			"proxy.overhead_ms", proxyOverhead.Milliseconds(),
+			"upstream.calls", telemetry.upstreamCalls,
+			"upstream.duration_ms", telemetry.upstreamDuration.Milliseconds(),
+			"upstream.status_code", telemetry.upstreamLastCode,
+			"upstream.error", telemetry.upstreamErrorSeen,
+		}
+		if authUser != "" {
+			logAttrs = append(logAttrs,
+				"auth.principal", authUser,
+				"auth.source", authSource,
+			)
+		}
+		logLevel("request", logAttrs...)
 	})
 }
 

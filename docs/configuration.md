@@ -250,7 +250,7 @@ kill -HUP $(pidof loki-vl-proxy)
 | `-server.admin-auth-token` | — | — | Bearer token accepted on admin/debug endpoints |
 | `-metrics.max-tenants` | — | `256` | Max unique tenant labels retained in `/metrics` before using `__overflow__` |
 | `-metrics.max-clients` | — | `256` | Max unique client labels retained in `/metrics` before using `__overflow__` |
-| `-metrics.trust-proxy-headers` | — | `false` | Trust `X-Grafana-User` and `X-Forwarded-For` for client metrics, logs, and backend client-context forwarding |
+| `-metrics.trust-proxy-headers` | — | `false` | Trust user/proxy headers (`X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User`, `X-Auth-Request-User`, `X-Forwarded-*`) for client metrics/log attribution and backend context forwarding |
 
 ## Grafana Datasource Mapping
 
@@ -269,6 +269,8 @@ These Grafana Loki datasource settings now have a direct proxy-side mapping:
 | Timeout | `-backend-timeout` for proxy→VL, Grafana datasource timeout for Grafana→proxy |
 | Maximum lines | `-max-lines` |
 
-When `-metrics.trust-proxy-headers=true`, the proxy also forwards `X-Grafana-User` plus derived `X-Loki-VL-Client-ID` and `X-Loki-VL-Client-Source` headers to the backend so downstream logs and stats can attribute expensive queries to real Grafana users instead of only source IPs.
+When `-metrics.trust-proxy-headers=true`, the proxy forwards trusted user headers and proxy-chain headers to the backend, plus derived context headers `X-Loki-VL-Client-ID` / `X-Loki-VL-Client-Source`.
+
+Datasource auth credentials are forwarded separately as `X-Loki-VL-Auth-User` / `X-Loki-VL-Auth-Source` and are not used as `enduser.id` client identity.
 
 Alerting datasource integration is still partial: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend, but it does not yet implement the full Loki ruler write API surface.

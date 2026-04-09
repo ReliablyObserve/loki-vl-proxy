@@ -104,8 +104,8 @@ func TestResolveClientID_IgnoresUntrustedProxyHeadersByDefault(t *testing.T) {
 	req.RemoteAddr = "198.51.100.20:1234"
 
 	got := ResolveClientID(req, false)
-	if got != "backend-user" {
-		t.Fatalf("expected basic auth user when proxy headers are untrusted, got %q", got)
+	if got != "198.51.100.20" {
+		t.Fatalf("expected remote client identity when proxy headers are untrusted, got %q", got)
 	}
 }
 
@@ -118,6 +118,18 @@ func TestResolveClientID_UsesTrustedGrafanaUser(t *testing.T) {
 	got := ResolveClientID(req, true)
 	if got != "grafana-user" {
 		t.Fatalf("expected trusted grafana user to win, got %q", got)
+	}
+}
+
+func TestResolveClientID_UsesTrustedForwardedUserHeader(t *testing.T) {
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	req.Header.Set("X-Forwarded-User", "idp-user@example.com")
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("backend-user:secret")))
+	req.RemoteAddr = "198.51.100.20:1234"
+
+	got := ResolveClientID(req, true)
+	if got != "idp-user@example.com" {
+		t.Fatalf("expected trusted forwarded user header to win, got %q", got)
 	}
 }
 
@@ -215,6 +227,16 @@ func TestResolveClientContext_Branches(t *testing.T) {
 			t.Fatalf("unexpected context: %q %q", clientID, source)
 		}
 	})
+}
+
+func TestResolveAuthContext_BasicAuthUser(t *testing.T) {
+	req := httptest.NewRequest("GET", "/metrics", nil)
+	req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte("backend-user:secret")))
+
+	authUser, authSource := ResolveAuthContext(req)
+	if authUser != "backend-user" || authSource != "basic_auth" {
+		t.Fatalf("unexpected auth context: %q %q", authUser, authSource)
+	}
 }
 
 func TestSanitizeMetricIdentity(t *testing.T) {

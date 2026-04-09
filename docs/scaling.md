@@ -228,11 +228,12 @@ sum(rate(loki_vl_proxy_tenant_requests_total{status=~"4..|5.."}[5m])) by (tenant
 ### Per-Client (User Identity)
 
 Client identity is resolved from (priority order):
-1. `X-Grafana-User` header when `-metrics.trust-proxy-headers=true`
+1. Trusted user headers when `-metrics.trust-proxy-headers=true` (`X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User`, `X-Auth-Request-User`)
 2. `X-Scope-OrgID` header (tenant)
-3. Basic auth username
-4. `X-Forwarded-For` when `-metrics.trust-proxy-headers=true`
-5. Remote IP (fallback)
+3. `X-Forwarded-For` when `-metrics.trust-proxy-headers=true`
+4. Remote IP (fallback)
+
+Datasource/basic-auth credentials are tracked separately and are not used as client identity.
 
 ```promql
 # Request rate per client
