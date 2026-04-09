@@ -273,4 +273,39 @@ When `-metrics.trust-proxy-headers=true`, the proxy forwards trusted user header
 
 Datasource auth credentials are forwarded separately as `X-Loki-VL-Auth-User` / `X-Loki-VL-Auth-Source` and are not used as `enduser.id` client identity.
 
+### Grafana User Header Forwarding (Recommended)
+
+To attribute requests to real Grafana users instead of datasource service credentials:
+
+1. Enable trusted proxy headers on Loki-VL-proxy:
+
+```bash
+-metrics.trust-proxy-headers=true
+```
+
+2. Configure Grafana server dataproxy to forward the logged-in user header:
+
+```ini
+[dataproxy]
+send_user_header = true
+```
+
+3. Keep Loki datasource in proxy mode (`access: proxy`) and point it to Loki-VL-proxy:
+
+```yaml
+datasources:
+  - name: Loki (VL Proxy)
+    type: loki
+    access: proxy
+    url: http://loki-vl-proxy:3100
+```
+
+4. If Grafana sits behind an auth/reverse proxy, preserve user/proxy-chain headers end to end (`X-Forwarded-User`, `X-Grafana-User`, `X-Forwarded-*`, `Forwarded`).
+
+Expected request-log behavior with this setup:
+
+- `enduser.id` reflects the trusted Grafana/auth user.
+- `loki.client.source` indicates user-header source (for example `grafana_user` or `forwarded_user`).
+- `auth.principal` reflects datasource auth identity when present (for example basic-auth datasource user).
+
 Alerting datasource integration is still partial: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend, but it does not yet implement the full Loki ruler write API surface.

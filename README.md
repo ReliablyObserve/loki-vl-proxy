@@ -234,7 +234,7 @@ Proxy-side datasource helpers:
 - `-compat-cache-max-percent` to reserve a bounded share of the L1 memory budget for Tier0, defaulting to 10% and capped at 50%
 - `-backend-timeout` for long Grafana queries against VL
 - `-forward-headers` and `-forward-cookies` for backend auth/context passthrough
-- `-metrics.trust-proxy-headers` to trust `X-Grafana-User` and surface per-user client metrics/log context
+- `-metrics.trust-proxy-headers` plus Grafana `[dataproxy] send_user_header=true` to attribute logs/metrics to real Grafana users (`enduser.id`) while keeping datasource auth principals separate (`auth.*`)
 - `-metadata-field-mode=hybrid` by default, so field APIs expose both dotted OTel names and Loki-style aliases without changing the label surface
 - built-in default-tenant aliases `0`, `fake`, and `default` for VL's `0:0` tenant during single-tenant migrations
 - explicit Loki-style multi-tenant fanout on read/query endpoints with `X-Scope-OrgID: tenant-a|tenant-b`

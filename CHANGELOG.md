@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- add a Grafana user-header forwarding guide for Loki datasource deployments, including `dataproxy.send_user_header`, trusted proxy headers, and expected `enduser.id` / `auth.*` request-log behavior
+
+## [0.27.11] - 2026-04-09
+
+### Bug Fixes
+
+- harden stream tuple metadata emission to always return a flat key/value object in tuple slot `2`, including requests with `X-Loki-Response-Encoding-Flags: categorize-labels`, so Explore/Drilldown clients that require array-safe tuple decoding do not fail on nested metadata objects
+- classify upstream transport failures more accurately: map canceled upstream requests to `499` (`errorType=canceled`) and timeout/deadline failures to `504` (`errorType=timeout`) instead of generic `502`
+
 ## [0.27.11] - 2026-04-09
 
 ### Bug Fixes

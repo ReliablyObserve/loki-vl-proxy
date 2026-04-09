@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1436,8 +1437,9 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 
 	labels, err := p.fetchPreferredLabelNames(r.Context(), params)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
-		p.metrics.RecordRequest("labels", http.StatusBadGateway, time.Since(start))
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("labels", status, time.Since(start))
 		return
 	}
 
@@ -1492,8 +1494,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	if labelName == "service_name" {
 		values, err := p.serviceNameValues(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
 		if err != nil {
-			p.writeError(w, http.StatusBadGateway, err.Error())
-			p.metrics.RecordRequest("label_values", http.StatusBadGateway, time.Since(start))
+			status := statusFromUpstreamErr(err)
+			p.writeError(w, status, err.Error())
+			p.metrics.RecordRequest("label_values", status, time.Since(start))
 			return
 		}
 		result := lokiLabelsResponse(values)
@@ -1536,8 +1539,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 
 	values, err := p.fetchPreferredLabelValues(r.Context(), labelName, params)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
-		p.metrics.RecordRequest("label_values", http.StatusBadGateway, time.Since(start))
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("label_values", status, time.Since(start))
 		return
 	}
 
@@ -1577,8 +1581,9 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := p.vlGet(r.Context(), "/select/logsql/streams", params)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
-		p.metrics.RecordRequest("series", http.StatusBadGateway, time.Since(start))
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("series", status, time.Since(start))
 		return
 	}
 	defer resp.Body.Close()
@@ -2983,7 +2988,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -3013,7 +3018,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query", params)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -3077,7 +3082,7 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 	} else {
 		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
 		if e != nil {
-			p.writeError(w, http.StatusBadGateway, "left query: "+e.Error())
+			p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
 			return
 		}
 		defer resp.Body.Close()
@@ -3089,7 +3094,7 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 	} else {
 		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
 		if e != nil {
-			p.writeError(w, http.StatusBadGateway, "right query: "+e.Error())
+			p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
 			return
 		}
 		defer resp.Body.Close()
@@ -3145,7 +3150,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 	} else {
 		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
 		if e != nil {
-			p.writeError(w, http.StatusBadGateway, "left query: "+e.Error())
+			p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
 			return
 		}
 		defer resp.Body.Close()
@@ -3157,7 +3162,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 	} else {
 		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
 		if e != nil {
-			p.writeError(w, http.StatusBadGateway, "right query: "+e.Error())
+			p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
 			return
 		}
 		defer resp.Body.Close()
@@ -3400,7 +3405,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -3812,19 +3817,7 @@ func buildStreamValue(ts, msg string, structuredMetadata map[string]string, pars
 	if !emitStructuredMetadata {
 		return []interface{}{ts, msg}
 	}
-	if categorizedLabels {
-		payload := make(map[string]interface{}, 2)
-		if len(structuredMetadata) > 0 {
-			payload["structuredMetadata"] = structuredMetadata
-		}
-		if len(parsedFields) > 0 {
-			payload["parsed"] = parsedFields
-		}
-		if len(payload) > 0 {
-			return []interface{}{ts, msg, payload}
-		}
-		return []interface{}{ts, msg}
-	}
+	_ = categorizedLabels
 
 	// Legacy-safe fallback: flatten metadata into a simple map[string]string.
 	flat := make(map[string]string, len(structuredMetadata)+len(parsedFields))
@@ -5234,6 +5227,30 @@ func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 		"errorType": lokiErrorType(code),
 		"error":     msg,
 	})
+}
+
+func statusFromUpstreamErr(err error) int {
+	if err == nil {
+		return http.StatusBadGateway
+	}
+	if errors.Is(err, context.Canceled) {
+		return 499
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return http.StatusGatewayTimeout
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return http.StatusGatewayTimeout
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "context canceled") {
+		return 499
+	}
+	if strings.Contains(lower, "deadline exceeded") || strings.Contains(lower, "timeout") {
+		return http.StatusGatewayTimeout
+	}
+	return http.StatusBadGateway
 }
 
 // lokiErrorType returns the Loki/Prometheus-style errorType for an HTTP status code.

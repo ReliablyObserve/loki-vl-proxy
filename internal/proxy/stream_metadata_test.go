@@ -110,7 +110,7 @@ func TestVLLogsToLokiStreams_EmitStructuredMetadataWithParserFlattensFieldsByDef
 	}
 }
 
-func TestVLLogsToLokiStreams_CategorizedLabelsKeepsNestedStructuredMetadataAndParsed(t *testing.T) {
+func TestVLLogsToLokiStreams_CategorizedLabelsStillEmitsFlatMetadataForParserSafety(t *testing.T) {
 	p := newStreamMetadataTestProxy(t, true)
 	body := []byte(`{"_time":"2026-01-01T00:00:00Z","_msg":"{\"message\":\"ok\",\"status\":200}","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","trace_id":"abc123","http.status_code":"200","level":"info"}` + "\n")
 
@@ -126,12 +126,18 @@ func TestVLLogsToLokiStreams_CategorizedLabelsKeepsNestedStructuredMetadataAndPa
 	if !ok || len(pair) != 3 {
 		t.Fatalf("expected [ts, line, metadata] tuple, got %v", pair)
 	}
-	meta, ok := pair[2].(map[string]interface{})
+	meta, ok := pair[2].(map[string]string)
 	if !ok {
 		t.Fatalf("expected metadata object in tuple[2], got %T", pair[2])
 	}
-	if _, ok := meta["parsed"]; !ok {
-		t.Fatalf("expected nested parsed payload when categorize-labels is requested, got %v", meta)
+	if _, ok := meta["parsed"]; ok {
+		t.Fatalf("metadata should remain flat map for parser safety, got %v", meta)
+	}
+	if _, ok := meta["structuredMetadata"]; ok {
+		t.Fatalf("metadata should remain flat map for parser safety, got %v", meta)
+	}
+	if got := meta["http.status_code"]; got != "200" {
+		t.Fatalf("expected flattened parser field, got %v", meta)
 	}
 }
 
