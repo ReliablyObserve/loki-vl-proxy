@@ -224,18 +224,30 @@ jobs:
           } >> "$GITHUB_OUTPUT"
       - name: Create release tag
         env:
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
           WORKFLOW_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           TAG="${{ steps.meta.outputs.tag }}"
+          PRIMARY_TOKEN="${RELEASE_PR_TOKEN:-$WORKFLOW_TOKEN}"
+          PRIMARY_ACTOR="RELEASE_PR_TOKEN"
+          if [ -z "${RELEASE_PR_TOKEN:-}" ]; then
+            PRIMARY_ACTOR="GITHUB_TOKEN"
+          fi
           git fetch --tags origin
           if git rev-parse "${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists"
           else
             git tag "${TAG}" "${GITHUB_SHA}"
-            if ! git push origin "${TAG}"; then
-              echo "::warning::Primary tag push failed; retrying with workflow token"
-              git push "https://x-access-token:${WORKFLOW_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${TAG}"
+            PRIMARY_URL="https://x-access-token:${PRIMARY_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+            if ! git push "${PRIMARY_URL}" "${TAG}"; then
+              if [ "${PRIMARY_ACTOR}" = "RELEASE_PR_TOKEN" ]; then
+                echo "::warning::Tag push with RELEASE_PR_TOKEN failed; retrying with GITHUB_TOKEN"
+                git push "https://x-access-token:${WORKFLOW_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${TAG}"
+              else
+                echo "::error::Tag push failed with GITHUB_TOKEN and no RELEASE_PR_TOKEN fallback is available"
+                exit 1
+              fi
             fi
           fi
 
