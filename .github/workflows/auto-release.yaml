@@ -223,6 +223,8 @@ jobs:
             echo "notes_file=${NOTES_FILE}"
           } >> "$GITHUB_OUTPUT"
       - name: Create release tag
+        env:
+          WORKFLOW_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           TAG="${{ steps.meta.outputs.tag }}"
@@ -231,7 +233,10 @@ jobs:
             echo "Tag ${TAG} already exists"
           else
             git tag "${TAG}" "${GITHUB_SHA}"
-            git push origin "${TAG}"
+            if ! git push origin "${TAG}"; then
+              echo "::warning::Primary tag push failed; retrying with workflow token"
+              git push "https://x-access-token:${WORKFLOW_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "${TAG}"
+            fi
           fi
 
       - name: Build release binaries
