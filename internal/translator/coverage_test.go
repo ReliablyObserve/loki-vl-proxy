@@ -128,3 +128,20 @@ func TestCoverage_AddByClause_WithStatsAndTranslator(t *testing.T) {
 		t.Fatalf("addByClause returned %q, want %q", got, want)
 	}
 }
+
+func TestCoverage_AddByClause_DeduplicatesTranslatedLabels(t *testing.T) {
+	labelFn := func(label string) string {
+		switch label {
+		case "detected_level":
+			return "level"
+		default:
+			return label
+		}
+	}
+
+	got := addByClause(`service.name:=otel-app | stats count()`, "level, detected_level", labelFn)
+	want := `service.name:=otel-app | stats by (level) count()`
+	if got != want {
+		t.Fatalf("addByClause returned %q, want %q", got, want)
+	}
+}

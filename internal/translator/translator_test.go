@@ -260,6 +260,24 @@ func TestMetricQueryTranslation(t *testing.T) {
 	}
 }
 
+func TestMetricQueryTranslation_DedupesByLabelsAfterTranslation(t *testing.T) {
+	labelFn := func(label string) string {
+		if label == "detected_level" {
+			return "level"
+		}
+		return label
+	}
+
+	got, err := TranslateLogQLWithLabels(`sum by (level, detected_level) (count_over_time({foo="bar"}[5m]))`, labelFn)
+	if err != nil {
+		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
+	}
+	want := `foo:=bar | stats by (level) count()`
+	if got != want {
+		t.Fatalf("TranslateLogQLWithLabels() = %q, want %q", got, want)
+	}
+}
+
 func TestConvertGoTemplate_DottedFieldNames(t *testing.T) {
 	tests := []struct {
 		input string

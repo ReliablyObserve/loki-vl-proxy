@@ -20,6 +20,17 @@
 | `GET /loki/api/v1/format_query` | Implemented | - (passthrough) | - | 1 |
 | `WS /loki/api/v1/tail` | Implemented | `/select/logsql/tail` (WebSocket->NDJSON) | - | 2 |
 
+### Drilldown Field Shaping
+
+For Grafana Logs Drilldown and Explore compatibility:
+
+- Query results use canonical Loki 2-tuples `[timestamp, line]` by default. Set `-emit-structured-metadata=true` to emit Loki 3-tuples `[timestamp, line, metadata]`.
+- When emitted, tuple metadata keeps Loki-style `structuredMetadata` and also exposes a compatibility alias `structured_metadata` for clients that still read snake_case keys.
+- Stream labels stay Loki-compatible on the `stream` object.
+- Label APIs prefer VictoriaLogs stream metadata so parsed fields do not leak into Loki label pickers when the backend supports the stream-only endpoints.
+- Parsed fields and structured metadata are surfaced through `detected_fields` and `detected_field/{name}/values`.
+- With `-metadata-field-mode=hybrid` (the default), field-oriented APIs expose both native VictoriaLogs dotted names and translated Loki aliases when they differ, for example `service.name` and `service_name`.
+- Synthetic compatibility labels such as `service_name` and `detected_level` stay available on the stream and label APIs.
 ## Delete Endpoint (Exception)
 
 | Endpoint | Method | VL Backend |

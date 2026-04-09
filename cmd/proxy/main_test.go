@@ -719,6 +719,7 @@ func TestBuildProxyConfig(t *testing.T) {
 		forwardCookies:           "session, csrf",
 		derivedFieldsJSON:        `[{"name":"traceID","matcherRegex":"trace_id=(\\w+)","url":"http://tempo/${__value.raw}"}]`,
 		streamResponse:           true,
+		emitStructuredMetadata:   true,
 		authEnabled:              true,
 		allowGlobalTenant:        true,
 		registerInstrumentation:  &registerInstrumentation,
@@ -767,6 +768,9 @@ func TestBuildProxyConfig(t *testing.T) {
 	}
 	if len(got.DerivedFields) != 1 || got.DerivedFields[0].Name != "traceID" {
 		t.Fatalf("unexpected derived fields: %+v", got.DerivedFields)
+	}
+	if !got.EmitStructuredMetadata {
+		t.Fatalf("expected emit structured metadata to be enabled")
 	}
 	if len(got.StreamFields) != 2 || got.StreamFields[0] != "app" {
 		t.Fatalf("unexpected stream fields: %+v", got.StreamFields)

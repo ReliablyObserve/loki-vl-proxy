@@ -22,6 +22,7 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 |---|---|---|---|
 | `-label-style` | `LABEL_STYLE` | `passthrough` | `passthrough` or `underscores` |
 | `-metadata-field-mode` | `METADATA_FIELD_MODE` | `hybrid` | `native`, `translated`, or `hybrid` for `detected_fields` and structured metadata exposure |
+| `-emit-structured-metadata` | — | `false` | Emit Loki 3-tuple stream values `[timestamp, line, metadata]` instead of canonical 2-tuples |
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
 
 ### Label Style Modes

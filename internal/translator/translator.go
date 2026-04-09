@@ -983,16 +983,9 @@ func tryTranslateQuantileOverTime(innerExpr, _, byLabels string, labelFn LabelTr
 }
 
 func addByClause(query, labels string, labelFn LabelTranslateFunc) string {
-	if labelFn != nil {
-		parts := strings.Split(labels, ",")
-		for i, part := range parts {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
-			}
-			parts[i] = labelFn(part)
-		}
-		labels = strings.Join(parts, ", ")
+	labels = normalizeByLabels(labels, labelFn)
+	if labels == "" {
+		return query
 	}
 	// Insert by(labels) into the stats pipe
 	idx := strings.Index(query, "| stats ")
@@ -1001,6 +994,30 @@ func addByClause(query, labels string, labelFn LabelTranslateFunc) string {
 	}
 	statsStart := idx + len("| stats ")
 	return query[:statsStart] + "by (" + labels + ") " + query[statsStart:]
+}
+
+func normalizeByLabels(labels string, labelFn LabelTranslateFunc) string {
+	parts := strings.Split(labels, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if labelFn != nil {
+			part = strings.TrimSpace(labelFn(part))
+		}
+		if part == "" {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		out = append(out, part)
+	}
+	return strings.Join(out, ", ")
 }
 
 func findMatchingBrace(s string) int {

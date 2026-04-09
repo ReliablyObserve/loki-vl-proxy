@@ -62,6 +62,7 @@ type proxyRuntimeConfig struct {
 	forwardCookies           string
 	derivedFieldsJSON        string
 	streamResponse           bool
+	emitStructuredMetadata   bool
 	authEnabled              bool
 	allowGlobalTenant        bool
 	registerInstrumentation  *bool
@@ -286,6 +287,7 @@ func run(
 	forwardCookies := fs.String("forward-cookies", "", "Comma-separated list of cookie names to forward to VL backend")
 	derivedFieldsJSON := fs.String("derived-fields", "", `JSON derived fields: [{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]`)
 	streamResponse := fs.Bool("stream-response", false, "Stream log responses via chunked transfer encoding")
+	emitStructuredMetadata := fs.Bool("emit-structured-metadata", false, "Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses")
 
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
@@ -380,6 +382,7 @@ func run(
 			forwardCookies:           *forwardCookies,
 			derivedFieldsJSON:        *derivedFieldsJSON,
 			streamResponse:           *streamResponse,
+			emitStructuredMetadata:   *emitStructuredMetadata,
 			authEnabled:              *authEnabled,
 			allowGlobalTenant:        *allowGlobalTenant,
 			registerInstrumentation:  registerInstrumentation,
@@ -878,6 +881,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		ForwardCookies:           parseCSV(cfg.forwardCookies),
 		DerivedFields:            derivedFields,
 		StreamResponse:           cfg.streamResponse,
+		EmitStructuredMetadata:   cfg.emitStructuredMetadata,
 		AuthEnabled:              cfg.authEnabled,
 		AllowGlobalTenant:        cfg.allowGlobalTenant,
 		RegisterInstrumentation:  cfg.registerInstrumentation,
