@@ -361,6 +361,7 @@ jobs:
       - name: Prepare release metadata branch
         id: metadata
         env:
+          METADATA_PUSH_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
           TEST_COUNT: ${{ needs.validate-release.outputs.test_count }}
           COVERAGE_PCT: ${{ needs.validate-release.outputs.coverage_pct }}
@@ -395,7 +396,13 @@ jobs:
           git checkout -B "${BRANCH}"
           git add -f -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml
           git commit -m "docs: sync release metadata for v${VERSION}"
-          git push origin "${BRANCH}" --force
+          PUSH_URL="https://x-access-token:${METADATA_PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if ! git push "${PUSH_URL}" "${BRANCH}" --force; then
+            echo "::warning::Unable to push release metadata branch ${BRANCH}. Skipping metadata PR automation for this release."
+            echo "::warning::Verify RELEASE_PR_TOKEN permissions (contents:write and pull_requests:write) to re-enable metadata sync automation."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
       - name: Create or update release metadata PR
         id: metadata-pr
