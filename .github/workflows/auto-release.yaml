@@ -395,7 +395,12 @@ jobs:
           git checkout -B "${BRANCH}"
           git add -f -- CHANGELOG.md README.md docs/observability.md charts/loki-vl-proxy/Chart.yaml
           git commit -m "docs: sync release metadata for v${VERSION}"
-          git push origin "${BRANCH}" --force
+          if ! git push origin "${BRANCH}" --force; then
+            echo "::warning::Unable to push release metadata branch ${BRANCH}. Skipping metadata PR automation for this release."
+            echo "::warning::Verify RELEASE_PR_TOKEN permissions (contents:write and pull_requests:write) to re-enable metadata sync automation."
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
       - name: Create or update release metadata PR
         id: metadata-pr
