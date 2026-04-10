@@ -61,6 +61,7 @@ func decodeFirstTuple(t *testing.T, body []byte) []interface{} {
 	return resp.Data.Result[0].Values[0]
 }
 
+// labelPairsToMap accepts decoded JSON as either []interface{} or []map[string]string.
 func labelPairsToMap(t *testing.T, raw interface{}) map[string]string {
 	t.Helper()
 	var out map[string]string
