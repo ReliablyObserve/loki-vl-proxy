@@ -23,14 +23,24 @@ This project is intentionally a **read/query proxy**. Ingestion stays on Victori
 
 ```mermaid
 flowchart LR
-    A["Ingest + Storage<br/>vlagent / OTLP / Loki-push / JSON -> VictoriaLogs"]
-    B["Compatibility Edge<br/>Loki API surface + auth/tenant guardrails + strict tuple contracts"]
-    C["Route + Processing Layer<br/>LogQL translation + compatibility execution + response shaping"]
-    D["Cache Fabric<br/>Tier0 edge cache + L1 memory + optional L2 disk + optional L3 peer"]
-    E["Consumers + Operations<br/>Grafana Explore/Drilldown/Dashboards + API/CLI/MCP + metrics/alerts/runbooks"]
+    A["Client Experience Layer<br/>Grafana Explore, Dashboards, Logs Drilldown app, Loki API tooling, LLM/MCP/API consumers"]
+    B["Compatibility Edge<br/>Loki read API contract, tenant guardrails, strict tuple compliance"]
+    C["Translation + Execution Core<br/>LogQL translation, compatibility processing, response shaping"]
+    D["Performance Fabric<br/>Tier0 edge cache, L1 memory, optional L2 disk, optional L3 peer cache"]
+    E["Observability + Operations<br/>Metrics, alerts, runbooks, and operational visibility"]
+    F["Source Systems<br/>VictoriaLogs (log data) + vmalert (rules/alerts state)"]
 
     A --> B --> C --> D --> B
+    C --> F
+    F --> C
     B --> E
+
+    style A fill:#fef3c7,stroke:#b45309,color:#111827,stroke-width:2px
+    style B fill:#dbeafe,stroke:#1d4ed8,color:#111827,stroke-width:2px
+    style C fill:#dcfce7,stroke:#15803d,color:#111827,stroke-width:2px
+    style D fill:#ede9fe,stroke:#6d28d9,color:#111827,stroke-width:2px
+    style E fill:#fee2e2,stroke:#b91c1c,color:#111827,stroke-width:2px
+    style F fill:#e0f2fe,stroke:#0369a1,color:#111827,stroke-width:2px
 ```
 
 ## Architecture (Detailed)
