@@ -232,11 +232,11 @@ func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 				sysPct := (cur.system - sm.prevCPU.system) / totalDiff
 				iowaitPct := (cur.iowait - sm.prevCPU.iowait) / totalDiff
 
-				sb.WriteString("# HELP node_cpu_usage_ratio CPU usage ratio (0-1).\n")
-				sb.WriteString("# TYPE node_cpu_usage_ratio gauge\n")
-				fmt.Fprintf(sb, "node_cpu_usage_ratio{mode=\"user\"} %g\n", userPct)
-				fmt.Fprintf(sb, "node_cpu_usage_ratio{mode=\"system\"} %g\n", sysPct)
-				fmt.Fprintf(sb, "node_cpu_usage_ratio{mode=\"iowait\"} %g\n", iowaitPct)
+				sb.WriteString("# HELP process_cpu_usage_ratio CPU usage ratio (0-1).\n")
+				sb.WriteString("# TYPE process_cpu_usage_ratio gauge\n")
+				fmt.Fprintf(sb, "process_cpu_usage_ratio{mode=\"user\"} %g\n", userPct)
+				fmt.Fprintf(sb, "process_cpu_usage_ratio{mode=\"system\"} %g\n", sysPct)
+				fmt.Fprintf(sb, "process_cpu_usage_ratio{mode=\"iowait\"} %g\n", iowaitPct)
 			}
 		}
 		sm.prevCPU = cur
@@ -246,22 +246,22 @@ func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 	// Memory from /proc/meminfo
 	memTotal, memAvail, memFree := readMemInfo()
 	if memTotal > 0 {
-		sb.WriteString("# HELP node_memory_total_bytes Total memory.\n")
-		sb.WriteString("# TYPE node_memory_total_bytes gauge\n")
-		fmt.Fprintf(sb, "node_memory_total_bytes %d\n", memTotal)
+		sb.WriteString("# HELP process_memory_total_bytes Total memory.\n")
+		sb.WriteString("# TYPE process_memory_total_bytes gauge\n")
+		fmt.Fprintf(sb, "process_memory_total_bytes %d\n", memTotal)
 
-		sb.WriteString("# HELP node_memory_available_bytes Available memory.\n")
-		sb.WriteString("# TYPE node_memory_available_bytes gauge\n")
-		fmt.Fprintf(sb, "node_memory_available_bytes %d\n", memAvail)
+		sb.WriteString("# HELP process_memory_available_bytes Available memory.\n")
+		sb.WriteString("# TYPE process_memory_available_bytes gauge\n")
+		fmt.Fprintf(sb, "process_memory_available_bytes %d\n", memAvail)
 
-		sb.WriteString("# HELP node_memory_free_bytes Free memory.\n")
-		sb.WriteString("# TYPE node_memory_free_bytes gauge\n")
-		fmt.Fprintf(sb, "node_memory_free_bytes %d\n", memFree)
+		sb.WriteString("# HELP process_memory_free_bytes Free memory.\n")
+		sb.WriteString("# TYPE process_memory_free_bytes gauge\n")
+		fmt.Fprintf(sb, "process_memory_free_bytes %d\n", memFree)
 
 		used := memTotal - memAvail
-		sb.WriteString("# HELP node_memory_usage_ratio Memory usage ratio (0-1).\n")
-		sb.WriteString("# TYPE node_memory_usage_ratio gauge\n")
-		fmt.Fprintf(sb, "node_memory_usage_ratio %g\n", float64(used)/float64(memTotal))
+		sb.WriteString("# HELP process_memory_usage_ratio Memory usage ratio (0-1).\n")
+		sb.WriteString("# TYPE process_memory_usage_ratio gauge\n")
+		fmt.Fprintf(sb, "process_memory_usage_ratio %g\n", float64(used)/float64(memTotal))
 	}
 
 	// Process RSS from /proc/self/status
@@ -274,38 +274,38 @@ func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 
 	// Disk IO from /proc/diskstats
 	readBytes, writeBytes := readDiskIO()
-	sb.WriteString("# HELP node_disk_read_bytes_total Disk read bytes.\n")
-	sb.WriteString("# TYPE node_disk_read_bytes_total counter\n")
-	fmt.Fprintf(sb, "node_disk_read_bytes_total %d\n", readBytes)
-	sb.WriteString("# HELP node_disk_written_bytes_total Disk written bytes.\n")
-	sb.WriteString("# TYPE node_disk_written_bytes_total counter\n")
-	fmt.Fprintf(sb, "node_disk_written_bytes_total %d\n", writeBytes)
+	sb.WriteString("# HELP process_disk_read_bytes_total Disk read bytes.\n")
+	sb.WriteString("# TYPE process_disk_read_bytes_total counter\n")
+	fmt.Fprintf(sb, "process_disk_read_bytes_total %d\n", readBytes)
+	sb.WriteString("# HELP process_disk_written_bytes_total Disk written bytes.\n")
+	sb.WriteString("# TYPE process_disk_written_bytes_total counter\n")
+	fmt.Fprintf(sb, "process_disk_written_bytes_total %d\n", writeBytes)
 
 	// Network IO from /proc/net/dev
 	rxBytes, txBytes := readNetIO()
-	sb.WriteString("# HELP node_network_receive_bytes_total Network receive bytes.\n")
-	sb.WriteString("# TYPE node_network_receive_bytes_total counter\n")
-	fmt.Fprintf(sb, "node_network_receive_bytes_total %d\n", rxBytes)
-	sb.WriteString("# HELP node_network_transmit_bytes_total Network transmit bytes.\n")
-	sb.WriteString("# TYPE node_network_transmit_bytes_total counter\n")
-	fmt.Fprintf(sb, "node_network_transmit_bytes_total %d\n", txBytes)
+	sb.WriteString("# HELP process_network_receive_bytes_total Network receive bytes.\n")
+	sb.WriteString("# TYPE process_network_receive_bytes_total counter\n")
+	fmt.Fprintf(sb, "process_network_receive_bytes_total %d\n", rxBytes)
+	sb.WriteString("# HELP process_network_transmit_bytes_total Network transmit bytes.\n")
+	sb.WriteString("# TYPE process_network_transmit_bytes_total counter\n")
+	fmt.Fprintf(sb, "process_network_transmit_bytes_total %d\n", txBytes)
 
 	// PSI (Pressure Stall Information) from /proc/pressure/*
 	for _, resource := range []string{"cpu", "memory", "io"} {
 		some10, some60, some300, full10, full60, full300 := readPSI(resource)
 		if some10 >= 0 {
-			fmt.Fprintf(sb, "# HELP node_pressure_%s_some_ratio PSI some pressure (%s).\n", resource, resource)
-			fmt.Fprintf(sb, "# TYPE node_pressure_%s_some_ratio gauge\n", resource)
-			fmt.Fprintf(sb, "node_pressure_%s_some_ratio{window=\"10s\"} %g\n", resource, some10/100)
-			fmt.Fprintf(sb, "node_pressure_%s_some_ratio{window=\"60s\"} %g\n", resource, some60/100)
-			fmt.Fprintf(sb, "node_pressure_%s_some_ratio{window=\"300s\"} %g\n", resource, some300/100)
+			fmt.Fprintf(sb, "# HELP process_pressure_%s_some_ratio PSI some pressure (%s).\n", resource, resource)
+			fmt.Fprintf(sb, "# TYPE process_pressure_%s_some_ratio gauge\n", resource)
+			fmt.Fprintf(sb, "process_pressure_%s_some_ratio{window=\"10s\"} %g\n", resource, some10/100)
+			fmt.Fprintf(sb, "process_pressure_%s_some_ratio{window=\"60s\"} %g\n", resource, some60/100)
+			fmt.Fprintf(sb, "process_pressure_%s_some_ratio{window=\"300s\"} %g\n", resource, some300/100)
 		}
 		if full10 >= 0 {
-			fmt.Fprintf(sb, "# HELP node_pressure_%s_full_ratio PSI full pressure (%s).\n", resource, resource)
-			fmt.Fprintf(sb, "# TYPE node_pressure_%s_full_ratio gauge\n", resource)
-			fmt.Fprintf(sb, "node_pressure_%s_full_ratio{window=\"10s\"} %g\n", resource, full10/100)
-			fmt.Fprintf(sb, "node_pressure_%s_full_ratio{window=\"60s\"} %g\n", resource, full60/100)
-			fmt.Fprintf(sb, "node_pressure_%s_full_ratio{window=\"300s\"} %g\n", resource, full300/100)
+			fmt.Fprintf(sb, "# HELP process_pressure_%s_full_ratio PSI full pressure (%s).\n", resource, resource)
+			fmt.Fprintf(sb, "# TYPE process_pressure_%s_full_ratio gauge\n", resource)
+			fmt.Fprintf(sb, "process_pressure_%s_full_ratio{window=\"10s\"} %g\n", resource, full10/100)
+			fmt.Fprintf(sb, "process_pressure_%s_full_ratio{window=\"60s\"} %g\n", resource, full60/100)
+			fmt.Fprintf(sb, "process_pressure_%s_full_ratio{window=\"300s\"} %g\n", resource, full300/100)
 		}
 	}
 

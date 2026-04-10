@@ -742,41 +742,54 @@ func TestParseLabelModes(t *testing.T) {
 func TestBuildProxyConfig(t *testing.T) {
 	registerInstrumentation := true
 	c := proxyRuntimeConfig{
-		backendURL:               "http://backend",
-		rulerBackendURL:          "http://ruler",
-		alertsBackendURL:         "http://alerts",
-		cache:                    nil,
-		logLevel:                 "debug",
-		tenantMapJSON:            `{"team-a":{"account_id":"1","project_id":"2"}}`,
-		maxLines:                 123,
-		backendTimeout:           5 * time.Second,
-		backendBasicAuth:         "user:pass",
-		backendTLSSkip:           true,
-		forwardHeaders:           "X-Scope-OrgID",
-		forwardAuthorization:     true,
-		forwardCookies:           "session, csrf",
-		derivedFieldsJSON:        `[{"name":"traceID","matcherRegex":"trace_id=(\\w+)","url":"http://tempo/${__value.raw}"}]`,
-		streamResponse:           true,
-		emitStructuredMetadata:   true,
-		authEnabled:              true,
-		allowGlobalTenant:        true,
-		registerInstrumentation:  &registerInstrumentation,
-		enablePprof:              true,
-		enableQueryAnalytics:     true,
-		adminAuthToken:           "secret",
-		tailAllowedOrigins:       "https://grafana.example.com",
-		tailMode:                 "synthetic",
-		metricsMaxTenants:        11,
-		metricsMaxClients:        12,
-		metricsTrustProxyHeaders: true,
-		labelStyle:               "underscores",
-		metadataFieldMode:        "hybrid",
-		fieldMappingJSON:         `[{"vl_field":"service.name","loki_label":"service_name"}]`,
-		streamFieldsCSV:          "app,namespace",
-		peerSelf:                 "10.0.0.1:3100",
-		peerDiscovery:            "static",
-		peerStatic:               "10.0.0.2:3100,10.0.0.3:3100",
-		peerAuthToken:            "peer-secret",
+		backendURL:                      "http://backend",
+		rulerBackendURL:                 "http://ruler",
+		alertsBackendURL:                "http://alerts",
+		cache:                           nil,
+		logLevel:                        "debug",
+		tenantMapJSON:                   `{"team-a":{"account_id":"1","project_id":"2"}}`,
+		maxLines:                        123,
+		backendTimeout:                  5 * time.Second,
+		backendBasicAuth:                "user:pass",
+		backendTLSSkip:                  true,
+		forwardHeaders:                  "X-Scope-OrgID",
+		forwardAuthorization:            true,
+		forwardCookies:                  "session, csrf",
+		derivedFieldsJSON:               `[{"name":"traceID","matcherRegex":"trace_id=(\\w+)","url":"http://tempo/${__value.raw}"}]`,
+		streamResponse:                  true,
+		emitStructuredMetadata:          true,
+		queryRangeWindowing:             true,
+		queryRangeSplitInterval:         30 * time.Minute,
+		queryRangeMaxParallel:           4,
+		queryRangeAdaptiveParallel:      true,
+		queryRangeParallelMin:           2,
+		queryRangeParallelMax:           8,
+		queryRangeLatencyTarget:         1500 * time.Millisecond,
+		queryRangeLatencyBackoff:        3 * time.Second,
+		queryRangeAdaptiveCooldown:      45 * time.Second,
+		queryRangeErrorBackoffThreshold: 0.05,
+		queryRangeFreshness:             5 * time.Minute,
+		queryRangeRecentCacheTTL:        15 * time.Second,
+		queryRangeHistoryTTL:            2 * time.Hour,
+		authEnabled:                     true,
+		allowGlobalTenant:               true,
+		registerInstrumentation:         &registerInstrumentation,
+		enablePprof:                     true,
+		enableQueryAnalytics:            true,
+		adminAuthToken:                  "secret",
+		tailAllowedOrigins:              "https://grafana.example.com",
+		tailMode:                        "synthetic",
+		metricsMaxTenants:               11,
+		metricsMaxClients:               12,
+		metricsTrustProxyHeaders:        true,
+		labelStyle:                      "underscores",
+		metadataFieldMode:               "hybrid",
+		fieldMappingJSON:                `[{"vl_field":"service.name","loki_label":"service_name"}]`,
+		streamFieldsCSV:                 "app,namespace",
+		peerSelf:                        "10.0.0.1:3100",
+		peerDiscovery:                   "static",
+		peerStatic:                      "10.0.0.2:3100,10.0.0.3:3100",
+		peerAuthToken:                   "peer-secret",
 	}
 
 	got, err := buildProxyConfig(c)
@@ -809,6 +822,34 @@ func TestBuildProxyConfig(t *testing.T) {
 	}
 	if !got.EmitStructuredMetadata {
 		t.Fatalf("expected emit structured metadata to be enabled")
+	}
+	if !got.QueryRangeWindowingEnabled {
+		t.Fatalf("expected query range windowing to be enabled")
+	}
+	if got.QueryRangeSplitInterval != 30*time.Minute || got.QueryRangeMaxParallel != 4 {
+		t.Fatalf("unexpected query range window split config: interval=%s parallel=%d", got.QueryRangeSplitInterval, got.QueryRangeMaxParallel)
+	}
+	if !got.QueryRangeAdaptiveParallel || got.QueryRangeParallelMin != 2 || got.QueryRangeParallelMax != 8 {
+		t.Fatalf("unexpected adaptive query range parallel config: enabled=%v min=%d max=%d", got.QueryRangeAdaptiveParallel, got.QueryRangeParallelMin, got.QueryRangeParallelMax)
+	}
+	if got.QueryRangeLatencyTarget != 1500*time.Millisecond || got.QueryRangeLatencyBackoff != 3*time.Second || got.QueryRangeAdaptiveCooldown != 45*time.Second {
+		t.Fatalf(
+			"unexpected adaptive query range timing: target=%s backoff=%s cooldown=%s",
+			got.QueryRangeLatencyTarget,
+			got.QueryRangeLatencyBackoff,
+			got.QueryRangeAdaptiveCooldown,
+		)
+	}
+	if got.QueryRangeErrorBackoffThreshold != 0.05 {
+		t.Fatalf("unexpected adaptive query range error threshold: %v", got.QueryRangeErrorBackoffThreshold)
+	}
+	if got.QueryRangeFreshness != 5*time.Minute || got.QueryRangeRecentCacheTTL != 15*time.Second || got.QueryRangeHistoryCacheTTL != 2*time.Hour {
+		t.Fatalf(
+			"unexpected query range cache tuning: freshness=%s recentTTL=%s historyTTL=%s",
+			got.QueryRangeFreshness,
+			got.QueryRangeRecentCacheTTL,
+			got.QueryRangeHistoryCacheTTL,
+		)
 	}
 	if len(got.StreamFields) != 2 || got.StreamFields[0] != "app" {
 		t.Fatalf("unexpected stream fields: %+v", got.StreamFields)
@@ -957,6 +998,66 @@ func TestBuildCacheLayer_InvalidDiskCache(t *testing.T) {
 			cleanup()
 		}
 		t.Fatal("expected invalid disk cache path error")
+	}
+}
+
+func TestBuildCompatCacheLayer_DisabledOrZeroPercent(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	c, cleanup, err := buildCompatCacheLayer(15*time.Second, 100, defaultCacheMaxBytes, false, 10, logger)
+	if err != nil {
+		t.Fatalf("unexpected error for disabled compat cache: %v", err)
+	}
+	if c != nil {
+		t.Fatalf("expected nil compat cache when disabled, got %#v", c)
+	}
+	cleanup()
+
+	c, cleanup, err = buildCompatCacheLayer(15*time.Second, 100, defaultCacheMaxBytes, true, 0, logger)
+	if err != nil {
+		t.Fatalf("unexpected error for zero percent compat cache: %v", err)
+	}
+	if c != nil {
+		t.Fatalf("expected nil compat cache when percent=0, got %#v", c)
+	}
+	cleanup()
+}
+
+func TestBuildCompatCacheLayer_ValidationErrors(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	if _, cleanup, err := buildCompatCacheLayer(15*time.Second, 100, defaultCacheMaxBytes, true, maxCompatCachePercent+1, logger); err == nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		t.Fatal("expected percent validation error")
+	}
+	if _, cleanup, err := buildCompatCacheLayer(15*time.Second, 0, defaultCacheMaxBytes, true, 10, logger); err == nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		t.Fatal("expected cache-max validation error")
+	}
+	if _, cleanup, err := buildCompatCacheLayer(15*time.Second, 100, 0, true, 10, logger); err == nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		t.Fatal("expected cache-max-bytes validation error")
+	}
+}
+
+func TestBuildCompatCacheLayer_Enabled(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+	c, cleanup, err := buildCompatCacheLayer(15*time.Second, 100, defaultCacheMaxBytes, true, 10, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer cleanup()
+	if c == nil {
+		t.Fatal("expected compat cache")
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "compatibility edge cache enabled") || !strings.Contains(logs, "\"share_of_l1_percent\":10") {
+		t.Fatalf("expected compat cache startup log, got %s", logs)
 	}
 }
 

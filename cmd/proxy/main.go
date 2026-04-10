@@ -47,43 +47,56 @@ type envConfig struct {
 }
 
 type proxyRuntimeConfig struct {
-	backendURL               string
-	rulerBackendURL          string
-	alertsBackendURL         string
-	cache                    *cache.Cache
-	compatCache              *cache.Cache
-	logLevel                 string
-	tenantMapJSON            string
-	maxLines                 int
-	backendTimeout           time.Duration
-	backendBasicAuth         string
-	backendTLSSkip           bool
-	forwardHeaders           string
-	forwardAuthorization     bool
-	forwardCookies           string
-	derivedFieldsJSON        string
-	streamResponse           bool
-	emitStructuredMetadata   bool
-	authEnabled              bool
-	allowGlobalTenant        bool
-	registerInstrumentation  *bool
-	enablePprof              bool
-	enableQueryAnalytics     bool
-	adminAuthToken           string
-	tailAllowedOrigins       string
-	tailMode                 string
-	metricsMaxTenants        int
-	metricsMaxClients        int
-	metricsTrustProxyHeaders bool
-	labelStyle               string
-	metadataFieldMode        string
-	fieldMappingJSON         string
-	streamFieldsCSV          string
-	peerSelf                 string
-	peerDiscovery            string
-	peerDNS                  string
-	peerStatic               string
-	peerAuthToken            string
+	backendURL                      string
+	rulerBackendURL                 string
+	alertsBackendURL                string
+	cache                           *cache.Cache
+	compatCache                     *cache.Cache
+	logLevel                        string
+	tenantMapJSON                   string
+	maxLines                        int
+	backendTimeout                  time.Duration
+	backendBasicAuth                string
+	backendTLSSkip                  bool
+	forwardHeaders                  string
+	forwardAuthorization            bool
+	forwardCookies                  string
+	derivedFieldsJSON               string
+	streamResponse                  bool
+	emitStructuredMetadata          bool
+	queryRangeWindowing             bool
+	queryRangeSplitInterval         time.Duration
+	queryRangeMaxParallel           int
+	queryRangeAdaptiveParallel      bool
+	queryRangeParallelMin           int
+	queryRangeParallelMax           int
+	queryRangeLatencyTarget         time.Duration
+	queryRangeLatencyBackoff        time.Duration
+	queryRangeAdaptiveCooldown      time.Duration
+	queryRangeErrorBackoffThreshold float64
+	queryRangeFreshness             time.Duration
+	queryRangeRecentCacheTTL        time.Duration
+	queryRangeHistoryTTL            time.Duration
+	authEnabled                     bool
+	allowGlobalTenant               bool
+	registerInstrumentation         *bool
+	enablePprof                     bool
+	enableQueryAnalytics            bool
+	adminAuthToken                  string
+	tailAllowedOrigins              string
+	tailMode                        string
+	metricsMaxTenants               int
+	metricsMaxClients               int
+	metricsTrustProxyHeaders        bool
+	labelStyle                      string
+	metadataFieldMode               string
+	fieldMappingJSON                string
+	streamFieldsCSV                 string
+	peerSelf                        string
+	peerDiscovery                   string
+	peerDNS                         string
+	peerStatic                      string
+	peerAuthToken                   string
 }
 
 type otlpRuntimeConfig struct {
@@ -247,6 +260,7 @@ func run(
 	diskCacheCompress := fs.Bool("disk-cache-compress", true, "Gzip compression for disk cache")
 	diskCacheFlushSize := fs.Int("disk-cache-flush-size", 100, "Flush write buffer after N entries")
 	diskCacheFlushInterval := fs.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
+	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum on-disk L2 cache size in bytes (0 = unlimited)")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
 
@@ -290,6 +304,19 @@ func run(
 	derivedFieldsJSON := fs.String("derived-fields", "", `JSON derived fields: [{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]`)
 	streamResponse := fs.Bool("stream-response", false, "Stream log responses via chunked transfer encoding")
 	emitStructuredMetadata := fs.Bool("emit-structured-metadata", false, "Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses")
+	queryRangeWindowing := fs.Bool("query-range-windowing", true, "Enable query_range window splitting and window-level cache reuse for log queries")
+	queryRangeSplitInterval := fs.Duration("query-range-split-interval", time.Hour, "Time window size used for query_range split/merge (for example 15m, 1h, 24h)")
+	queryRangeMaxParallel := fs.Int("query-range-max-parallel", 2, "Maximum number of query_range windows fetched in parallel when adaptive parallelism is disabled")
+	queryRangeAdaptiveParallel := fs.Bool("query-range-adaptive-parallel", true, "Enable adaptive query_range window parallelism based on backend latency/error feedback")
+	queryRangeParallelMin := fs.Int("query-range-adaptive-min-parallel", 2, "Minimum adaptive query_range window parallelism")
+	queryRangeParallelMax := fs.Int("query-range-adaptive-max-parallel", 8, "Maximum adaptive query_range window parallelism")
+	queryRangeLatencyTarget := fs.Duration("query-range-latency-target", 1500*time.Millisecond, "Adaptive target backend fetch latency per window")
+	queryRangeLatencyBackoff := fs.Duration("query-range-latency-backoff", 3*time.Second, "Adaptive backoff threshold: reduce parallelism when backend fetch latency exceeds this value")
+	queryRangeAdaptiveCooldown := fs.Duration("query-range-adaptive-cooldown", 30*time.Second, "Minimum time between adaptive query_range parallelism adjustments")
+	queryRangeErrorBackoffThreshold := fs.Float64("query-range-error-backoff-threshold", 0.02, "Adaptive backoff threshold for backend fetch errors (0-1 ratio)")
+	queryRangeFreshness := fs.Duration("query-range-freshness", 10*time.Minute, "Near-now freshness boundary; windows newer than now-freshness use recent cache TTL")
+	queryRangeRecentCacheTTL := fs.Duration("query-range-recent-cache-ttl", 0, "Cache TTL for near-now query_range windows (0 disables near-now result caching)")
+	queryRangeHistoryTTL := fs.Duration("query-range-history-cache-ttl", 24*time.Hour, "Cache TTL for historical query_range windows older than -query-range-freshness")
 
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
@@ -372,43 +399,57 @@ func run(
 			Compression:   *diskCacheCompress,
 			FlushSize:     *diskCacheFlushSize,
 			FlushInterval: *diskCacheFlushInterval,
+			MaxBytes:      *diskCacheMaxBytes,
 		},
 		proxyCfg: proxyRuntimeConfig{
-			backendURL:               envCfg.backendURL,
-			rulerBackendURL:          envCfg.rulerBackendURL,
-			alertsBackendURL:         envCfg.alertsBackendURL,
-			logLevel:                 *logLevel,
-			tenantMapJSON:            envCfg.tenantMapJSON,
-			maxLines:                 *maxLines,
-			backendTimeout:           *backendTimeout,
-			backendBasicAuth:         *backendBasicAuth,
-			backendTLSSkip:           *backendTLSSkip,
-			forwardHeaders:           *forwardHeaders,
-			forwardAuthorization:     *forwardAuthorization,
-			forwardCookies:           *forwardCookies,
-			derivedFieldsJSON:        *derivedFieldsJSON,
-			streamResponse:           *streamResponse,
-			emitStructuredMetadata:   *emitStructuredMetadata,
-			authEnabled:              *authEnabled,
-			allowGlobalTenant:        *allowGlobalTenant,
-			registerInstrumentation:  registerInstrumentation,
-			enablePprof:              *enablePprof,
-			enableQueryAnalytics:     *enableQueryAnalytics,
-			adminAuthToken:           *adminAuthToken,
-			tailAllowedOrigins:       *tailAllowedOrigins,
-			tailMode:                 *tailMode,
-			metricsMaxTenants:        *metricsMaxTenants,
-			metricsMaxClients:        *metricsMaxClients,
-			metricsTrustProxyHeaders: *metricsTrustProxyHeaders,
-			labelStyle:               envCfg.labelStyle,
-			metadataFieldMode:        envCfg.metadataFieldMode,
-			fieldMappingJSON:         envCfg.fieldMappingJSON,
-			streamFieldsCSV:          *streamFieldsCSV,
-			peerSelf:                 *peerSelf,
-			peerDiscovery:            *peerDiscovery,
-			peerDNS:                  *peerDNS,
-			peerStatic:               *peerStatic,
-			peerAuthToken:            *peerAuthToken,
+			backendURL:                      envCfg.backendURL,
+			rulerBackendURL:                 envCfg.rulerBackendURL,
+			alertsBackendURL:                envCfg.alertsBackendURL,
+			logLevel:                        *logLevel,
+			tenantMapJSON:                   envCfg.tenantMapJSON,
+			maxLines:                        *maxLines,
+			backendTimeout:                  *backendTimeout,
+			backendBasicAuth:                *backendBasicAuth,
+			backendTLSSkip:                  *backendTLSSkip,
+			forwardHeaders:                  *forwardHeaders,
+			forwardAuthorization:            *forwardAuthorization,
+			forwardCookies:                  *forwardCookies,
+			derivedFieldsJSON:               *derivedFieldsJSON,
+			streamResponse:                  *streamResponse,
+			emitStructuredMetadata:          *emitStructuredMetadata,
+			queryRangeWindowing:             *queryRangeWindowing,
+			queryRangeSplitInterval:         *queryRangeSplitInterval,
+			queryRangeMaxParallel:           *queryRangeMaxParallel,
+			queryRangeAdaptiveParallel:      *queryRangeAdaptiveParallel,
+			queryRangeParallelMin:           *queryRangeParallelMin,
+			queryRangeParallelMax:           *queryRangeParallelMax,
+			queryRangeLatencyTarget:         *queryRangeLatencyTarget,
+			queryRangeLatencyBackoff:        *queryRangeLatencyBackoff,
+			queryRangeAdaptiveCooldown:      *queryRangeAdaptiveCooldown,
+			queryRangeErrorBackoffThreshold: *queryRangeErrorBackoffThreshold,
+			queryRangeFreshness:             *queryRangeFreshness,
+			queryRangeRecentCacheTTL:        *queryRangeRecentCacheTTL,
+			queryRangeHistoryTTL:            *queryRangeHistoryTTL,
+			authEnabled:                     *authEnabled,
+			allowGlobalTenant:               *allowGlobalTenant,
+			registerInstrumentation:         registerInstrumentation,
+			enablePprof:                     *enablePprof,
+			enableQueryAnalytics:            *enableQueryAnalytics,
+			adminAuthToken:                  *adminAuthToken,
+			tailAllowedOrigins:              *tailAllowedOrigins,
+			tailMode:                        *tailMode,
+			metricsMaxTenants:               *metricsMaxTenants,
+			metricsMaxClients:               *metricsMaxClients,
+			metricsTrustProxyHeaders:        *metricsTrustProxyHeaders,
+			labelStyle:                      envCfg.labelStyle,
+			metadataFieldMode:               envCfg.metadataFieldMode,
+			fieldMappingJSON:                envCfg.fieldMappingJSON,
+			streamFieldsCSV:                 *streamFieldsCSV,
+			peerSelf:                        *peerSelf,
+			peerDiscovery:                   *peerDiscovery,
+			peerDNS:                         *peerDNS,
+			peerStatic:                      *peerStatic,
+			peerAuthToken:                   *peerAuthToken,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -875,39 +916,52 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	}
 
 	return proxy.Config{
-		BackendURL:               cfg.backendURL,
-		RulerBackendURL:          cfg.rulerBackendURL,
-		AlertsBackendURL:         alertsBackendURL,
-		Cache:                    cfg.cache,
-		CompatCache:              cfg.compatCache,
-		LogLevel:                 cfg.logLevel,
-		TenantMap:                tenantMap,
-		MaxLines:                 cfg.maxLines,
-		BackendTimeout:           cfg.backendTimeout,
-		BackendBasicAuth:         cfg.backendBasicAuth,
-		BackendTLSSkip:           cfg.backendTLSSkip,
-		ForwardHeaders:           parseForwardHeaders(cfg.forwardHeaders, cfg.forwardAuthorization),
-		ForwardCookies:           parseCSV(cfg.forwardCookies),
-		DerivedFields:            derivedFields,
-		StreamResponse:           cfg.streamResponse,
-		EmitStructuredMetadata:   cfg.emitStructuredMetadata,
-		AuthEnabled:              cfg.authEnabled,
-		AllowGlobalTenant:        cfg.allowGlobalTenant,
-		RegisterInstrumentation:  cfg.registerInstrumentation,
-		EnablePprof:              cfg.enablePprof,
-		EnableQueryAnalytics:     cfg.enableQueryAnalytics,
-		AdminAuthToken:           cfg.adminAuthToken,
-		TailAllowedOrigins:       parseCSV(cfg.tailAllowedOrigins),
-		TailMode:                 tailMode,
-		MetricsMaxTenants:        cfg.metricsMaxTenants,
-		MetricsMaxClients:        cfg.metricsMaxClients,
-		MetricsTrustProxyHeaders: cfg.metricsTrustProxyHeaders,
-		LabelStyle:               ls,
-		MetadataFieldMode:        mfm,
-		FieldMappings:            fieldMappings,
-		StreamFields:             parseCSV(cfg.streamFieldsCSV),
-		PeerCache:                peerCache,
-		PeerAuthToken:            cfg.peerAuthToken,
+		BackendURL:                      cfg.backendURL,
+		RulerBackendURL:                 cfg.rulerBackendURL,
+		AlertsBackendURL:                alertsBackendURL,
+		Cache:                           cfg.cache,
+		CompatCache:                     cfg.compatCache,
+		LogLevel:                        cfg.logLevel,
+		TenantMap:                       tenantMap,
+		MaxLines:                        cfg.maxLines,
+		BackendTimeout:                  cfg.backendTimeout,
+		BackendBasicAuth:                cfg.backendBasicAuth,
+		BackendTLSSkip:                  cfg.backendTLSSkip,
+		ForwardHeaders:                  parseForwardHeaders(cfg.forwardHeaders, cfg.forwardAuthorization),
+		ForwardCookies:                  parseCSV(cfg.forwardCookies),
+		DerivedFields:                   derivedFields,
+		StreamResponse:                  cfg.streamResponse,
+		EmitStructuredMetadata:          cfg.emitStructuredMetadata,
+		QueryRangeWindowingEnabled:      cfg.queryRangeWindowing,
+		QueryRangeSplitInterval:         cfg.queryRangeSplitInterval,
+		QueryRangeMaxParallel:           cfg.queryRangeMaxParallel,
+		QueryRangeAdaptiveParallel:      cfg.queryRangeAdaptiveParallel,
+		QueryRangeParallelMin:           cfg.queryRangeParallelMin,
+		QueryRangeParallelMax:           cfg.queryRangeParallelMax,
+		QueryRangeLatencyTarget:         cfg.queryRangeLatencyTarget,
+		QueryRangeLatencyBackoff:        cfg.queryRangeLatencyBackoff,
+		QueryRangeAdaptiveCooldown:      cfg.queryRangeAdaptiveCooldown,
+		QueryRangeErrorBackoffThreshold: cfg.queryRangeErrorBackoffThreshold,
+		QueryRangeFreshness:             cfg.queryRangeFreshness,
+		QueryRangeRecentCacheTTL:        cfg.queryRangeRecentCacheTTL,
+		QueryRangeHistoryCacheTTL:       cfg.queryRangeHistoryTTL,
+		AuthEnabled:                     cfg.authEnabled,
+		AllowGlobalTenant:               cfg.allowGlobalTenant,
+		RegisterInstrumentation:         cfg.registerInstrumentation,
+		EnablePprof:                     cfg.enablePprof,
+		EnableQueryAnalytics:            cfg.enableQueryAnalytics,
+		AdminAuthToken:                  cfg.adminAuthToken,
+		TailAllowedOrigins:              parseCSV(cfg.tailAllowedOrigins),
+		TailMode:                        tailMode,
+		MetricsMaxTenants:               cfg.metricsMaxTenants,
+		MetricsMaxClients:               cfg.metricsMaxClients,
+		MetricsTrustProxyHeaders:        cfg.metricsTrustProxyHeaders,
+		LabelStyle:                      ls,
+		MetadataFieldMode:               mfm,
+		FieldMappings:                   fieldMappings,
+		StreamFields:                    parseCSV(cfg.streamFieldsCSV),
+		PeerCache:                       peerCache,
+		PeerAuthToken:                   cfg.peerAuthToken,
 	}, nil
 }
 
@@ -1008,6 +1062,18 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 	}
 	if proxyCfg.DerivedFields != nil {
 		logger.Info("loaded derived fields", "count", len(proxyCfg.DerivedFields))
+	}
+	if proxyCfg.QueryRangeWindowingEnabled {
+		logger.Info(
+			"query_range window cache enabled",
+			"split_interval", proxyCfg.QueryRangeSplitInterval,
+			"adaptive_parallel", proxyCfg.QueryRangeAdaptiveParallel,
+			"parallel_min", proxyCfg.QueryRangeParallelMin,
+			"parallel_max", proxyCfg.QueryRangeParallelMax,
+			"freshness", proxyCfg.QueryRangeFreshness,
+			"recent_cache_ttl", proxyCfg.QueryRangeRecentCacheTTL,
+			"history_cache_ttl", proxyCfg.QueryRangeHistoryCacheTTL,
+		)
 	}
 	if proxyCfg.PeerCache != nil {
 		c.SetL3(proxyCfg.PeerCache)

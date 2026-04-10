@@ -183,25 +183,25 @@ These are the metrics to use when you want to identify the users or tenants actu
 | `loki_vl_proxy_client_query_length_chars` | histogram | `client`, `endpoint` | query size outliers by client |
 | `loki_vl_proxy_client_errors_total` | counter | `endpoint`, `reason` | categorized 4xx-style client errors |
 
-### Runtime and Host Metrics
+### Runtime and Process Metrics
 
-The proxy also exports a lightweight built-in set of runtime and host health metrics:
+The proxy also exports a lightweight built-in set of runtime and process/container health metrics:
 
 | Metric family | Description |
 |---|---|
 | `go_memstats_*`, `go_goroutines`, `go_gc_cycles_total` | Go runtime health |
 | `process_resident_memory_bytes`, `process_open_fds` | process resource usage |
-| `node_cpu_usage_ratio` | CPU pressure split by `mode` |
-| `node_memory_*` | total, free, available, usage ratio |
-| `node_disk_*_bytes_total` | disk I/O counters |
-| `node_network_*_bytes_total` | network I/O counters |
-| `node_pressure_*` | Linux PSI gauges when available |
+| `process_cpu_usage_ratio` | CPU pressure split by `mode` |
+| `process_memory_*` | total, free, available, usage ratio |
+| `process_disk_*_bytes_total` | disk I/O counters |
+| `process_network_*_bytes_total` | network I/O counters |
+| `process_pressure_*` | Linux PSI gauges when available |
 
 Kubernetes notes:
 - These runtime/system metrics are read from `/proc` and do not require Kubernetes RBAC permissions.
-- PSI metrics (`node_pressure_*`) depend on kernel support and may be absent on nodes without `/proc/pressure/*`.
+- PSI metrics (`process_pressure_*`) depend on kernel support and may be absent on nodes without `/proc/pressure/*`.
 - On startup, the proxy logs a system-metrics readiness check with missing families and remediation hints instead of failing silently.
-- For node-level metrics in Kubernetes, mount host `/proc` and set `-proc-root=/host/proc` (the upstream chart supports this via `systemMetrics.hostProc.enabled: true`).
+- If you mount host `/proc` (`-proc-root=/host/proc`), these metrics will reflect host scope; keep default pod `/proc` for pod/container scope.
 - For per-pod attribution in OTLP backends, set `OTEL_SERVICE_INSTANCE_ID` from pod name and `OTEL_SERVICE_NAMESPACE` from pod namespace (the upstream chart now injects these by default).
 
 ### PromQL Drilldowns For Slowness And Client Errors
@@ -226,6 +226,13 @@ The packaged `Loki-VL-Proxy` dashboard also includes a `System Resources` sectio
 - PSI pressure (cpu/memory/io)
 - disk and network throughput
 - process RSS and open file descriptors
+
+It also includes a `Query-Range Windowing` section for cache/tuning signals:
+
+- window fetch p50/p95 latency
+- window merge p50/p95 latency
+- window cache hit ratio
+- adaptive window parallelism + EWMA latency/error
 
 ### Active Backend E2E Healthchecks
 

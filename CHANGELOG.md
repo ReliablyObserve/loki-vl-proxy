@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- migrate built-in system metric families from `node_*` to `process_*` so proxy-exported CPU/memory/disk/network/pressure signals are pod/container scoped instead of node-scoped by name
+
+### Features
+
+- add Loki-aligned `query_range` window cache defaults (`split=1h`, `max-parallel=2`, `freshness=10m`, `recent-ttl=0s`, `history-ttl=24h`) with bounded parallel fanout and historical-window reuse
+- add adaptive query-range window parallelism (`min/max` bounds with latency/error EWMA feedback) so backend fanout can scale up under healthy latency and back off under pressure
+- add `-disk-cache-max-bytes` to cap on-disk L2 cache size for predictable retention and capacity control
+
+### Observability
+
+- add adaptive query-range tuning gauges: current parallelism, latency EWMA, and error EWMA, exposed in both Prometheus and OTLP metrics
+- harden `Loki-VL-Proxy Metrics` dashboard selectors to tolerate headless/non-headless job+service labels and blank namespace URL vars so sand drilldowns no longer collapse to no-data
+- add a `Query-Range Windowing` dashboard section (window fetch/merge latency, window cache hit ratio, adaptive EWMA/parallelism)
+- update packaged dashboards, alerts, and runbook queries to consume `process_*` system metric families
+
+### Tests
+
+- add focused query-range helper coverage (`time parsing/normalization`, window split/ttl helpers, adaptive parallel controller behavior) to reduce CI quality-gate regressions
+- add synthetic `/proc` OTLP system-metrics coverage to lock process-scope metric family compatibility
+
+### Configuration
+
+- enable `systemMetrics.hostProc.enabled` by default in the upstream chart and document the host `/proc` mount behavior for node-level CPU/memory/disk/network/PSI visibility
+
 ## [0.27.20] - 2026-04-10
 
 ### Tests
@@ -23,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - update architecture/readme diagrams and migration/testing docs to describe recording-rule remote-write expectations and Grafana datasource-proxy `datasource_type=vlogs` validation flow
+- document query-range window cache controls, Loki-aligned defaults, and practical disk sizing guidance for longer retention windows
 
 ## [0.27.19] - 2026-04-10
 

@@ -244,10 +244,10 @@ func TestSystemMetrics_Linux_IncludesNodeMetrics(t *testing.T) {
 
 	// These metrics should always be present on Linux (not CPU-delta dependent)
 	required := []string{
-		"node_memory_total_bytes",
-		"node_memory_available_bytes",
-		"node_disk_read_bytes_total",
-		"node_network_receive_bytes_total",
+		"process_memory_total_bytes",
+		"process_memory_available_bytes",
+		"process_disk_read_bytes_total",
+		"process_network_receive_bytes_total",
 		"process_open_fds",
 		"process_resident_memory_bytes",
 	}
@@ -260,7 +260,7 @@ func TestSystemMetrics_Linux_IncludesNodeMetrics(t *testing.T) {
 
 	// CPU ratio may or may not appear depending on whether counters advanced
 	// (it's delta-based; on idle CI runners the delta can be 0)
-	if strings.Contains(output, "node_cpu_usage_ratio") {
+	if strings.Contains(output, "process_cpu_usage_ratio") {
 		t.Log("CPU usage ratio present (good)")
 	} else {
 		t.Log("CPU usage ratio not present (acceptable on idle CI)")
@@ -462,12 +462,12 @@ func TestSystemMetrics_WritePrometheus_UsesSyntheticLinuxProcFS(t *testing.T) {
 	output := sb.String()
 
 	for _, metric := range []string{
-		"node_cpu_usage_ratio",
-		"node_memory_total_bytes",
-		"node_disk_read_bytes_total",
-		"node_network_receive_bytes_total",
-		"node_pressure_cpu_some_ratio",
-		"node_pressure_memory_full_ratio",
+		"process_cpu_usage_ratio",
+		"process_memory_total_bytes",
+		"process_disk_read_bytes_total",
+		"process_network_receive_bytes_total",
+		"process_pressure_cpu_some_ratio",
+		"process_pressure_memory_full_ratio",
 		"process_open_fds",
 		"process_resident_memory_bytes",
 	} {

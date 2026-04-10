@@ -88,6 +88,73 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 | `-disk-cache-compress` | — | `true` | Gzip compression for disk cache |
 | `-disk-cache-flush-size` | — | `100` | Flush write buffer after N entries |
 | `-disk-cache-flush-interval` | — | `5s` | Write buffer flush interval |
+| `-disk-cache-max-bytes` | — | `0` | Maximum on-disk L2 cache size in bytes (`0` = unlimited) |
+
+## Query Range Window Cache
+
+These flags control Loki-compatible `query_range` split/merge execution with per-window cache reuse.
+
+| Flag | Env | Default | Description |
+|---|---|---|---|
+| `-query-range-windowing` | — | `true` | Enable window split/merge path for log `query_range` |
+| `-query-range-split-interval` | — | `1h` | Per-window time span used for split/merge |
+| `-query-range-max-parallel` | — | `2` | Static maximum window fetch parallelism (used when adaptive mode is disabled) |
+| `-query-range-adaptive-parallel` | — | `true` | Enable adaptive window fetch parallelism |
+| `-query-range-adaptive-min-parallel` | — | `2` | Lower bound for adaptive parallelism |
+| `-query-range-adaptive-max-parallel` | — | `8` | Upper bound for adaptive parallelism |
+| `-query-range-latency-target` | — | `1.5s` | Target backend window fetch latency for safe adaptive increase |
+| `-query-range-latency-backoff` | — | `3s` | Backoff threshold; adaptive mode reduces parallelism when EWMA latency exceeds this |
+| `-query-range-adaptive-cooldown` | — | `30s` | Minimum interval between adaptive parallelism changes |
+| `-query-range-error-backoff-threshold` | — | `0.02` | Backoff threshold for EWMA backend error ratio (0-1) |
+| `-query-range-freshness` | — | `10m` | Near-now freshness boundary |
+| `-query-range-recent-cache-ttl` | — | `0s` | Cache TTL for windows newer than `now-freshness` (`0s` disables near-now cache) |
+| `-query-range-history-cache-ttl` | — | `24h` | Cache TTL for historical windows older than `now-freshness` |
+
+### Loki-Aligned Defaults
+
+- `split-interval=1h` mirrors the common Loki split-by-interval setup.
+- `freshness=10m` keeps the latest time range uncached by default, matching typical Loki freshness posture.
+- bounded `max-parallel=2` protects VictoriaLogs from fanout bursts while still reducing latency for long ranges.
+- `history-cache-ttl=24h` keeps older windows warm for repeated drilldowns and expanded-range queries.
+- adaptive mode (`min=2`, `max=8`) raises parallelism only when EWMA latency/error remain healthy and backs off quickly when backend pressure rises.
+
+### Cache Sizing Guidance
+
+Use this approximation for disk planning:
+
+`required_bytes ~= unique_window_keys_per_day * avg_compressed_window_bytes * ttl_days`
+
+From in-repo sizing tests (`internal/cache/sizing_test.go`), a practical compressed average is around `56 KiB` per entry, which yields:
+
+- `1 GiB` -> about `18k` cached windows
+- `10 GiB` -> about `189k` cached windows
+- `50 GiB` -> about `948k` cached windows
+
+Set `-disk-cache-max-bytes` when you want deterministic upper bounds instead of relying only on PVC limits.
+
+### Practical Tuning Profiles
+
+| Profile | Suggested Settings | When to Use |
+|---|---|---|
+| Conservative | `adaptive-max=4`, `latency-target=2s`, `latency-backoff=4s`, `history-ttl=24h` | Shared VictoriaLogs clusters with strict backend protection goals |
+| Balanced (default) | `adaptive-max=8`, `latency-target=1.5s`, `latency-backoff=3s`, `history-ttl=24h` | Most Grafana + Drilldown workloads |
+| Aggressive | `adaptive-max=12`, `latency-target=1s`, `latency-backoff=2s`, `history-ttl=72h` + larger disk cache | Large repeated long-range analytics where backend headroom is proven |
+
+### Tuning Visibility Metrics
+
+Use these metrics to tune safely:
+
+- `loki_vl_proxy_window_adaptive_parallel_current` (gauge)
+- `loki_vl_proxy_window_adaptive_latency_ewma_seconds` (gauge)
+- `loki_vl_proxy_window_adaptive_error_ewma` (gauge)
+- `loki_vl_proxy_window_cache_hit_total`, `loki_vl_proxy_window_cache_miss_total` (counters)
+- `loki_vl_proxy_window_fetch_seconds` and `loki_vl_proxy_window_merge_seconds` (histograms)
+
+Recommended loop:
+
+1. Increase `-query-range-adaptive-max-parallel` only if latency EWMA stays below target and error EWMA stays near zero during peak load.
+2. Increase `-query-range-history-cache-ttl` only if disk utilization and cache hit ratio justify it.
+3. Set `-disk-cache-max-bytes` before increasing TTL windows beyond 24h.
 
 ### Metadata vs Live Query Freshness
 

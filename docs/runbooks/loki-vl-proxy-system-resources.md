@@ -19,13 +19,13 @@
 1. Confirm proxy health:
    - `curl -fsS http://<proxy>:3100/ready`
 2. Confirm metrics endpoint includes system families:
-   - `curl -fsS http://<proxy>:3100/metrics | rg "node_memory_usage_ratio|node_cpu_usage_ratio|node_pressure_"`
+   - `curl -fsS http://<proxy>:3100/metrics | rg "process_memory_usage_ratio|process_cpu_usage_ratio|process_pressure_"`
 3. Inspect startup diagnostics in proxy logs for system-metrics check output.
 4. Check dashboard section `System Resources` for memory, PSI, disk, and network trends.
 
 ## Kubernetes-Specific Checks
 
-1. Ensure host `/proc` is mounted when node-level visibility is expected:
+1. Ensure pod `/proc` scope is used for container-level visibility. If host `/proc` is mounted, metrics reflect host scope:
    - `systemMetrics.hostProc.enabled: true`
    - chart auto-sets `-proc-root=/host/proc`
 2. Verify container has read access to mounted proc path.
@@ -45,6 +45,6 @@
 
 ## Recovery Criteria
 
-- `node_memory_usage_ratio < 0.85` sustained.
+- `process_memory_usage_ratio < 0.85` sustained.
 - PSI `cpu` and `io` some-ratio drops below alert thresholds.
 - Query latency/error alerts recover and remain stable for at least one alert interval.

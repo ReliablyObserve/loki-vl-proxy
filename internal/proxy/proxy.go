@@ -201,6 +201,22 @@ type Config struct {
 	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
 	// Disabled by default for conservative datasource compatibility.
 	EmitStructuredMetadata bool
+	// Query range windowing/cache options.
+	// When enabled, eligible log query_range requests are split into time windows,
+	// fetched with bounded parallelism, and merged in Loki-compatible direction order.
+	QueryRangeWindowingEnabled      bool
+	QueryRangeSplitInterval         time.Duration
+	QueryRangeMaxParallel           int
+	QueryRangeAdaptiveParallel      bool
+	QueryRangeParallelMin           int
+	QueryRangeParallelMax           int
+	QueryRangeLatencyTarget         time.Duration
+	QueryRangeLatencyBackoff        time.Duration
+	QueryRangeAdaptiveCooldown      time.Duration
+	QueryRangeErrorBackoffThreshold float64
+	QueryRangeFreshness             time.Duration
+	QueryRangeRecentCacheTTL        time.Duration
+	QueryRangeHistoryCacheTTL       time.Duration
 
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
@@ -269,43 +285,61 @@ var CacheTTLs = map[string]time.Duration{
 }
 
 type Proxy struct {
-	backend                  *url.URL
-	rulerBackend             *url.URL
-	alertsBackend            *url.URL
-	client                   *http.Client
-	tailClient               *http.Client
-	cache                    *cache.Cache
-	compatCache              *cache.Cache
-	log                      *slog.Logger
-	metrics                  *metrics.Metrics
-	queryTracker             *metrics.QueryTracker
-	coalescer                *mw.Coalescer
-	limiter                  *mw.RateLimiter
-	breaker                  *mw.CircuitBreaker
-	configMu                 sync.RWMutex // protects tenantMap and labelTranslator
-	tenantMap                map[string]TenantMapping
-	authEnabled              bool
-	allowGlobalTenant        bool
-	maxLines                 int
-	forwardHeaders           []string          // headers to copy from client request to VL
-	forwardCookies           map[string]bool   // cookie names to copy from client request to VL
-	backendHeaders           map[string]string // static headers on all VL requests
-	derivedFields            []DerivedField
-	streamResponse           bool
-	emitStructuredMetadata   bool
-	labelTranslator          *LabelTranslator
-	metadataFieldMode        MetadataFieldMode
-	streamFieldsMap          map[string]bool  // known _stream_fields for VL stream selector optimization
-	peerCache                *cache.PeerCache // L3 fleet peer cache
-	peerAuthToken            string
-	registerInstrumentation  bool
-	enablePprof              bool
-	enableQueryAnalytics     bool
-	adminAuthToken           string
-	tailAllowedOrigins       map[string]struct{}
-	tailMode                 TailMode
-	metricsTrustProxyHeaders bool
-	translationCache         *cache.Cache
+	backend                         *url.URL
+	rulerBackend                    *url.URL
+	alertsBackend                   *url.URL
+	client                          *http.Client
+	tailClient                      *http.Client
+	cache                           *cache.Cache
+	compatCache                     *cache.Cache
+	log                             *slog.Logger
+	metrics                         *metrics.Metrics
+	queryTracker                    *metrics.QueryTracker
+	coalescer                       *mw.Coalescer
+	limiter                         *mw.RateLimiter
+	breaker                         *mw.CircuitBreaker
+	configMu                        sync.RWMutex // protects tenantMap and labelTranslator
+	tenantMap                       map[string]TenantMapping
+	authEnabled                     bool
+	allowGlobalTenant               bool
+	maxLines                        int
+	forwardHeaders                  []string          // headers to copy from client request to VL
+	forwardCookies                  map[string]bool   // cookie names to copy from client request to VL
+	backendHeaders                  map[string]string // static headers on all VL requests
+	derivedFields                   []DerivedField
+	streamResponse                  bool
+	emitStructuredMetadata          bool
+	labelTranslator                 *LabelTranslator
+	metadataFieldMode               MetadataFieldMode
+	streamFieldsMap                 map[string]bool  // known _stream_fields for VL stream selector optimization
+	peerCache                       *cache.PeerCache // L3 fleet peer cache
+	peerAuthToken                   string
+	registerInstrumentation         bool
+	enablePprof                     bool
+	enableQueryAnalytics            bool
+	adminAuthToken                  string
+	tailAllowedOrigins              map[string]struct{}
+	tailMode                        TailMode
+	metricsTrustProxyHeaders        bool
+	translationCache                *cache.Cache
+	queryRangeWindowing             bool
+	queryRangeSplitInterval         time.Duration
+	queryRangeMaxParallel           int
+	queryRangeAdaptiveParallel      bool
+	queryRangeParallelMin           int
+	queryRangeParallelMax           int
+	queryRangeLatencyTarget         time.Duration
+	queryRangeLatencyBackoff        time.Duration
+	queryRangeAdaptiveCooldown      time.Duration
+	queryRangeErrorBackoffThreshold float64
+	queryRangeAdaptiveMu            sync.Mutex
+	queryRangeParallelCurrent       int
+	queryRangeLatencyEWMA           time.Duration
+	queryRangeErrorEWMA             float64
+	queryRangeAdaptiveLastAdjust    time.Time
+	queryRangeFreshness             time.Duration
+	queryRangeRecentCacheTTL        time.Duration
+	queryRangeHistoryCacheTTL       time.Duration
 }
 
 type tailConn interface {
@@ -430,6 +464,58 @@ func New(cfg Config) (*Proxy, error) {
 		tailAllowedOrigins[origin] = struct{}{}
 	}
 	metadataFieldMode := normalizeMetadataFieldMode(cfg.MetadataFieldMode)
+	queryRangeMaxParallel := cfg.QueryRangeMaxParallel
+	if queryRangeMaxParallel <= 0 {
+		queryRangeMaxParallel = 2
+	}
+	queryRangeParallelMax := cfg.QueryRangeParallelMax
+	if queryRangeParallelMax <= 0 {
+		queryRangeParallelMax = queryRangeMaxParallel
+	}
+	queryRangeParallelMin := cfg.QueryRangeParallelMin
+	if queryRangeParallelMin <= 0 {
+		queryRangeParallelMin = 2
+	}
+	if queryRangeParallelMax < 1 {
+		queryRangeParallelMax = 1
+	}
+	if queryRangeParallelMin > queryRangeParallelMax {
+		queryRangeParallelMin = queryRangeParallelMax
+	}
+	if queryRangeParallelMin < 1 {
+		queryRangeParallelMin = 1
+	}
+	queryRangeLatencyTarget := cfg.QueryRangeLatencyTarget
+	if queryRangeLatencyTarget <= 0 {
+		queryRangeLatencyTarget = 1500 * time.Millisecond
+	}
+	queryRangeLatencyBackoff := cfg.QueryRangeLatencyBackoff
+	if queryRangeLatencyBackoff <= 0 {
+		queryRangeLatencyBackoff = 3 * time.Second
+	}
+	if queryRangeLatencyBackoff < queryRangeLatencyTarget {
+		queryRangeLatencyBackoff = queryRangeLatencyTarget * 2
+	}
+	queryRangeAdaptiveCooldown := cfg.QueryRangeAdaptiveCooldown
+	if queryRangeAdaptiveCooldown <= 0 {
+		queryRangeAdaptiveCooldown = 30 * time.Second
+	}
+	queryRangeErrorBackoffThreshold := cfg.QueryRangeErrorBackoffThreshold
+	if queryRangeErrorBackoffThreshold <= 0 || queryRangeErrorBackoffThreshold > 1 {
+		queryRangeErrorBackoffThreshold = 0.02
+	}
+	queryRangeFreshness := cfg.QueryRangeFreshness
+	if queryRangeFreshness <= 0 {
+		queryRangeFreshness = 10 * time.Minute
+	}
+	queryRangeRecentCacheTTL := cfg.QueryRangeRecentCacheTTL
+	if queryRangeRecentCacheTTL < 0 {
+		queryRangeRecentCacheTTL = 0
+	}
+	queryRangeHistoryCacheTTL := cfg.QueryRangeHistoryCacheTTL
+	if queryRangeHistoryCacheTTL < 0 {
+		queryRangeHistoryCacheTTL = 0
+	}
 	tailMode := cfg.TailMode
 	if tailMode == "" {
 		tailMode = TailModeAuto
@@ -451,37 +537,51 @@ func New(cfg Config) (*Proxy, error) {
 		tailClient: &http.Client{
 			Transport: tailTransport,
 		},
-		cache:                    cfg.Cache,
-		compatCache:              cfg.CompatCache,
-		log:                      logger,
-		metrics:                  metrics.NewMetricsWithLimits(cfg.MetricsMaxTenants, cfg.MetricsMaxClients),
-		queryTracker:             metrics.NewQueryTracker(10000),
-		coalescer:                mw.NewCoalescer(),
-		limiter:                  mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
-		breaker:                  mw.NewCircuitBreaker(cbFail, 3, cbOpen),
-		tenantMap:                cfg.TenantMap,
-		authEnabled:              cfg.AuthEnabled,
-		allowGlobalTenant:        cfg.AllowGlobalTenant,
-		maxLines:                 maxLines,
-		forwardHeaders:           cfg.ForwardHeaders,
-		forwardCookies:           forwardCookies,
-		backendHeaders:           backendHeaders,
-		derivedFields:            cfg.DerivedFields,
-		streamResponse:           cfg.StreamResponse,
-		emitStructuredMetadata:   cfg.EmitStructuredMetadata,
-		labelTranslator:          NewLabelTranslator(cfg.LabelStyle, cfg.FieldMappings),
-		metadataFieldMode:        metadataFieldMode,
-		streamFieldsMap:          buildStreamFieldsMap(cfg.StreamFields),
-		peerCache:                cfg.PeerCache,
-		peerAuthToken:            cfg.PeerAuthToken,
-		registerInstrumentation:  registerInstrumentation,
-		enablePprof:              cfg.EnablePprof,
-		enableQueryAnalytics:     cfg.EnableQueryAnalytics,
-		adminAuthToken:           cfg.AdminAuthToken,
-		tailAllowedOrigins:       tailAllowedOrigins,
-		tailMode:                 tailMode,
-		metricsTrustProxyHeaders: cfg.MetricsTrustProxyHeaders,
-		translationCache:         cache.New(5*time.Minute, 5000),
+		cache:                           cfg.Cache,
+		compatCache:                     cfg.CompatCache,
+		log:                             logger,
+		metrics:                         metrics.NewMetricsWithLimits(cfg.MetricsMaxTenants, cfg.MetricsMaxClients),
+		queryTracker:                    metrics.NewQueryTracker(10000),
+		coalescer:                       mw.NewCoalescer(),
+		limiter:                         mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
+		breaker:                         mw.NewCircuitBreaker(cbFail, 3, cbOpen),
+		tenantMap:                       cfg.TenantMap,
+		authEnabled:                     cfg.AuthEnabled,
+		allowGlobalTenant:               cfg.AllowGlobalTenant,
+		maxLines:                        maxLines,
+		forwardHeaders:                  cfg.ForwardHeaders,
+		forwardCookies:                  forwardCookies,
+		backendHeaders:                  backendHeaders,
+		derivedFields:                   cfg.DerivedFields,
+		streamResponse:                  cfg.StreamResponse,
+		emitStructuredMetadata:          cfg.EmitStructuredMetadata,
+		labelTranslator:                 NewLabelTranslator(cfg.LabelStyle, cfg.FieldMappings),
+		metadataFieldMode:               metadataFieldMode,
+		streamFieldsMap:                 buildStreamFieldsMap(cfg.StreamFields),
+		peerCache:                       cfg.PeerCache,
+		peerAuthToken:                   cfg.PeerAuthToken,
+		registerInstrumentation:         registerInstrumentation,
+		enablePprof:                     cfg.EnablePprof,
+		enableQueryAnalytics:            cfg.EnableQueryAnalytics,
+		adminAuthToken:                  cfg.AdminAuthToken,
+		tailAllowedOrigins:              tailAllowedOrigins,
+		tailMode:                        tailMode,
+		metricsTrustProxyHeaders:        cfg.MetricsTrustProxyHeaders,
+		translationCache:                cache.New(5*time.Minute, 5000),
+		queryRangeWindowing:             cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,
+		queryRangeSplitInterval:         cfg.QueryRangeSplitInterval,
+		queryRangeMaxParallel:           queryRangeMaxParallel,
+		queryRangeAdaptiveParallel:      cfg.QueryRangeAdaptiveParallel,
+		queryRangeParallelMin:           queryRangeParallelMin,
+		queryRangeParallelMax:           queryRangeParallelMax,
+		queryRangeLatencyTarget:         queryRangeLatencyTarget,
+		queryRangeLatencyBackoff:        queryRangeLatencyBackoff,
+		queryRangeAdaptiveCooldown:      queryRangeAdaptiveCooldown,
+		queryRangeErrorBackoffThreshold: queryRangeErrorBackoffThreshold,
+		queryRangeParallelCurrent:       queryRangeParallelMin,
+		queryRangeFreshness:             queryRangeFreshness,
+		queryRangeRecentCacheTTL:        queryRangeRecentCacheTTL,
+		queryRangeHistoryCacheTTL:       queryRangeHistoryCacheTTL,
 	}, nil
 }
 
@@ -1056,7 +1156,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQueryRange(sc, r, logsqlQuery)
 	} else {
-		p.proxyLogQuery(sc, r, logsqlQuery)
+		if !p.proxyLogQueryWindowed(sc, r, logsqlQuery) {
+			p.proxyLogQuery(sc, r, logsqlQuery)
+		}
 	}
 
 	if capture != nil {
@@ -2969,6 +3071,17 @@ func (p *Proxy) vlGetCoalesced(ctx context.Context, key, path string, params url
 		return p.vlGet(ctx, path, params)
 	})
 	return body, err
+}
+
+// vlPostCoalesced wraps vlPost with request coalescing and returns status + body.
+func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params url.Values) (int, []byte, error) {
+	status, _, body, err := p.coalescer.Do(key, func() (*http.Response, error) {
+		return p.vlPost(ctx, path, params)
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	return status, body, nil
 }
 
 // --- Stats query proxying ---

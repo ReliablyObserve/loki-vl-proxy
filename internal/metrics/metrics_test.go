@@ -264,6 +264,12 @@ func TestMetrics_RecordersAndHandler_ExposeAdditionalMetrics(t *testing.T) {
 	m.RecordBackendDuration("query_range", 25*time.Millisecond)
 	m.RecordCoalesced()
 	m.RecordCoalescedSaved()
+	m.RecordQueryRangeWindowCacheHit()
+	m.RecordQueryRangeWindowCacheMiss()
+	m.RecordQueryRangeWindowFetchDuration(20 * time.Millisecond)
+	m.RecordQueryRangeWindowMergeDuration(5 * time.Millisecond)
+	m.RecordQueryRangeWindowCount(3)
+	m.RecordQueryRangeAdaptiveState(4, 1400*time.Millisecond, 0.03)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/metrics", nil)
@@ -278,6 +284,14 @@ func TestMetrics_RecordersAndHandler_ExposeAdditionalMetrics(t *testing.T) {
 		`loki_vl_proxy_backend_duration_seconds_count{endpoint="query_range"} 1`,
 		`loki_vl_proxy_coalesced_total 1`,
 		`loki_vl_proxy_coalesced_saved_total 1`,
+		`loki_vl_proxy_window_cache_hit_total 1`,
+		`loki_vl_proxy_window_cache_miss_total 1`,
+		`loki_vl_proxy_window_fetch_seconds_count 1`,
+		`loki_vl_proxy_window_merge_seconds_count 1`,
+		`loki_vl_proxy_window_count_count 1`,
+		`loki_vl_proxy_window_adaptive_parallel_current 4`,
+		`loki_vl_proxy_window_adaptive_latency_ewma_seconds 1.4`,
+		`loki_vl_proxy_window_adaptive_error_ewma 0.03`,
 		`loki_vl_proxy_response_tuple_mode_total{mode="grafana_default_2tuple"} 2`,
 		`loki_vl_proxy_circuit_breaker_state 2`,
 	} {

@@ -55,6 +55,24 @@ extraArgs:
   backend: "http://victorialogs:9428"
   cache-ttl: "60s"
   cache-max: "10000"
+  # Loki-aligned query_range window cache defaults:
+  # - split by 1h windows
+  # - keep bounded backend fanout
+  # - do not cache near-now windows
+  # - keep historical windows warm for repeat drilldowns
+  query-range-windowing: "true"
+  query-range-split-interval: "1h"
+  query-range-max-parallel: "2"
+  query-range-adaptive-parallel: "true"
+  query-range-adaptive-min-parallel: "2"
+  query-range-adaptive-max-parallel: "8"
+  query-range-latency-target: "1.5s"
+  query-range-latency-backoff: "3s"
+  query-range-adaptive-cooldown: "30s"
+  query-range-error-backoff-threshold: "0.02"
+  query-range-freshness: "10m"
+  query-range-recent-cache-ttl: "0s"
+  query-range-history-cache-ttl: "24h"
   log-level: "info"
   # Hardening
   http-read-timeout: "30s"
@@ -68,6 +86,7 @@ extraArgs:
   # disk-cache-compress: "true"
   # disk-cache-flush-size: "100"
   # disk-cache-flush-interval: "5s"
+  # disk-cache-max-bytes: "21474836480" # 20Gi safety cap (0 = unlimited)
   # disk-cache-encryption-key: ""
   # otlp-endpoint: "http://otel-collector:4318/v1/metrics"
   # otlp-interval: "30s"
@@ -391,9 +410,11 @@ extraVolumeMounts: []
 # --- System metrics (/proc) ---
 # When enabled, mount host /proc read-only and point the proxy at that mount
 # so CPU/memory/disk/network/PSI metrics reflect node-level context.
+# Enabled by default to keep system-resource panels/alerts functional out of the box.
+# Disable only if your platform policy disallows hostPath mounts.
 systemMetrics:
   hostProc:
-    enabled: false
+    enabled: true
     mountPath: /host/proc
 
 # --- Gateway API HTTPRoute (traffic distribution) ---

@@ -200,6 +200,8 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 	metrics = append(metrics,
 		p.sumMetric("loki_vl_proxy_cache_hits_total", "Cache hits.", "", p.counterDP("loki_vl_proxy_cache_hits_total", p.metrics.cacheHits.Load(), now)),
 		p.sumMetric("loki_vl_proxy_cache_misses_total", "Cache misses.", "", p.counterDP("loki_vl_proxy_cache_misses_total", p.metrics.cacheMisses.Load(), now)),
+		p.sumMetric("loki_vl_proxy_window_cache_hit_total", "Query-range window cache hits.", "", p.counterDP("loki_vl_proxy_window_cache_hit_total", p.metrics.windowCacheHits.Load(), now)),
+		p.sumMetric("loki_vl_proxy_window_cache_miss_total", "Query-range window cache misses.", "", p.counterDP("loki_vl_proxy_window_cache_miss_total", p.metrics.windowCacheMisses.Load(), now)),
 		p.sumMetric("loki_vl_proxy_translations_total", "LogQL to LogsQL translations.", "", p.counterDP("loki_vl_proxy_translations_total", p.metrics.translationsTotal.Load(), now)),
 		p.sumMetric("loki_vl_proxy_translation_errors_total", "Failed translations.", "", p.counterDP("loki_vl_proxy_translation_errors_total", p.metrics.translationErrors.Load(), now)),
 		p.sumMetric("loki_vl_proxy_coalesced_total", "Requests served from coalesced results.", "", p.counterDP("loki_vl_proxy_coalesced_total", p.metrics.coalescedTotal.Load(), now)),
@@ -222,6 +224,7 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 	if circuitBreakerMetric := p.circuitBreakerMetric(now); circuitBreakerMetric != nil {
 		metrics = append(metrics, circuitBreakerMetric)
 	}
+	metrics = append(metrics, p.queryRangeWindowMetrics(now)...)
 
 	metrics = append(metrics, p.systemMetrics(now)...)
 
@@ -512,6 +515,55 @@ func (p *OTLPPusher) backendDurationMetrics(now int64) []map[string]interface{} 
 	return []map[string]interface{}{p.histogramMetric("loki_vl_proxy_backend_duration_seconds", "VL backend response time.", "s", points...)}
 }
 
+func (p *OTLPPusher) queryRangeWindowMetrics(now int64) []map[string]interface{} {
+	metrics := make([]map[string]interface{}, 0, 6)
+	if p.metrics.windowFetch != nil {
+		metrics = append(metrics, p.histogramMetric(
+			"loki_vl_proxy_window_fetch_seconds",
+			"Query-range window backend fetch duration.",
+			"s",
+			p.histogramDP(p.metrics.windowFetch, now),
+		))
+	}
+	if p.metrics.windowMerge != nil {
+		metrics = append(metrics, p.histogramMetric(
+			"loki_vl_proxy_window_merge_seconds",
+			"Query-range window merge duration.",
+			"s",
+			p.histogramDP(p.metrics.windowMerge, now),
+		))
+	}
+	if p.metrics.windowCount != nil {
+		metrics = append(metrics, p.histogramMetric(
+			"loki_vl_proxy_window_count",
+			"Query-range window count per request.",
+			"{window}",
+			p.histogramDP(p.metrics.windowCount, now),
+		))
+	}
+	metrics = append(metrics,
+		p.gaugeMetric(
+			"loki_vl_proxy_window_adaptive_parallel_current",
+			"Current adaptive query-range window parallelism.",
+			"{window}",
+			p.gaugeDP("loki_vl_proxy_window_adaptive_parallel_current", float64(p.metrics.windowAdaptiveParallelCurrent.Load()), now),
+		),
+		p.gaugeMetric(
+			"loki_vl_proxy_window_adaptive_latency_ewma_seconds",
+			"EWMA backend fetch latency for query-range windows.",
+			"s",
+			p.gaugeDP("loki_vl_proxy_window_adaptive_latency_ewma_seconds", float64(p.metrics.windowAdaptiveLatencyEWMAms.Load())/1000.0, now),
+		),
+		p.gaugeMetric(
+			"loki_vl_proxy_window_adaptive_error_ewma",
+			"Adaptive backend window fetch error EWMA ratio (0-1).",
+			"",
+			p.gaugeDP("loki_vl_proxy_window_adaptive_error_ewma", float64(p.metrics.windowAdaptiveErrorEWMAppm.Load())/1000000.0, now),
+		),
+	)
+	return metrics
+}
+
 func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
 	metrics := make([]map[string]interface{}, 0, 6)
 	reqKeys := sortedKeys(mapsFromCounters(p.metrics.clientRequests))
@@ -594,42 +646,42 @@ func (p *OTLPPusher) systemMetrics(now int64) []map[string]interface{} {
 	memTotal, memAvail, memFree := readMemInfo()
 	if memTotal > 0 {
 		metrics = append(metrics,
-			p.gaugeMetric("node_memory_total_bytes", "Total memory.", "By", p.gaugeDP("node_memory_total_bytes", float64(memTotal), now)),
-			p.gaugeMetric("node_memory_available_bytes", "Available memory.", "By", p.gaugeDP("node_memory_available_bytes", float64(memAvail), now)),
-			p.gaugeMetric("node_memory_free_bytes", "Free memory.", "By", p.gaugeDP("node_memory_free_bytes", float64(memFree), now)),
-			p.gaugeMetric("node_memory_usage_ratio", "Memory usage ratio (0-1).", "1", p.gaugeDP("node_memory_usage_ratio", float64(memTotal-memAvail)/float64(memTotal), now)),
+			p.gaugeMetric("process_memory_total_bytes", "Total memory.", "By", p.gaugeDP("process_memory_total_bytes", float64(memTotal), now)),
+			p.gaugeMetric("process_memory_available_bytes", "Available memory.", "By", p.gaugeDP("process_memory_available_bytes", float64(memAvail), now)),
+			p.gaugeMetric("process_memory_free_bytes", "Free memory.", "By", p.gaugeDP("process_memory_free_bytes", float64(memFree), now)),
+			p.gaugeMetric("process_memory_usage_ratio", "Memory usage ratio (0-1).", "1", p.gaugeDP("process_memory_usage_ratio", float64(memTotal-memAvail)/float64(memTotal), now)),
 		)
 	}
 	if rss := readProcessRSS(); rss > 0 {
 		metrics = append(metrics, p.gaugeMetric("process_resident_memory_bytes", "Process RSS.", "By", p.gaugeDP("process_resident_memory_bytes", float64(rss), now)))
 	}
 	metrics = append(metrics,
-		p.sumMetric("node_disk_read_bytes_total", "Disk read bytes.", "By", p.counterDP("node_disk_read_bytes_total", readBytes, now)),
-		p.sumMetric("node_disk_written_bytes_total", "Disk written bytes.", "By", p.counterDP("node_disk_written_bytes_total", writeBytes, now)),
-		p.sumMetric("node_network_receive_bytes_total", "Network receive bytes.", "By", p.counterDP("node_network_receive_bytes_total", rxBytes, now)),
-		p.sumMetric("node_network_transmit_bytes_total", "Network transmit bytes.", "By", p.counterDP("node_network_transmit_bytes_total", txBytes, now)),
+		p.sumMetric("process_disk_read_bytes_total", "Disk read bytes.", "By", p.counterDP("process_disk_read_bytes_total", readBytes, now)),
+		p.sumMetric("process_disk_written_bytes_total", "Disk written bytes.", "By", p.counterDP("process_disk_written_bytes_total", writeBytes, now)),
+		p.sumMetric("process_network_receive_bytes_total", "Network receive bytes.", "By", p.counterDP("process_network_receive_bytes_total", rxBytes, now)),
+		p.sumMetric("process_network_transmit_bytes_total", "Network transmit bytes.", "By", p.counterDP("process_network_transmit_bytes_total", txBytes, now)),
 	)
 	if cur, err := readCPUStat(); err == nil {
 		total := cur.user + cur.nice + cur.system + cur.idle + cur.iowait + cur.irq + cur.softirq + cur.steal
 		if total > 0 {
-			metrics = append(metrics, p.gaugeMetric("node_cpu_usage_ratio", "CPU usage ratio (0-1).", "1",
-				p.gaugeDP("node_cpu_usage_ratio", (cur.user+cur.nice)/total, now, attr("mode", "user")),
-				p.gaugeDP("node_cpu_usage_ratio", cur.system/total, now, attr("mode", "system")),
-				p.gaugeDP("node_cpu_usage_ratio", cur.iowait/total, now, attr("mode", "iowait")),
+			metrics = append(metrics, p.gaugeMetric("process_cpu_usage_ratio", "CPU usage ratio (0-1).", "1",
+				p.gaugeDP("process_cpu_usage_ratio", (cur.user+cur.nice)/total, now, attr("mode", "user")),
+				p.gaugeDP("process_cpu_usage_ratio", cur.system/total, now, attr("mode", "system")),
+				p.gaugeDP("process_cpu_usage_ratio", cur.iowait/total, now, attr("mode", "iowait")),
 			))
 		}
 	}
 	for _, resource := range []string{"cpu", "memory", "io"} {
 		some10, some60, some300, full10, full60, full300 := readPSI(resource)
 		if some10 >= 0 {
-			metrics = append(metrics, p.gaugeMetric("node_pressure_"+resource+"_some_ratio", "PSI some pressure.", "1",
+			metrics = append(metrics, p.gaugeMetric("process_pressure_"+resource+"_some_ratio", "PSI some pressure.", "1",
 				p.gaugeDP("", some10/100, now, attr("window", "10s")),
 				p.gaugeDP("", some60/100, now, attr("window", "60s")),
 				p.gaugeDP("", some300/100, now, attr("window", "300s")),
 			))
 		}
 		if full10 >= 0 {
-			metrics = append(metrics, p.gaugeMetric("node_pressure_"+resource+"_full_ratio", "PSI full pressure.", "1",
+			metrics = append(metrics, p.gaugeMetric("process_pressure_"+resource+"_full_ratio", "PSI full pressure.", "1",
 				p.gaugeDP("", full10/100, now, attr("window", "10s")),
 				p.gaugeDP("", full60/100, now, attr("window", "60s")),
 				p.gaugeDP("", full300/100, now, attr("window", "300s")),

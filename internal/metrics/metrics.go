@@ -46,6 +46,16 @@ type Metrics struct {
 	// Tuple emission mode stats
 	tupleModes map[string]*atomic.Int64 // "mode" -> count
 
+	// Query-range windowing stats
+	windowCacheHits               atomic.Int64
+	windowCacheMisses             atomic.Int64
+	windowFetch                   *histogram
+	windowMerge                   *histogram
+	windowCount                   *histogram
+	windowAdaptiveParallelCurrent atomic.Int64
+	windowAdaptiveLatencyEWMAms   atomic.Int64
+	windowAdaptiveErrorEWMAppm    atomic.Int64
+
 	// Client error tracking
 	clientErrors map[string]*atomic.Int64 // "endpoint:reason" → count
 
@@ -138,6 +148,9 @@ func NewMetricsWithLimits(maxTenantLabels, maxClientLabels int) *Metrics {
 		clientStatuses:      make(map[string]*atomic.Int64),
 		clientInflight:      make(map[string]*atomic.Int64),
 		clientQueryLengths:  make(map[string]*histogram),
+		windowFetch:         newHistogram(),
+		windowMerge:         newHistogram(),
+		windowCount:         newHistogram(),
 		system:              NewSystemMetrics(),
 		startTime:           time.Now(),
 		maxTenantLabels:     maxTenantLabels,
@@ -527,6 +540,55 @@ func (m *Metrics) RecordCoalesced() { m.coalescedTotal.Add(1) }
 // RecordCoalescedSaved records a backend request that was saved by coalescing.
 func (m *Metrics) RecordCoalescedSaved() { m.coalescedSaved.Add(1) }
 
+// RecordQueryRangeWindowCacheHit records a query_range window cache hit.
+func (m *Metrics) RecordQueryRangeWindowCacheHit() { m.windowCacheHits.Add(1) }
+
+// RecordQueryRangeWindowCacheMiss records a query_range window cache miss.
+func (m *Metrics) RecordQueryRangeWindowCacheMiss() { m.windowCacheMisses.Add(1) }
+
+// RecordQueryRangeWindowFetchDuration records backend fetch latency for one query_range window.
+func (m *Metrics) RecordQueryRangeWindowFetchDuration(d time.Duration) {
+	if m.windowFetch == nil {
+		return
+	}
+	m.windowFetch.observe(d.Seconds())
+}
+
+// RecordQueryRangeWindowMergeDuration records merge latency for one windowed query_range response.
+func (m *Metrics) RecordQueryRangeWindowMergeDuration(d time.Duration) {
+	if m.windowMerge == nil {
+		return
+	}
+	m.windowMerge.observe(d.Seconds())
+}
+
+// RecordQueryRangeWindowCount records how many windows were used for a query_range request.
+func (m *Metrics) RecordQueryRangeWindowCount(n int) {
+	if m.windowCount == nil || n <= 0 {
+		return
+	}
+	m.windowCount.observe(float64(n))
+}
+
+// RecordQueryRangeAdaptiveState records adaptive query_range controller state.
+func (m *Metrics) RecordQueryRangeAdaptiveState(currentParallel int, latencyEWMA time.Duration, errorEWMA float64) {
+	if currentParallel < 0 {
+		currentParallel = 0
+	}
+	if latencyEWMA < 0 {
+		latencyEWMA = 0
+	}
+	if errorEWMA < 0 {
+		errorEWMA = 0
+	}
+	if errorEWMA > 1 {
+		errorEWMA = 1
+	}
+	m.windowAdaptiveParallelCurrent.Store(int64(currentParallel))
+	m.windowAdaptiveLatencyEWMAms.Store(latencyEWMA.Milliseconds())
+	m.windowAdaptiveErrorEWMAppm.Store(int64(errorEWMA * 1_000_000))
+}
+
 // Handler serves Prometheus metrics at /metrics.
 func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	var sb strings.Builder
@@ -733,6 +795,63 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_coalesced_saved_total Backend requests saved by coalescing.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_coalesced_saved_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_coalesced_saved_total %d\n", m.coalescedSaved.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_cache_hit_total Query-range window cache hits.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_cache_hit_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_cache_hit_total %d\n", m.windowCacheHits.Load())
+	sb.WriteString("# HELP loki_vl_proxy_window_cache_miss_total Query-range window cache misses.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_cache_miss_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_cache_miss_total %d\n", m.windowCacheMisses.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_fetch_seconds Query-range window backend fetch duration.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_fetch_seconds histogram\n")
+	if m.windowFetch != nil {
+		m.windowFetch.mu.Lock()
+		for i, b := range m.windowFetch.buckets {
+			fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_bucket{le=\"%g\"} %d\n", b, m.windowFetch.counts[i])
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_bucket{le=\"+Inf\"} %d\n", m.windowFetch.count)
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_sum %g\n", m.windowFetch.sum)
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_count %d\n", m.windowFetch.count)
+		m.windowFetch.mu.Unlock()
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_window_merge_seconds Query-range window merge duration.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_merge_seconds histogram\n")
+	if m.windowMerge != nil {
+		m.windowMerge.mu.Lock()
+		for i, b := range m.windowMerge.buckets {
+			fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_bucket{le=\"%g\"} %d\n", b, m.windowMerge.counts[i])
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_bucket{le=\"+Inf\"} %d\n", m.windowMerge.count)
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_sum %g\n", m.windowMerge.sum)
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_count %d\n", m.windowMerge.count)
+		m.windowMerge.mu.Unlock()
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_window_count Query-range window count per request.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_count histogram\n")
+	if m.windowCount != nil {
+		m.windowCount.mu.Lock()
+		for i, b := range m.windowCount.buckets {
+			fmt.Fprintf(&sb, "loki_vl_proxy_window_count_bucket{le=\"%g\"} %d\n", b, m.windowCount.counts[i])
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_bucket{le=\"+Inf\"} %d\n", m.windowCount.count)
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_sum %g\n", m.windowCount.sum)
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_count %d\n", m.windowCount.count)
+		m.windowCount.mu.Unlock()
+	}
+	sb.WriteString("# HELP loki_vl_proxy_window_adaptive_parallel_current Current adaptive query-range window parallelism.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_adaptive_parallel_current gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_adaptive_parallel_current %d\n", m.windowAdaptiveParallelCurrent.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_adaptive_latency_ewma_seconds EWMA backend fetch latency for query-range windows.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_adaptive_latency_ewma_seconds gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_adaptive_latency_ewma_seconds %g\n", float64(m.windowAdaptiveLatencyEWMAms.Load())/1000.0)
+
+	sb.WriteString("# HELP loki_vl_proxy_window_adaptive_error_ewma Adaptive backend window fetch error EWMA ratio (0-1).\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_adaptive_error_ewma gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_adaptive_error_ewma %g\n", float64(m.windowAdaptiveErrorEWMAppm.Load())/1000000.0)
 
 	// Per-client identity metrics
 	sb.WriteString("# HELP loki_vl_proxy_client_requests_total Requests by client identity.\n")

@@ -207,6 +207,17 @@ helm install loki-vl-proxy ./charts/loki-vl-proxy \
   --set extraArgs.backend=http://victorialogs:9428
 ```
 
+Loki-aligned `query_range` caching defaults are enabled in the chart:
+
+- `-query-range-windowing=true`
+- `-query-range-split-interval=1h`
+- `-query-range-max-parallel=2`
+- `-query-range-freshness=10m`
+- `-query-range-recent-cache-ttl=0s` (no near-now cache)
+- `-query-range-history-cache-ttl=24h`
+
+For deterministic disk usage, set `-disk-cache-max-bytes` (for example `20Gi`) instead of relying only on PVC capacity.
+
 ### Fleet Cache (Multi-Replica)
 
 ```bash
@@ -249,8 +260,11 @@ datasources:
 Proxy-side datasource helpers:
 
 - `-cache-max-bytes` to set the primary L1 in-memory cache budget explicitly
+- `-disk-cache-max-bytes` to cap L2 disk usage explicitly (`0` means unlimited)
 - `-compat-cache-enabled` to keep the Tier0 compatibility-edge cache on or off
 - `-compat-cache-max-percent` to reserve a bounded share of the L1 memory budget for Tier0, defaulting to 10% and capped at 50%
+- `-query-range-windowing` plus `-query-range-history-cache-ttl` to reuse historical time windows and reduce repeated long-range backend scans
+- `-query-range-adaptive-parallel` with min/max bounds to adapt backend fanout safely from live latency/error feedback
 - `-backend-timeout` for long Grafana queries against VL
 - `-forward-headers` and `-forward-cookies` for backend auth/context passthrough
 - `-metrics.trust-proxy-headers` plus Grafana `[dataproxy] send_user_header=true` to attribute logs/metrics to real Grafana users (`enduser.id`) while keeping datasource auth principals separate (`auth.*`)
@@ -265,6 +279,39 @@ Proxy-side datasource helpers:
 - `-tls-client-ca-file` and `-tls-require-client-cert` for HTTPS client auth
 - `-tail.mode=auto|native|synthetic` to choose native tail, forced synthetic tail, or the default native-with-fallback behavior
 - `-tail.allowed-origins` when Grafana or another browser client must use `/tail`
+
+### Query-Range Tuning (Long-Range Efficiency)
+
+Default Loki-aligned behavior:
+
+- split long `query_range` into `1h` windows
+- disable near-now window cache (`recent-cache-ttl=0s`)
+- cache historical windows for `24h`
+- adaptive parallel fetch starts at `2` and can grow up to `8` when backend latency/error remain healthy
+
+Sizing formula for persistent disk cache:
+
+`disk_bytes ~= unique_window_keys_per_day * avg_window_entry_bytes * ttl_days`
+
+In this repo's sizing tests, average compressed entry size is roughly `56 KiB`, which is a good planning baseline:
+
+- `1 GiB` disk: around `18k` windows
+- `10 GiB` disk: around `189k` windows
+- `50 GiB` disk: around `948k` windows
+
+Use these metrics to tune safely:
+
+- `loki_vl_proxy_window_adaptive_parallel_current`
+- `loki_vl_proxy_window_adaptive_latency_ewma_seconds`
+- `loki_vl_proxy_window_adaptive_error_ewma`
+- `loki_vl_proxy_window_cache_hit_total` / `loki_vl_proxy_window_cache_miss_total`
+- `loki_vl_proxy_window_fetch_seconds`
+
+Rule of thumb:
+
+- if latency/error EWMA stay low during peak, increase `adaptive-max-parallel`
+- if cache hit ratio is low and repeated historical ranges are common, increase `history-cache-ttl` and disk size together
+- always set `-disk-cache-max-bytes` when extending retention windows to keep usage bounded
 
 ### Why The Cache Stack Matters
 
