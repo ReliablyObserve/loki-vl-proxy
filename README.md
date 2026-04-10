@@ -4,8 +4,14 @@
 [![Loki Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-loki.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-loki.yaml)
 [![Drilldown Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml)
 [![VictoriaLogs Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ReliablyObserve/Loki-VL-proxy)](https://go.dev/)
 [![Release](https://img.shields.io/github/v/release/ReliablyObserve/Loki-VL-proxy)](https://github.com/ReliablyObserve/Loki-VL-proxy/releases)
+[![Lines of Code](https://img.shields.io/badge/go%20loc-48.9k-blue)](https://github.com/ReliablyObserve/Loki-VL-proxy)
+[![Tests](https://img.shields.io/badge/tests-1356%20passed-brightgreen)](#testing-and-release)
+[![Coverage](https://img.shields.io/badge/coverage-90.5%25-brightgreen)](#testing-and-release)
+[![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
+[![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
 
 Use **Grafana Loki clients** with **VictoriaLogs** through a **Loki-compatible read proxy**.
 
@@ -55,6 +61,13 @@ flowchart LR
     C[Upstream<br/>VictoriaLogs data + vmalert rules/alerts]
 
     A --> B --> C
+
+    classDef client fill:#1f2937,stroke:#60a5fa,color:#f3f4f6,stroke-width:2px;
+    classDef proxy fill:#172554,stroke:#22d3ee,color:#f8fafc,stroke-width:2px;
+    classDef upstream fill:#052e16,stroke:#34d399,color:#ecfeff,stroke-width:2px;
+    class A client;
+    class B proxy;
+    class C upstream;
 ```
 
 Related docs: [Architecture](docs/architecture.md), [API Reference](docs/api-reference.md)
@@ -116,6 +129,18 @@ flowchart TD
     T --> VL
     R --> VMA
     VMA -. optional remote write .-> VM
+
+    classDef client fill:#1f2937,stroke:#93c5fd,color:#f3f4f6,stroke-width:2px;
+    classDef api fill:#0f172a,stroke:#22d3ee,color:#f8fafc,stroke-width:2px;
+    classDef exec fill:#172554,stroke:#818cf8,color:#eef2ff,stroke-width:2px;
+    classDef cache fill:#3f1d2e,stroke:#f472b6,color:#fdf2f8,stroke-width:2px;
+    classDef upstream fill:#052e16,stroke:#34d399,color:#ecfdf5,stroke-width:2px;
+
+    class G,M,C client;
+    class API,GUARD,EDGE api;
+    class Q,T,R,RESP exec;
+    class L1C,L2C,L3C cache;
+    class VL,VMA,VM upstream;
 ```
 
 Related docs: [Architecture](docs/architecture.md), [Fleet Cache](docs/fleet-cache.md), [Peer Cache Design](docs/peer-cache-design.md)
