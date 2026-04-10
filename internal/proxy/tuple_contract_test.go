@@ -131,15 +131,12 @@ func assertCategorizeLabelsThreeTupleContract(t *testing.T, body []byte) {
 
 func assertMetadataPairArray(t *testing.T, raw json.RawMessage, key string) {
 	t.Helper()
-	var pairs []struct {
-		Name  string `json:"name"`
-		Value string `json:"value"`
-	}
+	var pairs [][]string
 	if err := json.Unmarshal(raw, &pairs); err != nil {
 		t.Fatalf("expected %s to be Loki label-pair array, got %s: %v", key, string(raw), err)
 	}
 	for _, pair := range pairs {
-		if pair.Name == "" {
+		if len(pair) < 2 || pair[0] == "" {
 			t.Fatalf("expected non-empty %s pair name in %s", key, string(raw))
 		}
 	}

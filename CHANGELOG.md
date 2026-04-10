@@ -7,11 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- normalize merged query stream metadata to Loki pair-tuples (`[[name,value], ...]`) so legacy/object-shaped metadata cannot trigger strict decoder `ReadArray` failures
+
+### Tests
+
+- extend tuple regression coverage for query-range and multitenant merge paths to lock pair-tuple metadata compatibility
+
 ## [0.27.24] - 2026-04-10
 
 ### Bug Fixes
 
-- emit `structuredMetadata` and `parsed` tuple metadata in Loki label-pair array shape (`[{name,value}]`) when `X-Loki-Response-Encoding-Flags: categorize-labels` is enabled, preventing strict decoder `ReadArray` failures on object-shaped payloads
+- emit `structuredMetadata` and `parsed` tuple metadata as Loki pair-tuples (`[[name,value], ...]`) when `X-Loki-Response-Encoding-Flags: categorize-labels` is enabled, preventing strict decoder `ReadArray` failures on object-shaped or `{name,value}` pair payloads
+- normalize multi-tenant merged stream metadata to pair-tuples (`[[name,value], ...]`) so legacy backend shapes cannot leak incompatible tuple payloads to strict decoders
 
 ### Tests
 

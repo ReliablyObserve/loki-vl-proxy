@@ -415,7 +415,7 @@ func TestMergeMultiTenantResponsesQueryInjectsTenantLabel(t *testing.T) {
 func TestMergeMultiTenantResponsesQueryPreservesThreeTupleValues(t *testing.T) {
 	body, _, err := mergeMultiTenantResponses("query", []string{"tenant-a", "tenant-b"}, []*httptest.ResponseRecorder{
 		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["2","line-a",{"structuredMetadata":[{"name":"service.name","value":"orders"}]}]]}]}}`),
-		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["1","line-b",{"parsed":[{"name":"status","value":"200"}]}]]}]}}`),
+		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["1","line-b",{"parsed":{"status":"200"}}]]}]}}`),
 	})
 	if err != nil {
 		t.Fatalf("mergeMultiTenantResponses failed: %v", err)
@@ -442,13 +442,27 @@ func TestMergeMultiTenantResponsesQueryPreservesThreeTupleValues(t *testing.T) {
 			t.Fatalf("expected metadata object in tuple[2], got %#v", item.Values[0][2])
 		}
 		if structured, ok := meta["structuredMetadata"]; ok {
-			if _, ok := structured.([]interface{}); !ok {
+			pairs, ok := structured.([]interface{})
+			if !ok {
 				t.Fatalf("expected structuredMetadata label-pair array, got %#v", structured)
+			}
+			for _, rawPair := range pairs {
+				pair, ok := rawPair.([]interface{})
+				if !ok || len(pair) < 2 {
+					t.Fatalf("expected structuredMetadata pair tuple, got %#v", rawPair)
+				}
 			}
 		}
 		if parsed, ok := meta["parsed"]; ok {
-			if _, ok := parsed.([]interface{}); !ok {
+			pairs, ok := parsed.([]interface{})
+			if !ok {
 				t.Fatalf("expected parsed label-pair array, got %#v", parsed)
+			}
+			for _, rawPair := range pairs {
+				pair, ok := rawPair.([]interface{})
+				if !ok || len(pair) < 2 {
+					t.Fatalf("expected parsed pair tuple, got %#v", rawPair)
+				}
 			}
 		}
 	}
