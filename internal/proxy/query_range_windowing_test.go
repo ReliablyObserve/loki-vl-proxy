@@ -153,6 +153,74 @@ func TestQueryRangeWindow_ParserChainBraceHeavyLine(t *testing.T) {
 	}
 }
 
+func TestQueryRangeWindow_CategorizeLabelsUsesLokiPairArrays(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		startNs, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+		msg := `time="2026-01-01T00:00:00Z" level=error status=500 component=ingester`
+		_, _ = fmt.Fprintf(w, "{\"_time\":%q,\"_msg\":%q,\"_stream\":\"{app=\\\"iptables\\\"}\",\"http.status_code\":\"500\"}\n", time.Unix(0, startNs).UTC().Format(time.RFC3339Nano), msg)
+	}))
+	defer vlBackend.Close()
+
+	p := newWindowingTestProxy(t, vlBackend.URL)
+	p.emitStructuredMetadata = true
+
+	start := time.Now().Add(-12 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	end := start + int64(2*time.Hour) - 1
+	q := `{app="iptables"} | json | logfmt | drop __error__, __error_details__`
+	req := httptest.NewRequest("GET", fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=100", url.QueryEscape(q), start, end), nil)
+	req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+	resp := httptest.NewRecorder()
+	p.handleQueryRange(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	var payload struct {
+		Data struct {
+			Result []struct {
+				Values []json.RawMessage `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("failed to decode response: %v body=%s", err, resp.Body.String())
+	}
+	if len(payload.Data.Result) == 0 || len(payload.Data.Result[0].Values) == 0 {
+		t.Fatalf("expected non-empty stream values: %#v", payload.Data.Result)
+	}
+
+	var tuple []json.RawMessage
+	if err := json.Unmarshal(payload.Data.Result[0].Values[0], &tuple); err != nil {
+		t.Fatalf("expected stream tuple array, got %s: %v", string(payload.Data.Result[0].Values[0]), err)
+	}
+	if len(tuple) != 3 {
+		t.Fatalf("expected categorize-labels 3-tuple, got len=%d tuple=%s", len(tuple), string(payload.Data.Result[0].Values[0]))
+	}
+
+	var metadata struct {
+		StructuredMetadata []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"structuredMetadata"`
+		Parsed []struct {
+			Name  string `json:"name"`
+			Value string `json:"value"`
+		} `json:"parsed"`
+	}
+	if err := json.Unmarshal(tuple[2], &metadata); err != nil {
+		t.Fatalf("expected tuple[2] metadata object with Loki pair arrays, got %s: %v", string(tuple[2]), err)
+	}
+	if len(metadata.Parsed) == 0 && len(metadata.StructuredMetadata) == 0 {
+		t.Fatalf("expected parsed and/or structuredMetadata pairs, got %s", string(tuple[2]))
+	}
+	for _, pair := range append(metadata.StructuredMetadata, metadata.Parsed...) {
+		if pair.Name == "" {
+			t.Fatalf("expected non-empty metadata pair name, got %s", string(tuple[2]))
+		}
+	}
+}
+
 func TestQueryRangeWindow_MultiTenantCompatibility(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()

@@ -218,22 +218,31 @@ func firstStreamStructuredMetadata(t *testing.T, response map[string]interface{}
 	if _, ok := meta["structured_metadata"]; ok {
 		t.Fatalf("non-Loki structured_metadata alias must not be emitted: %#v", meta)
 	}
-	structuredRaw, ok := meta["structuredMetadata"].(map[string]interface{})
+	structuredRaw, ok := meta["structuredMetadata"].([]interface{})
 	if !ok {
 		t.Fatalf("expected structuredMetadata key in metadata object, got %#v", meta)
 	}
 
 	structured := make(map[string]string, len(structuredRaw))
-	for k, v := range structuredRaw {
+	for _, item := range structuredRaw {
+		pair, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected structured metadata pair object, got %#v", item)
+		}
+		name, _ := pair["name"].(string)
+		if name == "" {
+			t.Fatalf("expected non-empty structured metadata name in %#v", pair)
+		}
+		v := pair["value"]
 		switch typed := v.(type) {
 		case string:
-			structured[k] = typed
+			structured[name] = typed
 		case float64:
-			structured[k] = fmt.Sprintf("%g", typed)
+			structured[name] = fmt.Sprintf("%g", typed)
 		case bool:
-			structured[k] = fmt.Sprintf("%t", typed)
+			structured[name] = fmt.Sprintf("%t", typed)
 		default:
-			structured[k] = fmt.Sprintf("%v", typed)
+			structured[name] = fmt.Sprintf("%v", typed)
 		}
 	}
 	return structured
