@@ -414,8 +414,8 @@ func TestMergeMultiTenantResponsesQueryInjectsTenantLabel(t *testing.T) {
 
 func TestMergeMultiTenantResponsesQueryPreservesThreeTupleValues(t *testing.T) {
 	body, _, err := mergeMultiTenantResponses("query", []string{"tenant-a", "tenant-b"}, []*httptest.ResponseRecorder{
-		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["2","line-a",{"structuredMetadata":{"service.name":"orders"}}]]}]}}`),
-		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["1","line-b",{"parsed":{"status":"200"}}]]}]}}`),
+		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["2","line-a",{"structuredMetadata":[{"name":"service.name","value":"orders"}]}]]}]}}`),
+		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["1","line-b",{"parsed":[{"name":"status","value":"200"}]}]]}]}}`),
 	})
 	if err != nil {
 		t.Fatalf("mergeMultiTenantResponses failed: %v", err)
@@ -436,6 +436,20 @@ func TestMergeMultiTenantResponsesQueryPreservesThreeTupleValues(t *testing.T) {
 	for _, item := range resp.Data.Result {
 		if len(item.Values) == 0 || len(item.Values[0]) != 3 {
 			t.Fatalf("expected merged stream values to preserve 3-tuple shape, got %#v", item.Values)
+		}
+		meta, ok := item.Values[0][2].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected metadata object in tuple[2], got %#v", item.Values[0][2])
+		}
+		if structured, ok := meta["structuredMetadata"]; ok {
+			if _, ok := structured.([]interface{}); !ok {
+				t.Fatalf("expected structuredMetadata label-pair array, got %#v", structured)
+			}
+		}
+		if parsed, ok := meta["parsed"]; ok {
+			if _, ok := parsed.([]interface{}); !ok {
+				t.Fatalf("expected parsed label-pair array, got %#v", parsed)
+			}
 		}
 	}
 }

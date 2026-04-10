@@ -111,6 +111,12 @@ func assertCategorizeLabelsThreeTupleContract(t *testing.T, body []byte) {
 			if _, ok := metadata["structured_metadata"]; ok {
 				t.Fatalf("non-Loki structured_metadata alias must not be emitted: %s", string(tuple[2]))
 			}
+			if raw, ok := metadata["structuredMetadata"]; ok {
+				assertMetadataPairArray(t, raw, "structuredMetadata")
+			}
+			if raw, ok := metadata["parsed"]; ok {
+				assertMetadataPairArray(t, raw, "parsed")
+			}
 			if _, ok := metadata["structuredMetadata"]; !ok {
 				if _, ok := metadata["parsed"]; !ok {
 					t.Fatalf("expected structuredMetadata and/or parsed metadata keys, got %s", string(tuple[2]))
@@ -120,6 +126,22 @@ func assertCategorizeLabelsThreeTupleContract(t *testing.T, body []byte) {
 	}
 	if tupleCount == 0 {
 		t.Fatalf("expected at least one tuple in response body=%s", string(body))
+	}
+}
+
+func assertMetadataPairArray(t *testing.T, raw json.RawMessage, key string) {
+	t.Helper()
+	var pairs []struct {
+		Name  string `json:"name"`
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal(raw, &pairs); err != nil {
+		t.Fatalf("expected %s to be Loki label-pair array, got %s: %v", key, string(raw), err)
+	}
+	for _, pair := range pairs {
+		if pair.Name == "" {
+			t.Fatalf("expected non-empty %s pair name in %s", key, string(raw))
+		}
 	}
 }
 
