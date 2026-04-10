@@ -44,6 +44,20 @@ jobs:
           name: coverage
           path: coverage.out
 
+  tuple-contract:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+
+      - name: Tuple contract gate (Grafana default must remain strict 2-tuple)
+        run: go test ./internal/proxy -run '^TestTupleContract_' -count=1
+
   bench:
     runs-on: ubuntu-latest
     steps:

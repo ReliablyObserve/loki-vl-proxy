@@ -184,6 +184,47 @@ rules:
       action: "Identify top offending clients and inspect rejected query patterns."
       runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-client-bad-request-burst.md'
 
+  - alert: LokiVLProxyGrafanaDefault3TupleUnexpected
+    expr: sum(rate(loki_vl_proxy_response_tuple_mode_total{mode="grafana_default_3tuple"}[10m])) > 0
+    for: 5m
+    labels:
+      severity: critical
+      service: loki-vl-proxy
+      component: grafana-contract
+      category: compatibility
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "Grafana default request emitted 3-tuple response"
+      description: "Proxy observed grafana_default_3tuple emissions for 5 minutes."
+      impact: "Explore/Drilldown requests can fail with ReadArray tuple-shape decode errors."
+      action: "Validate tuple contract smoke script and inspect recent query path changes."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-grafana-tuple-contract.md'
+
+  - alert: LokiVLProxyGrafanaDefault2TupleMissing
+    expr: |
+      sum(rate(loki_vl_proxy_response_tuple_mode_total{mode=~"grafana_default_2tuple|grafana_optin_3tuple|grafana_default_3tuple"}[10m])) > 0
+      and
+      sum(rate(loki_vl_proxy_response_tuple_mode_total{mode="grafana_default_2tuple"}[10m])) == 0
+    for: 10m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: grafana-contract
+      category: compatibility
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "Grafana default 2-tuple emissions missing"
+      description: "Grafana tuple-mode traffic exists but grafana_default_2tuple stayed at zero for 10 minutes."
+      impact: "Tuple-shape drift is likely; Grafana decode failures may follow."
+      action: "Run tuple smoke canary and verify `structured_metadata` overrides are not being forced globally."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-grafana-tuple-contract.md'
+
   - alert: LokiVLProxySystemMetricsMissing
     expr: absent(node_memory_usage_ratio{job="{{ include "loki-vl-proxy.fullname" . }}"})
     for: 15m

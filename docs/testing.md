@@ -6,6 +6,9 @@
 # Unit tests
 go test ./...
 
+# Dedicated tuple-shape contract gate used in CI
+go test ./internal/proxy -run '^TestTupleContract_' -count=1
+
 # With race detector
 go test -race ./...
 
@@ -43,6 +46,9 @@ docker run --rm \
 
 # Build binary
 go build -o loki-vl-proxy ./cmd/proxy
+
+# Post-deploy Grafana tuple contract canary (expects recent log data)
+PROXY_URL=http://127.0.0.1:3100 ./scripts/smoke-test.sh
 ```
 
 ## Test Coverage by Category

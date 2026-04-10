@@ -257,6 +257,8 @@ func TestMetrics_RecordersAndHandler_ExposeAdditionalMetrics(t *testing.T) {
 	m.SetCircuitBreakerFunc(func() string { return "half-open" })
 	m.RecordTenantRequest("team-a", "query_range", 200, 15*time.Millisecond)
 	m.RecordClientError("query_range", "bad_query")
+	m.RecordTupleMode("grafana_default_2tuple")
+	m.RecordTupleMode("grafana_default_2tuple")
 	m.RecordEndpointCacheHit("labels")
 	m.RecordEndpointCacheMiss("labels")
 	m.RecordBackendDuration("query_range", 25*time.Millisecond)
@@ -276,6 +278,7 @@ func TestMetrics_RecordersAndHandler_ExposeAdditionalMetrics(t *testing.T) {
 		`loki_vl_proxy_backend_duration_seconds_count{endpoint="query_range"} 1`,
 		`loki_vl_proxy_coalesced_total 1`,
 		`loki_vl_proxy_coalesced_saved_total 1`,
+		`loki_vl_proxy_response_tuple_mode_total{mode="grafana_default_2tuple"} 2`,
 		`loki_vl_proxy_circuit_breaker_state 2`,
 	} {
 		if !strings.Contains(body, snippet) {

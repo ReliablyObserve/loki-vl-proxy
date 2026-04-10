@@ -43,6 +43,9 @@ type Metrics struct {
 	translationsTotal atomic.Int64
 	translationErrors atomic.Int64
 
+	// Tuple emission mode stats
+	tupleModes map[string]*atomic.Int64 // "mode" -> count
+
 	// Client error tracking
 	clientErrors map[string]*atomic.Int64 // "endpoint:reason" → count
 
@@ -128,6 +131,7 @@ func NewMetricsWithLimits(maxTenantLabels, maxClientLabels int) *Metrics {
 		endpointCacheHits:   make(map[string]*atomic.Int64),
 		endpointCacheMisses: make(map[string]*atomic.Int64),
 		backendDurations:    make(map[string]*histogram),
+		tupleModes:          make(map[string]*atomic.Int64),
 		clientRequests:      make(map[string]*atomic.Int64),
 		clientDurations:     make(map[string]*histogram),
 		clientBytes:         make(map[string]*atomic.Int64),
@@ -443,6 +447,27 @@ func (m *Metrics) RecordCacheMiss()        { m.cacheMisses.Add(1) }
 func (m *Metrics) RecordTranslation()      { m.translationsTotal.Add(1) }
 func (m *Metrics) RecordTranslationError() { m.translationErrors.Add(1) }
 
+// RecordTupleMode records the emitted tuple mode for a log query response.
+func (m *Metrics) RecordTupleMode(mode string) {
+	mode = strings.TrimSpace(mode)
+	if mode == "" {
+		return
+	}
+	m.mu.RLock()
+	counter, ok := m.tupleModes[mode]
+	m.mu.RUnlock()
+	if !ok {
+		m.mu.Lock()
+		counter, ok = m.tupleModes[mode]
+		if !ok {
+			counter = &atomic.Int64{}
+			m.tupleModes[mode] = counter
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+}
+
 // RecordEndpointCacheHit records a cache hit for a specific endpoint.
 func (m *Metrics) RecordEndpointCacheHit(endpoint string) {
 	m.cacheHits.Add(1)
@@ -557,6 +582,17 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_translation_errors_total Failed translations.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_translation_errors_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_translation_errors_total %d\n", m.translationErrors.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_response_tuple_mode_total Log response tuple mode emissions by client behavior.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_response_tuple_mode_total counter\n")
+	tmKeys := make([]string, 0, len(m.tupleModes))
+	for mode := range m.tupleModes {
+		tmKeys = append(tmKeys, mode)
+	}
+	sort.Strings(tmKeys)
+	for _, mode := range tmKeys {
+		fmt.Fprintf(&sb, "loki_vl_proxy_response_tuple_mode_total{mode=%q} %d\n", mode, m.tupleModes[mode].Load())
+	}
 
 	sb.WriteString("# HELP loki_vl_proxy_uptime_seconds Proxy uptime.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_uptime_seconds gauge\n")

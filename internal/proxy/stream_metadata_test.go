@@ -240,12 +240,12 @@ func TestShouldEmitStructuredMetadata_AllowsQueryParamOptOut(t *testing.T) {
 	}
 }
 
-func TestShouldEmitStructuredMetadata_NonGrafanaDefaultsToEnabled(t *testing.T) {
+func TestShouldEmitStructuredMetadata_EnablesForNonGrafanaByDefault(t *testing.T) {
 	p := newStreamMetadataTestProxy(t, true)
 	req := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
 
 	if !p.shouldEmitStructuredMetadata(req) {
-		t.Fatal("expected structured metadata enabled by default for non-Grafana callers")
+		t.Fatal("expected structured metadata enabled for non-Grafana callers by default")
 	}
 }
 
@@ -295,5 +295,43 @@ func TestQueryRange_GrafanaDefaultStaysTwoTupleForStrictDecoders(t *testing.T) {
 	}
 	if strict.Data.Result[0].Values[0][1] == "" {
 		t.Fatalf("expected non-empty log line in strict decode tuple, got %+v", strict.Data.Result[0].Values[0])
+	}
+}
+
+func TestRequestLooksLikeGrafana(t *testing.T) {
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	if requestLooksLikeGrafana(req) {
+		t.Fatal("expected non-Grafana request by default")
+	}
+
+	req.Header.Set("X-Grafana-User", "admin")
+	if !requestLooksLikeGrafana(req) {
+		t.Fatal("expected Grafana detection from X-Grafana-User")
+	}
+
+	req = httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	req.Header.Set("User-Agent", "Grafana/12.4.2")
+	if !requestLooksLikeGrafana(req) {
+		t.Fatal("expected Grafana detection from User-Agent")
+	}
+}
+
+func TestTupleModeForRequest(t *testing.T) {
+	grafanaReq := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	grafanaReq.Header.Set("X-Grafana-User", "admin")
+	if got := tupleModeForRequest(grafanaReq, false); got != "grafana_default_2tuple" {
+		t.Fatalf("unexpected mode for Grafana default 2-tuple: %q", got)
+	}
+
+	grafanaOptInReq := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	grafanaOptInReq.Header.Set("X-Grafana-User", "admin")
+	grafanaOptInReq.Header.Set("X-Loki-Response-Encoding-Flags", "structured-metadata")
+	if got := tupleModeForRequest(grafanaOptInReq, true); got != "grafana_optin_3tuple" {
+		t.Fatalf("unexpected mode for Grafana opt-in 3-tuple: %q", got)
+	}
+
+	nonGrafanaReq := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	if got := tupleModeForRequest(nonGrafanaReq, true); got != "nongrafana_3tuple" {
+		t.Fatalf("unexpected mode for non-Grafana 3-tuple: %q", got)
 	}
 }

@@ -10,10 +10,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - restore Grafana-safe tuple defaults when `-emit-structured-metadata=true`: Explore/Drilldown requests now stay on canonical `[timestamp, line]` unless explicitly opted into `structured_metadata=true` (or `X-Loki-Response-Encoding-Flags: structured-metadata`), preventing `ReadArray` decode regressions
+- harden Grafana sand metrics dashboard templating with universal regex-safe variables (`job`, `cluster`, `env`, `namespace`, `service`, `pod`) and default service scoping to reduce duplicated/noisy series
 
 ### Tests
 
-- add strict query-range regression coverage that decodes Grafana responses as `[2]string` tuples and fails on any metadata-object tuple shape leak
+- add strict tuple-shape regression coverage that decodes Grafana responses as `[2]string` tuples and fails on any metadata-object tuple shape leak
+- add explicit tuple-contract tests for `/query_range`, `/query`, stream-response mode, multi-tenant merge, and parser-chain brace-heavy logs
+
+### CI
+
+- add a dedicated tuple-shape contract gate in CI (`TestTupleContract_*`) so Grafana default stream responses fail fast on any 3-tuple regression
+
+### Observability
+
+- add tuple-mode regression alerts for unexpected `grafana_default_3tuple` emissions and missing `grafana_default_2tuple` emissions while Grafana tuple traffic is present
+
+### Documentation
+
+- add `scripts/smoke-test.sh` deploy canary to validate strict 2-tuple Grafana responses on `/query_range` and `/query`
+- add a dedicated Grafana tuple-contract runbook and include it in the alert runbook index
 
 ## [0.27.17] - 2026-04-10
 

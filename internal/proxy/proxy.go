@@ -3424,6 +3424,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	// Chunked streaming: flush partial results as they arrive from VL
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
+	p.metrics.RecordTupleMode(tupleModeForRequest(r, emitStructuredMetadata))
 	if p.streamResponse {
 		p.streamLogQuery(w, resp, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 		return
@@ -4190,10 +4191,36 @@ func requestLooksLikeGrafana(r *http.Request) bool {
 	if r == nil {
 		return false
 	}
-	if strings.TrimSpace(r.Header.Get("X-Grafana-User")) != "" || strings.TrimSpace(r.Header.Get("X-Grafana-Org-Id")) != "" {
+	if strings.TrimSpace(r.Header.Get("X-Grafana-User")) != "" {
 		return true
 	}
-	return strings.Contains(strings.ToLower(strings.TrimSpace(r.Header.Get("User-Agent"))), "grafana")
+	if strings.TrimSpace(r.Header.Get("X-Grafana-Org-Id")) != "" {
+		return true
+	}
+	if strings.TrimSpace(r.Header.Get("X-Dashboard-Uid")) != "" {
+		return true
+	}
+	ua := strings.ToLower(strings.TrimSpace(r.Header.Get("User-Agent")))
+	return strings.Contains(ua, "grafana")
+}
+
+func tupleModeForRequest(r *http.Request, emitStructuredMetadata bool) string {
+	isGrafana := requestLooksLikeGrafana(r)
+	overrideEnabled, overrideSet := requestStructuredMetadataOverride(r)
+
+	if isGrafana {
+		if !emitStructuredMetadata {
+			return "grafana_default_2tuple"
+		}
+		if overrideSet && overrideEnabled {
+			return "grafana_optin_3tuple"
+		}
+		return "grafana_default_3tuple"
+	}
+	if emitStructuredMetadata {
+		return "nongrafana_3tuple"
+	}
+	return "nongrafana_2tuple"
 }
 
 func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
@@ -4206,8 +4233,7 @@ func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
 	if enabled, ok := requestStructuredMetadataOverride(r); ok {
 		return enabled
 	}
-	// Keep Grafana clients on canonical [ts, line] tuples unless they opt in.
-	// This avoids ReadArray/decode regressions across Explore/Drilldown versions.
+	// Keep Grafana default on canonical 2-tuples unless explicit opt-in is sent.
 	if requestLooksLikeGrafana(r) {
 		return false
 	}
