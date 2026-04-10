@@ -931,7 +931,7 @@ func TestTenant_QueryRangeCacheKeyUsesRawQueryWhenAvailable(t *testing.T) {
 	r.Header.Set("X-Scope-OrgID", "tenant-a")
 
 	got := p.queryRangeCacheKey(r, `{app="nginx"}`)
-	want := `query_range:tenant-a:end=2&query={app="nginx"}&start=1&step=1`
+	want := `query_range:tenant-a:end=2&query={app="nginx"}&start=1&step=1:default_2tuple`
 	if got != want {
 		t.Fatalf("queryRangeCacheKey() = %q, want %q", got, want)
 	}

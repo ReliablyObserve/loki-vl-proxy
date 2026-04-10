@@ -260,3 +260,63 @@ func TestTupleContract_CategorizeLabelsQueryThreeTuple(t *testing.T) {
 	}
 	assertCategorizeLabelsThreeTupleContract(t, rec.Body.Bytes())
 }
+
+func TestTupleContract_QueryRangeCacheSegregatesTupleModes(t *testing.T) {
+	backend := makeTupleContractBackend(t)
+	defer backend.Close()
+
+	p := newTupleContractProxy(t, backend.URL, false)
+	params := url.Values{}
+	params.Set("query", `{job="tuple-contract"} |= "api" | json | logfmt | drop __error__, __error_details__`)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	params.Set("limit", "50")
+
+	categorizedReq := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	categorizedReq.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+	categorizedRec := httptest.NewRecorder()
+	p.handleQueryRange(categorizedRec, categorizedReq)
+	if categorizedRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", categorizedRec.Code, categorizedRec.Body.String())
+	}
+	assertCategorizeLabelsThreeTupleContract(t, categorizedRec.Body.Bytes())
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	defaultRec := httptest.NewRecorder()
+	p.handleQueryRange(defaultRec, defaultReq)
+	if defaultRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", defaultRec.Code, defaultRec.Body.String())
+	}
+	assertStrictTwoTupleContract(t, defaultRec.Body.Bytes())
+}
+
+func TestTupleContract_MultiTenantQueryRangeCacheSegregatesTupleModes(t *testing.T) {
+	backend := makeTupleContractBackend(t)
+	defer backend.Close()
+
+	p := newTupleContractProxy(t, backend.URL, false)
+	params := url.Values{}
+	params.Set("query", `{job="tuple-contract"} |= "level=error" | json | logfmt | drop __error__, __error_details__`)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	params.Set("limit", "50")
+
+	categorizedReq := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	categorizedReq.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+	categorizedReq.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+	categorizedRec := httptest.NewRecorder()
+	p.handleQueryRange(categorizedRec, categorizedReq)
+	if categorizedRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", categorizedRec.Code, categorizedRec.Body.String())
+	}
+	assertCategorizeLabelsThreeTupleContract(t, categorizedRec.Body.Bytes())
+
+	defaultReq := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	defaultReq.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
+	defaultRec := httptest.NewRecorder()
+	p.handleQueryRange(defaultRec, defaultReq)
+	if defaultRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", defaultRec.Code, defaultRec.Body.String())
+	}
+	assertStrictTwoTupleContract(t, defaultRec.Body.Bytes())
+}
