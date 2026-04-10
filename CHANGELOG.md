@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.13] - 2026-04-10
+
 ### Features
 
 - add Service `trafficDistribution` support across chart service resources (`service` and `peerService`), including configurable values for `PreferSameZone`, `PreferSameNode`, and deprecated alias `PreferClose`
