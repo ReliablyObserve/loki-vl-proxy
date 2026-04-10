@@ -19,6 +19,8 @@ No custom Grafana datasource plugin. No sidecar translation service. One small s
 - **Production guardrails**: Tenant isolation, bounded fanout, circuit breaking, rate limits, and safe caching.
 - **Fast repeat reads**: Tiered cache with optional disk and fleet peer reuse.
 
+Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/compatibility-matrix.md), [Operations](docs/operations.md)
+
 ## Key Features
 
 ### Compatibility
@@ -42,6 +44,8 @@ No custom Grafana datasource plugin. No sidecar translation service. One small s
 - Compatibility CI tracks for Loki, Logs Drilldown, and VictoriaLogs.
 - Runbook-backed alerting assets for operational response.
 
+Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Observability](docs/observability.md), [Testing](docs/testing.md)
+
 ## High-Level Flow
 
 ```mermaid
@@ -52,6 +56,8 @@ flowchart LR
 
     A --> B --> C
 ```
+
+Related docs: [Architecture](docs/architecture.md), [API Reference](docs/api-reference.md)
 
 ## Detailed Architecture
 
@@ -112,6 +118,8 @@ flowchart TD
     VMA -. optional remote write .-> VM
 ```
 
+Related docs: [Architecture](docs/architecture.md), [Fleet Cache](docs/fleet-cache.md), [Peer Cache Design](docs/peer-cache-design.md)
+
 ## Product Scope
 
 Loki-VL-proxy is intentionally a **read/query proxy**.
@@ -120,6 +128,8 @@ Loki-VL-proxy is intentionally a **read/query proxy**.
 - Out of scope: ingestion pipeline ownership (`push` is blocked), rule write lifecycle.
 
 Use VictoriaLogs-side ingestion (`vlagent`, OTLP, native JSON/OTel, Loki-push-to-VL) and query that data through this proxy.
+
+Related docs: [API Reference](docs/api-reference.md), [Rules And Alerts Migration](docs/rules-alerts-migration.md), [Known Issues](docs/KNOWN_ISSUES.md)
 
 ## Quick Start
 
@@ -162,6 +172,8 @@ datasources:
       httpHeaderValue1: team-alpha
 ```
 
+Related docs: [Getting Started](docs/getting-started.md), [Configuration](docs/configuration.md), [Operations](docs/operations.md)
+
 ## Compatibility Guarantees (Operator-Relevant)
 
 - **Loki tuple safety**:
@@ -171,6 +183,8 @@ datasources:
   - query cache keys are split by tuple mode to prevent 3-tuple/2-tuple cross-contamination
 - **Grafana-first behavior**:
   - compatibility tracks continuously verify Loki API, Logs Drilldown, and VictoriaLogs integration
+
+Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Loki Compatibility](docs/compatibility-loki.md), [Logs Drilldown Compatibility](docs/compatibility-drilldown.md), [VictoriaLogs Compatibility](docs/compatibility-victorialogs.md)
 
 ## LogQL Compatibility
 
