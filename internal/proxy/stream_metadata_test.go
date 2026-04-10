@@ -63,7 +63,7 @@ func decodeFirstTuple(t *testing.T, body []byte) []interface{} {
 
 func labelPairsToMap(t *testing.T, raw interface{}) map[string]string {
 	t.Helper()
-	out := map[string]string{}
+	var out map[string]string
 	switch items := raw.(type) {
 	case []interface{}:
 		out = make(map[string]string, len(items))
