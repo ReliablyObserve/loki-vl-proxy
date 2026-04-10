@@ -15,8 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - dedupe translated metric `by(...)` labels after alias mapping so queries that combine canonical and alias fields (for example `level` plus `detected_level`) do not emit duplicate stats grouping columns
-- add opt-in `-emit-structured-metadata` support for Loki-style stream 3-tuples `[timestamp, line, metadata]` while keeping default query responses on canonical 2-tuples for compatibility
-- expose `structured_metadata` as a compatibility alias alongside canonical `structuredMetadata` in emitted stream metadata payloads
+- make query tuple shape strictly Loki-compliant: default/no-flag requests return canonical 2-tuples, while `X-Loki-Response-Encoding-Flags: categorize-labels` returns Loki-style 3-tuples with `structuredMetadata` and/or `parsed`
+- remove non-Loki `structured_metadata` tuple key alias from query responses and keep only canonical Loki metadata keys
+- add strict `/query` and `/query_range` compliance regressions (default 2-tuple and categorize-labels 3-tuple), including parser-chain and stream-response coverage for brace-heavy log lines
 
 ### Documentation
 

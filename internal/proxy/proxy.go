@@ -25,11 +25,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"github.com/gorilla/websocket"
 	"gopkg.in/yaml.v3"
 )
 
@@ -104,6 +104,11 @@ const (
 	TailModeSynthetic TailMode = "synthetic"
 )
 
+const (
+	lokiResponseEncodingFlagsHeader         = "X-Loki-Response-Encoding-Flags"
+	lokiResponseEncodingCategorizeLabelsTag = "categorize-labels"
+)
+
 type Config struct {
 	BackendURL        string
 	RulerBackendURL   string
@@ -130,8 +135,9 @@ type Config struct {
 	BackendTLSSkip   bool              // skip TLS verification for VL backend
 	DerivedFields    []DerivedField    // derived fields for trace/link extraction
 	StreamResponse   bool              // stream responses via chunked transfer (default: false)
-	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
-	// Disabled by default for conservative datasource compatibility.
+	// EmitStructuredMetadata enables Loki categorize-labels metadata payloads.
+	// When enabled, requests with X-Loki-Response-Encoding-Flags=categorize-labels
+	// emit Loki 3-tuples [ts, line, metadata]. Default/no-flag requests stay 2-tuples.
 	EmitStructuredMetadata bool
 
 	// Label translation
@@ -2165,6 +2171,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r = withOrgID(r)
+	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 
 	tailCtx, tailCancel := context.WithCancel(r.Context())
 	defer tailCancel()
@@ -2206,7 +2213,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 
 	if p.tailMode == TailModeSynthetic {
 		p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery, "native", false, "fallback", "forced synthetic tail mode")
-		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, r.FormValue("start"))
+		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, logqlQuery, r.FormValue("start"), emitStructuredMetadata)
 		return
 	}
 
@@ -2217,7 +2224,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 			_ = p.writeTailControl(conn, websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, fallbackReason))
 			return
 		}
-		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, r.FormValue("start"))
+		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, logqlQuery, r.FormValue("start"), emitStructuredMetadata)
 		return
 	}
 	defer resp.Body.Close()
@@ -2265,7 +2272,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Convert to Loki tail frame
-			frame := p.vlLineToTailFrame(vlLine)
+			frame := p.vlLineToTailFrame(vlLine, logqlQuery, emitStructuredMetadata)
 			frameJSON, err := json.Marshal(frame)
 			if err != nil {
 				continue
@@ -2344,7 +2351,7 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	return nil, false, fmt.Sprintf("backend tail unavailable: %s", msg)
 }
 
-func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQuery, startHint string) {
+func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQuery, logqlQuery, startHint string, emitStructuredMetadata bool) {
 	lastSeen := newSyntheticTailSeen(maxSyntheticTailSeenEntries)
 	windowStart := time.Now().Add(-5 * time.Second)
 	if parsed, ok := parseEntryTime(startHint); ok {
@@ -2355,7 +2362,7 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQu
 	defer ticker.Stop()
 
 	for {
-		if err := p.writeSyntheticTailBatch(ctx, conn, logsqlQuery, &windowStart, lastSeen); err != nil {
+		if err := p.writeSyntheticTailBatch(ctx, conn, logsqlQuery, logqlQuery, &windowStart, lastSeen, emitStructuredMetadata); err != nil {
 			p.log.Debug("synthetic tail batch failed", "error", err)
 		}
 
@@ -2367,7 +2374,7 @@ func (p *Proxy) streamSyntheticTail(ctx context.Context, conn tailConn, logsqlQu
 	}
 }
 
-func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logsqlQuery string, windowStart *time.Time, lastSeen *syntheticTailSeen) error {
+func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logsqlQuery, logqlQuery string, windowStart *time.Time, lastSeen *syntheticTailSeen, emitStructuredMetadata bool) error {
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time)")
 	params.Set("start", formatVLTimestamp(windowStart.UTC().Format(time.RFC3339Nano)))
@@ -2410,7 +2417,7 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 			newest = entryTime
 		}
 
-		frameJSON, err := json.Marshal(p.vlLineToTailFrame(vlLine))
+		frameJSON, err := json.Marshal(p.vlLineToTailFrame(vlLine, logqlQuery, emitStructuredMetadata))
 		if err != nil {
 			continue
 		}
@@ -2473,7 +2480,7 @@ func (p *Proxy) writeTailControl(conn tailConn, messageType int, data []byte) er
 }
 
 // vlLineToTailFrame converts a single VL NDJSON log line to a Loki tail WebSocket frame.
-func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}) map[string]interface{} {
+func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}, originalQuery string, emitStructuredMetadata bool) map[string]interface{} {
 	ts := ""
 	msg := ""
 
@@ -2496,7 +2503,7 @@ func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}) map[string]inte
 		ts = fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 
-	labels := buildEntryLabels(vlLine)
+	labels, metadata := p.classifyEntryFields(vlLine, originalQuery)
 	translatedLabels := labels
 	if !p.labelTranslator.IsPassthrough() {
 		translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
@@ -2508,7 +2515,7 @@ func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}) map[string]inte
 		"streams": []map[string]interface{}{
 			{
 				"stream": translatedLabels,
-				"values": [][]string{{ts, msg}},
+				"values": buildStreamValues(ts, msg, metadata, emitStructuredMetadata),
 			},
 		},
 	}
@@ -3325,6 +3332,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 		return
 	}
 	defer resp.Body.Close()
+	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 
 	// Propagate VL error status to the client
 	if resp.StatusCode >= 400 {
@@ -3339,7 +3347,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 
 	// Chunked streaming: flush partial results as they arrive from VL
 	if p.streamResponse {
-		p.streamLogQuery(w, resp)
+		p.streamLogQuery(w, resp, r.FormValue("query"), emitStructuredMetadata)
 		return
 	}
 
@@ -3347,7 +3355,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 
 	// VL returns newline-delimited JSON, each line is a log entry.
 	// Loki expects: {"status":"success","data":{"resultType":"streams","result":[...]}}
-	streams := p.vlLogsToLokiStreams(body, r.FormValue("query"))
+	streams := p.vlLogsToLokiStreams(body, r.FormValue("query"), emitStructuredMetadata)
 
 	// Apply derived fields (extract trace_id etc. from log lines)
 	if len(p.derivedFields) > 0 {
@@ -3381,7 +3389,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 }
 
 // streamLogQuery streams VL NDJSON response as chunked Loki-compatible JSON.
-func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response) {
+func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, originalQuery string, emitStructuredMetadata bool) {
 	flusher, canFlush := w.(http.Flusher)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -3419,7 +3427,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response) {
 			continue
 		}
 
-		labels, metadata := p.classifyEntryFields(entry, "")
+		labels, metadata := p.classifyEntryFields(entry, originalQuery)
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
@@ -3429,7 +3437,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response) {
 
 		stream := map[string]interface{}{
 			"stream": translatedLabels,
-			"values": buildStreamValues(tsNanos, msg, metadata, p.emitStructuredMetadata),
+			"values": buildStreamValues(tsNanos, msg, metadata, emitStructuredMetadata),
 		}
 
 		chunk, _ := json.Marshal(stream)
@@ -3622,7 +3630,7 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 	return result
 }
 
-func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string) []map[string]interface{} {
+func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string, emitStructuredMetadata bool) []map[string]interface{} {
 	type streamEntry struct {
 		Labels map[string]string
 		Values []interface{}
@@ -3685,7 +3693,7 @@ func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string) []map[str
 			}
 			streamMap[streamKey] = se
 		}
-		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, metadata, p.emitStructuredMetadata))
+		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, metadata, emitStructuredMetadata))
 		vlEntryPool.Put(entry)
 	}
 
@@ -3729,10 +3737,31 @@ func buildStreamValues(ts, msg string, metadata map[string]interface{}, emitStru
 }
 
 func buildStreamValue(ts, msg string, metadata map[string]interface{}, emitStructuredMetadata bool) interface{} {
-	if emitStructuredMetadata && len(metadata) > 0 {
+	if emitStructuredMetadata {
+		if len(metadata) == 0 {
+			return []interface{}{ts, msg, map[string]interface{}{}}
+		}
 		return []interface{}{ts, msg, metadata}
 	}
 	return []interface{}{ts, msg}
+}
+
+func requestWantsCategorizedLabels(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	for _, value := range r.Header.Values(lokiResponseEncodingFlagsHeader) {
+		for _, token := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(token), lokiResponseEncodingCategorizeLabelsTag) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
+	return p.emitStructuredMetadata && requestWantsCategorizedLabels(r)
 }
 
 func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string) (map[string]string, map[string]interface{}) {
@@ -3780,10 +3809,7 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 
 	metadata := map[string]interface{}{}
 	if len(structuredMetadataFields) > 0 {
-		// Keep canonical Loki query-response shape while exposing a snake_case alias
-		// for clients that still read structured metadata under that key.
 		metadata["structuredMetadata"] = structuredMetadataFields
-		metadata["structured_metadata"] = structuredMetadataFields
 	}
 	if len(parsedFields) > 0 {
 		metadata["parsed"] = parsedFields
@@ -4181,7 +4207,7 @@ type lokiQueryResponse struct {
 
 type lokiStreamResult struct {
 	Stream map[string]string `json:"stream"`
-	Values [][]string        `json:"values"`
+	Values [][]interface{}   `json:"values"`
 }
 
 type lokiVectorResult struct {
@@ -4680,14 +4706,14 @@ func mergeLokiQueryResponses(tenantIDs []string, recorders []*httptest.ResponseR
 	return body, "application/json", err
 }
 
-func latestStreamTimestampStrings(values [][]string) string {
+func latestStreamTimestampStrings(values [][]interface{}) string {
 	if len(values) == 0 {
 		return ""
 	}
 	if len(values[0]) == 0 {
 		return ""
 	}
-	return values[0][0]
+	return fmt.Sprintf("%v", values[0][0])
 }
 
 func mergeIndexStatsResponses(recorders []*httptest.ResponseRecorder) ([]byte, string, error) {

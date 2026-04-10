@@ -412,6 +412,34 @@ func TestMergeMultiTenantResponsesQueryInjectsTenantLabel(t *testing.T) {
 	}
 }
 
+func TestMergeMultiTenantResponsesQueryPreservesThreeTupleValues(t *testing.T) {
+	body, _, err := mergeMultiTenantResponses("query", []string{"tenant-a", "tenant-b"}, []*httptest.ResponseRecorder{
+		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["2","line-a",{"structuredMetadata":{"service.name":"orders"}}]]}]}}`),
+		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["1","line-b",{"parsed":{"status":"200"}}]]}]}}`),
+	})
+	if err != nil {
+		t.Fatalf("mergeMultiTenantResponses failed: %v", err)
+	}
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Values [][]interface{} `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Data.Result) != 2 {
+		t.Fatalf("expected 2 merged streams, got %#v", resp.Data.Result)
+	}
+	for _, item := range resp.Data.Result {
+		if len(item.Values) == 0 || len(item.Values[0]) != 3 {
+			t.Fatalf("expected merged stream values to preserve 3-tuple shape, got %#v", item.Values)
+		}
+	}
+}
+
 func TestMergeMultiTenantResponsesQueryVectorInjectsTenantLabel(t *testing.T) {
 	body, _, err := mergeMultiTenantResponses("query", []string{"tenant-a", "tenant-b"}, []*httptest.ResponseRecorder{
 		recorderWithJSON(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{"app":"api"},"value":[1,"2"]}],"stats":{"summary":"ok"}}}`),
@@ -479,10 +507,10 @@ func TestLatestStreamTimestampStrings(t *testing.T) {
 	if got := latestStreamTimestampStrings(nil); got != "" {
 		t.Fatalf("expected empty timestamp for nil input, got %q", got)
 	}
-	if got := latestStreamTimestampStrings([][]string{{}}); got != "" {
+	if got := latestStreamTimestampStrings([][]interface{}{{}}); got != "" {
 		t.Fatalf("expected empty timestamp for empty pair, got %q", got)
 	}
-	if got := latestStreamTimestampStrings([][]string{{"42", "line"}}); got != "42" {
+	if got := latestStreamTimestampStrings([][]interface{}{{"42", "line"}}); got != "42" {
 		t.Fatalf("expected first timestamp, got %q", got)
 	}
 }

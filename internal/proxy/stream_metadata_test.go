@@ -1,20 +1,25 @@
 package proxy
 
 import (
-	"reflect"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
-func newStreamMetadataTestProxy(t *testing.T, emitStructuredMetadata bool) *Proxy {
+func newStreamMetadataProxy(t *testing.T, backendURL string, emitStructuredMetadata, streamResponse bool) *Proxy {
 	t.Helper()
 	p, err := New(Config{
-		BackendURL:             "http://unused",
+		BackendURL:             backendURL,
 		Cache:                  cache.New(30*time.Second, 100),
 		LogLevel:               "error",
 		EmitStructuredMetadata: emitStructuredMetadata,
+		StreamResponse:         streamResponse,
 		MetadataFieldMode:      MetadataFieldModeHybrid,
 		LabelStyle:             LabelStylePassthrough,
 	})
@@ -24,87 +29,232 @@ func newStreamMetadataTestProxy(t *testing.T, emitStructuredMetadata bool) *Prox
 	return p
 }
 
-func TestVLLogsToLokiStreams_DefaultValuesStayTwoTuple(t *testing.T) {
-	p := newStreamMetadataTestProxy(t, false)
-	body := []byte(`{"_time":"2026-01-01T00:00:00Z","_msg":"ok","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","deployment.environment.name":"dev","level":"info"}` + "\n")
+func backendWithSingleNDJSONLine(t *testing.T, line string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte(line + "\n"))
+	}))
+}
 
-	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"}`)
-	if len(streams) != 1 {
-		t.Fatalf("expected 1 stream, got %d", len(streams))
+func decodeFirstTuple(t *testing.T, body []byte) []interface{} {
+	t.Helper()
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Values [][]interface{} `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
 	}
-	values, ok := streams[0]["values"].([]interface{})
-	if !ok || len(values) != 1 {
-		t.Fatalf("expected one stream value, got %#v", streams[0]["values"])
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
 	}
-	pair, ok := values[0].([]interface{})
-	if !ok {
-		t.Fatalf("expected stream value to be tuple, got %T", values[0])
+	if len(resp.Data.Result) != 1 {
+		t.Fatalf("expected one stream result, got %#v", resp.Data.Result)
 	}
-	if len(pair) != 2 {
-		t.Fatalf("expected canonical [ts, line] tuple, got %v", pair)
+	if len(resp.Data.Result[0].Values) != 1 {
+		t.Fatalf("expected one tuple value, got %#v", resp.Data.Result[0].Values)
+	}
+	return resp.Data.Result[0].Values[0]
+}
+
+func TestRequestWantsCategorizedLabels(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	if requestWantsCategorizedLabels(req) {
+		t.Fatal("unexpected categorize-labels for empty header")
+	}
+
+	req.Header.Set(lokiResponseEncodingFlagsHeader, "foo, categorize-labels,bar")
+	if !requestWantsCategorizedLabels(req) {
+		t.Fatal("expected categorize-labels to be detected from flag list")
+	}
+
+	req.Header.Set(lokiResponseEncodingFlagsHeader, "foo,bar")
+	if requestWantsCategorizedLabels(req) {
+		t.Fatal("did not expect categorize-labels for unrelated flags")
 	}
 }
 
-func TestVLLogsToLokiStreams_EmitStructuredMetadataAddsThirdTupleValue(t *testing.T) {
-	p := newStreamMetadataTestProxy(t, true)
-	body := []byte(`{"_time":"2026-01-01T00:00:00Z","_msg":"ok","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","deployment.environment.name":"dev","level":"info"}` + "\n")
+func TestShouldEmitStructuredMetadata(t *testing.T) {
+	pDisabled := newStreamMetadataProxy(t, "http://unused", false, false)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set(lokiResponseEncodingFlagsHeader, "categorize-labels")
+	if pDisabled.shouldEmitStructuredMetadata(req) {
+		t.Fatal("must not emit metadata when feature flag is disabled")
+	}
 
-	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"}`)
-	if len(streams) != 1 {
-		t.Fatalf("expected 1 stream, got %d", len(streams))
+	pEnabled := newStreamMetadataProxy(t, "http://unused", true, false)
+	noFlags := httptest.NewRequest("GET", "/", nil)
+	if pEnabled.shouldEmitStructuredMetadata(noFlags) {
+		t.Fatal("must not emit metadata for default requests without flags")
 	}
-	values, ok := streams[0]["values"].([]interface{})
-	if !ok || len(values) != 1 {
-		t.Fatalf("expected one stream value, got %#v", streams[0]["values"])
-	}
-	pair, ok := values[0].([]interface{})
-	if !ok {
-		t.Fatalf("expected stream value to be tuple, got %T", values[0])
-	}
-	if len(pair) != 3 {
-		t.Fatalf("expected [ts, line, metadata] tuple, got %v", pair)
-	}
-	meta, ok := pair[2].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected metadata object in tuple[2], got %T", pair[2])
-	}
-	canonical, ok := meta["structuredMetadata"]
-	if !ok {
-		t.Fatalf("expected structuredMetadata payload, got %v", meta)
-	}
-	snakeCase, ok := meta["structured_metadata"]
-	if !ok {
-		t.Fatalf("expected structured_metadata payload alias, got %v", meta)
-	}
-	if !reflect.DeepEqual(canonical, snakeCase) {
-		t.Fatalf("expected structured metadata alias to mirror canonical value, got canonical=%v alias=%v", canonical, snakeCase)
+	if !pEnabled.shouldEmitStructuredMetadata(req) {
+		t.Fatal("expected metadata emission when categorize-labels flag is present")
 	}
 }
 
-func TestVLLogsToLokiStreams_EmitStructuredMetadataWithParserPopulatesParsedPayload(t *testing.T) {
-	p := newStreamMetadataTestProxy(t, true)
-	body := []byte(`{"_time":"2026-01-01T00:00:00Z","_msg":"{\"message\":\"ok\",\"status\":200}","_stream":"{job=\"otel-proxy\",level=\"info\"}","http.status_code":"200","level":"info"}` + "\n")
+func TestQueryRange_DefaultRequestStaysTwoTupleForStrictDecoders(t *testing.T) {
+	vlBackend := backendWithSingleNDJSONLine(t, `{"_time":"2026-01-01T00:00:00Z","_msg":"line","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","level":"info"}`)
+	defer vlBackend.Close()
 
-	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"} | json`)
-	if len(streams) != 1 {
-		t.Fatalf("expected 1 stream, got %d", len(streams))
+	p := newStreamMetadataProxy(t, vlBackend.URL, true, false)
+	q := url.Values{}
+	q.Set("query", `{job="otel-proxy"}`)
+	q.Set("start", "1")
+	q.Set("end", "2")
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
+	rec := httptest.NewRecorder()
+
+	p.handleQueryRange(rec, req)
+	tuple := decodeFirstTuple(t, rec.Body.Bytes())
+	if len(tuple) != 2 {
+		t.Fatalf("expected strict 2-tuple default query_range response, got %#v", tuple)
 	}
-	values, ok := streams[0]["values"].([]interface{})
-	if !ok || len(values) != 1 {
-		t.Fatalf("expected one stream value, got %#v", streams[0]["values"])
+}
+
+func TestQueryRange_CategorizeLabelsReturnsLokiThreeTuple(t *testing.T) {
+	vlBackend := backendWithSingleNDJSONLine(t, `{"_time":"2026-01-01T00:00:00Z","_msg":"line","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","level":"info"}`)
+	defer vlBackend.Close()
+
+	p := newStreamMetadataProxy(t, vlBackend.URL, true, false)
+	q := url.Values{}
+	q.Set("query", `{job="otel-proxy"}`)
+	q.Set("start", "1")
+	q.Set("end", "2")
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
+	req.Header.Set(lokiResponseEncodingFlagsHeader, "categorize-labels")
+	rec := httptest.NewRecorder()
+
+	p.handleQueryRange(rec, req)
+	tuple := decodeFirstTuple(t, rec.Body.Bytes())
+	if len(tuple) != 3 {
+		t.Fatalf("expected 3-tuple categorize-labels response, got %#v", tuple)
 	}
-	pair, ok := values[0].([]interface{})
+	meta, ok := tuple[2].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected stream value to be tuple, got %T", values[0])
+		t.Fatalf("expected metadata object at tuple[2], got %T", tuple[2])
 	}
-	if len(pair) != 3 {
-		t.Fatalf("expected [ts, line, metadata] tuple, got %v", pair)
+	if _, ok := meta["structuredMetadata"]; !ok {
+		t.Fatalf("expected Loki structuredMetadata payload, got %#v", meta)
 	}
-	meta, ok := pair[2].(map[string]interface{})
+	if _, ok := meta["structured_metadata"]; ok {
+		t.Fatalf("non-Loki structured_metadata alias must not be emitted, got %#v", meta)
+	}
+}
+
+func TestQuery_CategorizeLabelsReturnsThreeTuple(t *testing.T) {
+	vlBackend := backendWithSingleNDJSONLine(t, `{"_time":"2026-01-01T00:00:00Z","_msg":"line","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","level":"info"}`)
+	defer vlBackend.Close()
+
+	p := newStreamMetadataProxy(t, vlBackend.URL, true, false)
+	q := url.Values{}
+	q.Set("query", `{job="otel-proxy"}`)
+	req := httptest.NewRequest("GET", "/loki/api/v1/query?"+q.Encode(), nil)
+	req.Header.Set(lokiResponseEncodingFlagsHeader, "categorize-labels")
+	rec := httptest.NewRecorder()
+
+	p.handleQuery(rec, req)
+	tuple := decodeFirstTuple(t, rec.Body.Bytes())
+	if len(tuple) != 3 {
+		t.Fatalf("expected 3-tuple categorize-labels query response, got %#v", tuple)
+	}
+}
+
+func TestQuery_DefaultRequestStaysTwoTupleForStrictDecoders(t *testing.T) {
+	vlBackend := backendWithSingleNDJSONLine(t, `{"_time":"2026-01-01T00:00:00Z","_msg":"line","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","level":"info"}`)
+	defer vlBackend.Close()
+
+	p := newStreamMetadataProxy(t, vlBackend.URL, true, false)
+	q := url.Values{}
+	q.Set("query", `{job="otel-proxy"}`)
+	req := httptest.NewRequest("GET", "/loki/api/v1/query?"+q.Encode(), nil)
+	rec := httptest.NewRecorder()
+
+	p.handleQuery(rec, req)
+	tuple := decodeFirstTuple(t, rec.Body.Bytes())
+	if len(tuple) != 2 {
+		t.Fatalf("expected strict 2-tuple default query response, got %#v", tuple)
+	}
+}
+
+func TestStreamLogQuery_StreamingModePreservesThreeTupleMetadata(t *testing.T) {
+	// Brace-heavy line + parser chain protects the regression that previously broke Drilldown/Explore.
+	vlBackend := backendWithSingleNDJSONLine(t, `{"_time":"2026-01-01T00:00:00Z","_msg":"time=\"2026-01-01T00:00:00Z\" level=error msg=\"Failed to call api\" details=\"{\\\"code\\\":500,\\\"path\\\":\\\"/api/v1/orders\\\"}\"","_stream":"{job=\"otel-proxy\",level=\"error\"}","http.status_code":"500","level":"error"}`)
+	defer vlBackend.Close()
+
+	p := newStreamMetadataProxy(t, vlBackend.URL, true, true)
+	q := url.Values{}
+	q.Set("query", `{job="otel-proxy"} | json | logfmt | drop __error__, __error_details__`)
+	q.Set("start", "1")
+	q.Set("end", "2")
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
+	req.Header.Set(lokiResponseEncodingFlagsHeader, "categorize-labels")
+	rec := httptest.NewRecorder()
+
+	p.handleQueryRange(rec, req)
+	tuple := decodeFirstTuple(t, rec.Body.Bytes())
+	if len(tuple) != 3 {
+		t.Fatalf("expected stream-mode 3-tuple value, got %#v", tuple)
+	}
+	meta, ok := tuple[2].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected metadata object in tuple[2], got %T", pair[2])
+		t.Fatalf("expected metadata object at tuple[2], got %T", tuple[2])
 	}
 	if _, ok := meta["parsed"]; !ok {
-		t.Fatalf("expected parsed payload for parser query, got %v", meta)
+		t.Fatalf("expected parsed payload for parser-chain query, got %#v", meta)
+	}
+}
+
+func TestBuildStreamValue_CategorizeLabelsEmitsEmptyObjectWhenNoMetadata(t *testing.T) {
+	tuple, ok := buildStreamValue("1", "line", nil, true).([]interface{})
+	if !ok {
+		t.Fatalf("expected tuple slice, got %T", tuple)
+	}
+	if len(tuple) != 3 {
+		t.Fatalf("expected 3-tuple for categorize-labels path, got %#v", tuple)
+	}
+	if _, ok := tuple[2].(map[string]interface{}); !ok {
+		t.Fatalf("expected empty metadata object in tuple[2], got %#v", tuple[2])
+	}
+}
+
+func TestClassifyEntryFields_UsesLokiCanonicalMetadataKeysOnly(t *testing.T) {
+	p := newStreamMetadataProxy(t, "http://unused", true, false)
+	_, metadata := p.classifyEntryFields(map[string]interface{}{
+		"_time":        "2026-01-01T00:00:00Z",
+		"_msg":         "line",
+		"_stream":      `{job="otel-proxy",level="info"}`,
+		"service.name": "otel-app",
+	}, `{job="otel-proxy"}`)
+	if _, ok := metadata["structuredMetadata"]; !ok {
+		t.Fatalf("expected structuredMetadata key, got %#v", metadata)
+	}
+	if _, ok := metadata["structured_metadata"]; ok {
+		t.Fatalf("did not expect structured_metadata alias, got %#v", metadata)
+	}
+}
+
+func TestQueryRange_DefaultParserChainStillStaysTwoTuple(t *testing.T) {
+	vlBackend := backendWithSingleNDJSONLine(t, `{"_time":"2026-01-01T00:00:00Z","_msg":"time=\"2026-01-01T00:00:00Z\" level=error msg=\"api call failed\"","_stream":"{job=\"otel-proxy\",level=\"error\"}","http.status_code":"500","level":"error"}`)
+	defer vlBackend.Close()
+
+	p := newStreamMetadataProxy(t, vlBackend.URL, true, false)
+	q := url.Values{}
+	q.Set("query", `{job="otel-proxy"} |= "api" | json | logfmt | drop __error__, __error_details__`)
+	q.Set("start", "1")
+	q.Set("end", "2")
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
+	rec := httptest.NewRecorder()
+
+	p.handleQueryRange(rec, req)
+	if strings.Contains(rec.Body.String(), `"structuredMetadata"`) {
+		t.Fatalf("default parser-chain response must remain 2-tuple, got body=%s", rec.Body.String())
+	}
+	tuple := decodeFirstTuple(t, rec.Body.Bytes())
+	if len(tuple) != 2 {
+		t.Fatalf("expected 2-tuple default parser-chain response, got %#v", tuple)
 	}
 }

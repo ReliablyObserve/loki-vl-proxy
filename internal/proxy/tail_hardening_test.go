@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/gorilla/websocket"
 )
 
 type fakeTailConn struct {
@@ -517,7 +517,7 @@ func TestTailHardening_WriteSyntheticTailBatchPropagatesSlowWriterError(t *testi
 	conn := &fakeTailConn{writeMessageErr: errors.New("slow writer")}
 	windowStart := time.Date(2024, 1, 15, 10, 29, 0, 0, time.UTC)
 
-	err := p.writeSyntheticTailBatch(t.Context(), conn, `{app="nginx"}`, &windowStart, newSyntheticTailSeen(maxSyntheticTailSeenEntries))
+	err := p.writeSyntheticTailBatch(t.Context(), conn, `{app="nginx"}`, `{app="nginx"}`, &windowStart, newSyntheticTailSeen(maxSyntheticTailSeenEntries), false)
 	if err == nil || !strings.Contains(err.Error(), "slow writer") {
 		t.Fatalf("expected slow writer error, got %v", err)
 	}
