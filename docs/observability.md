@@ -48,7 +48,7 @@ Default logs are emitted as JSON and already use OTel-friendly top-level keys:
   },
   "body": "request",
   "service.name": "loki-vl-proxy",
-  "service.version": "0.27.19",
+  "service.version": "0.27.20",
   "service.instance.id": "proxy-1",
   "deployment.environment.name": "prod",
   "component": "proxy",
@@ -201,7 +201,7 @@ Kubernetes notes:
 - These runtime/system metrics are read from `/proc` and do not require Kubernetes RBAC permissions.
 - PSI metrics (`node_pressure_*`) depend on kernel support and may be absent on nodes without `/proc/pressure/*`.
 - On startup, the proxy logs a system-metrics readiness check with missing families and remediation hints instead of failing silently.
-- For node-level metrics in Kubernetes, mount host `/proc` and set `-proc-root=/host/proc` (the upstream chart supports this via `systemMetrics.hostProc.enabled: true`).
+- For node-level metrics in Kubernetes, mount host `/proc` and set `-proc-root=/host/proc` (the upstream chart enables this by default via `systemMetrics.hostProc.enabled: true`).
 - For per-pod attribution in OTLP backends, set `OTEL_SERVICE_INSTANCE_ID` from pod name and `OTEL_SERVICE_NAMESPACE` from pod namespace (the upstream chart now injects these by default).
 
 ### PromQL Drilldowns For Slowness And Client Errors
@@ -226,6 +226,13 @@ The packaged `Loki-VL-Proxy` dashboard also includes a `System Resources` sectio
 - PSI pressure (cpu/memory/io)
 - disk and network throughput
 - process RSS and open file descriptors
+
+It also includes a `Query-Range Windowing` section for cache/tuning signals:
+
+- window fetch p50/p95 latency
+- window merge p50/p95 latency
+- window cache hit ratio
+- adaptive window parallelism + EWMA latency/error
 
 ### Active Backend E2E Healthchecks
 

@@ -410,9 +410,11 @@ extraVolumeMounts: []
 # --- System metrics (/proc) ---
 # When enabled, mount host /proc read-only and point the proxy at that mount
 # so CPU/memory/disk/network/PSI metrics reflect node-level context.
+# Enabled by default to keep system-resource panels/alerts functional out of the box.
+# Disable only if your platform policy disallows hostPath mounts.
 systemMetrics:
   hostProc:
-    enabled: false
+    enabled: true
     mountPath: /host/proc
 
 # --- Gateway API HTTPRoute (traffic distribution) ---

@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Observability
 
 - add adaptive query-range tuning gauges: current parallelism, latency EWMA, and error EWMA, exposed in both Prometheus and OTLP metrics
+- harden `Loki-VL-Proxy Metrics` dashboard selectors to tolerate headless/non-headless job+service labels and blank namespace URL vars so sand drilldowns no longer collapse to no-data
+- add a `Query-Range Windowing` dashboard section (window fetch/merge latency, window cache hit ratio, adaptive EWMA/parallelism)
+
+### Configuration
+
+- enable `systemMetrics.hostProc.enabled` by default in the upstream chart and document the host `/proc` mount behavior for node-level CPU/memory/disk/network/PSI visibility
+
+## [0.27.20] - 2026-04-10
 
 ### Tests
 
