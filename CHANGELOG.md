@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.19] - 2026-04-10
+
 ### Bug Fixes
 
 - enforce strict Loki tuple behavior for query responses: default/no-flag requests return canonical 2-tuples, while `X-Loki-Response-Encoding-Flags: categorize-labels` returns Loki-style 3-tuples with `structuredMetadata` and/or `parsed`
