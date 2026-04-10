@@ -61,7 +61,7 @@ func decodeFirstTuple(t *testing.T, body []byte) []interface{} {
 	return resp.Data.Result[0].Values[0]
 }
 
-// labelPairsToMap accepts decoded JSON as either []interface{} or []map[string]string.
+// labelPairsToMap decodes Loki metadata pair-tuples: [[name,value], ...].
 func labelPairsToMap(t *testing.T, raw interface{}) map[string]string {
 	t.Helper()
 	var out map[string]string
@@ -69,25 +69,31 @@ func labelPairsToMap(t *testing.T, raw interface{}) map[string]string {
 	case []interface{}:
 		out = make(map[string]string, len(items))
 		for _, item := range items {
-			pair, ok := item.(map[string]interface{})
+			pair, ok := item.([]interface{})
 			if !ok {
-				t.Fatalf("expected label pair object, got %T", item)
+				t.Fatalf("expected label pair tuple, got %T", item)
 			}
-			name, _ := pair["name"].(string)
-			value, _ := pair["value"].(string)
+			if len(pair) < 2 {
+				t.Fatalf("expected [name,value] pair, got %v", pair)
+			}
+			name, _ := pair[0].(string)
+			value, _ := pair[1].(string)
 			if name == "" {
 				t.Fatalf("expected non-empty pair name in %v", pair)
 			}
 			out[name] = value
 		}
-	case []map[string]string:
+	case [][]string:
 		out = make(map[string]string, len(items))
 		for _, pair := range items {
-			name := pair["name"]
+			if len(pair) < 2 {
+				t.Fatalf("expected [name,value] pair, got %v", pair)
+			}
+			name := pair[0]
 			if name == "" {
 				t.Fatalf("expected non-empty pair name in %v", pair)
 			}
-			out[name] = pair["value"]
+			out[name] = pair[1]
 		}
 	default:
 		t.Fatalf("expected metadata label pairs array, got %T", raw)

@@ -3950,7 +3950,7 @@ func buildStreamValue(ts, msg string, structuredMetadata map[string]string, pars
 	return []interface{}{ts, msg, metadata}
 }
 
-func metadataFieldPairs(fields map[string]string) []map[string]string {
+func metadataFieldPairs(fields map[string]string) [][]string {
 	if len(fields) == 0 {
 		return nil
 	}
@@ -3960,12 +3960,9 @@ func metadataFieldPairs(fields map[string]string) []map[string]string {
 	}
 	sort.Strings(keys)
 
-	pairs := make([]map[string]string, 0, len(keys))
+	pairs := make([][]string, 0, len(keys))
 	for _, key := range keys {
-		pairs = append(pairs, map[string]string{
-			"name":  key,
-			"value": fields[key],
-		})
+		pairs = append(pairs, []string{key, fields[key]})
 	}
 	return pairs
 }
@@ -4895,6 +4892,7 @@ func mergeLokiQueryResponses(tenantIDs []string, recorders []*httptest.ResponseR
 			}
 			for _, item := range items {
 				item.Stream = injectTenantLabel(item.Stream, tenantIDs[i])
+				normalizeMetadataPairTuples(item.Values)
 				streams = append(streams, item)
 			}
 		case "vector":
@@ -4950,6 +4948,65 @@ func latestStreamTimestampStrings(values [][]interface{}) string {
 		return ""
 	}
 	return fmt.Sprintf("%v", values[0][0])
+}
+
+// normalizeMetadataPairTuples rewrites tuple metadata to Loki-compatible pair tuples.
+// It normalizes legacy pair-object arrays ({name,value}) and flat maps ({k:v}) into [[name,value], ...].
+func normalizeMetadataPairTuples(values [][]interface{}) {
+	for i := range values {
+		if len(values[i]) < 3 {
+			continue
+		}
+		meta, ok := values[i][2].(map[string]interface{})
+		if !ok || len(meta) == 0 {
+			continue
+		}
+		if raw, ok := meta["structuredMetadata"]; ok {
+			meta["structuredMetadata"] = normalizeMetadataPairs(raw)
+		}
+		if raw, ok := meta["parsed"]; ok {
+			meta["parsed"] = normalizeMetadataPairs(raw)
+		}
+		values[i][2] = meta
+	}
+}
+
+func normalizeMetadataPairs(raw interface{}) []interface{} {
+	switch typed := raw.(type) {
+	case nil:
+		return nil
+	case []interface{}:
+		out := make([]interface{}, 0, len(typed))
+		for _, item := range typed {
+			switch pair := item.(type) {
+			case []interface{}:
+				if len(pair) < 2 {
+					continue
+				}
+				out = append(out, []interface{}{fmt.Sprintf("%v", pair[0]), fmt.Sprintf("%v", pair[1])})
+			case map[string]interface{}:
+				name, _ := pair["name"].(string)
+				if name == "" {
+					continue
+				}
+				out = append(out, []interface{}{name, fmt.Sprintf("%v", pair["value"])})
+			}
+		}
+		return out
+	case map[string]interface{}:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		out := make([]interface{}, 0, len(keys))
+		for _, key := range keys {
+			out = append(out, []interface{}{key, fmt.Sprintf("%v", typed[key])})
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func mergeIndexStatsResponses(recorders []*httptest.ResponseRecorder) ([]byte, string, error) {

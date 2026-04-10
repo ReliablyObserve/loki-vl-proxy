@@ -199,14 +199,8 @@ func TestQueryRangeWindow_CategorizeLabelsUsesLokiPairArrays(t *testing.T) {
 	}
 
 	var metadata struct {
-		StructuredMetadata []struct {
-			Name  string `json:"name"`
-			Value string `json:"value"`
-		} `json:"structuredMetadata"`
-		Parsed []struct {
-			Name  string `json:"name"`
-			Value string `json:"value"`
-		} `json:"parsed"`
+		StructuredMetadata [][]string `json:"structuredMetadata"`
+		Parsed             [][]string `json:"parsed"`
 	}
 	if err := json.Unmarshal(tuple[2], &metadata); err != nil {
 		t.Fatalf("expected tuple[2] metadata object with Loki pair arrays, got %s: %v", string(tuple[2]), err)
@@ -215,7 +209,7 @@ func TestQueryRangeWindow_CategorizeLabelsUsesLokiPairArrays(t *testing.T) {
 		t.Fatalf("expected parsed and/or structuredMetadata pairs, got %s", string(tuple[2]))
 	}
 	for _, pair := range append(metadata.StructuredMetadata, metadata.Parsed...) {
-		if pair.Name == "" {
+		if len(pair) < 2 || pair[0] == "" {
 			t.Fatalf("expected non-empty metadata pair name, got %s", string(tuple[2]))
 		}
 	}

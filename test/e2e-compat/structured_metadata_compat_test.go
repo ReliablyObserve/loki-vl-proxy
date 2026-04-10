@@ -225,15 +225,18 @@ func firstStreamStructuredMetadata(t *testing.T, response map[string]interface{}
 
 	structured := make(map[string]string, len(structuredRaw))
 	for _, item := range structuredRaw {
-		pair, ok := item.(map[string]interface{})
+		pair, ok := item.([]interface{})
 		if !ok {
-			t.Fatalf("expected structured metadata pair object, got %#v", item)
+			t.Fatalf("expected structured metadata pair tuple, got %#v", item)
 		}
-		name, _ := pair["name"].(string)
+		if len(pair) < 2 {
+			t.Fatalf("expected [name,value] structured metadata pair, got %#v", pair)
+		}
+		name, _ := pair[0].(string)
 		if name == "" {
 			t.Fatalf("expected non-empty structured metadata name in %#v", pair)
 		}
-		v := pair["value"]
+		v := pair[1]
 		switch typed := v.(type) {
 		case string:
 			structured[name] = typed
