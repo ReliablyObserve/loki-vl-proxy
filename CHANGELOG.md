@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- expand tuple-contract coverage and smoke validation paths to keep strict default 2-tuple and categorize-labels 3-tuple behavior regression-safe
+- add e2e compatibility checks for vlogs alerting plus recording-rule visibility across direct `vmalert`, proxy Prometheus endpoints, legacy Loki YAML, and Grafana datasource-proxy paths
+- add dedicated e2e structured-metadata compatibility coverage for `-metadata-field-mode=hybrid` and `-metadata-field-mode=native`
+
+### CI
+
+- extend CI shard coverage to include structured-metadata compatibility tests so metadata mode regressions fail on pull requests
+
+### Documentation
+
+- update architecture/readme diagrams and migration/testing docs to describe recording-rule remote-write expectations and Grafana datasource-proxy `datasource_type=vlogs` validation flow
+
 ## [0.27.19] - 2026-04-10
 
 ### Bug Fixes
