@@ -58,6 +58,38 @@ The simplest way to understand the cache stack is by operational outcome:
 
 This is the difference between “it speaks Loki” and “it feels like Loki at runtime.” The project is designed to preserve Loki-compatible UX while reducing repeated backend work aggressively.
 
+## Query-Range Tuning (Long-Range Efficiency)
+
+Default tuning pattern:
+
+- split long `query_range` requests into fixed windows (commonly `1h`)
+- avoid caching near-now windows (or keep TTL very short)
+- keep historical window cache TTL longer for reuse
+- use adaptive bounded parallel fetch to improve range latency under healthy backend conditions
+
+Recommended operator workflow:
+
+1. Start with conservative adaptive bounds (for example min `2`, max `8`).
+2. Observe backend latency/error EWMA and window cache hit ratio.
+3. Increase max parallel only when backend latency/error stays stable.
+4. Increase history TTL together with disk cache budget, not independently.
+
+Key tuning signals:
+
+- `loki_vl_proxy_window_cache_hit_total`
+- `loki_vl_proxy_window_cache_miss_total`
+- `loki_vl_proxy_window_fetch_seconds`
+- `loki_vl_proxy_window_merge_seconds`
+- `loki_vl_proxy_window_adaptive_parallel_current`
+- `loki_vl_proxy_window_adaptive_latency_ewma_seconds`
+- `loki_vl_proxy_window_adaptive_error_ewma`
+
+Capacity approximation for history window caching:
+
+`required_disk_bytes ~= unique_windows_per_day * avg_window_bytes * ttl_days`
+
+Always cap disk cache explicitly with `-disk-cache-max-bytes` for predictable retention and node usage.
+
 ## Benchmark Results
 
 Measured on Apple M3 Max (14 cores), Go 1.26.1, `-benchmem`.

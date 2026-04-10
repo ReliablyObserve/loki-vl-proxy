@@ -191,6 +191,20 @@ For full detail:
 - Query-range windowing: historical range reuse with adaptive bounded parallel fetch.
 - Built-in metrics/logs for tuning cache hit ratio, backend latency, fanout behavior, and tenant/client pressure.
 
+### Query-Range Tuning (Long-Range Efficiency)
+
+- Split long ranges into cacheable windows (for example `1h`) and reuse historical windows.
+- Keep near-now windows uncached (or very short TTL) and use longer TTL for historical windows.
+- Use adaptive bounded parallelism to improve long-range latency without overloading VictoriaLogs.
+- Track tuning with window cache hit/miss, window fetch latency, and adaptive parallelism metrics.
+
+### Why The Cache Stack Matters
+
+- `Tier0` compatibility-edge cache reduces repeated frontend compatibility work.
+- `L1` memory cache gives fastest hot-path reads.
+- `L2` disk cache keeps useful historical windows warm across larger working sets.
+- `L3` peer cache lets warm replicas help the fleet instead of refetching from backend.
+
 See [Performance](docs/performance.md), [Fleet Cache](docs/fleet-cache.md), [Scaling](docs/scaling.md), and [Observability](docs/observability.md).
 
 ## Documentation Map
