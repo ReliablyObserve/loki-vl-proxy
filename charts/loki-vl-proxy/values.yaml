@@ -97,6 +97,23 @@ extraArgs:
   # forward-headers: "Authorization"
   # forward-authorization: "true" # convenience flag; appends Authorization to forwarded header allowlist
   # forward-cookies: "vmui_session"
+  # Compatibility profile knobs:
+  # - label-style: passthrough | underscores
+  # - metadata-field-mode: native | translated | hybrid
+  # - emit-structured-metadata: true | false
+  #
+  # Common profile examples:
+  # 1) Loki/Grafana conservative:
+  #    label-style=underscores, metadata-field-mode=translated, emit-structured-metadata=false
+  # 2) Drilldown/OTel mixed mode:
+  #    label-style=underscores, metadata-field-mode=hybrid, emit-structured-metadata=true
+  # 3) Native VL field surface:
+  #    label-style=passthrough, metadata-field-mode=native, emit-structured-metadata=true
+  #
+  # Docs:
+  # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/configuration.md#compatibility-profiles
+  # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/api-reference.md
+  # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/compatibility-matrix.md
   # Label translation (OTel compatibility)
   # label-style: "underscores"  # convert VL dotted fields (service.name) to Loki underscores (service_name)
   # field-mapping: '[{"vl_field":"custom.field","loki_label":"custom_label"}]'

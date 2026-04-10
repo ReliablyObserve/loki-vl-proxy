@@ -52,6 +52,23 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 
 `-metadata-field-mode=hybrid` keeps the label surface Loki-compatible while making field-oriented APIs like `detected_fields` and `detected_field/{name}/values` expose both `service.name` and `service_name` when they differ.
 
+### Compatibility Profiles
+
+The three flags below define the compatibility profile:
+
+- `-label-style`
+- `-metadata-field-mode`
+- `-emit-structured-metadata`
+
+| Profile | Settings | Best For |
+|---|---|---|
+| Loki/Grafana conservative | `label-style=underscores`, `metadata-field-mode=translated`, `emit-structured-metadata=false` | Strict Loki-style field naming with 2-tuple defaults |
+| Drilldown/OTel mixed mode | `label-style=underscores`, `metadata-field-mode=hybrid`, `emit-structured-metadata=true` | Grafana + OTel correlation where both dotted and translated field names are useful |
+| Native VL field surface | `label-style=passthrough`, `metadata-field-mode=native`, `emit-structured-metadata=true` | Consumers that prefer raw VictoriaLogs field names and structured metadata |
+
+For tuple behavior and endpoint-level details, see [API Reference](api-reference.md).
+For support scope by product/version track, see [Compatibility Matrix](compatibility-matrix.md).
+
 ## Cache (L1 In-Memory)
 
 | Flag | Env | Default | Description |
