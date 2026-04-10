@@ -48,7 +48,7 @@ Default logs are emitted as JSON and already use OTel-friendly top-level keys:
   },
   "body": "request",
   "service.name": "loki-vl-proxy",
-  "service.version": "0.27.16",
+  "service.version": "0.27.17",
   "service.instance.id": "proxy-1",
   "deployment.environment.name": "prod",
   "component": "proxy",
