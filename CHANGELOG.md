@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- harden startup diagnostics and /proc-host mount guidance for system resource metrics so missing CPU/memory/disk/network/PSI families are surfaced explicitly at boot
+
+### Tests
+
+- add coverage for `PROC_ROOT` env override behavior and startup diagnostics branches (`passed`/`incomplete`) to prevent regressions in release quality checks
+
 ## [0.27.15] - 2026-04-10
 
 ### Bug Fixes
