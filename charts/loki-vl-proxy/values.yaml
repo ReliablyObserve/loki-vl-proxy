@@ -282,12 +282,16 @@ resources:
     memory: 256Mi
 
 # --- Probes ---
-# All probes hit /ready.
+# Default probe endpoints:
+# - liveness:  /alive  (process is running)
+# - readiness: /ready  (backend + circuit-breaker checks)
+# - startup:   /health (basic process health)
 # Startup probe is disabled by default because the proxy starts quickly in the
 # common in-memory-cache case; enable it for slower cold starts.
 probe:
   liveness:
     enabled: true
+    path: /alive
     initialDelaySeconds: 5
     periodSeconds: 15
     timeoutSeconds: 5
@@ -295,6 +299,7 @@ probe:
     successThreshold: 1
   readiness:
     enabled: true
+    path: /ready
     initialDelaySeconds: 3
     periodSeconds: 10
     timeoutSeconds: 3
@@ -302,6 +307,7 @@ probe:
     successThreshold: 1
   startup:
     enabled: false
+    path: /health
     initialDelaySeconds: 5
     periodSeconds: 5
     timeoutSeconds: 3

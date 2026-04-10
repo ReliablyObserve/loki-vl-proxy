@@ -145,7 +145,7 @@ spec:
           {{- if .Values.probe.liveness.enabled }}
           livenessProbe:
             httpGet:
-              path: /ready
+              path: {{ .Values.probe.liveness.path | quote }}
               port: http
             initialDelaySeconds: {{ .Values.probe.liveness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probe.liveness.periodSeconds }}
@@ -156,7 +156,7 @@ spec:
           {{- if .Values.probe.readiness.enabled }}
           readinessProbe:
             httpGet:
-              path: /ready
+              path: {{ .Values.probe.readiness.path | quote }}
               port: http
             initialDelaySeconds: {{ .Values.probe.readiness.initialDelaySeconds }}
             periodSeconds: {{ .Values.probe.readiness.periodSeconds }}
@@ -167,7 +167,7 @@ spec:
           {{- if .Values.probe.startup.enabled }}
           startupProbe:
             httpGet:
-              path: /ready
+              path: {{ .Values.probe.startup.path | quote }}
               port: http
             initialDelaySeconds: {{ .Values.probe.startup.initialDelaySeconds }}
             periodSeconds: {{ .Values.probe.startup.periodSeconds }}

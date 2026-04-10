@@ -1024,6 +1024,10 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/config", p.handleConfigStub)
 
 	// Health / readiness — NOT rate-limited
+	mux.HandleFunc("/alive", p.handleAlive)
+	mux.HandleFunc("/livez", p.handleAlive)
+	mux.HandleFunc("/health", p.handleHealth)
+	mux.HandleFunc("/healthz", p.handleHealth)
 	mux.HandleFunc("/ready", p.handleReady)
 	mux.HandleFunc("/loki/api/v1/status/buildinfo", p.handleBuildInfo)
 
@@ -2721,6 +2725,16 @@ func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Write([]byte("ready"))
+}
+
+// handleHealth returns process health status without backend dependency checks.
+func (p *Proxy) handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("ok"))
+}
+
+// handleAlive returns process liveness status without backend dependency checks.
+func (p *Proxy) handleAlive(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("alive"))
 }
 
 func (p *Proxy) writeEmptyRules(w http.ResponseWriter) {
