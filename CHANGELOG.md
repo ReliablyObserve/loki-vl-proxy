@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.25] - 2026-04-10
+
 ### Bug Fixes
 
 - normalize merged query stream metadata to Loki pair-tuples (`[[name,value], ...]`) so legacy/object-shaped metadata cannot trigger strict decoder `ReadArray` failures
