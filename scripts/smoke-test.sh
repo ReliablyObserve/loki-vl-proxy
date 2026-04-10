@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROXY_URL="${PROXY_URL:-http://127.0.0.1:3100}"
+DEFAULT_PROXY_URL="${PROXY_URL_DEFAULT:-${PROXY_URL:-http://127.0.0.1:3100}}"
+CATEGORIZED_PROXY_URL="${PROXY_URL_CATEGORIZED:-${DEFAULT_PROXY_URL}}"
 QUERY="${SMOKE_QUERY:-{job=~\".+\"}}"
 LIMIT="${SMOKE_LIMIT:-20}"
 LOOKBACK_SECONDS="${SMOKE_LOOKBACK_SECONDS:-900}"
@@ -36,10 +37,15 @@ check_strict_two_tuple() {
     return 1
   fi
 
-  echo "$payload" | jq -e '
+  if ! echo "$payload" | jq -e '
     [.data.result[]?.values[]? | (type == "array" and length == 2 and (.[0] | type == "string") and (.[1] | type == "string"))]
     | all
-  ' >/dev/null
+  ' >/dev/null; then
+    local sample
+    sample="$(echo "$payload" | jq -c '.data.result[0].values[0] // empty')"
+    echo "strict 2-tuple contract failed for ${endpoint}; sample tuple=${sample:-<none>}" >&2
+    return 1
+  fi
 }
 
 check_categorize_three_tuple() {
@@ -55,7 +61,7 @@ check_categorize_three_tuple() {
     return 1
   fi
 
-  echo "$payload" | jq -e '
+  if ! echo "$payload" | jq -e '
     [
       .data.result[]?.values[]?
       | (
@@ -73,10 +79,16 @@ check_categorize_three_tuple() {
         )
     ]
     | all
-  ' >/dev/null
+  ' >/dev/null; then
+    local sample
+    sample="$(echo "$payload" | jq -c '.data.result[0].values[0] // empty')"
+    echo "categorize-labels 3-tuple contract failed for ${endpoint}; sample tuple=${sample:-<none>}" >&2
+    return 1
+  fi
 }
 
 fetch_query_range() {
+  local base_url="$1"
   compute_window
   curl -sS --get \
     -H 'X-Grafana-User: smoke-canary' \
@@ -85,10 +97,11 @@ fetch_query_range() {
     --data-urlencode "start=${start_ns}" \
     --data-urlencode "end=${now_ns}" \
     --data-urlencode "limit=${LIMIT}" \
-    "${PROXY_URL}/loki/api/v1/query_range"
+    "${base_url}/loki/api/v1/query_range"
 }
 
 fetch_query() {
+  local base_url="$1"
   compute_window
   curl -sS --get \
     -H 'X-Grafana-User: smoke-canary' \
@@ -96,10 +109,11 @@ fetch_query() {
     --data-urlencode "query=${QUERY}" \
     --data-urlencode "time=${now_ns}" \
     --data-urlencode "limit=${LIMIT}" \
-    "${PROXY_URL}/loki/api/v1/query"
+    "${base_url}/loki/api/v1/query"
 }
 
 fetch_query_range_categorized() {
+  local base_url="$1"
   compute_window
   curl -sS --get \
     -H 'X-Grafana-User: smoke-canary' \
@@ -109,10 +123,11 @@ fetch_query_range_categorized() {
     --data-urlencode "start=${start_ns}" \
     --data-urlencode "end=${now_ns}" \
     --data-urlencode "limit=${LIMIT}" \
-    "${PROXY_URL}/loki/api/v1/query_range"
+    "${base_url}/loki/api/v1/query_range"
 }
 
 fetch_query_categorized() {
+  local base_url="$1"
   compute_window
   curl -sS --get \
     -H 'X-Grafana-User: smoke-canary' \
@@ -121,18 +136,19 @@ fetch_query_categorized() {
     --data-urlencode "query=${QUERY}" \
     --data-urlencode "time=${now_ns}" \
     --data-urlencode "limit=${LIMIT}" \
-    "${PROXY_URL}/loki/api/v1/query"
+    "${base_url}/loki/api/v1/query"
 }
 
 fetch_with_retry() {
   local fetcher="$1"
   local endpoint="$2"
+  local base_url="$3"
   local payload=""
   local count=0
   local attempt=1
 
   while [[ "$attempt" -le "$RETRIES" ]]; do
-    payload="$($fetcher)"
+    payload="$($fetcher "$base_url")"
     count="$(tuple_count "$payload")"
     if [[ "$count" -gt 0 ]]; then
       echo "$payload"
@@ -148,14 +164,14 @@ fetch_with_retry() {
   return 1
 }
 
-range_payload="$(fetch_with_retry fetch_query_range "/query_range")"
-query_payload="$(fetch_with_retry fetch_query "/query")"
-range_categorized_payload="$(fetch_with_retry fetch_query_range_categorized "/query_range categorize-labels")"
-query_categorized_payload="$(fetch_with_retry fetch_query_categorized "/query categorize-labels")"
+range_payload="$(fetch_with_retry fetch_query_range "/query_range" "$DEFAULT_PROXY_URL")"
+query_payload="$(fetch_with_retry fetch_query "/query" "$DEFAULT_PROXY_URL")"
+range_categorized_payload="$(fetch_with_retry fetch_query_range_categorized "/query_range categorize-labels" "$CATEGORIZED_PROXY_URL")"
+query_categorized_payload="$(fetch_with_retry fetch_query_categorized "/query categorize-labels" "$CATEGORIZED_PROXY_URL")"
 
 check_strict_two_tuple "$range_payload" "/query_range"
 check_strict_two_tuple "$query_payload" "/query"
 check_categorize_three_tuple "$range_categorized_payload" "/query_range"
 check_categorize_three_tuple "$query_categorized_payload" "/query"
 
-echo "tuple contract smoke check passed for /query_range and /query (default 2-tuple + categorize-labels 3-tuple)"
+echo "tuple contract smoke check passed (default=${DEFAULT_PROXY_URL} strict 2-tuple; categorized=${CATEGORIZED_PROXY_URL} 3-tuple)"

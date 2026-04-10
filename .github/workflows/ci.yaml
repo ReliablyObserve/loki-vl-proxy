@@ -64,6 +64,7 @@ jobs:
     env:
       PROXY_IMAGE: loki-vl-proxy:tuple-smoke
       PROXY_URL: http://127.0.0.1:3100
+      PROXY_URL_CATEGORIZED: http://127.0.0.1:3102
       SMOKE_QUERY: '{app="e2e-test"}'
     steps:
       - uses: actions/checkout@v4

@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### CI
 
 - extend CI shard coverage to include structured-metadata compatibility tests so metadata mode regressions fail on pull requests
+- harden tuple-smoke wiring to validate strict 2-tuples on the default proxy endpoint and `categorize-labels` 3-tuples on the metadata-enabled endpoint with explicit failure diagnostics
 
 ### Documentation
 
