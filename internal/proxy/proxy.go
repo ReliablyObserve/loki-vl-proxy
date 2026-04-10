@@ -4167,48 +4167,34 @@ func requestWantsCategorizedLabels(r *http.Request) bool {
 	return false
 }
 
-func requestWantsStructuredMetadata(r *http.Request) bool {
+func requestStructuredMetadataOverride(r *http.Request) (bool, bool) {
 	if r == nil {
-		return false
+		return false, false
 	}
 	if raw := strings.TrimSpace(r.FormValue("structured_metadata")); raw != "" {
 		if enabled, err := strconv.ParseBool(raw); err == nil {
-			return enabled
+			return enabled, true
 		}
 	}
-	raw := strings.TrimSpace(r.Header.Get("X-Loki-Response-Encoding-Flags"))
-	if raw == "" {
-		return false
-	}
-	for _, part := range strings.Split(raw, ",") {
-		if strings.EqualFold(strings.TrimSpace(part), "structured-metadata") {
-			return true
+	if raw := strings.TrimSpace(r.Header.Get("X-Loki-Response-Encoding-Flags")); raw != "" {
+		for _, part := range strings.Split(raw, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), "structured-metadata") {
+				return true, true
+			}
 		}
 	}
-	return false
-}
-
-func requestLooksLikeGrafana(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	if strings.TrimSpace(r.Header.Get("X-Grafana-User")) != "" || strings.TrimSpace(r.Header.Get("X-Grafana-Org-Id")) != "" {
-		return true
-	}
-	return strings.Contains(strings.ToLower(strings.TrimSpace(r.Header.Get("User-Agent"))), "grafana")
+	return false, false
 }
 
 func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
 	if !p.emitStructuredMetadata {
 		return false
 	}
-	if requestWantsStructuredMetadata(r) {
-		return true
-	}
-	// Grafana Explore/Drilldown clients still expect canonical [ts, line] tuples.
-	// Keep 3-tuples opt-in for these callers even when global emission is enabled.
-	if requestLooksLikeGrafana(r) {
-		return false
+	// Allow explicit per-request override via query/header flags.
+	// - structured_metadata=true|false
+	// - X-Loki-Response-Encoding-Flags: structured-metadata
+	if enabled, ok := requestStructuredMetadataOverride(r); ok {
+		return enabled
 	}
 	return true
 }

@@ -199,13 +199,13 @@ func TestRequestWantsCategorizedLabels(t *testing.T) {
 	}
 }
 
-func TestShouldEmitStructuredMetadata_DisablesForGrafanaByDefault(t *testing.T) {
+func TestShouldEmitStructuredMetadata_EnablesForGrafanaByDefault(t *testing.T) {
 	p := newStreamMetadataTestProxy(t, true)
 	req := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
 	req.Header.Set("X-Grafana-User", "admin")
 
-	if p.shouldEmitStructuredMetadata(req) {
-		t.Fatal("expected structured metadata disabled for Grafana callers by default")
+	if !p.shouldEmitStructuredMetadata(req) {
+		t.Fatal("expected structured metadata enabled for Grafana callers by default")
 	}
 }
 
@@ -227,5 +227,15 @@ func TestShouldEmitStructuredMetadata_AllowsQueryParamOptIn(t *testing.T) {
 
 	if !p.shouldEmitStructuredMetadata(req) {
 		t.Fatal("expected structured metadata when structured_metadata=true query param is set")
+	}
+}
+
+func TestShouldEmitStructuredMetadata_AllowsQueryParamOptOut(t *testing.T) {
+	p := newStreamMetadataTestProxy(t, true)
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?structured_metadata=false", nil)
+	req.Header.Set("X-Grafana-User", "admin")
+
+	if p.shouldEmitStructuredMetadata(req) {
+		t.Fatal("expected structured metadata disabled when structured_metadata=false query param is set")
 	}
 }
