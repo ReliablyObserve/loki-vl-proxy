@@ -3939,15 +3939,35 @@ func buildStreamValue(ts, msg string, structuredMetadata map[string]string, pars
 
 	metadata := map[string]interface{}{}
 	if len(structuredMetadata) > 0 {
-		metadata["structuredMetadata"] = structuredMetadata
+		metadata["structuredMetadata"] = metadataFieldPairs(structuredMetadata)
 	}
 	if len(parsedFields) > 0 {
-		metadata["parsed"] = parsedFields
+		metadata["parsed"] = metadataFieldPairs(parsedFields)
 	}
 	if len(metadata) == 0 {
 		return []interface{}{ts, msg, map[string]interface{}{}}
 	}
 	return []interface{}{ts, msg, metadata}
+}
+
+func metadataFieldPairs(fields map[string]string) []map[string]string {
+	if len(fields) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(fields))
+	for key := range fields {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	pairs := make([]map[string]string, 0, len(keys))
+	for _, key := range keys {
+		pairs = append(pairs, map[string]string{
+			"name":  key,
+			"value": fields[key],
+		})
+	}
+	return pairs
 }
 
 func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string) (map[string]string, map[string]string, map[string]string) {

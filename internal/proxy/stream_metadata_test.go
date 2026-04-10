@@ -61,6 +61,39 @@ func decodeFirstTuple(t *testing.T, body []byte) []interface{} {
 	return resp.Data.Result[0].Values[0]
 }
 
+func labelPairsToMap(t *testing.T, raw interface{}) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	switch items := raw.(type) {
+	case []interface{}:
+		out = make(map[string]string, len(items))
+		for _, item := range items {
+			pair, ok := item.(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected label pair object, got %T", item)
+			}
+			name, _ := pair["name"].(string)
+			value, _ := pair["value"].(string)
+			if name == "" {
+				t.Fatalf("expected non-empty pair name in %v", pair)
+			}
+			out[name] = value
+		}
+	case []map[string]string:
+		out = make(map[string]string, len(items))
+		for _, pair := range items {
+			name := pair["name"]
+			if name == "" {
+				t.Fatalf("expected non-empty pair name in %v", pair)
+			}
+			out[name] = pair["value"]
+		}
+	default:
+		t.Fatalf("expected metadata label pairs array, got %T", raw)
+	}
+	return out
+}
+
 func TestRequestWantsCategorizedLabels(t *testing.T) {
 	req := httptest.NewRequest("GET", "/", nil)
 	if requestWantsCategorizedLabels(req) {
@@ -137,8 +170,13 @@ func TestQueryRange_CategorizeLabelsReturnsLokiThreeTuple(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected metadata object at tuple[2], got %T", tuple[2])
 	}
-	if _, ok := meta["structuredMetadata"]; !ok {
+	structuredRaw, ok := meta["structuredMetadata"]
+	if !ok {
 		t.Fatalf("expected Loki structuredMetadata payload, got %#v", meta)
+	}
+	structured := labelPairsToMap(t, structuredRaw)
+	if got := structured["service.name"]; got != "otel-app" {
+		t.Fatalf("expected service.name pair in structured metadata, got %#v", structured)
 	}
 	if _, ok := meta["structured_metadata"]; ok {
 		t.Fatalf("non-Loki structured_metadata alias must not be emitted, got %#v", meta)
@@ -203,8 +241,13 @@ func TestStreamLogQuery_StreamingModePreservesThreeTupleMetadata(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected metadata object at tuple[2], got %T", tuple[2])
 	}
-	if _, ok := meta["parsed"]; !ok {
+	parsedRaw, ok := meta["parsed"]
+	if !ok {
 		t.Fatalf("expected parsed payload for parser-chain query, got %#v", meta)
+	}
+	parsed := labelPairsToMap(t, parsedRaw)
+	if got := parsed["http.status_code"]; got != "500" {
+		t.Fatalf("expected http.status_code in parsed payload, got %#v", parsed)
 	}
 }
 
@@ -238,8 +281,13 @@ func TestClassifyEntryFields_UsesLokiCanonicalMetadataKeysOnly(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected metadata object in tuple[2], got %#v", tuple[2])
 	}
-	if _, ok := meta["structuredMetadata"]; !ok {
+	structuredRaw, ok := meta["structuredMetadata"]
+	if !ok {
 		t.Fatalf("expected structuredMetadata key, got %#v", meta)
+	}
+	structured := labelPairsToMap(t, structuredRaw)
+	if got := structured["service.name"]; got != "otel-app" {
+		t.Fatalf("expected service.name in structuredMetadata payload, got %#v", structured)
 	}
 	if _, ok := meta["structured_metadata"]; ok {
 		t.Fatalf("did not expect structured_metadata alias, got %#v", meta)
