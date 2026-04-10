@@ -1103,6 +1103,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if _, ok := p.validateQuery(w, logqlQuery, "query_range"); !ok {
 		return
 	}
+	categorizedLabels := requestWantsCategorizedLabels(r)
+	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
+	tupleMode := tupleModeForRequest(categorizedLabels, emitStructuredMetadata)
 	if p.handleMultiTenantFanout(w, r, "query_range", p.handleQueryRange) {
 		return
 	}
@@ -1115,6 +1118,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(cached)
 			elapsed := time.Since(start)
 			p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+			p.metrics.RecordTupleMode(tupleMode)
 			p.metrics.RecordCacheHit()
 			p.queryTracker.Record("query_range", logqlQuery, elapsed, false)
 			return
@@ -1201,7 +1205,7 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 		}
 		rawQuery = b.String()
 	}
-	return "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + rawQuery
+	return "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + rawQuery + ":" + p.tupleModeCacheKey(r)
 }
 
 // handleQuery translates Loki instant queries.
@@ -4482,9 +4486,21 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 		return "", false
 	}
 	if endpoint == "patterns" || endpoint == "index_stats" || endpoint == "volume" || endpoint == "volume_range" || endpoint == "detected_labels" || endpoint == "detected_fields" || endpoint == "detected_field_values" || endpoint == "series" || endpoint == "labels" || endpoint == "label_values" || endpoint == "query" || endpoint == "query_range" {
-		return "mt:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.RawQuery, true
+		key := "mt:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.RawQuery
+		if endpoint == "query" || endpoint == "query_range" {
+			key += ":" + p.tupleModeCacheKey(r)
+		}
+		return key, true
 	}
 	return "", false
+}
+
+func (p *Proxy) tupleModeCacheKey(r *http.Request) string {
+	categorizedLabels := requestWantsCategorizedLabels(r)
+	if p.emitStructuredMetadata && categorizedLabels {
+		return "categorize_labels_3tuple"
+	}
+	return "default_2tuple"
 }
 
 func emptyMultiTenantResponse(endpoint string) map[string]interface{} {

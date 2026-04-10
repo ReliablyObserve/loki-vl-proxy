@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - migrate built-in system metric families from `node_*` to `process_*` so proxy-exported CPU/memory/disk/network/pressure signals are pod/container scoped instead of node-scoped by name
+- harden `query_range` tuple-shape cache safety by keying cache entries with tuple mode (`default_2tuple` vs `categorize_labels_3tuple`) so metadata-enabled responses cannot leak into default Grafana decode paths (`ReadArray` regression guard)
 
 ### Features
 
