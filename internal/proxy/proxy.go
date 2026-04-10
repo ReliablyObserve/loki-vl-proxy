@@ -4186,6 +4186,16 @@ func requestStructuredMetadataOverride(r *http.Request) (bool, bool) {
 	return false, false
 }
 
+func requestLooksLikeGrafana(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if strings.TrimSpace(r.Header.Get("X-Grafana-User")) != "" || strings.TrimSpace(r.Header.Get("X-Grafana-Org-Id")) != "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(strings.TrimSpace(r.Header.Get("User-Agent"))), "grafana")
+}
+
 func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
 	if !p.emitStructuredMetadata {
 		return false
@@ -4195,6 +4205,11 @@ func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
 	// - X-Loki-Response-Encoding-Flags: structured-metadata
 	if enabled, ok := requestStructuredMetadataOverride(r); ok {
 		return enabled
+	}
+	// Keep Grafana clients on canonical [ts, line] tuples unless they opt in.
+	// This avoids ReadArray/decode regressions across Explore/Drilldown versions.
+	if requestLooksLikeGrafana(r) {
+		return false
 	}
 	return true
 }

@@ -199,13 +199,13 @@ func TestRequestWantsCategorizedLabels(t *testing.T) {
 	}
 }
 
-func TestShouldEmitStructuredMetadata_EnablesForGrafanaByDefault(t *testing.T) {
+func TestShouldEmitStructuredMetadata_DisablesForGrafanaByDefault(t *testing.T) {
 	p := newStreamMetadataTestProxy(t, true)
 	req := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
 	req.Header.Set("X-Grafana-User", "admin")
 
-	if !p.shouldEmitStructuredMetadata(req) {
-		t.Fatal("expected structured metadata enabled for Grafana callers by default")
+	if p.shouldEmitStructuredMetadata(req) {
+		t.Fatal("expected structured metadata disabled for Grafana callers by default")
 	}
 }
 
@@ -237,5 +237,63 @@ func TestShouldEmitStructuredMetadata_AllowsQueryParamOptOut(t *testing.T) {
 
 	if p.shouldEmitStructuredMetadata(req) {
 		t.Fatal("expected structured metadata disabled when structured_metadata=false query param is set")
+	}
+}
+
+func TestShouldEmitStructuredMetadata_NonGrafanaDefaultsToEnabled(t *testing.T) {
+	p := newStreamMetadataTestProxy(t, true)
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+
+	if !p.shouldEmitStructuredMetadata(req) {
+		t.Fatal("expected structured metadata enabled by default for non-Grafana callers")
+	}
+}
+
+func TestQueryRange_GrafanaDefaultStaysTwoTupleForStrictDecoders(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte(`{"_time":"2026-04-10T12:00:00Z","_msg":"iptables policy update: \"Drop if no profiles matched\" -j DROP","_stream":"{deployment_environment=\"dev\"}","chain.link.env":"dev","deployment_environment":"dev","service.name":"calico","level":"error"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{
+		BackendURL:             vlBackend.URL,
+		Cache:                  cache.New(30*time.Second, 100),
+		LogLevel:               "error",
+		EmitStructuredMetadata: true,
+		MetadataFieldMode:      MetadataFieldModeHybrid,
+		LabelStyle:             LabelStylePassthrough,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={deployment_environment="dev"}&start=1&end=2&limit=10`, nil)
+	req.Header.Set("X-Grafana-User", "admin")
+	p.handleQueryRange(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// Strict decoder: Grafana compatibility path expects [ts, line] tuples.
+	var strict struct {
+		Data struct {
+			Result []struct {
+				Values [][2]string `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &strict); err != nil {
+		t.Fatalf("strict tuple decode failed (possible ReadArray regression): %v\nbody=%s", err, rec.Body.String())
+	}
+	if len(strict.Data.Result) != 1 || len(strict.Data.Result[0].Values) != 1 {
+		t.Fatalf("unexpected strict decode shape: %+v", strict.Data.Result)
+	}
+	if strict.Data.Result[0].Values[0][1] == "" {
+		t.Fatalf("expected non-empty log line in strict decode tuple, got %+v", strict.Data.Result[0].Values[0])
 	}
 }

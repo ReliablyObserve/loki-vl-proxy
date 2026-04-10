@@ -23,7 +23,7 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 |---|---|---|---|
 | `-label-style` | `LABEL_STYLE` | `passthrough` | `passthrough` or `underscores` |
 | `-metadata-field-mode` | `METADATA_FIELD_MODE` | `hybrid` | `native`, `translated`, or `hybrid` for `detected_fields` and structured metadata exposure |
-| `-emit-structured-metadata` | — | `false` | Enable 3-tuple support. Callers (including Grafana) get `[timestamp, line, metadata]` by default; set `structured_metadata=false` per request to force canonical `[timestamp, line]` tuples |
+| `-emit-structured-metadata` | — | `false` | Enable 3-tuple support. Non-Grafana callers get `[timestamp, line, metadata]` by default; Grafana callers stay on `[timestamp, line]` unless they explicitly opt in (`structured_metadata=true` or `X-Loki-Response-Encoding-Flags: structured-metadata`) |
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
 
 ### Label Style Modes

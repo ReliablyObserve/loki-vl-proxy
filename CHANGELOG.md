@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- restore Grafana-safe tuple defaults when `-emit-structured-metadata=true`: Explore/Drilldown requests now stay on canonical `[timestamp, line]` unless explicitly opted into `structured_metadata=true` (or `X-Loki-Response-Encoding-Flags: structured-metadata`), preventing `ReadArray` decode regressions
+
+### Tests
+
+- add strict query-range regression coverage that decodes Grafana responses as `[2]string` tuples and fails on any metadata-object tuple shape leak
+
 ## [0.27.17] - 2026-04-10
 
 ### Bug Fixes
