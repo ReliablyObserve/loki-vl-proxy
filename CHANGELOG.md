@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.26] - 2026-04-10
+
 ### Bug Fixes
 
 - align categorized stream responses with upstream Loki/Grafana contract by emitting `data.encodingFlags=["categorize-labels"]` alongside 3-tuples and object-map metadata (`structuredMetadata`/`parsed`)
@@ -20,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### CI
 
 - add `fuzz-smoke` PR workflow steps to exercise structured-metadata normalization and merged categorized-stream contract fuzz targets
+
 ## [0.27.25] - 2026-04-10
 ### Bug Fixes
 
