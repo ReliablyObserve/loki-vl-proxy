@@ -16,7 +16,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const maxQueryRangeWindows = 4096
+const (
+	maxQueryRangeWindows          = 4096
+	queryRangeCollectedInitialCap = 1024
+)
 
 type queryRangeWindow struct {
 	startNs int64
@@ -63,7 +66,8 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	p.metrics.RecordQueryRangeWindowCount(len(windows))
 
 	remaining := limitValue
-	collected := make([]queryRangeWindowEntry, 0, min(limitValue, 4096))
+	// Keep preallocation constant-sized to avoid any user-influenced allocation growth.
+	collected := make([]queryRangeWindowEntry, 0, queryRangeCollectedInitialCap)
 	for i := 0; i < len(windows) && remaining > 0; {
 		parallel := p.queryRangeWindowParallelLimit()
 		batchSize := min(parallel, len(windows)-i)
