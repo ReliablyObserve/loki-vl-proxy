@@ -1,5 +1,7 @@
 # LogQL to LogsQL Translation Reference
 
+For label/field exposure mode behavior (`label-style`, `metadata-field-mode`, `emit-structured-metadata`, and custom mappings), see [Translation Modes Guide](translation-modes.md).
+
 ## Stream Selectors
 
 | LogQL | LogsQL | Notes |

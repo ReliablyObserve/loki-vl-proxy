@@ -19,6 +19,8 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 
 ## Label Translation
 
+See [Translation Modes Guide](translation-modes.md) for mode-selection profiles and exact underscore vs dotted exposure behavior across labels, field APIs, and structured metadata.
+
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-label-style` | `LABEL_STYLE` | `passthrough` | `passthrough` or `underscores` |

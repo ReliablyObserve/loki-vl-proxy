@@ -94,48 +94,20 @@ Critical defaults to reduce incident frequency:
 
 ---
 
-## Label Translation
+## Translation Modes
 
-### When to Use Each Mode
+Translation guidance moved to dedicated docs:
 
-| VL Ingestion | Pipeline | Label Style | Result |
-|---|---|---|---|
-| OTLP direct → VL | None | `underscores` | `service.name` → `service_name` in Loki |
-| Vector → VL | Vector normalizes dots→underscores | `passthrough` | Already underscore, no translation needed |
-| FluentBit → VL | FluentBit preserves dots | `underscores` | Dots translated to underscores |
-| Loki push → VL | Any | `passthrough` | Labels already Loki-compatible |
-| ES bulk → VL | Any | Depends on field names | Use `field-mapping` for custom |
+- [Translation Modes Guide](translation-modes.md) for mode selection and exact underscore vs dotted behavior
+- [Configuration](configuration.md#label-translation) for flag reference
+- [Translation Reference](translation-reference.md) for LogQL-to-LogsQL execution mapping
 
-### Custom Field Mapping
+Operational recommendation:
 
-For non-standard VL field names:
-
-```bash
--field-mapping '[
-  {"vl_field": "my_app_trace_id", "loki_label": "traceID"},
-  {"vl_field": "internal.request.id", "loki_label": "request_id"}
-]'
-```
-
-Custom mappings override automatic translation for both query and response directions.
-
-### Known OTel Semantic Fields
-
-The proxy has built-in reverse mappings for 50+ OTel semantic convention fields:
-
-- **Service**: `service_name`, `service_namespace`, `service_version`, `service_instance_id`
-- **Kubernetes**: `k8s_pod_name`, `k8s_namespace_name`, `k8s_node_name`, `k8s_container_name`, `k8s_deployment_name`, `k8s_daemonset_name`, `k8s_statefulset_name`, `k8s_replicaset_name`, `k8s_job_name`, `k8s_cronjob_name`, `k8s_cluster_name`
-- **Cloud**: `cloud_provider`, `cloud_platform`, `cloud_region`, `cloud_availability_zone`, `cloud_account_id`
-- **Host**: `host_name`, `host_id`, `host_type`, `host_arch`
-- **Process**: `process_pid`, `process_executable_name`, `process_runtime_name`, `process_runtime_version`
-- **Container**: `container_id`, `container_name`, `container_runtime`, `container_image_name`, `container_image_tag`
-- **Network**: `net_host_name`, `net_host_port`, `net_peer_name`, `net_peer_port`
-- **OS**: `os_type`, `os_version`
-- **Log**: `log_file_path`, `log_file_name`, `log_iostream`
-- **Telemetry**: `telemetry_sdk_name`, `telemetry_sdk_language`, `telemetry_sdk_version`
-- **Deployment**: `deployment_environment`, `deployment_environment_name`
-
-Fields NOT in this table pass through as-is in queries. The response direction uses generic regex sanitization for any dotted field.
+- use `label-style=underscores` when upstream VL stores dotted OTel fields
+- use `metadata-field-mode=hybrid` for mixed Loki + OTel field workflows
+- use `metadata-field-mode=translated` for strict Loki-style field surfaces
+- use `metadata-field-mode=native` for OTel-native field-only surfaces
 
 ---
 

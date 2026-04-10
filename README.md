@@ -220,6 +220,7 @@ Loki-VL-proxy targets Loki client compatibility while translating execution to V
 - Compatibility is validated continuously in CI against separate Loki, Drilldown, and VictoriaLogs tracks.
 
 For full detail:
+- [Translation Modes Guide](docs/translation-modes.md)
 - [Translation Reference](docs/translation-reference.md)
 - [Loki Compatibility](docs/compatibility-loki.md)
 - [Known Issues](docs/KNOWN_ISSUES.md)
@@ -264,6 +265,7 @@ See [Performance](docs/performance.md), [Fleet Cache](docs/fleet-cache.md), [Sca
 - [Loki Compatibility](docs/compatibility-loki.md)
 - [Logs Drilldown Compatibility](docs/compatibility-drilldown.md)
 - [VictoriaLogs Compatibility](docs/compatibility-victorialogs.md)
+- [Translation Modes Guide](docs/translation-modes.md)
 - [Translation Reference](docs/translation-reference.md)
 
 ### Cache and Runtime Design
