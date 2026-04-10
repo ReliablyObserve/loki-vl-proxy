@@ -13,6 +13,7 @@ metadata:
   {{- end }}
 spec:
   type: {{ .Values.service.type }}
+  {{- include "loki-vl-proxy.renderTrafficDistribution" (dict "field" ".Values.service.trafficDistribution" "value" .Values.service.trafficDistribution) | nindent 2 }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: http

@@ -1,0 +1,29 @@
+{{- if .Values.statefulSetImmutableGuard.enabled -}}
+{{- $name := include "loki-vl-proxy.fullname" . -}}
+{{- $kind := include "loki-vl-proxy.workloadKind" . -}}
+{{- $existing := lookup "apps/v1" "StatefulSet" .Release.Namespace $name -}}
+
+{{- if and $existing (ne $kind "StatefulSet") -}}
+{{- fail (printf "statefulSetImmutableGuard: release %q in namespace %q already has StatefulSet %q; switching workload.kind away from StatefulSet requires explicit migration/recreation" .Release.Name .Release.Namespace $name) -}}
+{{- end -}}
+
+{{- if and $existing (eq $kind "StatefulSet") -}}
+{{- $existingServiceName := default "" $existing.spec.serviceName -}}
+{{- $desiredServiceName := include "loki-vl-proxy.peerServiceName" . -}}
+{{- if ne $existingServiceName $desiredServiceName -}}
+{{- fail (printf "statefulSetImmutableGuard: immutable StatefulSet field change detected for %q: spec.serviceName current=%q desired=%q" $name $existingServiceName $desiredServiceName) -}}
+{{- end -}}
+
+{{- $existingPodManagementPolicy := default "" $existing.spec.podManagementPolicy -}}
+{{- $desiredPodManagementPolicy := default "" .Values.workload.statefulSet.podManagementPolicy -}}
+{{- if ne $existingPodManagementPolicy $desiredPodManagementPolicy -}}
+{{- fail (printf "statefulSetImmutableGuard: immutable StatefulSet field change detected for %q: spec.podManagementPolicy current=%q desired=%q" $name $existingPodManagementPolicy $desiredPodManagementPolicy) -}}
+{{- end -}}
+
+{{- $existingVCT := include "loki-vl-proxy.canonicalizeVolumeClaimTemplates" (dict "volumeClaimTemplates" (default (list) $existing.spec.volumeClaimTemplates)) | trim -}}
+{{- $desiredVCT := include "loki-vl-proxy.desiredVolumeClaimTemplates" . | trim -}}
+{{- if ne $existingVCT $desiredVCT -}}
+{{- fail (printf "statefulSetImmutableGuard: immutable StatefulSet field change detected for %q: spec.volumeClaimTemplates differs from live object; recreate/migrate StatefulSet or keep PVC template shape stable" $name) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

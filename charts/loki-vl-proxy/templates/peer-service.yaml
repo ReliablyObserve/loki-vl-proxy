@@ -5,9 +5,17 @@ metadata:
   name: {{ include "loki-vl-proxy.peerServiceName" . }}
   labels:
     {{- include "loki-vl-proxy.labels" . | nindent 4 }}
+    {{- with .Values.peerService.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.peerService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   clusterIP: None
   publishNotReadyAddresses: true
+  {{- include "loki-vl-proxy.renderTrafficDistribution" (dict "field" ".Values.peerService.trafficDistribution" "value" .Values.peerService.trafficDistribution) | nindent 2 }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: http
