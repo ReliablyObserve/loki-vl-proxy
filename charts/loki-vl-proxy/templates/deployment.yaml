@@ -70,9 +70,21 @@ spec:
       initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- $hostProcEnabled := false }}
+      {{- $hostProcMountPath := "/host/proc" }}
+      {{- if and (hasKey .Values "systemMetrics") (hasKey .Values.systemMetrics "hostProc") }}
+      {{- $hostProcEnabled = .Values.systemMetrics.hostProc.enabled }}
+      {{- if .Values.systemMetrics.hostProc.mountPath }}
+      {{- $hostProcMountPath = .Values.systemMetrics.hostProc.mountPath }}
+      {{- end }}
+      {{- end }}
       containers:
         - name: loki-vl-proxy
           {{- $goMemLimitValue := (include "loki-vl-proxy.goMemLimitValue" . | trim) }}
+          {{- $injectOTELFromPod := true }}
+          {{- if and (hasKey .Values "otelResourceAttributes") (hasKey .Values.otelResourceAttributes "injectFromPod") }}
+          {{- $injectOTELFromPod = .Values.otelResourceAttributes.injectFromPod }}
+          {{- end }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
@@ -80,6 +92,9 @@ spec:
           args:
             {{- range $key, $value := .Values.extraArgs }}
             - "-{{ $key }}={{ $value }}"
+            {{- end }}
+            {{- if and $hostProcEnabled (not (hasKey .Values.extraArgs "proc-root")) }}
+            - "-proc-root={{ $hostProcMountPath }}"
             {{- end }}
             {{- if and .Values.persistence.enabled (not (hasKey .Values.extraArgs "disk-cache-path")) }}
             - "-disk-cache-path={{ include "loki-vl-proxy.diskCachePath" . }}"
@@ -93,11 +108,21 @@ spec:
             - "-peer-static={{ join "," .Values.peerCache.peers }}"
             {{- end }}
             {{- end }}
-          {{- if or .Values.peerCache.enabled .Values.env $goMemLimitValue }}
+          {{- if or .Values.peerCache.enabled .Values.env $goMemLimitValue $injectOTELFromPod }}
           env:
             {{- if $goMemLimitValue }}
             - name: GOMEMLIMIT
               value: {{ $goMemLimitValue | quote }}
+            {{- end }}
+            {{- if $injectOTELFromPod }}
+            - name: OTEL_SERVICE_INSTANCE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: OTEL_SERVICE_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             {{- end }}
             {{- if .Values.peerCache.enabled }}
             - name: POD_IP
@@ -155,11 +180,16 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if or .Values.persistence.enabled .Values.extraVolumeMounts }}
+          {{- if or .Values.persistence.enabled .Values.extraVolumeMounts $hostProcEnabled }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
             - name: cache-data
               mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+            {{- if $hostProcEnabled }}
+            - name: host-proc
+              mountPath: {{ $hostProcMountPath }}
+              readOnly: true
             {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -168,12 +198,18 @@ spec:
         {{- with .Values.extraContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- if or .Values.extraVolumes (and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet"))) }}
+      {{- if or .Values.extraVolumes $hostProcEnabled (and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet"))) }}
       volumes:
         {{- if and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet")) }}
         - name: cache-data
           persistentVolumeClaim:
             claimName: {{ include "loki-vl-proxy.persistenceClaimName" . }}
+        {{- end }}
+        {{- if $hostProcEnabled }}
+        - name: host-proc
+          hostPath:
+            path: /proc
+            type: Directory
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}

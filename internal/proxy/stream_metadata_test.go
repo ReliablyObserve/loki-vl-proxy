@@ -32,7 +32,7 @@ func TestVLLogsToLokiStreams_DefaultValuesStayTwoTuple(t *testing.T) {
 	p := newStreamMetadataTestProxy(t, false)
 	body := []byte(`{"_time":"2026-01-01T00:00:00Z","_msg":"ok","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","deployment.environment.name":"dev","level":"info"}` + "\n")
 
-	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"}`, false)
+	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"}`, false, p.emitStructuredMetadata)
 	if len(streams) != 1 {
 		t.Fatalf("expected 1 stream, got %d", len(streams))
 	}
@@ -53,7 +53,7 @@ func TestVLLogsToLokiStreams_EmitStructuredMetadataAddsFlatThirdTupleValueByDefa
 	p := newStreamMetadataTestProxy(t, true)
 	body := []byte(`{"_time":"2026-01-01T00:00:00Z","_msg":"ok","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","deployment.environment.name":"dev","level":"info"}` + "\n")
 
-	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"}`, false)
+	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"}`, false, p.emitStructuredMetadata)
 	if len(streams) != 1 {
 		t.Fatalf("expected 1 stream, got %d", len(streams))
 	}
@@ -87,7 +87,7 @@ func TestVLLogsToLokiStreams_EmitStructuredMetadataWithParserFlattensFieldsByDef
 	p := newStreamMetadataTestProxy(t, true)
 	body := []byte(`{"_time":"2026-01-01T00:00:00Z","_msg":"{\"message\":\"ok\",\"status\":200}","_stream":"{job=\"otel-proxy\",level=\"info\"}","http.status_code":"200","level":"info"}` + "\n")
 
-	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"} | json`, false)
+	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"} | json`, false, p.emitStructuredMetadata)
 	if len(streams) != 1 {
 		t.Fatalf("expected 1 stream, got %d", len(streams))
 	}
@@ -118,7 +118,7 @@ func TestVLLogsToLokiStreams_CategorizedLabelsStillEmitsFlatMetadataForParserSaf
 	p := newStreamMetadataTestProxy(t, true)
 	body := []byte(`{"_time":"2026-01-01T00:00:00Z","_msg":"{\"message\":\"ok\",\"status\":200}","_stream":"{job=\"otel-proxy\",level=\"info\"}","service.name":"otel-app","trace_id":"abc123","http.status_code":"200","level":"info"}` + "\n")
 
-	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"} | json`, true)
+	streams := p.vlLogsToLokiStreams(body, `{job="otel-proxy"} | json`, true, p.emitStructuredMetadata)
 	if len(streams) != 1 {
 		t.Fatalf("expected 1 stream, got %d", len(streams))
 	}
@@ -152,7 +152,7 @@ func TestStreamLogQuery_StreamingModePreservesThreeTupleMetadata(t *testing.T) {
 		Body: io.NopCloser(strings.NewReader(`{"_time":"2026-01-01T00:00:00Z","_msg":"{\"status\":200}","_stream":"{job=\"otel-proxy\",level=\"info\"}","http.status_code":"200","level":"info"}` + "\n")),
 	}
 
-	p.streamLogQuery(rec, resp, `{job="otel-proxy"} | json`, false)
+	p.streamLogQuery(rec, resp, `{job="otel-proxy"} | json`, false, p.emitStructuredMetadata)
 
 	var payload map[string]interface{}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
@@ -196,5 +196,36 @@ func TestRequestWantsCategorizedLabels(t *testing.T) {
 	req.Header.Set("X-Loki-Response-Encoding-Flags", "foo,categorize-labels,bar")
 	if !requestWantsCategorizedLabels(req) {
 		t.Fatal("expected true when categorize-labels flag is present")
+	}
+}
+
+func TestShouldEmitStructuredMetadata_DisablesForGrafanaByDefault(t *testing.T) {
+	p := newStreamMetadataTestProxy(t, true)
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	req.Header.Set("X-Grafana-User", "admin")
+
+	if p.shouldEmitStructuredMetadata(req) {
+		t.Fatal("expected structured metadata disabled for Grafana callers by default")
+	}
+}
+
+func TestShouldEmitStructuredMetadata_AllowsGrafanaOptInViaEncodingFlag(t *testing.T) {
+	p := newStreamMetadataTestProxy(t, true)
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	req.Header.Set("X-Grafana-User", "admin")
+	req.Header.Set("X-Loki-Response-Encoding-Flags", "structured-metadata")
+
+	if !p.shouldEmitStructuredMetadata(req) {
+		t.Fatal("expected structured metadata when Grafana explicitly opts in via encoding flag")
+	}
+}
+
+func TestShouldEmitStructuredMetadata_AllowsQueryParamOptIn(t *testing.T) {
+	p := newStreamMetadataTestProxy(t, true)
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?structured_metadata=true", nil)
+	req.Header.Set("X-Grafana-User", "admin")
+
+	if !p.shouldEmitStructuredMetadata(req) {
+		t.Fatal("expected structured metadata when structured_metadata=true query param is set")
 	}
 }

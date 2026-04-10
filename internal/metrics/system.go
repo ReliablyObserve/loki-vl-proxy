@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +30,167 @@ var (
 	procReadDir  = os.ReadDir
 	systemGOOS   = runtime.GOOS
 )
+
+// SystemStartupCheck describes startup-time availability of /proc-backed metric families.
+type SystemStartupCheck struct {
+	GOOS            string
+	ProcRoot        string
+	Scope           string
+	Availability    map[string]bool
+	Issues          map[string]string
+	Recommendations []string
+}
+
+// MissingFamilies returns a stable list of unavailable metric families.
+func (c SystemStartupCheck) MissingFamilies() []string {
+	missing := make([]string, 0, len(c.Availability))
+	for family, ok := range c.Availability {
+		if !ok {
+			missing = append(missing, family)
+		}
+	}
+	sort.Strings(missing)
+	return missing
+}
+
+// IssueList returns issue strings in stable key order.
+func (c SystemStartupCheck) IssueList() []string {
+	keys := make([]string, 0, len(c.Issues))
+	for k := range c.Issues {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, fmt.Sprintf("%s: %s", k, c.Issues[k]))
+	}
+	return out
+}
+
+// SetProcRoot overrides the root used for /proc-backed system metrics.
+func SetProcRoot(root string) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		procRoot = "/proc"
+		return
+	}
+	procRoot = filepath.Clean(root)
+}
+
+// ProcRoot returns the configured /proc root path.
+func ProcRoot() string {
+	return procRoot
+}
+
+func detectProcScope(root string) string {
+	clean := filepath.Clean(strings.TrimSpace(root))
+	switch clean {
+	case "/proc":
+		return "container"
+	case "/host/proc", "/rootfs/proc":
+		return "host"
+	default:
+		if strings.Contains(clean, "host") && strings.HasSuffix(clean, "/proc") {
+			return "host"
+		}
+		return "custom"
+	}
+}
+
+// InspectSystemStartup validates startup prerequisites for /proc-backed metric families.
+func InspectSystemStartup() SystemStartupCheck {
+	check := SystemStartupCheck{
+		GOOS:         systemGOOS,
+		ProcRoot:     procRoot,
+		Scope:        detectProcScope(procRoot),
+		Availability: map[string]bool{},
+		Issues:       map[string]string{},
+	}
+
+	if systemGOOS != "linux" {
+		check.Recommendations = append(check.Recommendations, "System CPU/memory/disk/network/PSI metrics are exported only on Linux; non-Linux builds expose runtime/process metrics only.")
+		return check
+	}
+
+	if _, err := readCPUStat(); err != nil {
+		check.Availability["cpu"] = false
+		check.Issues["cpu"] = fmt.Sprintf("failed to read %s: %v", procPath("stat"), err)
+	} else {
+		check.Availability["cpu"] = true
+	}
+
+	if data, err := procReadFile(procPath("meminfo")); err != nil {
+		check.Availability["memory"] = false
+		check.Issues["memory"] = fmt.Sprintf("failed to read %s: %v", procPath("meminfo"), err)
+	} else {
+		memTotal, _, _ := parseMemInfoData(string(data))
+		if memTotal <= 0 {
+			check.Availability["memory"] = false
+			check.Issues["memory"] = fmt.Sprintf("parsed MemTotal=0 from %s", procPath("meminfo"))
+		} else {
+			check.Availability["memory"] = true
+		}
+	}
+
+	if data, err := procReadFile(procPath("self", "status")); err != nil {
+		check.Availability["process_rss"] = false
+		check.Issues["process_rss"] = fmt.Sprintf("failed to read %s: %v", procPath("self", "status"), err)
+	} else {
+		if parseProcessRSSData(string(data)) <= 0 {
+			check.Availability["process_rss"] = false
+			check.Issues["process_rss"] = fmt.Sprintf("unable to parse VmRSS from %s", procPath("self", "status"))
+		} else {
+			check.Availability["process_rss"] = true
+		}
+	}
+
+	if _, err := procReadFile(procPath("diskstats")); err != nil {
+		check.Availability["disk_io"] = false
+		check.Issues["disk_io"] = fmt.Sprintf("failed to read %s: %v", procPath("diskstats"), err)
+	} else {
+		check.Availability["disk_io"] = true
+	}
+
+	if _, err := procReadFile(procPath("net", "dev")); err != nil {
+		check.Availability["network_io"] = false
+		check.Issues["network_io"] = fmt.Sprintf("failed to read %s: %v", procPath("net", "dev"), err)
+	} else {
+		check.Availability["network_io"] = true
+	}
+
+	for _, resource := range []string{"cpu", "memory", "io"} {
+		family := "pressure_" + resource
+		path := procPath("pressure", resource)
+		data, err := procReadFile(path)
+		if err != nil {
+			check.Availability[family] = false
+			check.Issues[family] = fmt.Sprintf("failed to read %s: %v", path, err)
+			continue
+		}
+		some10, some60, some300, full10, full60, full300 := parsePSIData(string(data))
+		if some10 < 0 && some60 < 0 && some300 < 0 && full10 < 0 && full60 < 0 && full300 < 0 {
+			check.Availability[family] = false
+			check.Issues[family] = fmt.Sprintf("unable to parse PSI data from %s", path)
+			continue
+		}
+		check.Availability[family] = true
+	}
+
+	if _, err := procReadDir(procPath("self", "fd")); err != nil {
+		check.Availability["open_fds"] = false
+		check.Issues["open_fds"] = fmt.Sprintf("failed to read %s: %v", procPath("self", "fd"), err)
+	} else {
+		check.Availability["open_fds"] = true
+	}
+
+	if check.Scope != "host" {
+		check.Recommendations = append(check.Recommendations, "For node-level CPU/memory/disk/network/PSI metrics in Kubernetes, mount host /proc read-only and set -proc-root=/host/proc (or PROC_ROOT=/host/proc).")
+	}
+	if len(check.MissingFamilies()) > 0 {
+		check.Recommendations = append(check.Recommendations, "Verify container permissions and mount path for proc files; inaccessible /proc paths result in missing system metric families.")
+	}
+	return check
+}
 
 func procPath(parts ...string) string {
 	all := append([]string{procRoot}, parts...)

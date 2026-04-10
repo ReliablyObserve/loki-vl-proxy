@@ -183,3 +183,79 @@ rules:
       impact: "Clients experience hard failures and retry storms can increase platform load."
       action: "Identify top offending clients and inspect rejected query patterns."
       runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-client-bad-request-burst.md'
+
+  - alert: LokiVLProxySystemMetricsMissing
+    expr: absent(node_memory_usage_ratio{job="{{ include "loki-vl-proxy.fullname" . }}"})
+    for: 15m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: system-metrics
+      category: observability
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "System resource metrics missing"
+      description: "node_memory_usage_ratio is missing for loki-vl-proxy for 15 minutes."
+      impact: "CPU/memory/disk/network/pressure visibility is degraded and related alerts cannot fire."
+      action: "Check startup diagnostics, ensure /metrics exposure, and if running in Kubernetes enable host /proc mount plus -proc-root=/host/proc."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-system-resources.md'
+
+  - alert: LokiVLProxySystemMemoryHigh
+    expr: max_over_time(node_memory_usage_ratio{job="{{ include "loki-vl-proxy.fullname" . }}"}[10m]) > 0.90
+    for: 10m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: system-memory
+      category: capacity
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "System memory usage > 90%"
+      description: "node_memory_usage_ratio stayed above 90% for 10 minutes."
+      impact: "Query latency and backend request failures may increase under memory pressure."
+      action: "Correlate with process RSS/open FDs and node pressure, then reduce query load or increase pod/node capacity."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-system-resources.md'
+
+  - alert: LokiVLProxySystemCPUPressureHigh
+    expr: max_over_time(node_pressure_cpu_some_ratio{job="{{ include "loki-vl-proxy.fullname" . }}",window="60s"}[10m]) > 0.30
+    for: 10m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: system-cpu
+      category: performance
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "CPU pressure elevated"
+      description: "CPU PSI some ratio (60s window) stayed above 30% for 10 minutes."
+      impact: "Scheduler contention can cause request tail latency and timeout amplification."
+      action: "Check CPU mode split, top endpoints/tenants, and scale replicas or tune expensive queries."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-system-resources.md'
+
+  - alert: LokiVLProxySystemIOPressureHigh
+    expr: max_over_time(node_pressure_io_some_ratio{job="{{ include "loki-vl-proxy.fullname" . }}",window="60s"}[10m]) > 0.20
+    for: 10m
+    labels:
+      severity: warning
+      service: loki-vl-proxy
+      component: system-io
+      category: performance
+      team: '{{ .Values.prometheusRule.standardLabels.team | default "sre" }}'
+      owner: '{{ .Values.prometheusRule.standardLabels.owner | default "reliablyobserve" }}'
+      source: '{{ .Values.prometheusRule.standardLabels.source | default "vmalert" }}'
+      managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
+    annotations:
+      summary: "I/O pressure elevated"
+      description: "I/O PSI some ratio (60s window) stayed above 20% for 10 minutes."
+      impact: "Disk/network stalls can slow backend and cache operations, increasing user-facing latency."
+      action: "Check disk and network throughput trends, cache path storage performance, and backend saturation."
+      runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-system-resources.md'

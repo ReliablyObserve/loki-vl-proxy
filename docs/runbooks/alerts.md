@@ -24,3 +24,4 @@ Alert runbooks are split per alert under this directory so each alert annotation
 - [LokiVLProxyTenantHighErrorRate](loki-vl-proxy-tenant-high-error-rate.md)
 - [LokiVLProxyRateLimiting](loki-vl-proxy-rate-limiting.md)
 - [LokiVLProxyClientBadRequestBurst](loki-vl-proxy-client-bad-request-burst.md)
+- [LokiVLProxySystemResources](loki-vl-proxy-system-resources.md)

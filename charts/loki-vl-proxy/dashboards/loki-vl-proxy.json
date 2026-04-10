@@ -322,6 +322,150 @@
       "fieldConfig": {
         "defaults": {"unit": "s"}
       }
+    },
+    {
+      "title": "System Resources",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 61},
+      "collapsed": false
+    },
+    {
+      "title": "Memory Usage %",
+      "type": "gauge",
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 62},
+      "targets": [
+        {
+          "expr": "100 * max(node_memory_usage_ratio{job=\"$job\"})",
+          "legendFormat": "memory usage"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 75},
+              {"color": "red", "value": 90}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "CPU Usage Ratio by Mode",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 9, "x": 6, "y": 62},
+      "targets": [
+        {
+          "expr": "max(node_cpu_usage_ratio{job=\"$job\"}) by (mode)",
+          "legendFormat": "{{mode}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {"fillOpacity": 10}
+        }
+      }
+    },
+    {
+      "title": "PSI Pressure (60s Window)",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 9, "x": 15, "y": 62},
+      "targets": [
+        {
+          "expr": "max(node_pressure_cpu_some_ratio{job=\"$job\",window=\"60s\"})",
+          "legendFormat": "cpu some"
+        },
+        {
+          "expr": "max(node_pressure_memory_some_ratio{job=\"$job\",window=\"60s\"})",
+          "legendFormat": "memory some"
+        },
+        {
+          "expr": "max(node_pressure_io_some_ratio{job=\"$job\",window=\"60s\"})",
+          "legendFormat": "io some"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {"fillOpacity": 10},
+          "thresholds": {
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.1},
+              {"color": "red", "value": 0.2}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Disk Throughput",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 70},
+      "targets": [
+        {
+          "expr": "sum(rate(node_disk_read_bytes_total{job=\"$job\"}[$__rate_interval]))",
+          "legendFormat": "read"
+        },
+        {
+          "expr": "sum(rate(node_disk_written_bytes_total{job=\"$job\"}[$__rate_interval]))",
+          "legendFormat": "write"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "Bps", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "Network Throughput",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 70},
+      "targets": [
+        {
+          "expr": "sum(rate(node_network_receive_bytes_total{job=\"$job\"}[$__rate_interval]))",
+          "legendFormat": "rx"
+        },
+        {
+          "expr": "sum(rate(node_network_transmit_bytes_total{job=\"$job\"}[$__rate_interval]))",
+          "legendFormat": "tx"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "Bps", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "Process RSS",
+      "type": "stat",
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 78},
+      "targets": [
+        {
+          "expr": "max(process_resident_memory_bytes{job=\"$job\"})",
+          "legendFormat": "rss"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "bytes"}
+      }
+    },
+    {
+      "title": "Open File Descriptors",
+      "type": "stat",
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 78},
+      "targets": [
+        {
+          "expr": "max(process_open_fds{job=\"$job\"})",
+          "legendFormat": "fds"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "none"}
+      }
     }
   ],
   "schemaVersion": 39,

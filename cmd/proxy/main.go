@@ -32,6 +32,7 @@ type envConfig struct {
 	backendURL        string
 	rulerBackendURL   string
 	alertsBackendURL  string
+	procRoot          string
 	tenantMapJSON     string
 	otlpEndpoint      string
 	otlpCompression   string
@@ -260,6 +261,7 @@ func run(
 	otelServiceNamespace := fs.String("otel-service-namespace", "", "OpenTelemetry service.namespace for logs and OTLP metrics")
 	otelServiceInstanceID := fs.String("otel-service-instance-id", "", "OpenTelemetry service.instance.id for logs and OTLP metrics")
 	deploymentEnvironment := fs.String("deployment-environment", "", "OpenTelemetry deployment.environment.name for logs and OTLP metrics")
+	procRoot := fs.String("proc-root", "/proc", "Proc filesystem root for system metrics (/proc for container scope, /host/proc for host scope)")
 
 	// HTTP server hardening
 	readTimeout := fs.Duration("http-read-timeout", 30*time.Second, "HTTP server read timeout")
@@ -329,6 +331,7 @@ func run(
 		backendURL:        *backendURL,
 		rulerBackendURL:   *rulerBackendURL,
 		alertsBackendURL:  *alertsBackendURL,
+		procRoot:          *procRoot,
 		tenantMapJSON:     *tenantMapJSON,
 		otlpEndpoint:      *otlpEndpoint,
 		otlpCompression:   *otlpCompression,
@@ -350,6 +353,9 @@ func run(
 		serviceInstanceID:     envCfg.serviceInstanceID,
 		deploymentEnvironment: envCfg.deploymentEnv,
 	})
+	metrics.SetProcRoot(envCfg.procRoot)
+	logSystemMetricsStartup(logger)
+
 	fatal := func(msg string, args ...any) {
 		logger.Error(msg, args...)
 		os.Exit(1)
@@ -682,6 +688,9 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	if v := getenv("ALERTS_BACKEND_URL"); v != "" && cfg.alertsBackendURL == "" {
 		cfg.alertsBackendURL = v
 	}
+	if v := getenv("PROC_ROOT"); v != "" && cfg.procRoot == "/proc" {
+		cfg.procRoot = v
+	}
 	if v := getenv("TENANT_MAP"); v != "" && cfg.tenantMapJSON == "" {
 		cfg.tenantMapJSON = v
 	}
@@ -1006,5 +1015,36 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 	}
 	if compat != nil {
 		logger.Info("compatibility edge cache active", "tier", "tier0")
+	}
+}
+
+func logSystemMetricsStartup(logger *slog.Logger) {
+	check := metrics.InspectSystemStartup()
+	if check.GOOS != "linux" {
+		logger.Info("system metrics startup check",
+			"goos", check.GOOS,
+			"proc_root", check.ProcRoot,
+			"scope", check.Scope,
+			"note", "linux /proc metric families are unavailable on this platform",
+		)
+		return
+	}
+
+	missing := check.MissingFamilies()
+	if len(missing) == 0 {
+		logger.Info("system metrics startup check passed",
+			"proc_root", check.ProcRoot,
+			"scope", check.Scope,
+		)
+	} else {
+		logger.Warn("system metrics startup check incomplete",
+			"proc_root", check.ProcRoot,
+			"scope", check.Scope,
+			"missing_families", strings.Join(missing, ","),
+			"issues", strings.Join(check.IssueList(), "; "),
+		)
+	}
+	for _, rec := range check.Recommendations {
+		logger.Info("system metrics startup recommendation", "message", rec)
 	}
 }

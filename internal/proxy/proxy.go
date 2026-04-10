@@ -3423,8 +3423,9 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 
 	// Chunked streaming: flush partial results as they arrive from VL
 	categorizedLabels := requestWantsCategorizedLabels(r)
+	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	if p.streamResponse {
-		p.streamLogQuery(w, resp, r.FormValue("query"), categorizedLabels)
+		p.streamLogQuery(w, resp, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 		return
 	}
 
@@ -3432,7 +3433,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 
 	// VL returns newline-delimited JSON, each line is a log entry.
 	// Loki expects: {"status":"success","data":{"resultType":"streams","result":[...]}}
-	streams := p.vlLogsToLokiStreams(body, r.FormValue("query"), categorizedLabels)
+	streams := p.vlLogsToLokiStreams(body, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 
 	// Apply derived fields (extract trace_id etc. from log lines)
 	if len(p.derivedFields) > 0 {
@@ -3466,7 +3467,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 }
 
 // streamLogQuery streams VL NDJSON response as chunked Loki-compatible JSON.
-func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, originalQuery string, categorizedLabels bool) {
+func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) {
 	flusher, canFlush := w.(http.Flusher)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -3514,7 +3515,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 
 		stream := map[string]interface{}{
 			"stream": translatedLabels,
-			"values": buildStreamValues(tsNanos, msg, structuredMetadata, parsedFields, p.emitStructuredMetadata, categorizedLabels),
+			"values": buildStreamValues(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels),
 		}
 
 		chunk, _ := json.Marshal(stream)
@@ -3707,7 +3708,7 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 	return result
 }
 
-func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string, categorizedLabels bool) []map[string]interface{} {
+func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []map[string]interface{} {
 	type streamEntry struct {
 		Labels map[string]string
 		Values []interface{}
@@ -3770,7 +3771,7 @@ func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string, categoriz
 			}
 			streamMap[streamKey] = se
 		}
-		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, structuredMetadata, parsedFields, p.emitStructuredMetadata, categorizedLabels))
+		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels))
 		vlEntryPool.Put(entry)
 	}
 
@@ -4164,6 +4165,52 @@ func requestWantsCategorizedLabels(r *http.Request) bool {
 		}
 	}
 	return false
+}
+
+func requestWantsStructuredMetadata(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if raw := strings.TrimSpace(r.FormValue("structured_metadata")); raw != "" {
+		if enabled, err := strconv.ParseBool(raw); err == nil {
+			return enabled
+		}
+	}
+	raw := strings.TrimSpace(r.Header.Get("X-Loki-Response-Encoding-Flags"))
+	if raw == "" {
+		return false
+	}
+	for _, part := range strings.Split(raw, ",") {
+		if strings.EqualFold(strings.TrimSpace(part), "structured-metadata") {
+			return true
+		}
+	}
+	return false
+}
+
+func requestLooksLikeGrafana(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if strings.TrimSpace(r.Header.Get("X-Grafana-User")) != "" || strings.TrimSpace(r.Header.Get("X-Grafana-Org-Id")) != "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(strings.TrimSpace(r.Header.Get("User-Agent"))), "grafana")
+}
+
+func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
+	if !p.emitStructuredMetadata {
+		return false
+	}
+	if requestWantsStructuredMetadata(r) {
+		return true
+	}
+	// Grafana Explore/Drilldown clients still expect canonical [ts, line] tuples.
+	// Keep 3-tuples opt-in for these callers even when global emission is enabled.
+	if requestLooksLikeGrafana(r) {
+		return false
+	}
+	return true
 }
 
 func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string, single func(http.ResponseWriter, *http.Request)) bool {

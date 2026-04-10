@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -95,6 +96,28 @@ func (r *runtimeRecorder) build(_ runtimeOptions, _ *slog.Logger, _ signalNotifi
 func (r *exitRecorder) exit(code int) {
 	r.calls++
 	r.code = code
+}
+
+func writeSyntheticProcFiles(t *testing.T, root string, files map[string]string) {
+	t.Helper()
+
+	for rel, content := range files {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+}
+
+func withSyntheticProcRoot(t *testing.T, files map[string]string) string {
+	t.Helper()
+
+	root := t.TempDir()
+	writeSyntheticProcFiles(t, root, files)
+	return root
 }
 
 func TestBuildLogger(t *testing.T) {
@@ -600,6 +623,21 @@ func TestApplyEnvOverrides_PreservesExplicitFlags(t *testing.T) {
 	got := applyEnvOverrides(cfg, func(key string) string { return env[key] })
 	if got != cfg {
 		t.Fatalf("expected explicit values to win, got %+v", got)
+	}
+}
+
+func TestApplyEnvOverrides_ProcRoot(t *testing.T) {
+	cfg := envConfig{procRoot: "/proc"}
+	env := map[string]string{"PROC_ROOT": "/host/proc"}
+	got := applyEnvOverrides(cfg, func(key string) string { return env[key] })
+	if got.procRoot != "/host/proc" {
+		t.Fatalf("expected PROC_ROOT override when default procRoot is used, got %+v", got)
+	}
+
+	cfg.procRoot = "/custom/proc"
+	got = applyEnvOverrides(cfg, func(key string) string { return env[key] })
+	if got.procRoot != "/custom/proc" {
+		t.Fatalf("expected explicit procRoot to win over PROC_ROOT env var, got %+v", got)
 	}
 }
 
@@ -1303,6 +1341,76 @@ func TestLogProxyStartup(t *testing.T) {
 		if !strings.Contains(logs, want) {
 			t.Fatalf("expected log %q in %s", want, logs)
 		}
+	}
+}
+
+func TestLogSystemMetricsStartup_Passed(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only startup check path")
+	}
+
+	root := withSyntheticProcRoot(t, map[string]string{
+		"stat":            "cpu  100 5 20 300 7 0 1 2\n",
+		"meminfo":         "MemTotal: 1024 kB\nMemAvailable: 512 kB\nMemFree: 128 kB\n",
+		"self/status":     "Name:\tproxy\nVmRSS:\t123 kB\n",
+		"diskstats":       "   8       0 sda 1 2 6 4 5 6 10 8 0 0 0 0\n",
+		"net/dev":         "Inter-|   Receive                                                |  Transmit\n face |bytes packets errs drop fifo frame compressed multicast|bytes packets errs drop fifo colls carrier compressed\n  eth0: 101 1 0 0 0 0 0 0 202 2 0 0 0 0 0 0\n",
+		"pressure/cpu":    "some avg10=1.00 avg60=2.00 avg300=3.00 total=10\nfull avg10=4.00 avg60=5.00 avg300=6.00 total=20\n",
+		"pressure/memory": "some avg10=0.50 avg60=1.00 avg300=1.50 total=10\nfull avg10=2.00 avg60=2.50 avg300=3.00 total=20\n",
+		"pressure/io":     "some avg10=0.25 avg60=0.50 avg300=0.75 total=10\nfull avg10=1.00 avg60=1.25 avg300=1.50 total=20\n",
+		"self/fd/0":       "",
+	})
+	prevProcRoot := metrics.ProcRoot()
+	metrics.SetProcRoot(root)
+	t.Cleanup(func() { metrics.SetProcRoot(prevProcRoot) })
+
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+	logSystemMetricsStartup(logger)
+
+	logs := buf.String()
+	if !strings.Contains(logs, "system metrics startup check passed") {
+		t.Fatalf("expected startup pass log, got: %s", logs)
+	}
+	if strings.Contains(logs, "system metrics startup check incomplete") {
+		t.Fatalf("did not expect startup incomplete log, got: %s", logs)
+	}
+	if !strings.Contains(logs, "system metrics startup recommendation") {
+		t.Fatalf("expected startup recommendation log for non-host proc scope, got: %s", logs)
+	}
+}
+
+func TestLogSystemMetricsStartup_Incomplete(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only startup check path")
+	}
+
+	root := withSyntheticProcRoot(t, map[string]string{
+		"stat":            "cpu  100 5 20 300 7 0 1 2\n",
+		"self/status":     "Name:\tproxy\nVmRSS:\t123 kB\n",
+		"diskstats":       "   8       0 sda 1 2 6 4 5 6 10 8 0 0 0 0\n",
+		"net/dev":         "Inter-|   Receive                                                |  Transmit\n face |bytes packets errs drop fifo frame compressed multicast|bytes packets errs drop fifo colls carrier compressed\n  eth0: 101 1 0 0 0 0 0 0 202 2 0 0 0 0 0 0\n",
+		"pressure/cpu":    "some avg10=1.00 avg60=2.00 avg300=3.00 total=10\nfull avg10=4.00 avg60=5.00 avg300=6.00 total=20\n",
+		"pressure/memory": "some avg10=0.50 avg60=1.00 avg300=1.50 total=10\nfull avg10=2.00 avg60=2.50 avg300=3.00 total=20\n",
+		"self/fd/0":       "",
+	})
+	prevProcRoot := metrics.ProcRoot()
+	metrics.SetProcRoot(root)
+	t.Cleanup(func() { metrics.SetProcRoot(prevProcRoot) })
+
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+	logSystemMetricsStartup(logger)
+
+	logs := buf.String()
+	if !strings.Contains(logs, "system metrics startup check incomplete") {
+		t.Fatalf("expected startup incomplete log, got: %s", logs)
+	}
+	if !strings.Contains(logs, "missing_families") {
+		t.Fatalf("expected missing families in startup log, got: %s", logs)
+	}
+	if !strings.Contains(logs, "system metrics startup recommendation") {
+		t.Fatalf("expected startup recommendation log, got: %s", logs)
 	}
 }
 

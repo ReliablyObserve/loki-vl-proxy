@@ -123,6 +123,14 @@ env: []
   #       name: loki-vl-proxy-config
   #       key: field-mapping
 
+# OpenTelemetry resource attribute defaults for Kubernetes.
+# When enabled, the chart injects:
+# - OTEL_SERVICE_INSTANCE_ID from pod name
+# - OTEL_SERVICE_NAMESPACE from pod namespace
+# This improves per-pod metric visibility in OTLP pipelines without extra RBAC.
+otelResourceAttributes:
+  injectFromPod: true
+
 envFrom: []
   # - secretRef:
   #     name: loki-vl-proxy-env
@@ -379,6 +387,14 @@ initContainers: []
 extraContainers: []
 extraVolumes: []
 extraVolumeMounts: []
+
+# --- System metrics (/proc) ---
+# When enabled, mount host /proc read-only and point the proxy at that mount
+# so CPU/memory/disk/network/PSI metrics reflect node-level context.
+systemMetrics:
+  hostProc:
+    enabled: false
+    mountPath: /host/proc
 
 # --- Gateway API HTTPRoute (traffic distribution) ---
 # Optional Gateway API exposure instead of Ingress.

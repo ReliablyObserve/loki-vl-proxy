@@ -8,6 +8,7 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 |---|---|---|---|
 | `-listen` | `LISTEN_ADDR` | `:3100` | Listen address |
 | `-backend` | `VL_BACKEND_URL` | `http://localhost:9428` | VictoriaLogs backend URL |
+| `-proc-root` | `PROC_ROOT` | `/proc` | Proc filesystem root used for CPU/memory/disk/network/PSI metrics (`/proc` for container scope, `/host/proc` for host scope) |
 | `-ruler-backend` | `RULER_BACKEND_URL` | — | Optional rules backend for legacy Loki YAML rules routes and Prometheus-style `/prometheus/api/v1/rules` passthrough |
 | `-alerts-backend` | `ALERTS_BACKEND_URL` | — | Optional alerts backend for Loki and Prometheus-style alerts endpoints (defaults to `-ruler-backend`) |
 | `-log-level` | — | `info` | Log level: debug, info, warn, error |
@@ -22,7 +23,7 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 |---|---|---|---|
 | `-label-style` | `LABEL_STYLE` | `passthrough` | `passthrough` or `underscores` |
 | `-metadata-field-mode` | `METADATA_FIELD_MODE` | `hybrid` | `native`, `translated`, or `hybrid` for `detected_fields` and structured metadata exposure |
-| `-emit-structured-metadata` | — | `false` | Emit Loki 3-tuple stream values `[timestamp, line, metadata]` instead of canonical 2-tuples |
+| `-emit-structured-metadata` | — | `false` | Enable 3-tuple support. Non-Grafana callers get `[timestamp, line, metadata]`; Grafana callers stay on `[timestamp, line]` unless they explicitly opt in (`X-Loki-Response-Encoding-Flags: structured-metadata` or `structured_metadata=true`) |
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
 
 ### Label Style Modes

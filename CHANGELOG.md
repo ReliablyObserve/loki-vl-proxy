@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- harden startup diagnostics and /proc-host mount guidance for system resource metrics so missing CPU/memory/disk/network/PSI families are surfaced explicitly at boot
+
+### Tests
+
+- add coverage for `PROC_ROOT` env override behavior and startup diagnostics branches (`passed`/`incomplete`) to prevent regressions in release quality checks
+
+## [0.27.15] - 2026-04-10
+
+### Bug Fixes
+
+- keep Grafana Explore/Drilldown on canonical 2-tuples even when `-emit-structured-metadata=true`, and require explicit caller opt-in (`X-Loki-Response-Encoding-Flags: structured-metadata` or `structured_metadata=true`) for 3-tuples to prevent `ReadArray` client decode failures
+
+### Observability
+
+- add startup diagnostics for `/proc`-backed system metrics so missing CPU/memory/disk/network/PSI families are logged with concrete remediation instead of failing silently
+- expand the main operations dashboard with system resource drilldown panels (memory, CPU modes, PSI pressure, disk/network throughput, process RSS, open FDs)
+- add actionable system resource alerts for missing system metrics, high memory usage, and sustained CPU/IO PSI pressure
+
+### Helm
+
+- add chart support for host `/proc` mounting (`systemMetrics.hostProc.enabled`) and auto-wire `-proc-root` so node-level system metrics can be enabled explicitly in Kubernetes
+
+### Documentation
+
+- add a dedicated system-resources runbook and include it in the alert runbook index for faster incident handling
+
 ## [0.27.14] - 2026-04-10
 
 ### Bug Fixes
