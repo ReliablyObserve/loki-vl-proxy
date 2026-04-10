@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- enforce strict Loki tuple behavior for query responses: default/no-flag requests return canonical 2-tuples, while `X-Loki-Response-Encoding-Flags: categorize-labels` returns Loki-style 3-tuples with `structuredMetadata` and/or `parsed`
+- remove proxy-side Grafana caller sniffing and `structured_metadata` request overrides from tuple-shape decisions, so response shape is controlled only by Loki header flags
+- remove non-Loki `structured_metadata` tuple key alias from query responses and keep only canonical Loki metadata keys
+
+### Tests
+
+- add strict `/query_range` and `/query` contract tests covering both default 2-tuple and `categorize-labels` 3-tuple paths
+- add parser-chain/brace-heavy stream-response regression coverage to prevent `ReadArray` tuple-shape regressions in Grafana Explore/Drilldown
+
+### Documentation
+
+- update API/config docs to describe strict `categorize-labels`-driven 3-tuple behavior and canonical Loki metadata keys
+
 ## [0.27.18] - 2026-04-10
 
 ### Bug Fixes

@@ -414,8 +414,8 @@ func TestMergeMultiTenantResponsesQueryInjectsTenantLabel(t *testing.T) {
 
 func TestMergeMultiTenantResponsesQueryPreservesThreeTupleValues(t *testing.T) {
 	body, _, err := mergeMultiTenantResponses("query", []string{"tenant-a", "tenant-b"}, []*httptest.ResponseRecorder{
-		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["2","line-a",{"service.name":"orders"}]]}]}}`),
-		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["1","line-b",{"http.status_code":"200"}]]}]}}`),
+		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["2","line-a",{"structuredMetadata":{"service.name":"orders"}}]]}]}}`),
+		recorderWithJSON(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"app":"api"},"values":[["1","line-b",{"parsed":{"status":"200"}}]]}]}}`),
 	})
 	if err != nil {
 		t.Fatalf("mergeMultiTenantResponses failed: %v", err)

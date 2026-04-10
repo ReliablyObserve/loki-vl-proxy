@@ -25,9 +25,8 @@
 For Grafana Logs Drilldown and Explore compatibility:
 
 - Query results use canonical Loki 2-tuples `[timestamp, line]` by default.
-- With `-emit-structured-metadata=true`, non-Grafana callers receive Loki 3-tuples `[timestamp, line, metadata]` by default.
-- Grafana Explore/Drilldown callers stay on canonical 2-tuples unless they explicitly opt in with `structured_metadata=true` or `X-Loki-Response-Encoding-Flags: structured-metadata`.
-- When emitted, tuple metadata is always a flat key/value object for broad client/parser compatibility, including requests that carry `X-Loki-Response-Encoding-Flags: categorize-labels`.
+- When `X-Loki-Response-Encoding-Flags: categorize-labels` is present and `-emit-structured-metadata=true`, query results emit Loki 3-tuples `[timestamp, line, metadata]`.
+- The 3rd tuple object follows Loki keys only: `structuredMetadata` and/or `parsed` (no snake_case alias keys).
 - Stream labels stay Loki-compatible on the `stream` object.
 - Label APIs prefer VictoriaLogs stream metadata so parsed fields do not leak into Loki label pickers when the backend supports the stream-only endpoints.
 - Parsed fields and structured metadata are surfaced through `detected_fields` and `detected_field/{name}/values`.

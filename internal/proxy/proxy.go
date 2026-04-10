@@ -3424,7 +3424,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	// Chunked streaming: flush partial results as they arrive from VL
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
-	p.metrics.RecordTupleMode(tupleModeForRequest(r, emitStructuredMetadata))
+	p.metrics.RecordTupleMode(tupleModeForRequest(categorizedLabels, emitStructuredMetadata))
 	if p.streamResponse {
 		p.streamLogQuery(w, resp, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 		return
@@ -3816,23 +3816,21 @@ func buildStreamValues(ts, msg string, structuredMetadata map[string]string, par
 }
 
 func buildStreamValue(ts, msg string, structuredMetadata map[string]string, parsedFields map[string]string, emitStructuredMetadata bool, categorizedLabels bool) interface{} {
-	if !emitStructuredMetadata {
+	if !emitStructuredMetadata || !categorizedLabels {
 		return []interface{}{ts, msg}
 	}
-	_ = categorizedLabels
 
-	// Legacy-safe fallback: flatten metadata into a simple map[string]string.
-	flat := make(map[string]string, len(structuredMetadata)+len(parsedFields))
-	for key, value := range structuredMetadata {
-		flat[key] = value
+	metadata := map[string]interface{}{}
+	if len(structuredMetadata) > 0 {
+		metadata["structuredMetadata"] = structuredMetadata
 	}
-	for key, value := range parsedFields {
-		flat[key] = value
+	if len(parsedFields) > 0 {
+		metadata["parsed"] = parsedFields
 	}
-	if len(flat) > 0 {
-		return []interface{}{ts, msg, flat}
+	if len(metadata) == 0 {
+		return []interface{}{ts, msg, map[string]interface{}{}}
 	}
-	return []interface{}{ts, msg}
+	return []interface{}{ts, msg, metadata}
 }
 
 func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string) (map[string]string, map[string]string, map[string]string) {
@@ -4156,88 +4154,25 @@ func requestWantsCategorizedLabels(r *http.Request) bool {
 	if r == nil {
 		return false
 	}
-	raw := strings.TrimSpace(r.Header.Get("X-Loki-Response-Encoding-Flags"))
-	if raw == "" {
-		return false
-	}
-	for _, part := range strings.Split(raw, ",") {
-		if strings.EqualFold(strings.TrimSpace(part), "categorize-labels") {
-			return true
+	for _, raw := range r.Header.Values("X-Loki-Response-Encoding-Flags") {
+		for _, part := range strings.Split(raw, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), "categorize-labels") {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-func requestStructuredMetadataOverride(r *http.Request) (bool, bool) {
-	if r == nil {
-		return false, false
+func tupleModeForRequest(categorizedLabels bool, emitStructuredMetadata bool) string {
+	if emitStructuredMetadata && categorizedLabels {
+		return "categorize_labels_3tuple"
 	}
-	if raw := strings.TrimSpace(r.FormValue("structured_metadata")); raw != "" {
-		if enabled, err := strconv.ParseBool(raw); err == nil {
-			return enabled, true
-		}
-	}
-	if raw := strings.TrimSpace(r.Header.Get("X-Loki-Response-Encoding-Flags")); raw != "" {
-		for _, part := range strings.Split(raw, ",") {
-			if strings.EqualFold(strings.TrimSpace(part), "structured-metadata") {
-				return true, true
-			}
-		}
-	}
-	return false, false
-}
-
-func requestLooksLikeGrafana(r *http.Request) bool {
-	if r == nil {
-		return false
-	}
-	if strings.TrimSpace(r.Header.Get("X-Grafana-User")) != "" {
-		return true
-	}
-	if strings.TrimSpace(r.Header.Get("X-Grafana-Org-Id")) != "" {
-		return true
-	}
-	if strings.TrimSpace(r.Header.Get("X-Dashboard-Uid")) != "" {
-		return true
-	}
-	ua := strings.ToLower(strings.TrimSpace(r.Header.Get("User-Agent")))
-	return strings.Contains(ua, "grafana")
-}
-
-func tupleModeForRequest(r *http.Request, emitStructuredMetadata bool) string {
-	isGrafana := requestLooksLikeGrafana(r)
-	overrideEnabled, overrideSet := requestStructuredMetadataOverride(r)
-
-	if isGrafana {
-		if !emitStructuredMetadata {
-			return "grafana_default_2tuple"
-		}
-		if overrideSet && overrideEnabled {
-			return "grafana_optin_3tuple"
-		}
-		return "grafana_default_3tuple"
-	}
-	if emitStructuredMetadata {
-		return "nongrafana_3tuple"
-	}
-	return "nongrafana_2tuple"
+	return "default_2tuple"
 }
 
 func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
-	if !p.emitStructuredMetadata {
-		return false
-	}
-	// Allow explicit per-request override via query/header flags.
-	// - structured_metadata=true|false
-	// - X-Loki-Response-Encoding-Flags: structured-metadata
-	if enabled, ok := requestStructuredMetadataOverride(r); ok {
-		return enabled
-	}
-	// Keep Grafana default on canonical 2-tuples unless explicit opt-in is sent.
-	if requestLooksLikeGrafana(r) {
-		return false
-	}
-	return true
+	return p.emitStructuredMetadata && requestWantsCategorizedLabels(r)
 }
 
 func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string, single func(http.ResponseWriter, *http.Request)) bool {
