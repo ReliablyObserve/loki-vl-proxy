@@ -75,10 +75,59 @@ Stateful/headless service name.
 {{- end }}
 
 {{/*
+Render Service trafficDistribution with strict enum validation.
+*/}}
+{{- define "loki-vl-proxy.renderTrafficDistribution" -}}
+{{- $value := default "" .value -}}
+{{- $allowed := list "" "PreferSameZone" "PreferSameNode" "PreferClose" -}}
+{{- if not (has $value $allowed) -}}
+{{- fail (printf "%s must be one of: PreferSameZone, PreferSameNode, PreferClose (deprecated), or empty" .field) -}}
+{{- end -}}
+{{- if ne $value "" -}}
+trafficDistribution: {{ $value | quote }}
+{{- end -}}
+{{- end }}
+
+{{/*
 Persistence claim name for standalone PVC / existing claim mode.
 */}}
 {{- define "loki-vl-proxy.persistenceClaimName" -}}
 {{- default (printf "%s-cache" (include "loki-vl-proxy.fullname" .)) .Values.persistence.existingClaim }}
+{{- end }}
+
+{{/*
+Canonicalize volumeClaimTemplates to immutable-shape fields we care about.
+*/}}
+{{- define "loki-vl-proxy.canonicalizeVolumeClaimTemplates" -}}
+{{- $out := list -}}
+{{- range $tpl := default (list) .volumeClaimTemplates -}}
+{{- $meta := default (dict) $tpl.metadata -}}
+{{- $out = append $out (dict "name" (default "" $meta.name) "spec" (default (dict) $tpl.spec)) -}}
+{{- end -}}
+{{- toYaml $out -}}
+{{- end }}
+
+{{/*
+Desired canonical volumeClaimTemplates for StatefulSet mode.
+Must stay aligned with templates/deployment.yaml generation logic.
+*/}}
+{{- define "loki-vl-proxy.desiredVolumeClaimTemplates" -}}
+{{- $out := list -}}
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) -}}
+{{- $spec := dict
+    "accessModes" (list .Values.persistence.accessMode)
+    "resources" (dict "requests" (dict "storage" .Values.persistence.size))
+-}}
+{{- if .Values.persistence.storageClass -}}
+{{- $_ := set $spec "storageClassName" .Values.persistence.storageClass -}}
+{{- end -}}
+{{- $out = append $out (dict "name" "cache-data" "spec" $spec) -}}
+{{- end -}}
+{{- range $tpl := default (list) .Values.persistence.extraVolumeClaimTemplates -}}
+{{- $meta := default (dict) $tpl.metadata -}}
+{{- $out = append $out (dict "name" (default "" $meta.name) "spec" (default (dict) $tpl.spec)) -}}
+{{- end -}}
+{{- toYaml $out -}}
 {{- end }}
 
 {{/*

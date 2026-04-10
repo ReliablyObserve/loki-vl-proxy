@@ -176,6 +176,23 @@ service:
   port: 3100
   annotations: {}
   labels: {}
+  # Service traffic preference (Kubernetes Service .spec.trafficDistribution).
+  # Supported values:
+  # - PreferSameZone
+  # - PreferSameNode
+  # - PreferClose (deprecated alias for PreferSameZone)
+  trafficDistribution: ""
+
+# Headless peer-discovery service used by StatefulSet / peerCache DNS mode.
+peerService:
+  annotations: {}
+  labels: {}
+  # Service traffic preference (Kubernetes Service .spec.trafficDistribution).
+  # Supported values:
+  # - PreferSameZone
+  # - PreferSameNode
+  # - PreferClose (deprecated alias for PreferSameZone)
+  trafficDistribution: ""
 
 # --- ServiceMonitor (Prometheus Operator) ---
 # Disabled by default to keep the chart generic outside Prometheus-Operator clusters.
@@ -416,3 +433,9 @@ persistence:
   # Extra claim templates appended only in StatefulSet mode.
   # Useful for separate WAL/buffer/storage volumes managed by the same chart.
   extraVolumeClaimTemplates: []
+
+# Guardrail for immutable StatefulSet fields.
+# Enabled by default to fail early during helm upgrade when live StatefulSet
+# immutable fields diverge from desired chart values.
+statefulSetImmutableGuard:
+  enabled: true

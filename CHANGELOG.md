@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- add Service `trafficDistribution` support across chart service resources (`service` and `peerService`), including configurable values for `PreferSameZone`, `PreferSameNode`, and deprecated alias `PreferClose`
+
+### Reliability
+
+- add a StatefulSet immutable-field upgrade guard in the Helm chart to fail early when live immutable fields drift from desired values (`serviceName`, `podManagementPolicy`, `volumeClaimTemplates`)
+
 ## [0.27.12] - 2026-04-09
 
 ### Documentation

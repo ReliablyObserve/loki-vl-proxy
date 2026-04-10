@@ -185,7 +185,7 @@ spec:
     - metadata:
         name: cache-data
         labels:
-          {{- include "loki-vl-proxy.labels" . | nindent 10 }}
+          {{- include "loki-vl-proxy.selectorLabels" . | nindent 10 }}
         {{- with .Values.persistence.annotations }}
         annotations:
           {{- toYaml . | nindent 10 }}
