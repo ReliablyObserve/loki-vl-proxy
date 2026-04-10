@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- default to Loki 3-tuple structured metadata for Grafana query callers when `-emit-structured-metadata=true`, so Explore one-event details include full metadata by default while still allowing explicit request override via `structured_metadata=true|false`
+
 ## [0.27.16] - 2026-04-10
 
 ### Bug Fixes
