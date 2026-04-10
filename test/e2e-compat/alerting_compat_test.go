@@ -27,8 +27,10 @@ func TestAlertingCompat_PrometheusRulesAndAlerts(t *testing.T) {
 		t.Fatalf("expected exactly one alerting group via direct=%d proxy=%d", len(directGroups), len(proxyGroups))
 	}
 	assertGroupPresent(t, proxyGroups, "loki-vl-e2e-alerts")
+	assertRulePresent(t, proxyGroups, "ApiGatewayErrorLogLines", "recording", "vlogs")
 	assertRulePresent(t, proxyGroups, "ApiGatewayErrorsPresent", "alerting", "vlogs")
 	assertRulePresent(t, proxyGroups, "PaymentServiceErrorsPresent", "alerting", "vlogs")
+	assertRuleQueryParity(t, directGroups, proxyGroups, "ApiGatewayErrorLogLines")
 	assertRuleStateParity(t, directGroups, proxyGroups, "ApiGatewayErrorsPresent")
 	assertRuleStateParity(t, directGroups, proxyGroups, "PaymentServiceErrorsPresent")
 
@@ -66,6 +68,7 @@ func TestAlertingCompat_LegacyLokiRulesYAML(t *testing.T) {
 	text := string(body)
 	for _, want := range []string{
 		"name: loki-vl-e2e-alerts",
+		"record: ApiGatewayErrorLogLines",
 		"alert: ApiGatewayErrorsPresent",
 		"alert: PaymentServiceErrorsPresent",
 		"severity: page",
@@ -73,6 +76,37 @@ func TestAlertingCompat_LegacyLokiRulesYAML(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("expected YAML response to contain %q, got %s", want, text)
 		}
+	}
+}
+
+func TestAlertingCompat_GrafanaDatasourceRulesAndAlertsParity(t *testing.T) {
+	ensureDataIngested(t)
+	waitForReady(t, vmalertURL+"/api/v1/rules?datasource_type=vlogs", 30*time.Second)
+	waitForAlertingData(t)
+
+	dsUID := grafanaDatasourceUID(t, "Loki (via VL proxy)")
+	rulesPath := grafanaURL + "/api/datasources/proxy/uid/" + url.PathEscape(dsUID) + "/prometheus/api/v1/rules?datasource_type=vlogs"
+	alertsPath := grafanaURL + "/api/datasources/proxy/uid/" + url.PathEscape(dsUID) + "/prometheus/api/v1/alerts?datasource_type=vlogs"
+
+	rulesViaGrafana := getJSON(t, rulesPath)
+	rulesViaProxy := getJSON(t, proxyURL+"/prometheus/api/v1/rules?datasource_type=vlogs")
+	grafanaGroups := extractArray(extractMap(rulesViaGrafana, "data"), "groups")
+	proxyGroups := extractArray(extractMap(rulesViaProxy, "data"), "groups")
+
+	if len(grafanaGroups) != len(proxyGroups) {
+		t.Fatalf("expected grafana datasource rules parity via proxy=%d grafana=%d", len(proxyGroups), len(grafanaGroups))
+	}
+	assertGroupPresent(t, grafanaGroups, "loki-vl-e2e-alerts")
+	assertRulePresent(t, grafanaGroups, "ApiGatewayErrorLogLines", "recording", "vlogs")
+	assertRulePresent(t, grafanaGroups, "ApiGatewayErrorsPresent", "alerting", "vlogs")
+	assertRulePresent(t, grafanaGroups, "PaymentServiceErrorsPresent", "alerting", "vlogs")
+
+	alertsViaGrafana := getJSON(t, alertsPath)
+	alertsViaProxy := getJSON(t, proxyURL+"/prometheus/api/v1/alerts?datasource_type=vlogs")
+	grafanaAlerts := extractArray(extractMap(alertsViaGrafana, "data"), "alerts")
+	proxyAlerts := extractArray(extractMap(alertsViaProxy, "data"), "alerts")
+	if len(grafanaAlerts) != len(proxyAlerts) {
+		t.Fatalf("expected grafana datasource alerts parity via proxy=%d grafana=%d", len(proxyAlerts), len(grafanaAlerts))
 	}
 }
 
@@ -138,6 +172,38 @@ func assertRuleStateParity(t *testing.T, directGroups, proxyGroups []interface{}
 	if directState != proxyState {
 		t.Fatalf("expected rule %q state parity direct=%q proxy=%q", ruleName, directState, proxyState)
 	}
+}
+
+func assertRuleQueryParity(t *testing.T, directGroups, proxyGroups []interface{}, ruleName string) {
+	t.Helper()
+
+	directRule, ok := findRule(directGroups, ruleName)
+	if !ok {
+		t.Fatalf("expected direct rule %q in %+v", ruleName, directGroups)
+	}
+	proxyRule, ok := findRule(proxyGroups, ruleName)
+	if !ok {
+		t.Fatalf("expected proxy rule %q in %+v", ruleName, proxyGroups)
+	}
+	directQuery, _ := directRule["query"].(string)
+	proxyQuery, _ := proxyRule["query"].(string)
+	if directQuery != proxyQuery {
+		t.Fatalf("expected rule %q query parity direct=%q proxy=%q", ruleName, directQuery, proxyQuery)
+	}
+}
+
+func findRule(groups []interface{}, ruleName string) (map[string]interface{}, bool) {
+	for _, g := range groups {
+		group, _ := g.(map[string]interface{})
+		rules, _ := group["rules"].([]interface{})
+		for _, r := range rules {
+			rule, _ := r.(map[string]interface{})
+			if rule["name"] == ruleName {
+				return rule, true
+			}
+		}
+	}
+	return nil, false
 }
 
 func findRuleState(groups []interface{}, ruleName string) (string, bool) {

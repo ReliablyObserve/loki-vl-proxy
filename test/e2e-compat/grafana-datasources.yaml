@@ -35,6 +35,17 @@ datasources:
     secureJsonData:
       httpHeaderValue1: "0|fake"
 
+  - name: Loki (via VL proxy native metadata)
+    type: loki
+    access: proxy
+    url: http://loki-vl-proxy-native-metadata:3100
+    isDefault: false
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+      maxLines: 1000
+    secureJsonData:
+      httpHeaderValue1: "0"
+
   - name: Loki (via VL proxy live tail)
     type: loki
     access: proxy

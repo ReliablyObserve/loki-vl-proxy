@@ -72,6 +72,57 @@ func assertStrictTwoTupleContract(t *testing.T, body []byte) {
 	}
 }
 
+func assertCategorizeLabelsThreeTupleContract(t *testing.T, body []byte) {
+	t.Helper()
+	var payload struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []struct {
+				Values []json.RawMessage `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("failed to decode response payload: %v\nbody=%s", err, string(body))
+	}
+	if payload.Status != "success" {
+		t.Fatalf("expected success status, got %q body=%s", payload.Status, string(body))
+	}
+
+	tupleCount := 0
+	for _, stream := range payload.Data.Result {
+		for _, rawTuple := range stream.Values {
+			tupleCount++
+			var tuple []json.RawMessage
+			if err := json.Unmarshal(rawTuple, &tuple); err != nil {
+				t.Fatalf("failed to decode tuple: %v\nraw=%s", err, string(rawTuple))
+			}
+			if len(tuple) != 3 {
+				t.Fatalf("expected 3-tuple [ts,line,metadata], got len=%d tuple=%s", len(tuple), string(rawTuple))
+			}
+
+			var metadata map[string]json.RawMessage
+			if err := json.Unmarshal(tuple[2], &metadata); err != nil {
+				t.Fatalf("expected tuple[2] metadata object, got %s: %v", string(tuple[2]), err)
+			}
+			if len(metadata) == 0 {
+				continue
+			}
+			if _, ok := metadata["structured_metadata"]; ok {
+				t.Fatalf("non-Loki structured_metadata alias must not be emitted: %s", string(tuple[2]))
+			}
+			if _, ok := metadata["structuredMetadata"]; !ok {
+				if _, ok := metadata["parsed"]; !ok {
+					t.Fatalf("expected structuredMetadata and/or parsed metadata keys, got %s", string(tuple[2]))
+				}
+			}
+		}
+	}
+	if tupleCount == 0 {
+		t.Fatalf("expected at least one tuple in response body=%s", string(body))
+	}
+}
+
 func makeTupleContractBackend(t *testing.T) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -91,7 +142,7 @@ func makeTupleContractBackend(t *testing.T) *httptest.Server {
 	}))
 }
 
-func TestTupleContract_GrafanaDefaultQueryRangeStrictTwoTuple(t *testing.T) {
+func TestTupleContract_DefaultQueryRangeStrictTwoTuple(t *testing.T) {
 	backend := makeTupleContractBackend(t)
 	defer backend.Close()
 
@@ -102,7 +153,6 @@ func TestTupleContract_GrafanaDefaultQueryRangeStrictTwoTuple(t *testing.T) {
 	params.Set("end", "2")
 	params.Set("limit", "50")
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
-	req.Header.Set("X-Grafana-User", "admin")
 
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, req)
@@ -112,7 +162,7 @@ func TestTupleContract_GrafanaDefaultQueryRangeStrictTwoTuple(t *testing.T) {
 	assertStrictTwoTupleContract(t, rec.Body.Bytes())
 }
 
-func TestTupleContract_GrafanaDefaultQueryStrictTwoTuple(t *testing.T) {
+func TestTupleContract_DefaultQueryStrictTwoTuple(t *testing.T) {
 	backend := makeTupleContractBackend(t)
 	defer backend.Close()
 
@@ -121,7 +171,6 @@ func TestTupleContract_GrafanaDefaultQueryStrictTwoTuple(t *testing.T) {
 	params.Set("query", `{job="tuple-contract"} |= "api" | json | logfmt | drop __error__, __error_details__`)
 	params.Set("time", "2")
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+params.Encode(), nil)
-	req.Header.Set("X-Grafana-User", "admin")
 
 	rec := httptest.NewRecorder()
 	p.handleQuery(rec, req)
@@ -142,7 +191,6 @@ func TestTupleContract_StreamResponseModeStrictTwoTuple(t *testing.T) {
 	params.Set("end", "2")
 	params.Set("limit", "20")
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
-	req.Header.Set("X-Grafana-User", "admin")
 
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, req)
@@ -163,7 +211,6 @@ func TestTupleContract_MultiTenantMergeStrictTwoTuple(t *testing.T) {
 	params.Set("end", "2")
 	params.Set("limit", "50")
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
-	req.Header.Set("X-Grafana-User", "admin")
 	req.Header.Set("X-Scope-OrgID", "tenant-a|tenant-b")
 
 	rec := httptest.NewRecorder()
@@ -172,4 +219,44 @@ func TestTupleContract_MultiTenantMergeStrictTwoTuple(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
 	assertStrictTwoTupleContract(t, rec.Body.Bytes())
+}
+
+func TestTupleContract_CategorizeLabelsQueryRangeThreeTuple(t *testing.T) {
+	backend := makeTupleContractBackend(t)
+	defer backend.Close()
+
+	p := newTupleContractProxy(t, backend.URL, false)
+	params := url.Values{}
+	params.Set("query", `{job="tuple-contract"} |= "DROP" | json | logfmt | drop __error__, __error_details__`)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	params.Set("limit", "50")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	assertCategorizeLabelsThreeTupleContract(t, rec.Body.Bytes())
+}
+
+func TestTupleContract_CategorizeLabelsQueryThreeTuple(t *testing.T) {
+	backend := makeTupleContractBackend(t)
+	defer backend.Close()
+
+	p := newTupleContractProxy(t, backend.URL, false)
+	params := url.Values{}
+	params.Set("query", `{job="tuple-contract"} |= "api" | json | logfmt | drop __error__, __error_details__`)
+	params.Set("time", "2")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+params.Encode(), nil)
+	req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
+
+	rec := httptest.NewRecorder()
+	p.handleQuery(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	assertCategorizeLabelsThreeTupleContract(t, rec.Body.Bytes())
 }

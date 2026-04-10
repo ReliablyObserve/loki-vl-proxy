@@ -89,7 +89,7 @@ Minimal example:
 ```yaml
 services:
   vmalert:
-    image: victoriametrics/vmalert:v1.139.0
+    image: victoriametrics/vmalert:v1.138.0
     command:
       - -datasource.url=http://victorialogs:9428
       - -rule=/rules/vmalert-rules.yaml
@@ -102,11 +102,25 @@ For local validation without a real Alertmanager:
 ```yaml
 services:
   vmalert:
-    image: victoriametrics/vmalert:v1.139.0
+    image: victoriametrics/vmalert:v1.138.0
     command:
       - -datasource.url=http://victorialogs:9428
       - -rule=/rules/vmalert-rules.yaml
       - -rule.defaultRuleType=vlogs
+      - -notifier.blackhole
+```
+
+If your file contains recording rules (`record:`), add a remote-write target so `vmalert` can persist those series:
+
+```yaml
+services:
+  vmalert:
+    image: victoriametrics/vmalert:v1.138.0
+    command:
+      - -datasource.url=http://victorialogs:9428
+      - -rule=/rules/vmalert-rules.yaml
+      - -rule.defaultRuleType=vlogs
+      - -remoteWrite.url=http://victoriametrics:8428/api/v1/write
       - -notifier.blackhole
 ```
 
@@ -127,6 +141,9 @@ After `vmalert` is configured and the proxy points at it:
 - `/api/prom/rules` returns the same classic YAML alias
 - `/prometheus/api/v1/rules` returns Prometheus-style JSON
 - `/loki/api/v1/alerts`, `/api/prom/alerts`, and `/prometheus/api/v1/alerts` return JSON alert state
+- Grafana datasource proxy reads stay consistent with direct paths when `datasource_type=vlogs` is set:
+  - `/api/datasources/proxy/uid/<uid>/prometheus/api/v1/rules?datasource_type=vlogs`
+  - `/api/datasources/proxy/uid/<uid>/prometheus/api/v1/alerts?datasource_type=vlogs`
 
 So Grafana can keep reading alert/rule state from the Loki-facing datasource path.
 
@@ -199,6 +216,8 @@ Recommended migration flow:
    - `GET /prometheus/api/v1/rules`
    - `GET /prometheus/api/v1/alerts`
    - `GET /loki/api/v1/rules`
+   - `GET /api/datasources/proxy/uid/<uid>/prometheus/api/v1/rules?datasource_type=vlogs` (from Grafana)
+   - `GET /api/datasources/proxy/uid/<uid>/prometheus/api/v1/alerts?datasource_type=vlogs` (from Grafana)
 6. Confirm Grafana sees the rules/alerts through the Loki datasource path.
 
 ## Real-Life Test Coverage

@@ -61,6 +61,11 @@ func TestRulerProxy_LegacyRulesYAML(t *testing.T) {
 								"health": "ok",
 								"type":   "alerting",
 							},
+							{
+								"name":  "api_requests_total:rate5m",
+								"query": `sum(rate({app="api"}[5m]))`,
+								"type":  "recording",
+							},
 						},
 					},
 				},
@@ -102,8 +107,14 @@ func TestRulerProxy_LegacyRulesYAML(t *testing.T) {
 	if groups[0].Name != "api" {
 		t.Fatalf("expected group name api, got %q", groups[0].Name)
 	}
-	if len(groups[0].Rules) != 1 || groups[0].Rules[0].Alert != "HighErrorRate" {
-		t.Fatalf("expected alert rule conversion, got %+v", groups[0].Rules)
+	if len(groups[0].Rules) != 2 {
+		t.Fatalf("expected 2 YAML rules, got %+v", groups[0].Rules)
+	}
+	if groups[0].Rules[0].Alert != "HighErrorRate" {
+		t.Fatalf("expected alert rule conversion, got %+v", groups[0].Rules[0])
+	}
+	if groups[0].Rules[1].Record != "api_requests_total:rate5m" {
+		t.Fatalf("expected recording rule conversion, got %+v", groups[0].Rules[1])
 	}
 }
 

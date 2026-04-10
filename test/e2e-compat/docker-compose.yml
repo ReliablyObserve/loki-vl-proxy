@@ -44,9 +44,25 @@ services:
       retries: 10
       start_period: 5s
 
+  # VictoriaMetrics TSDB for vmalert recording-rule remote write
+  victoriametrics:
+    image: ${VICTORIAMETRICS_IMAGE:-victoriametrics/victoria-metrics:v1.119.0}
+    container_name: e2e-victoriametrics
+    command:
+      - "-storageDataPath=/vm-data"
+      - "-httpListenAddr=:8428"
+    volumes:
+      - vm-data:/vm-data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8428/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
   # vmalert alert/rule backend against VictoriaLogs
   vmalert:
-    image: ${VMALERT_IMAGE:-victoriametrics/vmalert:v1.139.0}
+    image: ${VMALERT_IMAGE:-victoriametrics/vmalert:v1.138.0}
     container_name: e2e-vmalert
     working_dir: /rules
     ports:
@@ -54,6 +70,7 @@ services:
     command:
       - "-httpListenAddr=:8880"
       - "-datasource.url=http://victorialogs:9428"
+      - "-remoteWrite.url=http://victoriametrics:8428/api/v1/write"
       - "-notifier.blackhole"
       - "-rule=compat.rules"
       - "-configCheckInterval=5s"
@@ -61,6 +78,8 @@ services:
       - ./vmalert-rules.yml:/rules/compat.rules:ro
     depends_on:
       victorialogs:
+        condition: service_healthy
+      victoriametrics:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8880/api/v1/rules?datasource_type=vlogs"]
@@ -114,6 +133,38 @@ services:
       - "-log-level=info"
       - "-cache-ttl=5s"
       - "-label-style=underscores"
+      - "-emit-structured-metadata=true"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      vmalert:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  # Loki-VL-proxy with underscore labels but native metadata field mode
+  loki-vl-proxy-native-metadata:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-native-metadata
+    ports:
+      - "3106:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
+      - "-log-level=info"
+      - "-cache-ttl=5s"
+      - "-label-style=underscores"
+      - "-metadata-field-mode=native"
+      - "-emit-structured-metadata=true"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -221,9 +272,11 @@ services:
       - loki
       - loki-vl-proxy
       - loki-vl-proxy-underscore
+      - loki-vl-proxy-native-metadata
       - loki-vl-proxy-tail
       - loki-vl-proxy-tail-native
       - tail-ingress
 
 volumes:
   vl-data:
+  vm-data:

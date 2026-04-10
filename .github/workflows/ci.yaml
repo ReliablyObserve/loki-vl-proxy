@@ -55,8 +55,51 @@ jobs:
           go-version: "1.26.1"
           cache: true
 
-      - name: Tuple contract gate (Grafana default must remain strict 2-tuple)
+      - name: Tuple contract gate (default 2-tuple + categorize-labels 3-tuple)
         run: go test ./internal/proxy -run '^TestTupleContract_' -count=1
+
+  tuple-smoke:
+    runs-on: ubuntu-latest
+    needs: [test]
+    env:
+      PROXY_IMAGE: loki-vl-proxy:tuple-smoke
+      PROXY_URL: http://127.0.0.1:3100
+      SMOKE_QUERY: '{app="e2e-test"}'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.1"
+          cache: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=e2e-proxy
+          cache-to: type=gha,mode=max,scope=e2e-proxy
+
+      - name: Start e2e stack
+        working-directory: test/e2e-compat
+        run: |
+          docker compose up -d --no-build
+          ../../scripts/ci/wait_e2e_stack.sh 180
+
+      - name: Seed smoke data
+        run: go test -v -tags=e2e -run '^TestSetup_IngestLogs$' ./test/e2e-compat/
+
+      - name: Run tuple smoke script
+        run: ./scripts/smoke-test.sh
+
+      - name: Tear down e2e stack
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose down -v
 
   bench:
     runs-on: ubuntu-latest
@@ -145,7 +188,7 @@ jobs:
           - name: drilldown
             pattern: '^(TestSetup_IngestLogs|TestDrilldown_.*|TestFeature_(IndexStats|IndexVolume|IndexVolumeRange|DrilldownClusterLevelOrFilters|MultitenantDrilldownClusterLevelOrFilters)|TestDrilldownTrackScore|TestLokiTrackScore|TestVLTrackScore)$'
           - name: otel-edge
-            pattern: '^(TestSetup_IngestEdgeCaseData|TestSetup_IngestRichData|TestOTel.*|TestQueryDirection_UnderscoreProxy|TestDetectedFields_UnderscoreProxy|TestSeries_UnderscoreProxy|TestMixedLabels_UnderscoreProxy|TestLokiVsProxy_LabelParity|TestGrafanaDrilldown_UnderscoreProxy|TestLabelDeduplication|TestLabelTranslation_EdgeCases|TestOTelCompatibilityScore|TestEdge_.*|TestComplex_.*)$'
+            pattern: '^(TestSetup_IngestEdgeCaseData|TestSetup_IngestRichData|TestOTel.*|TestStructuredMetadata_.*|TestQueryDirection_UnderscoreProxy|TestDetectedFields_UnderscoreProxy|TestSeries_UnderscoreProxy|TestMixedLabels_UnderscoreProxy|TestLokiVsProxy_LabelParity|TestGrafanaDrilldown_UnderscoreProxy|TestLabelDeduplication|TestLabelTranslation_EdgeCases|TestOTelCompatibilityScore|TestEdge_.*|TestComplex_.*)$'
           - name: tail-multitenancy
             pattern: '^(TestSetup_IngestLogs|TestFeature_Multitenancy_.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_Tail_.*|TestFeature_QueryAnalytics_Endpoint|TestFeature_SecurityHeaders|TestFeature_MetricsEndpoint|TestFeature_GzipCompression|TestFeature_NoGzipWithoutAccept|TestFeature_DerivedFields_TraceIDInJSON|TestFeature_ResponseStructureConsistency|TestFeature_QueryRange_vs_Query_Consistency|TestFeature_InstantVectorExpression_Compatibility|TestEdge_ConcurrentIdenticalQueries|TestEdge_LongQueryString|TestEdge_CombinedFilterTypes|TestEdge_EmptyResults|TestEdge_RapidSequentialQueries|TestEdge_InstantQuery)$'
     name: e2e-compat (${{ matrix.group.name }})

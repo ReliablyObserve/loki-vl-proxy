@@ -47,7 +47,7 @@ docker run --rm \
 # Build binary
 go build -o loki-vl-proxy ./cmd/proxy
 
-# Post-deploy Grafana tuple contract canary (expects recent log data)
+# Post-deploy tuple contract canary (validates default 2-tuple + categorize-labels 3-tuple; expects recent log data)
 PROXY_URL=http://127.0.0.1:3100 ./scripts/smoke-test.sh
 ```
 
@@ -134,6 +134,7 @@ Stack startup now uses [`wait_e2e_stack.sh`](../scripts/ci/wait_e2e_stack.sh) in
 The GitHub-hosted Docker jobs now also prebuild the proxy image once per job through BuildKit cache and start compose stacks with `--no-build`. That keeps the grouped compat shards and UI shards parallel without paying the full Docker rebuild cost every time a stack starts inside the same job.
 
 Compose-backed fleet cache smoke now runs on pull requests and post-merge `main` in CI (`e2e-fleet`), using the dedicated `TestFleetSmoke_*` suite.
+Tuple smoke contract canary also runs automatically in CI (`tuple-smoke`) by seeding e2e data then executing `scripts/smoke-test.sh`.
 
 ### `datasource` shard
 
@@ -202,6 +203,7 @@ The default local stack is pinned to:
 
 - Loki `3.7.1`
 - VictoriaLogs `v1.49.0`
+- vmalert `v1.138.0` (with local VictoriaMetrics remote-write target for recording-rule evaluation)
 - Grafana `12.4.2`
 - Logs Drilldown contract `2.0.1` from `grafana/logs-drilldown` commit `4463f56047de75da95251086d1906fb902ad53a7`
 
@@ -210,6 +212,13 @@ Field-surface defaults in the pinned stack:
 - Labels remain Loki-compatible when `-label-style=underscores` is used
 - `-metadata-field-mode=hybrid` is the default, so field APIs expose both native dotted names and translated aliases
 - If you need a stricter Loki-only field surface for a focused test, run the proxy with `-metadata-field-mode=translated`
+- The compose matrix includes a dedicated native-metadata proxy profile (`-metadata-field-mode=native`) so CI verifies both hybrid and native structured-metadata exposure
+
+Alerting and recording-rule parity coverage:
+
+- `TestAlertingCompat_PrometheusRulesAndAlerts` validates alerting + recording rules from `vmalert` are visible through proxy Prometheus paths
+- `TestAlertingCompat_GrafanaDatasourceRulesAndAlertsParity` validates the same rule/alert payload through Grafana datasource proxy endpoints
+- `TestAlertingCompat_LegacyLokiRulesYAML` validates Loki legacy YAML formatting includes both `alert` and `record` entries
 
 Support window policy:
 

@@ -3,6 +3,10 @@ groups:
     type: vlogs
     interval: 5s
     rules:
+      - record: ApiGatewayErrorLogLines
+        expr: 'app: "api-gateway" AND level: "error" | stats by (app, cluster) count(*) as error_logs'
+        labels:
+          team: platform
       - alert: ApiGatewayErrorsPresent
         expr: 'app: "api-gateway" AND level: "error" | stats by (app, cluster) count(*) as error_logs | filter error_logs:>0'
         for: 0s

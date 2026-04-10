@@ -43,6 +43,7 @@ flowchart TD
     subgraph Backends["Backends + Outputs"]
         VL["VictoriaLogs"]
         VMR["vmalert / ruler read backend"]
+        VMTS["optional VictoriaMetrics<br/>recording-rule outputs"]
         OBS["Prometheus metrics + OTLP + JSON logs"]
     end
 
@@ -59,6 +60,7 @@ flowchart TD
     MODE --> NATIVE --> VL
     MODE --> SYN --> VL
     ROUTE --> ALERT --> VMR
+    VMR -. recording writes .-> VMTS
     GUARD --> OBS
     SHAPE --> OBS
 
@@ -160,6 +162,7 @@ flowchart LR
     BACKEND -->|yes| PROXY["Forward read request with mapped tenant headers"]
     PROXY --> VMR["vmalert / ruler-compatible backend"]
     VMR --> SHAPE["Return legacy Loki YAML or Prometheus JSON view"]
+    VMR -. optional recording-rule writes .-> VMTS["VictoriaMetrics (or compatible remote write sink)"]
 ```
 
 ## Data Model Mapping
@@ -201,6 +204,7 @@ flowchart LR
         LOKI["Loki :3101<br/>(ground truth)"]
         VLP["Loki-VL-proxy<br/>:3100"]
         VL["VictoriaLogs<br/>:9428"]
+        VM["VictoriaMetrics<br/>:8428 (recording-rule sink)"]
         GF["Grafana :3000<br/>Loki / Drilldown / tail datasources"]
     end
 
@@ -209,7 +213,8 @@ flowchart LR
     COMPARE -->|GET /loki/api/v1/*| LOKI
     COMPARE -->|GET /loki/api/v1/*| VLP
     VLP --> VL
-    VLP -. rules / alerts .-> VM["vmalert"]
+    VLP -. rules / alerts .-> VMA["vmalert"]
+    VMA -. optional recording writes .-> VM
     COMPARE --> SCORE
     GF -.->|manual compare| LOKI
     GF -.->|manual compare| VLP

@@ -25,7 +25,7 @@ This project is intentionally a **read/query proxy**. Ingestion stays on Victori
 flowchart LR
     A["Clients<br/>Grafana Explore, Dashboards, Logs Drilldown, Loki API tools, LLM/MCP/API consumers"]
     B["Loki-VL-proxy (Read Compatibility Layer)<br/>Loki API contract + tenant guardrails + LogQL translation + response shaping + tiered cache"]
-    C["Data + Rules Upstream<br/>VictoriaLogs (log data) + vmalert (rules/alerts state)"]
+    C["Data + Rules Upstream<br/>VictoriaLogs (log data) + vmalert (rules/alerts state)<br/>+ optional VictoriaMetrics (recording-rule outputs)"]
 
     A --> B --> C
 
@@ -66,6 +66,7 @@ flowchart TD
     subgraph L5["Backends + Outputs"]
         VL["VictoriaLogs"]
         RULES["vmalert / ruler reads"]
+        VMTS["optional VictoriaMetrics<br/>recording-rule outputs"]
         OBS["Prometheus metrics<br/>OTLP export<br/>JSON logs"]
     end
 
@@ -86,6 +87,7 @@ flowchart TD
     Q --> RESP
     T --> VL
     R --> RULES
+    RULES -. recording writes .-> VMTS
     GUARD --> OBS
     Q --> OBS
     T --> OBS
