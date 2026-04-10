@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.20] - 2026-04-10
+
 ### Tests
 
 - expand tuple-contract coverage and smoke validation paths to keep strict default 2-tuple and categorize-labels 3-tuple behavior regression-safe
