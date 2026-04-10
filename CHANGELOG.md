@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.14] - 2026-04-10
+
 ### Bug Fixes
 
 - preserve Loki stream 3-tuples (`[ts,line,metadata]`) in multi-tenant query merge paths so metadata-bearing responses no longer fail tuple decode/sort logic
