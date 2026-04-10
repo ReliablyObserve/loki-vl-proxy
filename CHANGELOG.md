@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- preserve Loki stream 3-tuples (`[ts,line,metadata]`) in multi-tenant query merge paths so metadata-bearing responses no longer fail tuple decode/sort logic
+
+### Observability
+
+- align request-log attributes closer to OTEL semantic conventions by adding `url.path`, `network.peer.address`, `user.id`, `user.name`, and `event.duration` while keeping existing compatibility fields
+
 ## [0.27.13] - 2026-04-10
 
 ### Features

@@ -1,7 +1,11 @@
 package proxy
 
 import (
+	"encoding/json"
+	"io"
+	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -138,6 +142,48 @@ func TestVLLogsToLokiStreams_CategorizedLabelsStillEmitsFlatMetadataForParserSaf
 	}
 	if got := meta["http.status_code"]; got != "200" {
 		t.Fatalf("expected flattened parser field, got %v", meta)
+	}
+}
+
+func TestStreamLogQuery_StreamingModePreservesThreeTupleMetadata(t *testing.T) {
+	p := newStreamMetadataTestProxy(t, true)
+	rec := httptest.NewRecorder()
+	resp := &http.Response{
+		Body: io.NopCloser(strings.NewReader(`{"_time":"2026-01-01T00:00:00Z","_msg":"{\"status\":200}","_stream":"{job=\"otel-proxy\",level=\"info\"}","http.status_code":"200","level":"info"}` + "\n")),
+	}
+
+	p.streamLogQuery(rec, resp, `{job="otel-proxy"} | json`, false)
+
+	var payload map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode streamLogQuery response: %v", err)
+	}
+	data, ok := payload["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected data object, got %T", payload["data"])
+	}
+	results, ok := data["result"].([]interface{})
+	if !ok || len(results) != 1 {
+		t.Fatalf("expected one stream result, got %v", data["result"])
+	}
+	stream0, ok := results[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected stream object, got %T", results[0])
+	}
+	values, ok := stream0["values"].([]interface{})
+	if !ok || len(values) != 1 {
+		t.Fatalf("expected one stream value, got %v", stream0["values"])
+	}
+	tuple, ok := values[0].([]interface{})
+	if !ok || len(tuple) != 3 {
+		t.Fatalf("expected 3-tuple stream value, got %v", values[0])
+	}
+	meta, ok := tuple[2].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected metadata object in tuple[2], got %T", tuple[2])
+	}
+	if got, ok := meta["http.status_code"]; !ok || got != "200" {
+		t.Fatalf("expected parser metadata in tuple[2], got %v", meta)
 	}
 }
 
