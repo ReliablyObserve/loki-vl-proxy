@@ -226,7 +226,7 @@ rules:
       runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-grafana-tuple-contract.md'
 
   - alert: LokiVLProxySystemMetricsMissing
-    expr: absent(node_memory_usage_ratio{job="{{ include "loki-vl-proxy.fullname" . }}"})
+    expr: absent(process_memory_usage_ratio{job="{{ include "loki-vl-proxy.fullname" . }}"})
     for: 15m
     labels:
       severity: warning
@@ -239,13 +239,13 @@ rules:
       managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
     annotations:
       summary: "System resource metrics missing"
-      description: "node_memory_usage_ratio is missing for loki-vl-proxy for 15 minutes."
+      description: "process_memory_usage_ratio is missing for loki-vl-proxy for 15 minutes."
       impact: "CPU/memory/disk/network/pressure visibility is degraded and related alerts cannot fire."
       action: "Check startup diagnostics, ensure /metrics exposure, and if running in Kubernetes enable host /proc mount plus -proc-root=/host/proc."
       runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-system-resources.md'
 
   - alert: LokiVLProxySystemMemoryHigh
-    expr: max_over_time(node_memory_usage_ratio{job="{{ include "loki-vl-proxy.fullname" . }}"}[10m]) > 0.90
+    expr: max_over_time(process_memory_usage_ratio{job="{{ include "loki-vl-proxy.fullname" . }}"}[10m]) > 0.90
     for: 10m
     labels:
       severity: warning
@@ -258,13 +258,13 @@ rules:
       managed_by: '{{ .Values.prometheusRule.standardLabels.managedBy | default "helm" }}'
     annotations:
       summary: "System memory usage > 90%"
-      description: "node_memory_usage_ratio stayed above 90% for 10 minutes."
+      description: "process_memory_usage_ratio stayed above 90% for 10 minutes."
       impact: "Query latency and backend request failures may increase under memory pressure."
       action: "Correlate with process RSS/open FDs and node pressure, then reduce query load or increase pod/node capacity."
       runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-system-resources.md'
 
   - alert: LokiVLProxySystemCPUPressureHigh
-    expr: max_over_time(node_pressure_cpu_some_ratio{job="{{ include "loki-vl-proxy.fullname" . }}",window="60s"}[10m]) > 0.30
+    expr: max_over_time(process_pressure_cpu_some_ratio{job="{{ include "loki-vl-proxy.fullname" . }}",window="60s"}[10m]) > 0.30
     for: 10m
     labels:
       severity: warning
@@ -283,7 +283,7 @@ rules:
       runbook_url: '{{ .Values.prometheusRule.runbookBaseUrl | default "https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/runbooks" }}/loki-vl-proxy-system-resources.md'
 
   - alert: LokiVLProxySystemIOPressureHigh
-    expr: max_over_time(node_pressure_io_some_ratio{job="{{ include "loki-vl-proxy.fullname" . }}",window="60s"}[10m]) > 0.20
+    expr: max_over_time(process_pressure_io_some_ratio{job="{{ include "loki-vl-proxy.fullname" . }}",window="60s"}[10m]) > 0.20
     for: 10m
     labels:
       severity: warning

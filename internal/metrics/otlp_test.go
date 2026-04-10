@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -410,14 +412,65 @@ func TestOTLPPusher_SystemMetrics(t *testing.T) {
 	}
 	if runtime.GOOS == "linux" {
 		for _, required := range []string{
-			"node_disk_read_bytes_total",
-			"node_disk_written_bytes_total",
-			"node_network_receive_bytes_total",
-			"node_network_transmit_bytes_total",
+			"process_disk_read_bytes_total",
+			"process_disk_written_bytes_total",
+			"process_network_receive_bytes_total",
+			"process_network_transmit_bytes_total",
 		} {
 			if !names[required] {
 				t.Fatalf("expected linux system metric %s, names=%v", required, names)
 			}
+		}
+	}
+}
+
+func TestOTLPPusher_SystemMetrics_WithSyntheticProcRoot(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only synthetic /proc test")
+	}
+
+	root := t.TempDir()
+	for rel, content := range map[string]string{
+		"stat":            "cpu  100 5 20 300 7 0 1 2\n",
+		"meminfo":         "MemTotal: 1024 kB\nMemAvailable: 512 kB\nMemFree: 128 kB\n",
+		"self/status":     "Name:\tproxy\nVmRSS:\t123 kB\n",
+		"diskstats":       "   8       0 sda 1 2 6 4 5 6 10 8 0 0 0 0\n",
+		"net/dev":         "Inter-|   Receive                                                |  Transmit\n face |bytes packets errs drop fifo frame compressed multicast|bytes packets errs drop fifo colls carrier compressed\n  eth0: 101 1 0 0 0 0 0 0 202 2 0 0 0 0 0 0\n",
+		"pressure/cpu":    "some avg10=1.00 avg60=2.00 avg300=3.00 total=10\nfull avg10=4.00 avg60=5.00 avg300=6.00 total=20\n",
+		"pressure/memory": "some avg10=0.50 avg60=1.00 avg300=1.50 total=10\nfull avg10=2.00 avg60=2.50 avg300=3.00 total=20\n",
+		"pressure/io":     "some avg10=0.25 avg60=0.50 avg300=0.75 total=10\nfull avg10=1.00 avg60=1.25 avg300=1.50 total=20\n",
+		"self/fd/0":       "",
+		"self/fd/1":       "",
+	} {
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", path, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
+		}
+	}
+
+	prev := ProcRoot()
+	SetProcRoot(root)
+	t.Cleanup(func() { SetProcRoot(prev) })
+
+	pusher := NewOTLPPusher(OTLPConfig{Endpoint: "http://unused"}, NewMetrics())
+	names := metricNamesFromMaps(pusher.systemMetrics(time.Now().UnixNano()))
+	for _, required := range []string{
+		"process_memory_total_bytes",
+		"process_memory_available_bytes",
+		"process_memory_free_bytes",
+		"process_memory_usage_ratio",
+		"process_cpu_usage_ratio",
+		"process_pressure_cpu_some_ratio",
+		"process_pressure_memory_full_ratio",
+		"process_pressure_io_some_ratio",
+		"process_resident_memory_bytes",
+		"process_open_fds",
+	} {
+		if !names[required] {
+			t.Fatalf("expected synthetic proc export to include %s, names=%v", required, names)
 		}
 	}
 }

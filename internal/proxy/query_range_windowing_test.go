@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
 
 func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
@@ -187,6 +189,208 @@ func TestQueryRangeWindow_MultiTenantCompatibility(t *testing.T) {
 	}
 	if !seenTenants["1"] || !seenTenants["2"] {
 		t.Fatalf("expected merged response to include __tenant_id__ labels for both tenants, got=%v", seenTenants)
+	}
+}
+
+func TestQueryRangeWindow_ParseLokiTimeAndNormalization(t *testing.T) {
+	t.Run("rfc3339", func(t *testing.T) {
+		raw := "2026-04-10T12:00:00Z"
+		got, ok := parseLokiTimeToUnixNano(raw)
+		if !ok {
+			t.Fatalf("expected %q to parse", raw)
+		}
+		want := time.Date(2026, 4, 10, 12, 0, 0, 0, time.UTC).UnixNano()
+		if got != want {
+			t.Fatalf("unexpected unix nanos: got=%d want=%d", got, want)
+		}
+	})
+
+	t.Run("now_relative", func(t *testing.T) {
+		before := time.Now().UnixNano()
+		gotNow, ok := parseLokiTimeToUnixNano("now")
+		if !ok {
+			t.Fatal("expected now to parse")
+		}
+		after := time.Now().UnixNano()
+		if gotNow < before || gotNow > after {
+			t.Fatalf("expected now timestamp between %d and %d, got %d", before, after, gotNow)
+		}
+
+		gotPast, ok := parseLokiTimeToUnixNano("now-2s")
+		if !ok {
+			t.Fatal("expected now-2s to parse")
+		}
+		if gotPast > gotNow {
+			t.Fatalf("expected now-2s <= now, got past=%d now=%d", gotPast, gotNow)
+		}
+
+		gotFuture, ok := parseLokiTimeToUnixNano("now+2s")
+		if !ok {
+			t.Fatal("expected now+2s to parse")
+		}
+		if gotFuture < gotNow {
+			t.Fatalf("expected now+2s >= now, got future=%d now=%d", gotFuture, gotNow)
+		}
+	})
+
+	t.Run("numeric_units", func(t *testing.T) {
+		const want = int64(1700000000500000000)
+		cases := []string{
+			"1700000000.5",        // seconds
+			"1700000000500",       // milliseconds
+			"1700000000500000",    // microseconds
+			"1700000000500000000", // nanoseconds
+		}
+		for _, raw := range cases {
+			got, ok := parseLokiTimeToUnixNano(raw)
+			if !ok {
+				t.Fatalf("expected %q to parse", raw)
+			}
+			if got != want {
+				t.Fatalf("unexpected normalization for %q: got=%d want=%d", raw, got, want)
+			}
+		}
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		if _, ok := parseLokiTimeToUnixNano("definitely-not-a-time"); ok {
+			t.Fatal("expected invalid time parse to fail")
+		}
+	})
+
+	if got := normalizeLokiIntTimeToUnixNano(-1700000000); got != -1700000000000000000 {
+		t.Fatalf("unexpected int normalization: got=%d", got)
+	}
+	if got := normalizeLokiNumericTimeToUnixNano(1700000000.5); got != 1700000000500000000 {
+		t.Fatalf("unexpected float normalization: got=%d", got)
+	}
+}
+
+func TestQueryRangeWindow_ParseLokiTimeRange(t *testing.T) {
+	start, end, ok := parseLokiTimeRangeToUnixNano("1700000000", "1700003600")
+	if !ok {
+		t.Fatal("expected valid range to parse")
+	}
+	if end <= start {
+		t.Fatalf("expected end > start, got start=%d end=%d", start, end)
+	}
+
+	if _, _, ok := parseLokiTimeRangeToUnixNano("invalid", "1700003600"); ok {
+		t.Fatal("expected invalid start to fail parsing")
+	}
+	if _, _, ok := parseLokiTimeRangeToUnixNano("1700003600", "1700000000"); ok {
+		t.Fatal("expected end < start to fail parsing")
+	}
+}
+
+func TestQueryRangeWindow_SplitAndTTLHelpers(t *testing.T) {
+	start := int64(0)
+	end := int64(3*time.Hour - 1)
+
+	forward := splitQueryRangeWindows(start, end, time.Hour, "forward")
+	if len(forward) != 3 {
+		t.Fatalf("expected 3 forward windows, got %d", len(forward))
+	}
+	if forward[0].startNs != start || forward[0].endNs != int64(time.Hour)-1 {
+		t.Fatalf("unexpected first forward window: %+v", forward[0])
+	}
+
+	backward := splitQueryRangeWindows(start, end, time.Hour, "backward")
+	if len(backward) != 3 {
+		t.Fatalf("expected 3 backward windows, got %d", len(backward))
+	}
+	if backward[0].startNs != int64(2*time.Hour) {
+		t.Fatalf("unexpected first backward window: %+v", backward[0])
+	}
+
+	if got := splitQueryRangeWindows(10, 1, time.Hour, "forward"); got != nil {
+		t.Fatalf("expected nil for end < start, got %+v", got)
+	}
+	if got := splitQueryRangeWindows(0, 10, 0, "forward"); got != nil {
+		t.Fatalf("expected nil for zero interval, got %+v", got)
+	}
+
+	p := &Proxy{
+		queryRangeFreshness:       time.Hour,
+		queryRangeRecentCacheTTL:  2 * time.Minute,
+		queryRangeHistoryCacheTTL: 24 * time.Hour,
+	}
+	oldWindowEnd := time.Now().Add(-2 * time.Hour).UnixNano()
+	recentWindowEnd := time.Now().Add(-10 * time.Minute).UnixNano()
+
+	if got := p.queryRangeWindowTTL(oldWindowEnd); got != 24*time.Hour {
+		t.Fatalf("expected history ttl, got %s", got)
+	}
+	if got := p.queryRangeWindowTTL(recentWindowEnd); got != 2*time.Minute {
+		t.Fatalf("expected recent ttl, got %s", got)
+	}
+}
+
+func TestQueryRangeWindow_AdaptiveParallelHelpers(t *testing.T) {
+	nonAdaptive := &Proxy{queryRangeAdaptiveParallel: false, queryRangeMaxParallel: 0}
+	if got := nonAdaptive.queryRangeWindowParallelLimit(); got != 1 {
+		t.Fatalf("expected non-adaptive fallback limit=1, got %d", got)
+	}
+	nonAdaptive.queryRangeMaxParallel = 5
+	if got := nonAdaptive.queryRangeWindowParallelLimit(); got != 5 {
+		t.Fatalf("expected non-adaptive configured limit=5, got %d", got)
+	}
+
+	p := &Proxy{
+		queryRangeAdaptiveParallel:      true,
+		queryRangeParallelMin:           2,
+		queryRangeParallelMax:           6,
+		queryRangeParallelCurrent:       99, // force clamp/reset path
+		queryRangeLatencyTarget:         100 * time.Millisecond,
+		queryRangeLatencyBackoff:        300 * time.Millisecond,
+		queryRangeAdaptiveCooldown:      0,
+		queryRangeErrorBackoffThreshold: 0.2,
+		metrics:                         metrics.NewMetrics(),
+	}
+
+	if got := p.queryRangeWindowParallelLimit(); got != 2 {
+		t.Fatalf("expected adaptive reset to min=2, got %d", got)
+	}
+
+	p.queryRangeParallelCurrent = 4
+	p.observeQueryRangeWindowFetch(500*time.Millisecond, false) // backoff by latency
+	if got := p.queryRangeParallelCurrent; got != 2 {
+		t.Fatalf("expected adaptive backoff to 2, got %d", got)
+	}
+
+	for i := 0; i < 20; i++ {
+		p.observeQueryRangeWindowFetch(10*time.Millisecond, false) // increase path
+	}
+	if got := p.queryRangeParallelCurrent; got <= 2 {
+		t.Fatalf("expected adaptive increase above 2, got %d", got)
+	}
+
+	p.queryRangeAdaptiveCooldown = time.Hour
+	p.queryRangeAdaptiveLastAdjust = time.Now()
+	current := p.queryRangeParallelCurrent
+	p.observeQueryRangeWindowFetch(time.Second, true)
+	if got := p.queryRangeParallelCurrent; got != current {
+		t.Fatalf("expected cooldown to suppress adjustments, got=%d want=%d", got, current)
+	}
+
+	// Error-driven backoff path with latency below backoff threshold.
+	p2 := &Proxy{
+		queryRangeAdaptiveParallel:      true,
+		queryRangeParallelMin:           1,
+		queryRangeParallelMax:           6,
+		queryRangeParallelCurrent:       4,
+		queryRangeLatencyTarget:         100 * time.Millisecond,
+		queryRangeLatencyBackoff:        10 * time.Second,
+		queryRangeAdaptiveCooldown:      0,
+		queryRangeErrorBackoffThreshold: 0.1,
+		metrics:                         metrics.NewMetrics(),
+	}
+	p2.observeQueryRangeWindowFetch(10*time.Millisecond, true)
+	if got := p2.queryRangeParallelCurrent; got >= 4 {
+		t.Fatalf("expected error-driven backoff to reduce parallelism, got %d", got)
+	}
+	if math.IsNaN(p2.queryRangeErrorEWMA) {
+		t.Fatal("expected finite error EWMA")
 	}
 }
 

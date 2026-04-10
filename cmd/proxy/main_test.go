@@ -1001,6 +1001,66 @@ func TestBuildCacheLayer_InvalidDiskCache(t *testing.T) {
 	}
 }
 
+func TestBuildCompatCacheLayer_DisabledOrZeroPercent(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	c, cleanup, err := buildCompatCacheLayer(15*time.Second, 100, defaultCacheMaxBytes, false, 10, logger)
+	if err != nil {
+		t.Fatalf("unexpected error for disabled compat cache: %v", err)
+	}
+	if c != nil {
+		t.Fatalf("expected nil compat cache when disabled, got %#v", c)
+	}
+	cleanup()
+
+	c, cleanup, err = buildCompatCacheLayer(15*time.Second, 100, defaultCacheMaxBytes, true, 0, logger)
+	if err != nil {
+		t.Fatalf("unexpected error for zero percent compat cache: %v", err)
+	}
+	if c != nil {
+		t.Fatalf("expected nil compat cache when percent=0, got %#v", c)
+	}
+	cleanup()
+}
+
+func TestBuildCompatCacheLayer_ValidationErrors(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	if _, cleanup, err := buildCompatCacheLayer(15*time.Second, 100, defaultCacheMaxBytes, true, maxCompatCachePercent+1, logger); err == nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		t.Fatal("expected percent validation error")
+	}
+	if _, cleanup, err := buildCompatCacheLayer(15*time.Second, 0, defaultCacheMaxBytes, true, 10, logger); err == nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		t.Fatal("expected cache-max validation error")
+	}
+	if _, cleanup, err := buildCompatCacheLayer(15*time.Second, 100, 0, true, 10, logger); err == nil {
+		if cleanup != nil {
+			cleanup()
+		}
+		t.Fatal("expected cache-max-bytes validation error")
+	}
+}
+
+func TestBuildCompatCacheLayer_Enabled(t *testing.T) {
+	buf := &bytes.Buffer{}
+	logger := slog.New(slog.NewJSONHandler(buf, nil))
+	c, cleanup, err := buildCompatCacheLayer(15*time.Second, 100, defaultCacheMaxBytes, true, 10, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer cleanup()
+	if c == nil {
+		t.Fatal("expected compat cache")
+	}
+	logs := buf.String()
+	if !strings.Contains(logs, "compatibility edge cache enabled") || !strings.Contains(logs, "\"share_of_l1_percent\":10") {
+		t.Fatalf("expected compat cache startup log, got %s", logs)
+	}
+}
+
 func TestRunServerLoop_UsesPlainHTTPByDefault(t *testing.T) {
 	srv := &fakeHTTPServer{}
 	buf := &bytes.Buffer{}
