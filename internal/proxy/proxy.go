@@ -4285,7 +4285,7 @@ type lokiQueryResponse struct {
 
 type lokiStreamResult struct {
 	Stream map[string]string `json:"stream"`
-	Values [][]string        `json:"values"`
+	Values [][]interface{}   `json:"values"`
 }
 
 type lokiVectorResult struct {
@@ -4784,14 +4784,14 @@ func mergeLokiQueryResponses(tenantIDs []string, recorders []*httptest.ResponseR
 	return body, "application/json", err
 }
 
-func latestStreamTimestampStrings(values [][]string) string {
+func latestStreamTimestampStrings(values [][]interface{}) string {
 	if len(values) == 0 {
 		return ""
 	}
 	if len(values[0]) == 0 {
 		return ""
 	}
-	return values[0][0]
+	return fmt.Sprintf("%v", values[0][0])
 }
 
 func mergeIndexStatsResponses(recorders []*httptest.ResponseRecorder) ([]byte, string, error) {
@@ -5452,12 +5452,16 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 		}
 		logAttrs := []interface{}{
 			"http.route", endpoint,
+			"url.path", r.URL.Path,
 			"http.request.method", r.Method,
 			"http.response.status_code", sc.code,
+			"event.duration", elapsed.Nanoseconds(),
 			"event.duration_ms", elapsed.Milliseconds(),
 			"loki.tenant.id", tenant,
 			"loki.query", truncateQuery(query, 200),
 			"client.address", r.RemoteAddr,
+			"network.peer.address", r.RemoteAddr,
+			"user.id", clientID,
 			"enduser.id", clientID,
 			"loki.client.source", clientSource,
 			"cache.result", telemetry.cacheResult,
@@ -5470,6 +5474,7 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 		}
 		if authUser != "" {
 			logAttrs = append(logAttrs,
+				"user.name", authUser,
 				"auth.principal", authUser,
 				"auth.source", authSource,
 			)
