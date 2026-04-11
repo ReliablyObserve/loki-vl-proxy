@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.28] - 2026-04-11
+
 ### Bug Fixes
 
 - restore Explore event tuple structured metadata behavior across translated/native metadata paths, preserving Loki-compatible payloads for Grafana Explore details
