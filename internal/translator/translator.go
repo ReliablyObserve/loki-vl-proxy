@@ -523,13 +523,15 @@ func quoteLogsQLFieldNameIfNeeded(label string) string {
 }
 
 func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (string, bool) {
-	candidate := normalizeFieldIdentifier(stage)
-	if candidate == "" {
+	rawCandidate := normalizeFieldIdentifier(stage)
+	if rawCandidate == "" {
 		return "", false
 	}
-	if strings.ContainsAny(candidate, `=<>!~`) {
+	if strings.ContainsAny(rawCandidate, `=<>!~`) {
 		return "", false
 	}
+	trailingDot := strings.HasSuffix(rawCandidate, ".")
+	candidate := strings.Trim(rawCandidate, ".")
 	candidate = strings.Trim(candidate, ".")
 	if !strings.Contains(candidate, ".") {
 		return "", false
@@ -545,6 +547,13 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 	}
 	if candidate == "" {
 		return "", false
+	}
+	if trailingDot {
+		// Some upstream Drilldown paths emit malformed stages like:
+		//   k8s . `cluster.`
+		// Treat them as prefix regex filters to avoid generating an
+		// impossible field matcher such as "k8s.cluster":!"".
+		return fmt.Sprintf(`~"%s"`, regexp.QuoteMeta(candidate+".")), true
 	}
 	return fmt.Sprintf(`%s:!""`, quoteLogsQLFieldNameIfNeeded(candidate)), true
 }

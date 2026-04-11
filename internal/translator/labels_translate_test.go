@@ -107,9 +107,14 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster.name":=cluster-alpha`,
 		},
 		{
-			name:  "malformed dotted stage from drilldown degrades to non-empty filter",
+			name:  "malformed dotted stage from drilldown degrades to dotted-prefix regex filter",
 			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | k8s . ` + "`cluster.`",
-			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster":!""`,
+			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns ~"k8s\.cluster\."`,
+		},
+		{
+			name:  "malformed nested dotted stage keeps full prefix for regex fallback",
+			logql: `{app="api"} | cll . ` + "`pipeline.`",
+			want:  `app:=api ~"cll\.pipeline\."`,
 		},
 	}
 

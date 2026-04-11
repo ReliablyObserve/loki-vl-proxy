@@ -311,7 +311,7 @@ func TestMetricQueryTranslation_MalformedDottedDrilldownStage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
 	}
-	want := `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster":!"" | stats by (level) count()`
+	want := `"deployment.environment":=dev "k8s.namespace.name":=sample_ns ~"k8s\.cluster\." | stats by (level) count()`
 	if got != want {
 		t.Fatalf("TranslateLogQLWithLabels() = %q, want %q", got, want)
 	}
