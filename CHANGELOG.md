@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - cap preallocated slice capacities on label-values browse paths to satisfy CodeQL excessive allocation guards for request-driven limits
 
+### Tests
+
+- fix `TestLoad_HighConcurrency_MemoryStability` memory delta arithmetic to avoid unsigned underflow false-positives after GC, keeping release validation deterministic
+
 ## [0.27.34] - 2026-04-11
 
 ### Configuration
