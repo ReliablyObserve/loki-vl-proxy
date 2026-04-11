@@ -2299,11 +2299,8 @@ func (p *Proxy) selectLabelValuesFromIndex(orgID, labelName, search string, offs
 		return nil, false
 	}
 
-	valuesCap := limit
-	if valuesCap > maxUserDrivenSlicePrealloc {
-		valuesCap = maxUserDrivenSlicePrealloc
-	}
-	values := make([]string, 0, valuesCap)
+	// Keep preallocation fixed-size so allocation cannot scale with request input.
+	values := make([]string, 0, maxUserDrivenSlicePrealloc)
 	seen := 0
 	for _, candidate := range index.ordered {
 		if search != "" && !strings.Contains(strings.ToLower(candidate), search) {
@@ -2333,11 +2330,8 @@ func selectLabelValuesWindow(values []string, search string, offset, limit int) 
 	}
 
 	search = normalizeLabelValueSearch(search)
-	outCap := min(limit, len(values))
-	if outCap > maxUserDrivenSlicePrealloc {
-		outCap = maxUserDrivenSlicePrealloc
-	}
-	out := make([]string, 0, outCap)
+	// Keep preallocation fixed-size so allocation cannot scale with request input.
+	out := make([]string, 0, maxUserDrivenSlicePrealloc)
 	seen := 0
 	for _, value := range values {
 		if search != "" && !strings.Contains(strings.ToLower(value), search) {
