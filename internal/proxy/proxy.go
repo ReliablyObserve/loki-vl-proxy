@@ -3038,17 +3038,14 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 	duration := time.Since(start)
 	if err != nil {
 		recordUpstreamCall(ctx, 0, duration, true)
-		if !isCanceledErr(err) {
+		if shouldRecordBreakerFailure(err) {
 			p.breaker.RecordFailure()
 		}
 		return nil, err
 	}
 	recordUpstreamCall(ctx, resp.StatusCode, duration, false)
-	if resp.StatusCode >= 500 {
-		p.breaker.RecordFailure()
-	} else {
-		p.breaker.RecordSuccess()
-	}
+	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
+	p.breaker.RecordSuccess()
 	return resp, nil
 }
 
@@ -3073,17 +3070,14 @@ func (p *Proxy) vlPost(ctx context.Context, path string, params url.Values) (*ht
 	duration := time.Since(start)
 	if err != nil {
 		recordUpstreamCall(ctx, 0, duration, true)
-		if !isCanceledErr(err) {
+		if shouldRecordBreakerFailure(err) {
 			p.breaker.RecordFailure()
 		}
 		return nil, err
 	}
 	recordUpstreamCall(ctx, resp.StatusCode, duration, false)
-	if resp.StatusCode >= 500 {
-		p.breaker.RecordFailure()
-	} else {
-		p.breaker.RecordSuccess()
-	}
+	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
+	p.breaker.RecordSuccess()
 	return resp, nil
 }
 
@@ -5575,6 +5569,26 @@ func isCanceledErr(err error) bool {
 		return true
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "context canceled")
+}
+
+func shouldRecordBreakerFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	if isCanceledErr(err) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+	if strings.Contains(lower, "context canceled") ||
+		strings.Contains(lower, "deadline exceeded") ||
+		strings.Contains(lower, "timeout") {
+		return false
+	}
+	return true
 }
 
 // lokiErrorType returns the Loki/Prometheus-style errorType for an HTTP status code.

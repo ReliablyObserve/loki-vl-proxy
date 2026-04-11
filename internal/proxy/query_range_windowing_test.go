@@ -270,6 +270,70 @@ func TestQueryRangeWindow_MultiTenantCompatibility(t *testing.T) {
 	}
 }
 
+func TestQueryRangeWindow_SevenDayRangeUsesParallelWindowFetch(t *testing.T) {
+	var calls atomic.Int64
+	var inFlight atomic.Int64
+	var maxInFlight atomic.Int64
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		current := inFlight.Add(1)
+		for {
+			observed := maxInFlight.Load()
+			if current <= observed || maxInFlight.CompareAndSwap(observed, current) {
+				break
+			}
+		}
+		defer inFlight.Add(-1)
+
+		_ = r.ParseForm()
+		startNs, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+		time.Sleep(10 * time.Millisecond)
+		_, _ = fmt.Fprintf(w, "{\"_time\":%q,\"_msg\":\"ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n", time.Unix(0, startNs).UTC().Format(time.RFC3339Nano))
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, err := New(Config{
+		BackendURL:                      vlBackend.URL,
+		Cache:                           c,
+		LogLevel:                        "error",
+		QueryRangeWindowingEnabled:      true,
+		QueryRangeSplitInterval:         time.Hour,
+		QueryRangeAdaptiveParallel:      true,
+		QueryRangeParallelMin:           2,
+		QueryRangeParallelMax:           8,
+		QueryRangeLatencyTarget:         500 * time.Millisecond,
+		QueryRangeLatencyBackoff:        5 * time.Second,
+		QueryRangeAdaptiveCooldown:      0,
+		QueryRangeErrorBackoffThreshold: 0.5,
+		QueryRangeFreshness:             10 * time.Minute,
+		QueryRangeRecentCacheTTL:        0,
+		QueryRangeHistoryCacheTTL:       24 * time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	start := time.Now().Add(-7 * 24 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	end := start + int64(7*24*time.Hour) - 1
+	req := httptest.NewRequest("GET", fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=5000", url.QueryEscape(`{app="nginx"}`), start, end), nil)
+	resp := httptest.NewRecorder()
+	p.handleQueryRange(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	const expectedWindows = int64(7 * 24)
+	if got := calls.Load(); got != expectedWindows {
+		t.Fatalf("expected %d window fetches for 7-day range, got %d", expectedWindows, got)
+	}
+	if got := maxInFlight.Load(); got < 2 {
+		t.Fatalf("expected at least 2 concurrent window fetches for adaptive parallel mode, got %d", got)
+	}
+}
+
 func TestQueryRangeWindow_ParseLokiTimeAndNormalization(t *testing.T) {
 	t.Run("rfc3339", func(t *testing.T) {
 		raw := "2026-04-10T12:00:00Z"
