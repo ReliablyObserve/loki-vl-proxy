@@ -72,7 +72,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \
   --version <release> \
   --set extraArgs.backend=http://victorialogs:9428 \
-  --set-string extraArgs.metrics\\.otlp-endpoint=http://daemon-collector.opentelemetry-kube-stack.svc.cluster.local:4318/v1/metrics \
+  --set-string extraArgs.metrics\\.otlp-endpoint=http://otel-collector.monitoring.svc.cluster.local:4318/v1/metrics \
   --set-string extraArgs.server\\.register-instrumentation=false
 ```
 

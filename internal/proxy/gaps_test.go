@@ -355,6 +355,10 @@ func TestCoverage_AllRoutesRegistered(t *testing.T) {
 		"/loki/api/v1/patterns",
 		"/loki/api/v1/tail",
 		"/loki/api/v1/status/buildinfo",
+		"/health",
+		"/healthz",
+		"/alive",
+		"/livez",
 		"/ready",
 		"/metrics",
 	}

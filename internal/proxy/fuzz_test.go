@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"testing"
 )
 
@@ -119,5 +120,31 @@ func FuzzFormatVLStep(f *testing.F) {
 	f.Fuzz(func(t *testing.T, input string) {
 		result := formatVLStep(input)
 		_ = result
+	})
+}
+
+// FuzzNormalizeMetadataPairs guards metadata normalization from panics across arbitrary JSON payloads.
+func FuzzNormalizeMetadataPairs(f *testing.F) {
+	seeds := [][]byte{
+		[]byte(`{"service.name":"orders","k8s.cluster.name":"cluster-alpha"}`),
+		[]byte(`[["service.name","orders"],["k8s.cluster.name","cluster-alpha"]]`),
+		[]byte(`[{"name":"service.name","value":"orders"},{"name":"k8s.cluster.name","value":"cluster-alpha"}]`),
+		[]byte(`null`),
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input []byte) {
+		var raw interface{}
+		if err := json.Unmarshal(input, &raw); err != nil {
+			return
+		}
+		out := normalizeMetadataPairs(raw)
+		for key := range out {
+			if key == "" {
+				t.Fatalf("normalizeMetadataPairs produced empty key for input=%q", string(input))
+			}
+		}
 	})
 }

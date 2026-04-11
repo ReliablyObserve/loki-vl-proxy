@@ -167,7 +167,7 @@ func makeTupleContractBackend(t *testing.T) *httptest.Server {
 		case "tenant-b":
 			_, _ = w.Write([]byte(`{"_time":"2026-04-10T10:00:01Z","_msg":"time=\"2026-04-10T10:00:01Z\" level=error msg=\"fromYaml not defined\" app.label.component=notifications-controller","_stream":"{job=\"tuple-contract\",level=\"error\"}","job":"tuple-contract","level":"error","app.label.component":"notifications-controller"}` + "\n"))
 		default:
-			_, _ = w.Write([]byte(`{"_time":"2026-04-10T10:00:02Z","_msg":"time=\"2026-04-10T10:00:02Z\" level=error msg=\"api chain check\" resource=argocd/f5-nginx-external","_stream":"{job=\"tuple-contract\",level=\"error\"}","job":"tuple-contract","level":"error","resource":"argocd/f5-nginx-external"}` + "\n"))
+			_, _ = w.Write([]byte(`{"_time":"2026-04-10T10:00:02Z","_msg":"time=\"2026-04-10T10:00:02Z\" level=error msg=\"api chain check\" resource=sample-ns/edge-service","_stream":"{job=\"tuple-contract\",level=\"error\"}","job":"tuple-contract","level":"error","resource":"sample-ns/edge-service"}` + "\n"))
 		}
 	}))
 }

@@ -293,6 +293,30 @@ func TestMetricQueryTranslation_DedupesByLabelsAfterTranslation(t *testing.T) {
 	}
 }
 
+func TestMetricQueryTranslation_MalformedDottedDrilldownStage(t *testing.T) {
+	labelFn := func(label string) string {
+		switch label {
+		case "deployment_environment":
+			return "deployment.environment"
+		case "k8s_namespace_name":
+			return "k8s.namespace.name"
+		case "detected_level":
+			return "level"
+		default:
+			return label
+		}
+	}
+
+	got, err := TranslateLogQLWithLabels(`sum by (level, detected_level) (count_over_time({deployment_environment="dev", k8s_namespace_name="sample_ns"} | k8s . `+"`cluster.`"+`[1m]))`, labelFn)
+	if err != nil {
+		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
+	}
+	want := `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster":!"" | stats by (level) count()`
+	if got != want {
+		t.Fatalf("TranslateLogQLWithLabels() = %q, want %q", got, want)
+	}
+}
+
 func TestConvertGoTemplate_DottedFieldNames(t *testing.T) {
 	tests := []struct {
 		input string

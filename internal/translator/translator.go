@@ -338,6 +338,10 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc) string {
 		return translated
 	}
 
+	if translated, ok := translateMalformedDottedStage(stage, labelFn); ok {
+		return translated
+	}
+
 	// Unknown stage — pass through as-is with pipe
 	return "| " + stage
 }
@@ -470,13 +474,13 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 	for _, op := range ops {
 		idx := strings.Index(stage, op.logql)
 		if idx > 0 {
-			label := strings.TrimSpace(stage[:idx])
+			label := normalizeFieldIdentifier(stage[:idx])
 			value := strings.TrimSpace(stage[idx+len(op.logql):])
 			if label == "detected_level" {
 				label = "level"
 			}
 			if labelFn != nil {
-				label = labelFn(label)
+				label = normalizeFieldIdentifier(labelFn(label))
 			}
 
 			value = strings.Trim(value, "\"`")
@@ -517,6 +521,46 @@ func quoteLogsQLFieldNameIfNeeded(label string) string {
 	}
 	return label
 }
+
+func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (string, bool) {
+	candidate := normalizeFieldIdentifier(stage)
+	if candidate == "" {
+		return "", false
+	}
+	if strings.ContainsAny(candidate, `=<>!~`) {
+		return "", false
+	}
+	candidate = strings.Trim(candidate, ".")
+	if !strings.Contains(candidate, ".") {
+		return "", false
+	}
+	for _, r := range candidate {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '.' || r == '-' {
+			continue
+		}
+		return "", false
+	}
+	if labelFn != nil {
+		candidate = normalizeFieldIdentifier(labelFn(candidate))
+	}
+	if candidate == "" {
+		return "", false
+	}
+	return fmt.Sprintf(`%s:!""`, quoteLogsQLFieldNameIfNeeded(candidate)), true
+}
+
+func normalizeFieldIdentifier(label string) string {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return ""
+	}
+	label = strings.ReplaceAll(label, "`", "")
+	label = strings.ReplaceAll(label, `"`, "")
+	label = fieldDotSpacingRE.ReplaceAllString(label, ".")
+	return strings.TrimSpace(label)
+}
+
+var fieldDotSpacingRE = regexp.MustCompile(`\s*\.\s*`)
 
 // translateLabelFormat converts label_format expressions.
 // Supports multiple renames: label_format a="{{.x}}", b="{{.y}}"
@@ -1188,7 +1232,7 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 	for _, op := range ops {
 		idx := strings.Index(matcher, op.logql)
 		if idx > 0 {
-			origLabel := strings.TrimSpace(matcher[:idx])
+			origLabel := normalizeFieldIdentifier(matcher[:idx])
 			label := origLabel
 			value := strings.TrimSpace(matcher[idx+len(op.logql):])
 
@@ -1197,7 +1241,7 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 				return serviceNameMatcherFilter(op.logsql, value, op.neg, op.isRe)
 			}
 			if labelFn != nil {
-				label = labelFn(label)
+				label = normalizeFieldIdentifier(labelFn(label))
 			}
 
 			// VL requires quoting for dotted field names

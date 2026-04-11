@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/gorilla/websocket"
 )
 
 // =============================================================================
@@ -719,6 +719,36 @@ func TestContract_Ready_UnhealthyBackend(t *testing.T) {
 
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected 503 when backend unhealthy, got %d", w.Code)
+	}
+}
+
+// --- /health and /alive ---
+
+func TestContract_Health_AlwaysOK(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/health", nil)
+	p.handleHealth(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for /health, got %d", w.Code)
+	}
+	if got := strings.TrimSpace(w.Body.String()); got != "ok" {
+		t.Errorf("expected /health body to be ok, got %q", got)
+	}
+}
+
+func TestContract_Alive_AlwaysOK(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/alive", nil)
+	p.handleAlive(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected 200 for /alive, got %d", w.Code)
+	}
+	if got := strings.TrimSpace(w.Body.String()); got != "alive" {
+		t.Errorf("expected /alive body to be alive, got %q", got)
 	}
 }
 

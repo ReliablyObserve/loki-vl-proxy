@@ -8,10 +8,12 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 	// Simulate a label translator that converts underscore labels to dotted VL fields
 	labelFn := func(label string) string {
 		mapping := map[string]string{
-			"service_name":       "service.name",
-			"k8s_pod_name":       "k8s.pod.name",
-			"k8s_namespace_name": "k8s.namespace.name",
-			"host_name":          "host.name",
+			"service_name":           "service.name",
+			"k8s_pod_name":           "k8s.pod.name",
+			"k8s_namespace_name":     "k8s.namespace.name",
+			"k8s_cluster_name":       "k8s.cluster.name",
+			"deployment_environment": "deployment.environment",
+			"host_name":              "host.name",
 		}
 		if mapped, ok := mapping[label]; ok {
 			return mapped
@@ -93,6 +95,21 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 			name:  "dotted structured metadata non empty filter is quoted",
 			logql: `{app="api"} | json | service.name!=""`,
 			want:  `app:=api | unpack_json | filter "service.name":!""`,
+		},
+		{
+			name:  "native dotted field equality filter in pipeline",
+			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | k8s.cluster.name = ` + "`cluster-alpha`",
+			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster.name":=cluster-alpha`,
+		},
+		{
+			name:  "underscored alias equality filter maps to same dotted field",
+			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | k8s_cluster_name = ` + "`cluster-alpha`",
+			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster.name":=cluster-alpha`,
+		},
+		{
+			name:  "malformed dotted stage from drilldown degrades to non-empty filter",
+			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | k8s . ` + "`cluster.`",
+			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster":!""`,
 		},
 	}
 
