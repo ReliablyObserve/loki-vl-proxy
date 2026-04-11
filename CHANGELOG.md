@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.27] - 2026-04-11
+
 ### Tests
 
 - sanitize test/doc metadata fixtures to use neutral placeholder values (remove infra-specific cluster/namespace/resource examples)
