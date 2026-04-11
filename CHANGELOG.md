@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- restore Explore event tuple structured metadata behavior across translated/native metadata paths, preserving Loki-compatible payloads for Grafana Explore details
+
+### Tests
+
+- add pinned e2e compatibility matrix guards for structured metadata profile modes so future label/metadata mode drift fails CI early
+
 ## [0.27.27] - 2026-04-11
 
 ### Tests

@@ -104,11 +104,13 @@ extraArgs:
   #
   # Common profile examples:
   # 1) Loki/Grafana conservative:
-  #    label-style=underscores, metadata-field-mode=translated, emit-structured-metadata=false
+  #    label-style=underscores, metadata-field-mode=translated, emit-structured-metadata=true
   # 2) Drilldown/OTel mixed mode:
   #    label-style=underscores, metadata-field-mode=hybrid, emit-structured-metadata=true
   # 3) Native VL field surface:
   #    label-style=passthrough, metadata-field-mode=native, emit-structured-metadata=true
+  # Legacy strict parser fallback (only if required):
+  #    emit-structured-metadata=false
   #
   # Docs:
   # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/configuration.md#compatibility-profiles

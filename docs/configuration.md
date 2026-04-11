@@ -25,7 +25,7 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 |---|---|---|---|
 | `-label-style` | `LABEL_STYLE` | `passthrough` | `passthrough` or `underscores` |
 | `-metadata-field-mode` | `METADATA_FIELD_MODE` | `hybrid` | `native`, `translated`, or `hybrid` for `detected_fields` and structured metadata exposure |
-| `-emit-structured-metadata` | — | `false` | Enable Loki `categorize-labels` response encoding: requests with `X-Loki-Response-Encoding-Flags: categorize-labels` emit 3-tuples `[timestamp, line, metadata]`, while default/no-flag requests stay canonical 2-tuples |
+| `-emit-structured-metadata` | — | `true` | Enable Loki `categorize-labels` response encoding: requests with `X-Loki-Response-Encoding-Flags: categorize-labels` emit 3-tuples `[timestamp, line, metadata]`, while default/no-flag requests stay canonical 2-tuples |
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
 
 ### Label Style Modes
@@ -62,12 +62,14 @@ The three flags below define the compatibility profile:
 
 | Profile | Settings | Best For |
 |---|---|---|
-| Loki/Grafana conservative | `label-style=underscores`, `metadata-field-mode=translated`, `emit-structured-metadata=false` | Strict Loki-style field naming with 2-tuple defaults |
+| Loki/Grafana conservative | `label-style=underscores`, `metadata-field-mode=translated`, `emit-structured-metadata=true` | Strict Loki-style field naming plus Explore/Drilldown event metadata |
 | Drilldown/OTel mixed mode | `label-style=underscores`, `metadata-field-mode=hybrid`, `emit-structured-metadata=true` | Grafana + OTel correlation where both dotted and translated field names are useful |
 | Native VL field surface | `label-style=passthrough`, `metadata-field-mode=native`, `emit-structured-metadata=true` | Consumers that prefer raw VictoriaLogs field names and structured metadata |
 
 For tuple behavior and endpoint-level details, see [API Reference](api-reference.md).
 For support scope by product/version track, see [Compatibility Matrix](compatibility-matrix.md).
+
+If you must interoperate with legacy clients that reject metadata objects in `categorize-labels` mode, explicitly set `-emit-structured-metadata=false`.
 
 ## Cache (L1 In-Memory)
 

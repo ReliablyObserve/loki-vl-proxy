@@ -8,7 +8,7 @@ This guide explains how field and label translation behaves across proxy surface
 |---|---|---|
 | `-label-style` | Controls label-name translation between VL and Loki label surfaces | `passthrough`, `underscores` |
 | `-metadata-field-mode` | Controls field exposure for field-oriented APIs and structured metadata payloads | `native`, `translated`, `hybrid` |
-| `-emit-structured-metadata` | Enables 3-tuple metadata responses for explicit `categorize-labels` requests | `false`, `true` |
+| `-emit-structured-metadata` | Enables 3-tuple metadata responses for explicit `categorize-labels` requests (default: `true`) | `false`, `true` |
 | `-field-mapping` | Custom mapping between VL field name and Loki label name | JSON mappings |
 
 ## Surfaces Affected

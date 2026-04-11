@@ -315,6 +315,43 @@ func TestRunMain_SuccessDoesNotExit(t *testing.T) {
 	}
 }
 
+func TestRun_DefaultEnablesStructuredMetadata(t *testing.T) {
+	reloadCh := make(chan os.Signal)
+	close(reloadCh)
+	shutdownCh := make(chan os.Signal, 1)
+	shutdownCh <- syscall.SIGTERM
+
+	var captured runtimeOptions
+	err := run(
+		nil,
+		func(string) string { return "" },
+		io.Discard,
+		func(chan<- os.Signal, ...os.Signal) {},
+		func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher { return &fakeOTLPPusher{} },
+		func(opts runtimeOptions, _ *slog.Logger, _ signalNotifier, _ otlpPusherFactory) (*runtimeState, error) {
+			captured = opts
+			return &runtimeState{
+				proxy:        &proxy.Proxy{},
+				server:       &fakeHTTPServer{},
+				cacheCleanup: func() {},
+				stopOTLP:     func() {},
+				reloadCh:     reloadCh,
+				shutdownCh:   shutdownCh,
+			}, nil
+		},
+		func(httpServer, serverLoopOptions, *slog.Logger, func(string, ...any)) {},
+		func(ch <-chan os.Signal, _ httpServer, _ time.Duration, _ *slog.Logger) {
+			<-ch
+		},
+	)
+	if err != nil {
+		t.Fatalf("run returned unexpected error: %v", err)
+	}
+	if !captured.proxyCfg.emitStructuredMetadata {
+		t.Fatal("expected -emit-structured-metadata to default to true")
+	}
+}
+
 func TestBuildServerTLSConfig_RequiresCAWhenClientCertsRequired(t *testing.T) {
 	cfg, err := buildServerTLSConfig("", true)
 	if err == nil {

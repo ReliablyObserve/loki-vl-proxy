@@ -303,7 +303,7 @@ func run(
 	forwardCookies := fs.String("forward-cookies", "", "Comma-separated list of cookie names to forward to VL backend")
 	derivedFieldsJSON := fs.String("derived-fields", "", `JSON derived fields: [{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]`)
 	streamResponse := fs.Bool("stream-response", false, "Stream log responses via chunked transfer encoding")
-	emitStructuredMetadata := fs.Bool("emit-structured-metadata", false, "Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses")
+	emitStructuredMetadata := fs.Bool("emit-structured-metadata", true, "Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses")
 	queryRangeWindowing := fs.Bool("query-range-windowing", true, "Enable query_range window splitting and window-level cache reuse for log queries")
 	queryRangeSplitInterval := fs.Duration("query-range-split-interval", time.Hour, "Time window size used for query_range split/merge (for example 15m, 1h, 24h)")
 	queryRangeMaxParallel := fs.Int("query-range-max-parallel", 2, "Maximum number of query_range windows fetched in parallel when adaptive parallelism is disabled")
