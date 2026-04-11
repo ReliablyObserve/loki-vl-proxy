@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- sanitize test/doc metadata fixtures to use neutral placeholder values (remove infra-specific cluster/namespace/resource examples)
+
+### CI
+
+- remove an unused helper from stream metadata contract tests so `golangci-lint` `unused` checks pass reliably
+
 ## [0.27.26] - 2026-04-10
 
 ### Bug Fixes
