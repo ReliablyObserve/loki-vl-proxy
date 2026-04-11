@@ -10,10 +10,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - harden malformed dotted Drilldown pipeline stages (for example `| cll . \`pipeline.\``) to degrade into safe dotted-prefix regex filters instead of impossible field-existence matchers
+- preserve Grafana datasource dotted-key filter intent by validating `key=value` label filtering for native dotted metadata fields (for example `k8s.cluster.name=my-cluster`) and preventing malformed dot-token fallback regressions
 
 ### CI
 
 - expose compatibility component-level endpoint scores in PR quality reports and enforce shared component regressions through the quality gate
+
+### Tests
+
+- add unit, e2e-compat, and UI regression guards for dotted metadata key filtering across Explore/Drilldown query construction and datasource compatibility paths
 
 ## [0.27.29] - 2026-04-11
 
