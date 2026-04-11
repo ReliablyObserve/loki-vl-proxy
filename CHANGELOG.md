@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.29] - 2026-04-11
+
 ### Bug Fixes
 
 - harden backend circuit-breaker accounting for long-range queries by counting only transport reachability failures as breaker failures, preventing transient upstream HTTP 5xx responses from opening the local breaker
