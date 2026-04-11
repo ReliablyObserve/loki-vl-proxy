@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Configuration
+
+- expose indexed label-values browse cache knobs in Helm `extraArgs` (`label-values-indexed-cache`, `label-values-hot-limit`, `label-values-index-max-entries`) and document chart-based tuning examples for high-cardinality label UX
+
 ## [0.27.32] - 2026-04-11
 
 ### Bug Fixes
