@@ -3,6 +3,7 @@ package proxy
 import (
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // LabelStyle controls how VL field names are translated to Loki label names in responses,
@@ -59,15 +60,23 @@ type LabelTranslator struct {
 	style    LabelStyle
 	vlToLoki map[string]string // VL field name → Loki label name
 	lokiToVL map[string]string // Loki label name → VL field name
+
+	// learnedLokiToVL keeps runtime-learned underscore -> dotted mappings for
+	// custom attributes discovered from backend field inventory.
+	learnedMu        sync.RWMutex
+	learnedLokiToVL  map[string]string
+	learnedAmbiguous map[string]struct{}
 }
 
 // NewLabelTranslator creates a label translator with the given style and custom mappings.
 // Custom mappings take precedence over automatic translation.
 func NewLabelTranslator(style LabelStyle, mappings []FieldMapping) *LabelTranslator {
 	lt := &LabelTranslator{
-		style:    style,
-		vlToLoki: make(map[string]string),
-		lokiToVL: make(map[string]string),
+		style:            style,
+		vlToLoki:         make(map[string]string),
+		lokiToVL:         make(map[string]string),
+		learnedLokiToVL:  make(map[string]string),
+		learnedAmbiguous: make(map[string]struct{}),
 	}
 
 	// Register custom mappings (bidirectional)
@@ -113,10 +122,89 @@ func (lt *LabelTranslator) ToVL(lokiLabel string) string {
 		if dotted, ok := knownUnderscoreToDot[lokiLabel]; ok {
 			return dotted
 		}
+		// For custom attributes, use learned aliases only when they were resolved
+		// uniquely from backend field inventory.
+		if learned, ok := lt.resolveLearnedAlias(lokiLabel); ok {
+			return learned
+		}
 		// For unknown labels, pass through as-is — the VL field might already be underscore-based.
 		return lokiLabel
 	default:
 		return lokiLabel
+	}
+}
+
+func (lt *LabelTranslator) resolveLearnedAlias(lokiLabel string) (string, bool) {
+	if lt == nil || lt.style != LabelStyleUnderscores {
+		return "", false
+	}
+	lt.learnedMu.RLock()
+	defer lt.learnedMu.RUnlock()
+	if _, ambiguous := lt.learnedAmbiguous[lokiLabel]; ambiguous {
+		return "", false
+	}
+	mapped, ok := lt.learnedLokiToVL[lokiLabel]
+	return mapped, ok
+}
+
+// LearnFieldAliases captures runtime underscore -> dotted mappings for custom
+// fields based on backend field inventory. Mappings are installed only when an
+// alias resolves to exactly one VL field; collisions are marked ambiguous.
+func (lt *LabelTranslator) LearnFieldAliases(fields []string) {
+	if lt == nil || lt.style != LabelStyleUnderscores || len(fields) == 0 {
+		return
+	}
+
+	buckets := make(map[string]map[string]struct{}, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		alias := strings.TrimSpace(lt.ToLoki(field))
+		if alias == "" || alias == field {
+			continue
+		}
+		bucket := buckets[alias]
+		if bucket == nil {
+			bucket = make(map[string]struct{}, 1)
+			buckets[alias] = bucket
+		}
+		bucket[field] = struct{}{}
+	}
+	if len(buckets) == 0 {
+		return
+	}
+
+	lt.learnedMu.Lock()
+	defer lt.learnedMu.Unlock()
+
+	for alias, bucket := range buckets {
+		// Explicit and known mappings always win.
+		if _, ok := lt.lokiToVL[alias]; ok {
+			continue
+		}
+		if _, ok := knownUnderscoreToDot[alias]; ok {
+			continue
+		}
+		if len(bucket) != 1 {
+			lt.learnedAmbiguous[alias] = struct{}{}
+			delete(lt.learnedLokiToVL, alias)
+			continue
+		}
+		if _, ambiguous := lt.learnedAmbiguous[alias]; ambiguous {
+			continue
+		}
+		var candidate string
+		for field := range bucket {
+			candidate = field
+		}
+		if existing, ok := lt.learnedLokiToVL[alias]; ok && existing != candidate {
+			lt.learnedAmbiguous[alias] = struct{}{}
+			delete(lt.learnedLokiToVL, alias)
+			continue
+		}
+		lt.learnedLokiToVL[alias] = candidate
 	}
 }
 
@@ -238,6 +326,7 @@ func (lt *LabelTranslator) ResolveMetadataCandidates(fieldName string, available
 
 // TranslateLabelsMap translates all keys in a labels map (response direction).
 func (lt *LabelTranslator) TranslateLabelsMap(labels map[string]string) map[string]string {
+	lt.learnFieldAliasesFromMap(labels)
 	if lt.style == LabelStylePassthrough && len(lt.vlToLoki) == 0 {
 		return labels
 	}
@@ -250,6 +339,7 @@ func (lt *LabelTranslator) TranslateLabelsMap(labels map[string]string) map[stri
 
 // TranslateLabelsList translates a list of label names (response direction).
 func (lt *LabelTranslator) TranslateLabelsList(labels []string) []string {
+	lt.LearnFieldAliases(labels)
 	if lt.style == LabelStylePassthrough && len(lt.vlToLoki) == 0 {
 		return labels
 	}
@@ -263,6 +353,17 @@ func (lt *LabelTranslator) TranslateLabelsList(labels []string) []string {
 		}
 	}
 	return result
+}
+
+func (lt *LabelTranslator) learnFieldAliasesFromMap(labels map[string]string) {
+	if lt == nil || lt.style != LabelStyleUnderscores || len(labels) == 0 {
+		return
+	}
+	fields := make([]string, 0, len(labels))
+	for field := range labels {
+		fields = append(fields, field)
+	}
+	lt.LearnFieldAliases(fields)
 }
 
 // IsPassthrough returns true if no translation is needed.

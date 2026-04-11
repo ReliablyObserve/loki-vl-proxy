@@ -1421,7 +1421,12 @@ func (p *Proxy) fetchVLFieldNames(ctx context.Context, path string, params url.V
 	if resp.StatusCode >= 400 {
 		return nil, &vlAPIError{status: resp.StatusCode, body: string(body)}
 	}
-	return decodeVLFieldHits(body)
+	fields, err := decodeVLFieldHits(body)
+	if err != nil {
+		return nil, err
+	}
+	p.labelTranslator.LearnFieldAliases(fields)
+	return fields, nil
 }
 
 func (p *Proxy) fetchVLFieldValues(ctx context.Context, path string, params url.Values) ([]string, error) {

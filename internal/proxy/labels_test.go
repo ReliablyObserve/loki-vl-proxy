@@ -107,6 +107,44 @@ func TestLabelTranslator_ToVL_DetectedLevelAliasInPassthrough(t *testing.T) {
 	}
 }
 
+func TestLabelTranslator_ToVL_LearnedCustomAliases(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+
+	if got := lt.ToVL("cll_pipeline_processing"); got != "cll_pipeline_processing" {
+		t.Fatalf("unexpected pre-learn mapping, got %q", got)
+	}
+
+	lt.LearnFieldAliases([]string{"cll.pipeline.processing"})
+	if got := lt.ToVL("cll_pipeline_processing"); got != "cll.pipeline.processing" {
+		t.Fatalf("learned alias mapping failed, got %q", got)
+	}
+}
+
+func TestLabelTranslator_ToVL_LearnedAliasesAmbiguous(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.LearnFieldAliases([]string{"foo.bar", "foo-bar"})
+
+	if got := lt.ToVL("foo_bar"); got != "foo_bar" {
+		t.Fatalf("ambiguous alias should fall back to passthrough, got %q", got)
+	}
+}
+
+func TestLabelTranslator_ToVL_LearnedAliasesDoNotOverrideKnownOrCustom(t *testing.T) {
+	ltKnown := NewLabelTranslator(LabelStyleUnderscores, nil)
+	ltKnown.LearnFieldAliases([]string{"service-name"})
+	if got := ltKnown.ToVL("service_name"); got != "service.name" {
+		t.Fatalf("known semconv alias must win, got %q", got)
+	}
+
+	ltCustom := NewLabelTranslator(LabelStyleUnderscores, []FieldMapping{
+		{VLField: "my.custom.field", LokiLabel: "my_custom_field"},
+	})
+	ltCustom.LearnFieldAliases([]string{"other.custom.field"})
+	if got := ltCustom.ToVL("my_custom_field"); got != "my.custom.field" {
+		t.Fatalf("explicit custom mapping must win, got %q", got)
+	}
+}
+
 func TestLabelTranslator_CustomMappings(t *testing.T) {
 	mappings := []FieldMapping{
 		{VLField: "my_custom_field", LokiLabel: "custom"},

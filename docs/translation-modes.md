@@ -58,6 +58,11 @@ Compatibility behavior:
 - Stream label outputs remain Loki-safe (underscore keys) when `-label-style=underscores`.
 - Field-oriented and metadata surfaces follow `-metadata-field-mode` (`native`, `translated`, `hybrid`).
 
+Caveat for Grafana Loki datasource builder:
+- The builder UI can tokenize dotted keys (for example `host.id`) into `host` `.` `id` controls even when the generated LogQL query executes correctly.
+- For stable click-to-filter workflows from Event Details, prefer underscore aliases in the UI (`-label-style=underscores`, `-metadata-field-mode=translated`) while VL remains dotted internally.
+- Code mode remains valid for dotted expressions when your workflow requires native dotted fields.
+
 ## Mode Profiles
 
 ### Loki-First Profile
