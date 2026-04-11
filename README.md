@@ -21,6 +21,7 @@ No custom Grafana datasource plugin. No sidecar translation service. One small s
 
 - **Drop-in Loki frontend**: Keep Grafana Explore, Drilldown, dashboards, and Loki API tooling.
 - **VictoriaLogs backend economics**: Query VL while preserving Loki client experience.
+- **Dual-schema compatibility**: Keep Loki-safe underscore labels while exposing OTel/VL dotted structured metadata where needed.
 - **Strict compatibility contracts**: Default 2-tuple responses, explicit 3-tuple only when `categorize-labels` is requested.
 - **Production guardrails**: Tenant isolation, bounded fanout, circuit breaking, rate limits, and safe caching.
 - **Fast repeat reads**: Tiered cache with optional disk and fleet peer reuse.
@@ -208,6 +209,17 @@ Related docs: [Getting Started](docs/getting-started.md), [Configuration](docs/c
   - query cache keys are split by tuple mode to prevent 3-tuple/2-tuple cross-contamination
 - **Grafana-first behavior**:
   - compatibility tracks continuously verify Loki API, Logs Drilldown, and VictoriaLogs integration
+
+### Label/Field Compatibility Profiles
+
+| Profile | Label surfaces (`stream`, `/labels`) | Field/metadata surfaces (`/detected_fields`, 3-tuple metadata) | Best fit |
+|---|---|---|---|
+| Loki-conservative | underscore-only | translated underscore aliases | strict Loki UX |
+| Mixed (default) | underscore-only | dotted + translated aliases | Grafana + OTel correlation |
+| Native-field | underscore-only (when `label-style=underscores`) | dotted-native only | VL/OTel-native field workflows |
+
+Operational note:
+- Grafana datasource queries can use dotted field filters (for example `k8s.cluster.name = \`my-cluster\``) while stream labels remain Loki-compatible underscores.
 
 Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Loki Compatibility](docs/compatibility-loki.md), [Logs Drilldown Compatibility](docs/compatibility-drilldown.md), [VictoriaLogs Compatibility](docs/compatibility-victorialogs.md)
 

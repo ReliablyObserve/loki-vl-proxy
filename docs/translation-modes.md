@@ -44,6 +44,20 @@ Notes:
 - `hybrid` is the default and best when users need both Loki-style and OTel-style workflows.
 - Label surfaces remain Loki-compatible (underscore) when `label-style=underscores` regardless of metadata mode.
 
+## Grafana Datasource Behavior
+
+When Grafana Explore/Drilldown builds field filters from Event Details, it may emit dotted field expressions such as:
+
+```logql
+{service_name="otel-collector"} | k8s.cluster.name = `us-east-1`
+```
+
+Compatibility behavior:
+- Dotted filters are accepted and translated to VL-native dotted field matching.
+- Underscore aliases for known OTel fields are also accepted (`k8s_cluster_name = ...`) and resolve to the same dotted VL field.
+- Stream label outputs remain Loki-safe (underscore keys) when `-label-style=underscores`.
+- Field-oriented and metadata surfaces follow `-metadata-field-mode` (`native`, `translated`, `hybrid`).
+
 ## Mode Profiles
 
 ### Loki-First Profile
