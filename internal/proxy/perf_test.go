@@ -678,7 +678,14 @@ func TestLoad_HighConcurrency_MemoryStability(t *testing.T) {
 
 	totalRequests := concurrency * requestsPerGoroutine
 	rps := float64(totalRequests) / elapsed.Seconds()
-	memGrowthMB := float64(memAfter.Alloc-memBefore.Alloc) / 1024 / 1024
+	memDeltaBytes := int64(memAfter.Alloc) - int64(memBefore.Alloc)
+	memGrowthBytes := memDeltaBytes
+	if memGrowthBytes < 0 {
+		// GC may reduce Alloc below baseline; treat that as zero growth.
+		memGrowthBytes = 0
+	}
+	memDeltaMB := float64(memDeltaBytes) / 1024 / 1024
+	memGrowthMB := float64(memGrowthBytes) / 1024 / 1024
 
 	t.Logf("Load test results:")
 	t.Logf("  Total requests: %d", totalRequests)
@@ -687,8 +694,8 @@ func TestLoad_HighConcurrency_MemoryStability(t *testing.T) {
 	t.Logf("  Throughput: %.0f req/s", rps)
 	t.Logf("  Backend calls: %d (cache effectiveness: %.1f%%)",
 		requestCount.Load(), 100*(1-float64(requestCount.Load())/float64(totalRequests)))
-	t.Logf("  Memory growth: %.1f MB (before: %.1f MB, after: %.1f MB)",
-		memGrowthMB, float64(memBefore.Alloc)/1024/1024, float64(memAfter.Alloc)/1024/1024)
+	t.Logf("  Memory growth: %.1f MB (delta: %.1f MB, before: %.1f MB, after: %.1f MB)",
+		memGrowthMB, memDeltaMB, float64(memBefore.Alloc)/1024/1024, float64(memAfter.Alloc)/1024/1024)
 	t.Logf("  GC cycles: %d", memAfter.NumGC-memBefore.NumGC)
 
 	// Assertions
