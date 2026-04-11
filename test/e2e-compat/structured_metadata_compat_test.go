@@ -14,8 +14,10 @@ import (
 )
 
 var (
-	proxyNativeMetadataURL = envOrOtel("PROXY_NATIVE_METADATA_URL", "http://localhost:3106")
-	structuredMetadataOnce sync.Once
+	proxyNativeMetadataURL       = envOrOtel("PROXY_NATIVE_METADATA_URL", "http://localhost:3106")
+	proxyTranslatedMetadataURL   = envOrOtel("PROXY_TRANSLATED_METADATA_URL", "http://localhost:3107")
+	proxyNoStructuredMetadataURL = envOrOtel("PROXY_NO_STRUCTURED_METADATA_URL", "http://localhost:3108")
+	structuredMetadataOnce       sync.Once
 )
 
 func TestStructuredMetadata_HybridModeExposesNativeAndTranslatedAliases(t *testing.T) {
@@ -76,6 +78,61 @@ func TestStructuredMetadata_NativeModeKeepsDottedMetadataWithUnderscoreLabels(t 
 	}
 }
 
+func TestStructuredMetadata_TranslatedModeExposesOnlyTranslatedAliases(t *testing.T) {
+	ensureStructuredMetadataData(t)
+
+	resp := queryRangeCategorized(t, proxyTranslatedMetadataURL, `{service_name="structured-metadata-e2e",level="info"}`)
+	labels := firstStreamLabels(t, resp)
+	metadata := firstStreamStructuredMetadata(t, resp)
+
+	for _, want := range []string{"service_name", "k8s_pod_name"} {
+		if _, ok := labels[want]; !ok {
+			t.Fatalf("translated metadata mode labels missing %q: %+v", want, labels)
+		}
+	}
+	for _, forbidden := range []string{"service.name", "k8s.pod.name"} {
+		if _, ok := labels[forbidden]; ok {
+			t.Fatalf("translated metadata mode labels unexpectedly exposed dotted key %q: %+v", forbidden, labels)
+		}
+	}
+
+	for _, want := range []string{"http_target", "cloud_region"} {
+		if _, ok := metadata[want]; !ok {
+			t.Fatalf("translated structuredMetadata missing translated key %q: %+v", want, metadata)
+		}
+	}
+	for _, forbidden := range []string{"http.target", "cloud.region"} {
+		if _, ok := metadata[forbidden]; ok {
+			t.Fatalf("translated structuredMetadata unexpectedly exposed dotted key %q: %+v", forbidden, metadata)
+		}
+	}
+}
+
+func TestStructuredMetadata_DisabledModeReturnsEmptyMetadataObject(t *testing.T) {
+	ensureStructuredMetadataData(t)
+
+	resp := queryRangeCategorized(t, proxyNoStructuredMetadataURL, `{service_name="structured-metadata-e2e",level="info"}`)
+	labels := firstStreamLabels(t, resp)
+
+	for _, want := range []string{"service_name", "k8s_pod_name"} {
+		if _, ok := labels[want]; !ok {
+			t.Fatalf("disabled metadata mode labels missing %q: %+v", want, labels)
+		}
+	}
+
+	firstTuple := firstStreamTuple(t, resp)
+	if len(firstTuple) != 3 {
+		t.Fatalf("expected categorize-labels 3-tuple with metadata disabled, got %#v", firstTuple)
+	}
+	meta, ok := firstTuple[2].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected metadata object in tuple[2], got %#v", firstTuple[2])
+	}
+	if len(meta) != 0 {
+		t.Fatalf("expected empty metadata object when emit-structured-metadata=false, got %#v", meta)
+	}
+}
+
 func TestStructuredMetadata_LabelShapeMatchesLokiExpectations(t *testing.T) {
 	ensureStructuredMetadataData(t)
 
@@ -83,6 +140,8 @@ func TestStructuredMetadata_LabelShapeMatchesLokiExpectations(t *testing.T) {
 		"loki_direct":             lokiURL,
 		"proxy_hybrid_underscore": proxyUnderscoreURL,
 		"proxy_native_metadata":   proxyNativeMetadataURL,
+		"proxy_translated":        proxyTranslatedMetadataURL,
+		"proxy_no_metadata":       proxyNoStructuredMetadataURL,
 	} {
 		resp := queryRangeCategorized(t, baseURL, `{service_name="structured-metadata-e2e",level="info"}`)
 		labels := firstStreamLabels(t, resp)
@@ -216,17 +275,7 @@ func firstStreamLabels(t *testing.T, response map[string]interface{}) map[string
 func firstStreamStructuredMetadata(t *testing.T, response map[string]interface{}) map[string]string {
 	t.Helper()
 
-	data := extractMap(response, "data")
-	result := extractArray(data, "result")
-	if len(result) == 0 {
-		t.Fatalf("expected at least one stream result, got %v", response)
-	}
-	stream, _ := result[0].(map[string]interface{})
-	values, _ := stream["values"].([]interface{})
-	if len(values) == 0 {
-		t.Fatalf("expected tuple values, got %v", stream)
-	}
-	firstTuple, _ := values[0].([]interface{})
+	firstTuple := firstStreamTuple(t, response)
 	if len(firstTuple) < 3 {
 		t.Fatalf("expected 3-tuple with metadata, got %#v", firstTuple)
 	}
@@ -259,4 +308,21 @@ func firstStreamStructuredMetadata(t *testing.T, response map[string]interface{}
 		}
 	}
 	return structured
+}
+
+func firstStreamTuple(t *testing.T, response map[string]interface{}) []interface{} {
+	t.Helper()
+
+	data := extractMap(response, "data")
+	result := extractArray(data, "result")
+	if len(result) == 0 {
+		t.Fatalf("expected at least one stream result, got %v", response)
+	}
+	stream, _ := result[0].(map[string]interface{})
+	values, _ := stream["values"].([]interface{})
+	if len(values) == 0 {
+		t.Fatalf("expected tuple values, got %v", stream)
+	}
+	firstTuple, _ := values[0].([]interface{})
+	return firstTuple
 }

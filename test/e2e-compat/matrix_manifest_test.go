@@ -111,6 +111,28 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 		t.Fatalf("docker-compose.yml must expose GRAFANA_IMAGE override")
 	}
 
+	// Keep translation profile matrix pinned in compose so CI always exercises:
+	// - hybrid + underscores + emit=true
+	// - translated + underscores + emit=true
+	// - native + underscores + emit=true
+	// - translated + underscores + emit=false
+	profileExpectations := []string{
+		"loki-vl-proxy-underscore:",
+		`- "-metadata-field-mode=hybrid"`,
+		`- "-emit-structured-metadata=true"`,
+		"loki-vl-proxy-translated-metadata:",
+		`- "-metadata-field-mode=translated"`,
+		"loki-vl-proxy-native-metadata:",
+		`- "-metadata-field-mode=native"`,
+		"loki-vl-proxy-no-metadata:",
+		`- "-emit-structured-metadata=false"`,
+	}
+	for _, expected := range profileExpectations {
+		if !strings.Contains(compose, expected) {
+			t.Fatalf("docker-compose.yml missing translation profile expectation %q", expected)
+		}
+	}
+
 	if matrix.Stack.LogsDrilldownContract.PinnedVersion == "" || matrix.Stack.LogsDrilldownContract.PinnedCommit == "" {
 		t.Fatalf("logs drilldown contract pin must include version and commit: %+v", matrix.Stack.LogsDrilldownContract)
 	}

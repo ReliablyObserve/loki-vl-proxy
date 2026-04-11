@@ -133,6 +133,7 @@ services:
       - "-log-level=info"
       - "-cache-ttl=5s"
       - "-label-style=underscores"
+      - "-metadata-field-mode=hybrid"
       - "-emit-structured-metadata=true"
     depends_on:
       victorialogs:
@@ -165,6 +166,68 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=native"
       - "-emit-structured-metadata=true"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      vmalert:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  # Loki-VL-proxy with underscore labels and translated-only metadata aliases
+  loki-vl-proxy-translated-metadata:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-translated-metadata
+    ports:
+      - "3107:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
+      - "-log-level=info"
+      - "-cache-ttl=5s"
+      - "-label-style=underscores"
+      - "-metadata-field-mode=translated"
+      - "-emit-structured-metadata=true"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      vmalert:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  # Loki-VL-proxy with underscore labels and structured metadata disabled
+  loki-vl-proxy-no-metadata:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-no-metadata
+    ports:
+      - "3108:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
+      - "-log-level=info"
+      - "-cache-ttl=5s"
+      - "-label-style=underscores"
+      - "-metadata-field-mode=translated"
+      - "-emit-structured-metadata=false"
     depends_on:
       victorialogs:
         condition: service_healthy
