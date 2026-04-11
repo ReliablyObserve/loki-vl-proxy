@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.32] - 2026-04-11
+
 ### Bug Fixes
 
 - add runtime learning for unique custom underscore-to-dotted field aliases from backend field inventory, with ambiguity safeguards and precedence for explicit mappings and known OTel aliases
