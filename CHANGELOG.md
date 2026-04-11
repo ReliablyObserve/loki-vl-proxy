@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- harden backend circuit-breaker accounting for long-range queries by counting only transport reachability failures as breaker failures, preventing transient upstream HTTP 5xx responses from opening the local breaker
+- keep canceled/timeout upstream transport errors out of breaker failure accounting so client cancellations and timeout paths do not unnecessarily block subsequent traffic
+
+### Tests
+
+- add breaker regression coverage for upstream HTTP 502, transport connection failure, and canceled transport error paths
+- add a 7-day query-range windowing regression test to verify adaptive parallel window fetch behavior under long time-range fanout
+
 ## [0.27.28] - 2026-04-11
 
 ### Bug Fixes
