@@ -38,3 +38,17 @@ test("buildServiceDrilldownUrl preserves service filter state across reloadable 
   expect(built.searchParams.get("var-filters")).toBe("service_name|=|api-gateway");
   expect(built.searchParams.get("var-fields")).toBe("method|=|GET");
 });
+
+test("buildServiceDrilldownUrl keeps dotted field triplet for event-details filters @drilldown-core", async () => {
+  const built = new URL(
+    `http://localhost${buildServiceDrilldownUrl("proxy-uid", "api-gateway", "logs", {
+      "var-fields": "k8s.cluster.name|=|my-cluster",
+    })}`
+  );
+
+  expect(built.searchParams.get("var-fields")).toBe("k8s.cluster.name|=|my-cluster");
+  const [label, operator, value] = (built.searchParams.get("var-fields") ?? "").split("|");
+  expect(label).toBe("k8s.cluster.name");
+  expect(operator).toBe("=");
+  expect(value).toBe("my-cluster");
+});

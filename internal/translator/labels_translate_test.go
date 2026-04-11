@@ -107,6 +107,11 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster.name":=cluster-alpha`,
 		},
 		{
+			name:  "malformed spaced dotted triplet with trailing dot normalizes to valid dotted filter",
+			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | cll . ` + "`pipeline.processing.`" + ` = ` + "`vector-processing`",
+			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "cll.pipeline.processing":=vector-processing`,
+		},
+		{
 			name:  "malformed dotted stage from drilldown degrades to dotted-prefix regex filter",
 			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | k8s . ` + "`cluster.`",
 			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns ~"k8s\.cluster\."`,
@@ -139,5 +144,48 @@ func TestTranslateLogQLWithLabels_NilFn(t *testing.T) {
 	}
 	if got != `app:=nginx` {
 		t.Errorf("nil labelFn: got %q, want %q", got, `app:=nginx`)
+	}
+}
+
+func TestTranslateSingleLabelFilter_DottedTripletKeyOperatorValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		stage   string
+		labelFn LabelTranslateFunc
+		want    string
+	}{
+		{
+			name:  "native dotted key with equals operator and literal value",
+			stage: "k8s.cluster.name = `my-cluster`",
+			want:  `"k8s.cluster.name":=my-cluster`,
+		},
+		{
+			name:  "translated underscore alias still resolves to dotted key",
+			stage: "k8s_cluster_name = `my-cluster`",
+			labelFn: func(label string) string {
+				if label == "k8s_cluster_name" {
+					return "k8s.cluster.name"
+				}
+				return label
+			},
+			want: `"k8s.cluster.name":=my-cluster`,
+		},
+		{
+			name:  "malformed spaced dotted key with trailing dot is sanitized",
+			stage: "cll . `pipeline.processing.` = `vector-processing`",
+			want:  `"cll.pipeline.processing":=vector-processing`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := translateSingleLabelFilter(tt.stage, tt.labelFn)
+			if !ok {
+				t.Fatalf("expected stage to be parsed as label/operator/value triplet: %q", tt.stage)
+			}
+			if got != tt.want {
+				t.Fatalf("translateSingleLabelFilter(%q) = %q, want %q", tt.stage, got, tt.want)
+			}
+		})
 	}
 }

@@ -474,13 +474,19 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 	for _, op := range ops {
 		idx := strings.Index(stage, op.logql)
 		if idx > 0 {
-			label := normalizeFieldIdentifier(stage[:idx])
+			label := sanitizeFieldIdentifier(stage[:idx])
 			value := strings.TrimSpace(stage[idx+len(op.logql):])
+			if label == "" {
+				return "", false
+			}
 			if label == "detected_level" {
 				label = "level"
 			}
 			if labelFn != nil {
-				label = normalizeFieldIdentifier(labelFn(label))
+				label = sanitizeFieldIdentifier(labelFn(label))
+				if label == "" {
+					return "", false
+				}
 			}
 
 			value = strings.Trim(value, "\"`")
@@ -543,7 +549,7 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 		return "", false
 	}
 	if labelFn != nil {
-		candidate = normalizeFieldIdentifier(labelFn(candidate))
+		candidate = sanitizeFieldIdentifier(labelFn(candidate))
 	}
 	if candidate == "" {
 		return "", false
@@ -566,6 +572,18 @@ func normalizeFieldIdentifier(label string) string {
 	label = strings.ReplaceAll(label, "`", "")
 	label = strings.ReplaceAll(label, `"`, "")
 	label = fieldDotSpacingRE.ReplaceAllString(label, ".")
+	return strings.TrimSpace(label)
+}
+
+func sanitizeFieldIdentifier(label string) string {
+	label = normalizeFieldIdentifier(label)
+	if label == "" {
+		return ""
+	}
+	label = strings.Trim(label, ".")
+	for strings.Contains(label, "..") {
+		label = strings.ReplaceAll(label, "..", ".")
+	}
 	return strings.TrimSpace(label)
 }
 
@@ -1241,16 +1259,22 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 	for _, op := range ops {
 		idx := strings.Index(matcher, op.logql)
 		if idx > 0 {
-			origLabel := normalizeFieldIdentifier(matcher[:idx])
+			origLabel := sanitizeFieldIdentifier(matcher[:idx])
 			label := origLabel
 			value := strings.TrimSpace(matcher[idx+len(op.logql):])
+			if label == "" {
+				return ""
+			}
 
 			// Apply label name translation (e.g., service_name → service.name)
 			if origLabel == "service_name" {
 				return serviceNameMatcherFilter(op.logsql, value, op.neg, op.isRe)
 			}
 			if labelFn != nil {
-				label = normalizeFieldIdentifier(labelFn(label))
+				label = sanitizeFieldIdentifier(labelFn(label))
+				if label == "" {
+					return ""
+				}
 			}
 
 			// VL requires quoting for dotted field names
@@ -1297,12 +1321,18 @@ func canUseStreamSelector(matcher string, streamFields map[string]bool, labelFn 
 	if idx <= 0 {
 		return false
 	}
-	label := strings.TrimSpace(matcher[:idx])
+	label := sanitizeFieldIdentifier(matcher[:idx])
+	if label == "" {
+		return false
+	}
 	if label == "service_name" {
 		return false
 	}
 	if labelFn != nil {
-		label = labelFn(label)
+		label = sanitizeFieldIdentifier(labelFn(label))
+		if label == "" {
+			return false
+		}
 	}
 	return streamFields[label]
 }

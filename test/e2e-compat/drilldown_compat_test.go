@@ -522,6 +522,35 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("datasource_proxy_query_range_accepts_dotted_field_filters", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", "{service_name=\"otel-collector\"} | k8s.cluster.name = `us-east-1`")
+		params.Set("start", fmt.Sprintf("%d", now.Add(-2*time.Hour).UnixNano()))
+		params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+		params.Set("limit", "50")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/proxy/uid/"+dsUID+"/loki/api/v1/query_range?"+params.Encode())
+		if resp == nil || resp["status"] != "success" {
+			t.Fatalf("expected success for dotted field filter via Grafana datasource proxy, got %v", resp)
+		}
+
+		data := extractMap(resp, "data")
+		result := extractArray(data, "result")
+		if len(result) == 0 {
+			t.Fatalf("expected non-empty streams for dotted field filter via Grafana datasource proxy, got %v", resp)
+		}
+
+		for _, item := range result {
+			streamObj, _ := item.(map[string]interface{})
+			stream, _ := streamObj["stream"].(map[string]interface{})
+			for key := range stream {
+				if strings.Contains(key, ".") {
+					t.Fatalf("expected Loki-compatible underscore stream labels only, found dotted key %q in %v", key, stream)
+				}
+			}
+		}
+	})
+
 	t.Run("patterns_resource_returns_drilldown_payload", func(t *testing.T) {
 		params := url.Values{}
 		params.Set("query", `{app="pattern-test"}`)
