@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.31] - 2026-04-11
+
 ### Bug Fixes
 
 - harden malformed dotted Drilldown pipeline stages (for example `| cll . \`pipeline.\``) to degrade into safe dotted-prefix regex filters instead of impossible field-existence matchers
