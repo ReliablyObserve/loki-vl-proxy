@@ -368,7 +368,9 @@ func (p *Proxy) prefilterQueryRangeWindowsByHits(
 	}
 	p.metrics.RecordQueryRangeWindowPrefilterAttempt()
 	start := time.Now()
-	defer p.metrics.RecordQueryRangeWindowPrefilterDuration(time.Since(start))
+	defer func() {
+		p.metrics.RecordQueryRangeWindowPrefilterDuration(time.Since(start))
+	}()
 
 	prefilterQuery := queryRangePrefilterQuery(logsqlQuery)
 	if prefilterQuery == "" {
