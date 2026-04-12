@@ -20,9 +20,10 @@ import (
 const (
 	maxQueryRangeWindows          = 4096
 	queryRangeCollectedInitialCap = 1024
-	queryRangeWindowFetchAttempts = 3
+	queryRangeWindowFetchAttempts = 5
 	queryRangeRetryMinBackoff     = 100 * time.Millisecond
-	queryRangeRetryMaxBackoff     = 1 * time.Second
+	queryRangeRetryMaxBackoff     = 5 * time.Second
+	queryRangeBatchRetryAttempts  = 3
 )
 
 type queryRangeWindow struct {
@@ -78,10 +79,60 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		if batchSize <= 0 {
 			batchSize = 1
 		}
-		batch := windows[i : i+batchSize]
-		limitForBatch := remaining
-		results, err := p.fetchQueryRangeWindowBatch(r, logsqlQuery, queryLimit, batch, limitForBatch, batchSize, categorizedLabels, emitStructuredMetadata)
-		if err != nil {
+		retryAttempt := 0
+		var results []queryRangeWindowCacheEntry
+		var err error
+		for {
+			batch := windows[i : i+batchSize]
+			limitForBatch := remaining
+			results, err = p.fetchQueryRangeWindowBatch(r, logsqlQuery, queryLimit, batch, limitForBatch, batchSize, categorizedLabels, emitStructuredMetadata)
+			if err == nil {
+				break
+			}
+
+			retryable := shouldRetryQueryRangeWindow(err)
+			if retryable && batchSize > 1 {
+				nextBatchSize := max(1, batchSize/2)
+				p.log.Warn("query_range windowed batch backoff",
+					"error", err,
+					"window_count", len(windows),
+					"batch_start", i,
+					"batch_size", batchSize,
+					"next_batch_size", nextBatchSize,
+				)
+				p.forceQueryRangeParallelBackoff()
+				retryAttempt++
+				backoff := queryRangeWindowRetryBackoff(retryAttempt)
+				select {
+				case <-r.Context().Done():
+					p.writeError(w, http.StatusRequestTimeout, r.Context().Err().Error())
+					return true
+				case <-time.After(backoff):
+				}
+				batchSize = nextBatchSize
+				continue
+			}
+
+			if retryable && batchSize == 1 && retryAttempt < queryRangeBatchRetryAttempts {
+				retryAttempt++
+				backoff := queryRangeWindowRetryBackoff(retryAttempt)
+				p.log.Warn("query_range single-window retrying after batch failure",
+					"error", err,
+					"window_count", len(windows),
+					"window_index", i,
+					"attempt", retryAttempt+1,
+					"max_attempts", queryRangeBatchRetryAttempts+1,
+					"backoff", backoff.String(),
+				)
+				select {
+				case <-r.Context().Done():
+					p.writeError(w, http.StatusRequestTimeout, r.Context().Err().Error())
+					return true
+				case <-time.After(backoff):
+				}
+				continue
+			}
+
 			status := statusFromQueryRangeWindowErr(err)
 			p.log.Warn("query_range windowed fetch failed",
 				"error", err,
@@ -92,6 +143,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 			p.writeError(w, status, err.Error())
 			return true
 		}
+
 		for _, result := range results {
 			if len(result.Entries) == 0 {
 				continue
@@ -631,5 +683,21 @@ func (p *Proxy) observeQueryRangeWindowFetch(latency time.Duration, failed bool)
 	if p.queryRangeParallelCurrent != oldCurrent {
 		p.queryRangeAdaptiveLastAdjust = now
 	}
+	p.metrics.RecordQueryRangeAdaptiveState(p.queryRangeParallelCurrent, p.queryRangeLatencyEWMA, p.queryRangeErrorEWMA)
+}
+
+func (p *Proxy) forceQueryRangeParallelBackoff() {
+	if !p.queryRangeAdaptiveParallel {
+		return
+	}
+
+	p.queryRangeAdaptiveMu.Lock()
+	defer p.queryRangeAdaptiveMu.Unlock()
+
+	if p.queryRangeParallelCurrent <= p.queryRangeParallelMin {
+		return
+	}
+	p.queryRangeParallelCurrent = max(p.queryRangeParallelMin, p.queryRangeParallelCurrent/2)
+	p.queryRangeAdaptiveLastAdjust = time.Now()
 	p.metrics.RecordQueryRangeAdaptiveState(p.queryRangeParallelCurrent, p.queryRangeLatencyEWMA, p.queryRangeErrorEWMA)
 }

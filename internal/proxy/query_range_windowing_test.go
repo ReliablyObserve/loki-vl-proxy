@@ -454,6 +454,82 @@ func TestQueryRangeWindow_RetriesTransientWindowFailures(t *testing.T) {
 	}
 }
 
+func TestQueryRangeWindow_DegradesBatchParallelismOnBackendUnavailable(t *testing.T) {
+	start := time.Now().Add(-4 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	end := start + int64(4*time.Hour) - 1
+
+	var (
+		calls    atomic.Int64
+		failures atomic.Int64
+		inFlight atomic.Int64
+	)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		calls.Add(1)
+		current := inFlight.Add(1)
+		defer inFlight.Add(-1)
+		_ = r.ParseForm()
+		time.Sleep(15 * time.Millisecond)
+
+		// Simulate an overloaded backend that rejects parallel window fetches.
+		if current > 1 {
+			failures.Add(1)
+			http.Error(w, "all the 1 backends for the user \"\" are unavailable for proxying the request", http.StatusBadGateway)
+			return
+		}
+
+		startNs, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+		_, _ = fmt.Fprintf(
+			w,
+			"{\"_time\":%q,\"_msg\":\"ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+			time.Unix(0, startNs).UTC().Format(time.RFC3339Nano),
+		)
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, err := New(Config{
+		BackendURL:                 vlBackend.URL,
+		Cache:                      c,
+		LogLevel:                   "error",
+		QueryRangeWindowingEnabled: true,
+		QueryRangeSplitInterval:    time.Hour,
+		QueryRangeMaxParallel:      4,
+		QueryRangeAdaptiveParallel: false,
+		QueryRangeFreshness:        10 * time.Minute,
+		QueryRangeRecentCacheTTL:   0,
+		QueryRangeHistoryCacheTTL:  24 * time.Hour,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		"GET",
+		fmt.Sprintf(
+			"/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=100",
+			url.QueryEscape(`{app="nginx"}`),
+			start,
+			end,
+		),
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	p.handleQueryRange(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected successful response after batch degradation, got=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if failures.Load() == 0 {
+		t.Fatal("expected at least one backend-unavailable failure before degradation")
+	}
+	if calls.Load() <= 4 {
+		t.Fatalf("expected additional backend attempts after degradation, got calls=%d", calls.Load())
+	}
+}
+
 func TestQueryRangeWindow_ParseLokiTimeAndNormalization(t *testing.T) {
 	t.Run("rfc3339", func(t *testing.T) {
 		raw := "2026-04-10T12:00:00Z"
