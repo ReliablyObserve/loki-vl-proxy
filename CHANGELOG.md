@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Reliability
+
+- harden long-range `query_range` execution by retrying transient per-window backend failures with bounded backoff and returning Loki-style upstream errors instead of collapsing to an expensive direct full-range fallback
+
+### Observability
+
+- scope `process_*` and `loki_vl_proxy_process_*` CPU/disk/network runtime metrics to proxy-process sources (`/proc/self` + cgroup pressure fallback) to avoid host-level attribution drift in scrape and OTLP paths
+
 ## [0.27.37] - 2026-04-12
 
 ### Reliability
