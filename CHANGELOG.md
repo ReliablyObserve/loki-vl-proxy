@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- add phase-1 long-range `query_range` prefiltering using `/select/logsql/hits` to skip empty windows before window fanout, with fail-open behavior when prefilter is unavailable
+
+### Observability
+
+- add query-range prefilter metrics (`loki_vl_proxy_window_prefilter_*` and duration histogram) to measure kept/skipped windows and prefilter error rate
+
+### Tests
+
+- add regression coverage for prefilter skip/fail-open behavior and selector extraction used by long-range window prefiltering
+
 ## [0.27.39] - 2026-04-12
 
 ### Reliability
