@@ -848,7 +848,8 @@ func TestQueryRangeWindow_SevenDayRegressionSLO(t *testing.T) {
 		t.Fatalf("expected prefilter to inspect all 168 windows, got %d", got)
 	}
 }
-func TestQueryRangeWindow_DoesNotFallbackToDirectQueryOnWindowFetchError(t *testing.T) {
+
+func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T) {
 	start := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
 	end := start + int64(2*time.Hour) - 1
 
@@ -863,10 +864,18 @@ func TestQueryRangeWindow_DoesNotFallbackToDirectQueryOnWindowFetchError(t *test
 		reqStart, _ := strconv.ParseInt(startParam, 10, 64)
 		reqEnd, _ := strconv.ParseInt(endParam, 10, 64)
 
-		if reqStart == start && reqEnd == end {
-			fullRangeCalls.Add(1)
+		// Windowed calls should fail to force fallback.
+		if reqStart != start || reqEnd != end {
+			http.Error(w, "all backends unavailable", http.StatusBadGateway)
+			return
 		}
-		http.Error(w, "all backends unavailable", http.StatusBadGateway)
+
+		fullRangeCalls.Add(1)
+		_, _ = fmt.Fprintf(
+			w,
+			"{\"_time\":%q,\"_msg\":\"fallback-ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+			time.Unix(0, reqStart).UTC().Format(time.RFC3339Nano),
+		)
 	}))
 	defer vlBackend.Close()
 
@@ -884,22 +893,21 @@ func TestQueryRangeWindow_DoesNotFallbackToDirectQueryOnWindowFetchError(t *test
 	resp := httptest.NewRecorder()
 	p.handleQueryRange(resp, req)
 
-	if resp.Code != http.StatusBadGateway {
-		t.Fatalf("expected windowed query failure status=502, got=%d body=%s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected fallback query_range status=200, got=%d body=%s", resp.Code, resp.Body.String())
 	}
-	if got := fullRangeCalls.Load(); got != 0 {
-		t.Fatalf("expected no direct full-range fallback call, got %d", got)
+	if got := fullRangeCalls.Load(); got != 1 {
+		t.Fatalf("expected exactly one direct full-range fallback call, got %d", got)
 	}
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
-		t.Fatalf("failed to decode error response: %v body=%s", err, resp.Body.String())
+		t.Fatalf("failed to decode fallback response: %v body=%s", err, resp.Body.String())
 	}
-	if parsed["status"] != "error" {
-		t.Fatalf("expected Loki error response status=error, body=%s", resp.Body.String())
-	}
-	if parsed["errorType"] != "unavailable" {
-		t.Fatalf("expected Loki errorType=unavailable, body=%s", resp.Body.String())
+	data, _ := parsed["data"].(map[string]interface{})
+	result, _ := data["result"].([]interface{})
+	if len(result) == 0 {
+		t.Fatalf("expected non-empty result from direct fallback, body=%s", resp.Body.String())
 	}
 }
 
@@ -1043,6 +1051,7 @@ func TestQueryRangeWindow_DegradesBatchParallelismOnBackendUnavailable(t *testin
 		t.Fatalf("expected additional backend attempts after degradation, got calls=%d", calls.Load())
 	}
 }
+
 func TestQueryRangeWindow_ParseLokiTimeAndNormalization(t *testing.T) {
 	t.Run("rfc3339", func(t *testing.T) {
 		raw := "2026-04-10T12:00:00Z"

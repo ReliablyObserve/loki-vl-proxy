@@ -193,8 +193,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 				"batch_size", batchSize,
 				"status", status,
 			)
-			p.writeError(w, status, err.Error())
-			return true
+			return false
 		}
 
 		for _, result := range results {
