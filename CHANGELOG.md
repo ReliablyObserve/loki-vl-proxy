@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - add query_range safety fallback from window-split execution to direct backend query path on transient upstream failures, reducing user-facing 5xx during long-range requests
 
+### Performance
+
+- reduce proxy disk write amplification by skipping L2 disk-cache writes for short-lived entries and avoiding unchanged periodic label-index snapshot rewrites
+
 ## [0.27.35] - 2026-04-12
 
 ### Security
