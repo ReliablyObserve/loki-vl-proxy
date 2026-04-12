@@ -15,17 +15,24 @@ import (
 // SystemMetrics collects OS-level metrics from /proc for standalone observability.
 // Only available on Linux; returns empty on other platforms.
 type SystemMetrics struct {
-	mu       sync.Mutex
-	prevCPU  cpuStat
-	prevTime time.Time
+	mu          sync.Mutex
+	prevCPU     cpuStat
+	prevProcCPU processCPUStat
+	prevTime    time.Time
 }
 
 type cpuStat struct {
 	user, nice, system, idle, iowait, irq, softirq, steal float64
 }
 
+type processCPUStat struct {
+	user, system float64
+}
+
 var (
 	procRoot     = "/proc"
+	selfProcRoot = "/proc"
+	cgroupRoot   = "/sys/fs/cgroup"
 	procReadFile = os.ReadFile
 	procReadDir  = os.ReadDir
 	systemGOOS   = runtime.GOOS
@@ -119,49 +126,54 @@ func InspectSystemStartup() SystemStartupCheck {
 		check.Availability["cpu"] = true
 	}
 
-	if data, err := procReadFile(procPath("meminfo")); err != nil {
+	if data, err := procReadFile(selfProcPath("meminfo")); err != nil {
 		check.Availability["memory"] = false
-		check.Issues["memory"] = fmt.Sprintf("failed to read %s: %v", procPath("meminfo"), err)
+		check.Issues["memory"] = fmt.Sprintf("failed to read %s: %v", selfProcPath("meminfo"), err)
 	} else {
 		memTotal, _, _ := parseMemInfoData(string(data))
 		if memTotal <= 0 {
 			check.Availability["memory"] = false
-			check.Issues["memory"] = fmt.Sprintf("parsed MemTotal=0 from %s", procPath("meminfo"))
+			check.Issues["memory"] = fmt.Sprintf("parsed MemTotal=0 from %s", selfProcPath("meminfo"))
 		} else {
 			check.Availability["memory"] = true
 		}
 	}
 
-	if data, err := procReadFile(procPath("self", "status")); err != nil {
+	if data, err := procReadFile(selfProcPath("self", "status")); err != nil {
 		check.Availability["process_rss"] = false
-		check.Issues["process_rss"] = fmt.Sprintf("failed to read %s: %v", procPath("self", "status"), err)
+		check.Issues["process_rss"] = fmt.Sprintf("failed to read %s: %v", selfProcPath("self", "status"), err)
 	} else {
 		if parseProcessRSSData(string(data)) <= 0 {
 			check.Availability["process_rss"] = false
-			check.Issues["process_rss"] = fmt.Sprintf("unable to parse VmRSS from %s", procPath("self", "status"))
+			check.Issues["process_rss"] = fmt.Sprintf("unable to parse VmRSS from %s", selfProcPath("self", "status"))
 		} else {
 			check.Availability["process_rss"] = true
 		}
 	}
 
-	if _, err := procReadFile(procPath("diskstats")); err != nil {
+	if data, err := procReadFile(selfProcPath("self", "io")); err != nil {
 		check.Availability["disk_io"] = false
-		check.Issues["disk_io"] = fmt.Sprintf("failed to read %s: %v", procPath("diskstats"), err)
+		check.Issues["disk_io"] = fmt.Sprintf("failed to read %s: %v", selfProcPath("self", "io"), err)
 	} else {
-		check.Availability["disk_io"] = true
+		text := string(data)
+		if !strings.Contains(text, "read_bytes:") || !strings.Contains(text, "write_bytes:") {
+			check.Availability["disk_io"] = false
+			check.Issues["disk_io"] = fmt.Sprintf("unable to parse read_bytes/write_bytes from %s", selfProcPath("self", "io"))
+		} else {
+			check.Availability["disk_io"] = true
+		}
 	}
 
-	if _, err := procReadFile(procPath("net", "dev")); err != nil {
+	if _, err := procReadFile(selfProcPath("net", "dev")); err != nil {
 		check.Availability["network_io"] = false
-		check.Issues["network_io"] = fmt.Sprintf("failed to read %s: %v", procPath("net", "dev"), err)
+		check.Issues["network_io"] = fmt.Sprintf("failed to read %s: %v", selfProcPath("net", "dev"), err)
 	} else {
 		check.Availability["network_io"] = true
 	}
 
 	for _, resource := range []string{"cpu", "memory", "io"} {
 		family := "pressure_" + resource
-		path := procPath("pressure", resource)
-		data, err := procReadFile(path)
+		data, path, err := readPSIRaw(resource)
 		if err != nil {
 			check.Availability[family] = false
 			check.Issues[family] = fmt.Sprintf("failed to read %s: %v", path, err)
@@ -176,16 +188,13 @@ func InspectSystemStartup() SystemStartupCheck {
 		check.Availability[family] = true
 	}
 
-	if _, err := procReadDir(procPath("self", "fd")); err != nil {
+	if _, err := procReadDir(selfProcPath("self", "fd")); err != nil {
 		check.Availability["open_fds"] = false
-		check.Issues["open_fds"] = fmt.Sprintf("failed to read %s: %v", procPath("self", "fd"), err)
+		check.Issues["open_fds"] = fmt.Sprintf("failed to read %s: %v", selfProcPath("self", "fd"), err)
 	} else {
 		check.Availability["open_fds"] = true
 	}
 
-	if check.Scope != "host" {
-		check.Recommendations = append(check.Recommendations, "For node-level CPU/memory/disk/network/PSI metrics in Kubernetes, mount host /proc read-only and set -proc-root=/host/proc (or PROC_ROOT=/host/proc).")
-	}
 	if len(check.MissingFamilies()) > 0 {
 		check.Recommendations = append(check.Recommendations, "Verify container permissions and mount path for proc files; inaccessible /proc paths result in missing system metric families.")
 	}
@@ -197,9 +206,20 @@ func procPath(parts ...string) string {
 	return filepath.Join(all...)
 }
 
+func selfProcPath(parts ...string) string {
+	all := append([]string{selfProcRoot}, parts...)
+	return filepath.Join(all...)
+}
+
+func cgroupPath(parts ...string) string {
+	all := append([]string{cgroupRoot}, parts...)
+	return filepath.Join(all...)
+}
+
 func NewSystemMetrics() *SystemMetrics {
 	sm := &SystemMetrics{prevTime: time.Now()}
 	sm.prevCPU, _ = readCPUStat()
+	sm.prevProcCPU, _ = readProcessCPUStat()
 	return sm
 }
 
@@ -224,20 +244,27 @@ func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 	// CPU usage (always export; falls back to 0s when /proc is unavailable).
 	userPct, sysPct, iowaitPct := 0.0, 0.0, 0.0
 	now := time.Now()
-	cur, err := readCPUStat()
-	if err == nil {
+	cur, cpuErr := readCPUStat()
+	curProc, procErr := readProcessCPUStat()
+	if cpuErr == nil && procErr == nil {
 		elapsed := now.Sub(sm.prevTime).Seconds()
 		if elapsed > 0 {
 			totalPrev := sm.prevCPU.user + sm.prevCPU.nice + sm.prevCPU.system + sm.prevCPU.idle + sm.prevCPU.iowait + sm.prevCPU.irq + sm.prevCPU.softirq + sm.prevCPU.steal
 			totalCur := cur.user + cur.nice + cur.system + cur.idle + cur.iowait + cur.irq + cur.softirq + cur.steal
 			totalDiff := totalCur - totalPrev
-			if totalDiff > 0 {
-				userPct = (cur.user + cur.nice - sm.prevCPU.user - sm.prevCPU.nice) / totalDiff
-				sysPct = (cur.system - sm.prevCPU.system) / totalDiff
-				iowaitPct = (cur.iowait - sm.prevCPU.iowait) / totalDiff
+			userDiff := curProc.user - sm.prevProcCPU.user
+			sysDiff := curProc.system - sm.prevProcCPU.system
+			if totalDiff > 0 && userDiff >= 0 {
+				userPct = userDiff / totalDiff
 			}
+			if totalDiff > 0 && sysDiff >= 0 {
+				sysPct = sysDiff / totalDiff
+			}
+			// Per-process iowait isn't exposed by procfs; keep a stable series with zero.
+			iowaitPct = 0
 		}
 		sm.prevCPU = cur
+		sm.prevProcCPU = curProc
 		sm.prevTime = now
 	}
 	sb.WriteString("# HELP process_cpu_usage_ratio CPU usage ratio (0-1).\n")
@@ -295,7 +322,7 @@ func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 	fmt.Fprintf(sb, "process_resident_memory_bytes %d\n", rss)
 	fmt.Fprintf(sb, "loki_vl_proxy_process_resident_memory_bytes %d\n", rss)
 
-	// Disk IO from /proc/diskstats
+	// Disk IO from /proc/self/io
 	readBytes, writeBytes := readDiskIO()
 	sb.WriteString("# HELP process_disk_read_bytes_total Disk read bytes.\n")
 	sb.WriteString("# TYPE process_disk_read_bytes_total counter\n")
@@ -310,7 +337,7 @@ func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 	fmt.Fprintf(sb, "process_disk_written_bytes_total %d\n", writeBytes)
 	fmt.Fprintf(sb, "loki_vl_proxy_process_disk_written_bytes_total %d\n", writeBytes)
 
-	// Network IO from /proc/net/dev
+	// Network IO from /proc/net/dev in the process network namespace.
 	rxBytes, txBytes := readNetIO()
 	sb.WriteString("# HELP process_network_receive_bytes_total Network receive bytes.\n")
 	sb.WriteString("# TYPE process_network_receive_bytes_total counter\n")
@@ -373,7 +400,7 @@ func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 // --- /proc readers ---
 
 func readCPUStat() (cpuStat, error) {
-	data, err := procReadFile(procPath("stat"))
+	data, err := procReadFile(selfProcPath("stat"))
 	if err != nil {
 		return cpuStat{}, err
 	}
@@ -403,7 +430,7 @@ func parseCPUStatData(data string) (cpuStat, error) {
 }
 
 func readMemInfo() (total, avail, free int64) {
-	data, err := procReadFile(procPath("meminfo"))
+	data, err := procReadFile(selfProcPath("meminfo"))
 	if err != nil {
 		return 0, 0, 0
 	}
@@ -430,7 +457,7 @@ func parseMemInfoData(data string) (total, avail, free int64) {
 }
 
 func readProcessRSS() int64 {
-	data, err := procReadFile(procPath("self", "status"))
+	data, err := procReadFile(selfProcPath("self", "status"))
 	if err != nil {
 		return 0
 	}
@@ -451,11 +478,11 @@ func parseProcessRSSData(data string) int64 {
 }
 
 func readDiskIO() (readBytes, writeBytes int64) {
-	data, err := procReadFile(procPath("diskstats"))
+	data, err := procReadFile(selfProcPath("self", "io"))
 	if err != nil {
 		return 0, 0
 	}
-	return parseDiskIOData(string(data))
+	return parseProcessIOData(string(data))
 }
 
 func parseDiskIOData(data string) (readBytes, writeBytes int64) {
@@ -472,8 +499,28 @@ func parseDiskIOData(data string) (readBytes, writeBytes int64) {
 	return
 }
 
+func parseProcessIOData(data string) (readBytes, writeBytes int64) {
+	for _, line := range strings.Split(data, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		val, err := strconv.ParseInt(fields[1], 10, 64)
+		if err != nil {
+			continue
+		}
+		switch strings.TrimSuffix(fields[0], ":") {
+		case "read_bytes":
+			readBytes = val
+		case "write_bytes":
+			writeBytes = val
+		}
+	}
+	return
+}
+
 func readNetIO() (rxBytes, txBytes int64) {
-	data, err := procReadFile(procPath("net", "dev"))
+	data, err := procReadFile(selfProcPath("net", "dev"))
 	if err != nil {
 		return 0, 0
 	}
@@ -509,11 +556,24 @@ func readPSI(resource string) (some10, some60, some300, full10, full60, full300 
 	some10, some60, some300 = -1, -1, -1
 	full10, full60, full300 = -1, -1, -1
 
-	data, err := procReadFile(procPath("pressure", resource))
+	data, _, err := readPSIRaw(resource)
 	if err != nil {
 		return
 	}
 	return parsePSIData(string(data))
+}
+
+func readPSIRaw(resource string) ([]byte, string, error) {
+	cgroupPressure := cgroupPath(resource + ".pressure")
+	if data, err := procReadFile(cgroupPressure); err == nil {
+		return data, cgroupPressure, nil
+	}
+	procPressure := procPath("pressure", resource)
+	data, err := procReadFile(procPressure)
+	if err != nil {
+		return nil, procPressure, err
+	}
+	return data, procPressure, nil
 }
 
 func parsePSIData(data string) (some10, some60, some300, full10, full60, full300 float64) {
@@ -547,11 +607,43 @@ func parsePSILine(line string) (avg10, avg60, avg300 float64) {
 }
 
 func countOpenFDs() int {
-	entries, err := procReadDir(procPath("self", "fd"))
+	entries, err := procReadDir(selfProcPath("self", "fd"))
 	if err != nil {
 		return -1
 	}
 	return len(entries)
+}
+
+func readProcessCPUStat() (processCPUStat, error) {
+	data, err := procReadFile(selfProcPath("self", "stat"))
+	if err != nil {
+		return processCPUStat{}, err
+	}
+	return parseProcessCPUStatData(string(data))
+}
+
+func parseProcessCPUStatData(data string) (processCPUStat, error) {
+	line := strings.TrimSpace(data)
+	if line == "" {
+		return processCPUStat{}, fmt.Errorf("empty stat data")
+	}
+	end := strings.LastIndex(line, ")")
+	if end < 0 || end+2 >= len(line) {
+		return processCPUStat{}, fmt.Errorf("malformed stat line")
+	}
+	rest := strings.Fields(line[end+2:])
+	if len(rest) < 13 {
+		return processCPUStat{}, fmt.Errorf("insufficient stat fields")
+	}
+	utime, err := strconv.ParseFloat(rest[11], 64)
+	if err != nil {
+		return processCPUStat{}, fmt.Errorf("parse utime: %w", err)
+	}
+	stime, err := strconv.ParseFloat(rest[12], 64)
+	if err != nil {
+		return processCPUStat{}, fmt.Errorf("parse stime: %w", err)
+	}
+	return processCPUStat{user: utime, system: stime}, nil
 }
 
 func parseFloat(s string) float64 {

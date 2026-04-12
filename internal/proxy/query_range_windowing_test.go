@@ -334,7 +334,7 @@ func TestQueryRangeWindow_SevenDayRangeUsesParallelWindowFetch(t *testing.T) {
 	}
 }
 
-func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T) {
+func TestQueryRangeWindow_DoesNotFallbackToDirectQueryOnWindowFetchError(t *testing.T) {
 	start := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
 	end := start + int64(2*time.Hour) - 1
 
@@ -349,17 +349,77 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 		reqStart, _ := strconv.ParseInt(startParam, 10, 64)
 		reqEnd, _ := strconv.ParseInt(endParam, 10, 64)
 
-		// Windowed calls should fail to force fallback.
-		if reqStart != start || reqEnd != end {
+		if reqStart == start && reqEnd == end {
+			fullRangeCalls.Add(1)
+		}
+		http.Error(w, "all backends unavailable", http.StatusBadGateway)
+	}))
+	defer vlBackend.Close()
+
+	p := newWindowingTestProxy(t, vlBackend.URL)
+	req := httptest.NewRequest(
+		"GET",
+		fmt.Sprintf(
+			"/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=100",
+			url.QueryEscape(`{app="nginx"}`),
+			start,
+			end,
+		),
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	p.handleQueryRange(resp, req)
+
+	if resp.Code != http.StatusBadGateway {
+		t.Fatalf("expected windowed query failure status=502, got=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := fullRangeCalls.Load(); got != 0 {
+		t.Fatalf("expected no direct full-range fallback call, got %d", got)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("failed to decode error response: %v body=%s", err, resp.Body.String())
+	}
+	if parsed["status"] != "error" {
+		t.Fatalf("expected Loki error response status=error, body=%s", resp.Body.String())
+	}
+	if parsed["errorType"] != "unavailable" {
+		t.Fatalf("expected Loki errorType=unavailable, body=%s", resp.Body.String())
+	}
+}
+
+func TestQueryRangeWindow_RetriesTransientWindowFailures(t *testing.T) {
+	start := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	end := start + int64(2*time.Hour) - 1
+
+	var (
+		mu       sync.Mutex
+		attempts = map[string]int{}
+	)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		_ = r.ParseForm()
+		startParam := r.Form.Get("start")
+		endParam := r.Form.Get("end")
+		key := startParam + ":" + endParam
+		startNs, _ := strconv.ParseInt(startParam, 10, 64)
+
+		mu.Lock()
+		attempts[key]++
+		n := attempts[key]
+		mu.Unlock()
+
+		if n == 1 {
 			http.Error(w, "all backends unavailable", http.StatusBadGateway)
 			return
 		}
-
-		fullRangeCalls.Add(1)
 		_, _ = fmt.Fprintf(
 			w,
-			"{\"_time\":%q,\"_msg\":\"fallback-ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
-			time.Unix(0, reqStart).UTC().Format(time.RFC3339Nano),
+			"{\"_time\":%q,\"_msg\":\"retry-ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+			time.Unix(0, startNs).UTC().Format(time.RFC3339Nano),
 		)
 	}))
 	defer vlBackend.Close()
@@ -379,20 +439,18 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 	p.handleQueryRange(resp, req)
 
 	if resp.Code != http.StatusOK {
-		t.Fatalf("expected fallback query_range status=200, got=%d body=%s", resp.Code, resp.Body.String())
-	}
-	if got := fullRangeCalls.Load(); got != 1 {
-		t.Fatalf("expected exactly one direct full-range fallback call, got %d", got)
+		t.Fatalf("expected successful response after retries, got=%d body=%s", resp.Code, resp.Body.String())
 	}
 
-	var parsed map[string]interface{}
-	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
-		t.Fatalf("failed to decode fallback response: %v body=%s", err, resp.Body.String())
+	mu.Lock()
+	defer mu.Unlock()
+	if len(attempts) != 2 {
+		t.Fatalf("expected two hourly windows, got %d windows: %+v", len(attempts), attempts)
 	}
-	data, _ := parsed["data"].(map[string]interface{})
-	result, _ := data["result"].([]interface{})
-	if len(result) == 0 {
-		t.Fatalf("expected non-empty result from direct fallback, body=%s", resp.Body.String())
+	for window, n := range attempts {
+		if n < 2 {
+			t.Fatalf("expected at least one retry for window %s, got %d attempts", window, n)
+		}
 	}
 }
 

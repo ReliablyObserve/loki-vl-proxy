@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -44,6 +45,11 @@ type OTLPPusher struct {
 	serviceVersion        string
 	serviceInstanceID     string
 	deploymentEnvironment string
+	systemMu              sync.Mutex
+	prevCPU               cpuStat
+	prevProcCPU           processCPUStat
+	prevSystemAt          time.Time
+	hasPrevSystem         bool
 }
 
 // OTLPConfig configures the OTLP metrics pusher.
@@ -83,7 +89,7 @@ func NewOTLPPusher(cfg OTLPConfig, m *Metrics) *OTLPPusher {
 	}
 	endpoint := normalizeMetricsEndpoint(cfg.Endpoint)
 
-	return &OTLPPusher{
+	p := &OTLPPusher{
 		endpoint:              endpoint,
 		interval:              cfg.Interval,
 		metrics:               m,
@@ -97,6 +103,17 @@ func NewOTLPPusher(cfg OTLPConfig, m *Metrics) *OTLPPusher {
 		serviceInstanceID:     strings.TrimSpace(cfg.ServiceInstanceID),
 		deploymentEnvironment: strings.TrimSpace(cfg.DeploymentEnvironment),
 	}
+	if runtime.GOOS == "linux" {
+		if cpu, cpuErr := readCPUStat(); cpuErr == nil {
+			if procCPU, procErr := readProcessCPUStat(); procErr == nil {
+				p.prevCPU = cpu
+				p.prevProcCPU = procCPU
+				p.prevSystemAt = time.Now()
+				p.hasPrevSystem = true
+			}
+		}
+	}
+	return p
 }
 
 // Start begins periodic metric export in a background goroutine.
@@ -682,24 +699,41 @@ func (p *OTLPPusher) systemMetrics(now int64) []map[string]interface{} {
 		p.sumMetric("process_network_transmit_bytes_total", "Network transmit bytes.", "By", p.counterDP("process_network_transmit_bytes_total", txBytes, now)),
 		p.sumMetric("loki_vl_proxy_process_network_transmit_bytes_total", "Network transmit bytes.", "By", p.counterDP("loki_vl_proxy_process_network_transmit_bytes_total", txBytes, now)),
 	)
-	userCPU, systemCPU, iowaitCPU := 0.0, 0.0, 0.0
-	if cur, err := readCPUStat(); err == nil {
-		total := cur.user + cur.nice + cur.system + cur.idle + cur.iowait + cur.irq + cur.softirq + cur.steal
-		if total > 0 {
-			userCPU = (cur.user + cur.nice) / total
-			systemCPU = cur.system / total
-			iowaitCPU = cur.iowait / total
+
+	userCPU := 0.0
+	systemCPU := 0.0
+	p.systemMu.Lock()
+	if cur, cpuErr := readCPUStat(); cpuErr == nil {
+		if curProc, procErr := readProcessCPUStat(); procErr == nil {
+			if p.hasPrevSystem {
+				totalPrev := p.prevCPU.user + p.prevCPU.nice + p.prevCPU.system + p.prevCPU.idle + p.prevCPU.iowait + p.prevCPU.irq + p.prevCPU.softirq + p.prevCPU.steal
+				totalCur := cur.user + cur.nice + cur.system + cur.idle + cur.iowait + cur.irq + cur.softirq + cur.steal
+				totalDiff := totalCur - totalPrev
+				userDiff := curProc.user - p.prevProcCPU.user
+				sysDiff := curProc.system - p.prevProcCPU.system
+				if totalDiff > 0 && userDiff >= 0 {
+					userCPU = userDiff / totalDiff
+				}
+				if totalDiff > 0 && sysDiff >= 0 {
+					systemCPU = sysDiff / totalDiff
+				}
+			}
+			p.prevCPU = cur
+			p.prevProcCPU = curProc
+			p.prevSystemAt = time.Unix(0, now)
+			p.hasPrevSystem = true
 		}
 	}
+	p.systemMu.Unlock()
 	metrics = append(metrics, p.gaugeMetric("process_cpu_usage_ratio", "CPU usage ratio (0-1).", "1",
 		p.gaugeDP("process_cpu_usage_ratio", userCPU, now, attr("mode", "user")),
 		p.gaugeDP("process_cpu_usage_ratio", systemCPU, now, attr("mode", "system")),
-		p.gaugeDP("process_cpu_usage_ratio", iowaitCPU, now, attr("mode", "iowait")),
+		p.gaugeDP("process_cpu_usage_ratio", 0, now, attr("mode", "iowait")),
 	))
 	metrics = append(metrics, p.gaugeMetric("loki_vl_proxy_process_cpu_usage_ratio", "CPU usage ratio (0-1).", "1",
 		p.gaugeDP("loki_vl_proxy_process_cpu_usage_ratio", userCPU, now, attr("mode", "user")),
 		p.gaugeDP("loki_vl_proxy_process_cpu_usage_ratio", systemCPU, now, attr("mode", "system")),
-		p.gaugeDP("loki_vl_proxy_process_cpu_usage_ratio", iowaitCPU, now, attr("mode", "iowait")),
+		p.gaugeDP("loki_vl_proxy_process_cpu_usage_ratio", 0, now, attr("mode", "iowait")),
 	))
 	for _, resource := range []string{"cpu", "memory", "io"} {
 		some10, some60, some300, full10, full60, full300 := readPSI(resource)

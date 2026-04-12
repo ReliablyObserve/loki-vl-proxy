@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,6 +20,9 @@ import (
 const (
 	maxQueryRangeWindows          = 4096
 	queryRangeCollectedInitialCap = 1024
+	queryRangeWindowFetchAttempts = 3
+	queryRangeRetryMinBackoff     = 100 * time.Millisecond
+	queryRangeRetryMaxBackoff     = 1 * time.Second
 )
 
 type queryRangeWindow struct {
@@ -78,12 +82,15 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		limitForBatch := remaining
 		results, err := p.fetchQueryRangeWindowBatch(r, logsqlQuery, queryLimit, batch, limitForBatch, batchSize, categorizedLabels, emitStructuredMetadata)
 		if err != nil {
-			p.log.Warn("query_range windowed fetch failed; falling back to direct query",
+			status := statusFromQueryRangeWindowErr(err)
+			p.log.Warn("query_range windowed fetch failed",
 				"error", err,
 				"window_count", len(windows),
 				"batch_size", batchSize,
+				"status", status,
 			)
-			return false
+			p.writeError(w, status, err.Error())
+			return true
 		}
 		for _, result := range results {
 			if len(result.Entries) == 0 {
@@ -214,32 +221,118 @@ func (p *Proxy) fetchQueryRangeWindow(
 	params.Set("limit", strconv.Itoa(windowLimit))
 
 	coalesceKey := "query_range_window:" + cacheKey
-	fetchStart := time.Now()
-	status, body, err := p.vlPostCoalesced(ctx, coalesceKey, "/select/logsql/query", params)
-	fetchDuration := time.Since(fetchStart)
-	p.metrics.RecordQueryRangeWindowFetchDuration(fetchDuration)
-	if err != nil {
-		p.observeQueryRangeWindowFetch(fetchDuration, true)
-		return queryRangeWindowCacheEntry{}, err
-	}
-	if status >= 400 {
-		p.observeQueryRangeWindowFetch(fetchDuration, true)
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = fmt.Sprintf("VL backend returned %d", status)
-		}
-		return queryRangeWindowCacheEntry{}, errors.New(msg)
-	}
-	p.observeQueryRangeWindowFetch(fetchDuration, false)
+	for attempt := 1; attempt <= queryRangeWindowFetchAttempts; attempt++ {
+		fetchStart := time.Now()
+		status, body, err := p.vlPostCoalesced(ctx, coalesceKey, "/select/logsql/query", params)
+		fetchDuration := time.Since(fetchStart)
+		p.metrics.RecordQueryRangeWindowFetchDuration(fetchDuration)
 
-	entries := p.vlLogsToLokiWindowEntries(body, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
-	entry := queryRangeWindowCacheEntry{Entries: entries}
-	if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
-		if encoded, err := json.Marshal(entry); err == nil {
-			p.cache.SetWithTTL(cacheKey, encoded, ttl)
+		if err == nil && status < 400 {
+			p.observeQueryRangeWindowFetch(fetchDuration, false)
+			entries := p.vlLogsToLokiWindowEntries(body, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
+			entry := queryRangeWindowCacheEntry{Entries: entries}
+			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
+				if encoded, err := json.Marshal(entry); err == nil {
+					p.cache.SetWithTTL(cacheKey, encoded, ttl)
+				}
+			}
+			return entry, nil
+		}
+
+		var fetchErr error
+		if err != nil {
+			fetchErr = err
+		} else {
+			msg := strings.TrimSpace(string(body))
+			if msg == "" {
+				msg = fmt.Sprintf("VL backend returned %d", status)
+			}
+			fetchErr = &queryRangeWindowHTTPError{status: status, msg: msg}
+		}
+
+		p.observeQueryRangeWindowFetch(fetchDuration, true)
+		if attempt >= queryRangeWindowFetchAttempts || !shouldRetryQueryRangeWindow(fetchErr) {
+			return queryRangeWindowCacheEntry{}, fetchErr
+		}
+
+		backoff := queryRangeWindowRetryBackoff(attempt)
+		p.log.Warn(
+			"query_range window fetch retrying",
+			"attempt", attempt+1,
+			"max_attempts", queryRangeWindowFetchAttempts,
+			"backoff", backoff.String(),
+			"error", fetchErr,
+		)
+		select {
+		case <-ctx.Done():
+			return queryRangeWindowCacheEntry{}, ctx.Err()
+		case <-time.After(backoff):
 		}
 	}
-	return entry, nil
+
+	return queryRangeWindowCacheEntry{}, errors.New("query_range window fetch failed")
+}
+
+type queryRangeWindowHTTPError struct {
+	status int
+	msg    string
+}
+
+func (e *queryRangeWindowHTTPError) Error() string {
+	return e.msg
+}
+
+func (e *queryRangeWindowHTTPError) StatusCode() int {
+	return e.status
+}
+
+func shouldRetryQueryRangeWindow(err error) bool {
+	if err == nil {
+		return false
+	}
+	if isCanceledErr(err) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	var httpErr interface{ StatusCode() int }
+	if errors.As(err, &httpErr) {
+		code := httpErr.StatusCode()
+		if code == http.StatusTooManyRequests || code == http.StatusInternalServerError || code == http.StatusBadGateway || code == http.StatusServiceUnavailable || code == http.StatusGatewayTimeout {
+			return true
+		}
+	}
+	lower := strings.ToLower(err.Error())
+	return strings.Contains(lower, "backend unavailable") ||
+		strings.Contains(lower, "all the 1 backends") ||
+		strings.Contains(lower, "connection refused") ||
+		strings.Contains(lower, "connection reset") ||
+		strings.Contains(lower, "timeout") ||
+		strings.Contains(lower, "temporarily unavailable")
+}
+
+func statusFromQueryRangeWindowErr(err error) int {
+	var httpErr interface{ StatusCode() int }
+	if errors.As(err, &httpErr) {
+		return httpErr.StatusCode()
+	}
+	return statusFromUpstreamErr(err)
+}
+
+func queryRangeWindowRetryBackoff(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	backoff := queryRangeRetryMinBackoff << (attempt - 1)
+	if backoff > queryRangeRetryMaxBackoff {
+		return queryRangeRetryMaxBackoff
+	}
+	return backoff
 }
 
 func (p *Proxy) queryRangeWindowTTL(windowEndNs int64) time.Duration {

@@ -482,6 +482,8 @@ func TestOTLPPusher_SystemMetrics_WithSyntheticProcRoot(t *testing.T) {
 		"stat":            "cpu  100 5 20 300 7 0 1 2\n",
 		"meminfo":         "MemTotal: 1024 kB\nMemAvailable: 512 kB\nMemFree: 128 kB\n",
 		"self/status":     "Name:\tproxy\nVmRSS:\t123 kB\n",
+		"self/stat":       "12345 (loki-vl-proxy) R 1 1 1 0 -1 4194560 100 0 0 0 50 25 0 0 20 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n",
+		"self/io":         "read_bytes: 3072\nwrite_bytes: 5120\n",
 		"diskstats":       "   8       0 sda 1 2 6 4 5 6 10 8 0 0 0 0\n",
 		"net/dev":         "Inter-|   Receive                                                |  Transmit\n face |bytes packets errs drop fifo frame compressed multicast|bytes packets errs drop fifo colls carrier compressed\n  eth0: 101 1 0 0 0 0 0 0 202 2 0 0 0 0 0 0\n",
 		"pressure/cpu":    "some avg10=1.00 avg60=2.00 avg300=3.00 total=10\nfull avg10=4.00 avg60=5.00 avg300=6.00 total=20\n",
@@ -500,8 +502,16 @@ func TestOTLPPusher_SystemMetrics_WithSyntheticProcRoot(t *testing.T) {
 	}
 
 	prev := ProcRoot()
+	prevSelfRoot := selfProcRoot
+	prevCgroupRoot := cgroupRoot
 	SetProcRoot(root)
-	t.Cleanup(func() { SetProcRoot(prev) })
+	selfProcRoot = root
+	cgroupRoot = filepath.Join(root, "sys", "fs", "cgroup")
+	t.Cleanup(func() {
+		SetProcRoot(prev)
+		selfProcRoot = prevSelfRoot
+		cgroupRoot = prevCgroupRoot
+	})
 
 	pusher := NewOTLPPusher(OTLPConfig{Endpoint: "http://unused"}, NewMetrics())
 	names := metricNamesFromMaps(pusher.systemMetrics(time.Now().UnixNano()))
