@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.39] - 2026-04-12
+
 ### Reliability
 
 - improve long-range windowed `query_range` resiliency by degrading batch parallelism on retryable upstream failures (`backend unavailable` / 502/503/504), adding bounded single-window retries, and widening retry backoff to survive transient breaker/backend spikes
