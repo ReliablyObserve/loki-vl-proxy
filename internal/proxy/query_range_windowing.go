@@ -18,12 +18,14 @@ import (
 )
 
 const (
-	maxQueryRangeWindows          = 4096
-	queryRangeCollectedInitialCap = 1024
-	queryRangeWindowFetchAttempts = 5
-	queryRangeRetryMinBackoff     = 100 * time.Millisecond
-	queryRangeRetryMaxBackoff     = 5 * time.Second
-	queryRangeBatchRetryAttempts  = 3
+	maxQueryRangeWindows           = 4096
+	queryRangeCollectedInitialCap  = 1024
+	queryRangeWindowFetchAttempts  = 5
+	queryRangeRetryMinBackoff      = 100 * time.Millisecond
+	queryRangeRetryMaxBackoff      = 5 * time.Second
+	queryRangeBatchRetryAttempts   = 3
+	queryRangePrefilterAttempts    = 2
+	queryRangePrefilterFallbackTTL = 30 * time.Second
 )
 
 type queryRangeWindow struct {
@@ -53,6 +55,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	if len(windows) <= 1 {
 		return false
 	}
+	originalWindowCount := len(windows)
 
 	queryLimit := r.FormValue("limit")
 	if queryLimit == "" {
@@ -68,7 +71,37 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	p.metrics.RecordTupleMode(tupleModeForRequest(categorizedLabels, emitStructuredMetadata))
 
+	filteredWindows, prefilterErr := p.prefilterQueryRangeWindowsByHits(r.Context(), r, logsqlQuery, windows)
+	if prefilterErr != nil {
+		p.log.Debug(
+			"query_range window prefilter unavailable; using full window set",
+			"error", prefilterErr,
+			"window_count", originalWindowCount,
+		)
+	} else {
+		windows = filteredWindows
+	}
+
 	p.metrics.RecordQueryRangeWindowCount(len(windows))
+	if len(windows) == 0 {
+		result, _ := json.Marshal(map[string]interface{}{
+			"status": "success",
+			"data": func() map[string]interface{} {
+				data := map[string]interface{}{
+					"resultType": "streams",
+					"result":     []map[string]interface{}{},
+					"stats":      map[string]interface{}{},
+				}
+				if categorizedLabels {
+					data["encodingFlags"] = []string{"categorize-labels"}
+				}
+				return data
+			}(),
+		})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(result)
+		return true
+	}
 
 	remaining := limitValue
 	// Keep preallocation constant-sized to avoid any user-influenced allocation growth.
@@ -323,6 +356,142 @@ func (p *Proxy) fetchQueryRangeWindow(
 	}
 
 	return queryRangeWindowCacheEntry{}, errors.New("query_range window fetch failed")
+}
+
+func (p *Proxy) prefilterQueryRangeWindowsByHits(
+	ctx context.Context,
+	r *http.Request,
+	logsqlQuery string,
+	windows []queryRangeWindow,
+) ([]queryRangeWindow, error) {
+	if !p.queryRangePrefilterIndexStats || len(windows) < p.queryRangePrefilterMinWindows {
+		return windows, nil
+	}
+	p.metrics.RecordQueryRangeWindowPrefilterAttempt()
+	start := time.Now()
+	defer p.metrics.RecordQueryRangeWindowPrefilterDuration(time.Since(start))
+
+	prefilterQuery := queryRangePrefilterQuery(logsqlQuery)
+	if prefilterQuery == "" {
+		prefilterQuery = "*"
+	}
+
+	keep := make([]bool, len(windows))
+	maxParallel := min(4, max(1, p.queryRangeWindowParallelLimit()))
+	maxParallel = min(maxParallel, len(windows))
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(maxParallel)
+	for i := range windows {
+		i := i
+		window := windows[i]
+		g.Go(func() error {
+			hasHits, err := p.queryRangeWindowHasHits(gctx, r, prefilterQuery, window)
+			if err != nil {
+				return err
+			}
+			keep[i] = hasHits
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		p.metrics.RecordQueryRangeWindowPrefilterError()
+		return windows, err
+	}
+
+	filtered := make([]queryRangeWindow, 0, len(windows))
+	for i, hasHits := range keep {
+		if hasHits {
+			filtered = append(filtered, windows[i])
+		}
+	}
+	p.metrics.RecordQueryRangeWindowPrefilterOutcome(len(filtered), len(windows)-len(filtered))
+	return filtered, nil
+}
+
+func (p *Proxy) queryRangeWindowHasHits(
+	ctx context.Context,
+	r *http.Request,
+	logsqlQuery string,
+	window queryRangeWindow,
+) (bool, error) {
+	cacheKey := p.queryRangeWindowHasHitsCacheKey(r, logsqlQuery, window)
+	if cached, ok := p.cache.Get(cacheKey); ok && len(cached) > 0 {
+		return cached[0] == '1', nil
+	}
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	params.Set("start", strconv.FormatInt(window.startNs, 10))
+	params.Set("end", strconv.FormatInt(window.endNs, 10))
+	windowSeconds := max(int64(1), (window.endNs-window.startNs+1)/int64(time.Second))
+	params.Set("step", formatVLStep(strconv.FormatInt(windowSeconds, 10)))
+
+	coalesceKey := "query_range_window_prefilter:" + cacheKey
+	for attempt := 1; attempt <= queryRangePrefilterAttempts; attempt++ {
+		status, body, err := p.vlGetCoalescedWithStatus(ctx, coalesceKey, "/select/logsql/hits", params)
+		if err == nil && status < http.StatusBadRequest {
+			hasHits := sumHitsValues(body) > 0
+			if ttl := p.queryRangeWindowPrefilterTTL(window.endNs); ttl > 0 {
+				if hasHits {
+					p.cache.SetWithTTL(cacheKey, []byte("1"), ttl)
+				} else {
+					p.cache.SetWithTTL(cacheKey, []byte("0"), ttl)
+				}
+			}
+			return hasHits, nil
+		}
+		if err == nil {
+			msg := strings.TrimSpace(string(body))
+			if msg == "" {
+				msg = fmt.Sprintf("VL backend returned %d", status)
+			}
+			err = &queryRangeWindowHTTPError{status: status, msg: msg}
+		}
+		if attempt >= queryRangePrefilterAttempts || !shouldRetryQueryRangeWindow(err) {
+			return false, err
+		}
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		case <-time.After(queryRangeWindowRetryBackoff(attempt)):
+		}
+	}
+	return false, errors.New("query_range window prefilter failed")
+}
+
+func (p *Proxy) queryRangeWindowHasHitsCacheKey(
+	r *http.Request,
+	logsqlQuery string,
+	window queryRangeWindow,
+) string {
+	return strings.Join([]string{
+		"query_range_window_has_hits",
+		r.Header.Get("X-Scope-OrgID"),
+		logsqlQuery,
+		strconv.FormatInt(window.startNs, 10),
+		strconv.FormatInt(window.endNs, 10),
+	}, ":")
+}
+
+func (p *Proxy) queryRangeWindowPrefilterTTL(windowEndNs int64) time.Duration {
+	ttl := p.queryRangeWindowTTL(windowEndNs)
+	if ttl <= 0 {
+		return queryRangePrefilterFallbackTTL
+	}
+	return ttl
+}
+
+func queryRangePrefilterQuery(logsqlQuery string) string {
+	query := strings.TrimSpace(logsqlQuery)
+	if query == "" {
+		return ""
+	}
+	if idx := strings.Index(query, "|"); idx > 0 {
+		if selector := strings.TrimSpace(query[:idx]); selector != "" {
+			return selector
+		}
+	}
+	return query
 }
 
 type queryRangeWindowHTTPError struct {

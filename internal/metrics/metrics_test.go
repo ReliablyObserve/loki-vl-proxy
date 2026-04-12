@@ -269,6 +269,10 @@ func TestMetrics_RecordersAndHandler_ExposeAdditionalMetrics(t *testing.T) {
 	m.RecordQueryRangeWindowFetchDuration(20 * time.Millisecond)
 	m.RecordQueryRangeWindowMergeDuration(5 * time.Millisecond)
 	m.RecordQueryRangeWindowCount(3)
+	m.RecordQueryRangeWindowPrefilterAttempt()
+	m.RecordQueryRangeWindowPrefilterError()
+	m.RecordQueryRangeWindowPrefilterOutcome(2, 1)
+	m.RecordQueryRangeWindowPrefilterDuration(3 * time.Millisecond)
 	m.RecordQueryRangeAdaptiveState(4, 1400*time.Millisecond, 0.03)
 
 	w := httptest.NewRecorder()
@@ -289,6 +293,11 @@ func TestMetrics_RecordersAndHandler_ExposeAdditionalMetrics(t *testing.T) {
 		`loki_vl_proxy_window_fetch_seconds_count 1`,
 		`loki_vl_proxy_window_merge_seconds_count 1`,
 		`loki_vl_proxy_window_count_count 1`,
+		`loki_vl_proxy_window_prefilter_attempt_total 1`,
+		`loki_vl_proxy_window_prefilter_error_total 1`,
+		`loki_vl_proxy_window_prefilter_kept_total 2`,
+		`loki_vl_proxy_window_prefilter_skipped_total 1`,
+		`loki_vl_proxy_window_prefilter_duration_seconds_count 1`,
 		`loki_vl_proxy_window_adaptive_parallel_current 4`,
 		`loki_vl_proxy_window_adaptive_latency_ewma_seconds 1.4`,
 		`loki_vl_proxy_window_adaptive_error_ewma 0.03`,

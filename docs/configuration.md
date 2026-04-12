@@ -221,6 +221,8 @@ These flags control Loki-compatible `query_range` split/merge execution with per
 | `-query-range-freshness` | — | `10m` | Near-now freshness boundary |
 | `-query-range-recent-cache-ttl` | — | `0s` | Cache TTL for windows newer than `now-freshness` (`0s` disables near-now cache) |
 | `-query-range-history-cache-ttl` | — | `24h` | Cache TTL for historical windows older than `now-freshness` |
+| `-query-range-prefilter-index-stats` | — | `true` | Use `/select/logsql/hits` preflight to skip empty split windows before expensive log fanout |
+| `-query-range-prefilter-min-windows` | — | `8` | Minimum split-window count required before prefilter is enabled |
 
 ### Loki-Aligned Defaults
 
@@ -261,6 +263,9 @@ Use these metrics to tune safely:
 - `loki_vl_proxy_window_adaptive_error_ewma` (gauge)
 - `loki_vl_proxy_window_cache_hit_total`, `loki_vl_proxy_window_cache_miss_total` (counters)
 - `loki_vl_proxy_window_fetch_seconds` and `loki_vl_proxy_window_merge_seconds` (histograms)
+- `loki_vl_proxy_window_prefilter_attempt_total`, `loki_vl_proxy_window_prefilter_error_total` (counters)
+- `loki_vl_proxy_window_prefilter_kept_total`, `loki_vl_proxy_window_prefilter_skipped_total` (counters)
+- `loki_vl_proxy_window_prefilter_duration_seconds` (histogram)
 
 Recommended loop:
 

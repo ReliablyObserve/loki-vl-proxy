@@ -337,6 +337,166 @@ func TestQueryRangeWindow_SevenDayRangeUsesParallelWindowFetch(t *testing.T) {
 	}
 }
 
+func TestQueryRangeWindow_PrefilterSkipsEmptyWindows(t *testing.T) {
+	start := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	end := start + int64(3*time.Hour) - 1
+	emptyWindowStart := start + int64(time.Hour)
+
+	var hitsCalls atomic.Int64
+	var queryCalls atomic.Int64
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		switch r.URL.Path {
+		case "/select/logsql/hits":
+			hitsCalls.Add(1)
+			windowStart, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+			hits := 1
+			if windowStart == emptyWindowStart {
+				hits = 0
+			}
+			_, _ = fmt.Fprintf(
+				w,
+				`{"hits":[{"fields":{"app":"nginx"},"timestamps":["%s"],"values":[%d]}]}`,
+				time.Unix(0, windowStart).UTC().Format(time.RFC3339),
+				hits,
+			)
+		case "/select/logsql/query":
+			queryCalls.Add(1)
+			windowStart, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+			_, _ = fmt.Fprintf(
+				w,
+				"{\"_time\":%q,\"_msg\":\"ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+				time.Unix(0, windowStart).UTC().Format(time.RFC3339Nano),
+			)
+		default:
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, err := New(Config{
+		BackendURL:                    vlBackend.URL,
+		Cache:                         c,
+		LogLevel:                      "error",
+		QueryRangeWindowingEnabled:    true,
+		QueryRangeSplitInterval:       time.Hour,
+		QueryRangeMaxParallel:         1,
+		QueryRangeAdaptiveParallel:    false,
+		QueryRangeFreshness:           10 * time.Minute,
+		QueryRangeRecentCacheTTL:      0,
+		QueryRangeHistoryCacheTTL:     24 * time.Hour,
+		QueryRangePrefilterIndexStats: true,
+		QueryRangePrefilterMinWindows: 1,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		"GET",
+		fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=100", url.QueryEscape(`{app="nginx"} | json`), start, end),
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	p.handleQueryRange(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := hitsCalls.Load(); got != 3 {
+		t.Fatalf("expected 3 prefilter hit checks, got %d", got)
+	}
+	if got := queryCalls.Load(); got != 2 {
+		t.Fatalf("expected 2 window query calls after prefilter, got %d", got)
+	}
+
+	metricsBody := collectMetricsText(t, p.metrics)
+	for _, snippet := range []string{
+		"loki_vl_proxy_window_prefilter_attempt_total 1",
+		"loki_vl_proxy_window_prefilter_error_total 0",
+		"loki_vl_proxy_window_prefilter_kept_total 2",
+		"loki_vl_proxy_window_prefilter_skipped_total 1",
+	} {
+		if !strings.Contains(metricsBody, snippet) {
+			t.Fatalf("expected metrics to include %q\nmetrics:\n%s", snippet, metricsBody)
+		}
+	}
+}
+
+func TestQueryRangeWindow_PrefilterFailureFallsBackToAllWindows(t *testing.T) {
+	start := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	end := start + int64(3*time.Hour) - 1
+
+	var hitsCalls atomic.Int64
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		switch r.URL.Path {
+		case "/select/logsql/hits":
+			hitsCalls.Add(1)
+			http.Error(w, "prefilter backend unavailable", http.StatusBadGateway)
+		case "/select/logsql/query":
+			windowStart, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+			_, _ = fmt.Fprintf(
+				w,
+				"{\"_time\":%q,\"_msg\":\"ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+				time.Unix(0, windowStart).UTC().Format(time.RFC3339Nano),
+			)
+		default:
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, err := New(Config{
+		BackendURL:                    vlBackend.URL,
+		Cache:                         c,
+		LogLevel:                      "error",
+		QueryRangeWindowingEnabled:    true,
+		QueryRangeSplitInterval:       time.Hour,
+		QueryRangeMaxParallel:         1,
+		QueryRangeAdaptiveParallel:    false,
+		QueryRangeFreshness:           10 * time.Minute,
+		QueryRangeRecentCacheTTL:      0,
+		QueryRangeHistoryCacheTTL:     24 * time.Hour,
+		QueryRangePrefilterIndexStats: true,
+		QueryRangePrefilterMinWindows: 1,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		"GET",
+		fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=100", url.QueryEscape(`{app="nginx"} | logfmt`), start, end),
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	p.handleQueryRange(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", resp.Code, resp.Body.String())
+	}
+	if hitsCalls.Load() < 1 {
+		t.Fatalf("expected prefilter /hits calls, got %d", hitsCalls.Load())
+	}
+
+	metricsBody := collectMetricsText(t, p.metrics)
+	for _, snippet := range []string{
+		"loki_vl_proxy_window_prefilter_attempt_total 1",
+		"loki_vl_proxy_window_prefilter_error_total 1",
+		"loki_vl_proxy_window_prefilter_kept_total 0",
+		"loki_vl_proxy_window_prefilter_skipped_total 0",
+		"loki_vl_proxy_window_count_count 1",
+		"loki_vl_proxy_window_count_sum 3",
+	} {
+		if !strings.Contains(metricsBody, snippet) {
+			t.Fatalf("expected metrics to include %q\nmetrics:\n%s", snippet, metricsBody)
+		}
+	}
+}
+
 func TestQueryRangeWindow_DoesNotFallbackToDirectQueryOnWindowFetchError(t *testing.T) {
 	start := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
 	end := start + int64(2*time.Hour) - 1
@@ -818,6 +978,43 @@ func TestQueryRangeWindow_RetryHelpers(t *testing.T) {
 	}
 }
 
+func TestQueryRangePrefilterQuery(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "selector only",
+			input: `{app="nginx"}`,
+			want:  `{app="nginx"}`,
+		},
+		{
+			name:  "strip pipeline for cheap prefilter",
+			input: `{app="nginx"} | json | logfmt | drop __error__`,
+			want:  `{app="nginx"}`,
+		},
+		{
+			name:  "keep malformed prefix",
+			input: `| json`,
+			want:  `| json`,
+		},
+		{
+			name:  "empty",
+			input: ``,
+			want:  ``,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			if got := queryRangePrefilterQuery(tc.input); got != tc.want {
+				t.Fatalf("queryRangePrefilterQuery(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
 func newWindowingTestProxy(t *testing.T, backendURL string) *Proxy {
 	t.Helper()
 	c := cache.New(60*time.Second, 10000)
@@ -876,6 +1073,14 @@ func assertQueryRangeFirstTimestamp(t *testing.T, rec *httptest.ResponseRecorder
 	if tsInt != expectedTs {
 		t.Fatalf("unexpected first timestamp: got=%d want=%d", tsInt, expectedTs)
 	}
+}
+
+func collectMetricsText(t *testing.T, m *metrics.Metrics) string {
+	t.Helper()
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	m.Handler(w, r)
+	return w.Body.String()
 }
 
 func minInt64(a, b int64) int64 {

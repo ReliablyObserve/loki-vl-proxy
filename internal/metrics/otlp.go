@@ -533,7 +533,7 @@ func (p *OTLPPusher) backendDurationMetrics(now int64) []map[string]interface{} 
 }
 
 func (p *OTLPPusher) queryRangeWindowMetrics(now int64) []map[string]interface{} {
-	metrics := make([]map[string]interface{}, 0, 6)
+	metrics := make([]map[string]interface{}, 0, 11)
 	if p.metrics.windowFetch != nil {
 		metrics = append(metrics, p.histogramMetric(
 			"loki_vl_proxy_window_fetch_seconds",
@@ -558,7 +558,39 @@ func (p *OTLPPusher) queryRangeWindowMetrics(now int64) []map[string]interface{}
 			p.histogramDP(p.metrics.windowCount, now),
 		))
 	}
+	if p.metrics.windowPrefilterDuration != nil {
+		metrics = append(metrics, p.histogramMetric(
+			"loki_vl_proxy_window_prefilter_duration_seconds",
+			"Query-range window prefilter duration.",
+			"s",
+			p.histogramDP(p.metrics.windowPrefilterDuration, now),
+		))
+	}
 	metrics = append(metrics,
+		p.sumMetric(
+			"loki_vl_proxy_window_prefilter_attempt_total",
+			"Query-range window prefilter attempts.",
+			"",
+			p.counterDP("loki_vl_proxy_window_prefilter_attempt_total", p.metrics.windowPrefilterAttempts.Load(), now),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_window_prefilter_error_total",
+			"Query-range window prefilter errors.",
+			"",
+			p.counterDP("loki_vl_proxy_window_prefilter_error_total", p.metrics.windowPrefilterErrors.Load(), now),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_window_prefilter_kept_total",
+			"Query-range windows kept after prefilter.",
+			"{window}",
+			p.counterDP("loki_vl_proxy_window_prefilter_kept_total", p.metrics.windowPrefilterKept.Load(), now),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_window_prefilter_skipped_total",
+			"Query-range windows skipped after prefilter.",
+			"{window}",
+			p.counterDP("loki_vl_proxy_window_prefilter_skipped_total", p.metrics.windowPrefilterSkipped.Load(), now),
+		),
 		p.gaugeMetric(
 			"loki_vl_proxy_window_adaptive_parallel_current",
 			"Current adaptive query-range window parallelism.",

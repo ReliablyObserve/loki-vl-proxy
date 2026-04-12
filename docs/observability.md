@@ -167,6 +167,26 @@ Operational notes for these hot paths:
 - multi-tenant read fanout and merged response bodies are capped to keep a single request from exhausting proxy memory
 - synthetic tail keeps bounded dedup state so long-running websocket sessions do not grow without limit
 
+### Query-Range Windowing Metrics
+
+These are the primary signals for long-range query performance and backend protection:
+
+| Metric | Type | Labels | Description |
+|---|---|---|---|
+| `loki_vl_proxy_window_cache_hit_total` | counter | none | cached split windows served without backend scan |
+| `loki_vl_proxy_window_cache_miss_total` | counter | none | split windows requiring backend scan |
+| `loki_vl_proxy_window_fetch_seconds` | histogram | none | backend fetch duration per split window |
+| `loki_vl_proxy_window_merge_seconds` | histogram | none | merge duration for split-window responses |
+| `loki_vl_proxy_window_count` | histogram | none | split windows per `query_range` request |
+| `loki_vl_proxy_window_prefilter_attempt_total` | counter | none | prefilter runs against `/select/logsql/hits` |
+| `loki_vl_proxy_window_prefilter_error_total` | counter | none | prefilter failures (proxy safely falls back to full window fanout) |
+| `loki_vl_proxy_window_prefilter_kept_total` | counter | none | split windows retained for real log fanout |
+| `loki_vl_proxy_window_prefilter_skipped_total` | counter | none | split windows skipped as empty by prefilter |
+| `loki_vl_proxy_window_prefilter_duration_seconds` | histogram | none | prefilter latency |
+| `loki_vl_proxy_window_adaptive_parallel_current` | gauge | none | current adaptive split-window parallelism |
+| `loki_vl_proxy_window_adaptive_latency_ewma_seconds` | gauge | none | adaptive EWMA latency |
+| `loki_vl_proxy_window_adaptive_error_ewma` | gauge | none | adaptive EWMA backend error ratio |
+
 ### Tenant and Client Metrics
 
 These are the metrics to use when you want to identify the users or tenants actually causing backend load.

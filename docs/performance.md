@@ -80,6 +80,11 @@ Key tuning signals:
 - `loki_vl_proxy_window_cache_miss_total`
 - `loki_vl_proxy_window_fetch_seconds`
 - `loki_vl_proxy_window_merge_seconds`
+- `loki_vl_proxy_window_prefilter_attempt_total`
+- `loki_vl_proxy_window_prefilter_error_total`
+- `loki_vl_proxy_window_prefilter_kept_total`
+- `loki_vl_proxy_window_prefilter_skipped_total`
+- `loki_vl_proxy_window_prefilter_duration_seconds`
 - `loki_vl_proxy_window_adaptive_parallel_current`
 - `loki_vl_proxy_window_adaptive_latency_ewma_seconds`
 - `loki_vl_proxy_window_adaptive_error_ewma`

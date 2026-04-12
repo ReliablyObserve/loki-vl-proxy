@@ -814,6 +814,8 @@ func TestBuildProxyConfig(t *testing.T) {
 		queryRangeFreshness:             5 * time.Minute,
 		queryRangeRecentCacheTTL:        15 * time.Second,
 		queryRangeHistoryTTL:            2 * time.Hour,
+		queryRangePrefilterIndexStats:   true,
+		queryRangePrefilterMinWindows:   6,
 		authEnabled:                     true,
 		allowGlobalTenant:               true,
 		registerInstrumentation:         &registerInstrumentation,
@@ -900,6 +902,13 @@ func TestBuildProxyConfig(t *testing.T) {
 			got.QueryRangeFreshness,
 			got.QueryRangeRecentCacheTTL,
 			got.QueryRangeHistoryCacheTTL,
+		)
+	}
+	if !got.QueryRangePrefilterIndexStats || got.QueryRangePrefilterMinWindows != 6 {
+		t.Fatalf(
+			"unexpected query range prefilter tuning: enabled=%v min_windows=%d",
+			got.QueryRangePrefilterIndexStats,
+			got.QueryRangePrefilterMinWindows,
 		)
 	}
 	if len(got.StreamFields) != 2 || got.StreamFields[0] != "app" {

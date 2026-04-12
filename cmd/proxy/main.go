@@ -78,6 +78,8 @@ type proxyRuntimeConfig struct {
 	queryRangeFreshness             time.Duration
 	queryRangeRecentCacheTTL        time.Duration
 	queryRangeHistoryTTL            time.Duration
+	queryRangePrefilterIndexStats   bool
+	queryRangePrefilterMinWindows   int
 	authEnabled                     bool
 	allowGlobalTenant               bool
 	registerInstrumentation         *bool
@@ -326,6 +328,8 @@ func run(
 	queryRangeFreshness := fs.Duration("query-range-freshness", 10*time.Minute, "Near-now freshness boundary; windows newer than now-freshness use recent cache TTL")
 	queryRangeRecentCacheTTL := fs.Duration("query-range-recent-cache-ttl", 0, "Cache TTL for near-now query_range windows (0 disables near-now result caching)")
 	queryRangeHistoryTTL := fs.Duration("query-range-history-cache-ttl", 24*time.Hour, "Cache TTL for historical query_range windows older than -query-range-freshness")
+	queryRangePrefilterIndexStats := fs.Bool("query-range-prefilter-index-stats", true, "Use /select/logsql/hits preflight to skip empty query_range windows before log fanout")
+	queryRangePrefilterMinWindows := fs.Int("query-range-prefilter-min-windows", 8, "Minimum split windows required before enabling query_range prefilter")
 
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
@@ -448,6 +452,8 @@ func run(
 			queryRangeFreshness:             *queryRangeFreshness,
 			queryRangeRecentCacheTTL:        *queryRangeRecentCacheTTL,
 			queryRangeHistoryTTL:            *queryRangeHistoryTTL,
+			queryRangePrefilterIndexStats:   *queryRangePrefilterIndexStats,
+			queryRangePrefilterMinWindows:   *queryRangePrefilterMinWindows,
 			authEnabled:                     *authEnabled,
 			allowGlobalTenant:               *allowGlobalTenant,
 			registerInstrumentation:         registerInstrumentation,
@@ -977,6 +983,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		QueryRangeFreshness:             cfg.queryRangeFreshness,
 		QueryRangeRecentCacheTTL:        cfg.queryRangeRecentCacheTTL,
 		QueryRangeHistoryCacheTTL:       cfg.queryRangeHistoryTTL,
+		QueryRangePrefilterIndexStats:   cfg.queryRangePrefilterIndexStats,
+		QueryRangePrefilterMinWindows:   cfg.queryRangePrefilterMinWindows,
 		AuthEnabled:                     cfg.authEnabled,
 		AllowGlobalTenant:               cfg.allowGlobalTenant,
 		RegisterInstrumentation:         cfg.registerInstrumentation,
@@ -1128,6 +1136,8 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 			"freshness", proxyCfg.QueryRangeFreshness,
 			"recent_cache_ttl", proxyCfg.QueryRangeRecentCacheTTL,
 			"history_cache_ttl", proxyCfg.QueryRangeHistoryCacheTTL,
+			"prefilter_index_stats", proxyCfg.QueryRangePrefilterIndexStats,
+			"prefilter_min_windows", proxyCfg.QueryRangePrefilterMinWindows,
 		)
 	}
 	if proxyCfg.PeerCache != nil {

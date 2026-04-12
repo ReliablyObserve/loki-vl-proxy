@@ -317,6 +317,10 @@ func TestOTLPPusher_SpecializedMetricFamilies(t *testing.T) {
 	m.RecordQueryRangeWindowFetchDuration(20 * time.Millisecond)
 	m.RecordQueryRangeWindowMergeDuration(5 * time.Millisecond)
 	m.RecordQueryRangeWindowCount(4)
+	m.RecordQueryRangeWindowPrefilterAttempt()
+	m.RecordQueryRangeWindowPrefilterError()
+	m.RecordQueryRangeWindowPrefilterOutcome(3, 1)
+	m.RecordQueryRangeWindowPrefilterDuration(4 * time.Millisecond)
 	m.SetCircuitBreakerFunc(func() string { return "half-open" })
 
 	pusher := NewOTLPPusher(OTLPConfig{Endpoint: "http://unused"}, m)
@@ -349,6 +353,11 @@ func TestOTLPPusher_SpecializedMetricFamilies(t *testing.T) {
 		"loki_vl_proxy_window_fetch_seconds",
 		"loki_vl_proxy_window_merge_seconds",
 		"loki_vl_proxy_window_count",
+		"loki_vl_proxy_window_prefilter_duration_seconds",
+		"loki_vl_proxy_window_prefilter_attempt_total",
+		"loki_vl_proxy_window_prefilter_error_total",
+		"loki_vl_proxy_window_prefilter_kept_total",
+		"loki_vl_proxy_window_prefilter_skipped_total",
 		"loki_vl_proxy_window_adaptive_parallel_current",
 		"loki_vl_proxy_window_adaptive_latency_ewma_seconds",
 		"loki_vl_proxy_window_adaptive_error_ewma",

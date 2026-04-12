@@ -52,6 +52,11 @@ type Metrics struct {
 	windowFetch                   *histogram
 	windowMerge                   *histogram
 	windowCount                   *histogram
+	windowPrefilterAttempts       atomic.Int64
+	windowPrefilterErrors         atomic.Int64
+	windowPrefilterKept           atomic.Int64
+	windowPrefilterSkipped        atomic.Int64
+	windowPrefilterDuration       *histogram
 	windowAdaptiveParallelCurrent atomic.Int64
 	windowAdaptiveLatencyEWMAms   atomic.Int64
 	windowAdaptiveErrorEWMAppm    atomic.Int64
@@ -133,30 +138,31 @@ func NewMetricsWithLimits(maxTenantLabels, maxClientLabels int) *Metrics {
 		maxClientLabels = defaultMaxClientLabels
 	}
 	return &Metrics{
-		requestsTotal:       make(map[string]*atomic.Int64),
-		requestDurations:    make(map[string]*histogram),
-		tenantRequests:      make(map[string]*atomic.Int64),
-		tenantDurations:     make(map[string]*histogram),
-		clientErrors:        make(map[string]*atomic.Int64),
-		endpointCacheHits:   make(map[string]*atomic.Int64),
-		endpointCacheMisses: make(map[string]*atomic.Int64),
-		backendDurations:    make(map[string]*histogram),
-		tupleModes:          make(map[string]*atomic.Int64),
-		clientRequests:      make(map[string]*atomic.Int64),
-		clientDurations:     make(map[string]*histogram),
-		clientBytes:         make(map[string]*atomic.Int64),
-		clientStatuses:      make(map[string]*atomic.Int64),
-		clientInflight:      make(map[string]*atomic.Int64),
-		clientQueryLengths:  make(map[string]*histogram),
-		windowFetch:         newHistogram(),
-		windowMerge:         newHistogram(),
-		windowCount:         newHistogram(),
-		system:              NewSystemMetrics(),
-		startTime:           time.Now(),
-		maxTenantLabels:     maxTenantLabels,
-		maxClientLabels:     maxClientLabels,
-		knownTenants:        make(map[string]struct{}),
-		knownClients:        make(map[string]struct{}),
+		requestsTotal:           make(map[string]*atomic.Int64),
+		requestDurations:        make(map[string]*histogram),
+		tenantRequests:          make(map[string]*atomic.Int64),
+		tenantDurations:         make(map[string]*histogram),
+		clientErrors:            make(map[string]*atomic.Int64),
+		endpointCacheHits:       make(map[string]*atomic.Int64),
+		endpointCacheMisses:     make(map[string]*atomic.Int64),
+		backendDurations:        make(map[string]*histogram),
+		tupleModes:              make(map[string]*atomic.Int64),
+		clientRequests:          make(map[string]*atomic.Int64),
+		clientDurations:         make(map[string]*histogram),
+		clientBytes:             make(map[string]*atomic.Int64),
+		clientStatuses:          make(map[string]*atomic.Int64),
+		clientInflight:          make(map[string]*atomic.Int64),
+		clientQueryLengths:      make(map[string]*histogram),
+		windowFetch:             newHistogram(),
+		windowMerge:             newHistogram(),
+		windowCount:             newHistogram(),
+		windowPrefilterDuration: newHistogram(),
+		system:                  NewSystemMetrics(),
+		startTime:               time.Now(),
+		maxTenantLabels:         maxTenantLabels,
+		maxClientLabels:         maxClientLabels,
+		knownTenants:            make(map[string]struct{}),
+		knownClients:            make(map[string]struct{}),
 	}
 }
 
@@ -570,6 +576,34 @@ func (m *Metrics) RecordQueryRangeWindowCount(n int) {
 	m.windowCount.observe(float64(n))
 }
 
+// RecordQueryRangeWindowPrefilterAttempt records one query_range window prefilter attempt.
+func (m *Metrics) RecordQueryRangeWindowPrefilterAttempt() {
+	m.windowPrefilterAttempts.Add(1)
+}
+
+// RecordQueryRangeWindowPrefilterDuration records query_range window prefilter duration.
+func (m *Metrics) RecordQueryRangeWindowPrefilterDuration(d time.Duration) {
+	if m.windowPrefilterDuration == nil {
+		return
+	}
+	m.windowPrefilterDuration.observe(d.Seconds())
+}
+
+// RecordQueryRangeWindowPrefilterError records one query_range window prefilter error.
+func (m *Metrics) RecordQueryRangeWindowPrefilterError() {
+	m.windowPrefilterErrors.Add(1)
+}
+
+// RecordQueryRangeWindowPrefilterOutcome records kept/skipped windows after prefiltering.
+func (m *Metrics) RecordQueryRangeWindowPrefilterOutcome(kept, skipped int) {
+	if kept > 0 {
+		m.windowPrefilterKept.Add(int64(kept))
+	}
+	if skipped > 0 {
+		m.windowPrefilterSkipped.Add(int64(skipped))
+	}
+}
+
 // RecordQueryRangeAdaptiveState records adaptive query_range controller state.
 func (m *Metrics) RecordQueryRangeAdaptiveState(currentParallel int, latencyEWMA time.Duration, errorEWMA float64) {
 	if currentParallel < 0 {
@@ -840,6 +874,34 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_sum %g\n", m.windowCount.sum)
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_count %d\n", m.windowCount.count)
 		m.windowCount.mu.Unlock()
+	}
+	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_attempt_total Query-range window prefilter attempts.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_attempt_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_attempt_total %d\n", m.windowPrefilterAttempts.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_error_total Query-range window prefilter errors.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_error_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_error_total %d\n", m.windowPrefilterErrors.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_kept_total Query-range windows kept after prefilter.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_kept_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_kept_total %d\n", m.windowPrefilterKept.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_skipped_total Query-range windows skipped after prefilter.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_skipped_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_skipped_total %d\n", m.windowPrefilterSkipped.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_duration_seconds Query-range window prefilter duration.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_duration_seconds histogram\n")
+	if m.windowPrefilterDuration != nil {
+		m.windowPrefilterDuration.mu.Lock()
+		for i, b := range m.windowPrefilterDuration.buckets {
+			fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_bucket{le=\"%g\"} %d\n", b, m.windowPrefilterDuration.counts[i])
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_bucket{le=\"+Inf\"} %d\n", m.windowPrefilterDuration.count)
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_sum %g\n", m.windowPrefilterDuration.sum)
+		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_count %d\n", m.windowPrefilterDuration.count)
+		m.windowPrefilterDuration.mu.Unlock()
 	}
 	sb.WriteString("# HELP loki_vl_proxy_window_adaptive_parallel_current Current adaptive query-range window parallelism.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_adaptive_parallel_current gauge\n")
