@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -826,6 +827,54 @@ func TestLabelSurface_LabelValuesIndexPersistenceLoop_StartStopAndPersist(t *tes
 	}
 	if len(snapshot.StatesByKey) == 0 {
 		t.Fatalf("expected persisted snapshot to contain label index state")
+	}
+}
+
+func TestLabelSurface_LabelValuesIndexPersistenceLoop_SkipsUnchangedPeriodicWrites(t *testing.T) {
+	persistPath := filepath.Join(t.TempDir(), "label-values-index.json")
+
+	p, err := New(Config{
+		BackendURL:                      "http://unused",
+		Cache:                           cache.New(60*time.Second, 1000),
+		LogLevel:                        "error",
+		LabelStyle:                      LabelStyleUnderscores,
+		MetadataFieldMode:               MetadataFieldModeTranslated,
+		LabelValuesIndexedCache:         true,
+		LabelValuesIndexPersistPath:     persistPath,
+		LabelValuesIndexMaxEntries:      1000,
+		LabelValuesHotLimit:             100,
+		LabelValuesIndexPersistInterval: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	p.updateLabelValuesIndex("", "app", []string{"alpha", "beta"})
+	p.startLabelValuesIndexPersistenceLoop()
+	defer p.stopLabelValuesIndexPersistenceLoop(context.Background())
+
+	var first []byte
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		first, err = os.ReadFile(persistPath)
+		if err == nil && len(first) > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("expected first persisted index snapshot file, read error: %v", err)
+	}
+
+	// Wait across multiple persistence ticks without mutating the index.
+	time.Sleep(120 * time.Millisecond)
+
+	second, err := os.ReadFile(persistPath)
+	if err != nil {
+		t.Fatalf("expected persisted index snapshot file on second read: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatalf("expected unchanged index to skip periodic rewrite")
 	}
 }
 

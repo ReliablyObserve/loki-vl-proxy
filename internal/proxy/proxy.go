@@ -376,6 +376,7 @@ type Proxy struct {
 	labelValuesIndexPeerWarmTimeout time.Duration
 	labelValuesIndexWarmReady       atomic.Bool
 	labelValuesIndexPersistStarted  atomic.Bool
+	labelValuesIndexPersistDirty    atomic.Bool
 	labelValuesIndexPersistStop     chan struct{}
 	labelValuesIndexPersistDone     chan struct{}
 	labelValuesIndexMu              sync.RWMutex
@@ -760,6 +761,7 @@ func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
 	p.labelValuesIndexMu.Lock()
 	p.labelValuesIndex = make(map[string]*labelValuesIndexState)
 	p.labelValuesIndexMu.Unlock()
+	p.labelValuesIndexPersistDirty.Store(true)
 }
 
 // ReloadFieldMappings hot-reloads field mappings and rebuilds the label translator.
@@ -776,6 +778,7 @@ func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
 	p.labelValuesIndexMu.Lock()
 	p.labelValuesIndex = make(map[string]*labelValuesIndexState)
 	p.labelValuesIndexMu.Unlock()
+	p.labelValuesIndexPersistDirty.Store(true)
 }
 
 // GetMetrics returns the proxy's metrics instance for external telemetry exporters.
@@ -1909,11 +1912,15 @@ func (p *Proxy) applyLabelValuesIndexSnapshot(snapshot labelValuesIndexSnapshot)
 	p.labelValuesIndexMu.Lock()
 	p.labelValuesIndex = restored
 	p.labelValuesIndexMu.Unlock()
+	p.labelValuesIndexPersistDirty.Store(false)
 	return states, values
 }
 
 func (p *Proxy) persistLabelValuesIndexNow(reason string) error {
 	if !p.labelValuesIndexedCache || strings.TrimSpace(p.labelValuesIndexPersistPath) == "" {
+		return nil
+	}
+	if reason == "periodic" && !p.labelValuesIndexPersistDirty.Load() {
 		return nil
 	}
 
@@ -1953,6 +1960,7 @@ func (p *Proxy) persistLabelValuesIndexNow(reason string) error {
 	} else {
 		p.log.Info("label values index snapshot persisted", "reason", reason, "path", path, "states", states, "values", values, "bytes", len(data))
 	}
+	p.labelValuesIndexPersistDirty.Store(false)
 	return nil
 }
 
@@ -2234,12 +2242,17 @@ func (p *Proxy) updateLabelValuesIndex(orgID, labelName string, values []string)
 	defer p.labelValuesIndexMu.Unlock()
 
 	index, ok := p.labelValuesIndex[key]
+	structuralChange := false
 	if !ok {
 		index = &labelValuesIndexState{entries: make(map[string]labelValueIndexEntry, len(values))}
 		p.labelValuesIndex[key] = index
+		structuralChange = true
 	}
 
 	for _, value := range values {
+		if _, exists := index.entries[value]; !exists {
+			structuralChange = true
+		}
 		entry := index.entries[value]
 		if entry.SeenCount < ^uint32(0) {
 			entry.SeenCount++
@@ -2251,10 +2264,16 @@ func (p *Proxy) updateLabelValuesIndex(orgID, labelName string, values []string)
 
 	maxEntries := p.labelValuesIndexMaxEntries
 	if maxEntries <= 0 || len(index.entries) <= maxEntries {
+		if structuralChange {
+			p.labelValuesIndexPersistDirty.Store(true)
+		}
 		return
 	}
 	p.labelValueIndexEnsureOrderedLocked(index)
 	if len(index.ordered) <= maxEntries {
+		if structuralChange {
+			p.labelValuesIndexPersistDirty.Store(true)
+		}
 		return
 	}
 	keep := index.ordered[:maxEntries]
@@ -2265,6 +2284,10 @@ func (p *Proxy) updateLabelValuesIndex(orgID, labelName string, values []string)
 	index.entries = pruned
 	index.ordered = append([]string(nil), keep...)
 	index.dirty = false
+	structuralChange = true
+	if structuralChange {
+		p.labelValuesIndexPersistDirty.Store(true)
+	}
 }
 
 func (p *Proxy) selectLabelValuesFromIndex(orgID, labelName, search string, offset, limit int) ([]string, bool) {

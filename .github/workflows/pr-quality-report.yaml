@@ -63,7 +63,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/pr-quality/base-quality.json
-          key: ${{ runner.os }}-pr-quality-base-${{ github.event.pull_request.base.sha }}-perf-${{ steps.perf-scope.outputs.run_perf }}-schema-v2
+          key: ${{ runner.os }}-pr-quality-base-${{ github.event.pull_request.base.sha }}-perf-${{ steps.perf-scope.outputs.run_perf }}-schema-v3
 
       - name: Collect base and PR quality snapshots
         env:

@@ -102,6 +102,28 @@ const (
 	overflowMetricLabel    = "__overflow__"
 )
 
+var (
+	defaultMetricSeedEndpoints = []string{
+		"query_range",
+		"query",
+		"labels",
+		"label_values",
+		"series",
+		"index_stats",
+		"volume",
+		"volume_range",
+		"detected_fields",
+		"detected_field_values",
+		"detected_labels",
+		"patterns",
+		"tail",
+		"delete",
+	}
+	defaultMetricSeedStatuses = []int{200, 400, 429, 500, 502}
+	defaultClientErrorReasons = []string{"bad_request", "rate_limited", "not_found", "body_too_large", "timeout"}
+	defaultTupleModes         = []string{"default_2tuple", "categorize_labels_3tuple"}
+)
+
 func newHistogram() *histogram {
 	return &histogram{
 		buckets: defaultBuckets,
@@ -132,7 +154,7 @@ func NewMetricsWithLimits(maxTenantLabels, maxClientLabels int) *Metrics {
 	if maxClientLabels <= 0 {
 		maxClientLabels = defaultMaxClientLabels
 	}
-	return &Metrics{
+	m := &Metrics{
 		requestsTotal:       make(map[string]*atomic.Int64),
 		requestDurations:    make(map[string]*histogram),
 		tenantRequests:      make(map[string]*atomic.Int64),
@@ -157,6 +179,72 @@ func NewMetricsWithLimits(maxTenantLabels, maxClientLabels int) *Metrics {
 		maxClientLabels:     maxClientLabels,
 		knownTenants:        make(map[string]struct{}),
 		knownClients:        make(map[string]struct{}),
+	}
+	m.preRegisterZeroSeries()
+	return m
+}
+
+func (m *Metrics) preRegisterZeroSeries() {
+	for _, endpoint := range defaultMetricSeedEndpoints {
+		if _, ok := m.requestDurations[endpoint]; !ok {
+			m.requestDurations[endpoint] = newHistogram()
+		}
+		if _, ok := m.backendDurations[endpoint]; !ok {
+			m.backendDurations[endpoint] = newHistogram()
+		}
+		if _, ok := m.endpointCacheHits[endpoint]; !ok {
+			m.endpointCacheHits[endpoint] = &atomic.Int64{}
+		}
+		if _, ok := m.endpointCacheMisses[endpoint]; !ok {
+			m.endpointCacheMisses[endpoint] = &atomic.Int64{}
+		}
+		for _, status := range defaultMetricSeedStatuses {
+			key := fmt.Sprintf("%s:%d", endpoint, status)
+			if _, ok := m.requestsTotal[key]; !ok {
+				m.requestsTotal[key] = &atomic.Int64{}
+			}
+		}
+		for _, reason := range defaultClientErrorReasons {
+			key := fmt.Sprintf("%s:%s", endpoint, reason)
+			if _, ok := m.clientErrors[key]; !ok {
+				m.clientErrors[key] = &atomic.Int64{}
+			}
+		}
+		for _, status := range defaultMetricSeedStatuses {
+			tk := fmt.Sprintf("%s:%s:%d", "__none__", endpoint, status)
+			if _, ok := m.tenantRequests[tk]; !ok {
+				m.tenantRequests[tk] = &atomic.Int64{}
+			}
+			ck := fmt.Sprintf("%s:%s:%d", "__none__", endpoint, status)
+			if _, ok := m.clientStatuses[ck]; !ok {
+				m.clientStatuses[ck] = &atomic.Int64{}
+			}
+		}
+		tdk := fmt.Sprintf("%s:%s", "__none__", endpoint)
+		if _, ok := m.tenantDurations[tdk]; !ok {
+			m.tenantDurations[tdk] = newHistogram()
+		}
+		cdk := fmt.Sprintf("%s:%s", "__none__", endpoint)
+		if _, ok := m.clientRequests[cdk]; !ok {
+			m.clientRequests[cdk] = &atomic.Int64{}
+		}
+		if _, ok := m.clientDurations[cdk]; !ok {
+			m.clientDurations[cdk] = newHistogram()
+		}
+		if _, ok := m.clientQueryLengths[cdk]; !ok {
+			m.clientQueryLengths[cdk] = newHistogram()
+		}
+	}
+	if _, ok := m.clientBytes["__none__"]; !ok {
+		m.clientBytes["__none__"] = &atomic.Int64{}
+	}
+	if _, ok := m.clientInflight["__none__"]; !ok {
+		m.clientInflight["__none__"] = &atomic.Int64{}
+	}
+	for _, mode := range defaultTupleModes {
+		if _, ok := m.tupleModes[mode]; !ok {
+			m.tupleModes[mode] = &atomic.Int64{}
+		}
 	}
 }
 
@@ -667,30 +755,51 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP go_memstats_alloc_bytes Current heap allocation in bytes.\n")
 	sb.WriteString("# TYPE go_memstats_alloc_bytes gauge\n")
 	fmt.Fprintf(&sb, "go_memstats_alloc_bytes %d\n", memStats.Alloc)
+	sb.WriteString("# HELP loki_vl_proxy_go_memstats_alloc_bytes Current heap allocation in bytes.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_go_memstats_alloc_bytes gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_go_memstats_alloc_bytes %d\n", memStats.Alloc)
 
 	sb.WriteString("# HELP go_memstats_sys_bytes Total memory from OS in bytes.\n")
 	sb.WriteString("# TYPE go_memstats_sys_bytes gauge\n")
 	fmt.Fprintf(&sb, "go_memstats_sys_bytes %d\n", memStats.Sys)
+	sb.WriteString("# HELP loki_vl_proxy_go_memstats_sys_bytes Total memory from OS in bytes.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_go_memstats_sys_bytes gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_go_memstats_sys_bytes %d\n", memStats.Sys)
 
 	sb.WriteString("# HELP go_memstats_heap_inuse_bytes Heap in-use bytes.\n")
 	sb.WriteString("# TYPE go_memstats_heap_inuse_bytes gauge\n")
 	fmt.Fprintf(&sb, "go_memstats_heap_inuse_bytes %d\n", memStats.HeapInuse)
+	sb.WriteString("# HELP loki_vl_proxy_go_memstats_heap_inuse_bytes Heap in-use bytes.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_go_memstats_heap_inuse_bytes gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_go_memstats_heap_inuse_bytes %d\n", memStats.HeapInuse)
 
 	sb.WriteString("# HELP go_memstats_heap_idle_bytes Heap idle bytes.\n")
 	sb.WriteString("# TYPE go_memstats_heap_idle_bytes gauge\n")
 	fmt.Fprintf(&sb, "go_memstats_heap_idle_bytes %d\n", memStats.HeapIdle)
+	sb.WriteString("# HELP loki_vl_proxy_go_memstats_heap_idle_bytes Heap idle bytes.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_go_memstats_heap_idle_bytes gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_go_memstats_heap_idle_bytes %d\n", memStats.HeapIdle)
 
 	sb.WriteString("# HELP go_gc_duration_seconds GC pause duration summary.\n")
 	sb.WriteString("# TYPE go_gc_duration_seconds summary\n")
 	fmt.Fprintf(&sb, "go_gc_duration_seconds_count %d\n", memStats.NumGC)
+	sb.WriteString("# HELP loki_vl_proxy_go_gc_duration_seconds GC pause duration summary.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_go_gc_duration_seconds summary\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_go_gc_duration_seconds_count %d\n", memStats.NumGC)
 
 	sb.WriteString("# HELP go_goroutines Current number of goroutines.\n")
 	sb.WriteString("# TYPE go_goroutines gauge\n")
 	fmt.Fprintf(&sb, "go_goroutines %d\n", runtime.NumGoroutine())
+	sb.WriteString("# HELP loki_vl_proxy_go_goroutines Current number of goroutines.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_go_goroutines gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_go_goroutines %d\n", runtime.NumGoroutine())
 
 	sb.WriteString("# HELP go_gc_cycles_total Total GC cycles completed.\n")
 	sb.WriteString("# TYPE go_gc_cycles_total counter\n")
 	fmt.Fprintf(&sb, "go_gc_cycles_total %d\n", memStats.NumGC)
+	sb.WriteString("# HELP loki_vl_proxy_go_gc_cycles_total Total GC cycles completed.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_go_gc_cycles_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_go_gc_cycles_total %d\n", memStats.NumGC)
 
 	// Per-tenant request counters
 	sb.WriteString("# HELP loki_vl_proxy_tenant_requests_total Requests by tenant.\n")
@@ -966,22 +1075,23 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		h.mu.Unlock()
 	}
 
-	// Circuit breaker state
+	// Circuit breaker state (export a default closed=0 value when callback is unavailable).
+	cbState := "closed"
 	if m.cbStateFunc != nil {
-		cbState := m.cbStateFunc()
-		cbVal := 0
-		switch cbState {
-		case "closed":
-			cbVal = 0
-		case "open":
-			cbVal = 1
-		case "half_open", "half-open":
-			cbVal = 2
-		}
-		sb.WriteString("# HELP loki_vl_proxy_circuit_breaker_state Circuit breaker state (0=closed, 1=open, 2=half-open).\n")
-		sb.WriteString("# TYPE loki_vl_proxy_circuit_breaker_state gauge\n")
-		fmt.Fprintf(&sb, "loki_vl_proxy_circuit_breaker_state %d\n", cbVal)
+		cbState = m.cbStateFunc()
 	}
+	cbVal := 0
+	switch cbState {
+	case "closed":
+		cbVal = 0
+	case "open":
+		cbVal = 1
+	case "half_open", "half-open":
+		cbVal = 2
+	}
+	sb.WriteString("# HELP loki_vl_proxy_circuit_breaker_state Circuit breaker state (0=closed, 1=open, 2=half-open).\n")
+	sb.WriteString("# TYPE loki_vl_proxy_circuit_breaker_state gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_circuit_breaker_state %d\n", cbVal)
 
 	m.mu.RUnlock()
 

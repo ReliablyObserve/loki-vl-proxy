@@ -185,17 +185,18 @@ These are the metrics to use when you want to identify the users or tenants actu
 
 ### Runtime and Process Metrics
 
-The proxy also exports a lightweight built-in set of runtime and process/container health metrics:
+The proxy also exports a lightweight built-in set of runtime and process/container health metrics.
+App-scoped aliases are emitted with the `loki_vl_proxy_` prefix, while legacy `go_*` and `process_*` families remain for compatibility:
 
 | Metric family | Description |
 |---|---|
-| `go_memstats_*`, `go_goroutines`, `go_gc_cycles_total` | Go runtime health |
-| `process_resident_memory_bytes`, `process_open_fds` | process resource usage |
-| `process_cpu_usage_ratio` | CPU pressure split by `mode` |
-| `process_memory_*` | total, free, available, usage ratio |
-| `process_disk_*_bytes_total` | disk I/O counters |
-| `process_network_*_bytes_total` | network I/O counters |
-| `process_pressure_*` | Linux PSI gauges when available |
+| `loki_vl_proxy_go_*` (`go_*` compatibility aliases) | Go runtime health |
+| `loki_vl_proxy_process_resident_memory_bytes`, `loki_vl_proxy_process_open_fds` (`process_*` compatibility aliases) | process resource usage |
+| `loki_vl_proxy_process_cpu_usage_ratio` (`process_cpu_usage_ratio` alias) | CPU pressure split by `mode` |
+| `loki_vl_proxy_process_memory_*` (`process_memory_*` aliases) | total, free, available, usage ratio |
+| `loki_vl_proxy_process_disk_*_bytes_total` (`process_disk_*_bytes_total` aliases) | disk I/O counters |
+| `loki_vl_proxy_process_network_*_bytes_total` (`process_network_*_bytes_total` aliases) | network I/O counters |
+| `loki_vl_proxy_process_pressure_*` (`process_pressure_*` aliases) | Linux PSI gauges when available |
 
 Kubernetes notes:
 - These runtime/system metrics are read from `/proc` and do not require Kubernetes RBAC permissions.
@@ -381,6 +382,37 @@ Start with:
 |---|---|---|
 | [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | Prometheus metrics | Service health, SLOs, cache and endpoint latency trends |
 | [`dashboard/loki-vl-proxy-offenders.json`](../dashboard/loki-vl-proxy-offenders.json) | Native VictoriaLogs datasource | Offender triage with built-in `tenant`, `client`, `cluster`, and `env` filters for route/status load and error analysis |
+
+#### Metrics Dashboard Setup (Scrape and OTLP Push)
+
+The metrics dashboard includes a `Datasource` variable and works with either metric transport mode:
+
+- Prometheus scrape (`/metrics` + `ServiceMonitor`)
+- OTLP push (`-otlp-endpoint=...`) into a Prometheus-compatible backend
+
+Recommended setup:
+
+1. Point `Datasource` to any Prometheus-compatible datasource that contains `loki_vl_proxy_*` metrics.
+2. For scrape mode, use the datasource fed by your `ServiceMonitor`/Prometheus scrape pipeline.
+3. For OTLP push mode, use the datasource fed by your OTLP metrics pipeline.
+4. VictoriaMetrics can be used for both modes when it receives both scrape and OTLP streams.
+
+Transport checklist:
+
+- Scrape mode:
+  - `-server.register-instrumentation=true`
+  - Helm `serviceMonitor.enabled=true`
+- OTLP push mode:
+  - `-otlp-endpoint` configured
+  - `-server.register-instrumentation=false` (optional, recommended when you want push-only)
+
+Quick validation in Grafana Explore against the selected datasource:
+
+```promql
+loki_vl_proxy_uptime_seconds
+```
+
+If this query has data, the `Loki-VL-Proxy Metrics` dashboard should populate out of the box.
 
 Use the offenders dashboard during Loki/proxy incidents to keep visibility on raw operator/client behavior directly from stored logs.
 

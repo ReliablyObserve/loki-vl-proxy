@@ -477,6 +477,34 @@ func TestSystemMetrics_WritePrometheus_UsesSyntheticLinuxProcFS(t *testing.T) {
 	}
 }
 
+func TestSystemMetrics_WritePrometheus_EmitsZeroWhenProcDataMissing(t *testing.T) {
+	root := withSyntheticProcFS(t, map[string]string{
+		// Intentionally sparse proc tree to force fallback zeros.
+		"self/status": "Name:\tproxy\n",
+	})
+	setSyntheticProcEnv(t, root)
+
+	sm := NewSystemMetrics()
+	var sb strings.Builder
+	sm.WritePrometheus(&sb)
+	output := sb.String()
+
+	for _, expected := range []string{
+		"process_memory_total_bytes 0",
+		"process_memory_usage_ratio 0",
+		"process_resident_memory_bytes 0",
+		"process_open_fds 0",
+		"process_pressure_cpu_some_ratio{window=\"60s\"} 0",
+		"process_pressure_memory_full_ratio{window=\"60s\"} 0",
+		"loki_vl_proxy_process_memory_total_bytes 0",
+		"loki_vl_proxy_process_open_fds 0",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected zero fallback line %q, output:\n%s", expected, output)
+		}
+	}
+}
+
 func TestProcReaders_DoNotReturnNegativeValues(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Linux-only /proc readers")

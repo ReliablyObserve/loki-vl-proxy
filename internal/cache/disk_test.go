@@ -251,3 +251,26 @@ func TestDiskCache_MaxBytesSkipsFlushEntriesBeyondBudget(t *testing.T) {
 		t.Fatal("expected max-bytes skip to increment evictions")
 	}
 }
+
+func TestDiskCache_MinTTLSkipsShortLivedWrites(t *testing.T) {
+	dc, err := NewDiskCache(DiskCacheConfig{
+		Path:     tempDBPath(t),
+		MinTTL:   30 * time.Second,
+		MaxBytes: 1 << 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dc.Close() }()
+
+	dc.Set("short", []byte("skip-me"), 5*time.Second)
+	dc.Set("long", []byte("keep-me"), time.Minute)
+	dc.Flush()
+
+	if _, ok := dc.Get("short"); ok {
+		t.Fatal("expected short-lived entry to be skipped for disk cache")
+	}
+	if v, ok := dc.Get("long"); !ok || string(v) != "keep-me" {
+		t.Fatalf("expected long-lived entry to be stored, got %q ok=%v", string(v), ok)
+	}
+}

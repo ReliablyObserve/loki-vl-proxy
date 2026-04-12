@@ -72,7 +72,7 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \
   --version <release> \
   --set extraArgs.backend=http://victorialogs:9428 \
-  --set-string extraArgs.metrics\\.otlp-endpoint=http://otel-collector.monitoring.svc.cluster.local:4318/v1/metrics \
+  --set-string extraArgs.otlp-endpoint=http://otel-collector.monitoring.svc.cluster.local:4318/v1/metrics \
   --set-string extraArgs.server\\.register-instrumentation=false
 
 # 5) Indexed label-values browse cache (hotset + paging/search)
@@ -107,6 +107,22 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 ```
 
 For additional production guidance, see [Operations](operations.md).
+
+## Metrics Dashboard Out-Of-Box Setup
+
+The `Loki-VL-Proxy Metrics` dashboard supports both scrape and OTLP push. Select datasource from the dashboard `Datasource` variable:
+
+1. Scrape mode: choose the datasource fed by your `ServiceMonitor`/Prometheus scrape path.
+2. OTLP push mode: choose the datasource fed by your OTLP metrics path.
+3. If VictoriaMetrics receives both scrape and OTLP metrics, use the same `VictoriaMetrics` datasource for both modes.
+
+Minimal checks:
+
+```promql
+loki_vl_proxy_uptime_seconds
+```
+
+If this returns data in the selected datasource, dashboard panels should render without extra query edits.
 
 ## Grafana Datasource
 

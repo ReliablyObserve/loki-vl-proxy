@@ -7,11 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Reliability
+
+- harden long-range query execution by adding `query_range` fallback from window-split execution to direct backend query path on transient upstream failures
+
+### Performance
+
+- reduce proxy disk write amplification by skipping L2 disk-cache writes for short-lived entries and avoiding unchanged periodic label-index snapshot rewrites
+
+### Observability
+
+- keep `loki_vl_proxy_*` runtime/process metric families consistently queryable across scrape and OTLP flows for dashboard compatibility
+
 ## [0.27.36] - 2026-04-12
 
 ### Reliability
 
 - add query_range safety fallback from window-split execution to direct backend query path on transient upstream failures, reducing user-facing 5xx during long-range requests
+
+### Performance
+
+- reduce proxy disk write amplification by skipping L2 disk-cache writes for short-lived entries and avoiding unchanged periodic label-index snapshot rewrites
 
 ## [0.27.35] - 2026-04-12
 
@@ -26,6 +42,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### CI
 
 - fix release asset upload globs to avoid duplicate `.tgz` matches in GitHub Release publishing, which could fail with REST asset update `Not Found`
+
+### Performance
+
+- reduce proxy disk write amplification by skipping L2 disk-cache writes for short-lived entries via `disk-cache-min-ttl` (default `30s`)
+- avoid periodic label-values index snapshot rewrites when index structure is unchanged, lowering background disk I/O and write latency pressure
+
+### Observability
+
+- improve app-scoped metrics compatibility for dashboard/runtime process telemetry by keeping `loki_vl_proxy_*` metric families consistently queryable across scrape and OTLP flows
 
 ## [0.27.34] - 2026-04-11
 

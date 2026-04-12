@@ -125,10 +125,18 @@ func TestOTLPPusher_SendsMetrics(t *testing.T) {
 		"loki_vl_proxy_cache_hits_total",
 		"loki_vl_proxy_uptime_seconds",
 		"go_goroutines",
+		"loki_vl_proxy_go_goroutines",
 	} {
 		if !names[required] {
 			t.Fatalf("expected OTLP payload to include %s; names=%v", required, names)
 		}
+	}
+	if runtime.GOOS == "linux" {
+		if !names["loki_vl_proxy_process_disk_read_bytes_total"] {
+			t.Fatalf("expected OTLP payload to include linux process metric alias; names=%v", names)
+		}
+	} else if !names["loki_vl_proxy_process_resident_memory_bytes"] {
+		t.Fatalf("expected OTLP payload to include non-linux process metric alias; names=%v", names)
 	}
 }
 
@@ -233,11 +241,16 @@ func TestOTLPPusher_BuildPayload(t *testing.T) {
 func TestOTLPPusher_GzipCompression(t *testing.T) {
 	var mu sync.Mutex
 	var receivedEncoding string
+	seen := make(chan struct{}, 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		receivedEncoding = r.Header.Get("Content-Encoding")
 		mu.Unlock()
+		select {
+		case seen <- struct{}{}:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -251,7 +264,11 @@ func TestOTLPPusher_GzipCompression(t *testing.T) {
 	pusher.Start()
 	defer pusher.Stop()
 
-	time.Sleep(120 * time.Millisecond)
+	select {
+	case <-seen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for OTLP push")
+	}
 
 	mu.Lock()
 	enc := receivedEncoding
@@ -264,11 +281,16 @@ func TestOTLPPusher_GzipCompression(t *testing.T) {
 func TestOTLPPusher_ZstdCompression(t *testing.T) {
 	var mu sync.Mutex
 	var receivedEncoding string
+	seen := make(chan struct{}, 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		receivedEncoding = r.Header.Get("Content-Encoding")
 		mu.Unlock()
+		select {
+		case seen <- struct{}{}:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -282,7 +304,11 @@ func TestOTLPPusher_ZstdCompression(t *testing.T) {
 	pusher.Start()
 	defer pusher.Stop()
 
-	time.Sleep(120 * time.Millisecond)
+	select {
+	case <-seen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for OTLP push")
+	}
 
 	mu.Lock()
 	enc := receivedEncoding
@@ -327,16 +353,29 @@ func TestOTLPPusher_SpecializedMetricFamilies(t *testing.T) {
 		t.Fatalf("expected one client error metric family, got %d", len(clientErrors))
 	}
 	points := metricPointsByType(t, clientErrors[0], "sum")
-	if len(points) != 1 {
-		t.Fatalf("expected one client error datapoint, got %d", len(points))
+	found := false
+	for _, raw := range points {
+		point, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		attrs := flattenAnyAttrs(t, point["attributes"])
+		if attrs["endpoint"] == "query_range" && attrs["reason"] == "timeout" {
+			got := 0.0
+			if v, ok := point["asInt"].(int64); ok {
+				got = float64(v)
+			} else if v, ok := point["asInt"].(float64); ok {
+				got = v
+			}
+			if got != 2 {
+				t.Fatalf("expected timeout client error count=2, got %v", got)
+			}
+			found = true
+			break
+		}
 	}
-	point0, ok := points[0].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected client error datapoint map, got %#v", points[0])
-	}
-	attrs := flattenAnyAttrs(t, point0["attributes"])
-	if attrs["endpoint"] != "query_range" || attrs["reason"] != "timeout" {
-		t.Fatalf("unexpected client error attrs: %#v", attrs)
+	if !found {
+		t.Fatalf("expected query_range timeout datapoint in client errors: %#v", points)
 	}
 
 	endpointFamilies := append(pusher.endpointCacheMetrics(now), pusher.backendDurationMetrics(now)...)
@@ -379,8 +418,17 @@ func TestOTLPPusher_CircuitBreakerMetricStates(t *testing.T) {
 	pusher := NewOTLPPusher(OTLPConfig{Endpoint: "http://unused"}, NewMetrics())
 	now := time.Now().UnixNano()
 
-	if metric := pusher.circuitBreakerMetric(now); metric != nil {
-		t.Fatal("expected nil metric when no callback is configured")
+	if metric := pusher.circuitBreakerMetric(now); metric == nil {
+		t.Fatal("expected default closed circuit breaker metric when no callback is configured")
+	} else {
+		points := metricPointsByType(t, metric, "gauge")
+		point0, ok := points[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected circuit breaker datapoint map, got %#v", points[0])
+		}
+		if got := point0["asDouble"]; got != float64(0) {
+			t.Fatalf("expected default circuit breaker value 0, got %#v", got)
+		}
 	}
 
 	cases := map[string]float64{
@@ -475,6 +523,52 @@ func TestOTLPPusher_SystemMetrics_WithSyntheticProcRoot(t *testing.T) {
 	}
 }
 
+func TestOTLPPusher_SystemMetrics_EmitsZeroWhenProcDataMissing(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("linux-only synthetic /proc test")
+	}
+
+	root := t.TempDir()
+	path := filepath.Join(root, "self", "status")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte("Name:\tproxy\n"), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+
+	prev := ProcRoot()
+	SetProcRoot(root)
+	t.Cleanup(func() { SetProcRoot(prev) })
+
+	pusher := NewOTLPPusher(OTLPConfig{Endpoint: "http://unused"}, NewMetrics())
+	metrics := pusher.systemMetrics(time.Now().UnixNano())
+	names := metricNamesFromMaps(metrics)
+	for _, required := range []string{
+		"process_memory_total_bytes",
+		"process_resident_memory_bytes",
+		"process_open_fds",
+		"process_pressure_cpu_some_ratio",
+		"loki_vl_proxy_process_memory_total_bytes",
+		"loki_vl_proxy_process_open_fds",
+		"loki_vl_proxy_process_pressure_cpu_some_ratio",
+	} {
+		if !names[required] {
+			t.Fatalf("expected missing-proc export to include %s, names=%v", required, names)
+		}
+	}
+
+	if got := firstDataPointNumber(t, findMetricByName(t, metrics, "process_memory_total_bytes")); got != 0 {
+		t.Fatalf("expected process_memory_total_bytes fallback to be 0, got %v", got)
+	}
+	if got := firstDataPointNumber(t, findMetricByName(t, metrics, "process_open_fds")); got != 0 {
+		t.Fatalf("expected process_open_fds fallback to be 0, got %v", got)
+	}
+	if got := firstDataPointNumber(t, findMetricByName(t, metrics, "process_pressure_cpu_some_ratio")); got != 0 {
+		t.Fatalf("expected process_pressure_cpu_some_ratio fallback to be 0, got %v", got)
+	}
+}
+
 func flattenAttrs(t *testing.T, attrs []interface{}) map[string]string {
 	t.Helper()
 	flat := make(map[string]string, len(attrs))
@@ -559,4 +653,45 @@ func metricPointsByType(t *testing.T, metric map[string]interface{}, typ string)
 		t.Fatalf("metric %q missing datapoints: %#v", metric["name"], body)
 		return nil
 	}
+}
+
+func findMetricByName(t *testing.T, metrics []map[string]interface{}, name string) map[string]interface{} {
+	t.Helper()
+	for _, metric := range metrics {
+		if metric["name"] == name {
+			return metric
+		}
+	}
+	t.Fatalf("metric %q not found", name)
+	return nil
+}
+
+func firstDataPointNumber(t *testing.T, metric map[string]interface{}) float64 {
+	t.Helper()
+	for _, typ := range []string{"gauge", "sum"} {
+		body, ok := metric[typ].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		points := metricPointsByType(t, metric, typ)
+		if len(points) == 0 {
+			t.Fatalf("metric %q has no datapoints", metric["name"])
+		}
+		point, ok := points[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("metric %q point is not object: %#v", metric["name"], points[0])
+		}
+		if v, ok := point["asDouble"].(float64); ok {
+			return v
+		}
+		if v, ok := point["asInt"].(int64); ok {
+			return float64(v)
+		}
+		if v, ok := point["asInt"].(float64); ok {
+			return v
+		}
+		_ = body
+	}
+	t.Fatalf("metric %q has no numeric datapoint", metric["name"])
+	return 0
 }

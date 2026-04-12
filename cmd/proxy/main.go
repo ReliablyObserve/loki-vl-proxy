@@ -269,6 +269,7 @@ func run(
 	diskCacheCompress := fs.Bool("disk-cache-compress", true, "Gzip compression for disk cache")
 	diskCacheFlushSize := fs.Int("disk-cache-flush-size", 100, "Flush write buffer after N entries")
 	diskCacheFlushInterval := fs.Duration("disk-cache-flush-interval", 5*time.Second, "Write buffer flush interval")
+	diskCacheMinTTL := fs.Duration("disk-cache-min-ttl", 30*time.Second, "Minimum entry TTL eligible for L2 disk cache writes (shorter TTL entries stay in-memory only)")
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum on-disk L2 cache size in bytes (0 = unlimited)")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
@@ -417,6 +418,7 @@ func run(
 			Compression:   *diskCacheCompress,
 			FlushSize:     *diskCacheFlushSize,
 			FlushInterval: *diskCacheFlushInterval,
+			MinTTL:        *diskCacheMinTTL,
 			MaxBytes:      *diskCacheMaxBytes,
 		},
 		proxyCfg: proxyRuntimeConfig{
@@ -546,6 +548,7 @@ func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, diskCfg cache.
 		"compress", diskCfg.Compression,
 		"flush_size", diskCfg.FlushSize,
 		"flush_interval", diskCfg.FlushInterval.String(),
+		"min_ttl", diskCfg.MinTTL.String(),
 	)
 	return c, func() {
 		c.Close()

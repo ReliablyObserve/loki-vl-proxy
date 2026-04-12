@@ -43,6 +43,7 @@ type DiskCache struct {
 	writeBuf    map[string]diskEntry
 	writeMu     sync.Mutex
 	flushSize   int // flush buffer after this many entries
+	minTTL      time.Duration
 	maxBytes    int64
 	log         *slog.Logger
 	done        chan struct{} // signals background flusher to stop
@@ -67,6 +68,7 @@ type DiskCacheConfig struct {
 	MaxBytes      int64         // Max disk usage (0 = unlimited)
 	FlushInterval time.Duration // How often to flush write buffer (default: 5s)
 	FlushSize     int           // Flush after N buffered writes (default: 100)
+	MinTTL        time.Duration // Skip disk writes for entries with TTL below this threshold
 	Compression   bool          // Gzip compress values (default: true)
 }
 
@@ -103,6 +105,7 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 		compression: cfg.Compression,
 		writeBuf:    make(map[string]diskEntry),
 		flushSize:   flushSize,
+		minTTL:      cfg.MinTTL,
 		maxBytes:    cfg.MaxBytes,
 		log:         logger,
 		done:        make(chan struct{}),
@@ -177,6 +180,13 @@ func (dc *DiskCache) Get(key string) ([]byte, bool) {
 
 // Set stores a value in the write buffer (will be flushed to disk).
 func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
+	if ttl <= 0 {
+		return
+	}
+	if dc.minTTL > 0 && ttl < dc.minTTL {
+		return
+	}
+
 	dc.writeMu.Lock()
 	dc.writeBuf[key] = diskEntry{
 		Value:     value,
@@ -316,8 +326,8 @@ func compress(data []byte) ([]byte, error) {
 
 func decompress(data []byte) ([]byte, error) {
 	var (
-		r  *gzip.Reader
-		ok bool
+		r   *gzip.Reader
+		ok  bool
 		err error
 	)
 	if pooled := gzipReaderPool.Get(); pooled != nil {
