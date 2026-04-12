@@ -78,8 +78,12 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		limitForBatch := remaining
 		results, err := p.fetchQueryRangeWindowBatch(r, logsqlQuery, queryLimit, batch, limitForBatch, batchSize, categorizedLabels, emitStructuredMetadata)
 		if err != nil {
-			p.writeError(w, statusFromUpstreamErr(err), err.Error())
-			return true
+			p.log.Warn("query_range windowed fetch failed; falling back to direct query",
+				"error", err,
+				"window_count", len(windows),
+				"batch_size", batchSize,
+			)
+			return false
 		}
 		for _, result := range results {
 			if len(result.Entries) == 0 {
