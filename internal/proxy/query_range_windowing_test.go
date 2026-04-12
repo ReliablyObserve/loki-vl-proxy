@@ -1,9 +1,12 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -729,6 +732,89 @@ func TestQueryRangeWindow_AdaptiveParallelHelpers(t *testing.T) {
 	}
 	if math.IsNaN(p2.queryRangeErrorEWMA) {
 		t.Fatal("expected finite error EWMA")
+	}
+}
+
+func TestQueryRangeWindow_ForceAdaptiveBackoff(t *testing.T) {
+	p := &Proxy{
+		queryRangeAdaptiveParallel: true,
+		queryRangeParallelMin:      2,
+		queryRangeParallelCurrent:  8,
+		metrics:                    metrics.NewMetrics(),
+	}
+	before := p.queryRangeAdaptiveLastAdjust
+	p.forceQueryRangeParallelBackoff()
+	if got := p.queryRangeParallelCurrent; got != 4 {
+		t.Fatalf("expected forced backoff to halve parallelism, got=%d", got)
+	}
+	if !p.queryRangeAdaptiveLastAdjust.After(before) {
+		t.Fatal("expected adaptive last-adjust timestamp to update")
+	}
+
+	p.queryRangeParallelCurrent = 2
+	unchanged := p.queryRangeAdaptiveLastAdjust
+	p.forceQueryRangeParallelBackoff()
+	if got := p.queryRangeParallelCurrent; got != 2 {
+		t.Fatalf("expected no backoff at min parallelism, got=%d", got)
+	}
+	if !p.queryRangeAdaptiveLastAdjust.Equal(unchanged) {
+		t.Fatal("expected timestamp unchanged when no backoff applied")
+	}
+
+	disabled := &Proxy{
+		queryRangeAdaptiveParallel: false,
+		queryRangeParallelMin:      1,
+		queryRangeParallelCurrent:  4,
+		metrics:                    metrics.NewMetrics(),
+	}
+	disabled.forceQueryRangeParallelBackoff()
+	if got := disabled.queryRangeParallelCurrent; got != 4 {
+		t.Fatalf("expected no change when adaptive mode disabled, got=%d", got)
+	}
+}
+
+type timeoutNetErr struct{}
+
+func (timeoutNetErr) Error() string   { return "timeout" }
+func (timeoutNetErr) Timeout() bool   { return true }
+func (timeoutNetErr) Temporary() bool { return true }
+
+func TestQueryRangeWindow_RetryHelpers(t *testing.T) {
+	if shouldRetryQueryRangeWindow(nil) {
+		t.Fatal("expected nil error to be non-retryable")
+	}
+	if shouldRetryQueryRangeWindow(context.Canceled) {
+		t.Fatal("expected canceled context to be non-retryable")
+	}
+	if !shouldRetryQueryRangeWindow(context.DeadlineExceeded) {
+		t.Fatal("expected deadline exceeded to be retryable")
+	}
+	var nerr net.Error = timeoutNetErr{}
+	if !shouldRetryQueryRangeWindow(nerr) {
+		t.Fatal("expected timeout net error to be retryable")
+	}
+	if !shouldRetryQueryRangeWindow(&queryRangeWindowHTTPError{status: http.StatusBadGateway, msg: "bad gateway"}) {
+		t.Fatal("expected 502 to be retryable")
+	}
+	if !shouldRetryQueryRangeWindow(errors.New("all the 1 backends for the user \"\" are unavailable for proxying the request")) {
+		t.Fatal("expected backend unavailable message to be retryable")
+	}
+	if shouldRetryQueryRangeWindow(errors.New("validation error")) {
+		t.Fatal("expected generic validation error to be non-retryable")
+	}
+
+	if got := statusFromQueryRangeWindowErr(&queryRangeWindowHTTPError{status: http.StatusServiceUnavailable, msg: "down"}); got != http.StatusServiceUnavailable {
+		t.Fatalf("expected http status passthrough, got=%d", got)
+	}
+
+	if got := queryRangeWindowRetryBackoff(0); got != queryRangeRetryMinBackoff {
+		t.Fatalf("expected attempt<=0 backoff to min, got=%s", got)
+	}
+	if got := queryRangeWindowRetryBackoff(2); got != 2*queryRangeRetryMinBackoff {
+		t.Fatalf("expected second attempt backoff to double min, got=%s", got)
+	}
+	if got := queryRangeWindowRetryBackoff(30); got != queryRangeRetryMaxBackoff {
+		t.Fatalf("expected capped max backoff, got=%s", got)
 	}
 }
 
