@@ -354,7 +354,8 @@ jobs:
           name: ${{ steps.meta.outputs.tag }}
           body_path: ${{ steps.meta.outputs.notes_file }}
           files: |
-            dist/loki-vl-proxy-*
+            dist/loki-vl-proxy-linux-*
+            dist/loki-vl-proxy-darwin-*
             dist/checksums.txt
             dist/loki-vl-proxy-*.tgz
 

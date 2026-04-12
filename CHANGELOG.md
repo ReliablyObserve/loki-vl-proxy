@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix `TestLoad_HighConcurrency_MemoryStability` memory delta arithmetic to avoid unsigned underflow false-positives after GC, keeping release validation deterministic
 
+### CI
+
+- fix release asset upload globs to avoid duplicate `.tgz` matches in GitHub Release publishing, which could fail with REST asset update `Not Found`
+
 ## [0.27.34] - 2026-04-11
 
 ### Configuration
