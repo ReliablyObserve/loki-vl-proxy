@@ -27,6 +27,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix release asset upload globs to avoid duplicate `.tgz` matches in GitHub Release publishing, which could fail with REST asset update `Not Found`
 
+### Performance
+
+- reduce proxy disk write amplification by skipping L2 disk-cache writes for short-lived entries via `disk-cache-min-ttl` (default `30s`)
+- avoid periodic label-values index snapshot rewrites when index structure is unchanged, lowering background disk I/O and write latency pressure
+
+### Observability
+
+- improve app-scoped metrics compatibility for dashboard/runtime process telemetry by keeping `loki_vl_proxy_*` metric families consistently queryable across scrape and OTLP flows
+
 ## [0.27.34] - 2026-04-11
 
 ### Configuration
