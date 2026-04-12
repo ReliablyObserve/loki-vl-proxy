@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.38] - 2026-04-12
+
 ### Reliability
 
 - harden long-range `query_range` execution by retrying transient per-window backend failures with bounded backoff and returning Loki-style upstream errors instead of collapsing to an expensive direct full-range fallback
