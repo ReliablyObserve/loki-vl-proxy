@@ -241,11 +241,16 @@ func TestOTLPPusher_BuildPayload(t *testing.T) {
 func TestOTLPPusher_GzipCompression(t *testing.T) {
 	var mu sync.Mutex
 	var receivedEncoding string
+	seen := make(chan struct{}, 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		receivedEncoding = r.Header.Get("Content-Encoding")
 		mu.Unlock()
+		select {
+		case seen <- struct{}{}:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -259,7 +264,11 @@ func TestOTLPPusher_GzipCompression(t *testing.T) {
 	pusher.Start()
 	defer pusher.Stop()
 
-	time.Sleep(120 * time.Millisecond)
+	select {
+	case <-seen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for OTLP push")
+	}
 
 	mu.Lock()
 	enc := receivedEncoding
@@ -272,11 +281,16 @@ func TestOTLPPusher_GzipCompression(t *testing.T) {
 func TestOTLPPusher_ZstdCompression(t *testing.T) {
 	var mu sync.Mutex
 	var receivedEncoding string
+	seen := make(chan struct{}, 1)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		receivedEncoding = r.Header.Get("Content-Encoding")
 		mu.Unlock()
+		select {
+		case seen <- struct{}{}:
+		default:
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -290,7 +304,11 @@ func TestOTLPPusher_ZstdCompression(t *testing.T) {
 	pusher.Start()
 	defer pusher.Stop()
 
-	time.Sleep(120 * time.Millisecond)
+	select {
+	case <-seen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for OTLP push")
+	}
 
 	mu.Lock()
 	enc := receivedEncoding
