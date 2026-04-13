@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Reliability
 
 - add long-range phase-5 adaptive timeout budgeting with partial-response fallback and warm-cache continuation to avoid hard user-facing failures during backend saturation
+- harden drilldown include/exclude query translation by deduplicating repeated field filters and making the latest include/exclude toggle authoritative for the same field/value
 
 ### Observability
 
