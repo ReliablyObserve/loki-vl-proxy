@@ -47,10 +47,6 @@ Default logs are emitted as JSON and already use OTel-friendly top-level keys:
     "number": 9
   },
   "body": "request",
-  "service.name": "loki-vl-proxy",
-  "service.version": "0.27.17",
-  "service.instance.id": "proxy-1",
-  "deployment.environment.name": "prod",
   "component": "proxy",
   "http.route": "query_range",
   "http.request.method": "GET",
@@ -92,8 +88,6 @@ The proxy writes structured logs for:
 | `timestamp` | event time |
 | `severity.text` / `severity.number` | log severity |
 | `body` | message body |
-| `service.*` | stable service identity |
-| `deployment.environment.name` | environment name |
 | `component` | internal subsystem (`proxy`, `disk_cache`, `cache_warmer`, `otlp_metrics`) |
 | `http.*` | request semantics |
 | `client.address` | remote address |
@@ -133,7 +127,9 @@ If the OTLP endpoint is passed as a collector base URL like `http://collector:43
 
 ### OpenTelemetry Resource Attributes for Metrics and Logs
 
-These flags shape both OTLP metric exports and structured logs:
+These flags shape OTLP metric resource attributes. Structured logs intentionally do
+not duplicate resource attributes per line; keep service identity in collector/OTLP
+resource metadata to avoid `message.service.*` duplication in storage.
 
 | Flag | Meaning |
 |---|---|

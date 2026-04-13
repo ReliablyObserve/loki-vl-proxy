@@ -29,20 +29,23 @@ func TestNewLogger_EmitsOTelFriendlyJSON(t *testing.T) {
 	if payload["body"] != "request finished" {
 		t.Fatalf("expected body field, got %#v", payload["body"])
 	}
-	if payload["service.name"] != "test-proxy" {
-		t.Fatalf("expected service.name, got %#v", payload["service.name"])
+	if payload["service.name"] != nil {
+		t.Fatalf("did not expect service.name in log payload, got %#v", payload["service.name"])
 	}
-	if payload["service.namespace"] != "edge" {
-		t.Fatalf("expected service.namespace, got %#v", payload["service.namespace"])
+	if payload["service.namespace"] != nil {
+		t.Fatalf("did not expect service.namespace in log payload, got %#v", payload["service.namespace"])
 	}
-	if payload["service.version"] != "1.2.3" {
-		t.Fatalf("expected service.version, got %#v", payload["service.version"])
+	if payload["service.version"] != nil {
+		t.Fatalf("did not expect service.version in log payload, got %#v", payload["service.version"])
 	}
-	if payload["service.instance.id"] != "proxy-1" {
-		t.Fatalf("expected service.instance.id, got %#v", payload["service.instance.id"])
+	if payload["service.instance.id"] != nil {
+		t.Fatalf("did not expect service.instance.id in log payload, got %#v", payload["service.instance.id"])
 	}
-	if payload["deployment.environment.name"] != "prod" {
-		t.Fatalf("expected deployment.environment.name, got %#v", payload["deployment.environment.name"])
+	if payload["deployment.environment.name"] != nil {
+		t.Fatalf("did not expect deployment.environment.name in log payload, got %#v", payload["deployment.environment.name"])
+	}
+	if payload["telemetry.sdk.name"] != nil || payload["telemetry.sdk.language"] != nil || payload["telemetry.sdk.version"] != nil {
+		t.Fatalf("did not expect telemetry.sdk.* in log payload: %#v %#v %#v", payload["telemetry.sdk.name"], payload["telemetry.sdk.language"], payload["telemetry.sdk.version"])
 	}
 	severity, ok := payload["severity"].(map[string]any)
 	if !ok {
@@ -99,12 +102,11 @@ func TestValueOrDefault(t *testing.T) {
 	}
 }
 
-func TestDefaultInstanceID(t *testing.T) {
-	got := defaultInstanceID()
-	if strings.TrimSpace(got) == "" {
-		t.Fatal("expected non-empty instance id")
-	}
-	if !strings.Contains(got, "-") {
-		t.Fatalf("expected host-pid shaped instance id, got %q", got)
+func TestLoggerConfigAllowsEmptyResourceFields(t *testing.T) {
+	var buf bytes.Buffer
+	logger := NewLogger(&buf, LoggerConfig{})
+	logger.Info("ok")
+	if strings.TrimSpace(buf.String()) == "" {
+		t.Fatal("expected log output")
 	}
 }
