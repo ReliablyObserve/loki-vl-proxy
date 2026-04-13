@@ -165,6 +165,9 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 	// Track whether we've seen a parser pipe (json, logfmt, pattern, regexp).
 	// After a parser, label filters must become VL `| filter` pipes.
 	afterParser := false
+	// Track canonical label-filter stages so repeated drilldown include/exclude
+	// clicks don't accumulate duplicate or contradictory filters.
+	labelFilterLatest := make(map[string]int)
 
 	// 2. Process pipeline stages: | operator ...
 	// LogQL line filters: |= "text", != "text", |~ "regexp", !~ "regexp"
@@ -235,7 +238,17 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 			if afterParser && !strings.HasPrefix(translated, "|") && isFieldFilter(translated) {
 				translated = "| filter " + translated
 			}
-			parts = append(parts, translated)
+			if _, baseKey, ok := canonicalLabelFilterStage(stage, labelFn); ok {
+				if idx, exists := labelFilterLatest[baseKey]; exists {
+					// Latest action wins for the same field/value filter identity.
+					parts[idx] = translated
+				} else {
+					labelFilterLatest[baseKey] = len(parts)
+					parts = append(parts, translated)
+				}
+			} else {
+				parts = append(parts, translated)
+			}
 		}
 	}
 
@@ -562,6 +575,16 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 		return fmt.Sprintf(`~"%s"`, regexp.QuoteMeta(candidate+".")), true
 	}
 	return fmt.Sprintf(`%s:!""`, quoteLogsQLFieldNameIfNeeded(candidate)), true
+}
+
+func canonicalLabelFilterStage(stage string, labelFn LabelTranslateFunc) (canonical string, baseKey string, ok bool) {
+	if translated, ok := translateSingleLabelFilter(stage, labelFn); ok {
+		return translated, strings.TrimPrefix(translated, "-"), true
+	}
+	if translated, ok := translateMalformedDottedStage(stage, labelFn); ok {
+		return translated, translated, true
+	}
+	return "", "", false
 }
 
 func normalizeFieldIdentifier(label string) string {
