@@ -63,7 +63,6 @@ Treat these as one versioned operational package:
 | Asset | Canonical source | Purpose |
 |------|------------------|---------|
 | Grafana operations dashboard | [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | SLO and troubleshooting views for request, cache, tenant, and backend signals from proxy metrics |
-| Grafana offenders dashboard (native VL) | [`dashboard/loki-vl-proxy-offenders.json`](../dashboard/loki-vl-proxy-offenders.json) | Tenant/client/query offender analytics with `tenant`, `client`, `cluster`, and `env` filters when Loki/proxy query paths are degraded |
 | Alert rules | [`alerting/loki-vl-proxy-prometheusrule.yaml`](../alerting/loki-vl-proxy-prometheusrule.yaml) | PrometheusRule/vmalert-oriented alert set with standardized labels and annotations |
 | SRE runbooks | [`docs/runbooks/alerts.md`](runbooks/alerts.md) | Index plus per-alert runbook files referenced directly from alert `runbook_url` |
 

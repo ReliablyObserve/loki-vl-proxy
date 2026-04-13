@@ -72,6 +72,7 @@ const (
 	orgIDKey ctxKey = iota
 	origRequestKey
 	requestTelemetryKey
+	requestRouteMetaKey
 )
 
 type requestTelemetry struct {
@@ -92,6 +93,25 @@ type requestTelemetrySnapshot struct {
 	upstreamErrorSeen bool
 }
 
+type requestRouteMeta struct {
+	endpoint string
+	route    string
+}
+
+var upstreamRequestTypeByRoute = map[string]string{
+	"/select/logsql/query":               "select_logsql_query",
+	"/select/logsql/stats_query":         "select_logsql_stats_query",
+	"/select/logsql/stats_query_range":   "select_logsql_stats_query_range",
+	"/select/logsql/streams":             "select_logsql_streams",
+	"/select/logsql/hits":                "select_logsql_hits",
+	"/select/logsql/field_names":         "select_logsql_field_names",
+	"/select/logsql/stream_field_names":  "select_logsql_stream_field_names",
+	"/select/logsql/field_values":        "select_logsql_field_values",
+	"/select/logsql/stream_field_values": "select_logsql_stream_field_values",
+	"/select/logsql/delete":              "select_logsql_delete",
+	"/select/logsql/tail":                "select_logsql_tail",
+}
+
 func newRequestTelemetry() *requestTelemetry {
 	return &requestTelemetry{cacheResult: "bypass"}
 }
@@ -109,6 +129,32 @@ func setCacheResult(ctx context.Context, result string) {
 	rt.mu.Lock()
 	rt.cacheResult = result
 	rt.mu.Unlock()
+}
+
+func splitHostPortValue(addr string) (string, int) {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return "", 0
+	}
+	host, portStr, err := net.SplitHostPort(addr)
+	if err == nil {
+		port, _ := strconv.Atoi(portStr)
+		return strings.TrimSpace(host), port
+	}
+	return addr, 0
+}
+
+func forwardedClientAddress(r *http.Request, trustProxyHeaders bool) string {
+	if trustProxyHeaders {
+		if fwd := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); fwd != "" {
+			if idx := strings.IndexByte(fwd, ','); idx > 0 {
+				return strings.TrimSpace(fwd[:idx])
+			}
+			return fwd
+		}
+	}
+	host, _ := splitHostPortValue(r.RemoteAddr)
+	return host
 }
 
 func recordUpstreamCall(ctx context.Context, statusCode int, duration time.Duration, hadError bool) {
@@ -138,6 +184,11 @@ func snapshotTelemetry(ctx context.Context) requestTelemetrySnapshot {
 		upstreamLastCode:  rt.upstreamLastCode,
 		upstreamErrorSeen: rt.upstreamErrorSeen,
 	}
+}
+
+func requestRouteMetaFromContext(ctx context.Context) requestRouteMeta {
+	meta, _ := ctx.Value(requestRouteMetaKey).(requestRouteMeta)
+	return meta
 }
 
 // withOrgID stores the X-Scope-OrgID and original request in the request context (request-scoped, no shared state).
@@ -466,7 +517,10 @@ func New(cfg Config) (*Proxy, error) {
 	if baseLogger == nil {
 		baseLogger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	}
-	logger := slog.New(NewRedactingHandler(baseLogger.Handler())).With("component", "proxy")
+	logger := slog.New(NewRedactingHandler(&levelFilterHandler{
+		inner: baseLogger.Handler(),
+		min:   level,
+	})).With("component", "proxy")
 
 	maxConcurrent := cfg.MaxConcurrent
 	if maxConcurrent == 0 {
@@ -1132,7 +1186,7 @@ func compatCacheResponseAllowed(rec *httptest.ResponseRecorder) bool {
 	return contentType == "" || strings.Contains(contentType, "application/json")
 }
 
-func (p *Proxy) compatCacheMiddleware(endpoint string, next http.HandlerFunc) http.HandlerFunc {
+func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		cacheKey, cacheable := p.compatCacheKey(endpoint, r)
@@ -1152,7 +1206,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint string, next http.HandlerFunc) ht
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cached)
 			elapsed := time.Since(start)
-			p.metrics.RecordRequest(endpoint, http.StatusOK, elapsed)
+			p.metrics.RecordRequestWithRoute(endpoint, route, http.StatusOK, elapsed)
 			p.metrics.RecordCacheHit()
 			if endpoint == "query" || endpoint == "query_range" {
 				p.queryTracker.Record(endpoint, r.FormValue("query"), elapsed, false)
@@ -1183,54 +1237,54 @@ func (p *Proxy) compatCacheMiddleware(endpoint string, next http.HandlerFunc) ht
 
 func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	// Rate-limited endpoints with security headers + request logging
-	rl := func(endpoint string, h http.HandlerFunc) http.Handler {
-		return securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, p.compatCacheMiddleware(endpoint, h)))))
+	rl := func(endpoint, route string, h http.HandlerFunc) http.Handler {
+		return securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, route, p.compatCacheMiddleware(endpoint, route, h)))))
 	}
-	rlNoTenant := func(endpoint string, h http.HandlerFunc) http.Handler {
-		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, h)))
+	rlNoTenant := func(endpoint, route string, h http.HandlerFunc) http.Handler {
+		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h)))
 	}
 
 	// Loki API endpoints — data queries are rate-limited
-	mux.Handle("/loki/api/v1/query_range", rl("query_range", p.handleQueryRange))
-	mux.Handle("/loki/api/v1/query", rl("query", p.handleQuery))
-	mux.Handle("/loki/api/v1/series", rl("series", p.handleSeries))
+	mux.Handle("/loki/api/v1/query_range", rl("query_range", "/loki/api/v1/query_range", p.handleQueryRange))
+	mux.Handle("/loki/api/v1/query", rl("query", "/loki/api/v1/query", p.handleQuery))
+	mux.Handle("/loki/api/v1/series", rl("series", "/loki/api/v1/series", p.handleSeries))
 
 	// Metadata endpoints — rate-limited but cached
-	mux.Handle("/loki/api/v1/labels", rl("labels", p.handleLabels))
-	mux.Handle("/loki/api/v1/label/", rl("label_values", p.handleLabelValues))
-	mux.Handle("/loki/api/v1/detected_fields", rl("detected_fields", p.handleDetectedFields))
-	mux.Handle("/loki/api/v1/detected_field/", rl("detected_field_values", p.handleDetectedFieldValues))
+	mux.Handle("/loki/api/v1/labels", rl("labels", "/loki/api/v1/labels", p.handleLabels))
+	mux.Handle("/loki/api/v1/label/", rl("label_values", "/loki/api/v1/label/{name}/values", p.handleLabelValues))
+	mux.Handle("/loki/api/v1/detected_fields", rl("detected_fields", "/loki/api/v1/detected_fields", p.handleDetectedFields))
+	mux.Handle("/loki/api/v1/detected_field/", rl("detected_field_values", "/loki/api/v1/detected_field/{name}/values", p.handleDetectedFieldValues))
 
 	// Lighter endpoints — still rate-limited
-	mux.Handle("/loki/api/v1/index/stats", rl("index_stats", p.handleIndexStats))
-	mux.Handle("/loki/api/v1/index/volume", rl("volume", p.handleVolume))
-	mux.Handle("/loki/api/v1/index/volume_range", rl("volume_range", p.handleVolumeRange))
-	mux.Handle("/loki/api/v1/patterns", rl("patterns", p.handlePatterns))
-	mux.Handle("/loki/api/v1/tail", rl("tail", p.handleTail))
+	mux.Handle("/loki/api/v1/index/stats", rl("index_stats", "/loki/api/v1/index/stats", p.handleIndexStats))
+	mux.Handle("/loki/api/v1/index/volume", rl("volume", "/loki/api/v1/index/volume", p.handleVolume))
+	mux.Handle("/loki/api/v1/index/volume_range", rl("volume_range", "/loki/api/v1/index/volume_range", p.handleVolumeRange))
+	mux.Handle("/loki/api/v1/patterns", rl("patterns", "/loki/api/v1/patterns", p.handlePatterns))
+	mux.Handle("/loki/api/v1/tail", rl("tail", "/loki/api/v1/tail", p.handleTail))
 
 	// Read-only API additions
-	mux.Handle("/loki/api/v1/format_query", rl("format_query", p.handleFormatQuery))
-	mux.Handle("/loki/api/v1/detected_labels", rl("detected_labels", p.handleDetectedLabels))
-	mux.Handle("/loki/api/v1/drilldown-limits", rlNoTenant("drilldown_limits", p.handleDrilldownLimits))
+	mux.Handle("/loki/api/v1/format_query", rl("format_query", "/loki/api/v1/format_query", p.handleFormatQuery))
+	mux.Handle("/loki/api/v1/detected_labels", rl("detected_labels", "/loki/api/v1/detected_labels", p.handleDetectedLabels))
+	mux.Handle("/loki/api/v1/drilldown-limits", rlNoTenant("drilldown_limits", "/loki/api/v1/drilldown-limits", p.handleDrilldownLimits))
 
 	// Write endpoints — blocked (this is a read-only proxy)
 	mux.HandleFunc("/loki/api/v1/push", p.handleWriteBlocked)
 
 	// Delete endpoint — exception to read-only with strict safeguards
-	mux.Handle("/loki/api/v1/delete", rl("delete", p.handleDelete))
+	mux.Handle("/loki/api/v1/delete", rl("delete", "/loki/api/v1/delete", p.handleDelete))
 
 	// Alerting / ruler read endpoints
-	alertRead := func(endpoint string, h http.HandlerFunc) http.Handler {
-		return securityHeaders(p.tenantMiddleware(p.requestLogger(endpoint, h)))
+	alertRead := func(endpoint, route string, h http.HandlerFunc) http.Handler {
+		return securityHeaders(p.tenantMiddleware(p.requestLogger(endpoint, route, h)))
 	}
-	mux.Handle("/loki/api/v1/rules", alertRead("rules", p.handleRules))
-	mux.Handle("/loki/api/v1/rules/", alertRead("rules_nested", p.handleRules))
-	mux.Handle("/api/prom/rules", alertRead("rules_prom", p.handleRules))
-	mux.Handle("/api/prom/rules/", alertRead("rules_prom_nested", p.handleRules))
-	mux.Handle("/prometheus/api/v1/rules", alertRead("rules_prometheus", p.handleRules))
-	mux.Handle("/loki/api/v1/alerts", alertRead("alerts", p.handleAlerts))
-	mux.Handle("/api/prom/alerts", alertRead("alerts_prom", p.handleAlerts))
-	mux.Handle("/prometheus/api/v1/alerts", alertRead("alerts_prometheus", p.handleAlerts))
+	mux.Handle("/loki/api/v1/rules", alertRead("rules", "/loki/api/v1/rules", p.handleRules))
+	mux.Handle("/loki/api/v1/rules/", alertRead("rules_nested", "/loki/api/v1/rules/{namespace}", p.handleRules))
+	mux.Handle("/api/prom/rules", alertRead("rules_prom", "/api/prom/rules", p.handleRules))
+	mux.Handle("/api/prom/rules/", alertRead("rules_prom_nested", "/api/prom/rules/{namespace}", p.handleRules))
+	mux.Handle("/prometheus/api/v1/rules", alertRead("rules_prometheus", "/prometheus/api/v1/rules", p.handleRules))
+	mux.Handle("/loki/api/v1/alerts", alertRead("alerts", "/loki/api/v1/alerts", p.handleAlerts))
+	mux.Handle("/api/prom/alerts", alertRead("alerts_prom", "/api/prom/alerts", p.handleAlerts))
+	mux.Handle("/prometheus/api/v1/alerts", alertRead("alerts_prometheus", "/prometheus/api/v1/alerts", p.handleAlerts))
 	mux.HandleFunc("/config", p.handleConfigStub)
 
 	// Health / readiness — NOT rate-limited
@@ -4167,7 +4221,19 @@ func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, 
 	}
 	p.forwardTenantHeaders(req)
 	p.applyBackendHeaders(req)
-	return p.client.Do(req)
+	start := time.Now()
+	resp, err := p.client.Do(req)
+	duration := time.Since(start)
+	serverPort, _ := strconv.Atoi(u.Port())
+	if err != nil {
+		mappedStatus := statusFromUpstreamErr(err)
+		recordUpstreamCall(r.Context(), mappedStatus, duration, true)
+		p.recordUpstreamObservation(r.Context(), "loki", http.MethodGet, path, u.Hostname(), serverPort, mappedStatus, duration, err)
+		return nil, err
+	}
+	recordUpstreamCall(r.Context(), resp.StatusCode, duration, false)
+	p.recordUpstreamObservation(r.Context(), "loki", http.MethodGet, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
+	return resp, nil
 }
 
 type alertingRulesResponse struct {
@@ -4342,6 +4408,80 @@ func legacyRuleGroupFromBackend(g alertingRuleGroup) legacyRuleGroup {
 	return out
 }
 
+func deriveRequestType(endpoint, route string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint != "" {
+		return endpoint
+	}
+	route = strings.TrimSpace(route)
+	if route == "" {
+		return "unknown"
+	}
+	if requestType, ok := upstreamRequestTypeByRoute[route]; ok {
+		return requestType
+	}
+	trimmed := strings.Trim(route, "/")
+	if trimmed == "" {
+		return "unknown"
+	}
+	trimmed = strings.ReplaceAll(trimmed, "/", "_")
+	return trimmed
+}
+
+func normalizeObservedRoute(route string) string {
+	route = strings.TrimSpace(route)
+	if route == "" {
+		return "/unknown"
+	}
+	return route
+}
+
+func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, route, serverAddress string, serverPort int, statusCode int, duration time.Duration, err error) {
+	meta := requestRouteMetaFromContext(ctx)
+	requestType := deriveRequestType(meta.endpoint, route)
+	observedRoute := normalizeObservedRoute(route)
+
+	p.metrics.RecordUpstreamRequest(system, requestType, observedRoute, statusCode, duration)
+	if system == "vl" {
+		p.metrics.RecordBackendDurationWithRoute(requestType, observedRoute, duration)
+	}
+
+	level := slog.LevelInfo
+	if err != nil || statusCode >= http.StatusInternalServerError {
+		level = slog.LevelError
+	} else if statusCode >= http.StatusBadRequest {
+		level = slog.LevelWarn
+	}
+	if !p.log.Enabled(ctx, level) {
+		return
+	}
+
+	logAttrs := []interface{}{
+		"http.route", observedRoute,
+		"url.path", observedRoute,
+		"http.request.method", method,
+		"http.response.status_code", statusCode,
+		"loki.request.type", requestType,
+		"loki.api.system", system,
+		"proxy.direction", "upstream",
+		"event.duration", duration.Nanoseconds(),
+		"loki.tenant.id", getOrgID(ctx),
+	}
+	if serverAddress != "" {
+		logAttrs = append(logAttrs, "server.address", serverAddress)
+	}
+	if serverPort > 0 {
+		logAttrs = append(logAttrs, "server.port", serverPort)
+	}
+	if err != nil {
+		logAttrs = append(logAttrs,
+			"error.type", "transport",
+			"error.message", err.Error(),
+		)
+	}
+	p.log.Log(ctx, level, "upstream_request", logAttrs...)
+}
+
 func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	if !p.breaker.Allow() {
 		return nil, fmt.Errorf("circuit breaker open — backend unavailable")
@@ -4361,14 +4501,18 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 	start := time.Now()
 	resp, err := p.client.Do(req)
 	duration := time.Since(start)
+	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
-		recordUpstreamCall(ctx, 0, duration, true)
+		mappedStatus := statusFromUpstreamErr(err)
+		recordUpstreamCall(ctx, mappedStatus, duration, true)
+		p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		if shouldRecordBreakerFailure(err) {
 			p.breaker.RecordFailure()
 		}
 		return nil, err
 	}
 	recordUpstreamCall(ctx, resp.StatusCode, duration, false)
+	p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
 	return resp, nil
@@ -4393,14 +4537,18 @@ func (p *Proxy) vlPost(ctx context.Context, path string, params url.Values) (*ht
 	start := time.Now()
 	resp, err := p.client.Do(req)
 	duration := time.Since(start)
+	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
-		recordUpstreamCall(ctx, 0, duration, true)
+		mappedStatus := statusFromUpstreamErr(err)
+		recordUpstreamCall(ctx, mappedStatus, duration, true)
+		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		if shouldRecordBreakerFailure(err) {
 			p.breaker.RecordFailure()
 		}
 		return nil, err
 	}
 	recordUpstreamCall(ctx, resp.StatusCode, duration, false)
+	p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
 	return resp, nil
@@ -7078,19 +7226,20 @@ func (sc *statusCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, fmt.Errorf("hijack not supported")
 }
 
-// requestLogger wraps a handler with structured logging and per-tenant metrics.
-func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handler {
+// requestLogger wraps a handler with structured logging and route-aware metrics.
+func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		tenant := r.Header.Get("X-Scope-OrgID")
 		query := r.FormValue("query")
-		authUser, authSource := metrics.ResolveAuthContext(r)
 		clientID, clientSource := metrics.ResolveClientContext(r, p.metricsTrustProxyHeaders)
 		p.metrics.RecordClientInflight(clientID, 1)
 		defer p.metrics.RecordClientInflight(clientID, -1)
 
 		rt := newRequestTelemetry()
-		reqWithTelemetry := r.WithContext(context.WithValue(r.Context(), requestTelemetryKey, rt))
+		ctx := context.WithValue(r.Context(), requestTelemetryKey, rt)
+		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route})
+		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
 		next.ServeHTTP(sc, reqWithTelemetry)
 
@@ -7102,12 +7251,12 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 		}
 
 		// Per-tenant metrics
-		p.metrics.RecordTenantRequest(tenant, endpoint, sc.code, elapsed)
+		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)
 
 		// Per-client identity metrics (Grafana user > tenant > IP)
-		p.metrics.RecordClientIdentity(clientID, endpoint, elapsed, int64(sc.bytesWritten))
-		p.metrics.RecordClientStatus(clientID, endpoint, sc.code)
-		p.metrics.RecordClientQueryLength(clientID, endpoint, len(query))
+		p.metrics.RecordClientIdentityWithRoute(clientID, endpoint, route, elapsed, int64(sc.bytesWritten))
+		p.metrics.RecordClientStatusWithRoute(clientID, endpoint, route, sc.code)
+		p.metrics.RecordClientQueryLengthWithRoute(clientID, endpoint, route, len(query))
 
 		// Client error categorization
 		if sc.code >= 400 && sc.code < 500 {
@@ -7122,27 +7271,35 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 			case 413:
 				reason = "body_too_large"
 			}
-			p.metrics.RecordClientError(endpoint, reason)
+			p.metrics.RecordClientErrorWithRoute(endpoint, route, reason)
 		}
 
 		// Structured request log — includes tenant, query, status, latency, cache info
-		logLevel := p.log.Info
+		logLevel := slog.LevelInfo
 		if sc.code >= 500 {
-			logLevel = p.log.Error
+			logLevel = slog.LevelError
 		} else if sc.code >= 400 {
-			logLevel = p.log.Warn
+			logLevel = slog.LevelWarn
 		}
+		reqCtx := reqWithTelemetry.Context()
+		if !p.log.Enabled(reqCtx, logLevel) {
+			return
+		}
+
+		authUser, authSource := metrics.ResolveAuthContext(r)
+		clientAddr := forwardedClientAddress(r, p.metricsTrustProxyHeaders)
+		peerAddr, _ := splitHostPortValue(r.RemoteAddr)
 		logAttrs := []interface{}{
-			"http.route", endpoint,
+			"http.route", route,
 			"url.path", r.URL.Path,
 			"http.request.method", r.Method,
 			"http.response.status_code", sc.code,
+			"loki.request.type", endpoint,
+			"loki.api.system", "loki",
+			"proxy.direction", "downstream",
 			"event.duration", elapsed.Nanoseconds(),
-			"event.duration_ms", elapsed.Milliseconds(),
 			"loki.tenant.id", tenant,
 			"loki.query", truncateQuery(query, 200),
-			"client.address", r.RemoteAddr,
-			"network.peer.address", r.RemoteAddr,
 			"enduser.id", clientID,
 			"enduser.source", clientSource,
 			"cache.result", telemetry.cacheResult,
@@ -7153,6 +7310,15 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 			"upstream.status_code", telemetry.upstreamLastCode,
 			"upstream.error", telemetry.upstreamErrorSeen,
 		}
+		if clientAddr != "" {
+			logAttrs = append(logAttrs, "client.address", clientAddr)
+		}
+		if peerAddr != "" {
+			logAttrs = append(logAttrs, "network.peer.address", peerAddr)
+		}
+		if userAgent := strings.TrimSpace(r.Header.Get("User-Agent")); userAgent != "" {
+			logAttrs = append(logAttrs, "user_agent.original", userAgent)
+		}
 		if enduserName := deriveEnduserName(clientID, clientSource); enduserName != "" {
 			logAttrs = append(logAttrs, "enduser.name", enduserName)
 		}
@@ -7162,7 +7328,7 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 				"auth.source", authSource,
 			)
 		}
-		logLevel("request", logAttrs...)
+		p.log.Log(reqCtx, logLevel, "request", logAttrs...)
 	})
 }
 

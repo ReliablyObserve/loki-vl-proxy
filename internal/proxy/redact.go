@@ -61,6 +61,11 @@ type redactingHandler struct {
 	inner slog.Handler
 }
 
+type levelFilterHandler struct {
+	inner slog.Handler
+	min   slog.Level
+}
+
 // NewRedactingHandler wraps an existing slog.Handler with secret redaction.
 func NewRedactingHandler(inner slog.Handler) slog.Handler {
 	return &redactingHandler{inner: inner}
@@ -97,6 +102,25 @@ func (h *redactingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h *redactingHandler) WithGroup(name string) slog.Handler {
 	return &redactingHandler{inner: h.inner.WithGroup(name)}
+}
+
+func (h *levelFilterHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	if level < h.min {
+		return false
+	}
+	return h.inner.Enabled(ctx, level)
+}
+
+func (h *levelFilterHandler) Handle(ctx context.Context, r slog.Record) error {
+	return h.inner.Handle(ctx, r)
+}
+
+func (h *levelFilterHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &levelFilterHandler{inner: h.inner.WithAttrs(attrs), min: h.min}
+}
+
+func (h *levelFilterHandler) WithGroup(name string) slog.Handler {
+	return &levelFilterHandler{inner: h.inner.WithGroup(name), min: h.min}
 }
 
 func redactAttr(a slog.Attr) slog.Attr {

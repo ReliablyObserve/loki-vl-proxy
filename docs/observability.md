@@ -414,7 +414,6 @@ Start with:
 | Dashboard | Source | Primary use |
 |---|---|---|
 | [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | Prometheus metrics | Service health, SLOs, cache and endpoint latency trends |
-| [`dashboard/loki-vl-proxy-offenders.json`](../dashboard/loki-vl-proxy-offenders.json) | Native VictoriaLogs datasource | Offender triage with built-in `tenant`, `client`, `cluster`, and `env` filters for route/status load and error analysis |
 
 #### Metrics Dashboard Setup (Scrape and OTLP Push)
 
@@ -446,8 +445,6 @@ loki_vl_proxy_uptime_seconds
 ```
 
 If this query has data, the `Loki-VL-Proxy Metrics` dashboard should populate out of the box.
-
-Use the offenders dashboard during Loki/proxy incidents to keep visibility on raw operator/client behavior directly from stored logs.
 
 High-signal alert ideas:
 

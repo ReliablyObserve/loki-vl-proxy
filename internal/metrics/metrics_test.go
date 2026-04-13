@@ -93,12 +93,12 @@ func TestMetrics_Handler_EmptyState(t *testing.T) {
 	}
 	body := w.Body.String()
 	for _, needle := range []string{
-		`loki_vl_proxy_requests_total{endpoint="query_range",status="200"} 0`,
-		`loki_vl_proxy_cache_hits_by_endpoint{endpoint="query_range"} 0`,
-		`loki_vl_proxy_backend_duration_seconds_count{endpoint="query_range"} 0`,
-		`loki_vl_proxy_tenant_requests_total{tenant="__none__",endpoint="query_range",status="200"} 0`,
-		`loki_vl_proxy_client_requests_total{client="__none__",endpoint="query_range"} 0`,
-		`loki_vl_proxy_client_status_total{client="__none__",endpoint="query_range",status="200"} 0`,
+		`loki_vl_proxy_requests_total{system="loki",direction="downstream",endpoint="query_range",route="/loki/api/v1/query_range",status="200"} 0`,
+		`loki_vl_proxy_cache_hits_by_endpoint{system="loki",direction="downstream",endpoint="query_range",route="/loki/api/v1/query_range"} 0`,
+		`loki_vl_proxy_backend_duration_seconds_count{system="vl",direction="upstream",endpoint="query_range",route="/loki/api/v1/query_range"} 0`,
+		`loki_vl_proxy_tenant_requests_total{system="loki",direction="downstream",tenant="__none__",endpoint="query_range",route="/loki/api/v1/query_range",status="200"} 0`,
+		`loki_vl_proxy_client_requests_total{system="loki",direction="downstream",client="__none__",endpoint="query_range",route="/loki/api/v1/query_range"} 0`,
+		`loki_vl_proxy_client_status_total{system="loki",direction="downstream",client="__none__",endpoint="query_range",route="/loki/api/v1/query_range",status="200"} 0`,
 		`loki_vl_proxy_circuit_breaker_state 0`,
 	} {
 		if !strings.Contains(body, needle) {
@@ -259,6 +259,53 @@ func TestResolveAuthContext_BasicAuthUser(t *testing.T) {
 	}
 }
 
+func TestMetricKeyHelpers_NormalizeAndSplit(t *testing.T) {
+	if got := normalizeMetricSystem("VL"); got != vlSystemLabel {
+		t.Fatalf("normalizeMetricSystem(VL) = %q", got)
+	}
+	if got := normalizeMetricSystem("unknown"); got != lokiSystemLabel {
+		t.Fatalf("normalizeMetricSystem(unknown) = %q", got)
+	}
+	if got := normalizeMetricRoute(" /custom/route ", ""); got != "/custom/route" {
+		t.Fatalf("normalizeMetricRoute explicit route = %q", got)
+	}
+	if got := normalizeMetricRoute("", "labels"); got != "/loki/api/v1/labels" {
+		t.Fatalf("normalizeMetricRoute seeded endpoint = %q", got)
+	}
+	if got := normalizeMetricRoute("", ""); got != "/unknown" {
+		t.Fatalf("normalizeMetricRoute unknown = %q", got)
+	}
+	if parts := splitMetricKey("one"+metricKeySep+"two", 3); parts != nil {
+		t.Fatalf("expected nil split result for mismatched size, got %#v", parts)
+	}
+}
+
+func TestMetrics_Handler_ExportsRouteAwareRequestAndBackendMetrics(t *testing.T) {
+	m := NewMetrics()
+	m.RecordRequestWithRoute("custom", "/custom/route", http.StatusTeapot, 3*time.Millisecond)
+	m.RecordUpstreamRequest("VL", "select_logsql_query", "/select/logsql/query", http.StatusGatewayTimeout, 4*time.Millisecond)
+	m.RecordEndpointCacheHitWithRoute("custom", "/custom/route")
+	m.RecordEndpointCacheMissWithRoute("custom", "/custom/route")
+	m.RecordBackendDurationWithRoute("select_logsql_query", "/select/logsql/query", 2*time.Millisecond)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/metrics", nil)
+	m.Handler(w, r)
+
+	body := w.Body.String()
+	for _, needle := range []string{
+		`loki_vl_proxy_requests_total{system="loki",direction="downstream",endpoint="custom",route="/custom/route",status="418"} 1`,
+		`loki_vl_proxy_requests_total{system="vl",direction="upstream",endpoint="select_logsql_query",route="/select/logsql/query",status="504"} 1`,
+		`loki_vl_proxy_cache_hits_by_endpoint{system="loki",direction="downstream",endpoint="custom",route="/custom/route"} 1`,
+		`loki_vl_proxy_cache_misses_by_endpoint{system="loki",direction="downstream",endpoint="custom",route="/custom/route"} 1`,
+		`loki_vl_proxy_backend_duration_seconds_count{system="vl",direction="upstream",endpoint="select_logsql_query",route="/select/logsql/query"} 1`,
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected route-aware metric %q", needle)
+		}
+	}
+}
+
 func TestSanitizeMetricIdentity(t *testing.T) {
 	if got := sanitizeMetricIdentity("", "__fallback__"); got != "__fallback__" {
 		t.Fatalf("expected fallback, got %q", got)
@@ -301,11 +348,11 @@ func TestMetrics_RecordersAndHandler_ExposeAdditionalMetrics(t *testing.T) {
 	body := w.Body.String()
 
 	for _, snippet := range []string{
-		`loki_vl_proxy_tenant_requests_total{tenant="team-a",endpoint="query_range",status="200"} 1`,
-		`loki_vl_proxy_client_errors_total{endpoint="query_range",reason="bad_query"} 1`,
-		`loki_vl_proxy_cache_hits_by_endpoint{endpoint="labels"} 1`,
-		`loki_vl_proxy_cache_misses_by_endpoint{endpoint="labels"} 1`,
-		`loki_vl_proxy_backend_duration_seconds_count{endpoint="query_range"} 1`,
+		`loki_vl_proxy_tenant_requests_total{system="loki",direction="downstream",tenant="team-a",endpoint="query_range",route="/loki/api/v1/query_range",status="200"} 1`,
+		`loki_vl_proxy_client_errors_total{system="loki",direction="downstream",endpoint="query_range",route="/loki/api/v1/query_range",reason="bad_query"} 1`,
+		`loki_vl_proxy_cache_hits_by_endpoint{system="loki",direction="downstream",endpoint="labels",route="/loki/api/v1/labels"} 1`,
+		`loki_vl_proxy_cache_misses_by_endpoint{system="loki",direction="downstream",endpoint="labels",route="/loki/api/v1/labels"} 1`,
+		`loki_vl_proxy_backend_duration_seconds_count{system="vl",direction="upstream",endpoint="query_range",route="/loki/api/v1/query_range"} 1`,
 		`loki_vl_proxy_coalesced_total 1`,
 		`loki_vl_proxy_coalesced_saved_total 1`,
 		`loki_vl_proxy_window_cache_hit_total 1`,
