@@ -27,6 +27,12 @@ IMPACTFUL_PATHS = (
     "charts/",
 )
 
+UNIT_TEST_PATH_PREFIXES = (
+    "cmd/",
+    "internal/",
+    "pkg/",
+)
+
 IMPACTFUL_FILES = {
     "Dockerfile",
     "go.mod",
@@ -35,12 +41,14 @@ IMPACTFUL_FILES = {
 
 NON_RELEASE_PATH_PREFIXES = (
     "docs/",
+    "scripts/ci/tests/",
 )
 
 NON_RELEASE_FILES = {
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
+    "scripts/ci/check_changelog_pr.py",
 }
 
 RELEASE_METADATA_FILES = {
@@ -99,15 +107,25 @@ def is_release_commit(subject: str) -> bool:
 
 
 def is_release_path(path: str) -> bool:
+    if is_unit_test_only_path(path):
+        return False
     if path in IMPACTFUL_FILES:
         return True
     return any(path.startswith(prefix) for prefix in IMPACTFUL_PATHS)
 
 
 def is_non_release_path(path: str) -> bool:
+    if is_unit_test_only_path(path):
+        return True
     if path in NON_RELEASE_FILES:
         return True
     return any(path.startswith(prefix) for prefix in NON_RELEASE_PATH_PREFIXES)
+
+
+def is_unit_test_only_path(path: str) -> bool:
+    return path.endswith("_test.go") and any(
+        path.startswith(prefix) for prefix in UNIT_TEST_PATH_PREFIXES
+    )
 
 
 def should_require_changelog(commits: Iterable[str], files: Iterable[str]) -> bool:
