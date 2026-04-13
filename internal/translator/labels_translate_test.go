@@ -121,6 +121,26 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 			logql: `{app="api"} | custom . ` + "`pipeline.`",
 			want:  `app:=api ~"custom\.pipeline\."`,
 		},
+		{
+			name:  "repeated include filter clicks are deduplicated after parser",
+			logql: `{app="api"} | json | source_message_bytes="89" | source_message_bytes = "89" | source_message_bytes = ` + "`89`",
+			want:  `app:=api | unpack_json | filter source_message_bytes:=89`,
+		},
+		{
+			name:  "repeated exclude filter clicks are deduplicated after parser",
+			logql: `{app="api"} | json | source_message_bytes!="89" | source_message_bytes != "89"`,
+			want:  `app:=api | unpack_json | filter -source_message_bytes:=89`,
+		},
+		{
+			name:  "include then exclude same value keeps latest filter stage",
+			logql: `{app="api"} | json | source_message_bytes="89" | source_message_bytes!="89"`,
+			want:  `app:=api | unpack_json | filter -source_message_bytes:=89`,
+		},
+		{
+			name:  "exclude then include same value keeps latest filter stage",
+			logql: `{app="api"} | json | source_message_bytes!="89" | source_message_bytes="89"`,
+			want:  `app:=api | unpack_json | filter source_message_bytes:=89`,
+		},
 	}
 
 	for _, tt := range tests {
