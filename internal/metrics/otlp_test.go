@@ -374,7 +374,7 @@ func TestOTLPPusher_SpecializedMetricFamilies(t *testing.T) {
 			continue
 		}
 		attrs := flattenAnyAttrs(t, point["attributes"])
-		if attrs["endpoint"] == "query_range" && attrs["reason"] == "timeout" {
+		if attrs["loki.api.system"] == "loki" && attrs["proxy.direction"] == "downstream" && attrs["loki.request.type"] == "query_range" && attrs["http.route"] == "/loki/api/v1/query_range" && attrs["error.type"] == "timeout" {
 			got := 0.0
 			if v, ok := point["asInt"].(int64); ok {
 				got = float64(v)

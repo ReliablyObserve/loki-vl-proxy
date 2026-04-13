@@ -444,19 +444,23 @@ func (p *OTLPPusher) requestMetrics(now int64) []map[string]interface{} {
 	reqKeys := sortedKeys(mapsFromCounters(p.metrics.requestsTotal))
 	requestPoints := make([]map[string]interface{}, 0, len(reqKeys))
 	for _, key := range reqKeys {
-		parts := strings.SplitN(key, ":", 2)
-		if len(parts) != 2 {
+		parts := splitMetricKey(key, 5)
+		if parts == nil {
 			continue
 		}
-		requestPoints = append(requestPoints, p.counterDP("loki_vl_proxy_requests_total", p.metrics.requestsTotal[key].Load(), now, attr("endpoint", parts[0]), attr("status", parts[1])))
+		requestPoints = append(requestPoints, p.counterDP("loki_vl_proxy_requests_total", p.metrics.requestsTotal[key].Load(), now, attr("loki.api.system", parts[0]), attr("proxy.direction", parts[1]), attr("loki.request.type", parts[2]), attr("http.route", parts[3]), attr("http.response.status_code", parts[4])))
 	}
 	if len(requestPoints) > 0 {
 		metrics = append(metrics, p.sumMetric("loki_vl_proxy_requests_total", "Total number of proxied requests.", "", requestPoints...))
 	}
 	durationKeys := sortedKeys(mapsFromHists(p.metrics.requestDurations))
 	durationPoints := make([]map[string]interface{}, 0, len(durationKeys))
-	for _, endpoint := range durationKeys {
-		durationPoints = append(durationPoints, p.histogramDP(p.metrics.requestDurations[endpoint], now, attr("endpoint", endpoint)))
+	for _, key := range durationKeys {
+		parts := splitMetricKey(key, 4)
+		if parts == nil {
+			continue
+		}
+		durationPoints = append(durationPoints, p.histogramDP(p.metrics.requestDurations[key], now, attr("loki.api.system", parts[0]), attr("proxy.direction", parts[1]), attr("loki.request.type", parts[2]), attr("http.route", parts[3])))
 	}
 	if len(durationPoints) > 0 {
 		metrics = append(metrics, p.histogramMetric("loki_vl_proxy_request_duration_seconds", "Request duration histogram.", "s", durationPoints...))
@@ -469,11 +473,11 @@ func (p *OTLPPusher) tenantMetrics(now int64) []map[string]interface{} {
 	reqKeys := sortedKeys(mapsFromCounters(p.metrics.tenantRequests))
 	reqPoints := make([]map[string]interface{}, 0, len(reqKeys))
 	for _, key := range reqKeys {
-		parts := strings.SplitN(key, ":", 3)
-		if len(parts) != 3 {
+		parts := splitMetricKey(key, 4)
+		if parts == nil {
 			continue
 		}
-		reqPoints = append(reqPoints, p.counterDP("loki_vl_proxy_tenant_requests_total", p.metrics.tenantRequests[key].Load(), now, attr("tenant", parts[0]), attr("endpoint", parts[1]), attr("status", parts[2])))
+		reqPoints = append(reqPoints, p.counterDP("loki_vl_proxy_tenant_requests_total", p.metrics.tenantRequests[key].Load(), now, attr("loki.api.system", lokiSystemLabel), attr("proxy.direction", downstreamDirection), attr("loki.tenant.id", parts[0]), attr("loki.request.type", parts[1]), attr("http.route", parts[2]), attr("http.response.status_code", parts[3])))
 	}
 	if len(reqPoints) > 0 {
 		metrics = append(metrics, p.sumMetric("loki_vl_proxy_tenant_requests_total", "Requests by tenant.", "", reqPoints...))
@@ -481,11 +485,11 @@ func (p *OTLPPusher) tenantMetrics(now int64) []map[string]interface{} {
 	durKeys := sortedKeys(mapsFromHists(p.metrics.tenantDurations))
 	durPoints := make([]map[string]interface{}, 0, len(durKeys))
 	for _, key := range durKeys {
-		parts := strings.SplitN(key, ":", 2)
-		if len(parts) != 2 {
+		parts := splitMetricKey(key, 3)
+		if parts == nil {
 			continue
 		}
-		durPoints = append(durPoints, p.histogramDP(p.metrics.tenantDurations[key], now, attr("tenant", parts[0]), attr("endpoint", parts[1])))
+		durPoints = append(durPoints, p.histogramDP(p.metrics.tenantDurations[key], now, attr("loki.api.system", lokiSystemLabel), attr("proxy.direction", downstreamDirection), attr("loki.tenant.id", parts[0]), attr("loki.request.type", parts[1]), attr("http.route", parts[2])))
 	}
 	if len(durPoints) > 0 {
 		metrics = append(metrics, p.histogramMetric("loki_vl_proxy_tenant_request_duration_seconds", "Per-tenant request duration.", "s", durPoints...))
@@ -497,11 +501,11 @@ func (p *OTLPPusher) clientErrorMetrics(now int64) []map[string]interface{} {
 	keys := sortedKeys(mapsFromCounters(p.metrics.clientErrors))
 	points := make([]map[string]interface{}, 0, len(keys))
 	for _, key := range keys {
-		parts := strings.SplitN(key, ":", 2)
-		if len(parts) != 2 {
+		parts := splitMetricKey(key, 3)
+		if parts == nil {
 			continue
 		}
-		points = append(points, p.counterDP("loki_vl_proxy_client_errors_total", p.metrics.clientErrors[key].Load(), now, attr("endpoint", parts[0]), attr("reason", parts[1])))
+		points = append(points, p.counterDP("loki_vl_proxy_client_errors_total", p.metrics.clientErrors[key].Load(), now, attr("loki.api.system", lokiSystemLabel), attr("proxy.direction", downstreamDirection), attr("loki.request.type", parts[0]), attr("http.route", parts[1]), attr("error.type", parts[2])))
 	}
 	if len(points) == 0 {
 		return nil
@@ -513,16 +517,24 @@ func (p *OTLPPusher) endpointCacheMetrics(now int64) []map[string]interface{} {
 	metrics := make([]map[string]interface{}, 0, 2)
 	hitKeys := sortedKeys(mapsFromCounters(p.metrics.endpointCacheHits))
 	hitPoints := make([]map[string]interface{}, 0, len(hitKeys))
-	for _, endpoint := range hitKeys {
-		hitPoints = append(hitPoints, p.counterDP("loki_vl_proxy_cache_hits_by_endpoint", p.metrics.endpointCacheHits[endpoint].Load(), now, attr("endpoint", endpoint)))
+	for _, key := range hitKeys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		hitPoints = append(hitPoints, p.counterDP("loki_vl_proxy_cache_hits_by_endpoint", p.metrics.endpointCacheHits[key].Load(), now, attr("loki.api.system", lokiSystemLabel), attr("proxy.direction", downstreamDirection), attr("loki.request.type", parts[0]), attr("http.route", parts[1])))
 	}
 	if len(hitPoints) > 0 {
 		metrics = append(metrics, p.sumMetric("loki_vl_proxy_cache_hits_by_endpoint", "Cache hits per endpoint.", "", hitPoints...))
 	}
 	missKeys := sortedKeys(mapsFromCounters(p.metrics.endpointCacheMisses))
 	missPoints := make([]map[string]interface{}, 0, len(missKeys))
-	for _, endpoint := range missKeys {
-		missPoints = append(missPoints, p.counterDP("loki_vl_proxy_cache_misses_by_endpoint", p.metrics.endpointCacheMisses[endpoint].Load(), now, attr("endpoint", endpoint)))
+	for _, key := range missKeys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		missPoints = append(missPoints, p.counterDP("loki_vl_proxy_cache_misses_by_endpoint", p.metrics.endpointCacheMisses[key].Load(), now, attr("loki.api.system", lokiSystemLabel), attr("proxy.direction", downstreamDirection), attr("loki.request.type", parts[0]), attr("http.route", parts[1])))
 	}
 	if len(missPoints) > 0 {
 		metrics = append(metrics, p.sumMetric("loki_vl_proxy_cache_misses_by_endpoint", "Cache misses per endpoint.", "", missPoints...))
@@ -533,8 +545,12 @@ func (p *OTLPPusher) endpointCacheMetrics(now int64) []map[string]interface{} {
 func (p *OTLPPusher) backendDurationMetrics(now int64) []map[string]interface{} {
 	keys := sortedKeys(mapsFromHists(p.metrics.backendDurations))
 	points := make([]map[string]interface{}, 0, len(keys))
-	for _, endpoint := range keys {
-		points = append(points, p.histogramDP(p.metrics.backendDurations[endpoint], now, attr("endpoint", endpoint)))
+	for _, key := range keys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		points = append(points, p.histogramDP(p.metrics.backendDurations[key], now, attr("loki.api.system", vlSystemLabel), attr("proxy.direction", upstreamDirection), attr("loki.request.type", parts[0]), attr("http.route", parts[1])))
 	}
 	if len(points) == 0 {
 		return nil
@@ -652,11 +668,11 @@ func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
 	reqKeys := sortedKeys(mapsFromCounters(p.metrics.clientRequests))
 	reqPoints := make([]map[string]interface{}, 0, len(reqKeys))
 	for _, key := range reqKeys {
-		parts := strings.SplitN(key, ":", 2)
-		if len(parts) != 2 {
+		parts := splitMetricKey(key, 3)
+		if parts == nil {
 			continue
 		}
-		reqPoints = append(reqPoints, p.counterDP("loki_vl_proxy_client_requests_total", p.metrics.clientRequests[key].Load(), now, attr("client", parts[0]), attr("endpoint", parts[1])))
+		reqPoints = append(reqPoints, p.counterDP("loki_vl_proxy_client_requests_total", p.metrics.clientRequests[key].Load(), now, attr("loki.api.system", lokiSystemLabel), attr("proxy.direction", downstreamDirection), attr("enduser.id", parts[0]), attr("loki.request.type", parts[1]), attr("http.route", parts[2])))
 	}
 	if len(reqPoints) > 0 {
 		metrics = append(metrics, p.sumMetric("loki_vl_proxy_client_requests_total", "Requests by client identity.", "", reqPoints...))
@@ -664,7 +680,7 @@ func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
 	byteKeys := sortedKeys(mapsFromCounters(p.metrics.clientBytes))
 	bytePoints := make([]map[string]interface{}, 0, len(byteKeys))
 	for _, client := range byteKeys {
-		bytePoints = append(bytePoints, p.counterDP("loki_vl_proxy_client_response_bytes_total", p.metrics.clientBytes[client].Load(), now, attr("client", client)))
+		bytePoints = append(bytePoints, p.counterDP("loki_vl_proxy_client_response_bytes_total", p.metrics.clientBytes[client].Load(), now, attr("enduser.id", client)))
 	}
 	if len(bytePoints) > 0 {
 		metrics = append(metrics, p.sumMetric("loki_vl_proxy_client_response_bytes_total", "Response bytes by client.", "By", bytePoints...))
@@ -672,11 +688,11 @@ func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
 	statusKeys := sortedKeys(mapsFromCounters(p.metrics.clientStatuses))
 	statusPoints := make([]map[string]interface{}, 0, len(statusKeys))
 	for _, key := range statusKeys {
-		parts := strings.SplitN(key, ":", 3)
-		if len(parts) != 3 {
+		parts := splitMetricKey(key, 4)
+		if parts == nil {
 			continue
 		}
-		statusPoints = append(statusPoints, p.counterDP("loki_vl_proxy_client_status_total", p.metrics.clientStatuses[key].Load(), now, attr("client", parts[0]), attr("endpoint", parts[1]), attr("status", parts[2])))
+		statusPoints = append(statusPoints, p.counterDP("loki_vl_proxy_client_status_total", p.metrics.clientStatuses[key].Load(), now, attr("loki.api.system", lokiSystemLabel), attr("proxy.direction", downstreamDirection), attr("enduser.id", parts[0]), attr("loki.request.type", parts[1]), attr("http.route", parts[2]), attr("http.response.status_code", parts[3])))
 	}
 	if len(statusPoints) > 0 {
 		metrics = append(metrics, p.sumMetric("loki_vl_proxy_client_status_total", "Requests by client identity and final HTTP status.", "", statusPoints...))
@@ -684,7 +700,7 @@ func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
 	inflightKeys := sortedKeys(mapsFromCounters(p.metrics.clientInflight))
 	inflightPoints := make([]map[string]interface{}, 0, len(inflightKeys))
 	for _, client := range inflightKeys {
-		inflightPoints = append(inflightPoints, p.gaugeDP("loki_vl_proxy_client_inflight_requests", float64(p.metrics.clientInflight[client].Load()), now, attr("client", client)))
+		inflightPoints = append(inflightPoints, p.gaugeDP("loki_vl_proxy_client_inflight_requests", float64(p.metrics.clientInflight[client].Load()), now, attr("enduser.id", client)))
 	}
 	if len(inflightPoints) > 0 {
 		metrics = append(metrics, p.gaugeMetric("loki_vl_proxy_client_inflight_requests", "In-flight requests by client identity.", "{request}", inflightPoints...))
@@ -692,11 +708,11 @@ func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
 	durationKeys := sortedKeys(mapsFromHists(p.metrics.clientDurations))
 	durationPoints := make([]map[string]interface{}, 0, len(durationKeys))
 	for _, key := range durationKeys {
-		parts := strings.SplitN(key, ":", 2)
-		if len(parts) != 2 {
+		parts := splitMetricKey(key, 3)
+		if parts == nil {
 			continue
 		}
-		durationPoints = append(durationPoints, p.histogramDP(p.metrics.clientDurations[key], now, attr("client", parts[0]), attr("endpoint", parts[1])))
+		durationPoints = append(durationPoints, p.histogramDP(p.metrics.clientDurations[key], now, attr("loki.api.system", lokiSystemLabel), attr("proxy.direction", downstreamDirection), attr("enduser.id", parts[0]), attr("loki.request.type", parts[1]), attr("http.route", parts[2])))
 	}
 	if len(durationPoints) > 0 {
 		metrics = append(metrics, p.histogramMetric("loki_vl_proxy_client_request_duration_seconds", "Per-client request duration.", "s", durationPoints...))
@@ -704,11 +720,11 @@ func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
 	queryLenKeys := sortedKeys(mapsFromHists(p.metrics.clientQueryLengths))
 	queryLenPoints := make([]map[string]interface{}, 0, len(queryLenKeys))
 	for _, key := range queryLenKeys {
-		parts := strings.SplitN(key, ":", 2)
-		if len(parts) != 2 {
+		parts := splitMetricKey(key, 3)
+		if parts == nil {
 			continue
 		}
-		queryLenPoints = append(queryLenPoints, p.histogramDP(p.metrics.clientQueryLengths[key], now, attr("client", parts[0]), attr("endpoint", parts[1])))
+		queryLenPoints = append(queryLenPoints, p.histogramDP(p.metrics.clientQueryLengths[key], now, attr("loki.api.system", lokiSystemLabel), attr("proxy.direction", downstreamDirection), attr("enduser.id", parts[0]), attr("loki.request.type", parts[1]), attr("http.route", parts[2])))
 	}
 	if len(queryLenPoints) > 0 {
 		metrics = append(metrics, p.histogramMetric("loki_vl_proxy_client_query_length_chars", "LogQL query length by client identity.", "{character}", queryLenPoints...))
