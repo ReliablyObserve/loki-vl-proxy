@@ -361,6 +361,8 @@ func TestOTLPPusher_ZstdCompression(t *testing.T) {
 
 func TestNormalizeMetricsEndpoint(t *testing.T) {
 	cases := map[string]string{
+		"":                                "",
+		"://collector%%%":                 "://collector%%%",
 		"http://collector:4318":             "http://collector:4318/v1/metrics",
 		"http://collector:4318/":            "http://collector:4318/v1/metrics",
 		"http://collector:4318/v1":          "http://collector:4318/v1/metrics",
@@ -371,6 +373,63 @@ func TestNormalizeMetricsEndpoint(t *testing.T) {
 		if got := normalizeMetricsEndpoint(in); got != want {
 			t.Fatalf("normalizeMetricsEndpoint(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestNewOTLPPusher_DefaultsAndFallbackResourceAttrs(t *testing.T) {
+	lockProcEnvTest(t)
+
+	pusher := NewOTLPPusher(OTLPConfig{
+		Endpoint:      "https://collector.example:4318/",
+		TLSSkipVerify: true,
+	}, NewMetrics())
+
+	if pusher.endpoint != "https://collector.example:4318/v1/metrics" {
+		t.Fatalf("unexpected normalized endpoint: %q", pusher.endpoint)
+	}
+	if pusher.interval != 30*time.Second {
+		t.Fatalf("unexpected default interval: %v", pusher.interval)
+	}
+	if pusher.compression != OTLPCompressionNone {
+		t.Fatalf("unexpected default compression: %q", pusher.compression)
+	}
+	if pusher.client.Timeout != 10*time.Second {
+		t.Fatalf("unexpected default timeout: %v", pusher.client.Timeout)
+	}
+
+	transport, ok := pusher.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", pusher.client.Transport)
+	}
+	if transport.TLSClientConfig == nil || !transport.TLSClientConfig.InsecureSkipVerify {
+		t.Fatal("expected TLS skip verify to be enabled on the OTLP transport")
+	}
+
+	attrs := flattenAnyAttrs(t, pusher.resourceAttributes())
+	if attrs["service.name"] != "loki-vl-proxy" {
+		t.Fatalf("expected fallback service.name, got %#v", attrs["service.name"])
+	}
+	if attrs["service.version"] != "dev" {
+		t.Fatalf("expected fallback service.version, got %#v", attrs["service.version"])
+	}
+	if _, ok := attrs["service.namespace"]; ok {
+		t.Fatalf("did not expect service.namespace attribute when unset: %#v", attrs)
+	}
+}
+
+func TestOTLPPusher_Push_InvalidEndpoint(t *testing.T) {
+	lockProcEnvTest(t)
+
+	pusher := NewOTLPPusher(OTLPConfig{
+		Endpoint: "://collector%%%",
+	}, NewMetrics())
+
+	err := pusher.push(context.Background())
+	if err == nil {
+		t.Fatal("expected invalid endpoint push to fail")
+	}
+	if !strings.Contains(err.Error(), "create otlp request") {
+		t.Fatalf("expected request creation failure, got %v", err)
 	}
 }
 

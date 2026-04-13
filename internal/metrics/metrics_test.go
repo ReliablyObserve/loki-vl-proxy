@@ -247,6 +247,16 @@ func TestResolveClientContext_Branches(t *testing.T) {
 			t.Fatalf("unexpected context: %q %q", clientID, source)
 		}
 	})
+
+	t.Run("raw remote addr fallback", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/metrics", nil)
+		req.RemoteAddr = "198.51.100.20"
+
+		clientID, source := ResolveClientContext(req, false)
+		if clientID != "198.51.100.20" || source != "remote_addr" {
+			t.Fatalf("unexpected context: %q %q", clientID, source)
+		}
+	})
 }
 
 func TestResolveAuthContext_BasicAuthUser(t *testing.T) {
@@ -256,6 +266,15 @@ func TestResolveAuthContext_BasicAuthUser(t *testing.T) {
 	authUser, authSource := ResolveAuthContext(req)
 	if authUser != "backend-user" || authSource != "basic_auth" {
 		t.Fatalf("unexpected auth context: %q %q", authUser, authSource)
+	}
+}
+
+func TestResolveAuthContext_Empty(t *testing.T) {
+	req := httptest.NewRequest("GET", "/metrics", nil)
+
+	authUser, authSource := ResolveAuthContext(req)
+	if authUser != "" || authSource != "" {
+		t.Fatalf("expected empty auth context, got %q %q", authUser, authSource)
 	}
 }
 
@@ -275,8 +294,48 @@ func TestMetricKeyHelpers_NormalizeAndSplit(t *testing.T) {
 	if got := normalizeMetricRoute("", ""); got != "/unknown" {
 		t.Fatalf("normalizeMetricRoute unknown = %q", got)
 	}
+	if got := normalizeMetricRoute("", "custom_endpoint"); got != "custom_endpoint" {
+		t.Fatalf("normalizeMetricRoute endpoint fallback = %q", got)
+	}
 	if parts := splitMetricKey("one"+metricKeySep+"two", 3); parts != nil {
 		t.Fatalf("expected nil split result for mismatched size, got %#v", parts)
+	}
+}
+
+func TestMetrics_RecordRequest_FastPathAndFallbacks(t *testing.T) {
+	m := NewMetrics()
+
+	if !m.recordSeededRequest("query_range", http.StatusOK, 2*time.Millisecond) {
+		t.Fatal("expected seeded request to use the fast path")
+	}
+	if m.recordSeededRequest("query_range", http.StatusTeapot, 2*time.Millisecond) {
+		t.Fatal("unexpected seeded fast-path hit for non-pre-registered status")
+	}
+	if m.recordSeededRequest("custom", http.StatusOK, 2*time.Millisecond) {
+		t.Fatal("unexpected seeded fast-path hit for unknown endpoint")
+	}
+
+	m.RecordRequest("query_range", http.StatusOK, 3*time.Millisecond)
+	m.RecordRequest("adhoc", http.StatusAccepted, 6*time.Millisecond)
+	m.RecordRequestWithRoute("query_range", "", http.StatusOK, 4*time.Millisecond)
+	m.RecordRequestWithRoute("query_range", "/custom/query_range", http.StatusCreated, 5*time.Millisecond)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/metrics", nil)
+	m.Handler(w, r)
+
+	body := w.Body.String()
+	for _, needle := range []string{
+		`loki_vl_proxy_requests_total{system="loki",direction="downstream",endpoint="query_range",route="/loki/api/v1/query_range",status="200"} 3`,
+		`loki_vl_proxy_requests_total{system="loki",direction="downstream",endpoint="adhoc",route="adhoc",status="202"} 1`,
+		`loki_vl_proxy_requests_total{system="loki",direction="downstream",endpoint="query_range",route="/custom/query_range",status="201"} 1`,
+		`loki_vl_proxy_request_duration_seconds_count{system="loki",direction="downstream",endpoint="query_range",route="/loki/api/v1/query_range"} 3`,
+		`loki_vl_proxy_request_duration_seconds_count{system="loki",direction="downstream",endpoint="adhoc",route="adhoc"} 1`,
+		`loki_vl_proxy_request_duration_seconds_count{system="loki",direction="downstream",endpoint="query_range",route="/custom/query_range"} 1`,
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected metrics output to contain %q\nbody:\n%s", needle, body)
+		}
 	}
 }
 
@@ -374,6 +433,42 @@ func TestMetrics_RecordersAndHandler_ExposeAdditionalMetrics(t *testing.T) {
 		if !strings.Contains(body, snippet) {
 			t.Fatalf("expected metrics output to contain %q\nbody:\n%s", snippet, body)
 		}
+	}
+}
+
+func TestMetrics_QueryRangeAdaptiveAndPrefilterClamps(t *testing.T) {
+	m := NewMetrics()
+
+	m.RecordQueryRangeWindowPrefilterOutcome(-1, 2)
+	if got := m.windowPrefilterHitRatioPpm.Load(); got != 0 {
+		t.Fatalf("expected clamped negative prefilter hit ratio to 0, got %d", got)
+	}
+
+	m.RecordQueryRangeWindowPrefilterOutcome(2, -1)
+	if got := m.windowPrefilterHitRatioPpm.Load(); got != 1_000_000 {
+		t.Fatalf("expected clamped oversized prefilter hit ratio to 1e6, got %d", got)
+	}
+
+	m.RecordQueryRangeAdaptiveState(-2, -5*time.Millisecond, -0.5)
+	if got := m.windowAdaptiveParallelCurrent.Load(); got != 0 {
+		t.Fatalf("expected negative adaptive parallelism to clamp to 0, got %d", got)
+	}
+	if got := m.windowAdaptiveLatencyEWMAms.Load(); got != 0 {
+		t.Fatalf("expected negative adaptive latency to clamp to 0, got %d", got)
+	}
+	if got := m.windowAdaptiveErrorEWMAppm.Load(); got != 0 {
+		t.Fatalf("expected negative adaptive error EWMA to clamp to 0, got %d", got)
+	}
+
+	m.RecordQueryRangeAdaptiveState(3, 1500*time.Millisecond, 1.5)
+	if got := m.windowAdaptiveParallelCurrent.Load(); got != 3 {
+		t.Fatalf("expected adaptive parallelism 3, got %d", got)
+	}
+	if got := m.windowAdaptiveLatencyEWMAms.Load(); got != 1500 {
+		t.Fatalf("expected adaptive latency 1500ms, got %d", got)
+	}
+	if got := m.windowAdaptiveErrorEWMAppm.Load(); got != 1_000_000 {
+		t.Fatalf("expected oversized adaptive error EWMA to clamp to 1e6, got %d", got)
 	}
 }
 
