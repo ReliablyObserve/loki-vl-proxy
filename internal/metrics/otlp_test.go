@@ -196,6 +196,36 @@ func TestOTLPPusher_HandlesErrors(t *testing.T) {
 	}
 }
 
+func TestOTLPPusher_StartStop(t *testing.T) {
+	lockProcEnvTest(t)
+
+	seen := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case seen <- struct{}{}:
+		default:
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	m := NewMetrics()
+	m.RecordRequestWithRoute("labels", "/loki/api/v1/labels", http.StatusOK, 5*time.Millisecond)
+
+	pusher := NewOTLPPusher(OTLPConfig{
+		Endpoint: srv.URL,
+		Interval: 10 * time.Millisecond,
+	}, m)
+	pusher.Start()
+	defer pusher.Stop()
+
+	select {
+	case <-seen:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for background OTLP push")
+	}
+}
+
 func TestOTLPPusher_BuildPayload(t *testing.T) {
 	m := NewMetrics()
 	m.RecordCacheHit()

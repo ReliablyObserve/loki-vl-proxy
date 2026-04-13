@@ -259,6 +259,53 @@ func TestResolveAuthContext_BasicAuthUser(t *testing.T) {
 	}
 }
 
+func TestMetricKeyHelpers_NormalizeAndSplit(t *testing.T) {
+	if got := normalizeMetricSystem("VL"); got != vlSystemLabel {
+		t.Fatalf("normalizeMetricSystem(VL) = %q", got)
+	}
+	if got := normalizeMetricSystem("unknown"); got != lokiSystemLabel {
+		t.Fatalf("normalizeMetricSystem(unknown) = %q", got)
+	}
+	if got := normalizeMetricRoute(" /custom/route ", ""); got != "/custom/route" {
+		t.Fatalf("normalizeMetricRoute explicit route = %q", got)
+	}
+	if got := normalizeMetricRoute("", "labels"); got != "/loki/api/v1/labels" {
+		t.Fatalf("normalizeMetricRoute seeded endpoint = %q", got)
+	}
+	if got := normalizeMetricRoute("", ""); got != "/unknown" {
+		t.Fatalf("normalizeMetricRoute unknown = %q", got)
+	}
+	if parts := splitMetricKey("one"+metricKeySep+"two", 3); parts != nil {
+		t.Fatalf("expected nil split result for mismatched size, got %#v", parts)
+	}
+}
+
+func TestMetrics_Handler_ExportsRouteAwareRequestAndBackendMetrics(t *testing.T) {
+	m := NewMetrics()
+	m.RecordRequestWithRoute("custom", "/custom/route", http.StatusTeapot, 3*time.Millisecond)
+	m.RecordUpstreamRequest("VL", "select_logsql_query", "/select/logsql/query", http.StatusGatewayTimeout, 4*time.Millisecond)
+	m.RecordEndpointCacheHitWithRoute("custom", "/custom/route")
+	m.RecordEndpointCacheMissWithRoute("custom", "/custom/route")
+	m.RecordBackendDurationWithRoute("select_logsql_query", "/select/logsql/query", 2*time.Millisecond)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/metrics", nil)
+	m.Handler(w, r)
+
+	body := w.Body.String()
+	for _, needle := range []string{
+		`loki_vl_proxy_requests_total{system="loki",direction="downstream",endpoint="custom",route="/custom/route",status="418"} 1`,
+		`loki_vl_proxy_requests_total{system="vl",direction="upstream",endpoint="select_logsql_query",route="/select/logsql/query",status="504"} 1`,
+		`loki_vl_proxy_cache_hits_by_endpoint{system="loki",direction="downstream",endpoint="custom",route="/custom/route"} 1`,
+		`loki_vl_proxy_cache_misses_by_endpoint{system="loki",direction="downstream",endpoint="custom",route="/custom/route"} 1`,
+		`loki_vl_proxy_backend_duration_seconds_count{system="vl",direction="upstream",endpoint="select_logsql_query",route="/select/logsql/query"} 1`,
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected route-aware metric %q", needle)
+		}
+	}
+}
+
 func TestSanitizeMetricIdentity(t *testing.T) {
 	if got := sanitizeMetricIdentity("", "__fallback__"); got != "__fallback__" {
 		t.Fatalf("expected fallback, got %q", got)

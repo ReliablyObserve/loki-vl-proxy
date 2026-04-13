@@ -122,6 +122,11 @@ type routeSeed struct {
 	route    string
 }
 
+type requestSeed struct {
+	histKey    string
+	statusKeys map[int]string
+}
+
 var (
 	defaultMetricSeedRoutes = []routeSeed{
 		{endpoint: "query_range", route: "/loki/api/v1/query_range"},
@@ -178,6 +183,27 @@ var (
 		"alerts_prom":           "/api/prom/alerts",
 		"alerts_prometheus":     "/prometheus/api/v1/alerts",
 	}
+	defaultRequestSeeds = func() map[string]requestSeed {
+		seeds := make(map[string]requestSeed, len(defaultMetricSeedRoutes))
+		for _, seed := range defaultMetricSeedRoutes {
+			histKey := joinMetricKey(lokiSystemLabel, downstreamDirection, seed.endpoint, seed.route)
+			statusKeys := make(map[int]string, len(defaultMetricSeedStatuses))
+			for _, status := range defaultMetricSeedStatuses {
+				statusKeys[status] = joinMetricKey(
+					lokiSystemLabel,
+					downstreamDirection,
+					seed.endpoint,
+					seed.route,
+					strconv.Itoa(status),
+				)
+			}
+			seeds[seed.endpoint] = requestSeed{
+				histKey:    histKey,
+				statusKeys: statusKeys,
+			}
+		}
+		return seeds
+	}()
 )
 
 func joinMetricKey(parts ...string) string {
@@ -350,10 +376,16 @@ func (m *Metrics) SetCircuitBreakerFunc(fn func() string) {
 }
 
 func (m *Metrics) RecordRequest(endpoint string, statusCode int, duration time.Duration) {
+	if m.recordSeededRequest(endpoint, statusCode, duration) {
+		return
+	}
 	m.RecordRequestWithRoute(endpoint, "", statusCode, duration)
 }
 
 func (m *Metrics) RecordRequestWithRoute(endpoint, route string, statusCode int, duration time.Duration) {
+	if route == "" && m.recordSeededRequest(endpoint, statusCode, duration) {
+		return
+	}
 	m.recordRequestWithLabels(lokiSystemLabel, downstreamDirection, endpoint, route, statusCode, duration)
 }
 
@@ -392,6 +424,29 @@ func (m *Metrics) recordRequestWithLabels(system, direction, endpoint, route str
 		m.mu.Unlock()
 	}
 	hist.observe(duration.Seconds())
+}
+
+func (m *Metrics) recordSeededRequest(endpoint string, statusCode int, duration time.Duration) bool {
+	seed, ok := defaultRequestSeeds[endpoint]
+	if !ok {
+		return false
+	}
+	counterKey, ok := seed.statusKeys[statusCode]
+	if !ok {
+		return false
+	}
+
+	m.mu.RLock()
+	counter := m.requestsTotal[counterKey]
+	hist := m.requestDurations[seed.histKey]
+	m.mu.RUnlock()
+	if counter == nil || hist == nil {
+		return false
+	}
+
+	counter.Add(1)
+	hist.observe(duration.Seconds())
+	return true
 }
 
 // RecordTenantRequest records a request for a specific tenant (X-Scope-OrgID).

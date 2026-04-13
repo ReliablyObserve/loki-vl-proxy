@@ -98,6 +98,20 @@ type requestRouteMeta struct {
 	route    string
 }
 
+var upstreamRequestTypeByRoute = map[string]string{
+	"/select/logsql/query":               "select_logsql_query",
+	"/select/logsql/stats_query":         "select_logsql_stats_query",
+	"/select/logsql/stats_query_range":   "select_logsql_stats_query_range",
+	"/select/logsql/streams":             "select_logsql_streams",
+	"/select/logsql/hits":                "select_logsql_hits",
+	"/select/logsql/field_names":         "select_logsql_field_names",
+	"/select/logsql/stream_field_names":  "select_logsql_stream_field_names",
+	"/select/logsql/field_values":        "select_logsql_field_values",
+	"/select/logsql/stream_field_values": "select_logsql_stream_field_values",
+	"/select/logsql/delete":              "select_logsql_delete",
+	"/select/logsql/tail":                "select_logsql_tail",
+}
+
 func newRequestTelemetry() *requestTelemetry {
 	return &requestTelemetry{cacheResult: "bypass"}
 }
@@ -4402,6 +4416,9 @@ func deriveRequestType(endpoint, route string) string {
 	route = strings.TrimSpace(route)
 	if route == "" {
 		return "unknown"
+	}
+	if requestType, ok := upstreamRequestTypeByRoute[route]; ok {
+		return requestType
 	}
 	trimmed := strings.Trim(route, "/")
 	if trimmed == "" {

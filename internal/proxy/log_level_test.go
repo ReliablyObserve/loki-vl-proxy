@@ -34,3 +34,12 @@ func TestNew_RespectsConfiguredLogLevelOverDefaultLogger(t *testing.T) {
 		t.Fatalf("expected info log to be suppressed, got %q", buf.String())
 	}
 }
+
+func TestDeriveRequestType_UsesKnownUpstreamRouteMapping(t *testing.T) {
+	if got := deriveRequestType("", "/select/logsql/query"); got != "select_logsql_query" {
+		t.Fatalf("deriveRequestType() = %q, want %q", got, "select_logsql_query")
+	}
+	if got := deriveRequestType("query_range", "/select/logsql/stats_query_range"); got != "query_range" {
+		t.Fatalf("deriveRequestType() should prefer explicit endpoint, got %q", got)
+	}
+}

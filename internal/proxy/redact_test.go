@@ -227,6 +227,18 @@ func TestRedactingHandler_Enabled(t *testing.T) {
 	}
 }
 
+func TestLevelFilterHandler_WithGroupPreservesMinimumLevel(t *testing.T) {
+	inner := slog.NewJSONHandler(&bytes.Buffer{}, &slog.HandlerOptions{Level: slog.LevelDebug})
+	h := (&levelFilterHandler{inner: inner, min: slog.LevelWarn}).WithGroup("request")
+
+	if h.Enabled(context.Background(), slog.LevelInfo) {
+		t.Fatal("info should remain disabled after WithGroup")
+	}
+	if !h.Enabled(context.Background(), slog.LevelError) {
+		t.Fatal("error should remain enabled after WithGroup")
+	}
+}
+
 // =============================================================================
 // Benchmarks
 // =============================================================================
