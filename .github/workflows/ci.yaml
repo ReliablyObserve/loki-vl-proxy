@@ -143,14 +143,12 @@ jobs:
             | tee bench-label-fields.txt
 
           awk '
-            /^BenchmarkProxy_Label(Keys|Values)_Scale_/ {
+            /^BenchmarkProxy_Label(Keys|Values)_Scale_.*ns\/op/ {
               bench=$1
               sub(/-[0-9]+$/, "", bench)
-              next
-            }
-            /ns\/op/ && bench != "" {
-              printf "%s\t%s\t%s\t%s\n", bench, $2, $4, $6
-              bench=""
+              # go test benchmark line format:
+              # BenchmarkXxx-4  12345  999.9 ns/op  321 B/op  7 allocs/op
+              printf "%s\t%s\t%s\t%s\n", bench, $3, $5, $7
             }
           ' bench-label-fields.txt > bench-label-fields.tsv
 
