@@ -21,7 +21,7 @@ jobs:
           BRANCH="${GITHUB_REF_NAME}"
           VERSION="$(printf '%s' "$BRANCH" | sed -n 's/^release\/v\([0-9][0-9.]*\)$/\1/p')"
           if [ -z "$VERSION" ]; then
-            echo "expected release branch like release/v0.26.0, got: $BRANCH"
+            echo "expected release branch like release/v1.0.0, got: $BRANCH"
             exit 1
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"

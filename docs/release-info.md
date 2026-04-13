@@ -4,10 +4,11 @@
 
 `Auto Release` on `main` uses this precedence order:
 
-1. explicit release labels on merged PR: `release:major`, `release:minor`, `release:patch`, `no-release`
-2. semantic PR labels: `breaking-change`, `feature`, `bugfix`, `performance`
-3. conventional commit subjects (`feat`, `fix`, `perf`, `refactor`, `revert`, breaking markers)
-4. fallback patch bump for non-doc/non-ci changes when no explicit signal is present
+1. explicit chart version override: if `charts/loki-vl-proxy/Chart.yaml` `version` is ahead of the latest git tag, release exactly that chart version
+2. explicit release labels on merged PR: `release:major`, `release:minor`, `release:patch`, `no-release`
+3. semantic PR labels: `breaking-change`, `feature`, `bugfix`, `performance`
+4. conventional commit subjects (`feat`, `fix`, `perf`, `refactor`, `revert`, breaking markers)
+5. fallback patch bump for non-doc/non-ci changes when no explicit signal is present
 
 ## Skip Rules
 
