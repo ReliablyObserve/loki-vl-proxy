@@ -431,6 +431,19 @@ func TestParsePatternUnixSeconds(t *testing.T) {
 	}
 }
 
+func TestExtractLogPatterns_AlternateMessageAndTimestampFields(t *testing.T) {
+	vlBody := []byte(strings.Join([]string{
+		`{"timestamp":"2026-04-04T10:00:00Z","message":"GET /v1/users 200 15ms","detected_level":"info"}`,
+		`{"ts":"1775296801","msg":"GET /v1/users 200 19ms","level":"info"}`,
+		`{"time":"1775296802","line":"POST /v1/orders 201 88ms","level":"info"}`,
+	}, "\n"))
+
+	patterns := extractLogPatterns(vlBody, "1m", 10)
+	if len(patterns) == 0 {
+		t.Fatalf("expected patterns for alternate message/timestamp field names, got %#v", patterns)
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

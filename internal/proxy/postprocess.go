@@ -201,11 +201,11 @@ func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]inte
 		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
 		}
-		msg, _ := stringifyEntryValue(entry["_msg"])
-		if msg == "" {
+		msg, ok := patternMessageFromEntry(entry)
+		if !ok {
 			continue
 		}
-		unixSeconds, ok := parsePatternUnixSeconds(entry["_time"])
+		unixSeconds, ok := patternUnixSecondsFromEntry(entry)
 		if !ok {
 			continue
 		}
@@ -297,6 +297,25 @@ func parsePatternUnixSeconds(raw interface{}) (int64, bool) {
 	default:
 		return value, true
 	}
+}
+
+func patternMessageFromEntry(entry map[string]interface{}) (string, bool) {
+	for _, key := range []string{"_msg", "message", "msg", "line", "log"} {
+		msg, ok := stringifyEntryValue(entry[key])
+		if ok && strings.TrimSpace(msg) != "" {
+			return msg, true
+		}
+	}
+	return "", false
+}
+
+func patternUnixSecondsFromEntry(entry map[string]interface{}) (int64, bool) {
+	for _, key := range []string{"_time", "time", "timestamp", "ts"} {
+		if unixSeconds, ok := parsePatternUnixSeconds(entry[key]); ok {
+			return unixSeconds, true
+		}
+	}
+	return 0, false
 }
 
 func buildPatternResponse(miner *patternMiner, limit int) []map[string]interface{} {
