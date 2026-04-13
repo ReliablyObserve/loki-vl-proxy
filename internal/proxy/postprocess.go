@@ -238,9 +238,7 @@ func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]inte
 	}
 	entries := make([]*patternBucket, 0, entryCap)
 	if len(clusters) <= limit {
-		for _, entry := range clusters {
-			entries = append(entries, entry)
-		}
+		entries = append(entries, clusters...)
 		sort.Slice(entries, func(i, j int) bool {
 			return entries[i].total > entries[j].total
 		})

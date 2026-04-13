@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- patterns: add Loki-compatible `/loki/api/v1/patterns` extraction flow with canonicalized token clustering and low-signal line filtering for better parity on repeated dynamic log messages
+
+### Configuration
+
+- proxy: add `-patterns-enabled` runtime flag to explicitly enable/disable patterns API behavior
+- chart: expose `extraArgs.patterns-enabled` in Helm values for straightforward deployment-time control
+
+### Tests
+
+- patterns: add benchmark scale coverage (`10/100/1000/10000`) with CI regression gates to keep cache-assisted patterns extraction from regressing in latency-sensitive paths
+
 ## [1.0.5] - 2026-04-13
 
 ### Observability
