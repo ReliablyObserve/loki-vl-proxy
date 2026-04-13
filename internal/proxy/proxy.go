@@ -4074,6 +4074,29 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	patterns := extractLogPatterns(body, stepParam, patternLimit)
+	if resp.StatusCode >= http.StatusBadRequest {
+		rangeParams := url.Values{}
+		rangeParams.Set("query", logsqlQuery)
+		if s := startParam; s != "" {
+			rangeParams.Set("start", formatVLTimestamp(s))
+		}
+		if e := endParam; e != "" {
+			rangeParams.Set("end", formatVLTimestamp(e))
+		}
+		rangeParams.Set("limit", "1000")
+		rangeResp, rangeErr := p.vlPost(r.Context(), "/select/logsql/query_range", rangeParams)
+		if rangeErr == nil {
+			defer rangeResp.Body.Close()
+			if rangeBody, readErr := io.ReadAll(rangeResp.Body); readErr == nil && rangeResp.StatusCode < http.StatusBadRequest {
+				if fallbackPatterns := extractLogPatterns(rangeBody, stepParam, patternLimit); len(fallbackPatterns) > 0 {
+					patterns = fallbackPatterns
+				}
+			}
+		}
+	}
+	if patterns == nil {
+		patterns = []map[string]interface{}{}
+	}
 	p.metrics.RecordPatternsDetected(len(patterns))
 	result := map[string]interface{}{
 		"status": "success",
