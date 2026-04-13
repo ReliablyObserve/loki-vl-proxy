@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -894,6 +895,24 @@ func TestTranslation_MalformedSpacedDottedTripletNormalizedForDatasourceOps(t *t
 	}
 	if strings.Contains(receivedQuery, "custom . `") {
 		t.Fatalf("expected malformed spaced dotted syntax to be removed, got %q", receivedQuery)
+	}
+}
+
+func TestTranslation_DottedFieldComplexLiteralIsQuoted(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Write([]byte{})
+	}))
+	defer vlBackend.Close()
+
+	stack := `golang.a2z.com/EKSNodeMonitoringAgent/internal/monitor/kernel.(*KernelMonitor).handleEnvironment`
+	logql := `{deployment_environment="dev"} | code.stacktrace = ` + "`" + stack + "`"
+	doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query="+url.QueryEscape(logql)+"&start=1&end=2&limit=10")
+
+	if !strings.Contains(receivedQuery, `"code.stacktrace":="`+stack+`"`) {
+		t.Fatalf("expected complex dotted field value to be quoted in backend query, got %q", receivedQuery)
 	}
 }
 

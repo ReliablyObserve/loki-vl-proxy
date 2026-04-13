@@ -215,6 +215,11 @@ func TestTranslateSingleLabelFilter_DottedTripletKeyOperatorValue(t *testing.T) 
 			stage: "custom . `pipeline.processing.` = `vector-processing`",
 			want:  `"custom.pipeline.processing":=vector-processing`,
 		},
+		{
+			name:  "complex dotted value is quoted for valid logsql",
+			stage: "code.stacktrace = `golang.a2z.com/EKSNodeMonitoringAgent/internal/monitor/kernel.(*KernelMonitor).handleEnvironment`",
+			want:  `"code.stacktrace":="golang.a2z.com/EKSNodeMonitoringAgent/internal/monitor/kernel.(*KernelMonitor).handleEnvironment"`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -227,5 +232,17 @@ func TestTranslateSingleLabelFilter_DottedTripletKeyOperatorValue(t *testing.T) 
 				t.Fatalf("translateSingleLabelFilter(%q) = %q, want %q", tt.stage, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestTranslateSingleLabelFilter_DottedTripletComplexMultilineValueQuoted(t *testing.T) {
+	stage := "code.stacktrace = `first line\n\tsecond line`"
+	got, ok := translateSingleLabelFilter(stage, nil)
+	if !ok {
+		t.Fatalf("expected stage to be parsed as label/operator/value triplet: %q", stage)
+	}
+	want := `"code.stacktrace":="first line\n\tsecond line"`
+	if got != want {
+		t.Fatalf("translateSingleLabelFilter multiline literal = %q, want %q", got, want)
 	}
 }

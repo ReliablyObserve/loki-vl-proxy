@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // LabelTranslateFunc translates a Loki label name to a VL field name (query direction).
@@ -518,10 +519,17 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 				}
 				return fmt.Sprintf(`%s:=""`, label), true
 			}
-			if strings.HasPrefix(op.logsql, "-") {
-				return fmt.Sprintf("-%s%s%s", label, op.logsql[1:], value), true
+			formattedValue := value
+			if op.logsql == ":=" || op.logsql == "-:=" {
+				// Equality filters can carry arbitrary string payloads
+				// (for example stacktraces). Keep simple tokens bare and
+				// quote/escape complex values to preserve valid LogsQL.
+				formattedValue = formatLogsQLEqualityValue(value)
 			}
-			return fmt.Sprintf("%s%s%s", label, op.logsql, value), true
+			if strings.HasPrefix(op.logsql, "-") {
+				return fmt.Sprintf("-%s%s%s", label, op.logsql[1:], formattedValue), true
+			}
+			return fmt.Sprintf("%s%s%s", label, op.logsql, formattedValue), true
 		}
 	}
 
@@ -539,6 +547,36 @@ func quoteLogsQLFieldNameIfNeeded(label string) string {
 		return `"` + label + `"`
 	}
 	return label
+}
+
+func formatLogsQLEqualityValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return `""`
+	}
+	if logsQLEqualityValueNeedsQuoting(value) {
+		return strconv.Quote(value)
+	}
+	return value
+}
+
+func logsQLEqualityValueNeedsQuoting(value string) bool {
+	if value == "" {
+		return true
+	}
+	for _, r := range value {
+		if unicode.IsSpace(r) {
+			return true
+		}
+		if (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '_' || r == '-' || r == '.' || r == '/' {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (string, bool) {
@@ -1348,10 +1386,14 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 				}
 				return fmt.Sprintf(`%s:=""`, label)
 			}
-			if op.neg {
-				return fmt.Sprintf("-%s%s%s", label, op.logsql, value)
+			formattedValue := value
+			if op.logsql == ":=" {
+				formattedValue = formatLogsQLEqualityValue(value)
 			}
-			return fmt.Sprintf("%s%s%s", label, op.logsql, value)
+			if op.neg {
+				return fmt.Sprintf("-%s%s%s", label, op.logsql, formattedValue)
+			}
+			return fmt.Sprintf("%s%s%s", label, op.logsql, formattedValue)
 		}
 	}
 	return ""
@@ -1410,6 +1452,10 @@ var syntheticServiceNameFields = []string{
 
 func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
 	value = strings.TrimSpace(strings.Trim(value, "\"`"))
+	formattedValue := value
+	if !isRegex {
+		formattedValue = formatLogsQLEqualityValue(value)
+	}
 	parts := make([]string, 0, len(syntheticServiceNameFields))
 	for _, field := range syntheticServiceNameFields {
 		name := field
@@ -1433,9 +1479,9 @@ func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
 			continue
 		}
 		if neg {
-			parts = append(parts, fmt.Sprintf(`-%s%s%s`, name, op, value))
+			parts = append(parts, fmt.Sprintf(`-%s%s%s`, name, op, formattedValue))
 		} else {
-			parts = append(parts, fmt.Sprintf(`%s%s%s`, name, op, value))
+			parts = append(parts, fmt.Sprintf(`%s%s%s`, name, op, formattedValue))
 		}
 	}
 	if neg {
