@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- benchmarks: make label/field benchmark row parsing robust across GitHub runner output formats (single-line `Benchmark... ns/op ...`), preventing false CI failures when extracting the 12-row scale matrix
+
 ## [1.0.3] - 2026-04-13
 
 ### Documentation
