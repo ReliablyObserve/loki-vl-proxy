@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- tests: harden e2e patterns readiness polling (`/loki/api/v1/patterns`) with explicit `step=60s` and a longer readiness window to avoid false negatives on slower CI runners
+
 ### Documentation
 
 - refresh the README, API reference, observability guide, operations guide, and operational-resources runbook for the `1.0.0` through `1.0.6` release line, including patterns support, route-aware request dimensions, and the renamed `Operational Resources` dashboard section

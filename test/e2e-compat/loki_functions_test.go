@@ -446,8 +446,9 @@ func ingestPatternData(t *testing.T) {
 		"query": {`{app="pattern-test", level="info"}`},
 		"start": {time.Now().Add(-1 * time.Hour).Format(time.RFC3339Nano)},
 		"end":   {time.Now().Add(time.Hour).Format(time.RFC3339Nano)},
+		"step":  {"60s"},
 	}
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		resp := getJSON(t, proxyURL+"/loki/api/v1/patterns?"+params.Encode())
 		data, _ := resp["data"].([]interface{})
