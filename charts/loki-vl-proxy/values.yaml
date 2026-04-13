@@ -530,7 +530,9 @@ peerCache:
   enabled: false
   # Discovery: "dns" (headless service, recommended) or "static" (explicit peers list)
   discovery: "dns"
-  # Headless service name (defaults to release-name + "-headless")
+  # Optional DNS service name used for peer discovery.
+  # Does NOT change StatefulSet spec.serviceName (that is controlled by workload.statefulSet.serviceName).
+  # Empty = reuse StatefulSet headless service.
   serviceName: ""
   # Static peer addresses in host:port form (if discovery=static)
   peers: []

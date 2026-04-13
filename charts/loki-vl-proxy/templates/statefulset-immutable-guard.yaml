@@ -9,7 +9,7 @@
 
 {{- if and $existing (eq $kind "StatefulSet") -}}
 {{- $existingServiceName := default "" $existing.spec.serviceName -}}
-{{- $desiredServiceName := include "loki-vl-proxy.peerServiceName" . -}}
+{{- $desiredServiceName := include "loki-vl-proxy.headlessServiceName" . -}}
 {{- if ne $existingServiceName $desiredServiceName -}}
 {{- fail (printf "statefulSetImmutableGuard: immutable StatefulSet field change detected for %q: spec.serviceName current=%q desired=%q" $name $existingServiceName $desiredServiceName) -}}
 {{- end -}}

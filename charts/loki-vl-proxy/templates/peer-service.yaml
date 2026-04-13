@@ -1,8 +1,10 @@
 {{- if or (eq (include "loki-vl-proxy.workloadKind" .) "StatefulSet") (and .Values.peerCache.enabled (eq .Values.peerCache.discovery "dns")) }}
+{{- $headlessName := include "loki-vl-proxy.headlessServiceName" . -}}
+{{- $peerName := include "loki-vl-proxy.peerServiceName" . -}}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "loki-vl-proxy.peerServiceName" . }}
+  name: {{ $headlessName }}
   labels:
     {{- include "loki-vl-proxy.labels" . | nindent 4 }}
     {{- with .Values.peerService.labels }}
@@ -23,4 +25,31 @@ spec:
       name: http
   selector:
     {{- include "loki-vl-proxy.selectorLabels" . | nindent 4 }}
+{{- if and .Values.peerCache.enabled (eq .Values.peerCache.discovery "dns") (ne $peerName $headlessName) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $peerName }}
+  labels:
+    {{- include "loki-vl-proxy.labels" . | nindent 4 }}
+    {{- with .Values.peerService.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.peerService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  {{- include "loki-vl-proxy.renderTrafficDistribution" (dict "field" ".Values.peerService.trafficDistribution" "value" .Values.peerService.trafficDistribution) | nindent 2 }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "loki-vl-proxy.selectorLabels" . | nindent 4 }}
+{{- end }}
 {{- end }}

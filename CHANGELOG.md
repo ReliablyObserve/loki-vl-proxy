@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- chart: decouple StatefulSet immutable `spec.serviceName` from peer-discovery alias settings by binding StatefulSet identity to `workload.statefulSet.serviceName` and rendering an additional DNS headless alias service when `peerCache.serviceName` differs
+
 ## [1.0.1] - 2026-04-13
 
 ### Bug Fixes

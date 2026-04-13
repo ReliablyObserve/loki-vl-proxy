@@ -6,7 +6,7 @@ metadata:
     {{- include "loki-vl-proxy.labels" . | nindent 4 }}
 spec:
   {{- if eq (include "loki-vl-proxy.workloadKind" .) "StatefulSet" }}
-  serviceName: {{ include "loki-vl-proxy.peerServiceName" . }}
+  serviceName: {{ include "loki-vl-proxy.headlessServiceName" . }}
   podManagementPolicy: {{ .Values.workload.statefulSet.podManagementPolicy }}
   updateStrategy:
     {{- toYaml .Values.workload.statefulSet.updateStrategy | nindent 4 }}
