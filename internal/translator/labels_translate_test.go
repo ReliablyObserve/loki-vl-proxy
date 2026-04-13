@@ -141,6 +141,26 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 			logql: `{app="api"} | json | source_message_bytes!="89" | source_message_bytes="89"`,
 			want:  `app:=api | unpack_json | filter source_message_bytes:=89`,
 		},
+		{
+			name:  "repeated include on same field with different values keeps latest value",
+			logql: `{app="api"} | json | traceID="a1" | traceID="b2"`,
+			want:  `app:=api | unpack_json | filter traceID:=b2`,
+		},
+		{
+			name:  "repeated exclude on same field with different values keeps latest value",
+			logql: `{app="api"} | json | traceID!="a1" | traceID!="b2"`,
+			want:  `app:=api | unpack_json | filter -traceID:=b2`,
+		},
+		{
+			name:  "range filters on same field are preserved",
+			logql: `{app="api"} | json | duration_ms > 100 | duration_ms < 500`,
+			want:  `app:=api | unpack_json | filter duration_ms:>100 | filter duration_ms:<500`,
+		},
+		{
+			name:  "mixed include exclude on same field keeps latest action",
+			logql: `{app="api"} | json | traceID="a1" | traceID!="a1"`,
+			want:  `app:=api | unpack_json | filter -traceID:=a1`,
+		},
 	}
 
 	for _, tt := range tests {

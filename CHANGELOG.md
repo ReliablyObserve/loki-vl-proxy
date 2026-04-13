@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Notes
+### Bug Fixes
 
-- _No unreleased changes yet._
+- harden Drilldown include/exclude translation for repeated same-field clicks by keeping the latest equality/regex filter per field and preventing impossible AND chains from accumulating
+
+### Observability
+
+- use OTel semantic end-user fields in request logs by emitting `enduser.name` for trusted user-header flows while keeping `enduser.id` as stable identity and `enduser.source` as provenance
+- stop duplicating OTel resource attributes (`service.*`, `deployment.environment.name`, `telemetry.sdk.*`) in per-line JSON log payloads to prevent downstream `message.*` field explosion
 
 ## [0.27.42] - 2026-04-13
 
