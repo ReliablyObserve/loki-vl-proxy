@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-04-13
+
 ### Observability
 
 - rebuild the packaged operations dashboard resource section into a consistent operator view, adding directional CPU/memory/disk/network panels plus per-pod FD and RSS visibility
