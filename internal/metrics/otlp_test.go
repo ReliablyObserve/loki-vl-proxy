@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -52,10 +53,9 @@ func TestOTLPPusher_SendsMetrics(t *testing.T) {
 		ServiceInstanceID:     "proxy-1",
 		DeploymentEnvironment: "prod",
 	}, m)
-	pusher.Start()
-	defer pusher.Stop()
-
-	time.Sleep(120 * time.Millisecond)
+	if err := pusher.push(context.Background()); err != nil {
+		t.Fatalf("push failed: %v", err)
+	}
 
 	if received.Load() < 1 {
 		t.Fatal("expected at least 1 push")
@@ -162,10 +162,9 @@ func TestOTLPPusher_CustomHeaders(t *testing.T) {
 		Interval: 50 * time.Millisecond,
 		Headers:  map[string]string{"Authorization": "Bearer test-token"},
 	}, m)
-	pusher.Start()
-	defer pusher.Stop()
-
-	time.Sleep(120 * time.Millisecond)
+	if err := pusher.push(context.Background()); err != nil {
+		t.Fatalf("push failed: %v", err)
+	}
 
 	mu.Lock()
 	auth := receivedAuth
@@ -188,11 +187,13 @@ func TestOTLPPusher_HandlesErrors(t *testing.T) {
 		Endpoint: srv.URL,
 		Interval: 50 * time.Millisecond,
 	}, m)
-	pusher.Start()
-	defer pusher.Stop()
-
-	// Should not panic on errors
-	time.Sleep(120 * time.Millisecond)
+	err := pusher.push(context.Background())
+	if err == nil {
+		t.Fatal("expected push error")
+	}
+	if !strings.Contains(err.Error(), "500") {
+		t.Fatalf("expected 500 error, got %v", err)
+	}
 }
 
 func TestOTLPPusher_BuildPayload(t *testing.T) {
@@ -269,13 +270,13 @@ func TestOTLPPusher_GzipCompression(t *testing.T) {
 		Interval:    50 * time.Millisecond,
 		Compression: OTLPCompressionGzip,
 	}, m)
-	pusher.Start()
-	defer pusher.Stop()
-
+	if err := pusher.push(context.Background()); err != nil {
+		t.Fatalf("push failed: %v", err)
+	}
 	select {
 	case <-seen:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for OTLP push")
+	default:
+		t.Fatal("expected OTLP push to be observed")
 	}
 
 	mu.Lock()
@@ -311,13 +312,13 @@ func TestOTLPPusher_ZstdCompression(t *testing.T) {
 		Interval:    50 * time.Millisecond,
 		Compression: OTLPCompressionZstd,
 	}, m)
-	pusher.Start()
-	defer pusher.Stop()
-
+	if err := pusher.push(context.Background()); err != nil {
+		t.Fatalf("push failed: %v", err)
+	}
 	select {
 	case <-seen:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for OTLP push")
+	default:
+		t.Fatal("expected OTLP push to be observed")
 	}
 
 	mu.Lock()

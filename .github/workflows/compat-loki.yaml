@@ -51,8 +51,9 @@ jobs:
       - name: Start pinned stack
         working-directory: test/e2e-compat
         run: |
-          docker compose up -d --no-build
-          ../../scripts/ci/wait_e2e_stack.sh 180
+          docker compose up -d --no-build loki victorialogs vmalert loki-vl-proxy loki-vl-proxy-underscore
+          docker compose up -d --no-build --no-deps grafana
+          bash ../../scripts/ci/wait_loki_track_stack.sh 180
       - name: Run Loki compatibility score
         run: |
           set -euo pipefail
@@ -114,8 +115,9 @@ jobs:
         env:
           LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
         run: |
-          docker compose up -d --no-build
-          ../../scripts/ci/wait_e2e_stack.sh 180
+          docker compose up -d --no-build loki victorialogs vmalert loki-vl-proxy loki-vl-proxy-underscore
+          docker compose up -d --no-build --no-deps grafana
+          bash ../../scripts/ci/wait_loki_track_stack.sh 180
       - name: Run Loki compatibility score
         env:
           LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}

@@ -503,7 +503,10 @@ func New(cfg Config) (*Proxy, error) {
 	if baseLogger == nil {
 		baseLogger = slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 	}
-	logger := slog.New(NewRedactingHandler(baseLogger.Handler())).With("component", "proxy")
+	logger := slog.New(NewRedactingHandler(&levelFilterHandler{
+		inner: baseLogger.Handler(),
+		min:   level,
+	})).With("component", "proxy")
 
 	maxConcurrent := cfg.MaxConcurrent
 	if maxConcurrent == 0 {
@@ -4426,6 +4429,16 @@ func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, r
 		p.metrics.RecordBackendDurationWithRoute(requestType, observedRoute, duration)
 	}
 
+	level := slog.LevelInfo
+	if err != nil || statusCode >= http.StatusInternalServerError {
+		level = slog.LevelError
+	} else if statusCode >= http.StatusBadRequest {
+		level = slog.LevelWarn
+	}
+	if !p.log.Enabled(ctx, level) {
+		return
+	}
+
 	logAttrs := []interface{}{
 		"http.route", observedRoute,
 		"url.path", observedRoute,
@@ -4448,18 +4461,8 @@ func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, r
 			"error.type", "transport",
 			"error.message", err.Error(),
 		)
-		p.log.Error("upstream_request", logAttrs...)
-		return
 	}
-	if statusCode >= http.StatusInternalServerError {
-		p.log.Error("upstream_request", logAttrs...)
-		return
-	}
-	if statusCode >= http.StatusBadRequest {
-		p.log.Warn("upstream_request", logAttrs...)
-		return
-	}
-	p.log.Info("upstream_request", logAttrs...)
+	p.log.Log(ctx, level, "upstream_request", logAttrs...)
 }
 
 func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*http.Response, error) {
@@ -7212,7 +7215,6 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		start := time.Now()
 		tenant := r.Header.Get("X-Scope-OrgID")
 		query := r.FormValue("query")
-		authUser, authSource := metrics.ResolveAuthContext(r)
 		clientID, clientSource := metrics.ResolveClientContext(r, p.metricsTrustProxyHeaders)
 		p.metrics.RecordClientInflight(clientID, 1)
 		defer p.metrics.RecordClientInflight(clientID, -1)
@@ -7256,12 +7258,18 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		}
 
 		// Structured request log — includes tenant, query, status, latency, cache info
-		logLevel := p.log.Info
+		logLevel := slog.LevelInfo
 		if sc.code >= 500 {
-			logLevel = p.log.Error
+			logLevel = slog.LevelError
 		} else if sc.code >= 400 {
-			logLevel = p.log.Warn
+			logLevel = slog.LevelWarn
 		}
+		reqCtx := reqWithTelemetry.Context()
+		if !p.log.Enabled(reqCtx, logLevel) {
+			return
+		}
+
+		authUser, authSource := metrics.ResolveAuthContext(r)
 		clientAddr := forwardedClientAddress(r, p.metricsTrustProxyHeaders)
 		peerAddr, _ := splitHostPortValue(r.RemoteAddr)
 		logAttrs := []interface{}{
@@ -7303,7 +7311,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 				"auth.source", authSource,
 			)
 		}
-		logLevel("request", logAttrs...)
+		p.log.Log(reqCtx, logLevel, "request", logAttrs...)
 	})
 }
 
