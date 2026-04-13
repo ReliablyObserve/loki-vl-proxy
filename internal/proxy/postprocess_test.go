@@ -444,6 +444,14 @@ func TestExtractLogPatterns_AlternateMessageAndTimestampFields(t *testing.T) {
 	}
 }
 
+func TestExtractLogPatterns_WrappedJSONResults(t *testing.T) {
+	vlBody := []byte(`{"results":[{"timestamp":"2026-04-04T10:00:00Z","message":"GET /v1/users 200 15ms","level":"info"},{"timestamp":"2026-04-04T10:00:01Z","message":"GET /v1/users 200 19ms","level":"info"}]}`)
+	patterns := extractLogPatterns(vlBody, "1m", 10)
+	if len(patterns) == 0 {
+		t.Fatalf("expected patterns from wrapped results payload, got %#v", patterns)
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
