@@ -356,12 +356,13 @@ const (
 
 // CacheTTLs defines per-endpoint cache TTLs.
 var CacheTTLs = map[string]time.Duration{
-	"labels":                60 * time.Second,
-	"label_values":          60 * time.Second,
+	"labels":                2 * time.Minute,
+	"label_values":          2 * time.Minute,
+	"label_inventory":       5 * time.Minute,
 	"series":                30 * time.Second,
-	"detected_fields":       30 * time.Second,
-	"detected_field_values": 30 * time.Second,
-	"detected_labels":       30 * time.Second,
+	"detected_fields":       90 * time.Second,
+	"detected_field_values": 90 * time.Second,
+	"detected_labels":       90 * time.Second,
 	"patterns":              20 * time.Second,
 	"query_range":           10 * time.Second,
 	"query":                 10 * time.Second,
@@ -1778,7 +1779,7 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 		return nil, err
 	}
 	if encoded, err := json.Marshal(labels); err == nil {
-		p.cache.SetWithTTL(cacheKey, encoded, CacheTTLs["labels"])
+		p.cache.SetWithTTL(cacheKey, encoded, CacheTTLs["label_inventory"])
 	}
 	return labels, nil
 }
@@ -2647,7 +2648,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		params.Set("end", e)
 	}
 
-	labels, err := p.fetchPreferredLabelNames(r.Context(), params)
+	labels, err := p.fetchPreferredLabelNamesCached(r.Context(), params)
 	if err != nil {
 		status := statusFromUpstreamErr(err)
 		p.writeError(w, status, err.Error())
@@ -3296,6 +3297,21 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 	}
 	p.metrics.RecordCacheMiss()
 
+	if fieldName == "service_name" {
+		if values, err := p.serviceNameValues(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end")); err == nil && len(values) > 0 {
+			payload := map[string]interface{}{
+				"status": "success",
+				"data":   values,
+				"values": values,
+				"limit":  lineLimit,
+			}
+			p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_field_values"], payload)
+			p.writeJSON(w, payload)
+			p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
+			return
+		}
+	}
+
 	if nativeField, ok, err := p.resolveNativeDetectedField(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), fieldName); err == nil && ok {
 		if values, valuesErr := p.fetchNativeFieldValues(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), nativeField, lineLimit); valuesErr == nil {
 			if len(values) > 0 {
@@ -3352,15 +3368,35 @@ func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, quer
 	if err != nil || summaries == nil {
 		return nil
 	}
-	summary := summaries[fieldName]
-	if summary == nil {
-		return nil
+
+	available := make([]string, 0, len(summaries))
+	for name := range summaries {
+		available = append(available, name)
 	}
-	values := make([]string, 0, len(summary.values))
-	for value := range summary.values {
-		if strings.TrimSpace(value) == "" {
+	resolution := p.labelTranslator.ResolveLabelCandidates(fieldName, available)
+	if len(resolution.candidates) == 0 {
+		resolution = fieldResolution{candidates: []string{fieldName}}
+	}
+
+	valueSet := make(map[string]struct{})
+	for _, candidate := range resolution.candidates {
+		summary := summaries[candidate]
+		if summary == nil {
 			continue
 		}
+		for value := range summary.values {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			valueSet[value] = struct{}{}
+		}
+	}
+	if len(valueSet) == 0 {
+		return nil
+	}
+
+	values := make([]string, 0, len(valueSet))
+	for value := range valueSet {
 		values = append(values, value)
 	}
 	sort.Strings(values)

@@ -137,6 +137,54 @@ jobs:
           go test ./internal/proxy/ -bench . -benchmem -run "^$" -count=3 -timeout=120s \
             | tee bench-results.txt
 
+      - name: Run label/field scale benchmarks (regression guard)
+        run: |
+          go test ./internal/proxy/ -run "^$" -bench 'BenchmarkProxy_Label(Keys|Values)_Scale_' -benchmem -count=1 -benchtime=200ms \
+            | tee bench-label-fields.txt
+
+          awk '
+            /^BenchmarkProxy_Label(Keys|Values)_Scale_/ {
+              bench=$1
+              sub(/-[0-9]+$/, "", bench)
+              next
+            }
+            /ns\/op/ && bench != "" {
+              printf "%s\t%s\t%s\t%s\n", bench, $2, $4, $6
+              bench=""
+            }
+          ' bench-label-fields.txt > bench-label-fields.tsv
+
+          expected=12
+          actual=$(wc -l < bench-label-fields.tsv | tr -d " ")
+          if [ "$actual" -ne "$expected" ]; then
+            echo "FAIL: expected ${expected} parsed benchmark rows, got ${actual}"
+            cat bench-label-fields.tsv
+            exit 1
+          fi
+
+          awk -F'\t' '
+            BEGIN { fail=0 }
+            {
+              ns=$2+0
+              # Conservative threshold to catch severe performance regressions
+              if (ns > 25000) {
+                printf "FAIL: %s exceeded ns/op threshold: %.2f\n", $1, ns
+                fail=1
+              }
+            }
+            END { exit fail }
+          ' bench-label-fields.tsv
+
+      - name: Publish label/field benchmark summary
+        run: |
+          {
+            echo "### Label/Field Scale Benchmarks"
+            echo ""
+            echo "| Benchmark | ns/op | B/op | allocs/op |"
+            echo "|---|---:|---:|---:|"
+            awk -F'\t' '{printf "| `%s` | %s | %s | %s |\n", $1, $2, $3, $4}' bench-label-fields.tsv
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run load tests
         run: |
           go test ./internal/proxy/ -run "TestLoad" -v -timeout=120s -count=1 \
@@ -148,6 +196,8 @@ jobs:
           name: benchmarks
           path: |
             bench-results.txt
+            bench-label-fields.txt
+            bench-label-fields.tsv
             load-results.txt
 
       - name: Check for performance regressions

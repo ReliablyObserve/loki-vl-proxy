@@ -1011,6 +1011,80 @@ func TestCache_QueryRangeHitOnRepeat(t *testing.T) {
 	}
 }
 
+func TestCache_DetectedFieldServiceNameHitOnRepeat(t *testing.T) {
+	callCount := 0
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch r.URL.Path {
+		case "/select/logsql/streams":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[{"value":"{service.name=\"grafana\"}","hits":1}]}`))
+		default:
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	path := `/loki/api/v1/detected_field/service_name/values?query=%7Bdeployment_environment%3D%22dev%22%7D&start=1&end=2`
+
+	w1 := httptest.NewRecorder()
+	p.handleDetectedFieldValues(w1, httptest.NewRequest(http.MethodGet, path, nil))
+	if callCount != 1 {
+		t.Fatalf("expected 1 backend call on cache miss, got %d", callCount)
+	}
+
+	w2 := httptest.NewRecorder()
+	p.handleDetectedFieldValues(w2, httptest.NewRequest(http.MethodGet, path, nil))
+	if callCount != 1 {
+		t.Fatalf("expected cache hit before backend call, got %d", callCount)
+	}
+
+	var first, second map[string]interface{}
+	mustUnmarshal(t, w1.Body.Bytes(), &first)
+	mustUnmarshal(t, w2.Body.Bytes(), &second)
+	firstValuesRaw, ok := first["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array in first response, got %T", first["values"])
+	}
+	secondValuesRaw, ok := second["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array in second response, got %T", second["values"])
+	}
+	firstValues := make([]string, 0, len(firstValuesRaw))
+	secondValues := make([]string, 0, len(secondValuesRaw))
+	for _, item := range firstValuesRaw {
+		firstValues = append(firstValues, fmt.Sprint(item))
+	}
+	for _, item := range secondValuesRaw {
+		secondValues = append(secondValues, fmt.Sprint(item))
+	}
+	if len(firstValues) != len(secondValues) || firstValues[0] != secondValues[0] {
+		t.Fatalf("expected cached detected_field values to match original, got %v vs %v", firstValues, secondValues)
+	}
+}
+
+func TestCacheTTLs_MetadataDiscoveryExtended(t *testing.T) {
+	if got := CacheTTLs["labels"]; got < 2*time.Minute {
+		t.Fatalf("labels TTL must stay >= 2m, got %s", got)
+	}
+	if got := CacheTTLs["label_values"]; got < 2*time.Minute {
+		t.Fatalf("label_values TTL must stay >= 2m, got %s", got)
+	}
+	if got := CacheTTLs["label_inventory"]; got < 5*time.Minute {
+		t.Fatalf("label_inventory TTL must stay >= 5m, got %s", got)
+	}
+	if got := CacheTTLs["detected_fields"]; got < 90*time.Second {
+		t.Fatalf("detected_fields TTL must stay >= 90s, got %s", got)
+	}
+	if got := CacheTTLs["detected_field_values"]; got < 90*time.Second {
+		t.Fatalf("detected_field_values TTL must stay >= 90s, got %s", got)
+	}
+	if got := CacheTTLs["detected_labels"]; got < 90*time.Second {
+		t.Fatalf("detected_labels TTL must stay >= 90s, got %s", got)
+	}
+}
+
 // =============================================================================
 // POST Support Tests — Loki allows POST for all query endpoints
 // =============================================================================

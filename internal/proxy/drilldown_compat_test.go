@@ -869,6 +869,86 @@ func TestDrilldown_DetectedFieldValues_ReturnStructuredMetadataValues(t *testing
 	}
 }
 
+func TestDrilldown_DetectedFieldValues_ServiceNameUsesFastPath(t *testing.T) {
+	var sawStreams bool
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/streams":
+			sawStreams = true
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"{service.name=\"grafana\",cluster=\"test-cluster\"}","hits":2}]}`))
+		case "/select/logsql/field_names", "/select/logsql/query", "/select/logsql/field_values":
+			t.Fatalf("service_name detected field values must use dedicated fast path, got %s", r.URL.Path)
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	params := url.Values{}
+	params.Set("query", `{deployment_environment="dev"} | json | logfmt | source_message_bytes="89"`)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/service_name/values?"+params.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	values, ok := resp["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array, got %v", resp)
+	}
+	if len(values) != 1 || values[0].(string) != "grafana" {
+		t.Fatalf("expected service_name values from fast path, got %v", values)
+	}
+	if !sawStreams {
+		t.Fatalf("expected streams endpoint to be used")
+	}
+}
+
+func TestDetectedLabelValuesForField_ResolvesKnownUnderscoreAlias(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/streams":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"{k8s.cluster.name=\"prod-cluster\",app=\"api\"}","hits":1}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"ok","_stream":"{k8s.cluster.name=\"prod-cluster\",app=\"api\"}"}` + "\n"))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL: backend.URL,
+		Cache:      cache.New(60*time.Second, 1000),
+		LogLevel:   "error",
+		LabelStyle: LabelStylePassthrough,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	values := p.detectedLabelValuesForField(context.Background(), "k8s_cluster_name", `{app="api"}`, "1", "2", 25)
+	if len(values) != 1 || values[0] != "prod-cluster" {
+		t.Fatalf("expected known underscore alias to resolve to dotted label values, got %v", values)
+	}
+}
+
 func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 	var (
 		sampleQueries []string

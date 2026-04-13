@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - align proxy request telemetry with OTel semantic HTTP attributes, and add shared upstream/downstream route-aware request dimensions for Loki and VictoriaLogs visibility
 
+### Bug Fixes
+
+- drilldown: resolve `service_name` detected-field values via the dedicated service discovery fast path before generic field scans, removing intermittent `No data` responses in field value search
+- drilldown: make detected-label value fallback alias-aware so underscore keys (for example `k8s_cluster_name`) correctly resolve dotted VL labels
+
+### Performance
+
+- cache: increase discovery endpoint TTLs for labels and detected fields/values/labels to reduce repeated upstream metadata scans during drilldown exploration
+
+### CI
+
+- benchmarks: add always-on label/field scale benchmark matrix (`10/100/1000/10000`) with artifact upload, workflow summary table, and a conservative ns/op regression guard
+
 ## [1.0.2] - 2026-04-13
 
 ### Bug Fixes
