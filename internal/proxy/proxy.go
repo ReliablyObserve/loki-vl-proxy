@@ -7146,9 +7146,8 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 			"loki.query", truncateQuery(query, 200),
 			"client.address", r.RemoteAddr,
 			"network.peer.address", r.RemoteAddr,
-			"user.id", clientID,
 			"enduser.id", clientID,
-			"loki.client.source", clientSource,
+			"enduser.source", clientSource,
 			"cache.result", telemetry.cacheResult,
 			"proxy.duration_ms", elapsed.Milliseconds(),
 			"proxy.overhead_ms", proxyOverhead.Milliseconds(),
@@ -7157,9 +7156,11 @@ func (p *Proxy) requestLogger(endpoint string, next http.HandlerFunc) http.Handl
 			"upstream.status_code", telemetry.upstreamLastCode,
 			"upstream.error", telemetry.upstreamErrorSeen,
 		}
+		if enduserName := deriveEnduserName(clientID, clientSource); enduserName != "" {
+			logAttrs = append(logAttrs, "enduser.name", enduserName)
+		}
 		if authUser != "" {
 			logAttrs = append(logAttrs,
-				"user.name", authUser,
 				"auth.principal", authUser,
 				"auth.source", authSource,
 			)
@@ -7173,6 +7174,15 @@ func truncateQuery(q string, maxLen int) string {
 		return q
 	}
 	return q[:maxLen] + "..."
+}
+
+func deriveEnduserName(clientID, clientSource string) string {
+	switch clientSource {
+	case "grafana_user", "forwarded_user", "webauth_user", "auth_request_user":
+		return clientID
+	default:
+		return ""
+	}
 }
 
 // translateQuery translates a LogQL query to LogsQL, applying label name translation.

@@ -97,7 +97,8 @@ The proxy writes structured logs for:
 | `component` | internal subsystem (`proxy`, `disk_cache`, `cache_warmer`, `otlp_metrics`) |
 | `http.*` | request semantics |
 | `client.address` | remote address |
-| `enduser.id` | trusted user/client identity when available |
+| `enduser.id` | stable trusted user/client identity when available |
+| `enduser.name` | display/login user name from trusted user headers when available |
 | `auth.*` | datasource/auth principal context (separate from `enduser.id`) |
 | `cache.result` | compatibility cache result (`hit`, `miss`, `bypass`) |
 | `upstream.*` | backend call count, status, and latency |
