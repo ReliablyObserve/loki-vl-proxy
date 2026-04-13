@@ -51,7 +51,13 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	if !ok {
 		return false
 	}
-	windows := splitQueryRangeWindows(startNs, endNs, p.queryRangeSplitInterval, r.FormValue("direction"))
+	windows := splitQueryRangeWindowsWithOptions(
+		startNs,
+		endNs,
+		p.queryRangeSplitInterval,
+		r.FormValue("direction"),
+		p.queryRangeAlignWindows,
+	)
 	if len(windows) <= 1 {
 		return false
 	}
@@ -71,7 +77,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	p.metrics.RecordTupleMode(tupleModeForRequest(categorizedLabels, emitStructuredMetadata))
 
-	filteredWindows, prefilterErr := p.prefilterQueryRangeWindowsByHits(r.Context(), r, logsqlQuery, windows)
+	filteredWindows, windowHitEstimate, prefilterErr := p.prefilterQueryRangeWindowsByHits(r.Context(), r, logsqlQuery, windows)
 	if prefilterErr != nil {
 		p.log.Debug(
 			"query_range window prefilter unavailable; using full window set",
@@ -107,7 +113,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	// Keep preallocation constant-sized to avoid any user-influenced allocation growth.
 	collected := make([]queryRangeWindowEntry, 0, queryRangeCollectedInitialCap)
 	for i := 0; i < len(windows) && remaining > 0; {
-		parallel := p.queryRangeWindowParallelLimit()
+		parallel := p.queryRangeWindowBatchParallelLimit(windows[i], windowHitEstimate)
 		batchSize := min(parallel, len(windows)-i)
 		if batchSize <= 0 {
 			batchSize = 1
@@ -126,6 +132,8 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 			retryable := shouldRetryQueryRangeWindow(err)
 			if retryable && batchSize > 1 {
 				nextBatchSize := max(1, batchSize/2)
+				p.metrics.RecordQueryRangeWindowDegradedBatch()
+				p.metrics.RecordQueryRangeWindowRetry()
 				p.log.Warn("query_range windowed batch backoff",
 					"error", err,
 					"window_count", len(windows),
@@ -148,6 +156,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 
 			if retryable && batchSize == 1 && retryAttempt < queryRangeBatchRetryAttempts {
 				retryAttempt++
+				p.metrics.RecordQueryRangeWindowRetry()
 				backoff := queryRangeWindowRetryBackoff(retryAttempt)
 				p.log.Warn("query_range single-window retrying after batch failure",
 					"error", err,
@@ -164,6 +173,18 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 				case <-time.After(backoff):
 				}
 				continue
+			}
+			if retryable && p.queryRangePartialResponses {
+				p.metrics.RecordQueryRangeWindowPartialResponse()
+				w.Header().Set("X-Loki-VL-Partial-Response", "true")
+				if p.queryRangeBackgroundWarm {
+					p.warmQueryRangeWindowsAsync(r.Clone(context.Background()), logsqlQuery, queryLimit, windows[i:], categorizedLabels, emitStructuredMetadata)
+				}
+				p.log.Warn("query_range returning partial response after retryable batch failure",
+					"error", err,
+					"remaining_windows", len(windows)-i,
+				)
+				break
 			}
 			status := statusFromQueryRangeWindowErr(err)
 			p.log.Warn("query_range windowed fetch failed",
@@ -228,6 +249,36 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	return true
 }
 
+func (p *Proxy) warmQueryRangeWindowsAsync(
+	r *http.Request,
+	logsqlQuery string,
+	queryLimit string,
+	windows []queryRangeWindow,
+	categorizedLabels bool,
+	emitStructuredMetadata bool,
+) {
+	if len(windows) == 0 || p == nil {
+		return
+	}
+	maxWarm := p.queryRangeBackgroundWarmMaxWindows
+	if maxWarm <= 0 || maxWarm > len(windows) {
+		maxWarm = len(windows)
+	}
+	toWarm := append([]queryRangeWindow(nil), windows[:maxWarm]...)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		for _, window := range toWarm {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			_, _ = p.fetchQueryRangeWindow(ctx, r, logsqlQuery, queryLimit, 1000, window, categorizedLabels, emitStructuredMetadata)
+		}
+	}()
+}
+
 func (p *Proxy) fetchQueryRangeWindowBatch(
 	r *http.Request,
 	logsqlQuery string,
@@ -287,6 +338,13 @@ func (p *Proxy) fetchQueryRangeWindow(
 	categorizedLabels bool,
 	emitStructuredMetadata bool,
 ) (queryRangeWindowCacheEntry, error) {
+	fetchCtx := ctx
+	cancel := func() {}
+	if p.queryRangeWindowTimeout > 0 {
+		fetchCtx, cancel = context.WithTimeout(ctx, p.queryRangeWindowTimeout)
+	}
+	defer cancel()
+
 	cacheKey := p.queryRangeWindowCacheKey(r, logsqlQuery, queryLimit, window, categorizedLabels, emitStructuredMetadata)
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		var entry queryRangeWindowCacheEntry
@@ -307,7 +365,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 	coalesceKey := "query_range_window:" + cacheKey
 	for attempt := 1; attempt <= queryRangeWindowFetchAttempts; attempt++ {
 		fetchStart := time.Now()
-		status, body, err := p.vlPostCoalesced(ctx, coalesceKey, "/select/logsql/query", params)
+		status, body, err := p.vlPostCoalesced(fetchCtx, coalesceKey, "/select/logsql/query", params)
 		fetchDuration := time.Since(fetchStart)
 		p.metrics.RecordQueryRangeWindowFetchDuration(fetchDuration)
 
@@ -339,6 +397,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 			return queryRangeWindowCacheEntry{}, fetchErr
 		}
 
+		p.metrics.RecordQueryRangeWindowRetry()
 		backoff := queryRangeWindowRetryBackoff(attempt)
 		p.log.Warn(
 			"query_range window fetch retrying",
@@ -348,8 +407,8 @@ func (p *Proxy) fetchQueryRangeWindow(
 			"error", fetchErr,
 		)
 		select {
-		case <-ctx.Done():
-			return queryRangeWindowCacheEntry{}, ctx.Err()
+		case <-fetchCtx.Done():
+			return queryRangeWindowCacheEntry{}, fetchCtx.Err()
 		case <-time.After(backoff):
 		}
 	}
@@ -362,9 +421,9 @@ func (p *Proxy) prefilterQueryRangeWindowsByHits(
 	r *http.Request,
 	logsqlQuery string,
 	windows []queryRangeWindow,
-) ([]queryRangeWindow, error) {
+) ([]queryRangeWindow, map[string]int64, error) {
 	if !p.queryRangePrefilterIndexStats || len(windows) < p.queryRangePrefilterMinWindows {
-		return windows, nil
+		return windows, nil, nil
 	}
 	p.metrics.RecordQueryRangeWindowPrefilterAttempt()
 	start := time.Now()
@@ -378,6 +437,7 @@ func (p *Proxy) prefilterQueryRangeWindowsByHits(
 	}
 
 	keep := make([]bool, len(windows))
+	estimates := make([]int64, len(windows))
 	maxParallel := min(4, max(1, p.queryRangeWindowParallelLimit()))
 	maxParallel = min(maxParallel, len(windows))
 	g, gctx := errgroup.WithContext(ctx)
@@ -386,38 +446,47 @@ func (p *Proxy) prefilterQueryRangeWindowsByHits(
 		i := i
 		window := windows[i]
 		g.Go(func() error {
-			hasHits, err := p.queryRangeWindowHasHits(gctx, r, prefilterQuery, window)
+			hitEstimate, err := p.queryRangeWindowHitEstimate(gctx, r, prefilterQuery, window)
 			if err != nil {
 				return err
 			}
-			keep[i] = hasHits
+			estimates[i] = hitEstimate
+			keep[i] = hitEstimate > 0
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
 		p.metrics.RecordQueryRangeWindowPrefilterError()
-		return windows, err
+		return windows, nil, err
 	}
 
 	filtered := make([]queryRangeWindow, 0, len(windows))
+	filteredEstimates := make(map[string]int64, len(windows))
 	for i, hasHits := range keep {
 		if hasHits {
 			filtered = append(filtered, windows[i])
+			filteredEstimates[queryRangeWindowKey(windows[i])] = estimates[i]
 		}
 	}
 	p.metrics.RecordQueryRangeWindowPrefilterOutcome(len(filtered), len(windows)-len(filtered))
-	return filtered, nil
+	return filtered, filteredEstimates, nil
 }
 
-func (p *Proxy) queryRangeWindowHasHits(
+func (p *Proxy) queryRangeWindowHitEstimate(
 	ctx context.Context,
 	r *http.Request,
 	logsqlQuery string,
 	window queryRangeWindow,
-) (bool, error) {
+) (int64, error) {
 	cacheKey := p.queryRangeWindowHasHitsCacheKey(r, logsqlQuery, window)
 	if cached, ok := p.cache.Get(cacheKey); ok && len(cached) > 0 {
-		return cached[0] == '1', nil
+		if est, err := strconv.ParseInt(strings.TrimSpace(string(cached)), 10, 64); err == nil && est >= 0 {
+			return est, nil
+		}
+		if cached[0] == '1' {
+			return 1, nil
+		}
+		return 0, nil
 	}
 
 	params := url.Values{}
@@ -431,15 +500,14 @@ func (p *Proxy) queryRangeWindowHasHits(
 	for attempt := 1; attempt <= queryRangePrefilterAttempts; attempt++ {
 		status, body, err := p.vlGetCoalescedWithStatus(ctx, coalesceKey, "/select/logsql/hits", params)
 		if err == nil && status < http.StatusBadRequest {
-			hasHits := sumHitsValues(body) > 0
-			if ttl := p.queryRangeWindowPrefilterTTL(window.endNs); ttl > 0 {
-				if hasHits {
-					p.cache.SetWithTTL(cacheKey, []byte("1"), ttl)
-				} else {
-					p.cache.SetWithTTL(cacheKey, []byte("0"), ttl)
-				}
+			hitEstimate := int64(sumHitsValues(body))
+			if hitEstimate < 0 {
+				hitEstimate = 0
 			}
-			return hasHits, nil
+			if ttl := p.queryRangeWindowPrefilterTTL(window.endNs); ttl > 0 {
+				p.cache.SetWithTTL(cacheKey, []byte(strconv.FormatInt(hitEstimate, 10)), ttl)
+			}
+			return hitEstimate, nil
 		}
 		if err == nil {
 			msg := strings.TrimSpace(string(body))
@@ -449,15 +517,47 @@ func (p *Proxy) queryRangeWindowHasHits(
 			err = &queryRangeWindowHTTPError{status: status, msg: msg}
 		}
 		if attempt >= queryRangePrefilterAttempts || !shouldRetryQueryRangeWindow(err) {
-			return false, err
+			return 0, err
 		}
+		p.metrics.RecordQueryRangeWindowRetry()
 		select {
 		case <-ctx.Done():
-			return false, ctx.Err()
+			return 0, ctx.Err()
 		case <-time.After(queryRangeWindowRetryBackoff(attempt)):
 		}
 	}
-	return false, errors.New("query_range window prefilter failed")
+	return 0, errors.New("query_range window prefilter failed")
+}
+
+func queryRangeWindowKey(window queryRangeWindow) string {
+	return strconv.FormatInt(window.startNs, 10) + ":" + strconv.FormatInt(window.endNs, 10)
+}
+
+func (p *Proxy) queryRangeWindowBatchParallelLimit(window queryRangeWindow, estimates map[string]int64) int {
+	parallel := p.queryRangeWindowParallelLimit()
+	if !p.queryRangeStreamAwareBatching || parallel <= 1 {
+		return parallel
+	}
+	threshold := p.queryRangeExpensiveWindowHitThreshold
+	if threshold <= 0 {
+		return parallel
+	}
+	if estimates == nil {
+		return parallel
+	}
+	hitEstimate, ok := estimates[queryRangeWindowKey(window)]
+	if !ok || hitEstimate < threshold {
+		return parallel
+	}
+	capParallel := p.queryRangeExpensiveWindowMaxParallel
+	if capParallel <= 0 {
+		capParallel = 1
+	}
+	if capParallel < parallel {
+		p.metrics.RecordQueryRangeWindowDegradedBatch()
+		return capParallel
+	}
+	return parallel
 }
 
 func (p *Proxy) queryRangeWindowHasHitsCacheKey(
@@ -685,6 +785,10 @@ func withQueryDirectionSort(logsqlQuery, direction string) string {
 }
 
 func splitQueryRangeWindows(startNs, endNs int64, interval time.Duration, direction string) []queryRangeWindow {
+	return splitQueryRangeWindowsWithOptions(startNs, endNs, interval, direction, false)
+}
+
+func splitQueryRangeWindowsWithOptions(startNs, endNs int64, interval time.Duration, direction string, align bool) []queryRangeWindow {
 	if interval <= 0 || endNs < startNs {
 		return nil
 	}
@@ -694,6 +798,29 @@ func splitQueryRangeWindows(startNs, endNs int64, interval time.Duration, direct
 	}
 	windows := make([]queryRangeWindow, 0, min(int((endNs-startNs)/step)+1, maxQueryRangeWindows))
 	cursor := startNs
+	if align {
+		if rem := cursor % step; rem != 0 {
+			if rem < 0 {
+				rem += step
+			}
+			firstEnd := cursor + (step - rem) - 1
+			if firstEnd >= cursor {
+				if firstEnd > endNs {
+					firstEnd = endNs
+				}
+				windows = append(windows, queryRangeWindow{startNs: cursor, endNs: firstEnd})
+				if firstEnd == endNs || len(windows) >= maxQueryRangeWindows {
+					if direction != "forward" {
+						for i, j := 0, len(windows)-1; i < j; i, j = i+1, j-1 {
+							windows[i], windows[j] = windows[j], windows[i]
+						}
+					}
+					return windows
+				}
+				cursor = firstEnd + 1
+			}
+		}
+	}
 	for cursor <= endNs && len(windows) < maxQueryRangeWindows {
 		windowEnd := cursor + step - 1
 		if windowEnd < cursor || windowEnd > endNs {

@@ -539,7 +539,7 @@ func (p *OTLPPusher) backendDurationMetrics(now int64) []map[string]interface{} 
 }
 
 func (p *OTLPPusher) queryRangeWindowMetrics(now int64) []map[string]interface{} {
-	metrics := make([]map[string]interface{}, 0, 11)
+	metrics := make([]map[string]interface{}, 0, 15)
 	if p.metrics.windowFetch != nil {
 		metrics = append(metrics, p.histogramMetric(
 			"loki_vl_proxy_window_fetch_seconds",
@@ -596,6 +596,30 @@ func (p *OTLPPusher) queryRangeWindowMetrics(now int64) []map[string]interface{}
 			"Query-range windows skipped after prefilter.",
 			"{window}",
 			p.counterDP("loki_vl_proxy_window_prefilter_skipped_total", p.metrics.windowPrefilterSkipped.Load(), now),
+		),
+		p.gaugeMetric(
+			"loki_vl_proxy_window_prefilter_hit_ratio",
+			"Prefilter hit ratio (kept / total windows).",
+			"",
+			p.gaugeDP("loki_vl_proxy_window_prefilter_hit_ratio", float64(p.metrics.windowPrefilterHitRatioPpm.Load())/1000000.0, now),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_window_retry_total",
+			"Query-range window retry attempts.",
+			"",
+			p.counterDP("loki_vl_proxy_window_retry_total", p.metrics.windowRetries.Load(), now),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_window_degraded_batch_total",
+			"Query-range batches degraded to lower parallelism.",
+			"",
+			p.counterDP("loki_vl_proxy_window_degraded_batch_total", p.metrics.windowDegradedBatches.Load(), now),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_window_partial_response_total",
+			"Query-range partial responses due to retryable backend failures.",
+			"",
+			p.counterDP("loki_vl_proxy_window_partial_response_total", p.metrics.windowPartialResponses.Load(), now),
 		),
 		p.gaugeMetric(
 			"loki_vl_proxy_window_adaptive_parallel_current",

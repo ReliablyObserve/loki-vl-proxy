@@ -48,66 +48,74 @@ type envConfig struct {
 }
 
 type proxyRuntimeConfig struct {
-	backendURL                      string
-	rulerBackendURL                 string
-	alertsBackendURL                string
-	cache                           *cache.Cache
-	compatCache                     *cache.Cache
-	logLevel                        string
-	tenantMapJSON                   string
-	maxLines                        int
-	backendTimeout                  time.Duration
-	backendBasicAuth                string
-	backendTLSSkip                  bool
-	forwardHeaders                  string
-	forwardAuthorization            bool
-	forwardCookies                  string
-	derivedFieldsJSON               string
-	streamResponse                  bool
-	emitStructuredMetadata          bool
-	queryRangeWindowing             bool
-	queryRangeSplitInterval         time.Duration
-	queryRangeMaxParallel           int
-	queryRangeAdaptiveParallel      bool
-	queryRangeParallelMin           int
-	queryRangeParallelMax           int
-	queryRangeLatencyTarget         time.Duration
-	queryRangeLatencyBackoff        time.Duration
-	queryRangeAdaptiveCooldown      time.Duration
-	queryRangeErrorBackoffThreshold float64
-	queryRangeFreshness             time.Duration
-	queryRangeRecentCacheTTL        time.Duration
-	queryRangeHistoryTTL            time.Duration
-	queryRangePrefilterIndexStats   bool
-	queryRangePrefilterMinWindows   int
-	authEnabled                     bool
-	allowGlobalTenant               bool
-	registerInstrumentation         *bool
-	enablePprof                     bool
-	enableQueryAnalytics            bool
-	adminAuthToken                  string
-	tailAllowedOrigins              string
-	tailMode                        string
-	metricsMaxTenants               int
-	metricsMaxClients               int
-	metricsTrustProxyHeaders        bool
-	labelStyle                      string
-	metadataFieldMode               string
-	fieldMappingJSON                string
-	streamFieldsCSV                 string
-	extraLabelFieldsCSV             string
-	labelValuesIndexedCache         bool
-	labelValuesHotLimit             int
-	labelValuesIndexMaxEntries      int
-	labelValuesIndexPersistPath     string
-	labelValuesIndexPersistInterval time.Duration
-	labelValuesIndexStartupStale    time.Duration
-	labelValuesIndexPeerWarmTimeout time.Duration
-	peerSelf                        string
-	peerDiscovery                   string
-	peerDNS                         string
-	peerStatic                      string
-	peerAuthToken                   string
+	backendURL                         string
+	rulerBackendURL                    string
+	alertsBackendURL                   string
+	cache                              *cache.Cache
+	compatCache                        *cache.Cache
+	logLevel                           string
+	tenantMapJSON                      string
+	maxLines                           int
+	backendTimeout                     time.Duration
+	backendBasicAuth                   string
+	backendTLSSkip                     bool
+	forwardHeaders                     string
+	forwardAuthorization               bool
+	forwardCookies                     string
+	derivedFieldsJSON                  string
+	streamResponse                     bool
+	emitStructuredMetadata             bool
+	queryRangeWindowing                bool
+	queryRangeSplitInterval            time.Duration
+	queryRangeMaxParallel              int
+	queryRangeAdaptiveParallel         bool
+	queryRangeParallelMin              int
+	queryRangeParallelMax              int
+	queryRangeLatencyTarget            time.Duration
+	queryRangeLatencyBackoff           time.Duration
+	queryRangeAdaptiveCooldown         time.Duration
+	queryRangeErrorBackoffThreshold    float64
+	queryRangeFreshness                time.Duration
+	queryRangeRecentCacheTTL           time.Duration
+	queryRangeHistoryTTL               time.Duration
+	queryRangePrefilterIndexStats      bool
+	queryRangePrefilterMinWindows      int
+	queryRangeStreamAwareBatching      bool
+	queryRangeExpensiveHitThreshold    int64
+	queryRangeExpensiveMaxParallel     int
+	queryRangeAlignWindows             bool
+	queryRangeWindowTimeout            time.Duration
+	queryRangePartialResponses         bool
+	queryRangeBackgroundWarm           bool
+	queryRangeBackgroundWarmMaxWindows int
+	authEnabled                        bool
+	allowGlobalTenant                  bool
+	registerInstrumentation            *bool
+	enablePprof                        bool
+	enableQueryAnalytics               bool
+	adminAuthToken                     string
+	tailAllowedOrigins                 string
+	tailMode                           string
+	metricsMaxTenants                  int
+	metricsMaxClients                  int
+	metricsTrustProxyHeaders           bool
+	labelStyle                         string
+	metadataFieldMode                  string
+	fieldMappingJSON                   string
+	streamFieldsCSV                    string
+	extraLabelFieldsCSV                string
+	labelValuesIndexedCache            bool
+	labelValuesHotLimit                int
+	labelValuesIndexMaxEntries         int
+	labelValuesIndexPersistPath        string
+	labelValuesIndexPersistInterval    time.Duration
+	labelValuesIndexStartupStale       time.Duration
+	labelValuesIndexPeerWarmTimeout    time.Duration
+	peerSelf                           string
+	peerDiscovery                      string
+	peerDNS                            string
+	peerStatic                         string
+	peerAuthToken                      string
 }
 
 type otlpRuntimeConfig struct {
@@ -331,6 +339,14 @@ func run(
 	queryRangeHistoryTTL := fs.Duration("query-range-history-cache-ttl", 24*time.Hour, "Cache TTL for historical query_range windows older than -query-range-freshness")
 	queryRangePrefilterIndexStats := fs.Bool("query-range-prefilter-index-stats", true, "Use /select/logsql/hits preflight to skip empty query_range windows before log fanout")
 	queryRangePrefilterMinWindows := fs.Int("query-range-prefilter-min-windows", 8, "Minimum split windows required before enabling query_range prefilter")
+	queryRangeStreamAwareBatching := fs.Bool("query-range-stream-aware-batching", true, "Reduce query_range batch parallelism for expensive windows estimated from prefilter hits")
+	queryRangeExpensiveHitThreshold := fs.Int64("query-range-expensive-hit-threshold", 2000, "Prefilter hit threshold above which a query_range window is treated as expensive")
+	queryRangeExpensiveMaxParallel := fs.Int("query-range-expensive-max-parallel", 1, "Maximum window parallelism for expensive query_range windows")
+	queryRangeAlignWindows := fs.Bool("query-range-align-windows", true, "Align query_range split windows to fixed interval boundaries for overlap cache reuse")
+	queryRangeWindowTimeout := fs.Duration("query-range-window-timeout", 20*time.Second, "Per-window backend timeout budget for query_range window fetches (0 disables)")
+	queryRangePartialResponses := fs.Bool("query-range-partial-responses", false, "Allow partial query_range responses on retryable backend failures")
+	queryRangeBackgroundWarm := fs.Bool("query-range-background-warm", true, "Warm failed query_range windows in background after partial response")
+	queryRangeBackgroundWarmMaxWindows := fs.Int("query-range-background-warm-max-windows", 24, "Maximum query_range windows warmed in background after partial response")
 
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
@@ -426,64 +442,72 @@ func run(
 			MaxBytes:      *diskCacheMaxBytes,
 		},
 		proxyCfg: proxyRuntimeConfig{
-			backendURL:                      envCfg.backendURL,
-			rulerBackendURL:                 envCfg.rulerBackendURL,
-			alertsBackendURL:                envCfg.alertsBackendURL,
-			logLevel:                        *logLevel,
-			tenantMapJSON:                   envCfg.tenantMapJSON,
-			maxLines:                        *maxLines,
-			backendTimeout:                  *backendTimeout,
-			backendBasicAuth:                *backendBasicAuth,
-			backendTLSSkip:                  *backendTLSSkip,
-			forwardHeaders:                  *forwardHeaders,
-			forwardAuthorization:            *forwardAuthorization,
-			forwardCookies:                  *forwardCookies,
-			derivedFieldsJSON:               *derivedFieldsJSON,
-			streamResponse:                  *streamResponse,
-			emitStructuredMetadata:          *emitStructuredMetadata,
-			queryRangeWindowing:             *queryRangeWindowing,
-			queryRangeSplitInterval:         *queryRangeSplitInterval,
-			queryRangeMaxParallel:           *queryRangeMaxParallel,
-			queryRangeAdaptiveParallel:      *queryRangeAdaptiveParallel,
-			queryRangeParallelMin:           *queryRangeParallelMin,
-			queryRangeParallelMax:           *queryRangeParallelMax,
-			queryRangeLatencyTarget:         *queryRangeLatencyTarget,
-			queryRangeLatencyBackoff:        *queryRangeLatencyBackoff,
-			queryRangeAdaptiveCooldown:      *queryRangeAdaptiveCooldown,
-			queryRangeErrorBackoffThreshold: *queryRangeErrorBackoffThreshold,
-			queryRangeFreshness:             *queryRangeFreshness,
-			queryRangeRecentCacheTTL:        *queryRangeRecentCacheTTL,
-			queryRangeHistoryTTL:            *queryRangeHistoryTTL,
-			queryRangePrefilterIndexStats:   *queryRangePrefilterIndexStats,
-			queryRangePrefilterMinWindows:   *queryRangePrefilterMinWindows,
-			authEnabled:                     *authEnabled,
-			allowGlobalTenant:               *allowGlobalTenant,
-			registerInstrumentation:         registerInstrumentation,
-			enablePprof:                     *enablePprof,
-			enableQueryAnalytics:            *enableQueryAnalytics,
-			adminAuthToken:                  *adminAuthToken,
-			tailAllowedOrigins:              *tailAllowedOrigins,
-			tailMode:                        *tailMode,
-			metricsMaxTenants:               *metricsMaxTenants,
-			metricsMaxClients:               *metricsMaxClients,
-			metricsTrustProxyHeaders:        *metricsTrustProxyHeaders,
-			labelStyle:                      envCfg.labelStyle,
-			metadataFieldMode:               envCfg.metadataFieldMode,
-			fieldMappingJSON:                envCfg.fieldMappingJSON,
-			streamFieldsCSV:                 *streamFieldsCSV,
-			extraLabelFieldsCSV:             envCfg.extraLabelFields,
-			labelValuesIndexedCache:         *labelValuesIndexedCache,
-			labelValuesHotLimit:             *labelValuesHotLimit,
-			labelValuesIndexMaxEntries:      *labelValuesIndexMaxEntries,
-			labelValuesIndexPersistPath:     *labelValuesIndexPersistPath,
-			labelValuesIndexPersistInterval: *labelValuesIndexPersistInterval,
-			labelValuesIndexStartupStale:    *labelValuesIndexStartupStale,
-			labelValuesIndexPeerWarmTimeout: *labelValuesIndexPeerWarmTimeout,
-			peerSelf:                        *peerSelf,
-			peerDiscovery:                   *peerDiscovery,
-			peerDNS:                         *peerDNS,
-			peerStatic:                      *peerStatic,
-			peerAuthToken:                   *peerAuthToken,
+			backendURL:                         envCfg.backendURL,
+			rulerBackendURL:                    envCfg.rulerBackendURL,
+			alertsBackendURL:                   envCfg.alertsBackendURL,
+			logLevel:                           *logLevel,
+			tenantMapJSON:                      envCfg.tenantMapJSON,
+			maxLines:                           *maxLines,
+			backendTimeout:                     *backendTimeout,
+			backendBasicAuth:                   *backendBasicAuth,
+			backendTLSSkip:                     *backendTLSSkip,
+			forwardHeaders:                     *forwardHeaders,
+			forwardAuthorization:               *forwardAuthorization,
+			forwardCookies:                     *forwardCookies,
+			derivedFieldsJSON:                  *derivedFieldsJSON,
+			streamResponse:                     *streamResponse,
+			emitStructuredMetadata:             *emitStructuredMetadata,
+			queryRangeWindowing:                *queryRangeWindowing,
+			queryRangeSplitInterval:            *queryRangeSplitInterval,
+			queryRangeMaxParallel:              *queryRangeMaxParallel,
+			queryRangeAdaptiveParallel:         *queryRangeAdaptiveParallel,
+			queryRangeParallelMin:              *queryRangeParallelMin,
+			queryRangeParallelMax:              *queryRangeParallelMax,
+			queryRangeLatencyTarget:            *queryRangeLatencyTarget,
+			queryRangeLatencyBackoff:           *queryRangeLatencyBackoff,
+			queryRangeAdaptiveCooldown:         *queryRangeAdaptiveCooldown,
+			queryRangeErrorBackoffThreshold:    *queryRangeErrorBackoffThreshold,
+			queryRangeFreshness:                *queryRangeFreshness,
+			queryRangeRecentCacheTTL:           *queryRangeRecentCacheTTL,
+			queryRangeHistoryTTL:               *queryRangeHistoryTTL,
+			queryRangePrefilterIndexStats:      *queryRangePrefilterIndexStats,
+			queryRangePrefilterMinWindows:      *queryRangePrefilterMinWindows,
+			queryRangeStreamAwareBatching:      *queryRangeStreamAwareBatching,
+			queryRangeExpensiveHitThreshold:    *queryRangeExpensiveHitThreshold,
+			queryRangeExpensiveMaxParallel:     *queryRangeExpensiveMaxParallel,
+			queryRangeAlignWindows:             *queryRangeAlignWindows,
+			queryRangeWindowTimeout:            *queryRangeWindowTimeout,
+			queryRangePartialResponses:         *queryRangePartialResponses,
+			queryRangeBackgroundWarm:           *queryRangeBackgroundWarm,
+			queryRangeBackgroundWarmMaxWindows: *queryRangeBackgroundWarmMaxWindows,
+			authEnabled:                        *authEnabled,
+			allowGlobalTenant:                  *allowGlobalTenant,
+			registerInstrumentation:            registerInstrumentation,
+			enablePprof:                        *enablePprof,
+			enableQueryAnalytics:               *enableQueryAnalytics,
+			adminAuthToken:                     *adminAuthToken,
+			tailAllowedOrigins:                 *tailAllowedOrigins,
+			tailMode:                           *tailMode,
+			metricsMaxTenants:                  *metricsMaxTenants,
+			metricsMaxClients:                  *metricsMaxClients,
+			metricsTrustProxyHeaders:           *metricsTrustProxyHeaders,
+			labelStyle:                         envCfg.labelStyle,
+			metadataFieldMode:                  envCfg.metadataFieldMode,
+			fieldMappingJSON:                   envCfg.fieldMappingJSON,
+			streamFieldsCSV:                    *streamFieldsCSV,
+			extraLabelFieldsCSV:                envCfg.extraLabelFields,
+			labelValuesIndexedCache:            *labelValuesIndexedCache,
+			labelValuesHotLimit:                *labelValuesHotLimit,
+			labelValuesIndexMaxEntries:         *labelValuesIndexMaxEntries,
+			labelValuesIndexPersistPath:        *labelValuesIndexPersistPath,
+			labelValuesIndexPersistInterval:    *labelValuesIndexPersistInterval,
+			labelValuesIndexStartupStale:       *labelValuesIndexStartupStale,
+			labelValuesIndexPeerWarmTimeout:    *labelValuesIndexPeerWarmTimeout,
+			peerSelf:                           *peerSelf,
+			peerDiscovery:                      *peerDiscovery,
+			peerDNS:                            *peerDNS,
+			peerStatic:                         *peerStatic,
+			peerAuthToken:                      *peerAuthToken,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -957,62 +981,70 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	}
 
 	return proxy.Config{
-		BackendURL:                      cfg.backendURL,
-		RulerBackendURL:                 cfg.rulerBackendURL,
-		AlertsBackendURL:                alertsBackendURL,
-		Cache:                           cfg.cache,
-		CompatCache:                     cfg.compatCache,
-		LogLevel:                        cfg.logLevel,
-		TenantMap:                       tenantMap,
-		MaxLines:                        cfg.maxLines,
-		BackendTimeout:                  cfg.backendTimeout,
-		BackendBasicAuth:                cfg.backendBasicAuth,
-		BackendTLSSkip:                  cfg.backendTLSSkip,
-		ForwardHeaders:                  parseForwardHeaders(cfg.forwardHeaders, cfg.forwardAuthorization),
-		ForwardCookies:                  parseCSV(cfg.forwardCookies),
-		DerivedFields:                   derivedFields,
-		StreamResponse:                  cfg.streamResponse,
-		EmitStructuredMetadata:          cfg.emitStructuredMetadata,
-		QueryRangeWindowingEnabled:      cfg.queryRangeWindowing,
-		QueryRangeSplitInterval:         cfg.queryRangeSplitInterval,
-		QueryRangeMaxParallel:           cfg.queryRangeMaxParallel,
-		QueryRangeAdaptiveParallel:      cfg.queryRangeAdaptiveParallel,
-		QueryRangeParallelMin:           cfg.queryRangeParallelMin,
-		QueryRangeParallelMax:           cfg.queryRangeParallelMax,
-		QueryRangeLatencyTarget:         cfg.queryRangeLatencyTarget,
-		QueryRangeLatencyBackoff:        cfg.queryRangeLatencyBackoff,
-		QueryRangeAdaptiveCooldown:      cfg.queryRangeAdaptiveCooldown,
-		QueryRangeErrorBackoffThreshold: cfg.queryRangeErrorBackoffThreshold,
-		QueryRangeFreshness:             cfg.queryRangeFreshness,
-		QueryRangeRecentCacheTTL:        cfg.queryRangeRecentCacheTTL,
-		QueryRangeHistoryCacheTTL:       cfg.queryRangeHistoryTTL,
-		QueryRangePrefilterIndexStats:   cfg.queryRangePrefilterIndexStats,
-		QueryRangePrefilterMinWindows:   cfg.queryRangePrefilterMinWindows,
-		AuthEnabled:                     cfg.authEnabled,
-		AllowGlobalTenant:               cfg.allowGlobalTenant,
-		RegisterInstrumentation:         cfg.registerInstrumentation,
-		EnablePprof:                     cfg.enablePprof,
-		EnableQueryAnalytics:            cfg.enableQueryAnalytics,
-		AdminAuthToken:                  cfg.adminAuthToken,
-		TailAllowedOrigins:              parseCSV(cfg.tailAllowedOrigins),
-		TailMode:                        tailMode,
-		MetricsMaxTenants:               cfg.metricsMaxTenants,
-		MetricsMaxClients:               cfg.metricsMaxClients,
-		MetricsTrustProxyHeaders:        cfg.metricsTrustProxyHeaders,
-		LabelStyle:                      ls,
-		MetadataFieldMode:               mfm,
-		FieldMappings:                   fieldMappings,
-		StreamFields:                    parseCSV(cfg.streamFieldsCSV),
-		ExtraLabelFields:                parseCSV(cfg.extraLabelFieldsCSV),
-		LabelValuesIndexedCache:         cfg.labelValuesIndexedCache,
-		LabelValuesHotLimit:             cfg.labelValuesHotLimit,
-		LabelValuesIndexMaxEntries:      cfg.labelValuesIndexMaxEntries,
-		LabelValuesIndexPersistPath:     cfg.labelValuesIndexPersistPath,
-		LabelValuesIndexPersistInterval: cfg.labelValuesIndexPersistInterval,
-		LabelValuesIndexStartupStale:    cfg.labelValuesIndexStartupStale,
-		LabelValuesIndexPeerWarmTimeout: cfg.labelValuesIndexPeerWarmTimeout,
-		PeerCache:                       peerCache,
-		PeerAuthToken:                   cfg.peerAuthToken,
+		BackendURL:                         cfg.backendURL,
+		RulerBackendURL:                    cfg.rulerBackendURL,
+		AlertsBackendURL:                   alertsBackendURL,
+		Cache:                              cfg.cache,
+		CompatCache:                        cfg.compatCache,
+		LogLevel:                           cfg.logLevel,
+		TenantMap:                          tenantMap,
+		MaxLines:                           cfg.maxLines,
+		BackendTimeout:                     cfg.backendTimeout,
+		BackendBasicAuth:                   cfg.backendBasicAuth,
+		BackendTLSSkip:                     cfg.backendTLSSkip,
+		ForwardHeaders:                     parseForwardHeaders(cfg.forwardHeaders, cfg.forwardAuthorization),
+		ForwardCookies:                     parseCSV(cfg.forwardCookies),
+		DerivedFields:                      derivedFields,
+		StreamResponse:                     cfg.streamResponse,
+		EmitStructuredMetadata:             cfg.emitStructuredMetadata,
+		QueryRangeWindowingEnabled:         cfg.queryRangeWindowing,
+		QueryRangeSplitInterval:            cfg.queryRangeSplitInterval,
+		QueryRangeMaxParallel:              cfg.queryRangeMaxParallel,
+		QueryRangeAdaptiveParallel:         cfg.queryRangeAdaptiveParallel,
+		QueryRangeParallelMin:              cfg.queryRangeParallelMin,
+		QueryRangeParallelMax:              cfg.queryRangeParallelMax,
+		QueryRangeLatencyTarget:            cfg.queryRangeLatencyTarget,
+		QueryRangeLatencyBackoff:           cfg.queryRangeLatencyBackoff,
+		QueryRangeAdaptiveCooldown:         cfg.queryRangeAdaptiveCooldown,
+		QueryRangeErrorBackoffThreshold:    cfg.queryRangeErrorBackoffThreshold,
+		QueryRangeFreshness:                cfg.queryRangeFreshness,
+		QueryRangeRecentCacheTTL:           cfg.queryRangeRecentCacheTTL,
+		QueryRangeHistoryCacheTTL:          cfg.queryRangeHistoryTTL,
+		QueryRangePrefilterIndexStats:      cfg.queryRangePrefilterIndexStats,
+		QueryRangePrefilterMinWindows:      cfg.queryRangePrefilterMinWindows,
+		QueryRangeStreamAwareBatching:      cfg.queryRangeStreamAwareBatching,
+		QueryRangeExpensiveHitThreshold:    cfg.queryRangeExpensiveHitThreshold,
+		QueryRangeExpensiveMaxParallel:     cfg.queryRangeExpensiveMaxParallel,
+		QueryRangeAlignWindows:             cfg.queryRangeAlignWindows,
+		QueryRangeWindowTimeout:            cfg.queryRangeWindowTimeout,
+		QueryRangePartialResponses:         cfg.queryRangePartialResponses,
+		QueryRangeBackgroundWarm:           cfg.queryRangeBackgroundWarm,
+		QueryRangeBackgroundWarmMaxWindows: cfg.queryRangeBackgroundWarmMaxWindows,
+		AuthEnabled:                        cfg.authEnabled,
+		AllowGlobalTenant:                  cfg.allowGlobalTenant,
+		RegisterInstrumentation:            cfg.registerInstrumentation,
+		EnablePprof:                        cfg.enablePprof,
+		EnableQueryAnalytics:               cfg.enableQueryAnalytics,
+		AdminAuthToken:                     cfg.adminAuthToken,
+		TailAllowedOrigins:                 parseCSV(cfg.tailAllowedOrigins),
+		TailMode:                           tailMode,
+		MetricsMaxTenants:                  cfg.metricsMaxTenants,
+		MetricsMaxClients:                  cfg.metricsMaxClients,
+		MetricsTrustProxyHeaders:           cfg.metricsTrustProxyHeaders,
+		LabelStyle:                         ls,
+		MetadataFieldMode:                  mfm,
+		FieldMappings:                      fieldMappings,
+		StreamFields:                       parseCSV(cfg.streamFieldsCSV),
+		ExtraLabelFields:                   parseCSV(cfg.extraLabelFieldsCSV),
+		LabelValuesIndexedCache:            cfg.labelValuesIndexedCache,
+		LabelValuesHotLimit:                cfg.labelValuesHotLimit,
+		LabelValuesIndexMaxEntries:         cfg.labelValuesIndexMaxEntries,
+		LabelValuesIndexPersistPath:        cfg.labelValuesIndexPersistPath,
+		LabelValuesIndexPersistInterval:    cfg.labelValuesIndexPersistInterval,
+		LabelValuesIndexStartupStale:       cfg.labelValuesIndexStartupStale,
+		LabelValuesIndexPeerWarmTimeout:    cfg.labelValuesIndexPeerWarmTimeout,
+		PeerCache:                          peerCache,
+		PeerAuthToken:                      cfg.peerAuthToken,
 	}, nil
 }
 
@@ -1141,6 +1173,14 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 			"history_cache_ttl", proxyCfg.QueryRangeHistoryCacheTTL,
 			"prefilter_index_stats", proxyCfg.QueryRangePrefilterIndexStats,
 			"prefilter_min_windows", proxyCfg.QueryRangePrefilterMinWindows,
+			"stream_aware_batching", proxyCfg.QueryRangeStreamAwareBatching,
+			"expensive_hit_threshold", proxyCfg.QueryRangeExpensiveHitThreshold,
+			"expensive_max_parallel", proxyCfg.QueryRangeExpensiveMaxParallel,
+			"align_windows", proxyCfg.QueryRangeAlignWindows,
+			"window_timeout", proxyCfg.QueryRangeWindowTimeout,
+			"partial_responses", proxyCfg.QueryRangePartialResponses,
+			"background_warm", proxyCfg.QueryRangeBackgroundWarm,
+			"background_warm_max_windows", proxyCfg.QueryRangeBackgroundWarmMaxWindows,
 		)
 	}
 	if proxyCfg.PeerCache != nil {

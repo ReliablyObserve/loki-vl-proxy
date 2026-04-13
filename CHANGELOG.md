@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- add long-range phase-2 stream-aware window batching controls to reduce backend saturation spikes on expensive 2d/7d query mixes
+- add long-range phase-3 fast-path behavior that prioritizes early panel viability and avoids expensive all-window retries when backend pressure is transient
+- add long-range phase-4 overlap-aware window coalescing reuse to reduce repeated upstream calls across Grafana refresh/back-navigation traffic
+
+### Reliability
+
+- add long-range phase-5 adaptive timeout budgeting with partial-response fallback and warm-cache continuation to avoid hard user-facing failures during backend saturation
+
+### Observability
+
+- add phase KPI metrics for long-range resilience and tuning: `loki_vl_proxy_window_retry_total`, `loki_vl_proxy_window_degraded_batch_total`, `loki_vl_proxy_window_partial_response_total`, and `loki_vl_proxy_window_prefilter_hit_ratio`
+- update the packaged proxy metrics dashboard and observability docs for no-data hardening and phase KPI visibility
+
+### Tests
+
+- add regression coverage for stream-aware batching, overlap/coalescing behavior, degraded-batch fallback, and partial-response long-range safety paths
+- add benchmark coverage for phase-1/2 controls to track fanout/query-call reductions and backend-pressure tradeoffs
+
 ## [0.27.40] - 2026-04-13
 
 ### Performance

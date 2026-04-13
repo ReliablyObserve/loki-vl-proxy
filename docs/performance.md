@@ -99,6 +99,26 @@ Always cap disk cache explicitly with `-disk-cache-max-bytes` for predictable re
 
 Measured on Apple M3 Max (14 cores), Go 1.26.1, `-benchmem`.
 
+### Long-Range Phase Program Benchmarks (1h split windows)
+
+Command:
+
+```bash
+go test ./internal/proxy -run '^$' -bench 'BenchmarkQueryRangeWindowing_(NoPrefilter|WithPrefilter|StreamAwareBatching_Off|StreamAwareBatching_On)$' -benchmem -benchtime=10x
+```
+
+| Benchmark | ns/op | hits_calls/op | query_calls/op | max_inflight | allocs/op | Key result |
+|---|---:|---:|---:|---:|---:|---|
+| `NoPrefilter` | 39,525,225 | 0 | 49 | n/a | 11,582 | baseline full fanout |
+| `WithPrefilter` | 11,672,412 | 48 | 9 | n/a | 10,346 | ~81.6% fewer backend query calls |
+| `StreamAwareBatching_Off` | 17,048,771 | n/a | n/a | 4 | 9,490 | higher concurrency under load |
+| `StreamAwareBatching_On` | 62,808,025 | n/a | n/a | 1 | 9,656 | lower concurrency spikes, more stable backend pressure |
+
+Notes:
+
+- Prefiltering is the largest direct backend-load reduction lever for sparse long ranges.
+- Stream-aware batching intentionally trades raw synthetic throughput for lower backend saturation risk and fewer breaker cascades on real 2d/7d traffic.
+
 ### Per-Request Latency
 
 | Operation | Latency | Allocs | Bytes/op |

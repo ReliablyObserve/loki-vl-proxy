@@ -182,6 +182,10 @@ These are the primary signals for long-range query performance and backend prote
 | `loki_vl_proxy_window_prefilter_error_total` | counter | none | prefilter failures (proxy safely falls back to full window fanout) |
 | `loki_vl_proxy_window_prefilter_kept_total` | counter | none | split windows retained for real log fanout |
 | `loki_vl_proxy_window_prefilter_skipped_total` | counter | none | split windows skipped as empty by prefilter |
+| `loki_vl_proxy_window_prefilter_hit_ratio` | gauge | none | current prefilter kept/total ratio (0-1) |
+| `loki_vl_proxy_window_retry_total` | counter | none | per-window retry attempts after retryable backend failures |
+| `loki_vl_proxy_window_degraded_batch_total` | counter | none | batches that were downgraded to lower parallelism |
+| `loki_vl_proxy_window_partial_response_total` | counter | none | partial query-range responses returned when slow windows exceed budget |
 | `loki_vl_proxy_window_prefilter_duration_seconds` | histogram | none | prefilter latency |
 | `loki_vl_proxy_window_adaptive_parallel_current` | gauge | none | current adaptive split-window parallelism |
 | `loki_vl_proxy_window_adaptive_latency_ewma_seconds` | gauge | none | adaptive EWMA latency |
@@ -254,6 +258,17 @@ It also includes a `Query-Range Windowing` section for cache/tuning signals:
 - window merge p50/p95 latency
 - window cache hit ratio
 - adaptive window parallelism + EWMA latency/error
+
+It also includes a `Long-Range Resilience KPIs` section for phase tuning:
+
+- prefilter kept/skipped rate
+- retry/degraded-batch/partial-response rate
+- prefilter hit ratio
+
+Dashboard datasource notes:
+
+- datasource variable regex is intentionally permissive (`/.*/`) so the dashboard works with scrape-backed and OTLP-backed metric datasources without renaming
+- key stat panels use explicit zero fallbacks so dashboards remain readable during cold starts and low-traffic windows
 
 ### Active Backend E2E Healthchecks
 

@@ -73,6 +73,17 @@ extraArgs:
   query-range-freshness: "10m"
   query-range-recent-cache-ttl: "0s"
   query-range-history-cache-ttl: "24h"
+  # Long-range phase controls (defaults shown here; uncomment to override quickly):
+  # query-range-prefilter-index-stats: "true"          # preflight /select/logsql/hits to skip empty windows
+  # query-range-prefilter-min-windows: "8"             # prefilter engages only when split windows >= this threshold
+  # query-range-stream-aware-batching: "true"          # reduce concurrency for expensive windows
+  # query-range-expensive-hit-threshold: "2000"        # hits/window threshold considered expensive
+  # query-range-expensive-max-parallel: "1"            # max parallelism for expensive windows
+  # query-range-align-windows: "true"                  # align split boundaries for overlap cache reuse
+  # query-range-window-timeout: "20s"                  # per-window timeout budget (0 disables)
+  # query-range-partial-responses: "false"             # return partial response on retryable backend failures
+  # query-range-background-warm: "true"                # continue warming failed windows in background
+  # query-range-background-warm-max-windows: "24"      # cap background warm fanout
   # Indexed label-values browse cache (high-cardinality label UX).
   # Keep disabled by default; enable when label value lists are large and you
   # want hotset-first responses with optional offset/search.
@@ -98,6 +109,7 @@ extraArgs:
   # otlp-interval: "30s"
   # otlp-compression: "gzip"
   # otlp-timeout: "10s"
+  # otlp-tls-skip-verify: "false"
   # Backend auth to VictoriaLogs
   # backend-basic-auth: "user:password"
   # forward-headers: "Authorization"
@@ -139,6 +151,46 @@ extraArgs:
   # label-values-index-startup-stale-threshold: "60s"
   # label-values-index-startup-peer-warm-timeout: "5s"
   # Sizing hint: plan roughly ~96 bytes RAM/value and ~60% of RAM footprint on disk snapshot.
+  # System metrics scope override (chart auto-injects when systemMetrics.hostProc.enabled=true):
+  # proc-root: "/host/proc"
+  #
+  # Full optional flag catalog (commented defaults from runtime):
+  # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
+  # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
+  # compat-cache-max-percent: "10"              # Tier0 share of L1 cache budget (max 50)
+  # backend-timeout: "120s"                     # upstream request timeout
+  # backend-tls-skip-verify: "false"
+  # deployment-environment: ""                  # OTel deployment.environment.name
+  # otel-service-name: "loki-vl-proxy"
+  # otel-service-namespace: ""
+  # otel-service-instance-id: ""
+  # otlp-headers: ""                            # comma-separated key=value pairs
+  # response-gzip: "true"
+  # max-lines: "1000"
+  # auth.enabled: "false"                       # require tenant header
+  # tenant.allow-global: "false"                # allow global tenant map wildcard entry
+  # metrics.max-tenants: "256"
+  # metrics.max-clients: "256"
+  # metrics.trust-proxy-headers: "false"
+  # server.register-instrumentation: "true"     # expose /metrics
+  # server.enable-pprof: "false"
+  # server.enable-query-analytics: "false"
+  # server.admin-auth-token: ""                 # bearer token for admin/debug endpoints
+  # tail.mode: "auto"                           # auto | native | synthetic
+  # tail.allowed-origins: ""                    # comma-separated websocket origin allowlist
+  # ruler-backend: ""                           # optional /rules passthrough backend
+  # alerts-backend: ""                          # optional /alerts passthrough backend
+  # extra-label-fields: "service.name,host.name"
+  # peer-auth-token: ""                         # token required for /_cache/get peer calls
+  # peer-discovery: "dns"                       # chart-managed via peerCache.* values
+  # peer-dns: ""                                # chart-managed when peerCache.enabled=true
+  # peer-self: ""                               # chart-managed when peerCache.enabled=true
+  # peer-static: ""                             # used with peer-discovery=static
+  # disk-cache-min-ttl: "30s"                   # skip L2 writes for very short-lived entries
+  # tls-cert-file: ""                           # enable HTTPS listener when cert+key set
+  # tls-key-file: ""
+  # tls-client-ca-file: ""
+  # tls-require-client-cert: "false"
 
 # Go runtime tuning:
 # The chart exports GOMEMLIMIT into the container env.

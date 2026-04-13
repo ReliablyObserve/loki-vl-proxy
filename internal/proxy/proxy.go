@@ -206,21 +206,29 @@ type Config struct {
 	// Query range windowing/cache options.
 	// When enabled, eligible log query_range requests are split into time windows,
 	// fetched with bounded parallelism, and merged in Loki-compatible direction order.
-	QueryRangeWindowingEnabled      bool
-	QueryRangeSplitInterval         time.Duration
-	QueryRangeMaxParallel           int
-	QueryRangeAdaptiveParallel      bool
-	QueryRangeParallelMin           int
-	QueryRangeParallelMax           int
-	QueryRangeLatencyTarget         time.Duration
-	QueryRangeLatencyBackoff        time.Duration
-	QueryRangeAdaptiveCooldown      time.Duration
-	QueryRangeErrorBackoffThreshold float64
-	QueryRangeFreshness             time.Duration
-	QueryRangeRecentCacheTTL        time.Duration
-	QueryRangeHistoryCacheTTL       time.Duration
-	QueryRangePrefilterIndexStats   bool
-	QueryRangePrefilterMinWindows   int
+	QueryRangeWindowingEnabled         bool
+	QueryRangeSplitInterval            time.Duration
+	QueryRangeMaxParallel              int
+	QueryRangeAdaptiveParallel         bool
+	QueryRangeParallelMin              int
+	QueryRangeParallelMax              int
+	QueryRangeLatencyTarget            time.Duration
+	QueryRangeLatencyBackoff           time.Duration
+	QueryRangeAdaptiveCooldown         time.Duration
+	QueryRangeErrorBackoffThreshold    float64
+	QueryRangeFreshness                time.Duration
+	QueryRangeRecentCacheTTL           time.Duration
+	QueryRangeHistoryCacheTTL          time.Duration
+	QueryRangePrefilterIndexStats      bool
+	QueryRangePrefilterMinWindows      int
+	QueryRangeStreamAwareBatching      bool
+	QueryRangeExpensiveHitThreshold    int64
+	QueryRangeExpensiveMaxParallel     int
+	QueryRangeAlignWindows             bool
+	QueryRangeWindowTimeout            time.Duration
+	QueryRangePartialResponses         bool
+	QueryRangeBackgroundWarm           bool
+	QueryRangeBackgroundWarmMaxWindows int
 
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
@@ -312,79 +320,87 @@ var CacheTTLs = map[string]time.Duration{
 }
 
 type Proxy struct {
-	backend                         *url.URL
-	rulerBackend                    *url.URL
-	alertsBackend                   *url.URL
-	client                          *http.Client
-	tailClient                      *http.Client
-	cache                           *cache.Cache
-	compatCache                     *cache.Cache
-	log                             *slog.Logger
-	metrics                         *metrics.Metrics
-	queryTracker                    *metrics.QueryTracker
-	coalescer                       *mw.Coalescer
-	limiter                         *mw.RateLimiter
-	breaker                         *mw.CircuitBreaker
-	configMu                        sync.RWMutex // protects tenantMap and labelTranslator
-	tenantMap                       map[string]TenantMapping
-	authEnabled                     bool
-	allowGlobalTenant               bool
-	maxLines                        int
-	forwardHeaders                  []string          // headers to copy from client request to VL
-	forwardCookies                  map[string]bool   // cookie names to copy from client request to VL
-	backendHeaders                  map[string]string // static headers on all VL requests
-	derivedFields                   []DerivedField
-	streamResponse                  bool
-	emitStructuredMetadata          bool
-	labelTranslator                 *LabelTranslator
-	metadataFieldMode               MetadataFieldMode
-	streamFieldsMap                 map[string]bool  // known _stream_fields for VL stream selector optimization
-	declaredLabelFields             []string         // configured VL-native label fields (stream_fields + extras)
-	peerCache                       *cache.PeerCache // L3 fleet peer cache
-	peerAuthToken                   string
-	registerInstrumentation         bool
-	enablePprof                     bool
-	enableQueryAnalytics            bool
-	adminAuthToken                  string
-	tailAllowedOrigins              map[string]struct{}
-	tailMode                        TailMode
-	metricsTrustProxyHeaders        bool
-	translationCache                *cache.Cache
-	queryRangeWindowing             bool
-	queryRangeSplitInterval         time.Duration
-	queryRangeMaxParallel           int
-	queryRangeAdaptiveParallel      bool
-	queryRangeParallelMin           int
-	queryRangeParallelMax           int
-	queryRangeLatencyTarget         time.Duration
-	queryRangeLatencyBackoff        time.Duration
-	queryRangeAdaptiveCooldown      time.Duration
-	queryRangeErrorBackoffThreshold float64
-	queryRangeAdaptiveMu            sync.Mutex
-	queryRangeParallelCurrent       int
-	queryRangeLatencyEWMA           time.Duration
-	queryRangeErrorEWMA             float64
-	queryRangeAdaptiveLastAdjust    time.Time
-	queryRangeFreshness             time.Duration
-	queryRangeRecentCacheTTL        time.Duration
-	queryRangeHistoryCacheTTL       time.Duration
-	queryRangePrefilterIndexStats   bool
-	queryRangePrefilterMinWindows   int
-	labelRefreshGroup               singleflight.Group
-	labelValuesIndexedCache         bool
-	labelValuesHotLimit             int
-	labelValuesIndexMaxEntries      int
-	labelValuesIndexPersistPath     string
-	labelValuesIndexPersistInterval time.Duration
-	labelValuesIndexStartupStale    time.Duration
-	labelValuesIndexPeerWarmTimeout time.Duration
-	labelValuesIndexWarmReady       atomic.Bool
-	labelValuesIndexPersistStarted  atomic.Bool
-	labelValuesIndexPersistDirty    atomic.Bool
-	labelValuesIndexPersistStop     chan struct{}
-	labelValuesIndexPersistDone     chan struct{}
-	labelValuesIndexMu              sync.RWMutex
-	labelValuesIndex                map[string]*labelValuesIndexState
+	backend                               *url.URL
+	rulerBackend                          *url.URL
+	alertsBackend                         *url.URL
+	client                                *http.Client
+	tailClient                            *http.Client
+	cache                                 *cache.Cache
+	compatCache                           *cache.Cache
+	log                                   *slog.Logger
+	metrics                               *metrics.Metrics
+	queryTracker                          *metrics.QueryTracker
+	coalescer                             *mw.Coalescer
+	limiter                               *mw.RateLimiter
+	breaker                               *mw.CircuitBreaker
+	configMu                              sync.RWMutex // protects tenantMap and labelTranslator
+	tenantMap                             map[string]TenantMapping
+	authEnabled                           bool
+	allowGlobalTenant                     bool
+	maxLines                              int
+	forwardHeaders                        []string          // headers to copy from client request to VL
+	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
+	backendHeaders                        map[string]string // static headers on all VL requests
+	derivedFields                         []DerivedField
+	streamResponse                        bool
+	emitStructuredMetadata                bool
+	labelTranslator                       *LabelTranslator
+	metadataFieldMode                     MetadataFieldMode
+	streamFieldsMap                       map[string]bool  // known _stream_fields for VL stream selector optimization
+	declaredLabelFields                   []string         // configured VL-native label fields (stream_fields + extras)
+	peerCache                             *cache.PeerCache // L3 fleet peer cache
+	peerAuthToken                         string
+	registerInstrumentation               bool
+	enablePprof                           bool
+	enableQueryAnalytics                  bool
+	adminAuthToken                        string
+	tailAllowedOrigins                    map[string]struct{}
+	tailMode                              TailMode
+	metricsTrustProxyHeaders              bool
+	translationCache                      *cache.Cache
+	queryRangeWindowing                   bool
+	queryRangeSplitInterval               time.Duration
+	queryRangeMaxParallel                 int
+	queryRangeAdaptiveParallel            bool
+	queryRangeParallelMin                 int
+	queryRangeParallelMax                 int
+	queryRangeLatencyTarget               time.Duration
+	queryRangeLatencyBackoff              time.Duration
+	queryRangeAdaptiveCooldown            time.Duration
+	queryRangeErrorBackoffThreshold       float64
+	queryRangeAdaptiveMu                  sync.Mutex
+	queryRangeParallelCurrent             int
+	queryRangeLatencyEWMA                 time.Duration
+	queryRangeErrorEWMA                   float64
+	queryRangeAdaptiveLastAdjust          time.Time
+	queryRangeFreshness                   time.Duration
+	queryRangeRecentCacheTTL              time.Duration
+	queryRangeHistoryCacheTTL             time.Duration
+	queryRangePrefilterIndexStats         bool
+	queryRangePrefilterMinWindows         int
+	queryRangeStreamAwareBatching         bool
+	queryRangeExpensiveWindowHitThreshold int64
+	queryRangeExpensiveWindowMaxParallel  int
+	queryRangeAlignWindows                bool
+	queryRangeWindowTimeout               time.Duration
+	queryRangePartialResponses            bool
+	queryRangeBackgroundWarm              bool
+	queryRangeBackgroundWarmMaxWindows    int
+	labelRefreshGroup                     singleflight.Group
+	labelValuesIndexedCache               bool
+	labelValuesHotLimit                   int
+	labelValuesIndexMaxEntries            int
+	labelValuesIndexPersistPath           string
+	labelValuesIndexPersistInterval       time.Duration
+	labelValuesIndexStartupStale          time.Duration
+	labelValuesIndexPeerWarmTimeout       time.Duration
+	labelValuesIndexWarmReady             atomic.Bool
+	labelValuesIndexPersistStarted        atomic.Bool
+	labelValuesIndexPersistDirty          atomic.Bool
+	labelValuesIndexPersistStop           chan struct{}
+	labelValuesIndexPersistDone           chan struct{}
+	labelValuesIndexMu                    sync.RWMutex
+	labelValuesIndex                      map[string]*labelValuesIndexState
 }
 
 type labelValueIndexEntry struct {
@@ -582,6 +598,25 @@ func New(cfg Config) (*Proxy, error) {
 	if queryRangePrefilterMinWindows <= 0 {
 		queryRangePrefilterMinWindows = 8
 	}
+	queryRangeExpensiveHitThreshold := cfg.QueryRangeExpensiveHitThreshold
+	if queryRangeExpensiveHitThreshold <= 0 {
+		queryRangeExpensiveHitThreshold = 2000
+	}
+	queryRangeExpensiveMaxParallel := cfg.QueryRangeExpensiveMaxParallel
+	if queryRangeExpensiveMaxParallel <= 0 {
+		queryRangeExpensiveMaxParallel = 1
+	}
+	if queryRangeExpensiveMaxParallel > queryRangeParallelMax {
+		queryRangeExpensiveMaxParallel = queryRangeParallelMax
+	}
+	queryRangeWindowTimeout := cfg.QueryRangeWindowTimeout
+	if queryRangeWindowTimeout < 0 {
+		queryRangeWindowTimeout = 0
+	}
+	queryRangeBackgroundWarmMaxWindows := cfg.QueryRangeBackgroundWarmMaxWindows
+	if queryRangeBackgroundWarmMaxWindows <= 0 {
+		queryRangeBackgroundWarmMaxWindows = 24
+	}
 	tailMode := cfg.TailMode
 	if tailMode == "" {
 		tailMode = TailModeAuto
@@ -629,64 +664,72 @@ func New(cfg Config) (*Proxy, error) {
 		tailClient: &http.Client{
 			Transport: tailTransport,
 		},
-		cache:                           cfg.Cache,
-		compatCache:                     cfg.CompatCache,
-		log:                             logger,
-		metrics:                         metrics.NewMetricsWithLimits(cfg.MetricsMaxTenants, cfg.MetricsMaxClients),
-		queryTracker:                    metrics.NewQueryTracker(10000),
-		coalescer:                       mw.NewCoalescer(),
-		limiter:                         mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
-		breaker:                         mw.NewCircuitBreaker(cbFail, 3, cbOpen),
-		tenantMap:                       cfg.TenantMap,
-		authEnabled:                     cfg.AuthEnabled,
-		allowGlobalTenant:               cfg.AllowGlobalTenant,
-		maxLines:                        maxLines,
-		forwardHeaders:                  cfg.ForwardHeaders,
-		forwardCookies:                  forwardCookies,
-		backendHeaders:                  backendHeaders,
-		derivedFields:                   cfg.DerivedFields,
-		streamResponse:                  cfg.StreamResponse,
-		emitStructuredMetadata:          cfg.EmitStructuredMetadata,
-		labelTranslator:                 labelTranslator,
-		metadataFieldMode:               metadataFieldMode,
-		streamFieldsMap:                 buildStreamFieldsMap(cfg.StreamFields),
-		declaredLabelFields:             declaredLabelFields,
-		peerCache:                       cfg.PeerCache,
-		peerAuthToken:                   cfg.PeerAuthToken,
-		registerInstrumentation:         registerInstrumentation,
-		enablePprof:                     cfg.EnablePprof,
-		enableQueryAnalytics:            cfg.EnableQueryAnalytics,
-		adminAuthToken:                  cfg.AdminAuthToken,
-		tailAllowedOrigins:              tailAllowedOrigins,
-		tailMode:                        tailMode,
-		metricsTrustProxyHeaders:        cfg.MetricsTrustProxyHeaders,
-		translationCache:                cache.New(5*time.Minute, 5000),
-		queryRangeWindowing:             cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,
-		queryRangeSplitInterval:         cfg.QueryRangeSplitInterval,
-		queryRangeMaxParallel:           queryRangeMaxParallel,
-		queryRangeAdaptiveParallel:      cfg.QueryRangeAdaptiveParallel,
-		queryRangeParallelMin:           queryRangeParallelMin,
-		queryRangeParallelMax:           queryRangeParallelMax,
-		queryRangeLatencyTarget:         queryRangeLatencyTarget,
-		queryRangeLatencyBackoff:        queryRangeLatencyBackoff,
-		queryRangeAdaptiveCooldown:      queryRangeAdaptiveCooldown,
-		queryRangeErrorBackoffThreshold: queryRangeErrorBackoffThreshold,
-		queryRangeParallelCurrent:       queryRangeParallelMin,
-		queryRangeFreshness:             queryRangeFreshness,
-		queryRangeRecentCacheTTL:        queryRangeRecentCacheTTL,
-		queryRangeHistoryCacheTTL:       queryRangeHistoryCacheTTL,
-		queryRangePrefilterIndexStats:   cfg.QueryRangePrefilterIndexStats,
-		queryRangePrefilterMinWindows:   queryRangePrefilterMinWindows,
-		labelValuesIndexedCache:         cfg.LabelValuesIndexedCache,
-		labelValuesHotLimit:             labelValuesHotLimit,
-		labelValuesIndexMaxEntries:      labelValuesIndexMaxEntries,
-		labelValuesIndexPersistPath:     strings.TrimSpace(cfg.LabelValuesIndexPersistPath),
-		labelValuesIndexPersistInterval: labelValuesIndexPersistInterval,
-		labelValuesIndexStartupStale:    labelValuesIndexStartupStale,
-		labelValuesIndexPeerWarmTimeout: labelValuesIndexPeerWarmTimeout,
-		labelValuesIndexPersistStop:     make(chan struct{}),
-		labelValuesIndexPersistDone:     make(chan struct{}),
-		labelValuesIndex:                make(map[string]*labelValuesIndexState),
+		cache:                                 cfg.Cache,
+		compatCache:                           cfg.CompatCache,
+		log:                                   logger,
+		metrics:                               metrics.NewMetricsWithLimits(cfg.MetricsMaxTenants, cfg.MetricsMaxClients),
+		queryTracker:                          metrics.NewQueryTracker(10000),
+		coalescer:                             mw.NewCoalescer(),
+		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
+		breaker:                               mw.NewCircuitBreaker(cbFail, 3, cbOpen),
+		tenantMap:                             cfg.TenantMap,
+		authEnabled:                           cfg.AuthEnabled,
+		allowGlobalTenant:                     cfg.AllowGlobalTenant,
+		maxLines:                              maxLines,
+		forwardHeaders:                        cfg.ForwardHeaders,
+		forwardCookies:                        forwardCookies,
+		backendHeaders:                        backendHeaders,
+		derivedFields:                         cfg.DerivedFields,
+		streamResponse:                        cfg.StreamResponse,
+		emitStructuredMetadata:                cfg.EmitStructuredMetadata,
+		labelTranslator:                       labelTranslator,
+		metadataFieldMode:                     metadataFieldMode,
+		streamFieldsMap:                       buildStreamFieldsMap(cfg.StreamFields),
+		declaredLabelFields:                   declaredLabelFields,
+		peerCache:                             cfg.PeerCache,
+		peerAuthToken:                         cfg.PeerAuthToken,
+		registerInstrumentation:               registerInstrumentation,
+		enablePprof:                           cfg.EnablePprof,
+		enableQueryAnalytics:                  cfg.EnableQueryAnalytics,
+		adminAuthToken:                        cfg.AdminAuthToken,
+		tailAllowedOrigins:                    tailAllowedOrigins,
+		tailMode:                              tailMode,
+		metricsTrustProxyHeaders:              cfg.MetricsTrustProxyHeaders,
+		translationCache:                      cache.New(5*time.Minute, 5000),
+		queryRangeWindowing:                   cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,
+		queryRangeSplitInterval:               cfg.QueryRangeSplitInterval,
+		queryRangeMaxParallel:                 queryRangeMaxParallel,
+		queryRangeAdaptiveParallel:            cfg.QueryRangeAdaptiveParallel,
+		queryRangeParallelMin:                 queryRangeParallelMin,
+		queryRangeParallelMax:                 queryRangeParallelMax,
+		queryRangeLatencyTarget:               queryRangeLatencyTarget,
+		queryRangeLatencyBackoff:              queryRangeLatencyBackoff,
+		queryRangeAdaptiveCooldown:            queryRangeAdaptiveCooldown,
+		queryRangeErrorBackoffThreshold:       queryRangeErrorBackoffThreshold,
+		queryRangeParallelCurrent:             queryRangeParallelMin,
+		queryRangeFreshness:                   queryRangeFreshness,
+		queryRangeRecentCacheTTL:              queryRangeRecentCacheTTL,
+		queryRangeHistoryCacheTTL:             queryRangeHistoryCacheTTL,
+		queryRangePrefilterIndexStats:         cfg.QueryRangePrefilterIndexStats,
+		queryRangePrefilterMinWindows:         queryRangePrefilterMinWindows,
+		queryRangeStreamAwareBatching:         cfg.QueryRangeStreamAwareBatching,
+		queryRangeExpensiveWindowHitThreshold: queryRangeExpensiveHitThreshold,
+		queryRangeExpensiveWindowMaxParallel:  queryRangeExpensiveMaxParallel,
+		queryRangeAlignWindows:                cfg.QueryRangeAlignWindows,
+		queryRangeWindowTimeout:               queryRangeWindowTimeout,
+		queryRangePartialResponses:            cfg.QueryRangePartialResponses,
+		queryRangeBackgroundWarm:              cfg.QueryRangeBackgroundWarm,
+		queryRangeBackgroundWarmMaxWindows:    queryRangeBackgroundWarmMaxWindows,
+		labelValuesIndexedCache:               cfg.LabelValuesIndexedCache,
+		labelValuesHotLimit:                   labelValuesHotLimit,
+		labelValuesIndexMaxEntries:            labelValuesIndexMaxEntries,
+		labelValuesIndexPersistPath:           strings.TrimSpace(cfg.LabelValuesIndexPersistPath),
+		labelValuesIndexPersistInterval:       labelValuesIndexPersistInterval,
+		labelValuesIndexStartupStale:          labelValuesIndexStartupStale,
+		labelValuesIndexPeerWarmTimeout:       labelValuesIndexPeerWarmTimeout,
+		labelValuesIndexPersistStop:           make(chan struct{}),
+		labelValuesIndexPersistDone:           make(chan struct{}),
+		labelValuesIndex:                      make(map[string]*labelValuesIndexState),
 	}, nil
 }
 
@@ -2923,30 +2966,53 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = withOrgID(r)
-	query := r.FormValue("query")
+	orgID := r.Header.Get("X-Scope-OrgID")
+	cacheKey := "volume:" + orgID + ":" + r.URL.RawQuery
+	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(cached)
+		p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
+		p.metrics.RecordCacheHit()
+		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume"]) {
+			p.refreshVolumeCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("targetLabels"))
+		}
+		return
+	}
+	p.metrics.RecordCacheMiss()
+
+	result, err := p.computeVolumeResult(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("targetLabels"))
+	if err != nil {
+		result = map[string]interface{}{
+			"status": "success",
+			"data":   map[string]interface{}{"resultType": "vector", "result": []interface{}{}},
+		}
+	}
+	p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume"], result)
+	p.writeJSON(w, result)
+	p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
+}
+
+func (p *Proxy) computeVolumeResult(ctx context.Context, query, start, end, targetLabels string) (map[string]interface{}, error) {
 	if query == "" {
 		query = "*"
 	}
-	targetLabels := r.FormValue("targetLabels")
 	if targetLabels == "" {
 		targetLabels = inferPrimaryTargetLabel(query)
 	}
 	if usesDerivedVolumeLabels(targetLabels) {
-		result, err := p.volumeByDerivedLabels(r.Context(), query, r.FormValue("start"), r.FormValue("end"), targetLabels, "")
+		result, err := p.volumeByDerivedLabels(ctx, query, start, end, targetLabels, "")
 		if err == nil {
-			p.writeJSON(w, result)
-			p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
-			return
+			return result, nil
 		}
 	}
 	logsqlQuery, _ := p.translateQuery(query)
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time desc)")
-	if s := r.FormValue("start"); s != "" {
+	if s := start; s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}
-	if e := r.FormValue("end"); e != "" {
+	if e := end; e != "" {
 		params.Set("end", formatVLTimestamp(e))
 	}
 	// VL v1.49+ requires step for hits
@@ -2955,27 +3021,41 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	// Request field-level grouping
 	if targetLabels != "" {
-		mappedFields := p.resolveTargetLabelFields(r.Context(), targetLabels, params)
+		mappedFields := p.resolveTargetLabelFields(ctx, targetLabels, params)
 		if len(mappedFields) > 0 {
 			params.Set("field", strings.Join(mappedFields, ","))
 		}
 	}
 
-	resp, err := p.vlGet(r.Context(), "/select/logsql/hits", params)
+	resp, err := p.vlGet(ctx, "/select/logsql/hits", params)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{
-			"status": "success",
-			"data":   map[string]interface{}{"resultType": "vector", "result": []interface{}{}},
-		})
-		p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
-		return
+		return nil, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 
-	result := p.hitsToVolumeVector(body)
-	p.writeJSON(w, result)
-	p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
+	return p.hitsToVolumeVector(body), nil
+}
+
+func (p *Proxy) refreshVolumeCacheAsync(orgID, cacheKey, rawQuery, start, end, targetLabels string) {
+	refreshKey := "refresh:volume:" + cacheKey
+	go func() {
+		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), p.labelBackgroundTimeout())
+			defer cancel()
+			if orgID != "" {
+				ctx = context.WithValue(ctx, orgIDKey, orgID)
+			}
+			result, err := p.computeVolumeResult(ctx, rawQuery, start, end, targetLabels)
+			if err == nil {
+				p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume"], result)
+			}
+			return nil, err
+		})
+		if err != nil {
+			p.log.Debug("background volume refresh failed", "cache_key", cacheKey, "error", err)
+		}
+	}()
 }
 
 // handleVolumeRange returns volume range data via VL /select/logsql/hits with step.
@@ -2987,58 +3067,95 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = withOrgID(r)
-	query := r.FormValue("query")
+	orgID := r.Header.Get("X-Scope-OrgID")
+	cacheKey := "volume_range:" + orgID + ":" + r.URL.RawQuery
+	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(cached)
+		p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
+		p.metrics.RecordCacheHit()
+		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume_range"]) {
+			p.refreshVolumeRangeCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"), r.FormValue("targetLabels"))
+		}
+		return
+	}
+	p.metrics.RecordCacheMiss()
+
+	result, err := p.computeVolumeRangeResult(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"), r.FormValue("targetLabels"))
+	if err != nil {
+		result = map[string]interface{}{
+			"status": "success",
+			"data":   map[string]interface{}{"resultType": "matrix", "result": []interface{}{}},
+		}
+	}
+	p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume_range"], result)
+	p.writeJSON(w, result)
+	p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
+}
+
+func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end, step, targetLabels string) (map[string]interface{}, error) {
 	if query == "" {
 		query = "*"
 	}
-	targetLabels := r.FormValue("targetLabels")
 	if targetLabels == "" {
 		targetLabels = inferPrimaryTargetLabel(query)
 	}
 	if usesDerivedVolumeLabels(targetLabels) {
-		result, err := p.volumeByDerivedLabels(r.Context(), query, r.FormValue("start"), r.FormValue("end"), targetLabels, r.FormValue("step"))
+		result, err := p.volumeByDerivedLabels(ctx, query, start, end, targetLabels, step)
 		if err == nil {
-			p.writeJSON(w, result)
-			p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
-			return
+			return result, nil
 		}
 	}
 	logsqlQuery, _ := p.translateQuery(query)
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time desc)")
-	if s := r.FormValue("start"); s != "" {
+	if s := start; s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}
-	if e := r.FormValue("end"); e != "" {
+	if e := end; e != "" {
 		params.Set("end", formatVLTimestamp(e))
 	}
-	if step := r.FormValue("step"); step != "" {
+	if step != "" {
 		params.Set("step", formatVLStep(step))
 	}
 	// Forward targetLabels for field-level grouping (same as /volume)
 	if targetLabels != "" {
-		mappedFields := p.resolveTargetLabelFields(r.Context(), targetLabels, params)
+		mappedFields := p.resolveTargetLabelFields(ctx, targetLabels, params)
 		if len(mappedFields) > 0 {
 			params.Set("field", strings.Join(mappedFields, ","))
 		}
 	}
 
-	resp, err := p.vlGet(r.Context(), "/select/logsql/hits", params)
+	resp, err := p.vlGet(ctx, "/select/logsql/hits", params)
 	if err != nil {
-		p.writeJSON(w, map[string]interface{}{
-			"status": "success",
-			"data":   map[string]interface{}{"resultType": "matrix", "result": []interface{}{}},
-		})
-		p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
-		return
+		return nil, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 
-	result := p.hitsToVolumeMatrix(body)
-	p.writeJSON(w, result)
-	p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
+	return p.hitsToVolumeMatrix(body), nil
+}
+
+func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, end, step, targetLabels string) {
+	refreshKey := "refresh:volume_range:" + cacheKey
+	go func() {
+		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), p.labelBackgroundTimeout())
+			defer cancel()
+			if orgID != "" {
+				ctx = context.WithValue(ctx, orgIDKey, orgID)
+			}
+			result, err := p.computeVolumeRangeResult(ctx, rawQuery, start, end, step, targetLabels)
+			if err == nil {
+				p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume_range"], result)
+			}
+			return nil, err
+		})
+		if err != nil {
+			p.log.Debug("background volume_range refresh failed", "cache_key", cacheKey, "error", err)
+		}
+	}()
 }
 
 // handleDetectedFields returns detected field names.

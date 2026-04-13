@@ -496,6 +496,314 @@ func TestQueryRangeWindow_PrefilterFailureFallsBackToAllWindows(t *testing.T) {
 		}
 	}
 }
+
+func TestQueryRangeWindow_StreamAwareBatchingCapsExpensiveWindows(t *testing.T) {
+	start := time.Now().Add(-6 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	end := start + int64(6*time.Hour) - 1
+
+	var inFlight atomic.Int64
+	var maxInFlight atomic.Int64
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		switch r.URL.Path {
+		case "/select/logsql/hits":
+			windowStart, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+			_, _ = fmt.Fprintf(
+				w,
+				`{"hits":[{"fields":{"app":"nginx"},"timestamps":["%s"],"values":[100000]}]}`,
+				time.Unix(0, windowStart).UTC().Format(time.RFC3339),
+			)
+		case "/select/logsql/query":
+			cur := inFlight.Add(1)
+			for {
+				prev := maxInFlight.Load()
+				if cur <= prev || maxInFlight.CompareAndSwap(prev, cur) {
+					break
+				}
+			}
+			time.Sleep(5 * time.Millisecond)
+			inFlight.Add(-1)
+			windowStart, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+			_, _ = fmt.Fprintf(
+				w,
+				"{\"_time\":%q,\"_msg\":\"ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+				time.Unix(0, windowStart).UTC().Format(time.RFC3339Nano),
+			)
+		default:
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 10000)
+	p, err := New(Config{
+		BackendURL:                      vlBackend.URL,
+		Cache:                           c,
+		LogLevel:                        "error",
+		QueryRangeWindowingEnabled:      true,
+		QueryRangeSplitInterval:         time.Hour,
+		QueryRangeMaxParallel:           4,
+		QueryRangeAdaptiveParallel:      false,
+		QueryRangeFreshness:             10 * time.Minute,
+		QueryRangeRecentCacheTTL:        0,
+		QueryRangeHistoryCacheTTL:       24 * time.Hour,
+		QueryRangePrefilterIndexStats:   true,
+		QueryRangePrefilterMinWindows:   1,
+		QueryRangeStreamAwareBatching:   true,
+		QueryRangeExpensiveHitThreshold: 1,
+		QueryRangeExpensiveMaxParallel:  1,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=1000", url.QueryEscape(`{app="nginx"}`), start, end),
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	p.handleQueryRange(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := maxInFlight.Load(); got > 1 {
+		t.Fatalf("expected expensive windows to be processed with max parallel 1, got=%d", got)
+	}
+}
+
+func TestQueryRangeWindow_AlignedWindowsImproveOverlapReuse(t *testing.T) {
+	run := func(t *testing.T, aligned bool) int64 {
+		t.Helper()
+		var backendCalls atomic.Int64
+		vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/select/logsql/query" {
+				t.Fatalf("unexpected backend path: %s", r.URL.Path)
+			}
+			backendCalls.Add(1)
+			_ = r.ParseForm()
+			windowStart, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+			_, _ = fmt.Fprintf(
+				w,
+				"{\"_time\":%q,\"_msg\":\"ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+				time.Unix(0, windowStart).UTC().Format(time.RFC3339Nano),
+			)
+		}))
+		defer vlBackend.Close()
+
+		p, err := New(Config{
+			BackendURL:                 vlBackend.URL,
+			Cache:                      cache.New(60*time.Second, 20000),
+			LogLevel:                   "error",
+			QueryRangeWindowingEnabled: true,
+			QueryRangeSplitInterval:    time.Hour,
+			QueryRangeMaxParallel:      1,
+			QueryRangeAdaptiveParallel: false,
+			QueryRangeFreshness:        10 * time.Minute,
+			QueryRangeRecentCacheTTL:   0,
+			QueryRangeHistoryCacheTTL:  24 * time.Hour,
+			QueryRangeAlignWindows:     aligned,
+		})
+		if err != nil {
+			t.Fatalf("failed to create proxy: %v", err)
+		}
+
+		base := time.Now().Add(-12 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+		start1 := base + int64(15*time.Minute)
+		end1 := start1 + int64(4*time.Hour) - 1
+		start2 := start1 + int64(10*time.Minute)
+		end2 := end1 + int64(10*time.Minute)
+
+		req1 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=1000", url.QueryEscape(`{app="nginx"}`), start1, end1), nil)
+		w1 := httptest.NewRecorder()
+		p.handleQueryRange(w1, req1)
+		if w1.Code != http.StatusOK {
+			t.Fatalf("unexpected status for request1: %d body=%s", w1.Code, w1.Body.String())
+		}
+		callsAfterFirst := backendCalls.Load()
+
+		req2 := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=1000", url.QueryEscape(`{app="nginx"}`), start2, end2), nil)
+		w2 := httptest.NewRecorder()
+		p.handleQueryRange(w2, req2)
+		if w2.Code != http.StatusOK {
+			t.Fatalf("unexpected status for request2: %d body=%s", w2.Code, w2.Body.String())
+		}
+		callsAfterSecond := backendCalls.Load()
+		return callsAfterSecond - callsAfterFirst
+	}
+
+	deltaUnaligned := run(t, false)
+	deltaAligned := run(t, true)
+	if deltaAligned >= deltaUnaligned {
+		t.Fatalf("expected aligned windows to require fewer additional backend calls: aligned=%d unaligned=%d", deltaAligned, deltaUnaligned)
+	}
+}
+
+func TestQueryRangeWindow_PartialResponseOnRetryableFailure(t *testing.T) {
+	start := time.Now().Add(-3 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	end := start + int64(3*time.Hour) - 1
+	oldestWindowStart := start
+	oldestWindowEnd := start + int64(time.Hour) - 1
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		_ = r.ParseForm()
+		windowStart, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+		windowEnd, _ := strconv.ParseInt(r.Form.Get("end"), 10, 64)
+		if windowStart == oldestWindowStart && windowEnd == oldestWindowEnd {
+			http.Error(w, "all backends unavailable", http.StatusBadGateway)
+			return
+		}
+		_, _ = fmt.Fprintf(
+			w,
+			"{\"_time\":%q,\"_msg\":\"ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+			time.Unix(0, windowStart).UTC().Format(time.RFC3339Nano),
+		)
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{
+		BackendURL:                 vlBackend.URL,
+		Cache:                      cache.New(60*time.Second, 10000),
+		LogLevel:                   "error",
+		QueryRangeWindowingEnabled: true,
+		QueryRangeSplitInterval:    time.Hour,
+		QueryRangeMaxParallel:      1,
+		QueryRangeAdaptiveParallel: false,
+		QueryRangeFreshness:        10 * time.Minute,
+		QueryRangeRecentCacheTTL:   0,
+		QueryRangeHistoryCacheTTL:  24 * time.Hour,
+		QueryRangePartialResponses: true,
+		QueryRangeBackgroundWarm:   false,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=5000", url.QueryEscape(`{app="nginx"}`), start, end),
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	p.handleQueryRange(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected partial-success status=200, got=%d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("X-Loki-VL-Partial-Response"); got != "true" {
+		t.Fatalf("expected X-Loki-VL-Partial-Response=true, got %q", got)
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("failed to decode response: %v body=%s", err, resp.Body.String())
+	}
+	if parsed["status"] != "success" {
+		t.Fatalf("expected success body for partial response, got=%v", parsed["status"])
+	}
+	data, _ := parsed["data"].(map[string]interface{})
+	result, _ := data["result"].([]interface{})
+	if len(result) == 0 {
+		t.Fatalf("expected non-empty partial result set")
+	}
+
+	metricsBody := collectMetricsText(t, p.metrics)
+	for _, snippet := range []string{
+		"loki_vl_proxy_window_partial_response_total 1",
+		"loki_vl_proxy_window_retry_total ",
+	} {
+		if !strings.Contains(metricsBody, snippet) {
+			t.Fatalf("expected metrics to include %q\nmetrics:\n%s", snippet, metricsBody)
+		}
+	}
+}
+
+func TestQueryRangeWindow_SevenDayRegressionSLO(t *testing.T) {
+	start := time.Now().Add(-7 * 24 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	end := start + int64(7*24*time.Hour) - 1
+	stepNs := int64(time.Hour)
+
+	var hitsCalls atomic.Int64
+	var queryCalls atomic.Int64
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		switch r.URL.Path {
+		case "/select/logsql/hits":
+			hitsCalls.Add(1)
+			windowStart, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+			idx := int((windowStart - start) / stepNs)
+			val := 0
+			// Sparse long-range history: only every 8th window has events.
+			if idx%8 == 0 {
+				val = 1000
+			}
+			_, _ = fmt.Fprintf(
+				w,
+				`{"hits":[{"fields":{"app":"nginx"},"timestamps":["%s"],"values":[%d]}]}`,
+				time.Unix(0, windowStart).UTC().Format(time.RFC3339),
+				val,
+			)
+		case "/select/logsql/query":
+			queryCalls.Add(1)
+			windowStart, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+			time.Sleep(2 * time.Millisecond)
+			_, _ = fmt.Fprintf(
+				w,
+				"{\"_time\":%q,\"_msg\":\"ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
+				time.Unix(0, windowStart).UTC().Format(time.RFC3339Nano),
+			)
+		default:
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{
+		BackendURL:                      vlBackend.URL,
+		Cache:                           cache.New(60*time.Second, 100000),
+		LogLevel:                        "error",
+		QueryRangeWindowingEnabled:      true,
+		QueryRangeSplitInterval:         time.Hour,
+		QueryRangeMaxParallel:           4,
+		QueryRangeAdaptiveParallel:      false,
+		QueryRangeFreshness:             10 * time.Minute,
+		QueryRangeRecentCacheTTL:        0,
+		QueryRangeHistoryCacheTTL:       24 * time.Hour,
+		QueryRangePrefilterIndexStats:   true,
+		QueryRangePrefilterMinWindows:   1,
+		QueryRangeStreamAwareBatching:   true,
+		QueryRangeExpensiveHitThreshold: 500,
+		QueryRangeExpensiveMaxParallel:  1,
+		QueryRangeAlignWindows:          true,
+		QueryRangeWindowTimeout:         10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=5000", url.QueryEscape(`{app="nginx"} | json`), start, end), nil)
+	resp := httptest.NewRecorder()
+
+	begin := time.Now()
+	p.handleQueryRange(resp, req)
+	duration := time.Since(begin)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", resp.Code, resp.Body.String())
+	}
+	if duration > 2*time.Second {
+		t.Fatalf("expected 7d sparse-range regression test under 2s, got %s", duration)
+	}
+	if got := queryCalls.Load(); got > 30 {
+		t.Fatalf("expected <=30 window query fanout calls after prefilter, got %d", got)
+	}
+	if got := hitsCalls.Load(); got < 168 {
+		t.Fatalf("expected prefilter to inspect all 168 windows, got %d", got)
+	}
+}
 func TestQueryRangeWindow_DoesNotFallbackToDirectQueryOnWindowFetchError(t *testing.T) {
 	start := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
 	end := start + int64(2*time.Hour) - 1

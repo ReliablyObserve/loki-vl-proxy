@@ -519,7 +519,7 @@
       "gridPos": {"h": 8, "w": 8, "x": 8, "y": 93},
       "targets": [
         {
-          "expr": "max(loki_vl_proxy_window_adaptive_parallel_current{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})",
+          "expr": "max(loki_vl_proxy_window_adaptive_parallel_current{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
           "legendFormat": "parallel"
         }
       ],
@@ -533,16 +533,76 @@
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 93},
       "targets": [
         {
-          "expr": "max(loki_vl_proxy_window_adaptive_latency_ewma_seconds{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})",
+          "expr": "max(loki_vl_proxy_window_adaptive_latency_ewma_seconds{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
           "legendFormat": "latency ewma"
         },
         {
-          "expr": "max(loki_vl_proxy_window_adaptive_error_ewma{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})",
+          "expr": "max(loki_vl_proxy_window_adaptive_error_ewma{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
           "legendFormat": "error ewma"
         }
       ],
       "fieldConfig": {
         "defaults": {"unit": "short", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "Long-Range Resilience KPIs",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 101},
+      "collapsed": false
+    },
+    {
+      "title": "Prefilter Keep/Skip Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 102},
+      "targets": [
+        {
+          "expr": "sum(rate(loki_vl_proxy_window_prefilter_kept_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "kept/s"
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_window_prefilter_skipped_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "skipped/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "Retry/Degraded/Partial Rate",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 102},
+      "targets": [
+        {
+          "expr": "sum(rate(loki_vl_proxy_window_retry_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "retry/s"
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_window_degraded_batch_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "degraded/s"
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_window_partial_response_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "partial/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "Prefilter Hit Ratio",
+      "type": "stat",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 102},
+      "targets": [
+        {
+          "expr": "100 * max(loki_vl_proxy_window_prefilter_hit_ratio{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
+          "legendFormat": "hit ratio %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "percent", "min": 0, "max": 100}
       }
     }
   ],
@@ -555,13 +615,12 @@
         "label": "Datasource",
         "type": "datasource",
         "query": "prometheus",
-        "regex": "/^(Prometheus|Thanos|VictoriaMetrics|Mimir|Cortex|prometheus)$/",
+        "regex": "/.*/",
         "refresh": 1,
         "hide": 0,
         "includeAll": false,
         "multi": false,
-        "options": [],
-        "current": {"text": "VictoriaMetrics", "value": "VictoriaMetrics"}
+        "options": []
       },
       {
         "name": "job",
@@ -642,5 +701,5 @@
   "timezone": "browser",
   "title": "Loki-VL-Proxy Metrics",
   "uid": "loki-vl-proxy-metrics",
-  "version": 5
+  "version": 6
 }

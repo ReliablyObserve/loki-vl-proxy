@@ -56,6 +56,10 @@ type Metrics struct {
 	windowPrefilterErrors         atomic.Int64
 	windowPrefilterKept           atomic.Int64
 	windowPrefilterSkipped        atomic.Int64
+	windowPrefilterHitRatioPpm    atomic.Int64
+	windowRetries                 atomic.Int64
+	windowDegradedBatches         atomic.Int64
+	windowPartialResponses        atomic.Int64
 	windowPrefilterDuration       *histogram
 	windowAdaptiveParallelCurrent atomic.Int64
 	windowAdaptiveLatencyEWMAms   atomic.Int64
@@ -690,6 +694,32 @@ func (m *Metrics) RecordQueryRangeWindowPrefilterOutcome(kept, skipped int) {
 	if skipped > 0 {
 		m.windowPrefilterSkipped.Add(int64(skipped))
 	}
+	total := kept + skipped
+	if total > 0 {
+		ratio := float64(kept) / float64(total)
+		if ratio < 0 {
+			ratio = 0
+		}
+		if ratio > 1 {
+			ratio = 1
+		}
+		m.windowPrefilterHitRatioPpm.Store(int64(ratio * 1_000_000))
+	}
+}
+
+// RecordQueryRangeWindowRetry records retry attempts for query_range window fetches.
+func (m *Metrics) RecordQueryRangeWindowRetry() {
+	m.windowRetries.Add(1)
+}
+
+// RecordQueryRangeWindowDegradedBatch records degraded batch execution events.
+func (m *Metrics) RecordQueryRangeWindowDegradedBatch() {
+	m.windowDegradedBatches.Add(1)
+}
+
+// RecordQueryRangeWindowPartialResponse records partial query_range responses.
+func (m *Metrics) RecordQueryRangeWindowPartialResponse() {
+	m.windowPartialResponses.Add(1)
 }
 
 // RecordQueryRangeAdaptiveState records adaptive query_range controller state.
@@ -999,6 +1029,22 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_skipped_total Query-range windows skipped after prefilter.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_skipped_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_skipped_total %d\n", m.windowPrefilterSkipped.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_hit_ratio Prefilter hit ratio (kept / total windows).\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_hit_ratio gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_hit_ratio %g\n", float64(m.windowPrefilterHitRatioPpm.Load())/1000000.0)
+
+	sb.WriteString("# HELP loki_vl_proxy_window_retry_total Query-range window retry attempts.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_retry_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_retry_total %d\n", m.windowRetries.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_degraded_batch_total Query-range batches degraded to lower parallelism.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_degraded_batch_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_degraded_batch_total %d\n", m.windowDegradedBatches.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_window_partial_response_total Query-range partial responses due to retryable backend failures.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_window_partial_response_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_window_partial_response_total %d\n", m.windowPartialResponses.Load())
 
 	sb.WriteString("# HELP loki_vl_proxy_window_prefilter_duration_seconds Query-range window prefilter duration.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_duration_seconds histogram\n")
