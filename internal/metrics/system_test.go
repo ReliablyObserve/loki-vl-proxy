@@ -27,6 +27,7 @@ func withSyntheticProcFS(t *testing.T, files map[string]string) string {
 
 func setSyntheticProcEnv(t *testing.T, root string) {
 	t.Helper()
+	lockProcEnvTest(t)
 
 	oldRoot := procRoot
 	oldSelfRoot := selfProcRoot
@@ -51,6 +52,8 @@ func setSyntheticProcEnv(t *testing.T, root string) {
 }
 
 func TestSetProcRoot(t *testing.T) {
+	lockProcEnvTest(t)
+
 	oldRoot := procRoot
 	t.Cleanup(func() { procRoot = oldRoot })
 
@@ -86,6 +89,8 @@ func TestDetectProcScope(t *testing.T) {
 }
 
 func TestInspectSystemStartup_NonLinux(t *testing.T) {
+	lockProcEnvTest(t)
+
 	oldGOOS := systemGOOS
 	oldRoot := procRoot
 	systemGOOS = "darwin"

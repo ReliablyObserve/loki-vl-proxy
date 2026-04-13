@@ -135,9 +135,14 @@ func TestBuildLogger(t *testing.T) {
 	}
 	logger.Info("hello")
 	logs := buf.String()
-	for _, want := range []string{"\"service.name\":\"proxy\"", "\"service.version\":\"v1.2.3\"", "\"deployment.environment.name\":\"prod\"", "\"body\":\"hello\""} {
+	for _, want := range []string{"\"body\":\"hello\"", "\"severity\":{\"text\":\"INFO\",\"number\":9}"} {
 		if !strings.Contains(logs, want) {
 			t.Fatalf("expected %q in %s", want, logs)
+		}
+	}
+	for _, blocked := range []string{"\"service.name\":", "\"service.version\":", "\"service.instance.id\":", "\"deployment.environment.name\":", "\"telemetry.sdk.name\":", "\"telemetry.sdk.language\":", "\"telemetry.sdk.version\":"} {
+		if strings.Contains(logs, blocked) {
+			t.Fatalf("did not expect %q in %s", blocked, logs)
 		}
 	}
 }

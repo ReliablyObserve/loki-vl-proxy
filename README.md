@@ -7,8 +7,8 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/ReliablyObserve/Loki-VL-proxy)](https://go.dev/)
 [![Release](https://img.shields.io/github/v/release/ReliablyObserve/Loki-VL-proxy)](https://github.com/ReliablyObserve/Loki-VL-proxy/releases)
 [![Lines of Code](https://img.shields.io/badge/go%20loc-55.9k-blue)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-1470%20passed-brightgreen)](#tests)
-[![Coverage](https://img.shields.io/badge/coverage-89.6%25-green)](#tests)
+[![Tests](https://img.shields.io/badge/tests-CI%20tracked-brightgreen)](docs/testing.md)
+[![Coverage](https://img.shields.io/badge/coverage-PR%20quality%20report-green)](docs/testing.md)
 [![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -52,6 +52,28 @@ Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/
 - Runbook-backed alerting assets for operational response.
 
 Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Observability](docs/observability.md), [Testing](docs/testing.md)
+
+## UI Gallery
+
+VictoriaLogs backend with Loki-VL-proxy as the Loki-compatible query layer.
+
+<a href="docs/images/ui/explore-main.png">
+  <img src="docs/images/ui/explore-main.png" alt="Grafana Explore main view" width="240" />
+</a>
+<a href="docs/images/ui/explore-details.png">
+  <img src="docs/images/ui/explore-details.png" alt="Grafana Explore details view" width="240" />
+</a>
+<a href="docs/images/ui/drilldown-main.png">
+  <img src="docs/images/ui/drilldown-main.png" alt="Grafana Logs Drilldown main view" width="240" />
+</a>
+<a href="docs/images/ui/drilldown-service.png">
+  <img src="docs/images/ui/drilldown-service.png" alt="Grafana Logs Drilldown service detail view" width="240" />
+</a>
+<a href="docs/images/ui/explore-tail-multitenant.png">
+  <img src="docs/images/ui/explore-tail-multitenant.png" alt="Grafana Explore multi-tenant view" width="240" />
+</a>
+
+Capture/re-generation workflow is documented in [Testing](docs/testing.md#compose-screenshot-workflow).
 
 ## High-Level Flow
 

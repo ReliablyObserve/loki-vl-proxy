@@ -5,7 +5,8 @@
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
     "test:debug": "npx playwright test --debug",
-    "report": "npx playwright show-report"
+    "report": "npx playwright show-report",
+    "capture:screenshots": "node capture-screenshots.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1"

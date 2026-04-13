@@ -7,9 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Notes
+### Documentation
 
-- _No unreleased changes yet._
+- prepare post-`1.0.0` release cycle changelog section
+
+## [1.0.0] - 2026-04-13
+
+### Highlights
+
+- official `1.0.0` stable release of Loki-VL-proxy as a production Loki API compatibility layer on top of VictoriaLogs
+- full compatibility-first delivery model with dedicated CI suites for Loki API, Logs Drilldown, and VictoriaLogs behavior
+- proven long-range query hardening for 2d/7d+ workloads with adaptive execution, retries, and partial-response safety paths
+
+### Features
+
+- Loki API coverage for query/query_range, labels, series, index endpoints, buildinfo, and readiness/metrics paths
+- Logs Drilldown support including detected labels/fields/values flows and include/exclude filter translation
+- native dot/underscore metadata compatibility modes for Loki-style and OTel/VL-style field conventions
+- chart-driven runtime controls for translation, structured metadata, caching, retry behavior, and query windowing
+
+### Performance
+
+- split-window query execution with adaptive parallelism and prefiltering to skip empty windows before fanout
+- stream-aware batching and overlap-aware coalescing to reduce repeated backend work across refresh/back-navigation traffic
+- disk + memory cache improvements, peer cache sharing, and write-amplification reductions for steadier runtime behavior
+
+### Reliability
+
+- bounded retries and degraded-batch fallback for transient backend pressure instead of immediate user-visible hard failures
+- direct fallback safeguards and adaptive timeout budgeting for expensive long-range query patterns
+- startup/runtime cache hardening with consistency protections for rolling updates and recovery scenarios
+
+### Observability
+
+- OTel semantic logging alignment for HTTP, network, auth, and end-user context
+- standardized `loki_vl_proxy_*` KPI metrics for cache, query windowing, retries, degraded batches, and partial responses
+- dashboard and docs updates for zero/no-data hardening and stable scrape/OTLP visibility
+
+### Bug Fixes
+
+- harden Drilldown include/exclude behavior for repeated same-field clicks by keeping the latest field filter authoritative and preventing impossible accumulated chains
+- use OTel semantic end-user fields in request logs (`enduser.name`/`enduser.id`/`enduser.source`) for clearer identity provenance
+- stop duplicating OTel resource attributes (`service.*`, `deployment.environment.name`, `telemetry.sdk.*`) in per-line JSON payloads to prevent downstream `message.*` field explosion
+
+### Documentation
+
+- add compose-backed Playwright screenshot workflow and publish refreshed UI gallery assets for Explore, Tail, and Drilldown
+- refresh docs for compatibility profiles, cache behavior, and runtime tuning guidance
 
 ## [0.27.42] - 2026-04-13
 
@@ -275,7 +319,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Observability
 
 - add adaptive query-range tuning gauges: current parallelism, latency EWMA, and error EWMA, exposed in both Prometheus and OTLP metrics
-- harden `Loki-VL-Proxy Metrics` dashboard selectors to tolerate headless/non-headless job+service labels and blank namespace URL vars so sand drilldowns no longer collapse to no-data
+- harden `Loki-VL-Proxy Metrics` dashboard selectors to tolerate headless/non-headless job+service labels and blank namespace URL vars so drilldown views no longer collapse to no-data
 - add a `Query-Range Windowing` dashboard section (window fetch/merge latency, window cache hit ratio, adaptive EWMA/parallelism)
 - update packaged dashboards, alerts, and runbook queries to consume `process_*` system metric families
 
@@ -343,7 +387,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - restore Grafana-safe tuple defaults when `-emit-structured-metadata=true`: Explore/Drilldown requests now stay on canonical `[timestamp, line]` unless explicitly opted into `structured_metadata=true` (or `X-Loki-Response-Encoding-Flags: structured-metadata`), preventing `ReadArray` decode regressions
-- harden Grafana sand metrics dashboard templating with universal regex-safe variables (`job`, `cluster`, `env`, `namespace`, `service`, `pod`) and default service scoping to reduce duplicated/noisy series
+- harden Grafana metrics dashboard templating with universal regex-safe variables (`job`, `cluster`, `env`, `namespace`, `service`, `pod`) and default service scoping to reduce duplicated/noisy series
 
 ### Tests
 

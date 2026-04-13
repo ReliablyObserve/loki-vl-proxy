@@ -391,10 +391,10 @@ kill -HUP $(pidof loki-vl-proxy)
 | `-otlp-headers` | `OTLP_HEADERS` | — | Comma-separated OTLP HTTP headers in `key=value` form |
 | `-otlp-timeout` | — | `10s` | HTTP request timeout |
 | `-otlp-tls-skip-verify` | — | `false` | Skip TLS verification |
-| `-otel-service-name` | `OTEL_SERVICE_NAME` | `loki-vl-proxy` | `service.name` for OTLP metrics and JSON logs |
-| `-otel-service-namespace` | `OTEL_SERVICE_NAMESPACE` | — | `service.namespace` for OTLP metrics and JSON logs |
-| `-otel-service-instance-id` | `OTEL_SERVICE_INSTANCE_ID` | — | `service.instance.id` for OTLP metrics and JSON logs |
-| `-deployment-environment` | `DEPLOYMENT_ENVIRONMENT` | — | `deployment.environment.name` for OTLP metrics and JSON logs |
+| `-otel-service-name` | `OTEL_SERVICE_NAME` | `loki-vl-proxy` | `service.name` resource metadata for OTLP metrics/logs (not duplicated per JSON log line) |
+| `-otel-service-namespace` | `OTEL_SERVICE_NAMESPACE` | — | `service.namespace` resource metadata for OTLP metrics/logs (not duplicated per JSON log line) |
+| `-otel-service-instance-id` | `OTEL_SERVICE_INSTANCE_ID` | — | `service.instance.id` resource metadata for OTLP metrics/logs (not duplicated per JSON log line) |
+| `-deployment-environment` | `DEPLOYMENT_ENVIRONMENT` | — | `deployment.environment.name` resource metadata for OTLP metrics/logs (not duplicated per JSON log line) |
 
 ## HTTP Hardening
 
@@ -490,7 +490,7 @@ datasources:
 Expected request-log behavior with this setup:
 
 - `enduser.id` reflects the trusted Grafana/auth user.
-- `loki.client.source` indicates user-header source (for example `grafana_user` or `forwarded_user`).
+- `enduser.source` indicates user-header source (for example `grafana_user` or `forwarded_user`).
 - `auth.principal` reflects datasource auth identity when present (for example basic-auth datasource user).
 
 Alerting datasource integration is still partial: the proxy supports legacy Loki YAML rules reads and Prometheus-style JSON rules/alerts reads against a configured backend, but it does not yet implement the full Loki ruler write API surface.

@@ -20,6 +20,37 @@ npx playwright install chromium
 npm test
 ```
 
+## Capture UI Screenshots
+
+Generate docs-ready screenshots directly from the local compose stack:
+
+```bash
+cd test/e2e-compat
+docker compose up -d --build
+../../scripts/ci/wait_e2e_stack.sh 180
+
+cd ../e2e-ui
+npm ci
+npx playwright install chromium
+npm run capture:screenshots
+```
+
+Default output path:
+
+- `docs/images/ui/explore-main.png`
+- `docs/images/ui/explore-details.png`
+- `docs/images/ui/drilldown-main.png`
+- `docs/images/ui/drilldown-service.png`
+- `docs/images/ui/explore-tail-multitenant.png`
+
+Default screenshot time window is `now-5m` for high signal density. Override with:
+
+```bash
+SCREENSHOT_FROM=now-15m SCREENSHOT_TO=now npm run capture:screenshots
+```
+
+The script seeds fresh logs and keeps writing background logs while capturing, so screenshots include live data in Explore range, Explore live tail, and Drilldown service views.
+
 If local Chromium cannot start on macOS, run the same suite inside Linux Playwright:
 
 ```bash

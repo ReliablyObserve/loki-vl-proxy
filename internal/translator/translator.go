@@ -579,10 +579,38 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 
 func canonicalLabelFilterStage(stage string, labelFn LabelTranslateFunc) (canonical string, baseKey string, ok bool) {
 	if translated, ok := translateSingleLabelFilter(stage, labelFn); ok {
+		if fieldKey, op, ok := translatedFilterFieldOp(translated); ok {
+			// Drilldown include/exclude interactions emit equality/regex filters.
+			// Keep only the latest filter per field so repeated clicks on the same
+			// field do not accumulate into impossible AND chains.
+			if op == ":=" || op == ":~" {
+				return translated, fieldKey, true
+			}
+		}
 		return translated, strings.TrimPrefix(translated, "-"), true
 	}
 	if translated, ok := translateMalformedDottedStage(stage, labelFn); ok {
 		return translated, translated, true
+	}
+	return "", "", false
+}
+
+func translatedFilterFieldOp(translated string) (field string, op string, ok bool) {
+	s := strings.TrimSpace(translated)
+	if s == "" {
+		return "", "", false
+	}
+	s = strings.TrimPrefix(s, "-")
+	for _, candidate := range []string{":>=", ":<=", ":~", ":=", ":>", ":<"} {
+		idx := strings.Index(s, candidate)
+		if idx <= 0 {
+			continue
+		}
+		field = strings.TrimSpace(s[:idx])
+		if field == "" {
+			return "", "", false
+		}
+		return field, candidate, true
 	}
 	return "", "", false
 }

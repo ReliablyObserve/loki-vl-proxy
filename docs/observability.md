@@ -47,10 +47,6 @@ Default logs are emitted as JSON and already use OTel-friendly top-level keys:
     "number": 9
   },
   "body": "request",
-  "service.name": "loki-vl-proxy",
-  "service.version": "0.27.42",
-  "service.instance.id": "proxy-1",
-  "deployment.environment.name": "prod",
   "component": "proxy",
   "http.route": "query_range",
   "http.request.method": "GET",
@@ -60,7 +56,7 @@ Default logs are emitted as JSON and already use OTel-friendly top-level keys:
   "loki.query": "{service_name=\"api\"} |= \"error\"",
   "client.address": "10.0.0.12:51884",
   "enduser.id": "grafana-user@example.com",
-  "loki.client.source": "grafana_user",
+  "enduser.source": "grafana_user",
   "cache.result": "miss",
   "upstream.calls": 1,
   "upstream.status_code": 200,
@@ -92,12 +88,12 @@ The proxy writes structured logs for:
 | `timestamp` | event time |
 | `severity.text` / `severity.number` | log severity |
 | `body` | message body |
-| `service.*` | stable service identity |
-| `deployment.environment.name` | environment name |
 | `component` | internal subsystem (`proxy`, `disk_cache`, `cache_warmer`, `otlp_metrics`) |
 | `http.*` | request semantics |
 | `client.address` | remote address |
-| `enduser.id` | trusted user/client identity when available |
+| `enduser.id` | stable trusted user/client identity when available |
+| `enduser.name` | display/login user name from trusted user headers when available |
+| `enduser.source` | trusted header source for end-user attribution (`grafana_user`, `forwarded_user`, etc.) |
 | `auth.*` | datasource/auth principal context (separate from `enduser.id`) |
 | `cache.result` | compatibility cache result (`hit`, `miss`, `bypass`) |
 | `upstream.*` | backend call count, status, and latency |
@@ -133,7 +129,9 @@ If the OTLP endpoint is passed as a collector base URL like `http://collector:43
 
 ### OpenTelemetry Resource Attributes for Metrics and Logs
 
-These flags shape both OTLP metric exports and structured logs:
+These flags shape OTLP metric resource attributes. Structured logs intentionally do
+not duplicate resource attributes per line; keep service identity in collector/OTLP
+resource metadata to avoid `message.service.*` duplication in storage.
 
 | Flag | Meaning |
 |---|---|

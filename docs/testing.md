@@ -28,6 +28,9 @@ cd test/e2e-ui
 npm ci && npx playwright install chromium
 npm test
 
+# Generate local UI screenshots (Explore/Drilldown)
+npm run capture:screenshots
+
 # Run the same shards used in CI
 npx playwright test tests/datasource.spec.ts
 npx playwright test --grep @explore-core
@@ -75,6 +78,15 @@ Exact counts move often. Treat the categories below as the stable map of what is
 | E2E edge cases (VL issues) | 12 | Large bodies, dotted labels, unicode, multiline |
 | Fuzz testing | 1.2M+ executions | No panics found |
 
+## Recent Regression Guards
+
+Recent PRs added targeted guards in areas that were previously flaky in live Grafana workflows:
+
+- `internal/translator/labels_translate_test.go` now verifies repeated same-field include/exclude interactions keep the latest equality/regex action while preserving valid range pairs on the same field.
+- `internal/proxy/request_logger_semconv_test.go` verifies request logs use end-user semantic fields (`enduser.*`) without falling back to legacy `user.*`.
+- `internal/observability/logger_test.go` verifies resource identity fields are not duplicated into per-line JSON payloads (prevents downstream `message.service.*` / `message.telemetry.sdk.*` field explosion).
+- `internal/metrics/procenv_test.go` + related `otlp_test.go` / `system_test.go` locking guards keep `-race` CI deterministic when tests manipulate proc-path globals alongside OTLP pusher goroutines.
+
 ## Test Files
 
 | File | Focus |
@@ -105,6 +117,38 @@ Exact counts move often. Treat the categories below as the stable map of what is
 ## Playwright UI Matrix
 
 The browser suite now keeps only browser-only smoke paths. Query parity, Drilldown resource contracts, datasource bootstrap, and most tail protocol coverage live in `test/e2e-compat` or lower-level Go tests so CI does not keep paying Chromium cost for them.
+
+## Compose Screenshot Workflow
+
+The repository includes a direct Playwright capture script for documentation screenshots:
+
+```bash
+cd test/e2e-compat
+docker compose up -d --build
+../../scripts/ci/wait_e2e_stack.sh 180
+
+cd ../e2e-ui
+npm ci
+npx playwright install chromium
+npm run capture:screenshots
+```
+
+Output directory:
+
+- `docs/images/ui/explore-main.png`
+- `docs/images/ui/explore-details.png`
+- `docs/images/ui/drilldown-main.png`
+- `docs/images/ui/drilldown-service.png`
+- `docs/images/ui/explore-tail-multitenant.png`
+
+The capture script writes a fresh seed batch and continues background log ingestion while taking screenshots, so Explore range queries, live tail, and Drilldown screenshots include visible active data.
+
+Optional overrides:
+
+- `SCREENSHOT_FROM` (default `now-5m`)
+- `SCREENSHOT_TO` (default `now`)
+- `SCREENSHOT_OUT_DIR` (default `../../docs/images/ui`)
+- `GRAFANA_URL` (default `http://127.0.0.1:3002`)
 
 CI prefers the runner's existing Chrome/Chromium binary for these shards and falls back to `npx playwright install chromium` only when no system browser is available. That removes the repeated `apt` dependency install from the common GitHub-hosted path.
 

@@ -16,6 +16,8 @@ import (
 )
 
 func TestOTLPPusher_SendsMetrics(t *testing.T) {
+	lockProcEnvTest(t)
+
 	var received atomic.Int32
 	var mu sync.Mutex
 	var lastBody []byte
@@ -141,6 +143,8 @@ func TestOTLPPusher_SendsMetrics(t *testing.T) {
 }
 
 func TestOTLPPusher_CustomHeaders(t *testing.T) {
+	lockProcEnvTest(t)
+
 	var mu sync.Mutex
 	var receivedAuth string
 
@@ -172,6 +176,8 @@ func TestOTLPPusher_CustomHeaders(t *testing.T) {
 }
 
 func TestOTLPPusher_HandlesErrors(t *testing.T) {
+	lockProcEnvTest(t)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -239,6 +245,8 @@ func TestOTLPPusher_BuildPayload(t *testing.T) {
 }
 
 func TestOTLPPusher_GzipCompression(t *testing.T) {
+	lockProcEnvTest(t)
+
 	var mu sync.Mutex
 	var receivedEncoding string
 	seen := make(chan struct{}, 1)
@@ -279,6 +287,8 @@ func TestOTLPPusher_GzipCompression(t *testing.T) {
 }
 
 func TestOTLPPusher_ZstdCompression(t *testing.T) {
+	lockProcEnvTest(t)
+
 	var mu sync.Mutex
 	var receivedEncoding string
 	seen := make(chan struct{}, 1)
@@ -482,6 +492,8 @@ func TestOTLPPusher_SystemMetrics(t *testing.T) {
 }
 
 func TestOTLPPusher_SystemMetrics_WithSyntheticProcRoot(t *testing.T) {
+	lockProcEnvTest(t)
+
 	if runtime.GOOS != "linux" {
 		t.Skip("linux-only synthetic /proc test")
 	}
@@ -543,6 +555,8 @@ func TestOTLPPusher_SystemMetrics_WithSyntheticProcRoot(t *testing.T) {
 }
 
 func TestOTLPPusher_SystemMetrics_EmitsZeroWhenProcDataMissing(t *testing.T) {
+	lockProcEnvTest(t)
+
 	if runtime.GOOS != "linux" {
 		t.Skip("linux-only synthetic /proc test")
 	}
