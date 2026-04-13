@@ -3966,9 +3966,10 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	patterns := extractLogPatterns(body, r.FormValue("step"), patternLimit)
 	result := map[string]interface{}{
 		"status": "success",
-		"data":   extractLogPatterns(body, r.FormValue("step"), patternLimit),
+		"data":   patterns,
 	}
 	resultBody, err := json.Marshal(result)
 	if err != nil {
@@ -3976,8 +3977,11 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 		return
 	}
-	p.cache.SetWithTTL(cacheKey, resultBody, patternsCacheRetention)
-	p.recordPatternSnapshotEntry(cacheKey, resultBody, time.Now().UTC())
+	// Avoid sticky empty results: first-call empty probes should not poison long-lived pattern cache entries.
+	if len(patterns) > 0 {
+		p.cache.SetWithTTL(cacheKey, resultBody, patternsCacheRetention)
+		p.recordPatternSnapshotEntry(cacheKey, resultBody, time.Now().UTC())
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(resultBody)
 	p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))

@@ -629,6 +629,48 @@ func TestContract_Patterns_DisabledReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
+	callCount := 0
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		if callCount == 1 {
+			// First probe is empty (no logs yet).
+			return
+		}
+		// Subsequent probe has data and should not be blocked by sticky empty cache.
+		w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		w.Write([]byte(`{"_time":"2026-04-04T10:00:01Z","_msg":"GET /api/users 200 22ms","app":"web","level":"info"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	reqURL := "/loki/api/v1/patterns?query=%7B%7D&start=1&end=2"
+
+	w1 := httptest.NewRecorder()
+	r1 := httptest.NewRequest("GET", reqURL, nil)
+	p.handlePatterns(w1, r1)
+	var first map[string]interface{}
+	mustUnmarshal(t, w1.Body.Bytes(), &first)
+	firstData, _ := first["data"].([]interface{})
+	if len(firstData) != 0 {
+		t.Fatalf("expected first patterns probe to be empty, got %v", first)
+	}
+
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest("GET", reqURL, nil)
+	p.handlePatterns(w2, r2)
+	var second map[string]interface{}
+	mustUnmarshal(t, w2.Body.Bytes(), &second)
+	secondData, _ := second["data"].([]interface{})
+	if len(secondData) == 0 {
+		t.Fatalf("expected second patterns probe to return data (empty response must not be sticky), got %v", second)
+	}
+	if callCount < 2 {
+		t.Fatalf("expected backend to be queried again after empty probe; got callCount=%d", callCount)
+	}
+}
+
 func TestContract_DrilldownLimits_PatternsEnabledAdvertised(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	w := httptest.NewRecorder()
