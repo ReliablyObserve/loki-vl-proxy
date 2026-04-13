@@ -38,12 +38,31 @@ class CheckChangelogPRTests(unittest.TestCase):
         self.assertTrue(should_require_changelog(["test: add coverage"], ["internal/proxy/proxy.go"]))
         self.assertTrue(should_require_changelog(["docs: mention thing"], ["go.mod"]))
 
+    def test_should_skip_for_unit_test_only_changes(self):
+        self.assertFalse(
+            should_require_changelog(
+                ["test: add coverage"],
+                ["internal/metrics/metrics_test.go", "pkg/cache/cache_test.go"],
+            )
+        )
+
     def test_should_skip_for_docs_only(self):
         self.assertFalse(should_require_changelog(["docs: update guide"], ["docs/getting-started.md"]))
 
     def test_should_require_for_ci_and_tests_changes(self):
         self.assertTrue(should_require_changelog(["ci: tune workflow"], [".github/workflows/ci.yaml"]))
         self.assertTrue(should_require_changelog(["test: add coverage"], ["test/e2e-compat/features_test.go"]))
+
+    def test_should_skip_for_changelog_gate_policy_only_changes(self):
+        self.assertFalse(
+            should_require_changelog(
+                ["test: refine changelog gate"],
+                [
+                    "scripts/ci/check_changelog_pr.py",
+                    "scripts/ci/tests/test_check_changelog_pr.py",
+                ],
+            )
+        )
 
     def test_release_metadata_sync_detection(self):
         self.assertTrue(
