@@ -28,14 +28,6 @@ No custom Grafana datasource plugin. No sidecar translation service. One small s
 
 Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/compatibility-matrix.md), [Operations](docs/operations.md)
 
-## 1.0.x Release Line
-
-The `1.0.x` line tightened the product around stable read compatibility, operator visibility, and safer release hygiene without changing the core scope.
-
-- **`1.0.0`**: established the stable `1.x` line with production-focused compatibility, long-range query hardening, and documented support/release policy.
-- **`1.0.1` to `1.0.3`**: fixed Drilldown edge cases, improved metadata path caching, and added route-aware upstream/downstream request telemetry aligned to OTel HTTP semantics.
-- **`1.0.4` to `1.0.6`**: refreshed the packaged operations dashboard, added prefixed process disk-operation metrics plus a CI guard against new unprefixed metrics, and introduced the Loki-compatible `/loki/api/v1/patterns` API with explicit runtime gating.
-
 ## Key Features
 
 ### Compatibility
