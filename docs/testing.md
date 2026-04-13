@@ -127,10 +127,7 @@ cd test/e2e-compat
 docker compose up -d --build
 ../../scripts/ci/wait_e2e_stack.sh 180
 
-cd ../..
-go test -v -tags=e2e -run '^TestSetup_IngestLogs$' ./test/e2e-compat/
-
-cd test/e2e-ui
+cd ../e2e-ui
 npm ci
 npx playwright install chromium
 npm run capture:screenshots
@@ -142,6 +139,8 @@ Output directory:
 - `docs/images/ui/explore-details.png`
 - `docs/images/ui/drilldown-main.png`
 - `docs/images/ui/explore-tail-multitenant.png`
+
+The capture script writes a fresh seed batch and continues background log ingestion while taking screenshots, so Explore range queries, live tail, and Drilldown screenshots include visible active data.
 
 Optional overrides:
 

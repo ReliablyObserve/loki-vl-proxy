@@ -29,10 +29,7 @@ cd test/e2e-compat
 docker compose up -d --build
 ../../scripts/ci/wait_e2e_stack.sh 180
 
-cd ../..
-go test -v -tags=e2e -run '^TestSetup_IngestLogs$' ./test/e2e-compat/
-
-cd test/e2e-ui
+cd ../e2e-ui
 npm ci
 npx playwright install chromium
 npm run capture:screenshots
@@ -50,6 +47,8 @@ Default screenshot time window is `now-5m` for high signal density. Override wit
 ```bash
 SCREENSHOT_FROM=now-15m SCREENSHOT_TO=now npm run capture:screenshots
 ```
+
+The script seeds fresh logs and keeps writing background logs while capturing, so screenshots include live data in Explore range, Explore live tail, and Drilldown service views.
 
 If local Chromium cannot start on macOS, run the same suite inside Linux Playwright:
 

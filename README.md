@@ -70,21 +70,7 @@ These screenshots are generated from the local compose stack (`test/e2e-compat`)
   <img src="docs/images/ui/explore-tail-multitenant.png" alt="Grafana Explore multi-tenant view" width="240" />
 </a>
 
-Re-generate locally:
-
-```bash
-cd test/e2e-compat
-docker compose up -d --build
-../../scripts/ci/wait_e2e_stack.sh 180
-
-cd ../..
-go test -v -tags=e2e -run '^TestSetup_IngestLogs$' ./test/e2e-compat/
-
-cd test/e2e-ui
-npm ci
-npx playwright install chromium
-npm run capture:screenshots
-```
+Capture/re-generation workflow is documented in [Testing](docs/testing.md#compose-screenshot-workflow).
 
 ## High-Level Flow
 
