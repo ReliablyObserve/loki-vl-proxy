@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - refresh the README, API reference, observability guide, operations guide, and operational-resources runbook for the `1.0.0` through `1.0.6` release line, including patterns support, route-aware request dimensions, and the renamed `Operational Resources` dashboard section
 
+## [1.0.7] - 2026-04-13
+
 ### CI
 
 - stabilize the label/field benchmark regression guard by raising only the catastrophic threshold for `BenchmarkProxy_LabelKeys_Scale_CacheBypass/keys_10000`, preventing flaky failures on shared GitHub runners while preserving strict bounds for other scale rows
