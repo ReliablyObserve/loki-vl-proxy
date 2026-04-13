@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- stabilize the label/field benchmark regression guard by raising only the catastrophic threshold for `BenchmarkProxy_LabelKeys_Scale_CacheBypass/keys_10000`, preventing flaky failures on shared GitHub runners while preserving strict bounds for other scale rows
+
 ## [1.0.6] - 2026-04-13
 
 ### Features

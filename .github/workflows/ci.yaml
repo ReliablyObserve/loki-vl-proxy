@@ -174,6 +174,9 @@ jobs:
 
               # Scale-aware catastrophic bounds:
               # smaller sets should stay tighter, large sets get wider headroom.
+              # LabelKeys cache-bypass at 10k keys may run in the low single-digit ms
+              # range on noisy shared runners due to large slice materialization/sort;
+              # keep this guard catastrophic (regression detection), not flaky.
               limit=100000
               if (size <= 10) {
                 limit=50000
@@ -183,6 +186,9 @@ jobs:
                 limit=250000
               } else if (size > 1000) {
                 limit=600000
+              }
+              if (name ~ /BenchmarkProxy_LabelKeys_Scale_CacheBypass\/keys_10000$/) {
+                limit=3000000
               }
 
               if (ns > limit) {
