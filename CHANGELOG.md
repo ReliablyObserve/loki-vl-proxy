@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-04-13
+
 ### Features
 
 - patterns: add Loki-compatible `/loki/api/v1/patterns` extraction flow with canonicalized token clustering and low-signal line filtering for better parity on repeated dynamic log messages
