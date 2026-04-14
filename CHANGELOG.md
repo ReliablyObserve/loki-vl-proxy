@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### CI
 
 - add a GitHub Pages workflow that builds and deploys the Docusaurus site from `website/`
-- let the Pages workflow auto-enable GitHub Pages on the first `main` deployment instead of failing when the site is not yet provisioned
+- skip docs-site deployment cleanly until GitHub Pages is enabled in repository settings, instead of failing `main` builds when the Pages site is not yet provisioned
 
 ## [1.0.15] - 2026-04-14
 
