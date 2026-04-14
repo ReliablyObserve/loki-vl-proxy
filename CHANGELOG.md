@@ -7,15 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- align release metadata and notes coverage for `1.0.8`/`1.0.9` so changelog and published GitHub releases remain consistent for patterns/persistence deliverables
+
 ## [1.0.9] - 2026-04-14
 
-### Bug Fixes
+### Features
 
-- tests: harden e2e patterns readiness polling (`/loki/api/v1/patterns`) with explicit `step=60s` and a longer readiness window to avoid false negatives on slower CI runners
+- patterns: persist `/loki/api/v1/patterns` snapshots to disk and restore on startup for warm restarts
+- patterns: support peer-warm startup flow so stale/missing local snapshots can be refreshed from fleet peers
+- patterns: support global pattern warming from successful `query` and `query_range` responses via `patterns-autodetect-from-queries`
+
+### Configuration
+
+- add patterns persistence/runtime flags: `patterns-persist-path`, `patterns-persist-interval`, `patterns-startup-stale-threshold`, `patterns-startup-peer-warm-timeout`
+- wire and validate patterns autodetect/persistence flags end-to-end in startup/runtime config
+
+### Reliability
+
+- fail fast on invalid/unwritable patterns persistence paths with explicit startup validation errors
+- avoid sticky empty `/patterns` responses by skipping compatibility-edge cache writes for empty patterns payloads
+
+### Observability
+
+- add patterns lifecycle metrics coverage (detected, stored, restored from disk/peers, in-memory footprint)
+
+### Tests
+
+- add regression and benchmark coverage for patterns persistence/restore, peer warm, and performance stability
+- harden e2e patterns readiness polling (`/loki/api/v1/patterns`) with explicit `step=60s` and extended readiness window for slower CI runners
 
 ### Documentation
 
-- refresh the README, API reference, observability guide, operations guide, and operational-resources runbook for the `1.0.0` through `1.0.6` release line, including patterns support, route-aware request dimensions, and the renamed `Operational Resources` dashboard section
+- add dedicated patterns documentation and refresh README/API/configuration docs for persistence/autodetect operator guidance
+
+## [1.0.8] - 2026-04-13
+
+### Documentation
+
+- refresh README, API reference, observability guide, operations guide, and runbooks for the `1.0.x` line
+- align compatibility/operations guidance for patterns support, route-aware telemetry, and dashboard terminology updates
 
 ## [1.0.7] - 2026-04-13
 
