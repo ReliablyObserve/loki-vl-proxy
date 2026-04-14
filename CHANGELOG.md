@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- patterns: honor `from`/`to` when `start`/`end` are not provided so Drilldown refresh requests keep the selected range scope
+- patterns: replace fixed upstream source fetch limit (`1000`) with bounded adaptive sampling for longer ranges to prevent near-now-only pattern results after refresh
+
 ## [1.0.12] - 2026-04-14
 
 ### Features
