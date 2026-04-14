@@ -160,6 +160,21 @@
   line-height: 1.7;
 }
 
+.codeBlock {
+  margin: 1rem 0 0;
+  padding: 1rem 1.1rem;
+  border-radius: 20px;
+  background: #102a43;
+  color: #e2e8f0;
+  overflow: auto;
+}
+
+.codeBlock code {
+  white-space: pre-wrap;
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
 .linkCard {
   display: block;
   color: inherit;

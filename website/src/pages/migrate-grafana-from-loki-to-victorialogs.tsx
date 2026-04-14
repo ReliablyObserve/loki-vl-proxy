@@ -43,7 +43,15 @@ export default function MigrateGrafanaFromLokiToVictoriaLogs(): ReactNode {
       <section className={styles.section}>
         <div className={styles.cardGrid}>
           <div className={styles.card}>
-            <h2 className={styles.cardTitle}>1. Stand up a parallel datasource path</h2>
+            <h2 className={styles.cardTitle}>1. Inventory the Grafana behaviors you must preserve</h2>
+            <p>
+              Before you migrate, list the dashboards, Explore flows, Drilldown
+              views, rules screens, and label-browse paths people actually use.
+              That is the real contract you need to preserve.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>2. Stand up a parallel datasource path</h2>
             <p>
               Deploy Loki-VL-proxy against VictoriaLogs and point a non-primary
               Grafana datasource at the proxy. Keep the existing Loki-backed
@@ -51,7 +59,7 @@ export default function MigrateGrafanaFromLokiToVictoriaLogs(): ReactNode {
             </p>
           </div>
           <div className={styles.card}>
-            <h2 className={styles.cardTitle}>2. Choose translation behavior early</h2>
+            <h2 className={styles.cardTitle}>3. Choose translation behavior early</h2>
             <p>
               Decide whether label-facing surfaces should stay Loki-first,
               balanced, or OTel-native on the metadata side. This is where dotted
@@ -59,26 +67,34 @@ export default function MigrateGrafanaFromLokiToVictoriaLogs(): ReactNode {
             </p>
           </div>
           <div className={styles.card}>
-            <h2 className={styles.cardTitle}>3. Validate metadata and Drilldown paths</h2>
+            <h2 className={styles.cardTitle}>4. Validate metadata and Drilldown paths</h2>
             <p>
               Query compatibility alone is not enough. Check label APIs, detected
               fields, field values, service buckets, and patterns if users depend
               on Drilldown.
             </p>
           </div>
-          <div className={styles.card}>
-            <h2 className={styles.cardTitle}>4. Cut traffic over with telemetry on</h2>
-            <p>
-              Watch downstream, proxy, cache, and upstream metrics separately as
-              you move dashboards or teams across. Regressions are easier to catch
-              when those splits are already visible.
-            </p>
-          </div>
         </div>
       </section>
 
       <section className={styles.section}>
-        <div className={styles.columns}>
+        <div className={styles.cardGrid}>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>5. Cut traffic over with telemetry already on</h2>
+            <p>
+              Watch downstream, proxy, cache, and upstream metrics separately as
+              you move dashboards or teams across. Regressions are easier to catch
+              when those splits are already visible before cutover starts.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>6. Keep rollback as a datasource choice</h2>
+            <p>
+              The practical value of the proxy layer is that rollback can stay a
+              datasource or dashboard-routing decision instead of a full backend
+              rearchitecture in the middle of an incident.
+            </p>
+          </div>
           <div className={styles.card}>
             <h2 className={styles.cardTitle}>Cutover checklist</h2>
             <ul className={styles.list}>
@@ -90,12 +106,13 @@ export default function MigrateGrafanaFromLokiToVictoriaLogs(): ReactNode {
             </ul>
           </div>
           <div className={styles.card}>
-            <h2 className={styles.cardTitle}>Rollback posture</h2>
-            <p>
-              Because Grafana can keep both datasources during validation, rollback
-              can be a datasource or dashboard choice rather than a full backend
-              rearchitecture. That is the practical value of the proxy layer.
-            </p>
+            <h2 className={styles.cardTitle}>Migration acceptance bar</h2>
+            <ul className={styles.list}>
+              <li>Hot routes have acceptable downstream p95 and error rate.</li>
+              <li>Upstream latency is understood separately from proxy overhead.</li>
+              <li>Cache hit ratio is reasonable on repeated dashboard and metadata paths.</li>
+              <li>Users can still perform their real Explore and Drilldown workflows.</li>
+            </ul>
           </div>
         </div>
       </section>
@@ -106,6 +123,9 @@ export default function MigrateGrafanaFromLokiToVictoriaLogs(): ReactNode {
             The docs to use during migration
           </Heading>
           <div className={styles.inlineLinks}>
+            <Link to="/run-loki-vl-proxy-for-victorialogs/">Run guide</Link>
+            <Link to="/grafana-loki-datasource-victorialogs/">Grafana datasource setup</Link>
+            <Link to="/monitor-loki-vl-proxy/">Monitoring guide</Link>
             <Link to="/docs/getting-started/">Getting Started</Link>
             <Link to="/docs/translation-modes/">Translation Modes</Link>
             <Link to="/docs/compatibility-matrix/">Compatibility Matrix</Link>

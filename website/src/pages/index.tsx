@@ -20,6 +20,39 @@ const softwareSchema = {
   isAccessibleForFree: true,
 };
 
+const practicalGuides = [
+  {
+    to: '/run-loki-vl-proxy-for-victorialogs/',
+    title: 'Run Loki-VL-proxy',
+    body: 'Start with a local binary or container, prove the Loki-compatible read path, and verify readiness before any Grafana cutover.',
+  },
+  {
+    to: '/grafana-loki-datasource-victorialogs/',
+    title: 'Set Up the Grafana Datasource',
+    body: 'Keep Grafana on the native Loki datasource and point it at the proxy, then validate translation, labels, metadata, and latency.',
+  },
+  {
+    to: '/install-loki-vl-proxy-with-helm/',
+    title: 'Install with Helm',
+    body: 'Choose the right chart topology for day one: basic Deployment, StatefulSet with disk cache, or multi-replica peer-cache fleet.',
+  },
+  {
+    to: '/monitor-loki-vl-proxy/',
+    title: 'Monitor the Proxy',
+    body: 'See downstream, proxy, cache, and upstream behavior with route-aware metrics, logs, and runtime resource signals.',
+  },
+  {
+    to: '/migrate-grafana-from-loki-to-victorialogs/',
+    title: 'Migrate from Loki',
+    body: 'Use a parallel datasource path, validate Grafana workflows, and cut over only after route-aware checks are green.',
+  },
+  {
+    to: '/cache-tiers-and-fleet-cache-for-victorialogs/',
+    title: 'Use Cache and Fleet Cache',
+    body: 'Understand how Tier0, local cache, disk cache, peer cache, and long-range window reuse reduce repeated backend work.',
+  },
+];
+
 const intentPages = [
   {
     to: '/loki-proxy-for-victorialogs/',
@@ -56,17 +89,12 @@ const intentPages = [
     title: 'Loki vs VictoriaLogs for Grafana Query Workflows',
     body: 'Operational comparison of a native Loki backend versus VictoriaLogs routed through Loki-VL-proxy for Grafana query paths.',
   },
-  {
-    to: '/migrate-grafana-from-loki-to-victorialogs/',
-    title: 'Migrate Grafana from Loki to VictoriaLogs',
-    body: 'Step-by-step migration path for moving Grafana read workflows from Loki to VictoriaLogs with route-aware validation and rollback control.',
-  },
 ];
 
 const operatorCards = [
   {
     title: 'Compatibility is explicit, not implied',
-    body: 'The project keeps separate compatibility tracks for Grafana Loki datasource behavior, Logs Drilldown, and VictoriaLogs runtime bands. CI exercises the contracts instead of relying on hand-wavy claims.',
+    body: 'The project keeps separate compatibility tracks for Grafana Loki datasource behavior, Logs Drilldown, and VictoriaLogs runtime bands. CI exercises the contracts instead of relying on vague claims.',
   },
   {
     title: 'Translation stays bounded',
@@ -74,26 +102,11 @@ const operatorCards = [
   },
   {
     title: 'Caching is part of the product surface',
-    body: 'Tier-0 compatibility cache, in-memory cache, disk cache, and optional peer or fleet cache are first-class operational levers, not hidden implementation details.',
+    body: 'Tier0 compatibility cache, in-memory cache, disk cache, and optional peer or fleet cache are first-class operational levers, not hidden implementation details.',
   },
   {
-    title: 'Observability already matches the path',
+    title: 'Observability follows the runtime path',
     body: 'The packaged dashboard follows Client -> Proxy -> VictoriaLogs and breaks out route, latency, errors, cache efficiency, and operational resources for both Prometheus pull and OTLP push setups.',
-  },
-];
-
-const journeySteps = [
-  {
-    title: '1. Stand up the proxy',
-    body: 'Use the binary, container image, or Helm chart. The proxy stays read-only and points to VictoriaLogs plus optional rules or alerts backends.',
-  },
-  {
-    title: '2. Keep Grafana on the Loki datasource',
-    body: 'Grafana keeps its native Loki datasource type. The proxy translates the read paths, tuple contracts, and metadata surfaces Grafana expects.',
-  },
-  {
-    title: '3. Validate with route-aware visibility',
-    body: 'Observe downstream client latency, upstream VictoriaLogs latency, translation costs, and cache hit or miss behavior before cutting traffic over.',
   },
 ];
 
@@ -106,8 +119,8 @@ export default function Home(): ReactNode {
       eyebrow="Grafana + VictoriaLogs"
       headline="Loki Proxy for VictoriaLogs"
       lede="Use Grafana's native Loki datasource, Explore, and Logs Drilldown with VictoriaLogs. No plugin required."
-      primaryCta={{label: 'Start with the docs', to: '/docs/getting-started/'}}
-      secondaryCta={{label: 'See the deployment pattern', to: '/loki-proxy-for-victorialogs/'}}
+      primaryCta={{label: 'Run the proxy first', to: '/run-loki-vl-proxy-for-victorialogs/'}}
+      secondaryCta={{label: 'Open the docs', to: '/docs/getting-started/'}}
       highlights={[
         {
           value: 'Native Loki datasource',
@@ -121,7 +134,7 @@ export default function Home(): ReactNode {
         },
         {
           value: 'Read-only by design',
-          label: 'Query, metadata, patterns, and rules/alerts read views are in scope',
+          label: 'Query, metadata, patterns, and rules or alerts read views are in scope',
           detail: 'Push remains blocked.',
         },
         {
@@ -183,12 +196,34 @@ export default function Home(): ReactNode {
       <section className={styles.section}>
         <div className={styles.sectionHeader}>
           <Heading as="h2" className={styles.sectionTitle}>
+            Practical operator guides
+          </Heading>
+          <p className={styles.sectionLead}>
+            These pages are written as real deployment and migration playbooks,
+            not just keyword landing pages. They map directly onto the docs,
+            chart recipes, cache model, and observability surface the project
+            already ships.
+          </p>
+        </div>
+        <div className={styles.cardGrid}>
+          {practicalGuides.map((page) => (
+            <Link key={page.to} className={`${styles.card} ${styles.linkCard}`} to={page.to}>
+              <h3 className={styles.cardTitle}>{page.title}</h3>
+              <p>{page.body}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <Heading as="h2" className={styles.sectionTitle}>
             Search-focused entry points
           </Heading>
           <p className={styles.sectionLead}>
-            These pages answer the exact questions operators, Grafana users, and
-            migration teams search for when they are trying to make VictoriaLogs
-            work behind Loki-compatible tooling.
+            These pages answer the exact discovery queries operators and Grafana
+            users search for when they are trying to make VictoriaLogs work
+            behind Loki-compatible tooling.
           </p>
         </div>
         <div className={styles.cardGrid}>
@@ -207,24 +242,16 @@ export default function Home(): ReactNode {
             The path operators actually run
           </Heading>
           <p className={styles.sectionLead}>
-            The product is easiest to reason about when you keep the path simple:
-            clients and Grafana on the left, the compatibility layer in the
-            middle, VictoriaLogs and optional rules backends on the right.
+            Keep the path simple: clients and Grafana on the left, the
+            compatibility and cache layer in the middle, VictoriaLogs and
+            optional rules backends on the right.
           </p>
-        </div>
-        <div className={styles.cardGrid}>
-          {journeySteps.map((step) => (
-            <div key={step.title} className={styles.card}>
-              <h3 className={styles.cardTitle}>{step.title}</h3>
-              <p>{step.body}</p>
-            </div>
-          ))}
         </div>
         <div className={styles.routeStrip}>
           <span>Client or Grafana</span>
           <span>Loki-compatible read API</span>
           <span>Translation and shaping</span>
-          <span>Tiered cache</span>
+          <span>Tier0 and deeper cache</span>
           <span>VictoriaLogs and vmalert</span>
         </div>
       </section>
@@ -253,21 +280,19 @@ export default function Home(): ReactNode {
       <section className={styles.section}>
         <div className={styles.callout}>
           <Heading as="h2" className={styles.sectionTitle}>
-            Start from the deep docs when you need implementation detail
+            Start from the practical guides, then drop into the deep docs
           </Heading>
           <p className={styles.sectionLead}>
-            The landing pages are meant to answer intent quickly. The deeper docs
-            stay in the repository and cover deployment, configuration, field
-            translation, compatibility matrices, patterns, observability, and
-            operations in detail.
+            The landing pages should get you to the right operating model fast.
+            The deep docs still cover exact flags, compatibility matrices,
+            benchmarks, scaling decisions, and runbooks.
           </p>
           <div className={styles.inlineLinks}>
             <Link to="/docs/getting-started/">Getting Started</Link>
-            <Link to="/docs/compatibility-matrix/">Compatibility Matrix</Link>
-            <Link to="/docs/observability/">Observability</Link>
             <Link to="/docs/operations/">Operations</Link>
-            <Link to="/docs/translation-modes/">Translation Modes</Link>
-            <Link to="/docs/patterns/">Patterns</Link>
+            <Link to="/docs/observability/">Observability</Link>
+            <Link to="/docs/performance/">Performance</Link>
+            <Link to="/docs/fleet-cache/">Fleet Cache</Link>
           </div>
         </div>
       </section>

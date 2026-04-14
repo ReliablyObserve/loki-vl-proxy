@@ -11,6 +11,9 @@ const datasourceYaml = `datasources:
     access: proxy
     url: http://loki-vl-proxy:3100`;
 
+const verifyCommands = `curl -sS http://127.0.0.1:3100/ready
+curl -sS http://127.0.0.1:3100/loki/api/v1/labels`;
+
 export default function GrafanaLokiDatasourceVictoriaLogs(): ReactNode {
   return (
     <MarketingLayout
@@ -54,7 +57,7 @@ export default function GrafanaLokiDatasourceVictoriaLogs(): ReactNode {
               Grafana stays on the standard Loki datasource type. The proxy URL
               becomes the datasource target.
             </p>
-            <pre>
+            <pre className={styles.codeBlock}>
               <code>{datasourceYaml}</code>
             </pre>
           </div>
@@ -66,6 +69,46 @@ export default function GrafanaLokiDatasourceVictoriaLogs(): ReactNode {
               <li>Existing dashboards and Explore entry points keep the Loki contract.</li>
               <li>Migration work moves into a controllable server-side layer.</li>
             </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.cardGrid}>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>1. Bring the proxy up first</h2>
+            <p>
+              Do not debug Grafana and backend reachability at the same time.
+              Stand up the proxy, make sure `/ready` is healthy, and prove a
+              simple labels call before you touch Grafana.
+            </p>
+            <pre className={styles.codeBlock}>
+              <code>{verifyCommands}</code>
+            </pre>
+          </div>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>2. Pick translation behavior deliberately</h2>
+            <p>
+              If VictoriaLogs stores dotted OTel fields, choose the label and
+              metadata mode that matches how your users browse data in Grafana.
+              This is where most accidental surprises come from.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>3. Validate more than query_range</h2>
+            <p>
+              Users feel label browsing, detected fields, patterns, and service
+              buckets just as strongly as they feel line queries. Treat those as
+              first-class acceptance checks.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>4. Watch route-aware telemetry during cutover</h2>
+            <p>
+              Downstream latency, upstream latency, status codes, and cache hit
+              ratio by route are the fastest way to see whether the new datasource
+              path is actually safe for users.
+            </p>
           </div>
         </div>
       </section>
@@ -123,6 +166,9 @@ export default function GrafanaLokiDatasourceVictoriaLogs(): ReactNode {
             Recommended docs from here
           </Heading>
           <div className={styles.inlineLinks}>
+            <Link to="/run-loki-vl-proxy-for-victorialogs/">Run the proxy</Link>
+            <Link to="/install-loki-vl-proxy-with-helm/">Install with Helm</Link>
+            <Link to="/monitor-loki-vl-proxy/">Monitoring guide</Link>
             <Link to="/docs/getting-started/">Getting Started</Link>
             <Link to="/docs/translation-modes/">Translation Modes</Link>
             <Link to="/docs/compatibility-matrix/">Compatibility Matrix</Link>
