@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.19] - 2026-04-14
+
 ### Bug Fixes
 
 - patterns: normalize relative-range (`now`/`now-*`) cache key boundaries for `/loki/api/v1/patterns` so Drilldown refresh requests consistently reuse the correct time-scoped cache entries
