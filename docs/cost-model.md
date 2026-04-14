@@ -166,6 +166,37 @@ Important:
   consumed usage, so they should **not** be turned into direct CPU or RAM
   savings claims by themselves
 
+### Observed compute envelope
+
+Using the measured component footprint for the same environment:
+
+- `vlstorage`: about `1.0` core and `5.0 GiB`
+- `vlinsert`: about `0.1` core and `0.6 GiB`
+- `vlselect`: about `0.1` core and `0.25 GiB`
+
+This gives a practical VictoriaLogs service envelope of:
+
+- `1.2` cores total
+- `5.85 GiB` total
+
+That envelope is the only CPU/memory baseline used below. The dashboard fields
+`available CPU = 43` and `available memory = 43 GiB` are treated as cluster
+headroom, not as service consumption.
+
+| Scale | Raw ingest/day | Scaled VL envelope | Illustrative VL EC2 floor | Loki published compute floor | Loki / VL CPU ratio | Loki / VL memory ratio |
+|---|---:|---:|---|---:|---:|---:|
+| `1x` | `0.333 TB/day` | `1.2 cores / 5.85 GiB` | `1 x c7i.xlarge` | `$1,489.20 / month` | `31.7x` | `10.1x` |
+| `10x` | `3.33 TB/day` | `12 cores / 58.5 GiB` | `4 x c7i.2xlarge` | `$13,402.80 / month` | `35.9x` | `14.6x` |
+| `30x` | `9.99 TB/day` | `36 cores / 175.5 GiB` | `6 x c7i.4xlarge` | `$13,402.80 / month` | `12.0x` | `4.9x` |
+| `100x` | `33.29 TB/day` | `120 cores / 585 GiB` | `19 x c7i.4xlarge` | `$38,222.80 / month` | `10.2x` | `3.8x` |
+
+Illustrative monthly VictoriaLogs compute floors for those rows are:
+
+- `1x`: `$124.10 / month`
+- `10x`: `$992.80 / month`
+- `30x`: `$2,978.40 / month`
+- `100x`: `$9,431.60 / month`
+
 ## Scaling The Observed Baseline To Loki Floors
 
 The table below keeps the real VictoriaLogs baseline for storage and retention,
@@ -190,6 +221,96 @@ What this real baseline says:
 - because the observed snapshot has `0` read requests per second, it is useful
   for **storage and ingest-tier calibration**, but not for proving read-path
   savings from the proxy cache stack
+
+## Inter-AZ Network Cost Model
+
+AWS EC2 pricing states that data transferred across Availability Zones in the
+same Region is charged at `$0.01/GB` **in** and `$0.01/GB` **out**. For a
+payload that crosses an AZ boundary once, this worksheet therefore models an
+effective inter-AZ transport price of:
+
+```text
+$0.02 / GB crossed once
+```
+
+### Loki 3-AZ write-path floor
+
+Loki docs state that the distributor forwards each stream to a
+`replication_factor` of ingesters and that the replication factor is generally
+`3`.
+
+In a 3-AZ spread with replication factor `3`, a simple write-path floor is:
+
+- one replica written to an ingester in the local AZ
+- two replicas written to ingesters in remote AZs
+
+That means the **minimum** cross-AZ write payload is approximately:
+
+```text
+2 x raw ingest volume
+```
+
+This ignores extra cross-AZ traffic from:
+
+- query fanout
+- querier to ingester reads
+- index/object-store fetches
+- compactor, ruler, or other component chatter
+
+So this is a floor, not a ceiling.
+
+| Scale | Raw ingest/day | Cross-AZ Loki write payload/day | Effective inter-AZ monthly cost |
+|---|---:|---:|---:|
+| `1x` | `310 GiB` | `620 GiB` | `$372.00` |
+| `10x` | `3,100 GiB` | `6,200 GiB` | `$3,720.00` |
+| `30x` | `9,300 GiB` | `18,600 GiB` | `$11,160.00` |
+| `100x` | `31,000 GiB` | `62,000 GiB` | `$37,200.00` |
+
+### Why Loki read-path traffic is harder to cap
+
+Loki docs say:
+
+- queriers query all ingesters for in-memory data before falling back to the
+  backend store
+- query frontends split larger queries into multiple smaller queries and execute
+  them in parallel on downstream queriers
+
+Loki's zone-aware replication design docs are also explicit that:
+
+- **minimizing cross-zone traffic costs is a non-goal**
+- a remaining open question is how to make queriers and ingesters zone-aware so
+  that each querier only queries ingesters in the same zone
+
+That is why this worksheet does **not** attach a hard cross-AZ read bill to the
+observed system: with `0 rps` reads in the snapshot, any numeric read-path
+network bill would be invented rather than measured.
+
+### VictoriaLogs + proxy in 3 AZ
+
+VictoriaLogs cluster docs explicitly support:
+
+- independent VictoriaLogs instances or clusters in separate availability zones
+- advanced multi-level cluster setups
+- HA patterns where copies of logs are sent to independent clusters and queries
+  can return full responses from the remaining AZ when one AZ is unavailable
+
+This matters because it enables a different traffic shape:
+
+- local clients can be pinned to local proxy and local VictoriaLogs paths for
+  normal reads
+- global fanout can be reserved for explicit global or failover queries instead
+  of being the default shape for every read
+- Loki-VL-proxy adds `zstd`/`gzip` compression on the read path it controls,
+  which reduces client and peer-cache transport bytes on repeated reads
+
+Important constraint:
+
+- the docs do **not** publish a stable per-hop VictoriaLogs replication
+  compression ratio for cross-AZ HA traffic
+- because of that, this worksheet does not invent a hard dollar figure for
+  VictoriaLogs cross-AZ write replication
+
+That omission is intentional. It keeps the model honest.
 
 ## Storage Model Output
 

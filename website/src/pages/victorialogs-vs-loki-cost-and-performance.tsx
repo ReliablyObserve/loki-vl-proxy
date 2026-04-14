@@ -60,6 +60,15 @@ const comparisonRows = [
     proxy:
       'The proxy does not change backend ingest economics by itself, but it keeps the read side small and can cut repeated backend work through tiered caches and route-aware control.',
   },
+  {
+    dimension: 'Cross-AZ traffic posture',
+    loki:
+      'Loki docs say distributors forward writes to a replication factor that is generally `3`, queriers query all ingesters for in-memory data, and the zone-aware replication design explicitly lists minimizing cross-zone traffic costs as a non-goal.',
+    victorialogs:
+      'VictoriaLogs cluster docs support independent clusters in separate availability zones plus advanced multi-level cluster setup, which lets operators keep most normal reads local and reserve cross-AZ fanout for HA or global queries.',
+    proxy:
+      'The proxy can stay AZ-local on the read path and adds `zstd`/`gzip` compression on the hops it controls, but it does not invent backend replication savings that the VictoriaLogs docs do not quantify.',
+  },
 ];
 
 const lokiSizingRows = [
@@ -156,6 +165,76 @@ const observedRows = [
     lokiCost: '$514.29',
     tier: '~30 TB/day',
     compute: '$38,222.80 / month',
+  },
+];
+
+const networkRows = [
+  {
+    scale: '1x',
+    ingest: '310 GiB/day',
+    payload: '620 GiB/day',
+    cost: '$372.00 / month',
+  },
+  {
+    scale: '10x',
+    ingest: '3,100 GiB/day',
+    payload: '6,200 GiB/day',
+    cost: '$3,720.00 / month',
+  },
+  {
+    scale: '30x',
+    ingest: '9,300 GiB/day',
+    payload: '18,600 GiB/day',
+    cost: '$11,160.00 / month',
+  },
+  {
+    scale: '100x',
+    ingest: '31,000 GiB/day',
+    payload: '62,000 GiB/day',
+    cost: '$37,200.00 / month',
+  },
+];
+
+const computeRows = [
+  {
+    scale: '1x',
+    ingest: '0.333 TB/day',
+    envelope: '1.2 cores / 5.85 GiB',
+    floor: '1 x c7i.xlarge',
+    vlCost: '$124.10 / month',
+    lokiCost: '$1,489.20 / month',
+    cpu: '31.7x',
+    memory: '10.1x',
+  },
+  {
+    scale: '10x',
+    ingest: '3.33 TB/day',
+    envelope: '12 cores / 58.5 GiB',
+    floor: '4 x c7i.2xlarge',
+    vlCost: '$992.80 / month',
+    lokiCost: '$13,402.80 / month',
+    cpu: '35.9x',
+    memory: '14.6x',
+  },
+  {
+    scale: '30x',
+    ingest: '9.99 TB/day',
+    envelope: '36 cores / 175.5 GiB',
+    floor: '6 x c7i.4xlarge',
+    vlCost: '$2,978.40 / month',
+    lokiCost: '$13,402.80 / month',
+    cpu: '12.0x',
+    memory: '4.9x',
+  },
+  {
+    scale: '100x',
+    ingest: '33.29 TB/day',
+    envelope: '120 cores / 585 GiB',
+    floor: '19 x c7i.4xlarge',
+    vlCost: '$9,431.60 / month',
+    lokiCost: '$38,222.80 / month',
+    cpu: '10.2x',
+    memory: '3.8x',
   },
 ];
 
@@ -358,6 +437,7 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
               <li>`800 M / 112 M per day` implies about `7.14d` of retained data, which matches the `40.5 GiB` disk footprint closely.</li>
               <li>Average raw event size on this system is about `2.9 KiB`, which is far larger than the earlier generic `250 B` planning model.</li>
               <li>This is a write-heavy calibration point because observed read traffic is `0 rps`, so it is useful for storage and ingest-tier math, not for proving read-path cache savings by itself.</li>
+              <li>`available CPU = 43` and `available memory = 43 GiB` are cluster headroom signals, not service consumption, so they are not used as the VictoriaLogs compute baseline.</li>
             </ul>
           </div>
           <div className={styles.card}>
@@ -397,6 +477,105 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
               as the base, then applies the same conservative `VL = 63% of Loki`
               retained-bytes assumption used in the docs cost model.
             </p>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.columns}>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>Observed compute envelope vs Loki floor</h2>
+            <div className={styles.tableWrap}>
+              <table className={styles.comparisonTable}>
+                <thead>
+                  <tr>
+                    <th>Scale</th>
+                    <th>Raw ingest/day</th>
+                    <th>Scaled VL envelope</th>
+                    <th>Illustrative VL EC2 floor</th>
+                    <th>VL compute</th>
+                    <th>Loki compute</th>
+                    <th>Loki / VL CPU</th>
+                    <th>Loki / VL memory</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {computeRows.map((row) => (
+                    <tr key={row.scale}>
+                      <td>{row.scale}</td>
+                      <td>{row.ingest}</td>
+                      <td>{row.envelope}</td>
+                      <td>{row.floor}</td>
+                      <td>{row.vlCost}</td>
+                      <td>{row.lokiCost}</td>
+                      <td>{row.cpu}</td>
+                      <td>{row.memory}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p>
+              This uses the measured VictoriaLogs process envelope from the same
+              environment: about `1.2` cores and `5.85 GiB` total across
+              `vlstorage`, `vlinsert`, and `vlselect`.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>What this comparison means</h2>
+            <ul className={styles.list}>
+              <li>At the exact observed baseline, the VictoriaLogs service envelope is small enough to fit on a single `c7i.xlarge`, while Loki’s published throughput floor for the same ingest tier is already `3 x c7i.4xlarge`.</li>
+              <li>Even when you scale the measured VictoriaLogs envelope linearly, Loki’s published floor stays materially larger on both CPU and memory.</li>
+              <li>This does not prove that VictoriaLogs scales perfectly linearly; it only shows that your measured baseline is far below Loki’s published distributed floor at the same ingest tier.</li>
+              <li>That is the right way to compare here: measured VictoriaLogs envelope versus Loki’s own published cluster-sizing floor, not marketing slogans versus marketing slogans.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.columns}>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>Inter-AZ write replication cost floor</h2>
+            <div className={styles.tableWrap}>
+              <table className={styles.comparisonTable}>
+                <thead>
+                  <tr>
+                    <th>Scale</th>
+                    <th>Raw ingest/day</th>
+                    <th>Loki cross-AZ write payload/day</th>
+                    <th>Illustrative monthly inter-AZ cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {networkRows.map((row) => (
+                    <tr key={row.scale}>
+                      <td>{row.scale}</td>
+                      <td>{row.ingest}</td>
+                      <td>{row.payload}</td>
+                      <td>{row.cost}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p>
+              This models AWS inter-AZ transfer at an effective `$0.02/GB`
+              crossed once because EC2 pricing charges `$0.01/GB` in and
+              `$0.01/GB` out across Availability Zones in the same Region. For a
+              3-AZ Loki cluster with replication factor `3`, the simple write
+              floor is one local replica plus two remote replicas.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>Why the VictoriaLogs shape can differ</h2>
+            <ul className={styles.list}>
+              <li>VictoriaLogs cluster docs support independent clusters in separate AZs and advanced multi-level cluster setup.</li>
+              <li>That lets operators keep normal reads AZ-local and reserve cross-AZ fanout for explicit global or failover queries.</li>
+              <li>The proxy adds `zstd` and `gzip` on the read path it controls, which reduces client and peer-cache transport bytes for repeated reads.</li>
+              <li>I did not attach a hard VictoriaLogs inter-AZ dollar figure because the docs do not publish a stable per-hop replication compression ratio, and inventing one would make the model less honest.</li>
+              <li>On your observed system, `0 rps` reads means the measurable network bill is dominated by write replication, not by query fanout.</li>
+            </ul>
           </div>
         </div>
       </section>
