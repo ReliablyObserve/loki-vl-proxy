@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.18] - 2026-04-14
+
 ### Documentation
 
 - add a Docusaurus-based GitHub Pages site with SEO landing pages for VictoriaLogs, Grafana Loki datasource usage, Explore, Drilldown, LogQL semantics, comparison, and migration flows
