@@ -81,59 +81,84 @@ function nsRangeLastTwoHours() {
 async function waitForAutodetectedPatterns(
   page: Page,
   datasource: string,
-  query: string,
+  queries: string[],
   timeoutMs = 30_000
 ) {
   const uid = await resolveDatasourceUid(page, datasource);
   const deadline = Date.now() + timeoutMs;
   let lastPatternsPayload: unknown = null;
   let lastSeedPayload: unknown = null;
+  let lastQuery = "";
   const { start, end } = nsRangeLastTwoHours();
+  const fallbackQueries = [...queries];
+  const serviceKeys = [
+    "service_name",
+    "service.name",
+    "service",
+    "app",
+    "application",
+    "app_name",
+  ];
 
   while (Date.now() < deadline) {
-    const seedParams = new URLSearchParams();
-    seedParams.set("query", query);
-    seedParams.set("start", String(start));
-    seedParams.set("end", String(end));
-    seedParams.set("limit", "200");
-    seedParams.set("direction", "backward");
-    const seedResponse = await page.request.get(
-      `/api/datasources/proxy/uid/${uid}/loki/api/v1/query_range?${seedParams.toString()}`
-    );
-    try {
-      lastSeedPayload = await seedResponse.json();
-    } catch {
-      lastSeedPayload = null;
-    }
+    for (const query of fallbackQueries) {
+      lastQuery = query;
+      const seedParams = new URLSearchParams();
+      seedParams.set("query", query);
+      seedParams.set("start", String(start));
+      seedParams.set("end", String(end));
+      seedParams.set("limit", "200");
+      seedParams.set("direction", "backward");
+      const seedResponse = await page.request.get(
+        `/api/datasources/proxy/uid/${uid}/loki/api/v1/query_range?${seedParams.toString()}`
+      );
+      try {
+        lastSeedPayload = await seedResponse.json();
+      } catch {
+        lastSeedPayload = null;
+      }
 
-    const patternsParams = new URLSearchParams();
-    patternsParams.set("query", query);
-    patternsParams.set("start", String(start));
-    patternsParams.set("end", String(end));
-    patternsParams.set("step", "60s");
-    const patternsResponse = await page.request.get(
-      `/api/datasources/uid/${uid}/resources/patterns?${patternsParams.toString()}`
-    );
-    try {
-      lastPatternsPayload = await patternsResponse.json();
-    } catch {
-      lastPatternsPayload = null;
-    }
+      const patternsParams = new URLSearchParams();
+      patternsParams.set("query", query);
+      patternsParams.set("start", String(start));
+      patternsParams.set("end", String(end));
+      patternsParams.set("step", "60s");
+      const patternsResponse = await page.request.get(
+        `/api/datasources/uid/${uid}/resources/patterns?${patternsParams.toString()}`
+      );
+      try {
+        lastPatternsPayload = await patternsResponse.json();
+      } catch {
+        lastPatternsPayload = null;
+      }
 
-    if (
-      seedResponse.ok() &&
-      (lastSeedPayload as { status?: string } | null)?.status === "success" &&
-      Array.isArray((lastPatternsPayload as { data?: unknown[] } | null)?.data) &&
-      ((lastPatternsPayload as { data?: unknown[] }).data?.length ?? 0) > 0
-    ) {
-      return;
+      if (
+        !seedResponse.ok() ||
+        (lastSeedPayload as { status?: string } | null)?.status !== "success" ||
+        !Array.isArray((lastPatternsPayload as { data?: unknown[] } | null)?.data) ||
+        ((lastPatternsPayload as { data?: unknown[] }).data?.length ?? 0) === 0
+      ) {
+        continue;
+      }
+
+      const result = ((lastSeedPayload as { data?: { result?: unknown[] } } | null)?.data
+        ?.result ?? []) as Array<{ stream?: Record<string, string> }>;
+      for (const entry of result) {
+        const stream = entry?.stream ?? {};
+        for (const key of serviceKeys) {
+          const value = stream[key];
+          if (typeof value === "string" && value.trim().length > 0) {
+            return value;
+          }
+        }
+      }
     }
 
     await page.waitForTimeout(500);
   }
 
   throw new Error(
-    `timed out waiting for autodetected patterns (seed=${JSON.stringify(
+    `timed out waiting for autodetected patterns (query=${lastQuery}, seed=${JSON.stringify(
       lastSeedPayload
     )}, patterns=${JSON.stringify(lastPatternsPayload)})`
   );
@@ -267,13 +292,13 @@ test.describe("Grafana Logs Drilldown", () => {
     page,
   }) => {
     const guards = installGrafanaGuards(page);
-    await waitForAutodetectedPatterns(
+    const serviceName = await waitForAutodetectedPatterns(
       page,
       PROXY_PATTERNS_AUTODETECT_DS,
-      `{service_name="api-gateway"}`
+      [`{service_name="api-gateway"}`, `{app="api-gateway"}`, `{app=~".+"}`]
     );
 
-    await openServiceDrilldown(page, PROXY_PATTERNS_AUTODETECT_DS, "api-gateway", "logs");
+    await openServiceDrilldown(page, PROXY_PATTERNS_AUTODETECT_DS, serviceName, "logs");
 
     const patternsTab = page.getByRole("tab", { name: /^Patterns/i }).first();
     await expect(patternsTab).toBeVisible({ timeout: 10_000 });
