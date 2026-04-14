@@ -298,7 +298,7 @@ func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCach
 			return
 		}
 		if _, err := zw.Write(value); err != nil {
-			zw.Close()
+			_ = zw.Close()
 			http.Error(w, "compression write error", http.StatusInternalServerError)
 			return
 		}
@@ -344,7 +344,7 @@ func decodePeerResponseBody(contentEncoding string, body []byte) ([]byte, error)
 		if err != nil {
 			return nil, err
 		}
-		defer zr.Close()
+		defer func() { _ = zr.Close() }()
 		return io.ReadAll(zr)
 	case "zstd":
 		zr, err := zstd.NewReader(nil)
