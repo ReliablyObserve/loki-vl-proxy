@@ -4357,7 +4357,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if cached, ok := p.cache.Get(key); ok {
-			body := p.applyCustomPatternsToPayload(cached, startParam, stepParam, patternLimit)
+			body := p.applyCustomPatternsToPayload(cached, startParam, endParam, stepParam, patternLimit)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(body)
 			p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
@@ -4367,7 +4367,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if fallbackCached, ok := p.cache.Get(cacheWriteKey); ok {
-		body := p.applyCustomPatternsToPayload(fallbackCached, startParam, stepParam, patternLimit)
+		body := p.applyCustomPatternsToPayload(fallbackCached, startParam, endParam, stepParam, patternLimit)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
 		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
@@ -4478,6 +4478,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	p.metrics.RecordPatternsDetected(len(entries))
 	entries = p.prependCustomPatternEntries(entries, startParam, stepParam, patternLimit)
+	entries = fillPatternSamplesAcrossRequestedRange(entries, startParam, endParam, stepParam)
 	resultBody, err := json.Marshal(patternsResponse{
 		Status: "success",
 		Data:   entries,
@@ -4871,22 +4872,23 @@ func (p *Proxy) prependCustomPatternEntries(patterns []patternResultEntry, start
 	return out
 }
 
-func (p *Proxy) applyCustomPatternsToPayload(payload []byte, startParam, stepParam string, limit int) []byte {
+func (p *Proxy) applyCustomPatternsToPayload(payload []byte, startParam, endParam, stepParam string, limit int) []byte {
 	if len(payload) == 0 {
 		return payload
 	}
 	if len(p.patternsCustom) == 0 {
-		return limitPatternPayload(payload, limit)
+		return fillPatternPayloadSamples(payload, startParam, endParam, stepParam, limit)
 	}
 
 	var resp patternsResponse
 	if err := json.Unmarshal(payload, &resp); err != nil {
-		return limitPatternPayload(payload, limit)
+		return fillPatternPayloadSamples(payload, startParam, endParam, stepParam, limit)
 	}
 	resp.Data = p.prependCustomPatternEntries(resp.Data, startParam, stepParam, limit)
+	resp.Data = fillPatternSamplesAcrossRequestedRange(resp.Data, startParam, endParam, stepParam)
 	encoded, err := json.Marshal(resp)
 	if err != nil {
-		return limitPatternPayload(payload, limit)
+		return fillPatternPayloadSamples(payload, startParam, endParam, stepParam, limit)
 	}
 	return encoded
 }
@@ -4898,16 +4900,101 @@ func (p *Proxy) patternsAutodetectCacheKey(orgID, query, start, end, step string
 	}
 	params := url.Values{}
 	params.Set("query", strings.TrimSpace(query))
+	normalizedStep := normalizePatternCacheStep(step)
 	if trimmed := strings.TrimSpace(start); trimmed != "" {
-		params.Set("start", formatVLTimestamp(trimmed))
+		params.Set("start", normalizePatternCacheBoundary(trimmed, normalizedStep))
 	}
 	if trimmed := strings.TrimSpace(end); trimmed != "" {
-		params.Set("end", formatVLTimestamp(trimmed))
+		params.Set("end", normalizePatternCacheBoundary(trimmed, normalizedStep))
 	}
-	if trimmed := strings.TrimSpace(step); trimmed != "" {
-		params.Set("step", normalizePatternCacheStep(trimmed))
+	if trimmed := strings.TrimSpace(normalizedStep); trimmed != "" {
+		params.Set("step", trimmed)
 	}
 	return "patterns:" + orgID + ":" + params.Encode()
+}
+
+func normalizePatternCacheBoundary(raw, normalizedStep string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	ts := formatVLTimestamp(raw)
+	ns, ok := parseLokiTimeToUnixNano(raw)
+	if !ok {
+		return ts
+	}
+	isRelativeNow := raw == "now" || strings.HasPrefix(raw, "now-") || strings.HasPrefix(raw, "now+")
+	if isRelativeNow {
+		if stepSeconds := parsePatternStepSeconds(normalizedStep); stepSeconds > 0 {
+			stepNs := stepSeconds * int64(time.Second)
+			if stepNs > 0 {
+				ns = (ns / stepNs) * stepNs
+			}
+		}
+	}
+	return strconv.FormatInt(ns, 10)
+}
+
+func fillPatternPayloadSamples(payload []byte, startParam, endParam, stepParam string, limit int) []byte {
+	trimmed := limitPatternPayload(payload, limit)
+	if len(trimmed) == 0 {
+		return trimmed
+	}
+	var resp patternsResponse
+	if err := json.Unmarshal(trimmed, &resp); err != nil {
+		return trimmed
+	}
+	resp.Data = fillPatternSamplesAcrossRequestedRange(resp.Data, startParam, endParam, stepParam)
+	encoded, err := json.Marshal(resp)
+	if err != nil {
+		return trimmed
+	}
+	return encoded
+}
+
+func fillPatternSamplesAcrossRequestedRange(entries []patternResultEntry, startParam, endParam, stepParam string) []patternResultEntry {
+	if len(entries) == 0 {
+		return entries
+	}
+	startUnix, okStart := parsePatternUnixSeconds(startParam)
+	endUnix, okEnd := parsePatternUnixSeconds(endParam)
+	if !okStart || !okEnd || endUnix < startUnix {
+		return entries
+	}
+	stepSeconds := parsePatternStepSeconds(stepParam)
+	if stepSeconds <= 0 {
+		return entries
+	}
+	startBucket := (startUnix / stepSeconds) * stepSeconds
+	endBucket := (endUnix / stepSeconds) * stepSeconds
+	if endBucket < startBucket {
+		return entries
+	}
+	const maxPatternRangePoints = 11000
+	points := int(((endBucket - startBucket) / stepSeconds) + 1)
+	if points <= 0 || points > maxPatternRangePoints {
+		return entries
+	}
+	for i := range entries {
+		sampleMap := make(map[int64]int, len(entries[i].Samples))
+		for _, pair := range entries[i].Samples {
+			if len(pair) < 2 {
+				continue
+			}
+			ts, okTS := numberToInt64(pair[0])
+			count, okCount := numberToInt(pair[1])
+			if !okTS || !okCount {
+				continue
+			}
+			sampleMap[ts] += count
+		}
+		filled := make([][]interface{}, 0, points)
+		for ts := startBucket; ts <= endBucket; ts += stepSeconds {
+			filled = append(filled, []interface{}{ts, sampleMap[ts]})
+		}
+		entries[i].Samples = filled
+	}
+	return entries
 }
 
 func normalizePatternCacheStep(step string) string {
