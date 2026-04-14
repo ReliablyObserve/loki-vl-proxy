@@ -1,14 +1,17 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -234,6 +237,72 @@ func TestContract_LabelValues_PrefersStreamFieldValues(t *testing.T) {
 	assertContains(t, data, "prod")
 	if streamNameCalls != 1 || streamValueCalls != 1 || genericValueCalls != 0 {
 		t.Fatalf("expected stream metadata path only, got names=%d streamValues=%d genericValues=%d", streamNameCalls, streamValueCalls, genericValueCalls)
+	}
+}
+
+func TestContract_LabelValues_ForwardsSubstringFilter_OnV149Plus(t *testing.T) {
+	var receivedQ, receivedFilter string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			writeVLFieldNames(w, []fieldHit{{"app", 1}})
+		case "/select/logsql/stream_field_values":
+			receivedQ = r.URL.Query().Get("q")
+			receivedFilter = r.URL.Query().Get("filter")
+			writeVLFieldValues(w, []fieldHit{{"argocd", 1}})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	h := http.Header{}
+	h.Set("Server", "VictoriaLogs/v1.49.0")
+	p.observeBackendVersionFromHeaders(h)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/label/app/values?search=arg", nil)
+	p.handleLabelValues(w, r)
+
+	if receivedQ != "arg" {
+		t.Fatalf("expected q=arg to be forwarded for substring filter, got %q", receivedQ)
+	}
+	if receivedFilter != "substring" {
+		t.Fatalf("expected filter=substring for VictoriaLogs >= v1.49.0, got %q", receivedFilter)
+	}
+}
+
+func TestContract_LabelValues_DoesNotForwardSubstringFilter_OnV148(t *testing.T) {
+	var receivedQ, receivedFilter string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			writeVLFieldNames(w, []fieldHit{{"app", 1}})
+		case "/select/logsql/stream_field_values":
+			receivedQ = r.URL.Query().Get("q")
+			receivedFilter = r.URL.Query().Get("filter")
+			writeVLFieldValues(w, []fieldHit{{"argocd", 1}})
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	h := http.Header{}
+	h.Set("Server", "VictoriaLogs/v1.48.0")
+	p.observeBackendVersionFromHeaders(h)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/label/app/values?search=arg", nil)
+	p.handleLabelValues(w, r)
+
+	if receivedQ != "" {
+		t.Fatalf("expected q to stay unset for VictoriaLogs < v1.49.0, got %q", receivedQ)
+	}
+	if receivedFilter != "" {
+		t.Fatalf("expected filter to stay unset for VictoriaLogs < v1.49.0, got %q", receivedFilter)
 	}
 }
 
@@ -812,6 +881,7 @@ func TestContract_Patterns_UsesFromToWhenStartEndMissing(t *testing.T) {
 
 func TestContract_Patterns_AdaptiveSourceLimitForLongRanges(t *testing.T) {
 	receivedLimits := make([]string, 0, 32)
+	var limitsMu sync.Mutex
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/query_range" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
@@ -819,7 +889,9 @@ func TestContract_Patterns_AdaptiveSourceLimitForLongRanges(t *testing.T) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("parse form: %v", err)
 		}
+		limitsMu.Lock()
 		receivedLimits = append(receivedLimits, r.FormValue("limit"))
+		limitsMu.Unlock()
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","level":"info"}` + "\n"))
 	}))
@@ -837,25 +909,26 @@ func TestContract_Patterns_AdaptiveSourceLimitForLongRanges(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
 	}
-	if len(receivedLimits) < 2 {
-		t.Fatalf("expected windowed query_range fanout for long range, got %d backend calls", len(receivedLimits))
+	limitsMu.Lock()
+	limitsSnapshot := append([]string(nil), receivedLimits...)
+	limitsMu.Unlock()
+	if len(limitsSnapshot) < 2 {
+		t.Fatalf("expected windowed query_range fanout for long range, got %d backend calls", len(limitsSnapshot))
 	}
-	if receivedLimits[0] != "50000" {
-		t.Fatalf("expected initial adaptive source limit capped at 50000 for long range, got %q", receivedLimits[0])
-	}
-	for i, limit := range receivedLimits[1:] {
+	for i, limit := range limitsSnapshot {
 		n, err := strconv.Atoi(limit)
 		if err != nil {
-			t.Fatalf("expected numeric per-window limit at call %d, got %q", i+2, limit)
+			t.Fatalf("expected numeric per-window limit at call %d, got %q", i+1, limit)
 		}
-		if n <= 0 || n > 10000 {
-			t.Fatalf("expected per-window limit in range 1..10000 at call %d, got %d", i+2, n)
+		if n <= 0 || n > 2000 {
+			t.Fatalf("expected per-window limit in range 1..2000 at call %d, got %d", i+1, n)
 		}
 	}
 }
 
 func TestContract_Patterns_DerivesStepWhenMissing(t *testing.T) {
 	var receivedStep string
+	var stepMu sync.Mutex
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/query_range" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
@@ -863,7 +936,11 @@ func TestContract_Patterns_DerivesStepWhenMissing(t *testing.T) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("parse form: %v", err)
 		}
-		receivedStep = r.FormValue("step")
+		stepMu.Lock()
+		if strings.TrimSpace(receivedStep) == "" {
+			receivedStep = r.FormValue("step")
+		}
+		stepMu.Unlock()
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","level":"info"}` + "\n"))
 	}))
@@ -881,7 +958,10 @@ func TestContract_Patterns_DerivesStepWhenMissing(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
 	}
-	if strings.TrimSpace(receivedStep) == "" {
+	stepMu.Lock()
+	stepSnapshot := receivedStep
+	stepMu.Unlock()
+	if strings.TrimSpace(stepSnapshot) == "" {
 		t.Fatalf("expected derived step to be forwarded when request step is missing")
 	}
 }
@@ -938,6 +1018,385 @@ func TestContract_Patterns_WindowedSamplingCoversWholeRange(t *testing.T) {
 	}
 	if firstTS >= lastTS {
 		t.Fatalf("expected increasing sample timestamps across range, got first=%d last=%d", firstTS, lastTS)
+	}
+}
+
+func TestBackendVersionDetection_FromResponseHeaders(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	if p.supportsDensePatternWindowing() {
+		t.Fatalf("expected dense windowing disabled before backend version is detected")
+	}
+	if !p.supportsStreamMetadataEndpoints() {
+		t.Fatalf("expected stream metadata endpoints enabled before version detection")
+	}
+
+	h := http.Header{}
+	h.Set("Server", "VictoriaLogs/v1.50.0")
+	p.observeBackendVersionFromHeaders(h)
+
+	if got := p.backendVersionSemver; got != "v1.50.0" {
+		t.Fatalf("expected semver v1.50.0 from headers, got %q", got)
+	}
+	if !p.supportsDensePatternWindowing() {
+		t.Fatalf("expected dense pattern windowing to be enabled for VictoriaLogs >= v1.50.0")
+	}
+	if !p.supportsStreamMetadataEndpoints() {
+		t.Fatalf("expected stream metadata endpoints to stay enabled for VictoriaLogs >= v1.50.0")
+	}
+	if got := p.backendCapabilityProfile; got != "vl-v1.50-plus" {
+		t.Fatalf("expected capability profile vl-v1.50-plus, got %q", got)
+	}
+}
+
+func TestBackendVersionDetection_OlderVersionKeepsConservativeProfile(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+
+	h := http.Header{}
+	h.Set("X-App-Version", "victoria-logs v1.49.0")
+	p.observeBackendVersionFromHeaders(h)
+
+	if got := p.backendVersionSemver; got != "v1.49.0" {
+		t.Fatalf("expected semver v1.49.0 from headers, got %q", got)
+	}
+	if p.supportsDensePatternWindowing() {
+		t.Fatalf("expected dense pattern windowing to stay disabled for VictoriaLogs < v1.50.0")
+	}
+	if !p.supportsStreamMetadataEndpoints() {
+		t.Fatalf("expected stream metadata endpoints enabled for VictoriaLogs >= v1.30.0")
+	}
+	if !p.supportsMetadataSubstringFilter() {
+		t.Fatalf("expected metadata substring filter enabled for VictoriaLogs >= v1.49.0")
+	}
+	if got := p.backendCapabilityProfile; got != "vl-v1.49-plus" {
+		t.Fatalf("expected capability profile vl-v1.49-plus, got %q", got)
+	}
+}
+
+func TestBackendVersionDetection_V148KeepsSubstringFilterDisabled(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+
+	h := http.Header{}
+	h.Set("Server", "VictoriaLogs/v1.48.0")
+	p.observeBackendVersionFromHeaders(h)
+
+	if got := p.backendVersionSemver; got != "v1.48.0" {
+		t.Fatalf("expected semver v1.48.0 from headers, got %q", got)
+	}
+	if p.supportsMetadataSubstringFilter() {
+		t.Fatalf("expected metadata substring filter disabled for VictoriaLogs < v1.49.0")
+	}
+	if got := p.backendCapabilityProfile; got != "vl-v1.30-plus" {
+		t.Fatalf("expected capability profile vl-v1.30-plus, got %q", got)
+	}
+}
+
+func TestBackendVersionDetection_LegacyVersionDisablesStreamMetadataFastPath(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+
+	h := http.Header{}
+	h.Set("Server", "VictoriaLogs/v1.29.0")
+	p.observeBackendVersionFromHeaders(h)
+
+	if got := p.backendVersionSemver; got != "v1.29.0" {
+		t.Fatalf("expected semver v1.29.0 from headers, got %q", got)
+	}
+	if p.supportsStreamMetadataEndpoints() {
+		t.Fatalf("expected stream metadata endpoints disabled for legacy VictoriaLogs versions")
+	}
+	if p.supportsDensePatternWindowing() {
+		t.Fatalf("expected dense pattern windowing disabled for legacy VictoriaLogs versions")
+	}
+	if got := p.backendCapabilityProfile; got != "legacy-pre-v1.30" {
+		t.Fatalf("expected capability profile legacy-pre-v1.30, got %q", got)
+	}
+}
+
+func TestBackendVersionCompatibilityGate_BlocksTooOldVersion(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Server", "VictoriaLogs/v1.29.0")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL:                 backend.URL,
+		Cache:                      cache.New(60*time.Second, 1000),
+		BackendMinVersion:          "v1.30.0",
+		BackendVersionCheckTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+
+	err = p.ValidateBackendVersionCompatibility(context.Background())
+	if err == nil {
+		t.Fatalf("expected compatibility gate to fail for backend v1.29.0")
+	}
+	if !strings.Contains(err.Error(), "backend-allow-unsupported-version") {
+		t.Fatalf("expected bypass hint in error, got: %v", err)
+	}
+}
+
+func TestBackendVersionCompatibilityGate_AllowsBypassForTooOldVersion(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "VictoriaLogs/v1.29.0")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL:                     backend.URL,
+		Cache:                          cache.New(60*time.Second, 1000),
+		BackendMinVersion:              "v1.30.0",
+		BackendAllowUnsupportedVersion: true,
+		BackendVersionCheckTimeout:     time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		t.Fatalf("expected bypassed compatibility gate, got: %v", err)
+	}
+}
+
+func TestBackendVersionCompatibilityGate_PassesSupportedVersion(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "VictoriaLogs/v1.50.0")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL:                 backend.URL,
+		Cache:                      cache.New(60*time.Second, 1000),
+		BackendMinVersion:          "v1.30.0",
+		BackendVersionCheckTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		t.Fatalf("expected compatibility gate to pass, got: %v", err)
+	}
+}
+
+func TestBackendVersionCompatibilityGate_AllowsMissingVersionHeaders(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL:                 backend.URL,
+		Cache:                      cache.New(60*time.Second, 1000),
+		BackendMinVersion:          "v1.30.0",
+		BackendVersionCheckTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		t.Fatalf("expected compatibility gate to skip missing version headers, got: %v", err)
+	}
+}
+
+func TestBackendVersionCompatibilityGate_AllowsHealthProbeFailure(t *testing.T) {
+	p, err := New(Config{
+		BackendURL:                 "http://127.0.0.1:65535",
+		Cache:                      cache.New(60*time.Second, 1000),
+		BackendMinVersion:          "v1.30.0",
+		BackendVersionCheckTimeout: 200 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		t.Fatalf("expected compatibility gate to skip health probe failure, got: %v", err)
+	}
+}
+
+func TestBackendVersionCompatibilityGate_AllowsNonSuccessHealthStatus(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", "VictoriaLogs/v1.10.0")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("unavailable"))
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL:                 backend.URL,
+		Cache:                      cache.New(60*time.Second, 1000),
+		BackendMinVersion:          "v1.30.0",
+		BackendVersionCheckTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		t.Fatalf("expected compatibility gate to skip non-success health status, got: %v", err)
+	}
+}
+
+func TestBackendVersionCompatibilityConfig_InvalidMinVersion(t *testing.T) {
+	_, err := New(Config{
+		BackendURL:        "http://example.com",
+		Cache:             cache.New(60*time.Second, 1000),
+		BackendMinVersion: "not-a-semver",
+	})
+	if err == nil {
+		t.Fatalf("expected invalid backend minimum version error")
+	}
+}
+
+func TestPatternsSnapshotCompaction_DeduplicatesEquivalentScopes(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	p.patternsSnapshotEntries = map[string]patternSnapshotEntry{}
+	now := time.Now().UnixNano()
+
+	payloadA := []byte(`{"status":"success","data":[{"pattern":"a","samples":[[1,2]]}]}`)
+	payloadB := []byte(`{"status":"success","data":[{"pattern":"b","samples":[[1,3]]}]}`)
+
+	keyOld := "patterns:org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=10&step=60"
+	keyNew := "patterns:org-a:query=%7Bapp%3D%22api%22%7D&start=5&end=15&step=60"
+	keyOther := "patterns:org-a:query=%7Bapp%3D%22worker%22%7D&start=1&end=10&step=60"
+
+	p.patternsSnapshotEntries[keyOld] = patternSnapshotEntry{Value: append([]byte(nil), payloadA...), UpdatedAtUnixNano: now - 10, PatternCount: 1}
+	p.patternsSnapshotEntries[keyNew] = patternSnapshotEntry{Value: append([]byte(nil), payloadA...), UpdatedAtUnixNano: now, PatternCount: 1}
+	p.patternsSnapshotEntries[keyOther] = patternSnapshotEntry{Value: append([]byte(nil), payloadB...), UpdatedAtUnixNano: now, PatternCount: 1}
+
+	p.cache.SetWithTTL(keyOld, payloadA, time.Minute)
+	p.cache.SetWithTTL(keyNew, payloadA, time.Minute)
+	p.cache.SetWithTTL(keyOther, payloadB, time.Minute)
+
+	droppedEntries, droppedPatterns := p.compactPatternsSnapshot(patternDedupSourceMemory, "test")
+	if droppedEntries != 1 {
+		t.Fatalf("expected one deduplicated entry, got %d", droppedEntries)
+	}
+	if droppedPatterns < 0 {
+		t.Fatalf("expected non-negative dropped pattern count, got %d", droppedPatterns)
+	}
+	if _, ok := p.patternsSnapshotEntries[keyOld]; ok {
+		t.Fatalf("expected older equivalent key to be dropped")
+	}
+	if _, ok := p.patternsSnapshotEntries[keyNew]; !ok {
+		t.Fatalf("expected newer equivalent key to be kept")
+	}
+	if _, ok := p.patternsSnapshotEntries[keyOther]; !ok {
+		t.Fatalf("expected different-scope key to stay")
+	}
+	if _, ok := p.cache.Get(keyOld); ok {
+		t.Fatalf("expected dropped key to be invalidated from cache")
+	}
+}
+
+func TestPatternsPersistenceLoop_PersistsAndStopsOnShutdown(t *testing.T) {
+	tmpDir := t.TempDir()
+	persistPath := filepath.Join(tmpDir, "patterns-snapshot.json")
+
+	p, err := New(Config{
+		BackendURL:              "http://127.0.0.1:65535",
+		Cache:                   cache.New(60*time.Second, 1000),
+		LogLevel:                "error",
+		PatternsPersistPath:     persistPath,
+		PatternsPersistInterval: 20 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	p.Init()
+
+	payload := []byte(`{"status":"success","data":[{"pattern":"sample","samples":[[1,1]]}]}`)
+	p.recordPatternSnapshotEntry("patterns:org-a:query=%7Bapp%3D%22api%22%7D&start=1&end=2", payload, time.Now())
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		data, readErr := os.ReadFile(persistPath)
+		if readErr == nil && len(data) > 0 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	data, readErr := os.ReadFile(persistPath)
+	if readErr != nil {
+		t.Fatalf("expected persisted snapshot file: %v", readErr)
+	}
+	if len(data) == 0 {
+		t.Fatalf("expected persisted snapshot file to be non-empty")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	p.Shutdown(ctx)
+
+	select {
+	case <-p.patternsPersistDone:
+	default:
+		t.Fatalf("expected patterns persistence loop to be stopped after shutdown")
+	}
+}
+
+func TestRecentTailCacheBypass_Decision(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	p.recentTailRefreshEnabled = true
+	p.recentTailRefreshWindow = 2 * time.Minute
+	p.recentTailRefreshMaxStaleness = 2 * time.Second
+
+	nearNow := httptest.NewRequest("GET", "/loki/api/v1/query_range?end=now", nil)
+	if !p.shouldBypassRecentTailCache("query_range", 5*time.Second, nearNow) {
+		t.Fatalf("expected near-now stale cache to be bypassed")
+	}
+
+	oldRange := httptest.NewRequest("GET", "/loki/api/v1/query_range?end=now-10m", nil)
+	if p.shouldBypassRecentTailCache("query_range", 5*time.Second, oldRange) {
+		t.Fatalf("expected old-range cache hit to be retained")
+	}
+
+	fresh := httptest.NewRequest("GET", "/loki/api/v1/query_range?end=now", nil)
+	if p.shouldBypassRecentTailCache("query_range", 9*time.Second, fresh) {
+		t.Fatalf("expected fresh near-now cache hit to be retained")
+	}
+
+	p.recentTailRefreshEnabled = false
+	if p.shouldBypassRecentTailCache("query_range", 5*time.Second, nearNow) {
+		t.Fatalf("expected disabled tail-refresh to retain cache")
+	}
+}
+
+func TestContract_Volume_BypassesNearNowStaleCache(t *testing.T) {
+	var backendCalls int
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/hits" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		backendCalls++
+		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	p.recentTailRefreshEnabled = true
+	p.recentTailRefreshWindow = time.Hour
+	p.recentTailRefreshMaxStaleness = time.Nanosecond
+
+	uri := "/loki/api/v1/index/volume?query=%7Bapp%3D%22api%22%7D&end=now"
+	w1 := httptest.NewRecorder()
+	p.handleVolume(w1, httptest.NewRequest("GET", uri, nil))
+	if backendCalls != 1 {
+		t.Fatalf("expected first call to hit backend once, got %d", backendCalls)
+	}
+
+	time.Sleep(2 * time.Millisecond)
+	w2 := httptest.NewRecorder()
+	p.handleVolume(w2, httptest.NewRequest("GET", uri, nil))
+	if backendCalls < 2 {
+		t.Fatalf("expected stale near-now cache to be bypassed, backend calls=%d", backendCalls)
 	}
 }
 
@@ -1402,6 +1861,33 @@ func TestContract_DrilldownLimits_PatternsDisabledAdvertised(t *testing.T) {
 	}
 }
 
+func TestContract_DrilldownLimits_AdvertisesGrafanaProfilesWhenDetected(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/drilldown-limits", nil)
+	r.Header.Set("User-Agent", "Grafana/11.6.6")
+	r.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+	p.handleDrilldownLimits(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from drilldown-limits, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if got := resp["grafana_client_surface"]; got != "grafana_drilldown" {
+		t.Fatalf("expected grafana_client_surface=grafana_drilldown, got %v", got)
+	}
+	if got := resp["grafana_runtime_version"]; got != "11.6.6" {
+		t.Fatalf("expected grafana_runtime_version=11.6.6, got %v", got)
+	}
+	if got := resp["grafana_runtime_family"]; got != "11.x" {
+		t.Fatalf("expected grafana_runtime_family=11.x, got %v", got)
+	}
+	if got := resp["drilldown_profile"]; got != "drilldown-v1" {
+		t.Fatalf("expected drilldown_profile=drilldown-v1, got %v", got)
+	}
+}
+
 func TestContract_DrilldownLimits_ExposesRequiredLimitsContract(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	w := httptest.NewRecorder()
@@ -1470,6 +1956,36 @@ func TestContract_DrilldownLimits_ExposesRequiredLimitsContract(t *testing.T) {
 	}
 	if _, ok := limits["retention_stream"].([]interface{}); !ok {
 		t.Fatalf("expected limits.retention_stream to be an array, got %T", limits["retention_stream"])
+	}
+}
+
+func TestContract_SupportsDensePatternWindowingForRequest_GrafanaRuntimeAware(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	p.backendVersionMu.Lock()
+	p.backendSupportsDensePatternWindowing = true
+	p.backendVersionSemver = "v1.50.0"
+	p.backendVersionMu.Unlock()
+
+	baseReq := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22api%22%7D", nil)
+
+	legacyCtx := context.WithValue(baseReq.Context(), requestGrafanaClientKey, grafanaClientProfile{
+		surface:      "grafana_drilldown",
+		runtimeMajor: 11,
+	})
+	if p.supportsDensePatternWindowingForRequest(baseReq.WithContext(legacyCtx)) {
+		t.Fatal("expected dense windowing disabled for legacy drilldown runtime family")
+	}
+
+	modernCtx := context.WithValue(baseReq.Context(), requestGrafanaClientKey, grafanaClientProfile{
+		surface:      "grafana_drilldown",
+		runtimeMajor: 12,
+	})
+	if !p.supportsDensePatternWindowingForRequest(baseReq.WithContext(modernCtx)) {
+		t.Fatal("expected dense windowing enabled for modern drilldown runtime family")
+	}
+
+	if !p.supportsDensePatternWindowingForRequest(baseReq) {
+		t.Fatal("expected dense windowing enabled for non-grafana request context")
 	}
 }
 
@@ -2410,6 +2926,32 @@ func TestContract_Labels_ForwardsQueryParam(t *testing.T) {
 	}
 	if !strings.Contains(receivedQuery, "app") {
 		t.Errorf("expected translated query to contain 'app', got %q", receivedQuery)
+	}
+}
+
+func TestContract_Labels_ForwardsSubstringFilter_OnV149Plus(t *testing.T) {
+	var receivedQ, receivedFilter string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedQ = r.URL.Query().Get("q")
+		receivedFilter = r.URL.Query().Get("filter")
+		writeVLFieldNames(w, []fieldHit{{"app", 1}, {"level", 1}})
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	h := http.Header{}
+	h.Set("Server", "VictoriaLogs/v1.49.0")
+	p.observeBackendVersionFromHeaders(h)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", `/loki/api/v1/labels?query={app="nginx"}&search=app`, nil)
+	p.handleLabels(w, r)
+
+	if receivedQ != "app" {
+		t.Fatalf("expected q=app to be forwarded for substring filter, got %q", receivedQ)
+	}
+	if receivedFilter != "substring" {
+		t.Fatalf("expected filter=substring for VictoriaLogs >= v1.49.0, got %q", receivedFilter)
 	}
 }
 

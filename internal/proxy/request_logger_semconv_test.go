@@ -108,3 +108,98 @@ func TestRequestLogger_MetricsUseTemplateRoutes(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestLogger_DetectsGrafanaDrilldownSurface(t *testing.T) {
+	var buf bytes.Buffer
+	p := &Proxy{
+		log:                      slog.New(slog.NewJSONHandler(&buf, nil)),
+		metrics:                  metrics.NewMetrics(),
+		metricsTrustProxyHeaders: true,
+	}
+
+	h := p.requestLogger("detected_fields", "/loki/api/v1/detected_fields", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/detected_fields?query=%7Bservice_name%3D%22api%22%7D", nil)
+	req.Header.Set("User-Agent", "Grafana/12.3.3")
+	req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	var payload map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid request log json: %v", err)
+	}
+	if got := payload["grafana.client.surface"]; got != "grafana_drilldown" {
+		t.Fatalf("expected drilldown surface, got %#v", got)
+	}
+	if got := payload["grafana.client.source_tag"]; got != "grafana-lokiexplore-app" {
+		t.Fatalf("expected source tag, got %#v", got)
+	}
+	if got := payload["grafana.version"]; got != "12.3.3" {
+		t.Fatalf("expected grafana version, got %#v", got)
+	}
+	if got := payload["grafana.runtime.family"]; got != "12.x+" {
+		t.Fatalf("expected grafana runtime family, got %#v", got)
+	}
+	if got := payload["grafana.drilldown.profile"]; got != "drilldown-v2" {
+		t.Fatalf("expected drilldown profile, got %#v", got)
+	}
+}
+
+func TestRequestLogger_DetectsGrafanaDatasourceSurface(t *testing.T) {
+	var buf bytes.Buffer
+	p := &Proxy{
+		log:     slog.New(slog.NewJSONHandler(&buf, nil)),
+		metrics: metrics.NewMetrics(),
+	}
+
+	h := p.requestLogger("labels", "/loki/api/v1/labels", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels", nil)
+	req.Header.Set("User-Agent", "Grafana/12.4.1")
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	var payload map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &payload); err != nil {
+		t.Fatalf("invalid request log json: %v", err)
+	}
+	if got := payload["grafana.client.surface"]; got != "grafana_loki_datasource" {
+		t.Fatalf("expected datasource surface, got %#v", got)
+	}
+	if got := payload["grafana.version"]; got != "12.4.1" {
+		t.Fatalf("expected grafana version, got %#v", got)
+	}
+	if got := payload["grafana.runtime.family"]; got != "12.x+" {
+		t.Fatalf("expected grafana runtime family, got %#v", got)
+	}
+	if got := payload["grafana.datasource.profile"]; got != "grafana-datasource-v12" {
+		t.Fatalf("expected datasource profile, got %#v", got)
+	}
+}
+
+func TestParseGrafanaSourceTag(t *testing.T) {
+	got := parseGrafanaSourceTag([]string{`foo=bar, Source="grafana-lokiexplore-app"`})
+	if got != "grafana-lokiexplore-app" {
+		t.Fatalf("unexpected source tag: %q", got)
+	}
+	if empty := parseGrafanaSourceTag([]string{"foo=bar"}); empty != "" {
+		t.Fatalf("expected empty source tag, got %q", empty)
+	}
+}
+
+func TestParseGrafanaRuntimeMajor(t *testing.T) {
+	if got := parseGrafanaRuntimeMajor("12.4.1"); got != 12 {
+		t.Fatalf("expected 12, got %d", got)
+	}
+	if got := parseGrafanaRuntimeMajor("11.6.6-beta1"); got != 11 {
+		t.Fatalf("expected 11, got %d", got)
+	}
+	if got := parseGrafanaRuntimeMajor("dev"); got != 0 {
+		t.Fatalf("expected 0 for non-semver token, got %d", got)
+	}
+}

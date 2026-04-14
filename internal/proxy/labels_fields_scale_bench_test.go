@@ -140,11 +140,11 @@ func BenchmarkProxy_LabelValues_Scale_CacheHit(b *testing.B) {
 
 			rawURL := "/loki/api/v1/label/app/values?query=%7Bapp%3D%22api%22%7D&start=1&end=2"
 			warmRoute(mux, rawURL, nil)
-			req := benchmarkRequest(rawURL)
 
 			b.ReportAllocs()
 			b.ResetTimer()
 			b.RunParallel(func(pb *testing.PB) {
+				req := benchmarkRequest(rawURL)
 				w := newBenchmarkResponseWriter()
 				for pb.Next() {
 					w.reset()

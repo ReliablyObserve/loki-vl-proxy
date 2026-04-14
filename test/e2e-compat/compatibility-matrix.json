@@ -28,12 +28,15 @@
     },
     "victorialogs": {
       "image_repo": "victoriametrics/victoria-logs",
-      "pinned_version": "v1.49.0",
+      "pinned_version": "v1.50.0",
       "support_window": {
-        "policy": "v1_3x_and_v1_4x",
-        "description": "Support VictoriaLogs releases in the v1.3x.x and v1.4x.x bands. This is intentionally broader than Loki because users commonly run older VictoriaLogs backends during migration windows.",
-        "current_family": "v1.4x.x",
-        "previous_family": "v1.3x.x"
+        "policy": "v1_3x_to_v1_5x_transition",
+        "description": "Support VictoriaLogs releases across v1.3x.x through v1.5x.x during migration windows. The current family is v1.5x.x, but we intentionally retain older bands to avoid backend upgrade lockstep.",
+        "current_family": "v1.5x.x",
+        "previous_family": "v1.4x.x",
+        "additional_families": [
+          "v1.3x.x"
+        ]
       },
       "matrix_versions": [
         "v1.30.0",
@@ -55,7 +58,39 @@
         "v1.46.0",
         "v1.47.0",
         "v1.48.0",
-        "v1.49.0"
+        "v1.49.0",
+        "v1.50.0"
+      ],
+    "capability_profiles": [
+      {
+        "profile": "vl-v1.50-plus",
+        "version_range": ">= v1.50.0",
+        "capabilities": [
+          "stream_metadata_endpoints",
+          "dense_patterns_windowing",
+          "metadata_substring_filter"
+        ]
+      },
+      {
+        "profile": "vl-v1.49-plus",
+        "version_range": ">= v1.49.0 < v1.50.0",
+        "capabilities": [
+          "stream_metadata_endpoints",
+          "metadata_substring_filter"
+        ]
+      },
+      {
+        "profile": "vl-v1.30-plus",
+        "version_range": ">= v1.30.0 < v1.49.0",
+        "capabilities": [
+          "stream_metadata_endpoints"
+        ]
+      },
+        {
+          "profile": "legacy-pre-v1.30",
+          "version_range": "< v1.30.0",
+          "capabilities": []
+        }
       ],
       "role": "backend under translation"
     },
@@ -87,12 +122,67 @@
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
         }
+      ],
+      "capability_profiles": [
+        {
+          "profile": "grafana-runtime-v12-plus",
+          "version_range": ">= 12.0.0",
+          "capabilities": [
+            "drilldown_source_tag",
+            "runtime_family_v12_contracts"
+          ]
+        },
+        {
+          "profile": "grafana-runtime-v11",
+          "version_range": ">= 11.0.0 < 12.0.0",
+          "capabilities": [
+            "drilldown_source_tag",
+            "runtime_family_v11_contracts"
+          ]
+        }
+      ]
+    },
+    "grafana_loki_datasource_contract": {
+      "repo": "https://github.com/grafana/grafana",
+      "path": "public/app/plugins/datasource/loki",
+      "support_window": {
+        "policy": "current_runtime_family_plus_previous_family",
+        "description": "Track built-in Loki datasource contract behavior for current Grafana runtime family and one family behind.",
+        "current_family": "12.x",
+        "previous_family": "11.x"
+      },
+      "matrix_versions": [
+        "12.4.2",
+        "12.4.1",
+        "11.6.6"
+      ],
+      "capability_profiles": [
+        {
+          "profile": "grafana-datasource-v12",
+          "version_range": ">= 12.0.0",
+          "capabilities": [
+            "runtime_v12_contract_assertions",
+            "structured_resource_flow"
+          ]
+        },
+        {
+          "profile": "grafana-datasource-v11",
+          "version_range": ">= 11.0.0 < 12.0.0",
+          "capabilities": [
+            "runtime_v11_contract_assertions",
+            "legacy_runtime_flow"
+          ]
+        }
+      ],
+      "notes": [
+        "Datasource plugin exact semver is not emitted on request headers by default.",
+        "Proxy runtime sensing uses Grafana User-Agent version family and endpoint/source-tag request shape."
       ]
     },
     "logs_drilldown_contract": {
       "repo": "https://github.com/grafana/logs-drilldown",
-      "pinned_version": "2.0.1",
-      "pinned_commit": "4463f56047de75da95251086d1906fb902ad53a7",
+      "pinned_version": "2.0.3",
+      "pinned_commit": "c22fae24f533a36ec2173933d2c303804cb7e814",
       "support_window": {
         "policy": "current_family_plus_previous_family",
         "description": "Support the current Logs Drilldown release family and one family behind. The contract matrix moves forward as upstream releases advance; we do not keep an open-ended history of older families.",
@@ -100,6 +190,8 @@
         "previous_family": "1.0.x"
       },
       "matrix_versions": [
+        "2.0.3",
+        "2.0.2",
         "2.0.1",
         "2.0.0",
         "1.0.41",
@@ -116,6 +208,42 @@
         "Service detail logs use a mixed parser selector: json + logfmt + drop __error__ stages",
         "detected_fields is post-processed by the app datasource wrapper to drop detected_level, level, and level_extracted",
         "Patterns are label-scoped; parsed fields, metadata, and line filters are not expected to constrain the pattern list"
+      ],
+      "capability_profiles": [
+        {
+          "profile": "drilldown-v2",
+          "version_range": ">= 2.0.0 < 3.0.0",
+          "capabilities": [
+            "detected_level_default_columns",
+            "service_detail_field_value_breakdowns"
+          ]
+        },
+        {
+          "profile": "drilldown-v1",
+          "version_range": ">= 1.0.34 < 2.0.0",
+          "capabilities": [
+            "legacy_service_selection_buckets",
+            "legacy_detected_fields_filtering"
+          ]
+        }
+      ],
+      "runtime_detection": {
+        "source_header": "X-Query-Tags",
+        "source_tag_key": "Source",
+        "source_tag_value": "grafana-lokiexplore-app",
+        "runtime_version_source": "User-Agent: Grafana/<version>",
+        "app_semver_exposed_on_wire": false
+      }
+    },
+    "grafana_client_detection": {
+      "signals": [
+        "User-Agent: Grafana/<version>",
+        "X-Query-Tags: Source=grafana-lokiexplore-app"
+      ],
+      "surfaces": [
+        "grafana_drilldown",
+        "grafana_loki_datasource",
+        "unknown"
       ]
     }
   },
@@ -172,7 +300,9 @@
         {
           "versions": [
             "2.0.0",
-            "2.0.1"
+            "2.0.1",
+            "2.0.2",
+            "2.0.3"
           ],
           "focus": [
             "detected_level coloring series names",
@@ -217,7 +347,8 @@
             "v1.46.x",
             "v1.47.x",
             "v1.48.x",
-            "v1.49.x"
+            "v1.49.x",
+            "v1.50.x"
           ],
           "focus": [
             "stats_query_range shape",

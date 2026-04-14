@@ -235,21 +235,22 @@ Moved out of Playwright:
 
 ## Compatibility Tracks
 
-The repo now keeps three separate compatibility tracks:
+The repo now keeps four separate compatibility tracks/contracts:
 
 | Track | Local score test | Matrix coverage |
 |---|---|---|
 | Loki | `TestLokiTrackScore` | Loki `3.6.x` and `3.7.x` |
 | Logs Drilldown | `TestDrilldownTrackScore` | Logs Drilldown `1.0.x` and `2.0.x` families |
-| VictoriaLogs | `TestVLTrackScore` | VictoriaLogs `v1.3x.x` and `v1.4x.x` bands |
+| Grafana Loki datasource | `TestGrafanaDatasourceCatalogAndHealth` | Grafana runtime `11.x` and `12.x` families |
+| VictoriaLogs | `TestVLTrackScore` | VictoriaLogs `v1.3x.x` through `v1.5x.x` transition band |
 
 The default local stack is pinned to:
 
 - Loki `3.7.1`
-- VictoriaLogs `v1.49.0`
+- VictoriaLogs `v1.50.0`
 - vmalert `v1.138.0` (with local VictoriaMetrics remote-write target for recording-rule evaluation)
 - Grafana `12.4.2`
-- Logs Drilldown contract `2.0.1` from `grafana/logs-drilldown` commit `4463f56047de75da95251086d1906fb902ad53a7`
+- Logs Drilldown contract `2.0.3` from `grafana/logs-drilldown` commit `c22fae24f533a36ec2173933d2c303804cb7e814`
 
 Field-surface defaults in the pinned stack:
 
@@ -269,7 +270,7 @@ Support window policy:
 - Loki: current minor family plus one minor behind
 - Grafana runtime: pinned current family gets the fuller Drilldown runtime contract, and pull requests also run smaller current-family and previous-family smoke profiles; the full runtime matrix stays on scheduled/manual coverage
 - Logs Drilldown: current family plus one family behind
-- VictoriaLogs: `v1.3x.x` and `v1.4x.x`
+- VictoriaLogs: `v1.3x.x` through `v1.5x.x` (transition band)
 
 Grafana runtime profiles from the manifest:
 

@@ -26,9 +26,10 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 				ImageRepo     string `json:"image_repo"`
 				PinnedVersion string `json:"pinned_version"`
 				SupportWindow struct {
-					Policy         string `json:"policy"`
-					CurrentFamily  string `json:"current_family"`
-					PreviousFamily string `json:"previous_family"`
+					Policy             string   `json:"policy"`
+					CurrentFamily      string   `json:"current_family"`
+					PreviousFamily     string   `json:"previous_family"`
+					AdditionalFamilies []string `json:"additional_families"`
 				} `json:"support_window"`
 				MatrixVersions []string `json:"matrix_versions"`
 			} `json:"loki"`
@@ -36,9 +37,10 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 				ImageRepo     string `json:"image_repo"`
 				PinnedVersion string `json:"pinned_version"`
 				SupportWindow struct {
-					Policy         string `json:"policy"`
-					CurrentFamily  string `json:"current_family"`
-					PreviousFamily string `json:"previous_family"`
+					Policy             string   `json:"policy"`
+					CurrentFamily      string   `json:"current_family"`
+					PreviousFamily     string   `json:"previous_family"`
+					AdditionalFamilies []string `json:"additional_families"`
 				} `json:"support_window"`
 				MatrixVersions []string `json:"matrix_versions"`
 			} `json:"victorialogs"`
@@ -46,9 +48,10 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 				ImageRepo     string `json:"image_repo"`
 				PinnedVersion string `json:"pinned_version"`
 				SupportWindow struct {
-					Policy         string `json:"policy"`
-					CurrentFamily  string `json:"current_family"`
-					PreviousFamily string `json:"previous_family"`
+					Policy             string   `json:"policy"`
+					CurrentFamily      string   `json:"current_family"`
+					PreviousFamily     string   `json:"previous_family"`
+					AdditionalFamilies []string `json:"additional_families"`
 				} `json:"support_window"`
 				RuntimeProfiles []struct {
 					Version   string `json:"version"`
@@ -61,9 +64,10 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 				PinnedVersion string `json:"pinned_version"`
 				PinnedCommit  string `json:"pinned_commit"`
 				SupportWindow struct {
-					Policy         string `json:"policy"`
-					CurrentFamily  string `json:"current_family"`
-					PreviousFamily string `json:"previous_family"`
+					Policy             string   `json:"policy"`
+					CurrentFamily      string   `json:"current_family"`
+					PreviousFamily     string   `json:"previous_family"`
+					AdditionalFamilies []string `json:"additional_families"`
 				} `json:"support_window"`
 				MatrixVersions []string `json:"matrix_versions"`
 			} `json:"logs_drilldown_contract"`
@@ -145,7 +149,7 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 	if len(matrix.Stack.Loki.MatrixVersions) == 0 || len(matrix.Stack.VictoriaLogs.MatrixVersions) == 0 {
 		t.Fatalf("runtime matrices must not be empty")
 	}
-	assertSupportWindow := func(name, policyName, currentFamily, previousFamily string, versions []string) {
+	assertSupportWindow := func(name, policyName, currentFamily, previousFamily string, additionalFamilies, versions []string) {
 		t.Helper()
 		if policyName == "" || currentFamily == "" || previousFamily == "" {
 			t.Fatalf("%s support window must define policy, current family, and previous family", name)
@@ -155,15 +159,29 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 		}
 		currentPrefix := familyPrefix(currentFamily)
 		previousPrefix := familyPrefix(previousFamily)
+		allowedPrefixes := []string{currentPrefix, previousPrefix}
+		for _, family := range additionalFamilies {
+			if family == "" {
+				continue
+			}
+			allowedPrefixes = append(allowedPrefixes, familyPrefix(family))
+		}
 		foundCurrent := false
 		foundPrevious := false
 		for _, version := range versions {
+			matched := false
+			for _, prefix := range allowedPrefixes {
+				if strings.HasPrefix(version, prefix) {
+					matched = true
+					break
+				}
+			}
 			switch {
 			case strings.HasPrefix(version, currentPrefix):
 				foundCurrent = true
 			case strings.HasPrefix(version, previousPrefix):
 				foundPrevious = true
-			default:
+			case !matched:
 				t.Fatalf("%s version %q falls outside support window %q / %q", name, version, currentFamily, previousFamily)
 			}
 		}
@@ -179,6 +197,7 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 		matrix.Stack.Loki.SupportWindow.Policy,
 		matrix.Stack.Loki.SupportWindow.CurrentFamily,
 		matrix.Stack.Loki.SupportWindow.PreviousFamily,
+		matrix.Stack.Loki.SupportWindow.AdditionalFamilies,
 		matrix.Stack.Loki.MatrixVersions,
 	)
 	assertSupportWindow(
@@ -186,6 +205,7 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 		matrix.Stack.VictoriaLogs.SupportWindow.Policy,
 		matrix.Stack.VictoriaLogs.SupportWindow.CurrentFamily,
 		matrix.Stack.VictoriaLogs.SupportWindow.PreviousFamily,
+		matrix.Stack.VictoriaLogs.SupportWindow.AdditionalFamilies,
 		matrix.Stack.VictoriaLogs.MatrixVersions,
 	)
 	assertSupportWindow(
@@ -193,6 +213,7 @@ func TestPinnedCompatibilityMatrixMatchesCompose(t *testing.T) {
 		matrix.Stack.LogsDrilldownContract.SupportWindow.Policy,
 		matrix.Stack.LogsDrilldownContract.SupportWindow.CurrentFamily,
 		matrix.Stack.LogsDrilldownContract.SupportWindow.PreviousFamily,
+		matrix.Stack.LogsDrilldownContract.SupportWindow.AdditionalFamilies,
 		matrix.Stack.LogsDrilldownContract.MatrixVersions,
 	)
 	if !strings.HasPrefix(matrix.Stack.Loki.PinnedVersion, familyPrefix(matrix.Stack.Loki.SupportWindow.CurrentFamily)) {

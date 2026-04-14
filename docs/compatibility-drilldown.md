@@ -31,7 +31,9 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Logs Drilldown version | Coverage path | Version-specific focus |
 |---|---|---|
-| `2.0.1` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract |
+| `2.0.3` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract |
+| `2.0.2` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
+| `2.0.1` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
 | `2.0.0` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
 | `1.0.41` | PR/main previous-family Grafana smoke + scheduled/manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
 | `1.0.40` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
@@ -41,6 +43,45 @@ The Drilldown matrix is also a moving window. We support the current app family 
 | `1.0.36` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
 | `1.0.35` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
 | `1.0.34` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
+
+## Runtime Detection And Version Coupling
+
+Proxy-side Drilldown detection is based on deterministic request signals:
+
+- `X-Query-Tags: Source=grafana-lokiexplore-app` identifies Drilldown-origin resource calls
+- `User-Agent: Grafana/<version>` provides Grafana runtime version family
+
+Important limit:
+
+- exact Drilldown app semver is not emitted on the datasource HTTP request path by default
+
+Because of that, version-specific behavior should be gated by:
+
+1. explicit request source tag,
+2. Grafana runtime family (`11.x`, `12.x`),
+3. compatibility matrix contract version bands (`1.0.x`, `2.0.x`), validated in CI.
+
+## Drilldown Capability Profiles
+
+| Drilldown version family | Capability profile | Proxy handling focus |
+|---|---|---|
+| `2.0.x` | `drilldown-v2` | detected-level defaults, modern service-detail scenes, patterns and field-value drill flows |
+| `1.0.x` | `drilldown-v1` | legacy service buckets, filtered detected-fields path, prior labels/field rendering behavior |
+
+These profiles are matrix-level compatibility profiles (contract and CI guidance). Runtime request handling must stay Loki-compatible and should not depend on guessed app build strings.
+
+## Release Watchlist
+
+Potential next family move:
+
+- current: `2.0.x`
+- next expected family to evaluate: `2.1.x` (then `3.0.x` when released)
+
+Promotion criteria for a new family:
+
+1. add versions to matrix manifest,
+2. verify `TestDrilldownTrackScore` and `TestDrilldown_RuntimeFamilyContracts` on pinned + smoke runtimes,
+3. confirm no regressions in patterns, labels/fields, and service detail flows.
 
 ## Contracts We Enforce
 

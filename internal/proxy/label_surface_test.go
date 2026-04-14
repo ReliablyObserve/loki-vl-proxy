@@ -574,7 +574,7 @@ func TestLabelSurface_AsyncRefreshPathsPopulateCache(t *testing.T) {
 		t.Fatalf("failed to create proxy: %v", err)
 	}
 
-	p.refreshLabelValuesCacheAsync("", "label_values:async", "app", "", "", "", "")
+	p.refreshLabelValuesCacheAsync("", "label_values:async", "app", "", "", "", "", "")
 	waitForCachedKey(t, c, "label_values:async")
 
 	p.refreshDetectedFieldsCacheAsync("", "detected_fields:async", `{service_name="svc-a"}`, "", "", 100)
@@ -650,7 +650,7 @@ func TestLabelSurface_RefreshLabelsCacheAsyncPopulatesCache(t *testing.T) {
 	}
 
 	cacheKey := "labels:async"
-	p.refreshLabelsCacheAsync("", cacheKey, `{service_name="svc-a"}`, "", "")
+	p.refreshLabelsCacheAsync("", cacheKey, `{service_name="svc-a"}`, "", "", "")
 	raw := waitForCachedKey(t, c, cacheKey)
 
 	if streamFieldNamesCalls.Load() == 0 {
@@ -668,6 +668,87 @@ func TestLabelSurface_RefreshLabelsCacheAsyncPopulatesCache(t *testing.T) {
 	}
 	if contains(resp.Data, "_msg") {
 		t.Fatalf("expected internal labels to be filtered, got %v", resp.Data)
+	}
+}
+
+func TestLabelSurface_RefreshLabelsCacheAsync_ForwardsSubstringFilterWhenSupported(t *testing.T) {
+	var gotQ, gotFilter atomic.Value
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/stream_field_names" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		gotQ.Store(r.URL.Query().Get("q"))
+		gotFilter.Store(r.URL.Query().Get("filter"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"values":[{"value":"service.name","hits":2}]}`))
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL:        vlBackend.URL,
+		Cache:             c,
+		LogLevel:          "error",
+		LabelStyle:        LabelStyleUnderscores,
+		MetadataFieldMode: MetadataFieldModeTranslated,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+	p.observeBackendVersionFromHeaders(http.Header{"Server": []string{"VictoriaLogs/v1.49.0"}})
+
+	cacheKey := "labels:async:substring"
+	p.refreshLabelsCacheAsync("", cacheKey, `{service_name="svc-a"}`, "", "", "svc")
+	_ = waitForCachedKey(t, c, cacheKey)
+
+	if v, _ := gotQ.Load().(string); v != "svc" {
+		t.Fatalf("expected q=svc for async labels refresh, got %q", v)
+	}
+	if v, _ := gotFilter.Load().(string); v != "substring" {
+		t.Fatalf("expected filter=substring for async labels refresh, got %q", v)
+	}
+}
+
+func TestLabelSurface_RefreshLabelValuesCacheAsync_ForwardsSubstringFilterWhenSupported(t *testing.T) {
+	var gotQ, gotFilter atomic.Value
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":2}]}`))
+		case "/select/logsql/stream_field_values":
+			gotQ.Store(r.URL.Query().Get("q"))
+			gotFilter.Store(r.URL.Query().Get("filter"))
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"svc-a","hits":2}]}`))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL:        vlBackend.URL,
+		Cache:             c,
+		LogLevel:          "error",
+		LabelStyle:        LabelStyleUnderscores,
+		MetadataFieldMode: MetadataFieldModeTranslated,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+	p.observeBackendVersionFromHeaders(http.Header{"Server": []string{"VictoriaLogs/v1.49.0"}})
+
+	cacheKey := "label_values:async:substring"
+	p.refreshLabelValuesCacheAsync("", cacheKey, "app", `{service_name="svc-a"}`, "", "", "", "svc")
+	_ = waitForCachedKey(t, c, cacheKey)
+
+	if v, _ := gotQ.Load().(string); v != "svc" {
+		t.Fatalf("expected q=svc for async label values refresh, got %q", v)
+	}
+	if v, _ := gotFilter.Load().(string); v != "substring" {
+		t.Fatalf("expected filter=substring for async label values refresh, got %q", v)
 	}
 }
 

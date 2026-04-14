@@ -7,11 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- ci: remove an unused Grafana surface helper that triggered lint failure.
+- tests: harden long-range patterns contract tests against race conditions under parallel window fanout (`-race`).
+
 ## [1.0.21] - 2026-04-14
 
 ### Bug Fixes
 
 - patterns: keep `/loki/api/v1/patterns` charts full-range on large scopes by parsing relative range boundaries and adaptively coarsening overly dense bucket grids instead of returning sparse short-tail samples.
+- patterns: harden long-range windowed extraction by using direct `query_range` fanout per window and bounded per-window limits, avoiding helper-path stalls and preserving deterministic dense-range coverage.
+- compatibility gate: enforce minimum supported VictoriaLogs version at startup (with explicit unsafe bypass flag) and add version-sensed runtime capability profiles for stream metadata and dense pattern windowing paths.
+- metadata browse: add version-gated (`v1.49+`) forwarding of `q` + `filter=substring` to VictoriaLogs `field_*`/`stream_field_*` endpoints, with safe fallback behavior for older versions.
+- cache freshness: add near-now stale-cache bypass controls (`recent-tail-refresh-*`) for `query_range`, `index/volume`, and `index/volume_range` to reduce refresh gaps without sacrificing long-lived historical cache reuse.
+
+### Tests
+
+- add regression coverage for VictoriaLogs version compatibility gate edge paths (missing version headers, health probe failure, non-success health status).
+- add cache freshness and persistence hardening tests for near-now cache bypass decisions, volume cache bypass behavior, patterns snapshot compaction, and patterns persistence loop startup/shutdown.
+
+### Documentation
+
+- compatibility matrix: bump Logs Drilldown contract coverage to `2.0.3` and VictoriaLogs pinned runtime coverage to `v1.50.0`, including updated support-band notes and pinned commit references.
+- compatibility matrix/docs: add VictoriaLogs runtime capability profiles (version-sensed feature gates) and document which LogSQL optimizations are enabled per version family.
+- compatibility matrix/docs: add Grafana Loki datasource compatibility profiles and Drilldown `v1`/`v2` capability profiles, including runtime detection limits (`X-Query-Tags` + `User-Agent`) and release-family watchlists for forward support planning.
 
 ## [1.0.20] - 2026-04-14
 

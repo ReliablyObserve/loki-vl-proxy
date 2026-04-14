@@ -289,6 +289,9 @@ These flags control Loki-compatible `query_range` split/merge execution with per
 | `-query-range-partial-responses` | — | `false` | Allow partial `query_range` responses on retryable backend failures |
 | `-query-range-background-warm` | — | `true` | Continue warming failed windows in background after a partial response |
 | `-query-range-background-warm-max-windows` | — | `24` | Cap background warm fanout after a partial response |
+| `-recent-tail-refresh-enabled` | — | `true` | Enable near-now stale-cache bypass for `query_range`, `index/volume`, and `index/volume_range` |
+| `-recent-tail-refresh-window` | — | `2m` | Treat requests ending within this window from `now` as near-now |
+| `-recent-tail-refresh-max-staleness` | — | `15s` | Maximum acceptable cache age for near-now requests before forcing a fresh backend fetch |
 
 ### Loki-Aligned Defaults
 
@@ -500,6 +503,9 @@ Operational notes:
 |---|---|---|---|
 | `-max-lines` | — | `1000` | Default max lines per query |
 | `-backend-timeout` | — | `120s` | Timeout for non-streaming VL backend requests |
+| `-backend-min-version` | — | `v1.30.0` | Minimum VictoriaLogs version considered fully supported at startup compatibility gate |
+| `-backend-allow-unsupported-version` | — | `false` | Allow startup when detected backend version is lower than `-backend-min-version` (unsafe override) |
+| `-backend-version-check-timeout` | — | `5s` | Timeout for startup backend version compatibility check (`/health`) |
 | `-stream-response` | — | `false` | Stream via chunked transfer |
 | `-response-compression` | — | `auto` | Response compression codec: `auto`, `gzip`, `zstd`, `none` |
 | `-response-gzip` | — | `true` | Deprecated compatibility switch; `false` disables response compression when `-response-compression` is unset |
@@ -522,6 +528,13 @@ Compression notes:
 - `-backend-compression=auto` advertises `zstd, gzip` upstream and the proxy safely decodes either on the way back.
 - current VictoriaLogs docs describe HTTP response compression in general terms, not a guaranteed `zstd` select-query path, so in practice many deployments will still observe `gzip` or identity from stock VictoriaLogs today.
 - Grafana `12.4.2` datasource proxy requests advertised `Accept-Encoding: deflate, gzip`, not `zstd`, in local verification, so `auto` will not magically turn standard Grafana datasource traffic into `zstd` today.
+
+Backend version gate notes:
+
+- On startup, proxy probes backend `/health` and inspects response headers for a VictoriaLogs semver.
+- If detected version is below `-backend-min-version`, startup is blocked by default.
+- Set `-backend-allow-unsupported-version=true` to bypass the gate at your own risk.
+- If version cannot be detected from headers, proxy logs a warning and continues startup.
 
 ## Built-In Protection Defaults
 

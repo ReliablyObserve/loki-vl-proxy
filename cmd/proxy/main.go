@@ -63,6 +63,9 @@ type proxyRuntimeConfig struct {
 	tenantLimitsJSON                   string
 	maxLines                           int
 	backendTimeout                     time.Duration
+	backendMinVersion                  string
+	backendAllowUnsupportedVersion     bool
+	backendVersionCheckTimeout         time.Duration
 	backendBasicAuth                   string
 	backendCompression                 string
 	backendTLSSkip                     bool
@@ -99,6 +102,9 @@ type proxyRuntimeConfig struct {
 	queryRangePartialResponses         bool
 	queryRangeBackgroundWarm           bool
 	queryRangeBackgroundWarmMaxWindows int
+	recentTailRefreshEnabled           bool
+	recentTailRefreshWindow            time.Duration
+	recentTailRefreshMaxStaleness      time.Duration
 	authEnabled                        bool
 	allowGlobalTenant                  bool
 	registerInstrumentation            *bool
@@ -335,6 +341,9 @@ func run(
 	// Grafana datasource compatibility
 	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
 	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend")
+	backendMinVersion := fs.String("backend-min-version", "v1.30.0", "Minimum VictoriaLogs version considered fully supported at startup")
+	backendAllowUnsupportedVersion := fs.Bool("backend-allow-unsupported-version", false, "Allow startup with backend versions lower than -backend-min-version (at your own risk)")
+	backendVersionCheckTimeout := fs.Duration("backend-version-check-timeout", 5*time.Second, "Timeout for startup backend version compatibility check")
 	backendBasicAuth := fs.String("backend-basic-auth", "", "Basic auth for VL backend (user:password)")
 	backendCompression := fs.String("backend-compression", "auto", "Backend HTTP compression preference: auto, gzip, zstd, none")
 	backendTLSSkip := fs.Bool("backend-tls-skip-verify", false, "Skip TLS verification for VL backend")
@@ -371,6 +380,9 @@ func run(
 	queryRangePartialResponses := fs.Bool("query-range-partial-responses", false, "Allow partial query_range responses on retryable backend failures")
 	queryRangeBackgroundWarm := fs.Bool("query-range-background-warm", true, "Warm failed query_range windows in background after partial response")
 	queryRangeBackgroundWarmMaxWindows := fs.Int("query-range-background-warm-max-windows", 24, "Maximum query_range windows warmed in background after partial response")
+	recentTailRefreshEnabled := fs.Bool("recent-tail-refresh-enabled", true, "Bypass stale near-now cache hits and fetch latest backend data while preserving historical cache")
+	recentTailRefreshWindow := fs.Duration("recent-tail-refresh-window", 2*time.Minute, "How close request end must be to now to enable near-now cache freshness bypass")
+	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 15*time.Second, "Maximum acceptable cache age for near-now requests before cache bypass")
 
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
@@ -492,6 +504,9 @@ func run(
 			tenantLimitsJSON:                   envCfg.tenantLimitsJSON,
 			maxLines:                           *maxLines,
 			backendTimeout:                     *backendTimeout,
+			backendMinVersion:                  *backendMinVersion,
+			backendAllowUnsupportedVersion:     *backendAllowUnsupportedVersion,
+			backendVersionCheckTimeout:         *backendVersionCheckTimeout,
 			backendBasicAuth:                   *backendBasicAuth,
 			backendCompression:                 resolvedBackendCompression,
 			backendTLSSkip:                     *backendTLSSkip,
@@ -528,6 +543,9 @@ func run(
 			queryRangePartialResponses:         *queryRangePartialResponses,
 			queryRangeBackgroundWarm:           *queryRangeBackgroundWarm,
 			queryRangeBackgroundWarmMaxWindows: *queryRangeBackgroundWarmMaxWindows,
+			recentTailRefreshEnabled:           *recentTailRefreshEnabled,
+			recentTailRefreshWindow:            *recentTailRefreshWindow,
+			recentTailRefreshMaxStaleness:      *recentTailRefreshMaxStaleness,
 			authEnabled:                        *authEnabled,
 			allowGlobalTenant:                  *allowGlobalTenant,
 			registerInstrumentation:            registerInstrumentation,
@@ -698,6 +716,11 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 		cacheCleanup()
 		compatCleanup()
 		return nil, fmt.Errorf("create proxy: %w", err)
+	}
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		cacheCleanup()
+		compatCleanup()
+		return nil, fmt.Errorf("backend compatibility gate: %w", err)
 	}
 	p.Init()
 
@@ -1188,6 +1211,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		TenantLimits:                       tenantLimits,
 		MaxLines:                           cfg.maxLines,
 		BackendTimeout:                     cfg.backendTimeout,
+		BackendMinVersion:                  cfg.backendMinVersion,
+		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
+		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,
 		BackendBasicAuth:                   cfg.backendBasicAuth,
 		BackendCompression:                 cfg.backendCompression,
 		BackendTLSSkip:                     cfg.backendTLSSkip,
@@ -1222,6 +1248,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		QueryRangePartialResponses:         cfg.queryRangePartialResponses,
 		QueryRangeBackgroundWarm:           cfg.queryRangeBackgroundWarm,
 		QueryRangeBackgroundWarmMaxWindows: cfg.queryRangeBackgroundWarmMaxWindows,
+		RecentTailRefreshEnabled:           cfg.recentTailRefreshEnabled,
+		RecentTailRefreshWindow:            cfg.recentTailRefreshWindow,
+		RecentTailRefreshMaxStaleness:      cfg.recentTailRefreshMaxStaleness,
 		AuthEnabled:                        cfg.authEnabled,
 		AllowGlobalTenant:                  cfg.allowGlobalTenant,
 		RegisterInstrumentation:            cfg.registerInstrumentation,

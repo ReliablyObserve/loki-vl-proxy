@@ -293,7 +293,7 @@ Operational note:
 - Grafana Loki query builder UI may tokenize dotted keys as `label=host`, `operator=.`, `value=id` for `host.id`. Query execution still works in code mode, but builder editing is safest with underscore aliases (`label-style=underscores`, `metadata-field-mode=translated`).
 - `extra-label-fields` can extend `/labels` and alias resolution for custom VL fields while keeping Loki-facing labels underscore-safe in conservative mode.
 
-Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Loki Compatibility](docs/compatibility-loki.md), [Logs Drilldown Compatibility](docs/compatibility-drilldown.md), [VictoriaLogs Compatibility](docs/compatibility-victorialogs.md)
+Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Loki Compatibility](docs/compatibility-loki.md), [Logs Drilldown Compatibility](docs/compatibility-drilldown.md), [Grafana Loki Datasource Compatibility](docs/compatibility-grafana-datasource.md), [VictoriaLogs Compatibility](docs/compatibility-victorialogs.md)
 
 ## LogQL Compatibility
 
@@ -348,6 +348,7 @@ See [Performance](docs/performance.md), [Fleet Cache](docs/fleet-cache.md), [Sca
 - [Compatibility Matrix](docs/compatibility-matrix.md)
 - [Loki Compatibility](docs/compatibility-loki.md)
 - [Logs Drilldown Compatibility](docs/compatibility-drilldown.md)
+- [Grafana Loki Datasource Compatibility](docs/compatibility-grafana-datasource.md)
 - [VictoriaLogs Compatibility](docs/compatibility-victorialogs.md)
 - [Translation Modes Guide](docs/translation-modes.md)
 - [Translation Reference](docs/translation-reference.md)

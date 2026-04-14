@@ -73,6 +73,9 @@ extraArgs:
   query-range-freshness: "10m"
   query-range-recent-cache-ttl: "0s"
   query-range-history-cache-ttl: "24h"
+  recent-tail-refresh-enabled: "true"
+  recent-tail-refresh-window: "2m"
+  recent-tail-refresh-max-staleness: "15s"
   # Long-range phase controls (defaults shown here; uncomment to override quickly):
   # query-range-prefilter-index-stats: "true"          # preflight /select/logsql/hits to skip empty windows
   # query-range-prefilter-min-windows: "8"             # prefilter engages only when split windows >= this threshold
@@ -84,6 +87,9 @@ extraArgs:
   # query-range-partial-responses: "false"             # return partial response on retryable backend failures
   # query-range-background-warm: "true"                # continue warming failed windows in background
   # query-range-background-warm-max-windows: "24"      # cap background warm fanout
+  # recent-tail-refresh-enabled: "true"                # bypass stale near-now cache hits and fetch latest backend data
+  # recent-tail-refresh-window: "2m"                   # only near-now ranges (end within window) are refreshed
+  # recent-tail-refresh-max-staleness: "15s"           # max near-now cache age before bypass
   # Indexed label-values browse cache (high-cardinality label UX).
   # Keep disabled by default; enable when label value lists are large and you
   # want hotset-first responses with optional offset/search.
@@ -92,6 +98,9 @@ extraArgs:
   label-values-index-max-entries: "200000"
   patterns-enabled: "true"
   patterns-autodetect-from-queries: "false"
+  backend-min-version: "v1.30.0"
+  backend-allow-unsupported-version: "false"
+  backend-version-check-timeout: "5s"
   log-level: "info"
   # Hardening
   http-read-timeout: "30s"
@@ -169,6 +178,9 @@ extraArgs:
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
   # compat-cache-max-percent: "10"              # Tier0 share of L1 cache budget (max 50)
   # backend-timeout: "120s"                     # upstream request timeout
+  # backend-min-version: "v1.30.0"              # startup minimum supported VictoriaLogs version
+  # backend-allow-unsupported-version: "false"  # allow older backend at your own risk
+  # backend-version-check-timeout: "5s"         # startup backend version check timeout
   # backend-tls-skip-verify: "false"
   # deployment-environment: ""                  # OTel deployment.environment.name
   # otel-service-name: "loki-vl-proxy"

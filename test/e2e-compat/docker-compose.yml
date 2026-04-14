@@ -27,7 +27,7 @@ services:
 
   # VictoriaLogs backend
   victorialogs:
-    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.49.0}
+    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.50.0}
     container_name: e2e-victorialogs
     ports:
       - "9428:9428"

@@ -54,6 +54,8 @@ var jsonBufPool = sync.Pool{
 	},
 }
 
+var backendSemverPattern = regexp.MustCompile(`v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?`)
+
 // marshalJSON encodes v to JSON using a pooled buffer, then writes to w.
 // Reduces allocations vs json.NewEncoder(w).Encode() by reusing buffers.
 func marshalJSON(w http.ResponseWriter, v interface{}) {
@@ -81,6 +83,7 @@ const (
 	origRequestKey
 	requestTelemetryKey
 	requestRouteMetaKey
+	requestGrafanaClientKey
 )
 
 type requestTelemetry struct {
@@ -104,6 +107,16 @@ type requestTelemetrySnapshot struct {
 type requestRouteMeta struct {
 	endpoint string
 	route    string
+}
+
+type grafanaClientProfile struct {
+	surface           string
+	sourceTag         string
+	version           string
+	runtimeMajor      int
+	runtimeFamily     string
+	drilldownProfile  string
+	datasourceProfile string
 }
 
 var upstreamRequestTypeByRoute = map[string]string{
@@ -199,6 +212,11 @@ func requestRouteMetaFromContext(ctx context.Context) requestRouteMeta {
 	return meta
 }
 
+func grafanaClientProfileFromContext(ctx context.Context) grafanaClientProfile {
+	profile, _ := ctx.Value(requestGrafanaClientKey).(grafanaClientProfile)
+	return profile
+}
+
 // withOrgID stores the X-Scope-OrgID and original request in the request context (request-scoped, no shared state).
 func withOrgID(r *http.Request) *http.Request {
 	ctx := r.Context()
@@ -258,8 +276,16 @@ type Config struct {
 	BackendCompression string            // upstream HTTP compression preference: auto, gzip, zstd, none
 	BackendTimeout     time.Duration     // bounded timeout for non-streaming backend requests
 	BackendTLSSkip     bool              // skip TLS verification for VL backend
-	DerivedFields      []DerivedField    // derived fields for trace/link extraction
-	StreamResponse     bool              // stream responses via chunked transfer (default: false)
+	// BackendMinVersion defines the minimum VictoriaLogs version considered
+	// fully supported at startup compatibility check time.
+	BackendMinVersion string
+	// BackendAllowUnsupportedVersion allows startup to continue when detected
+	// backend version is lower than BackendMinVersion. Use at your own risk.
+	BackendAllowUnsupportedVersion bool
+	// BackendVersionCheckTimeout bounds startup backend version checks.
+	BackendVersionCheckTimeout time.Duration
+	DerivedFields              []DerivedField // derived fields for trace/link extraction
+	StreamResponse             bool           // stream responses via chunked transfer (default: false)
 	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
 	// Disabled by default for conservative datasource compatibility.
 	EmitStructuredMetadata bool
@@ -298,6 +324,16 @@ type Config struct {
 	QueryRangePartialResponses         bool
 	QueryRangeBackgroundWarm           bool
 	QueryRangeBackgroundWarmMaxWindows int
+	// RecentTailRefreshEnabled enables near-now cache freshness bypass for selected endpoints.
+	// When enabled, stale cache hits near current time are bypassed so the proxy refetches
+	// latest data while still caching historical ranges.
+	RecentTailRefreshEnabled bool
+	// RecentTailRefreshWindow defines how close query end time must be to "now" to be
+	// considered near-now for freshness bypass.
+	RecentTailRefreshWindow time.Duration
+	// RecentTailRefreshMaxStaleness defines max acceptable cache age for near-now requests.
+	// Older cache hits are bypassed and recomputed.
+	RecentTailRefreshMaxStaleness time.Duration
 
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
@@ -435,6 +471,9 @@ type Proxy struct {
 	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
 	backendHeaders                        map[string]string // static headers on all VL requests
 	backendCompression                    string
+	backendMinVersion                     string
+	backendAllowUnsupportedVersion        bool
+	backendVersionCheckTimeout            time.Duration
 	derivedFields                         []DerivedField
 	streamResponse                        bool
 	emitStructuredMetadata                bool
@@ -486,6 +525,9 @@ type Proxy struct {
 	queryRangePartialResponses            bool
 	queryRangeBackgroundWarm              bool
 	queryRangeBackgroundWarmMaxWindows    int
+	recentTailRefreshEnabled              bool
+	recentTailRefreshWindow               time.Duration
+	recentTailRefreshMaxStaleness         time.Duration
 	labelRefreshGroup                     singleflight.Group
 	labelValuesIndexedCache               bool
 	labelValuesHotLimit                   int
@@ -507,6 +549,14 @@ type Proxy struct {
 	patternsSnapshotEntries               map[string]patternSnapshotEntry
 	patternsSnapshotPatternCount          int64
 	patternsSnapshotPayloadBytes          int64
+	backendVersionMu                      sync.RWMutex
+	backendVersionRaw                     string
+	backendVersionSemver                  string
+	backendCapabilityProfile              string
+	backendSupportsStreamMetadata         bool
+	backendSupportsDensePatternWindowing  bool
+	backendSupportsMetadataSubstring      bool
+	backendVersionLogged                  bool
 	labelValuesIndexWarmReady             atomic.Bool
 	labelValuesIndexPersistStarted        atomic.Bool
 	labelValuesIndexPersistDirty          atomic.Bool
@@ -698,6 +748,17 @@ func New(cfg Config) (*Proxy, error) {
 	if backendTimeout <= 0 {
 		backendTimeout = 120 * time.Second
 	}
+	backendMinVersion := normalizeSemverString(cfg.BackendMinVersion)
+	if backendMinVersion == "" {
+		backendMinVersion = "v1.30.0"
+	}
+	if _, _, _, ok := parseSemverTriplet(backendMinVersion); !ok {
+		return nil, fmt.Errorf("invalid backend minimum version %q", backendMinVersion)
+	}
+	backendVersionCheckTimeout := cfg.BackendVersionCheckTimeout
+	if backendVersionCheckTimeout <= 0 {
+		backendVersionCheckTimeout = 5 * time.Second
+	}
 	transport.ResponseHeaderTimeout = backendTimeout
 	transport.DisableCompression = false // accept gzip from VL if available
 	if cfg.BackendTLSSkip {
@@ -815,6 +876,14 @@ func New(cfg Config) (*Proxy, error) {
 	if queryRangeBackgroundWarmMaxWindows <= 0 {
 		queryRangeBackgroundWarmMaxWindows = 24
 	}
+	recentTailRefreshWindow := cfg.RecentTailRefreshWindow
+	if recentTailRefreshWindow <= 0 {
+		recentTailRefreshWindow = 2 * time.Minute
+	}
+	recentTailRefreshMaxStaleness := cfg.RecentTailRefreshMaxStaleness
+	if recentTailRefreshMaxStaleness <= 0 {
+		recentTailRefreshMaxStaleness = 15 * time.Second
+	}
 	tailMode := cfg.TailMode
 	if tailMode == "" {
 		tailMode = TailModeAuto
@@ -909,6 +978,9 @@ func New(cfg Config) (*Proxy, error) {
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
 		backendCompression:                    normalizeBackendCompression(cfg.BackendCompression),
+		backendMinVersion:                     backendMinVersion,
+		backendAllowUnsupportedVersion:        cfg.BackendAllowUnsupportedVersion,
+		backendVersionCheckTimeout:            backendVersionCheckTimeout,
 		derivedFields:                         cfg.DerivedFields,
 		streamResponse:                        cfg.StreamResponse,
 		emitStructuredMetadata:                cfg.EmitStructuredMetadata,
@@ -956,6 +1028,9 @@ func New(cfg Config) (*Proxy, error) {
 		queryRangePartialResponses:            cfg.QueryRangePartialResponses,
 		queryRangeBackgroundWarm:              cfg.QueryRangeBackgroundWarm,
 		queryRangeBackgroundWarmMaxWindows:    queryRangeBackgroundWarmMaxWindows,
+		recentTailRefreshEnabled:              cfg.RecentTailRefreshEnabled,
+		recentTailRefreshWindow:               recentTailRefreshWindow,
+		recentTailRefreshMaxStaleness:         recentTailRefreshMaxStaleness,
 		labelValuesIndexedCache:               cfg.LabelValuesIndexedCache,
 		labelValuesHotLimit:                   labelValuesHotLimit,
 		labelValuesIndexMaxEntries:            labelValuesIndexMaxEntries,
@@ -1636,15 +1711,17 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	cacheable := !p.streamResponse
 	if cacheable {
 		cacheKey = p.queryRangeCacheKey(r, logqlQuery)
-		if cached, ok := p.cache.Get(cacheKey); ok {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(cached)
-			elapsed := time.Since(start)
-			p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
-			p.metrics.RecordTupleMode(tupleMode)
-			p.metrics.RecordCacheHit()
-			p.queryTracker.Record("query_range", logqlQuery, elapsed, false)
-			return
+		if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+			if !p.shouldBypassRecentTailCache("query_range", remaining, r) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write(cached)
+				elapsed := time.Since(start)
+				p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+				p.metrics.RecordTupleMode(tupleMode)
+				p.metrics.RecordCacheHit()
+				p.queryTracker.Record("query_range", logqlQuery, elapsed, false)
+				return
+			}
 		}
 		p.metrics.RecordCacheMiss()
 	}
@@ -1999,20 +2076,22 @@ func (p *Proxy) fetchVLFieldValues(ctx context.Context, path string, params url.
 }
 
 func (p *Proxy) fetchPreferredLabelNames(ctx context.Context, params url.Values) ([]string, error) {
-	labels, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
-	if err == nil {
-		labels = appendUniqueStrings(labels, p.snapshotDeclaredLabelFields()...)
-		return labels, nil
-	}
-	if shouldFallbackToGenericMetadata(err) {
-		fallback, fallbackErr := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
-		if fallbackErr != nil {
-			return nil, fallbackErr
+	if p.supportsStreamMetadataEndpoints() {
+		labels, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
+		if err == nil {
+			labels = appendUniqueStrings(labels, p.snapshotDeclaredLabelFields()...)
+			return labels, nil
 		}
-		fallback = appendUniqueStrings(fallback, p.snapshotDeclaredLabelFields()...)
-		return fallback, nil
+		if !shouldFallbackToGenericMetadata(err) {
+			return nil, err
+		}
 	}
-	return nil, err
+	fallback, fallbackErr := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
+	if fallbackErr != nil {
+		return nil, fallbackErr
+	}
+	fallback = appendUniqueStrings(fallback, p.snapshotDeclaredLabelFields()...)
+	return fallback, nil
 }
 
 func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.Values) ([]string, error) {
@@ -2039,10 +2118,15 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 }
 
 func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string, params url.Values) ([]string, error) {
-	streamFields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
-	useStreamEndpoint := err == nil
-	if err != nil && !shouldFallbackToGenericMetadata(err) {
-		return nil, err
+	useStreamEndpoint := p.supportsStreamMetadataEndpoints()
+	streamFields := []string{}
+	if useStreamEndpoint {
+		var err error
+		streamFields, err = p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
+		useStreamEndpoint = err == nil
+		if err != nil && !shouldFallbackToGenericMetadata(err) {
+			return nil, err
+		}
 	}
 	streamFields = appendUniqueStrings(streamFields, p.snapshotDeclaredLabelFields()...)
 
@@ -2107,6 +2191,41 @@ func (p *Proxy) shouldRefreshLabelsInBackground(remaining, ttl time.Duration) bo
 	return remaining <= threshold
 }
 
+func (p *Proxy) requestEndsNearNow(r *http.Request) bool {
+	if p == nil || r == nil || p.recentTailRefreshWindow <= 0 {
+		return false
+	}
+	endRaw := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
+	if endRaw == "" {
+		// Loki defaults to "now" when end is omitted.
+		return true
+	}
+	endNs, ok := parseLokiTimeToUnixNano(endRaw)
+	if !ok {
+		return false
+	}
+	nowNs := time.Now().UnixNano()
+	if endNs > nowNs {
+		endNs = nowNs
+	}
+	return nowNs-endNs <= p.recentTailRefreshWindow.Nanoseconds()
+}
+
+func (p *Proxy) shouldBypassRecentTailCache(endpoint string, remaining time.Duration, r *http.Request) bool {
+	if p == nil || !p.recentTailRefreshEnabled {
+		return false
+	}
+	ttl := CacheTTLs[endpoint]
+	if ttl <= 0 || remaining <= 0 {
+		return false
+	}
+	cacheAge := ttl - remaining
+	if cacheAge < p.recentTailRefreshMaxStaleness {
+		return false
+	}
+	return p.requestEndsNearNow(r)
+}
+
 func (p *Proxy) labelBackgroundTimeout() time.Duration {
 	if p.client != nil && p.client.Timeout > 0 && p.client.Timeout < 10*time.Second {
 		return p.client.Timeout
@@ -2114,7 +2233,7 @@ func (p *Proxy) labelBackgroundTimeout() time.Duration {
 	return 10 * time.Second
 }
 
-func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end string) {
+func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, search string) {
 	refreshKey := "refresh:labels:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -2141,6 +2260,10 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end st
 			if strings.TrimSpace(end) != "" {
 				params.Set("end", end)
 			}
+			if search = strings.TrimSpace(search); search != "" && p.supportsMetadataSubstringFilter() {
+				params.Set("q", search)
+				params.Set("filter", "substring")
+			}
 
 			labels, fetchErr := p.fetchPreferredLabelNames(ctx, params)
 			if fetchErr != nil {
@@ -2165,7 +2288,7 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end st
 	}()
 }
 
-func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuery, start, end, limit string) {
+func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuery, start, end, limit, search string) {
 	refreshKey := "refresh:label_values:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -2202,6 +2325,10 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 				}
 				if strings.TrimSpace(limit) != "" {
 					params.Set("limit", limit)
+				}
+				if search = strings.TrimSpace(search); search != "" && p.supportsMetadataSubstringFilter() {
+					params.Set("q", search)
+					params.Set("filter", "substring")
 				}
 				values, fetchErr = p.fetchPreferredLabelValues(ctx, labelName, params)
 			}
@@ -3541,7 +3668,11 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
 		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["labels"]) {
-			p.refreshLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
+			search := strings.TrimSpace(r.FormValue("search"))
+			if search == "" {
+				search = strings.TrimSpace(r.FormValue("q"))
+			}
+			p.refreshLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), search)
 		}
 		return
 	}
@@ -3565,6 +3696,14 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	if e := r.FormValue("end"); e != "" {
 		params.Set("end", e)
+	}
+	search := strings.TrimSpace(r.FormValue("search"))
+	if search == "" {
+		search = strings.TrimSpace(r.FormValue("q"))
+	}
+	if search != "" && p.supportsMetadataSubstringFilter() {
+		params.Set("q", search)
+		params.Set("filter", "substring")
 	}
 
 	labels, err := p.fetchPreferredLabelNamesCached(r.Context(), params)
@@ -3650,6 +3789,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 				r.FormValue("start"),
 				r.FormValue("end"),
 				r.FormValue("limit"),
+				search,
 			)
 		}
 		return
@@ -3710,6 +3850,10 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 	if l := r.FormValue("limit"); l != "" {
 		params.Set("limit", l)
+	}
+	if search != "" && p.supportsMetadataSubstringFilter() {
+		params.Set("q", search)
+		params.Set("filter", "substring")
 	}
 
 	values, err := p.fetchPreferredLabelValues(r.Context(), labelName, params)
@@ -3943,14 +4087,16 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := "volume:" + orgID + ":" + r.URL.RawQuery
 	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(cached)
-		p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
-		p.metrics.RecordCacheHit()
-		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume"]) {
-			p.refreshVolumeCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("targetLabels"))
+		if !p.shouldBypassRecentTailCache("volume", remaining, r) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(cached)
+			p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
+			p.metrics.RecordCacheHit()
+			if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume"]) {
+				p.refreshVolumeCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("targetLabels"))
+			}
+			return
 		}
-		return
 	}
 	p.metrics.RecordCacheMiss()
 
@@ -4044,14 +4190,16 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := "volume_range:" + orgID + ":" + r.URL.RawQuery
 	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(cached)
-		p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
-		p.metrics.RecordCacheHit()
-		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume_range"]) {
-			p.refreshVolumeRangeCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"), r.FormValue("targetLabels"))
+		if !p.shouldBypassRecentTailCache("volume_range", remaining, r) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(cached)
+			p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
+			p.metrics.RecordCacheHit()
+			if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume_range"]) {
+				p.refreshVolumeRangeCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"), r.FormValue("targetLabels"))
+			}
+			return
 		}
-		return
 	}
 	p.metrics.RecordCacheMiss()
 
@@ -4441,36 +4589,26 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			return entries, true
 		}
 
+		if endpoint == "/select/logsql/query_range" {
+			startNs, endNs, splitInterval, perWindowLimit, ok := patternWindowedSamplingConfig(startParam, endParam, stepParam, sourceLimit, p.supportsDensePatternWindowingForRequest(r))
+			if ok {
+				windows := splitQueryRangeWindowsWithOptions(startNs, endNs, splitInterval, "backward", true)
+				if len(windows) > 1 {
+					windowEntries, windowSuccesses := p.fetchPatternsFromWindows(r, logsqlQuery, sourceLimit, perWindowLimit, windows, stepParam, patternLimit)
+					if windowSuccesses > 0 && len(windowEntries) > 0 {
+						// Prefer distributed stratified windows so dense ranges keep full-range
+						// visibility instead of collapsing to a recent-tail sample.
+						return windowEntries, true
+					}
+				}
+			}
+		}
+
 		entries, ok := fetchFromParams(params)
 		if !ok {
 			return nil, false
 		}
-		if endpoint != "/select/logsql/query_range" {
-			return entries, true
-		}
-
-		startNs, endNs, splitInterval, perWindowLimit, ok := patternWindowedSamplingConfig(startParam, endParam, sourceLimit)
-		if !ok {
-			return entries, true
-		}
-		windows := splitQueryRangeWindowsWithOptions(startNs, endNs, splitInterval, "backward", true)
-		if len(windows) <= 1 {
-			return entries, true
-		}
-
-		merged := entries
-		for _, window := range windows {
-			windowParams := cloneURLValues(params)
-			windowParams.Set("start", strconv.FormatInt(window.startNs, 10))
-			windowParams.Set("end", strconv.FormatInt(window.endNs, 10))
-			windowParams.Set("limit", strconv.Itoa(perWindowLimit))
-			windowEntries, ok := fetchFromParams(windowParams)
-			if !ok {
-				continue
-			}
-			merged = mergePatternResultEntries(merged, windowEntries)
-		}
-		return merged, true
+		return entries, true
 	}
 
 	// Prefer query_range to preserve full selected-range buckets in Drilldown graphs.
@@ -4506,6 +4644,107 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(resultBody)
 	p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
+}
+
+func (p *Proxy) fetchPatternsFromWindows(
+	r *http.Request,
+	logsqlQuery string,
+	sourceLimit int,
+	perWindowLimit int,
+	windows []queryRangeWindow,
+	stepParam string,
+	patternLimit int,
+) ([]patternResultEntry, int) {
+	if len(windows) == 0 {
+		return nil, 0
+	}
+	if perWindowLimit <= 0 {
+		perWindowLimit = 1
+	}
+	effectiveLimit := perWindowLimit
+	if sourceLimit > 0 && sourceLimit < effectiveLimit {
+		effectiveLimit = sourceLimit
+	}
+
+	maxParallel := min(8, max(1, p.queryRangeWindowParallelLimit()))
+	if maxParallel > len(windows) {
+		maxParallel = len(windows)
+	}
+
+	sem := make(chan struct{}, maxParallel)
+	var wg sync.WaitGroup
+
+	baseParams := url.Values{}
+	baseParams.Set("query", logsqlQuery)
+	if s := strings.TrimSpace(stepParam); s != "" {
+		baseParams.Set("step", formatVLStep(s))
+	}
+
+	collected := make([]patternResultEntry, 0, len(windows))
+	successes := 0
+	var mu sync.Mutex
+
+	for _, window := range windows {
+		window := window
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case <-r.Context().Done():
+				return
+			case sem <- struct{}{}:
+			}
+			defer func() { <-sem }()
+
+			params := cloneURLValues(baseParams)
+			params.Set("start", strconv.FormatInt(window.startNs, 10))
+			params.Set("end", strconv.FormatInt(window.endNs, 10))
+			params.Set("limit", strconv.Itoa(effectiveLimit))
+			resp, err := p.vlPost(r.Context(), "/select/logsql/query_range", params)
+			if err != nil {
+				p.log.Debug(
+					"patterns window fetch failed",
+					"start_ns", window.startNs,
+					"end_ns", window.endNs,
+					"error", err,
+				)
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode >= http.StatusBadRequest {
+				p.log.Debug(
+					"patterns window fetch non-success status",
+					"start_ns", window.startNs,
+					"end_ns", window.endNs,
+					"status_code", resp.StatusCode,
+				)
+				return
+			}
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return
+			}
+			extracted := extractLogPatterns(body, stepParam, patternLimit)
+			if len(extracted) == 0 {
+				return
+			}
+			entries := patternResultEntriesFromMaps(extracted)
+			if len(entries) == 0 {
+				return
+			}
+
+			mu.Lock()
+			successes++
+			collected = mergePatternResultEntries(collected, entries)
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	if len(collected) == 0 {
+		return nil, successes
+	}
+	return collected, successes
 }
 
 func patternScopeQuery(query string) string {
@@ -4642,25 +4881,38 @@ func derivePatternStep(startParam, endParam string) string {
 	return strconv.FormatInt(stepSeconds, 10) + "s"
 }
 
-func patternWindowedSamplingConfig(startParam, endParam string, sourceLimit int) (int64, int64, time.Duration, int, bool) {
+func patternWindowedSamplingConfig(startParam, endParam, stepParam string, sourceLimit int, denseWindowing bool) (int64, int64, time.Duration, int, bool) {
 	startNs, endNs, ok := parseLokiTimeRangeToUnixNano(startParam, endParam)
 	if !ok || sourceLimit <= 0 || endNs <= startNs {
 		return 0, 0, 0, 0, false
 	}
 
 	span := time.Duration(endNs - startNs)
-	const (
-		minWindowedSpan         = 30 * time.Minute
-		targetWindowSpan        = 15 * time.Minute
-		minWindowSourceLimit    = 500
-		maxWindowSourceLimit    = 10_000
-		maxPatternWindowSamples = 24
-	)
+	minWindowedSpan := 20 * time.Minute
+	targetWindowSpan := 20 * time.Minute
+	minWindowSourceLimit := 200
+	maxWindowSourceLimit := 1_000
+	maxPatternWindowSamples := 96
+	if denseWindowing {
+		targetWindowSpan = 10 * time.Minute
+		minWindowSourceLimit = 100
+		maxWindowSourceLimit = 2_000
+		maxPatternWindowSamples = 240
+	}
 	if span < minWindowedSpan {
 		return 0, 0, 0, 0, false
 	}
 
 	windowCount := int(span/targetWindowSpan) + 1
+	if stepSeconds := parsePatternStepSeconds(stepParam); stepSeconds > 0 {
+		stepNs := stepSeconds * int64(time.Second)
+		if stepNs > 0 {
+			stepBasedCount := int(((endNs - startNs) / stepNs) + 1)
+			if stepBasedCount > windowCount {
+				windowCount = stepBasedCount
+			}
+		}
+	}
 	if windowCount < 2 {
 		windowCount = 2
 	}
@@ -5094,7 +5346,11 @@ func (p *Proxy) handleFormatQuery(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) handleDrilldownLimits(w http.ResponseWriter, r *http.Request) {
 	patternIngesterEnabled := p.patternsEnabled && p.patternsAutodetectFromQueries
 	limits := p.publishedTenantLimits(r)
-	p.writeJSON(w, map[string]interface{}{
+	profile := grafanaClientProfileFromContext(r.Context())
+	if profile.surface == "" {
+		profile = detectGrafanaClientProfile(r, "drilldown_limits", "/loki/api/v1/drilldown-limits")
+	}
+	resp := map[string]interface{}{
 		"limits":                   limits,
 		"pattern_ingester_enabled": patternIngesterEnabled,
 		"version":                  "unknown",
@@ -5102,7 +5358,23 @@ func (p *Proxy) handleDrilldownLimits(w http.ResponseWriter, r *http.Request) {
 		"maxDetectedValues":        1000,
 		"maxLabelValues":           1000,
 		"maxLines":                 p.maxLines,
-	})
+	}
+	if profile.surface != "" && profile.surface != "unknown" {
+		resp["grafana_client_surface"] = profile.surface
+	}
+	if profile.version != "" {
+		resp["grafana_runtime_version"] = profile.version
+	}
+	if profile.runtimeFamily != "" {
+		resp["grafana_runtime_family"] = profile.runtimeFamily
+	}
+	if profile.drilldownProfile != "" {
+		resp["drilldown_profile"] = profile.drilldownProfile
+	}
+	if profile.datasourceProfile != "" {
+		resp["grafana_datasource_profile"] = profile.datasourceProfile
+	}
+	p.writeJSON(w, resp)
 }
 
 func (p *Proxy) publishedTenantLimits(r *http.Request) map[string]any {
@@ -6174,6 +6446,278 @@ func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, r
 	p.log.Log(ctx, level, "upstream_request", logAttrs...)
 }
 
+func (p *Proxy) observeBackendVersionFromHeaders(headers http.Header) {
+	if headers == nil {
+		return
+	}
+	candidates := []string{
+		headers.Get("Server"),
+		headers.Get("X-App-Version"),
+		headers.Get("X-Backend-Version"),
+		headers.Get("X-Victoriametrics-Build"),
+	}
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		semver := extractBackendSemver(candidate)
+		if semver == "" {
+			continue
+		}
+		p.storeBackendVersion(candidate, semver)
+		return
+	}
+}
+
+func extractBackendSemver(raw string) string {
+	return backendSemverPattern.FindString(raw)
+}
+
+func parseSemverTriplet(version string) (int, int, int, bool) {
+	version = strings.TrimSpace(strings.TrimPrefix(version, "v"))
+	if version == "" {
+		return 0, 0, 0, false
+	}
+	parts := strings.Split(version, ".")
+	if len(parts) < 3 {
+		return 0, 0, 0, false
+	}
+	major, err := strconv.Atoi(numericPrefix(parts[0]))
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	minor, err := strconv.Atoi(numericPrefix(parts[1]))
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	patch, err := strconv.Atoi(numericPrefix(parts[2]))
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	return major, minor, patch, true
+}
+
+func normalizeSemverString(version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return ""
+	}
+	if version[0] >= '0' && version[0] <= '9' {
+		return "v" + version
+	}
+	return version
+}
+
+func numericPrefix(in string) string {
+	in = strings.TrimSpace(in)
+	if in == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range in {
+		if r < '0' || r > '9' {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
+}
+
+func semverAtLeastSemver(version, minVersion string) bool {
+	vMaj, vMin, vPatch, vok := parseSemverTriplet(version)
+	mMaj, mMin, mPatch, mok := parseSemverTriplet(minVersion)
+	if !vok || !mok {
+		return false
+	}
+	if vMaj != mMaj {
+		return vMaj > mMaj
+	}
+	if vMin != mMin {
+		return vMin > mMin
+	}
+	return vPatch >= mPatch
+}
+
+func semverAtLeast(semver string, major, minor, patch int) bool {
+	mj, mn, pt, ok := parseSemverTriplet(semver)
+	if !ok {
+		return false
+	}
+	if mj != major {
+		return mj > major
+	}
+	if mn != minor {
+		return mn > minor
+	}
+	return pt >= patch
+}
+
+func deriveBackendCapabilities(semver string) (profile string, supportsStreamMetadata bool, supportsDensePatternWindowing bool, supportsMetadataSubstring bool) {
+	switch {
+	case semverAtLeast(semver, 1, 50, 0):
+		return "vl-v1.50-plus", true, true, true
+	case semverAtLeast(semver, 1, 49, 0):
+		return "vl-v1.49-plus", true, false, true
+	case semverAtLeast(semver, 1, 30, 0):
+		return "vl-v1.30-plus", true, false, false
+	default:
+		return "legacy-pre-v1.30", false, false, false
+	}
+}
+
+func (p *Proxy) storeBackendVersion(raw, semver string) {
+	if semver == "" {
+		return
+	}
+	p.backendVersionMu.Lock()
+	defer p.backendVersionMu.Unlock()
+	// Keep first detected version to avoid churn from intermediaries rewriting headers.
+	if p.backendVersionSemver != "" {
+		return
+	}
+	profile, supportsStreamMetadata, supportsDensePatternWindowing, supportsMetadataSubstring := deriveBackendCapabilities(semver)
+	p.backendVersionRaw = raw
+	p.backendVersionSemver = semver
+	p.backendCapabilityProfile = profile
+	p.backendSupportsStreamMetadata = supportsStreamMetadata
+	p.backendSupportsDensePatternWindowing = supportsDensePatternWindowing
+	p.backendSupportsMetadataSubstring = supportsMetadataSubstring
+	if !p.backendVersionLogged {
+		p.backendVersionLogged = true
+		p.log.Info(
+			"backend version detected",
+			"backend.version.raw", raw,
+			"backend.version.semver", semver,
+			"backend.capability_profile", p.backendCapabilityProfile,
+			"metadata.stream_endpoints", p.backendSupportsStreamMetadata,
+			"metadata.substring_filter", p.backendSupportsMetadataSubstring,
+			"patterns.dense_windowing", p.backendSupportsDensePatternWindowing,
+		)
+	}
+}
+
+func (p *Proxy) supportsStreamMetadataEndpoints() bool {
+	p.backendVersionMu.RLock()
+	defer p.backendVersionMu.RUnlock()
+	// Before first backend version observation, optimistically keep stream-first
+	// behavior so we don't regress newer deployments.
+	if p.backendVersionSemver == "" {
+		return true
+	}
+	return p.backendSupportsStreamMetadata
+}
+
+func (p *Proxy) supportsDensePatternWindowing() bool {
+	p.backendVersionMu.RLock()
+	defer p.backendVersionMu.RUnlock()
+	return p.backendSupportsDensePatternWindowing
+}
+
+func (p *Proxy) supportsDensePatternWindowingForRequest(r *http.Request) bool {
+	if !p.supportsDensePatternWindowing() {
+		return false
+	}
+	if r == nil {
+		return true
+	}
+	profile := grafanaClientProfileFromContext(r.Context())
+	// Keep legacy Drilldown runtime family on conservative windowing even when backend
+	// can do denser extraction. This mirrors 1.x behavior and avoids over-rendering
+	// surprises on older Grafana runtimes.
+	if profile.surface == "grafana_drilldown" && profile.runtimeMajor > 0 && profile.runtimeMajor < 12 {
+		return false
+	}
+	return true
+}
+
+func (p *Proxy) supportsMetadataSubstringFilter() bool {
+	p.backendVersionMu.RLock()
+	defer p.backendVersionMu.RUnlock()
+	return p.backendSupportsMetadataSubstring
+}
+
+func (p *Proxy) backendVersionState() (raw, semver, profile string) {
+	p.backendVersionMu.RLock()
+	defer p.backendVersionMu.RUnlock()
+	return p.backendVersionRaw, p.backendVersionSemver, p.backendCapabilityProfile
+}
+
+// ValidateBackendVersionCompatibility checks backend version support at startup.
+// It blocks startup only when a detected backend version is below the configured
+// minimum and the unsafe override is not enabled.
+func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
+	if p == nil {
+		return nil
+	}
+	timeout := p.backendVersionCheckTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	resp, err := p.vlGet(checkCtx, "/health", nil)
+	if err != nil {
+		p.log.Warn(
+			"backend version compatibility check skipped",
+			"reason", "health probe failed",
+			"error", err,
+			"minimum_supported_version", p.backendMinVersion,
+		)
+		return nil
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		p.log.Warn(
+			"backend version compatibility check skipped",
+			"reason", "health probe returned non-success status",
+			"http.response.status_code", resp.StatusCode,
+			"minimum_supported_version", p.backendMinVersion,
+		)
+		return nil
+	}
+
+	raw, semver, profile := p.backendVersionState()
+	if semver == "" {
+		p.log.Warn(
+			"backend version compatibility check unavailable",
+			"reason", "backend did not expose version in response headers",
+			"minimum_supported_version", p.backendMinVersion,
+		)
+		return nil
+	}
+	if !semverAtLeastSemver(semver, p.backendMinVersion) {
+		if p.backendAllowUnsupportedVersion {
+			p.log.Warn(
+				"unsupported backend version allowed by override",
+				"backend.version.raw", raw,
+				"backend.version.semver", semver,
+				"backend.capability_profile", profile,
+				"minimum_supported_version", p.backendMinVersion,
+				"flag", "backend-allow-unsupported-version",
+			)
+			return nil
+		}
+		return fmt.Errorf(
+			"detected backend version %s (%s) is below minimum supported %s; compatibility may be incomplete. Set -backend-allow-unsupported-version=true to bypass at your own risk",
+			semver,
+			raw,
+			p.backendMinVersion,
+		)
+	}
+
+	p.log.Info(
+		"backend version compatibility check passed",
+		"backend.version.raw", raw,
+		"backend.version.semver", semver,
+		"backend.capability_profile", profile,
+		"minimum_supported_version", p.backendMinVersion,
+	)
+	return nil
+}
+
 func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	if !p.breaker.Allow() {
 		return nil, fmt.Errorf("circuit breaker open — backend unavailable")
@@ -6203,6 +6747,7 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 		}
 		return nil, err
 	}
+	p.observeBackendVersionFromHeaders(resp.Header)
 	if err := decodeCompressedHTTPResponse(resp); err != nil {
 		_ = resp.Body.Close()
 		recordUpstreamCall(ctx, http.StatusBadGateway, duration, true)
@@ -6245,6 +6790,7 @@ func (p *Proxy) vlPost(ctx context.Context, path string, params url.Values) (*ht
 		}
 		return nil, err
 	}
+	p.observeBackendVersionFromHeaders(resp.Header)
 	if err := decodeCompressedHTTPResponse(resp); err != nil {
 		_ = resp.Body.Close()
 		recordUpstreamCall(ctx, http.StatusBadGateway, duration, true)
@@ -8885,6 +9431,19 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 		clientID, clientSource := metrics.ResolveClientContext(origReq, p.metricsTrustProxyHeaders)
 		vlReq.Header.Set("X-Loki-VL-Client-ID", clientID)
 		vlReq.Header.Set("X-Loki-VL-Client-Source", clientSource)
+		gp := grafanaClientProfileFromContext(origReq.Context())
+		if gp.surface != "" {
+			vlReq.Header.Set("X-Loki-VL-Grafana-Surface", gp.surface)
+		}
+		if gp.version != "" {
+			vlReq.Header.Set("X-Loki-VL-Grafana-Version", gp.version)
+		}
+		if gp.runtimeFamily != "" {
+			vlReq.Header.Set("X-Loki-VL-Grafana-Runtime-Family", gp.runtimeFamily)
+		}
+		if gp.drilldownProfile != "" {
+			vlReq.Header.Set("X-Loki-VL-Drilldown-Profile", gp.drilldownProfile)
+		}
 		if authUser, authSource := metrics.ResolveAuthContext(origReq); authUser != "" {
 			vlReq.Header.Set("X-Loki-VL-Auth-User", authUser)
 			vlReq.Header.Set("X-Loki-VL-Auth-Source", authSource)
@@ -9031,6 +9590,8 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		rt := newRequestTelemetry()
 		ctx := context.WithValue(r.Context(), requestTelemetryKey, rt)
 		ctx = context.WithValue(ctx, requestRouteMetaKey, requestRouteMeta{endpoint: endpoint, route: route})
+		grafanaProfile := detectGrafanaClientProfile(r, endpoint, route)
+		ctx = context.WithValue(ctx, requestGrafanaClientKey, grafanaProfile)
 		reqWithTelemetry := r.WithContext(ctx)
 		sc := &statusCapture{ResponseWriter: w, code: 200}
 		next.ServeHTTP(sc, reqWithTelemetry)
@@ -9081,6 +9642,9 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		authUser, authSource := metrics.ResolveAuthContext(r)
 		clientAddr := forwardedClientAddress(r, p.metricsTrustProxyHeaders)
 		peerAddr, _ := splitHostPortValue(r.RemoteAddr)
+		grafanaSurface := grafanaProfile.surface
+		grafanaSourceTag := grafanaProfile.sourceTag
+		grafanaVersion := grafanaProfile.version
 		logAttrs := []interface{}{
 			"http.route", route,
 			"url.path", r.URL.Path,
@@ -9111,6 +9675,24 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		if userAgent := strings.TrimSpace(r.Header.Get("User-Agent")); userAgent != "" {
 			logAttrs = append(logAttrs, "user_agent.original", userAgent)
 		}
+		if grafanaVersion != "" {
+			logAttrs = append(logAttrs, "grafana.version", grafanaVersion)
+		}
+		if grafanaSourceTag != "" {
+			logAttrs = append(logAttrs, "grafana.client.source_tag", grafanaSourceTag)
+		}
+		if grafanaSurface != "unknown" {
+			logAttrs = append(logAttrs, "grafana.client.surface", grafanaSurface)
+		}
+		if grafanaProfile.runtimeFamily != "" {
+			logAttrs = append(logAttrs, "grafana.runtime.family", grafanaProfile.runtimeFamily)
+		}
+		if grafanaProfile.drilldownProfile != "" {
+			logAttrs = append(logAttrs, "grafana.drilldown.profile", grafanaProfile.drilldownProfile)
+		}
+		if grafanaProfile.datasourceProfile != "" {
+			logAttrs = append(logAttrs, "grafana.datasource.profile", grafanaProfile.datasourceProfile)
+		}
 		if enduserName := deriveEnduserName(clientID, clientSource); enduserName != "" {
 			logAttrs = append(logAttrs, "enduser.name", enduserName)
 		}
@@ -9129,6 +9711,135 @@ func truncateQuery(q string, maxLen int) string {
 		return q
 	}
 	return q[:maxLen] + "..."
+}
+
+func detectGrafanaClientProfile(r *http.Request, endpoint, route string) grafanaClientProfile {
+	version := parseGrafanaVersionFromUserAgent(r.Header.Get("User-Agent"))
+	sourceTag := parseGrafanaSourceTag(r.Header.Values("X-Query-Tags"))
+	surface := "unknown"
+
+	sourceLower := strings.ToLower(sourceTag)
+	switch {
+	case strings.Contains(sourceLower, "lokiexplore"), strings.Contains(sourceLower, "drilldown"):
+		surface = "grafana_drilldown"
+	case strings.Contains(sourceLower, "loki"):
+		surface = "grafana_loki_datasource"
+	}
+
+	// Fallback: infer surface from endpoint family when request is known to come from Grafana.
+	if surface == "unknown" && version != "" {
+		switch endpoint {
+		case "patterns", "detected_fields", "detected_labels", "volume", "volume_range", "drilldown_limits":
+			surface = "grafana_drilldown"
+		default:
+			if strings.HasPrefix(route, "/loki/api/") {
+				surface = "grafana_loki_datasource"
+			}
+		}
+	}
+
+	major := parseGrafanaRuntimeMajor(version)
+	runtimeFamily := ""
+	switch {
+	case major >= 12:
+		runtimeFamily = "12.x+"
+	case major == 11:
+		runtimeFamily = "11.x"
+	case major > 0:
+		runtimeFamily = strconv.Itoa(major) + ".x"
+	}
+
+	drilldownProfile := ""
+	if surface == "grafana_drilldown" {
+		switch {
+		case major >= 12:
+			drilldownProfile = "drilldown-v2"
+		case major == 11:
+			drilldownProfile = "drilldown-v1"
+		}
+	}
+
+	datasourceProfile := ""
+	if surface == "grafana_loki_datasource" {
+		switch {
+		case major >= 12:
+			datasourceProfile = "grafana-datasource-v12"
+		case major == 11:
+			datasourceProfile = "grafana-datasource-v11"
+		}
+	}
+
+	return grafanaClientProfile{
+		surface:           surface,
+		sourceTag:         sourceTag,
+		version:           version,
+		runtimeMajor:      major,
+		runtimeFamily:     runtimeFamily,
+		drilldownProfile:  drilldownProfile,
+		datasourceProfile: datasourceProfile,
+	}
+}
+
+func parseGrafanaSourceTag(values []string) string {
+	for _, raw := range values {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			key, val, ok := strings.Cut(part, "=")
+			if !ok {
+				continue
+			}
+			if !strings.EqualFold(strings.TrimSpace(key), "source") {
+				continue
+			}
+			clean := strings.Trim(strings.TrimSpace(val), `"`)
+			if clean != "" {
+				return clean
+			}
+		}
+	}
+	return ""
+}
+
+func parseGrafanaVersionFromUserAgent(userAgent string) string {
+	userAgent = strings.TrimSpace(userAgent)
+	if userAgent == "" {
+		return ""
+	}
+	lower := strings.ToLower(userAgent)
+	idx := strings.Index(lower, "grafana/")
+	if idx < 0 {
+		return ""
+	}
+	rest := userAgent[idx+len("grafana/"):]
+	end := 0
+	for end < len(rest) {
+		ch := rest[end]
+		if (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '.' || ch == '-' {
+			end++
+			continue
+		}
+		break
+	}
+	version := strings.Trim(rest[:end], ".-")
+	return version
+}
+
+func parseGrafanaRuntimeMajor(version string) int {
+	if version == "" {
+		return 0
+	}
+	majorPart := version
+	if idx := strings.IndexByte(majorPart, '.'); idx >= 0 {
+		majorPart = majorPart[:idx]
+	}
+	major, err := strconv.Atoi(majorPart)
+	if err != nil {
+		return 0
+	}
+	return major
 }
 
 func deriveEnduserName(clientID, clientSource string) string {
