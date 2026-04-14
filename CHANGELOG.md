@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-04-14
+
 ### Features
 
 - patterns: support static custom pattern overlays via inline JSON/text (`-patterns-custom`) and file-backed input (`-patterns-custom-file`) for deterministic Drilldown pattern suggestions
