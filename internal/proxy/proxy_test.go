@@ -1045,6 +1045,58 @@ func TestContract_PatternHelpers_ParseAndLimitPayload(t *testing.T) {
 	}
 }
 
+func TestContract_PatternsCacheKey_NormalizesRelativeRangeBoundaries(t *testing.T) {
+	p := newTestProxy(t, "http://127.0.0.1:65535")
+
+	key := p.patternsAutodetectCacheKey("org-a", `{app="web"}`, "now-1h", "now", "60s")
+	if key == "" {
+		t.Fatal("expected non-empty patterns cache key")
+	}
+	if strings.Contains(key, "now-1h") || strings.Contains(key, "now") {
+		t.Fatalf("expected normalized numeric boundaries in patterns cache key, got %q", key)
+	}
+}
+
+func TestContract_Patterns_FillsSamplesAcrossRequestedRange(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		// Only one line near range end. Handler should fill full range buckets with zeros.
+		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:04:58Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(
+		"GET",
+		"/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=2026-04-04T10:00:00Z&end=2026-04-04T10:05:00Z&step=60s&limit=1",
+		nil,
+	)
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp patternsResponse
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected one pattern, got %v", resp.Data)
+	}
+	samples := resp.Data[0].Samples
+	if len(samples) != 6 {
+		t.Fatalf("expected six 60s buckets across selected range, got %d samples: %v", len(samples), samples)
+	}
+	firstTS, okFirst := numberToInt64(samples[0][0])
+	lastTS, okLast := numberToInt64(samples[len(samples)-1][0])
+	if !okFirst || !okLast {
+		t.Fatalf("expected numeric sample timestamps, got first=%v last=%v", samples[0], samples[len(samples)-1])
+	}
+	if firstTS != 1775296800 || lastTS != 1775297100 {
+		t.Fatalf("expected filled start/end buckets 1775296800..1775297100, got %d..%d", firstTS, lastTS)
+	}
+}
+
 func TestContract_Patterns_CustomPatternsPrepended(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
