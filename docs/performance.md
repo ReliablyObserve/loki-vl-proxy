@@ -157,7 +157,7 @@ Tier0 is most valuable on metadata-style and Drilldown-style endpoints where the
 
 | Load (req/s) | CPU (est.) | Memory | Notes |
 |---|---|---|---|
-| 100 | <1% | ~10 MB | Idle, mostly cache hits |
+| 100 | &lt;1% | ~10 MB | Idle, mostly cache hits |
 | 1,000 | ~8% | ~20 MB | Mixed cache hit/miss |
 | 10,000 | ~30% | ~50 MB | Backend-bound |
 | 30,000+ | ~100% | ~100 MB | CPU-bound, scale horizontally |
@@ -166,7 +166,7 @@ Tier0 is most valuable on metadata-style and Drilldown-style endpoints where the
 
 Under sustained load (10K requests, no cache):
 - Total allocation: ~70 KB/request (GC reclaims between requests)
-- Live heap growth: **<1 MB** (no leak)
+- Live heap growth: **&lt;1 MB** (no leak)
 - GC handles ~200 cycles per 10K requests
 
 1000-line NDJSON body (700 bytes/line, 700 KB input): **1.2 MB allocated** total.
@@ -184,7 +184,7 @@ Under sustained load (10K requests, no cache):
 | `TestOptimization_ConnectionPool_HighConcurrency` | 200 concurrent, 0 errors (port exhaustion regression) |
 | `TestOptimization_FormatVLStep` | VL step format conversion (8 cases) |
 | `TestOptimization_VLLogsToLokiStreams_ValidJSON` | 100-line output produces valid parseable JSON |
-| `TestOptimization_NoMemoryLeak_SustainedLoad` | <200 KB/req allocation after 10K requests |
+| `TestOptimization_NoMemoryLeak_SustainedLoad` | &lt;200 KB/req allocation after 10K requests |
 | `TestOptimization_LargeBody_GCPressure` | 1000-line body within allocation budget |
 | `TestLoad_NoCache_ScalingProfile` | 3 concurrency tiers, 0 errors |
 | `TestLoad_WithCache_ScalingProfile` | Same tiers with cache enabled |

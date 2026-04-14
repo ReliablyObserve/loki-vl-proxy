@@ -1,5 +1,12 @@
 # Loki-VL-proxy
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="website/static/img/loki-vl-proxy-logo-white.jpg">
+    <img src="website/static/img/loki-vl-proxy-logo-black.jpg" alt="Loki-VL-proxy marketing logo" width="340">
+  </picture>
+</p>
+
 [![CI](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/ci.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/ci.yaml)
 [![Loki Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-loki.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-loki.yaml)
 [![Drilldown Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-drilldown.yaml)
@@ -16,6 +23,8 @@
 Use **Grafana Loki clients** with **VictoriaLogs** through a **Loki-compatible read proxy**.
 
 No custom Grafana datasource plugin. No sidecar translation service. One small static binary.
+
+Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
 
 ## Why Teams Use It
 

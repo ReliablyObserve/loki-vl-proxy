@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://reliablyobserve.github.io/Loki-VL-proxy/sitemap.xml

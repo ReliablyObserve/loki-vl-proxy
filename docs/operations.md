@@ -227,7 +227,7 @@ The proxy exposes Prometheus metrics at `/metrics`:
 ### Key Ratios to Monitor
 
 - **Route cache hit ratio**: `cache_hits_by_endpoint / (cache_hits_by_endpoint + cache_misses_by_endpoint)` by `endpoint,route` — target >80% on stable metadata paths
-- **Downstream error rate**: `requests_total{system="loki",direction="downstream",status=~"5.."}` over total downstream requests — target <1%
+- **Downstream error rate**: `requests_total{system="loki",direction="downstream",status=~"5.."}` over total downstream requests — target &lt;1%
 - **Upstream latency**: `backend_duration_seconds` by `endpoint,route` — use this to separate VictoriaLogs slowness from proxy-side work
 - **End-to-end latency**: `request_duration_seconds{system="loki",direction="downstream"}` by `endpoint,route` — compare with upstream latency and request logs
 

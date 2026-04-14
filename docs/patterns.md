@@ -46,8 +46,8 @@ Loki behavior reference:
 
 References:
 
-- Loki HTTP API patterns endpoint: <https://grafana.com/docs/loki/latest/reference/loki-http-api/#patterns-detection>
-- Grafana Logs patterns UX: <https://grafana.com/docs/grafana/latest/visualizations/simplified-exploration/logs/patterns/>
+- Loki HTTP API patterns endpoint: https://grafana.com/docs/loki/latest/reference/loki-http-api/#patterns-detection
+- Grafana Logs patterns UX: https://grafana.com/docs/grafana/latest/visualizations/simplified-exploration/logs/patterns/
 
 ## Persistence Model
 
