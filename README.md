@@ -37,6 +37,8 @@ Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/
 - Strict tuple contracts: default 2-tuple, explicit 3-tuple only via `categorize-labels`.
 - Grafana Logs Drilldown patterns support through `/loki/api/v1/patterns`, with explicit `-patterns-enabled` control when deployments need it disabled.
 - Loki-compatible patterns endpoint with optional restart-safe persistence.
+- Automatic pattern autodetection from successful `query`/`query_range` responses (`-patterns-autodetect-from-queries`) to keep Drilldown patterns warm behind the scenes.
+- Custom pattern overlays via runtime flags or Helm ConfigMap/file wiring (`-patterns-custom`, `-patterns-custom-file`, `patternsCustom.*`).
 - Multi-tenant read fanout with tenant isolation guardrails.
 - Rules and alerts read compatibility from `vmalert`.
 
