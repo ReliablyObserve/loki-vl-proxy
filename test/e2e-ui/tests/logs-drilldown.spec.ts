@@ -270,10 +270,10 @@ test.describe("Grafana Logs Drilldown", () => {
     await waitForAutodetectedPatterns(
       page,
       PROXY_PATTERNS_AUTODETECT_DS,
-      `{app="pattern-test"}`
+      `{app="api-gateway"}`
     );
 
-    await openServiceDrilldown(page, PROXY_PATTERNS_AUTODETECT_DS, "pattern-test", "logs");
+    await openServiceDrilldown(page, PROXY_PATTERNS_AUTODETECT_DS, "api-gateway", "logs");
 
     const patternsTab = page.getByRole("tab", { name: /^Patterns/i }).first();
     await expect(patternsTab).toBeVisible({ timeout: 10_000 });
