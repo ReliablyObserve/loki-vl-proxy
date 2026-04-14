@@ -8,17 +8,26 @@
   --ifm-color-primary-light: #12867d;
   --ifm-color-primary-lighter: #149184;
   --ifm-color-primary-lightest: #1aa89a;
-  --ifm-background-color: #f5f1e8;
-  --ifm-background-surface-color: rgba(255, 255, 255, 0.78);
+  --ifm-background-color: #ffffff;
+  --ifm-background-surface-color: #f6f8fa;
   --ifm-font-family-base: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   --ifm-font-family-monospace: 'IBM Plex Mono', monospace;
   --ifm-font-color-base: #1f2937;
   --ifm-heading-color: #102a43;
   --ifm-code-font-size: 94%;
-  --ifm-navbar-background-color: rgba(245, 241, 232, 0.84);
-  --ifm-footer-background-color: #111827;
-  --ifm-global-shadow-lw: 0 20px 60px rgba(16, 42, 67, 0.08);
+  --ifm-navbar-background-color: #ffffff;
+  --ifm-footer-background-color: #111111;
+  --ifm-link-color: #0f766e;
+  --ifm-link-hover-color: #0b615a;
+  --ifm-menu-color: #334155;
+  --ifm-menu-color-active: #0f766e;
+  --ifm-menu-color-background-active: #e6f5f3;
+  --ifm-global-shadow-lw: 0 12px 28px rgba(16, 42, 67, 0.06);
   --docusaurus-highlighted-code-line-bg: rgba(15, 118, 110, 0.12);
+  --site-border-color: rgba(16, 42, 67, 0.1);
+  --site-muted-color: #475569;
+  --site-panel-background: #f6f8fa;
+  --site-code-background: #102a43;
 }
 
 [data-theme='dark'] {
@@ -29,13 +38,22 @@
   --ifm-color-primary-light: #78d2c8;
   --ifm-color-primary-lighter: #84d7ce;
   --ifm-color-primary-lightest: #a7e3dd;
-  --ifm-background-color: #0b1324;
-  --ifm-background-surface-color: rgba(11, 19, 36, 0.88);
-  --ifm-font-color-base: #dbe6f3;
+  --ifm-background-color: #000000;
+  --ifm-background-surface-color: #0b0b0d;
+  --ifm-font-color-base: #e5e7eb;
   --ifm-heading-color: #f8fafc;
-  --ifm-navbar-background-color: rgba(11, 19, 36, 0.88);
-  --ifm-footer-background-color: #040814;
+  --ifm-navbar-background-color: #000000;
+  --ifm-footer-background-color: #000000;
+  --ifm-link-color: #8be8dd;
+  --ifm-link-hover-color: #c9fff8;
+  --ifm-menu-color: #cbd5e1;
+  --ifm-menu-color-active: #8be8dd;
+  --ifm-menu-color-background-active: rgba(139, 232, 221, 0.12);
   --docusaurus-highlighted-code-line-bg: rgba(255, 255, 255, 0.08);
+  --site-border-color: rgba(255, 255, 255, 0.1);
+  --site-muted-color: #a5b0bd;
+  --site-panel-background: #0b0b0d;
+  --site-code-background: #101418;
 }
 
 html {
@@ -43,16 +61,18 @@ html {
 }
 
 body {
-  background:
-    radial-gradient(circle at top right, rgba(15, 118, 110, 0.12), transparent 34%),
-    radial-gradient(circle at 10% 0%, rgba(255, 106, 61, 0.16), transparent 25%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0)),
-    var(--ifm-background-color);
+  background: var(--ifm-background-color);
 }
 
 .navbar {
-  border-bottom: 1px solid rgba(16, 42, 67, 0.08);
-  backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--site-border-color);
+  backdrop-filter: none;
+}
+
+.navbar__brand img,
+.navbar__logo img {
+  height: 2.2rem;
+  width: auto;
 }
 
 .navbar__title,
@@ -68,23 +88,24 @@ body {
 
 .button--primary {
   border: 0;
-  background: linear-gradient(135deg, #0f766e, #165d86);
+  background: var(--ifm-color-primary);
 }
 
 .button--secondary {
   color: #102a43;
-  background: rgba(255, 255, 255, 0.86);
-  border: 1px solid rgba(16, 42, 67, 0.1);
+  background: var(--site-panel-background);
+  border: 1px solid var(--site-border-color);
 }
 
 [data-theme='dark'] .button--secondary {
   color: #f8fafc;
-  background: rgba(15, 23, 42, 0.88);
-  border-color: rgba(148, 163, 184, 0.16);
+  background: var(--site-panel-background);
+  border-color: var(--site-border-color);
 }
 
 .footer {
-  background: linear-gradient(135deg, #071120, #14213d);
+  background: var(--ifm-footer-background-color);
+  border-top: 1px solid var(--site-border-color);
 }
 
 main code,
@@ -98,4 +119,36 @@ main pre {
 
 .markdown a:not(.button) {
   font-weight: 600;
+  color: var(--ifm-link-color);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.14em;
+}
+
+.navbar__link:hover,
+.menu__link:hover,
+.table-of-contents__link:hover,
+.footer a:hover,
+.markdown a:not(.button):hover {
+  color: var(--ifm-link-hover-color);
+}
+
+.theme-doc-sidebar-container {
+  background: var(--ifm-background-color);
+  border-right: 1px solid var(--site-border-color);
+}
+
+.table-of-contents {
+  background: var(--site-panel-background);
+  border: 1px solid var(--site-border-color);
+  border-radius: 18px;
+  padding: 1rem;
+}
+
+.pagination-nav__link {
+  border-color: var(--site-border-color);
+  background: var(--site-panel-background);
+}
+
+.menu__link--active:not(.menu__link--sublist) {
+  background: var(--ifm-menu-color-background-active);
 }

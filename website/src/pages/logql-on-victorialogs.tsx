@@ -103,6 +103,54 @@ export default function LogqlOnVictoriaLogs(): ReactNode {
       </section>
 
       <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <Heading as="h2" className={styles.sectionTitle}>
+            Current differences to plan for
+          </Heading>
+          <p className={styles.sectionLead}>
+            The current codebase supports the read path broadly, but a few
+            boundaries are still important if you want predictable Grafana and
+            Loki-client behavior.
+          </p>
+        </div>
+        <div className={styles.cardGrid}>
+          <div className={styles.card}>
+            <h3 className={styles.cardTitle}>Read compatibility, not generic Loki identity</h3>
+            <p>
+              The proxy keeps Loki-facing reads usable on VictoriaLogs. It does
+              not turn VictoriaLogs into a native Loki backend, and it does not
+              open the normal Loki write path.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <h3 className={styles.cardTitle}>Dotted fields still need explicit UX choices</h3>
+            <p>
+              Underscore labels and dotted field APIs can coexist, but Grafana
+              builder flows are still safer when operators use the underscore
+              aliases for click-to-filter paths.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <h3 className={styles.cardTitle}>Some compatibility work stays in the proxy</h3>
+            <p>
+              Parser compatibility, formatting helpers, alias resolution, and
+              parts of binary or subquery behavior still run in the proxy. They
+              are supported, but they are not zero-cost native VictoriaLogs
+              operations.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <h3 className={styles.cardTitle}>Patterns and parsed fields have warm-state caveats</h3>
+            <p>
+              `/patterns` is optional and capped per request, and parsed-only
+              field discovery can still rely on bounded sampling when there is no
+              safe indexed metadata path.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
         <div className={styles.callout}>
           <Heading as="h2" className={styles.sectionTitle}>
             Deep references
@@ -112,6 +160,7 @@ export default function LogqlOnVictoriaLogs(): ReactNode {
             <Link to="/docs/translation-reference/">Translation Reference</Link>
             <Link to="/docs/compatibility-loki/">Loki Compatibility</Link>
             <Link to="/docs/api-reference/">API Reference</Link>
+            <Link to="/docs/KNOWN_ISSUES/">Known Differences</Link>
           </div>
         </div>
       </section>

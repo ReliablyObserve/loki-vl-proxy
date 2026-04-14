@@ -70,8 +70,8 @@ const config: Config = {
       title: 'Loki-VL-proxy',
       logo: {
         alt: 'Loki-VL-proxy logo',
-        src: 'img/loki-vl-proxy-logo-black.jpg',
-        srcDark: 'img/loki-vl-proxy-logo-white.jpg',
+        src: 'img/logo.svg',
+        srcDark: 'img/logo.svg',
       },
       items: [
         {to: '/', label: 'Overview', position: 'left'},

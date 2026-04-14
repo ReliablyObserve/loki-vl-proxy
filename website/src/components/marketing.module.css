@@ -27,7 +27,8 @@
   width: min(100%, 360px);
   height: auto;
   border-radius: 28px;
-  box-shadow: 0 28px 64px rgba(16, 42, 67, 0.14);
+  border: 1px solid var(--site-border-color);
+  box-shadow: 0 16px 36px rgba(16, 42, 67, 0.08);
 }
 
 .heroCopy,
@@ -35,10 +36,9 @@
 .card,
 .callout,
 .tableWrap {
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(16, 42, 67, 0.08);
-  box-shadow: 0 22px 60px rgba(16, 42, 67, 0.08);
-  backdrop-filter: blur(18px);
+  background: var(--site-panel-background);
+  border: 1px solid var(--site-border-color);
+  box-shadow: 0 12px 28px rgba(16, 42, 67, 0.05);
 }
 
 .heroCopy {
@@ -68,7 +68,7 @@
   margin: 1.35rem 0 0;
   font-size: 1.08rem;
   line-height: 1.7;
-  color: #334155;
+  color: var(--site-muted-color);
 }
 
 .actions {
@@ -90,8 +90,8 @@
   min-height: 144px;
   padding: 1rem;
   border-radius: 22px;
-  background: linear-gradient(160deg, rgba(15, 118, 110, 0.08), rgba(16, 42, 67, 0.03));
-  border: 1px solid rgba(15, 118, 110, 0.12);
+  background: var(--ifm-background-color);
+  border: 1px solid var(--site-border-color);
 }
 
 .signalValue {
@@ -106,12 +106,12 @@
   margin-top: 0.65rem;
   font-size: 1.05rem;
   font-weight: 600;
-  color: #102a43;
+  color: var(--ifm-heading-color);
 }
 
 .signalDetail {
   margin-top: 0.65rem;
-  color: #475569;
+  color: var(--site-muted-color);
   line-height: 1.5;
   font-size: 0.95rem;
 }
@@ -138,7 +138,7 @@
 
 .sectionLead {
   margin: 0.7rem 0 0;
-  color: #475569;
+  color: var(--site-muted-color);
   line-height: 1.7;
 }
 
@@ -156,20 +156,20 @@
 .cardTitle {
   margin: 0;
   font-size: 1.15rem;
-  color: #102a43;
+  color: var(--ifm-heading-color);
 }
 
 .card p {
   margin: 0.8rem 0 0;
   line-height: 1.65;
-  color: #475569;
+  color: var(--site-muted-color);
 }
 
 .card ul,
 .list {
   margin: 0.85rem 0 0;
   padding-left: 1.1rem;
-  color: #475569;
+  color: var(--site-muted-color);
   line-height: 1.7;
 }
 
@@ -177,7 +177,7 @@
   margin: 1rem 0 0;
   padding: 1rem 1.1rem;
   border-radius: 20px;
-  background: #102a43;
+  background: var(--site-code-background);
   color: #e2e8f0;
   overflow: auto;
 }
@@ -218,7 +218,7 @@
 .comparisonTable th,
 .comparisonTable td {
   padding: 1rem 1.1rem;
-  border-bottom: 1px solid rgba(16, 42, 67, 0.08);
+  border-bottom: 1px solid var(--site-border-color);
   vertical-align: top;
   text-align: left;
 }
@@ -231,7 +231,7 @@
 }
 
 .comparisonTable td {
-  color: #334155;
+  color: var(--site-muted-color);
 }
 
 .inlineLinks {
@@ -261,9 +261,9 @@
 .routeStrip span {
   padding: 0.55rem 0.85rem;
   border-radius: 999px;
-  background: rgba(15, 118, 110, 0.08);
-  border: 1px solid rgba(15, 118, 110, 0.12);
-  color: #0f766e;
+  background: var(--ifm-menu-color-background-active);
+  border: 1px solid var(--site-border-color);
+  color: var(--ifm-link-color);
   font-size: 0.94rem;
   font-weight: 600;
 }

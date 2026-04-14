@@ -1,106 +1,76 @@
-# Known Differences, Scope Boundaries, and Follow-Up Work
+# Known Differences and Known Issues
 
-Last updated: main
+Last updated against `main`.
 
-## Remaining Behavioral Differences
+This project is a Loki-compatible read proxy for VictoriaLogs. It is not a claim
+that VictoriaLogs is natively Loki or that every Loki behavior is reproduced in
+the backend itself. This page tracks the differences, scope boundaries, and
+operational caveats that still matter in the current codebase.
 
-All LogQL features are handled. No errors, no silent failures. Minor behavioral differences:
+## Intentional Scope Boundaries
 
-| Feature | Proxy Behavior | Loki Behavior |
-|---|---|---|
-| `without()` grouping | Proxy strips excluded labels from VL results | Native complement grouping |
-| `on()`/`ignoring()` | Proxy-side label-subset matching | Native label-subset matching |
-| `group_left()`/`group_right()` | Proxy-side one-to-many join via on() | Native one-to-many join validation |
-| Subquery `rate(...)[1h:5m]` | Proxy-side: runs inner query at sub-steps, aggregates | Native nested sub-step evaluation |
-
-## Scope Boundaries
-
-The proxy supports datasource-facing headers, cookie forwarding, backend timeout control, and optional HTTPS client-certificate verification. The remaining differences here are intentional scope boundaries rather than missing read-path features:
-
-| Area | Current State |
+| Area | Current state |
 |---|---|
-| Alerting / ruler APIs | Read-path compatibility covers legacy Loki YAML rules routes plus Prometheus-style JSON rules and alerts. The proxy is intentionally read-only; rule writes and lifecycle changes stay on the VictoriaLogs / `vmalert` side |
-| Browser-origin tailing | `/loki/api/v1/tail` rejects browser `Origin` headers unless explicitly allowlisted via `-tail.allowed-origins` |
-| Multi-tenant tailing | `/loki/api/v1/tail` remains intentionally single-tenant; Loki-style `tenant-a|tenant-b` fanout and `__tenant_id__` filtering are not supported there |
-| Global wildcard tenant | `X-Scope-OrgID: *` remains a proxy-specific default/global convenience, not a Loki all-tenants shorthand |
+| Write path | `POST /loki/api/v1/push` stays blocked. The proxy is read-focused. Log ingestion should go directly to VictoriaLogs-side ingestion paths. |
+| Delete path | `POST /loki/api/v1/delete` is the only write exception and is guarded by confirmation header, time-range checks, tenant scoping, and audit logging. |
+| Rules and alerts lifecycle | Read compatibility is exposed through Loki YAML and Prometheus-style JSON views when `-ruler-backend` / `-alerts-backend` is configured. Rule writes and alert lifecycle changes remain outside the proxy. |
+| Browser-origin tailing | `/loki/api/v1/tail` rejects browser `Origin` headers unless allowlisted with `-tail.allowed-origins`. |
+| Multi-tenant tailing | Tail remains intentionally single-tenant. Loki-style multi-tenant tail fanout is not supported there. |
 
-## Coverage Status
+## Current Behavioral Differences
 
-Current coverage closes several older compatibility concerns that no longer need to stay on the open-gap list:
+| Area | What to expect |
+|---|---|
+| Label vs field surfaces | With `-label-style=underscores` and `-metadata-field-mode=hybrid`, label APIs remain Loki-safe (`service_name`) while field-oriented APIs can expose both `service.name` and `service_name`. This is expected compatibility behavior, not duplicate data corruption. |
+| Grafana dotted-field builder UX | Grafana builder paths can still tokenize dotted field names awkwardly even when the generated query executes correctly. For click-to-filter flows, underscore aliases are the safer UI path. |
+| Parsed-only field freshness | `detected_fields` and `detected_field/{name}/values` prefer native VictoriaLogs metadata when possible, but parsed-only or very new fields can still fall back to bounded sampling. That means freshness can differ from indexed metadata. |
+| Multi-tenant Drilldown aggregation | Some Drilldown-oriented field and label surfaces still use approximate merged cardinality across tenants. Query fanout works, but merged browse surfaces are not perfect set-theory replicas of native Loki multitenancy. |
+| Wildcard tenant shorthand | `X-Scope-OrgID: *` is a proxy convenience for global/default routing. It is not a Loki-compatible all-tenants shorthand. |
+| Patterns surface | `/loki/api/v1/patterns` is optional (`-patterns-enabled`) and responses are clamped to `1000` patterns per request. |
 
-- `/tail` handler tests cover browser-origin rejection, configured origin allowlists, native fallback, and upstream `401`, `403`, and `5xx` failure handling
-- compose and browser e2e cover synthetic tail, ingress tail, reconnect behavior, idle windows, browser-origin rejection, and native-to-ingress recovery
-- multi-tenant coverage includes query fanout, labels, series, `__tenant_id__` narrowing, Drilldown resource contracts, and browser smoke for Explore and Logs Drilldown landing, service, and fields flows
+## Translation and Performance Caveats
 
-## Remaining Multi-Tenant Differences
+Some compatibility behavior is implemented in the proxy rather than delegated to
+native VictoriaLogs primitives. That keeps the Loki-facing contract usable, but
+it also means latency, CPU cost, and observability differ from a native Loki
+backend or a pure VictoriaLogs query path.
 
-Read/query fanout now supports Loki-style `X-Scope-OrgID: tenant-a|tenant-b` plus `__tenant_id__` selector narrowing. The remaining differences are:
+This especially matters for:
 
-- merged field/label cardinality across tenants is still approximate in a few Drilldown-oriented surfaces
-- `*` remains a proxy-specific default/global bypass mode, not a Loki-compatible all-tenants shorthand
+- parser and filter compatibility stages
+- some response shaping and label/field alias resolution
+- parts of binary and subquery compatibility behavior
+- formatting helpers such as `line_format` / `label_format`
+- unwrap helper compatibility such as duration and byte parsing
 
-## Data Model Differences
+Treat those paths as supported compatibility work, not as zero-cost backend
+equivalents.
 
-### Stream Filter vs Field Filter Performance
+## Operational Caveats
 
-VL stream selectors `{label="value"}` only match `_stream_fields`. By default, the proxy converts ALL Loki stream matchers to field filters for correctness. Use `-stream-fields=app,env,namespace` to enable VL native stream selectors for known `_stream_fields` (faster index path).
+| Area | Current state |
+|---|---|
+| Patterns persistence | If `-patterns-persist-path` is configured and not writable, startup fails fast. Without persistence, the endpoint still works, but warm state is lost on restart. |
+| Label-values persistence | If `-label-values-index-persist-path` is configured and not writable, startup fails fast. Without persistence, indexed browse state is rebuilt after restart. |
+| Startup warm readiness | When patterns or label-values startup warm is configured, readiness can remain `503` until disk restore or peer warm completes. |
+| Older VictoriaLogs metadata paths | Newer VictoriaLogs versions let the proxy prefer stream-only metadata APIs. Older versions may fall back to broader field APIs, which can change how strictly stream-shaped some browse endpoints feel. |
+| Large body fields | Very large body fields can still be dropped on the VictoriaLogs side. Track the upstream issue: [VictoriaLogs issue #91](https://github.com/VictoriaMetrics/victorialogs-datasource/issues/91). |
 
-### Structured Metadata (Loki 3.x)
+## What Is No Longer an Open Gap
 
-Loki 3.x has stream labels vs structured metadata vs parsed labels. VL treats all fields equally. The mapping is natural but not identical -- Grafana Explore handles both transparently.
+These are not current open issues in this codebase:
 
-### Labels vs OTel Dotted Fields
+- read-path query and label fanout across multiple tenants
+- Grafana Logs Drilldown contract coverage as a tracked compatibility product
+- Loki-compatible `/loki/api/v1/patterns` support with persistence and peer warm
+- route-aware proxy, cache, and upstream request telemetry
+- prefixed app metrics under `loki_vl_proxy_*` with CI guard coverage
 
-When `-label-style=underscores` and `-metadata-field-mode=hybrid` are used together, the proxy intentionally exposes:
+## Related Docs
 
-- Loki-compatible underscore labels on the label surface
-- both dotted OTel names and translated aliases on field-oriented APIs
-
-This is the expected compatibility model for Drilldown and Explore. It is not a bug if `service_name` appears in label pickers while `service.name` appears in fields/details.
-
-### Native-First Drilldown Discovery
-
-The proxy now prefers VictoriaLogs-native metadata lookups for field names, field values, and streams where that is safe and accurate enough, then falls back to bounded raw-log sampling for parsed and derived fields.
-
-Remaining caveat:
-
-- parsed-only fields can still require fallback sampling, so very new or highly dynamic fields may appear with slightly different freshness than indexed/native metadata
-
-### Large Body Fields
-
-VL may silently drop log records with very large body fields (50KB+). See [VL Issue #91](https://github.com/VictoriaMetrics/victorialogs-datasource/issues/91).
-
-## Previously Fixed (for reference)
-
-These were previously listed as gaps and have been resolved:
-
-- ~~Substring vs word matching~~ -> Fixed: `|= "text"` -> VL `~"text"` (substring)
-- ~~Volume API missing~~ -> Fixed: implemented via VL `/select/logsql/hits`
-- ~~Tail WebSocket~~ -> Fixed: WebSocket->NDJSON bridge
-- ~~Multitenancy header mismatch~~ -> Fixed: `-tenant-map` string->int mapping
-- ~~`| decolorize`~~ -> Fixed: proxy-side ANSI stripping
-- ~~`absent_over_time()`~~ -> Fixed: mapped to `count()`
-- ~~Binary metric expressions~~ -> Fixed: proxy-side evaluation
-- ~~`quantile_over_time()`~~ -> Fixed: mapped to VL `quantile(phi, field)`
-- ~~Admin endpoints (`/rules`, `/alerts`)~~ -> Fixed for read-path compatibility: legacy Loki YAML rules plus Prometheus-style JSON rules and alerts are exposed from configured backends; ruler writes remain intentionally out of scope for this read proxy
-- ~~Coalescer cross-tenant data leak~~ -> Fixed: tenant included in coalescing key
-- ~~Stats detection false-positive~~ -> Fixed: quote-aware parsing
-- ~~Metrics always recording 200~~ -> Fixed: actual status code captured
-- ~~`without()` clause silent wrong behavior~~ -> Fixed: returns clear error (v0.17.0)
-- ~~Binary ops missing `%`, `^`, comparisons~~ -> Fixed: all operators implemented (v0.17.0)
-- ~~Tenant map reload data race~~ -> Fixed: RLock on read path (v0.17.0)
-- ~~CB metrics half_open mismatch~~ -> Fixed: accepts both underscore and hyphen (v0.17.0)
-- ~~`targetLabels` missing on volume_range~~ -> Fixed: field param forwarded (v0.17.0)
-- ~~`IsScalar` rejects negatives~~ -> Fixed: uses strconv.ParseFloat (v0.17.0)
-- ~~No delete API~~ -> Fixed: `/loki/api/v1/delete` with safeguards (v0.17.0)
-- ~~`X-Forwarded-For` spoofable~~ -> Fixed: proxy headers are ignored for client metrics unless `-metrics.trust-proxy-headers=true` (v0.24.0)
-- ~~`offset` and `@` modifiers~~ -> Fixed: stripped during translation, time range unaffected (v0.19.0)
-- ~~`bool` modifier~~ -> Fixed: stripped at translation, comparisons return 1/0 (v0.19.0)
-- ~~Field-specific parser `| json f1, f2`~~ -> Fixed: maps to full unpack (v0.19.0)
-- ~~Backslash quotes in selectors~~ -> Fixed: findMatchingBrace handles `\"` (v0.19.0)
-- ~~No system metrics~~ -> Fixed: process + Linux runtime metrics exposed, with container-scoped cgroup metrics replacing old node-style naming in the latest observability docs
-- ~~Cache random eviction~~ -> Fixed: LRU eviction via container/list (v0.21.0)
-- ~~`unwrap duration()/bytes()` conversion~~ -> Fixed: proxy-side parsers for duration/byte strings (v0.21.0)
-- ~~`on()`/`ignoring()`/`group_left()`/`group_right()`~~ -> Fixed: stripped at translation, binary uses exact key match (v0.22.0)
-- ~~Subquery `rate(...)[1h:5m]`~~ -> Fixed: proxy-side evaluation — runs inner query at sub-steps, aggregates with outer function (v0.23.0)
-- ~~golangci-lint v2 config~~ -> Fixed: added version: "2" to .golangci.yml (v0.22.0)
+- [Compatibility Matrix](compatibility-matrix.md)
+- [Loki Compatibility](compatibility-loki.md)
+- [Logs Drilldown Compatibility](compatibility-drilldown.md)
+- [VictoriaLogs Compatibility](compatibility-victorialogs.md)
+- [Translation Modes](translation-modes.md)
+- [API Reference](api-reference.md)

@@ -113,8 +113,8 @@ const operatorCards = [
 ];
 
 export default function Home(): ReactNode {
-  const lightBrand = useBaseUrl('/img/loki-vl-proxy-logo-black.jpg');
-  const darkBrand = useBaseUrl('/img/loki-vl-proxy-logo-white.jpg');
+  const lightBrand = useBaseUrl('/img/loki-vl-proxy-logo-white.jpg');
+  const darkBrand = useBaseUrl('/img/loki-vl-proxy-logo-black.jpg');
 
   return (
     <MarketingLayout

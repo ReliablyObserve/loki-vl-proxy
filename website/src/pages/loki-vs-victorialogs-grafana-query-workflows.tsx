@@ -178,6 +178,29 @@ export default function LokiVsVictoriaLogsGrafanaQueryWorkflows(): ReactNode {
       </section>
 
       <section className={styles.section}>
+        <div className={styles.cardGrid}>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>Current boundaries that still matter</h2>
+            <ul className={styles.list}>
+              <li>The proxy path is still read-focused; standard Loki push is blocked.</li>
+              <li>Tail remains single-tenant and browser tailing still needs origin allowlisting.</li>
+              <li>`X-Scope-OrgID: *` is proxy-specific convenience, not native Loki all-tenants semantics.</li>
+              <li>Some field and Drilldown browse surfaces still use approximate merged cardinality in multi-tenant views.</li>
+            </ul>
+          </div>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>Why those boundaries exist</h2>
+            <p>
+              The project is explicit about where compatibility lives. Where
+              VictoriaLogs has a clean native path, the proxy prefers it. Where
+              Grafana or Loki-facing contracts need shaping, the proxy keeps that
+              work visible instead of pretending the backend is identical.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className={styles.section}>
         <div className={styles.callout}>
           <Heading as="h2" className={styles.sectionTitle}>
             Follow-up docs
@@ -187,6 +210,7 @@ export default function LokiVsVictoriaLogsGrafanaQueryWorkflows(): ReactNode {
             <Link to="/monitor-loki-vl-proxy/">Monitoring guide</Link>
             <Link to="/docs/compatibility-matrix/">Compatibility Matrix</Link>
             <Link to="/docs/observability/">Observability</Link>
+            <Link to="/docs/KNOWN_ISSUES/">Known Differences</Link>
             <Link to="/migrate-grafana-from-loki-to-victorialogs/">Migration Guide</Link>
           </div>
         </div>
