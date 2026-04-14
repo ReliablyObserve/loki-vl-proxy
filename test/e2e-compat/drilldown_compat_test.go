@@ -14,6 +14,76 @@ import (
 
 const grafanaURL = "http://localhost:3002"
 
+var requiredDrilldownLimitKeys = []string{
+	"discover_log_levels",
+	"discover_service_name",
+	"log_level_fields",
+	"max_entries_limit_per_query",
+	"max_line_size_truncate",
+	"max_query_bytes_read",
+	"max_query_length",
+	"max_query_lookback",
+	"max_query_range",
+	"max_query_series",
+	"metric_aggregation_enabled",
+	"otlp_config",
+	"pattern_persistence_enabled",
+	"query_timeout",
+	"retention_period",
+	"retention_stream",
+	"volume_enabled",
+	"volume_max_series",
+}
+
+func assertDrilldownLimitsContract(t *testing.T, resp map[string]interface{}) map[string]interface{} {
+	t.Helper()
+
+	limits := extractMap(resp, "limits")
+	if limits == nil {
+		t.Fatalf("expected Loki-style limits object, got %v", resp)
+	}
+
+	requiredTopLevel := []string{
+		"pattern_ingester_enabled",
+		"version",
+		"maxDetectedFields",
+		"maxDetectedValues",
+		"maxLabelValues",
+		"maxLines",
+	}
+	for _, key := range requiredTopLevel {
+		if _, ok := resp[key]; !ok {
+			t.Fatalf("drilldown-limits missing top-level key %q: %v", key, resp)
+		}
+	}
+	if _, ok := resp["pattern_ingester_enabled"].(bool); !ok {
+		t.Fatalf("expected boolean pattern_ingester_enabled in drilldown-limits: %v", resp)
+	}
+	if _, ok := resp["version"].(string); !ok {
+		t.Fatalf("expected string version in drilldown-limits: %v", resp)
+	}
+
+	for _, key := range requiredDrilldownLimitKeys {
+		if _, ok := limits[key]; !ok {
+			t.Fatalf("drilldown-limits missing limits.%s: %v", key, resp)
+		}
+	}
+	if _, ok := limits["discover_service_name"].([]interface{}); !ok {
+		t.Fatalf("expected limits.discover_service_name array, got %T", limits["discover_service_name"])
+	}
+	if _, ok := limits["log_level_fields"].([]interface{}); !ok {
+		t.Fatalf("expected limits.log_level_fields array, got %T", limits["log_level_fields"])
+	}
+	if _, ok := limits["retention_stream"].([]interface{}); !ok {
+		t.Fatalf("expected limits.retention_stream array, got %T", limits["retention_stream"])
+	}
+	if _, ok := limits["pattern_persistence_enabled"].(bool); !ok {
+		t.Fatalf("expected boolean limits.pattern_persistence_enabled in drilldown-limits: %v", resp)
+	}
+
+	return limits
+}
+
 func grafanaDatasourceUID(t *testing.T, name string) string {
 	t.Helper()
 	deadline := time.Now().Add(20 * time.Second)
@@ -181,52 +251,25 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 
 	t.Run("drilldown_limits_shape", func(t *testing.T) {
 		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/drilldown-limits")
-		limits := extractMap(resp, "limits")
-		if limits == nil {
-			t.Fatalf("expected Loki-style limits object, got %v", resp)
-		}
-		if limits["retention_period"] == nil {
-			t.Fatalf("expected retention_period in drilldown-limits: %v", resp)
-		}
-		if limits["discover_service_name"] == nil || limits["log_level_fields"] == nil {
-			t.Fatalf("expected Drilldown config arrays in drilldown-limits: %v", resp)
-		}
-		patternIngesterEnabled, ok := resp["pattern_ingester_enabled"].(bool)
-		if !ok {
-			t.Fatalf("expected boolean pattern_ingester_enabled in drilldown-limits: %v", resp)
-		}
+		limits := assertDrilldownLimitsContract(t, resp)
+		patternIngesterEnabled := resp["pattern_ingester_enabled"].(bool)
 		if patternIngesterEnabled {
 			t.Fatalf("expected pattern_ingester_enabled=false for default proxy datasource: %v", resp)
 		}
-		patternPersistenceEnabled, ok := limits["pattern_persistence_enabled"].(bool)
-		if !ok {
-			t.Fatalf("expected boolean limits.pattern_persistence_enabled in drilldown-limits: %v", resp)
-		}
+		patternPersistenceEnabled := limits["pattern_persistence_enabled"].(bool)
 		if patternPersistenceEnabled {
 			t.Fatalf("expected limits.pattern_persistence_enabled=false for default proxy datasource: %v", resp)
-		}
-		if _, ok := resp["version"]; !ok {
-			t.Fatalf("expected version in drilldown-limits: %v", resp)
 		}
 	})
 
 	t.Run("drilldown_limits_pattern_flags_for_autodetect_datasource", func(t *testing.T) {
 		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+autodetectUID+"/resources/drilldown-limits")
-		limits := extractMap(resp, "limits")
-		if limits == nil {
-			t.Fatalf("expected Loki-style limits object, got %v", resp)
-		}
-		patternIngesterEnabled, ok := resp["pattern_ingester_enabled"].(bool)
-		if !ok {
-			t.Fatalf("expected boolean pattern_ingester_enabled in drilldown-limits: %v", resp)
-		}
+		limits := assertDrilldownLimitsContract(t, resp)
+		patternIngesterEnabled := resp["pattern_ingester_enabled"].(bool)
 		if !patternIngesterEnabled {
 			t.Fatalf("expected pattern_ingester_enabled=true for autodetect datasource: %v", resp)
 		}
-		patternPersistenceEnabled, ok := limits["pattern_persistence_enabled"].(bool)
-		if !ok {
-			t.Fatalf("expected boolean limits.pattern_persistence_enabled in drilldown-limits: %v", resp)
-		}
+		patternPersistenceEnabled := limits["pattern_persistence_enabled"].(bool)
 		if !patternPersistenceEnabled {
 			t.Fatalf("expected limits.pattern_persistence_enabled=true for autodetect datasource: %v", resp)
 		}

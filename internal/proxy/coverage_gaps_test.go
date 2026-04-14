@@ -102,6 +102,12 @@ func TestAdminStubs_DrilldownLimits(t *testing.T) {
 	if limits["retention_period"] == nil || limits["discover_service_name"] == nil || limits["log_level_fields"] == nil {
 		t.Fatalf("drilldown-limits missing Loki config fields required by Logs Drilldown: %v", resp)
 	}
+	if limits["retention_stream"] == nil {
+		t.Fatalf("drilldown-limits missing retention_stream for Loki limits parity: %v", resp)
+	}
+	if _, ok := limits["retention_stream"].([]interface{}); !ok {
+		t.Fatalf("drilldown-limits retention_stream must be array, got %T", limits["retention_stream"])
+	}
 	if resp["pattern_ingester_enabled"] == nil || resp["version"] == nil {
 		t.Fatalf("drilldown-limits missing Loki config top-level fields: %v", resp)
 	}

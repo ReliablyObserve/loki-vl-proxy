@@ -995,6 +995,77 @@ func TestContract_DrilldownLimits_PatternsDisabledAdvertised(t *testing.T) {
 	}
 }
 
+func TestContract_DrilldownLimits_ExposesRequiredLimitsContract(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/drilldown-limits", nil)
+	p.handleDrilldownLimits(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from drilldown-limits, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+
+	requiredTopLevel := []string{
+		"limits",
+		"pattern_ingester_enabled",
+		"version",
+		"maxDetectedFields",
+		"maxDetectedValues",
+		"maxLabelValues",
+		"maxLines",
+	}
+	for _, key := range requiredTopLevel {
+		if _, ok := resp[key]; !ok {
+			t.Fatalf("drilldown-limits missing top-level key %q: %v", key, resp)
+		}
+	}
+	if _, ok := resp["pattern_ingester_enabled"].(bool); !ok {
+		t.Fatalf("expected boolean pattern_ingester_enabled, got %T", resp["pattern_ingester_enabled"])
+	}
+
+	limits, ok := resp["limits"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected limits object, got %T", resp["limits"])
+	}
+
+	requiredLimitKeys := []string{
+		"discover_log_levels",
+		"discover_service_name",
+		"log_level_fields",
+		"max_entries_limit_per_query",
+		"max_line_size_truncate",
+		"max_query_bytes_read",
+		"max_query_length",
+		"max_query_lookback",
+		"max_query_range",
+		"max_query_series",
+		"metric_aggregation_enabled",
+		"otlp_config",
+		"pattern_persistence_enabled",
+		"query_timeout",
+		"retention_period",
+		"retention_stream",
+		"volume_enabled",
+		"volume_max_series",
+	}
+	for _, key := range requiredLimitKeys {
+		if _, ok := limits[key]; !ok {
+			t.Fatalf("drilldown-limits missing limits.%s in contract: %v", key, limits)
+		}
+	}
+	if _, ok := limits["discover_service_name"].([]interface{}); !ok {
+		t.Fatalf("expected limits.discover_service_name to be an array, got %T", limits["discover_service_name"])
+	}
+	if _, ok := limits["log_level_fields"].([]interface{}); !ok {
+		t.Fatalf("expected limits.log_level_fields to be an array, got %T", limits["log_level_fields"])
+	}
+	if _, ok := limits["retention_stream"].([]interface{}); !ok {
+		t.Fatalf("expected limits.retention_stream to be an array, got %T", limits["retention_stream"])
+	}
+}
+
 // --- /loki/api/v1/tail ---
 
 func TestContract_Tail_RequiresQuery(t *testing.T) {

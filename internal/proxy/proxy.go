@@ -4510,6 +4510,7 @@ func (p *Proxy) handleDrilldownLimits(w http.ResponseWriter, r *http.Request) {
 			"pattern_persistence_enabled": patternPersistenceEnabled,
 			"query_timeout":               "1m",
 			"retention_period":            "0s",
+			"retention_stream":            []interface{}{},
 			"volume_enabled":              true,
 			"volume_max_series":           1000,
 		},
