@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.21] - 2026-04-14
+
 ### Bug Fixes
 
 - patterns: keep `/loki/api/v1/patterns` charts full-range on large scopes by parsing relative range boundaries and adaptively coarsening overly dense bucket grids instead of returning sparse short-tail samples.
