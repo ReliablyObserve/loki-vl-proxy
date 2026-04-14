@@ -72,6 +72,10 @@ spec:
       {{- end }}
       {{- $hostProcEnabled := false }}
       {{- $hostProcMountPath := "/host/proc" }}
+      {{- $customPatternsFileEnabled := .Values.patternsCustom.file.enabled }}
+      {{- $customPatternsFilePath := default "/etc/loki-vl-proxy/patterns/custom-patterns.json" .Values.patternsCustom.file.path }}
+      {{- $customPatternsMountDir := dir $customPatternsFilePath }}
+      {{- $customPatternsFileName := base $customPatternsFilePath }}
       {{- if and (hasKey .Values "systemMetrics") (hasKey .Values.systemMetrics "hostProc") }}
       {{- $hostProcEnabled = .Values.systemMetrics.hostProc.enabled }}
       {{- if .Values.systemMetrics.hostProc.mountPath }}
@@ -98,6 +102,12 @@ spec:
             {{- end }}
             {{- if and .Values.persistence.enabled (not (hasKey .Values.extraArgs "disk-cache-path")) }}
             - "-disk-cache-path={{ include "loki-vl-proxy.diskCachePath" . }}"
+            {{- end }}
+            {{- if and (gt (len .Values.patternsCustom.inline) 0) (not (hasKey .Values.extraArgs "patterns-custom")) }}
+            - '-patterns-custom={{ toJson .Values.patternsCustom.inline }}'
+            {{- end }}
+            {{- if and $customPatternsFileEnabled (not (hasKey .Values.extraArgs "patterns-custom-file")) }}
+            - "-patterns-custom-file={{ $customPatternsFilePath }}"
             {{- end }}
             {{- if .Values.peerCache.enabled }}
             - "-peer-self=$(POD_IP):3100"
@@ -180,7 +190,7 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if or .Values.persistence.enabled .Values.extraVolumeMounts $hostProcEnabled }}
+          {{- if or .Values.persistence.enabled .Values.extraVolumeMounts $hostProcEnabled $customPatternsFileEnabled }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
             - name: cache-data
@@ -191,6 +201,11 @@ spec:
               mountPath: {{ $hostProcMountPath }}
               readOnly: true
             {{- end }}
+            {{- if $customPatternsFileEnabled }}
+            - name: custom-patterns
+              mountPath: {{ $customPatternsMountDir | quote }}
+              readOnly: true
+            {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -198,7 +213,7 @@ spec:
         {{- with .Values.extraContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- if or .Values.extraVolumes $hostProcEnabled (and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet"))) }}
+      {{- if or .Values.extraVolumes $hostProcEnabled $customPatternsFileEnabled (and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet"))) }}
       volumes:
         {{- if and .Values.persistence.enabled (or .Values.persistence.existingClaim (ne (include "loki-vl-proxy.workloadKind" .) "StatefulSet")) }}
         - name: cache-data
@@ -210,6 +225,14 @@ spec:
           hostPath:
             path: /proc
             type: Directory
+        {{- end }}
+        {{- if $customPatternsFileEnabled }}
+        - name: custom-patterns
+          configMap:
+            name: {{ include "loki-vl-proxy.customPatternsConfigMapName" . }}
+            items:
+              - key: {{ default "custom-patterns.json" .Values.patternsCustom.file.key | quote }}
+                path: {{ $customPatternsFileName | quote }}
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}

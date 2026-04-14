@@ -202,6 +202,34 @@ extraArgs:
   # tls-client-ca-file: ""
   # tls-require-client-cert: "false"
 
+# Custom Drilldown patterns always prepended to /loki/api/v1/patterns.
+# Runtime supports:
+# - inline JSON/newline config via -patterns-custom
+# - file-based config via -patterns-custom-file
+#
+# The chart can source file-based patterns from an existing ConfigMap or create
+# one from patternsCustom.file.content.
+patternsCustom:
+  # Inline patterns are rendered as a JSON array and passed via -patterns-custom.
+  inline: []
+  # - "time=\"<_>\" level=info msg=\"finished unary call\" grpc.code=OK"
+  # - "component=proxy http.route=<_> http.response.status_code=<_->"
+  file:
+    enabled: false
+    # Path inside the container passed to -patterns-custom-file.
+    path: /etc/loki-vl-proxy/patterns/custom-patterns.json
+    # Use an existing ConfigMap when set.
+    existingConfigMap: ""
+    # Optional override for chart-managed ConfigMap name (when existingConfigMap is empty).
+    configMapName: ""
+    # ConfigMap key mounted as the file basename from path.
+    key: custom-patterns.json
+    # File content used when chart creates the ConfigMap.
+    # Accepted by runtime:
+    # - JSON array of strings
+    # - newline-separated patterns (supports # comments)
+    content: ""
+
 # Go runtime tuning:
 # The chart exports GOMEMLIMIT into the container env.
 # Priority:

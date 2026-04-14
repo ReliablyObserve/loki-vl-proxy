@@ -266,6 +266,9 @@ type Config struct {
 	// PatternsAutodetectFromQueries passively extracts patterns from successful
 	// log query/query_range responses and warms /patterns cache entries.
 	PatternsAutodetectFromQueries bool
+	// PatternsCustom is a static list of patterns always prepended to
+	// /loki/api/v1/patterns responses.
+	PatternsCustom []string
 	// Query range windowing/cache options.
 	// When enabled, eligible log query_range requests are split into time windows,
 	// fetched with bounded parallelism, and merged in Loki-compatible direction order.
@@ -433,6 +436,7 @@ type Proxy struct {
 	emitStructuredMetadata                bool
 	patternsEnabled                       bool
 	patternsAutodetectFromQueries         bool
+	patternsCustom                        []string
 	labelTranslator                       *LabelTranslator
 	metadataFieldMode                     MetadataFieldMode
 	streamFieldsMap                       map[string]bool  // known _stream_fields for VL stream selector optimization
@@ -872,6 +876,7 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	tenantDefaultLimits := cloneStringAnyMap(cfg.TenantDefaultLimits)
 	tenantLimits := cloneTenantLimitsMap(cfg.TenantLimits)
+	patternsCustom := normalizeCustomPatterns(cfg.PatternsCustom)
 
 	return &Proxy{
 		backend:       u,
@@ -904,6 +909,7 @@ func New(cfg Config) (*Proxy, error) {
 		emitStructuredMetadata:                cfg.EmitStructuredMetadata,
 		patternsEnabled:                       patternsEnabled,
 		patternsAutodetectFromQueries:         cfg.PatternsAutodetectFromQueries,
+		patternsCustom:                        patternsCustom,
 		labelTranslator:                       labelTranslator,
 		metadataFieldMode:                     metadataFieldMode,
 		streamFieldsMap:                       buildStreamFieldsMap(cfg.StreamFields),
@@ -1035,6 +1041,29 @@ func buildDeclaredLabelFields(streamFields, extraLabelFields []string, lt *Label
 		return nil
 	}
 	sort.Strings(out)
+	return out
+}
+
+func normalizeCustomPatterns(patterns []string) []string {
+	if len(patterns) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(patterns))
+	out := make([]string, 0, len(patterns))
+	for _, pattern := range patterns {
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		if _, ok := seen[pattern]; ok {
+			continue
+		}
+		seen[pattern] = struct{}{}
+		out = append(out, pattern)
+	}
+	if len(out) == 0 {
+		return nil
+	}
 	return out
 }
 
@@ -4311,7 +4340,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		cacheKey = "patterns:" + orgID + ":" + r.URL.RawQuery
 	}
 	if cached, ok := p.cache.Get(cacheKey); ok {
-		body := limitPatternPayload(cached, patternLimit)
+		body := p.applyCustomPatternsToPayload(cached, startParam, stepParam, patternLimit)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
 		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
@@ -4340,66 +4369,48 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	params.Set("limit", "1000")
 
-	resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
-	if err != nil {
-		p.writeJSON(w, map[string]interface{}{
-			"status": "success",
-			"data":   []interface{}{},
-		})
-		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
-		return
+	fetchPatterns := func(endpoint string) ([]map[string]interface{}, bool) {
+		resp, err := p.vlPost(r.Context(), endpoint, params)
+		if err != nil {
+			return nil, false
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= http.StatusBadRequest {
+			return nil, false
+		}
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, false
+		}
+		extracted := extractLogPatterns(body, stepParam, patternLimit)
+		if len(extracted) == 0 {
+			return nil, false
+		}
+		return extracted, true
 	}
-	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		p.writeJSON(w, map[string]interface{}{
-			"status": "success",
-			"data":   []interface{}{},
-		})
-		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
-		return
-	}
-
-	patterns := extractLogPatterns(body, stepParam, patternLimit)
-	// Some VictoriaLogs builds may return a query payload shape that is valid (HTTP 200)
-	// but not pattern-extractable here; fall back to query_range in that case too.
-	if resp.StatusCode >= http.StatusBadRequest || len(patterns) == 0 {
-		rangeParams := url.Values{}
-		rangeParams.Set("query", logsqlQuery)
-		if s := startParam; s != "" {
-			rangeParams.Set("start", formatVLTimestamp(s))
-		}
-		if e := endParam; e != "" {
-			rangeParams.Set("end", formatVLTimestamp(e))
-		}
-		rangeParams.Set("limit", "1000")
-		rangeResp, rangeErr := p.vlPost(r.Context(), "/select/logsql/query_range", rangeParams)
-		if rangeErr == nil {
-			defer rangeResp.Body.Close()
-			if rangeBody, readErr := io.ReadAll(rangeResp.Body); readErr == nil && rangeResp.StatusCode < http.StatusBadRequest {
-				if fallbackPatterns := extractLogPatterns(rangeBody, stepParam, patternLimit); len(fallbackPatterns) > 0 {
-					patterns = fallbackPatterns
-				}
-			}
-		}
+	// Prefer query_range to preserve full selected-range buckets in Drilldown graphs.
+	patterns, ok := fetchPatterns("/select/logsql/query_range")
+	if !ok {
+		patterns, _ = fetchPatterns("/select/logsql/query")
 	}
 	if patterns == nil {
 		patterns = []map[string]interface{}{}
 	}
-	p.metrics.RecordPatternsDetected(len(patterns))
-	result := map[string]interface{}{
-		"status": "success",
-		"data":   patterns,
-	}
-	resultBody, err := json.Marshal(result)
+	entries := patternResultEntriesFromMaps(patterns)
+	p.metrics.RecordPatternsDetected(len(entries))
+	entries = p.prependCustomPatternEntries(entries, startParam, stepParam, patternLimit)
+	resultBody, err := json.Marshal(patternsResponse{
+		Status: "success",
+		Data:   entries,
+	})
 	if err != nil {
 		p.writeJSON(w, map[string]interface{}{"status": "success", "data": []interface{}{}})
 		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 		return
 	}
 	// Avoid sticky empty results: first-call empty probes should not poison long-lived pattern cache entries.
-	if len(patterns) > 0 {
+	if len(entries) > 0 {
 		p.cache.SetWithTTL(cacheKey, resultBody, patternsCacheRetention)
 		p.recordPatternSnapshotEntry(cacheKey, resultBody, time.Now().UTC())
 	}
@@ -4475,6 +4486,122 @@ func limitPatternPayload(payload []byte, limit int) []byte {
 	encoded, err := json.Marshal(resp)
 	if err != nil {
 		return payload
+	}
+	return encoded
+}
+
+func customPatternSeedBucket(startParam, stepParam string) int64 {
+	nowBucket := time.Now().UTC().Unix()
+	if parsed, ok := parsePatternUnixSeconds(strings.TrimSpace(startParam)); ok {
+		nowBucket = parsed
+	}
+	stepSeconds := parsePatternStepSeconds(stepParam)
+	if stepSeconds > 0 {
+		nowBucket = (nowBucket / stepSeconds) * stepSeconds
+	}
+	return nowBucket
+}
+
+func patternResultEntriesFromMaps(patterns []map[string]interface{}) []patternResultEntry {
+	if len(patterns) == 0 {
+		return nil
+	}
+	out := make([]patternResultEntry, 0, len(patterns))
+	for _, item := range patterns {
+		pattern, _ := item["pattern"].(string)
+		pattern = strings.TrimSpace(pattern)
+		if pattern == "" {
+			continue
+		}
+		entry := patternResultEntry{
+			Pattern: pattern,
+			Samples: [][]interface{}{},
+		}
+		if level, ok := item["level"].(string); ok {
+			entry.Level = strings.TrimSpace(level)
+		}
+		if rawSamples, ok := item["samples"].([][]interface{}); ok {
+			entry.Samples = rawSamples
+		} else if rawSamples, ok := item["samples"].([]interface{}); ok && len(rawSamples) > 0 {
+			samples := make([][]interface{}, 0, len(rawSamples))
+			for _, sample := range rawSamples {
+				pair, ok := sample.([]interface{})
+				if !ok || len(pair) != 2 {
+					continue
+				}
+				samples = append(samples, pair)
+			}
+			entry.Samples = samples
+		}
+		out = append(out, entry)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func (p *Proxy) prependCustomPatternEntries(patterns []patternResultEntry, startParam, stepParam string, limit int) []patternResultEntry {
+	if len(p.patternsCustom) == 0 {
+		if limit > 0 && len(patterns) > limit {
+			return patterns[:limit]
+		}
+		return patterns
+	}
+
+	seedBucket := customPatternSeedBucket(startParam, stepParam)
+	out := make([]patternResultEntry, 0, len(p.patternsCustom)+len(patterns))
+	seen := make(map[string]struct{}, len(p.patternsCustom)+len(patterns))
+
+	for _, customPattern := range p.patternsCustom {
+		customPattern = strings.TrimSpace(customPattern)
+		if customPattern == "" {
+			continue
+		}
+		if _, ok := seen[customPattern]; ok {
+			continue
+		}
+		seen[customPattern] = struct{}{}
+		out = append(out, patternResultEntry{
+			Pattern: customPattern,
+			Samples: [][]interface{}{{seedBucket, 0}},
+		})
+	}
+
+	for _, entry := range patterns {
+		patternKey := strings.TrimSpace(entry.Pattern)
+		if patternKey == "" {
+			continue
+		}
+		if _, ok := seen[patternKey]; ok {
+			continue
+		}
+		seen[patternKey] = struct{}{}
+		out = append(out, entry)
+	}
+
+	if limit > 0 && len(out) > limit {
+		return out[:limit]
+	}
+	return out
+}
+
+func (p *Proxy) applyCustomPatternsToPayload(payload []byte, startParam, stepParam string, limit int) []byte {
+	if len(payload) == 0 {
+		return payload
+	}
+	if len(p.patternsCustom) == 0 {
+		return limitPatternPayload(payload, limit)
+	}
+
+	var resp patternsResponse
+	if err := json.Unmarshal(payload, &resp); err != nil {
+		return limitPatternPayload(payload, limit)
+	}
+	resp.Data = p.prependCustomPatternEntries(resp.Data, startParam, stepParam, limit)
+	encoded, err := json.Marshal(resp)
+	if err != nil {
+		return limitPatternPayload(payload, limit)
 	}
 	return encoded
 }

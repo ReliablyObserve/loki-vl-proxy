@@ -28,6 +28,8 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-emit-structured-metadata` | — | `true` | Enable Loki `categorize-labels` response encoding: requests with `X-Loki-Response-Encoding-Flags: categorize-labels` emit 3-tuples `[timestamp, line, metadata]`, while default/no-flag requests stay canonical 2-tuples |
 | `-patterns-enabled` | — | `true` | Enable `GET /loki/api/v1/patterns` (Grafana Logs Drilldown patterns view). When `false`, the endpoint returns `404 not_found` |
 | `-patterns-autodetect-from-queries` | — | `false` | Warm `/loki/api/v1/patterns` cache from successful `query` and `query_range` responses (global autodetect mode, opt-in) |
+| `-patterns-custom` | — | — | Static custom patterns prepended to every `/patterns` response. Accepts JSON string array or newline-separated text payload |
+| `-patterns-custom-file` | — | — | File path for static custom patterns prepended to every `/patterns` response. Supports JSON string array or newline-separated text with optional `#` comments |
 | `-patterns-persist-path` | — | — | Disk path for persisted patterns snapshot JSON file (empty disables persistence) |
 | `-patterns-persist-interval` | — | `30s` | Periodic flush interval for in-memory patterns snapshot |
 | `-patterns-startup-stale-threshold` | — | `60s` | Freshness threshold used by startup warm logic/peer snapshot cache |
@@ -48,6 +50,20 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 ```bash
 ./loki-vl-proxy -label-style=underscores \
   -field-mapping='[{"vl_field":"my_trace_id","loki_label":"traceID"}]'
+```
+
+### Custom Drilldown Patterns
+
+Examples:
+
+```bash
+# Inline JSON list
+./loki-vl-proxy \
+  -patterns-custom='["time=\"<_>\" level=info msg=\"finished unary call\"","grpc.code=<_> grpc.method=<_>"]'
+
+# File-backed list (JSON array or newline-separated text)
+./loki-vl-proxy \
+  -patterns-custom-file=/etc/loki-vl-proxy/custom-patterns.json
 ```
 
 ### Extra Label Fields (`-extra-label-fields`)

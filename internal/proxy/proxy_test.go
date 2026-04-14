@@ -732,6 +732,46 @@ func TestContract_Patterns_FallsBackToQueryRangeWhenQueryHasNoExtractablePattern
 	}
 }
 
+func TestContract_Patterns_PrefersQueryRangeForSelectedRange(t *testing.T) {
+	var queryRangeCalls, queryCalls int
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query_range":
+			queryRangeCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"level":"info"},"values":[["1712311200000000000","GET /api/users 200 15ms"],["1712311260000000000","GET /api/users 200 22ms"]]}]}}`))
+		case "/select/logsql/query":
+			queryCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1712311200&end=1712311800&step=1m", nil)
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
+	}
+	if queryRangeCalls == 0 {
+		t.Fatalf("expected query_range to be used for patterns extraction")
+	}
+	if queryCalls != 0 {
+		t.Fatalf("expected query fallback to be skipped when query_range already returned patterns, got %d calls", queryCalls)
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data, _ := resp["data"].([]interface{})
+	if len(data) == 0 {
+		t.Fatalf("expected non-empty patterns response, got %v", resp)
+	}
+}
+
 func TestContract_Patterns_DisabledReturnsNotFound(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -833,6 +873,87 @@ func TestContract_PatternHelpers_ParseAndLimitPayload(t *testing.T) {
 	mustUnmarshal(t, limited, &resp)
 	if len(resp.Data) != 2 {
 		t.Fatalf("expected 2 limited patterns, got %d", len(resp.Data))
+	}
+}
+
+func TestContract_Patterns_CustomPatternsPrepended(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:01Z","_msg":"GET /api/users 200 22ms","app":"web","level":"info"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL:      vlBackend.URL,
+		Cache:           c,
+		LogLevel:        "error",
+		PatternsCustom:  []string{"always-top", "always-top", "second-custom"},
+		PatternsEnabled: nil,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1&end=2&step=1m", nil)
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp patternsResponse
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if len(resp.Data) < 2 {
+		t.Fatalf("expected prepended custom patterns, got %+v", resp.Data)
+	}
+	if resp.Data[0].Pattern != "always-top" || resp.Data[1].Pattern != "second-custom" {
+		t.Fatalf("expected custom patterns prepended, got %+v", resp.Data[:2])
+	}
+	if len(resp.Data[0].Samples) != 1 || len(resp.Data[0].Samples[0]) != 2 {
+		t.Fatalf("expected synthetic sample for custom pattern, got %+v", resp.Data[0].Samples)
+	}
+}
+
+func TestContract_Patterns_CachedPayloadStillPrependsCustomPatterns(t *testing.T) {
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL:     "http://127.0.0.1:65535",
+		Cache:          c,
+		LogLevel:       "error",
+		PatternsCustom: []string{"cached-custom"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	cacheKey := p.patternsAutodetectCacheKey("", `{app="web"}`, "1", "2", "1m")
+	payload, err := json.Marshal(patternsResponse{
+		Status: "success",
+		Data: []patternResultEntry{
+			{Pattern: "auto-pattern", Samples: [][]interface{}{{int64(1), 3}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	p.cache.SetWithTTL(cacheKey, payload, patternsCacheRetention)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1&end=2&step=1m&limit=2", nil)
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp patternsResponse
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if len(resp.Data) != 2 {
+		t.Fatalf("expected custom+cached patterns with limit=2, got %+v", resp.Data)
+	}
+	if resp.Data[0].Pattern != "cached-custom" || resp.Data[1].Pattern != "auto-pattern" {
+		t.Fatalf("expected custom pattern prepended over cached payload, got %+v", resp.Data)
 	}
 }
 

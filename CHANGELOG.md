@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- patterns: support static custom pattern overlays via inline JSON/text (`-patterns-custom`) and file-backed input (`-patterns-custom-file`) for deterministic Drilldown pattern suggestions
+- patterns: prefer `query_range` during pattern extraction with `query` fallback so Drilldown pattern graphs align with selected time windows instead of only recent tail data
+
+### Chart
+
+- add Helm wiring for custom patterns via `patternsCustom.inline` and `patternsCustom.file.*` (including optional ConfigMap generation and mount wiring)
+
+### Tests
+
+- extend proxy unit coverage for custom pattern parsing, file loading, and merged `/patterns` response behavior
+
 ## [1.0.11] - 2026-04-14
 
 ### Features

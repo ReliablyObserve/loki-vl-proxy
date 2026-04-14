@@ -1,0 +1,11 @@
+{{- if and .Values.patternsCustom.file.enabled (eq (trim .Values.patternsCustom.file.existingConfigMap) "") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "loki-vl-proxy.customPatternsConfigMapName" . }}
+  labels:
+    {{- include "loki-vl-proxy.labels" . | nindent 4 }}
+data:
+  {{ default "custom-patterns.json" .Values.patternsCustom.file.key }}: |
+    {{- include "loki-vl-proxy.customPatternsFileContent" . | nindent 4 }}
+{{- end }}

@@ -227,6 +227,16 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
   --set extraArgs.label-values-index-max-entries=200000
 ```
 
+For static custom Drilldown patterns (always prepended), configure inline values or a file-backed ConfigMap:
+
+```bash
+helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \
+  --version <release> \
+  --set extraArgs.backend=http://victorialogs:9428 \
+  --set-json 'patternsCustom.inline=["time=\"<_>\" level=info msg=\"finished unary call\"","grpc.code=<_> grpc.method=<_>"]' \
+  --set patternsCustom.file.enabled=true
+```
+
 For deployment recipes (StatefulSet + persistence, peer-cache fleet setup, OTLP push wiring) and image source selection (GHCR vs Docker Hub vs custom registry), see:
 - [Getting Started](docs/getting-started.md)
 - [Operations](docs/operations.md)

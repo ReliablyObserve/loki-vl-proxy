@@ -73,6 +73,8 @@ type proxyRuntimeConfig struct {
 	emitStructuredMetadata             bool
 	patternsEnabled                    bool
 	patternsAutodetectFromQueries      bool
+	patternsCustomRaw                  string
+	patternsCustomFile                 string
 	queryRangeWindowing                bool
 	queryRangeSplitInterval            time.Duration
 	queryRangeMaxParallel              int
@@ -341,6 +343,8 @@ func run(
 	emitStructuredMetadata := fs.Bool("emit-structured-metadata", true, "Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
 	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
+	patternsCustomRaw := fs.String("patterns-custom", "", `JSON array (or newline-separated text) of custom Drilldown patterns always prepended to /loki/api/v1/patterns responses`)
+	patternsCustomFile := fs.String("patterns-custom-file", "", "Path to custom Drilldown patterns file (JSON array or newline-separated text) loaded on startup")
 	queryRangeWindowing := fs.Bool("query-range-windowing", true, "Enable query_range window splitting and window-level cache reuse for log queries")
 	queryRangeSplitInterval := fs.Duration("query-range-split-interval", time.Hour, "Time window size used for query_range split/merge (for example 15m, 1h, 24h)")
 	queryRangeMaxParallel := fs.Int("query-range-max-parallel", 2, "Maximum number of query_range windows fetched in parallel when adaptive parallelism is disabled")
@@ -486,6 +490,8 @@ func run(
 			emitStructuredMetadata:             *emitStructuredMetadata,
 			patternsEnabled:                    *patternsEnabled,
 			patternsAutodetectFromQueries:      *patternsAutodetectFromQueries,
+			patternsCustomRaw:                  *patternsCustomRaw,
+			patternsCustomFile:                 *patternsCustomFile,
 			queryRangeWindowing:                *queryRangeWindowing,
 			queryRangeSplitInterval:            *queryRangeSplitInterval,
 			queryRangeMaxParallel:              *queryRangeMaxParallel,
@@ -930,6 +936,80 @@ func parseDerivedFieldsJSON(raw string) ([]proxy.DerivedField, error) {
 	return derivedFields, nil
 }
 
+func parseCustomPatternsSource(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+
+	normalize := func(values []string) []string {
+		if len(values) == 0 {
+			return nil
+		}
+		seen := make(map[string]struct{}, len(values))
+		out := make([]string, 0, len(values))
+		for _, v := range values {
+			v = strings.TrimSpace(v)
+			if v == "" {
+				continue
+			}
+			if _, ok := seen[v]; ok {
+				continue
+			}
+			seen[v] = struct{}{}
+			out = append(out, v)
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	}
+
+	var fromJSON []string
+	if err := json.Unmarshal([]byte(raw), &fromJSON); err == nil {
+		return normalize(fromJSON), nil
+	}
+	if strings.HasPrefix(raw, "[") {
+		return nil, fmt.Errorf("expected valid JSON string array")
+	}
+
+	lines := strings.Split(raw, "\n")
+	parsed := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parsed = append(parsed, line)
+	}
+	return normalize(parsed), nil
+}
+
+func parseCustomPatterns(inlineRaw, filePath string) ([]string, error) {
+	inlinePatterns, err := parseCustomPatternsSource(inlineRaw)
+	if err != nil {
+		return nil, fmt.Errorf("parse -patterns-custom: %w", err)
+	}
+
+	var filePatterns []string
+	filePath = strings.TrimSpace(filePath)
+	if filePath != "" {
+		data, readErr := os.ReadFile(filePath)
+		if readErr != nil {
+			return nil, fmt.Errorf("read -patterns-custom-file %q: %w", filePath, readErr)
+		}
+		filePatterns, err = parseCustomPatternsSource(string(data))
+		if err != nil {
+			return nil, fmt.Errorf("parse -patterns-custom-file %q: %w", filePath, err)
+		}
+	}
+
+	combined := make([]string, 0, len(inlinePatterns)+len(filePatterns))
+	combined = append(combined, inlinePatterns...)
+	combined = append(combined, filePatterns...)
+	return parseCustomPatternsSource(strings.Join(combined, "\n"))
+}
+
 func parseLabelModes(labelStyle, metadataFieldMode string) (proxy.LabelStyle, proxy.MetadataFieldMode, error) {
 	ls := proxy.LabelStyle(labelStyle)
 	switch ls {
@@ -1036,6 +1116,10 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if err != nil {
 		return proxy.Config{}, fmt.Errorf("parse derived fields: %w", err)
 	}
+	customPatterns, err := parseCustomPatterns(cfg.patternsCustomRaw, cfg.patternsCustomFile)
+	if err != nil {
+		return proxy.Config{}, err
+	}
 	tailMode := proxy.TailMode(cfg.tailMode)
 	switch tailMode {
 	case "", proxy.TailModeAuto:
@@ -1078,6 +1162,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		EmitStructuredMetadata:             cfg.emitStructuredMetadata,
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
 		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
+		PatternsCustom:                     customPatterns,
 		QueryRangeWindowingEnabled:         cfg.queryRangeWindowing,
 		QueryRangeSplitInterval:            cfg.queryRangeSplitInterval,
 		QueryRangeMaxParallel:              cfg.queryRangeMaxParallel,
@@ -1270,6 +1355,9 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 				"hint", "set -patterns-persist-path and use StatefulSet + PVC for restart-safe patterns cache",
 			)
 		}
+	}
+	if len(proxyCfg.PatternsCustom) > 0 {
+		logger.Info("custom drilldown patterns enabled", "count", len(proxyCfg.PatternsCustom))
 	}
 	if proxyCfg.DerivedFields != nil {
 		logger.Info("loaded derived fields", "count", len(proxyCfg.DerivedFields))

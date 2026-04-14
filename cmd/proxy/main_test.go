@@ -361,6 +361,12 @@ func TestRun_DefaultEnablesStructuredMetadata(t *testing.T) {
 	if captured.proxyCfg.patternsAutodetectFromQueries {
 		t.Fatal("expected -patterns-autodetect-from-queries to default to false")
 	}
+	if captured.proxyCfg.patternsCustomRaw != "" {
+		t.Fatalf("expected -patterns-custom default empty, got %q", captured.proxyCfg.patternsCustomRaw)
+	}
+	if captured.proxyCfg.patternsCustomFile != "" {
+		t.Fatalf("expected -patterns-custom-file default empty, got %q", captured.proxyCfg.patternsCustomFile)
+	}
 	if captured.proxyCfg.patternsPersistPath != "" {
 		t.Fatalf("expected -patterns-persist-path to default empty, got %q", captured.proxyCfg.patternsPersistPath)
 	}
@@ -867,6 +873,7 @@ func TestBuildProxyConfig(t *testing.T) {
 		emitStructuredMetadata:          true,
 		patternsEnabled:                 false,
 		patternsAutodetectFromQueries:   true,
+		patternsCustomRaw:               `["msg=error code=<_>", "grpc.code=<_>"]`,
 		queryRangeWindowing:             true,
 		queryRangeSplitInterval:         30 * time.Minute,
 		queryRangeMaxParallel:           4,
@@ -960,6 +967,9 @@ func TestBuildProxyConfig(t *testing.T) {
 	}
 	if !got.PatternsAutodetectFromQueries {
 		t.Fatalf("expected patterns autodetect from queries to be enabled")
+	}
+	if len(got.PatternsCustom) != 2 || got.PatternsCustom[0] != "msg=error code=<_>" || got.PatternsCustom[1] != "grpc.code=<_>" {
+		t.Fatalf("unexpected custom patterns: %+v", got.PatternsCustom)
 	}
 	if !got.QueryRangeWindowingEnabled {
 		t.Fatalf("expected query range windowing to be enabled")
@@ -1073,6 +1083,39 @@ func TestBuildProxyConfig_DefaultsAlertsBackendToRuler(t *testing.T) {
 	if got.AlertsBackendURL != "http://ruler" {
 		t.Fatalf("expected alerts backend to default to ruler backend, got %q", got.AlertsBackendURL)
 	}
+}
+
+func TestParseCustomPatterns(t *testing.T) {
+	t.Run("json-inline", func(t *testing.T) {
+		got, err := parseCustomPatterns(`["a"," b ","a"]`, "")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 2 || got[0] != "a" || got[1] != "b" {
+			t.Fatalf("unexpected parsed patterns: %+v", got)
+		}
+	})
+
+	t.Run("newline-file", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "patterns.txt")
+		content := "# comment\nfirst pattern\n\nsecond pattern\nfirst pattern\n"
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("write patterns file: %v", err)
+		}
+		got, err := parseCustomPatterns("", path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(got) != 2 || got[0] != "first pattern" || got[1] != "second pattern" {
+			t.Fatalf("unexpected parsed file patterns: %+v", got)
+		}
+	})
+
+	t.Run("invalid-json-inline", func(t *testing.T) {
+		if _, err := parseCustomPatterns("[not-valid]", ""); err == nil {
+			t.Fatal("expected invalid json error")
+		}
+	})
 }
 
 func TestBuildProxyConfig_InvalidInputs(t *testing.T) {

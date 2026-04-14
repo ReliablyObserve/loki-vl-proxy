@@ -18,6 +18,26 @@ Proxy behavior:
 - Patterns are derived from live query results, not from a static dictionary.
 - Optional global autodetect mode (`-patterns-autodetect-from-queries=true`) additionally warms pattern cache from successful `query` and `query_range` responses.
 - Maximum patterns returned per request are clamped to `1000`.
+- Pattern extraction prefers backend `query_range` first so Drilldown graphs use the selected time range buckets (not only recent tail windows), with `query` as fallback.
+
+## Static Custom Patterns
+
+You can prepend static patterns to every `/loki/api/v1/patterns` response:
+
+- `-patterns-custom` for inline config
+- `-patterns-custom-file` for file-based config (for example ConfigMap-mounted files)
+
+Accepted formats:
+
+- JSON string array
+- newline-separated text (`#` comments and empty lines are ignored)
+
+Custom patterns are prepended before autodetected patterns and de-duplicated by exact pattern string.
+
+Helm chart wiring:
+
+- `patternsCustom.inline` -> `-patterns-custom`
+- `patternsCustom.file.enabled=true` + ConfigMap mount -> `-patterns-custom-file`
 
 Loki behavior reference:
 
@@ -47,6 +67,8 @@ Retention model:
 
 - `-patterns-enabled`
 - `-patterns-autodetect-from-queries`
+- `-patterns-custom`
+- `-patterns-custom-file`
 - `-patterns-persist-path`
 - `-patterns-persist-interval`
 - `-patterns-startup-stale-threshold`

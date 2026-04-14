@@ -138,6 +138,34 @@ Default disk cache path when persistence is enabled.
 {{- end }}
 
 {{/*
+Resolve ConfigMap name for file-based custom patterns.
+*/}}
+{{- define "loki-vl-proxy.customPatternsConfigMapName" -}}
+{{- if .Values.patternsCustom.file.existingConfigMap -}}
+{{- .Values.patternsCustom.file.existingConfigMap -}}
+{{- else -}}
+{{- default (printf "%s-custom-patterns" (include "loki-vl-proxy.fullname" .)) .Values.patternsCustom.file.configMapName -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+Render default custom patterns file content.
+Priority:
+1) explicit patternsCustom.file.content
+2) JSON from patternsCustom.inline
+3) empty JSON array
+*/}}
+{{- define "loki-vl-proxy.customPatternsFileContent" -}}
+{{- if .Values.patternsCustom.file.content -}}
+{{- .Values.patternsCustom.file.content -}}
+{{- else if gt (len .Values.patternsCustom.inline) 0 -}}
+{{- toJson .Values.patternsCustom.inline -}}
+{{- else -}}
+[]
+{{- end -}}
+{{- end }}
+
+{{/*
 Resolve effective GOMEMLIMIT value.
 Priority:
 1) explicit .Values.goMemLimit
