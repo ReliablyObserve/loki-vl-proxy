@@ -17,6 +17,8 @@ Use **Grafana Loki clients** with **VictoriaLogs** through a **Loki-compatible r
 
 No custom Grafana datasource plugin. No sidecar translation service. One small static binary.
 
+Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
+
 ## Why Teams Use It
 
 - **Drop-in Loki frontend**: Keep Grafana Explore, Drilldown, dashboards, and Loki API tooling.

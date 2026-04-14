@@ -110,7 +110,7 @@ export EXTRA_LABEL_FIELDS='host.id,k8s.cluster.name,custom.pipeline.processing'
 When to also use `-field-mapping`:
 
 - Use `-extra-label-fields` to extend discovery and alias resolution.
-- Use `-field-mapping` when you need a non-default alias name (for example `custom.pipeline.processing` <-> `pipeline_proc`).
+- Use `-field-mapping` when you need a non-default alias name (for example `custom.pipeline.processing` &lt;-&gt; `pipeline_proc`).
 
 ### Indexed Label Values Browse Cache (Optional)
 
@@ -187,8 +187,8 @@ Sizing guidance:
 
 References:
 
-- Loki patterns API: <https://grafana.com/docs/loki/latest/reference/loki-http-api/#patterns-detection>
-- Grafana Logs patterns UI: <https://grafana.com/docs/grafana/latest/visualizations/simplified-exploration/logs/patterns/>
+- Loki patterns API: https://grafana.com/docs/loki/latest/reference/loki-http-api/#patterns-detection
+- Grafana Logs patterns UI: https://grafana.com/docs/grafana/latest/visualizations/simplified-exploration/logs/patterns/
 
 ### Metadata Field Modes
 

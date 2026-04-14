@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title desc">
+  <title id="title">Loki-VL-proxy</title>
+  <desc id="desc">Abstract pipeline icon for Loki-VL-proxy</desc>
+  <rect width="160" height="160" rx="34" fill="#0b1324"/>
+  <rect x="18" y="54" width="36" height="52" rx="12" fill="#ff6a3d"/>
+  <rect x="63" y="37" width="34" height="86" rx="12" fill="#0f766e"/>
+  <path d="M104 48h18l20 32-20 32h-18l18-32z" fill="#f5f1e8"/>
+  <circle cx="36" cy="80" r="8" fill="#fff4ef"/>
+  <circle cx="80" cy="80" r="8" fill="#dbfff7"/>
+</svg>

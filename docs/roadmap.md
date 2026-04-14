@@ -21,7 +21,7 @@
 - [x] Grafana datasource config (maxLines, basic auth, backend timeout, TLS, header/cookie forwarding, optional listener mTLS)
 - [x] Derived fields (regex extraction for trace linking)
 - [x] Chunked streaming (Transfer-Encoding: chunked for large results)
-- [x] OTel label translation (bidirectional dot<->underscore for 50+ fields)
+- [x] OTel label translation (bidirectional dot&lt;-&gt;underscore for 50+ fields)
 - [x] Custom field remapping (`-field-mapping`)
 - [x] Per-tenant metrics (request rate, latency, error rate by X-Scope-OrgID)
 - [x] Client error breakdown (bad_request, rate_limited, not_found, body_too_large)
