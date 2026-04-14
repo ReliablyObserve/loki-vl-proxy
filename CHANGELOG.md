@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- runtime compatibility: add Loki-compatible `/config/tenant/v1/limits` endpoint to expose published tenant limits for datasource/runtime probing
+- runtime compatibility: wire `/loki/api/v1/drilldown-limits` to runtime published limits (including per-tenant overrides) instead of fixed literals
+
+### Configuration
+
+- add published limits runtime controls: `tenant-limits-allow-publish`, `tenant-default-limits`, and `tenant-limits`
+- add matching environment variables: `TENANT_LIMITS_ALLOW_PUBLISH`, `TENANT_DEFAULT_LIMITS`, and `TENANT_LIMITS`
+
 ### Bug Fixes
 
 - drilldown-limits: advertise `pattern_ingester_enabled` from actual query-autodetect runtime state and `limits.pattern_persistence_enabled` from configured persistence path, so Grafana capability probing reflects real proxy behavior
 
 ### Tests
 
+- contract: add unit/e2e regression coverage for `/config/tenant/v1/limits` and strict drilldown limits contract keys/types
 - e2e compat: add Drilldown contract coverage for pattern flags and query-range-seeded autodetection through Grafana datasource resources
 - e2e compat: add dedicated autodetect proxy verification (`localhost:3110`) asserting `patterns_detected_total` increases after `query_range`
 - e2e UI: add Playwright Drilldown regression test proving `/resources/patterns` returns non-empty data for autodetect-enabled datasource
