@@ -27,6 +27,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      pages_site_exists: ${{ steps.pages_site.outputs.exists || 'false' }}
     permissions:
       contents: read
       pages: write
@@ -50,20 +52,40 @@ jobs:
         working-directory: website
         run: npm run build
 
-      - name: Configure Pages
+      - name: Detect Pages site
         if: github.event_name != 'pull_request'
+        id: pages_site
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if curl -fsS \
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/pages" >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+          {
+            echo "### GitHub Pages not enabled"
+            echo ""
+            echo "Site build succeeded, but deployment was skipped because GitHub Pages is not enabled for this repository."
+            echo "Enable GitHub Pages in repository settings and select GitHub Actions as the source, then rerun this workflow."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Configure Pages
+        if: github.event_name != 'pull_request' && steps.pages_site.outputs.exists == 'true'
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Upload Pages artifact
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.pages_site.outputs.exists == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: website/build
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && needs.build.outputs.pages_site_exists == 'true'
     needs: build
     runs-on: ubuntu-latest
     permissions:
