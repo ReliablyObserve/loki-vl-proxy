@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- align release metadata and notes coverage for `1.0.8`/`1.0.9` so changelog and published GitHub releases remain consistent for patterns/persistence deliverables
+
 ## [1.0.9] - 2026-04-14
 
 ### Features
