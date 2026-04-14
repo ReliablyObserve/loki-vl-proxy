@@ -65,10 +65,11 @@ async function openServiceDrilldown(
   page: Page,
   datasource: string,
   serviceName: string,
-  view: "logs" | "fields" = "logs"
+  view: "logs" | "fields" = "logs",
+  overrides: Record<string, string> = {}
 ) {
   const uid = await resolveDatasourceUid(page, datasource);
-  await page.goto(buildServiceDrilldownUrl(uid, serviceName, view));
+  await page.goto(buildServiceDrilldownUrl(uid, serviceName, view, overrides));
   await waitForDrilldownDetails(page);
 }
 
@@ -223,7 +224,9 @@ test.describe("Grafana Logs Drilldown", () => {
   test("service drilldown field filter survives reload from URL state @drilldown-core", async ({
     page,
   }) => {
-    const guards = installGrafanaGuards(page);
+    const guards = installGrafanaGuards(page, {
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
     const uid = await resolveDatasourceUid(page, PROXY_DS);
 
     await page.goto(
@@ -298,7 +301,10 @@ test.describe("Grafana Logs Drilldown", () => {
       [`{service_name="api-gateway"}`, `{app="api-gateway"}`, `{app=~".+"}`]
     );
 
-    await openServiceDrilldown(page, PROXY_PATTERNS_AUTODETECT_DS, serviceName, "logs");
+    await openServiceDrilldown(page, PROXY_PATTERNS_AUTODETECT_DS, serviceName, "logs", {
+      from: "now-24h",
+      to: "now",
+    });
 
     const patternsTab = page.getByRole("tab", { name: /^Patterns/i }).first();
     await expect(patternsTab).toBeVisible({ timeout: 10_000 });
