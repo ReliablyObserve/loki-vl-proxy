@@ -160,7 +160,10 @@ def main() -> int:
     commits = run_git("log", "--pretty=format:%s", f"{args.base}..{args.head}").splitlines()
 
     base_text = run_git("show", f"{args.base}:CHANGELOG.md")
-    head_text = CHANGELOG.read_text(encoding="utf-8")
+    # In PR workflows, checkout can point at the synthetic merge ref instead of
+    # the PR head commit. Read changelog directly from --head to avoid false
+    # negatives when base moved after the PR was opened.
+    head_text = run_git("show", f"{args.head}:CHANGELOG.md")
     base_unreleased = extract_unreleased_section(base_text)
     head_unreleased = extract_unreleased_section(head_text)
 

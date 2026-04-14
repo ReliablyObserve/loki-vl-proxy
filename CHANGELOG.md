@@ -42,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - e2e compat: add Drilldown contract coverage for pattern flags and query-range-seeded autodetection through Grafana datasource resources
 - e2e compat: add dedicated autodetect proxy verification (`localhost:3110`) asserting `patterns_detected_total` increases after `query_range`
 - e2e UI: add Playwright Drilldown regression test proving `/resources/patterns` returns non-empty data for autodetect-enabled datasource
+- e2e UI: stabilize Drilldown patterns autodetect test by seeding and validating against the guaranteed `api-gateway` stream in CI stacks
 
 ## [1.0.10] - 2026-04-14
 

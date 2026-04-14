@@ -65,75 +65,196 @@ async function openServiceDrilldown(
   page: Page,
   datasource: string,
   serviceName: string,
-  view: "logs" | "fields" = "logs"
+  view: "logs" | "fields" = "logs",
+  overrides: Record<string, string> = {}
 ) {
   const uid = await resolveDatasourceUid(page, datasource);
-  await page.goto(buildServiceDrilldownUrl(uid, serviceName, view));
+  await page.goto(buildServiceDrilldownUrl(uid, serviceName, view, overrides));
   await waitForDrilldownDetails(page);
 }
 
-function nsRangeLastTwoHours() {
+function nsRangeLastDay() {
   const end = Date.now() * 1_000_000;
-  const start = (Date.now() - 2 * 60 * 60 * 1000) * 1_000_000;
+  const start = (Date.now() - 24 * 60 * 60 * 1000) * 1_000_000;
   return { start, end };
+}
+
+function uniqueQueries(queries: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const query of queries) {
+    const normalized = query.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+async function seedPatternsStream(page: Page) {
+  const now = new Date();
+  const lines = [
+    JSON.stringify({
+      _time: new Date(now.getTime() - 2000).toISOString(),
+      _msg: 'time="2026-04-14T11:00:00Z" level=info msg="finished unary call with code OK" grpc.code=OK grpc.method=GetThing grpc.service=DemoService grpc.start_time="2026-04-14T11:00:00Z" grpc.time_ms=7 span.kind=server system=grpc',
+      app: "pattern-test",
+      service_name: "pattern-test",
+      level: "info",
+      cluster: "e2e",
+    }),
+    JSON.stringify({
+      _time: now.toISOString(),
+      _msg: 'time="2026-04-14T11:00:01Z" level=info msg="finished unary call with code OK" grpc.code=OK grpc.method=ListThings grpc.service=DemoService grpc.start_time="2026-04-14T11:00:01Z" grpc.time_ms=9 span.kind=server system=grpc',
+      app: "pattern-test",
+      service_name: "pattern-test",
+      level: "info",
+      cluster: "e2e",
+    }),
+  ].join("\n");
+
+  // e2e-ui shards don't run ingest tests, so seed VictoriaLogs directly.
+  await page.request.post(
+    "http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,service_name,level,cluster",
+    {
+      data: lines,
+      headers: {
+        "Content-Type": "application/stream+json",
+      },
+    }
+  );
+}
+
+async function discoverLabelValueQueries(
+  page: Page,
+  uid: string,
+  start: number,
+  end: number
+) {
+  const labels = ["service_name", "app", "service", "job", "namespace", "pod", "container"];
+  const discovered: string[] = [];
+
+  for (const label of labels) {
+    const params = new URLSearchParams();
+    params.set("start", String(start));
+    params.set("end", String(end));
+    const response = await page.request.get(
+      `/api/datasources/proxy/uid/${uid}/loki/api/v1/label/${encodeURIComponent(label)}/values?${params.toString()}`
+    );
+    if (!response.ok()) {
+      continue;
+    }
+    const payload = (await response.json().catch(() => null)) as {
+      status?: string;
+      data?: unknown[];
+    } | null;
+    if (payload?.status !== "success" || !Array.isArray(payload.data)) {
+      continue;
+    }
+    for (const rawValue of payload.data) {
+      if (typeof rawValue !== "string" || rawValue.trim().length === 0) {
+        continue;
+      }
+      const value = rawValue.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      discovered.push(`{${label}="${value}"}`);
+      break;
+    }
+  }
+
+  return discovered;
 }
 
 async function waitForAutodetectedPatterns(
   page: Page,
   datasource: string,
-  query: string,
+  queries: string[],
   timeoutMs = 30_000
 ) {
   const uid = await resolveDatasourceUid(page, datasource);
   const deadline = Date.now() + timeoutMs;
   let lastPatternsPayload: unknown = null;
   let lastSeedPayload: unknown = null;
-  const { start, end } = nsRangeLastTwoHours();
+  let lastQuery = "";
+  const { start, end } = nsRangeLastDay();
+  await seedPatternsStream(page);
+  const discoveredQueries = await discoverLabelValueQueries(page, uid, start, end);
+  const fallbackQueries = uniqueQueries([
+    '{app="pattern-test"}',
+    '{service_name="pattern-test"}',
+    ...queries,
+    ...discoveredQueries,
+    '{service_name=~".+"}',
+    '{app=~".+"}',
+  ]);
+  const serviceKeys = [
+    "service_name",
+    "service.name",
+    "service",
+    "app",
+    "application",
+    "app_name",
+  ];
 
   while (Date.now() < deadline) {
-    const seedParams = new URLSearchParams();
-    seedParams.set("query", query);
-    seedParams.set("start", String(start));
-    seedParams.set("end", String(end));
-    seedParams.set("limit", "200");
-    seedParams.set("direction", "backward");
-    const seedResponse = await page.request.get(
-      `/api/datasources/proxy/uid/${uid}/loki/api/v1/query_range?${seedParams.toString()}`
-    );
-    try {
-      lastSeedPayload = await seedResponse.json();
-    } catch {
-      lastSeedPayload = null;
-    }
+    for (const query of fallbackQueries) {
+      lastQuery = query;
+      const seedParams = new URLSearchParams();
+      seedParams.set("query", query);
+      seedParams.set("start", String(start));
+      seedParams.set("end", String(end));
+      seedParams.set("limit", "200");
+      seedParams.set("direction", "backward");
+      const seedResponse = await page.request.get(
+        `/api/datasources/proxy/uid/${uid}/loki/api/v1/query_range?${seedParams.toString()}`
+      );
+      try {
+        lastSeedPayload = await seedResponse.json();
+      } catch {
+        lastSeedPayload = null;
+      }
 
-    const patternsParams = new URLSearchParams();
-    patternsParams.set("query", query);
-    patternsParams.set("start", String(start));
-    patternsParams.set("end", String(end));
-    patternsParams.set("step", "60s");
-    const patternsResponse = await page.request.get(
-      `/api/datasources/uid/${uid}/resources/patterns?${patternsParams.toString()}`
-    );
-    try {
-      lastPatternsPayload = await patternsResponse.json();
-    } catch {
-      lastPatternsPayload = null;
-    }
+      const patternsParams = new URLSearchParams();
+      patternsParams.set("query", query);
+      patternsParams.set("start", String(start));
+      patternsParams.set("end", String(end));
+      patternsParams.set("step", "60s");
+      const patternsResponse = await page.request.get(
+        `/api/datasources/uid/${uid}/resources/patterns?${patternsParams.toString()}`
+      );
+      try {
+        lastPatternsPayload = await patternsResponse.json();
+      } catch {
+        lastPatternsPayload = null;
+      }
 
-    if (
-      seedResponse.ok() &&
-      (lastSeedPayload as { status?: string } | null)?.status === "success" &&
-      Array.isArray((lastPatternsPayload as { data?: unknown[] } | null)?.data) &&
-      ((lastPatternsPayload as { data?: unknown[] }).data?.length ?? 0) > 0
-    ) {
-      return;
+      if (
+        !seedResponse.ok() ||
+        (lastSeedPayload as { status?: string } | null)?.status !== "success" ||
+        !Array.isArray((lastPatternsPayload as { data?: unknown[] } | null)?.data) ||
+        ((lastPatternsPayload as { data?: unknown[] }).data?.length ?? 0) === 0
+      ) {
+        continue;
+      }
+
+      const result = ((lastSeedPayload as { data?: { result?: unknown[] } } | null)?.data
+        ?.result ?? []) as Array<{ stream?: Record<string, string> }>;
+      for (const entry of result) {
+        const stream = entry?.stream ?? {};
+        for (const key of serviceKeys) {
+          const value = stream[key];
+          if (typeof value === "string" && value.trim().length > 0) {
+            return value;
+          }
+        }
+      }
     }
 
     await page.waitForTimeout(500);
   }
 
   throw new Error(
-    `timed out waiting for autodetected patterns (seed=${JSON.stringify(
+    `timed out waiting for autodetected patterns (query=${lastQuery}, seed=${JSON.stringify(
       lastSeedPayload
     )}, patterns=${JSON.stringify(lastPatternsPayload)})`
   );
@@ -198,7 +319,9 @@ test.describe("Grafana Logs Drilldown", () => {
   test("service drilldown field filter survives reload from URL state @drilldown-core", async ({
     page,
   }) => {
-    const guards = installGrafanaGuards(page);
+    const guards = installGrafanaGuards(page, {
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
     const uid = await resolveDatasourceUid(page, PROXY_DS);
 
     await page.goto(
@@ -267,13 +390,16 @@ test.describe("Grafana Logs Drilldown", () => {
     page,
   }) => {
     const guards = installGrafanaGuards(page);
-    await waitForAutodetectedPatterns(
+    const serviceName = await waitForAutodetectedPatterns(
       page,
       PROXY_PATTERNS_AUTODETECT_DS,
-      `{app="pattern-test"}`
+      [`{service_name="api-gateway"}`, `{app="api-gateway"}`, `{app=~".+"}`]
     );
 
-    await openServiceDrilldown(page, PROXY_PATTERNS_AUTODETECT_DS, "pattern-test", "logs");
+    await openServiceDrilldown(page, PROXY_PATTERNS_AUTODETECT_DS, serviceName, "logs", {
+      from: "now-24h",
+      to: "now",
+    });
 
     const patternsTab = page.getByRole("tab", { name: /^Patterns/i }).first();
     await expect(patternsTab).toBeVisible({ timeout: 10_000 });

@@ -108,7 +108,17 @@ jobs:
       - name: Start e2e stack
         working-directory: test/e2e-compat
         run: |
-          docker compose up -d --no-build
+          for attempt in 1 2 3; do
+            if docker compose up -d --no-build; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "docker compose up failed after ${attempt} attempts"
+              exit 1
+            fi
+            echo "docker compose up failed (attempt ${attempt}), retrying in 10s..."
+            sleep 10
+          done
           ../../scripts/ci/wait_e2e_stack.sh 180
 
       - name: Seed smoke data
