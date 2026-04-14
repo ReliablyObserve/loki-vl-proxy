@@ -79,6 +79,89 @@ function nsRangeLastDay() {
   return { start, end };
 }
 
+function uniqueQueries(queries: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const query of queries) {
+    const normalized = query.trim();
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  }
+  return result;
+}
+
+async function seedPatternsStream(page: Page, uid: string) {
+  const nowNs = BigInt(Date.now()) * 1_000_000n;
+  const payload = {
+    streams: [
+      {
+        stream: {
+          app: "pattern-test",
+          service_name: "pattern-test",
+          level: "info",
+          cluster: "e2e",
+        },
+        values: [
+          [
+            (nowNs - 2_000_000_000n).toString(),
+            'time="2026-04-14T11:00:00Z" level=info msg="finished unary call with code OK" grpc.code=OK grpc.method=GetThing grpc.service=DemoService grpc.start_time="2026-04-14T11:00:00Z" grpc.time_ms=7 span.kind=server system=grpc',
+          ],
+          [
+            nowNs.toString(),
+            'time="2026-04-14T11:00:01Z" level=info msg="finished unary call with code OK" grpc.code=OK grpc.method=ListThings grpc.service=DemoService grpc.start_time="2026-04-14T11:00:01Z" grpc.time_ms=9 span.kind=server system=grpc',
+          ],
+        ],
+      },
+    ],
+  };
+
+  await page.request.post(`/api/datasources/proxy/uid/${uid}/loki/api/v1/push`, {
+    data: payload,
+  });
+}
+
+async function discoverLabelValueQueries(
+  page: Page,
+  uid: string,
+  start: number,
+  end: number
+) {
+  const labels = ["service_name", "app", "service", "job", "namespace", "pod", "container"];
+  const discovered: string[] = [];
+
+  for (const label of labels) {
+    const params = new URLSearchParams();
+    params.set("start", String(start));
+    params.set("end", String(end));
+    const response = await page.request.get(
+      `/api/datasources/proxy/uid/${uid}/loki/api/v1/label/${encodeURIComponent(label)}/values?${params.toString()}`
+    );
+    if (!response.ok()) {
+      continue;
+    }
+    const payload = (await response.json().catch(() => null)) as {
+      status?: string;
+      data?: unknown[];
+    } | null;
+    if (payload?.status !== "success" || !Array.isArray(payload.data)) {
+      continue;
+    }
+    for (const rawValue of payload.data) {
+      if (typeof rawValue !== "string" || rawValue.trim().length === 0) {
+        continue;
+      }
+      const value = rawValue.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+      discovered.push(`{${label}="${value}"}`);
+      break;
+    }
+  }
+
+  return discovered;
+}
+
 async function waitForAutodetectedPatterns(
   page: Page,
   datasource: string,
@@ -91,7 +174,16 @@ async function waitForAutodetectedPatterns(
   let lastSeedPayload: unknown = null;
   let lastQuery = "";
   const { start, end } = nsRangeLastDay();
-  const fallbackQueries = [...queries];
+  await seedPatternsStream(page, uid);
+  const discoveredQueries = await discoverLabelValueQueries(page, uid, start, end);
+  const fallbackQueries = uniqueQueries([
+    '{app="pattern-test"}',
+    '{service_name="pattern-test"}',
+    ...queries,
+    ...discoveredQueries,
+    '{service_name=~".+"}',
+    '{app=~".+"}',
+  ]);
   const serviceKeys = [
     "service_name",
     "service.name",
