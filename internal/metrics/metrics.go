@@ -44,6 +44,18 @@ type Metrics struct {
 	translationsTotal atomic.Int64
 	translationErrors atomic.Int64
 
+	// Patterns lifecycle stats
+	patternsDetectedTotal            atomic.Int64
+	patternsStoredTotal              atomic.Int64
+	patternsRestoredFromDiskTotal    atomic.Int64
+	patternsRestoredFromPeersTotal   atomic.Int64
+	patternsRestoredDiskEntriesTotal atomic.Int64
+	patternsRestoredPeerEntriesTotal atomic.Int64
+	patternsInMemory                 atomic.Int64
+	patternsCacheKeys                atomic.Int64
+	patternsInMemoryBytes            atomic.Int64
+	patternsPersistedDiskBytes       atomic.Int64
+
 	// Tuple emission mode stats
 	tupleModes map[string]*atomic.Int64 // "mode" -> count
 
@@ -738,6 +750,52 @@ func (m *Metrics) RecordCacheHit()         { m.cacheHits.Add(1) }
 func (m *Metrics) RecordCacheMiss()        { m.cacheMisses.Add(1) }
 func (m *Metrics) RecordTranslation()      { m.translationsTotal.Add(1) }
 func (m *Metrics) RecordTranslationError() { m.translationErrors.Add(1) }
+func (m *Metrics) RecordPatternsDetected(n int) {
+	if n > 0 {
+		m.patternsDetectedTotal.Add(int64(n))
+	}
+}
+func (m *Metrics) RecordPatternsStored(n int) {
+	if n > 0 {
+		m.patternsStoredTotal.Add(int64(n))
+	}
+}
+func (m *Metrics) RecordPatternsRestoredFromDisk(patternCount, entryCount int) {
+	if patternCount > 0 {
+		m.patternsRestoredFromDiskTotal.Add(int64(patternCount))
+	}
+	if entryCount > 0 {
+		m.patternsRestoredDiskEntriesTotal.Add(int64(entryCount))
+	}
+}
+func (m *Metrics) RecordPatternsRestoredFromPeers(patternCount, entryCount int) {
+	if patternCount > 0 {
+		m.patternsRestoredFromPeersTotal.Add(int64(patternCount))
+	}
+	if entryCount > 0 {
+		m.patternsRestoredPeerEntriesTotal.Add(int64(entryCount))
+	}
+}
+func (m *Metrics) SetPatternsInMemory(patternCount, keyCount int, bytes int64) {
+	if patternCount < 0 {
+		patternCount = 0
+	}
+	if keyCount < 0 {
+		keyCount = 0
+	}
+	if bytes < 0 {
+		bytes = 0
+	}
+	m.patternsInMemory.Store(int64(patternCount))
+	m.patternsCacheKeys.Store(int64(keyCount))
+	m.patternsInMemoryBytes.Store(bytes)
+}
+func (m *Metrics) SetPatternsPersistedDiskBytes(bytes int64) {
+	if bytes < 0 {
+		bytes = 0
+	}
+	m.patternsPersistedDiskBytes.Store(bytes)
+}
 
 // RecordTupleMode records the emitted tuple mode for a log query response.
 func (m *Metrics) RecordTupleMode(mode string) {
@@ -1000,6 +1058,46 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_translation_errors_total Failed translations.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_translation_errors_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_translation_errors_total %d\n", m.translationErrors.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_detected_total Unique patterns detected from pattern mining.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_detected_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_detected_total %d\n", m.patternsDetectedTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_stored_total Pattern entries stored in proxy cache/snapshot updates.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_stored_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_stored_total %d\n", m.patternsStoredTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_restored_from_disk_total Pattern entries restored from on-disk snapshots.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_restored_from_disk_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_restored_from_disk_total %d\n", m.patternsRestoredFromDiskTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_restored_from_peers_total Pattern entries restored from peer snapshots.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_restored_from_peers_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_restored_from_peers_total %d\n", m.patternsRestoredFromPeersTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_restored_disk_entries_total Snapshot cache keys restored from disk.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_restored_disk_entries_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_restored_disk_entries_total %d\n", m.patternsRestoredDiskEntriesTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_restored_peer_entries_total Snapshot cache keys restored from peers.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_restored_peer_entries_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_restored_peer_entries_total %d\n", m.patternsRestoredPeerEntriesTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_in_memory Current number of patterns held in in-memory snapshot state.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_in_memory gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_in_memory %d\n", m.patternsInMemory.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_cache_keys Current number of pattern cache keys held in in-memory snapshot state.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_cache_keys gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_cache_keys %d\n", m.patternsCacheKeys.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_in_memory_bytes Current bytes used by in-memory pattern snapshot payloads.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_in_memory_bytes gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_in_memory_bytes %d\n", m.patternsInMemoryBytes.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_persisted_disk_bytes Last persisted pattern snapshot size on disk in bytes.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_persisted_disk_bytes gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_persisted_disk_bytes %d\n", m.patternsPersistedDiskBytes.Load())
 
 	sb.WriteString("# HELP loki_vl_proxy_response_tuple_mode_total Log response tuple mode emissions by client behavior.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_response_tuple_mode_total counter\n")

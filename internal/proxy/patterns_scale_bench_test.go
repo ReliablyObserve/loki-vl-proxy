@@ -36,6 +36,32 @@ func buildPatternNDJSON(lines int) []byte {
 	return []byte(b.String())
 }
 
+func buildPatternWindowEntries(lines int) []queryRangeWindowEntry {
+	if lines < 1 {
+		lines = 1
+	}
+	entries := make([]queryRangeWindowEntry, 0, lines)
+	for i := range lines {
+		method := []string{"GET", "POST", "PUT", "DELETE"}[i%4]
+		status := []int{200, 201, 400, 500}[i%4]
+		msg := fmt.Sprintf(
+			"level=info msg=request method=%s route=/api/item/%d status=%d duration_ms=%d",
+			method,
+			i%2000,
+			status,
+			10+(i%900),
+		)
+		entries = append(entries, queryRangeWindowEntry{
+			Stream: map[string]string{"level": "info"},
+			Value: []interface{}{
+				strconv.FormatInt(1_775_296_800_000_000_000+int64(i), 10),
+				msg,
+			},
+		})
+	}
+	return entries
+}
+
 func patternBypassRequests(requestCount int) []*http.Request {
 	if requestCount < 1 {
 		requestCount = 1
@@ -118,6 +144,21 @@ func BenchmarkProxy_Patterns_Scale_CacheHit(b *testing.B) {
 					mux.ServeHTTP(w, req)
 				}
 			})
+		})
+	}
+}
+
+func BenchmarkProxy_PatternsExtract_WindowEntries_Scale(b *testing.B) {
+	scales := []int{100, 1000, 10000}
+	for _, scale := range scales {
+		scale := scale
+		b.Run("lines_"+strconv.Itoa(scale), func(b *testing.B) {
+			entries := buildPatternWindowEntries(scale)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = extractLogPatternsFromWindowEntries(entries, "1m", 50)
+			}
 		})
 	}
 }

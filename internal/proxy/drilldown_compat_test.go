@@ -114,6 +114,29 @@ func TestDrilldown_QueryRange_ParsedFieldsStayOutOfStreamLabels(t *testing.T) {
 	}
 }
 
+func TestDrilldown_ServiceNameValuesFromDetectedLabels_UsesNativeDetectedLabels(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/streams" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"values":[{"value":"{service.name=\"api\",level=\"info\"}","hits":10},{"value":"{service.name=\"worker\",level=\"warn\"}","hits":7}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	values, err := p.serviceNameValuesFromDetectedLabels(context.Background(), `{service_name=~".+"}`, "", "")
+	if err != nil {
+		t.Fatalf("serviceNameValuesFromDetectedLabels returned error: %v", err)
+	}
+	if len(values) != 2 {
+		t.Fatalf("expected 2 service_name values, got %v", values)
+	}
+	if values[0] != "api" || values[1] != "worker" {
+		t.Fatalf("unexpected service_name values: %v", values)
+	}
+}
+
 func TestDrilldown_QueryRange_RawVLFieldsDoNotPolluteStreamLabels(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {

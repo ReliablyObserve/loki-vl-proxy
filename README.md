@@ -22,11 +22,12 @@ No custom Grafana datasource plugin. No sidecar translation service. One small s
 - **Drop-in Loki frontend**: Keep Grafana Explore, Drilldown, dashboards, and Loki API tooling.
 - **VictoriaLogs backend economics**: Query VL while preserving Loki client experience.
 - **Dual-schema compatibility**: Keep Loki-safe underscore labels while exposing OTel/VL dotted structured metadata where needed.
+- **Patterns compatibility with persistence**: Loki-compatible `/patterns` support with optional disk + peer-warm persistence for fast Drilldown after restarts.
 - **Strict compatibility contracts**: Default 2-tuple responses, explicit 3-tuple only when `categorize-labels` is requested.
 - **Production guardrails**: Tenant isolation, bounded fanout, circuit breaking, rate limits, and safe caching.
 - **Fast repeat reads**: Tiered cache with optional disk and fleet peer reuse.
 
-Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/compatibility-matrix.md), [Operations](docs/operations.md)
+Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/compatibility-matrix.md), [Patterns](docs/patterns.md), [Operations](docs/operations.md)
 
 ## Key Features
 
@@ -35,6 +36,7 @@ Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/
 - Loki-compatible read API for Grafana datasource, Explore, Drilldown, and API clients.
 - Strict tuple contracts: default 2-tuple, explicit 3-tuple only via `categorize-labels`.
 - Grafana Logs Drilldown patterns support through `/loki/api/v1/patterns`, with explicit `-patterns-enabled` control when deployments need it disabled.
+- Loki-compatible patterns endpoint with optional restart-safe persistence.
 - Multi-tenant read fanout with tenant isolation guardrails.
 - Rules and alerts read compatibility from `vmalert`.
 
@@ -54,7 +56,7 @@ Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/
 - CI guardrails to keep new app metrics under the `loki_vl_proxy_*` prefix.
 - Runbook-backed alerting assets for operational response.
 
-Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Observability](docs/observability.md), [Testing](docs/testing.md)
+Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Patterns](docs/patterns.md), [Observability](docs/observability.md), [Testing](docs/testing.md)
 
 ## UI Gallery
 

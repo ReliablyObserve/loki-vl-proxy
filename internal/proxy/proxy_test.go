@@ -600,6 +600,101 @@ func TestContract_Patterns_ResponseFormat(t *testing.T) {
 	}
 }
 
+func TestContract_Patterns_DoesNotAppendSortClause(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		if strings.Contains(r.FormValue("query"), "sort by") {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"sort unsupported"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:01Z","_msg":"GET /api/users 200 22ms","app":"web","level":"info"}` + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1&end=2", nil)
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data, _ := resp["data"].([]interface{})
+	if len(data) == 0 {
+		t.Fatalf("expected non-empty patterns response, got %v", resp)
+	}
+}
+
+func TestContract_Patterns_FallsBackToQueryRangeWhenQueryUnavailable(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"query endpoint unavailable"}`))
+		case "/select/logsql/query_range":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"level":"info"},"values":[["1712311200000000000","GET /api/users 200 15ms"],["1712311201000000000","GET /api/users 200 22ms"]]}]}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1&end=2", nil)
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data, _ := resp["data"].([]interface{})
+	if len(data) == 0 {
+		t.Fatalf("expected non-empty patterns response from query_range fallback, got %v", resp)
+	}
+}
+
+func TestContract_Patterns_FallsBackToQueryRangeWhenQueryHasNoExtractablePatterns(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			// Valid response body, but no extractable lines for pattern miner.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+		case "/select/logsql/query_range":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"level":"info"},"values":[["1712311200000000000","GET /api/users 200 15ms"],["1712311201000000000","GET /api/users 200 22ms"]]}]}}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1&end=2", nil)
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data, _ := resp["data"].([]interface{})
+	if len(data) == 0 {
+		t.Fatalf("expected non-empty patterns response from query_range fallback when query body has no extractable patterns, got %v", resp)
+	}
+}
+
 func TestContract_Patterns_DisabledReturnsNotFound(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -626,6 +721,204 @@ func TestContract_Patterns_DisabledReturnsNotFound(t *testing.T) {
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
 	if resp["errorType"] != "not_found" {
 		t.Fatalf("expected not_found errorType, got %v", resp["errorType"])
+	}
+}
+
+func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
+	callCount := 0
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		switch {
+		case callCount <= 2:
+			// First probe: query + fallback query_range are both empty.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+		default:
+			// Subsequent probe has data and should not be blocked by sticky empty cache.
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:01Z","_msg":"GET /api/users 200 22ms","app":"web","level":"info"}` + "\n"))
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	reqURL := "/loki/api/v1/patterns?query=%7B%7D&start=1&end=2"
+
+	w1 := httptest.NewRecorder()
+	r1 := httptest.NewRequest("GET", reqURL, nil)
+	p.handlePatterns(w1, r1)
+	var first map[string]interface{}
+	mustUnmarshal(t, w1.Body.Bytes(), &first)
+	firstData, _ := first["data"].([]interface{})
+	if len(firstData) != 0 {
+		t.Fatalf("expected first patterns probe to be empty, got %v", first)
+	}
+
+	w2 := httptest.NewRecorder()
+	r2 := httptest.NewRequest("GET", reqURL, nil)
+	p.handlePatterns(w2, r2)
+	var second map[string]interface{}
+	mustUnmarshal(t, w2.Body.Bytes(), &second)
+	secondData, _ := second["data"].([]interface{})
+	if len(secondData) == 0 {
+		t.Fatalf("expected second patterns probe to return data (empty response must not be sticky), got %v", second)
+	}
+	if callCount < 3 {
+		t.Fatalf("expected backend to be queried again after empty probe; got callCount=%d", callCount)
+	}
+}
+
+func TestContract_PatternHelpers_ParseAndLimitPayload(t *testing.T) {
+	if got := parsePatternLimit(""); got != 50 {
+		t.Fatalf("expected default limit 50, got %d", got)
+	}
+	if got := parsePatternLimit("5000"); got != maxPatternResponseLimit {
+		t.Fatalf("expected maxPatternResponseLimit clamp, got %d", got)
+	}
+	if got := parsePatternLimit("7"); got != 7 {
+		t.Fatalf("expected explicit parsed limit 7, got %d", got)
+	}
+
+	payload, err := json.Marshal(patternsResponse{
+		Status: "success",
+		Data: []patternResultEntry{
+			{Pattern: "alpha <_>", Samples: [][]interface{}{{"1", "alpha 1"}}},
+			{Pattern: "beta <_>", Samples: [][]interface{}{{"2", "beta 2"}}},
+			{Pattern: "gamma <_>", Samples: [][]interface{}{{"3", "gamma 3"}}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+	limited := limitPatternPayload(payload, 2)
+	var resp patternsResponse
+	mustUnmarshal(t, limited, &resp)
+	if len(resp.Data) != 2 {
+		t.Fatalf("expected 2 limited patterns, got %d", len(resp.Data))
+	}
+}
+
+func TestContract_RefreshVolumeCacheAsync_PopulatesCache(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/hits" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	cacheKey := "volume:test-refresh"
+	p.refreshVolumeCacheAsync("", cacheKey, `{app="api"}`, "", "", "")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if body, _, ok := p.cache.GetWithTTL(cacheKey); ok {
+			var resp map[string]interface{}
+			mustUnmarshal(t, body, &resp)
+			assertLokiSuccess(t, resp)
+			data := assertDataIsObject(t, resp)
+			if data["resultType"] != "vector" {
+				t.Fatalf("expected vector resultType, got %v", data["resultType"])
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected background volume refresh to populate cache")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestContract_RefreshVolumeRangeCacheAsync_PopulatesCache(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/hits" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[5]}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	cacheKey := "volume_range:test-refresh"
+	p.refreshVolumeRangeCacheAsync("", cacheKey, `{app="api"}`, "", "", "60", "")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if body, _, ok := p.cache.GetWithTTL(cacheKey); ok {
+			var resp map[string]interface{}
+			mustUnmarshal(t, body, &resp)
+			assertLokiSuccess(t, resp)
+			data := assertDataIsObject(t, resp)
+			if data["resultType"] != "matrix" {
+				t.Fatalf("expected matrix resultType, got %v", data["resultType"])
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("expected background volume_range refresh to populate cache")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestContract_DrilldownLimits_PatternsEnabledAdvertised(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/drilldown-limits", nil)
+	p.handleDrilldownLimits(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from drilldown-limits, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if resp["pattern_ingester_enabled"] != true {
+		t.Fatalf("expected pattern_ingester_enabled=true, got %v", resp["pattern_ingester_enabled"])
+	}
+	limits, ok := resp["limits"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected limits object, got %T", resp["limits"])
+	}
+	if limits["pattern_persistence_enabled"] != true {
+		t.Fatalf("expected limits.pattern_persistence_enabled=true, got %v", limits["pattern_persistence_enabled"])
+	}
+}
+
+func TestContract_DrilldownLimits_PatternsDisabledAdvertised(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer vlBackend.Close()
+
+	disabled := false
+	p, err := New(Config{
+		BackendURL:      vlBackend.URL,
+		PatternsEnabled: &disabled,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/drilldown-limits", nil)
+	p.handleDrilldownLimits(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from drilldown-limits, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if resp["pattern_ingester_enabled"] != false {
+		t.Fatalf("expected pattern_ingester_enabled=false, got %v", resp["pattern_ingester_enabled"])
+	}
+	limits, ok := resp["limits"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected limits object, got %T", resp["limits"])
+	}
+	if limits["pattern_persistence_enabled"] != false {
+		t.Fatalf("expected limits.pattern_persistence_enabled=false, got %v", limits["pattern_persistence_enabled"])
 	}
 }
 

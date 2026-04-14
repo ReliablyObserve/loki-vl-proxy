@@ -82,6 +82,58 @@ func TestCompatCacheMiddleware_DoesNotCacheErrors(t *testing.T) {
 	}
 }
 
+func TestCompatCacheMiddleware_DoesNotCacheEmptyPatterns(t *testing.T) {
+	var backendCalls int
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			backendCalls++
+			w.Header().Set("Content-Type", "application/json")
+			if backendCalls == 1 {
+				_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
+			return
+		case "/select/logsql/query_range":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+			return
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer backend.Close()
+
+	p := newCompatTestProxy(t, backend.URL)
+	target := "/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1&end=2"
+
+	first := doCompatProxyRequest(p, target, nil)
+	if first.Code != http.StatusOK {
+		t.Fatalf("expected 200 for first request, got %d: %s", first.Code, first.Body.String())
+	}
+	var firstBody map[string]interface{}
+	mustUnmarshal(t, first.Body.Bytes(), &firstBody)
+	firstData, _ := firstBody["data"].([]interface{})
+	if len(firstData) != 0 {
+		t.Fatalf("expected first patterns response to be empty, got %v", firstBody)
+	}
+
+	second := doCompatProxyRequest(p, target, nil)
+	if second.Code != http.StatusOK {
+		t.Fatalf("expected 200 for second request, got %d: %s", second.Code, second.Body.String())
+	}
+	var secondBody map[string]interface{}
+	mustUnmarshal(t, second.Body.Bytes(), &secondBody)
+	secondData, _ := secondBody["data"].([]interface{})
+	if len(secondData) == 0 {
+		t.Fatalf("expected second patterns response to be non-empty (empty must not be compat-cached), got %v", secondBody)
+	}
+	if backendCalls < 2 {
+		t.Fatalf("expected backend re-query after empty patterns response, got %d calls", backendCalls)
+	}
+}
+
 func TestCompatCacheMiddleware_InvalidatedOnFieldMappingReload(t *testing.T) {
 	var backendCalls int
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -234,6 +234,50 @@ func TestQueryRangeWindow_CategorizeLabelsUsesMetadataObjectMaps(t *testing.T) {
 	}
 }
 
+func TestQueryRangeWindow_WarmQueryRangeWindowsAsync_PrimesCache(t *testing.T) {
+	var backendCalls atomic.Int64
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendCalls.Add(1)
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		_ = r.ParseForm()
+		startNs, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+		_, _ = fmt.Fprintf(w, "{\"_time\":%q,\"_msg\":\"warm-cache-test message\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n", time.Unix(0, startNs).UTC().Format(time.RFC3339Nano))
+	}))
+	defer vlBackend.Close()
+
+	p := newWindowingTestProxy(t, vlBackend.URL)
+	p.queryRangeBackgroundWarmMaxWindows = 1
+
+	start := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+	window := queryRangeWindow{startNs: start, endNs: start + int64(time.Hour) - 1}
+	req := httptest.NewRequest(
+		"GET",
+		fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=100", url.QueryEscape(`{app="nginx"}`), window.startNs, window.endNs),
+		nil,
+	)
+	if err := req.ParseForm(); err != nil {
+		t.Fatalf("parse form: %v", err)
+	}
+	cacheKey := p.queryRangeWindowCacheKey(req, `{app="nginx"}`, "100", window, false, false)
+
+	p.warmQueryRangeWindowsAsync(req, `{app="nginx"}`, "100", []queryRangeWindow{window}, false, false)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, ok := p.cache.Get(cacheKey); ok {
+			if got := backendCalls.Load(); got == 0 {
+				t.Fatal("expected warmQueryRangeWindowsAsync to call backend at least once")
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected warmQueryRangeWindowsAsync to populate cache key %q", cacheKey)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestQueryRangeWindow_MultiTenantCompatibility(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()

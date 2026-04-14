@@ -116,6 +116,50 @@ func TestMetrics_RecordTranslationError(t *testing.T) {
 	}
 }
 
+func TestMetrics_PatternSnapshotMetrics(t *testing.T) {
+	m := NewMetrics()
+
+	// Non-positive updates should be ignored/sanitized.
+	m.RecordPatternsDetected(0)
+	m.RecordPatternsDetected(-1)
+	m.RecordPatternsStored(0)
+	m.RecordPatternsStored(-2)
+	m.RecordPatternsRestoredFromDisk(-1, -1)
+	m.RecordPatternsRestoredFromPeers(-1, -1)
+	m.SetPatternsInMemory(-1, -2, -3)
+	m.SetPatternsPersistedDiskBytes(-10)
+
+	// Positive updates should be recorded.
+	m.RecordPatternsDetected(3)
+	m.RecordPatternsStored(4)
+	m.RecordPatternsRestoredFromDisk(2, 5)
+	m.RecordPatternsRestoredFromPeers(7, 11)
+	m.SetPatternsInMemory(13, 17, 19)
+	m.SetPatternsPersistedDiskBytes(23)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/metrics", nil)
+	m.Handler(w, r)
+	body := w.Body.String()
+
+	for _, needle := range []string{
+		"loki_vl_proxy_patterns_detected_total 3",
+		"loki_vl_proxy_patterns_stored_total 4",
+		"loki_vl_proxy_patterns_restored_from_disk_total 2",
+		"loki_vl_proxy_patterns_restored_disk_entries_total 5",
+		"loki_vl_proxy_patterns_restored_from_peers_total 7",
+		"loki_vl_proxy_patterns_restored_peer_entries_total 11",
+		"loki_vl_proxy_patterns_in_memory 13",
+		"loki_vl_proxy_patterns_cache_keys 17",
+		"loki_vl_proxy_patterns_in_memory_bytes 19",
+		"loki_vl_proxy_patterns_persisted_disk_bytes 23",
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected metric %q in output", needle)
+		}
+	}
+}
+
 func TestResolveClientID_IgnoresUntrustedProxyHeadersByDefault(t *testing.T) {
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	req.Header.Set("X-Grafana-User", "grafana-user")

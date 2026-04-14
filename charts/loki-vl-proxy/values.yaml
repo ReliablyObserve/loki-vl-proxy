@@ -91,6 +91,7 @@ extraArgs:
   label-values-hot-limit: "200"
   label-values-index-max-entries: "200000"
   patterns-enabled: "true"
+  patterns-autodetect-from-queries: "false"
   log-level: "info"
   # Hardening
   http-read-timeout: "30s"
@@ -152,7 +153,14 @@ extraArgs:
   # label-values-index-persist-interval: "30s"
   # label-values-index-startup-stale-threshold: "60s"
   # label-values-index-startup-peer-warm-timeout: "5s"
+  # Patterns snapshot persistence (recommended for Drilldown patterns warm restart/fleet sync)
+  # patterns-persist-path: "/cache/patterns-snapshot.json"
+  # patterns-persist-interval: "30s"
+  # patterns-startup-stale-threshold: "60s"
+  # patterns-startup-peer-warm-timeout: "5s"
+  # patterns-autodetect-from-queries: "false"         # warm /patterns from successful query/query_range responses
   # Sizing hint: plan roughly ~96 bytes RAM/value and ~60% of RAM footprint on disk snapshot.
+  # For persisted patterns/label-values snapshots, prefer StatefulSet + PVC.
   # System metrics scope override (chart auto-injects when systemMetrics.hostProc.enabled=true):
   # proc-root: "/host/proc"
   #

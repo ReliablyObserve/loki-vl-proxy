@@ -27,6 +27,11 @@ See [Translation Modes Guide](translation-modes.md) for mode-selection profiles 
 | `-metadata-field-mode` | `METADATA_FIELD_MODE` | `hybrid` | `native`, `translated`, or `hybrid` for `detected_fields` and structured metadata exposure |
 | `-emit-structured-metadata` | — | `true` | Enable Loki `categorize-labels` response encoding: requests with `X-Loki-Response-Encoding-Flags: categorize-labels` emit 3-tuples `[timestamp, line, metadata]`, while default/no-flag requests stay canonical 2-tuples |
 | `-patterns-enabled` | — | `true` | Enable `GET /loki/api/v1/patterns` (Grafana Logs Drilldown patterns view). When `false`, the endpoint returns `404 not_found` |
+| `-patterns-autodetect-from-queries` | — | `false` | Warm `/loki/api/v1/patterns` cache from successful `query` and `query_range` responses (global autodetect mode, opt-in) |
+| `-patterns-persist-path` | — | — | Disk path for persisted patterns snapshot JSON file (empty disables persistence) |
+| `-patterns-persist-interval` | — | `30s` | Periodic flush interval for in-memory patterns snapshot |
+| `-patterns-startup-stale-threshold` | — | `60s` | Freshness threshold used by startup warm logic/peer snapshot cache |
+| `-patterns-startup-peer-warm-timeout` | — | `5s` | Startup timeout for peer warm merge of pattern snapshots |
 | `-field-mapping` | `FIELD_MAPPING` | — | JSON custom field mappings |
 | `-stream-fields` | — | — | Comma-separated `_stream_fields` labels used for stream selector optimization and label-surface hints |
 | `-extra-label-fields` | `EXTRA_LABEL_FIELDS` | — | Comma-separated additional VL fields to expose on label-facing APIs and alias resolution paths (for example `host.id,k8s.cluster.name`) |
@@ -134,6 +139,41 @@ Sizing guidance:
 - Total footprint scales with `(tenant_count * indexed_label_count)`.
 ```
 
+### Patterns Persistence (Optional, Recommended For Drilldown)
+
+Enable this to keep detected `/loki/api/v1/patterns` results warm across rolling restarts and fleet members.
+
+Behavior:
+
+- Pattern cache entries are retained long-term and updated in-place by cache key.
+- Every detected pattern response is appended to the in-memory snapshot map (no periodic TTL-based pruning in snapshot state).
+- Optional global autodetect (`-patterns-autodetect-from-queries=true`) passively mines successful `query` and `query_range` responses and pre-warms matching `/patterns` cache keys.
+- Snapshot is persisted to disk periodically and on graceful shutdown.
+- Startup restore order: disk snapshot first, then peer merge (newest entry wins per cache key).
+- Readiness stays `503` during startup warm when patterns persistence is configured.
+
+Operational guidance:
+
+- For restart-safe persistence, run StatefulSet + PVC and set `-patterns-persist-path` to a writable mounted path.
+- If `-patterns-persist-path` is set but not writable, proxy startup fails fast with a clear error.
+- If `-patterns-persist-path` is not set, patterns still work, but persistence is disabled (cold start after restart).
+
+Sizing guidance:
+
+- Endpoint clamp: max returned patterns per request is `1000`.
+- Approximate persisted bytes:
+  - `snapshot_size ~= sum(pattern_response_payload_bytes_per_cached_query_key)`
+  - Rule of thumb per pattern entry: `~(120 bytes base + pattern length + ~24 bytes per sample bucket)`
+- Real footprint depends on:
+  - number of unique `(tenant, rawQuery)` keys,
+  - sample bucket count per pattern (`step`, query range),
+  - pattern text length distribution.
+
+References:
+
+- Loki patterns API: <https://grafana.com/docs/loki/latest/reference/loki-http-api/#patterns-detection>
+- Grafana Logs patterns UI: <https://grafana.com/docs/grafana/latest/visualizations/simplified-exploration/logs/patterns/>
+
 ### Metadata Field Modes
 
 | Mode | When to Use | Field APIs |
@@ -189,7 +229,7 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 |---|---|
 | `labels`, `label_values` | 60s |
 | `series`, `detected_fields`, `detected_field_values`, `detected_labels` | 30s |
-| `patterns` | 20s |
+| `patterns` | `100y` (effectively persistent; update-on-write) |
 | `query_range`, `query` | 10s |
 | `index_stats`, `volume`, `volume_range` | 10s |
 

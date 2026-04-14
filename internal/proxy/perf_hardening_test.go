@@ -383,6 +383,52 @@ func TestHandlePatternsReuseCachedResponse(t *testing.T) {
 	}
 }
 
+func TestHandlePatterns_UsesAutodetectWarmCacheAcrossLimitVariants(t *testing.T) {
+	var backendCalls int
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		backendCalls++
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms","level":"info"}`)
+		fmt.Fprintln(w, `{"_time":"2024-01-15T10:30:01Z","_msg":"GET /api/users 200 17ms","level":"info"}`)
+	}))
+	defer backend.Close()
+
+	p := newTestProxy(t, backend.URL)
+	p.patternsAutodetectFromQueries = true
+
+	queryReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/query?query={app="api"}&start=1&end=2`, nil)
+	queryReq.Header.Set("X-Scope-OrgID", "tenant-a")
+	queryW := httptest.NewRecorder()
+	p.proxyLogQuery(queryW, queryReq, `{app="api"}`)
+	if queryW.Code != http.StatusOK {
+		t.Fatalf("query code=%d body=%s", queryW.Code, queryW.Body.String())
+	}
+
+	patternReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1&end=2&limit=1`, nil)
+	patternReq.Header.Set("X-Scope-OrgID", "tenant-a")
+	patternW := httptest.NewRecorder()
+	p.handlePatterns(patternW, patternReq)
+	if patternW.Code != http.StatusOK {
+		t.Fatalf("patterns code=%d body=%s", patternW.Code, patternW.Body.String())
+	}
+
+	var payload struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(patternW.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode patterns response: %v", err)
+	}
+	if len(payload.Data) != 1 {
+		t.Fatalf("expected limit=1 payload from warm cache, got %d", len(payload.Data))
+	}
+	if backendCalls != 1 {
+		t.Fatalf("expected patterns to reuse warm cache without extra backend call, got %d backend calls", backendCalls)
+	}
+}
+
 func TestHandleMultiTenantFanoutRejectsExcessiveTenantCount(t *testing.T) {
 	p := newTestProxy(t, "http://example.com")
 	tenants := make([]string, 0, maxMultiTenantFanout+1)

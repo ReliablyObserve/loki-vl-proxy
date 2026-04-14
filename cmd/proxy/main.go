@@ -66,6 +66,7 @@ type proxyRuntimeConfig struct {
 	streamResponse                     bool
 	emitStructuredMetadata             bool
 	patternsEnabled                    bool
+	patternsAutodetectFromQueries      bool
 	queryRangeWindowing                bool
 	queryRangeSplitInterval            time.Duration
 	queryRangeMaxParallel              int
@@ -112,6 +113,10 @@ type proxyRuntimeConfig struct {
 	labelValuesIndexPersistInterval    time.Duration
 	labelValuesIndexStartupStale       time.Duration
 	labelValuesIndexPeerWarmTimeout    time.Duration
+	patternsPersistPath                string
+	patternsPersistInterval            time.Duration
+	patternsStartupStale               time.Duration
+	patternsPeerWarmTimeout            time.Duration
 	peerSelf                           string
 	peerDiscovery                      string
 	peerDNS                            string
@@ -326,6 +331,7 @@ func run(
 	streamResponse := fs.Bool("stream-response", false, "Stream log responses via chunked transfer encoding")
 	emitStructuredMetadata := fs.Bool("emit-structured-metadata", true, "Include Loki 3-tuple stream values [timestamp, line, metadata] in query responses")
 	patternsEnabled := fs.Bool("patterns-enabled", true, "Enable /loki/api/v1/patterns endpoint (Grafana Logs Drilldown patterns)")
+	patternsAutodetectFromQueries := fs.Bool("patterns-autodetect-from-queries", false, "Warm /loki/api/v1/patterns cache from successful query/query_range log responses (opt-in global autodetect)")
 	queryRangeWindowing := fs.Bool("query-range-windowing", true, "Enable query_range window splitting and window-level cache reuse for log queries")
 	queryRangeSplitInterval := fs.Duration("query-range-split-interval", time.Hour, "Time window size used for query_range split/merge (for example 15m, 1h, 24h)")
 	queryRangeMaxParallel := fs.Int("query-range-max-parallel", 2, "Maximum number of query_range windows fetched in parallel when adaptive parallelism is disabled")
@@ -380,6 +386,10 @@ func run(
 	labelValuesIndexPersistInterval := fs.Duration("label-values-index-persist-interval", 30*time.Second, "How often to persist the in-memory label-values index snapshot to disk")
 	labelValuesIndexStartupStale := fs.Duration("label-values-index-startup-stale-threshold", 60*time.Second, "Treat on-disk label-values index snapshot older than this as stale and warm from peers before serving")
 	labelValuesIndexPeerWarmTimeout := fs.Duration("label-values-index-startup-peer-warm-timeout", 5*time.Second, "Maximum time to wait for startup label-values index warm from peers when disk snapshot is stale or missing")
+	patternsPersistPath := fs.String("patterns-persist-path", "", "Path to persisted patterns snapshot JSON file. Empty disables persistence.")
+	patternsPersistInterval := fs.Duration("patterns-persist-interval", 30*time.Second, "How often to persist in-memory patterns snapshots to disk")
+	patternsStartupStale := fs.Duration("patterns-startup-stale-threshold", 60*time.Second, "Treat on-disk patterns snapshot older than this as stale and warm from peers before serving")
+	patternsPeerWarmTimeout := fs.Duration("patterns-startup-peer-warm-timeout", 5*time.Second, "Maximum time to wait for startup patterns snapshot warm from peers")
 	allowGlobalTenant := fs.Bool("tenant.allow-global", false, `Allow X-Scope-OrgID "*" to bypass AccountID/ProjectID scoping and use the backend default tenant`)
 
 	// Peer cache (fleet distribution)
@@ -460,6 +470,7 @@ func run(
 			streamResponse:                     *streamResponse,
 			emitStructuredMetadata:             *emitStructuredMetadata,
 			patternsEnabled:                    *patternsEnabled,
+			patternsAutodetectFromQueries:      *patternsAutodetectFromQueries,
 			queryRangeWindowing:                *queryRangeWindowing,
 			queryRangeSplitInterval:            *queryRangeSplitInterval,
 			queryRangeMaxParallel:              *queryRangeMaxParallel,
@@ -506,6 +517,10 @@ func run(
 			labelValuesIndexPersistInterval:    *labelValuesIndexPersistInterval,
 			labelValuesIndexStartupStale:       *labelValuesIndexStartupStale,
 			labelValuesIndexPeerWarmTimeout:    *labelValuesIndexPeerWarmTimeout,
+			patternsPersistPath:                *patternsPersistPath,
+			patternsPersistInterval:            *patternsPersistInterval,
+			patternsStartupStale:               *patternsStartupStale,
+			patternsPeerWarmTimeout:            *patternsPeerWarmTimeout,
 			peerSelf:                           *peerSelf,
 			peerDiscovery:                      *peerDiscovery,
 			peerDNS:                            *peerDNS,
@@ -1005,6 +1020,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		StreamResponse:                     cfg.streamResponse,
 		EmitStructuredMetadata:             cfg.emitStructuredMetadata,
 		PatternsEnabled:                    boolPointer(cfg.patternsEnabled),
+		PatternsAutodetectFromQueries:      cfg.patternsAutodetectFromQueries,
 		QueryRangeWindowingEnabled:         cfg.queryRangeWindowing,
 		QueryRangeSplitInterval:            cfg.queryRangeSplitInterval,
 		QueryRangeMaxParallel:              cfg.queryRangeMaxParallel,
@@ -1051,6 +1067,10 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		LabelValuesIndexPersistInterval:    cfg.labelValuesIndexPersistInterval,
 		LabelValuesIndexStartupStale:       cfg.labelValuesIndexStartupStale,
 		LabelValuesIndexPeerWarmTimeout:    cfg.labelValuesIndexPeerWarmTimeout,
+		PatternsPersistPath:                cfg.patternsPersistPath,
+		PatternsPersistInterval:            cfg.patternsPersistInterval,
+		PatternsStartupStale:               cfg.patternsStartupStale,
+		PatternsPeerWarmTimeout:            cfg.patternsPeerWarmTimeout,
 		PeerCache:                          peerCache,
 		PeerAuthToken:                      cfg.peerAuthToken,
 	}, nil
@@ -1168,6 +1188,23 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 			"estimated_ram_per_label_bytes", estimatedRAMPerLabelBytes,
 			"estimated_disk_per_label_bytes", estimatedDiskPerLabelBytes,
 		)
+	}
+	if strings.TrimSpace(proxyCfg.PatternsPersistPath) != "" {
+		logger.Info(
+			"patterns snapshot persistence enabled",
+			"persist_path", proxyCfg.PatternsPersistPath,
+			"persist_interval", proxyCfg.PatternsPersistInterval,
+			"startup_stale_threshold", proxyCfg.PatternsStartupStale,
+			"startup_peer_warm_timeout", proxyCfg.PatternsPeerWarmTimeout,
+		)
+	} else {
+		patternsEnabled := proxyCfg.PatternsEnabled == nil || *proxyCfg.PatternsEnabled
+		if patternsEnabled {
+			logger.Info(
+				"patterns snapshot persistence disabled",
+				"hint", "set -patterns-persist-path and use StatefulSet + PVC for restart-safe patterns cache",
+			)
+		}
 	}
 	if proxyCfg.DerivedFields != nil {
 		logger.Info("loaded derived fields", "count", len(proxyCfg.DerivedFields))

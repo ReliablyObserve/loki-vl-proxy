@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bufio"
+	"bytes"
 	"container/heap"
 	"encoding/json"
 	"net"
@@ -179,52 +181,235 @@ func extractLineFormatTemplate(query string) string {
 // It tokenizes lines with punctuation-aware splitting, clusters by similarity,
 // and returns Grafana Logs Drilldown compatible pattern buckets.
 func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]interface{} {
-	stepSeconds := int64(60)
-	if step != "" {
-		if d, err := time.ParseDuration(step); err == nil && d > 0 {
-			stepSeconds = int64(d / time.Second)
-		} else if seconds, err := strconv.Atoi(step); err == nil && seconds > 0 {
-			stepSeconds = int64(seconds)
-		}
-	}
-
-	lines := strings.Split(string(vlBody), "\n")
+	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
+	if len(vlBody) == 0 {
+		return nil
+	}
+	observed := 0
 
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
+	scanner := bufio.NewScanner(bytes.NewReader(vlBody))
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	entry := make(map[string]interface{}, 16)
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
 			continue
 		}
-
-		var entry map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		for key := range entry {
+			delete(entry, key)
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
 		}
-		msg, _ := entry["_msg"].(string)
-		if msg == "" {
+		msg, ok := patternMessageFromEntry(entry)
+		if !ok {
 			continue
 		}
-		timeStr, _ := entry["_time"].(string)
-		ts, err := time.Parse(time.RFC3339Nano, timeStr)
-		if err != nil {
-			if ts, err = time.Parse(time.RFC3339, timeStr); err != nil {
-				continue
-			}
+		unixSeconds, ok := patternUnixSecondsFromEntry(entry)
+		if !ok {
+			continue
 		}
 		labels := buildEntryLabels(entry)
 		level := strings.TrimSpace(labels["detected_level"])
 		if level == "" {
 			level = strings.TrimSpace(labels["level"])
 		}
-		bucket := ts.Unix()
+		bucket := unixSeconds
+		if stepSeconds > 0 {
+			bucket = (bucket / stepSeconds) * stepSeconds
+		}
+		miner.Observe(level, msg, bucket)
+		observed++
+	}
+	if observed > 0 {
+		return buildPatternResponse(miner, limit)
+	}
+
+	var decoded interface{}
+	if err := json.Unmarshal(vlBody, &decoded); err != nil {
+		return nil
+	}
+	collectPatternObservationsFromJSON(miner, decoded, stepSeconds, "", &observed)
+	if observed == 0 {
+		return nil
+	}
+	return buildPatternResponse(miner, limit)
+}
+
+func extractLogPatternsFromWindowEntries(entries []queryRangeWindowEntry, step string, limit int) []map[string]interface{} {
+	if len(entries) == 0 {
+		return nil
+	}
+	stepSeconds := parsePatternStepSeconds(step)
+	miner := newPatternMiner()
+	for _, entry := range entries {
+		if len(entry.Value) < 2 {
+			continue
+		}
+		unixSeconds, ok := parsePatternUnixSeconds(entry.Value[0])
+		if !ok {
+			continue
+		}
+		msg, ok := stringifyEntryValue(entry.Value[1])
+		if !ok || strings.TrimSpace(msg) == "" {
+			continue
+		}
+		level := strings.TrimSpace(entry.Stream["detected_level"])
+		if level == "" {
+			level = strings.TrimSpace(entry.Stream["level"])
+		}
+		bucket := unixSeconds
 		if stepSeconds > 0 {
 			bucket = (bucket / stepSeconds) * stepSeconds
 		}
 		miner.Observe(level, msg, bucket)
 	}
+	return buildPatternResponse(miner, limit)
+}
 
-	// Sort by count descending
+func parsePatternStepSeconds(step string) int64 {
+	stepSeconds := int64(60)
+	if step == "" {
+		return stepSeconds
+	}
+	if d, err := time.ParseDuration(step); err == nil && d > 0 {
+		return int64(d / time.Second)
+	}
+	if seconds, err := strconv.Atoi(step); err == nil && seconds > 0 {
+		return int64(seconds)
+	}
+	return stepSeconds
+}
+
+func parsePatternUnixSeconds(raw interface{}) (int64, bool) {
+	timeStr, ok := stringifyEntryValue(raw)
+	if !ok {
+		return 0, false
+	}
+	timeStr = strings.TrimSpace(timeStr)
+	if timeStr == "" {
+		return 0, false
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
+		return parsed.Unix(), true
+	}
+	if parsed, err := time.Parse(time.RFC3339, timeStr); err == nil {
+		return parsed.Unix(), true
+	}
+	value, err := strconv.ParseInt(timeStr, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	switch l := len(timeStr); {
+	case l >= 19:
+		return value / 1_000_000_000, true
+	case l >= 16:
+		return value / 1_000_000, true
+	case l >= 13:
+		return value / 1_000, true
+	default:
+		return value, true
+	}
+}
+
+func patternMessageFromEntry(entry map[string]interface{}) (string, bool) {
+	for _, key := range []string{"_msg", "message", "msg", "line", "log"} {
+		msg, ok := stringifyEntryValue(entry[key])
+		if ok && strings.TrimSpace(msg) != "" {
+			return msg, true
+		}
+	}
+	return "", false
+}
+
+func patternUnixSecondsFromEntry(entry map[string]interface{}) (int64, bool) {
+	for _, key := range []string{"_time", "time", "timestamp", "ts"} {
+		if unixSeconds, ok := parsePatternUnixSeconds(entry[key]); ok {
+			return unixSeconds, true
+		}
+	}
+	return 0, false
+}
+
+func collectPatternObservationsFromJSON(miner *patternMiner, decoded interface{}, stepSeconds int64, inheritedLevel string, observed *int) {
+	switch value := decoded.(type) {
+	case map[string]interface{}:
+		if msg, ok := patternMessageFromEntry(value); ok {
+			if unixSeconds, ok := patternUnixSecondsFromEntry(value); ok {
+				level := inheritedLevel
+				if level == "" {
+					labels := buildEntryLabels(value)
+					level = strings.TrimSpace(labels["detected_level"])
+					if level == "" {
+						level = strings.TrimSpace(labels["level"])
+					}
+				}
+				bucket := unixSeconds
+				if stepSeconds > 0 {
+					bucket = (bucket / stepSeconds) * stepSeconds
+				}
+				miner.Observe(level, msg, bucket)
+				*observed = *observed + 1
+			}
+		}
+		if rows, ok := value["results"].([]interface{}); ok {
+			for _, row := range rows {
+				collectPatternObservationsFromJSON(miner, row, stepSeconds, inheritedLevel, observed)
+			}
+		}
+		if rows, ok := value["values"].([]interface{}); ok {
+			for _, row := range rows {
+				collectPatternObservationsFromJSON(miner, row, stepSeconds, inheritedLevel, observed)
+			}
+		}
+		if dataMap, ok := value["data"].(map[string]interface{}); ok {
+			if resultRows, ok := dataMap["result"].([]interface{}); ok {
+				for _, row := range resultRows {
+					rowMap, ok := row.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					level := inheritedLevel
+					if stream, ok := rowMap["stream"].(map[string]interface{}); ok {
+						if v, ok := stringifyEntryValue(stream["detected_level"]); ok && strings.TrimSpace(v) != "" {
+							level = strings.TrimSpace(v)
+						} else if v, ok := stringifyEntryValue(stream["level"]); ok && strings.TrimSpace(v) != "" {
+							level = strings.TrimSpace(v)
+						}
+					}
+					values, _ := rowMap["values"].([]interface{})
+					for _, pairRaw := range values {
+						pair, ok := pairRaw.([]interface{})
+						if !ok || len(pair) < 2 {
+							continue
+						}
+						unixSeconds, ok := parsePatternUnixSeconds(pair[0])
+						if !ok {
+							continue
+						}
+						msg, ok := stringifyEntryValue(pair[1])
+						if !ok || strings.TrimSpace(msg) == "" {
+							continue
+						}
+						bucket := unixSeconds
+						if stepSeconds > 0 {
+							bucket = (bucket / stepSeconds) * stepSeconds
+						}
+						miner.Observe(level, msg, bucket)
+						*observed = *observed + 1
+					}
+				}
+			}
+		}
+	case []interface{}:
+		for _, item := range value {
+			collectPatternObservationsFromJSON(miner, item, stepSeconds, inheritedLevel, observed)
+		}
+	}
+}
+
+func buildPatternResponse(miner *patternMiner, limit int) []map[string]interface{} {
 	if limit <= 0 {
 		limit = 50
 	}

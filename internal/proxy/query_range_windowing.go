@@ -213,6 +213,14 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	}
 
 	mergeStart := time.Now()
+	p.maybeAutodetectPatternsFromWindowEntries(
+		r.Header.Get("X-Scope-OrgID"),
+		r.FormValue("query"),
+		r.FormValue("start"),
+		r.FormValue("end"),
+		r.FormValue("step"),
+		collected,
+	)
 	streams := groupQueryRangeWindowEntries(collected)
 	p.metrics.RecordQueryRangeWindowMergeDuration(time.Since(mergeStart))
 

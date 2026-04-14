@@ -378,6 +378,80 @@ func TestExtractLogPatterns_SkipsTooShortMessagesLikeLokiDrain(t *testing.T) {
 	}
 }
 
+func TestExtractLogPatternsFromWindowEntries(t *testing.T) {
+	entries := []queryRangeWindowEntry{
+		{
+			Stream: map[string]string{"detected_level": "info"},
+			Value:  []interface{}{"1712311201000000000", "GET /api/users 200 15ms"},
+		},
+		{
+			Stream: map[string]string{"detected_level": "info"},
+			Value:  []interface{}{"1712311202000000000", "GET /api/users 200 22ms"},
+		},
+		{
+			Stream: map[string]string{"level": "error"},
+			Value:  []interface{}{"1712311203000000000", "POST /api/orders 500 142ms"},
+		},
+	}
+
+	patterns := extractLogPatternsFromWindowEntries(entries, "10s", 10)
+	if len(patterns) != 2 {
+		t.Fatalf("expected 2 patterns from window entries, got %d", len(patterns))
+	}
+	first := patterns[0]
+	samples, ok := first["samples"].([][]interface{})
+	if !ok || len(samples) == 0 {
+		t.Fatalf("expected samples in first pattern, got %#v", first["samples"])
+	}
+}
+
+func TestParsePatternUnixSeconds(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  interface{}
+		want int64
+	}{
+		{name: "rfc3339", raw: "2026-04-04T10:00:00Z", want: 1775296800},
+		{name: "seconds", raw: "1775296800", want: 1775296800},
+		{name: "millis", raw: "1775296800000", want: 1775296800},
+		{name: "micros", raw: "1775296800000000", want: 1775296800},
+		{name: "nanos", raw: "1775296800000000000", want: 1775296800},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := parsePatternUnixSeconds(tc.raw)
+			if !ok {
+				t.Fatalf("expected parse success for %v", tc.raw)
+			}
+			if got != tc.want {
+				t.Fatalf("expected %d, got %d", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestExtractLogPatterns_AlternateMessageAndTimestampFields(t *testing.T) {
+	vlBody := []byte(strings.Join([]string{
+		`{"timestamp":"2026-04-04T10:00:00Z","message":"GET /v1/users 200 15ms","detected_level":"info"}`,
+		`{"ts":"1775296801","msg":"GET /v1/users 200 19ms","level":"info"}`,
+		`{"time":"1775296802","line":"POST /v1/orders 201 88ms","level":"info"}`,
+	}, "\n"))
+
+	patterns := extractLogPatterns(vlBody, "1m", 10)
+	if len(patterns) == 0 {
+		t.Fatalf("expected patterns for alternate message/timestamp field names, got %#v", patterns)
+	}
+}
+
+func TestExtractLogPatterns_WrappedJSONResults(t *testing.T) {
+	vlBody := []byte(`{"results":[{"timestamp":"2026-04-04T10:00:00Z","message":"GET /v1/users 200 15ms","level":"info"},{"timestamp":"2026-04-04T10:00:01Z","message":"GET /v1/users 200 19ms","level":"info"}]}`)
+	patterns := extractLogPatterns(vlBody, "1m", 10)
+	if len(patterns) == 0 {
+		t.Fatalf("expected patterns from wrapped results payload, got %#v", patterns)
+	}
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a

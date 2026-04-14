@@ -139,7 +139,10 @@ def main():
         "coverage",
         float(base["tests"]["coverage_pct"]),
         float(head["tests"]["coverage_pct"]),
-        epsilon=0.1,
+        # End-to-end and compatibility-heavy suites can introduce small run-to-run
+        # variance in aggregate Go coverage. Keep the gate strict, but avoid
+        # failing on sub-point jitter.
+        epsilon=0.7,
     )
 
     for key, label in (

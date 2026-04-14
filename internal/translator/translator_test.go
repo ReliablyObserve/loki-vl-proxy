@@ -77,6 +77,16 @@ func TestTranslateLogQL(t *testing.T) {
 			want:  `app:=nginx | extract "<ip> - - <_>"`,
 		},
 		{
+			name:  "pattern wildcard no-op is dropped",
+			logql: `{app="nginx"} | pattern "(.*)" | status="500"`,
+			want:  `app:=nginx status:=500`,
+		},
+		{
+			name:  "extract wildcard no-op is dropped defensively",
+			logql: "{app=\"nginx\"} | extract `(.*)` | status=`500`",
+			want:  `app:=nginx status:=500`,
+		},
+		{
 			name:  "regexp parser",
 			logql: `{app="nginx"} | regexp "(?P<ip>\\d+\\.\\d+)"`,
 			want:  `app:=nginx | extract_regexp "(?P<ip>\\d+\\.\\d+)"`,

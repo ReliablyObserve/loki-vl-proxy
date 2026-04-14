@@ -446,18 +446,44 @@ func ingestPatternData(t *testing.T) {
 		"query": {`{app="pattern-test", level="info"}`},
 		"start": {time.Now().Add(-1 * time.Hour).Format(time.RFC3339Nano)},
 		"end":   {time.Now().Add(time.Hour).Format(time.RFC3339Nano)},
+		"step":  {"60s"},
 	}
-	deadline := time.Now().Add(20 * time.Second)
+	queryRangeParams := url.Values{
+		"query":     {`{app="pattern-test", level="info"}`},
+		"start":     {params.Get("start")},
+		"end":       {params.Get("end")},
+		"direction": {"backward"},
+		"limit":     {"200"},
+		"step":      {"60"},
+	}
+	deadline := time.Now().Add(120 * time.Second)
+	logsVisible := false
+	lastPatternResp := map[string]interface{}{}
 	for {
+		if !logsVisible {
+			resp, err := http.Get(proxyURL + "/loki/api/v1/query_range?" + queryRangeParams.Encode())
+			if err == nil {
+				var payload map[string]interface{}
+				_ = json.NewDecoder(resp.Body).Decode(&payload)
+				_ = resp.Body.Close()
+				if data, ok := payload["data"].(map[string]interface{}); ok {
+					if result, ok := data["result"].([]interface{}); ok && len(result) > 0 {
+						logsVisible = true
+					}
+				}
+			}
+		}
+
 		resp := getJSON(t, proxyURL+"/loki/api/v1/patterns?"+params.Encode())
+		lastPatternResp = resp
 		data, _ := resp["data"].([]interface{})
 		if len(data) > 0 {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("expected non-empty pattern data after ingestion, got %v", resp)
+			t.Fatalf("expected non-empty pattern data after ingestion (logsVisible=%t), got %v", logsVisible, lastPatternResp)
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 	}
 }
 

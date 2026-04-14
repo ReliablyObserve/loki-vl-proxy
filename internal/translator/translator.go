@@ -295,11 +295,26 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 	}
 	if strings.HasPrefix(stage, "pattern ") {
 		// | pattern "..." → | extract "..."
-		return "| extract " + stage[8:]
+		patternExpr := strings.TrimSpace(stage[8:])
+		if isNoopPatternExpression(patternExpr) {
+			// Defensive compatibility: some Drilldown flows emit wildcard-only
+			// patterns like `(.*)`. VL extract requires named placeholders and
+			// rejects these, so treat them as a no-op stage.
+			return ""
+		}
+		return "| extract " + patternExpr
 	}
 	if strings.HasPrefix(stage, "regexp ") {
 		// | regexp "..." → | extract_regexp "..."
 		return "| extract_regexp " + stage[7:]
+	}
+	if strings.HasPrefix(stage, "extract ") {
+		// Defensive pass-through for pre-translated queries.
+		patternExpr := strings.TrimSpace(stage[8:])
+		if isNoopPatternExpression(patternExpr) {
+			return ""
+		}
+		return "| extract " + patternExpr
 	}
 
 	// Line formatting
@@ -340,6 +355,29 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 
 	// Label filters: label op value
 	return translateLabelFilter(stage, labelFn)
+}
+
+func isNoopPatternExpression(expr string) bool {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return false
+	}
+	if strings.HasPrefix(expr, "`") && strings.HasSuffix(expr, "`") && len(expr) >= 2 {
+		expr = expr[1 : len(expr)-1]
+	} else if strings.HasPrefix(expr, `"`) && strings.HasSuffix(expr, `"`) && len(expr) >= 2 {
+		if unquoted, err := strconv.Unquote(expr); err == nil {
+			expr = unquoted
+		} else {
+			expr = expr[1 : len(expr)-1]
+		}
+	}
+	expr = strings.TrimSpace(expr)
+	switch expr {
+	case "(.*)", ".*", "^.*$", "(?s).*", "(?s:.*)":
+		return true
+	default:
+		return false
+	}
 }
 
 // translateLabelFilter handles label comparison filters.

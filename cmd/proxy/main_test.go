@@ -358,6 +358,21 @@ func TestRun_DefaultEnablesStructuredMetadata(t *testing.T) {
 	if !captured.proxyCfg.patternsEnabled {
 		t.Fatal("expected -patterns-enabled to default to true")
 	}
+	if captured.proxyCfg.patternsAutodetectFromQueries {
+		t.Fatal("expected -patterns-autodetect-from-queries to default to false")
+	}
+	if captured.proxyCfg.patternsPersistPath != "" {
+		t.Fatalf("expected -patterns-persist-path to default empty, got %q", captured.proxyCfg.patternsPersistPath)
+	}
+	if captured.proxyCfg.patternsPersistInterval != 30*time.Second {
+		t.Fatalf("expected -patterns-persist-interval default 30s, got %s", captured.proxyCfg.patternsPersistInterval)
+	}
+	if captured.proxyCfg.patternsStartupStale != 60*time.Second {
+		t.Fatalf("expected -patterns-startup-stale-threshold default 60s, got %s", captured.proxyCfg.patternsStartupStale)
+	}
+	if captured.proxyCfg.patternsPeerWarmTimeout != 5*time.Second {
+		t.Fatalf("expected -patterns-startup-peer-warm-timeout default 5s, got %s", captured.proxyCfg.patternsPeerWarmTimeout)
+	}
 }
 
 func TestBuildServerTLSConfig_RequiresCAWhenClientCertsRequired(t *testing.T) {
@@ -810,6 +825,7 @@ func TestBuildProxyConfig(t *testing.T) {
 		streamResponse:                  true,
 		emitStructuredMetadata:          true,
 		patternsEnabled:                 false,
+		patternsAutodetectFromQueries:   true,
 		queryRangeWindowing:             true,
 		queryRangeSplitInterval:         30 * time.Minute,
 		queryRangeMaxParallel:           4,
@@ -848,6 +864,10 @@ func TestBuildProxyConfig(t *testing.T) {
 		labelValuesIndexPersistInterval: 45 * time.Second,
 		labelValuesIndexStartupStale:    2 * time.Minute,
 		labelValuesIndexPeerWarmTimeout: 7 * time.Second,
+		patternsPersistPath:             "/cache/patterns-snapshot.json",
+		patternsPersistInterval:         40 * time.Second,
+		patternsStartupStale:            3 * time.Minute,
+		patternsPeerWarmTimeout:         9 * time.Second,
 		peerSelf:                        "10.0.0.1:3100",
 		peerDiscovery:                   "static",
 		peerStatic:                      "10.0.0.2:3100,10.0.0.3:3100",
@@ -887,6 +907,9 @@ func TestBuildProxyConfig(t *testing.T) {
 	}
 	if got.PatternsEnabled == nil || *got.PatternsEnabled {
 		t.Fatalf("expected patterns endpoint to be disabled in built config")
+	}
+	if !got.PatternsAutodetectFromQueries {
+		t.Fatalf("expected patterns autodetect from queries to be enabled")
 	}
 	if !got.QueryRangeWindowingEnabled {
 		t.Fatalf("expected query range windowing to be enabled")
@@ -947,6 +970,18 @@ func TestBuildProxyConfig(t *testing.T) {
 			got.LabelValuesIndexPersistInterval,
 			got.LabelValuesIndexStartupStale,
 			got.LabelValuesIndexPeerWarmTimeout,
+		)
+	}
+	if got.PatternsPersistPath != "/cache/patterns-snapshot.json" ||
+		got.PatternsPersistInterval != 40*time.Second ||
+		got.PatternsStartupStale != 3*time.Minute ||
+		got.PatternsPeerWarmTimeout != 9*time.Second {
+		t.Fatalf(
+			"unexpected patterns persistence config: path=%q interval=%s stale=%s peer_timeout=%s",
+			got.PatternsPersistPath,
+			got.PatternsPersistInterval,
+			got.PatternsStartupStale,
+			got.PatternsPeerWarmTimeout,
 		)
 	}
 	if got.TailMode != proxy.TailModeSynthetic {
