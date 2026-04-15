@@ -53,7 +53,7 @@ type compressedResponseWriter struct {
 }
 
 func (w *compressedResponseWriter) Write(b []byte) (int, error) {
-	ensureNoSniffHeader(w.ResponseWriter)
+	ensureSafeResponseHeaders(w.ResponseWriter, "application/octet-stream")
 	if w.started {
 		if w.bypass {
 			return w.ResponseWriter.Write(b)
@@ -85,7 +85,7 @@ func (w *compressedResponseWriter) Write(b []byte) (int, error) {
 }
 
 func (w *compressedResponseWriter) WriteHeader(code int) {
-	ensureNoSniffHeader(w.ResponseWriter)
+	ensureSafeResponseHeaders(w.ResponseWriter, "application/octet-stream")
 	if w.started {
 		return
 	}
@@ -277,6 +277,16 @@ func ensureNoSniffHeader(w http.ResponseWriter) {
 	}
 }
 
+func ensureSafeResponseHeaders(w http.ResponseWriter, defaultContentType string) {
+	ensureNoSniffHeader(w)
+	if w == nil || strings.TrimSpace(defaultContentType) == "" {
+		return
+	}
+	if strings.TrimSpace(w.Header().Get("Content-Type")) == "" {
+		w.Header().Set("Content-Type", defaultContentType)
+	}
+}
+
 // CompressionHandlerWithOptions negotiates response compression with clients.
 // "auto" keeps the gzip path enabled for clients that advertise support.
 func CompressionHandlerWithOptions(next http.Handler, opts CompressionOptions) http.Handler {
@@ -285,7 +295,7 @@ func CompressionHandlerWithOptions(next http.Handler, opts CompressionOptions) h
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ensureNoSniffHeader(w)
+		ensureSafeResponseHeaders(w, "application/octet-stream")
 		encoding, minBytes := PlanResponseCompression(r, opts)
 		if encoding == "" {
 			next.ServeHTTP(w, r)

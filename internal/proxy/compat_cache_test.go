@@ -150,6 +150,23 @@ func TestCompatCacheCaptureWriter_DropsOversizedBodies(t *testing.T) {
 	}
 }
 
+func TestCompatCacheCaptureWriter_SetsSafeJSONHeaders(t *testing.T) {
+	rec := httptest.NewRecorder()
+	w := newCompatCacheCaptureWriter(rec, 64)
+	defer w.Release()
+
+	if _, err := w.Write([]byte(`{"status":"ok"}`)); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	if got := rec.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("expected application/json content type, got %q", got)
+	}
+	if got := rec.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected nosniff header, got %q", got)
+	}
+}
+
 func TestCompatCacheMiddleware_IsTenantAware(t *testing.T) {
 	var backendCalls int
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -62,9 +62,13 @@ var jsonBufPool = sync.Pool{
 	},
 }
 
+type pooledCompatCaptureBuf struct {
+	data []byte
+}
+
 var compatCaptureBufPool = sync.Pool{
 	New: func() interface{} {
-		return make([]byte, 0, defaultCompatCaptureBufSize)
+		return &pooledCompatCaptureBuf{data: make([]byte, 0, defaultCompatCaptureBufSize)}
 	},
 }
 
@@ -1556,6 +1560,7 @@ func compatCacheResponseAllowed(rec *httptest.ResponseRecorder) bool {
 type compatCacheCaptureWriter struct {
 	http.ResponseWriter
 	body       []byte
+	bufHolder  *pooledCompatCaptureBuf
 	code       int
 	flushed    bool
 	limit      int
@@ -1563,9 +1568,11 @@ type compatCacheCaptureWriter struct {
 }
 
 func newCompatCacheCaptureWriter(w http.ResponseWriter, limit int) *compatCacheCaptureWriter {
+	body, holder := acquireCompatCaptureBuf(limit)
 	return &compatCacheCaptureWriter{
 		ResponseWriter: w,
-		body:           acquireCompatCaptureBuf(limit),
+		body:           body,
+		bufHolder:      holder,
 		limit:          limit,
 	}
 }
@@ -1578,6 +1585,9 @@ func (w *compatCacheCaptureWriter) WriteHeader(code int) {
 func (w *compatCacheCaptureWriter) Write(b []byte) (int, error) {
 	if w.code == 0 {
 		w.code = http.StatusOK
+	}
+	if strings.TrimSpace(w.Header().Get("Content-Type")) == "" {
+		w.Header().Set("Content-Type", "application/json")
 	}
 	if strings.TrimSpace(w.Header().Get("X-Content-Type-Options")) == "" {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -1609,8 +1619,9 @@ func (w *compatCacheCaptureWriter) overflow() {
 		return
 	}
 	w.overflowed = true
-	releaseCompatCaptureBuf(w.body)
+	releaseCompatCaptureBuf(w.body, w.bufHolder)
 	w.body = nil
+	w.bufHolder = nil
 }
 
 func (w *compatCacheCaptureWriter) CapturedBody() []byte {
@@ -1621,29 +1632,34 @@ func (w *compatCacheCaptureWriter) CapturedBody() []byte {
 }
 
 func (w *compatCacheCaptureWriter) Release() {
-	releaseCompatCaptureBuf(w.body)
+	releaseCompatCaptureBuf(w.body, w.bufHolder)
 	w.body = nil
+	w.bufHolder = nil
 }
 
-func acquireCompatCaptureBuf(limit int) []byte {
+func acquireCompatCaptureBuf(limit int) ([]byte, *pooledCompatCaptureBuf) {
 	size := defaultCompatCaptureBufSize
 	if limit > 0 {
 		size = min(size, limit)
 	}
-	buf := compatCaptureBufPool.Get().([]byte)
-	if cap(buf) < size {
-		return make([]byte, 0, size)
+	holder := compatCaptureBufPool.Get().(*pooledCompatCaptureBuf)
+	if cap(holder.data) < size {
+		holder.data = make([]byte, 0, size)
 	}
-	return buf[:0]
+	holder.data = holder.data[:0]
+	return holder.data, holder
 }
 
-func releaseCompatCaptureBuf(buf []byte) {
-	if buf == nil {
+func releaseCompatCaptureBuf(buf []byte, holder *pooledCompatCaptureBuf) {
+	if holder == nil {
 		return
 	}
-	if cap(buf) <= maxPooledCompatCaptureBufSize {
-		compatCaptureBufPool.Put(buf[:0])
+	if buf != nil && cap(buf) <= maxPooledCompatCaptureBufSize {
+		holder.data = buf[:0]
+	} else {
+		holder.data = make([]byte, 0, defaultCompatCaptureBufSize)
 	}
+	compatCaptureBufPool.Put(holder)
 }
 
 func compatCacheCaptureAllowed(code int, flushed bool, header http.Header) bool {
@@ -5581,14 +5597,6 @@ func normalizePatternCacheStep(step string) string {
 	return dur.String()
 }
 
-func (p *Proxy) maybeAutodetectPatternsFromNDJSON(orgID, query, start, end, step string, body []byte) {
-	if !p.patternsEnabled || !p.patternsAutodetectFromQueries || len(body) == 0 {
-		return
-	}
-	patterns := extractLogPatterns(body, step, maxPatternResponseLimit)
-	p.storeAutodetectedPatterns(orgID, query, start, end, step, patterns)
-}
-
 func (p *Proxy) storeAutodetectedPatterns(orgID, query, start, end, step string, patterns []map[string]interface{}) {
 	if !p.patternsEnabled || !p.patternsAutodetectFromQueries || len(patterns) == 0 {
 		return
@@ -8149,83 +8157,6 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		patterns = buildPatternResponse(miner, maxPatternResponseLimit)
 	}
 	return result, patterns, nil
-}
-
-func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []map[string]interface{} {
-	type streamEntry struct {
-		Labels map[string]string
-		Values []interface{}
-	}
-
-	streamMap := make(map[string]*streamEntry, len(body)/256+1)
-	start := 0
-	for i := 0; i <= len(body); i++ {
-		if i < len(body) && body[i] != '\n' {
-			continue
-		}
-		line := body[start:i]
-		start = i + 1
-
-		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
-			line = line[1:]
-		}
-		for len(line) > 0 && (line[len(line)-1] == ' ' || line[len(line)-1] == '\t' || line[len(line)-1] == '\r') {
-			line = line[:len(line)-1]
-		}
-		if len(line) == 0 {
-			continue
-		}
-
-		entry := vlEntryPool.Get().(map[string]interface{})
-		for k := range entry {
-			delete(entry, k)
-		}
-		if err := json.Unmarshal(line, &entry); err != nil {
-			vlEntryPool.Put(entry)
-			continue
-		}
-
-		timeStr, ok := stringifyEntryValue(entry["_time"])
-		if !ok || timeStr == "" {
-			vlEntryPool.Put(entry)
-			continue
-		}
-		tsNanos, ok := formatEntryTimestamp(timeStr)
-		if !ok {
-			vlEntryPool.Put(entry)
-			continue
-		}
-		msg, _ := stringifyEntryValue(entry["_msg"])
-
-		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery)
-		streamKey := canonicalLabelsKey(labels)
-		se, ok := streamMap[streamKey]
-		if !ok {
-			translatedLabels := labels
-			if !p.labelTranslator.IsPassthrough() {
-				translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
-			}
-			ensureDetectedLevel(translatedLabels)
-			ensureSyntheticServiceName(translatedLabels)
-
-			se = &streamEntry{
-				Labels: translatedLabels,
-				Values: make([]interface{}, 0, 8),
-			}
-			streamMap[streamKey] = se
-		}
-		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels))
-		vlEntryPool.Put(entry)
-	}
-
-	result := make([]map[string]interface{}, 0, len(streamMap))
-	for _, se := range streamMap {
-		result = append(result, map[string]interface{}{
-			"stream": se.Labels,
-			"values": se.Values,
-		})
-	}
-	return result
 }
 
 func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {

@@ -267,6 +267,9 @@ func TestCompressionHandlerWithOptions_SetsNoSniffHeader(t *testing.T) {
 	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
 		t.Fatalf("expected nosniff header, got %q", got)
 	}
+	if got := w.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Fatalf("expected safe fallback content type, got %q", got)
+	}
 }
 
 func TestCompressionHandler_ZstdAliasUsesGzip(t *testing.T) {
