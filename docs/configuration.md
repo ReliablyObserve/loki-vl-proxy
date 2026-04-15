@@ -579,6 +579,21 @@ Peer-cache notes:
 - with `-peer-write-through=true` (default), non-owner writes with TTL above threshold are pushed to owners and stored locally as short-lived shadows to reduce hot-pod disk skew
 - when `-peer-auth-token` is set, all peers must share the same token or peer-cache reuse will fail closed
 
+### Current Tuning For Higher Fleet Reuse
+
+Use these knobs first before introducing any new read-ahead mechanism:
+
+- keep `-peer-write-through=true` (default) to warm owner shards under skewed traffic
+- tune `-peer-write-through-min-ttl` so only stable/hot entries are replicated
+- keep `-response-compression=auto` and `-backend-compression=auto` for `zstd`/`gzip` negotiation
+- keep `query-range-windowing` enabled with long history TTL and near-now freshness controls for mixed historical/live workloads
+
+### Planned: Bounded Hot Read-Ahead
+
+A bounded peer hot-read-ahead mode is planned to periodically prefetch only top hot keys from owners.
+It will be budgeted by keys, bytes, and concurrency to prevent peer traffic storms.
+See [Fleet Cache Architecture](fleet-cache.md#proposed-hot-read-ahead-bounded).
+
 ## Grafana Datasource Mapping
 
 These Grafana Loki datasource settings now have a direct proxy-side mapping:

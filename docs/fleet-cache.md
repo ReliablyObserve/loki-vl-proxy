@@ -259,6 +259,54 @@ Use these together with the normal client metrics to tell apart:
 - cache-ring imbalance or shrinking fleets
 - peer-to-peer failures that are forcing traffic back to VictoriaLogs
 
+## Collapse Forwarding Status
+
+Current behavior already includes request collapsing in two critical places:
+
+- Proxy -> VictoriaLogs collapse uses singleflight coalescing (`internal/middleware/coalescer.go`) so concurrent identical requests share one upstream call.
+- Peer-cache `/_cache/get` collapse uses per-key in-flight dedupe (`internal/cache/peer.go`) so concurrent non-owner pulls for the same key share one owner fetch.
+
+Recent verification coverage:
+
+- `TestCoalescer_DedupConcurrentRequests`
+- `TestCoalescer_TenantIsolation`
+- `TestPeerCache_CoalescingAndCacheIntegration`
+- `TestPeerCache_ThreePeers_ShadowCopiesAvoidRepeatedOwnerFetches`
+
+Peer payload exchange already prefers `zstd`, then `gzip`, then identity.
+
+## Proposed Hot Read-Ahead (Bounded)
+
+Goal: keep hottest keys resident across replicas without full-mesh cache replication storms.
+
+Design (proposed, not enabled yet):
+
+1. Owners publish a compact hot-key index (top N keys with hit score, size, remaining TTL).
+2. Peers periodically fetch that index with jitter, then prefetch only a bounded subset.
+3. Prefetch candidates are filtered by safeguards:
+   - remaining TTL >= threshold
+   - value size <= max prefetch object bytes
+   - total prefetch bytes <= interval budget
+   - max keys <= interval key budget
+4. Prefetch pulls use existing `/_cache/get` path with `Accept-Encoding: zstd, gzip`.
+5. Local inserts from prefetch are stored as shadow copies with bounded TTL.
+6. Existing singleflight collapse remains active for prefetch and organic traffic paths.
+
+Anti-storm guardrails (required):
+
+- Per-peer prefetch concurrency cap.
+- Global prefetch bytes/sec budget.
+- Token-bucket rate limiter for warm pulls.
+- Jittered scheduling (avoid synchronized bursts).
+- Backoff on peer errors and circuit-breaker open states.
+- Tenant-aware fairness in hot-key selection.
+
+Expected effect:
+
+- Lower VictoriaLogs fetch rate for repeatedly accessed hot keys.
+- Better p95/p99 cache hit latency on non-owner replicas.
+- More even read pressure across a fleet behind L4/L7 load balancers.
+
 ## Design Decisions
 
 | Decision | Why |

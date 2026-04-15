@@ -74,4 +74,6 @@
 - [ ] Tighten remaining merged-tenant Drilldown metadata accuracy for field and label cardinality surfaces
 - [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests
 - [ ] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
+- [ ] Add bounded peer hot-read-ahead (top-N hot keys with per-interval key/byte/concurrency budgets, jitter, and tenant fairness) to improve non-owner local hit rates without causing peer traffic storms
+- [ ] Add regression/perf suite for collapse forwarding and hot-read-ahead interactions (owner/non-owner paths, coalescing efficiency, backend offload delta)
 - [x] Promote compose-backed e2e fleet cache smoke coverage into required GitHub Actions for pull requests and post-merge `main` runs (v0.27.7)
