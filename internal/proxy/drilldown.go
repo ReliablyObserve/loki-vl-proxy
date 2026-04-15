@@ -606,22 +606,36 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 
 	targets := splitTargetLabels(targetLabels)
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time desc)")
-	params.Set("limit", strconv.Itoa(maxLimitValue))
+	params.Set("query", logsqlQuery)
 	if start != "" {
 		params.Set("start", formatVLTimestamp(start))
 	}
 	if end != "" {
 		params.Set("end", formatVLTimestamp(end))
 	}
+	if strings.TrimSpace(step) != "" {
+		params.Set("step", formatVLStep(step))
+	} else {
+		// VictoriaLogs hits endpoint requires step on v1.49+.
+		params.Set("step", "1h")
+	}
+	sourceFields := p.derivedVolumeSourceFields(targets)
+	if len(sourceFields) > 0 {
+		params.Set("field", strings.Join(sourceFields, ","))
+	}
 
-	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
+	resp, err := p.vlGet(ctx, "/select/logsql/hits", params)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("derived volume hits request failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
 
 	body, _ := io.ReadAll(resp.Body)
+	hits := parseHits(body)
 	matrixMode := strings.TrimSpace(step) != ""
 
 	type seriesData struct {
@@ -636,24 +650,8 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 	series := make(map[string]*seriesData)
 	order := make([]string, 0)
 
-	startIdx := 0
-	for i := 0; i <= len(body); i++ {
-		if i < len(body) && body[i] != '\n' {
-			continue
-		}
-		line := strings.TrimSpace(string(body[startIdx:i]))
-		startIdx = i + 1
-		if line == "" {
-			continue
-		}
-
-		var entry map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			continue
-		}
-
-		entryLabels := buildEntryLabels(entry)
-		translated := p.labelTranslator.TranslateLabelsMap(entryLabels)
+	for _, hit := range hits.Hits {
+		translated := p.translateVolumeMetric(hit.Fields)
 		ensureDetectedLevel(translated)
 		ensureSyntheticServiceName(translated)
 		metric := buildVolumeMetric(translated, targets)
@@ -668,27 +666,51 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 			series[key] = item
 			order = append(order, key)
 		}
-		item.total++
 
-		if matrixMode {
-			entryTime, ok := parseEntryTime(entry["_time"])
+		if !matrixMode {
+			for _, v := range hit.Values {
+				item.total += int64(v)
+			}
+			continue
+		}
+
+		for i, ts := range hit.Timestamps {
+			value := 0
+			if i < len(hit.Values) {
+				value = hit.Values[i]
+			}
+			if value < 0 {
+				continue
+			}
+			entryNs, ok := parseLokiTimeToUnixNano(strings.TrimSpace(ts))
 			if !ok {
 				continue
 			}
+			entryTime := time.Unix(0, entryNs).UTC()
 			if hasStart && entryTime.Before(startTime) {
 				continue
 			}
 			if hasEnd && entryTime.After(endTime) {
 				continue
 			}
+
+			bucketTime := entryTime.Unix()
 			if hasStep {
-				offset := entryTime.Sub(startTime)
-				if offset < 0 {
+				stepSeconds := int64(stepDur.Seconds())
+				if stepSeconds <= 0 {
 					continue
 				}
-				bucketTime := startTime.Add((offset / stepDur) * stepDur).Unix()
-				item.bucket[bucketTime]++
+				if hasStart {
+					offset := entryTime.Sub(startTime)
+					if offset < 0 {
+						continue
+					}
+					bucketTime = startTime.Add((offset / stepDur) * stepDur).Unix()
+				} else {
+					bucketTime = (bucketTime / stepSeconds) * stepSeconds
+				}
 			}
+			item.bucket[bucketTime] += int64(value)
 		}
 	}
 
@@ -754,6 +776,36 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 			"result":     result,
 		},
 	}, nil
+}
+
+func (p *Proxy) derivedVolumeSourceFields(targets []string) []string {
+	fields := make([]string, 0, len(targets)+8)
+	addField := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		fields = appendUniqueStrings(fields, name)
+		if p != nil && p.labelTranslator != nil {
+			fields = appendUniqueStrings(fields, strings.TrimSpace(p.labelTranslator.ToVL(name)))
+		}
+	}
+
+	for _, target := range targets {
+		switch strings.TrimSpace(target) {
+		case "service_name":
+			for _, source := range serviceNameSourceFields {
+				addField(source)
+			}
+		case "detected_level":
+			addField("detected_level")
+			addField("level")
+		default:
+			addField(target)
+		}
+	}
+
+	return fields
 }
 
 func defaultQuery(query string) string {

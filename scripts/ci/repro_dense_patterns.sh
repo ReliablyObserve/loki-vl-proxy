@@ -19,4 +19,4 @@ docker compose up -d --build
 popd >/dev/null
 
 LVP_DENSE_PATTERNS_REPRO=1 \
-go test -v -tags=e2e -run '^TestPatternsDenseRepro_FullRangeAndRefreshStability$' ./test/e2e-compat
+go test -count=1 -v -tags=e2e -run '^TestPatternsDenseRepro_FullRangeAndRefreshStability$' ./test/e2e-compat

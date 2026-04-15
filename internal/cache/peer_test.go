@@ -228,6 +228,43 @@ func TestPeerCache_ServeHTTP_MissingKey(t *testing.T) {
 	}
 }
 
+func TestPeerCache_ServeHTTP_SetRoundTrip(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost"})
+	defer pc.Close()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/_cache/set?key=test-key&ttl_ms=90000", strings.NewReader("hello"))
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for set, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/_cache/get?key=test-key", nil)
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusOK || w.Body.String() != "hello" {
+		t.Fatalf("expected roundtrip 200/hello, got %d/%q", w.Code, w.Body.String())
+	}
+}
+
+func TestPeerCache_ServeHTTP_SetRejectsEmptyBody(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost"})
+	defer pc.Close()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/_cache/set?key=test-key", nil)
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for empty set payload, got %d", w.Code)
+	}
+}
+
 func TestPeerCache_ServeHTTP_RejectsNearExpiryEntry(t *testing.T) {
 	localCache := New(60*time.Second, 1000)
 	defer localCache.Close()
@@ -712,6 +749,102 @@ func TestPeerCache_SetIsNoop(t *testing.T) {
 	pc := NewPeerCache(PeerConfig{SelfAddr: "self"})
 	defer pc.Close()
 	pc.Set("key", []byte("val")) // should not panic
+}
+
+func TestPeerCache_WriteThroughPushesToOwner(t *testing.T) {
+	ownerCache := NewWithMaxBytes(60*time.Second, 1000, 1024*1024)
+	defer ownerCache.Close()
+	ownerPC := NewPeerCache(PeerConfig{SelfAddr: "owner"})
+	defer ownerPC.Close()
+	ownerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ownerPC.ServeHTTP(w, r, ownerCache)
+	}))
+	defer ownerServer.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:           "self:3100",
+		DiscoveryType:      "static",
+		StaticPeers:        "self:3100," + ownerServer.Listener.Addr().String(),
+		Timeout:            500 * time.Millisecond,
+		WriteThrough:       true,
+		WriteThroughMinTTL: 5 * time.Second,
+	})
+	defer pc.Close()
+
+	var key string
+	for i := 0; i < 512; i++ {
+		candidate := fmt.Sprintf("wt-key-%d", i)
+		pc.mu.RLock()
+		owner := pc.ring.get(candidate)
+		pc.mu.RUnlock()
+		if owner == ownerServer.Listener.Addr().String() {
+			key = candidate
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("failed to find key mapped to owner peer")
+	}
+
+	pc.SetWithTTL(key, []byte("value"), 30*time.Second)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if got, ok := ownerCache.Get(key); ok && string(got) == "value" {
+			stats := pc.Stats()
+			if stats["wt_pushes"].(int64) < 1 {
+				t.Fatalf("expected wt_pushes >= 1, got %+v", stats)
+			}
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("owner cache did not receive write-through key %q", key)
+}
+
+func TestPeerCache_WriteThroughSkipsShortTTL(t *testing.T) {
+	ownerCache := NewWithMaxBytes(60*time.Second, 1000, 1024*1024)
+	defer ownerCache.Close()
+	ownerPC := NewPeerCache(PeerConfig{SelfAddr: "owner"})
+	defer ownerPC.Close()
+	ownerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ownerPC.ServeHTTP(w, r, ownerCache)
+	}))
+	defer ownerServer.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:           "self:3100",
+		DiscoveryType:      "static",
+		StaticPeers:        "self:3100," + ownerServer.Listener.Addr().String(),
+		Timeout:            500 * time.Millisecond,
+		WriteThrough:       true,
+		WriteThroughMinTTL: 10 * time.Second,
+	})
+	defer pc.Close()
+
+	var key string
+	for i := 0; i < 512; i++ {
+		candidate := fmt.Sprintf("wt-short-key-%d", i)
+		pc.mu.RLock()
+		owner := pc.ring.get(candidate)
+		pc.mu.RUnlock()
+		if owner == ownerServer.Listener.Addr().String() {
+			key = candidate
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("failed to find key mapped to owner peer")
+	}
+
+	pc.SetWithTTL(key, []byte("value"), 2*time.Second)
+	time.Sleep(150 * time.Millisecond)
+	if _, ok := ownerCache.Get(key); ok {
+		t.Fatalf("expected short-TTL key %q to skip write-through", key)
+	}
+	stats := pc.Stats()
+	if stats["wt_pushes"].(int64) != 0 {
+		t.Fatalf("expected no write-through pushes for short TTL, got %+v", stats)
+	}
 }
 
 func TestPeerCache_GossipIsNoop(t *testing.T) {

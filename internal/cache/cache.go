@@ -181,13 +181,21 @@ func (c *Cache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 		c.lruIndex[key] = elem
 	}
 
-	// Write-through to L2 (disk)
-	if c.l2 != nil {
+	// Write-through to L2 (disk), except keys that already have dedicated
+	// persistence paths and would otherwise double-write to disk.
+	if c.l2 != nil && !skipL2WriteForKey(key) {
 		c.l2.Set(key, value, ttl)
 	}
 
-	// L3: no write-through in sharded model. Owner populates via VL fetch.
-	// Non-owners get data via L3 Get → shadow copy stored above.
+	// L3 optional owner write-through for better cache distribution in skewed
+	// traffic scenarios (for example a single hot client pinned to one pod).
+	if c.l3 != nil {
+		c.l3.SetWithTTL(key, value, ttl)
+	}
+}
+
+func skipL2WriteForKey(key string) bool {
+	return len(key) >= len("patterns:") && key[:len("patterns:")] == "patterns:"
 }
 
 // Invalidate removes a specific key.

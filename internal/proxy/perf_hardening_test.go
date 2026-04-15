@@ -353,7 +353,7 @@ func TestHandleDetectedFieldValues_LevelFallsBackToDetectedLevel(t *testing.T) {
 func TestHandlePatternsReuseCachedResponse(t *testing.T) {
 	var backendCalls int
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query_range" {
+		if r.URL.Path != "/select/logsql/query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
 		backendCalls++

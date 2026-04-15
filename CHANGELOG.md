@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- peer cache: add optional owner write-through replication (`/_cache/set`) so non-owner replicas can proactively warm ring owners under skewed client traffic, with bounded TTL gating (`peer-write-through`, `peer-write-through-min-ttl`) and peer token support on both peer endpoints.
+- metrics: expose peer write-through counters (`loki_vl_proxy_peer_cache_write_through_pushes_total`, `loki_vl_proxy_peer_cache_write_through_errors_total`) for fleet-cache redistribution observability.
+
+### Bug Fixes
+
+- cache persistence: skip duplicate L2 disk writes for `patterns:*` keys because patterns already use dedicated snapshot persistence, reducing avoidable local disk write pressure.
+- e2e dense patterns harness: fix synthetic timestamp generation overflow for large ranges/high line counts so 7d dense repro runs generate valid evenly distributed data instead of corrupted short-tail timestamps.
+
 ## [1.0.24] - 2026-04-15
 
 ### Bug Fixes

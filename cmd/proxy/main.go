@@ -137,6 +137,8 @@ type proxyRuntimeConfig struct {
 	peerDNS                            string
 	peerStatic                         string
 	peerAuthToken                      string
+	peerWriteThrough                   bool
+	peerWriteThroughMinTTL             time.Duration
 }
 
 type otlpRuntimeConfig struct {
@@ -425,7 +427,9 @@ func run(
 	peerDiscovery := fs.String("peer-discovery", "", `Peer discovery: "dns" (headless service) or "static" (comma-separated)`)
 	peerDNS := fs.String("peer-dns", "", `Headless service DNS name for peer discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
 	peerStatic := fs.String("peer-static", "", `Static peer list (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
-	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get peer-cache requests when set")
+	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
+	peerWriteThrough := fs.Bool("peer-write-through", false, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
+	peerWriteThroughMinTTL := fs.Duration("peer-write-through-min-ttl", 30*time.Second, "Minimum TTL eligible for peer owner write-through pushes")
 
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -578,6 +582,8 @@ func run(
 			peerDNS:                            *peerDNS,
 			peerStatic:                         *peerStatic,
 			peerAuthToken:                      *peerAuthToken,
+			peerWriteThrough:                   *peerWriteThrough,
+			peerWriteThroughMinTTL:             *peerWriteThroughMinTTL,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1190,11 +1196,14 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	var peerCache *cache.PeerCache
 	if cfg.peerSelf != "" && cfg.peerDiscovery != "" {
 		peerCache = cache.NewPeerCache(cache.PeerConfig{
-			SelfAddr:      cfg.peerSelf,
-			DiscoveryType: cfg.peerDiscovery,
-			DNSName:       cfg.peerDNS,
-			StaticPeers:   cfg.peerStatic,
-			Port:          3100,
+			SelfAddr:           cfg.peerSelf,
+			DiscoveryType:      cfg.peerDiscovery,
+			DNSName:            cfg.peerDNS,
+			StaticPeers:        cfg.peerStatic,
+			Port:               3100,
+			AuthToken:          cfg.peerAuthToken,
+			WriteThrough:       cfg.peerWriteThrough,
+			WriteThroughMinTTL: cfg.peerWriteThroughMinTTL,
 		})
 	}
 

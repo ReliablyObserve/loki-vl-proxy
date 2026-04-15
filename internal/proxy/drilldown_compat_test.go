@@ -258,14 +258,13 @@ func TestDrilldown_IndexVolume_ServiceNameBacktickRegexGroupsByDerivedService(t 
 	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/query":
-			if err := r.ParseForm(); err != nil {
-				t.Fatalf("parse form: %v", err)
-			}
-			receivedQuery = r.Form.Get("query")
-			w.Header().Set("Content-Type", "application/x-ndjson")
-			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.000000Z","_msg":"ok","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\"}","app":"api-gateway","cluster":"us-east-1","level":"info"}` + "\n"))
-			w.Write([]byte(`{"_time":"2026-04-04T17:18:50.000000Z","_msg":"ok","_stream":"{service.name=\"payment-service\",cluster=\"us-east-1\"}","service.name":"payment-service","cluster":"us-east-1","level":"error"}` + "\n"))
+		case "/select/logsql/hits":
+			receivedQuery = r.URL.Query().Get("query")
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"hints":{},"hits":[` +
+				`{"fields":{"app":"api-gateway","cluster":"us-east-1","level":"info"},"timestamps":["2026-04-04T17:18:49Z"],"values":[1]},` +
+				`{"fields":{"service.name":"payment-service","cluster":"us-east-1","level":"error"},"timestamps":["2026-04-04T17:18:50Z"],"values":[1]}` +
+				`]}`))
 		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
@@ -292,13 +291,14 @@ func TestDrilldown_IndexVolume_ServiceNameBacktickRegexGroupsByDerivedService(t 
 
 func TestDrilldown_IndexVolume_TargetLabelsServiceNameUsesDerivedAggregation(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		if r.URL.Path != "/select/logsql/hits" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:49.000000Z","_msg":"ok","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\"}","app":"api-gateway","cluster":"us-east-1","level":"info"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:50.000000Z","_msg":"ok","_stream":"{service.name=\"payment-service\",cluster=\"us-east-1\"}","service.name":"payment-service","cluster":"us-east-1","level":"error"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:51.000000Z","_msg":"ok","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\"}","app":"api-gateway","cluster":"us-east-1","level":"info"}` + "\n"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"hints":{},"hits":[` +
+			`{"fields":{"app":"api-gateway","cluster":"us-east-1","level":"info"},"timestamps":["2026-04-04T17:18:49Z"],"values":[2]},` +
+			`{"fields":{"service.name":"payment-service","cluster":"us-east-1","level":"error"},"timestamps":["2026-04-04T17:18:50Z"],"values":[1]}` +
+			`]}`))
 	}))
 	defer vlBackend.Close()
 
@@ -447,13 +447,14 @@ func TestDrilldown_IndexVolume_TranslatesInferredTargetLabelMetrics(t *testing.T
 
 func TestDrilldown_IndexVolumeRange_TargetLabelsDetectedLevelUsesDerivedAggregation(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		if r.URL.Path != "/select/logsql/hits" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:10Z","_msg":"ok","_stream":"{app=\"api-gateway\"}","app":"api-gateway","level":"info"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:18:20Z","_msg":"boom","_stream":"{app=\"api-gateway\"}","app":"api-gateway","level":"error"}` + "\n"))
-		w.Write([]byte(`{"_time":"2026-04-04T17:19:05Z","_msg":"ok","_stream":"{app=\"api-gateway\"}","app":"api-gateway","level":"info"}` + "\n"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"hints":{},"hits":[` +
+			`{"fields":{"level":"info","app":"api-gateway"},"timestamps":["2026-04-04T17:18:10Z","2026-04-04T17:19:05Z"],"values":[1,1]},` +
+			`{"fields":{"level":"error","app":"api-gateway"},"timestamps":["2026-04-04T17:18:20Z"],"values":[1]}` +
+			`]}`))
 	}))
 	defer vlBackend.Close()
 
@@ -478,6 +479,50 @@ func TestDrilldown_IndexVolumeRange_TargetLabelsDetectedLevelUsesDerivedAggregat
 	}
 	if len(got["info"]) == 0 || len(got["error"]) == 0 {
 		t.Fatalf("expected detected_level values for info and error, got %v", got)
+	}
+}
+
+func TestDrilldown_IndexVolumeRange_TargetLabelsServiceName_FillsFullRangeBuckets(t *testing.T) {
+	const (
+		start = "2026-04-01T00:00:00Z"
+		end   = "2026-04-08T00:00:00Z"
+	)
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/hits" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"hints":{},"hits":[` +
+			`{"fields":{"app":"api-gateway","level":"info"},"timestamps":["2026-04-01T00:00:00Z","2026-04-04T00:00:00Z","2026-04-08T00:00:00Z"],"values":[5,4,3]}` +
+			`]}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7Bservice_name%3D%22api-gateway%22%7D&start="+url.QueryEscape(start)+"&end="+url.QueryEscape(end)+"&step=3600&targetLabels=service_name", nil)
+	p.handleVolumeRange(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsObject(t, resp)
+	result := assertResultIsArray(t, data)
+	if len(result) != 1 {
+		t.Fatalf("expected one service_name matrix series, got %v", result)
+	}
+	series := result[0].(map[string]interface{})
+	values := series["values"].([]interface{})
+	if len(values) != (7*24 + 1) {
+		t.Fatalf("expected full 7-day hourly bucket coverage (169 points), got %d", len(values))
+	}
+	first := values[0].([]interface{})
+	last := values[len(values)-1].([]interface{})
+	if first[1].(string) != "5" {
+		t.Fatalf("expected first bucket count=5, got %v", first)
+	}
+	if last[1].(string) != "3" {
+		t.Fatalf("expected last bucket count=3, got %v", last)
 	}
 }
 

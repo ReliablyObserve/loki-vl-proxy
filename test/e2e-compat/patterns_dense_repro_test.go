@@ -188,6 +188,30 @@ func denseExpectedBuckets(start, end time.Time, step time.Duration) (int64, int6
 	return startBucket, endBucket, count
 }
 
+func TestDenseLinearTimestamp_MonotonicAndBounded(t *testing.T) {
+	startNs := time.Date(2026, 4, 8, 0, 0, 0, 0, time.UTC).UnixNano()
+	windowNs := int64((7 * 24 * time.Hour).Nanoseconds())
+	denom := int64(100000 - 1)
+
+	prev := denseLinearTimestamp(startNs, windowNs, 0, denom)
+	if prev != startNs {
+		t.Fatalf("expected first timestamp=%d, got %d", startNs, prev)
+	}
+	for i := int64(1); i <= denom; i += 257 {
+		ts := denseLinearTimestamp(startNs, windowNs, i, denom)
+		if ts < prev {
+			t.Fatalf("expected monotonic timestamps, prev=%d current=%d i=%d", prev, ts, i)
+		}
+		if ts > startNs+windowNs {
+			t.Fatalf("expected timestamp <= end bound, got=%d end=%d", ts, startNs+windowNs)
+		}
+		prev = ts
+	}
+	if got := denseLinearTimestamp(startNs, windowNs, denom, denom); got != startNs+windowNs {
+		t.Fatalf("expected last timestamp=%d, got=%d", startNs+windowNs, got)
+	}
+}
+
 func fetchPatternsViaGrafanaDatasource(dsUID, query string, start, end time.Time, step time.Duration, limit int) ([]densePatternEntry, error) {
 	params := url.Values{}
 	params.Set("query", query)
@@ -243,7 +267,7 @@ func pushDensePatternData(t *testing.T, appName string, start, end time.Time, cf
 		for i := offset; i < batchEnd; i++ {
 			relative := int64(i)
 			denom := int64(max(1, cfg.totalLines-1))
-			tsNs := start.UnixNano() + (relative*windowNs)/denom
+			tsNs := denseLinearTimestamp(start.UnixNano(), windowNs, relative, denom)
 			ts := time.Unix(0, tsNs).UTC().Format(time.RFC3339Nano)
 			patternID := i % cfg.patternCount
 			method := []string{"GET", "POST", "PUT", "DELETE"}[patternID%4]
@@ -280,6 +304,23 @@ func pushDensePatternData(t *testing.T, appName string, start, end time.Time, cf
 			t.Fatalf("dense VL push failed at offset=%d status=%d", offset, resp.StatusCode)
 		}
 	}
+}
+
+// denseLinearTimestamp maps [0..denom] to [startNs..startNs+windowNs] while
+// avoiding int64 overflow for very large windows and line counts.
+func denseLinearTimestamp(startNs, windowNs, relative, denom int64) int64 {
+	if denom <= 0 || windowNs <= 0 {
+		return startNs
+	}
+	if relative <= 0 {
+		return startNs
+	}
+	if relative >= denom {
+		return startNs + windowNs
+	}
+	quotient := windowNs / denom
+	remainder := windowNs % denom
+	return startNs + relative*quotient + (relative*remainder)/denom
 }
 
 func denseEnvInt(key string, fallback int) int {

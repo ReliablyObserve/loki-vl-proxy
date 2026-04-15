@@ -742,14 +742,10 @@ func TestContract_Patterns_StripsPipelineAndUsesLabelScope(t *testing.T) {
 
 func TestContract_Patterns_FallsBackToQueryRangeWhenQueryUnavailable(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/select/logsql/query":
+		if r.URL.Path == "/select/logsql/query" {
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"error":"query endpoint unavailable"}`))
-		case "/select/logsql/query_range":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"level":"info"},"values":[["1712311200000000000","GET /api/users 200 15ms"],["1712311201000000000","GET /api/users 200 22ms"]]}]}}`))
-		default:
+		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -766,22 +762,18 @@ func TestContract_Patterns_FallsBackToQueryRangeWhenQueryUnavailable(t *testing.
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
 	data, _ := resp["data"].([]interface{})
-	if len(data) == 0 {
-		t.Fatalf("expected non-empty patterns response from query_range fallback, got %v", resp)
+	if len(data) != 0 {
+		t.Fatalf("expected empty patterns response when query backend is unavailable, got %v", resp)
 	}
 }
 
 func TestContract_Patterns_FallsBackToQueryRangeWhenQueryHasNoExtractablePatterns(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/select/logsql/query":
+		if r.URL.Path == "/select/logsql/query" {
 			// Valid response body, but no extractable lines for pattern miner.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
-		case "/select/logsql/query_range":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"level":"info"},"values":[["1712311200000000000","GET /api/users 200 15ms"],["1712311201000000000","GET /api/users 200 22ms"]]}]}}`))
-		default:
+		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
@@ -798,8 +790,8 @@ func TestContract_Patterns_FallsBackToQueryRangeWhenQueryHasNoExtractablePattern
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
 	data, _ := resp["data"].([]interface{})
-	if len(data) == 0 {
-		t.Fatalf("expected non-empty patterns response from query_range fallback when query body has no extractable patterns, got %v", resp)
+	if len(data) != 0 {
+		t.Fatalf("expected empty patterns response when query body has no extractable lines, got %v", resp)
 	}
 }
 
@@ -810,11 +802,12 @@ func TestContract_Patterns_PrefersQueryRangeForSelectedRange(t *testing.T) {
 		case "/select/logsql/query_range":
 			queryRangeCalls++
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[{"stream":{"level":"info"},"values":[["1712311200000000000","GET /api/users 200 15ms"],["1712311260000000000","GET /api/users 200 22ms"]]}]}}`))
+			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
 		case "/select/logsql/query":
 			queryCalls++
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"GET /api/users 200 15ms","level":"info"}` + "\n"))
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:01:00Z","_msg":"GET /api/users 200 22ms","level":"info"}` + "\n"))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -829,11 +822,11 @@ func TestContract_Patterns_PrefersQueryRangeForSelectedRange(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
 	}
-	if queryRangeCalls == 0 {
-		t.Fatalf("expected query_range to be used for patterns extraction")
+	if queryCalls == 0 {
+		t.Fatalf("expected query endpoint to be used for patterns extraction")
 	}
-	if queryCalls != 0 {
-		t.Fatalf("expected query fallback to be skipped when query_range already returned patterns, got %d calls", queryCalls)
+	if queryRangeCalls != 0 {
+		t.Fatalf("expected query_range to be skipped for patterns extraction, got %d calls", queryRangeCalls)
 	}
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
@@ -846,7 +839,7 @@ func TestContract_Patterns_PrefersQueryRangeForSelectedRange(t *testing.T) {
 func TestContract_Patterns_UsesFromToWhenStartEndMissing(t *testing.T) {
 	var receivedStart, receivedEnd, receivedStep string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query_range" {
+		if r.URL.Path != "/select/logsql/query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
 		if err := r.ParseForm(); err != nil {
@@ -876,7 +869,7 @@ func TestContract_Patterns_UsesFromToWhenStartEndMissing(t *testing.T) {
 		t.Fatalf("expected from/to to be forwarded as start/end, got start=%q end=%q", receivedStart, receivedEnd)
 	}
 	if receivedStep != "1m" {
-		t.Fatalf("expected step to be forwarded to query_range, got %q", receivedStep)
+		t.Fatalf("expected step to be forwarded to query, got %q", receivedStep)
 	}
 }
 
@@ -884,7 +877,7 @@ func TestContract_Patterns_AdaptiveSourceLimitForLongRanges(t *testing.T) {
 	receivedLimits := make([]string, 0, 32)
 	var limitsMu sync.Mutex
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query_range" {
+		if r.URL.Path != "/select/logsql/query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
 		if err := r.ParseForm(); err != nil {
@@ -914,7 +907,7 @@ func TestContract_Patterns_AdaptiveSourceLimitForLongRanges(t *testing.T) {
 	limitsSnapshot := append([]string(nil), receivedLimits...)
 	limitsMu.Unlock()
 	if len(limitsSnapshot) < 2 {
-		t.Fatalf("expected windowed query_range fanout for long range, got %d backend calls", len(limitsSnapshot))
+		t.Fatalf("expected windowed query fanout for long range, got %d backend calls", len(limitsSnapshot))
 	}
 	for i, limit := range limitsSnapshot {
 		n, err := strconv.Atoi(limit)
@@ -931,7 +924,7 @@ func TestContract_Patterns_DerivesStepWhenMissing(t *testing.T) {
 	var receivedStep string
 	var stepMu sync.Mutex
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query_range" {
+		if r.URL.Path != "/select/logsql/query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
 		if err := r.ParseForm(); err != nil {
@@ -969,7 +962,7 @@ func TestContract_Patterns_DerivesStepWhenMissing(t *testing.T) {
 
 func TestContract_Patterns_WindowedSamplingCoversWholeRange(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query_range" {
+		if r.URL.Path != "/select/logsql/query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
 		if err := r.ParseForm(); err != nil {
@@ -1550,8 +1543,8 @@ func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		switch {
-		case callCount <= 2:
-			// First probe: query + fallback query_range are both empty.
+		case callCount <= 1:
+			// First probe: query is empty.
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"status":"success","data":[]}`))
 		default:
@@ -1585,7 +1578,7 @@ func TestContract_Patterns_EmptyResultDoesNotPoisonCache(t *testing.T) {
 	if len(secondData) == 0 {
 		t.Fatalf("expected second patterns probe to return data (empty response must not be sticky), got %v", second)
 	}
-	if callCount < 3 {
+	if callCount < 2 {
 		t.Fatalf("expected backend to be queried again after empty probe; got callCount=%d", callCount)
 	}
 }

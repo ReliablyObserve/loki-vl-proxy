@@ -220,6 +220,29 @@ func TestHardening_PeerCacheRequiresTokenWhenConfigured(t *testing.T) {
 	if string(body) != "cached-value" {
 		t.Fatalf("expected cached value, got %q", string(body))
 	}
+
+	req = httptest.NewRequest(http.MethodPost, "/_cache/set?key=remote-key&ttl_ms=60000", strings.NewReader("remote-value"))
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on /_cache/set without peer token, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/_cache/set?key=remote-key&ttl_ms=60000", strings.NewReader("remote-value"))
+	req.Header.Set("X-Peer-Token", "peer-secret")
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 on /_cache/set with peer token, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/_cache/get?key=remote-key", nil)
+	req.Header.Set("X-Peer-Token", "peer-secret")
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || w.Body.String() != "remote-value" {
+		t.Fatalf("expected remote value roundtrip after /_cache/set, got %d/%q", w.Code, w.Body.String())
+	}
 }
 
 func TestHardening_ReadyUsesBackendAuthHeaders(t *testing.T) {

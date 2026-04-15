@@ -45,6 +45,9 @@ type PeerCache struct {
 	done         chan struct{}
 	discoveryFn  func() ([]string, error)
 	discoveryInt time.Duration
+	authToken    string
+	writeThrough bool
+	wtMinTTL     time.Duration
 
 	// Per-peer circuit breakers
 	breakers sync.Map // string → *peerBreaker
@@ -56,6 +59,8 @@ type PeerCache struct {
 	PeerHits   atomic.Int64
 	PeerMisses atomic.Int64
 	PeerErrors atomic.Int64
+	WTPushes   atomic.Int64
+	WTErrors   atomic.Int64
 }
 
 type inflightEntry struct {
@@ -67,14 +72,17 @@ type inflightEntry struct {
 
 // PeerConfig configures the distributed peer cache.
 type PeerConfig struct {
-	SelfAddr          string        // this instance's address (ip:port)
-	DiscoveryType     string        // "dns", "static", or "" (disabled)
-	DNSName           string        // headless service DNS name
-	StaticPeers       string        // comma-separated peer addresses
-	Port              int           // peer cache HTTP port (default: 3100)
-	DiscoveryInterval time.Duration // peer list refresh interval (default: 15s)
-	Timeout           time.Duration // peer HTTP request timeout (default: 2s)
-	Logger            *slog.Logger
+	SelfAddr           string        // this instance's address (ip:port)
+	DiscoveryType      string        // "dns", "static", or "" (disabled)
+	DNSName            string        // headless service DNS name
+	StaticPeers        string        // comma-separated peer addresses
+	Port               int           // peer cache HTTP port (default: 3100)
+	DiscoveryInterval  time.Duration // peer list refresh interval (default: 15s)
+	Timeout            time.Duration // peer HTTP request timeout (default: 2s)
+	AuthToken          string        // optional shared token for peer cache endpoints
+	WriteThrough       bool          // push owner copies on local SetWithTTL
+	WriteThroughMinTTL time.Duration // minimum TTL to trigger write-through
+	Logger             *slog.Logger
 }
 
 // NewPeerCache creates a sharded peer cache.
@@ -106,6 +114,12 @@ func NewPeerCache(cfg PeerConfig) *PeerCache {
 		log:          cfg.Logger,
 		done:         make(chan struct{}),
 		discoveryInt: cfg.DiscoveryInterval,
+		authToken:    strings.TrimSpace(cfg.AuthToken),
+		writeThrough: cfg.WriteThrough,
+		wtMinTTL:     cfg.WriteThroughMinTTL,
+	}
+	if pc.wtMinTTL <= 0 {
+		pc.wtMinTTL = 30 * time.Second
 	}
 
 	switch cfg.DiscoveryType {
@@ -194,6 +208,9 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 		pc.PeerErrors.Add(1)
 		return nil, 0, false
 	}
+	if pc.authToken != "" {
+		req.Header.Set("X-Peer-Token", pc.authToken)
+	}
 	req.Header.Set("Accept-Encoding", "zstd, gzip")
 
 	resp, err := pc.client.Do(req)
@@ -246,14 +263,70 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	return body, remainingTTL, true
 }
 
-// Set is a no-op for the sharded model.
-// L1 Set already stores locally. The owner's L1 gets populated when
-// it receives a /_cache/get request and fetches from VL.
-// No write-through needed — saves network.
+// Set optionally pushes the key to owner based on write-through config.
+// Default behavior remains no-op for network writes.
 func (pc *PeerCache) Set(key string, value []byte) {
-	// Intentionally empty: sharded model doesn't push data to peers.
-	// Owner populates its own cache via VL fetch.
-	// Non-owners populate via L3 Get → shadow copy in L1.
+	pc.SetWithTTL(key, value, 0)
+}
+
+// SetWithTTL optionally pushes the key to its owner peer so the ring stays warm
+// even when client traffic is temporarily skewed to a subset of replicas.
+func (pc *PeerCache) SetWithTTL(key string, value []byte, ttl time.Duration) {
+	if !pc.writeThrough || len(value) == 0 {
+		return
+	}
+	if ttl > 0 && ttl < pc.wtMinTTL {
+		return
+	}
+	pc.mu.RLock()
+	if len(pc.peers) == 0 {
+		pc.mu.RUnlock()
+		return
+	}
+	owner := pc.ring.get(key)
+	pc.mu.RUnlock()
+	if owner == "" || owner == pc.selfAddr {
+		return
+	}
+	if !pc.peerAllowed(owner) {
+		pc.WTErrors.Add(1)
+		return
+	}
+	go pc.pushToOwner(owner, key, value, ttl)
+}
+
+func (pc *PeerCache) pushToOwner(owner, key string, value []byte, ttl time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), pc.client.Timeout)
+	defer cancel()
+	ttlMs := int64(0)
+	if ttl > 0 {
+		ttlMs = ttl.Milliseconds()
+	}
+	endpoint := fmt.Sprintf("http://%s/_cache/set?key=%s&ttl_ms=%d", owner, key, ttlMs)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(value))
+	if err != nil {
+		pc.recordPeerFailure(owner)
+		pc.WTErrors.Add(1)
+		return
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	if pc.authToken != "" {
+		req.Header.Set("X-Peer-Token", pc.authToken)
+	}
+	resp, err := pc.client.Do(req)
+	if err != nil {
+		pc.recordPeerFailure(owner)
+		pc.WTErrors.Add(1)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		pc.recordPeerFailure(owner)
+		pc.WTErrors.Add(1)
+		return
+	}
+	pc.recordPeerSuccess(owner)
+	pc.WTPushes.Add(1)
 }
 
 // GossipHaveKey is a no-op in the sharded model.
@@ -275,6 +348,19 @@ const MinUsableTTL = 5 * time.Second
 // GET /_cache/get?key=... — return cached value with remaining TTL header (or 404)
 // Header X-Cache-TTL-Ms: remaining TTL in milliseconds (for shadow copy)
 func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCache *Cache) {
+	if r.Method == http.MethodPost {
+		pc.serveSet(w, r, localCache)
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET, POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	pc.serveGet(w, r, localCache)
+}
+
+func (pc *PeerCache) serveGet(w http.ResponseWriter, r *http.Request, localCache *Cache) {
 	key := r.URL.Query().Get("key")
 	if key == "" {
 		http.Error(w, "missing key", http.StatusBadRequest)
@@ -323,6 +409,36 @@ func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCach
 		return
 	}
 	w.Write(value)
+}
+
+func (pc *PeerCache) serveSet(w http.ResponseWriter, r *http.Request, localCache *Cache) {
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+	if key == "" {
+		http.Error(w, "missing key", http.StatusBadRequest)
+		return
+	}
+	ttlMsRaw := strings.TrimSpace(r.URL.Query().Get("ttl_ms"))
+	var ttl time.Duration
+	if ttlMsRaw != "" {
+		var ttlMs int64
+		if _, err := fmt.Sscanf(ttlMsRaw, "%d", &ttlMs); err == nil && ttlMs > 0 {
+			ttl = time.Duration(ttlMs) * time.Millisecond
+		}
+	}
+	if ttl <= 0 {
+		ttl = 30 * time.Second
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+	if err != nil {
+		http.Error(w, "read body failed", http.StatusBadRequest)
+		return
+	}
+	if len(body) == 0 {
+		http.Error(w, "empty value", http.StatusBadRequest)
+		return
+	}
+	localCache.SetWithTTL(key, body, ttl)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func acceptsPeerEncoding(header, encoding string) bool {
@@ -396,6 +512,8 @@ func (pc *PeerCache) Stats() map[string]interface{} {
 		"peer_hits":   pc.PeerHits.Load(),
 		"peer_misses": pc.PeerMisses.Load(),
 		"peer_errors": pc.PeerErrors.Load(),
+		"wt_pushes":   pc.WTPushes.Load(),
+		"wt_errors":   pc.WTErrors.Load(),
 	}
 }
 
