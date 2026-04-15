@@ -401,6 +401,60 @@ func TestPatternSnapshotDedup_PeerMerge_RemovesExactDuplicates(t *testing.T) {
 	}
 }
 
+func TestHandlePatterns_FallsBackToLatestSnapshotOnEmptyRefresh(t *testing.T) {
+	var calls int
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		calls++
+		if calls == 1 {
+			_, _ = w.Write([]byte(`{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","level":"info"}` + "\n"))
+			return
+		}
+		_, _ = w.Write([]byte{})
+	}))
+	defer backend.Close()
+
+	p := newPatternPersistenceProxy(t, backend.URL, filepath.Join(t.TempDir(), "patterns.snapshot.json"), true)
+	t.Cleanup(func() {
+		_ = p.Shutdown(context.Background())
+	})
+
+	firstReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1710000000&end=1710000120&step=60s`, nil)
+	firstRec := httptest.NewRecorder()
+	p.handlePatterns(firstRec, firstReq)
+	if firstRec.Code != http.StatusOK {
+		t.Fatalf("expected first patterns call to succeed, got %d body=%s", firstRec.Code, firstRec.Body.String())
+	}
+
+	var firstResp patternsResponse
+	if err := json.Unmarshal(firstRec.Body.Bytes(), &firstResp); err != nil {
+		t.Fatalf("decode first patterns response: %v", err)
+	}
+	if len(firstResp.Data) == 0 {
+		t.Fatalf("expected first patterns response to contain data, got %#v", firstResp)
+	}
+
+	secondReq := httptest.NewRequest(http.MethodGet, `/loki/api/v1/patterns?query={app="api"}&start=1710000060&end=1710000180&step=60s`, nil)
+	secondRec := httptest.NewRecorder()
+	p.handlePatterns(secondRec, secondReq)
+	if secondRec.Code != http.StatusOK {
+		t.Fatalf("expected snapshot fallback response, got %d body=%s", secondRec.Code, secondRec.Body.String())
+	}
+
+	var secondResp patternsResponse
+	if err := json.Unmarshal(secondRec.Body.Bytes(), &secondResp); err != nil {
+		t.Fatalf("decode second patterns response: %v", err)
+	}
+	if len(secondResp.Data) == 0 {
+		t.Fatalf("expected snapshot fallback to keep non-empty patterns, got %#v", secondResp)
+	}
+	if len(secondResp.Data[0].Samples) != 3 {
+		t.Fatalf("expected fallback samples filled across the requested range, got %#v", secondResp.Data[0].Samples)
+	}
+}
+
 func newPatternPersistenceProxy(t *testing.T, backendURL, persistPath string, autodetect bool) *Proxy {
 	t.Helper()
 	enabled := true

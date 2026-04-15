@@ -2750,9 +2750,6 @@ func patternSnapshotIdentityFromCacheKey(cacheKey string) string {
 		return ""
 	}
 	orgID := strings.TrimSpace(parts[1])
-	if orgID == "" {
-		return ""
-	}
 	params, err := url.ParseQuery(parts[2])
 	if err != nil {
 		return ""
@@ -2776,6 +2773,40 @@ func betterPatternSnapshotEntry(current, incoming patternSnapshotEntry, currentK
 	}
 	// Deterministic tie-breaker.
 	return incomingKey > currentKey
+}
+
+func (p *Proxy) latestPatternSnapshotPayload(cacheKey string) ([]byte, bool) {
+	if p == nil || !p.patternsEnabled || strings.TrimSpace(p.patternsPersistPath) == "" {
+		return nil, false
+	}
+	identity := patternSnapshotIdentityFromCacheKey(cacheKey)
+	if identity == "" {
+		return nil, false
+	}
+
+	p.patternsSnapshotMu.RLock()
+	defer p.patternsSnapshotMu.RUnlock()
+
+	var (
+		bestKey   string
+		bestEntry patternSnapshotEntry
+	)
+	for key, entry := range p.patternsSnapshotEntries {
+		if patternSnapshotIdentityFromCacheKey(key) != identity {
+			continue
+		}
+		if entry.PatternCount <= 0 || len(entry.Value) == 0 {
+			continue
+		}
+		if bestKey == "" || betterPatternSnapshotEntry(bestEntry, entry, bestKey, key) {
+			bestKey = key
+			bestEntry = entry
+		}
+	}
+	if bestKey == "" {
+		return nil, false
+	}
+	return append([]byte(nil), bestEntry.Value...), true
 }
 
 func (p *Proxy) compactPatternSnapshotEntriesLocked() (int, int) {
@@ -4848,6 +4879,15 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 
 	// Use /query with stratified windowing to preserve full selected-range buckets.
 	entries, _ := fetchPatterns("/select/logsql/query")
+	if len(entries) == 0 {
+		if fallbackPayload, ok := p.latestPatternSnapshotPayload(cacheWriteKey); ok {
+			resultBody := p.applyCustomPatternsToPayload(fallbackPayload, startParam, endParam, stepParam, patternLimit)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(resultBody)
+			p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
+			return
+		}
+	}
 	if entries == nil {
 		entries = []patternResultEntry{}
 	}
