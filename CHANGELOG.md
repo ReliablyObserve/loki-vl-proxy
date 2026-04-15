@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-15
+
 ### Features
 
 - proxy: add downstream HTTP/1.x connection rotation, connection-state metrics, and frontend compression controls to redistribute sticky Loki-compatible clients while keeping upstream backend reuse warm.
