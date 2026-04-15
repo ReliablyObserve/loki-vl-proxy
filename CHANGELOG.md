@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-15
+
 ### Features
 
 - peer cache: add optional owner write-through replication (`/_cache/set`) so non-owner replicas can proactively warm ring owners under skewed client traffic, with bounded TTL gating (`peer-write-through`, `peer-write-through-min-ttl`) and peer token support on both peer endpoints.
