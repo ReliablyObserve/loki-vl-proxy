@@ -1579,6 +1579,9 @@ func (w *compatCacheCaptureWriter) Write(b []byte) (int, error) {
 	if w.code == 0 {
 		w.code = http.StatusOK
 	}
+	if strings.TrimSpace(w.Header().Get("X-Content-Type-Options")) == "" {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+	}
 	w.capture(b)
 	return w.ResponseWriter.Write(b)
 }
@@ -5542,12 +5545,16 @@ func (p *Proxy) maybeAutodetectPatternsFromNDJSON(orgID, query, start, end, step
 	if !p.patternsEnabled || !p.patternsAutodetectFromQueries || len(body) == 0 {
 		return
 	}
-	cacheKey := p.patternsAutodetectCacheKey(orgID, query, start, end, step)
-	if cacheKey == "" {
+	patterns := extractLogPatterns(body, step, maxPatternResponseLimit)
+	p.storeAutodetectedPatterns(orgID, query, start, end, step, patterns)
+}
+
+func (p *Proxy) storeAutodetectedPatterns(orgID, query, start, end, step string, patterns []map[string]interface{}) {
+	if !p.patternsEnabled || !p.patternsAutodetectFromQueries || len(patterns) == 0 {
 		return
 	}
-	patterns := extractLogPatterns(body, step, maxPatternResponseLimit)
-	if len(patterns) == 0 {
+	cacheKey := p.patternsAutodetectCacheKey(orgID, query, start, end, step)
+	if cacheKey == "" {
 		return
 	}
 	p.metrics.RecordPatternsDetected(len(patterns))
@@ -5567,25 +5574,8 @@ func (p *Proxy) maybeAutodetectPatternsFromWindowEntries(orgID, query, start, en
 	if !p.patternsEnabled || !p.patternsAutodetectFromQueries || len(entries) == 0 {
 		return
 	}
-	cacheKey := p.patternsAutodetectCacheKey(orgID, query, start, end, step)
-	if cacheKey == "" {
-		return
-	}
 	patterns := extractLogPatternsFromWindowEntries(entries, step, maxPatternResponseLimit)
-	if len(patterns) == 0 {
-		return
-	}
-	p.metrics.RecordPatternsDetected(len(patterns))
-	resultBody, err := json.Marshal(map[string]interface{}{
-		"status": "success",
-		"data":   patterns,
-	})
-	if err != nil {
-		return
-	}
-	now := time.Now().UTC()
-	p.cache.SetWithTTL(cacheKey, resultBody, patternsCacheRetention)
-	p.recordPatternSnapshotEntry(cacheKey, resultBody, now)
+	p.storeAutodetectedPatterns(orgID, query, start, end, step, patterns)
 }
 
 // handleFormatQuery returns the query as-is (pretty-printing is client-side for LogQL).
@@ -7703,19 +7693,27 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 		return
 	}
 
-	body, _ := io.ReadAll(resp.Body)
-	p.maybeAutodetectPatternsFromNDJSON(
+	collectPatterns := p.patternsEnabled && p.patternsAutodetectFromQueries
+	streams, patterns, err := p.vlReaderToLokiStreams(
+		resp.Body,
+		r.FormValue("query"),
+		r.FormValue("step"),
+		categorizedLabels,
+		emitStructuredMetadata,
+		collectPatterns,
+	)
+	if err != nil {
+		p.writeError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	p.storeAutodetectedPatterns(
 		r.Header.Get("X-Scope-OrgID"),
 		r.FormValue("query"),
 		r.FormValue("start"),
 		r.FormValue("end"),
 		r.FormValue("step"),
-		body,
+		patterns,
 	)
-
-	// VL returns newline-delimited JSON, each line is a log entry.
-	// Loki expects: {"status":"success","data":{"resultType":"streams","result":[...]}}
-	streams := p.vlLogsToLokiStreams(body, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 
 	// Apply derived fields (extract trace_id etc. from log lines)
 	if len(p.derivedFields) > 0 {
@@ -7736,7 +7734,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 		applyLineFormatTemplate(streams, tmpl)
 	}
 
-	result, _ := json.Marshal(map[string]interface{}{
+	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
 		"data": func() map[string]interface{} {
 			data := map[string]interface{}{
@@ -7750,8 +7748,6 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 			return data
 		}(),
 	})
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(result)
 }
 
 // streamLogQuery streams VL NDJSON response as chunked Loki-compatible JSON.
@@ -8001,6 +7997,120 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 	return result
 }
 
+type cachedLogQueryStreamDescriptor struct {
+	key              string
+	rawLabels        map[string]string
+	translatedLabels map[string]string
+}
+
+func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, categorizedLabels bool, emitStructuredMetadata bool, collectPatterns bool) ([]map[string]interface{}, []map[string]interface{}, error) {
+	type streamEntry struct {
+		Labels map[string]string
+		Values []interface{}
+	}
+
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+
+	streamMap := make(map[string]*streamEntry, 32)
+	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
+	streamLabelCache := make(map[string]map[string]string, 16)
+	exposureCache := make(map[string][]metadataFieldExposure, 16)
+	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
+
+	var (
+		miner        *patternMiner
+		stepSeconds  int64
+		patternCount int
+	)
+	if collectPatterns {
+		miner = newPatternMiner()
+		stepSeconds = parsePatternStepSeconds(step)
+	}
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
+		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
+			line = line[1:]
+		}
+		for len(line) > 0 && (line[len(line)-1] == ' ' || line[len(line)-1] == '\t' || line[len(line)-1] == '\r') {
+			line = line[:len(line)-1]
+		}
+		if len(line) == 0 {
+			continue
+		}
+
+		entry := vlEntryPool.Get().(map[string]interface{})
+		for k := range entry {
+			delete(entry, k)
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			vlEntryPool.Put(entry)
+			continue
+		}
+
+		timeStr, ok := stringifyEntryValue(entry["_time"])
+		if !ok || timeStr == "" {
+			vlEntryPool.Put(entry)
+			continue
+		}
+		tsNanos, ok := formatEntryTimestamp(timeStr)
+		if !ok {
+			vlEntryPool.Put(entry)
+			continue
+		}
+		msg, _ := stringifyEntryValue(entry["_msg"])
+		rawStream := asString(entry["_stream"])
+		level, _ := stringifyEntryValue(entry["level"])
+
+		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
+		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache)
+		se, ok := streamMap[desc.key]
+		if !ok {
+			se = &streamEntry{
+				Labels: desc.translatedLabels,
+				Values: make([]interface{}, 0, 8),
+			}
+			streamMap[desc.key] = se
+		}
+		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels))
+
+		if miner != nil {
+			levelValue := strings.TrimSpace(desc.rawLabels["detected_level"])
+			if levelValue == "" {
+				levelValue = strings.TrimSpace(desc.rawLabels["level"])
+			}
+			if unixSeconds, ok := parseFlexibleUnixSeconds(timeStr); ok {
+				bucket := unixSeconds
+				if stepSeconds > 0 {
+					bucket = (bucket / stepSeconds) * stepSeconds
+				}
+				miner.Observe(levelValue, msg, bucket)
+				patternCount++
+			}
+		}
+
+		vlEntryPool.Put(entry)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	result := make([]map[string]interface{}, 0, len(streamMap))
+	for _, se := range streamMap {
+		result = append(result, map[string]interface{}{
+			"stream": se.Labels,
+			"values": se.Values,
+		})
+	}
+
+	var patterns []map[string]interface{}
+	if miner != nil && patternCount > 0 {
+		patterns = buildPatternResponse(miner, maxPatternResponseLimit)
+	}
+	return result, patterns, nil
+}
+
 func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []map[string]interface{} {
 	type streamEntry struct {
 		Labels map[string]string
@@ -8078,6 +8188,103 @@ func (p *Proxy) vlLogsToLokiStreams(body []byte, originalQuery string, categoriz
 	return result
 }
 
+func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
+	cacheKey := rawStream + "\x00" + strings.TrimSpace(level)
+	if desc, ok := descriptorCache[cacheKey]; ok {
+		return desc
+	}
+
+	baseLabels, ok := streamLabelCache[rawStream]
+	if !ok {
+		baseLabels = parseStreamLabels(rawStream)
+		streamLabelCache[rawStream] = baseLabels
+	}
+
+	rawLabels := cloneStringMap(baseLabels)
+	if trimmed := strings.TrimSpace(level); trimmed != "" {
+		rawLabels["level"] = trimmed
+	}
+	ensureDetectedLevel(rawLabels)
+	ensureSyntheticServiceName(rawLabels)
+
+	translatedLabels := rawLabels
+	if p != nil && p.labelTranslator != nil && !p.labelTranslator.IsPassthrough() {
+		translatedLabels = p.labelTranslator.TranslateLabelsMap(rawLabels)
+		ensureDetectedLevel(translatedLabels)
+		ensureSyntheticServiceName(translatedLabels)
+	}
+
+	desc := cachedLogQueryStreamDescriptor{
+		key:              canonicalLabelsKey(rawLabels),
+		rawLabels:        rawLabels,
+		translatedLabels: translatedLabels,
+	}
+	descriptorCache[cacheKey] = desc
+	return desc
+}
+
+func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure) (map[string]string, map[string]string) {
+	var (
+		parsedFields             map[string]string
+		structuredMetadataFields map[string]string
+	)
+
+	for key, value := range entry {
+		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+			continue
+		}
+		if _, exists := streamLabels[key]; exists {
+			continue
+		}
+		stringValue, ok := stringifyEntryValue(value)
+		if !ok || strings.TrimSpace(stringValue) == "" {
+			continue
+		}
+		exposures := p.metadataFieldExposuresCached(key, exposureCache)
+		for _, exposure := range exposures {
+			if _, exists := streamLabels[exposure.name]; exists && !exposure.isAlias {
+				continue
+			}
+			if classifyAsParsed {
+				if parsedFields == nil {
+					parsedFields = make(map[string]string, 4)
+				}
+				parsedFields[exposure.name] = stringValue
+				continue
+			}
+			if structuredMetadataFields == nil {
+				structuredMetadataFields = make(map[string]string, 4)
+			}
+			structuredMetadataFields[exposure.name] = stringValue
+		}
+	}
+
+	return structuredMetadataFields, parsedFields
+}
+
+func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {
+	if len(exposureCache) == 0 {
+		return p.metadataFieldExposures(vlField)
+	}
+	if exposures, ok := exposureCache[vlField]; ok {
+		return exposures
+	}
+	exposures := p.metadataFieldExposures(vlField)
+	exposureCache[vlField] = exposures
+	return exposures
+}
+
+func cloneStringMap(src map[string]string) map[string]string {
+	if len(src) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(src))
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
+}
+
 func stringifyEntryValue(value interface{}) (string, bool) {
 	if value == nil {
 		return "", false
@@ -8107,36 +8314,35 @@ func buildStreamValues(ts, msg string, structuredMetadata map[string]string, par
 	return []interface{}{buildStreamValue(ts, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels)}
 }
 
+var emptyCategorizedMetadata = map[string]interface{}{}
+
 func buildStreamValue(ts, msg string, structuredMetadata map[string]string, parsedFields map[string]string, emitStructuredMetadata bool, categorizedLabels bool) interface{} {
 	if !categorizedLabels {
 		return []interface{}{ts, msg}
 	}
 
-	metadata := map[string]interface{}{}
 	if emitStructuredMetadata {
+		metadata := make(map[string]interface{}, 2)
 		if len(structuredMetadata) > 0 {
 			metadata["structuredMetadata"] = metadataFieldMap(structuredMetadata)
 		}
 		if len(parsedFields) > 0 {
 			metadata["parsed"] = metadataFieldMap(parsedFields)
 		}
+		if len(metadata) > 0 {
+			return []interface{}{ts, msg, metadata}
+		}
 	}
-	return []interface{}{ts, msg, metadata}
+	return []interface{}{ts, msg, emptyCategorizedMetadata}
 }
 
 func metadataFieldMap(fields map[string]string) map[string]string {
 	if len(fields) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(fields))
-	for key := range fields {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	pairs := make(map[string]string, len(keys))
-	for _, key := range keys {
-		pairs[key] = fields[key]
+	pairs := make(map[string]string, len(fields))
+	for key, value := range fields {
+		pairs[key] = value
 	}
 	return pairs
 }

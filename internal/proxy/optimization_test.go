@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -116,6 +117,41 @@ func TestOptimization_VLLogsToLokiStreams_MultipleStreams(t *testing.T) {
 		if labels["app"] == "api" && len(values) != 1 {
 			t.Errorf("api stream should have 1 value, got %d", len(values))
 		}
+	}
+}
+
+func TestOptimization_VLReaderToLokiStreams_CollectsPatterns(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected backend call to %s", r.URL.Path)
+	}))
+	defer backend.Close()
+
+	p := newTestProxy(t, backend.URL)
+	t.Cleanup(func() {
+		if p.cache != nil {
+			p.cache.Close()
+		}
+		if p.translationCache != nil {
+			p.translationCache.Close()
+		}
+	})
+
+	body := strings.Join([]string{
+		`{"_time":"2024-01-15T10:30:00Z","_msg":"GET /api/users 200 15ms","_stream":"{app=\"api\"}","app":"api","level":"info"}`,
+		`{"_time":"2024-01-15T10:30:01Z","_msg":"GET /api/users 200 17ms","_stream":"{app=\"api\"}","app":"api","level":"info"}`,
+		`{"_time":"2024-01-15T10:30:02Z","_msg":"POST /api/users 500 31ms","_stream":"{app=\"api\"}","app":"api","level":"error"}`,
+		"",
+	}, "\n")
+
+	streams, patterns, err := p.vlReaderToLokiStreams(bytes.NewReader([]byte(body)), `{app="api"} |= "users"`, "1m", false, false, true)
+	if err != nil {
+		t.Fatalf("vlReaderToLokiStreams error: %v", err)
+	}
+	if len(streams) != 2 {
+		t.Fatalf("expected 2 streams split by level, got %d", len(streams))
+	}
+	if len(patterns) == 0 {
+		t.Fatal("expected autodetected patterns from NDJSON reader path")
 	}
 }
 

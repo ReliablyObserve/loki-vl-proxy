@@ -53,6 +53,7 @@ type compressedResponseWriter struct {
 }
 
 func (w *compressedResponseWriter) Write(b []byte) (int, error) {
+	ensureNoSniffHeader(w.ResponseWriter)
 	if w.started {
 		if w.bypass {
 			return w.ResponseWriter.Write(b)
@@ -84,6 +85,7 @@ func (w *compressedResponseWriter) Write(b []byte) (int, error) {
 }
 
 func (w *compressedResponseWriter) WriteHeader(code int) {
+	ensureNoSniffHeader(w.ResponseWriter)
 	if w.started {
 		return
 	}
@@ -266,6 +268,15 @@ func RegisterEncodedResponseCapture(w http.ResponseWriter, encoding string, call
 	return false
 }
 
+func ensureNoSniffHeader(w http.ResponseWriter) {
+	if w == nil {
+		return
+	}
+	if strings.TrimSpace(w.Header().Get("X-Content-Type-Options")) == "" {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+	}
+}
+
 // CompressionHandlerWithOptions negotiates response compression with clients.
 // "auto" keeps the gzip path enabled for clients that advertise support.
 func CompressionHandlerWithOptions(next http.Handler, opts CompressionOptions) http.Handler {
@@ -274,6 +285,7 @@ func CompressionHandlerWithOptions(next http.Handler, opts CompressionOptions) h
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ensureNoSniffHeader(w)
 		encoding, minBytes := PlanResponseCompression(r, opts)
 		if encoding == "" {
 			next.ServeHTTP(w, r)
@@ -317,11 +329,11 @@ func normalizeCompressionMode(mode string) responseCompressionMode {
 // compression starts.
 func PlanResponseCompression(r *http.Request, opts CompressionOptions) (string, int) {
 	selectedMode := normalizeCompressionMode(opts.Mode)
-	mode, minBytes := compressionPolicyForPath("", selectedMode, opts.MinBytes)
+	_, minBytes := compressionPolicyForPath("", selectedMode, opts.MinBytes)
 	if r == nil {
 		return "", minBytes
 	}
-	mode, minBytes = compressionPolicyForPath(r.URL.Path, selectedMode, opts.MinBytes)
+	mode, minBytes := compressionPolicyForPath(r.URL.Path, selectedMode, opts.MinBytes)
 	if mode == ResponseCompressionNone || isWebSocketUpgrade(r) || r.Method == http.MethodHead {
 		return "", minBytes
 	}

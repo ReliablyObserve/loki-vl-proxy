@@ -249,6 +249,26 @@ func TestCompressionHandlerWithOptions_RegisterEncodedResponseCapture(t *testing
 	}
 }
 
+func TestCompressionHandlerWithOptions_SetsNoSniffHeader(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("hello", 32)))
+	})
+
+	handler := CompressionHandlerWithOptions(inner, CompressionOptions{
+		Mode:     "gzip",
+		MinBytes: 1,
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+
+	handler.ServeHTTP(w, r)
+
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected nosniff header, got %q", got)
+	}
+}
+
 func TestCompressionHandler_ZstdAliasUsesGzip(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(strings.Repeat("hello", 64)))
