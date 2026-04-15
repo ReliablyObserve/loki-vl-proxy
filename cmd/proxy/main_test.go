@@ -522,7 +522,7 @@ func TestWrapHandler_GzipEnabled(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Accept-Encoding", "gzip")
 	w := httptest.NewRecorder()
-	wrapHandler(next, 1024, "auto", nil).ServeHTTP(w, req)
+	wrapHandler(next, 1024, "auto", 0, nil).ServeHTTP(w, req)
 
 	if got := w.Header().Get("Content-Encoding"); got != "gzip" {
 		t.Fatalf("expected gzip response, got %q", got)
@@ -549,7 +549,7 @@ func TestWrapHandler_ZstdPreferred(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("Accept-Encoding", "zstd, gzip")
 	w := httptest.NewRecorder()
-	wrapHandler(next, 1024, "auto", nil).ServeHTTP(w, req)
+	wrapHandler(next, 1024, "auto", 0, nil).ServeHTTP(w, req)
 
 	if got := w.Header().Get("Content-Encoding"); got != "zstd" {
 		t.Fatalf("expected zstd response, got %q", got)

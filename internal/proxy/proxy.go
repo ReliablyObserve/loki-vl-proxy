@@ -275,8 +275,14 @@ type Config struct {
 	BackendHeaders     map[string]string // static headers to add to all VL requests
 	BackendBasicAuth   string            // "user:password" for VL backend basic auth
 	BackendCompression string            // upstream HTTP compression preference: auto, gzip, zstd, none
-	BackendTimeout     time.Duration     // bounded timeout for non-streaming backend requests
-	BackendTLSSkip     bool              // skip TLS verification for VL backend
+	// ClientResponseCompression controls downstream client-facing response
+	// compression policy used by the compatibility cache hit path.
+	ClientResponseCompression string
+	// ClientResponseCompressionMinBytes is the downstream compression threshold
+	// before the proxy spends CPU compressing a response.
+	ClientResponseCompressionMinBytes int
+	BackendTimeout                    time.Duration // bounded timeout for non-streaming backend requests
+	BackendTLSSkip                    bool          // skip TLS verification for VL backend
 	// BackendMinVersion defines the minimum VictoriaLogs version considered
 	// fully supported at startup compatibility check time.
 	BackendMinVersion string
@@ -474,6 +480,8 @@ type Proxy struct {
 	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
 	backendHeaders                        map[string]string // static headers on all VL requests
 	backendCompression                    string
+	clientResponseCompression             string
+	clientResponseCompressionMinBytes     int
 	backendMinVersion                     string
 	backendAllowUnsupportedVersion        bool
 	backendVersionCheckTimeout            time.Duration
@@ -981,6 +989,8 @@ func New(cfg Config) (*Proxy, error) {
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
 		backendCompression:                    normalizeBackendCompression(cfg.BackendCompression),
+		clientResponseCompression:             cfg.ClientResponseCompression,
+		clientResponseCompressionMinBytes:     cfg.ClientResponseCompressionMinBytes,
 		backendMinVersion:                     backendMinVersion,
 		backendAllowUnsupportedVersion:        cfg.BackendAllowUnsupportedVersion,
 		backendVersionCheckTimeout:            backendVersionCheckTimeout,
@@ -1491,6 +1501,33 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	return "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + r.URL.RawQuery, true
 }
 
+func compatCacheVariantKey(baseKey, encoding string) string {
+	return baseKey + ":enc:" + encoding
+}
+
+func (p *Proxy) compatCacheResponseEncoding(r *http.Request) (string, int) {
+	return mw.PlanResponseCompression(r, mw.CompressionOptions{
+		Mode:     p.clientResponseCompression,
+		MinBytes: p.clientResponseCompressionMinBytes,
+	})
+}
+
+func (p *Proxy) compatCacheEncodedVariant(cacheKey string, body []byte, ttl time.Duration, encoding string, minBytes int) ([]byte, string, bool) {
+	if encoding == "" || len(body) == 0 || len(body) < minBytes {
+		return body, "", true
+	}
+	variantKey := compatCacheVariantKey(cacheKey, encoding)
+	if cachedVariant, ok := p.compatCache.Get(variantKey); ok {
+		return cachedVariant, encoding, true
+	}
+	encoded, err := mw.EncodeResponseBody(encoding, body)
+	if err != nil || len(encoded) >= len(body) {
+		return body, "", false
+	}
+	p.compatCache.SetWithTTL(variantKey, encoded, ttl)
+	return encoded, encoding, true
+}
+
 func compatCacheResponseAllowed(rec *httptest.ResponseRecorder) bool {
 	if rec == nil || rec.Code != http.StatusOK || rec.Flushed {
 		return false
@@ -1571,10 +1608,18 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			next(w, r)
 			return
 		}
-		if cached, ok := p.compatCache.Get(cacheKey); ok {
+		if cached, remainingTTL, ok := p.compatCache.GetWithTTL(cacheKey); ok {
 			setCacheResult(r.Context(), "hit")
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(cached)
+			body := cached
+			if encoding, minBytes := p.compatCacheResponseEncoding(r); encoding != "" {
+				if encodedBody, encodedAs, ok := p.compatCacheEncodedVariant(cacheKey, cached, remainingTTL, encoding, minBytes); ok && encodedAs != "" {
+					w.Header().Set("Content-Encoding", encodedAs)
+					w.Header().Set("Vary", "Accept-Encoding")
+					body = encodedBody
+				}
+			}
+			_, _ = w.Write(body)
 			elapsed := time.Since(start)
 			p.metrics.RecordRequestWithRoute(endpoint, route, http.StatusOK, elapsed)
 			p.metrics.RecordCacheHit()

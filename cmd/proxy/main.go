@@ -72,6 +72,8 @@ type proxyRuntimeConfig struct {
 	backendVersionCheckTimeout          time.Duration
 	backendBasicAuth                    string
 	backendCompression                  string
+	clientResponseCompression           string
+	clientResponseCompressionMinBytes   int
 	backendTLSSkip                      bool
 	forwardHeaders                      string
 	forwardAuthorization                bool
@@ -224,17 +226,18 @@ type shutdownHandlerFunc func(<-chan os.Signal, httpServer, time.Duration, *slog
 type exitFunc func(int)
 
 type runtimeOptions struct {
-	cacheTTL              time.Duration
-	cacheMax              int
-	cacheMaxBytes         int
-	compatCacheEnabled    bool
-	compatCacheMaxPercent int
-	diskCfg               cache.DiskCacheConfig
-	proxyCfg              proxyRuntimeConfig
-	otlpCfg               otlpRuntimeConfig
-	maxBodyBytes          int64
-	responseCompression   string
-	serverOpts            serverRuntimeOptions
+	cacheTTL                    time.Duration
+	cacheMax                    int
+	cacheMaxBytes               int
+	compatCacheEnabled          bool
+	compatCacheMaxPercent       int
+	diskCfg                     cache.DiskCacheConfig
+	proxyCfg                    proxyRuntimeConfig
+	otlpCfg                     otlpRuntimeConfig
+	maxBodyBytes                int64
+	responseCompression         string
+	responseCompressionMinBytes int
+	serverOpts                  serverRuntimeOptions
 }
 
 type runtimeState struct {
@@ -247,9 +250,10 @@ type runtimeState struct {
 }
 
 const (
-	defaultCacheMaxBytes      = 256 * 1024 * 1024
-	defaultCompatCachePercent = 10
-	maxCompatCachePercent     = 50
+	defaultCacheMaxBytes               = 256 * 1024 * 1024
+	defaultCompatCachePercent          = 10
+	maxCompatCachePercent              = 50
+	defaultResponseCompressionMinBytes = 1024
 )
 
 func main() {
@@ -363,6 +367,7 @@ func run(
 	// Response compression
 	enableGzip := fs.Bool("response-gzip", true, "Deprecated: enable compressed responses for clients that accept them; prefer -response-compression")
 	responseCompression := fs.String("response-compression", "", "Response compression codec: auto, gzip, zstd, none (default: auto)")
+	responseCompressionMinBytes := fs.Int("response-compression-min-bytes", defaultResponseCompressionMinBytes, "Minimum response size before frontend compression starts (0 compresses any size)")
 
 	// Grafana datasource compatibility
 	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
@@ -474,6 +479,9 @@ func run(
 	if err != nil {
 		return err
 	}
+	if *responseCompressionMinBytes < 0 {
+		return fmt.Errorf("invalid -response-compression-min-bytes: must be >= 0")
+	}
 	resolvedBackendCompression, err := normalizeCompressionSetting(*backendCompression)
 	if err != nil {
 		return fmt.Errorf("invalid -backend-compression: %w", err)
@@ -551,6 +559,8 @@ func run(
 			backendVersionCheckTimeout:          *backendVersionCheckTimeout,
 			backendBasicAuth:                    *backendBasicAuth,
 			backendCompression:                  resolvedBackendCompression,
+			clientResponseCompression:           resolvedResponseCompression,
+			clientResponseCompressionMinBytes:   *responseCompressionMinBytes,
 			backendTLSSkip:                      *backendTLSSkip,
 			forwardHeaders:                      *forwardHeaders,
 			forwardAuthorization:                *forwardAuthorization,
@@ -647,8 +657,9 @@ func run(
 			serviceInstanceID:     envCfg.serviceInstanceID,
 			deploymentEnvironment: envCfg.deploymentEnv,
 		},
-		maxBodyBytes:        *maxBodyBytes,
-		responseCompression: resolvedResponseCompression,
+		maxBodyBytes:                *maxBodyBytes,
+		responseCompression:         resolvedResponseCompression,
+		responseCompressionMinBytes: *responseCompressionMinBytes,
 		serverOpts: serverRuntimeOptions{
 			listenAddr:           envCfg.listenAddr,
 			readTimeout:          *readTimeout,
@@ -795,7 +806,7 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	if rotator != nil {
 		serverOpts.connContext = rotator.ConnContextHook()
 	}
-	serverOpts.handler = wrapHandler(mux, opts.maxBodyBytes, opts.responseCompression, rotator, p.GetMetrics())
+	serverOpts.handler = wrapHandler(mux, opts.maxBodyBytes, opts.responseCompression, opts.responseCompressionMinBytes, rotator, p.GetMetrics())
 	srv, err := buildHTTPServer(serverOpts)
 	if err != nil {
 		stopOTLP()
@@ -871,9 +882,12 @@ func maxBodyHandler(maxBytes int64, next http.Handler) http.Handler {
 	})
 }
 
-func wrapHandler(next http.Handler, maxBodyBytes int64, responseCompression string, rotator *httpConnRotator, mm ...*metrics.Metrics) http.Handler {
+func wrapHandler(next http.Handler, maxBodyBytes int64, responseCompression string, responseCompressionMinBytes int, rotator *httpConnRotator, mm ...*metrics.Metrics) http.Handler {
 	handler := maxBodyHandler(maxBodyBytes, next)
-	handler = mw.CompressionHandler(handler, responseCompression)
+	handler = mw.CompressionHandlerWithOptions(handler, mw.CompressionOptions{
+		Mode:     responseCompression,
+		MinBytes: responseCompressionMinBytes,
+	})
 	if rotator != nil {
 		handler = rotator.Wrap(handler)
 	}
@@ -1312,6 +1326,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,
 		BackendBasicAuth:                   cfg.backendBasicAuth,
 		BackendCompression:                 cfg.backendCompression,
+		ClientResponseCompression:          cfg.clientResponseCompression,
+		ClientResponseCompressionMinBytes:  cfg.clientResponseCompressionMinBytes,
 		BackendTLSSkip:                     cfg.backendTLSSkip,
 		ForwardHeaders:                     parseForwardHeaders(cfg.forwardHeaders, cfg.forwardAuthorization),
 		ForwardCookies:                     parseCSV(cfg.forwardCookies),

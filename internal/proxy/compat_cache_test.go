@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"compress/gzip"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -33,6 +36,59 @@ func TestCompatCacheMiddleware_CachesSeriesResponses(t *testing.T) {
 	}
 	if backendCalls != 1 {
 		t.Fatalf("expected 1 backend call after compat cache hit, got %d", backendCalls)
+	}
+}
+
+func TestCompatCacheMiddleware_CachesCompressedVariantOnHit(t *testing.T) {
+	var backendCalls int
+	payload := `{"values":[` + strings.Repeat(`{"value":"{app=\"api\"}","hits":1},`, 64) + `{"value":"{app=\"api\"}","hits":1}]}`
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer backend.Close()
+
+	p := newCompatTestProxyWithCompression(t, backend.URL, "gzip", 128)
+	target := "/loki/api/v1/series?match[]=%7Bapp%3D%22api%22%7D"
+
+	first := doCompatProxyRequest(p, target, map[string]string{"X-Scope-OrgID": "team-a"})
+	if first.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", first.Code, first.Body.String())
+	}
+
+	second := doCompatProxyRequest(p, target, map[string]string{
+		"X-Scope-OrgID":   "team-a",
+		"Accept-Encoding": "gzip",
+	})
+	if second.Code != http.StatusOK {
+		t.Fatalf("expected cached 200, got %d: %s", second.Code, second.Body.String())
+	}
+	if got := second.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("expected gzip compat-cache hit, got %q", got)
+	}
+	gr, err := gzip.NewReader(second.Body)
+	if err != nil {
+		t.Fatalf("create gzip reader: %v", err)
+	}
+	decoded, err := io.ReadAll(gr)
+	_ = gr.Close()
+	if err != nil {
+		t.Fatalf("read gzip body: %v", err)
+	}
+	if string(decoded) != first.Body.String() {
+		t.Fatalf("unexpected decoded compat-cache body length %d", len(decoded))
+	}
+
+	third := doCompatProxyRequest(p, target, map[string]string{
+		"X-Scope-OrgID":   "team-a",
+		"Accept-Encoding": "gzip",
+	})
+	if third.Code != http.StatusOK {
+		t.Fatalf("expected cached 200 on repeated gzip hit, got %d: %s", third.Code, third.Body.String())
+	}
+	if backendCalls != 1 {
+		t.Fatalf("expected gzip compat-cache variant to avoid backend retry, got %d backend calls", backendCalls)
 	}
 }
 
@@ -172,12 +228,18 @@ func TestShouldUseCompatCache_SkipsStreamingAndUnsafeEndpoints(t *testing.T) {
 }
 
 func newCompatTestProxy(t *testing.T, backendURL string) *Proxy {
+	return newCompatTestProxyWithCompression(t, backendURL, "auto", 1024)
+}
+
+func newCompatTestProxyWithCompression(t *testing.T, backendURL, compression string, minBytes int) *Proxy {
 	t.Helper()
 	p, err := New(Config{
-		BackendURL:  backendURL,
-		Cache:       cache.New(60*time.Second, 1000),
-		CompatCache: cache.New(60*time.Second, 100),
-		LogLevel:    "error",
+		BackendURL:                        backendURL,
+		Cache:                             cache.New(60*time.Second, 1000),
+		CompatCache:                       cache.New(60*time.Second, 100),
+		LogLevel:                          "error",
+		ClientResponseCompression:         compression,
+		ClientResponseCompressionMinBytes: minBytes,
 		TenantMap: map[string]TenantMapping{
 			"team-a": {AccountID: "10", ProjectID: "0"},
 			"team-b": {AccountID: "20", ProjectID: "0"},

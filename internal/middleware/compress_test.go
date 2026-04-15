@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"bufio"
+	"bytes"
 	"compress/gzip"
 	"io"
 	"net"
@@ -117,6 +118,92 @@ func TestCompressionHandler_AutoPrefersZstd(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "hello") {
 		t.Fatalf("unexpected decoded body %q", string(body))
+	}
+}
+
+func TestCompressionHandlerWithOptions_SkipsSmallResponses(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	handler := CompressionHandlerWithOptions(inner, CompressionOptions{
+		Mode:     "gzip",
+		MinBytes: 1024,
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+
+	handler.ServeHTTP(w, r)
+
+	if got := w.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("expected identity response for small body, got %q", got)
+	}
+	if w.Body.String() != `{"status":"ok"}` {
+		t.Fatalf("unexpected body %q", w.Body.String())
+	}
+}
+
+func TestCompressionHandlerWithOptions_MetadataUsesHigherThreshold(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(strings.Repeat("a", 2048)))
+	})
+
+	handler := CompressionHandlerWithOptions(inner, CompressionOptions{
+		Mode:     "gzip",
+		MinBytes: 1024,
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+
+	handler.ServeHTTP(w, r)
+
+	if got := w.Header().Get("Content-Encoding"); got != "" {
+		t.Fatalf("expected metadata route to stay identity below raised threshold, got %q", got)
+	}
+}
+
+func TestCompressionHandlerWithOptions_PassesThroughPrecompressedResponse(t *testing.T) {
+	var precompressed bytes.Buffer
+	gz := gzip.NewWriter(&precompressed)
+	if _, err := gz.Write([]byte(strings.Repeat("hello", 128))); err != nil {
+		t.Fatalf("write precompressed body: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("close precompressed body: %v", err)
+	}
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Set("Vary", "Accept-Encoding")
+		_, _ = w.Write(precompressed.Bytes())
+	})
+
+	handler := CompressionHandlerWithOptions(inner, CompressionOptions{
+		Mode:     "auto",
+		MinBytes: 1024,
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	r.Header.Set("Accept-Encoding", "zstd, gzip")
+
+	handler.ServeHTTP(w, r)
+
+	if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("expected existing gzip encoding to pass through, got %q", got)
+	}
+	gr, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("create gzip reader: %v", err)
+	}
+	defer gr.Close()
+	body, err := io.ReadAll(gr)
+	if err != nil {
+		t.Fatalf("read gzip body: %v", err)
+	}
+	if !strings.Contains(string(body), "hello") {
+		t.Fatalf("unexpected passthrough body %q", string(body))
 	}
 }
 

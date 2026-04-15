@@ -561,7 +561,8 @@ func (pc *PeerCache) serveHotIndex(w http.ResponseWriter, r *http.Request, local
 }
 
 func writePeerEncodedResponse(w http.ResponseWriter, r *http.Request, body []byte) {
-	if len(body) >= 256 && acceptsPeerEncoding(r.Header.Get("Accept-Encoding"), "zstd") {
+	const peerCompressionMinBytes = 1024
+	if len(body) >= peerCompressionMinBytes && acceptsPeerEncoding(r.Header.Get("Accept-Encoding"), "zstd") {
 		w.Header().Set("Content-Encoding", "zstd")
 		zw, err := zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedFastest))
 		if err != nil {
@@ -578,7 +579,7 @@ func writePeerEncodedResponse(w http.ResponseWriter, r *http.Request, body []byt
 		}
 		return
 	}
-	if len(body) >= 256 && acceptsPeerEncoding(r.Header.Get("Accept-Encoding"), "gzip") {
+	if len(body) >= peerCompressionMinBytes && acceptsPeerEncoding(r.Header.Get("Accept-Encoding"), "gzip") {
 		w.Header().Set("Content-Encoding", "gzip")
 		zw, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
 		if err != nil {
