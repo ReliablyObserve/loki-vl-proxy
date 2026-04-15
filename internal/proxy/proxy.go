@@ -720,16 +720,16 @@ func New(cfg Config) (*Proxy, error) {
 	})).With("component", "proxy")
 
 	maxConcurrent := cfg.MaxConcurrent
-	if maxConcurrent == 0 {
-		maxConcurrent = 100 // sensible default
+	if maxConcurrent < 0 {
+		maxConcurrent = 0
 	}
 	ratePerSec := cfg.RatePerSecond
-	if ratePerSec == 0 {
-		ratePerSec = 50 // 50 req/s per client default
+	if ratePerSec < 0 {
+		ratePerSec = 0
 	}
 	rateBurst := cfg.RateBurst
-	if rateBurst == 0 {
-		rateBurst = 100
+	if rateBurst < 0 {
+		rateBurst = 0
 	}
 	cbFail := cfg.CBFailThreshold
 	if cbFail == 0 {
@@ -1502,6 +1502,47 @@ func compatCacheResponseAllowed(rec *httptest.ResponseRecorder) bool {
 	return contentType == "" || strings.Contains(contentType, "application/json")
 }
 
+type compatCacheCaptureWriter struct {
+	http.ResponseWriter
+	body    []byte
+	code    int
+	flushed bool
+}
+
+func (w *compatCacheCaptureWriter) WriteHeader(code int) {
+	w.code = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *compatCacheCaptureWriter) Write(b []byte) (int, error) {
+	if w.code == 0 {
+		w.code = http.StatusOK
+	}
+	w.body = append(w.body, b...)
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *compatCacheCaptureWriter) Flush() {
+	w.flushed = true
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func compatCacheCaptureAllowed(code int, flushed bool, header http.Header) bool {
+	if code == 0 {
+		code = http.StatusOK
+	}
+	if code != http.StatusOK || flushed {
+		return false
+	}
+	if len(header.Values("Set-Cookie")) > 0 {
+		return false
+	}
+	contentType := strings.ToLower(strings.TrimSpace(header.Get("Content-Type")))
+	return contentType == "" || strings.Contains(contentType, "application/json")
+}
+
 func patternsPayloadEmpty(body []byte) bool {
 	if len(body) == 0 {
 		return true
@@ -1544,21 +1585,10 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		}
 
 		setCacheResult(r.Context(), "miss")
-		rec := httptest.NewRecorder()
-		next(rec, r)
-		copyHeaders(w.Header(), rec.Header())
-		if rec.Code != http.StatusOK {
-			w.WriteHeader(rec.Code)
-			_, _ = w.Write(rec.Body.Bytes())
-			return
-		}
-
-		body := rec.Body.Bytes()
-		if w.Header().Get("Content-Type") == "" {
-			w.Header().Set("Content-Type", "application/json")
-		}
-		_, _ = w.Write(body)
-		if compatCacheResponseAllowed(rec) {
+		capture := &compatCacheCaptureWriter{ResponseWriter: w}
+		next(capture, r)
+		if compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
+			body := capture.body
 			if endpoint == "patterns" && patternsPayloadEmpty(body) {
 				return
 			}

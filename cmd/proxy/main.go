@@ -58,6 +58,9 @@ type proxyRuntimeConfig struct {
 	cache                               *cache.Cache
 	compatCache                         *cache.Cache
 	logLevel                            string
+	maxConcurrent                       int
+	ratePerSecond                       float64
+	rateBurst                           int
 	tenantMapJSON                       string
 	tenantLimitsAllowPublish            string
 	tenantDefaultLimitsJSON             string
@@ -343,6 +346,9 @@ func run(
 	idleTimeout := fs.Duration("http-idle-timeout", 120*time.Second, "HTTP server idle timeout")
 	maxHeaderBytes := fs.Int("http-max-header-bytes", 1<<20, "HTTP max header size (default: 1MB)")
 	maxBodyBytes := fs.Int64("http-max-body-bytes", 10<<20, "HTTP max request body size (default: 10MB)")
+	maxConcurrent := fs.Int("max-concurrent", 100, "Maximum concurrent requests allowed through the proxy (0 disables)")
+	rateLimitPerSecond := fs.Float64("rate-limit-per-second", 50, "Per-client request rate limit in requests per second (0 disables)")
+	rateLimitBurst := fs.Int("rate-limit-burst", 100, "Per-client burst size for request rate limiting (0 disables burst bucket)")
 	httpConnMaxAge := fs.Duration("http-conn-max-age", 10*time.Minute, "Maximum lifetime for downstream HTTP/1.x keepalive connections before responding with Connection: close (0 disables)")
 	httpConnMaxAgeJitter := fs.Duration("http-conn-max-age-jitter", 2*time.Minute, "Jitter applied to downstream HTTP/1.x connection age rotation to avoid synchronized reconnects")
 	httpConnMaxRequests := fs.Int("http-conn-max-requests", 256, "Maximum downstream HTTP/1.x requests served on one keepalive connection before responding with Connection: close (0 disables)")
@@ -531,6 +537,9 @@ func run(
 			rulerBackendURL:                     envCfg.rulerBackendURL,
 			alertsBackendURL:                    envCfg.alertsBackendURL,
 			logLevel:                            *logLevel,
+			maxConcurrent:                       *maxConcurrent,
+			ratePerSecond:                       *rateLimitPerSecond,
+			rateBurst:                           *rateLimitBurst,
 			tenantMapJSON:                       envCfg.tenantMapJSON,
 			tenantLimitsAllowPublish:            envCfg.tenantLimitsAllow,
 			tenantDefaultLimitsJSON:             envCfg.tenantDefaultJSON,
@@ -1289,6 +1298,9 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		Cache:                              cfg.cache,
 		CompatCache:                        cfg.compatCache,
 		LogLevel:                           cfg.logLevel,
+		MaxConcurrent:                      cfg.maxConcurrent,
+		RatePerSecond:                      cfg.ratePerSecond,
+		RateBurst:                          cfg.rateBurst,
 		TenantMap:                          tenantMap,
 		TenantLimitsAllowPublish:           parseCSV(cfg.tenantLimitsAllowPublish),
 		TenantDefaultLimits:                tenantDefaultLimits,
