@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.23] - 2026-04-15
+
 ### Bug Fixes
 
 - patterns: stabilize `/loki/api/v1/patterns` ordering under equal-count ties (sort by total, then level, then pattern) to prevent refresh-to-refresh pattern reshuffling on dense scopes.
