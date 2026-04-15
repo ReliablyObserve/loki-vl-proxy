@@ -3,6 +3,7 @@ package cache
 import (
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -195,6 +196,45 @@ func TestPeerCache_ServeHTTP_HitCompressedZstd(t *testing.T) {
 	}
 	if !bytes.Equal(decoded, payload) {
 		t.Fatalf("unexpected zstd payload, want len=%d got len=%d", len(payload), len(decoded))
+	}
+}
+
+func TestPeerCache_ServeHTTP_HotIndex(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+
+	localCache.Set("query_range:tenant-a:a", []byte("value-a"))
+	localCache.Set("query_range:tenant-b:b", []byte("value-b"))
+	for range 10 {
+		_, _ = localCache.Get("query_range:tenant-a:a")
+	}
+	for range 3 {
+		_, _ = localCache.Get("query_range:tenant-b:b")
+	}
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost:3100"})
+	defer pc.Close()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/_cache/hot?limit=1", nil)
+	r.Header.Set("Accept-Encoding", "zstd, gzip")
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	decoded, err := decodePeerResponseBody(w.Header().Get("Content-Encoding"), w.Body.Bytes())
+	if err != nil {
+		t.Fatalf("decode hot-index body: %v", err)
+	}
+	var payload hotIndexResponse
+	if err := json.Unmarshal(decoded, &payload); err != nil {
+		t.Fatalf("decode hot-index payload: %v", err)
+	}
+	if len(payload.Entries) != 1 {
+		t.Fatalf("expected 1 hot entry, got %d", len(payload.Entries))
+	}
+	if payload.Entries[0].Tenant != "tenant-a" {
+		t.Fatalf("expected top tenant-a entry, got %+v", payload.Entries[0])
 	}
 }
 
@@ -1315,6 +1355,104 @@ func TestPeerCache_CoalescingAndCacheIntegration(t *testing.T) {
 		}
 	}
 	t.Log("no key mapped to peer for coalescing test")
+}
+
+func TestPeerCache_ReadAhead_BoundedFairPrefetch(t *testing.T) {
+	ownerCache := NewWithMaxBytes(60*time.Second, 1000, 1024*1024)
+	defer ownerCache.Close()
+	ownerPC := NewPeerCache(PeerConfig{SelfAddr: "owner"})
+	defer ownerPC.Close()
+	ownerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ownerPC.ServeHTTP(w, r, ownerCache)
+	}))
+	defer ownerSrv.Close()
+
+	followerCache := NewWithMaxBytes(60*time.Second, 1000, 1024*1024)
+	defer followerCache.Close()
+	followerPC := NewPeerCache(PeerConfig{
+		SelfAddr:                 "self:3100",
+		DiscoveryType:            "static",
+		StaticPeers:              "self:3100," + ownerSrv.Listener.Addr().String(),
+		Timeout:                  2 * time.Second,
+		ReadAheadEnabled:         true,
+		ReadAheadTopN:            64,
+		ReadAheadMaxKeys:         4,
+		ReadAheadMaxBytes:        1 << 20,
+		ReadAheadMaxConcurrency:  2,
+		ReadAheadMinTTL:          20 * time.Second,
+		ReadAheadMaxObjectBytes:  1 << 20,
+		ReadAheadTenantFairShare: 50,
+		ReadAheadErrorBackoff:    time.Second,
+	})
+	defer followerPC.Close()
+	followerCache.SetL3(followerPC)
+
+	keysA := make([]string, 0, 3)
+	keysB := make([]string, 0, 3)
+	for i := 0; i < 2000 && (len(keysA) < 3 || len(keysB) < 3); i++ {
+		pcKeyA := fmt.Sprintf("query_range:tenant-a:key-%d", i)
+		pcKeyB := fmt.Sprintf("query_range:tenant-b:key-%d", i)
+		followerPC.mu.RLock()
+		ownerA := followerPC.ring.get(pcKeyA)
+		ownerB := followerPC.ring.get(pcKeyB)
+		followerPC.mu.RUnlock()
+		if ownerA == ownerSrv.Listener.Addr().String() && len(keysA) < 3 {
+			keysA = append(keysA, pcKeyA)
+		}
+		if ownerB == ownerSrv.Listener.Addr().String() && len(keysB) < 3 {
+			keysB = append(keysB, pcKeyB)
+		}
+	}
+	if len(keysA) < 3 || len(keysB) < 3 {
+		t.Fatalf("failed to find owner-mapped keys for both tenants: a=%d b=%d", len(keysA), len(keysB))
+	}
+
+	for _, k := range append(keysA, keysB...) {
+		ownerCache.SetWithTTL(k, []byte(strings.Repeat("x", 256)), 45*time.Second)
+	}
+	for _, k := range keysA {
+		for range 30 {
+			_, _ = ownerCache.Get(k)
+		}
+	}
+	for _, k := range keysB {
+		for range 20 {
+			_, _ = ownerCache.Get(k)
+		}
+	}
+
+	errs := followerPC.runReadAheadCycle()
+	if errs != 0 {
+		t.Fatalf("expected zero read-ahead errors, got %d", errs)
+	}
+
+	entries, _ := followerCache.Size()
+	if entries == 0 || entries > 4 {
+		t.Fatalf("expected bounded prefetch entries 1..4, got %d", entries)
+	}
+
+	hasTenantA := false
+	for _, k := range keysA {
+		if _, ok := followerCache.Get(k); ok {
+			hasTenantA = true
+			break
+		}
+	}
+	hasTenantB := false
+	for _, k := range keysB {
+		if _, ok := followerCache.Get(k); ok {
+			hasTenantB = true
+			break
+		}
+	}
+	if !hasTenantA || !hasTenantB {
+		t.Fatalf("expected fairness prefetch for both tenants, tenant-a=%v tenant-b=%v", hasTenantA, hasTenantB)
+	}
+
+	stats := followerPC.Stats()
+	if stats["ra_prefetches"].(int64) == 0 {
+		t.Fatalf("expected read-ahead prefetches > 0, got %+v", stats)
+	}
 }
 
 func TestParsePeerList(t *testing.T) {

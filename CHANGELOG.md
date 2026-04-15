@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - peer cache: add optional owner write-through replication (`/_cache/set`) so non-owner replicas can proactively warm ring owners under skewed client traffic, with bounded TTL gating (`peer-write-through`, `peer-write-through-min-ttl`) and peer token support on both peer endpoints.
 - metrics: expose peer write-through counters (`loki_vl_proxy_peer_cache_write_through_pushes_total`, `loki_vl_proxy_peer_cache_write_through_errors_total`) for fleet-cache redistribution observability.
 - peer cache: enable owner write-through by default (`peer-write-through=true`) so skewed client traffic warms owner shards without extra rollout tuning.
+- peer cache: add bounded hot read-ahead with owner hot-index endpoint (`/_cache/hot`), top-N selection, key/byte/concurrency budgets, tenant-fair prefetch selection, jittered periodic pulls, and backoff-aware anti-storm behavior.
+- peer cache: expose read-ahead metrics (`*_hot_index_requests_total`, `*_hot_index_errors_total`, `*_read_ahead_prefetches_total`, `*_read_ahead_prefetch_bytes_total`, `*_read_ahead_budget_drops_total`, `*_read_ahead_tenant_skips_total`) and wire runtime flags for interval/jitter/top-N/budgets/fair-share/backoff.
 
 ### Bug Fixes
 
@@ -24,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fleet-cache/config docs and Helm defaults: document default owner write-through behavior, `peer-write-through*` flags, and peer token requirements on both `/_cache/get` and `/_cache/set`.
 - fleet cache docs: add explicit collapse-forwarding status and a bounded hot-read-ahead design proposal (budgets, jitter, anti-storm guardrails, and validation plan).
 - docs: extend bounded hot-read-ahead proposal with planned flag surface, phased rollout plan, and proposed observability metrics for future regression gates.
+
+### Tests
+
+- cache: add regression tests for hot-index serving and bounded tenant-fair read-ahead prefetch behavior.
+- benchmarks: add cache-path benchmarks for `TopHotKeys` and bounded `PeerCache` read-ahead cycle performance.
+
+### CI
+
+- ci: add `internal/cache` coverage guard (`>=79.0%`) in the main test workflow.
+- ci: add cache benchmark regression guard in CI for hot read-ahead and cache hot paths, with threshold checks and job summary output.
 
 ## [1.0.24] - 2026-04-15
 

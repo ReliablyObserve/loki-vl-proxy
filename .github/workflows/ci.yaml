@@ -41,11 +41,27 @@ jobs:
       - name: Coverage report
         run: go tool cover -func=coverage.out | tail -1
 
+      - name: Cache package coverage guard
+        run: |
+          set -euo pipefail
+          go test ./internal/cache -coverprofile=coverage-cache.out -count=1 >/dev/null
+          cache_cov="$(go tool cover -func=coverage-cache.out | awk 'END {gsub("%","",$3); print $3}')"
+          echo "internal/cache coverage: ${cache_cov}%"
+          awk -v cov="${cache_cov}" 'BEGIN {
+            min=79.0
+            if (cov+0 < min) {
+              printf "FAIL: internal/cache coverage %.2f%% is below guard %.1f%%\n", cov+0, min
+              exit 1
+            }
+          }'
+
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: coverage.out
+          path: |
+            coverage.out
+            coverage-cache.out
 
   tuple-contract:
     runs-on: ubuntu-latest
@@ -287,6 +303,91 @@ jobs:
             awk -F'\t' '{printf "| `%s` | %s | %s | %s |\n", $1, $2, $3, $4}' bench-patterns.tsv
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Run cache benchmarks (regression guard)
+        run: |
+          go test ./internal/cache -run "^$" -bench 'BenchmarkCache_(Get_Hit|SetWithTTL|TopHotKeys)$|BenchmarkPeerCache_(ThreePeers_ShadowCopyHit|ReadAheadCycle_Bounded)$' -benchmem -count=1 -benchtime=200ms \
+            | tee bench-cache.txt
+
+          awk '
+            /^Benchmark(Cache_Get_Hit|Cache_SetWithTTL|Cache_TopHotKeys|PeerCache_ThreePeers_ShadowCopyHit|PeerCache_ReadAheadCycle_Bounded)-[0-9]+/ {
+              bench=$1
+              sub(/-[0-9]+$/, "", bench)
+              printf "%s\t%s\t%s\t%s\n", bench, $3, $5, $7
+            }
+          ' bench-cache.txt > bench-cache.tsv
+
+          expected=5
+          actual=$(wc -l < bench-cache.tsv | tr -d " ")
+          if [ "$actual" -ne "$expected" ]; then
+            echo "FAIL: expected ${expected} parsed cache benchmark rows, got ${actual}"
+            cat bench-cache.tsv
+            exit 1
+          fi
+
+          awk -F'\t' '
+            BEGIN {
+              fail=0
+            }
+            {
+              name=$1
+              ns=$2+0
+              b=$3+0
+              a=$4+0
+
+              if (name ~ /BenchmarkCache_Get_Hit$/ && ns > 2000) {
+                printf "FAIL: %s exceeded ns/op threshold 2000 (got %.2f)\n", name, ns
+                fail=1
+              }
+              if (name ~ /BenchmarkCache_SetWithTTL$/ && ns > 3000) {
+                printf "FAIL: %s exceeded ns/op threshold 3000 (got %.2f)\n", name, ns
+                fail=1
+              }
+              if (name ~ /BenchmarkPeerCache_ThreePeers_ShadowCopyHit$/ && ns > 3000) {
+                printf "FAIL: %s exceeded ns/op threshold 3000 (got %.2f)\n", name, ns
+                fail=1
+              }
+              if (name ~ /BenchmarkCache_TopHotKeys$/) {
+                if (ns > 15000000) {
+                  printf "FAIL: %s exceeded ns/op threshold 15000000 (got %.2f)\n", name, ns
+                  fail=1
+                }
+                if (b > 10000000) {
+                  printf "FAIL: %s exceeded B/op threshold 10000000 (got %.0f)\n", name, b
+                  fail=1
+                }
+                if (a > 200) {
+                  printf "FAIL: %s exceeded allocs/op threshold 200 (got %.0f)\n", name, a
+                  fail=1
+                }
+              }
+              if (name ~ /BenchmarkPeerCache_ReadAheadCycle_Bounded$/) {
+                if (ns > 25000000) {
+                  printf "FAIL: %s exceeded ns/op threshold 25000000 (got %.2f)\n", name, ns
+                  fail=1
+                }
+                if (b > 12000000) {
+                  printf "FAIL: %s exceeded B/op threshold 12000000 (got %.0f)\n", name, b
+                  fail=1
+                }
+                if (a > 5000) {
+                  printf "FAIL: %s exceeded allocs/op threshold 5000 (got %.0f)\n", name, a
+                  fail=1
+                }
+              }
+            }
+            END { exit fail }
+          ' bench-cache.tsv
+
+      - name: Publish cache benchmark summary
+        run: |
+          {
+            echo "### Cache Benchmarks"
+            echo ""
+            echo "| Benchmark | ns/op | B/op | allocs/op |"
+            echo "|---|---:|---:|---:|"
+            awk -F'\t' '{printf "| `%s` | %s | %s | %s |\n", $1, $2, $3, $4}' bench-cache.tsv
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run load tests
         run: |
           go test ./internal/proxy/ -run "TestLoad" -v -timeout=120s -count=1 \
@@ -302,6 +403,8 @@ jobs:
             bench-label-fields.tsv
             bench-patterns.txt
             bench-patterns.tsv
+            bench-cache.txt
+            bench-cache.tsv
             load-results.txt
 
       - name: Check for performance regressions

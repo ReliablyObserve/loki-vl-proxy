@@ -170,3 +170,90 @@ func BenchmarkPeerCache_ThreePeers_ShadowCopyHit(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkCache_TopHotKeys(b *testing.B) {
+	c := New(10*time.Minute, 20000)
+	defer c.Close()
+
+	for i := range 10000 {
+		k := fmt.Sprintf("query_range:tenant-a:key-%d", i)
+		c.SetWithTTL(k, []byte(`{"result":"ok"}`), 5*time.Minute)
+		hits := 1 + (i % 32)
+		for range hits {
+			_, _ = c.Get(k)
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		_ = c.TopHotKeys(256, 15*time.Second, 128*1024)
+	}
+}
+
+func BenchmarkPeerCache_ReadAheadCycle_Bounded(b *testing.B) {
+	caches := make([]*Cache, 2)
+	pcs := make([]*PeerCache, 2)
+	servers := make([]*httptest.Server, 2)
+
+	for i := range caches {
+		caches[i] = New(10*time.Minute, 50000)
+	}
+
+	for i := range servers {
+		idx := i
+		servers[i] = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			pcs[idx].ServeHTTP(w, r, caches[idx])
+		}))
+	}
+
+	addrs := []string{servers[0].Listener.Addr().String(), servers[1].Listener.Addr().String()}
+	peers := strings.Join(addrs, ",")
+
+	for i := range pcs {
+		pcs[i] = NewPeerCache(PeerConfig{
+			SelfAddr:                 addrs[i],
+			DiscoveryType:            "static",
+			StaticPeers:              peers,
+			Timeout:                  2 * time.Second,
+			ReadAheadEnabled:         false,
+			ReadAheadTopN:            256,
+			ReadAheadMaxKeys:         64,
+			ReadAheadMaxBytes:        8 * 1024 * 1024,
+			ReadAheadMaxConcurrency:  4,
+			ReadAheadMinTTL:          15 * time.Second,
+			ReadAheadMaxObjectBytes:  128 * 1024,
+			ReadAheadTenantFairShare: 50,
+			ReadAheadErrorBackoff:    5 * time.Second,
+			ReadAheadInterval:        30 * time.Second,
+			ReadAheadJitter:          0,
+		})
+		caches[i].SetL3(pcs[i])
+	}
+
+	b.Cleanup(func() {
+		for i := range servers {
+			servers[i].Close()
+			pcs[i].Close()
+			caches[i].Close()
+		}
+	})
+
+	ownerIdx := 0
+	followerIdx := 1
+	for i := range 5000 {
+		k := fmt.Sprintf("query_range:tenant-%d:key-%d", i%8, i)
+		val := []byte(fmt.Sprintf(`{"stream":%d,"ok":true}`, i))
+		caches[ownerIdx].SetWithTTL(k, val, 5*time.Minute)
+		hits := 1 + (i % 64)
+		for range hits {
+			_, _ = caches[ownerIdx].Get(k)
+		}
+	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		_ = pcs[followerIdx].runReadAheadCycle()
+	}
+}
