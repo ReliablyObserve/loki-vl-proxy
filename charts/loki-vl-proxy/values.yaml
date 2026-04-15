@@ -202,7 +202,7 @@ extraArgs:
   # otel-service-namespace: ""
   # otel-service-instance-id: ""
   # otlp-headers: ""                            # comma-separated key=value pairs
-  # response-compression: "auto"               # use zstd only for clients that explicitly advertise support
+  # response-compression: "gzip"               # client-facing compression stays on the Loki/Grafana-safe gzip path
   # response-compression-min-bytes: "1024"     # minimum response size before frontend compression starts
   # response-gzip: "true"
   # max-lines: "1000"

@@ -10,8 +10,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/klauspost/compress/zstd"
 )
 
 func TestGzipHandler_CompressesWhenAccepted(t *testing.T) {
@@ -92,7 +90,7 @@ func TestGzipHandler_LargeResponse(t *testing.T) {
 	}
 }
 
-func TestCompressionHandler_AutoPrefersZstd(t *testing.T) {
+func TestCompressionHandler_AutoUsesGzipWhenAccepted(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(strings.Repeat("hello", 64)))
 	})
@@ -104,17 +102,17 @@ func TestCompressionHandler_AutoPrefersZstd(t *testing.T) {
 
 	handler.ServeHTTP(w, r)
 
-	if got := w.Header().Get("Content-Encoding"); got != "zstd" {
-		t.Fatalf("expected zstd response, got %q", got)
+	if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("expected gzip response, got %q", got)
 	}
-	zr, err := zstd.NewReader(nil)
+	gr, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
 	if err != nil {
-		t.Fatalf("create zstd reader: %v", err)
+		t.Fatalf("create gzip reader: %v", err)
 	}
-	defer zr.Close()
-	body, err := zr.DecodeAll(w.Body.Bytes(), nil)
+	defer gr.Close()
+	body, err := io.ReadAll(gr)
 	if err != nil {
-		t.Fatalf("decode zstd body: %v", err)
+		t.Fatalf("read gzip body: %v", err)
 	}
 	if !strings.Contains(string(body), "hello") {
 		t.Fatalf("unexpected decoded body %q", string(body))
@@ -251,9 +249,9 @@ func TestCompressionHandlerWithOptions_RegisterEncodedResponseCapture(t *testing
 	}
 }
 
-func TestCompressionHandler_ZstdModeFallsBackToIdentityWhenUnsupported(t *testing.T) {
+func TestCompressionHandler_ZstdAliasUsesGzip(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"status":"success"}`))
+		w.Write([]byte(strings.Repeat("hello", 64)))
 	})
 
 	handler := CompressionHandler(inner, "zstd")
@@ -263,11 +261,20 @@ func TestCompressionHandler_ZstdModeFallsBackToIdentityWhenUnsupported(t *testin
 
 	handler.ServeHTTP(w, r)
 
-	if got := w.Header().Get("Content-Encoding"); got != "" {
-		t.Fatalf("expected identity response, got %q", got)
+	if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("expected gzip response, got %q", got)
 	}
-	if w.Body.String() != `{"status":"success"}` {
-		t.Fatalf("unexpected body %q", w.Body.String())
+	gr, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("create gzip reader: %v", err)
+	}
+	defer gr.Close()
+	body, err := io.ReadAll(gr)
+	if err != nil {
+		t.Fatalf("read gzip body: %v", err)
+	}
+	if !strings.Contains(string(body), "hello") {
+		t.Fatalf("unexpected body %q", string(body))
 	}
 }
 

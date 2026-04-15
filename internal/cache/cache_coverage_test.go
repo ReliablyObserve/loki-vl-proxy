@@ -48,6 +48,15 @@ func TestGetWithTTL_Miss(t *testing.T) {
 	}
 }
 
+func TestCache_MaxEntrySizeBytes(t *testing.T) {
+	c := NewWithMaxBytes(10*time.Second, 100, 1000)
+	defer c.Close()
+
+	if got := c.MaxEntrySizeBytes(); got != 100 {
+		t.Fatalf("expected 10%% admission cap, got %d", got)
+	}
+}
+
 // =============================================================================
 // Shadow copy TTL preservation
 // =============================================================================

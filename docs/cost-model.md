@@ -437,7 +437,7 @@ they are different layers:
   data-block compression ratio that some operators observe at `50-60x`,
   excluding `indexdb`
 - Loki-VL-proxy adds compressed transport on the read path it controls:
-  `zstd`/`gzip` client responses, `zstd`/`gzip` peer-cache transfers, gzip
+  `gzip` client responses, `zstd`/`gzip` peer-cache transfers, gzip
   disk-cache values, and negotiated upstream compression with safe decode
 
 That means:

@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-
-	"github.com/klauspost/compress/zstd"
 )
 
 type responseCompressor interface {
@@ -25,7 +23,6 @@ const (
 	ResponseCompressionNone responseCompressionMode = "none"
 	ResponseCompressionAuto responseCompressionMode = "auto"
 	ResponseCompressionGzip responseCompressionMode = "gzip"
-	ResponseCompressionZstd responseCompressionMode = "zstd"
 )
 
 type CompressionOptions struct {
@@ -234,16 +231,6 @@ var gzipWriterPool = sync.Pool{
 	},
 }
 
-var zstdWriterPool = sync.Pool{
-	New: func() interface{} {
-		w, err := zstd.NewWriter(io.Discard, zstd.WithEncoderLevel(zstd.SpeedFastest))
-		if err != nil {
-			panic(err)
-		}
-		return w
-	},
-}
-
 // GzipHandler is kept for backward compatibility with existing tests/callers.
 func GzipHandler(next http.Handler) http.Handler {
 	return CompressionHandler(next, string(ResponseCompressionGzip))
@@ -280,7 +267,7 @@ func RegisterEncodedResponseCapture(w http.ResponseWriter, encoding string, call
 }
 
 // CompressionHandlerWithOptions negotiates response compression with clients.
-// "auto" prefers zstd, then gzip, based on the client's Accept-Encoding header.
+// "auto" keeps the gzip path enabled for clients that advertise support.
 func CompressionHandlerWithOptions(next http.Handler, opts CompressionOptions) http.Handler {
 	selectedMode := normalizeCompressionMode(opts.Mode)
 	if selectedMode == ResponseCompressionNone {
@@ -305,7 +292,7 @@ func CompressionHandlerWithOptions(next http.Handler, opts CompressionOptions) h
 }
 
 // CompressionHandler negotiates response compression with clients.
-// "auto" prefers zstd, then gzip, based on the client's Accept-Encoding header.
+// "auto" keeps the gzip path enabled for clients that advertise support.
 func CompressionHandler(next http.Handler, mode string) http.Handler {
 	return CompressionHandlerWithOptions(next, CompressionOptions{Mode: mode})
 }
@@ -318,8 +305,8 @@ func normalizeCompressionMode(mode string) responseCompressionMode {
 		return ResponseCompressionNone
 	case string(ResponseCompressionGzip):
 		return ResponseCompressionGzip
-	case string(ResponseCompressionZstd):
-		return ResponseCompressionZstd
+	case "zstd":
+		return ResponseCompressionGzip
 	default:
 		return ResponseCompressionAuto
 	}
@@ -347,14 +334,7 @@ func negotiateResponseEncoding(acceptEncoding string, mode responseCompressionMo
 		if acceptsEncoding(acceptEncoding, "gzip") {
 			return "gzip"
 		}
-	case ResponseCompressionZstd:
-		if acceptsEncoding(acceptEncoding, "zstd") {
-			return "zstd"
-		}
 	case ResponseCompressionAuto:
-		if acceptsEncoding(acceptEncoding, "zstd") {
-			return "zstd"
-		}
 		if acceptsEncoding(acceptEncoding, "gzip") {
 			return "gzip"
 		}
@@ -366,7 +346,7 @@ func EncodeResponseBody(encoding string, body []byte) ([]byte, error) {
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "", "identity":
 		return append([]byte(nil), body...), nil
-	case "gzip", "zstd":
+	case "gzip":
 		var buf bytes.Buffer
 		compressor, release := acquireResponseCompressor(strings.ToLower(strings.TrimSpace(encoding)), &buf)
 		defer release()
@@ -394,21 +374,11 @@ func acceptsEncoding(header, encoding string) bool {
 }
 
 func acquireResponseCompressor(encoding string, dst io.Writer) (responseCompressor, func()) {
-	switch encoding {
-	case "zstd":
-		zw := zstdWriterPool.Get().(*zstd.Encoder)
-		zw.Reset(dst)
-		return zw, func() {
-			zw.Reset(io.Discard)
-			zstdWriterPool.Put(zw)
-		}
-	default:
-		gz := gzipWriterPool.Get().(*gzip.Writer)
-		gz.Reset(dst)
-		return gz, func() {
-			gz.Reset(io.Discard)
-			gzipWriterPool.Put(gz)
-		}
+	gz := gzipWriterPool.Get().(*gzip.Writer)
+	gz.Reset(dst)
+	return gz, func() {
+		gz.Reset(io.Discard)
+		gzipWriterPool.Put(gz)
 	}
 }
 

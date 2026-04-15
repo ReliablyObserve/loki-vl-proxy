@@ -366,7 +366,7 @@ func run(
 
 	// Response compression
 	enableGzip := fs.Bool("response-gzip", true, "Deprecated: enable compressed responses for clients that accept them; prefer -response-compression")
-	responseCompression := fs.String("response-compression", "", "Response compression codec: auto, gzip, zstd, none (default: auto)")
+	responseCompression := fs.String("response-compression", "", "Response compression codec: auto, gzip, none (default: auto)")
 	responseCompressionMinBytes := fs.Int("response-compression-min-bytes", defaultResponseCompressionMinBytes, "Minimum response size before frontend compression starts (0 compresses any size)")
 
 	// Grafana datasource compatibility
@@ -908,11 +908,26 @@ func resolveResponseCompression(explicit string, legacyEnabled bool) (string, er
 		}
 		return "none", nil
 	}
-	mode, err := normalizeCompressionSetting(explicit)
+	mode, err := normalizeFrontendCompressionSetting(explicit)
 	if err != nil {
 		return "", fmt.Errorf("invalid -response-compression: %w", err)
 	}
 	return mode, nil
+}
+
+func normalizeFrontendCompressionSetting(mode string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "auto":
+		return "auto", nil
+	case "none", "gzip":
+		return strings.ToLower(strings.TrimSpace(mode)), nil
+	case "zstd":
+		// Keep older deployments starting cleanly, but collapse the public
+		// client-facing surface to the gzip path we actually support and tune.
+		return "gzip", nil
+	default:
+		return "", fmt.Errorf("%q (must be auto, gzip, or none)", mode)
+	}
 }
 
 func normalizeCompressionSetting(mode string) (string, error) {

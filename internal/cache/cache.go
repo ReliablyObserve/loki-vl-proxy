@@ -42,6 +42,16 @@ type Cache struct {
 	Evictions atomic.Int64
 }
 
+// MaxEntrySizeBytes returns the largest object this cache will retain.
+// Entries larger than this threshold are rejected to protect the cache from
+// a single oversized response consuming a disproportionate share of memory.
+func (c *Cache) MaxEntrySizeBytes() int {
+	if c == nil || c.maxBytes <= 0 {
+		return 0
+	}
+	return c.maxBytes / 10
+}
+
 type lruEntry struct {
 	key string
 }

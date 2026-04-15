@@ -507,7 +507,7 @@ Operational notes:
 | `-backend-allow-unsupported-version` | — | `false` | Allow startup when detected backend version is lower than `-backend-min-version` (unsafe override) |
 | `-backend-version-check-timeout` | — | `5s` | Timeout for startup backend version compatibility check (`/health`) |
 | `-stream-response` | — | `false` | Stream via chunked transfer |
-| `-response-compression` | — | `auto` | Response compression codec: `auto`, `gzip`, `zstd`, `none` |
+| `-response-compression` | — | `auto` | Response compression codec: `auto`, `gzip`, `none` |
 | `-response-compression-min-bytes` | — | `1024` | Minimum response size before frontend compression starts; smaller responses stay identity |
 | `-response-gzip` | — | `true` | Deprecated compatibility switch; `false` disables response compression when `-response-compression` is unset |
 | `-derived-fields` | — | — | JSON derived fields for trace linking |
@@ -524,13 +524,13 @@ Operational notes:
 
 Compression notes:
 
-- `-response-compression=auto` prefers `zstd` for clients that advertise it and falls back to `gzip`.
+- `-response-compression=auto` keeps the optimized gzip path enabled for clients that advertise `gzip`.
 - `-response-compression-min-bytes=1024` keeps small control-plane responses uncompressed and the proxy applies higher effective thresholds on metadata-heavy routes.
 - peer-cache `/_cache/get` fetches follow the same preference order: `zstd`, then `gzip`, then identity.
 - `-backend-compression=auto` advertises `zstd, gzip` upstream and the proxy safely decodes either on the way back.
 - current VictoriaLogs docs describe HTTP response compression in general terms, not a guaranteed `zstd` select-query path, so in practice many deployments will still observe `gzip` or identity from stock VictoriaLogs today.
-- Grafana `12.4.2` datasource proxy requests advertised `Accept-Encoding: deflate, gzip`, not `zstd`, in local verification, so `auto` will not magically turn standard Grafana datasource traffic into `zstd` today.
-- The Helm chart now pins `-response-compression=gzip` and `-response-compression-min-bytes=1024` by default. Keep `auto` for controlled clients only.
+- Grafana `12.4.2` datasource proxy requests advertised `Accept-Encoding: deflate, gzip`, not `zstd`, in local verification, so the proxy keeps the frontend surface on `gzip`/identity only.
+- The Helm chart now pins `-response-compression=gzip` and `-response-compression-min-bytes=1024` by default.
 
 Backend version gate notes:
 
@@ -599,7 +599,7 @@ Use these knobs first:
 
 - keep `-peer-write-through=true` (default) to warm owner shards under skewed traffic
 - tune `-peer-write-through-min-ttl` so only stable/hot entries are replicated
-- keep `-response-compression=gzip` for unknown Loki/Grafana clients, or switch to `auto` only when clients explicitly advertise `zstd`
+- keep `-response-compression=gzip` for explicit Loki/Grafana-safe frontend behavior, or `auto` if you want the same gzip behavior through the legacy default
 - keep `-response-compression-min-bytes` around `1-4KiB` to avoid wasting CPU on small metadata/control responses
 - keep `-backend-compression=auto` for `zstd`/`gzip` upstream negotiation
 - keep `query-range-windowing` enabled with long history TTL and near-now freshness controls for mixed historical/live workloads

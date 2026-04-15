@@ -42,6 +42,14 @@ import (
 // Capped at 64KB before returning to prevent pool bloat from large responses.
 const maxPooledBufSize = 64 * 1024
 
+// compat cache capture buffers are pooled separately because large query_range
+// misses can otherwise spend most heap growth on append churn before the entry
+// is even admitted to cache.
+const (
+	maxPooledCompatCaptureBufSize = 64 * 1024
+	defaultCompatCaptureBufSize   = 32 * 1024
+)
+
 const (
 	patternDedupSourceMemory = "mem"
 	patternDedupSourceDisk   = "disk"
@@ -51,6 +59,12 @@ const (
 var jsonBufPool = sync.Pool{
 	New: func() interface{} {
 		return bytes.NewBuffer(make([]byte, 0, 4096))
+	},
+}
+
+var compatCaptureBufPool = sync.Pool{
+	New: func() interface{} {
+		return make([]byte, 0, defaultCompatCaptureBufSize)
 	},
 }
 
@@ -1541,9 +1555,19 @@ func compatCacheResponseAllowed(rec *httptest.ResponseRecorder) bool {
 
 type compatCacheCaptureWriter struct {
 	http.ResponseWriter
-	body    []byte
-	code    int
-	flushed bool
+	body       []byte
+	code       int
+	flushed    bool
+	limit      int
+	overflowed bool
+}
+
+func newCompatCacheCaptureWriter(w http.ResponseWriter, limit int) *compatCacheCaptureWriter {
+	return &compatCacheCaptureWriter{
+		ResponseWriter: w,
+		body:           acquireCompatCaptureBuf(limit),
+		limit:          limit,
+	}
 }
 
 func (w *compatCacheCaptureWriter) WriteHeader(code int) {
@@ -1555,7 +1579,7 @@ func (w *compatCacheCaptureWriter) Write(b []byte) (int, error) {
 	if w.code == 0 {
 		w.code = http.StatusOK
 	}
-	w.body = append(w.body, b...)
+	w.capture(b)
 	return w.ResponseWriter.Write(b)
 }
 
@@ -1563,6 +1587,59 @@ func (w *compatCacheCaptureWriter) Flush() {
 	w.flushed = true
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
+	}
+}
+
+func (w *compatCacheCaptureWriter) capture(b []byte) {
+	if w.overflowed || len(b) == 0 {
+		return
+	}
+	if w.limit > 0 && len(w.body)+len(b) > w.limit {
+		w.overflow()
+		return
+	}
+	w.body = append(w.body, b...)
+}
+
+func (w *compatCacheCaptureWriter) overflow() {
+	if w.overflowed {
+		return
+	}
+	w.overflowed = true
+	releaseCompatCaptureBuf(w.body)
+	w.body = nil
+}
+
+func (w *compatCacheCaptureWriter) CapturedBody() []byte {
+	if w.overflowed {
+		return nil
+	}
+	return w.body
+}
+
+func (w *compatCacheCaptureWriter) Release() {
+	releaseCompatCaptureBuf(w.body)
+	w.body = nil
+}
+
+func acquireCompatCaptureBuf(limit int) []byte {
+	size := defaultCompatCaptureBufSize
+	if limit > 0 {
+		size = min(size, limit)
+	}
+	buf := compatCaptureBufPool.Get().([]byte)
+	if cap(buf) < size {
+		return make([]byte, 0, size)
+	}
+	return buf[:0]
+}
+
+func releaseCompatCaptureBuf(buf []byte) {
+	if buf == nil {
+		return
+	}
+	if cap(buf) <= maxPooledCompatCaptureBufSize {
+		compatCaptureBufPool.Put(buf[:0])
 	}
 }
 
@@ -1630,30 +1707,41 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		}
 
 		setCacheResult(r.Context(), "miss")
-		var capture *compatCacheCaptureWriter
+		var (
+			capture            *compatCacheCaptureWriter
+			captureAllowed     bool
+			capturePatternsNil bool
+			captureBodyLen     int
+		)
 		if encoding, _ := p.compatCacheResponseEncoding(r); encoding != "" {
 			_ = mw.RegisterEncodedResponseCapture(w, encoding, func(encodedAs string, encoded []byte) {
-				if capture == nil || !compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
+				if !captureAllowed || capturePatternsNil || captureBodyLen == 0 {
 					return
 				}
-				if endpoint == "patterns" && patternsPayloadEmpty(capture.body) {
-					return
-				}
-				if len(encoded) == 0 || len(encoded) >= len(capture.body) {
+				if len(encoded) == 0 || len(encoded) >= captureBodyLen {
 					return
 				}
 				p.compatCache.SetWithTTL(compatCacheVariantKey(cacheKey, encodedAs), encoded, ttl)
 			})
 		}
-		capture = &compatCacheCaptureWriter{ResponseWriter: w}
+		capture = newCompatCacheCaptureWriter(w, p.compatCache.MaxEntrySizeBytes())
 		next(capture, r)
 		if compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
-			body := capture.body
-			if endpoint == "patterns" && patternsPayloadEmpty(body) {
-				return
+			body := capture.CapturedBody()
+			captureBodyLen = len(body)
+			captureAllowed = captureBodyLen > 0
+			if endpoint == "patterns" && captureAllowed {
+				capturePatternsNil = patternsPayloadEmpty(body)
+				if capturePatternsNil {
+					capture.Release()
+					return
+				}
 			}
-			p.compatCache.SetWithTTL(cacheKey, append([]byte(nil), body...), ttl)
+			if captureAllowed {
+				p.compatCache.SetWithTTL(cacheKey, append([]byte(nil), body...), ttl)
+			}
 		}
+		capture.Release()
 	}
 }
 
@@ -1878,7 +1966,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		capture = &bufferedResponseWriter{header: make(http.Header)}
 		sc = &statusCapture{ResponseWriter: capture, code: 200}
 	} else if cacheable {
-		cacheTap = &compatCacheCaptureWriter{ResponseWriter: w}
+		cacheTap = newCompatCacheCaptureWriter(w, p.cache.MaxEntrySizeBytes())
 		sc = &statusCapture{ResponseWriter: cacheTap, code: 200}
 	}
 
@@ -1910,10 +1998,15 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		_, _ = w.Write(cacheOut)
 		if cacheable && sc.code == http.StatusOK {
-			p.cache.SetWithTTL(cacheKey, cacheOut, CacheTTLs["query_range"])
+			p.cache.SetWithTTL(cacheKey, append([]byte(nil), cacheOut...), CacheTTLs["query_range"])
 		}
-	} else if cacheTap != nil && cacheable && sc.code == http.StatusOK {
-		p.cache.SetWithTTL(cacheKey, cacheTap.body, CacheTTLs["query_range"])
+	} else if cacheTap != nil {
+		if cacheable && sc.code == http.StatusOK {
+			if body := cacheTap.CapturedBody(); len(body) > 0 {
+				p.cache.SetWithTTL(cacheKey, append([]byte(nil), body...), CacheTTLs["query_range"])
+			}
+		}
+		cacheTap.Release()
 	}
 
 	elapsed := time.Since(start)

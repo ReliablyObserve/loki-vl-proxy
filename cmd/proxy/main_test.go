@@ -28,7 +28,6 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
-	"github.com/klauspost/compress/zstd"
 )
 
 type fakeReloadableProxy struct {
@@ -541,7 +540,7 @@ func TestWrapHandler_GzipEnabled(t *testing.T) {
 	}
 }
 
-func TestWrapHandler_ZstdPreferred(t *testing.T) {
+func TestWrapHandler_AutoUsesGzipForCompatibleClients(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(strings.Repeat("hello", 20)))
 	})
@@ -551,20 +550,20 @@ func TestWrapHandler_ZstdPreferred(t *testing.T) {
 	w := httptest.NewRecorder()
 	wrapHandler(next, 1024, "auto", 0, nil).ServeHTTP(w, req)
 
-	if got := w.Header().Get("Content-Encoding"); got != "zstd" {
-		t.Fatalf("expected zstd response, got %q", got)
+	if got := w.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("expected gzip response, got %q", got)
 	}
-	zr, err := zstd.NewReader(nil)
+	gr, err := gzip.NewReader(bytes.NewReader(w.Body.Bytes()))
 	if err != nil {
-		t.Fatalf("create zstd reader: %v", err)
+		t.Fatalf("create gzip reader: %v", err)
 	}
-	defer zr.Close()
-	body, err := zr.DecodeAll(w.Body.Bytes(), nil)
+	defer gr.Close()
+	body, err := io.ReadAll(gr)
 	if err != nil {
-		t.Fatalf("decode zstd body: %v", err)
+		t.Fatalf("decode gzip body: %v", err)
 	}
 	if !strings.Contains(string(body), "hello") {
-		t.Fatalf("expected decoded body, got %q", string(body))
+		t.Fatalf("expected decompressed body, got %q", string(body))
 	}
 }
 

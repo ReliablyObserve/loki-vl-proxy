@@ -128,6 +128,28 @@ func TestCompatCacheMiddleware_PrimesCompressedVariantOnGzipMiss(t *testing.T) {
 	}
 }
 
+func TestCompatCacheCaptureWriter_DropsOversizedBodies(t *testing.T) {
+	rec := httptest.NewRecorder()
+	w := newCompatCacheCaptureWriter(rec, 8)
+	defer w.Release()
+
+	if _, err := w.Write([]byte("1234")); err != nil {
+		t.Fatalf("first write failed: %v", err)
+	}
+	if got := string(w.CapturedBody()); got != "1234" {
+		t.Fatalf("expected buffered body before overflow, got %q", got)
+	}
+	if _, err := w.Write([]byte("56789")); err != nil {
+		t.Fatalf("second write failed: %v", err)
+	}
+	if body := w.CapturedBody(); len(body) != 0 {
+		t.Fatalf("expected buffered body to be dropped after overflow, got %q", string(body))
+	}
+	if !w.overflowed {
+		t.Fatal("expected overflow marker to be set")
+	}
+}
+
 func TestCompatCacheMiddleware_IsTenantAware(t *testing.T) {
 	var backendCalls int
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
