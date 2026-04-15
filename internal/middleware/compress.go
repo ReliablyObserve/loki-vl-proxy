@@ -56,6 +56,13 @@ func (w *compressedResponseWriter) Write(b []byte) (int, error) {
 	ensureSafeResponseHeaders(w.ResponseWriter, "text/plain; charset=utf-8")
 	if w.started {
 		if w.bypass {
+			header := w.ResponseWriter.Header()
+			if strings.TrimSpace(header.Get("Content-Type")) == "" {
+				header.Set("Content-Type", "text/plain; charset=utf-8")
+			}
+			if strings.TrimSpace(header.Get("X-Content-Type-Options")) == "" {
+				header.Set("X-Content-Type-Options", "nosniff")
+			}
 			return w.ResponseWriter.Write(b)
 		}
 		return w.writer.Write(b)
@@ -66,6 +73,13 @@ func (w *compressedResponseWriter) Write(b []byte) (int, error) {
 	if w.shouldBypassCompression() {
 		if err := w.startBypass(); err != nil {
 			return 0, err
+		}
+		header := w.ResponseWriter.Header()
+		if strings.TrimSpace(header.Get("Content-Type")) == "" {
+			header.Set("Content-Type", "text/plain; charset=utf-8")
+		}
+		if strings.TrimSpace(header.Get("X-Content-Type-Options")) == "" {
+			header.Set("X-Content-Type-Options", "nosniff")
 		}
 		return w.ResponseWriter.Write(b)
 	}
