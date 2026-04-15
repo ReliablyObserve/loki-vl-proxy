@@ -25,6 +25,12 @@ import (
 
 var lookupHost = net.LookupHost
 
+const (
+	maxPeerResponseBytes    int64 = 32 << 20
+	maxPeerDecodedBodyBytes int64 = 32 << 20
+	maxPeerHotIndexBytes    int64 = 4 << 20
+)
+
 // PeerCache implements a sharded distributed cache layer (L3).
 //
 // Simple design — no gossip, no background traffic:
@@ -347,13 +353,13 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 		return nil, 0, false
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readPeerBodyLimited(resp.Body, maxPeerResponseBytes)
 	if err != nil {
 		pc.recordPeerFailure(owner)
 		pc.PeerErrors.Add(1)
 		return nil, 0, false
 	}
-	body, err = decodePeerResponseBody(resp.Header.Get("Content-Encoding"), body)
+	body, err = decodePeerResponseBody(resp.Header.Get("Content-Encoding"), body, maxPeerDecodedBodyBytes)
 	if err != nil {
 		pc.recordPeerFailure(owner)
 		pc.PeerErrors.Add(1)
@@ -607,7 +613,7 @@ func acceptsPeerEncoding(header, encoding string) bool {
 	return false
 }
 
-func decodePeerResponseBody(contentEncoding string, body []byte) ([]byte, error) {
+func decodePeerResponseBody(contentEncoding string, body []byte, limit int64) ([]byte, error) {
 	switch strings.ToLower(strings.TrimSpace(contentEncoding)) {
 	case "", "identity":
 		return body, nil
@@ -617,14 +623,14 @@ func decodePeerResponseBody(contentEncoding string, body []byte) ([]byte, error)
 			return nil, err
 		}
 		defer func() { _ = zr.Close() }()
-		return io.ReadAll(zr)
+		return readPeerBodyLimited(zr, limit)
 	case "zstd":
-		zr, err := zstd.NewReader(nil)
+		zr, err := zstd.NewReader(bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
 		defer zr.Close()
-		return zr.DecodeAll(body, nil)
+		return readPeerBodyLimited(zr, limit)
 	default:
 		return body, nil
 	}
@@ -877,12 +883,12 @@ func (pc *PeerCache) fetchPeerHotIndex(peerAddr string, limit int) ([]hotIndexEn
 		pc.recordPeerFailure(peerAddr)
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := readPeerBodyLimited(resp.Body, maxPeerHotIndexBytes)
 	if err != nil {
 		pc.recordPeerFailure(peerAddr)
 		return nil, err
 	}
-	body, err = decodePeerResponseBody(resp.Header.Get("Content-Encoding"), body)
+	body, err = decodePeerResponseBody(resp.Header.Get("Content-Encoding"), body, maxPeerHotIndexBytes)
 	if err != nil {
 		pc.recordPeerFailure(peerAddr)
 		return nil, err
@@ -910,6 +916,20 @@ func (pc *PeerCache) PeerCount() int {
 		}
 	}
 	return count
+}
+
+func readPeerBodyLimited(r io.Reader, limit int64) ([]byte, error) {
+	if limit <= 0 {
+		return io.ReadAll(r)
+	}
+	body, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("peer response exceeded limit of %d bytes", limit)
+	}
+	return body, nil
 }
 
 // Peers returns the current peer list.

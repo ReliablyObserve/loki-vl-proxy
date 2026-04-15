@@ -226,7 +226,7 @@ func TestPeerCache_ServeHTTP_HotIndex(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	decoded, err := decodePeerResponseBody(w.Header().Get("Content-Encoding"), w.Body.Bytes())
+	decoded, err := decodePeerResponseBody(w.Header().Get("Content-Encoding"), w.Body.Bytes(), maxPeerHotIndexBytes)
 	if err != nil {
 		t.Fatalf("decode hot-index body: %v", err)
 	}

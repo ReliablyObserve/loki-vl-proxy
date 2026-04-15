@@ -122,6 +122,8 @@ type proxyRuntimeConfig struct {
 	metricsMaxTenants                   int
 	metricsMaxClients                   int
 	metricsTrustProxyHeaders            bool
+	metricsExportSensitiveLabels        bool
+	metricsMaxConcurrency               int
 	labelStyle                          string
 	metadataFieldMode                   string
 	fieldMappingJSON                    string
@@ -176,6 +178,7 @@ type serverRuntimeOptions struct {
 	listenAddr           string
 	handler              http.Handler
 	readTimeout          time.Duration
+	readHeaderTimeout    time.Duration
 	writeTimeout         time.Duration
 	idleTimeout          time.Duration
 	maxHeaderBytes       int
@@ -346,6 +349,7 @@ func run(
 
 	// HTTP server hardening
 	readTimeout := fs.Duration("http-read-timeout", 30*time.Second, "HTTP server read timeout")
+	readHeaderTimeout := fs.Duration("http-read-header-timeout", 10*time.Second, "HTTP server read header timeout")
 	writeTimeout := fs.Duration("http-write-timeout", 120*time.Second, "HTTP server write timeout")
 	idleTimeout := fs.Duration("http-idle-timeout", 120*time.Second, "HTTP server idle timeout")
 	maxHeaderBytes := fs.Int("http-max-header-bytes", 1<<20, "HTTP max header size (default: 1MB)")
@@ -426,6 +430,8 @@ func run(
 	metricsMaxTenants := fs.Int("metrics.max-tenants", 256, "Maximum unique tenant labels retained in exported metrics before collapsing into __overflow__")
 	metricsMaxClients := fs.Int("metrics.max-clients", 256, "Maximum unique client labels retained in exported metrics before collapsing into __overflow__")
 	metricsTrustProxyHeaders := fs.Bool("metrics.trust-proxy-headers", false, "Trust X-Grafana-User and X-Forwarded-For when deriving per-client metrics labels")
+	metricsExportSensitiveLabels := fs.Bool("metrics.export-sensitive-labels", false, "Export per-tenant and per-client identity metrics on /metrics and OTLP")
+	metricsMaxConcurrency := fs.Int("server.metrics-max-concurrency", 1, "Maximum concurrent /metrics scrapes served at once (0 disables the cap)")
 
 	// Label translation
 	labelStyle := fs.String("label-style", "passthrough", `Label name translation mode:
@@ -509,6 +515,10 @@ func run(
 		serviceInstanceID: *otelServiceInstanceID,
 		deploymentEnv:     *deploymentEnvironment,
 	}, getenv)
+
+	if err := validateAdminExposure(envCfg.listenAddr, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
+		return err
+	}
 
 	logger := buildLogger(logWriter, loggerConfig{
 		level:                 *logLevel,
@@ -609,6 +619,8 @@ func run(
 			metricsMaxTenants:                   *metricsMaxTenants,
 			metricsMaxClients:                   *metricsMaxClients,
 			metricsTrustProxyHeaders:            *metricsTrustProxyHeaders,
+			metricsExportSensitiveLabels:        *metricsExportSensitiveLabels,
+			metricsMaxConcurrency:               *metricsMaxConcurrency,
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			fieldMappingJSON:                    envCfg.fieldMappingJSON,
@@ -663,6 +675,7 @@ func run(
 		serverOpts: serverRuntimeOptions{
 			listenAddr:           envCfg.listenAddr,
 			readTimeout:          *readTimeout,
+			readHeaderTimeout:    *readHeaderTimeout,
 			writeTimeout:         *writeTimeout,
 			idleTimeout:          *idleTimeout,
 			maxHeaderBytes:       *maxHeaderBytes,
@@ -927,6 +940,48 @@ func normalizeFrontendCompressionSetting(mode string) (string, error) {
 	default:
 		return "", fmt.Errorf("%q (must be auto, gzip, or none)", mode)
 	}
+}
+
+func validateAdminExposure(listenAddr string, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
+	if strings.TrimSpace(adminAuthToken) != "" {
+		return nil
+	}
+	if !enablePprof && !enableQueryAnalytics {
+		return nil
+	}
+	if isLoopbackListenAddr(listenAddr) {
+		return nil
+	}
+	return fmt.Errorf("server.admin-auth-token is required when admin/debug endpoints are enabled on non-loopback listen addresses")
+}
+
+func isLoopbackListenAddr(listenAddr string) bool {
+	listenAddr = strings.TrimSpace(listenAddr)
+	if listenAddr == "" {
+		return false
+	}
+	host := listenAddr
+	if strings.HasPrefix(host, "[") && strings.Contains(host, "]:") {
+		parsedHost, _, err := net.SplitHostPort(host)
+		if err == nil {
+			host = parsedHost
+		}
+	} else if strings.Contains(host, ":") {
+		if parsedHost, _, err := net.SplitHostPort(host); err == nil {
+			host = parsedHost
+		}
+	}
+	host = strings.Trim(host, "[]")
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	case "":
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 func normalizeCompressionSetting(mode string) (string, error) {
@@ -1388,6 +1443,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetricsMaxTenants:                  cfg.metricsMaxTenants,
 		MetricsMaxClients:                  cfg.metricsMaxClients,
 		MetricsTrustProxyHeaders:           cfg.metricsTrustProxyHeaders,
+		MetricsExportSensitiveLabels:       cfg.metricsExportSensitiveLabels,
+		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
 		LabelStyle:                         ls,
 		MetadataFieldMode:                  mfm,
 		FieldMappings:                      fieldMappings,
@@ -1441,13 +1498,14 @@ func buildServerTLSConfig(clientCAFile string, requireClientCert bool) (*tls.Con
 
 func buildHTTPServer(opts serverRuntimeOptions) (*http.Server, error) {
 	srv := &http.Server{
-		Addr:           opts.listenAddr,
-		Handler:        opts.handler,
-		ReadTimeout:    opts.readTimeout,
-		WriteTimeout:   opts.writeTimeout,
-		IdleTimeout:    opts.idleTimeout,
-		MaxHeaderBytes: opts.maxHeaderBytes,
-		ConnContext:    opts.connContext,
+		Addr:              opts.listenAddr,
+		Handler:           opts.handler,
+		ReadTimeout:       opts.readTimeout,
+		ReadHeaderTimeout: opts.readHeaderTimeout,
+		WriteTimeout:      opts.writeTimeout,
+		IdleTimeout:       opts.idleTimeout,
+		MaxHeaderBytes:    opts.maxHeaderBytes,
+		ConnContext:       opts.connContext,
 	}
 	if opts.tlsClientCAFile != "" || opts.tlsRequireClientCert {
 		tlsCfg, err := buildServerTLSConfig(opts.tlsClientCAFile, opts.tlsRequireClientCert)

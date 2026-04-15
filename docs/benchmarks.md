@@ -1,6 +1,6 @@
 # Benchmarks
 
-Measured on Apple M3 Max (14 cores), Go 1.26.1, `-benchmem`.
+Measured on Apple M3 Max (14 cores), Go 1.26.2, `-benchmem`.
 
 ## Per-Request Latency
 

@@ -83,6 +83,21 @@ func TestProxyPolicyHelpers_ValidateTenantHeader(t *testing.T) {
 			t.Fatalf("expected mapped multi-tenant header to be allowed, got %v", err)
 		}
 	})
+
+	t.Run("wildcard_single_tenant_header_requires_explicit_opt_in", func(t *testing.T) {
+		p := newTestProxy(t, "http://unused")
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query", nil)
+		req.Header.Set("X-Scope-OrgID", "*")
+
+		err := p.validateTenantHeader(req)
+		if err == nil {
+			t.Fatal("expected wildcard tenant header to be rejected without explicit opt-in")
+		}
+		rpe := err.(*requestPolicyError)
+		if rpe.status != http.StatusForbidden {
+			t.Fatalf("expected forbidden, got %#v", err)
+		}
+	})
 }
 
 func TestProxyPolicyHelpers_SplitMultiTenantOrgIDs(t *testing.T) {

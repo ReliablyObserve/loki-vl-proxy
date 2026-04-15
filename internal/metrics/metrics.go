@@ -108,10 +108,11 @@ type Metrics struct {
 	// Startup time
 	startTime time.Time
 
-	maxTenantLabels int
-	maxClientLabels int
-	knownTenants    map[string]struct{}
-	knownClients    map[string]struct{}
+	maxTenantLabels       int
+	maxClientLabels       int
+	exportSensitiveLabels bool
+	knownTenants          map[string]struct{}
+	knownClients          map[string]struct{}
 }
 
 type histogram struct {
@@ -285,10 +286,14 @@ func (h *histogram) observe(v float64) {
 }
 
 func NewMetrics() *Metrics {
-	return NewMetricsWithLimits(defaultMaxTenantLabels, defaultMaxClientLabels)
+	return NewMetricsWithOptions(defaultMaxTenantLabels, defaultMaxClientLabels, true)
 }
 
 func NewMetricsWithLimits(maxTenantLabels, maxClientLabels int) *Metrics {
+	return NewMetricsWithOptions(maxTenantLabels, maxClientLabels, true)
+}
+
+func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitiveLabels bool) *Metrics {
 	if maxTenantLabels <= 0 {
 		maxTenantLabels = defaultMaxTenantLabels
 	}
@@ -322,6 +327,7 @@ func NewMetricsWithLimits(maxTenantLabels, maxClientLabels int) *Metrics {
 		startTime:               time.Now(),
 		maxTenantLabels:         maxTenantLabels,
 		maxClientLabels:         maxClientLabels,
+		exportSensitiveLabels:   exportSensitiveLabels,
 		knownTenants:            make(map[string]struct{}),
 		knownClients:            make(map[string]struct{}),
 	}
@@ -357,36 +363,40 @@ func (m *Metrics) preRegisterZeroSeries() {
 				m.clientErrors[key] = &atomic.Int64{}
 			}
 		}
-		for _, status := range defaultMetricSeedStatuses {
-			tk := joinMetricKey("__none__", seed.endpoint, seed.route, strconv.Itoa(status))
-			if _, ok := m.tenantRequests[tk]; !ok {
-				m.tenantRequests[tk] = &atomic.Int64{}
+		if m.exportSensitiveLabels {
+			for _, status := range defaultMetricSeedStatuses {
+				tk := joinMetricKey("__none__", seed.endpoint, seed.route, strconv.Itoa(status))
+				if _, ok := m.tenantRequests[tk]; !ok {
+					m.tenantRequests[tk] = &atomic.Int64{}
+				}
+				ck := joinMetricKey("__none__", seed.endpoint, seed.route, strconv.Itoa(status))
+				if _, ok := m.clientStatuses[ck]; !ok {
+					m.clientStatuses[ck] = &atomic.Int64{}
+				}
 			}
-			ck := joinMetricKey("__none__", seed.endpoint, seed.route, strconv.Itoa(status))
-			if _, ok := m.clientStatuses[ck]; !ok {
-				m.clientStatuses[ck] = &atomic.Int64{}
+			tdk := joinMetricKey("__none__", seed.endpoint, seed.route)
+			if _, ok := m.tenantDurations[tdk]; !ok {
+				m.tenantDurations[tdk] = newHistogram()
 			}
-		}
-		tdk := joinMetricKey("__none__", seed.endpoint, seed.route)
-		if _, ok := m.tenantDurations[tdk]; !ok {
-			m.tenantDurations[tdk] = newHistogram()
-		}
-		cdk := joinMetricKey("__none__", seed.endpoint, seed.route)
-		if _, ok := m.clientRequests[cdk]; !ok {
-			m.clientRequests[cdk] = &atomic.Int64{}
-		}
-		if _, ok := m.clientDurations[cdk]; !ok {
-			m.clientDurations[cdk] = newHistogram()
-		}
-		if _, ok := m.clientQueryLengths[cdk]; !ok {
-			m.clientQueryLengths[cdk] = newHistogram()
+			cdk := joinMetricKey("__none__", seed.endpoint, seed.route)
+			if _, ok := m.clientRequests[cdk]; !ok {
+				m.clientRequests[cdk] = &atomic.Int64{}
+			}
+			if _, ok := m.clientDurations[cdk]; !ok {
+				m.clientDurations[cdk] = newHistogram()
+			}
+			if _, ok := m.clientQueryLengths[cdk]; !ok {
+				m.clientQueryLengths[cdk] = newHistogram()
+			}
 		}
 	}
-	if _, ok := m.clientBytes["__none__"]; !ok {
-		m.clientBytes["__none__"] = &atomic.Int64{}
-	}
-	if _, ok := m.clientInflight["__none__"]; !ok {
-		m.clientInflight["__none__"] = &atomic.Int64{}
+	if m.exportSensitiveLabels {
+		if _, ok := m.clientBytes["__none__"]; !ok {
+			m.clientBytes["__none__"] = &atomic.Int64{}
+		}
+		if _, ok := m.clientInflight["__none__"]; !ok {
+			m.clientInflight["__none__"] = &atomic.Int64{}
+		}
 	}
 	for _, mode := range defaultTupleModes {
 		if _, ok := m.tupleModes[mode]; !ok {
@@ -413,6 +423,10 @@ func (m *Metrics) preRegisterZeroSeries() {
 // SetCircuitBreakerFunc sets the function to query CB state for metrics export.
 func (m *Metrics) SetCircuitBreakerFunc(fn func() string) {
 	m.cbStateFunc = fn
+}
+
+func (m *Metrics) ExportSensitiveLabels() bool {
+	return m != nil && m.exportSensitiveLabels
 }
 
 func (m *Metrics) RecordRequest(endpoint string, statusCode int, duration time.Duration) {
@@ -496,6 +510,9 @@ func (m *Metrics) RecordTenantRequest(tenant, endpoint string, statusCode int, d
 }
 
 func (m *Metrics) RecordTenantRequestWithRoute(tenant, endpoint, route string, statusCode int, duration time.Duration) {
+	if !m.exportSensitiveLabels {
+		return
+	}
 	tenant = m.canonicalTenantLabel(tenant)
 	route = normalizeMetricRoute(route, endpoint)
 	key := joinMetricKey(tenant, endpoint, route, strconv.Itoa(statusCode))
@@ -537,6 +554,9 @@ func (m *Metrics) RecordClientIdentity(clientID, endpoint string, duration time.
 }
 
 func (m *Metrics) RecordClientIdentityWithRoute(clientID, endpoint, route string, duration time.Duration, responseBytes int64) {
+	if !m.exportSensitiveLabels {
+		return
+	}
 	clientID = m.canonicalClientLabel(clientID)
 	route = normalizeMetricRoute(route, endpoint)
 
@@ -712,6 +732,9 @@ func (m *Metrics) RecordClientStatus(clientID, endpoint string, statusCode int) 
 }
 
 func (m *Metrics) RecordClientStatusWithRoute(clientID, endpoint, route string, statusCode int) {
+	if !m.exportSensitiveLabels {
+		return
+	}
 	clientID = m.canonicalClientLabel(clientID)
 	route = normalizeMetricRoute(route, endpoint)
 	key := joinMetricKey(clientID, endpoint, route, strconv.Itoa(statusCode))
@@ -732,6 +755,9 @@ func (m *Metrics) RecordClientStatusWithRoute(clientID, endpoint, route string, 
 
 // RecordClientInflight tracks currently active requests for a client.
 func (m *Metrics) RecordClientInflight(clientID string, delta int64) {
+	if !m.exportSensitiveLabels {
+		return
+	}
 	clientID = m.canonicalClientLabel(clientID)
 	m.mu.RLock()
 	gauge, ok := m.clientInflight[clientID]
@@ -756,6 +782,9 @@ func (m *Metrics) RecordClientQueryLength(clientID, endpoint string, queryLength
 }
 
 func (m *Metrics) RecordClientQueryLengthWithRoute(clientID, endpoint, route string, queryLength int) {
+	if !m.exportSensitiveLabels {
+		return
+	}
 	clientID = m.canonicalClientLabel(clientID)
 	route = normalizeMetricRoute(route, endpoint)
 	key := joinMetricKey(clientID, endpoint, route)
@@ -1388,51 +1417,53 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# TYPE loki_vl_proxy_go_gc_cycles_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_go_gc_cycles_total %d\n", memStats.NumGC)
 
-	// Per-tenant request counters
-	sb.WriteString("# HELP loki_vl_proxy_tenant_requests_total Requests by tenant.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_tenant_requests_total counter\n")
-	tenantKeys := make([]string, 0, len(m.tenantRequests))
-	for k := range m.tenantRequests {
-		tenantKeys = append(tenantKeys, k)
-	}
-	sort.Strings(tenantKeys)
-	for _, key := range tenantKeys {
-		parts := splitMetricKey(key, 4)
-		if parts == nil {
-			continue
+	if m.exportSensitiveLabels {
+		// Per-tenant request counters
+		sb.WriteString("# HELP loki_vl_proxy_tenant_requests_total Requests by tenant.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_tenant_requests_total counter\n")
+		tenantKeys := make([]string, 0, len(m.tenantRequests))
+		for k := range m.tenantRequests {
+			tenantKeys = append(tenantKeys, k)
 		}
-		count := m.tenantRequests[key].Load()
-		fmt.Fprintf(&sb, "loki_vl_proxy_tenant_requests_total{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,status=%q} %d\n",
-			lokiSystemLabel, downstreamDirection, parts[0], parts[1], parts[2], parts[3], count)
-	}
+		sort.Strings(tenantKeys)
+		for _, key := range tenantKeys {
+			parts := splitMetricKey(key, 4)
+			if parts == nil {
+				continue
+			}
+			count := m.tenantRequests[key].Load()
+			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_requests_total{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,status=%q} %d\n",
+				lokiSystemLabel, downstreamDirection, parts[0], parts[1], parts[2], parts[3], count)
+		}
 
-	// Per-tenant latency histograms
-	sb.WriteString("# HELP loki_vl_proxy_tenant_request_duration_seconds Per-tenant request duration.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_tenant_request_duration_seconds histogram\n")
-	tenantDurKeys := make([]string, 0, len(m.tenantDurations))
-	for k := range m.tenantDurations {
-		tenantDurKeys = append(tenantDurKeys, k)
-	}
-	sort.Strings(tenantDurKeys)
-	for _, key := range tenantDurKeys {
-		parts := splitMetricKey(key, 3)
-		if parts == nil {
-			continue
+		// Per-tenant latency histograms
+		sb.WriteString("# HELP loki_vl_proxy_tenant_request_duration_seconds Per-tenant request duration.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_tenant_request_duration_seconds histogram\n")
+		tenantDurKeys := make([]string, 0, len(m.tenantDurations))
+		for k := range m.tenantDurations {
+			tenantDurKeys = append(tenantDurKeys, k)
 		}
-		tenant, endpoint, route := parts[0], parts[1], parts[2]
-		h := m.tenantDurations[key]
-		h.mu.Lock()
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, b, h.counts[i])
+		sort.Strings(tenantDurKeys)
+		for _, key := range tenantDurKeys {
+			parts := splitMetricKey(key, 3)
+			if parts == nil {
+				continue
+			}
+			tenant, endpoint, route := parts[0], parts[1], parts[2]
+			h := m.tenantDurations[key]
+			h.mu.Lock()
+			for i, b := range h.buckets {
+				fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
+					lokiSystemLabel, downstreamDirection, tenant, endpoint, route, b, h.counts[i])
+			}
+			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
+				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.count)
+			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_sum{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q} %g\n",
+				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.sum)
+			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_count{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q} %d\n",
+				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.count)
+			h.mu.Unlock()
 		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
-			lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.count)
-		fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_sum{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q} %g\n",
-			lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.sum)
-		fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_count{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q} %d\n",
-			lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.count)
-		h.mu.Unlock()
 	}
 
 	// Client error breakdown
@@ -1617,117 +1648,119 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# TYPE loki_vl_proxy_window_adaptive_error_ewma gauge\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_window_adaptive_error_ewma %g\n", float64(m.windowAdaptiveErrorEWMAppm.Load())/1000000.0)
 
-	// Per-client identity metrics
-	sb.WriteString("# HELP loki_vl_proxy_client_requests_total Requests by client identity.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_client_requests_total counter\n")
-	crKeys := make([]string, 0, len(m.clientRequests))
-	for k := range m.clientRequests {
-		crKeys = append(crKeys, k)
-	}
-	sort.Strings(crKeys)
-	for _, key := range crKeys {
-		parts := splitMetricKey(key, 3)
-		if parts == nil {
-			continue
+	if m.exportSensitiveLabels {
+		// Per-client identity metrics
+		sb.WriteString("# HELP loki_vl_proxy_client_requests_total Requests by client identity.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_client_requests_total counter\n")
+		crKeys := make([]string, 0, len(m.clientRequests))
+		for k := range m.clientRequests {
+			crKeys = append(crKeys, k)
 		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_requests_total{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
-			lokiSystemLabel, downstreamDirection, parts[0], parts[1], parts[2], m.clientRequests[key].Load())
-	}
+		sort.Strings(crKeys)
+		for _, key := range crKeys {
+			parts := splitMetricKey(key, 3)
+			if parts == nil {
+				continue
+			}
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_requests_total{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
+				lokiSystemLabel, downstreamDirection, parts[0], parts[1], parts[2], m.clientRequests[key].Load())
+		}
 
-	sb.WriteString("# HELP loki_vl_proxy_client_response_bytes_total Response bytes by client.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_client_response_bytes_total counter\n")
-	cbKeys := make([]string, 0, len(m.clientBytes))
-	for k := range m.clientBytes {
-		cbKeys = append(cbKeys, k)
-	}
-	sort.Strings(cbKeys)
-	for _, client := range cbKeys {
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_response_bytes_total{client=%q} %d\n",
-			client, m.clientBytes[client].Load())
-	}
+		sb.WriteString("# HELP loki_vl_proxy_client_response_bytes_total Response bytes by client.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_client_response_bytes_total counter\n")
+		cbKeys := make([]string, 0, len(m.clientBytes))
+		for k := range m.clientBytes {
+			cbKeys = append(cbKeys, k)
+		}
+		sort.Strings(cbKeys)
+		for _, client := range cbKeys {
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_response_bytes_total{client=%q} %d\n",
+				client, m.clientBytes[client].Load())
+		}
 
-	sb.WriteString("# HELP loki_vl_proxy_client_status_total Requests by client identity and final HTTP status.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_client_status_total counter\n")
-	csKeys := make([]string, 0, len(m.clientStatuses))
-	for k := range m.clientStatuses {
-		csKeys = append(csKeys, k)
-	}
-	sort.Strings(csKeys)
-	for _, key := range csKeys {
-		parts := splitMetricKey(key, 4)
-		if parts == nil {
-			continue
+		sb.WriteString("# HELP loki_vl_proxy_client_status_total Requests by client identity and final HTTP status.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_client_status_total counter\n")
+		csKeys := make([]string, 0, len(m.clientStatuses))
+		for k := range m.clientStatuses {
+			csKeys = append(csKeys, k)
 		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_status_total{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,status=%q} %d\n",
-			lokiSystemLabel, downstreamDirection, parts[0], parts[1], parts[2], parts[3], m.clientStatuses[key].Load())
-	}
+		sort.Strings(csKeys)
+		for _, key := range csKeys {
+			parts := splitMetricKey(key, 4)
+			if parts == nil {
+				continue
+			}
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_status_total{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,status=%q} %d\n",
+				lokiSystemLabel, downstreamDirection, parts[0], parts[1], parts[2], parts[3], m.clientStatuses[key].Load())
+		}
 
-	sb.WriteString("# HELP loki_vl_proxy_client_inflight_requests In-flight requests by client identity.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_client_inflight_requests gauge\n")
-	ciKeys := make([]string, 0, len(m.clientInflight))
-	for k := range m.clientInflight {
-		ciKeys = append(ciKeys, k)
-	}
-	sort.Strings(ciKeys)
-	for _, client := range ciKeys {
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_inflight_requests{client=%q} %d\n",
-			client, m.clientInflight[client].Load())
-	}
+		sb.WriteString("# HELP loki_vl_proxy_client_inflight_requests In-flight requests by client identity.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_client_inflight_requests gauge\n")
+		ciKeys := make([]string, 0, len(m.clientInflight))
+		for k := range m.clientInflight {
+			ciKeys = append(ciKeys, k)
+		}
+		sort.Strings(ciKeys)
+		for _, client := range ciKeys {
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_inflight_requests{client=%q} %d\n",
+				client, m.clientInflight[client].Load())
+		}
 
-	sb.WriteString("# HELP loki_vl_proxy_client_request_duration_seconds Per-client request duration.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_client_request_duration_seconds histogram\n")
-	cdKeys := make([]string, 0, len(m.clientDurations))
-	for k := range m.clientDurations {
-		cdKeys = append(cdKeys, k)
-	}
-	sort.Strings(cdKeys)
-	for _, key := range cdKeys {
-		parts := splitMetricKey(key, 3)
-		if parts == nil {
-			continue
+		sb.WriteString("# HELP loki_vl_proxy_client_request_duration_seconds Per-client request duration.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_client_request_duration_seconds histogram\n")
+		cdKeys := make([]string, 0, len(m.clientDurations))
+		for k := range m.clientDurations {
+			cdKeys = append(cdKeys, k)
 		}
-		client, endpoint, route := parts[0], parts[1], parts[2]
-		h := m.clientDurations[key]
-		h.mu.Lock()
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-				lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
+		sort.Strings(cdKeys)
+		for _, key := range cdKeys {
+			parts := splitMetricKey(key, 3)
+			if parts == nil {
+				continue
+			}
+			client, endpoint, route := parts[0], parts[1], parts[2]
+			h := m.clientDurations[key]
+			h.mu.Lock()
+			for i, b := range h.buckets {
+				fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
+					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
+			}
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
+				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.count)
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_sum{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %g\n",
+				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.sum)
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_count{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
+				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.count)
+			h.mu.Unlock()
 		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
-			lokiSystemLabel, downstreamDirection, client, endpoint, route, h.count)
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_sum{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %g\n",
-			lokiSystemLabel, downstreamDirection, client, endpoint, route, h.sum)
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_count{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
-			lokiSystemLabel, downstreamDirection, client, endpoint, route, h.count)
-		h.mu.Unlock()
-	}
 
-	sb.WriteString("# HELP loki_vl_proxy_client_query_length_chars LogQL query length by client identity.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_client_query_length_chars histogram\n")
-	cqKeys := make([]string, 0, len(m.clientQueryLengths))
-	for k := range m.clientQueryLengths {
-		cqKeys = append(cqKeys, k)
-	}
-	sort.Strings(cqKeys)
-	for _, key := range cqKeys {
-		parts := splitMetricKey(key, 3)
-		if parts == nil {
-			continue
+		sb.WriteString("# HELP loki_vl_proxy_client_query_length_chars LogQL query length by client identity.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_client_query_length_chars histogram\n")
+		cqKeys := make([]string, 0, len(m.clientQueryLengths))
+		for k := range m.clientQueryLengths {
+			cqKeys = append(cqKeys, k)
 		}
-		client, endpoint, route := parts[0], parts[1], parts[2]
-		h := m.clientQueryLengths[key]
-		h.mu.Lock()
-		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-				lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
+		sort.Strings(cqKeys)
+		for _, key := range cqKeys {
+			parts := splitMetricKey(key, 3)
+			if parts == nil {
+				continue
+			}
+			client, endpoint, route := parts[0], parts[1], parts[2]
+			h := m.clientQueryLengths[key]
+			h.mu.Lock()
+			for i, b := range h.buckets {
+				fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
+					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
+			}
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
+				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.count)
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_sum{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %g\n",
+				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.sum)
+			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_count{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
+				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.count)
+			h.mu.Unlock()
 		}
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
-			lokiSystemLabel, downstreamDirection, client, endpoint, route, h.count)
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_sum{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %g\n",
-			lokiSystemLabel, downstreamDirection, client, endpoint, route, h.sum)
-		fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_count{system=%q,direction=%q,client=%q,endpoint=%q,route=%q} %d\n",
-			lokiSystemLabel, downstreamDirection, client, endpoint, route, h.count)
-		h.mu.Unlock()
 	}
 
 	// Circuit breaker state (export a default closed=0 value when callback is unavailable).

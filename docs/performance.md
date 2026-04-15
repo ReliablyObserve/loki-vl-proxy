@@ -122,7 +122,7 @@ Always cap disk cache explicitly with `-disk-cache-max-bytes` for predictable re
 
 ## Benchmark Results
 
-Measured on Apple M3 Max (14 cores), Go 1.26.1, `-benchmem`.
+Measured on Apple M3 Max (14 cores), Go 1.26.2, `-benchmem`.
 
 ### Long-Range Phase Program Benchmarks (1h split windows)
 

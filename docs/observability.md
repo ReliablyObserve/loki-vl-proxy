@@ -31,7 +31,7 @@ The proxy also now keeps more expensive metadata paths deliberately warmer than 
 | Endpoint | Purpose |
 |---|---|
 | `GET /ready` | Readiness probe (checks backend `/health` and circuit-breaker state) |
-| `GET /metrics` | Prometheus text exposition (`-server.register-instrumentation`) |
+| `GET /metrics` | Prometheus text exposition (`-server.register-instrumentation`, bounded by `-server.metrics-max-concurrency`) |
 | `GET /debug/queries` | Query analytics endpoint (disabled by default, `-server.enable-query-analytics`) |
 | `GET /debug/pprof/` | Go pprof profiling endpoints (disabled by default, `-server.enable-pprof`) |
 
@@ -253,6 +253,8 @@ That gives you:
 - per-client bad-request and error clustering via `loki_vl_proxy_client_status_total` and `loki_vl_proxy_client_errors_total`
 - per-tenant volume and latency visibility via `loki_vl_proxy_tenant_*`
 
+Those tenant and client identity series are opt-in. Set `-metrics.export-sensitive-labels=true` only on trusted scrape or OTLP paths where exposing identity labels is acceptable.
+
 At log level, the same request can also carry:
 
 - `enduser.id`
@@ -278,10 +280,10 @@ The same proxy layer also improves trust separation between components.
 
 | Boundary | Main controls | Why it matters operationally |
 |---|---|---|
-| Grafana or client -> proxy | `-auth.enabled`, `-tls-client-ca-file`, `-tls-require-client-cert`, trusted user headers with `-metrics.trust-proxy-headers` | Lets the proxy require tenant context, optionally require client certs, and attribute read traffic to the actual Grafana user or trusted upstream identity. |
+| Grafana or client -> proxy | `-auth.enabled`, `-tls-client-ca-file`, `-tls-require-client-cert`, trusted user headers with `-metrics.trust-proxy-headers` | Lets the proxy require tenant context, optionally require client certs, and attribute read traffic to the actual Grafana user or trusted upstream identity when sensitive metrics export is explicitly enabled. |
 | Proxy -> VictoriaLogs | `-backend-basic-auth`, `-forward-authorization`, `-forward-headers` | Lets the lower layer keep its own auth boundary while the proxy preserves full Loki-client compatibility on the northbound side. |
 | Proxy -> peer cache | `-peer-auth-token` | Prevents peer-cache reuse from becoming an unauthenticated east-west path when the fleet spans a broader network boundary. |
-| Operator -> admin/debug endpoints | `-server.admin-auth-token` | Protects admin and troubleshooting surfaces without weakening the main read path. |
+| Operator -> admin/debug endpoints | `-server.admin-auth-token` | Protects admin and troubleshooting surfaces without weakening the main read path. Non-loopback listeners now require this token before `/debug/queries` or `/debug/pprof` can be enabled. |
 
 When trusted proxy headers are enabled, the proxy also forwards derived context
 headers to VictoriaLogs:

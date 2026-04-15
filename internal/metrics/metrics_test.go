@@ -317,6 +317,44 @@ func TestMetrics_Handler_BoundsTenantAndClientCardinality(t *testing.T) {
 	}
 }
 
+func TestMetrics_Handler_CanDisableSensitiveLabels(t *testing.T) {
+	m := NewMetricsWithOptions(2, 2, false)
+	m.RecordTenantRequest("team-a", "query_range", 200, 10*time.Millisecond)
+	m.RecordClientIdentity("grafana-user", "query_range", 10*time.Millisecond, 128)
+	m.RecordClientStatus("grafana-user", "query_range", http.StatusOK)
+	m.RecordClientInflight("grafana-user", 1)
+	m.RecordClientQueryLength("grafana-user", "query_range", len(`{app="api"}`))
+	m.RecordClientError("query_range", "timeout")
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/metrics", nil)
+	m.Handler(w, r)
+
+	body := w.Body.String()
+	for _, needle := range []string{
+		"loki_vl_proxy_client_errors_total",
+		`reason="timeout"`,
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected non-sensitive metric %q to remain exported", needle)
+		}
+	}
+	for _, needle := range []string{
+		"loki_vl_proxy_tenant_requests_total",
+		"loki_vl_proxy_tenant_request_duration_seconds",
+		"loki_vl_proxy_client_requests_total",
+		"loki_vl_proxy_client_response_bytes_total",
+		"loki_vl_proxy_client_status_total",
+		"loki_vl_proxy_client_inflight_requests",
+		"loki_vl_proxy_client_request_duration_seconds",
+		"loki_vl_proxy_client_query_length_chars",
+	} {
+		if strings.Contains(body, needle) {
+			t.Fatalf("did not expect sensitive metric %q when exports are disabled", needle)
+		}
+	}
+}
+
 func TestResolveClientContext_Branches(t *testing.T) {
 	t.Run("trusted forwarded for", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/metrics", nil)

@@ -414,9 +414,10 @@ func newGapTestProxy(t *testing.T, backendURL string) *Proxy {
 	t.Helper()
 	c := cache.New(60*time.Second, 1000)
 	p, err := New(Config{
-		BackendURL: backendURL,
-		Cache:      c,
-		LogLevel:   "error",
+		BackendURL:                   backendURL,
+		Cache:                        c,
+		LogLevel:                     "error",
+		MetricsExportSensitiveLabels: true,
 	})
 	if err != nil {
 		t.Fatalf("failed to create proxy: %v", err)

@@ -10,7 +10,7 @@ Loki-VL-proxy is a stateless HTTP proxy with optional disk cache. Resource consu
 
 ## Resource Projections
 
-Based on benchmarks (Go 1.26.1, single core, typical Grafana dashboard workload with 60% cache hit rate):
+Based on benchmarks (Go 1.26.2, single core, typical Grafana dashboard workload with 60% cache hit rate):
 
 ### Single Replica
 

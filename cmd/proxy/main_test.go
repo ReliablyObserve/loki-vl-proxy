@@ -1165,18 +1165,37 @@ func TestBuildProxyConfig_InvalidInputs(t *testing.T) {
 
 func TestBuildHTTPServer(t *testing.T) {
 	srv, err := buildHTTPServer(serverRuntimeOptions{
-		listenAddr:     ":9999",
-		handler:        http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
-		readTimeout:    2 * time.Second,
-		writeTimeout:   3 * time.Second,
-		idleTimeout:    4 * time.Second,
-		maxHeaderBytes: 8192,
+		listenAddr:        ":9999",
+		handler:           http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+		readTimeout:       2 * time.Second,
+		readHeaderTimeout: 1500 * time.Millisecond,
+		writeTimeout:      3 * time.Second,
+		idleTimeout:       4 * time.Second,
+		maxHeaderBytes:    8192,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if srv.Addr != ":9999" || srv.ReadTimeout != 2*time.Second || srv.WriteTimeout != 3*time.Second || srv.IdleTimeout != 4*time.Second || srv.MaxHeaderBytes != 8192 {
+	if srv.Addr != ":9999" || srv.ReadTimeout != 2*time.Second || srv.ReadHeaderTimeout != 1500*time.Millisecond || srv.WriteTimeout != 3*time.Second || srv.IdleTimeout != 4*time.Second || srv.MaxHeaderBytes != 8192 {
 		t.Fatalf("unexpected server config: %+v", srv)
+	}
+}
+
+func TestValidateAdminExposure(t *testing.T) {
+	if err := validateAdminExposure("127.0.0.1:3100", true, false, ""); err != nil {
+		t.Fatalf("expected loopback admin exposure to be allowed without token, got %v", err)
+	}
+	if err := validateAdminExposure("[::1]:3100", false, true, ""); err != nil {
+		t.Fatalf("expected IPv6 loopback admin exposure to be allowed without token, got %v", err)
+	}
+	if err := validateAdminExposure(":3100", false, false, ""); err != nil {
+		t.Fatalf("expected no admin endpoints enabled to bypass validation, got %v", err)
+	}
+	if err := validateAdminExposure(":3100", true, false, "secret"); err != nil {
+		t.Fatalf("expected token-protected admin exposure to be allowed, got %v", err)
+	}
+	if err := validateAdminExposure(":3100", true, false, ""); err == nil {
+		t.Fatal("expected non-loopback admin exposure without token to be rejected")
 	}
 }
 

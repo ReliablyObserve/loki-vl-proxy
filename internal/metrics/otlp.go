@@ -519,6 +519,9 @@ func (p *OTLPPusher) requestMetrics(now int64) []map[string]interface{} {
 }
 
 func (p *OTLPPusher) tenantMetrics(now int64) []map[string]interface{} {
+	if !p.metrics.ExportSensitiveLabels() {
+		return nil
+	}
 	metrics := make([]map[string]interface{}, 0, 2)
 	reqKeys := sortedKeys(mapsFromCounters(p.metrics.tenantRequests))
 	reqPoints := make([]map[string]interface{}, 0, len(reqKeys))
@@ -714,6 +717,9 @@ func (p *OTLPPusher) queryRangeWindowMetrics(now int64) []map[string]interface{}
 }
 
 func (p *OTLPPusher) clientMetrics(now int64) []map[string]interface{} {
+	if !p.metrics.ExportSensitiveLabels() {
+		return nil
+	}
 	metrics := make([]map[string]interface{}, 0, 6)
 	reqKeys := sortedKeys(mapsFromCounters(p.metrics.clientRequests))
 	reqPoints := make([]map[string]interface{}, 0, len(reqKeys))

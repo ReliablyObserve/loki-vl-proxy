@@ -414,9 +414,11 @@ type Config struct {
 	TailMode           TailMode
 
 	// Metrics/export hardening
-	MetricsMaxTenants        int
-	MetricsMaxClients        int
-	MetricsTrustProxyHeaders bool
+	MetricsMaxTenants            int
+	MetricsMaxClients            int
+	MetricsTrustProxyHeaders     bool
+	MetricsExportSensitiveLabels bool
+	MetricsMaxConcurrency        int
 
 	// Tenant limits runtime exposure.
 	// TenantLimitsAllowPublish controls which fields are exposed by
@@ -452,6 +454,9 @@ const (
 	maxMultiTenantMergedResponseBytes = 32 << 20
 	maxDetectedScanLines              = 2000
 	maxSyntheticTailSeenEntries       = 4096
+	maxBufferedBackendBodyBytes       = 64 << 20
+	maxPatternsPeerSnapshotBytes      = 8 << 20
+	maxUpstreamErrorBodyBytes         = 4 << 10
 	labelValuesIndexSnapshotCacheKey  = "__label_values_index_snapshot:v1"
 	patternsSnapshotCacheKey          = "__patterns_snapshot:v1"
 	// Keep pattern cache entries effectively permanent; updates replace by cache key.
@@ -519,6 +524,7 @@ type Proxy struct {
 	enablePprof                           bool
 	enableQueryAnalytics                  bool
 	adminAuthToken                        string
+	metricsConcurrencyLimiter             chan struct{}
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool
@@ -994,7 +1000,7 @@ func New(cfg Config) (*Proxy, error) {
 		cache:                                 cfg.Cache,
 		compatCache:                           cfg.CompatCache,
 		log:                                   logger,
-		metrics:                               metrics.NewMetricsWithLimits(cfg.MetricsMaxTenants, cfg.MetricsMaxClients),
+		metrics:                               metrics.NewMetricsWithOptions(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels),
 		queryTracker:                          metrics.NewQueryTracker(10000),
 		coalescer:                             mw.NewCoalescer(),
 		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
@@ -1028,6 +1034,7 @@ func New(cfg Config) (*Proxy, error) {
 		enablePprof:                           cfg.EnablePprof,
 		enableQueryAnalytics:                  cfg.EnableQueryAnalytics,
 		adminAuthToken:                        cfg.AdminAuthToken,
+		metricsConcurrencyLimiter:             buildConcurrencyLimiter(cfg.MetricsMaxConcurrency),
 		tailAllowedOrigins:                    tailAllowedOrigins,
 		tailMode:                              tailMode,
 		metricsTrustProxyHeaders:              cfg.MetricsTrustProxyHeaders,
@@ -1391,12 +1398,7 @@ func isDefaultTenantAlias(orgID string) bool {
 }
 
 func (p *Proxy) globalTenantAllowed() bool {
-	if p.allowGlobalTenant {
-		return true
-	}
-	p.configMu.RLock()
-	defer p.configMu.RUnlock()
-	return len(p.tenantMap) == 0
+	return p.allowGlobalTenant
 }
 
 func (p *Proxy) tenantMiddleware(next http.Handler) http.Handler {
@@ -1826,8 +1828,8 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/loki/api/v1/status/buildinfo", p.handleBuildInfo)
 
 	if p.registerInstrumentation {
-		// Prometheus metrics endpoint — NOT rate-limited
-		mux.HandleFunc("/metrics", p.handleMetrics)
+		// Prometheus metrics endpoint — security headers plus bounded scrape concurrency.
+		mux.Handle("/metrics", securityHeaders(http.HandlerFunc(p.handleMetrics)))
 		if p.enablePprof {
 			mux.Handle("/debug/pprof/cmdline", p.adminMiddleware(http.NotFoundHandler()))
 			mux.Handle("/debug/pprof/", p.adminMiddleware(http.DefaultServeMux))
@@ -1850,6 +1852,21 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 }
 
 func (p *Proxy) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if limiter := p.metricsConcurrencyLimiter; limiter != nil {
+		select {
+		case limiter <- struct{}{}:
+			defer func() { <-limiter }()
+		default:
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, "metrics scrape already in progress", http.StatusTooManyRequests)
+			return
+		}
+	}
 	rec := httptest.NewRecorder()
 	p.metrics.Handler(rec, r)
 
@@ -2255,7 +2272,7 @@ func appendUniqueStrings(dst []string, values ...string) []string {
 	if len(values) == 0 {
 		return dst
 	}
-	seen := make(map[string]struct{}, len(dst)+len(values))
+	seen := make(map[string]struct{}, safeAddCap(len(dst), len(values)))
 	for _, existing := range dst {
 		seen[existing] = struct{}{}
 	}
@@ -3079,7 +3096,7 @@ func (p *Proxy) fetchPatternsSnapshotFromPeer(peerAddr string, timeout time.Dura
 		return nil, fmt.Errorf("peer %s status %d: %s", peerAddr, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBodyLimited(resp.Body, maxPatternsPeerSnapshotBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -4194,7 +4211,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	// Propagate VL error status
 	if resp.StatusCode >= 400 {
@@ -4268,7 +4285,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	entries := sumHitsValues(body)
 	hits := parseHits(body)
@@ -4430,7 +4447,7 @@ func (p *Proxy) computeVolumeResult(ctx context.Context, query, start, end, targ
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	return p.hitsToVolumeVector(body), nil
 }
@@ -4534,7 +4551,7 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	return p.hitsToVolumeMatrix(body, start, end, step), nil
 }
@@ -4854,7 +4871,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			if resp.StatusCode >= http.StatusBadRequest {
 				return nil, false
 			}
-			body, err := io.ReadAll(resp.Body)
+			body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 			if err != nil {
 				return nil, false
 			}
@@ -5008,7 +5025,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 				)
 				return
 			}
-			body, err := io.ReadAll(resp.Body)
+			body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 			if err != nil {
 				return
 			}
@@ -5931,7 +5948,7 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	// Propagate VL response
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 		p.writeError(w, resp.StatusCode, string(body))
 		p.metrics.RecordRequest("delete", resp.StatusCode, time.Since(start))
 		return
@@ -6118,7 +6135,7 @@ func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHi
 		return 0, "", false
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 	msg := strings.TrimSpace(string(body))
 	if msg == "" {
 		msg = http.StatusText(resp.StatusCode)
@@ -6151,7 +6168,7 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 		return resp, true, ""
 	}
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 	_ = resp.Body.Close()
 	msg := strings.TrimSpace(string(body))
 	if msg == "" {
@@ -6196,7 +6213,7 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 		return fmt.Errorf("synthetic tail query failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
@@ -7304,7 +7321,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	// Propagate VL error status
 	if resp.StatusCode >= 400 {
@@ -7334,7 +7351,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	}
 	defer resp.Body.Close()
 
-	body, _ := io.ReadAll(resp.Body)
+	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	// Propagate VL error status
 	if resp.StatusCode >= 400 {
@@ -7397,7 +7414,7 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 			return
 		}
 		defer resp.Body.Close()
-		leftBody, _ = io.ReadAll(resp.Body)
+		leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	}
 
 	if rightIsScalar {
@@ -7409,7 +7426,7 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 			return
 		}
 		defer resp.Body.Close()
-		rightBody, _ = io.ReadAll(resp.Body)
+		rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	}
 
 	// Apply vector matching: on(), ignoring(), group_left(), group_right()
@@ -7465,7 +7482,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 			return
 		}
 		defer resp.Body.Close()
-		leftBody, _ = io.ReadAll(resp.Body)
+		leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	}
 
 	if rightIsScalar {
@@ -7477,7 +7494,7 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 			return
 		}
 		defer resp.Body.Close()
-		rightBody, _ = io.ReadAll(resp.Body)
+		rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	}
 
 	// Combine results with arithmetic at proxy level
@@ -7723,7 +7740,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 
 	// Propagate VL error status to the client
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 		errMsg := string(body)
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
@@ -10320,6 +10337,10 @@ func (sc *statusCapture) WriteHeader(code int) {
 }
 
 func (sc *statusCapture) Write(b []byte) (int, error) {
+	if sc.ResponseWriter.Header().Get("Content-Type") == "" {
+		sc.ResponseWriter.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	}
+	sc.ResponseWriter.Header().Set("X-Content-Type-Options", "nosniff")
 	n, err := sc.ResponseWriter.Write(b)
 	sc.bytesWritten += n
 	return n, err
@@ -10342,6 +10363,13 @@ func (sc *statusCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 		return h.Hijack()
 	}
 	return nil, nil, fmt.Errorf("hijack not supported")
+}
+
+func buildConcurrencyLimiter(limit int) chan struct{} {
+	if limit <= 0 {
+		return nil
+	}
+	return make(chan struct{}, limit)
 }
 
 // requestLogger wraps a handler with structured logging and route-aware metrics.
@@ -10713,7 +10741,7 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if err != nil || len(body) == 0 {
 		return logql
 	}

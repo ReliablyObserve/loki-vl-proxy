@@ -119,7 +119,7 @@ Tenant limits notes:
 |---|---|
 | `GET /ready` | Readiness probe (checks VL `/health` + circuit breaker) |
 | `GET /loki/api/v1/status/buildinfo` | Fake Loki 2.9.0 build info for Grafana detection |
-| `GET /metrics` | Prometheus text exposition (`-server.register-instrumentation`) |
+| `GET /metrics` | Prometheus text exposition (`-server.register-instrumentation`); low-cardinality by default unless `-metrics.export-sensitive-labels=true` |
 | `GET /debug/queries` | Query analytics, disabled by default (`-server.enable-query-analytics`) |
 | `GET /debug/pprof/` | Go profiling, disabled by default (`-server.enable-pprof`) |
 

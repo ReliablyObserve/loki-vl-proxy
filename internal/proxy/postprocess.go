@@ -151,7 +151,7 @@ func applyLineFormatTemplate(streams []map[string]interface{}, tmplStr string) {
 			}
 
 			// Build template data from labels + line
-			data := make(map[string]string, len(labels)+1)
+			data := make(map[string]string, safeAddCap(len(labels), 1))
 			for k, v := range labels {
 				data[k] = v
 			}

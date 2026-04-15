@@ -102,6 +102,30 @@ func TestHardening_QueryAnalyticsDisabledByDefault(t *testing.T) {
 	}
 }
 
+func TestHardening_MetricsHideSensitiveLabelsByDefault(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	p.metrics.RecordTenantRequest("team-a", "query_range", 200, 5*time.Millisecond)
+	p.metrics.RecordClientIdentity("grafana-user", "query_range", 5*time.Millisecond, 128)
+
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for /metrics, got %d body=%s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "loki_vl_proxy_tenant_requests_total") {
+		t.Fatalf("expected tenant-sensitive metrics to be hidden by default\n%s", body)
+	}
+	if strings.Contains(body, "loki_vl_proxy_client_requests_total") {
+		t.Fatalf("expected client-sensitive metrics to be hidden by default\n%s", body)
+	}
+}
+
 func TestHardening_QueryAnalyticsRequiresAdminToken(t *testing.T) {
 	c := cache.New(60*time.Second, 1000)
 	p, err := New(Config{

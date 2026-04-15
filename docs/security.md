@@ -54,13 +54,17 @@ The following are disabled by default and should stay restricted:
 - `/debug/queries`
 - `/debug/pprof/*`
 
-Enable only for controlled troubleshooting windows, and protect them with `-server.admin-auth-token` when exposed outside a single-user environment.
+Enable only for controlled troubleshooting windows. On non-loopback listen addresses the proxy now refuses to start with these enabled unless `-server.admin-auth-token` is set.
+
+`/metrics` stays available on the main listener when instrumentation is enabled, but the default export now suppresses per-tenant and per-client identity labels. Opt back in with `-metrics.export-sensitive-labels=true` only on trusted scrape paths.
 
 ## Recommended Production Baseline
 
 - explicit `-tenant-map` (avoid implicit defaults for multi-tenant production)
+- keep `-tenant.allow-global=false` unless you intentionally need wildcard backend-default access
 - strict `/tail` origin allowlist
 - conservative request-size and timeout limits
+- explicit `-http-read-header-timeout` and bounded `/metrics` concurrency
 - `ServiceMonitor` + alerting on `5xx`, circuit breaker open state, and backend latency
 - `-server.admin-auth-token` for debug/admin surfaces
 - `-peer-auth-token` when peer cache crosses network trust boundaries

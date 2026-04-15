@@ -4,7 +4,7 @@
 
 - VictoriaLogs reachable from the proxy (`http://<host>:9428`)
 - Grafana using a Loki datasource
-- Go `1.26.1+` if running from source, or Docker for containerized runs
+- Go `1.26.2+` if running from source, or Docker for containerized runs
 
 ## Quick Local Run
 

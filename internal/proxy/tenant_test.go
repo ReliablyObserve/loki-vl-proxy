@@ -260,14 +260,9 @@ func TestTenant_DefaultTenantAliasesUseBackendDefaultWithoutMappings(t *testing.
 	}
 }
 
-func TestTenant_WildcardGlobalBypassAllowedWithoutMappings(t *testing.T) {
-	var receivedAccountID, receivedProjectID string
+func TestTenant_WildcardGlobalBypassRequiresOptInWithoutMappings(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedAccountID = r.Header.Get("AccountID")
-		receivedProjectID = r.Header.Get("ProjectID")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"values": []map[string]interface{}{},
-		})
+		t.Fatal("backend should not be called when wildcard tenant bypass is disabled")
 	}))
 	defer vlBackend.Close()
 
@@ -282,11 +277,8 @@ func TestTenant_WildcardGlobalBypassAllowedWithoutMappings(t *testing.T) {
 	r.Header.Set("X-Scope-OrgID", "*")
 	mux.ServeHTTP(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 for wildcard org without tenant mappings, got %d body=%s", w.Code, w.Body.String())
-	}
-	if receivedAccountID != "" || receivedProjectID != "" {
-		t.Fatalf("expected wildcard org to use backend default tenant, got AccountID=%q ProjectID=%q", receivedAccountID, receivedProjectID)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for wildcard org without explicit opt-in, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 

@@ -15,14 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - query-range/read path: reduce translation buffering and repeated frontend gzip work by reusing hot compat-cache encodings, moving log-query conversion to a one-pass reader path, and bounding miss-path capture memory.
 - query-range/patterns: reuse query response pattern extraction for autodetected pattern warming and keep `volume_range` zero-filled across the full requested range.
+- security/runtime: require explicit `tenant.allow-global` for wildcard tenant bypass, add bounded peer/backend body reads plus `ReadHeaderTimeout`, hide sensitive metrics labels by default, and harden admin/debug surfaces.
 
 ### Documentation
 
 - dashboards/config docs: refresh bundled operational dashboard JSON and document the client-facing gzip defaults and connection-redistribution controls.
+- security/docs: document explicit wildcard-tenant opt-in, low-cardinality default metrics export, `/metrics` concurrency bounds, and the Go `1.26.2` baseline.
 
 ### Tests
 
 - proxy/compression: add regression coverage for the one-pass reader conversion path, pattern collection on reader-backed query results, and frontend `nosniff` hardening on compressed responses.
+- security/metrics: add coverage for wildcard-tenant rejection, admin exposure validation, `ReadHeaderTimeout`, and sensitive-metrics export opt-in.
+
+### CI
+
+- toolchain/security: bump repo and workflow Go version to `1.26.2`, add `govulncheck` to CI, and override the docs-site `serialize-javascript` dependency to the non-vulnerable line.
 
 ## [1.1.0] - 2026-04-15
 

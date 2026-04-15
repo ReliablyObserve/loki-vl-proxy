@@ -360,7 +360,7 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 | `-tenant-default-limits` | `TENANT_DEFAULT_LIMITS` | — | JSON map of default published-limit overrides |
 | `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant published-limit overrides keyed by `X-Scope-OrgID` |
 | `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests |
-| `-tenant.allow-global` | — | `false` | Allow `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant even when a tenant map is configured |
+| `-tenant.allow-global` | — | `false` | Allow `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant |
 
 ### Tenant Resolution Order
 
@@ -368,7 +368,7 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 2. **Tenant map lookup** — if `-tenant-map` is configured and the org ID matches a key, use the mapped `AccountID`/`ProjectID`
 3. **Explicit tenant map override** — if a tenant map contains an exact key such as `"0"` or `"fake"`, that explicit mapping wins
 4. **Default-tenant aliases** — `X-Scope-OrgID` values `0`, `fake`, and `default` map to VictoriaLogs' built-in `0:0` tenant without rewriting headers
-5. **Wildcard global bypass** — `X-Scope-OrgID: *` is a proxy-specific convenience. It uses the backend default tenant only when no tenant map is configured, or when `-tenant.allow-global=true`
+5. **Wildcard global bypass** — `X-Scope-OrgID: *` is a proxy-specific convenience. It uses the backend default tenant only when `-tenant.allow-global=true`
 6. **Numeric passthrough** — if the org ID is a number other than the default-tenant alias case (for example `"42"`), pass it directly as `AccountID` with `ProjectID: 0`
 7. **Fail closed** — unmapped non-numeric org IDs are rejected with `403 Forbidden`
 
@@ -444,7 +444,7 @@ datasources:
       httpHeaderValue1: "0"
 ```
 
-`X-Scope-OrgID: "0"`, `X-Scope-OrgID: "fake"`, and `X-Scope-OrgID: "default"` resolve to VL's default `0:0` tenant in Loki-compatible single-tenant mode. `X-Scope-OrgID: "*"` remains a proxy-specific wildcard convenience, and if you later introduce a tenant map you keep that wildcard behavior only by explicitly setting `-tenant.allow-global=true`.
+`X-Scope-OrgID: "0"`, `X-Scope-OrgID: "fake"`, and `X-Scope-OrgID: "default"` resolve to VL's default `0:0` tenant in Loki-compatible single-tenant mode. `X-Scope-OrgID: "*"` remains a proxy-specific wildcard convenience and always requires explicit `-tenant.allow-global=true`.
 
 ### Hot Reload
 
@@ -492,6 +492,7 @@ Operational notes:
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-http-read-timeout` | — | `30s` | Server read timeout |
+| `-http-read-header-timeout` | — | `10s` | Server read header timeout |
 | `-http-write-timeout` | — | `120s` | Server write timeout |
 | `-http-idle-timeout` | — | `120s` | Server idle timeout |
 | `-http-max-header-bytes` | — | `1MB` | Maximum header size |
@@ -559,8 +560,10 @@ Treat these as current implementation defaults, not stable configuration API. If
 | `-server.enable-pprof` | — | `false` | Expose `/debug/pprof/*` |
 | `-server.enable-query-analytics` | — | `false` | Expose `/debug/queries` |
 | `-server.admin-auth-token` | — | — | Bearer token accepted on admin/debug endpoints |
+| `-server.metrics-max-concurrency` | — | `1` | Maximum concurrent `/metrics` scrapes served at once (`0` disables the cap) |
 | `-metrics.max-tenants` | — | `256` | Max unique tenant labels retained in `/metrics` before using `__overflow__` |
 | `-metrics.max-clients` | — | `256` | Max unique client labels retained in `/metrics` before using `__overflow__` |
+| `-metrics.export-sensitive-labels` | — | `false` | Export per-tenant and per-client identity metrics on `/metrics` and OTLP |
 | `-metrics.trust-proxy-headers` | — | `false` | Trust user/proxy headers (`X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User`, `X-Auth-Request-User`, `X-Forwarded-*`) for client metrics/log attribution and backend context forwarding |
 
 ## Peer Cache
