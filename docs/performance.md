@@ -23,8 +23,8 @@ The proxy now uses compression on multiple read-path hops:
 
 | Hop | Current behavior |
 |---|---|
-| Client -> proxy response | `-response-compression=auto` prefers `zstd`, then `gzip`, then identity |
-| Proxy -> peer-cache owner | `/_cache/get` prefers `zstd`, then `gzip`, then identity for larger payloads |
+| Client -> proxy response | Binary supports `auto`, but the chart default pins `-response-compression=gzip` with `-response-compression-min-bytes=1024` for broad Loki/Grafana compatibility |
+| Proxy -> peer-cache owner | `/_cache/get` prefers `zstd`, then `gzip`, then identity for payloads `>=1KiB` |
 | Proxy -> VictoriaLogs | `-backend-compression=auto` advertises `zstd, gzip`; the proxy decodes either safely before translation or passthrough |
 | Disk cache | gzip-compressed value storage |
 | OTLP push | `none`, `gzip`, or `zstd` |
@@ -33,10 +33,16 @@ Important: current VictoriaLogs docs clearly describe HTTP response compression,
 
 Verification note: against Grafana `12.4.2`, the datasource proxy path
 advertised `Accept-Encoding: deflate, gzip`, not `zstd`, in local
-verification. That means `-response-compression=auto` is immediately useful
-for direct clients and peer-cache hops, but standard Grafana datasource
-traffic will only see `zstd` if you force it explicitly or Grafana adds
+verification. That means the safe deployment default is frontend `gzip`,
+while `-response-compression=auto` remains useful for direct clients and
+peer-cache hops. Standard Grafana datasource traffic will only see `zstd` if
+you force it explicitly or Grafana adds
 `zstd` negotiation in a future release.
+
+The Tier0 compatibility cache now stores the canonical identity body and lazily
+adds compressed variants on hot hits. That removes repeated gzip/zstd work from
+the hot cached read path without forcing every cached response to occupy
+multiple encodings up front.
 
 ### NDJSON Parsing Optimization
 

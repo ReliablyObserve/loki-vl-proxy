@@ -101,6 +101,12 @@ extraArgs:
   backend-min-version: "v1.30.0"
   backend-allow-unsupported-version: "false"
   backend-version-check-timeout: "5s"
+  # Frontend/client-facing compression:
+  # - default to gzip for broad Loki/Grafana compatibility
+  # - only spend CPU once responses are at least 1KiB
+  # - route-aware policy in the proxy raises thresholds for metadata/control paths
+  response-compression: "gzip"
+  response-compression-min-bytes: "1024"
   peer-write-through: "true"
   peer-write-through-min-ttl: "30s"
   log-level: "info"
@@ -196,6 +202,8 @@ extraArgs:
   # otel-service-namespace: ""
   # otel-service-instance-id: ""
   # otlp-headers: ""                            # comma-separated key=value pairs
+  # response-compression: "auto"               # use zstd only for clients that explicitly advertise support
+  # response-compression-min-bytes: "1024"     # minimum response size before frontend compression starts
   # response-gzip: "true"
   # max-lines: "1000"
   # auth.enabled: "false"                       # require tenant header

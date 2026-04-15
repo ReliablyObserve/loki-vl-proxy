@@ -276,7 +276,8 @@ If `/ready` stays non-`ok` immediately after a restart, also check whether patte
 
 ### High Latency
 
-- Prefer `-response-compression=auto` for client-facing responses (`zstd`, then `gzip`, then identity)
+- Keep `-response-compression=gzip` for broad Loki/Grafana compatibility; use `auto` only for clients you control and know advertise `zstd`
+- Set `-response-compression-min-bytes` around `1024` to avoid wasting CPU on small metadata/control responses
 - Increase cache TTLs
 - Check VL backend latency via metrics
 - Rely on built-in singleflight coalescing for identical concurrent reads
