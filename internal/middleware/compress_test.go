@@ -267,7 +267,7 @@ func TestCompressionHandlerWithOptions_SetsNoSniffHeader(t *testing.T) {
 	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
 		t.Fatalf("expected nosniff header, got %q", got)
 	}
-	if got := w.Header().Get("Content-Type"); got != "application/octet-stream" {
+	if got := w.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
 		t.Fatalf("expected safe fallback content type, got %q", got)
 	}
 }

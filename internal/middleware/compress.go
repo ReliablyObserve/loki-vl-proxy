@@ -53,7 +53,7 @@ type compressedResponseWriter struct {
 }
 
 func (w *compressedResponseWriter) Write(b []byte) (int, error) {
-	ensureSafeResponseHeaders(w.ResponseWriter, "application/octet-stream")
+	ensureSafeResponseHeaders(w.ResponseWriter, "text/plain; charset=utf-8")
 	if w.started {
 		if w.bypass {
 			return w.ResponseWriter.Write(b)
@@ -85,7 +85,7 @@ func (w *compressedResponseWriter) Write(b []byte) (int, error) {
 }
 
 func (w *compressedResponseWriter) WriteHeader(code int) {
-	ensureSafeResponseHeaders(w.ResponseWriter, "application/octet-stream")
+	ensureSafeResponseHeaders(w.ResponseWriter, "text/plain; charset=utf-8")
 	if w.started {
 		return
 	}
@@ -295,7 +295,7 @@ func CompressionHandlerWithOptions(next http.Handler, opts CompressionOptions) h
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ensureSafeResponseHeaders(w, "application/octet-stream")
+		ensureSafeResponseHeaders(w, "text/plain; charset=utf-8")
 		encoding, minBytes := PlanResponseCompression(r, opts)
 		if encoding == "" {
 			next.ServeHTTP(w, r)
