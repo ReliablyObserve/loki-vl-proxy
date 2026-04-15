@@ -1630,7 +1630,22 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		}
 
 		setCacheResult(r.Context(), "miss")
-		capture := &compatCacheCaptureWriter{ResponseWriter: w}
+		var capture *compatCacheCaptureWriter
+		if encoding, _ := p.compatCacheResponseEncoding(r); encoding != "" {
+			_ = mw.RegisterEncodedResponseCapture(w, encoding, func(encodedAs string, encoded []byte) {
+				if capture == nil || !compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
+					return
+				}
+				if endpoint == "patterns" && patternsPayloadEmpty(capture.body) {
+					return
+				}
+				if len(encoded) == 0 || len(encoded) >= len(capture.body) {
+					return
+				}
+				p.compatCache.SetWithTTL(compatCacheVariantKey(cacheKey, encodedAs), encoded, ttl)
+			})
+		}
+		capture = &compatCacheCaptureWriter{ResponseWriter: w}
 		next(capture, r)
 		if compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
 			body := capture.body
@@ -1857,11 +1872,14 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	var (
 		sc       = &statusCapture{ResponseWriter: w, code: 200}
 		capture  *bufferedResponseWriter
-		cacheOut []byte
+		cacheTap *compatCacheCaptureWriter
 	)
-	if len(withoutLabels) > 0 || cacheable {
+	if len(withoutLabels) > 0 {
 		capture = &bufferedResponseWriter{header: make(http.Header)}
 		sc = &statusCapture{ResponseWriter: capture, code: 200}
+	} else if cacheable {
+		cacheTap = &compatCacheCaptureWriter{ResponseWriter: w}
+		sc = &statusCapture{ResponseWriter: cacheTap, code: 200}
 	}
 
 	// Check for subquery expression (e.g., max_over_time(rate(...)[1h:5m]))
@@ -1879,7 +1897,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if capture != nil {
-		cacheOut = append([]byte(nil), capture.body...)
+		cacheOut := capture.body
 		if len(withoutLabels) > 0 {
 			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels)
 		}
@@ -1894,6 +1912,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if cacheable && sc.code == http.StatusOK {
 			p.cache.SetWithTTL(cacheKey, cacheOut, CacheTTLs["query_range"])
 		}
+	} else if cacheTap != nil && cacheable && sc.code == http.StatusOK {
+		p.cache.SetWithTTL(cacheKey, cacheTap.body, CacheTTLs["query_range"])
 	}
 
 	elapsed := time.Since(start)
@@ -10040,6 +10060,10 @@ func (sc *statusCapture) Flush() {
 	if f, ok := sc.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+func (sc *statusCapture) Unwrap() http.ResponseWriter {
+	return sc.ResponseWriter
 }
 
 // Hijack implements http.Hijacker for WebSocket upgrade support.

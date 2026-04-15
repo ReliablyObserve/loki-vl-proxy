@@ -33,6 +33,12 @@ type CompressionOptions struct {
 	MinBytes int
 }
 
+type encodedResponseCapture struct {
+	encoding string
+	buf      bytes.Buffer
+	callback func(string, []byte)
+}
+
 // compressedResponseWriter delays compression until the handler proves the
 // response is worth compressing. This keeps small control-plane responses cheap
 // and lets inner handlers serve pre-compressed cache variants directly.
@@ -46,6 +52,7 @@ type compressedResponseWriter struct {
 	started    bool
 	bypass     bool
 	buf        bytes.Buffer
+	capture    *encodedResponseCapture
 }
 
 func (w *compressedResponseWriter) Write(b []byte) (int, error) {
@@ -129,10 +136,12 @@ func (w *compressedResponseWriter) finish() error {
 			}
 		}
 	}
+	var closeErr error
 	if !w.bypass && w.writer != nil {
-		return w.writer.Close()
+		closeErr = w.writer.Close()
 	}
-	return nil
+	w.finalizeEncodedCapture()
+	return closeErr
 }
 
 func (w *compressedResponseWriter) shouldBypassCompression() bool {
@@ -150,7 +159,11 @@ func (w *compressedResponseWriter) startCompression() error {
 	addVaryHeader(w.Header(), "Accept-Encoding")
 	w.Header().Set("Content-Encoding", w.encoding)
 	w.Header().Del("Content-Length")
-	compressor, release := acquireResponseCompressor(w.encoding, w.ResponseWriter)
+	dst := io.Writer(w.ResponseWriter)
+	if w.capture != nil {
+		dst = io.MultiWriter(dst, &w.capture.buf)
+	}
+	compressor, release := acquireResponseCompressor(w.encoding, dst)
 	w.writer = compressor
 	w.release = release
 	if w.statusCode != 0 {
@@ -189,6 +202,30 @@ func (w *compressedResponseWriter) releaseCompressor() {
 	w.release = nil
 }
 
+func (w *compressedResponseWriter) registerEncodedResponseCapture(encoding string, callback func(string, []byte)) bool {
+	if callback == nil || w.started {
+		return false
+	}
+	encoding = strings.ToLower(strings.TrimSpace(encoding))
+	if encoding == "" || encoding != w.encoding {
+		return false
+	}
+	w.capture = &encodedResponseCapture{
+		encoding: encoding,
+		callback: callback,
+	}
+	return true
+}
+
+func (w *compressedResponseWriter) finalizeEncodedCapture() {
+	if w.capture == nil || w.capture.callback == nil || w.capture.buf.Len() == 0 {
+		return
+	}
+	encoded := append([]byte(nil), w.capture.buf.Bytes()...)
+	w.capture.callback(w.capture.encoding, encoded)
+	w.capture = nil
+}
+
 // gzip.Writer pool to reduce allocations
 var gzipWriterPool = sync.Pool{
 	New: func() interface{} {
@@ -210,6 +247,36 @@ var zstdWriterPool = sync.Pool{
 // GzipHandler is kept for backward compatibility with existing tests/callers.
 func GzipHandler(next http.Handler) http.Handler {
 	return CompressionHandler(next, string(ResponseCompressionGzip))
+}
+
+type encodedResponseCaptureRegistrar interface {
+	registerEncodedResponseCapture(string, func(string, []byte)) bool
+}
+
+type responseWriterUnwrapper interface {
+	Unwrap() http.ResponseWriter
+}
+
+// RegisterEncodedResponseCapture asks the compression middleware to tee the
+// compressed bytes it emits. This is used by hot caches to persist the exact
+// frontend-compatible gzip payload from the initial miss instead of recomputing
+// it on the first encoded hit.
+func RegisterEncodedResponseCapture(w http.ResponseWriter, encoding string, callback func(string, []byte)) bool {
+	for w != nil {
+		if registrar, ok := w.(encodedResponseCaptureRegistrar); ok {
+			return registrar.registerEncodedResponseCapture(encoding, callback)
+		}
+		unwrapper, ok := w.(responseWriterUnwrapper)
+		if !ok {
+			return false
+		}
+		next := unwrapper.Unwrap()
+		if next == w {
+			return false
+		}
+		w = next
+	}
+	return false
 }
 
 // CompressionHandlerWithOptions negotiates response compression with clients.

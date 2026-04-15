@@ -207,6 +207,50 @@ func TestCompressionHandlerWithOptions_PassesThroughPrecompressedResponse(t *tes
 	}
 }
 
+func TestCompressionHandlerWithOptions_RegisterEncodedResponseCapture(t *testing.T) {
+	var capturedEncoding string
+	var capturedBody []byte
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ok := RegisterEncodedResponseCapture(w, "gzip", func(encoding string, body []byte) {
+			capturedEncoding = encoding
+			capturedBody = append([]byte(nil), body...)
+		}); !ok {
+			t.Fatal("expected gzip capture registration to succeed")
+		}
+		_, _ = w.Write([]byte(strings.Repeat("hello", 64)))
+	})
+
+	handler := CompressionHandlerWithOptions(inner, CompressionOptions{
+		Mode:     "gzip",
+		MinBytes: 1,
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	r.Header.Set("Accept-Encoding", "gzip")
+
+	handler.ServeHTTP(w, r)
+
+	if capturedEncoding != "gzip" {
+		t.Fatalf("expected captured encoding gzip, got %q", capturedEncoding)
+	}
+	if len(capturedBody) == 0 {
+		t.Fatal("expected captured compressed body")
+	}
+	gr, err := gzip.NewReader(bytes.NewReader(capturedBody))
+	if err != nil {
+		t.Fatalf("create gzip reader: %v", err)
+	}
+	defer gr.Close()
+	body, err := io.ReadAll(gr)
+	if err != nil {
+		t.Fatalf("read captured gzip body: %v", err)
+	}
+	if !strings.Contains(string(body), "hello") {
+		t.Fatalf("unexpected captured body %q", string(body))
+	}
+}
+
 func TestCompressionHandler_ZstdModeFallsBackToIdentityWhenUnsupported(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"status":"success"}`))

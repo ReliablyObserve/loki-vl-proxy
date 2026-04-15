@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
 
 func TestCompatCacheMiddleware_CachesSeriesResponses(t *testing.T) {
@@ -56,6 +57,9 @@ func TestCompatCacheMiddleware_CachesCompressedVariantOnHit(t *testing.T) {
 	if first.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", first.Code, first.Body.String())
 	}
+	if _, ok := p.compatCache.Get(compatCacheVariantKey("compat:v1:series:team-a:/loki/api/v1/series?match[]=%7Bapp%3D%22api%22%7D", "gzip")); ok {
+		t.Fatal("did not expect gzip variant to be primed from an identity miss")
+	}
 
 	second := doCompatProxyRequest(p, target, map[string]string{
 		"X-Scope-OrgID":   "team-a",
@@ -89,6 +93,38 @@ func TestCompatCacheMiddleware_CachesCompressedVariantOnHit(t *testing.T) {
 	}
 	if backendCalls != 1 {
 		t.Fatalf("expected gzip compat-cache variant to avoid backend retry, got %d backend calls", backendCalls)
+	}
+}
+
+func TestCompatCacheMiddleware_PrimesCompressedVariantOnGzipMiss(t *testing.T) {
+	payload := `{"values":[` + strings.Repeat(`{"value":"{app=\"api\"}","hits":1},`, 64) + `{"value":"{app=\"api\"}","hits":1}]}`
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer backend.Close()
+
+	p := newCompatTestProxyWithCompression(t, backend.URL, "gzip", 128)
+	target := "/loki/api/v1/series?match[]=%7Bapp%3D%22api%22%7D"
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	req.Header.Set("X-Scope-OrgID", "team-a")
+	cacheKey, ok := p.compatCacheKey("series", req)
+	if !ok {
+		t.Fatal("expected compat cache key")
+	}
+
+	first := doCompatProxyCompressedRequest(p, target, map[string]string{
+		"X-Scope-OrgID":   "team-a",
+		"Accept-Encoding": "gzip",
+	}, "gzip", 128)
+	if first.Code != http.StatusOK {
+		t.Fatalf("expected gzip miss to succeed, got %d: %s", first.Code, first.Body.String())
+	}
+	if got := first.Header().Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("expected first miss to be gzip-compressed, got %q", got)
+	}
+	if _, ok := p.compatCache.Get(compatCacheVariantKey(cacheKey, "gzip")); !ok {
+		t.Fatal("expected gzip variant to be primed from the initial miss")
 	}
 }
 
@@ -269,5 +305,21 @@ func doCompatProxyRequest(p *Proxy, target string, headers map[string]string) *h
 	}
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
+	return rec
+}
+
+func doCompatProxyCompressedRequest(p *Proxy, target string, headers map[string]string, mode string, minBytes int) *httptest.ResponseRecorder {
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	handler := mw.CompressionHandlerWithOptions(mux, mw.CompressionOptions{
+		Mode:     mode,
+		MinBytes: minBytes,
+	})
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
 	return rec
 }
