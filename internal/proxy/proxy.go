@@ -4590,12 +4590,13 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if endpoint == "/select/logsql/query_range" {
-			startNs, endNs, splitInterval, perWindowLimit, ok := patternWindowedSamplingConfig(startParam, endParam, stepParam, sourceLimit, p.supportsDensePatternWindowingForRequest(r))
+			denseWindowing := p.supportsDensePatternWindowingForRequest(r)
+			startNs, endNs, splitInterval, perWindowLimit, ok := patternWindowedSamplingConfig(startParam, endParam, stepParam, sourceLimit, denseWindowing)
 			if ok {
 				windows := splitQueryRangeWindowsWithOptions(startNs, endNs, splitInterval, "backward", true)
 				if len(windows) > 1 {
 					windowEntries, windowSuccesses := p.fetchPatternsFromWindows(r, logsqlQuery, sourceLimit, perWindowLimit, windows, stepParam, patternLimit)
-					if windowSuccesses > 0 && len(windowEntries) > 0 {
+					if shouldAcceptWindowedPatternResults(windowSuccesses, len(windows), denseWindowing) && len(windowEntries) > 0 {
 						// Prefer distributed stratified windows so dense ranges keep full-range
 						// visibility instead of collapsing to a recent-tail sample.
 						return windowEntries, true
@@ -4894,22 +4895,26 @@ func patternWindowedSamplingConfig(startParam, endParam, stepParam string, sourc
 	maxWindowSourceLimit := 1_000
 	maxPatternWindowSamples := 96
 	if denseWindowing {
-		targetWindowSpan = 10 * time.Minute
-		minWindowSourceLimit = 100
-		maxWindowSourceLimit = 2_000
-		maxPatternWindowSamples = 240
+		// Dense ranges can otherwise explode into hundreds of windows and produce
+		// short/unstable tails under backend pressure. Keep fanout bounded.
+		targetWindowSpan = 45 * time.Minute
+		minWindowSourceLimit = 200
+		maxWindowSourceLimit = 4_000
+		maxPatternWindowSamples = 64
 	}
 	if span < minWindowedSpan {
 		return 0, 0, 0, 0, false
 	}
 
 	windowCount := int(span/targetWindowSpan) + 1
-	if stepSeconds := parsePatternStepSeconds(stepParam); stepSeconds > 0 {
-		stepNs := stepSeconds * int64(time.Second)
-		if stepNs > 0 {
-			stepBasedCount := int(((endNs - startNs) / stepNs) + 1)
-			if stepBasedCount > windowCount {
-				windowCount = stepBasedCount
+	if !denseWindowing {
+		if stepSeconds := parsePatternStepSeconds(stepParam); stepSeconds > 0 {
+			stepNs := stepSeconds * int64(time.Second)
+			if stepNs > 0 {
+				stepBasedCount := int(((endNs - startNs) / stepNs) + 1)
+				if stepBasedCount > windowCount {
+					windowCount = stepBasedCount
+				}
 			}
 		}
 	}
@@ -4935,6 +4940,21 @@ func patternWindowedSamplingConfig(startParam, endParam, stepParam string, sourc
 	}
 
 	return startNs, endNs, interval, perWindowLimit, true
+}
+
+func shouldAcceptWindowedPatternResults(successes, total int, denseWindowing bool) bool {
+	if successes <= 0 || total <= 0 {
+		return false
+	}
+	if successes >= total {
+		return true
+	}
+	if !denseWindowing {
+		return true
+	}
+	// For dense mode, avoid returning highly partial window samples; they tend
+	// to collapse to short recent tails and churn on refresh.
+	return successes*2 >= total
 }
 
 func limitPatternPayload(payload []byte, limit int) []byte {
@@ -5061,7 +5081,15 @@ func mergePatternResultEntries(base, extra []patternResultEntry) []patternResult
 	for _, item := range merged {
 		items = append(items, item)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].total > items[j].total })
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].total != items[j].total {
+			return items[i].total > items[j].total
+		}
+		if items[i].level != items[j].level {
+			return items[i].level < items[j].level
+		}
+		return items[i].pattern < items[j].pattern
+	})
 
 	out := make([]patternResultEntry, 0, len(items))
 	for _, item := range items {

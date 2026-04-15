@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- patterns: stabilize `/loki/api/v1/patterns` ordering under equal-count ties (sort by total, then level, then pattern) to prevent refresh-to-refresh pattern reshuffling on dense scopes.
+- patterns: harden dense-range window sampling by bounding dense fanout (`<=64` windows), avoiding step-driven window explosion in dense mode, and requiring minimum dense window success coverage before accepting partial window merges.
+
+### Tests
+
+- add regression coverage for dense window config fanout bounds, dense partial-window acceptance gating, and deterministic tie ordering in merged pattern results.
+
 ## [1.0.22] - 2026-04-14
 
 ### Bug Fixes

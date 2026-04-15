@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -1986,6 +1987,74 @@ func TestContract_SupportsDensePatternWindowingForRequest_GrafanaRuntimeAware(t 
 
 	if !p.supportsDensePatternWindowingForRequest(baseReq) {
 		t.Fatal("expected dense windowing enabled for non-grafana request context")
+	}
+}
+
+func TestPatternWindowedSamplingConfig_DenseIgnoresStepInflationAndCapsFanout(t *testing.T) {
+	start := strconv.FormatInt(0, 10)
+	end := strconv.FormatInt(int64((24*time.Hour)/time.Second), 10)
+
+	startNsA, endNsA, intervalA, perWindowA, okA := patternWindowedSamplingConfig(start, end, "1s", 10000, true)
+	startNsB, endNsB, intervalB, perWindowB, okB := patternWindowedSamplingConfig(start, end, "30m", 10000, true)
+	if !okA || !okB {
+		t.Fatal("expected dense windowed config to be enabled for long ranges")
+	}
+	if startNsA != startNsB || endNsA != endNsB {
+		t.Fatalf("expected identical dense range bounds, got A=%d..%d B=%d..%d", startNsA, endNsA, startNsB, endNsB)
+	}
+	if intervalA != intervalB {
+		t.Fatalf("expected dense mode to ignore step-driven inflation, got intervalA=%s intervalB=%s", intervalA, intervalB)
+	}
+	if perWindowA != perWindowB {
+		t.Fatalf("expected dense mode per-window limit to remain stable across steps, got %d vs %d", perWindowA, perWindowB)
+	}
+
+	span := time.Duration(endNsA - startNsA)
+	windowCount := int(span/intervalA) + 1
+	if windowCount > 64 {
+		t.Fatalf("expected dense mode window cap <=64, got %d", windowCount)
+	}
+	if perWindowA < 200 {
+		t.Fatalf("expected dense mode per-window lower bound >=200, got %d", perWindowA)
+	}
+}
+
+func TestShouldAcceptWindowedPatternResults(t *testing.T) {
+	if shouldAcceptWindowedPatternResults(1, 4, true) {
+		t.Fatal("expected dense mode to reject highly partial window coverage")
+	}
+	if !shouldAcceptWindowedPatternResults(2, 4, true) {
+		t.Fatal("expected dense mode to accept >=50% window coverage")
+	}
+	if !shouldAcceptWindowedPatternResults(1, 4, false) {
+		t.Fatal("expected non-dense mode to accept partial coverage when there is at least one successful window")
+	}
+	if shouldAcceptWindowedPatternResults(0, 4, false) {
+		t.Fatal("expected zero successful windows to be rejected")
+	}
+}
+
+func TestMergePatternResultEntries_DeterministicTieOrder(t *testing.T) {
+	base := []patternResultEntry{
+		{Level: "warn", Pattern: "zeta", Samples: [][]interface{}{{int64(1), 1}}},
+		{Level: "info", Pattern: "beta", Samples: [][]interface{}{{int64(1), 1}}},
+	}
+	extra := []patternResultEntry{
+		{Level: "info", Pattern: "alpha", Samples: [][]interface{}{{int64(2), 1}}},
+	}
+
+	merged := mergePatternResultEntries(base, extra)
+	if len(merged) != 3 {
+		t.Fatalf("expected 3 merged patterns, got %d", len(merged))
+	}
+	got := []string{
+		merged[0].Level + "/" + merged[0].Pattern,
+		merged[1].Level + "/" + merged[1].Pattern,
+		merged[2].Level + "/" + merged[2].Pattern,
+	}
+	want := []string{"info/alpha", "info/beta", "warn/zeta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected deterministic order: got=%v want=%v", got, want)
 	}
 }
 
