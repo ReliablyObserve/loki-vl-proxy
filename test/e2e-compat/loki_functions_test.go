@@ -288,13 +288,24 @@ func TestLokiFunctions_Metrics(t *testing.T) {
 		"loki_vl_proxy_cache_hits_total",
 		"loki_vl_proxy_cache_misses_total",
 		"loki_vl_proxy_uptime_seconds",
-		"loki_vl_proxy_tenant_requests_total",
 		"loki_vl_proxy_client_errors_total",
 		"loki_vl_proxy_circuit_breaker_state",
 	}
 	for _, metric := range requiredMetrics {
 		if !strings.Contains(content, metric) {
 			t.Errorf("missing metric %q in /metrics output", metric)
+		}
+	}
+
+	// Sensitive per-tenant and per-client identity metrics are opt-in and should
+	// not be exposed on the default unauthenticated /metrics surface.
+	hiddenMetrics := []string{
+		"loki_vl_proxy_tenant_requests_total",
+		"loki_vl_proxy_client_requests_total",
+	}
+	for _, metric := range hiddenMetrics {
+		if strings.Contains(content, metric) {
+			t.Errorf("did not expect sensitive metric %q in default /metrics output", metric)
 		}
 	}
 
