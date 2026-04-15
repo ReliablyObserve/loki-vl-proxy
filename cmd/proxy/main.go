@@ -815,7 +815,6 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 		return nil, fmt.Errorf("build http server: %w", err)
 	}
 	srv.ConnState = p.GetMetrics().ConnStateHook()
-	srv.ConnState = p.GetMetrics().ConnStateHook()
 
 	reloadCh, shutdownCh := buildSignalChannels(notify)
 	return &runtimeState{

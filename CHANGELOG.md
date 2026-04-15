@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- proxy: add downstream HTTP/1.x connection rotation, connection-state metrics, and frontend compression controls to redistribute sticky Loki-compatible clients while keeping upstream backend reuse warm.
+
+### Bug Fixes
+
+- query-range/read path: reduce translation buffering and repeated frontend gzip work by reusing hot compat-cache encodings, moving log-query conversion to a one-pass reader path, and bounding miss-path capture memory.
+- query-range/patterns: reuse query response pattern extraction for autodetected pattern warming and keep `volume_range` zero-filled across the full requested range.
+
+### Documentation
+
+- dashboards/config docs: refresh bundled operational dashboard JSON and document the client-facing gzip defaults and connection-redistribution controls.
+
+### Tests
+
+- proxy/compression: add regression coverage for the one-pass reader conversion path, pattern collection on reader-backed query results, and frontend `nosniff` hardening on compressed responses.
+
 ## [1.1.0] - 2026-04-15
 
 ### Features
