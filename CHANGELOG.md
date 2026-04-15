@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - add regression tests for backend version fallback detection (`/metrics`), fallback min-version enforcement, endpoint-probed capability inference, and backend detection fields in drilldown limits.
 - add e2e compose coverage for backend/grafana detection surfaces across VictoriaLogs `v1.50.0` and `v1.49.0`.
+- add e2e compose coverage for backend/grafana detection when VictoriaLogs is fronted by `vmauth` (`Loki -> proxy -> vmauth -> VictoriaLogs`) to better match production routing topology.
 
 ## [1.0.23] - 2026-04-15
 

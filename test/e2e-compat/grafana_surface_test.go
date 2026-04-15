@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGrafanaDatasourceCatalogAndHealth(t *testing.T) {
@@ -28,6 +29,7 @@ func TestGrafanaDatasourceCatalogAndHealth(t *testing.T) {
 		{name: "Loki (via VL proxy multi-tenant)", kind: "loki"},
 		{name: "Loki (via VL proxy native metadata)", kind: "loki"},
 		{name: "Loki (via VL proxy patterns autodetect)", kind: "loki"},
+		{name: "Loki (via VL proxy vmauth)", kind: "loki"},
 		{name: "Loki (via VL proxy live tail)", kind: "loki"},
 		{name: "Loki (via ingress tail)", kind: "loki"},
 		{name: "Loki (via VL proxy live tail native)", kind: "loki"},
@@ -123,6 +125,31 @@ func TestProxyCompatibilitySurface(t *testing.T) {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("expected direct Loki drilldown-limits status 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("vmauth_proxy_drilldown_limits_backend_detection", func(t *testing.T) {
+		waitForReady(t, proxyVmauthURL+"/ready", 30*time.Second)
+		resp := getJSON(t, proxyVmauthURL+"/loki/api/v1/drilldown-limits")
+		profile, _ := resp["backend_capability_profile"].(string)
+		if profile == "" {
+			t.Fatalf("expected backend_capability_profile via vmauth proxy path, got %v", resp)
+		}
+		source, _ := resp["backend_version_source"].(string)
+		if source == "" {
+			t.Fatalf("expected backend_version_source via vmauth proxy path, got %v", resp)
+		}
+
+		expectedTag := expectedVLVersionPrefixFromEnv()
+		if expectedTag == "" {
+			return
+		}
+		semver, _ := resp["backend_version_semver"].(string)
+		if semver == "" {
+			t.Fatalf("expected backend_version_semver via vmauth proxy path for VICTORIALOGS_IMAGE=%q, got %v", expectedTag, resp)
+		}
+		if !strings.HasPrefix(semver, expectedTag+".") {
+			t.Fatalf("expected backend semver prefix %q via vmauth proxy path, got %q", expectedTag+".", semver)
 		}
 	})
 }
