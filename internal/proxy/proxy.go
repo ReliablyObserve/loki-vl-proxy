@@ -55,6 +55,7 @@ var jsonBufPool = sync.Pool{
 }
 
 var backendSemverPattern = regexp.MustCompile(`v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?`)
+var backendMetricsQuotedVersionPattern = regexp.MustCompile(`(?:^|[,{])(?:short_version|version)="(v[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z\.-]+)?)"`)
 
 // marshalJSON encodes v to JSON using a pooled buffer, then writes to w.
 // Reduces allocations vs json.NewEncoder(w).Encode() by reusing buffers.
@@ -5374,6 +5375,7 @@ func (p *Proxy) handleFormatQuery(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) handleDrilldownLimits(w http.ResponseWriter, r *http.Request) {
 	patternIngesterEnabled := p.patternsEnabled && p.patternsAutodetectFromQueries
 	limits := p.publishedTenantLimits(r)
+	backendRaw, backendSemver, backendProfile := p.backendVersionState()
 	profile := grafanaClientProfileFromContext(r.Context())
 	if profile.surface == "" {
 		profile = detectGrafanaClientProfile(r, "drilldown_limits", "/loki/api/v1/drilldown-limits")
@@ -5401,6 +5403,15 @@ func (p *Proxy) handleDrilldownLimits(w http.ResponseWriter, r *http.Request) {
 	}
 	if profile.datasourceProfile != "" {
 		resp["grafana_datasource_profile"] = profile.datasourceProfile
+	}
+	if backendRaw != "" {
+		resp["backend_version_source"] = backendRaw
+	}
+	if backendSemver != "" {
+		resp["backend_version_semver"] = backendSemver
+	}
+	if backendProfile != "" {
+		resp["backend_capability_profile"] = backendProfile
 	}
 	p.writeJSON(w, resp)
 }
@@ -6502,6 +6513,29 @@ func extractBackendSemver(raw string) string {
 	return backendSemverPattern.FindString(raw)
 }
 
+func extractBackendSemverFromMetrics(metricsText string) string {
+	metricsText = strings.TrimSpace(metricsText)
+	if metricsText == "" {
+		return ""
+	}
+	for _, line := range strings.Split(metricsText, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !strings.Contains(line, "vm_app_version{") && !strings.Contains(line, "victorialogs_build_info{") {
+			continue
+		}
+		if match := backendMetricsQuotedVersionPattern.FindStringSubmatch(line); len(match) == 2 {
+			return match[1]
+		}
+		if fallback := extractBackendSemver(line); fallback != "" {
+			return fallback
+		}
+	}
+	return ""
+}
+
 func parseSemverTriplet(version string) (int, int, int, bool) {
 	version = strings.TrimSpace(strings.TrimPrefix(version, "v"))
 	if version == "" {
@@ -6671,6 +6705,101 @@ func (p *Proxy) backendVersionState() (raw, semver, profile string) {
 	return p.backendVersionRaw, p.backendVersionSemver, p.backendCapabilityProfile
 }
 
+func (p *Proxy) storeBackendCapabilityProbe(source string, supportsStreamMetadata, supportsMetadataSubstring bool) {
+	if p == nil {
+		return
+	}
+	p.backendVersionMu.Lock()
+	defer p.backendVersionMu.Unlock()
+	if p.backendVersionSemver != "" {
+		return
+	}
+	p.backendVersionRaw = source
+	switch {
+	case supportsStreamMetadata && supportsMetadataSubstring:
+		p.backendCapabilityProfile = "vl-probed-v1.49-plus"
+	case supportsStreamMetadata:
+		p.backendCapabilityProfile = "vl-probed-v1.30-plus"
+	default:
+		p.backendCapabilityProfile = "legacy-probed-pre-v1.30"
+	}
+	p.backendSupportsStreamMetadata = supportsStreamMetadata
+	p.backendSupportsMetadataSubstring = supportsMetadataSubstring
+	// Keep dense-windowing conservative without explicit semver evidence.
+	p.backendSupportsDensePatternWindowing = false
+	if !p.backendVersionLogged {
+		p.backendVersionLogged = true
+		p.log.Info(
+			"backend capability profile inferred",
+			"backend.version.source", source,
+			"backend.capability_profile", p.backendCapabilityProfile,
+			"metadata.stream_endpoints", p.backendSupportsStreamMetadata,
+			"metadata.substring_filter", p.backendSupportsMetadataSubstring,
+			"patterns.dense_windowing", p.backendSupportsDensePatternWindowing,
+		)
+	}
+}
+
+func (p *Proxy) probeBackendVersionFromMetrics(ctx context.Context) {
+	if p == nil {
+		return
+	}
+	resp, err := p.vlGet(ctx, "/metrics", nil)
+	if err != nil {
+		p.log.Debug("backend version metrics probe failed", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		p.log.Debug("backend version metrics probe returned non-success status", "http.response.status_code", resp.StatusCode)
+		return
+	}
+
+	const maxMetricsProbeBytes = 2 << 20 // 2 MiB
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxMetricsProbeBytes))
+	if err != nil {
+		p.log.Debug("backend version metrics probe read failed", "error", err)
+		return
+	}
+	semver := extractBackendSemverFromMetrics(string(body))
+	if semver == "" {
+		p.log.Debug("backend version metrics probe found no semver")
+		return
+	}
+	p.storeBackendVersion("metrics:"+semver, semver)
+}
+
+func (p *Proxy) probeBackendEndpointSupport(ctx context.Context, path string, params url.Values) bool {
+	if p == nil {
+		return false
+	}
+	resp, err := p.vlGet(ctx, path, params)
+	if err != nil {
+		p.log.Debug("backend endpoint probe failed", "path", path, "error", err)
+		return false
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	return resp.StatusCode < http.StatusBadRequest
+}
+
+func (p *Proxy) probeBackendCapabilitiesFromEndpoints(ctx context.Context) {
+	if p == nil {
+		return
+	}
+	q := url.Values{}
+	q.Set("query", "*")
+	supportsStreamMetadata := p.probeBackendEndpointSupport(ctx, "/select/logsql/stream_field_names", q)
+
+	sub := url.Values{}
+	sub.Set("query", "*")
+	sub.Set("q", "a")
+	sub.Set("filter", "substring")
+	supportsMetadataSubstring := p.probeBackendEndpointSupport(ctx, "/select/logsql/field_names", sub)
+
+	p.storeBackendCapabilityProbe("endpoint-probe", supportsStreamMetadata, supportsMetadataSubstring)
+}
+
 // ValidateBackendVersionCompatibility checks backend version support at startup.
 // It blocks startup only when a detected backend version is below the configured
 // minimum and the unsafe override is not enabled.
@@ -6709,9 +6838,27 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 
 	raw, semver, profile := p.backendVersionState()
 	if semver == "" {
+		p.probeBackendVersionFromMetrics(checkCtx)
+		raw, semver, profile = p.backendVersionState()
+	}
+	if semver == "" {
+		p.probeBackendCapabilitiesFromEndpoints(checkCtx)
+		raw, semver, profile = p.backendVersionState()
+	}
+	if semver == "" && profile != "" {
+		p.log.Warn(
+			"backend version compatibility check partial",
+			"reason", "explicit backend semver unavailable; inferred capability profile from runtime endpoint probes",
+			"backend.version.source", raw,
+			"backend.capability_profile", profile,
+			"minimum_supported_version", p.backendMinVersion,
+		)
+		return nil
+	}
+	if semver == "" {
 		p.log.Warn(
 			"backend version compatibility check unavailable",
-			"reason", "backend did not expose version in response headers",
+			"reason", "backend did not expose version in response headers or /metrics payload",
 			"minimum_supported_version", p.backendMinVersion,
 		)
 		return nil

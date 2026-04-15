@@ -44,6 +44,25 @@ services:
       retries: 10
       start_period: 5s
 
+  # VictoriaMetrics Auth proxy in front of VictoriaLogs
+  vmauth:
+    image: ${VMAUTH_IMAGE:-victoriametrics/vmauth:v1.138.0}
+    container_name: e2e-vmauth
+    command:
+      - "-auth.config=/etc/vmauth/auth.yml"
+      - "-httpListenAddr=:8427"
+    volumes:
+      - ./vmauth.yml:/etc/vmauth/auth.yml:ro
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8427/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
   # VictoriaMetrics TSDB for vmalert recording-rule remote write
   victoriametrics:
     image: ${VICTORIAMETRICS_IMAGE:-victoriametrics/victoria-metrics:v1.119.0}
@@ -151,6 +170,37 @@ services:
       - "-patterns-startup-peer-warm-timeout=2s"
     depends_on:
       victorialogs:
+        condition: service_healthy
+      vmalert:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  # Loki-VL-proxy with backend routed through vmauth
+  loki-vl-proxy-vmauth:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-vmauth
+    ports:
+      - "3109:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://vmauth:8427"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
+      - "-log-level=info"
+      - "-cache-ttl=5s"
+      - "-label-style=underscores"
+      - "-metadata-field-mode=translated"
+      - "-emit-structured-metadata=true"
+    depends_on:
+      vmauth:
         condition: service_healthy
       vmalert:
         condition: service_healthy
@@ -380,6 +430,7 @@ services:
       - loki
       - loki-vl-proxy
       - loki-vl-proxy-patterns-autodetect
+      - loki-vl-proxy-vmauth
       - loki-vl-proxy-underscore
       - loki-vl-proxy-native-metadata
       - loki-vl-proxy-tail

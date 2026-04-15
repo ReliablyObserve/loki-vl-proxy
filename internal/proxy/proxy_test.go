@@ -1187,6 +1187,121 @@ func TestBackendVersionCompatibilityGate_PassesSupportedVersion(t *testing.T) {
 	}
 }
 
+func TestBackendVersionCompatibilityGate_FallbackMetricsDetectsVersion(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		case "/metrics":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`vm_app_version{short_version="v1.50.0",version="v1.50.0-cluster"} 1` + "\n"))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL:                 backend.URL,
+		Cache:                      cache.New(60*time.Second, 1000),
+		BackendMinVersion:          "v1.30.0",
+		BackendVersionCheckTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		t.Fatalf("expected compatibility gate to pass via metrics fallback, got: %v", err)
+	}
+	if got := p.backendVersionSemver; got != "v1.50.0" {
+		t.Fatalf("expected semver v1.50.0 from metrics fallback, got %q", got)
+	}
+	if !p.supportsDensePatternWindowing() {
+		t.Fatalf("expected dense windowing enabled for v1.50.0")
+	}
+}
+
+func TestBackendVersionCompatibilityGate_FallbackMetricsTooOldBlocks(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		case "/metrics":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`vm_app_version{short_version="v1.29.0",version="v1.29.0"} 1` + "\n"))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL:                 backend.URL,
+		Cache:                      cache.New(60*time.Second, 1000),
+		BackendMinVersion:          "v1.30.0",
+		BackendVersionCheckTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	err = p.ValidateBackendVersionCompatibility(context.Background())
+	if err == nil {
+		t.Fatalf("expected compatibility gate to fail for fallback metrics v1.29.0")
+	}
+}
+
+func TestBackendVersionCompatibilityGate_EndpointProbeInfersCapabilities(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		case "/metrics":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("up 1\n"))
+		case "/select/logsql/stream_field_names":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"hits":[]}`))
+		case "/select/logsql/field_names":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"hits":[]}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL:                 backend.URL,
+		Cache:                      cache.New(60*time.Second, 1000),
+		BackendMinVersion:          "v1.30.0",
+		BackendVersionCheckTimeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	if err := p.ValidateBackendVersionCompatibility(context.Background()); err != nil {
+		t.Fatalf("expected compatibility gate to continue with endpoint capability probe, got: %v", err)
+	}
+	if p.backendVersionSemver != "" {
+		t.Fatalf("expected empty semver when only endpoint probe is available, got %q", p.backendVersionSemver)
+	}
+	if got := p.backendCapabilityProfile; got != "vl-probed-v1.49-plus" {
+		t.Fatalf("expected capability profile vl-probed-v1.49-plus, got %q", got)
+	}
+	if !p.supportsStreamMetadataEndpoints() {
+		t.Fatalf("expected stream metadata support inferred via endpoint probe")
+	}
+	if !p.supportsMetadataSubstringFilter() {
+		t.Fatalf("expected metadata substring support inferred via endpoint probe")
+	}
+	if p.supportsDensePatternWindowing() {
+		t.Fatalf("expected dense windowing to remain conservative without explicit semver")
+	}
+}
+
 func TestBackendVersionCompatibilityGate_AllowsMissingVersionHeaders(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1957,6 +2072,28 @@ func TestContract_DrilldownLimits_ExposesRequiredLimitsContract(t *testing.T) {
 	}
 	if _, ok := limits["retention_stream"].([]interface{}); !ok {
 		t.Fatalf("expected limits.retention_stream to be an array, got %T", limits["retention_stream"])
+	}
+}
+
+func TestContract_DrilldownLimits_ExposesBackendDetectionStateWhenAvailable(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	p.observeBackendVersionFromHeaders(http.Header{
+		"Server": []string{"VictoriaLogs/v1.50.0"},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/drilldown-limits", nil)
+	p.handleDrilldownLimits(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from drilldown-limits, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if got := resp["backend_version_semver"]; got != "v1.50.0" {
+		t.Fatalf("expected backend_version_semver=v1.50.0, got %v", got)
+	}
+	if got := resp["backend_capability_profile"]; got != "vl-v1.50-plus" {
+		t.Fatalf("expected backend_capability_profile=vl-v1.50-plus, got %v", got)
 	}
 }
 

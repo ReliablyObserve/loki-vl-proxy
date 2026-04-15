@@ -90,6 +90,17 @@ datasources:
     secureJsonData:
       httpHeaderValue1: "0"
 
+  - name: Loki (via VL proxy vmauth)
+    type: loki
+    access: proxy
+    url: http://loki-vl-proxy-vmauth:3100
+    isDefault: false
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+      maxLines: 1000
+    secureJsonData:
+      httpHeaderValue1: "0"
+
   # 3. VictoriaLogs native datasource (for direct comparison)
   - name: VictoriaLogs (direct)
     type: victoriametrics-logs-datasource

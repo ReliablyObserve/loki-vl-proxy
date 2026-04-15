@@ -3,11 +3,16 @@
 package e2e_compat
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGrafanaDatasourceCatalogAndHealth(t *testing.T) {
@@ -24,6 +29,7 @@ func TestGrafanaDatasourceCatalogAndHealth(t *testing.T) {
 		{name: "Loki (via VL proxy multi-tenant)", kind: "loki"},
 		{name: "Loki (via VL proxy native metadata)", kind: "loki"},
 		{name: "Loki (via VL proxy patterns autodetect)", kind: "loki"},
+		{name: "Loki (via VL proxy vmauth)", kind: "loki"},
 		{name: "Loki (via VL proxy live tail)", kind: "loki"},
 		{name: "Loki (via ingress tail)", kind: "loki"},
 		{name: "Loki (via VL proxy live tail native)", kind: "loki"},
@@ -121,4 +127,115 @@ func TestProxyCompatibilitySurface(t *testing.T) {
 			t.Fatalf("expected direct Loki drilldown-limits status 200, got %d", resp.StatusCode)
 		}
 	})
+
+	t.Run("vmauth_proxy_drilldown_limits_backend_detection", func(t *testing.T) {
+		waitForReady(t, proxyVmauthURL+"/ready", 30*time.Second)
+		resp := getJSON(t, proxyVmauthURL+"/loki/api/v1/drilldown-limits")
+		profile, _ := resp["backend_capability_profile"].(string)
+		if profile == "" {
+			t.Fatalf("expected backend_capability_profile via vmauth proxy path, got %v", resp)
+		}
+		source, _ := resp["backend_version_source"].(string)
+		if source == "" {
+			t.Fatalf("expected backend_version_source via vmauth proxy path, got %v", resp)
+		}
+
+		expectedTag := expectedVLVersionPrefixFromEnv()
+		if expectedTag == "" {
+			return
+		}
+		semver, _ := resp["backend_version_semver"].(string)
+		if semver == "" {
+			t.Fatalf("expected backend_version_semver via vmauth proxy path for VICTORIALOGS_IMAGE=%q, got %v", expectedTag, resp)
+		}
+		if !strings.HasPrefix(semver, expectedTag+".") {
+			t.Fatalf("expected backend semver prefix %q via vmauth proxy path, got %q", expectedTag+".", semver)
+		}
+	})
+}
+
+func TestProxy_DrilldownLimits_ExposesBackendDetection(t *testing.T) {
+	ensureDataIngested(t)
+
+	resp := getJSON(t, proxyURL+"/loki/api/v1/drilldown-limits")
+	profile, _ := resp["backend_capability_profile"].(string)
+	if profile == "" {
+		t.Fatalf("expected backend_capability_profile in drilldown-limits, got %v", resp)
+	}
+
+	expectedTag := expectedVLVersionPrefixFromEnv()
+	if expectedTag == "" {
+		// Keep this robust for local runs where image env isn't exported to test.
+		return
+	}
+	semver, _ := resp["backend_version_semver"].(string)
+	if semver == "" {
+		t.Fatalf("expected backend_version_semver for VICTORIALOGS_IMAGE=%q, got %v", expectedTag, resp)
+	}
+	if !strings.HasPrefix(semver, expectedTag+".") {
+		t.Fatalf("expected backend semver prefix %q, got %q", expectedTag+".", semver)
+	}
+}
+
+func TestProxy_DrilldownLimits_DetectsGrafanaRuntimeHeaders(t *testing.T) {
+	ensureDataIngested(t)
+	version := grafanaRuntimeVersion(t)
+
+	req, err := http.NewRequest(http.MethodGet, proxyURL+"/loki/api/v1/drilldown-limits", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("User-Agent", "Grafana/"+version)
+	req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+	req.Header.Set("X-Scope-OrgID", "0")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("drilldown-limits request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200 from drilldown-limits, got %d body=%s", resp.StatusCode, string(body))
+	}
+
+	var payload map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode drilldown-limits: %v", err)
+	}
+	if got, _ := payload["grafana_client_surface"].(string); got != "grafana_drilldown" {
+		t.Fatalf("expected grafana_client_surface=grafana_drilldown, got %v payload=%v", got, payload)
+	}
+	if got, _ := payload["grafana_runtime_version"].(string); got == "" {
+		t.Fatalf("expected grafana_runtime_version to be exposed, got %v", payload)
+	}
+	if got, _ := payload["grafana_runtime_family"].(string); got == "" {
+		t.Fatalf("expected grafana_runtime_family to be exposed, got %v", payload)
+	}
+}
+
+func expectedVLVersionPrefixFromEnv() string {
+	raw := strings.TrimSpace(os.Getenv("VICTORIALOGS_IMAGE"))
+	if raw == "" {
+		return ""
+	}
+	parts := strings.Split(raw, ":")
+	if len(parts) < 2 {
+		return ""
+	}
+	tag := strings.TrimSpace(parts[len(parts)-1])
+	if !strings.HasPrefix(tag, "v") {
+		return ""
+	}
+	trimmed := strings.TrimPrefix(tag, "v")
+	segments := strings.Split(trimmed, ".")
+	if len(segments) < 2 {
+		return ""
+	}
+	_, errMaj := strconv.Atoi(segments[0])
+	_, errMin := strconv.Atoi(segments[1])
+	if errMaj != nil || errMin != nil {
+		return ""
+	}
+	return fmt.Sprintf("v%s.%s", segments[0], segments[1])
 }

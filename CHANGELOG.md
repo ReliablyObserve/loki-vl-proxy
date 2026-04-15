@@ -6,17 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
-## [1.0.23] - 2026-04-15
-
 ### Bug Fixes
 
-- patterns: stabilize `/loki/api/v1/patterns` ordering under equal-count ties (sort by total, then level, then pattern) to prevent refresh-to-refresh pattern reshuffling on dense scopes.
-- patterns: harden dense-range window sampling by bounding dense fanout (`<=64` windows), avoiding step-driven window explosion in dense mode, and requiring minimum dense window success coverage before accepting partial window merges.
+- backend detection: add startup fallback version sensing from `/metrics` (`vm_app_version`/`victorialogs_build_info`) when upstream proxies strip version headers, and infer conservative capability profiles from runtime endpoint probes when explicit semver is unavailable.
+- drilldown-limits: expose backend detection state (`backend_version_source`, `backend_version_semver`, `backend_capability_profile`) for operational verification and e2e assertions.
 
 ### Tests
 
-- add regression coverage for dense window config fanout bounds, dense partial-window acceptance gating, and deterministic tie ordering in merged pattern results.
+- add regression tests for backend version fallback detection (`/metrics`), fallback min-version enforcement, endpoint-probed capability inference, and backend detection fields in drilldown limits.
+- add e2e compose coverage for backend/grafana detection surfaces across VictoriaLogs `v1.50.0` and `v1.49.0`.
+- add e2e compose coverage for backend/grafana detection when VictoriaLogs is fronted by `vmauth` (`Loki -> proxy -> vmauth -> VictoriaLogs`) to better match production routing topology.
+
+## [1.0.23] - 2026-04-15
 
 ## [1.0.22] - 2026-04-14
 
