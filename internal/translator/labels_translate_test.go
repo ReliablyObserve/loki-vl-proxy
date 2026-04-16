@@ -67,6 +67,16 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 			want:  `(service_name:=auth OR "service.name":=auth OR service:=auth OR app:=auth OR application:=auth OR app_name:=auth OR name:=auth OR app_kubernetes_io_name:=auth OR container:=auth OR container_name:=auth OR "k8s.container.name":=auth OR k8s_container_name:=auth OR component:=auth OR workload:=auth OR job:=auth OR "k8s.job.name":=auth OR k8s_job_name:=auth) ~"error"`,
 		},
 		{
+			name:  "pattern include filter expands placeholder span",
+			logql: `{app="api"} |> "GET <_> 500"`,
+			want:  `app:=api ~"GET .* 500"`,
+		},
+		{
+			name:  "pattern exclude filter expands placeholder span",
+			logql: "{app=\"api\"} !> `GET <_> 500`",
+			want:  `app:=api NOT ~"GET .* 500"`,
+		},
+		{
 			name:  "backtick regex matcher",
 			logql: "{service_name=~`auth.*`}",
 			want:  `(service_name:~"auth.*" OR "service.name":~"auth.*" OR service:~"auth.*" OR app:~"auth.*" OR application:~"auth.*" OR app_name:~"auth.*" OR name:~"auth.*" OR app_kubernetes_io_name:~"auth.*" OR container:~"auth.*" OR container_name:~"auth.*" OR "k8s.container.name":~"auth.*" OR k8s_container_name:~"auth.*" OR component:~"auth.*" OR workload:~"auth.*" OR job:~"auth.*" OR "k8s.job.name":~"auth.*" OR k8s_job_name:~"auth.*")`,

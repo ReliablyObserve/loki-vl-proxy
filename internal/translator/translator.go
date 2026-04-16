@@ -215,6 +215,22 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 			remaining = rest
 			continue
 		}
+		if strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") || strings.HasPrefix(remaining, "|>`") {
+			// Pattern match filter: |> "<_> foo" → ~".* foo"
+			remaining = strings.TrimSpace(remaining[2:])
+			val, rest := extractQuotedValue(remaining)
+			parts = append(parts, "~"+translatePatternMatchValue(val))
+			remaining = rest
+			continue
+		}
+		if strings.HasPrefix(remaining, "!> ") || strings.HasPrefix(remaining, "!>\"") || strings.HasPrefix(remaining, "!>`") {
+			// Negative pattern match filter: !> "<_> foo" → NOT ~"..."
+			remaining = strings.TrimSpace(remaining[2:])
+			val, rest := extractQuotedValue(remaining)
+			parts = append(parts, "NOT ~"+translatePatternMatchValue(val))
+			remaining = rest
+			continue
+		}
 
 		if !strings.HasPrefix(remaining, "|") {
 			// Might be bare text — treat as filter
@@ -396,6 +412,34 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc) string {
 
 	// Unknown stage — pass through as-is with pipe
 	return "| " + stage
+}
+
+func translatePatternMatchValue(quoted string) string {
+	raw := strings.TrimSpace(quoted)
+	raw = strings.Trim(raw, "\"`")
+	if raw == "" {
+		return strconv.Quote("")
+	}
+
+	placeholderRe := regexp.MustCompile(`<[^>]+>`)
+	matches := placeholderRe.FindAllStringIndex(raw, -1)
+	if len(matches) == 0 {
+		return strconv.Quote(regexp.QuoteMeta(raw))
+	}
+
+	var b strings.Builder
+	last := 0
+	for _, match := range matches {
+		if match[0] > last {
+			b.WriteString(regexp.QuoteMeta(raw[last:match[0]]))
+		}
+		b.WriteString(".*")
+		last = match[1]
+	}
+	if last < len(raw) {
+		b.WriteString(regexp.QuoteMeta(raw[last:]))
+	}
+	return strconv.Quote(b.String())
 }
 
 func translateLogicalLabelFilterChain(stage string, labelFn LabelTranslateFunc) (string, bool) {
