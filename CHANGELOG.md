@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- query-range/windowing: fall back from the windowed log `query_range` path to the direct full-range Loki-compatible query when per-window fetches exhaust retries, instead of surfacing the windowed-path failure immediately.
+
 ## [1.4.4] - 2026-04-16
 
 ### Bug Fixes
