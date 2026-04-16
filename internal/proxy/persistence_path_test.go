@@ -3,7 +3,6 @@ package proxy
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -22,15 +21,10 @@ func TestEnsureWritableSnapshotPath_CreatesTargetFile(t *testing.T) {
 }
 
 func TestNew_FailsFastOnUnwritablePatternsPersistPath(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission semantics differ on Windows")
+	parent := filepath.Join(t.TempDir(), "occupied-parent")
+	if err := os.WriteFile(parent, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("create occupied parent file: %v", err)
 	}
-
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o500); err != nil {
-		t.Fatalf("chmod parent dir: %v", err)
-	}
-	defer func() { _ = os.Chmod(parent, 0o700) }()
 
 	_, err := New(Config{
 		BackendURL:          "http://unused",
@@ -47,15 +41,10 @@ func TestNew_FailsFastOnUnwritablePatternsPersistPath(t *testing.T) {
 }
 
 func TestNew_FailsFastOnUnwritableLabelValuesPersistPath(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("permission semantics differ on Windows")
+	parent := filepath.Join(t.TempDir(), "occupied-parent")
+	if err := os.WriteFile(parent, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("create occupied parent file: %v", err)
 	}
-
-	parent := t.TempDir()
-	if err := os.Chmod(parent, 0o500); err != nil {
-		t.Fatalf("chmod parent dir: %v", err)
-	}
-	defer func() { _ = os.Chmod(parent, 0o700) }()
 
 	_, err := New(Config{
 		BackendURL:                  "http://unused",
