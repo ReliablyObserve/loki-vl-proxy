@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-04-16
+
 ### Features
 
 - observability: add per-request fanout and proxy-internal operation telemetry to logs, Prometheus, OTLP export, bundled dashboard panels, and first-class Helm chart values for the new observability/runtime flags.
