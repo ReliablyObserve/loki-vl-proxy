@@ -10,14 +10,29 @@ func TestCoverage_MoreTranslatorHelpers(t *testing.T) {
 		t.Fatal("expected concrete pattern not to be treated as noop")
 	}
 
-	if got := translatePatternMatchValue(`"foo<bar>baz"`); got != `"foo.*baz"` {
+	if got := patternFilterValueToRegex(`foo<_>baz`); got != `foo.*baz` {
 		t.Fatalf("unexpected placeholder translation %q", got)
 	}
-	if got := translatePatternMatchValue(`"literal.*value"`); got != `"literal\\.\\*value"` {
+	if got := patternFilterValueToRegex(`literal.*value`); got != `literal\.\*value` {
 		t.Fatalf("unexpected literal pattern translation %q", got)
 	}
-	if got := translatePatternMatchValue(`""`); got != `""` {
+	if got := patternFilterValueToRegex(``); got != `.*` {
 		t.Fatalf("unexpected empty pattern translation %q", got)
+	}
+	if got := translatePatternLineFilter(`"foo<_>bar" or "baz"`, false); got != `~"(?:foo.*bar)|(?:baz)"` {
+		t.Fatalf("unexpected translated pattern line filter %q", got)
+	}
+	if got := translatePatternLineFilter(`"foo<_>bar"`, true); got != `NOT ~"foo.*bar"` {
+		t.Fatalf("unexpected translated negative pattern line filter %q", got)
+	}
+	if values, ok := extractPatternFilterValues(`"foo<_>bar" or "baz"`); !ok || len(values) != 2 || values[0] != "foo<_>bar" || values[1] != "baz" {
+		t.Fatalf("unexpected extracted pattern filter values %#v ok=%v", values, ok)
+	}
+	if _, ok := extractPatternFilterValues(`"foo<_>bar" and "baz"`); ok {
+		t.Fatal("expected malformed pattern alternation to fail parsing")
+	}
+	if got := normalizeQuotedStageExpr("`(?P<field>.*)`"); got != `"(?P<field>.*)"` {
+		t.Fatalf("unexpected normalized raw stage expression %q", got)
 	}
 
 	if field, op, ok := translatedFilterFieldOp(`-"service.name":~"api.*"`); !ok || field != `"service.name"` || op != ":~" {
