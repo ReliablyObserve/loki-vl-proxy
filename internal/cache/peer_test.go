@@ -424,6 +424,80 @@ func TestPeerCache_Get_DecodesCompressedPeerPayload(t *testing.T) {
 	t.Fatal("no key mapped to peer")
 }
 
+func TestPeerCache_Get_RecordsTimeoutReason(t *testing.T) {
+	peerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(40 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer peerServer.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "self:3100",
+		DiscoveryType: "static",
+		StaticPeers:   peerServer.Listener.Addr().String(),
+		Timeout:       10 * time.Millisecond,
+	})
+	defer pc.Close()
+
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("timeout-key-%d", i)
+		pc.mu.RLock()
+		owner := pc.ring.get(key)
+		pc.mu.RUnlock()
+		if owner != peerServer.Listener.Addr().String() {
+			continue
+		}
+		if value, _, ok := pc.Get(key); ok || value != nil {
+			t.Fatalf("expected timeout miss for key %q", key)
+		}
+		if got := pc.PeerErrorReasons()["timeout"]; got != 1 {
+			t.Fatalf("expected timeout reason count 1, got %d", got)
+		}
+		if got := pc.PeerErrors.Load(); got != 1 {
+			t.Fatalf("expected peer error count 1, got %d", got)
+		}
+		return
+	}
+	t.Fatal("no key mapped to peer")
+}
+
+func TestPeerCache_Get_RecordsStatusReason(t *testing.T) {
+	peerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "upstream boom", http.StatusBadGateway)
+	}))
+	defer peerServer.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "self:3100",
+		DiscoveryType: "static",
+		StaticPeers:   peerServer.Listener.Addr().String(),
+		Timeout:       2 * time.Second,
+	})
+	defer pc.Close()
+
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("status-key-%d", i)
+		pc.mu.RLock()
+		owner := pc.ring.get(key)
+		pc.mu.RUnlock()
+		if owner != peerServer.Listener.Addr().String() {
+			continue
+		}
+		if value, _, ok := pc.Get(key); ok || value != nil {
+			t.Fatalf("expected status miss for key %q", key)
+		}
+		reasons := pc.PeerErrorReasons()
+		if got := reasons["status_502"]; got != 1 {
+			t.Fatalf("expected status_502 reason count 1, got %d (%v)", got, reasons)
+		}
+		if got := pc.PeerErrors.Load(); got != 1 {
+			t.Fatalf("expected peer error count 1, got %d", got)
+		}
+		return
+	}
+	t.Fatal("no key mapped to peer")
+}
+
 func TestPeerCache_ShadowCopy_ShortTTL(t *testing.T) {
 	// Verify that L3 hits get stored in L1 with shadow TTL (≤30s)
 	peerCache := New(60*time.Second, 1000)

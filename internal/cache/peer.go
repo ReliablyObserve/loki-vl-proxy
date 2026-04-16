@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -81,6 +82,9 @@ type PeerCache struct {
 
 	// Singleflight to prevent cache stampede
 	inflight sync.Map // key → *inflightEntry
+
+	// Low-cardinality fetch error reasons for observability.
+	peerErrorReasons sync.Map // string → *atomic.Int64
 
 	// Stats
 	PeerHits   atomic.Int64
@@ -295,6 +299,7 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	}
 
 	if !pc.peerAllowed(owner) {
+		pc.RecordPeerErrorReason("breaker_open")
 		pc.PeerErrors.Add(1)
 		return nil, 0, false
 	}
@@ -325,6 +330,7 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		pc.recordPeerFailure(owner)
+		pc.RecordPeerErrorReason("request_build")
 		pc.PeerErrors.Add(1)
 		return nil, 0, false
 	}
@@ -336,6 +342,7 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	resp, err := pc.client.Do(req)
 	if err != nil {
 		pc.recordPeerFailure(owner)
+		pc.RecordPeerErrorReason(classifyPeerFetchError(err))
 		pc.PeerErrors.Add(1)
 		return nil, 0, false
 	}
@@ -349,6 +356,7 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		pc.recordPeerFailure(owner)
+		pc.RecordPeerErrorReason(peerStatusReason(resp.StatusCode))
 		pc.PeerErrors.Add(1)
 		return nil, 0, false
 	}
@@ -356,12 +364,14 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	body, err := readPeerBodyLimited(resp.Body, maxPeerResponseBytes)
 	if err != nil {
 		pc.recordPeerFailure(owner)
+		pc.RecordPeerErrorReason("body_read")
 		pc.PeerErrors.Add(1)
 		return nil, 0, false
 	}
 	body, err = decodePeerResponseBody(resp.Header.Get("Content-Encoding"), body, maxPeerDecodedBodyBytes)
 	if err != nil {
 		pc.recordPeerFailure(owner)
+		pc.RecordPeerErrorReason("decode")
 		pc.PeerErrors.Add(1)
 		return nil, 0, false
 	}
@@ -946,6 +956,14 @@ func (pc *PeerCache) WriteThroughEnabled() bool {
 	return pc != nil && pc.writeThrough
 }
 
+// RequestTimeout reports the timeout used for peer-cache HTTP fetches.
+func (pc *PeerCache) RequestTimeout() time.Duration {
+	if pc == nil || pc.client == nil {
+		return 0
+	}
+	return pc.client.Timeout
+}
+
 // Close stops the discovery loop.
 func (pc *PeerCache) Close() {
 	select {
@@ -958,19 +976,51 @@ func (pc *PeerCache) Close() {
 // Stats returns peer cache statistics.
 func (pc *PeerCache) Stats() map[string]interface{} {
 	return map[string]interface{}{
-		"peers":             pc.PeerCount(),
-		"peer_hits":         pc.PeerHits.Load(),
-		"peer_misses":       pc.PeerMisses.Load(),
-		"peer_errors":       pc.PeerErrors.Load(),
-		"wt_pushes":         pc.WTPushes.Load(),
-		"wt_errors":         pc.WTErrors.Load(),
-		"ra_hot_requests":   pc.RAHotReq.Load(),
-		"ra_hot_errors":     pc.RAHotErr.Load(),
-		"ra_prefetches":     pc.RAPrefetch.Load(),
-		"ra_prefetch_bytes": pc.RABytes.Load(),
-		"ra_budget_drops":   pc.RABudget.Load(),
-		"ra_tenant_skips":   pc.RATenant.Load(),
+		"peers":              pc.PeerCount(),
+		"peer_hits":          pc.PeerHits.Load(),
+		"peer_misses":        pc.PeerMisses.Load(),
+		"peer_errors":        pc.PeerErrors.Load(),
+		"peer_error_reasons": pc.PeerErrorReasons(),
+		"wt_pushes":          pc.WTPushes.Load(),
+		"wt_errors":          pc.WTErrors.Load(),
+		"ra_hot_requests":    pc.RAHotReq.Load(),
+		"ra_hot_errors":      pc.RAHotErr.Load(),
+		"ra_prefetches":      pc.RAPrefetch.Load(),
+		"ra_prefetch_bytes":  pc.RABytes.Load(),
+		"ra_budget_drops":    pc.RABudget.Load(),
+		"ra_tenant_skips":    pc.RATenant.Load(),
 	}
+}
+
+// RecordPeerErrorReason increments a low-cardinality peer fetch failure reason.
+func (pc *PeerCache) RecordPeerErrorReason(reason string) {
+	reason = strings.TrimSpace(reason)
+	if pc == nil || reason == "" {
+		return
+	}
+	counter, _ := pc.peerErrorReasons.LoadOrStore(reason, &atomic.Int64{})
+	counter.(*atomic.Int64).Add(1)
+}
+
+// PeerErrorReasons returns a stable snapshot of peer fetch failure reasons.
+func (pc *PeerCache) PeerErrorReasons() map[string]int64 {
+	if pc == nil {
+		return nil
+	}
+	out := map[string]int64{}
+	pc.peerErrorReasons.Range(func(key, value any) bool {
+		reason, ok := key.(string)
+		if !ok || reason == "" {
+			return true
+		}
+		counter, ok := value.(*atomic.Int64)
+		if !ok {
+			return true
+		}
+		out[reason] = counter.Load()
+		return true
+	})
+	return out
 }
 
 // MetricsJSON returns stats as JSON bytes.
@@ -990,6 +1040,24 @@ func (pc *PeerCache) updatePeers(peers []string) {
 		pc.ring.add(p)
 	}
 	pc.log.Info("peer cache updated", "peers", len(peers), "self", pc.selfAddr)
+}
+
+func classifyPeerFetchError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timeout"
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return "timeout"
+	}
+	return "transport"
+}
+
+func peerStatusReason(statusCode int) string {
+	return "status_" + strconv.Itoa(statusCode)
 }
 
 func (pc *PeerCache) discoveryLoop() {

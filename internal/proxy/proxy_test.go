@@ -1701,6 +1701,75 @@ func TestContract_Patterns_FillsSamplesAcrossRelativeNowRange(t *testing.T) {
 	}
 }
 
+func TestContract_Patterns_DenseShortRangeAvoidsFortyMinuteSamplingGaps(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("expected dense patterns to query /select/logsql/query, got %s", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		endNs, err := strconv.ParseInt(r.FormValue("end"), 10, 64)
+		if err != nil {
+			t.Fatalf("parse window end: %v", err)
+		}
+		ts := time.Unix(0, endNs).Add(-time.Second).UTC().Format(time.RFC3339)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		_, _ = fmt.Fprintf(w, `{"_time":"%s","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}`+"\n", ts)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	p.backendSupportsDensePatternWindowing = true
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=2026-04-04T10:00:00Z&end=2026-04-04T13:00:00Z&step=90s&limit=1",
+		nil,
+	)
+	req = req.WithContext(context.WithValue(req.Context(), requestGrafanaClientKey, grafanaClientProfile{
+		surface:      "grafana_drilldown",
+		runtimeMajor: 12,
+	}))
+	p.handlePatterns(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp patternsResponse
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected one pattern, got %+v", resp.Data)
+	}
+
+	nonZeroBuckets := 0
+	lastNonZeroTS := int64(-1)
+	maxGap := int64(0)
+	for _, sample := range resp.Data[0].Samples {
+		if len(sample) < 2 {
+			continue
+		}
+		ts, okTS := numberToInt64(sample[0])
+		count, okCount := numberToInt(sample[1])
+		if !okTS || !okCount || count <= 0 {
+			continue
+		}
+		nonZeroBuckets++
+		if lastNonZeroTS >= 0 && ts-lastNonZeroTS > maxGap {
+			maxGap = ts - lastNonZeroTS
+		}
+		lastNonZeroTS = ts
+	}
+	if nonZeroBuckets < 20 {
+		t.Fatalf("expected dense short-range sampling to populate many non-zero buckets, got %d from %+v", nonZeroBuckets, resp.Data[0].Samples)
+	}
+	if maxGap > int64((10*time.Minute)/time.Second) {
+		t.Fatalf("expected dense short-range sampling gaps <=10m, got max gap %ds", maxGap)
+	}
+}
+
 func TestContract_Patterns_FillCoarsensHugePointRanges(t *testing.T) {
 	entries := []patternResultEntry{
 		{
@@ -2146,6 +2215,27 @@ func TestPatternWindowedSamplingConfig_DenseIgnoresStepInflationAndCapsFanout(t 
 	}
 	if perWindowA < 200 {
 		t.Fatalf("expected dense mode per-window lower bound >=200, got %d", perWindowA)
+	}
+}
+
+func TestPatternWindowedSamplingConfig_DenseShortRangeUsesStepToIncreaseFanout(t *testing.T) {
+	start := strconv.FormatInt(0, 10)
+	end := strconv.FormatInt(int64((3*time.Hour)/time.Second), 10)
+
+	_, _, interval, perWindow, ok := patternWindowedSamplingConfig(start, end, "90s", 2420, true)
+	if !ok {
+		t.Fatal("expected dense windowed config for short 3h range")
+	}
+	span := 3 * time.Hour
+	windowCount := int(span/interval) + 1
+	if windowCount < 20 {
+		t.Fatalf("expected short dense range to fan out beyond coarse 45m windows, got %d windows", windowCount)
+	}
+	if windowCount > 96 {
+		t.Fatalf("expected short dense range fanout capped at 96 windows, got %d", windowCount)
+	}
+	if perWindow < 200 {
+		t.Fatalf("expected short dense per-window lower bound >=200, got %d", perWindow)
 	}
 }
 

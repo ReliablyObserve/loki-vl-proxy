@@ -21,6 +21,7 @@ func TestMetricsRoute_ExportsPeerCacheMetrics(t *testing.T) {
 	pc.PeerHits.Add(3)
 	pc.PeerMisses.Add(2)
 	pc.PeerErrors.Add(1)
+	pc.RecordPeerErrorReason("timeout")
 
 	p, err := New(Config{
 		BackendURL: "http://unused",
@@ -49,6 +50,7 @@ func TestMetricsRoute_ExportsPeerCacheMetrics(t *testing.T) {
 		"loki_vl_proxy_peer_cache_hits_total 3",
 		"loki_vl_proxy_peer_cache_misses_total 2",
 		"loki_vl_proxy_peer_cache_errors_total 1",
+		"loki_vl_proxy_peer_cache_error_reason_total{reason=\"timeout\"} 1",
 	} {
 		if !strings.Contains(body, metric) {
 			t.Fatalf("expected %q in metrics output\nbody:\n%s", metric, body)

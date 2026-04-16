@@ -144,6 +144,7 @@ type proxyRuntimeConfig struct {
 	peerDiscovery                       string
 	peerDNS                             string
 	peerStatic                          string
+	peerTimeout                         time.Duration
 	peerAuthToken                       string
 	peerWriteThrough                    bool
 	peerWriteThroughMinTTL              time.Duration
@@ -462,6 +463,7 @@ func run(
 	peerDiscovery := fs.String("peer-discovery", "", `Peer discovery: "dns" (headless service) or "static" (comma-separated)`)
 	peerDNS := fs.String("peer-dns", "", `Headless service DNS name for peer discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
 	peerStatic := fs.String("peer-static", "", `Static peer list (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
+	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
 	peerWriteThroughMinTTL := fs.Duration("peer-write-through-min-ttl", 30*time.Second, "Minimum TTL eligible for peer owner write-through pushes")
@@ -641,6 +643,7 @@ func run(
 			peerDiscovery:                       *peerDiscovery,
 			peerDNS:                             *peerDNS,
 			peerStatic:                          *peerStatic,
+			peerTimeout:                         *peerTimeout,
 			peerAuthToken:                       *peerAuthToken,
 			peerWriteThrough:                    *peerWriteThrough,
 			peerWriteThroughMinTTL:              *peerWriteThroughMinTTL,
@@ -1357,6 +1360,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			DNSName:                  cfg.peerDNS,
 			StaticPeers:              cfg.peerStatic,
 			Port:                     3100,
+			Timeout:                  cfg.peerTimeout,
 			AuthToken:                cfg.peerAuthToken,
 			WriteThrough:             cfg.peerWriteThrough,
 			WriteThroughMinTTL:       cfg.peerWriteThroughMinTTL,

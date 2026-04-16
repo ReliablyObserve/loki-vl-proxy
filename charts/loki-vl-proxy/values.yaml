@@ -107,6 +107,7 @@ extraArgs:
   # - route-aware policy in the proxy raises thresholds for metadata/control paths
   response-compression: "gzip"
   response-compression-min-bytes: "1024"
+  peer-timeout: "2s"
   peer-write-through: "true"
   peer-write-through-min-ttl: "30s"
   log-level: "info"
@@ -221,6 +222,7 @@ extraArgs:
   # alerts-backend: ""                          # optional /alerts passthrough backend
   # extra-label-fields: "service.name,host.name"
   # peer-auth-token: ""                         # token required for /_cache/get and /_cache/set peer calls
+  # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
   # peer-write-through: "true"                  # push eligible non-owner writes to owner peer
   # peer-write-through-min-ttl: "30s"           # only TTL >= threshold is pushed to owner peer
   # peer-hot-read-ahead-enabled: "false"        # bounded periodic prefetch from peer hot indexes

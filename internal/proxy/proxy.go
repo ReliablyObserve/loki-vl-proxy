@@ -530,7 +530,7 @@ const (
 	maxQueryLength = 65536 // 64KB
 	// maxLimitValue caps the number of results per query.
 	maxLimitValue                     = 10000
-	maxZeroFillBuckets                = 10000
+	maxZeroFillBuckets                = 32768
 	maxPatternBackendQueryLimit       = 20000
 	maxUserDrivenSlicePrealloc        = 512
 	tailWriteTimeout                  = 2 * time.Second
@@ -1973,6 +1973,7 @@ func (p *Proxy) peerCacheMetrics() string {
 	hits, _ := stats["peer_hits"].(int64)
 	misses, _ := stats["peer_misses"].(int64)
 	errors, _ := stats["peer_errors"].(int64)
+	errorReasons, _ := stats["peer_error_reasons"].(map[string]int64)
 	wtPushes, _ := stats["wt_pushes"].(int64)
 	wtErrors, _ := stats["wt_errors"].(int64)
 	raHotRequests, _ := stats["ra_hot_requests"].(int64)
@@ -1982,6 +1983,19 @@ func (p *Proxy) peerCacheMetrics() string {
 	raBudgetDrops, _ := stats["ra_budget_drops"].(int64)
 	raTenantSkips, _ := stats["ra_tenant_skips"].(int64)
 	clusterMembers := len(p.peerCache.Peers())
+	var reasonLines strings.Builder
+	if len(errorReasons) > 0 {
+		reasons := make([]string, 0, len(errorReasons))
+		for reason := range errorReasons {
+			reasons = append(reasons, reason)
+		}
+		sort.Strings(reasons)
+		reasonLines.WriteString("# HELP loki_vl_proxy_peer_cache_error_reason_total Peer-cache fetch errors by reason.\n")
+		reasonLines.WriteString("# TYPE loki_vl_proxy_peer_cache_error_reason_total counter\n")
+		for _, reason := range reasons {
+			fmt.Fprintf(&reasonLines, "loki_vl_proxy_peer_cache_error_reason_total{reason=%q} %d\n", reason, errorReasons[reason])
+		}
+	}
 
 	return fmt.Sprintf(
 		"# HELP loki_vl_proxy_peer_cache_peers Number of remote peers currently in the fleet cache ring.\n"+
@@ -1999,6 +2013,7 @@ func (p *Proxy) peerCacheMetrics() string {
 			"# HELP loki_vl_proxy_peer_cache_errors_total Peer-cache fetch errors.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_errors_total counter\n"+
 			"loki_vl_proxy_peer_cache_errors_total %d\n"+
+			"%s"+
 			"# HELP loki_vl_proxy_peer_cache_write_through_pushes_total Successful owner write-through pushes from non-owner peers.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_write_through_pushes_total counter\n"+
 			"loki_vl_proxy_peer_cache_write_through_pushes_total %d\n"+
@@ -2023,7 +2038,7 @@ func (p *Proxy) peerCacheMetrics() string {
 			"# HELP loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total Hot read-ahead candidates skipped by tenant fairness pass.\n"+
 			"# TYPE loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total counter\n"+
 			"loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total %d\n",
-		remotePeers, clusterMembers, hits, misses, errors, wtPushes, wtErrors, raHotRequests, raHotErrors, raPrefetches, raPrefetchBytes, raBudgetDrops, raTenantSkips,
+		remotePeers, clusterMembers, hits, misses, errors, reasonLines.String(), wtPushes, wtErrors, raHotRequests, raHotErrors, raPrefetches, raPrefetchBytes, raBudgetDrops, raTenantSkips,
 	)
 }
 
@@ -5291,6 +5306,8 @@ func patternWindowedSamplingConfig(startParam, endParam, stepParam string, sourc
 	minWindowSourceLimit := 200
 	maxWindowSourceLimit := 1_000
 	maxPatternWindowSamples := 96
+	shortDenseSpanThreshold := 6 * time.Hour
+	shortDenseWindowCap := 96
 	if denseWindowing {
 		// Dense ranges can otherwise explode into hundreds of windows and produce
 		// short/unstable tails under backend pressure. Keep fanout bounded.
@@ -5309,8 +5326,21 @@ func patternWindowedSamplingConfig(startParam, endParam, stepParam string, sourc
 	}
 
 	windowCount := int(span/targetWindowSpan) + 1
+	stepSeconds := parsePatternStepSeconds(stepParam)
+	if denseWindowing && stepSeconds > 0 && span <= shortDenseSpanThreshold {
+		stepNs := stepSeconds * int64(time.Second)
+		if stepNs > 0 {
+			stepBasedCount := int(((endNs - startNs) / stepNs) + 1)
+			if stepBasedCount > windowCount {
+				windowCount = stepBasedCount
+			}
+		}
+		if windowCount > shortDenseWindowCap {
+			windowCount = shortDenseWindowCap
+		}
+	}
 	if !denseWindowing {
-		if stepSeconds := parsePatternStepSeconds(stepParam); stepSeconds > 0 {
+		if stepSeconds > 0 {
 			stepNs := stepSeconds * int64(time.Second)
 			if stepNs > 0 {
 				stepBasedCount := int(((endNs - startNs) / stepNs) + 1)

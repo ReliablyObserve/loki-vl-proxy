@@ -300,6 +300,44 @@ func TestGap_VolumeRange_AcceptsFromToParams(t *testing.T) {
 	}
 }
 
+func TestGap_VolumeRange_FillsSevenDayMinuteRangePastLegacyBucketCap(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"hits": []map[string]interface{}{
+				{
+					"fields":     map[string]string{"app": "nginx"},
+					"timestamps": []string{"2026-04-16T00:00:00Z"},
+					"values":     []int{7},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&start=2026-04-09T00:00:00Z&end=2026-04-16T00:00:00Z&step=60", nil)
+	p.handleVolumeRange(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := resp["data"].(map[string]interface{})
+	result := data["result"].([]interface{})
+	if len(result) != 1 {
+		t.Fatalf("expected single series, got %d", len(result))
+	}
+	entry := result[0].(map[string]interface{})
+	values := entry["values"].([]interface{})
+	if len(values) != 10081 {
+		t.Fatalf("expected fully filled 7d minute range with 10081 buckets, got %d", len(values))
+	}
+	first := values[0].([]interface{})
+	last := values[len(values)-1].([]interface{})
+	if first[1] != "0" || last[1] != "7" {
+		t.Fatalf("expected zero-filled leading buckets and retained trailing hit, got first=%v last=%v", first, last)
+	}
+}
+
 // =============================================================================
 // Gap #4: /loki/api/v1/detected_field/{name}/values — missing endpoint
 // Loki response: {"values":["debug","info","warn","error"],"limit":1000}

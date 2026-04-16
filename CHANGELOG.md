@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- peer-cache/metrics: add configurable peer fetch timeout wiring (`peer-timeout`) and per-reason peer fetch error counters so peer cache failures are no longer a single opaque `errors_total` bucket.
+
+### Bug Fixes
+
+- drilldown: keep 7-day minute `volume_range` requests zero-filled beyond the old 10k-bucket ceiling, and make dense short-range patterns fan out enough to avoid the “one visible burst every ~40 minutes” sampling shape.
+
 ## [1.4.1] - 2026-04-16
 
 ### Bug Fixes

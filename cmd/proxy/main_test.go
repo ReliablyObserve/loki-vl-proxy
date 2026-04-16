@@ -946,6 +946,7 @@ func TestBuildProxyConfig(t *testing.T) {
 		peerSelf:                        "10.0.0.1:3100",
 		peerDiscovery:                   "static",
 		peerStatic:                      "10.0.0.2:3100,10.0.0.3:3100",
+		peerTimeout:                     7 * time.Second,
 		peerAuthToken:                   "peer-secret",
 	}
 
@@ -1079,6 +1080,9 @@ func TestBuildProxyConfig(t *testing.T) {
 	}
 	if got.PeerAuthToken != "peer-secret" {
 		t.Fatalf("unexpected peer auth token: %q", got.PeerAuthToken)
+	}
+	if got.PeerCache.RequestTimeout() != 7*time.Second {
+		t.Fatalf("unexpected peer cache timeout: %s", got.PeerCache.RequestTimeout())
 	}
 }
 
