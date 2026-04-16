@@ -7448,17 +7448,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	params := url.Values{}
-	params.Set("query", logsqlQuery)
-	if s := r.FormValue("start"); s != "" {
-		params.Set("start", formatVLTimestamp(s))
-	}
-	if e := r.FormValue("end"); e != "" {
-		params.Set("end", formatVLTimestamp(e))
-	}
-	if step := r.FormValue("step"); step != "" {
-		params.Set("step", formatVLStep(step))
-	}
+	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 	if err != nil {
@@ -7474,6 +7464,8 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		p.writeError(w, resp.StatusCode, string(body))
 		return
 	}
+
+	body = trimStatsQueryRangeResponseToEnd(body, r.FormValue("end"))
 
 	// VL stats_query_range returns Prometheus-compatible format.
 	// Just wrap it in Loki's envelope.
@@ -7538,12 +7530,12 @@ func (p *Proxy) fetchStatsQueryRangeWindow(ctx context.Context, r *http.Request,
 	defer cancel()
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery)
-	params.Set("start", strconv.FormatInt(window.startNs, 10))
-	params.Set("end", strconv.FormatInt(window.endNs, 10))
-	if step := r.FormValue("step"); step != "" {
-		params.Set("step", formatVLStep(step))
-	}
+	params = buildStatsQueryRangeParams(
+		logsqlQuery,
+		strconv.FormatInt(window.startNs, 10),
+		strconv.FormatInt(window.endNs, 10),
+		r.FormValue("step"),
+	)
 
 	for attempt := 1; attempt <= queryRangeWindowFetchAttempts; attempt++ {
 		fetchStart := time.Now()
@@ -7557,6 +7549,7 @@ func (p *Proxy) fetchStatsQueryRangeWindow(ctx context.Context, r *http.Request,
 			if readErr != nil {
 				err = readErr
 			} else if resp.StatusCode < http.StatusBadRequest {
+				body = trimStatsQueryRangeResponseToEnd(body, strconv.FormatInt(window.endNs, 10))
 				p.observeQueryRangeWindowFetch(fetchDuration, false)
 				return body, nil
 			} else {
@@ -7683,6 +7676,83 @@ func cloneStatsQueryRangePoint(point []interface{}) []interface{} {
 	return cloned
 }
 
+func buildStatsQueryRangeParams(logsqlQuery, startRaw, endRaw, stepRaw string) url.Values {
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	if s := strings.TrimSpace(startRaw); s != "" {
+		params.Set("start", formatVLTimestamp(s))
+	}
+	if e := strings.TrimSpace(endRaw); e != "" {
+		if extendedEnd, ok := extendStatsQueryRangeEnd(e, stepRaw); ok {
+			params.Set("end", extendedEnd)
+		} else {
+			params.Set("end", formatVLTimestamp(e))
+		}
+	}
+	if step := strings.TrimSpace(stepRaw); step != "" {
+		params.Set("step", formatVLStep(step))
+	}
+	return params
+}
+
+func extendStatsQueryRangeEnd(endRaw, stepRaw string) (string, bool) {
+	endNs, ok := parseLokiTimeToUnixNano(endRaw)
+	if !ok {
+		return "", false
+	}
+	stepDur, ok := parsePositiveStepDuration(stepRaw)
+	if !ok || stepDur <= 0 {
+		return "", false
+	}
+	return strconv.FormatInt(endNs+stepDur.Nanoseconds(), 10), true
+}
+
+func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
+	endNs, ok := parseLokiTimeToUnixNano(endRaw)
+	if !ok {
+		return body
+	}
+
+	var resp statsQueryRangeResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return body
+	}
+
+	results := resp.Results
+	target := &resp.Results
+	if len(results) == 0 {
+		results = resp.Data.Result
+		target = &resp.Data.Result
+	}
+	if len(results) == 0 {
+		return body
+	}
+
+	changed := false
+	trimmed := make([]statsQueryRangeSeries, 0, len(results))
+	for _, series := range results {
+		filtered := make([][]interface{}, 0, len(series.Values))
+		for _, point := range series.Values {
+			if statsQueryRangePointUnixNano(point) <= endNs {
+				filtered = append(filtered, point)
+				continue
+			}
+			changed = true
+		}
+		series.Values = filtered
+		trimmed = append(trimmed, series)
+	}
+	if !changed {
+		return body
+	}
+	*target = trimmed
+	encoded, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return encoded
+}
+
 func statsQueryRangePointKey(point []interface{}) string {
 	if len(point) == 0 {
 		return ""
@@ -7714,6 +7784,33 @@ func statsQueryRangePointTimestamp(point []interface{}) float64 {
 	default:
 		return 0
 	}
+}
+
+func statsQueryRangePointUnixNano(point []interface{}) int64 {
+	if len(point) == 0 {
+		return 0
+	}
+	switch ts := point[0].(type) {
+	case float64:
+		return normalizeLokiNumericTimeToUnixNano(ts)
+	case float32:
+		return normalizeLokiNumericTimeToUnixNano(float64(ts))
+	case int:
+		return normalizeLokiIntTimeToUnixNano(int64(ts))
+	case int64:
+		return normalizeLokiIntTimeToUnixNano(ts)
+	case int32:
+		return normalizeLokiIntTimeToUnixNano(int64(ts))
+	case json.Number:
+		if value, err := ts.Float64(); err == nil {
+			return normalizeLokiNumericTimeToUnixNano(value)
+		}
+	case string:
+		if value, ok := parseLokiTimeToUnixNano(ts); ok {
+			return value
+		}
+	}
+	return 0
 }
 
 func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQuery string) {

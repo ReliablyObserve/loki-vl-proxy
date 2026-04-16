@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -156,6 +157,94 @@ func TestDrilldown_LongRangeVolume_SplitQueriesStayDense(t *testing.T) {
 	for _, want := range []string{"info", "error"} {
 		if !seenLevels[want] {
 			t.Fatalf("expected long-range volume result to include detected_level=%s, got %v", want, seenLevels)
+		}
+	}
+}
+
+func TestDrilldown_LongRangeVolume_GrafanaStyleSplitQueriesStayDense(t *testing.T) {
+	ensureDataIngested(t)
+	waitForReady(t, proxyURL+"/ready", 30*time.Second)
+
+	cfg := longRangeDrilldownSeedConfig{
+		rangeWindow:             48 * time.Hour,
+		step:                    5 * time.Minute,
+		patternCount:            6,
+		repeatsPerPatternBucket: 4,
+		batchSize:               4000,
+	}
+	serviceName := longRangeServiceName(longRangeVolumeService)
+	start := time.Now().UTC().Add(-cfg.rangeWindow).Truncate(cfg.step)
+	end := start.Add(cfg.rangeWindow)
+	seedLongRangeDrilldownServiceData(t, serviceName, start, end, cfg)
+	waitForDrilldownServiceVisible(t, serviceName, start, end)
+
+	queryStep := time.Hour
+	expr := fmt.Sprintf(`sum by (detected_level) (count_over_time({service_name="%s"}[1h]))`, serviceName)
+
+	type splitWindow struct {
+		start time.Time
+		end   time.Time
+	}
+
+	windows := make([]splitWindow, 0, 3)
+	for chunkStart := start; !chunkStart.After(end); {
+		chunkEnd := chunkStart.Add(23 * queryStep)
+		if chunkEnd.After(end) {
+			chunkEnd = end
+		}
+		windows = append(windows, splitWindow{start: chunkStart, end: chunkEnd})
+		if !chunkEnd.Before(end) {
+			break
+		}
+		chunkStart = chunkEnd.Add(queryStep)
+	}
+	if len(windows) < 2 {
+		t.Fatalf("expected multi-window long-range split, got %#v", windows)
+	}
+
+	merged := map[string][]int64{}
+	for _, window := range windows {
+		windowResult := queryRangeMatrixResult(t, expr, window.start, window.end, queryStep)
+		for _, item := range windowResult {
+			series, _ := item.(map[string]interface{})
+			metric, _ := series["metric"].(map[string]interface{})
+			level, _ := metric["detected_level"].(string)
+			values, _ := series["values"].([]interface{})
+			for _, raw := range values {
+				pair, _ := raw.([]interface{})
+				if len(pair) != 2 {
+					t.Fatalf("expected [ts,value] pair for split volume series, got %v", raw)
+				}
+				ts, ok := denseSampleTs(pair[0])
+				if !ok {
+					t.Fatalf("expected numeric timestamp for detected_level=%s, got %T", level, pair[0])
+				}
+				merged[level] = append(merged[level], ts)
+			}
+		}
+	}
+
+	startBucket, endBucket, expectedBuckets := denseExpectedBuckets(start, end, queryStep)
+	minPoints := expectedBuckets - 1
+	for _, level := range []string{"info", "error"} {
+		series := merged[level]
+		if len(series) < minPoints {
+			t.Fatalf("expected dense merged split coverage for detected_level=%s, got %d/%d points", level, len(series), expectedBuckets)
+		}
+		series = uniqueSortedInt64s(series)
+		if len(series) < minPoints {
+			t.Fatalf("expected dense unique split coverage for detected_level=%s, got %d/%d points", level, len(series), expectedBuckets)
+		}
+		if series[0] > startBucket+(2*int64(queryStep/time.Second)) {
+			t.Fatalf("expected early split coverage for detected_level=%s, first_ts=%d start_bucket=%d", level, series[0], startBucket)
+		}
+		for i := 1; i < len(series); i++ {
+			if gap := series[i] - series[i-1]; gap > int64(queryStep/time.Second) {
+				t.Fatalf("expected contiguous merged split buckets for detected_level=%s, prev=%d current=%d gap=%d", level, series[i-1], series[i], gap)
+			}
+		}
+		if series[len(series)-1] < endBucket-(2*int64(queryStep/time.Second)) {
+			t.Fatalf("expected late split coverage for detected_level=%s, last_ts=%d end_bucket=%d", level, series[len(series)-1], endBucket)
 		}
 	}
 }
@@ -320,4 +409,19 @@ func queryRangeMatrixResult(t *testing.T, expr string, start, end time.Time, ste
 		t.Fatalf("expected query_range matrix result for %q, got %v", expr, resp)
 	}
 	return result
+}
+
+func uniqueSortedInt64s(values []int64) []int64 {
+	if len(values) == 0 {
+		return nil
+	}
+	sorted := append([]int64(nil), values...)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+	out := sorted[:1]
+	for _, value := range sorted[1:] {
+		if value != out[len(out)-1] {
+			out = append(out, value)
+		}
+	}
+	return out
 }

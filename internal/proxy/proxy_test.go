@@ -545,6 +545,76 @@ func TestContract_QueryRange_MatrixFormat_SplitsLongRangeStatsQueries(t *testing
 	}
 }
 
+func TestContract_QueryRange_MatrixFormat_ExtendsBackendEndByStepAndTrimsExtraPoint(t *testing.T) {
+	var receivedEnd string
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		receivedEnd = r.FormValue("end")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"resultType": "matrix",
+				"result": []map[string]interface{}{
+					{
+						"metric": map[string]string{"app": "nginx"},
+						"values": [][]interface{}{
+							{1705312200, "1"},
+							{1705312260, "2"},
+							{1705312320, "3"},
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	resp := doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query=rate(%7Bapp%3D%22nginx%22%7D%5B5m%5D)&start=1705312200&end=1705312260&step=60")
+	assertLokiSuccess(t, resp)
+
+	expectedEnd := strconv.FormatInt((1705312260+60)*int64(time.Second), 10)
+	if receivedEnd != expectedEnd {
+		t.Fatalf("expected compensated backend end %q, got %q", expectedEnd, receivedEnd)
+	}
+
+	data, ok := resp["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected Loki data object, got %#v", resp["data"])
+	}
+	result, ok := data["result"].([]interface{})
+	if !ok || len(result) != 1 {
+		t.Fatalf("expected single series, got %#v", data["result"])
+	}
+	series, ok := result[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected series object, got %#v", result[0])
+	}
+	values, ok := series["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array, got %#v", series["values"])
+	}
+	if len(values) != 2 {
+		t.Fatalf("expected proxy to trim extra backend point, got %#v", values)
+	}
+	lastPair, ok := values[len(values)-1].([]interface{})
+	if !ok {
+		t.Fatalf("expected [ts,value] pair, got %#v", values[len(values)-1])
+	}
+	lastTS, ok := lastPair[0].(float64)
+	if !ok {
+		t.Fatalf("expected numeric timestamp, got %T", lastPair[0])
+	}
+	if int64(lastTS) != 1705312260 {
+		t.Fatalf("expected last timestamp to stay at requested end, got %v", lastPair)
+	}
+}
+
 // --- /loki/api/v1/query (instant) ---
 
 func TestContract_Query_ResponseFormat(t *testing.T) {

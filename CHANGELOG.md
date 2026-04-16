@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- drilldown/volume: compensate split `stats_query_range` metric windows by extending backend end timestamps by one step and trimming the extra point back to the requested range, so 2-day Explore and Drilldown volume queries stay dense across 24h boundaries.
+
 ## [1.4.5] - 2026-04-16
 
 ### Bug Fixes
