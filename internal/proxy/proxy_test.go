@@ -2543,6 +2543,24 @@ func TestTranslation_JSONParser(t *testing.T) {
 	}
 }
 
+func TestTranslation_DrilldownPatternQueryForwarded(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Write([]byte{})
+	}))
+	defer vlBackend.Close()
+
+	logql := `{app="web"} |> ` + "`" + `GET <_> 500` + "`" + ` | pattern ` + "`" + `GET <field_1> 500` + "`" + ` | keep field_1 | line_format ""`
+	doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query="+url.QueryEscape(logql)+"&start=1&end=2&limit=10")
+
+	want := `app:=web ~"GET .* 500" | extract ` + "`" + `GET <field_1> 500` + "`" + ` | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
+	if receivedQuery != want {
+		t.Fatalf("expected translated drilldown pattern query,\n got: %q\nwant: %q", receivedQuery, want)
+	}
+}
+
 func TestTranslation_DottedLabelFilterTripletForwarded(t *testing.T) {
 	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

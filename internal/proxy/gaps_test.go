@@ -137,6 +137,34 @@ func TestGap_Volume_QueriesVLHits(t *testing.T) {
 	}
 }
 
+func TestGap_Volume_AcceptsFromToParams(t *testing.T) {
+	var receivedStart string
+	var receivedEnd string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedStart = r.URL.Query().Get("start")
+		receivedEnd = r.URL.Query().Get("end")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"hits": []map[string]interface{}{
+				{
+					"fields":     map[string]string{"app": "nginx"},
+					"timestamps": []int64{1705312200000},
+					"values":     []int{100},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7B%7D&from=1705312200000000000&to=1705312800000000000", nil)
+	p.handleVolume(w, r)
+
+	if receivedStart == "" || receivedEnd == "" {
+		t.Fatalf("expected from/to params to be forwarded as start/end, got start=%q end=%q", receivedStart, receivedEnd)
+	}
+}
+
 // =============================================================================
 // Gap #3: /loki/api/v1/index/volume_range — real via VL hits with step
 // Loki response: {"status":"success","data":{"resultType":"matrix","result":[...]}}
@@ -226,6 +254,49 @@ func TestGap_VolumeRange_FillsMissingBucketsAcrossRequestedRange(t *testing.T) {
 	fourth := values[3].([]interface{})
 	if second[1] != "0" || fourth[1] != "0" {
 		t.Fatalf("expected zero-filled missing buckets, got values=%v", values)
+	}
+}
+
+func TestGap_VolumeRange_AcceptsFromToParams(t *testing.T) {
+	var receivedStart string
+	var receivedEnd string
+	var receivedStep string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedStart = r.URL.Query().Get("start")
+		receivedEnd = r.URL.Query().Get("end")
+		receivedStep = r.URL.Query().Get("step")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"hits": []map[string]interface{}{
+				{
+					"fields":     map[string]string{"app": "nginx"},
+					"timestamps": []string{"2024-01-15T10:30:00Z", "2024-01-15T10:32:00Z"},
+					"values":     []int{100, 80},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&from=2024-01-15T10:30:00Z&to=2024-01-15T10:33:00Z&step=60", nil)
+	p.handleVolumeRange(w, r)
+
+	if receivedStart == "" || receivedEnd == "" {
+		t.Fatalf("expected from/to params to be forwarded as start/end, got start=%q end=%q", receivedStart, receivedEnd)
+	}
+	if receivedStep != "60s" {
+		t.Fatalf("expected step=60s forwarded, got %q", receivedStep)
+	}
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := resp["data"].(map[string]interface{})
+	result := data["result"].([]interface{})
+	entry := result[0].(map[string]interface{})
+	values := entry["values"].([]interface{})
+	if len(values) != 4 {
+		t.Fatalf("expected 4 filled buckets from from/to range, got %d", len(values))
 	}
 }
 

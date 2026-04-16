@@ -4462,6 +4462,10 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	}
 	r = withOrgID(r)
 	orgID := r.Header.Get("X-Scope-OrgID")
+	query := r.FormValue("query")
+	startParam := strings.TrimSpace(firstNonEmpty(r.FormValue("start"), r.FormValue("from")))
+	endParam := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
+	targetLabels := r.FormValue("targetLabels")
 	cacheKey := "volume:" + orgID + ":" + r.URL.RawQuery
 	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
 		if !p.shouldBypassRecentTailCache("volume", remaining, r) {
@@ -4470,14 +4474,14 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 			p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
 			p.metrics.RecordCacheHit()
 			if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume"]) {
-				p.refreshVolumeCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("targetLabels"))
+				p.refreshVolumeCacheAsync(orgID, cacheKey, query, startParam, endParam, targetLabels)
 			}
 			return
 		}
 	}
 	p.metrics.RecordCacheMiss()
 
-	result, err := p.computeVolumeResult(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("targetLabels"))
+	result, err := p.computeVolumeResult(r.Context(), query, startParam, endParam, targetLabels)
 	if err != nil {
 		result = map[string]interface{}{
 			"status": "success",
@@ -4567,6 +4571,11 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	}
 	r = withOrgID(r)
 	orgID := r.Header.Get("X-Scope-OrgID")
+	query := r.FormValue("query")
+	startParam := strings.TrimSpace(firstNonEmpty(r.FormValue("start"), r.FormValue("from")))
+	endParam := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
+	stepParam := r.FormValue("step")
+	targetLabels := r.FormValue("targetLabels")
 	cacheKey := "volume_range:" + orgID + ":" + r.URL.RawQuery
 	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
 		if !p.shouldBypassRecentTailCache("volume_range", remaining, r) {
@@ -4575,14 +4584,14 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 			p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
 			p.metrics.RecordCacheHit()
 			if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume_range"]) {
-				p.refreshVolumeRangeCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"), r.FormValue("targetLabels"))
+				p.refreshVolumeRangeCacheAsync(orgID, cacheKey, query, startParam, endParam, stepParam, targetLabels)
 			}
 			return
 		}
 	}
 	p.metrics.RecordCacheMiss()
 
-	result, err := p.computeVolumeRangeResult(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"), r.FormValue("targetLabels"))
+	result, err := p.computeVolumeRangeResult(r.Context(), query, startParam, endParam, stepParam, targetLabels)
 	if err != nil {
 		result = map[string]interface{}{
 			"status": "success",
