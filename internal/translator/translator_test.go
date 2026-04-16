@@ -62,6 +62,21 @@ func TestTranslateLogQL(t *testing.T) {
 			want:  `app:=nginx NOT ~"debug.*"`,
 		},
 		{
+			name:  "pattern line filter",
+			logql: `{app="nginx"} |> "test <_> pattern"`,
+			want:  `app:=nginx ~"test .* pattern"`,
+		},
+		{
+			name:  "negative pattern line filter",
+			logql: `{app="nginx"} !> "test <_> pattern"`,
+			want:  `app:=nginx NOT ~"test .* pattern"`,
+		},
+		{
+			name:  "pattern line filter with alternation",
+			logql: `{app="nginx"} |> "test <_> pattern" or "other <_> value"`,
+			want:  `app:=nginx ~"(?:test .* pattern)|(?:other .* value)"`,
+		},
+		{
 			name:  "json parser",
 			logql: `{app="nginx"} | json`,
 			want:  `app:=nginx | unpack_json`,
@@ -178,6 +193,11 @@ func TestTranslateLogQL(t *testing.T) {
 			name:  "json then keep",
 			logql: `{app="api"} | json | keep level, status`,
 			want:  `app:=api | unpack_json | fields _time, _msg, _stream, level, status`,
+		},
+		{
+			name:  "drilldown pattern stats query shape",
+			logql: `{foo="bar"} |> ` + "`" + `test <_> pattern` + "`" + ` | pattern ` + "`" + `test <field_1> pattern` + "`" + ` | keep field_1 | line_format ""`,
+			want:  `foo:=bar ~"test .* pattern" | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format ""`,
 		},
 		{
 			name:  "json then drop",

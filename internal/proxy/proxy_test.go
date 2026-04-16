@@ -456,6 +456,95 @@ func TestContract_QueryRange_MatrixFormat(t *testing.T) {
 	assertLokiSuccess(t, resp)
 }
 
+func TestContract_QueryRange_MatrixFormat_SplitsLongRangeStatsQueries(t *testing.T) {
+	var (
+		mu             sync.Mutex
+		receivedStarts []int64
+	)
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		start, err := strconv.ParseInt(r.FormValue("start"), 10, 64)
+		if err != nil {
+			t.Fatalf("parse start: %v", err)
+		}
+		mu.Lock()
+		receivedStarts = append(receivedStarts, start)
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"results": []map[string]interface{}{
+				{
+					"metric": map[string]string{"app": "nginx"},
+					"values": [][]interface{}{{start, strconv.FormatInt(start, 10)}},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	p.queryRangeWindowing = true
+	p.queryRangeSplitInterval = 5 * time.Minute
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(
+		http.MethodGet,
+		"/loki/api/v1/query_range?query="+url.QueryEscape(`rate({app="nginx"}[5m])`)+"&start=1705312200&end=1705313100&step=60",
+		nil,
+	)
+	p.handleQueryRange(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 response, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(receivedStarts) < 2 {
+		t.Fatalf("expected split stats_query_range fanout, got %d calls", len(receivedStarts))
+	}
+
+	var resp struct {
+		Data struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Data.ResultType != "matrix" {
+		t.Fatalf("expected matrix result type, got %q", resp.Data.ResultType)
+	}
+	if len(resp.Data.Result) != 1 {
+		t.Fatalf("expected single merged series, got %#v", resp.Data.Result)
+	}
+	if got := len(resp.Data.Result[0].Values); got != len(receivedStarts) {
+		t.Fatalf("expected %d merged points, got %d", len(receivedStarts), got)
+	}
+	prev := -1.0
+	for _, point := range resp.Data.Result[0].Values {
+		if len(point) < 2 {
+			t.Fatalf("expected matrix point pair, got %#v", point)
+		}
+		ts, ok := point[0].(float64)
+		if !ok {
+			t.Fatalf("expected numeric timestamp, got %T (%#v)", point[0], point[0])
+		}
+		if ts <= prev {
+			t.Fatalf("expected strictly increasing merged timestamps, got %#v", resp.Data.Result[0].Values)
+		}
+		prev = ts
+	}
+}
+
 // --- /loki/api/v1/query (instant) ---
 
 func TestContract_Query_ResponseFormat(t *testing.T) {
@@ -2645,9 +2734,27 @@ func TestTranslation_DrilldownPatternQueryForwarded(t *testing.T) {
 	logql := `{app="web"} |> ` + "`" + `GET <_> 500` + "`" + ` | pattern ` + "`" + `GET <field_1> 500` + "`" + ` | keep field_1 | line_format ""`
 	doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query="+url.QueryEscape(logql)+"&start=1&end=2&limit=10")
 
-	want := `app:=web ~"GET .* 500" | extract ` + "`" + `GET <field_1> 500` + "`" + ` | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
+	want := `app:=web ~"GET .* 500" | extract "GET <field_1> 500" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
 	if receivedQuery != want {
 		t.Fatalf("expected translated drilldown pattern query,\n got: %q\nwant: %q", receivedQuery, want)
+	}
+}
+
+func TestTranslation_DrilldownPatternStatsQueryForwarded(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Write([]byte{})
+	}))
+	defer vlBackend.Close()
+
+	logql := `{foo="bar"} |> ` + "`" + `test <_> pattern` + "`" + ` | pattern ` + "`" + `test <field_1> pattern` + "`" + ` | keep field_1 | line_format ""`
+	doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query="+url.QueryEscape(logql)+"&start=1&end=2&limit=10")
+
+	want := `foo:=bar ~"test .* pattern" | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
+	if receivedQuery != want {
+		t.Fatalf("expected translated drilldown pattern stats query, got %q", receivedQuery)
 	}
 }
 

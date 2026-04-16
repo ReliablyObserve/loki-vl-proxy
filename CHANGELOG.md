@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- drilldown/query-range: split long `stats_query_range` metric requests into aligned VL windows before merging them back into one Loki-shaped matrix response, and translate Drilldown pattern hover queries that use Loki pattern line filters (`|>`, `!>`) plus backtick-quoted `pattern`/`extract`/`regexp` stages into VL-compatible syntax.
+
 ## [1.4.2] - 2026-04-16
 
 ### Features

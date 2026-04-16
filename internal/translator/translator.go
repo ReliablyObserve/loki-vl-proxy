@@ -216,18 +216,22 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 			continue
 		}
 		if strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") || strings.HasPrefix(remaining, "|>`") {
-			// Pattern match filter: |> "<_> foo" → ~".* foo"
+			// Pattern filter match: |> "foo <_> bar" → ~"foo .* bar"
 			remaining = strings.TrimSpace(remaining[2:])
-			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "~"+translatePatternMatchValue(val))
+			expr, rest := extractPipelineStage(remaining)
+			if translated := translatePatternLineFilter(expr, false); translated != "" {
+				parts = append(parts, translated)
+			}
 			remaining = rest
 			continue
 		}
 		if strings.HasPrefix(remaining, "!> ") || strings.HasPrefix(remaining, "!>\"") || strings.HasPrefix(remaining, "!>`") {
-			// Negative pattern match filter: !> "<_> foo" → NOT ~"..."
+			// Negative pattern filter: !> "foo <_> bar" → NOT ~"foo .* bar"
 			remaining = strings.TrimSpace(remaining[2:])
-			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "NOT ~"+translatePatternMatchValue(val))
+			expr, rest := extractPipelineStage(remaining)
+			if translated := translatePatternLineFilter(expr, true); translated != "" {
+				parts = append(parts, translated)
+			}
 			remaining = rest
 			continue
 		}
@@ -311,7 +315,7 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 	}
 	if strings.HasPrefix(stage, "pattern ") {
 		// | pattern "..." → | extract "..."
-		patternExpr := strings.TrimSpace(stage[8:])
+		patternExpr := normalizeQuotedStageExpr(stage[8:])
 		if isNoopPatternExpression(patternExpr) {
 			// Defensive compatibility: some Drilldown flows emit wildcard-only
 			// patterns like `(.*)`. VL extract requires named placeholders and
@@ -322,11 +326,11 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 	}
 	if strings.HasPrefix(stage, "regexp ") {
 		// | regexp "..." → | extract_regexp "..."
-		return "| extract_regexp " + stage[7:]
+		return "| extract_regexp " + normalizeQuotedStageExpr(stage[7:])
 	}
 	if strings.HasPrefix(stage, "extract ") {
 		// Defensive pass-through for pre-translated queries.
-		patternExpr := strings.TrimSpace(stage[8:])
+		patternExpr := normalizeQuotedStageExpr(stage[8:])
 		if isNoopPatternExpression(patternExpr) {
 			return ""
 		}
@@ -412,34 +416,6 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc) string {
 
 	// Unknown stage — pass through as-is with pipe
 	return "| " + stage
-}
-
-func translatePatternMatchValue(quoted string) string {
-	raw := strings.TrimSpace(quoted)
-	raw = strings.Trim(raw, "\"`")
-	if raw == "" {
-		return strconv.Quote("")
-	}
-
-	placeholderRe := regexp.MustCompile(`<[^>]+>`)
-	matches := placeholderRe.FindAllStringIndex(raw, -1)
-	if len(matches) == 0 {
-		return strconv.Quote(regexp.QuoteMeta(raw))
-	}
-
-	var b strings.Builder
-	last := 0
-	for _, match := range matches {
-		if match[0] > last {
-			b.WriteString(regexp.QuoteMeta(raw[last:match[0]]))
-		}
-		b.WriteString(".*")
-		last = match[1]
-	}
-	if last < len(raw) {
-		b.WriteString(regexp.QuoteMeta(raw[last:]))
-	}
-	return strconv.Quote(b.String())
 }
 
 func translateLogicalLabelFilterChain(stage string, labelFn LabelTranslateFunc) (string, bool) {
@@ -1377,6 +1353,80 @@ func extractQuotedValue(s string) (string, string) {
 		return `"` + s[:end] + `"`, strings.TrimSpace(s[end:])
 	}
 	return `"` + s + `"`, ""
+}
+
+func normalizeQuotedStageExpr(expr string) string {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return expr
+	}
+	quoted, rest := extractQuotedValue(expr)
+	if strings.TrimSpace(rest) == "" && quoted != "" {
+		return quoted
+	}
+	return expr
+}
+
+func translatePatternLineFilter(expr string, negative bool) string {
+	values, ok := extractPatternFilterValues(expr)
+	if !ok || len(values) == 0 {
+		return ""
+	}
+
+	regexes := make([]string, 0, len(values))
+	for _, value := range values {
+		regexes = append(regexes, patternFilterValueToRegex(value))
+	}
+
+	combined := regexes[0]
+	if len(regexes) > 1 {
+		combined = "(?:" + strings.Join(regexes, ")|(?:") + ")"
+	}
+
+	if negative {
+		return "NOT ~" + strconv.Quote(combined)
+	}
+	return "~" + strconv.Quote(combined)
+}
+
+func extractPatternFilterValues(expr string) ([]string, bool) {
+	remaining := strings.TrimSpace(expr)
+	if remaining == "" {
+		return nil, false
+	}
+
+	values := make([]string, 0, 1)
+	for remaining != "" {
+		quoted, rest := extractQuotedValue(remaining)
+		value, err := strconv.Unquote(quoted)
+		if err != nil {
+			return nil, false
+		}
+		values = append(values, value)
+
+		remaining = strings.TrimSpace(rest)
+		if remaining == "" {
+			break
+		}
+		if !strings.HasPrefix(remaining, "or ") {
+			return nil, false
+		}
+		remaining = strings.TrimSpace(remaining[2:])
+	}
+
+	return values, len(values) > 0
+}
+
+func patternFilterValueToRegex(value string) string {
+	if value == "" {
+		return ".*"
+	}
+
+	parts := strings.Split(value, "<_>")
+	for i, part := range parts {
+		parts[i] = regexp.QuoteMeta(part)
+	}
+	return strings.Join(parts, ".*")
 }
 
 // splitStreamMatchers splits stream selector content like `app="x",level="error"`
