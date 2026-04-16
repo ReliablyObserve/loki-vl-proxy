@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-04-16
+
 ### Features
 
 - peer-cache/metrics: add configurable peer fetch timeout wiring (`peer-timeout`) and per-reason peer fetch error counters so peer cache failures are no longer a single opaque `errors_total` bucket.
