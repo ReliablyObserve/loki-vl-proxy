@@ -2149,6 +2149,19 @@ func TestPatternWindowedSamplingConfig_DenseIgnoresStepInflationAndCapsFanout(t 
 	}
 }
 
+func TestPatternWindowedSamplingConfig_DenseLongRangeBoostsPerWindowLimit(t *testing.T) {
+	start := strconv.FormatInt(0, 10)
+	end := strconv.FormatInt(int64((48*time.Hour)/time.Second), 10)
+
+	_, _, _, perWindow, ok := patternWindowedSamplingConfig(start, end, "5m", 11540, true)
+	if !ok {
+		t.Fatal("expected dense windowed config to be enabled for long ranges")
+	}
+	if perWindow < 4000 {
+		t.Fatalf("expected dense long-range per-window limit >=4000, got %d", perWindow)
+	}
+}
+
 func TestShouldAcceptWindowedPatternResults(t *testing.T) {
 	if shouldAcceptWindowedPatternResults(1, 4, true) {
 		t.Fatal("expected dense mode to reject highly partial window coverage")

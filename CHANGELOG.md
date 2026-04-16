@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- observability: add per-request fanout and proxy-internal operation telemetry to logs, Prometheus, OTLP export, bundled dashboard panels, and first-class Helm chart values for the new observability/runtime flags.
+
+### Bug Fixes
+
+- drilldown/patterns: keep long-range Drilldown patterns and volume queries dense across `>24h` windows by boosting dense per-window sampling and adding 48h regression coverage.
+
 ## [1.3.0] - 2026-04-16
 
 ### Bug Fixes

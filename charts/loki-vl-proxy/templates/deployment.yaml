@@ -76,6 +76,11 @@ spec:
       {{- $customPatternsFilePath := default "/etc/loki-vl-proxy/patterns/custom-patterns.json" .Values.patternsCustom.file.path }}
       {{- $customPatternsMountDir := dir $customPatternsFilePath }}
       {{- $customPatternsFileName := base $customPatternsFilePath }}
+      {{- $observability := default (dict) .Values.observability }}
+      {{- $observabilityOTEL := default (dict) (get $observability "otel") }}
+      {{- $observabilityOTLP := default (dict) (get $observability "otlp") }}
+      {{- $observabilityMetrics := default (dict) (get $observability "metrics") }}
+      {{- $observabilityServer := default (dict) (get $observability "server") }}
       {{- if and (hasKey .Values "systemMetrics") (hasKey .Values.systemMetrics "hostProc") }}
       {{- $hostProcEnabled = .Values.systemMetrics.hostProc.enabled }}
       {{- if .Values.systemMetrics.hostProc.mountPath }}
@@ -96,6 +101,54 @@ spec:
           args:
             {{- range $key, $value := .Values.extraArgs }}
             - "-{{ $key }}={{ $value }}"
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "deployment-environment")) (ne (default "" (get $observability "deploymentEnvironment")) "") }}
+            - "-deployment-environment={{ get $observability "deploymentEnvironment" }}"
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "otel-service-name")) (ne (default "" (get $observabilityOTEL "serviceName")) "") }}
+            - "-otel-service-name={{ get $observabilityOTEL "serviceName" }}"
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "otel-service-namespace")) (ne (default "" (get $observabilityOTEL "serviceNamespace")) "") }}
+            - "-otel-service-namespace={{ get $observabilityOTEL "serviceNamespace" }}"
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "otel-service-instance-id")) (ne (default "" (get $observabilityOTEL "serviceInstanceId")) "") }}
+            - "-otel-service-instance-id={{ get $observabilityOTEL "serviceInstanceId" }}"
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "otlp-endpoint")) (ne (default "" (get $observabilityOTLP "endpoint")) "") }}
+            - "-otlp-endpoint={{ get $observabilityOTLP "endpoint" }}"
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "otlp-interval")) (ne (default "" (get $observabilityOTLP "interval")) "") }}
+            - "-otlp-interval={{ get $observabilityOTLP "interval" }}"
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "otlp-compression")) (ne (default "" (get $observabilityOTLP "compression")) "") }}
+            - "-otlp-compression={{ get $observabilityOTLP "compression" }}"
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "otlp-timeout")) (ne (default "" (get $observabilityOTLP "timeout")) "") }}
+            - "-otlp-timeout={{ get $observabilityOTLP "timeout" }}"
+            {{- end }}
+            {{- if and (not (hasKey .Values.extraArgs "otlp-headers")) (ne (default "" (get $observabilityOTLP "headers")) "") }}
+            - "-otlp-headers={{ get $observabilityOTLP "headers" }}"
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "otlp-tls-skip-verify") }}
+            - "-otlp-tls-skip-verify={{ ternary "true" "false" (default false (get $observabilityOTLP "tlsSkipVerify")) }}"
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "metrics.max-tenants") }}
+            - "-metrics.max-tenants={{ default 256 (get $observabilityMetrics "maxTenants") }}"
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "metrics.max-clients") }}
+            - "-metrics.max-clients={{ default 256 (get $observabilityMetrics "maxClients") }}"
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "metrics.trust-proxy-headers") }}
+            - "-metrics.trust-proxy-headers={{ ternary "true" "false" (default false (get $observabilityMetrics "trustProxyHeaders")) }}"
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "metrics.export-sensitive-labels") }}
+            - "-metrics.export-sensitive-labels={{ ternary "true" "false" (default false (get $observabilityMetrics "exportSensitiveLabels")) }}"
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "server.register-instrumentation") }}
+            - "-server.register-instrumentation={{ ternary "true" "false" (default true (get $observabilityServer "registerInstrumentation")) }}"
+            {{- end }}
+            {{- if not (hasKey .Values.extraArgs "server.metrics-max-concurrency") }}
+            - "-server.metrics-max-concurrency={{ default 1 (get $observabilityServer "metricsMaxConcurrency") }}"
             {{- end }}
             {{- if and $hostProcEnabled (not (hasKey .Values.extraArgs "proc-root")) }}
             - "-proc-root={{ $hostProcMountPath }}"

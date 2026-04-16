@@ -14,6 +14,8 @@ func TestMetrics_Handler_Output(t *testing.T) {
 	m := NewMetrics()
 	m.RecordRequest("labels", 200, 5*time.Millisecond)
 	m.RecordRequest("query_range", 500, 100*time.Millisecond)
+	m.RecordUpstreamCallsPerRequest("query_range", 3)
+	m.RecordInternalOperation("translate_query", "cache_hit", 2*time.Millisecond)
 	m.RecordCacheHit()
 	m.RecordCacheMiss()
 	m.RecordTranslation()
@@ -67,6 +69,12 @@ func TestMetrics_Handler_Output(t *testing.T) {
 	if !strings.Contains(body, "loki_vl_proxy_translation_errors_total 1") {
 		t.Error("expected translation_errors_total 1")
 	}
+	if !strings.Contains(body, "loki_vl_proxy_upstream_calls_per_request_bucket") {
+		t.Error("missing upstream_calls_per_request histogram")
+	}
+	if !strings.Contains(body, `loki_vl_proxy_internal_operation_total{operation="translate_query",outcome="cache_hit"} 1`) {
+		t.Error("expected translate_query internal operation counter")
+	}
 
 	// Uptime
 	if !strings.Contains(body, "loki_vl_proxy_uptime_seconds") {
@@ -109,6 +117,7 @@ func TestMetrics_Handler_EmptyState(t *testing.T) {
 		`loki_vl_proxy_requests_total{system="loki",direction="downstream",endpoint="query_range",route="/loki/api/v1/query_range",status="200"} 0`,
 		`loki_vl_proxy_cache_hits_by_endpoint{system="loki",direction="downstream",endpoint="query_range",route="/loki/api/v1/query_range"} 0`,
 		`loki_vl_proxy_backend_duration_seconds_count{system="vl",direction="upstream",endpoint="query_range",route="/loki/api/v1/query_range"} 0`,
+		`loki_vl_proxy_upstream_calls_per_request_count{system="loki",direction="downstream",endpoint="query_range",route="/loki/api/v1/query_range"} 0`,
 		`loki_vl_proxy_tenant_requests_total{system="loki",direction="downstream",tenant="__none__",endpoint="query_range",route="/loki/api/v1/query_range",status="200"} 0`,
 		`loki_vl_proxy_client_requests_total{system="loki",direction="downstream",client="__none__",endpoint="query_range",route="/loki/api/v1/query_range"} 0`,
 		`loki_vl_proxy_client_status_total{system="loki",direction="downstream",client="__none__",endpoint="query_range",route="/loki/api/v1/query_range",status="200"} 0`,

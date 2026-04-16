@@ -215,6 +215,13 @@ See the dedicated [Observability Guide](observability.md) for the full metrics c
 
 The proxy exposes Prometheus metrics at `/metrics`:
 
+Use the [Observability Guide](observability.md) as the canonical catalog for:
+
+- every documented `loki_vl_proxy_*` metric family
+- cardinality level (`Low`, `Medium`, `High (capped)`) for each family
+- scrape versus OTLP field/label mapping
+- the new fanout and proxy-internal operation metrics/log fields
+
 | Metric | Type | Primary dimensions | Description |
 |--------|------|--------------------|-------------|
 | `loki_vl_proxy_requests_total` | counter | `system`, `direction`, `endpoint`, `route`, `status` | Total requests by downstream Loki route or upstream backend route |

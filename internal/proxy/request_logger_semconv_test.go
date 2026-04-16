@@ -14,6 +14,19 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
 
+func decodeLastJSONLogLine(t *testing.T, buf *bytes.Buffer) map[string]any {
+	t.Helper()
+	lines := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
+	if len(lines) == 0 {
+		t.Fatal("expected at least one log line")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(lines[len(lines)-1], &payload); err != nil {
+		t.Fatalf("invalid request log json: %v", err)
+	}
+	return payload
+}
+
 func TestRequestLogger_UsesEnduserSemanticFields(t *testing.T) {
 	var buf bytes.Buffer
 	p := &Proxy{
@@ -179,6 +192,71 @@ func TestRequestLogger_DetectsGrafanaDatasourceSurface(t *testing.T) {
 	}
 	if got := payload["grafana.datasource.profile"]; got != "grafana-datasource-v12" {
 		t.Fatalf("expected datasource profile, got %#v", got)
+	}
+}
+
+func TestRequestLogger_EmitsUpstreamAndInternalBreakdowns(t *testing.T) {
+	var buf bytes.Buffer
+	p := &Proxy{
+		log:     slog.New(slog.NewJSONHandler(&buf, nil)),
+		metrics: metrics.NewMetrics(),
+	}
+
+	h := p.requestLogger("query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, "/select/logsql/query", "vl.example", 8427, http.StatusOK, 12*time.Millisecond, nil)
+		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, "/select/logsql/query", "vl.example", 8427, http.StatusOK, 18*time.Millisecond, nil)
+		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, "/select/logsql/stats_query_range", "vl.example", 8427, http.StatusOK, 25*time.Millisecond, nil)
+		p.observeInternalOperation(ctx, "translate_query", "cache_hit", 2*time.Millisecond)
+		p.observeInternalOperation(ctx, "translate_stats_response_labels", "translated", 3*time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query=%7Bapp%3D%22x%22%7D", nil)
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+
+	payload := decodeLastJSONLogLine(t, &buf)
+
+	if got := payload["upstream.calls"]; got != float64(3) {
+		t.Fatalf("expected upstream.calls=3, got %#v", got)
+	}
+	upstreamCallsByType, ok := payload["upstream.calls_by_type"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected upstream.calls_by_type map, got %#v", payload["upstream.calls_by_type"])
+	}
+	if got := upstreamCallsByType["vl:select_logsql_query"]; got != float64(2) {
+		t.Fatalf("expected two select_logsql_query calls, got %#v", got)
+	}
+	if got := upstreamCallsByType["vl:select_logsql_stats_query_range"]; got != float64(1) {
+		t.Fatalf("expected one select_logsql_stats_query_range call, got %#v", got)
+	}
+	internalOpsByType, ok := payload["proxy.operations_by_type"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected proxy.operations_by_type map, got %#v", payload["proxy.operations_by_type"])
+	}
+	if got := internalOpsByType["translate_query:cache_hit"]; got != float64(1) {
+		t.Fatalf("expected translate_query:cache_hit once, got %#v", got)
+	}
+	if got := internalOpsByType["translate_stats_response_labels:translated"]; got != float64(1) {
+		t.Fatalf("expected translate_stats_response_labels:translated once, got %#v", got)
+	}
+
+	metricsRR := httptest.NewRecorder()
+	metricsReq := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	p.metrics.Handler(metricsRR, metricsReq)
+	body := metricsRR.Body.String()
+
+	for _, needle := range []string{
+		`loki_vl_proxy_backend_duration_seconds_count{system="vl",direction="upstream",endpoint="select_logsql_query",route="/select/logsql/query"} 2`,
+		`loki_vl_proxy_backend_duration_seconds_count{system="vl",direction="upstream",endpoint="select_logsql_stats_query_range",route="/select/logsql/stats_query_range"} 1`,
+		`loki_vl_proxy_upstream_calls_per_request_count{system="loki",direction="downstream",endpoint="query_range",route="/loki/api/v1/query_range"} 1`,
+		`loki_vl_proxy_internal_operation_total{operation="translate_query",outcome="cache_hit"} 1`,
+		`loki_vl_proxy_internal_operation_total{operation="translate_stats_response_labels",outcome="translated"} 1`,
+	} {
+		if !strings.Contains(body, needle) {
+			t.Fatalf("expected metrics output to contain %q", needle)
+		}
 	}
 }
 

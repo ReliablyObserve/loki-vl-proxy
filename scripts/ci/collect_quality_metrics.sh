@@ -239,14 +239,35 @@ PY
 
 collect_load() {
   local out="$TMP_DIR/load.txt"
-  go test ./internal/proxy -run '^TestLoad_HighConcurrency_MemoryStability$' -count=1 -v -timeout=180s >"$out"
-  local throughput memory_growth
-  throughput="$(grep -E 'Throughput: ' "$out" | tail -1 | sed -E 's/.*Throughput: ([0-9.]+) req\/s/\1/')"
-  memory_growth="$(grep -E 'Memory growth: ' "$out" | tail -1 | sed -E 's/.*Memory growth: ([0-9.]+) MB.*/\1/')"
-  jq -n \
-    --argjson throughput "${throughput:-0}" \
-    --argjson memory_growth "${memory_growth:-0}" \
-    '{high_concurrency_req_per_s:$throughput,high_concurrency_memory_growth_mb:$memory_growth}'
+  go test ./internal/proxy -run '^TestLoad_HighConcurrency_MemoryStability$' -count=3 -v -timeout=180s >"$out"
+  python3 - "$out" <<'PY'
+import json
+import re
+import statistics
+import sys
+
+throughputs = []
+memory_growth = []
+
+with open(sys.argv[1], "r", encoding="utf-8", errors="ignore") as fh:
+    for line in fh:
+        throughput_match = re.search(r"Throughput: ([0-9.]+) req/s", line)
+        if throughput_match:
+            throughputs.append(float(throughput_match.group(1)))
+            continue
+        memory_match = re.search(r"Memory growth: ([0-9.]+) MB", line)
+        if memory_match:
+            memory_growth.append(float(memory_match.group(1)))
+
+print(
+    json.dumps(
+        {
+            "high_concurrency_req_per_s": statistics.median(throughputs) if throughputs else 0,
+            "high_concurrency_memory_growth_mb": statistics.median(memory_growth) if memory_growth else 0,
+        }
+    )
+)
+PY
 }
 
 tests_file="$TMP_DIR/tests_and_coverage.json"

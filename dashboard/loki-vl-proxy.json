@@ -107,12 +107,12 @@
       "collapsed": false
     },
     {
-      "title": "P50 Latency by Endpoint",
+      "title": "Downstream P50 Latency by Endpoint",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 10},
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum(rate(loki_vl_proxy_request_duration_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
+          "expr": "histogram_quantile(0.5, sum(rate(loki_vl_proxy_request_duration_seconds_bucket{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
           "legendFormat": "p50 {{endpoint}}"
         }
       ],
@@ -121,12 +121,12 @@
       }
     },
     {
-      "title": "P99 Latency by Endpoint",
+      "title": "Downstream P99 Latency by Endpoint",
       "type": "timeseries",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 10},
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(loki_vl_proxy_request_duration_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
+          "expr": "histogram_quantile(0.99, sum(rate(loki_vl_proxy_request_duration_seconds_bucket{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
           "legendFormat": "p99 {{endpoint}}"
         }
       ],
@@ -188,7 +188,7 @@
       "gridPos": {"h": 8, "w": 8, "x": 0, "y": 28},
       "targets": [
         {
-          "expr": "sum(increase(loki_vl_proxy_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__range])) by (endpoint)",
+          "expr": "sum(increase(loki_vl_proxy_requests_total{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__range])) by (endpoint)",
           "legendFormat": "{{endpoint}}"
         }
       ]
@@ -199,7 +199,7 @@
       "gridPos": {"h": 8, "w": 8, "x": 8, "y": 28},
       "targets": [
         {
-          "expr": "sum(increase(loki_vl_proxy_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__range])) by (status)",
+          "expr": "sum(increase(loki_vl_proxy_requests_total{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__range])) by (status)",
           "legendFormat": "{{status}}"
         }
       ]
@@ -210,7 +210,7 @@
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 28},
       "targets": [
         {
-          "expr": "sum(rate(loki_vl_proxy_request_duration_seconds_sum{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint) / sum(rate(loki_vl_proxy_request_duration_seconds_count{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint)",
+          "expr": "sum(rate(loki_vl_proxy_request_duration_seconds_sum{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint) / sum(rate(loki_vl_proxy_request_duration_seconds_count{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint)",
           "legendFormat": "{{endpoint}}"
         }
       ],
@@ -826,6 +826,54 @@
       ],
       "fieldConfig": {
         "defaults": {"unit": "none", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "Fanout & Internal Ops",
+      "type": "row",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 137},
+      "collapsed": false
+    },
+    {
+      "title": "VL Child P99 Latency by Upstream Endpoint",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 138},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(loki_vl_proxy_backend_duration_seconds_bucket{system=\"vl\",direction=\"upstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
+          "legendFormat": "p99 {{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "P95 Upstream Calls per Downstream Request",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 138},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(loki_vl_proxy_upstream_calls_per_request_bucket{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
+          "legendFormat": "p95 {{endpoint}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "short", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "Internal Operations by Outcome",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 138},
+      "targets": [
+        {
+          "expr": "sum(rate(loki_vl_proxy_internal_operation_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (operation, outcome)",
+          "legendFormat": "{{operation}} {{outcome}}/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
       }
     }
   ],

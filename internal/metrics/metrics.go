@@ -36,6 +36,13 @@ type Metrics struct {
 	// Backend latency (VL response time, separate from total proxy latency)
 	backendDurations map[string]*histogram // "endpoint<sep>route" → VL duration histogram
 
+	// Upstream fanout per downstream request
+	upstreamCallsPerRequest map[string]*histogram // "endpoint<sep>route" → upstream call count histogram
+
+	// Proxy-side internal operation visibility
+	internalOperationTotal     map[string]*atomic.Int64 // "operation<sep>outcome" → count
+	internalOperationDurations map[string]*histogram    // "operation<sep>outcome" → duration histogram
+
 	// Singleflight coalescing stats
 	coalescedTotal atomic.Int64 // requests served from coalesced results
 	coalescedSaved atomic.Int64 // backend requests saved by coalescing
@@ -119,12 +126,13 @@ type histogram struct {
 	mu    sync.Mutex
 	sum   float64
 	count int64
-	// Buckets: 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10
+	// Buckets store cumulative upper bounds.
 	buckets []float64
 	counts  []int64
 }
 
 var defaultBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
+var countBuckets = []float64{1, 2, 4, 8, 16, 32, 64, 128}
 
 const (
 	defaultMaxTenantLabels = 256
@@ -267,10 +275,18 @@ func normalizeMetricSystem(system string) string {
 }
 
 func newHistogram() *histogram {
+	return newHistogramWithBuckets(defaultBuckets)
+}
+
+func newHistogramWithBuckets(buckets []float64) *histogram {
 	return &histogram{
-		buckets: defaultBuckets,
-		counts:  make([]int64, len(defaultBuckets)),
+		buckets: append([]float64(nil), buckets...),
+		counts:  make([]int64, len(buckets)),
 	}
+}
+
+func newCountHistogram() *histogram {
+	return newHistogramWithBuckets(countBuckets)
 }
 
 func (h *histogram) observe(v float64) {
@@ -301,35 +317,38 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 		maxClientLabels = defaultMaxClientLabels
 	}
 	m := &Metrics{
-		requestsTotal:           make(map[string]*atomic.Int64),
-		requestDurations:        make(map[string]*histogram),
-		tenantRequests:          make(map[string]*atomic.Int64),
-		tenantDurations:         make(map[string]*histogram),
-		clientErrors:            make(map[string]*atomic.Int64),
-		endpointCacheHits:       make(map[string]*atomic.Int64),
-		endpointCacheMisses:     make(map[string]*atomic.Int64),
-		backendDurations:        make(map[string]*histogram),
-		tupleModes:              make(map[string]*atomic.Int64),
-		clientRequests:          make(map[string]*atomic.Int64),
-		clientDurations:         make(map[string]*histogram),
-		clientBytes:             make(map[string]*atomic.Int64),
-		clientStatuses:          make(map[string]*atomic.Int64),
-		clientInflight:          make(map[string]*atomic.Int64),
-		clientQueryLengths:      make(map[string]*histogram),
-		connectionStates:        make(map[string]*atomic.Int64),
-		connectionTransitions:   make(map[string]*atomic.Int64),
-		connectionRotations:     make(map[string]*atomic.Int64),
-		windowFetch:             newHistogram(),
-		windowMerge:             newHistogram(),
-		windowCount:             newHistogram(),
-		windowPrefilterDuration: newHistogram(),
-		system:                  NewSystemMetrics(),
-		startTime:               time.Now(),
-		maxTenantLabels:         maxTenantLabels,
-		maxClientLabels:         maxClientLabels,
-		exportSensitiveLabels:   exportSensitiveLabels,
-		knownTenants:            make(map[string]struct{}),
-		knownClients:            make(map[string]struct{}),
+		requestsTotal:              make(map[string]*atomic.Int64),
+		requestDurations:           make(map[string]*histogram),
+		tenantRequests:             make(map[string]*atomic.Int64),
+		tenantDurations:            make(map[string]*histogram),
+		clientErrors:               make(map[string]*atomic.Int64),
+		endpointCacheHits:          make(map[string]*atomic.Int64),
+		endpointCacheMisses:        make(map[string]*atomic.Int64),
+		backendDurations:           make(map[string]*histogram),
+		upstreamCallsPerRequest:    make(map[string]*histogram),
+		internalOperationTotal:     make(map[string]*atomic.Int64),
+		internalOperationDurations: make(map[string]*histogram),
+		tupleModes:                 make(map[string]*atomic.Int64),
+		clientRequests:             make(map[string]*atomic.Int64),
+		clientDurations:            make(map[string]*histogram),
+		clientBytes:                make(map[string]*atomic.Int64),
+		clientStatuses:             make(map[string]*atomic.Int64),
+		clientInflight:             make(map[string]*atomic.Int64),
+		clientQueryLengths:         make(map[string]*histogram),
+		connectionStates:           make(map[string]*atomic.Int64),
+		connectionTransitions:      make(map[string]*atomic.Int64),
+		connectionRotations:        make(map[string]*atomic.Int64),
+		windowFetch:                newHistogram(),
+		windowMerge:                newHistogram(),
+		windowCount:                newHistogram(),
+		windowPrefilterDuration:    newHistogram(),
+		system:                     NewSystemMetrics(),
+		startTime:                  time.Now(),
+		maxTenantLabels:            maxTenantLabels,
+		maxClientLabels:            maxClientLabels,
+		exportSensitiveLabels:      exportSensitiveLabels,
+		knownTenants:               make(map[string]struct{}),
+		knownClients:               make(map[string]struct{}),
 	}
 	m.preRegisterZeroSeries()
 	return m
@@ -344,6 +363,9 @@ func (m *Metrics) preRegisterZeroSeries() {
 		routeKey := joinMetricKey(seed.endpoint, seed.route)
 		if _, ok := m.backendDurations[routeKey]; !ok {
 			m.backendDurations[routeKey] = newHistogram()
+		}
+		if _, ok := m.upstreamCallsPerRequest[routeKey]; !ok {
+			m.upstreamCallsPerRequest[routeKey] = newCountHistogram()
 		}
 		if _, ok := m.endpointCacheHits[routeKey]; !ok {
 			m.endpointCacheHits[routeKey] = &atomic.Int64{}
@@ -1096,6 +1118,72 @@ func (m *Metrics) RecordBackendDurationWithRoute(endpoint, route string, d time.
 	h.observe(d.Seconds())
 }
 
+// RecordUpstreamCallsPerRequest records how many upstream calls were triggered by a downstream request.
+func (m *Metrics) RecordUpstreamCallsPerRequest(endpoint string, calls int) {
+	m.RecordUpstreamCallsPerRequestWithRoute(endpoint, "", calls)
+}
+
+func (m *Metrics) RecordUpstreamCallsPerRequestWithRoute(endpoint, route string, calls int) {
+	route = normalizeMetricRoute(route, endpoint)
+	key := joinMetricKey(endpoint, route)
+	m.mu.RLock()
+	h, ok := m.upstreamCallsPerRequest[key]
+	m.mu.RUnlock()
+	if !ok {
+		m.mu.Lock()
+		h, ok = m.upstreamCallsPerRequest[key]
+		if !ok {
+			h = newCountHistogram()
+			m.upstreamCallsPerRequest[key] = h
+		}
+		m.mu.Unlock()
+	}
+	if calls < 0 {
+		calls = 0
+	}
+	h.observe(float64(calls))
+}
+
+// RecordInternalOperation records proxy-side work not performed by VL directly.
+func (m *Metrics) RecordInternalOperation(operation, outcome string, d time.Duration) {
+	operation = strings.TrimSpace(operation)
+	outcome = strings.TrimSpace(outcome)
+	if operation == "" {
+		operation = "unknown"
+	}
+	if outcome == "" {
+		outcome = "unknown"
+	}
+	if d < 0 {
+		d = 0
+	}
+	key := joinMetricKey(operation, outcome)
+	m.mu.RLock()
+	counter, cok := m.internalOperationTotal[key]
+	hist, hok := m.internalOperationDurations[key]
+	m.mu.RUnlock()
+	if !cok || !hok {
+		m.mu.Lock()
+		if !cok {
+			counter, cok = m.internalOperationTotal[key]
+			if !cok {
+				counter = &atomic.Int64{}
+				m.internalOperationTotal[key] = counter
+			}
+		}
+		if !hok {
+			hist, hok = m.internalOperationDurations[key]
+			if !hok {
+				hist = newHistogram()
+				m.internalOperationDurations[key] = hist
+			}
+		}
+		m.mu.Unlock()
+	}
+	counter.Add(1)
+	hist.observe(d.Seconds())
+}
+
 // RecordCoalesced records a request that was served from a coalesced result.
 func (m *Metrics) RecordCoalesced() { m.coalescedTotal.Add(1) }
 
@@ -1536,6 +1624,69 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, h.count)
 		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", vlSystemLabel, upstreamDirection, endpoint, route, h.sum)
 		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_count{system=%q,direction=%q,endpoint=%q,route=%q} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, h.count)
+		h.mu.Unlock()
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_upstream_calls_per_request Upstream call count per downstream request.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_upstream_calls_per_request histogram\n")
+	upstreamCallKeys := make([]string, 0, len(m.upstreamCallsPerRequest))
+	for k := range m.upstreamCallsPerRequest {
+		upstreamCallKeys = append(upstreamCallKeys, k)
+	}
+	sort.Strings(upstreamCallKeys)
+	for _, key := range upstreamCallKeys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		endpoint := parts[0]
+		route := parts[1]
+		h := m.upstreamCallsPerRequest[key]
+		h.mu.Lock()
+		for i, b := range h.buckets {
+			fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, b, h.counts[i])
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.count)
+		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.sum)
+		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_count{system=%q,direction=%q,endpoint=%q,route=%q} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.count)
+		h.mu.Unlock()
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_internal_operation_total Proxy-side internal operations by operation and outcome.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_internal_operation_total counter\n")
+	internalOpKeys := make([]string, 0, len(m.internalOperationTotal))
+	for k := range m.internalOperationTotal {
+		internalOpKeys = append(internalOpKeys, k)
+	}
+	sort.Strings(internalOpKeys)
+	for _, key := range internalOpKeys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_total{operation=%q,outcome=%q} %d\n", parts[0], parts[1], m.internalOperationTotal[key].Load())
+	}
+
+	sb.WriteString("# HELP loki_vl_proxy_internal_operation_duration_seconds Proxy-side internal operation duration.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_internal_operation_duration_seconds histogram\n")
+	internalDurationKeys := make([]string, 0, len(m.internalOperationDurations))
+	for k := range m.internalOperationDurations {
+		internalDurationKeys = append(internalDurationKeys, k)
+	}
+	sort.Strings(internalDurationKeys)
+	for _, key := range internalDurationKeys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		h := m.internalOperationDurations[key]
+		h.mu.Lock()
+		for i, b := range h.buckets {
+			fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_bucket{operation=%q,outcome=%q,le=\"%g\"} %d\n", parts[0], parts[1], b, h.counts[i])
+		}
+		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_bucket{operation=%q,outcome=%q,le=\"+Inf\"} %d\n", parts[0], parts[1], h.count)
+		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_sum{operation=%q,outcome=%q} %g\n", parts[0], parts[1], h.sum)
+		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_count{operation=%q,outcome=%q} %d\n", parts[0], parts[1], h.count)
 		h.mu.Unlock()
 	}
 

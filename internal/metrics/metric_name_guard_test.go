@@ -69,6 +69,8 @@ func seededMetricsForMetricNameGuard() *Metrics {
 	m.RecordEndpointCacheHitWithRoute("query_range", "/loki/api/v1/query_range")
 	m.RecordEndpointCacheMissWithRoute("query_range", "/loki/api/v1/query_range")
 	m.RecordBackendDurationWithRoute("query_range", "/loki/api/v1/query_range", 20*time.Millisecond)
+	m.RecordUpstreamCallsPerRequestWithRoute("query_range", "/loki/api/v1/query_range", 3)
+	m.RecordInternalOperation("translate_query", "translated", 5*time.Millisecond)
 	m.RecordTranslation()
 	m.RecordTranslationError()
 	m.RecordCoalesced()

@@ -244,6 +244,36 @@ extraArgs:
   # tls-client-ca-file: ""
   # tls-require-client-cert: "false"
 
+# First-class observability flags.
+# The chart renders these as CLI args unless the same key is already set under
+# extraArgs, so existing extraArgs-based installs keep precedence.
+#
+# Use env / envFrom for secrets; keep these values for non-secret runtime knobs.
+observability:
+  # Empty keeps the binary default / env-based value.
+  deploymentEnvironment: ""
+  otel:
+    # Empty keeps the binary default or env-derived value.
+    serviceName: ""
+    serviceNamespace: ""
+    serviceInstanceId: ""
+  otlp:
+    # Empty endpoint disables OTLP export unless set elsewhere.
+    endpoint: ""
+    interval: ""
+    compression: ""
+    timeout: ""
+    headers: ""
+    tlsSkipVerify: false
+  metrics:
+    maxTenants: 256
+    maxClients: 256
+    trustProxyHeaders: false
+    exportSensitiveLabels: false
+  server:
+    registerInstrumentation: true
+    metricsMaxConcurrency: 1
+
 # Custom Drilldown patterns always prepended to /loki/api/v1/patterns.
 # Runtime supports:
 # - inline JSON/newline config via -patterns-custom

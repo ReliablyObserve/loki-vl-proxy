@@ -33,7 +33,8 @@ services:
       - "9428:9428"
     command:
       - "-storageDataPath=/vlogs"
-      - "-retentionPeriod=1d"
+      # Keep enough history for long-range Drilldown regressions (>24h).
+      - "-retentionPeriod=7d"
       - "-httpListenAddr=:9428"
     volumes:
       - vl-data:/vlogs

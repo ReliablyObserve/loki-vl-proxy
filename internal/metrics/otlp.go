@@ -276,10 +276,12 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 	p.metrics.mu.RLock()
 	metrics = append(metrics, p.connectionMetrics(now)...)
 	metrics = append(metrics, p.requestMetrics(now)...)
+	metrics = append(metrics, p.upstreamFanoutMetrics(now)...)
 	metrics = append(metrics, p.tenantMetrics(now)...)
 	metrics = append(metrics, p.clientErrorMetrics(now)...)
 	metrics = append(metrics, p.endpointCacheMetrics(now)...)
 	metrics = append(metrics, p.backendDurationMetrics(now)...)
+	metrics = append(metrics, p.internalOperationMetrics(now)...)
 	metrics = append(metrics, p.clientMetrics(now)...)
 	p.metrics.mu.RUnlock()
 
@@ -518,6 +520,31 @@ func (p *OTLPPusher) requestMetrics(now int64) []map[string]interface{} {
 	return metrics
 }
 
+func (p *OTLPPusher) upstreamFanoutMetrics(now int64) []map[string]interface{} {
+	keys := sortedKeys(mapsFromHists(p.metrics.upstreamCallsPerRequest))
+	points := make([]map[string]interface{}, 0, len(keys))
+	for _, key := range keys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		points = append(points, p.histogramDP(
+			p.metrics.upstreamCallsPerRequest[key],
+			now,
+			attr("loki.api.system", lokiSystemLabel),
+			attr("proxy.direction", downstreamDirection),
+			attr("loki.request.type", parts[0]),
+			attr("http.route", parts[1]),
+		))
+	}
+	if len(points) == 0 {
+		return nil
+	}
+	return []map[string]interface{}{
+		p.histogramMetric("loki_vl_proxy_upstream_calls_per_request", "Upstream call count per downstream request.", "{request}", points...),
+	}
+}
+
 func (p *OTLPPusher) tenantMetrics(now int64) []map[string]interface{} {
 	if !p.metrics.ExportSensitiveLabels() {
 		return nil
@@ -609,6 +636,46 @@ func (p *OTLPPusher) backendDurationMetrics(now int64) []map[string]interface{} 
 		return nil
 	}
 	return []map[string]interface{}{p.histogramMetric("loki_vl_proxy_backend_duration_seconds", "VL backend response time.", "s", points...)}
+}
+
+func (p *OTLPPusher) internalOperationMetrics(now int64) []map[string]interface{} {
+	metrics := make([]map[string]interface{}, 0, 2)
+	counterKeys := sortedKeys(mapsFromCounters(p.metrics.internalOperationTotal))
+	counterPoints := make([]map[string]interface{}, 0, len(counterKeys))
+	for _, key := range counterKeys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		counterPoints = append(counterPoints, p.counterDP(
+			"loki_vl_proxy_internal_operation_total",
+			p.metrics.internalOperationTotal[key].Load(),
+			now,
+			attr("operation", parts[0]),
+			attr("outcome", parts[1]),
+		))
+	}
+	if len(counterPoints) > 0 {
+		metrics = append(metrics, p.sumMetric("loki_vl_proxy_internal_operation_total", "Proxy-side internal operations by operation and outcome.", "", counterPoints...))
+	}
+	durationKeys := sortedKeys(mapsFromHists(p.metrics.internalOperationDurations))
+	durationPoints := make([]map[string]interface{}, 0, len(durationKeys))
+	for _, key := range durationKeys {
+		parts := splitMetricKey(key, 2)
+		if parts == nil {
+			continue
+		}
+		durationPoints = append(durationPoints, p.histogramDP(
+			p.metrics.internalOperationDurations[key],
+			now,
+			attr("operation", parts[0]),
+			attr("outcome", parts[1]),
+		))
+	}
+	if len(durationPoints) > 0 {
+		metrics = append(metrics, p.histogramMetric("loki_vl_proxy_internal_operation_duration_seconds", "Proxy-side internal operation duration.", "s", durationPoints...))
+	}
+	return metrics
 }
 
 func (p *OTLPPusher) queryRangeWindowMetrics(now int64) []map[string]interface{} {

@@ -108,19 +108,27 @@ const (
 type requestTelemetry struct {
 	mu sync.Mutex
 
-	cacheResult       string
-	upstreamCalls     int
-	upstreamDuration  time.Duration
-	upstreamLastCode  int
-	upstreamErrorSeen bool
+	cacheResult            string
+	upstreamCalls          int
+	upstreamDuration       time.Duration
+	upstreamLastCode       int
+	upstreamErrorSeen      bool
+	upstreamCallsByType    map[string]int
+	upstreamDurationByType map[string]time.Duration
+	internalOpsByType      map[string]int
+	internalDurationByType map[string]time.Duration
 }
 
 type requestTelemetrySnapshot struct {
-	cacheResult       string
-	upstreamCalls     int
-	upstreamDuration  time.Duration
-	upstreamLastCode  int
-	upstreamErrorSeen bool
+	cacheResult            string
+	upstreamCalls          int
+	upstreamDuration       time.Duration
+	upstreamLastCode       int
+	upstreamErrorSeen      bool
+	upstreamCallsByType    map[string]int
+	upstreamDurationByType map[string]time.Duration
+	internalOpsByType      map[string]int
+	internalDurationByType map[string]time.Duration
 }
 
 type requestRouteMeta struct {
@@ -197,7 +205,31 @@ func forwardedClientAddress(r *http.Request, trustProxyHeaders bool) string {
 	return host
 }
 
-func recordUpstreamCall(ctx context.Context, statusCode int, duration time.Duration, hadError bool) {
+func upstreamBreakdownKey(system, requestType string) string {
+	system = strings.TrimSpace(system)
+	requestType = strings.TrimSpace(requestType)
+	if requestType == "" {
+		requestType = "unknown"
+	}
+	if system == "" {
+		return requestType
+	}
+	return system + ":" + requestType
+}
+
+func internalOperationBreakdownKey(operation, outcome string) string {
+	operation = strings.TrimSpace(operation)
+	outcome = strings.TrimSpace(outcome)
+	if operation == "" {
+		operation = "unknown"
+	}
+	if outcome == "" {
+		outcome = "unknown"
+	}
+	return operation + ":" + outcome
+}
+
+func recordUpstreamCall(ctx context.Context, system, requestType string, statusCode int, duration time.Duration, hadError bool) {
 	rt := getRequestTelemetry(ctx)
 	if rt == nil {
 		return
@@ -207,6 +239,38 @@ func recordUpstreamCall(ctx context.Context, statusCode int, duration time.Durat
 	rt.upstreamDuration += duration
 	rt.upstreamLastCode = statusCode
 	rt.upstreamErrorSeen = rt.upstreamErrorSeen || hadError
+	if requestType != "" {
+		key := upstreamBreakdownKey(system, requestType)
+		if rt.upstreamCallsByType == nil {
+			rt.upstreamCallsByType = make(map[string]int)
+		}
+		if rt.upstreamDurationByType == nil {
+			rt.upstreamDurationByType = make(map[string]time.Duration)
+		}
+		rt.upstreamCallsByType[key]++
+		rt.upstreamDurationByType[key] += duration
+	}
+	rt.mu.Unlock()
+}
+
+func recordInternalOperation(ctx context.Context, operation, outcome string, duration time.Duration) {
+	rt := getRequestTelemetry(ctx)
+	if rt == nil {
+		return
+	}
+	if duration < 0 {
+		duration = 0
+	}
+	rt.mu.Lock()
+	key := internalOperationBreakdownKey(operation, outcome)
+	if rt.internalOpsByType == nil {
+		rt.internalOpsByType = make(map[string]int)
+	}
+	if rt.internalDurationByType == nil {
+		rt.internalDurationByType = make(map[string]time.Duration)
+	}
+	rt.internalOpsByType[key]++
+	rt.internalDurationByType[key] += duration
 	rt.mu.Unlock()
 }
 
@@ -217,12 +281,32 @@ func snapshotTelemetry(ctx context.Context) requestTelemetrySnapshot {
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
+	upstreamCallsByType := make(map[string]int, len(rt.upstreamCallsByType))
+	for key, value := range rt.upstreamCallsByType {
+		upstreamCallsByType[key] = value
+	}
+	upstreamDurationByType := make(map[string]time.Duration, len(rt.upstreamDurationByType))
+	for key, value := range rt.upstreamDurationByType {
+		upstreamDurationByType[key] = value
+	}
+	internalOpsByType := make(map[string]int, len(rt.internalOpsByType))
+	for key, value := range rt.internalOpsByType {
+		internalOpsByType[key] = value
+	}
+	internalDurationByType := make(map[string]time.Duration, len(rt.internalDurationByType))
+	for key, value := range rt.internalDurationByType {
+		internalDurationByType[key] = value
+	}
 	return requestTelemetrySnapshot{
-		cacheResult:       rt.cacheResult,
-		upstreamCalls:     rt.upstreamCalls,
-		upstreamDuration:  rt.upstreamDuration,
-		upstreamLastCode:  rt.upstreamLastCode,
-		upstreamErrorSeen: rt.upstreamErrorSeen,
+		cacheResult:            rt.cacheResult,
+		upstreamCalls:          rt.upstreamCalls,
+		upstreamDuration:       rt.upstreamDuration,
+		upstreamLastCode:       rt.upstreamLastCode,
+		upstreamErrorSeen:      rt.upstreamErrorSeen,
+		upstreamCallsByType:    upstreamCallsByType,
+		upstreamDurationByType: upstreamDurationByType,
+		internalOpsByType:      internalOpsByType,
+		internalDurationByType: internalDurationByType,
 	}
 }
 
@@ -1981,7 +2065,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
-	logsqlQuery, err := p.translateQuery(logqlQuery)
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), logqlQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
@@ -2093,7 +2177,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
-	logsqlQuery, err := p.translateQuery(logqlQuery)
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), logqlQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
@@ -2507,7 +2591,7 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 
 			params := url.Values{}
 			if strings.TrimSpace(rawQuery) != "" {
-				translated, terr := p.translateQuery(defaultQuery(rawQuery))
+				translated, terr := p.translateQueryWithContext(ctx, defaultQuery(rawQuery))
 				if terr == nil {
 					params.Set("query", translated)
 				} else {
@@ -2570,7 +2654,7 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 			} else {
 				params := url.Values{}
 				if strings.TrimSpace(rawQuery) != "" {
-					translated, terr := p.translateQuery(defaultQuery(rawQuery))
+					translated, terr := p.translateQueryWithContext(ctx, defaultQuery(rawQuery))
 					if terr == nil {
 						params.Set("query", translated)
 					} else {
@@ -3975,7 +4059,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	params := url.Values{}
 	// Forward the query param if provided (Loki uses it to scope label suggestions)
 	if q := r.FormValue("query"); q != "" {
-		translated, terr := p.translateQuery(defaultQuery(q))
+		translated, terr := p.translateQueryWithContext(r.Context(), defaultQuery(q))
 		if terr == nil {
 			params.Set("query", translated)
 		} else {
@@ -4126,7 +4210,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 
 	params := url.Values{}
 	if q := r.FormValue("query"); q != "" {
-		translated, terr := p.translateQuery(defaultQuery(q))
+		translated, terr := p.translateQueryWithContext(r.Context(), defaultQuery(q))
 		if terr == nil {
 			params.Set("query", translated)
 		} else {
@@ -4187,7 +4271,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	matchQueries := r.Form["match[]"]
 	query := "*"
 	if len(matchQueries) > 0 {
-		translated, err := p.translateQuery(matchQueries[0])
+		translated, err := p.translateQueryWithContext(r.Context(), matchQueries[0])
 		if err == nil {
 			query = translated
 		}
@@ -4262,7 +4346,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	if query == "" {
 		query = "*"
 	}
-	logsqlQuery, _ := p.translateQuery(query)
+	logsqlQuery, _ := p.translateQueryWithContext(r.Context(), query)
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
@@ -4418,7 +4502,7 @@ func (p *Proxy) computeVolumeResult(ctx context.Context, query, start, end, targ
 			return result, nil
 		}
 	}
-	logsqlQuery, _ := p.translateQuery(query)
+	logsqlQuery, _ := p.translateQueryWithContext(ctx, query)
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
@@ -4523,7 +4607,7 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 			return result, nil
 		}
 	}
-	logsqlQuery, _ := p.translateQuery(query)
+	logsqlQuery, _ := p.translateQueryWithContext(ctx, query)
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery+" | sort by (_time desc)")
@@ -5205,6 +5289,11 @@ func patternWindowedSamplingConfig(startParam, endParam, stepParam string, sourc
 		minWindowSourceLimit = 200
 		maxWindowSourceLimit = 4_000
 		maxPatternWindowSamples = 64
+		// Long selected ranges need enough source lines per window to cover the
+		// full window rather than a single 5m bucket from each 45m sample.
+		if span >= 24*time.Hour {
+			minWindowSourceLimit = maxWindowSourceLimit
+		}
 	}
 	if span < minWindowedSpan {
 		return 0, 0, 0, 0, false
@@ -5911,7 +6000,7 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Translate query
-	logsqlQuery, err := p.translateQuery(query)
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), query)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, "failed to translate query: "+err.Error())
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
@@ -5980,7 +6069,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logsqlQuery, err := p.translateQuery(logqlQuery)
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), logqlQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
@@ -6506,17 +6595,14 @@ func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, 
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
 		mappedStatus := statusFromUpstreamErr(err)
-		recordUpstreamCall(r.Context(), mappedStatus, duration, true)
 		p.recordUpstreamObservation(r.Context(), "loki", http.MethodGet, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		return nil, err
 	}
 	if err := decodeCompressedHTTPResponse(resp); err != nil {
 		_ = resp.Body.Close()
-		recordUpstreamCall(r.Context(), http.StatusBadGateway, duration, true)
 		p.recordUpstreamObservation(r.Context(), "loki", http.MethodGet, path, u.Hostname(), serverPort, http.StatusBadGateway, duration, err)
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
-	recordUpstreamCall(r.Context(), resp.StatusCode, duration, false)
 	p.recordUpstreamObservation(r.Context(), "loki", http.MethodGet, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
 	return resp, nil
 }
@@ -6713,6 +6799,10 @@ func deriveRequestType(endpoint, route string) string {
 	return trimmed
 }
 
+func deriveUpstreamRequestType(route string) string {
+	return deriveRequestType("", route)
+}
+
 func normalizeObservedRoute(route string) string {
 	route = strings.TrimSpace(route)
 	if route == "" {
@@ -6723,8 +6813,11 @@ func normalizeObservedRoute(route string) string {
 
 func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, route, serverAddress string, serverPort int, statusCode int, duration time.Duration, err error) {
 	meta := requestRouteMetaFromContext(ctx)
-	requestType := deriveRequestType(meta.endpoint, route)
+	requestType := deriveUpstreamRequestType(route)
 	observedRoute := normalizeObservedRoute(route)
+	parentRequestType := deriveRequestType(meta.endpoint, meta.route)
+
+	recordUpstreamCall(ctx, system, requestType, statusCode, duration, err != nil)
 
 	p.metrics.RecordUpstreamRequest(system, requestType, observedRoute, statusCode, duration)
 	if system == "vl" {
@@ -6752,6 +6845,12 @@ func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, r
 		"event.duration", duration.Nanoseconds(),
 		"loki.tenant.id", getOrgID(ctx),
 	}
+	if parentRequestType != "" && parentRequestType != "unknown" {
+		logAttrs = append(logAttrs, "loki.parent_request.type", parentRequestType)
+	}
+	if parentRoute := strings.TrimSpace(meta.route); parentRoute != "" {
+		logAttrs = append(logAttrs, "http.parent_route", parentRoute)
+	}
 	if serverAddress != "" {
 		logAttrs = append(logAttrs, "server.address", serverAddress)
 	}
@@ -6765,6 +6864,16 @@ func (p *Proxy) recordUpstreamObservation(ctx context.Context, system, method, r
 		)
 	}
 	p.log.Log(ctx, level, "upstream_request", logAttrs...)
+}
+
+func (p *Proxy) observeInternalOperation(ctx context.Context, operation, outcome string, duration time.Duration) {
+	if duration < 0 {
+		duration = 0
+	}
+	recordInternalOperation(ctx, operation, outcome, duration)
+	if p != nil && p.metrics != nil {
+		p.metrics.RecordInternalOperation(operation, outcome, duration)
+	}
 }
 
 func (p *Proxy) observeBackendVersionFromHeaders(headers http.Header) {
@@ -7197,7 +7306,6 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
 		mappedStatus := statusFromUpstreamErr(err)
-		recordUpstreamCall(ctx, mappedStatus, duration, true)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		if shouldRecordBreakerFailure(err) {
 			p.breaker.RecordFailure()
@@ -7207,11 +7315,9 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 	p.observeBackendVersionFromHeaders(resp.Header)
 	if err := decodeCompressedHTTPResponse(resp); err != nil {
 		_ = resp.Body.Close()
-		recordUpstreamCall(ctx, http.StatusBadGateway, duration, true)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, http.StatusBadGateway, duration, err)
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
-	recordUpstreamCall(ctx, resp.StatusCode, duration, false)
 	p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
@@ -7240,7 +7346,6 @@ func (p *Proxy) vlPost(ctx context.Context, path string, params url.Values) (*ht
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
 		mappedStatus := statusFromUpstreamErr(err)
-		recordUpstreamCall(ctx, mappedStatus, duration, true)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		if shouldRecordBreakerFailure(err) {
 			p.breaker.RecordFailure()
@@ -7250,11 +7355,9 @@ func (p *Proxy) vlPost(ctx context.Context, path string, params url.Values) (*ht
 	p.observeBackendVersionFromHeaders(resp.Header)
 	if err := decodeCompressedHTTPResponse(resp); err != nil {
 		_ = resp.Body.Close()
-		recordUpstreamCall(ctx, http.StatusBadGateway, duration, true)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, http.StatusBadGateway, duration, err)
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
-	recordUpstreamCall(ctx, resp.StatusCode, duration, false)
 	p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
@@ -7332,7 +7435,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// VL stats_query_range returns Prometheus-compatible format.
 	// Just wrap it in Loki's envelope.
 	// Translate label names (e.g., dots → underscores) in metric labels.
-	body = p.translateStatsResponseLabels(body, r.FormValue("query"))
+	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "matrix"))
 }
@@ -7359,7 +7462,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 		return
 	}
 
-	body = p.translateStatsResponseLabels(body, r.FormValue("query"))
+	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "vector"))
 }
@@ -10397,6 +10500,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		if proxyOverhead < 0 {
 			proxyOverhead = 0
 		}
+		p.metrics.RecordUpstreamCallsPerRequestWithRoute(endpoint, route, telemetry.upstreamCalls)
 
 		// Per-tenant metrics
 		p.metrics.RecordTenantRequestWithRoute(tenant, endpoint, route, sc.code, elapsed)
@@ -10440,6 +10544,14 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		grafanaSurface := grafanaProfile.surface
 		grafanaSourceTag := grafanaProfile.sourceTag
 		grafanaVersion := grafanaProfile.version
+		upstreamDurationByTypeMs := make(map[string]int64, len(telemetry.upstreamDurationByType))
+		for key, value := range telemetry.upstreamDurationByType {
+			upstreamDurationByTypeMs[key] = value.Milliseconds()
+		}
+		internalDurationByTypeMs := make(map[string]int64, len(telemetry.internalDurationByType))
+		for key, value := range telemetry.internalDurationByType {
+			internalDurationByTypeMs[key] = value.Milliseconds()
+		}
 		logAttrs := []interface{}{
 			"http.route", route,
 			"url.path", r.URL.Path,
@@ -10460,6 +10572,18 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.duration_ms", telemetry.upstreamDuration.Milliseconds(),
 			"upstream.status_code", telemetry.upstreamLastCode,
 			"upstream.error", telemetry.upstreamErrorSeen,
+		}
+		if len(telemetry.upstreamCallsByType) > 0 {
+			logAttrs = append(logAttrs, "upstream.calls_by_type", telemetry.upstreamCallsByType)
+		}
+		if len(upstreamDurationByTypeMs) > 0 {
+			logAttrs = append(logAttrs, "upstream.duration_ms_by_type", upstreamDurationByTypeMs)
+		}
+		if len(telemetry.internalOpsByType) > 0 {
+			logAttrs = append(logAttrs, "proxy.operations_by_type", telemetry.internalOpsByType)
+		}
+		if len(internalDurationByTypeMs) > 0 {
+			logAttrs = append(logAttrs, "proxy.operation_duration_ms_by_type", internalDurationByTypeMs)
 		}
 		if clientAddr != "" {
 			logAttrs = append(logAttrs, "client.address", clientAddr)
@@ -10648,13 +10772,20 @@ func deriveEnduserName(clientID, clientSource string) string {
 
 // translateQuery translates a LogQL query to LogsQL, applying label name translation.
 func (p *Proxy) translateQuery(logql string) (string, error) {
+	return p.translateQueryWithContext(context.Background(), logql)
+}
+
+func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (string, error) {
+	start := time.Now()
 	normalized := strings.TrimSpace(logql)
 	switch normalized {
 	case "", "*", `"*"`, "`*`":
+		p.observeInternalOperation(ctx, "translate_query", "passthrough", time.Since(start))
 		return "*", nil
 	}
 	if p.translationCache != nil {
 		if cached, ok := p.translationCache.Get(normalized); ok {
+			p.observeInternalOperation(ctx, "translate_query", "cache_hit", time.Since(start))
 			return string(cached), nil
 		}
 	}
@@ -10673,6 +10804,10 @@ func (p *Proxy) translateQuery(logql string) (string, error) {
 		translated, err = translator.TranslateLogQLWithLabels(logql, labelFn)
 	}
 	if err != nil {
+		if p.metrics != nil {
+			p.metrics.RecordTranslationError()
+		}
+		p.observeInternalOperation(ctx, "translate_query", "error", time.Since(start))
 		return "", err
 	}
 	trimmed := strings.TrimSpace(translated)
@@ -10682,6 +10817,10 @@ func (p *Proxy) translateQuery(logql string) (string, error) {
 	if p.translationCache != nil {
 		p.translationCache.SetWithTTL(normalized, []byte(translated), 5*time.Minute)
 	}
+	if p.metrics != nil {
+		p.metrics.RecordTranslation()
+	}
+	p.observeInternalOperation(ctx, "translate_query", "translated", time.Since(start))
 	return translated, nil
 }
 
@@ -10711,7 +10850,9 @@ func removeParserStage(logql, parser string) string {
 }
 
 func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end string) string {
+	opStart := time.Now()
 	if !hasParserStage(logql, "json") || !hasParserStage(logql, "logfmt") {
+		p.observeInternalOperation(ctx, "prefer_working_parser", "bypass", time.Since(opStart))
 		return logql
 	}
 
@@ -10720,8 +10861,9 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		baseQuery = logql
 	}
 	baseQuery = defaultFieldDetectionQuery(baseQuery)
-	logsqlQuery, err := p.translateQuery(baseQuery)
+	logsqlQuery, err := p.translateQueryWithContext(ctx, baseQuery)
 	if err != nil {
+		p.observeInternalOperation(ctx, "prefer_working_parser", "probe_translate_error", time.Since(opStart))
 		return logql
 	}
 
@@ -10737,12 +10879,14 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
+		p.observeInternalOperation(ctx, "prefer_working_parser", "probe_upstream_error", time.Since(opStart))
 		return logql
 	}
 	defer resp.Body.Close()
 
 	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if err != nil || len(body) == 0 {
+		p.observeInternalOperation(ctx, "prefer_working_parser", "probe_empty", time.Since(opStart))
 		return logql
 	}
 
@@ -10779,10 +10923,13 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 
 	switch {
 	case jsonHits == 0 && logfmtHits == 0:
+		p.observeInternalOperation(ctx, "prefer_working_parser", "no_parser_signal", time.Since(opStart))
 		return logql
 	case jsonHits >= logfmtHits:
+		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_json", time.Since(opStart))
 		return removeParserStage(logql, "logfmt")
 	default:
+		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_logfmt", time.Since(opStart))
 		return removeParserStage(logql, "json")
 	}
 }
@@ -10797,12 +10944,11 @@ func extractParserProbeQuery(logql string) string {
 	return strings.TrimSpace(logql)
 }
 
-// translateStatsResponseLabels translates label names in VL stats responses
-// (both vector and matrix result types) from VL field names (dots) to
-// Loki-compatible label names (underscores).
-func (p *Proxy) translateStatsResponseLabels(body []byte, originalQuery string) []byte {
+func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
+	start := time.Now()
 	var resp map[string]interface{}
 	if err := json.Unmarshal(body, &resp); err != nil {
+		p.observeInternalOperation(ctx, "translate_stats_response_labels", "decode_error", time.Since(start))
 		return body
 	}
 
@@ -10821,9 +10967,11 @@ func (p *Proxy) translateStatsResponseLabels(body []byte, originalQuery string) 
 	}
 
 	if len(results) == 0 {
+		p.observeInternalOperation(ctx, "translate_stats_response_labels", "no_results", time.Since(start))
 		return body
 	}
 
+	translatedMetrics := 0
 	for _, r := range results {
 		entry, ok := r.(map[string]interface{})
 		if !ok {
@@ -10833,13 +10981,18 @@ func (p *Proxy) translateStatsResponseLabels(body []byte, originalQuery string) 
 		if metricRaw, ok := entry["metric"]; ok {
 			if metric, ok := metricRaw.(map[string]interface{}); ok {
 				translated := make(map[string]interface{}, len(metric))
+				changed := false
 				for k, v := range metric {
 					if k == "__name__" {
+						changed = true
 						continue
 					}
 					lokiKey := k
 					if !p.labelTranslator.IsPassthrough() {
 						lokiKey = p.labelTranslator.ToLoki(k)
+					}
+					if lokiKey != k {
+						changed = true
 					}
 					translated[lokiKey] = v
 				}
@@ -10848,8 +11001,12 @@ func (p *Proxy) translateStatsResponseLabels(body []byte, originalQuery string) 
 						if value, ok := translated["level"]; ok {
 							translated["detected_level"] = value
 							delete(translated, "level")
+							changed = true
 						}
 					}
+				}
+				if changed {
+					translatedMetrics++
 				}
 				entry["metric"] = translated
 			}
@@ -10858,7 +11015,13 @@ func (p *Proxy) translateStatsResponseLabels(body []byte, originalQuery string) 
 
 	result, err := json.Marshal(resp)
 	if err != nil {
+		p.observeInternalOperation(ctx, "translate_stats_response_labels", "encode_error", time.Since(start))
 		return body
 	}
+	outcome := "noop"
+	if translatedMetrics > 0 {
+		outcome = "translated"
+	}
+	p.observeInternalOperation(ctx, "translate_stats_response_labels", outcome, time.Since(start))
 	return result
 }

@@ -239,6 +239,8 @@ func TestOTLPPusher_BuildPayload(t *testing.T) {
 	m.RecordCacheMiss()
 	m.RecordTranslation()
 	m.RecordRequest("query_range", 200, 100*time.Millisecond)
+	m.RecordUpstreamCallsPerRequest("query_range", 3)
+	m.RecordInternalOperation("translate_query", "translated", 4*time.Millisecond)
 	m.RecordTenantRequest("team-a", "query_range", 200, 100*time.Millisecond)
 	m.RecordClientIdentity("grafana-user", "query_range", 50*time.Millisecond, 128)
 	m.RecordClientStatus("grafana-user", "query_range", 200)
@@ -268,16 +270,28 @@ func TestOTLPPusher_BuildPayload(t *testing.T) {
 	metricsList := scopeMetrics[0]["metrics"].([]map[string]interface{})
 	foundClientHistogram := false
 	foundTenantCounter := false
+	foundFanoutHistogram := false
+	foundInternalOpCounter := false
 	for _, metric := range metricsList {
 		switch metric["name"] {
 		case "loki_vl_proxy_client_query_length_chars":
 			foundClientHistogram = true
 		case "loki_vl_proxy_tenant_requests_total":
 			foundTenantCounter = true
+		case "loki_vl_proxy_upstream_calls_per_request":
+			foundFanoutHistogram = true
+		case "loki_vl_proxy_internal_operation_total":
+			foundInternalOpCounter = true
 		}
 	}
-	if !foundClientHistogram || !foundTenantCounter {
-		t.Fatalf("expected richer OTLP payload, foundClientHistogram=%v foundTenantCounter=%v", foundClientHistogram, foundTenantCounter)
+	if !foundClientHistogram || !foundTenantCounter || !foundFanoutHistogram || !foundInternalOpCounter {
+		t.Fatalf(
+			"expected richer OTLP payload, foundClientHistogram=%v foundTenantCounter=%v foundFanoutHistogram=%v foundInternalOpCounter=%v",
+			foundClientHistogram,
+			foundTenantCounter,
+			foundFanoutHistogram,
+			foundInternalOpCounter,
+		)
 	}
 }
 
@@ -367,8 +381,8 @@ func TestOTLPPusher_ZstdCompression(t *testing.T) {
 
 func TestNormalizeMetricsEndpoint(t *testing.T) {
 	cases := map[string]string{
-		"":                                "",
-		"://collector%%%":                 "://collector%%%",
+		"":                                  "",
+		"://collector%%%":                   "://collector%%%",
 		"http://collector:4318":             "http://collector:4318/v1/metrics",
 		"http://collector:4318/":            "http://collector:4318/v1/metrics",
 		"http://collector:4318/v1":          "http://collector:4318/v1/metrics",
@@ -446,6 +460,8 @@ func TestOTLPPusher_SpecializedMetricFamilies(t *testing.T) {
 	m.RecordEndpointCacheHit("query_range")
 	m.RecordEndpointCacheMiss("query")
 	m.RecordBackendDuration("query_range", 25*time.Millisecond)
+	m.RecordUpstreamCallsPerRequest("query_range", 7)
+	m.RecordInternalOperation("translate_query", "cache_hit", 2*time.Millisecond)
 	m.RecordQueryRangeWindowFetchDuration(20 * time.Millisecond)
 	m.RecordQueryRangeWindowMergeDuration(5 * time.Millisecond)
 	m.RecordQueryRangeWindowCount(4)
@@ -489,12 +505,17 @@ func TestOTLPPusher_SpecializedMetricFamilies(t *testing.T) {
 	}
 
 	endpointFamilies := append(pusher.endpointCacheMetrics(now), pusher.backendDurationMetrics(now)...)
+	endpointFamilies = append(endpointFamilies, pusher.upstreamFanoutMetrics(now)...)
+	endpointFamilies = append(endpointFamilies, pusher.internalOperationMetrics(now)...)
 	endpointFamilies = append(endpointFamilies, pusher.queryRangeWindowMetrics(now)...)
 	names := metricNamesFromMaps(endpointFamilies)
 	for _, required := range []string{
 		"loki_vl_proxy_cache_hits_by_endpoint",
 		"loki_vl_proxy_cache_misses_by_endpoint",
 		"loki_vl_proxy_backend_duration_seconds",
+		"loki_vl_proxy_upstream_calls_per_request",
+		"loki_vl_proxy_internal_operation_total",
+		"loki_vl_proxy_internal_operation_duration_seconds",
 		"loki_vl_proxy_window_fetch_seconds",
 		"loki_vl_proxy_window_merge_seconds",
 		"loki_vl_proxy_window_count",
