@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-16
+
 ### Bug Fixes
 
 - security/runtime: require explicit `tenant.allow-global` for wildcard tenant bypass, add bounded peer/backend body reads plus `ReadHeaderTimeout`, hide sensitive metrics labels by default, and harden admin/debug surfaces.
