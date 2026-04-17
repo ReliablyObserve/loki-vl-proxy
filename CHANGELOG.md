@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-04-17
+
 ### Features
 
 - patterns/observability: add read-path quality counters, last-response gauges, persisted snapshot inventory gauges, and disk/peer snapshot byte exchange metrics so fleet monitoring can distinguish sparse real pattern activity from degraded mining or restore behavior.
