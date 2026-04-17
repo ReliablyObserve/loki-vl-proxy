@@ -274,7 +274,28 @@ These metrics track the proxy-side pattern cache and snapshot lifecycle.
 | `loki_vl_proxy_patterns_in_memory` | gauge | none | `Low` | current number of patterns held in in-memory snapshot state |
 | `loki_vl_proxy_patterns_cache_keys` | gauge | none | `Low` | current number of pattern cache keys held in memory |
 | `loki_vl_proxy_patterns_in_memory_bytes` | gauge | none | `Low` | current bytes used by in-memory pattern snapshot payloads |
+| `loki_vl_proxy_patterns_last_response_patterns` | gauge | none | `Low` | pattern entries returned in the most recent `/patterns` response |
+| `loki_vl_proxy_patterns_last_response_bytes` | gauge | none | `Low` | encoded size of the most recent `/patterns` response |
+| `loki_vl_proxy_patterns_persisted_disk_entries` | gauge | none | `Low` | snapshot cache keys present in the last persisted disk snapshot |
+| `loki_vl_proxy_patterns_persisted_disk_patterns` | gauge | none | `Low` | pattern entries present in the last persisted disk snapshot |
 | `loki_vl_proxy_patterns_persisted_disk_bytes` | gauge | none | `Low` | last persisted pattern snapshot size on disk |
+| `loki_vl_proxy_patterns_persist_writes_total` | counter | none | `Low` | completed pattern snapshot writes to disk |
+| `loki_vl_proxy_patterns_persist_write_bytes_total` | counter | none | `Low` | cumulative bytes written by pattern snapshot persistence |
+| `loki_vl_proxy_patterns_restored_disk_bytes_total` | counter | none | `Low` | cumulative bytes restored from on-disk pattern snapshots |
+| `loki_vl_proxy_patterns_restored_peer_bytes_total` | counter | none | `Low` | cumulative bytes restored from peer snapshot warmup |
+| `loki_vl_proxy_patterns_source_lines_requested_total` | counter | none | `Low` | source lines requested from backend pattern fetches |
+| `loki_vl_proxy_patterns_source_lines_scanned_total` | counter | none | `Low` | source lines scanned from backend responses |
+| `loki_vl_proxy_patterns_source_lines_observed_total` | counter | none | `Low` | source lines accepted into the pattern miner |
+| `loki_vl_proxy_patterns_windows_attempted_total` | counter | none | `Low` | pattern fetch windows attempted |
+| `loki_vl_proxy_patterns_windows_accepted_total` | counter | none | `Low` | pattern fetch windows accepted into the merged response |
+| `loki_vl_proxy_patterns_windows_capped_total` | counter | none | `Low` | pattern fetch windows that hit the per-window source line cap |
+| `loki_vl_proxy_patterns_second_pass_windows_total` | counter | none | `Low` | pattern fetch windows retried with a higher line limit |
+| `loki_vl_proxy_patterns_mined_pre_merge_total` | counter | none | `Low` | pattern entries mined before cross-window merge |
+| `loki_vl_proxy_patterns_mined_post_merge_total` | counter | none | `Low` | pattern entries after cross-window merge |
+| `loki_vl_proxy_patterns_snapshot_hits_total` | counter | none | `Low` | pattern snapshot fallback lookups that found cached payloads |
+| `loki_vl_proxy_patterns_snapshot_misses_total` | counter | none | `Low` | pattern snapshot fallback lookups that missed |
+| `loki_vl_proxy_patterns_snapshot_reused_total` | counter | none | `Low` | cached snapshot payloads actually reused in `/patterns` responses |
+| `loki_vl_proxy_patterns_low_coverage_responses_total` | counter | none | `Low` | responses flagged as likely degraded by capped or incomplete mining coverage |
 
 ### Peer Cache Metrics
 
