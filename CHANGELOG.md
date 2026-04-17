@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-04-17
+
 ### Bug Fixes
 
 - translator/proxy: remove off-by-one line scanners flagged by CodeQL in proxy and Drilldown helpers, and tighten translator helper coverage plus error-path tests to keep the reliability/maintainability sweep green.
