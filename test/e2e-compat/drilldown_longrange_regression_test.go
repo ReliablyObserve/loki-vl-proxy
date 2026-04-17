@@ -27,7 +27,7 @@ const (
 	longRangeVolumeService   = "drilldown-longrange-volume"
 )
 
-func TestDrilldown_LongRangePatterns_MaintainPerPatternCoverage(t *testing.T) {
+func TestDrilldown_LongRangePatterns_ReturnContiguousGroupedSamples(t *testing.T) {
 	ensureDataIngested(t)
 	waitForReady(t, proxyURL+"/ready", 30*time.Second)
 	waitForReady(t, grafanaURL+"/api/health", 30*time.Second)
@@ -81,20 +81,26 @@ func TestDrilldown_LongRangePatterns_MaintainPerPatternCoverage(t *testing.T) {
 		t.Fatalf("expected long-range patterns to be detected, got %d", len(entries))
 	}
 
-	_, _, expectedBuckets := denseExpectedBuckets(start, end, cfg.step)
-	minCoverageBuckets := (expectedBuckets * 4) / 5
-	checkCount := min(4, len(entries))
+	minReturnedPatterns := min(4, cfg.patternCount)
+	if len(entries) < minReturnedPatterns {
+		t.Fatalf("expected at least %d grouped long-range patterns, got %d: %#v", minReturnedPatterns, len(entries), entries)
+	}
+
+	stepSeconds := int64(cfg.step / time.Second)
+	checkCount := min(minReturnedPatterns, len(entries))
 	for i := 0; i < checkCount; i++ {
-		nonzero := countNonZeroPatternBuckets(entries[i].Samples)
-		if nonzero < minCoverageBuckets {
-			t.Fatalf(
-				"expected pattern %q to cover at least %d/%d buckets, got %d samples: %#v",
-				entries[i].Pattern,
-				minCoverageBuckets,
-				expectedBuckets,
-				nonzero,
-				entries[i].Samples,
-			)
+		nonzero, firstTS, lastTS, maxGapSeconds := patternSampleStats(entries[i].Samples)
+		if nonzero < 2 {
+			t.Fatalf("expected grouped pattern %q to include at least two non-zero samples, got %d: %#v", entries[i].Pattern, nonzero, entries[i].Samples)
+		}
+		if firstTS == 0 || lastTS == 0 {
+			t.Fatalf("expected grouped pattern %q to include numeric timestamps: %#v", entries[i].Pattern, entries[i].Samples)
+		}
+		if firstTS < start.Unix() || lastTS > end.Unix() {
+			t.Fatalf("expected grouped pattern %q timestamps to stay within requested range [%d,%d], got first=%d last=%d", entries[i].Pattern, start.Unix(), end.Unix(), firstTS, lastTS)
+		}
+		if maxGapSeconds > stepSeconds {
+			t.Fatalf("expected grouped pattern %q to keep contiguous sample buckets, max_gap=%ds step=%ds samples=%#v", entries[i].Pattern, maxGapSeconds, stepSeconds, entries[i].Samples)
 		}
 	}
 }
@@ -405,33 +411,49 @@ func waitForDrilldownServiceVisible(t *testing.T, serviceName string, start, end
 	}
 }
 
-func countNonZeroPatternBuckets(samples [][]interface{}) int {
-	count := 0
+func patternSampleStats(samples [][]interface{}) (nonzero int, firstTS int64, lastTS int64, maxGapSeconds int64) {
+	var prevTS int64
 	for _, sample := range samples {
+		if len(sample) == 0 {
+			continue
+		}
+		ts, okTS := denseSampleTs(sample[0])
+		if !okTS {
+			continue
+		}
+		if firstTS == 0 || ts < firstTS {
+			firstTS = ts
+		}
+		if prevTS != 0 && ts-prevTS > maxGapSeconds {
+			maxGapSeconds = ts - prevTS
+		}
+		prevTS = ts
+		if ts > lastTS {
+			lastTS = ts
+		}
 		if len(sample) < 2 {
 			continue
 		}
-		v, ok := sample[1].(float64)
-		if ok && v > 0 {
-			count++
-			continue
-		}
 		switch raw := sample[1].(type) {
+		case float64:
+			if raw > 0 {
+				nonzero++
+			}
 		case int:
 			if raw > 0 {
-				count++
+				nonzero++
 			}
 		case int64:
 			if raw > 0 {
-				count++
+				nonzero++
 			}
 		case string:
 			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
-				count++
+				nonzero++
 			}
 		}
 	}
-	return count
+	return nonzero, firstTS, lastTS, maxGapSeconds
 }
 
 func queryRangeMatrixResult(t *testing.T, expr string, start, end time.Time, step time.Duration) []interface{} {
