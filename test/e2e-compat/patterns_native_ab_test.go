@@ -37,10 +37,93 @@ var stablePatternMessages = []string{
 	`stable_pattern_delta component=collector action=ship outcome=ok`,
 }
 
+var burstyPatternMessages = []string{
+	`bursty_pattern_base component=api method=GET route=/orders status=200`,
+	`bursty_pattern_auth component=api method=POST route=/login status=401`,
+	`bursty_pattern_ship component=worker action=ship outcome=retry`,
+}
+
+func waitForPatternABReady(t *testing.T) {
+	t.Helper()
+
+	const readyTimeout = 60 * time.Second
+	waitForReady(t, lokiURL+"/ready", readyTimeout)
+	waitForReady(t, proxyURL+"/ready", readyTimeout)
+	waitForReady(t, grafanaURL+"/api/health", readyTimeout)
+}
+
+func TestDrilldown_Patterns_NativeLokiAndProxyBurstyMixedPatternsStayAligned(t *testing.T) {
+	waitForPatternABReady(t)
+
+	cfg := stablePatternABConfig{
+		rangeWindow: 2 * time.Hour,
+		step:        30 * time.Second,
+		batchSize:   1000,
+	}
+	serviceName := fmt.Sprintf("stable-pattern-bursty-%d", time.Now().UTC().UnixNano())
+	start := time.Now().UTC().Add(-cfg.rangeWindow).Truncate(cfg.step)
+	end := start.Add(cfg.rangeWindow)
+
+	seedPatternMessagesToLokiAndVL(t, serviceName, start, end, cfg, func(bucket time.Time) []string {
+		bucketIndex := int(bucket.Sub(start) / cfg.step)
+		messages := []string{burstyPatternMessages[0]}
+		if bucketIndex%3 == 0 {
+			messages = append(messages, burstyPatternMessages[1])
+		}
+		if bucketIndex%7 == 0 {
+			messages = append(messages, burstyPatternMessages[2])
+		}
+		return messages
+	})
+
+	query := fmt.Sprintf(`{service_name="%s"}`, serviceName)
+	directUID := grafanaDatasourceUID(t, "Loki (direct)")
+	proxyUID := grafanaDatasourceUID(t, "Loki (via VL proxy patterns autodetect)")
+
+	directEntries := waitForPatternsViaGrafanaDatasource(t, directUID, query, start, end, cfg.step, len(burstyPatternMessages))
+	proxyEntries := waitForPatternsViaGrafanaDatasource(t, proxyUID, query, start, end, cfg.step, len(burstyPatternMessages))
+
+	directSummary := summarizePatternEntriesByPattern(t, "direct", directEntries, len(burstyPatternMessages), int64(cfg.step/time.Second))
+	proxySummary := summarizePatternEntriesByPattern(t, "proxy", proxyEntries, len(burstyPatternMessages), int64(cfg.step/time.Second))
+	assertPatternSet(t, "direct", directSummary, burstyPatternMessages)
+	assertPatternSet(t, "proxy", proxySummary, burstyPatternMessages)
+	assertPatternSignalComparable(t, directSummary, proxySummary, int64(cfg.step/time.Second), 1)
+}
+
+func TestDrilldown_Patterns_NativeLokiAndProxyHighCardinalityVariablesStayAligned(t *testing.T) {
+	waitForPatternABReady(t)
+
+	cfg := stablePatternABConfig{
+		rangeWindow: 90 * time.Minute,
+		step:        30 * time.Second,
+		batchSize:   1000,
+	}
+	serviceName := fmt.Sprintf("stable-pattern-hc-%d", time.Now().UTC().UnixNano())
+	start := time.Now().UTC().Add(-cfg.rangeWindow).Truncate(cfg.step)
+	end := start.Add(cfg.rangeWindow)
+
+	seedPatternMessagesToLokiAndVL(t, serviceName, start, end, cfg, func(bucket time.Time) []string {
+		seq := bucket.Unix()
+		return []string{
+			fmt.Sprintf("hc_uuid request trace_id=550e8400-e29b-41d4-a716-%012d user=user-%d", seq, seq%7),
+			fmt.Sprintf("hc_path request path=/api/v1/orders/%d/items/%d status=500", seq%1000, (seq/3)%1000),
+		}
+	})
+
+	query := fmt.Sprintf(`{service_name="%s"}`, serviceName)
+	directUID := grafanaDatasourceUID(t, "Loki (direct)")
+	proxyUID := grafanaDatasourceUID(t, "Loki (via VL proxy patterns autodetect)")
+
+	directEntries := waitForPatternsViaGrafanaDatasource(t, directUID, query, start, end, cfg.step, 2)
+	proxyEntries := waitForPatternsViaGrafanaDatasource(t, proxyUID, query, start, end, cfg.step, 2)
+
+	directSummary := summarizePatternEntriesByPattern(t, "direct", directEntries, 2, int64(cfg.step/time.Second))
+	proxySummary := summarizePatternEntriesByPattern(t, "proxy", proxyEntries, 2, int64(cfg.step/time.Second))
+	assertPatternSignalComparable(t, directSummary, proxySummary, int64(cfg.step/time.Second), 1)
+}
+
 func TestDrilldown_Patterns_NativeLokiAndProxyStayDenseOnSameStableData(t *testing.T) {
-	waitForReady(t, lokiURL+"/ready", 30*time.Second)
-	waitForReady(t, proxyURL+"/ready", 30*time.Second)
-	waitForReady(t, grafanaURL+"/api/health", 30*time.Second)
+	waitForPatternABReady(t)
 
 	cfg := stablePatternABConfig{
 		rangeWindow: 2 * time.Hour,
@@ -91,6 +174,13 @@ func TestDrilldown_Patterns_NativeLokiAndProxyStayDenseOnSameStableData(t *testi
 }
 
 func seedStablePatternsToLokiAndVL(t *testing.T, serviceName string, start, end time.Time, cfg stablePatternABConfig) {
+	t.Helper()
+	seedPatternMessagesToLokiAndVL(t, serviceName, start, end, cfg, func(time.Time) []string {
+		return stablePatternMessages
+	})
+}
+
+func seedPatternMessagesToLokiAndVL(t *testing.T, serviceName string, start, end time.Time, cfg stablePatternABConfig, messagesForBucket func(time.Time) []string) {
 	t.Helper()
 
 	if cfg.step <= 0 {
@@ -159,7 +249,7 @@ func seedStablePatternsToLokiAndVL(t *testing.T, serviceName string, start, end 
 	}
 
 	for bucket := start; !bucket.After(end); bucket = bucket.Add(cfg.step) {
-		for _, message := range stablePatternMessages {
+		for _, message := range messagesForBucket(bucket) {
 			ts := bucket.UTC()
 			lokiValues = append(lokiValues, []string{fmt.Sprintf("%d", ts.UnixNano()), message})
 			vlBody.WriteString("{\"_time\":\"")
@@ -286,4 +376,118 @@ func summarizeStablePatternEntries(t *testing.T, source string, entries []denseP
 	}
 
 	return summaries
+}
+func summarizePatternEntriesByPattern(t *testing.T, source string, entries []densePatternEntry, expectedMinPatterns int, _ int64) map[string]stablePatternSummary {
+	t.Helper()
+
+	if len(entries) < expectedMinPatterns {
+		t.Fatalf("%s returned too few patterns: got=%d want_at_least=%d entries=%v", source, len(entries), expectedMinPatterns, entries)
+	}
+
+	summaries := make(map[string]stablePatternSummary, len(entries))
+	for _, entry := range entries {
+		sampleBuckets := len(entry.Samples)
+		nonZeroBuckets := 0
+		firstTs := int64(0)
+		lastTs := int64(0)
+		maxGapSeconds := int64(0)
+		var prevTs int64
+		for i, sample := range entry.Samples {
+			if len(sample) < 2 {
+				continue
+			}
+			ts, ok := denseSampleTs(sample[0])
+			if !ok {
+				t.Fatalf("%s pattern %q has non-numeric timestamp sample=%v", source, entry.Pattern, sample)
+			}
+			value, ok := denseSampleTs(sample[1])
+			if !ok {
+				t.Fatalf("%s pattern %q has non-numeric value sample=%v", source, entry.Pattern, sample)
+			}
+			if value > 0 {
+				nonZeroBuckets++
+			}
+			if i == 0 {
+				firstTs = ts
+			}
+			if prevTs != 0 && ts-prevTs > maxGapSeconds {
+				maxGapSeconds = ts - prevTs
+			}
+			prevTs = ts
+			lastTs = ts
+		}
+		summaries[entry.Pattern] = stablePatternSummary{
+			pattern:        entry.Pattern,
+			sampleBuckets:  sampleBuckets,
+			nonZeroBuckets: nonZeroBuckets,
+			firstTs:        firstTs,
+			lastTs:         lastTs,
+			maxGapSeconds:  maxGapSeconds,
+		}
+	}
+	return summaries
+}
+
+func assertPatternSummariesMatch(t *testing.T, directSummary, proxySummary map[string]stablePatternSummary) {
+	t.Helper()
+
+	if len(directSummary) != len(proxySummary) {
+		t.Fatalf("expected same pattern count for direct and proxy, direct=%d proxy=%d direct=%v proxy=%v", len(directSummary), len(proxySummary), directSummary, proxySummary)
+	}
+	for pattern, directItem := range directSummary {
+		proxyItem, ok := proxySummary[pattern]
+		if !ok {
+			t.Fatalf("proxy missing pattern %q in %v", pattern, proxySummary)
+		}
+		if directItem.sampleBuckets != proxyItem.sampleBuckets || directItem.nonZeroBuckets != proxyItem.nonZeroBuckets || directItem.maxGapSeconds != proxyItem.maxGapSeconds {
+			t.Fatalf("pattern %q diverged between direct Loki and proxy: direct=%+v proxy=%+v", pattern, directItem, proxyItem)
+		}
+	}
+}
+
+func assertPatternSignalComparable(t *testing.T, directSummary, proxySummary map[string]stablePatternSummary, stepSeconds int64, maxCountDrift int) {
+	t.Helper()
+
+	if len(directSummary) != len(proxySummary) {
+		t.Fatalf("expected same pattern count for direct and proxy, direct=%d proxy=%d direct=%v proxy=%v", len(directSummary), len(proxySummary), directSummary, proxySummary)
+	}
+	for pattern, directItem := range directSummary {
+		proxyItem, ok := proxySummary[pattern]
+		if !ok {
+			t.Fatalf("proxy missing pattern %q in %v", pattern, proxySummary)
+		}
+		if absInt(directItem.nonZeroBuckets-proxyItem.nonZeroBuckets) > maxCountDrift {
+			t.Fatalf("pattern %q diverged in non-zero coverage: direct=%+v proxy=%+v", pattern, directItem, proxyItem)
+		}
+		if absInt64(directItem.firstTs-proxyItem.firstTs) > stepSeconds || absInt64(directItem.lastTs-proxyItem.lastTs) > stepSeconds {
+			t.Fatalf("pattern %q diverged in time bounds: direct=%+v proxy=%+v", pattern, directItem, proxyItem)
+		}
+	}
+}
+
+func assertPatternSet(t *testing.T, source string, summaries map[string]stablePatternSummary, expected []string) {
+	t.Helper()
+
+	if len(summaries) != len(expected) {
+		t.Fatalf("%s returned unexpected pattern count: got=%d want=%d summaries=%v", source, len(summaries), len(expected), summaries)
+	}
+	for _, pattern := range expected {
+		if _, ok := summaries[pattern]; !ok {
+			t.Fatalf("%s missing expected pattern %q in %v", source, pattern, summaries)
+		}
+	}
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func absInt64(v int64) int64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }

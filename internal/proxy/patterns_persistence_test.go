@@ -9,11 +9,22 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
+
+func requireProxyMetricsContain(t *testing.T, p *Proxy, needle string) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	p.metrics.Handler(rec, req)
+	if !strings.Contains(rec.Body.String(), needle) {
+		t.Fatalf("expected metrics output to contain %q, got:\n%s", needle, rec.Body.String())
+	}
+}
 
 func TestPatternsRestoreFromDisk_AndWarmStartup(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -49,7 +60,8 @@ func TestPatternsRestoreFromDisk_AndWarmStartup(t *testing.T) {
 			},
 		},
 	}
-	if err := os.WriteFile(persistPath, mustMarshalJSON(t, snapshot), 0o644); err != nil {
+	snapshotBody := mustMarshalJSON(t, snapshot)
+	if err := os.WriteFile(persistPath, snapshotBody, 0o644); err != nil {
 		t.Fatalf("write snapshot: %v", err)
 	}
 
@@ -63,6 +75,9 @@ func TestPatternsRestoreFromDisk_AndWarmStartup(t *testing.T) {
 	if restoredAt != savedAt {
 		t.Fatalf("expected restoredAt=%d, got %d", savedAt, restoredAt)
 	}
+	requireProxyMetricsContain(t, p, "loki_vl_proxy_patterns_persisted_disk_entries 1")
+	requireProxyMetricsContain(t, p, "loki_vl_proxy_patterns_persisted_disk_patterns 1")
+	requireProxyMetricsContain(t, p, "loki_vl_proxy_patterns_restored_disk_bytes_total "+strconv.Itoa(len(snapshotBody)))
 	if got, _, hit := p.cache.GetWithTTL(cacheKey); !hit || len(got) == 0 {
 		t.Fatalf("expected cache key %q to be restored from disk snapshot", cacheKey)
 	}
@@ -120,12 +135,13 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 		},
 	}
 
+	peerBody := append(mustMarshalJSON(t, peerSnapshot), '\n')
 	peerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/_cache/get" {
 			t.Fatalf("unexpected peer path: %s", r.URL.Path)
 		}
-		if err := json.NewEncoder(w).Encode(peerSnapshot); err != nil {
-			t.Fatalf("encode peer snapshot: %v", err)
+		if _, err := w.Write(peerBody); err != nil {
+			t.Fatalf("write peer snapshot: %v", err)
 		}
 	}))
 	defer peerSrv.Close()
@@ -144,8 +160,8 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 	})
 
 	// Empty peer address branch.
-	if snap, err := p.fetchPatternsSnapshotFromPeer("", 50*time.Millisecond); err != nil || snap != nil {
-		t.Fatalf("expected empty peer address to return nil,nil; got snapshot=%v err=%v", snap, err)
+	if snap, bodyBytes, err := p.fetchPatternsSnapshotFromPeer("", 50*time.Millisecond); err != nil || snap != nil || bodyBytes != 0 {
+		t.Fatalf("expected empty peer address to return nil,0,nil; got snapshot=%v bodyBytes=%d err=%v", snap, bodyBytes, err)
 	}
 
 	ok, restoredAt, err := p.restorePatternsFromPeers(0)
@@ -158,6 +174,7 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 	if restoredAt != peerSavedAt {
 		t.Fatalf("expected restoredAt=%d, got %d", peerSavedAt, restoredAt)
 	}
+	requireProxyMetricsContain(t, p, "loki_vl_proxy_patterns_restored_peer_bytes_total "+strconv.Itoa(len(peerBody)))
 	if got, _, hit := p.cache.GetWithTTL(peerCacheKey); !hit || len(got) == 0 {
 		t.Fatalf("expected cache key %q to be restored from peer snapshot", peerCacheKey)
 	}

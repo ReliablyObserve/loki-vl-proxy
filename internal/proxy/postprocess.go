@@ -18,12 +18,18 @@ var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
 
 const maxPatternResponseLimit = 1000
 const (
-	patternVarPlaceholder = "<_>"
-	patternMinTokens      = 4
-	patternMaxTokens      = 80
-	patternSimThreshold   = 0.3
-	patternMaxLineLength  = 3000
-	patternPrefixDepth    = 4
+	patternVarPlaceholder  = "<_>"
+	patternNumPlaceholder  = "<num>"
+	patternUUIDPlaceholder = "<uuid>"
+	patternIPPlaceholder   = "<ip>"
+	patternPathPlaceholder = "<path>"
+	patternHexPlaceholder  = "<hex>"
+	patternTSPlaceholder   = "<ts>"
+	patternMinTokens       = 4
+	patternMaxTokens       = 80
+	patternSimThreshold    = 0.3
+	patternMaxLineLength   = 3000
+	patternPrefixDepth     = 4
 )
 
 type patternBucket struct {
@@ -33,6 +39,16 @@ type patternBucket struct {
 	total       int
 	tokens      []string
 	spacesAfter []int
+}
+
+type patternExtractionStats struct {
+	scannedLines  int
+	observedLines int
+	patternCount  int
+}
+
+func (s patternExtractionStats) hitLimit(limit int) bool {
+	return limit > 0 && s.scannedLines >= limit
 }
 
 // decolorizeStreams strips ANSI escape sequences from all log lines in streams.
@@ -180,12 +196,17 @@ func extractLineFormatTemplate(query string) string {
 // It tokenizes lines with punctuation-aware splitting, clusters by similarity,
 // and returns Grafana Logs Drilldown compatible pattern buckets.
 func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]interface{} {
+	patterns, _ := extractLogPatternsWithStats(vlBody, step, limit)
+	return patterns
+}
+
+func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[string]interface{}, patternExtractionStats) {
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
+	stats := patternExtractionStats{}
 	if len(vlBody) == 0 {
-		return nil
+		return nil, stats
 	}
-	observed := 0
 
 	scanner := bufio.NewScanner(bytes.NewReader(vlBody))
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
@@ -195,6 +216,7 @@ func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]inte
 		if len(line) == 0 {
 			continue
 		}
+		stats.scannedLines++
 		for key := range entry {
 			delete(entry, key)
 		}
@@ -219,30 +241,41 @@ func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]inte
 			bucket = (bucket / stepSeconds) * stepSeconds
 		}
 		miner.Observe(level, msg, bucket)
-		observed++
+		stats.observedLines++
 	}
-	if observed > 0 {
-		return buildPatternResponse(miner, limit)
+	if stats.observedLines > 0 {
+		patterns := buildPatternResponse(miner, limit)
+		stats.patternCount = len(patterns)
+		return patterns, stats
 	}
 
 	var decoded interface{}
 	if err := json.Unmarshal(vlBody, &decoded); err != nil {
-		return nil
+		return nil, stats
 	}
-	collectPatternObservationsFromJSON(miner, decoded, stepSeconds, "", &observed)
-	if observed == 0 {
-		return nil
+	collectPatternObservationsFromJSON(miner, decoded, stepSeconds, "", &stats.observedLines)
+	if stats.observedLines == 0 {
+		return nil, stats
 	}
-	return buildPatternResponse(miner, limit)
+	patterns := buildPatternResponse(miner, limit)
+	stats.patternCount = len(patterns)
+	return patterns, stats
 }
 
 func extractLogPatternsFromWindowEntries(entries []queryRangeWindowEntry, step string, limit int) []map[string]interface{} {
+	patterns, _ := extractLogPatternsFromWindowEntriesWithStats(entries, step, limit)
+	return patterns
+}
+
+func extractLogPatternsFromWindowEntriesWithStats(entries []queryRangeWindowEntry, step string, limit int) ([]map[string]interface{}, patternExtractionStats) {
 	if len(entries) == 0 {
-		return nil
+		return nil, patternExtractionStats{}
 	}
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
+	stats := patternExtractionStats{}
 	for _, entry := range entries {
+		stats.scannedLines++
 		if len(entry.Value) < 2 {
 			continue
 		}
@@ -263,8 +296,11 @@ func extractLogPatternsFromWindowEntries(entries []queryRangeWindowEntry, step s
 			bucket = (bucket / stepSeconds) * stepSeconds
 		}
 		miner.Observe(level, msg, bucket)
+		stats.observedLines++
 	}
-	return buildPatternResponse(miner, limit)
+	patterns := buildPatternResponse(miner, limit)
+	stats.patternCount = len(patterns)
+	return patterns, stats
 }
 
 func parsePatternStepSeconds(step string) int64 {
@@ -450,14 +486,14 @@ func buildPatternResponse(miner *patternMiner, limit int) []map[string]interface
 
 type patternMiner struct {
 	tokenizer *patternLineTokenizer
-	// level -> tokenCount -> clusters
-	groups map[string]map[int][]*patternBucket
+	// level -> tokenCount -> structural signature -> clusters
+	groups map[string]map[int]map[string][]*patternBucket
 }
 
 func newPatternMiner() *patternMiner {
 	return &patternMiner{
 		tokenizer: newPatternLineTokenizer(),
-		groups:    make(map[string]map[int][]*patternBucket),
+		groups:    make(map[string]map[int]map[string][]*patternBucket),
 	}
 }
 
@@ -470,10 +506,16 @@ func (m *patternMiner) Observe(level, line string, bucket int64) {
 
 	levelGroups := m.groups[level]
 	if levelGroups == nil {
-		levelGroups = make(map[int][]*patternBucket)
+		levelGroups = make(map[int]map[string][]*patternBucket)
 		m.groups[level] = levelGroups
 	}
-	candidates := levelGroups[tokenCount]
+	signatureGroups := levelGroups[tokenCount]
+	if signatureGroups == nil {
+		signatureGroups = make(map[string][]*patternBucket)
+		levelGroups[tokenCount] = signatureGroups
+	}
+	signature := patternStructureSignature(tokens)
+	candidates := signatureGroups[signature]
 	cluster := bestPatternCluster(candidates, tokens)
 	if cluster == nil {
 		cluster = &patternBucket{
@@ -482,7 +524,7 @@ func (m *patternMiner) Observe(level, line string, bucket int64) {
 			tokens:      cloneTokens(tokens),
 			spacesAfter: cloneInts(spacesAfter),
 		}
-		levelGroups[tokenCount] = append(levelGroups[tokenCount], cluster)
+		signatureGroups[signature] = append(signatureGroups[signature], cluster)
 	} else {
 		cluster.tokens = mergePatternTemplate(cluster.tokens, tokens)
 	}
@@ -493,8 +535,10 @@ func (m *patternMiner) Observe(level, line string, bucket int64) {
 func (m *patternMiner) AllClusters() []*patternBucket {
 	out := make([]*patternBucket, 0)
 	for _, byCount := range m.groups {
-		for _, clusters := range byCount {
-			out = append(out, clusters...)
+		for _, bySignature := range byCount {
+			for _, clusters := range bySignature {
+				out = append(out, clusters...)
+			}
 		}
 	}
 	return out
@@ -536,10 +580,10 @@ func patternPrefixCompatible(templateTokens, tokens []string) bool {
 	for i := 0; i < depth; i++ {
 		templateToken := templateTokens[i]
 		inputToken := tokens[i]
-		if templateToken == patternVarPlaceholder || templateToken == inputToken {
+		if patternPlaceholderMatchesToken(templateToken, inputToken) || templateToken == inputToken {
 			continue
 		}
-		if patternTokenHasDigits(templateToken) || patternTokenHasDigits(inputToken) {
+		if samePatternPlaceholderKind(templateToken, inputToken) || patternTokenHasDigits(templateToken) || patternTokenHasDigits(inputToken) {
 			continue
 		}
 		return false
@@ -563,10 +607,10 @@ func getPatternSimilarity(templateTokens, tokens []string) (float64, int) {
 	simTokens := 0
 	paramCount := 0
 	for i := range templateTokens {
-		switch templateTokens[i] {
-		case patternVarPlaceholder:
+		switch {
+		case patternPlaceholderMatchesToken(templateTokens[i], tokens[i]):
 			paramCount++
-		case tokens[i]:
+		case templateTokens[i] == tokens[i]:
 			simTokens++
 		}
 	}
@@ -579,7 +623,7 @@ func mergePatternTemplate(templateTokens, tokens []string) []string {
 	}
 	for i := range templateTokens {
 		if templateTokens[i] != tokens[i] {
-			templateTokens[i] = patternVarPlaceholder
+			templateTokens[i] = commonPatternPlaceholder(templateTokens[i], tokens[i])
 		}
 	}
 	return templateTokens
@@ -651,7 +695,7 @@ func (p *patternLineTokenizer) Join(tokens []string, spacesAfter []int) string {
 	spacesIdx := 0
 	for i, token := range tokens {
 		out := token
-		if token == patternVarPlaceholder {
+		if isPatternPlaceholder(token) {
 			out = patternVarPlaceholder
 		}
 		strBuilder.WriteString(out)
@@ -661,6 +705,140 @@ func (p *patternLineTokenizer) Join(tokens []string, spacesAfter []int) string {
 		}
 	}
 	return deduplicatePlaceholders(strBuilder.String(), patternVarPlaceholder)
+}
+
+func patternStructureSignature(tokens []string) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	parts := make([]string, len(tokens))
+	for i, token := range tokens {
+		if i > 0 {
+			prev := tokens[i-1]
+			if prev == "=" || prev == ":" {
+				if placeholder := patternPlaceholderKind(token); placeholder != "" {
+					parts[i] = placeholder
+				} else {
+					parts[i] = patternVarPlaceholder
+				}
+				continue
+			}
+		}
+		if placeholder := patternPlaceholderKind(token); placeholder != "" {
+			parts[i] = placeholder
+			continue
+		}
+		parts[i] = token
+	}
+	return strings.Join(parts, "\x1e")
+}
+
+func isPatternPlaceholder(token string) bool {
+	switch token {
+	case patternVarPlaceholder, patternNumPlaceholder, patternUUIDPlaceholder, patternIPPlaceholder, patternPathPlaceholder, patternHexPlaceholder, patternTSPlaceholder:
+		return true
+	default:
+		return false
+	}
+}
+
+func patternPlaceholderKind(token string) string {
+	if isPatternPlaceholder(token) {
+		return token
+	}
+	return patternPlaceholderForToken(token)
+}
+
+func patternPlaceholderMatchesToken(placeholder, token string) bool {
+	if placeholder == "" {
+		return false
+	}
+	if placeholder == patternVarPlaceholder {
+		return true
+	}
+	return placeholder == patternPlaceholderForToken(token)
+}
+
+func samePatternPlaceholderKind(left, right string) bool {
+	leftKind := patternPlaceholderKind(left)
+	rightKind := patternPlaceholderKind(right)
+	return leftKind != "" && leftKind == rightKind
+}
+
+func commonPatternPlaceholder(left, right string) string {
+	leftKind := patternPlaceholderKind(left)
+	rightKind := patternPlaceholderKind(right)
+	if leftKind != "" && leftKind == rightKind {
+		return leftKind
+	}
+	return patternVarPlaceholder
+}
+
+func patternPlaceholderForToken(token string) string {
+	token = strings.TrimSpace(strings.Trim(token, `"'()[]{}<>,;`))
+	if token == "" {
+		return ""
+	}
+	switch {
+	case isIPLike(token):
+		return patternIPPlaceholder
+	case isUUIDLike(token):
+		return patternUUIDPlaceholder
+	case isTimestampLike(token):
+		return patternTSPlaceholder
+	case isPathLike(token):
+		return patternPathPlaceholder
+	case isNumericLike(token):
+		return patternNumPlaceholder
+	case len(token) >= 8 && isHexLike(token):
+		return patternHexPlaceholder
+	default:
+		return ""
+	}
+}
+
+func isUUIDLike(token string) bool {
+	if len(token) != 36 {
+		return false
+	}
+	for i, ch := range token {
+		switch i {
+		case 8, 13, 18, 23:
+			if ch != '-' {
+				return false
+			}
+		default:
+			isHex := (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isTimestampLike(token string) bool {
+	return strings.Contains(token, "T") && strings.Contains(token, ":")
+}
+
+func isPathLike(token string) bool {
+	return strings.HasPrefix(token, "/") && strings.Count(token, "/") >= 2
+}
+
+func isNumericLike(token string) bool {
+	if token == "" {
+		return false
+	}
+	if token[0] >= '0' && token[0] <= '9' {
+		return true
+	}
+	digitCount := 0
+	for _, ch := range token {
+		if unicode.IsDigit(ch) {
+			digitCount++
+		}
+	}
+	return len(token) > 3 && digitCount > len(token)/2
 }
 
 func deduplicatePlaceholders(line, placeholder string) string {

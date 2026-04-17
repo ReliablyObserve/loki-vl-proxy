@@ -52,19 +52,40 @@ type Metrics struct {
 	translationErrors atomic.Int64
 
 	// Patterns lifecycle stats
-	patternsDetectedTotal            atomic.Int64
-	patternsStoredTotal              atomic.Int64
-	patternsRestoredFromDiskTotal    atomic.Int64
-	patternsRestoredFromPeersTotal   atomic.Int64
-	patternsRestoredDiskEntriesTotal atomic.Int64
-	patternsRestoredPeerEntriesTotal atomic.Int64
-	patternsDeduplicatedMemTotal     atomic.Int64
-	patternsDeduplicatedDiskTotal    atomic.Int64
-	patternsDeduplicatedPeerTotal    atomic.Int64
-	patternsInMemory                 atomic.Int64
-	patternsCacheKeys                atomic.Int64
-	patternsInMemoryBytes            atomic.Int64
-	patternsPersistedDiskBytes       atomic.Int64
+	patternsDetectedTotal             atomic.Int64
+	patternsStoredTotal               atomic.Int64
+	patternsRestoredFromDiskTotal     atomic.Int64
+	patternsRestoredFromPeersTotal    atomic.Int64
+	patternsRestoredDiskEntriesTotal  atomic.Int64
+	patternsRestoredPeerEntriesTotal  atomic.Int64
+	patternsDeduplicatedMemTotal      atomic.Int64
+	patternsDeduplicatedDiskTotal     atomic.Int64
+	patternsDeduplicatedPeerTotal     atomic.Int64
+	patternsInMemory                  atomic.Int64
+	patternsCacheKeys                 atomic.Int64
+	patternsInMemoryBytes             atomic.Int64
+	patternsLastResponsePatterns      atomic.Int64
+	patternsLastResponseBytes         atomic.Int64
+	patternsPersistedDiskEntries      atomic.Int64
+	patternsPersistedDiskPatterns     atomic.Int64
+	patternsPersistedDiskBytes        atomic.Int64
+	patternsPersistWritesTotal        atomic.Int64
+	patternsPersistWriteBytesTotal    atomic.Int64
+	patternsRestoredDiskBytesTotal    atomic.Int64
+	patternsRestoredPeerBytesTotal    atomic.Int64
+	patternsSourceLinesRequestedTotal atomic.Int64
+	patternsSourceLinesScannedTotal   atomic.Int64
+	patternsSourceLinesObservedTotal  atomic.Int64
+	patternsWindowsAttemptedTotal     atomic.Int64
+	patternsWindowsAcceptedTotal      atomic.Int64
+	patternsWindowsCappedTotal        atomic.Int64
+	patternsSecondPassWindowsTotal    atomic.Int64
+	patternsMinedPreMergeTotal        atomic.Int64
+	patternsMinedPostMergeTotal       atomic.Int64
+	patternsSnapshotHitsTotal         atomic.Int64
+	patternsSnapshotMissesTotal       atomic.Int64
+	patternsSnapshotReusedTotal       atomic.Int64
+	patternsLowCoverageResponsesTotal atomic.Int64
 
 	// Tuple emission mode stats
 	tupleModes map[string]*atomic.Int64 // "mode" -> count
@@ -1019,11 +1040,100 @@ func (m *Metrics) SetPatternsInMemory(patternCount, keyCount int, bytes int64) {
 	m.patternsCacheKeys.Store(int64(keyCount))
 	m.patternsInMemoryBytes.Store(bytes)
 }
-func (m *Metrics) SetPatternsPersistedDiskBytes(bytes int64) {
+func (m *Metrics) SetPatternsLastResponse(patternCount int, bytes int64) {
+	if patternCount < 0 {
+		patternCount = 0
+	}
 	if bytes < 0 {
 		bytes = 0
 	}
+	m.patternsLastResponsePatterns.Store(int64(patternCount))
+	m.patternsLastResponseBytes.Store(bytes)
+}
+func (m *Metrics) SetPatternsPersistedDiskState(patternCount, entryCount int, bytes int64) {
+	if patternCount < 0 {
+		patternCount = 0
+	}
+	if entryCount < 0 {
+		entryCount = 0
+	}
+	if bytes < 0 {
+		bytes = 0
+	}
+	m.patternsPersistedDiskPatterns.Store(int64(patternCount))
+	m.patternsPersistedDiskEntries.Store(int64(entryCount))
 	m.patternsPersistedDiskBytes.Store(bytes)
+}
+func (m *Metrics) SetPatternsPersistedDiskBytes(bytes int64) {
+	m.SetPatternsPersistedDiskState(
+		int(m.patternsPersistedDiskPatterns.Load()),
+		int(m.patternsPersistedDiskEntries.Load()),
+		bytes,
+	)
+}
+
+func (m *Metrics) RecordPatternsPersistWrite(bytes int64) {
+	if bytes <= 0 {
+		return
+	}
+	m.patternsPersistWritesTotal.Add(1)
+	m.patternsPersistWriteBytesTotal.Add(bytes)
+}
+
+func (m *Metrics) RecordPatternsRestoreBytes(source string, bytes int64) {
+	if bytes <= 0 {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "peer":
+		m.patternsRestoredPeerBytesTotal.Add(bytes)
+	default:
+		m.patternsRestoredDiskBytesTotal.Add(bytes)
+	}
+}
+
+func (m *Metrics) RecordPatternsQuality(linesRequested, linesScanned, linesObserved, windowsAttempted, windowsAccepted, windowsCapped, secondPassWindows, minedPreMerge, minedPostMerge int, lowCoverage bool) {
+	if linesRequested > 0 {
+		m.patternsSourceLinesRequestedTotal.Add(int64(linesRequested))
+	}
+	if linesScanned > 0 {
+		m.patternsSourceLinesScannedTotal.Add(int64(linesScanned))
+	}
+	if linesObserved > 0 {
+		m.patternsSourceLinesObservedTotal.Add(int64(linesObserved))
+	}
+	if windowsAttempted > 0 {
+		m.patternsWindowsAttemptedTotal.Add(int64(windowsAttempted))
+	}
+	if windowsAccepted > 0 {
+		m.patternsWindowsAcceptedTotal.Add(int64(windowsAccepted))
+	}
+	if windowsCapped > 0 {
+		m.patternsWindowsCappedTotal.Add(int64(windowsCapped))
+	}
+	if secondPassWindows > 0 {
+		m.patternsSecondPassWindowsTotal.Add(int64(secondPassWindows))
+	}
+	if minedPreMerge > 0 {
+		m.patternsMinedPreMergeTotal.Add(int64(minedPreMerge))
+	}
+	if minedPostMerge > 0 {
+		m.patternsMinedPostMergeTotal.Add(int64(minedPostMerge))
+	}
+	if lowCoverage {
+		m.patternsLowCoverageResponsesTotal.Add(1)
+	}
+}
+
+func (m *Metrics) RecordPatternsSnapshotHit(reused bool) {
+	m.patternsSnapshotHitsTotal.Add(1)
+	if reused {
+		m.patternsSnapshotReusedTotal.Add(1)
+	}
+}
+
+func (m *Metrics) RecordPatternsSnapshotMiss() {
+	m.patternsSnapshotMissesTotal.Add(1)
 }
 
 // RecordTupleMode records the emitted tuple mode for a log query response.
@@ -1396,9 +1506,93 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# TYPE loki_vl_proxy_patterns_in_memory_bytes gauge\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_in_memory_bytes %d\n", m.patternsInMemoryBytes.Load())
 
+	sb.WriteString("# HELP loki_vl_proxy_patterns_last_response_patterns Pattern entries returned in the last /patterns response.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_last_response_patterns gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_last_response_patterns %d\n", m.patternsLastResponsePatterns.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_last_response_bytes Encoded bytes returned in the last /patterns response.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_last_response_bytes gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_last_response_bytes %d\n", m.patternsLastResponseBytes.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_persisted_disk_entries Current number of pattern snapshot cache keys present in the last persisted disk snapshot.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_persisted_disk_entries gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_persisted_disk_entries %d\n", m.patternsPersistedDiskEntries.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_persisted_disk_patterns Current number of pattern entries present in the last persisted disk snapshot.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_persisted_disk_patterns gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_persisted_disk_patterns %d\n", m.patternsPersistedDiskPatterns.Load())
+
 	sb.WriteString("# HELP loki_vl_proxy_patterns_persisted_disk_bytes Last persisted pattern snapshot size on disk in bytes.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_patterns_persisted_disk_bytes gauge\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_persisted_disk_bytes %d\n", m.patternsPersistedDiskBytes.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_persist_writes_total Pattern snapshot writes completed to disk.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_persist_writes_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_persist_writes_total %d\n", m.patternsPersistWritesTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_persist_write_bytes_total Pattern snapshot bytes written to disk.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_persist_write_bytes_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_persist_write_bytes_total %d\n", m.patternsPersistWriteBytesTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_restored_disk_bytes_total Pattern snapshot bytes restored from disk.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_restored_disk_bytes_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_restored_disk_bytes_total %d\n", m.patternsRestoredDiskBytesTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_restored_peer_bytes_total Pattern snapshot bytes restored from peers.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_restored_peer_bytes_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_restored_peer_bytes_total %d\n", m.patternsRestoredPeerBytesTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_source_lines_requested_total Pattern source lines requested from backend pattern fetches.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_source_lines_requested_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_source_lines_requested_total %d\n", m.patternsSourceLinesRequestedTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_source_lines_scanned_total Pattern source lines scanned from backend responses.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_source_lines_scanned_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_source_lines_scanned_total %d\n", m.patternsSourceLinesScannedTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_source_lines_observed_total Pattern source lines accepted into the miner.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_source_lines_observed_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_source_lines_observed_total %d\n", m.patternsSourceLinesObservedTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_windows_attempted_total Pattern fetch windows attempted.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_windows_attempted_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_windows_attempted_total %d\n", m.patternsWindowsAttemptedTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_windows_accepted_total Pattern fetch windows accepted into the merged response.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_windows_accepted_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_windows_accepted_total %d\n", m.patternsWindowsAcceptedTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_windows_capped_total Pattern fetch windows that hit the per-window source line cap.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_windows_capped_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_windows_capped_total %d\n", m.patternsWindowsCappedTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_second_pass_windows_total Pattern fetch windows retried with a higher line limit.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_second_pass_windows_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_second_pass_windows_total %d\n", m.patternsSecondPassWindowsTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_mined_pre_merge_total Pattern entries mined before cross-window merge.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_mined_pre_merge_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_mined_pre_merge_total %d\n", m.patternsMinedPreMergeTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_mined_post_merge_total Pattern entries after cross-window merge.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_mined_post_merge_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_mined_post_merge_total %d\n", m.patternsMinedPostMergeTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_snapshot_hits_total Pattern snapshot fallback lookups that found a cached payload.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_snapshot_hits_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_snapshot_hits_total %d\n", m.patternsSnapshotHitsTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_snapshot_misses_total Pattern snapshot fallback lookups that missed.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_snapshot_misses_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_snapshot_misses_total %d\n", m.patternsSnapshotMissesTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_snapshot_reused_total Pattern responses served from snapshot fallback payloads.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_snapshot_reused_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_snapshot_reused_total %d\n", m.patternsSnapshotReusedTotal.Load())
+
+	sb.WriteString("# HELP loki_vl_proxy_patterns_low_coverage_responses_total Pattern responses flagged as low coverage and likely degraded.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_patterns_low_coverage_responses_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_patterns_low_coverage_responses_total %d\n", m.patternsLowCoverageResponsesTotal.Load())
 
 	sb.WriteString("# HELP loki_vl_proxy_response_tuple_mode_total Log response tuple mode emissions by client behavior.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_response_tuple_mode_total counter\n")

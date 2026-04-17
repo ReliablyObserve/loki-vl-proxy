@@ -532,6 +532,8 @@ const (
 	maxLimitValue                     = 10000
 	maxZeroFillBuckets                = 32768
 	maxPatternBackendQueryLimit       = 20000
+	maxPatternSecondPassLineLimit     = 8000
+	maxPatternSecondPassWindows       = 8
 	maxUserDrivenSlicePrealloc        = 512
 	tailWriteTimeout                  = 2 * time.Second
 	maxMultiTenantFanout              = 64
@@ -2765,6 +2767,13 @@ func patternCountFromPayload(payload []byte) int {
 	return len(resp.Data)
 }
 
+func recordPatternResponseMetrics(m *metrics.Metrics, payload []byte) {
+	if m == nil {
+		return
+	}
+	m.SetPatternsLastResponse(patternCountFromPayload(payload), int64(len(payload)))
+}
+
 func patternCountFromSnapshot(snapshot patternsSnapshot) int {
 	total := 0
 	for key, entry := range snapshot.EntriesByKey {
@@ -3113,7 +3122,8 @@ func (p *Proxy) persistPatternsNow(reason string) error {
 		"patterns", patternCount,
 		"bytes", len(data),
 	)
-	p.metrics.SetPatternsPersistedDiskBytes(int64(len(data)))
+	p.metrics.SetPatternsPersistedDiskState(patternCount, entryCount, int64(len(data)))
+	p.metrics.RecordPatternsPersistWrite(int64(len(data)))
 	p.patternsPersistDirty.Store(false)
 	return nil
 }
@@ -3144,9 +3154,12 @@ func (p *Proxy) restorePatternsFromDisk() (bool, int64, error) {
 		return false, 0, fmt.Errorf("invalid patterns snapshot timestamp: %d", snapshot.SavedAtUnixNano)
 	}
 
+	snapshotEntryCount := len(snapshot.EntriesByKey)
+	snapshotPatternCount := patternCountFromSnapshot(snapshot)
 	appliedEntries, appliedPatterns := p.applyPatternsSnapshot(snapshot, patternDedupSourceDisk)
 	p.metrics.RecordPatternsRestoredFromDisk(appliedPatterns, appliedEntries)
-	p.metrics.SetPatternsPersistedDiskBytes(int64(len(data)))
+	p.metrics.RecordPatternsRestoreBytes("disk", int64(len(data)))
+	p.metrics.SetPatternsPersistedDiskState(snapshotPatternCount, snapshotEntryCount, int64(len(data)))
 	if p.cache != nil {
 		ttl := p.patternsStartupStale * 3
 		if ttl <= 0 {
@@ -3165,9 +3178,9 @@ func (p *Proxy) restorePatternsFromDisk() (bool, int64, error) {
 	return true, snapshot.SavedAtUnixNano, nil
 }
 
-func (p *Proxy) fetchPatternsSnapshotFromPeer(peerAddr string, timeout time.Duration) (*patternsSnapshot, error) {
+func (p *Proxy) fetchPatternsSnapshotFromPeer(peerAddr string, timeout time.Duration) (*patternsSnapshot, int, error) {
 	if strings.TrimSpace(peerAddr) == "" {
-		return nil, nil
+		return nil, 0, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -3175,7 +3188,7 @@ func (p *Proxy) fetchPatternsSnapshotFromPeer(peerAddr string, timeout time.Dura
 	endpoint := fmt.Sprintf("http://%s/_cache/get?key=%s", peerAddr, url.QueryEscape(patternsSnapshotCacheKey))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if p.peerAuthToken != "" {
 		req.Header.Set("X-Cache-Auth", p.peerAuthToken)
@@ -3183,30 +3196,30 @@ func (p *Proxy) fetchPatternsSnapshotFromPeer(peerAddr string, timeout time.Dura
 
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, nil
+		return nil, 0, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return nil, fmt.Errorf("peer %s status %d: %s", peerAddr, resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, 0, fmt.Errorf("peer %s status %d: %s", peerAddr, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	body, err := readBodyLimited(resp.Body, maxPatternsPeerSnapshotBytes)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	var snapshot patternsSnapshot
 	if err := json.Unmarshal(body, &snapshot); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if snapshot.Version != 1 || snapshot.SavedAtUnixNano <= 0 {
-		return nil, fmt.Errorf("invalid patterns snapshot metadata from peer %s", peerAddr)
+		return nil, 0, fmt.Errorf("invalid patterns snapshot metadata from peer %s", peerAddr)
 	}
-	return &snapshot, nil
+	return &snapshot, len(body), nil
 }
 
 func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) {
@@ -3224,9 +3237,10 @@ func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) 
 	}
 
 	type peerResult struct {
-		snapshot *patternsSnapshot
-		err      error
-		peer     string
+		snapshot  *patternsSnapshot
+		bodyBytes int
+		err       error
+		peer      string
 	}
 	resCh := make(chan peerResult, len(peers))
 	for _, peerAddr := range peers {
@@ -3235,8 +3249,8 @@ func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) 
 			continue
 		}
 		go func(addr string) {
-			snapshot, err := p.fetchPatternsSnapshotFromPeer(addr, timeout)
-			resCh <- peerResult{snapshot: snapshot, err: err, peer: addr}
+			snapshot, bodyBytes, err := p.fetchPatternsSnapshotFromPeer(addr, timeout)
+			resCh <- peerResult{snapshot: snapshot, bodyBytes: bodyBytes, err: err, peer: addr}
 		}(peerAddr)
 	}
 
@@ -3258,6 +3272,7 @@ func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) 
 
 	deadline := time.After(timeout)
 	received := 0
+	totalPeerBytes := int64(0)
 	for received < len(peers) {
 		select {
 		case res := <-resCh:
@@ -3265,6 +3280,9 @@ func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) 
 			if res.err != nil {
 				p.log.Debug("patterns peer warm fetch failed", "peer", res.peer, "error", res.err)
 				continue
+			}
+			if res.bodyBytes > 0 {
+				totalPeerBytes += int64(res.bodyBytes)
 			}
 			if res.snapshot == nil || len(res.snapshot.EntriesByKey) == 0 {
 				continue
@@ -3289,6 +3307,7 @@ func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) 
 			received = len(peers)
 		}
 	}
+	p.metrics.RecordPatternsRestoreBytes("peer", totalPeerBytes)
 
 	appliedEntries, appliedPatterns := p.applyPatternsSnapshot(merged, patternDedupSourcePeer)
 	if appliedEntries == 0 || mergedSavedAt <= minSavedAt {
@@ -4875,6 +4894,88 @@ func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, quer
 	return values
 }
 
+type patternFetchDiagnostics struct {
+	sourceLinesRequested int
+	sourceLinesScanned   int
+	sourceLinesObserved  int
+	windowAttempts       int
+	windowAccepted       int
+	windowCapped         int
+	secondPassWindows    int
+	minedPreMerge        int
+	minedPostMerge       int
+	lowCoverage          bool
+}
+
+func (d *patternFetchDiagnostics) recordExtraction(limit int, stats patternExtractionStats, windowed bool) {
+	if limit > 0 {
+		d.sourceLinesRequested += limit
+	}
+	d.sourceLinesScanned += stats.scannedLines
+	d.sourceLinesObserved += stats.observedLines
+	d.minedPreMerge += stats.patternCount
+	if windowed && stats.hitLimit(limit) {
+		d.windowCapped++
+	}
+}
+
+func (d *patternFetchDiagnostics) markLowCoverage() {
+	d.lowCoverage = true
+}
+
+func (d patternFetchDiagnostics) likelyLowCoverage() bool {
+	if d.lowCoverage {
+		return true
+	}
+	if d.windowAttempts > 0 {
+		if d.windowAccepted == 0 {
+			return true
+		}
+		if d.windowAccepted*2 < d.windowAttempts {
+			return true
+		}
+		if d.windowCapped > 0 && d.minedPostMerge <= max(1, d.windowAccepted/2) {
+			return true
+		}
+	}
+	return false
+}
+
+func patternSecondPassLimit(baseLimit, sourceLimit int) int {
+	if baseLimit <= 0 {
+		return 0
+	}
+	boosted := max(baseLimit*4, baseLimit+500)
+	if sourceLimit > 0 && sourceLimit > baseLimit && boosted > sourceLimit {
+		boosted = sourceLimit
+	}
+	if boosted > maxPatternSecondPassLineLimit {
+		boosted = maxPatternSecondPassLineLimit
+	}
+	if boosted <= baseLimit {
+		return 0
+	}
+	return boosted
+}
+
+func (p *Proxy) recordPatternFetchDiagnostics(diag patternFetchDiagnostics) {
+	if p == nil || p.metrics == nil {
+		return
+	}
+	p.metrics.RecordPatternsQuality(
+		diag.sourceLinesRequested,
+		diag.sourceLinesScanned,
+		diag.sourceLinesObserved,
+		diag.windowAttempts,
+		diag.windowAccepted,
+		diag.windowCapped,
+		diag.secondPassWindows,
+		diag.minedPreMerge,
+		diag.minedPostMerge,
+		diag.likelyLowCoverage(),
+	)
+}
+
 // handlePatterns returns log patterns for Grafana Logs Drilldown.
 func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -4916,6 +5017,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		}
 		if cached, ok := p.cache.Get(key); ok {
 			body := p.applyCustomPatternsToPayload(cached, startParam, endParam, stepParam, patternLimit)
+			recordPatternResponseMetrics(p.metrics, body)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(body)
 			p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
@@ -4926,6 +5028,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 
 	if fallbackCached, ok := p.cache.Get(cacheWriteKey); ok {
 		body := p.applyCustomPatternsToPayload(fallbackCached, startParam, endParam, stepParam, patternLimit)
+		recordPatternResponseMetrics(p.metrics, body)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
 		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
@@ -4965,9 +5068,11 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		params.Set("end", formatVLTimestamp(e))
 	}
 	params.Set("limit", strconv.Itoa(sourceLimit))
+	diag := patternFetchDiagnostics{}
 
 	fetchPatterns := func(endpoint string) ([]patternResultEntry, bool) {
 		fetchFromParams := func(queryParams url.Values) ([]patternResultEntry, bool) {
+			requestedLimit, _ := strconv.Atoi(strings.TrimSpace(queryParams.Get("limit")))
 			resp, err := p.vlPost(r.Context(), endpoint, queryParams)
 			if err != nil {
 				return nil, false
@@ -4980,8 +5085,12 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return nil, false
 			}
-			extracted := extractLogPatterns(body, stepParam, patternLimit)
+			extracted, stats := extractLogPatternsWithStats(body, stepParam, patternLimit)
+			diag.recordExtraction(requestedLimit, stats, false)
 			if len(extracted) == 0 {
+				if stats.hitLimit(requestedLimit) {
+					diag.markLowCoverage()
+				}
 				return nil, false
 			}
 			entries := patternResultEntriesFromMaps(extracted)
@@ -4997,7 +5106,21 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			if ok {
 				windows := splitQueryRangeWindowsWithOptions(startNs, endNs, splitInterval, "backward", true)
 				if len(windows) > 1 {
-					windowEntries, windowSuccesses := p.fetchPatternsFromWindows(r, logsqlQuery, sourceLimit, perWindowLimit, windows, stepParam, patternLimit)
+					windowEntries, windowSuccesses, windowDiag := p.fetchPatternsFromWindows(r, logsqlQuery, sourceLimit, perWindowLimit, windows, stepParam, patternLimit)
+					diag.sourceLinesRequested += windowDiag.sourceLinesRequested
+					diag.sourceLinesScanned += windowDiag.sourceLinesScanned
+					diag.sourceLinesObserved += windowDiag.sourceLinesObserved
+					diag.windowAttempts += windowDiag.windowAttempts
+					diag.windowAccepted += windowDiag.windowAccepted
+					diag.windowCapped += windowDiag.windowCapped
+					diag.secondPassWindows += windowDiag.secondPassWindows
+					diag.minedPreMerge += windowDiag.minedPreMerge
+					if windowDiag.lowCoverage {
+						diag.markLowCoverage()
+					}
+					if len(windowEntries) > diag.minedPostMerge {
+						diag.minedPostMerge = len(windowEntries)
+					}
 					if shouldAcceptWindowedPatternResults(windowSuccesses, len(windows), denseWindowing) && len(windowEntries) > 0 {
 						// Prefer distributed stratified windows so dense ranges keep full-range
 						// visibility instead of collapsing to a recent-tail sample.
@@ -5019,16 +5142,25 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	entries, _ := fetchPatterns("/select/logsql/query")
 	if len(entries) == 0 {
 		if fallbackPayload, ok := p.latestPatternSnapshotPayload(cacheWriteKey); ok {
+			p.metrics.RecordPatternsSnapshotHit(true)
+			p.recordPatternFetchDiagnostics(diag)
 			resultBody := p.applyCustomPatternsToPayload(fallbackPayload, startParam, endParam, stepParam, patternLimit)
+			recordPatternResponseMetrics(p.metrics, resultBody)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(resultBody)
 			p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 			return
 		}
+		p.metrics.RecordPatternsSnapshotMiss()
+		diag.markLowCoverage()
 	}
 	if entries == nil {
 		entries = []patternResultEntry{}
 	}
+	if len(entries) > diag.minedPostMerge {
+		diag.minedPostMerge = len(entries)
+	}
+	p.recordPatternFetchDiagnostics(diag)
 	p.metrics.RecordPatternsDetected(len(entries))
 	entries = p.prependCustomPatternEntries(entries, startParam, stepParam, patternLimit)
 	entries = fillPatternSamplesAcrossRequestedRange(entries, startParam, endParam, stepParam)
@@ -5037,10 +5169,12 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		Data:   entries,
 	})
 	if err != nil {
+		p.metrics.SetPatternsLastResponse(0, 0)
 		p.writeJSON(w, map[string]interface{}{"status": "success", "data": []interface{}{}})
 		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 		return
 	}
+	recordPatternResponseMetrics(p.metrics, resultBody)
 	// Avoid sticky empty results: first-call empty probes should not poison long-lived pattern cache entries.
 	if len(entries) > 0 {
 		now := time.Now().UTC()
@@ -5064,9 +5198,9 @@ func (p *Proxy) fetchPatternsFromWindows(
 	windows []queryRangeWindow,
 	stepParam string,
 	patternLimit int,
-) ([]patternResultEntry, int) {
+) ([]patternResultEntry, int, patternFetchDiagnostics) {
 	if len(windows) == 0 {
-		return nil, 0
+		return nil, 0, patternFetchDiagnostics{}
 	}
 	if perWindowLimit <= 0 {
 		perWindowLimit = 1
@@ -5075,6 +5209,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 	if sourceLimit > 0 && sourceLimit < effectiveLimit {
 		effectiveLimit = sourceLimit
 	}
+	diag := patternFetchDiagnostics{windowAttempts: len(windows)}
 
 	maxParallel := min(8, max(1, p.queryRangeWindowParallelLimit()))
 	if maxParallel > len(windows) {
@@ -5089,10 +5224,65 @@ func (p *Proxy) fetchPatternsFromWindows(
 	// Bucketization for patterns is proxy-side. Forwarding step to VictoriaLogs
 	// raw log queries makes split subrequests align backward to prior step
 	// boundaries, which duplicates adjacent window buckets on deterministic data.
-
-	collected := make([]patternResultEntry, 0, len(windows))
-	successes := 0
+	type windowResult struct {
+		window  queryRangeWindow
+		entries []patternResultEntry
+		stats   patternExtractionStats
+	}
+	results := make([]windowResult, 0, len(windows))
 	var mu sync.Mutex
+
+	fetchWindow := func(window queryRangeWindow, limit int) ([]patternResultEntry, patternExtractionStats, bool) {
+		params := cloneURLValues(baseParams)
+		params.Set("start", strconv.FormatInt(window.startNs, 10))
+		endNs := window.endNs
+		if len(windows) > 0 && window.endNs == windows[len(windows)-1].endNs {
+			stepNs := int64(parsePatternStepSeconds(stepParam)) * int64(time.Second)
+			if stepNs <= 0 {
+				stepNs = 1
+			}
+			if math.MaxInt64-endNs < stepNs {
+				endNs = math.MaxInt64
+			} else {
+				endNs += stepNs
+			}
+		}
+		params.Set("end", strconv.FormatInt(endNs, 10))
+		params.Set("limit", strconv.Itoa(limit))
+		resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
+		if err != nil {
+			p.log.Debug(
+				"patterns window fetch failed",
+				"start_ns", window.startNs,
+				"end_ns", window.endNs,
+				"error", err,
+			)
+			return nil, patternExtractionStats{}, false
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode >= http.StatusBadRequest {
+			p.log.Debug(
+				"patterns window fetch non-success status",
+				"start_ns", window.startNs,
+				"end_ns", window.endNs,
+				"status_code", resp.StatusCode,
+			)
+			return nil, patternExtractionStats{}, false
+		}
+		body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		if err != nil {
+			return nil, patternExtractionStats{}, false
+		}
+		extracted, stats := extractLogPatternsWithStats(body, stepParam, patternLimit)
+		if len(extracted) == 0 {
+			return nil, stats, false
+		}
+		entries := patternResultEntriesFromMaps(extracted)
+		if len(entries) == 0 {
+			return nil, stats, false
+		}
+		return entries, stats, true
+	}
 
 	for _, window := range windows {
 		window := window
@@ -5105,56 +5295,52 @@ func (p *Proxy) fetchPatternsFromWindows(
 			case sem <- struct{}{}:
 			}
 			defer func() { <-sem }()
-
-			params := cloneURLValues(baseParams)
-			params.Set("start", strconv.FormatInt(window.startNs, 10))
-			params.Set("end", strconv.FormatInt(window.endNs, 10))
-			params.Set("limit", strconv.Itoa(effectiveLimit))
-			resp, err := p.vlPost(r.Context(), "/select/logsql/query", params)
-			if err != nil {
-				p.log.Debug(
-					"patterns window fetch failed",
-					"start_ns", window.startNs,
-					"end_ns", window.endNs,
-					"error", err,
-				)
-				return
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode >= http.StatusBadRequest {
-				p.log.Debug(
-					"patterns window fetch non-success status",
-					"start_ns", window.startNs,
-					"end_ns", window.endNs,
-					"status_code", resp.StatusCode,
-				)
-				return
-			}
-			body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-			if err != nil {
-				return
-			}
-			extracted := extractLogPatterns(body, stepParam, patternLimit)
-			if len(extracted) == 0 {
-				return
-			}
-			entries := patternResultEntriesFromMaps(extracted)
-			if len(entries) == 0 {
-				return
-			}
+			entries, stats, ok := fetchWindow(window, effectiveLimit)
 
 			mu.Lock()
-			successes++
-			collected = mergePatternResultEntries(collected, entries)
+			diag.recordExtraction(effectiveLimit, stats, true)
+			if ok {
+				diag.windowAccepted++
+				results = append(results, windowResult{
+					window:  window,
+					entries: entries,
+					stats:   stats,
+				})
+			}
 			mu.Unlock()
 		}()
 	}
 	wg.Wait()
 
-	if len(collected) == 0 {
-		return nil, successes
+	collected := make([]patternResultEntry, 0, len(results))
+	cappedResults := make([]windowResult, 0, len(results))
+	for _, result := range results {
+		collected = mergePatternResultEntries(collected, result.entries)
+		if result.stats.hitLimit(effectiveLimit) {
+			cappedResults = append(cappedResults, result)
+		}
 	}
-	return collected, successes
+	if boostedLimit := patternSecondPassLimit(effectiveLimit, sourceLimit); boostedLimit > 0 && len(cappedResults) > 0 {
+		rerunCount := min(len(cappedResults), maxPatternSecondPassWindows)
+		diag.secondPassWindows += rerunCount
+		for i := 0; i < rerunCount; i++ {
+			result := cappedResults[i]
+			entries, stats, ok := fetchWindow(result.window, boostedLimit)
+			diag.recordExtraction(boostedLimit, stats, true)
+			if !ok || len(entries) == 0 {
+				continue
+			}
+			collected = mergePatternResultEntries(collected, entries)
+		}
+	}
+	diag.minedPostMerge = len(collected)
+	if len(collected) == 0 || diag.windowAccepted == 0 || (diag.windowCapped > 0 && len(collected) <= max(1, diag.windowAccepted/2)) {
+		diag.markLowCoverage()
+	}
+	if len(collected) == 0 {
+		return nil, diag.windowAccepted, diag
+	}
+	return collected, diag.windowAccepted, diag
 }
 
 func patternScopeQuery(query string) string {
@@ -5456,6 +5642,16 @@ func patternResultEntriesFromMaps(patterns []map[string]interface{}) []patternRe
 	return out
 }
 
+type mergedPatternBucket struct {
+	level       string
+	tokens      []string
+	spacesAfter []int
+	samples     map[int64]int
+	total       int
+}
+
+const patternResultPlaceholderSentinel = "__lvp_pattern_placeholder__"
+
 func mergePatternResultEntries(base, extra []patternResultEntry) []patternResultEntry {
 	if len(base) == 0 {
 		return extra
@@ -5464,29 +5660,32 @@ func mergePatternResultEntries(base, extra []patternResultEntry) []patternResult
 		return base
 	}
 
-	type bucket struct {
-		level   string
-		pattern string
-		samples map[int64]int
-		total   int
-	}
-
-	merged := map[string]*bucket{}
+	tokenizer := newPatternLineTokenizer()
+	merged := map[string][]*mergedPatternBucket{}
 	add := func(items []patternResultEntry) {
 		for _, item := range items {
 			pattern := strings.TrimSpace(item.Pattern)
 			if pattern == "" {
 				continue
 			}
-			key := item.Level + "\x00" + pattern
-			b := merged[key]
+			tokens, spacesAfter, ok := tokenizePatternResultPattern(tokenizer, pattern)
+			if !ok {
+				tokens = []string{pattern}
+				spacesAfter = nil
+			}
+			signature := strings.Join([]string{strings.TrimSpace(item.Level), strconv.Itoa(len(tokens))}, "\x00")
+			candidates := merged[signature]
+			b := bestMergedPatternBucket(candidates, tokens)
 			if b == nil {
-				b = &bucket{
-					level:   strings.TrimSpace(item.Level),
-					pattern: pattern,
-					samples: map[int64]int{},
+				b = &mergedPatternBucket{
+					level:       strings.TrimSpace(item.Level),
+					tokens:      cloneTokens(tokens),
+					spacesAfter: cloneInts(spacesAfter),
+					samples:     map[int64]int{},
 				}
-				merged[key] = b
+				merged[signature] = append(merged[signature], b)
+			} else {
+				b.tokens = mergePatternTemplate(b.tokens, tokens)
 			}
 			for _, pair := range item.Samples {
 				if len(pair) < 2 {
@@ -5508,9 +5707,9 @@ func mergePatternResultEntries(base, extra []patternResultEntry) []patternResult
 	add(base)
 	add(extra)
 
-	items := make([]*bucket, 0, len(merged))
-	for _, item := range merged {
-		items = append(items, item)
+	items := make([]*mergedPatternBucket, 0, len(base)+len(extra))
+	for _, group := range merged {
+		items = append(items, group...)
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].total != items[j].total {
@@ -5519,7 +5718,7 @@ func mergePatternResultEntries(base, extra []patternResultEntry) []patternResult
 		if items[i].level != items[j].level {
 			return items[i].level < items[j].level
 		}
-		return items[i].pattern < items[j].pattern
+		return tokenizer.Join(items[i].tokens, items[i].spacesAfter) < tokenizer.Join(items[j].tokens, items[j].spacesAfter)
 	})
 
 	out := make([]patternResultEntry, 0, len(items))
@@ -5533,7 +5732,10 @@ func mergePatternResultEntries(base, extra []patternResultEntry) []patternResult
 		for _, ts := range timestamps {
 			samples = append(samples, []interface{}{ts, item.samples[ts]})
 		}
-		entry := patternResultEntry{Pattern: item.pattern, Samples: samples}
+		entry := patternResultEntry{
+			Pattern: tokenizer.Join(item.tokens, item.spacesAfter),
+			Samples: samples,
+		}
 		if item.level != "" {
 			entry.Level = item.level
 		}
@@ -5541,6 +5743,45 @@ func mergePatternResultEntries(base, extra []patternResultEntry) []patternResult
 	}
 
 	return out
+}
+
+func tokenizePatternResultPattern(tokenizer *patternLineTokenizer, pattern string) ([]string, []int, bool) {
+	normalized := strings.ReplaceAll(pattern, patternVarPlaceholder, patternResultPlaceholderSentinel)
+	tokens, spacesAfter, ok := tokenizer.Tokenize(normalized)
+	if !ok {
+		return nil, nil, false
+	}
+	for i := range tokens {
+		if tokens[i] == patternResultPlaceholderSentinel {
+			tokens[i] = patternVarPlaceholder
+		}
+	}
+	return tokens, spacesAfter, true
+}
+
+func bestMergedPatternBucket(candidates []*mergedPatternBucket, tokens []string) *mergedPatternBucket {
+	var match *mergedPatternBucket
+	maxSim := -1.0
+	maxParamCount := -1
+
+	for _, candidate := range candidates {
+		if !patternPrefixCompatible(candidate.tokens, tokens) {
+			continue
+		}
+		curSim, paramCount := getPatternSimilarity(candidate.tokens, tokens)
+		if paramCount < 0 {
+			continue
+		}
+		if curSim > maxSim || (curSim == maxSim && paramCount > maxParamCount) {
+			maxSim = curSim
+			maxParamCount = paramCount
+			match = candidate
+		}
+	}
+	if maxSim >= patternSimThreshold {
+		return match
+	}
+	return nil
 }
 
 func (p *Proxy) prependCustomPatternEntries(patterns []patternResultEntry, startParam, stepParam string, limit int) []patternResultEntry {

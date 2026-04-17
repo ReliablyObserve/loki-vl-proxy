@@ -155,7 +155,14 @@ func TestMetrics_PatternSnapshotMetrics(t *testing.T) {
 	m.RecordPatternsDeduplicated("mem", 0)
 	m.RecordPatternsDeduplicated("disk", -1)
 	m.SetPatternsInMemory(-1, -2, -3)
+	m.SetPatternsLastResponse(-1, -2)
+	m.SetPatternsPersistedDiskState(-1, -2, -3)
 	m.SetPatternsPersistedDiskBytes(-10)
+	m.RecordPatternsPersistWrite(-1)
+	m.RecordPatternsRestoreBytes("disk", -1)
+	m.RecordPatternsRestoreBytes("peer", -2)
+	m.RecordPatternsQuality(0, -1, -2, 0, -1, -1, -1, -1, -1, false)
+	m.RecordPatternsSnapshotMiss()
 
 	// Positive updates should be recorded.
 	m.RecordPatternsDetected(3)
@@ -166,7 +173,14 @@ func TestMetrics_PatternSnapshotMetrics(t *testing.T) {
 	m.RecordPatternsDeduplicated("disk", 17)
 	m.RecordPatternsDeduplicated("peer", 19)
 	m.SetPatternsInMemory(13, 17, 19)
-	m.SetPatternsPersistedDiskBytes(23)
+	m.SetPatternsLastResponse(5, 29)
+	m.SetPatternsPersistedDiskState(31, 23, 37)
+	m.RecordPatternsPersistWrite(41)
+	m.RecordPatternsRestoreBytes("disk", 43)
+	m.RecordPatternsRestoreBytes("peer", 47)
+	m.RecordPatternsQuality(29, 23, 17, 11, 7, 3, 2, 13, 5, true)
+	m.RecordPatternsSnapshotHit(false)
+	m.RecordPatternsSnapshotHit(true)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/metrics", nil)
@@ -186,7 +200,28 @@ func TestMetrics_PatternSnapshotMetrics(t *testing.T) {
 		"loki_vl_proxy_patterns_in_memory 13",
 		"loki_vl_proxy_patterns_cache_keys 17",
 		"loki_vl_proxy_patterns_in_memory_bytes 19",
-		"loki_vl_proxy_patterns_persisted_disk_bytes 23",
+		"loki_vl_proxy_patterns_last_response_patterns 5",
+		"loki_vl_proxy_patterns_last_response_bytes 29",
+		"loki_vl_proxy_patterns_persisted_disk_entries 23",
+		"loki_vl_proxy_patterns_persisted_disk_patterns 31",
+		"loki_vl_proxy_patterns_persisted_disk_bytes 37",
+		"loki_vl_proxy_patterns_persist_writes_total 1",
+		"loki_vl_proxy_patterns_persist_write_bytes_total 41",
+		"loki_vl_proxy_patterns_restored_disk_bytes_total 43",
+		"loki_vl_proxy_patterns_restored_peer_bytes_total 47",
+		"loki_vl_proxy_patterns_source_lines_requested_total 29",
+		"loki_vl_proxy_patterns_source_lines_scanned_total 23",
+		"loki_vl_proxy_patterns_source_lines_observed_total 17",
+		"loki_vl_proxy_patterns_windows_attempted_total 11",
+		"loki_vl_proxy_patterns_windows_accepted_total 7",
+		"loki_vl_proxy_patterns_windows_capped_total 3",
+		"loki_vl_proxy_patterns_second_pass_windows_total 2",
+		"loki_vl_proxy_patterns_mined_pre_merge_total 13",
+		"loki_vl_proxy_patterns_mined_post_merge_total 5",
+		"loki_vl_proxy_patterns_snapshot_hits_total 2",
+		"loki_vl_proxy_patterns_snapshot_misses_total 1",
+		"loki_vl_proxy_patterns_snapshot_reused_total 1",
+		"loki_vl_proxy_patterns_low_coverage_responses_total 1",
 	} {
 		if !strings.Contains(body, needle) {
 			t.Fatalf("expected metric %q in output", needle)

@@ -85,8 +85,32 @@ func TestPostprocessHelperBranchesCoverage(t *testing.T) {
 	if got := tokenizer.Join([]string{patternVarPlaceholder, patternVarPlaceholder}, nil); got != patternVarPlaceholder {
 		t.Fatalf("expected adjacent placeholders to deduplicate, got %q", got)
 	}
+	if got := tokenizer.Join([]string{patternUUIDPlaceholder, patternIPPlaceholder, patternPathPlaceholder}, nil); got != patternVarPlaceholder {
+		t.Fatalf("expected typed placeholders to render as generic placeholders, got %q", got)
+	}
 
 	if isHexLike("token-xyz") {
 		t.Fatalf("expected non-hex token to be rejected")
+	}
+	if got := patternPlaceholderForToken("550e8400-e29b-41d4-a716-446655440000"); got != patternUUIDPlaceholder {
+		t.Fatalf("expected UUID placeholder, got %q", got)
+	}
+	if got := patternPlaceholderForToken("10.20.30.40"); got != patternIPPlaceholder {
+		t.Fatalf("expected IP placeholder, got %q", got)
+	}
+	if got := patternPlaceholderForToken("/api/v1/users/42"); got != patternPathPlaceholder {
+		t.Fatalf("expected path placeholder, got %q", got)
+	}
+	if got := patternPlaceholderForToken("2026-04-17T15:04:05Z"); got != patternTSPlaceholder {
+		t.Fatalf("expected timestamp placeholder, got %q", got)
+	}
+	if got := patternPlaceholderForToken("42ms"); got != patternNumPlaceholder {
+		t.Fatalf("expected numeric placeholder, got %q", got)
+	}
+	if !patternPlaceholderMatchesToken(patternUUIDPlaceholder, "550e8400-e29b-41d4-a716-446655440000") {
+		t.Fatalf("expected typed UUID placeholder to match UUID token")
+	}
+	if sig := patternStructureSignature([]string{"id", "=", "123", "user", "=", "alice"}); sig != strings.Join([]string{"id", "=", patternNumPlaceholder, "user", "=", patternVarPlaceholder}, "\x1e") {
+		t.Fatalf("unexpected pattern structure signature %q", sig)
 	}
 }

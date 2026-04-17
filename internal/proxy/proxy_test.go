@@ -1174,6 +1174,92 @@ func TestContract_Patterns_WindowedSamplingCoversWholeRange(t *testing.T) {
 	}
 }
 
+func TestContract_Patterns_WindowedSamplingSecondPassWidensCappedWindows(t *testing.T) {
+	var (
+		receivedLimits []int
+		limitsMu       sync.Mutex
+	)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		limit, err := strconv.Atoi(strings.TrimSpace(r.FormValue("limit")))
+		if err != nil {
+			t.Fatalf("expected numeric limit, got %q: %v", r.FormValue("limit"), err)
+		}
+		limitsMu.Lock()
+		receivedLimits = append(receivedLimits, limit)
+		limitsMu.Unlock()
+
+		startRaw := strings.TrimSpace(r.FormValue("start"))
+		startVal, err := strconv.ParseInt(startRaw, 10, 64)
+		if err != nil {
+			t.Fatalf("expected numeric start timestamp, got %q: %v", startRaw, err)
+		}
+		startSec := startVal
+		if len(startRaw) > 10 {
+			startSec = startVal / int64(time.Second)
+		}
+		base := time.Unix(startSec, 0).UTC()
+
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		writeLine := func(ts time.Time, msg string) {
+			_, _ = fmt.Fprintf(w, `{"_time":"%s","_msg":%q,"level":"info"}`+"\n", ts.Format(time.RFC3339), msg)
+		}
+		// First pass hits the line cap and only surfaces one dominant pattern.
+		if limit <= 12 {
+			for i := 0; i < 12; i++ {
+				writeLine(base.Add(time.Duration(i)*time.Second), fmt.Sprintf("level=info msg=request id=%d user=alpha", i))
+			}
+			return
+		}
+		// Second pass widens the sample so a second pattern family becomes visible.
+		for i := 0; i < 12; i++ {
+			writeLine(base.Add(time.Duration(i)*time.Second), fmt.Sprintf("level=info msg=request id=%d user=alpha", i))
+		}
+		for i := 0; i < 12; i++ {
+			writeLine(base.Add(time.Duration(i+20)*time.Second), fmt.Sprintf("level=warn msg=audit path=/api/v1/orders/%d status=500", i))
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(
+		"GET",
+		"/loki/api/v1/patterns?query=%7Bapp%3D%22web%22%7D&start=1712311200&end=1712484000&step=60s&line_limit=12",
+		nil,
+	)
+	p.handlePatterns(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	limitsMu.Lock()
+	limitsSnapshot := append([]int(nil), receivedLimits...)
+	limitsMu.Unlock()
+	sawSecondPass := false
+	for _, limit := range limitsSnapshot {
+		if limit > 12 {
+			sawSecondPass = true
+			break
+		}
+	}
+	if !sawSecondPass {
+		t.Fatalf("expected second-pass widened pattern fetch, got limits=%v", limitsSnapshot)
+	}
+
+	var resp patternsResponse
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	if len(resp.Data) < 2 {
+		t.Fatalf("expected widened second pass to surface multiple pattern families, got %v", resp.Data)
+	}
+}
+
 func TestBackendVersionDetection_FromResponseHeaders(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	if p.supportsDensePatternWindowing() {
@@ -1598,6 +1684,8 @@ func TestPatternsPersistenceLoop_PersistsAndStopsOnShutdown(t *testing.T) {
 	if len(data) == 0 {
 		t.Fatalf("expected persisted snapshot file to be non-empty")
 	}
+	requireProxyMetricsContain(t, p, "loki_vl_proxy_patterns_persist_writes_total 1")
+	requireProxyMetricsContain(t, p, "loki_vl_proxy_patterns_persist_write_bytes_total "+strconv.Itoa(len(data)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -2517,6 +2605,37 @@ func TestMergePatternResultEntries_DeterministicTieOrder(t *testing.T) {
 	want := []string{"info/alpha", "info/beta", "warn/zeta"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected deterministic order: got=%v want=%v", got, want)
+	}
+}
+
+func TestMergePatternResultEntries_FoldsSingletonLiteralEdgesIntoGeneralizedPattern(t *testing.T) {
+	base := []patternResultEntry{
+		{
+			Level:   "info",
+			Pattern: "hc_uuid request trace_id=550e8400-e29b-41d4-a716-001776428520 user=user-6",
+			Samples: [][]interface{}{{int64(1776428520), 1}},
+		},
+	}
+	extra := []patternResultEntry{
+		{
+			Level:   "info",
+			Pattern: "hc_uuid request trace_id=<_> user=<_>",
+			Samples: [][]interface{}{
+				{int64(1776428550), 1},
+				{int64(1776428580), 1},
+			},
+		},
+	}
+
+	merged := mergePatternResultEntries(base, extra)
+	if len(merged) != 1 {
+		t.Fatalf("expected singleton edge pattern to fold into generalized pattern, got %d entries: %#v", len(merged), merged)
+	}
+	if got := merged[0].Pattern; got != "hc_uuid request trace_id=<_> user=<_>" {
+		t.Fatalf("unexpected merged pattern %q", got)
+	}
+	if len(merged[0].Samples) != 3 {
+		t.Fatalf("expected merged samples across all buckets, got %#v", merged[0].Samples)
 	}
 }
 
