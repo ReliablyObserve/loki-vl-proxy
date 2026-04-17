@@ -1185,6 +1185,47 @@ func TestBuildHTTPServer(t *testing.T) {
 	}
 }
 
+func TestLogProxyStartup_EmitsBuildInfoAndPeerCacheAuthHint(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	oldVersion, oldRevision, oldBuildTime := version, revision, buildTime
+	version, revision, buildTime = "1.6.0", "abc123", "2026-04-17T15:00:00Z"
+	t.Cleanup(func() {
+		version, revision, buildTime = oldVersion, oldRevision, oldBuildTime
+	})
+
+	l1 := cache.New(time.Minute, 10)
+	t.Cleanup(l1.Close)
+
+	logProxyStartup(logger, proxy.Config{
+		QueryRangeWindowingEnabled: true,
+		QueryRangeSplitInterval:    time.Hour,
+		QueryRangeAdaptiveParallel: true,
+		QueryRangeParallelMin:      2,
+		QueryRangeParallelMax:      8,
+		QueryRangeHistoryCacheTTL:  24 * time.Hour,
+		QueryRangePartialResponses: true,
+		QueryRangeBackgroundWarm:   true,
+		PeerCache:                  &cache.PeerCache{},
+	}, "10.0.0.1:3100", "dns", l1, nil)
+
+	out := buf.String()
+	for _, needle := range []string{
+		`"msg":"proxy build info"`,
+		`"version":"1.6.0"`,
+		`"revision":"abc123"`,
+		`"build_time":"2026-04-17T15:00:00Z"`,
+		`"go_version":"` + runtime.Version() + `"`,
+		`"msg":"peer cache shared token not configured"`,
+		`"auth_mode":"peer_membership_only"`,
+	} {
+		if !strings.Contains(out, needle) {
+			t.Fatalf("expected startup log to contain %q, got %s", needle, out)
+		}
+	}
+}
+
 func TestValidateAdminExposure(t *testing.T) {
 	if err := validateAdminExposure("127.0.0.1:3100", true, false, ""); err != nil {
 		t.Fatalf("expected loopback admin exposure to be allowed without token, got %v", err)

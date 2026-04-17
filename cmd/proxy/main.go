@@ -15,6 +15,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -26,7 +27,11 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy"
 )
 
-var version = "dev"
+var (
+	version   = "dev"
+	revision  = "unknown"
+	buildTime = "unknown"
+)
 
 type envConfig struct {
 	listenAddr        string
@@ -1523,14 +1528,32 @@ func buildHTTPServer(opts serverRuntimeOptions) (*http.Server, error) {
 
 func runServerLoop(srv httpServer, opts serverLoopOptions, logger *slog.Logger, fatal func(string, ...any)) {
 	if opts.tlsCertFile != "" && opts.tlsKeyFile != "" {
-		logger.Info("proxy listening", "listen_address", opts.listenAddr, "backend_url", opts.backendURL, "tls", true)
+		logger.Info(
+			"proxy listening",
+			"listen_address", opts.listenAddr,
+			"backend_url", opts.backendURL,
+			"tls", true,
+			"version", version,
+			"revision", revision,
+			"build_time", buildTime,
+			"go_version", runtime.Version(),
+		)
 		if err := srv.ListenAndServeTLS(opts.tlsCertFile, opts.tlsKeyFile); err != nil && err != http.ErrServerClosed {
 			fatal("tls server failed", "error", err)
 		}
 		return
 	}
 
-	logger.Info("proxy listening", "listen_address", opts.listenAddr, "backend_url", opts.backendURL, "tls", false)
+	logger.Info(
+		"proxy listening",
+		"listen_address", opts.listenAddr,
+		"backend_url", opts.backendURL,
+		"tls", false,
+		"version", version,
+		"revision", revision,
+		"build_time", buildTime,
+		"go_version", runtime.Version(),
+	)
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		fatal("server failed", "error", err)
 	}
@@ -1558,6 +1581,13 @@ func reloadDynamicConfig(p reloadableProxy, getenv func(string) string, logger *
 }
 
 func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerDiscovery string, c, compat *cache.Cache) {
+	logger.Info(
+		"proxy build info",
+		"version", version,
+		"revision", revision,
+		"build_time", buildTime,
+		"go_version", runtime.Version(),
+	)
 	if proxyCfg.TenantMap != nil {
 		logger.Info("loaded tenant mappings", "count", len(proxyCfg.TenantMap))
 	}
@@ -1617,8 +1647,7 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 		logger.Info("loaded derived fields", "count", len(proxyCfg.DerivedFields))
 	}
 	if proxyCfg.QueryRangeWindowingEnabled {
-		logger.Info(
-			"query_range window cache enabled",
+		fullQueryRangeAttrs := []any{
 			"split_interval", proxyCfg.QueryRangeSplitInterval,
 			"adaptive_parallel", proxyCfg.QueryRangeAdaptiveParallel,
 			"parallel_min", proxyCfg.QueryRangeParallelMin,
@@ -1636,11 +1665,33 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 			"partial_responses", proxyCfg.QueryRangePartialResponses,
 			"background_warm", proxyCfg.QueryRangeBackgroundWarm,
 			"background_warm_max_windows", proxyCfg.QueryRangeBackgroundWarmMaxWindows,
+		}
+		logger.Info(
+			"query_range window cache enabled",
+			"split_interval", proxyCfg.QueryRangeSplitInterval,
+			"adaptive_parallel", proxyCfg.QueryRangeAdaptiveParallel,
+			"parallel_min", proxyCfg.QueryRangeParallelMin,
+			"parallel_max", proxyCfg.QueryRangeParallelMax,
+			"history_cache_ttl", proxyCfg.QueryRangeHistoryCacheTTL,
+			"partial_responses", proxyCfg.QueryRangePartialResponses,
+			"background_warm", proxyCfg.QueryRangeBackgroundWarm,
 		)
+		if logger.Enabled(context.Background(), slog.LevelDebug) {
+			logger.Debug("query_range window cache config", fullQueryRangeAttrs...)
+		}
 	}
 	if proxyCfg.PeerCache != nil {
 		c.SetL3(proxyCfg.PeerCache)
 		logger.Info("peer cache enabled", "self", peerSelf, "discovery", peerDiscovery)
+		if strings.TrimSpace(proxyCfg.PeerAuthToken) == "" {
+			logger.Warn(
+				"peer cache shared token not configured",
+				"auth_mode", "peer_membership_only",
+				"hint", "set -peer-auth-token fleet-wide to avoid transient startup/discovery 403s on peer cache endpoints",
+			)
+		} else {
+			logger.Info("peer cache shared token enabled", "auth_mode", "shared_token")
+		}
 	}
 	if compat != nil {
 		logger.Info("compatibility edge cache active", "tier", "tier0")

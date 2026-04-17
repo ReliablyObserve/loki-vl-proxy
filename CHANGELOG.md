@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- proxy/logging: emit build identity on startup and listener bind, carry real version/revision/build-time metadata in release artifacts, add restore/persist duration logging for patterns and label-values snapshots, downgrade `4xx` request errors to warn, and keep verbose per-type request breakdown maps at debug level while warning when peer cache runs without a shared auth token.
+
 ## [1.6.0] - 2026-04-17
 
 ### Features

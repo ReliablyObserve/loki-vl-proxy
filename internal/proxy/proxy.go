@@ -3081,6 +3081,7 @@ func (p *Proxy) persistPatternsNow(reason string) error {
 	if reason == "periodic" && !p.patternsPersistDirty.Load() {
 		return nil
 	}
+	startedAt := time.Now()
 
 	snapshot := p.buildPatternsSnapshot(time.Now().UTC())
 	data, err := json.Marshal(snapshot)
@@ -3121,6 +3122,7 @@ func (p *Proxy) persistPatternsNow(reason string) error {
 		"entries", entryCount,
 		"patterns", patternCount,
 		"bytes", len(data),
+		"duration_ms", time.Since(startedAt).Milliseconds(),
 	)
 	p.metrics.SetPatternsPersistedDiskState(patternCount, entryCount, int64(len(data)))
 	p.metrics.RecordPatternsPersistWrite(int64(len(data)))
@@ -3132,6 +3134,7 @@ func (p *Proxy) restorePatternsFromDisk() (bool, int64, error) {
 	if !p.patternsEnabled || strings.TrimSpace(p.patternsPersistPath) == "" {
 		return false, 0, nil
 	}
+	startedAt := time.Now()
 	data, err := os.ReadFile(p.patternsPersistPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -3174,6 +3177,7 @@ func (p *Proxy) restorePatternsFromDisk() (bool, int64, error) {
 		"entries_applied", appliedEntries,
 		"patterns_applied", appliedPatterns,
 		"bytes", len(data),
+		"duration_ms", time.Since(startedAt).Milliseconds(),
 	)
 	return true, snapshot.SavedAtUnixNano, nil
 }
@@ -3226,6 +3230,7 @@ func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) 
 	if !p.patternsEnabled || p.peerCache == nil {
 		return false, 0, nil
 	}
+	startedAt := time.Now()
 	peers := p.peerCache.Peers()
 	if len(peers) == 0 {
 		return false, 0, nil
@@ -3323,6 +3328,8 @@ func (p *Proxy) restorePatternsFromPeers(minSavedAt int64) (bool, int64, error) 
 		"entries_updated", appliedEntries,
 		"patterns_updated", appliedPatterns,
 		"peers", len(peers),
+		"bytes", totalPeerBytes,
+		"duration_ms", time.Since(startedAt).Milliseconds(),
 	)
 	return true, mergedSavedAt, nil
 }
@@ -3488,6 +3495,7 @@ func (p *Proxy) persistLabelValuesIndexNow(reason string) error {
 	if reason == "periodic" && !p.labelValuesIndexPersistDirty.Load() {
 		return nil
 	}
+	startedAt := time.Now()
 
 	snapshot := p.buildLabelValuesIndexSnapshot(time.Now().UTC())
 	data, err := json.Marshal(snapshot)
@@ -3521,9 +3529,9 @@ func (p *Proxy) persistLabelValuesIndexNow(reason string) error {
 
 	states, values := p.labelValuesIndexCardinality()
 	if reason == "periodic" {
-		p.log.Debug("label values index snapshot persisted", "path", path, "states", states, "values", values, "bytes", len(data))
+		p.log.Debug("label values index snapshot persisted", "path", path, "states", states, "values", values, "bytes", len(data), "duration_ms", time.Since(startedAt).Milliseconds())
 	} else {
-		p.log.Info("label values index snapshot persisted", "reason", reason, "path", path, "states", states, "values", values, "bytes", len(data))
+		p.log.Info("label values index snapshot persisted", "reason", reason, "path", path, "states", states, "values", values, "bytes", len(data), "duration_ms", time.Since(startedAt).Milliseconds())
 	}
 	p.labelValuesIndexPersistDirty.Store(false)
 	return nil
@@ -3533,6 +3541,7 @@ func (p *Proxy) restoreLabelValuesIndexFromDisk() (bool, int64, error) {
 	if !p.labelValuesIndexedCache || strings.TrimSpace(p.labelValuesIndexPersistPath) == "" {
 		return false, 0, nil
 	}
+	startedAt := time.Now()
 
 	data, err := os.ReadFile(p.labelValuesIndexPersistPath)
 	if err != nil {
@@ -3567,6 +3576,8 @@ func (p *Proxy) restoreLabelValuesIndexFromDisk() (bool, int64, error) {
 		"saved_at", time.Unix(0, snapshot.SavedAtUnixNano).UTC().Format(time.RFC3339Nano),
 		"states", states,
 		"values", values,
+		"bytes", len(data),
+		"duration_ms", time.Since(startedAt).Milliseconds(),
 	)
 	return true, snapshot.SavedAtUnixNano, nil
 }
@@ -3575,6 +3586,7 @@ func (p *Proxy) restoreLabelValuesIndexFromPeers(minSavedAt int64) (bool, int64,
 	if !p.labelValuesIndexedCache || p.cache == nil || p.peerCache == nil {
 		return false, 0, nil
 	}
+	startedAt := time.Now()
 	data, ok := p.cache.Get(labelValuesIndexSnapshotCacheKey)
 	if !ok {
 		return false, 0, nil
@@ -3597,6 +3609,8 @@ func (p *Proxy) restoreLabelValuesIndexFromPeers(minSavedAt int64) (bool, int64,
 		"saved_at", time.Unix(0, snapshot.SavedAtUnixNano).UTC().Format(time.RFC3339Nano),
 		"states", states,
 		"values", values,
+		"bytes", len(data),
+		"duration_ms", time.Since(startedAt).Milliseconds(),
 	)
 	return true, snapshot.SavedAtUnixNano, nil
 }
@@ -10822,7 +10836,16 @@ func sanitizeLimit(limitStr string) string {
 }
 
 func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
-	p.log.Error("request error", "code", code, "error", msg)
+	level := slog.LevelInfo
+	switch {
+	case code >= http.StatusInternalServerError:
+		level = slog.LevelError
+	case code >= http.StatusBadRequest:
+		level = slog.LevelWarn
+	}
+	if p.log != nil && p.log.Enabled(context.Background(), level) {
+		p.log.Log(context.Background(), level, "request error", "code", code, "error", msg)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -11233,16 +11256,30 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.error", telemetry.upstreamErrorSeen,
 		}
 		if len(telemetry.upstreamCallsByType) > 0 {
-			logAttrs = append(logAttrs, "upstream.calls_by_type", telemetry.upstreamCallsByType)
+			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
 		}
 		if len(upstreamDurationByTypeMs) > 0 {
-			logAttrs = append(logAttrs, "upstream.duration_ms_by_type", upstreamDurationByTypeMs)
+			logAttrs = append(logAttrs, "upstream.duration_types", len(upstreamDurationByTypeMs))
 		}
 		if len(telemetry.internalOpsByType) > 0 {
-			logAttrs = append(logAttrs, "proxy.operations_by_type", telemetry.internalOpsByType)
+			logAttrs = append(logAttrs, "proxy.operation_types", len(telemetry.internalOpsByType))
 		}
 		if len(internalDurationByTypeMs) > 0 {
-			logAttrs = append(logAttrs, "proxy.operation_duration_ms_by_type", internalDurationByTypeMs)
+			logAttrs = append(logAttrs, "proxy.operation_duration_types", len(internalDurationByTypeMs))
+		}
+		if p.log.Enabled(reqCtx, slog.LevelDebug) {
+			if len(telemetry.upstreamCallsByType) > 0 {
+				logAttrs = append(logAttrs, "upstream.calls_by_type", telemetry.upstreamCallsByType)
+			}
+			if len(upstreamDurationByTypeMs) > 0 {
+				logAttrs = append(logAttrs, "upstream.duration_ms_by_type", upstreamDurationByTypeMs)
+			}
+			if len(telemetry.internalOpsByType) > 0 {
+				logAttrs = append(logAttrs, "proxy.operations_by_type", telemetry.internalOpsByType)
+			}
+			if len(internalDurationByTypeMs) > 0 {
+				logAttrs = append(logAttrs, "proxy.operation_duration_ms_by_type", internalDurationByTypeMs)
+			}
 		}
 		if clientAddr != "" {
 			logAttrs = append(logAttrs, "client.address", clientAddr)

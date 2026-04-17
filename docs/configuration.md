@@ -575,7 +575,7 @@ Treat these as current implementation defaults, not stable configuration API. If
 | `-peer-dns` | — | — | Headless service DNS name used when `-peer-discovery=dns` |
 | `-peer-static` | — | — | Comma-separated peer list used when `-peer-discovery=static` |
 | `-peer-timeout` | — | `2s` | Timeout applied to peer-cache owner fetches (`/_cache/get`) before falling back locally |
-| `-peer-auth-token` | — | — | Shared token required on `/_cache/get` and `/_cache/set` peer-cache requests when set |
+| `-peer-auth-token` | — | — | Shared token used on `/_cache/get` and `/_cache/set` peer-cache requests. Strongly recommended for fleets so peer auth does not depend only on transient discovery/IP membership during startup. |
 | `-peer-write-through` | — | `true` | Push eligible non-owner cache writes to the owner peer (`/_cache/set`) to keep owner shards warm under skewed traffic |
 | `-peer-write-through-min-ttl` | — | `30s` | Minimum TTL required to push a write-through copy to the owner peer |
 | `-peer-hot-read-ahead-enabled` | — | `false` | Enable bounded periodic hot-read-ahead prefetch from peer hot indexes |
@@ -596,6 +596,7 @@ Peer-cache notes:
 - peer-cache fetches preserve owner TTL and can compress larger `/_cache/get` responses with `zstd` or `gzip`
 - `loki_vl_proxy_peer_cache_error_reason_total{reason=...}` breaks opaque peer fetch failures into low-cardinality reasons like `timeout`, `transport`, `status_502`, `body_read`, and `decode`
 - with `-peer-write-through=true` (default), non-owner writes with TTL above threshold are pushed to owners and stored locally as short-lived shadows to reduce hot-pod disk skew
+- set `-peer-auth-token` fleet-wide whenever peer cache is enabled; it avoids transient startup or discovery-flap `403` responses caused by IP-membership-only peer auth
 - when `-peer-auth-token` is set, all peers must share the same token or peer-cache reuse will fail closed
 
 ### Current Tuning For Higher Fleet Reuse

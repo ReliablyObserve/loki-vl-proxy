@@ -309,13 +309,19 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ steps.meta.outputs.version }}"
+          if [ -z "${VERSION}" ] || [ "${VERSION}" = "dev" ]; then
+            echo "refusing to build release binaries with VERSION='${VERSION}'" >&2
+            exit 1
+          fi
+          REVISION="${GITHUB_SHA}"
+          BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           mkdir -p dist
           for GOOS_GOARCH in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             GOOS="${GOOS_GOARCH%/*}"
             GOARCH="${GOOS_GOARCH#*/}"
             OUT="dist/loki-vl-proxy-${GOOS}-${GOARCH}"
             CGO_ENABLED=0 GOOS="$GOOS" GOARCH="$GOARCH" \
-              go build -ldflags="-s -w -X main.version=${VERSION}" \
+              go build -ldflags="-s -w -X main.version=${VERSION} -X main.revision=${REVISION} -X main.buildTime=${BUILD_TIME}" \
               -o "$OUT" ./cmd/proxy
           done
           cd dist && sha256sum loki-vl-proxy-* > checksums.txt
@@ -374,6 +380,10 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ github.sha }}
+            BUILD_TIME=${{ github.run_started_at }}
           tags: ${{ steps.image-tags.outputs.tags }}
           labels: |
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}

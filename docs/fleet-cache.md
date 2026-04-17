@@ -238,6 +238,7 @@ Peer fetch behavior details:
 
 - larger `/_cache/get` payloads are compressed when peers request `Accept-Encoding`, preferring `zstd` and falling back to `gzip`
 - when `-peer-write-through=true`, non-owner writes above `-peer-write-through-min-ttl` are pushed to owners via `/_cache/set`
+- set `-peer-auth-token` fleet-wide in Kubernetes deployments so peer fetches authenticate by token instead of only by the currently discovered peer IP set
 - when `-peer-auth-token` is set, both peer fetch and peer write-through calls must carry the shared token or endpoints fail closed
 
 ## Fleet Metrics
