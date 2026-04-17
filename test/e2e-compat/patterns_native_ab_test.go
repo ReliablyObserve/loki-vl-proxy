@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -60,7 +61,7 @@ func TestDrilldown_Patterns_NativeLokiAndProxyStayDenseOnSameStableData(t *testi
 	directEntries := waitForPatternsViaGrafanaDatasource(t, directUID, query, start, end, cfg.step, len(stablePatternMessages))
 	proxyEntries := waitForPatternsViaGrafanaDatasource(t, proxyUID, query, start, end, cfg.step, 1)
 
-	expectedBuckets := int(end.Sub(start)/cfg.step) + 1
+	_, _, expectedBuckets := denseExpectedBuckets(start, end, cfg.step)
 	stepSeconds := int64(cfg.step / time.Second)
 
 	directSummary := summarizeStablePatternEntries(t, "direct", directEntries, len(stablePatternMessages), expectedBuckets, stepSeconds)
@@ -164,7 +165,7 @@ func seedStablePatternsToLokiAndVL(t *testing.T, serviceName string, start, end 
 			vlBody.WriteString("{\"_time\":\"")
 			vlBody.WriteString(ts.Format(time.RFC3339Nano))
 			vlBody.WriteString("\",\"_msg\":")
-			vlBody.WriteString(strconvQuote(message))
+			vlBody.WriteString(strconv.Quote(message))
 			vlBody.WriteString(",\"app\":\"")
 			vlBody.WriteString(serviceName)
 			vlBody.WriteString("\",\"service_name\":\"")
@@ -177,22 +178,35 @@ func seedStablePatternsToLokiAndVL(t *testing.T, serviceName string, start, end 
 		}
 	}
 	flush()
-	time.Sleep(5 * time.Second)
 }
 
 func waitForPatternsViaGrafanaDatasource(t *testing.T, dsUID, query string, start, end time.Time, step time.Duration, minPatterns int) []densePatternEntry {
 	t.Helper()
 
 	deadline := time.Now().Add(45 * time.Second)
+	poll := 200 * time.Millisecond
+	maxPoll := 2 * time.Second
 	for {
 		entries, err := fetchPatternsViaGrafanaDatasource(dsUID, query, start, end, step, max(minPatterns, 20))
 		if err == nil && len(entries) >= minPatterns {
 			return entries
 		}
-		if time.Now().After(deadline) {
+		now := time.Now()
+		if now.After(deadline) {
 			t.Fatalf("patterns did not stabilize for datasource=%s query=%s: err=%v entries=%d", dsUID, query, err, len(entries))
 		}
-		time.Sleep(1500 * time.Millisecond)
+		sleepFor := poll
+		remaining := time.Until(deadline)
+		if sleepFor > remaining {
+			sleepFor = remaining
+		}
+		time.Sleep(sleepFor)
+		if poll < maxPoll {
+			poll *= 2
+			if poll > maxPoll {
+				poll = maxPoll
+			}
+		}
 	}
 }
 
@@ -272,12 +286,4 @@ func summarizeStablePatternEntries(t *testing.T, source string, entries []denseP
 	}
 
 	return summaries
-}
-
-func strconvQuote(value string) string {
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return `""`
-	}
-	return string(encoded)
 }

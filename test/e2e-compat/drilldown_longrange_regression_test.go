@@ -51,23 +51,37 @@ func TestDrilldown_LongRangePatterns_MaintainPerPatternCoverage(t *testing.T) {
 
 	var entries []densePatternEntry
 	deadline := time.Now().Add(60 * time.Second)
+	poll := 200 * time.Millisecond
+	maxPoll := 2 * time.Second
 	for {
 		fetched, err := fetchPatternsViaGrafanaDatasource(dsUID, query, start, end, cfg.step, cfg.patternCount)
 		if err == nil && len(fetched) > 0 {
 			entries = fetched
 			break
 		}
-		if time.Now().After(deadline) {
+		now := time.Now()
+		if now.After(deadline) {
 			t.Fatalf("patterns long-range repro did not stabilize in time; last_err=%v entries=%d", err, len(fetched))
 		}
-		time.Sleep(1500 * time.Millisecond)
+		sleepFor := poll
+		remaining := time.Until(deadline)
+		if sleepFor > remaining {
+			sleepFor = remaining
+		}
+		time.Sleep(sleepFor)
+		if poll < maxPoll {
+			poll *= 2
+			if poll > maxPoll {
+				poll = maxPoll
+			}
+		}
 	}
 
 	if len(entries) == 0 {
 		t.Fatalf("expected long-range patterns to be detected, got %d", len(entries))
 	}
 
-	expectedBuckets := int(end.Sub(start)/cfg.step) + 1
+	_, _, expectedBuckets := denseExpectedBuckets(start, end, cfg.step)
 	minCoverageBuckets := (expectedBuckets * 4) / 5
 	checkCount := min(4, len(entries))
 	for i := 0; i < checkCount; i++ {
@@ -225,6 +239,23 @@ func TestDrilldown_LongRangeVolume_GrafanaStyleSplitQueriesStayDense(t *testing.
 	}
 
 	startBucket, endBucket, expectedBuckets := denseExpectedBuckets(start, end, queryStep)
+	if queryStep <= 0 {
+		t.Fatalf("queryStep must be positive, got %s", queryStep)
+	}
+	if expectedBuckets <= 0 {
+		t.Fatalf("denseExpectedBuckets returned non-positive bucket count for queryStep=%s: %d", queryStep, expectedBuckets)
+	}
+	if endBucket < startBucket {
+		t.Fatalf("denseExpectedBuckets returned inverted range for queryStep=%s: start_bucket=%d end_bucket=%d", queryStep, startBucket, endBucket)
+	}
+	span := endBucket - startBucket
+	stepSeconds := int64(queryStep / time.Second)
+	if stepSeconds <= 0 {
+		t.Fatalf("queryStep must be at least one second for second-based bucket math, got %s", queryStep)
+	}
+	if span > 0 && span < stepSeconds {
+		t.Fatalf("denseExpectedBuckets span too small for queryStep=%s: start_bucket=%d end_bucket=%d span=%d", queryStep, startBucket, endBucket, span)
+	}
 	minPoints := expectedBuckets - 1
 	for _, level := range []string{"info", "error"} {
 		series := merged[level]
@@ -235,15 +266,15 @@ func TestDrilldown_LongRangeVolume_GrafanaStyleSplitQueriesStayDense(t *testing.
 		if len(series) < minPoints {
 			t.Fatalf("expected dense unique split coverage for detected_level=%s, got %d/%d points", level, len(series), expectedBuckets)
 		}
-		if series[0] > startBucket+(2*int64(queryStep/time.Second)) {
+		if series[0] > startBucket+(2*stepSeconds) {
 			t.Fatalf("expected early split coverage for detected_level=%s, first_ts=%d start_bucket=%d", level, series[0], startBucket)
 		}
 		for i := 1; i < len(series); i++ {
-			if gap := series[i] - series[i-1]; gap > int64(queryStep/time.Second) {
+			if gap := series[i] - series[i-1]; gap > stepSeconds {
 				t.Fatalf("expected contiguous merged split buckets for detected_level=%s, prev=%d current=%d gap=%d", level, series[i-1], series[i], gap)
 			}
 		}
-		if series[len(series)-1] < endBucket-(2*int64(queryStep/time.Second)) {
+		if series[len(series)-1] < endBucket-(2*stepSeconds) {
 			t.Fatalf("expected late split coverage for detected_level=%s, last_ts=%d end_bucket=%d", level, series[len(series)-1], endBucket)
 		}
 	}
@@ -332,7 +363,6 @@ func seedLongRangeDrilldownServiceData(t *testing.T, serviceName string, start, 
 		bucketIndex++
 	}
 	flush()
-	time.Sleep(5 * time.Second)
 }
 
 func longRangeServiceName(prefix string) string {
@@ -348,16 +378,30 @@ func waitForDrilldownServiceVisible(t *testing.T, serviceName string, start, end
 	params.Set("end", end.Format(time.RFC3339Nano))
 
 	deadline := time.Now().Add(45 * time.Second)
+	poll := 200 * time.Millisecond
+	maxPoll := 2 * time.Second
 	var last map[string]interface{}
 	for {
 		last = getJSON(t, proxyURL+"/loki/api/v1/index/stats?"+params.Encode())
 		if entries, ok := last["entries"].(float64); ok && entries > 0 {
 			return
 		}
-		if time.Now().After(deadline) {
+		now := time.Now()
+		if now.After(deadline) {
 			t.Fatalf("seeded service %q never became visible in index/stats: %v", serviceName, last)
 		}
-		time.Sleep(1500 * time.Millisecond)
+		sleepFor := poll
+		remaining := time.Until(deadline)
+		if sleepFor > remaining {
+			sleepFor = remaining
+		}
+		time.Sleep(sleepFor)
+		if poll < maxPoll {
+			poll *= 2
+			if poll > maxPoll {
+				poll = maxPoll
+			}
+		}
 	}
 }
 

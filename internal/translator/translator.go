@@ -981,9 +981,7 @@ type VectorMatchInfo struct {
 // ParseBinaryMetricExpr parses a "__binary__:op:left|||right[@@@modifier:labels...]" string.
 // Returns the operator, left query, right query, vector matching info, and whether it's valid.
 func ParseBinaryMetricExpr(s string) (op, left, right string, ok bool) {
-	vm := &VectorMatchInfo{}
-	op, left, right, vm, ok = ParseBinaryMetricExprFull(s)
-	_ = vm
+	op, left, right, _, ok = ParseBinaryMetricExprFull(s)
 	return op, left, right, ok
 }
 
@@ -1274,7 +1272,8 @@ func findMatchingBrace(s string) int {
 func findLastMatchingParen(s string) int {
 	depth := 0
 	var inQuote rune
-	for i, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := rune(s[i])
 		if c == '\\' && inQuote == '"' && i+1 < len(s) {
 			i++
 			continue
@@ -1305,7 +1304,8 @@ func findLastMatchingParen(s string) int {
 func extractPipelineStage(s string) (stage, rest string) {
 	// A pipeline stage goes until the next unquoted |
 	var inQuote rune
-	for i, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := rune(s[i])
 		if c == '\\' && inQuote == '"' && i+1 < len(s) {
 			i++
 			continue

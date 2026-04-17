@@ -225,12 +225,17 @@ func scanDetectedLabelSummaries(body []byte, lt *LabelTranslator) map[string]*de
 	summaries := map[string]*detectedLabelSummary{}
 
 	startIdx := 0
-	for i := 0; i <= len(body); i++ {
-		if i < len(body) && body[i] != '\n' {
-			continue
+	for startIdx < len(body) {
+		endIdx := startIdx
+		for endIdx < len(body) && body[endIdx] != '\n' {
+			endIdx++
 		}
-		line := strings.TrimSpace(string(body[startIdx:i]))
-		startIdx = i + 1
+		line := strings.TrimSpace(string(body[startIdx:endIdx]))
+		if endIdx < len(body) {
+			startIdx = endIdx + 1
+		} else {
+			startIdx = len(body)
+		}
 		if line == "" {
 			continue
 		}
@@ -463,30 +468,28 @@ func inferPrimaryTargetLabel(query string) string {
 	escape = false
 	start := 0
 	firstMatcher := ""
-	for i := 0; i <= len(content); i++ {
-		if i < len(content) {
-			ch := content[i]
-			if escape {
-				escape = false
+	for i := 0; i < len(content); i++ {
+		ch := content[i]
+		if escape {
+			escape = false
+			continue
+		}
+		if inQuote != 0 {
+			if ch == '\\' && inQuote == '"' {
+				escape = true
 				continue
 			}
-			if inQuote != 0 {
-				if ch == '\\' && inQuote == '"' {
-					escape = true
-					continue
-				}
-				if ch == inQuote {
-					inQuote = 0
-				}
-				continue
+			if ch == inQuote {
+				inQuote = 0
 			}
-			if ch == '"' || ch == '`' {
-				inQuote = ch
-				continue
-			}
-			if ch != ',' {
-				continue
-			}
+			continue
+		}
+		if ch == '"' || ch == '`' {
+			inQuote = ch
+			continue
+		}
+		if ch != ',' {
+			continue
 		}
 		part := strings.TrimSpace(content[start:i])
 		if part != "" {
@@ -494,6 +497,9 @@ func inferPrimaryTargetLabel(query string) string {
 			break
 		}
 		start = i + 1
+	}
+	if firstMatcher == "" {
+		firstMatcher = strings.TrimSpace(content[start:])
 	}
 	if firstMatcher == "" {
 		return ""
@@ -1002,12 +1008,17 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 	fields := make(map[string]*detectedFieldSummary)
 
 	startIdx := 0
-	for i := 0; i <= len(body); i++ {
-		if i < len(body) && body[i] != '\n' {
-			continue
+	for startIdx < len(body) {
+		endIdx := startIdx
+		for endIdx < len(body) && body[endIdx] != '\n' {
+			endIdx++
 		}
-		line := strings.TrimSpace(string(body[startIdx:i]))
-		startIdx = i + 1
+		line := strings.TrimSpace(string(body[startIdx:endIdx]))
+		if endIdx < len(body) {
+			startIdx = endIdx + 1
+		} else {
+			startIdx = len(body)
+		}
 		if line == "" {
 			continue
 		}

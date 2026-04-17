@@ -8487,14 +8487,19 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 	estimatedLines := len(body)/200 + 1
 	streamMap := make(map[string]*streamEntry, estimatedLines/10+1)
 
-	// Scan lines without copying the entire body to a string
+	// Scan lines without copying the entire body to a string.
 	start := 0
-	for i := 0; i <= len(body); i++ {
-		if i < len(body) && body[i] != '\n' {
-			continue
+	for start < len(body) {
+		end := start
+		for end < len(body) && body[end] != '\n' {
+			end++
 		}
-		line := body[start:i]
-		start = i + 1
+		line := body[start:end]
+		if end < len(body) {
+			start = end + 1
+		} else {
+			start = len(body)
+		}
 
 		// Trim whitespace (avoid bytes.TrimSpace allocation)
 		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
@@ -11306,12 +11311,17 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	jsonHits := 0
 	logfmtHits := 0
 	startIdx := 0
-	for i := 0; i <= len(body); i++ {
-		if i < len(body) && body[i] != '\n' {
-			continue
+	for startIdx < len(body) {
+		endIdx := startIdx
+		for endIdx < len(body) && body[endIdx] != '\n' {
+			endIdx++
 		}
-		line := strings.TrimSpace(string(body[startIdx:i]))
-		startIdx = i + 1
+		line := strings.TrimSpace(string(body[startIdx:endIdx]))
+		if endIdx < len(body) {
+			startIdx = endIdx + 1
+		} else {
+			startIdx = len(body)
+		}
 		if line == "" {
 			continue
 		}

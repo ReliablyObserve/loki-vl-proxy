@@ -696,12 +696,17 @@ func (p *Proxy) queryRangeWindowCacheKey(
 func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
 	entries := make([]queryRangeWindowEntry, 0, len(body)/256+1)
 	start := 0
-	for i := 0; i <= len(body); i++ {
-		if i < len(body) && body[i] != '\n' {
-			continue
+	for start < len(body) {
+		end := start
+		for end < len(body) && body[end] != '\n' {
+			end++
 		}
-		line := body[start:i]
-		start = i + 1
+		line := body[start:end]
+		if end < len(body) {
+			start = end + 1
+		} else {
+			start = len(body)
+		}
 		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
 			line = line[1:]
 		}

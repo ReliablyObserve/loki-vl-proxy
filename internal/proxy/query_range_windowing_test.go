@@ -47,8 +47,12 @@ func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
 
 	p := newWindowingTestProxy(t, vlBackend.URL)
 	start := time.Now().Add(-48 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
-	endA := start + int64(3*time.Hour) - 1
-	endB := start + int64(4*time.Hour) - 1
+	// Use 3 windows initially, then expand to 4 windows to verify cached window reuse
+	// with exactly one additional backend call for the newly covered window.
+	const initialRangeDuration = 3 * time.Hour
+	const expandedRangeDuration = 4 * time.Hour
+	endA := start + int64(initialRangeDuration) - 1
+	endB := start + int64(expandedRangeDuration) - 1
 
 	reqA := httptest.NewRequest("GET", fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=100", url.QueryEscape(`{app="nginx"}`), start, endA), nil)
 	wA := httptest.NewRecorder()
@@ -766,6 +770,10 @@ func TestQueryRangeWindow_PartialResponseOnRetryableFailure(t *testing.T) {
 }
 
 func TestQueryRangeWindow_SevenDayRegressionSLO(t *testing.T) {
+	const (
+		sparseWindowModulo   = 8
+		sparseWindowHitCount = 1000
+	)
 	start := time.Now().Add(-7 * 24 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
 	end := start + int64(7*24*time.Hour) - 1
 	stepNs := int64(time.Hour)
@@ -781,8 +789,8 @@ func TestQueryRangeWindow_SevenDayRegressionSLO(t *testing.T) {
 			idx := int((windowStart - start) / stepNs)
 			val := 0
 			// Sparse long-range history: only every 8th window has events.
-			if idx%8 == 0 {
-				val = 1000
+			if idx%sparseWindowModulo == 0 {
+				val = sparseWindowHitCount
 			}
 			_, _ = fmt.Fprintf(
 				w,

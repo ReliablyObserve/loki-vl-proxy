@@ -2,7 +2,7 @@ package translator
 
 import "testing"
 
-func TestCoverage_MoreTranslatorHelpers(t *testing.T) {
+func TestPatternAndTranslatorHelperBehaviors(t *testing.T) {
 	if !isNoopPatternExpression(`"^.*$"`) {
 		t.Fatal("expected quoted catch-all regex to be treated as noop pattern")
 	}
@@ -69,7 +69,7 @@ func TestCoverage_MoreTranslatorHelpers(t *testing.T) {
 		t.Fatal("expected malformed quantile_over_time expression to fail translation")
 	}
 
-	if got := findLastMatchingParen(`inner(")") ) tail`); got < 0 {
-		t.Fatalf("expected last matching paren finder to locate closing paren")
+	if got := findLastMatchingParen(`inner(")") ) tail`); got != 11 {
+		t.Fatalf("unexpected last matching paren index got=%d want=%d", got, 11)
 	}
 }

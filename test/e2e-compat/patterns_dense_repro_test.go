@@ -82,6 +82,8 @@ func TestPatternsDenseRepro_FullRangeAndRefreshStability(t *testing.T) {
 	var baseline densePatternCoverage
 	var baselineCount int
 	deadline := time.Now().Add(45 * time.Second)
+	poll := 200 * time.Millisecond
+	maxPoll := 2 * time.Second
 	for {
 		entries, err := fetchPatternsViaGrafanaDatasource(dsUID, query, seedStart, seedEnd, cfg.step, cfg.limit)
 		if err == nil && len(entries) > 0 {
@@ -92,10 +94,22 @@ func TestPatternsDenseRepro_FullRangeAndRefreshStability(t *testing.T) {
 				break
 			}
 		}
-		if time.Now().After(deadline) {
+		now := time.Now()
+		if now.After(deadline) {
 			t.Fatalf("dense repro query did not yield pattern coverage in time")
 		}
-		time.Sleep(1500 * time.Millisecond)
+		sleepFor := poll
+		remaining := time.Until(deadline)
+		if sleepFor > remaining {
+			sleepFor = remaining
+		}
+		time.Sleep(sleepFor)
+		if poll < maxPoll {
+			poll *= 2
+			if poll > maxPoll {
+				poll = maxPoll
+			}
+		}
 	}
 
 	if baseline.sampleBuckets < expectedBucketCount-1 {
@@ -176,16 +190,20 @@ func summarizeDensePatternCoverage(entries []densePatternEntry) (densePatternCov
 
 func denseExpectedBuckets(start, end time.Time, step time.Duration) (int64, int64, int) {
 	stepSeconds := int64(step / time.Second)
+	// Keep behavior safe for boundary inputs used by tests.
 	if stepSeconds <= 0 {
-		stepSeconds = 60
+		return start.Unix(), end.Unix(), 1
 	}
 	startBucket := (start.Unix() / stepSeconds) * stepSeconds
 	endBucket := (end.Unix() / stepSeconds) * stepSeconds
-	if endBucket < startBucket {
-		endBucket = startBucket
+	if endBucket <= startBucket {
+		return startBucket, endBucket, 1
 	}
-	count := int((endBucket-startBucket)/stepSeconds) + 1
-	return startBucket, endBucket, count
+	expectedBuckets := int(((endBucket - startBucket) / stepSeconds) + 1)
+	if expectedBuckets < 1 {
+		expectedBuckets = 1
+	}
+	return startBucket, endBucket, expectedBuckets
 }
 
 func TestDenseLinearTimestamp_MonotonicAndBounded(t *testing.T) {
@@ -210,6 +228,48 @@ func TestDenseLinearTimestamp_MonotonicAndBounded(t *testing.T) {
 	if got := denseLinearTimestamp(startNs, windowNs, denom, denom); got != startNs+windowNs {
 		t.Fatalf("expected last timestamp=%d, got=%d", startNs+windowNs, got)
 	}
+}
+
+func TestDenseExpectedBuckets_Boundaries(t *testing.T) {
+	start := time.Date(2026, 4, 8, 10, 0, 5, 0, time.UTC)
+
+	t.Run("zero and negative step collapse to single bucket", func(t *testing.T) {
+		for _, step := range []time.Duration{0, -time.Second} {
+			startBucket, endBucket, expectedBuckets := denseExpectedBuckets(start, start.Add(time.Minute), step)
+			if expectedBuckets != 1 {
+				t.Fatalf("expected single bucket for step=%s, got %d", step, expectedBuckets)
+			}
+			if startBucket != start.Unix() || endBucket != start.Add(time.Minute).Unix() {
+				t.Fatalf("expected raw unix bounds for step=%s, got start=%d end=%d", step, startBucket, endBucket)
+			}
+		}
+	})
+
+	t.Run("equal range returns single bucket", func(t *testing.T) {
+		startBucket, endBucket, expectedBuckets := denseExpectedBuckets(start, start, time.Minute)
+		if expectedBuckets != 1 {
+			t.Fatalf("expected single bucket for equal range, got %d", expectedBuckets)
+		}
+		if startBucket != endBucket {
+			t.Fatalf("expected equal bucket bounds, got start=%d end=%d", startBucket, endBucket)
+		}
+	})
+
+	t.Run("step larger than range still returns single bucket", func(t *testing.T) {
+		_, _, expectedBuckets := denseExpectedBuckets(start, start.Add(30*time.Second), time.Minute)
+		if expectedBuckets != 1 {
+			t.Fatalf("expected single bucket when step exceeds range, got %d", expectedBuckets)
+		}
+	})
+
+	t.Run("queryStep variation changes bucket count predictably", func(t *testing.T) {
+		end := start.Add(2 * time.Hour)
+		_, _, minuteBuckets := denseExpectedBuckets(start, end, time.Minute)
+		_, _, hourBuckets := denseExpectedBuckets(start, end, time.Hour)
+		if minuteBuckets <= hourBuckets {
+			t.Fatalf("expected smaller query step to yield more buckets, minute=%d hour=%d", minuteBuckets, hourBuckets)
+		}
+	})
 }
 
 func fetchPatternsViaGrafanaDatasource(dsUID, query string, start, end time.Time, step time.Duration, limit int) ([]densePatternEntry, error) {

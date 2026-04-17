@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- translator/proxy: remove off-by-one line scanners flagged by CodeQL in proxy and Drilldown helpers, and tighten translator helper coverage plus error-path tests to keep the reliability/maintainability sweep green.
+
+### Tests
+
+- e2e: replace brittle fixed sleeps with bounded polling in long-range Drilldown and patterns compatibility tests, add explicit dense-bucket boundary coverage, and simplify native patterns seed quoting to use the standard library directly.
+
 ## [1.5.0] - 2026-04-17
 
 ### Bug Fixes

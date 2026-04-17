@@ -52,6 +52,11 @@ func TestTranslateLogQL(t *testing.T) {
 			want:  `app:=nginx NOT ~"debug"`,
 		},
 		{
+			name:    "invalid selector syntax returns error",
+			logql:   `{app="nginx"`,
+			wantErr: true,
+		},
+		{
 			name:  "regexp filter",
 			logql: `{app="nginx"} |~ "err.*"`,
 			want:  `app:=nginx ~"err.*"`,
