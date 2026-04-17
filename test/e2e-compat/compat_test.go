@@ -38,7 +38,7 @@ var (
 	tailProxyURL   = envOr("TAIL_PROXY_URL", "http://localhost:3103")
 	tailIngressURL = envOr("TAIL_INGRESS_URL", "http://localhost:3104")
 	tailNativeURL  = envOr("TAIL_NATIVE_URL", "http://localhost:3105")
-	vlURL          = envOr("VL_URL", "http://localhost:29428")
+	vlURL          = envOr("VL_URL", "http://localhost:9428")
 )
 
 func envOr(key, def string) string {
