@@ -370,6 +370,12 @@ At log level, the same request can also carry:
 - `loki.tenant.id`
 - `http.route`
 
+Per-request by-type breakdown maps such as `upstream.calls_by_type` and
+`proxy.operations_by_type` are emitted only at debug level. The default info-level
+request logs keep aggregate counts while the detailed per-type visibility stays in
+Prometheus/OTLP metrics. This avoids log-body field explosion in pipelines that
+flatten structured JSON bodies into discoverable `message.*` fields.
+
 That separation matters:
 
 - `enduser.*` answers "which Grafana user or trusted client triggered this?"

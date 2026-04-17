@@ -221,7 +221,7 @@ extraArgs:
   # ruler-backend: ""                           # optional /rules passthrough backend
   # alerts-backend: ""                          # optional /alerts passthrough backend
   # extra-label-fields: "service.name,host.name"
-  # peer-auth-token: ""                         # token required for /_cache/get and /_cache/set peer calls
+  # peer-auth-token: ""                         # strongly recommended for fleets; avoids transient discovery/IP-only peer auth 403s on /_cache/get and /_cache/set
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
   # peer-write-through: "true"                  # push eligible non-owner writes to owner peer
   # peer-write-through-min-ttl: "30s"           # only TTL >= threshold is pushed to owner peer
