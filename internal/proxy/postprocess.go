@@ -23,6 +23,7 @@ const (
 	patternMaxTokens      = 80
 	patternSimThreshold   = 0.3
 	patternMaxLineLength  = 3000
+	patternPrefixDepth    = 4
 )
 
 type patternBucket struct {
@@ -505,6 +506,9 @@ func bestPatternCluster(candidates []*patternBucket, tokens []string) *patternBu
 	maxParamCount := -1
 
 	for _, cluster := range candidates {
+		if !patternPrefixCompatible(cluster.tokens, tokens) {
+			continue
+		}
 		curSim, paramCount := getPatternSimilarity(cluster.tokens, tokens)
 		if paramCount < 0 {
 			continue
@@ -519,6 +523,37 @@ func bestPatternCluster(candidates []*patternBucket, tokens []string) *patternBu
 		return match
 	}
 	return nil
+}
+
+func patternPrefixCompatible(templateTokens, tokens []string) bool {
+	if len(templateTokens) != len(tokens) || len(tokens) == 0 {
+		return false
+	}
+	depth := patternPrefixDepth
+	if depth > len(tokens) {
+		depth = len(tokens)
+	}
+	for i := 0; i < depth; i++ {
+		templateToken := templateTokens[i]
+		inputToken := tokens[i]
+		if templateToken == patternVarPlaceholder || templateToken == inputToken {
+			continue
+		}
+		if patternTokenHasDigits(templateToken) || patternTokenHasDigits(inputToken) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func patternTokenHasDigits(token string) bool {
+	for _, ch := range token {
+		if unicode.IsDigit(ch) {
+			return true
+		}
+	}
+	return false
 }
 
 func getPatternSimilarity(templateTokens, tokens []string) (float64, int) {

@@ -909,18 +909,14 @@ func TestPeerCache_WriteThroughPushesToOwner(t *testing.T) {
 	}
 
 	pc.SetWithTTL(key, []byte("value"), 30*time.Second)
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if got, ok := ownerCache.Get(key); ok && string(got) == "value" {
-			stats := pc.Stats()
-			if stats["wt_pushes"].(int64) < 1 {
-				t.Fatalf("expected wt_pushes >= 1, got %+v", stats)
-			}
-			return
+	requireEventually(t, 3*time.Second, func() bool {
+		got, ok := ownerCache.Get(key)
+		if !ok || string(got) != "value" {
+			return false
 		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	t.Fatalf("owner cache did not receive write-through key %q", key)
+		stats := pc.Stats()
+		return stats["wt_pushes"].(int64) >= 1
+	})
 }
 
 func TestPeerCache_WriteThroughSkipsShortTTL(t *testing.T) {

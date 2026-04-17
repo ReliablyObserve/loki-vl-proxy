@@ -4964,9 +4964,6 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	if e := endParam; e != "" {
 		params.Set("end", formatVLTimestamp(e))
 	}
-	if s := strings.TrimSpace(stepParam); s != "" {
-		params.Set("step", formatVLStep(s))
-	}
 	params.Set("limit", strconv.Itoa(sourceLimit))
 
 	fetchPatterns := func(endpoint string) ([]patternResultEntry, bool) {
@@ -5089,9 +5086,9 @@ func (p *Proxy) fetchPatternsFromWindows(
 
 	baseParams := url.Values{}
 	baseParams.Set("query", logsqlQuery)
-	if s := strings.TrimSpace(stepParam); s != "" {
-		baseParams.Set("step", formatVLStep(s))
-	}
+	// Bucketization for patterns is proxy-side. Forwarding step to VictoriaLogs
+	// raw log queries makes split subrequests align backward to prior step
+	// boundaries, which duplicates adjacent window buckets on deterministic data.
 
 	collected := make([]patternResultEntry, 0, len(windows))
 	successes := 0
@@ -5500,8 +5497,10 @@ func mergePatternResultEntries(base, extra []patternResultEntry) []patternResult
 				if !okTS || !okCount {
 					continue
 				}
-				b.samples[ts] += count
-				b.total += count
+				if count > b.samples[ts] {
+					b.total += count - b.samples[ts]
+					b.samples[ts] = count
+				}
 			}
 		}
 	}
@@ -5706,6 +5705,8 @@ func fillPatternSamplesAcrossRequestedRange(entries []patternResultEntry, startP
 	}
 	for i := range entries {
 		sampleMap := make(map[int64]int, len(entries[i].Samples))
+		firstObservedBucket := int64(0)
+		lastObservedBucket := int64(0)
 		for _, pair := range entries[i].Samples {
 			if len(pair) < 2 {
 				continue
@@ -5717,9 +5718,32 @@ func fillPatternSamplesAcrossRequestedRange(entries []patternResultEntry, startP
 			}
 			ts = (ts / effectiveStepSeconds) * effectiveStepSeconds
 			sampleMap[ts] += count
+			if firstObservedBucket == 0 || ts < firstObservedBucket {
+				firstObservedBucket = ts
+			}
+			if ts > lastObservedBucket {
+				lastObservedBucket = ts
+			}
 		}
-		filled := make([][]interface{}, 0, points)
-		for ts := startBucket; ts <= endBucket; ts += effectiveStepSeconds {
+		if firstObservedBucket == 0 && lastObservedBucket == 0 {
+			continue
+		}
+
+		fillStartBucket := startBucket
+		if firstObservedBucket > fillStartBucket {
+			fillStartBucket = firstObservedBucket
+		}
+		fillEndBucket := endBucket
+		if lastObservedBucket < fillEndBucket {
+			fillEndBucket = lastObservedBucket
+		}
+		if fillEndBucket < fillStartBucket {
+			continue
+		}
+
+		filledPoints := int(((fillEndBucket - fillStartBucket) / effectiveStepSeconds) + 1)
+		filled := make([][]interface{}, 0, filledPoints)
+		for ts := fillStartBucket; ts <= fillEndBucket; ts += effectiveStepSeconds {
 			filled = append(filled, []interface{}{ts, sampleMap[ts]})
 		}
 		entries[i].Samples = filled

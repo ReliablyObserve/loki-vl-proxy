@@ -1,6 +1,10 @@
 package proxy
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+)
 
 func TestCollectPatternObservationsFromJSON_MixedShapes(t *testing.T) {
 	miner := newPatternMiner()
@@ -87,5 +91,43 @@ func TestPostprocessHelperCoverage(t *testing.T) {
 	}
 	if isIPLike("192.168.0.x") {
 		t.Fatal("expected malformed IP not to be recognized as IP-like")
+	}
+}
+
+func TestExtractLogPatterns_KeepsStablePrefixPatternsSeparate(t *testing.T) {
+	lines := make([]string, 0, 8)
+	for _, ts := range []string{
+		"2026-04-17T05:35:30Z",
+		"2026-04-17T05:36:00Z",
+	} {
+		for _, msg := range []string{
+			"stable_pattern_alpha component=collector action=scrape outcome=ok",
+			"stable_pattern_bravo component=collector action=transform outcome=ok",
+			"stable_pattern_charlie component=collector action=export outcome=retry",
+			"stable_pattern_delta component=collector action=ship outcome=ok",
+		} {
+			lines = append(lines, fmt.Sprintf(`{"_time":"%s","_msg":"%s","level":"info"}`, ts, msg))
+		}
+	}
+
+	patterns := extractLogPatterns([]byte(strings.Join(lines, "\n")+"\n"), "30s", 10)
+	if len(patterns) != 4 {
+		t.Fatalf("expected 4 distinct stable patterns, got %d: %#v", len(patterns), patterns)
+	}
+
+	got := map[string]bool{}
+	for _, pattern := range patterns {
+		patternText, _ := pattern["pattern"].(string)
+		got[patternText] = true
+	}
+	for _, want := range []string{
+		"stable_pattern_alpha component=collector action=scrape outcome=ok",
+		"stable_pattern_bravo component=collector action=transform outcome=ok",
+		"stable_pattern_charlie component=collector action=export outcome=retry",
+		"stable_pattern_delta component=collector action=ship outcome=ok",
+	} {
+		if !got[want] {
+			t.Fatalf("expected pattern %q in %#v", want, got)
+		}
 	}
 }

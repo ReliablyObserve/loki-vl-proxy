@@ -450,8 +450,8 @@ func TestHandlePatterns_FallsBackToLatestSnapshotOnEmptyRefresh(t *testing.T) {
 	if len(secondResp.Data) == 0 {
 		t.Fatalf("expected snapshot fallback to keep non-empty patterns, got %#v", secondResp)
 	}
-	if len(secondResp.Data[0].Samples) != 3 {
-		t.Fatalf("expected fallback samples filled across the requested range, got %#v", secondResp.Data[0].Samples)
+	if len(secondResp.Data[0].Samples) != 1 {
+		t.Fatalf("expected snapshot fallback to preserve observed samples without synthetic tail fill, got %#v", secondResp.Data[0].Samples)
 	}
 }
 

@@ -1027,8 +1027,8 @@ func TestContract_Patterns_UsesFromToWhenStartEndMissing(t *testing.T) {
 	if receivedStart != "1712311200" || receivedEnd != "1712311800" {
 		t.Fatalf("expected from/to to be forwarded as start/end, got start=%q end=%q", receivedStart, receivedEnd)
 	}
-	if receivedStep != "1m" {
-		t.Fatalf("expected step to be forwarded to query, got %q", receivedStep)
+	if receivedStep != "" {
+		t.Fatalf("expected raw log patterns fetch not to forward step, got %q", receivedStep)
 	}
 }
 
@@ -1114,8 +1114,8 @@ func TestContract_Patterns_DerivesStepWhenMissing(t *testing.T) {
 	stepMu.Lock()
 	stepSnapshot := receivedStep
 	stepMu.Unlock()
-	if strings.TrimSpace(stepSnapshot) == "" {
-		t.Fatalf("expected derived step to be forwarded when request step is missing")
+	if strings.TrimSpace(stepSnapshot) != "" {
+		t.Fatalf("expected derived step to stay proxy-side for raw log fetches, got %q", stepSnapshot)
 	}
 }
 
@@ -1784,10 +1784,10 @@ func TestContract_PatternsCacheKey_NormalizesRelativeRangeBoundaries(t *testing.
 	}
 }
 
-func TestContract_Patterns_FillsSamplesAcrossRequestedRange(t *testing.T) {
+func TestContract_Patterns_UsesObservedSpanInsteadOfRequestedTailFill(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		// Only one line near range end. Handler should fill full range buckets with zeros.
+		// Native Loki patterns do not pad the whole requested range with zero buckets.
 		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:04:58Z","_msg":"GET /api/users 200 15ms","app":"web","level":"info"}` + "\n"))
 	}))
 	defer vlBackend.Close()
@@ -1811,20 +1811,19 @@ func TestContract_Patterns_FillsSamplesAcrossRequestedRange(t *testing.T) {
 		t.Fatalf("expected one pattern, got %v", resp.Data)
 	}
 	samples := resp.Data[0].Samples
-	if len(samples) != 6 {
-		t.Fatalf("expected six 60s buckets across selected range, got %d samples: %v", len(samples), samples)
+	if len(samples) != 1 {
+		t.Fatalf("expected only the observed 60s bucket without requested-range tail fill, got %d samples: %v", len(samples), samples)
 	}
 	firstTS, okFirst := numberToInt64(samples[0][0])
-	lastTS, okLast := numberToInt64(samples[len(samples)-1][0])
-	if !okFirst || !okLast {
-		t.Fatalf("expected numeric sample timestamps, got first=%v last=%v", samples[0], samples[len(samples)-1])
+	if !okFirst {
+		t.Fatalf("expected numeric sample timestamp, got first=%v", samples[0])
 	}
-	if firstTS != 1775296800 || lastTS != 1775297100 {
-		t.Fatalf("expected filled start/end buckets 1775296800..1775297100, got %d..%d", firstTS, lastTS)
+	if firstTS != 1775297040 {
+		t.Fatalf("expected observed bucket 1775297040, got %d", firstTS)
 	}
 }
 
-func TestContract_Patterns_FillsSamplesAcrossRelativeNowRange(t *testing.T) {
+func TestContract_Patterns_RelativeNowRangeDoesNotInventZeroBuckets(t *testing.T) {
 	now := time.Now().UTC()
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
@@ -1855,12 +1854,16 @@ func TestContract_Patterns_FillsSamplesAcrossRelativeNowRange(t *testing.T) {
 		t.Fatalf("expected one pattern, got %v", resp.Data)
 	}
 	samples := resp.Data[0].Samples
-	if len(samples) < 100 {
-		t.Fatalf("expected long-range relative fill to produce >=100 buckets, got %d samples: %v", len(samples), samples)
+	if len(samples) != 1 {
+		t.Fatalf("expected relative range without synthetic zero buckets, got %d samples: %v", len(samples), samples)
 	}
 }
 
 func TestContract_Patterns_DenseShortRangeAvoidsFortyMinuteSamplingGaps(t *testing.T) {
+	var (
+		stepMu        sync.Mutex
+		receivedSteps []string
+	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/query" {
 			t.Fatalf("expected dense patterns to query /select/logsql/query, got %s", r.URL.Path)
@@ -1868,6 +1871,9 @@ func TestContract_Patterns_DenseShortRangeAvoidsFortyMinuteSamplingGaps(t *testi
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("parse form: %v", err)
 		}
+		stepMu.Lock()
+		receivedSteps = append(receivedSteps, r.FormValue("step"))
+		stepMu.Unlock()
 		endNs, err := strconv.ParseInt(r.FormValue("end"), 10, 64)
 		if err != nil {
 			t.Fatalf("parse window end: %v", err)
@@ -1927,6 +1933,14 @@ func TestContract_Patterns_DenseShortRangeAvoidsFortyMinuteSamplingGaps(t *testi
 	if maxGap > int64((10*time.Minute)/time.Second) {
 		t.Fatalf("expected dense short-range sampling gaps <=10m, got max gap %ds", maxGap)
 	}
+	stepMu.Lock()
+	stepsSnapshot := append([]string(nil), receivedSteps...)
+	stepMu.Unlock()
+	for i, step := range stepsSnapshot {
+		if strings.TrimSpace(step) != "" {
+			t.Fatalf("expected dense windowed raw log fetch %d not to forward step, got %q", i+1, step)
+		}
+	}
 }
 
 func TestContract_Patterns_FloatSecondStepRespectsRequestedBuckets(t *testing.T) {
@@ -1961,8 +1975,8 @@ func TestContract_Patterns_FloatSecondStepRespectsRequestedBuckets(t *testing.T)
 	mu.Lock()
 	gotStep := receivedStep
 	mu.Unlock()
-	if gotStep != "90s" {
-		t.Fatalf("expected float-second step to be normalized to 90s, got %q", gotStep)
+	if gotStep != "" {
+		t.Fatalf("expected float-second step normalization to stay proxy-side for raw log fetches, got %q", gotStep)
 	}
 
 	var resp patternsResponse
@@ -1970,20 +1984,19 @@ func TestContract_Patterns_FloatSecondStepRespectsRequestedBuckets(t *testing.T)
 	if len(resp.Data) != 1 {
 		t.Fatalf("expected one pattern, got %+v", resp.Data)
 	}
-	if got := len(resp.Data[0].Samples); got != 121 {
-		t.Fatalf("expected 121 requested 90s buckets across 3h range, got %d", got)
+	if got := len(resp.Data[0].Samples); got != 1 {
+		t.Fatalf("expected one observed 90s bucket without synthetic fill, got %d", got)
 	}
 	firstTS, okFirst := numberToInt64(resp.Data[0].Samples[0][0])
-	lastTS, okLast := numberToInt64(resp.Data[0].Samples[len(resp.Data[0].Samples)-1][0])
-	if !okFirst || !okLast {
-		t.Fatalf("expected numeric sample timestamps, got first=%v last=%v", resp.Data[0].Samples[0], resp.Data[0].Samples[len(resp.Data[0].Samples)-1])
+	if !okFirst {
+		t.Fatalf("expected numeric sample timestamp, got first=%v", resp.Data[0].Samples[0])
 	}
-	if firstTS != 1775296800 || lastTS != 1775307600 {
-		t.Fatalf("expected requested 3h range to stay anchored to 90s buckets, got %d..%d", firstTS, lastTS)
+	if firstTS%90 != 0 {
+		t.Fatalf("expected 90s-aligned bucket timestamp, got %d", firstTS)
 	}
 }
 
-func TestContract_Patterns_FillCoarsensHugePointRanges(t *testing.T) {
+func TestContract_Patterns_CoarsensObservedSpanWithoutRequestedRangePad(t *testing.T) {
 	entries := []patternResultEntry{
 		{
 			Pattern: "GET <_> <_> <_>",
@@ -1998,16 +2011,19 @@ func TestContract_Patterns_FillCoarsensHugePointRanges(t *testing.T) {
 	if len(filled) != 1 {
 		t.Fatalf("expected one filled entry, got %d", len(filled))
 	}
-	if got := len(filled[0].Samples); got <= 100 || got > 11000 {
-		t.Fatalf("expected adaptive coarsening to keep buckets in 101..11000, got %d", got)
+	if got := len(filled[0].Samples); got != 2 {
+		t.Fatalf("expected coarsened observed span to keep only two aligned buckets, got %d", got)
 	}
 	firstTS, okFirst := numberToInt64(filled[0].Samples[0][0])
 	lastTS, okLast := numberToInt64(filled[0].Samples[len(filled[0].Samples)-1][0])
 	if !okFirst || !okLast {
 		t.Fatalf("expected numeric filled timestamps, got first=%v last=%v", filled[0].Samples[0], filled[0].Samples[len(filled[0].Samples)-1])
 	}
-	if firstTS != 0 || lastTS != 172800 {
-		t.Fatalf("expected filled range to remain anchored to request boundaries, got %d..%d", firstTS, lastTS)
+	if firstTS >= lastTS {
+		t.Fatalf("expected observed span to remain increasing after coarsening, got %d..%d", firstTS, lastTS)
+	}
+	if firstTS < 172700 || lastTS != 172800 {
+		t.Fatalf("expected coarsened buckets to stay near the observed tail, got %d..%d", firstTS, lastTS)
 	}
 }
 
