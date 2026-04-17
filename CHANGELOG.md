@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- patterns/observability: add read-path quality counters, last-response gauges, persisted snapshot inventory gauges, and disk/peer snapshot byte exchange metrics so fleet monitoring can distinguish sparse real pattern activity from degraded mining or restore behavior.
+
+### Bug Fixes
+
+- patterns/read-path: improve mining fidelity with typed placeholders, stronger cross-window merging, and bounded second-pass widening for capped windows so rare and high-cardinality pattern families stay closer to native Loki behavior on reads.
+
+### Tests
+
+- patterns: expand native-Loki-vs-proxy A/B coverage with bursty mixed-pattern and high-cardinality variable fixtures in addition to the stable-stream parity check.
+
 ## [1.5.1] - 2026-04-17
 
 ### Bug Fixes
