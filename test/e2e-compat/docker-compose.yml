@@ -20,6 +20,8 @@ services:
     ports:
       - "3101:3100"
     command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-local-config.yaml:/etc/loki/local-config.yaml:ro
     # Loki 3.7.1 image is minimal (no wget/curl/shell) — healthcheck uses NONE.
     # Tests retry on connection failure.
     healthcheck:
@@ -30,7 +32,7 @@ services:
     image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.50.0}
     container_name: e2e-victorialogs
     ports:
-      - "9428:9428"
+      - "29428:9428"
     command:
       - "-storageDataPath=/vlogs"
       # Keep enough history for long-range Drilldown regressions (>24h).

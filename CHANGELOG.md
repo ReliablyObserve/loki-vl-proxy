@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- patterns/drilldown: make proxy read-path pattern mining match native Loki pattern coverage more closely by preserving stable fixed-prefix patterns, avoiding split-window overlap on backend raw log fetches, and dropping the synthetic trailing zero bucket beyond the last observed sample.
+
 ## [1.4.6] - 2026-04-16
 
 ### Bug Fixes

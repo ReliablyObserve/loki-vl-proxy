@@ -75,7 +75,7 @@ func TestPatternsDenseRepro_FullRangeAndRefreshStability(t *testing.T) {
 	)
 	pushDensePatternData(t, appName, seedStart, seedEnd, cfg)
 
-	dsUID := grafanaDatasourceUID(t, "Loki (via VL proxy)")
+	dsUID := grafanaDatasourceUID(t, "Loki (via VL proxy patterns autodetect)")
 	query := fmt.Sprintf(`{cluster="dense-cluster", namespace="dense-ns", app="%s"}`, appName)
 	expectedStartBucket, expectedEndBucket, expectedBucketCount := denseExpectedBuckets(seedStart, seedEnd, cfg.step)
 
