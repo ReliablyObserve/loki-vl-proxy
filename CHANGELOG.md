@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- patterns/read-path: reduce dense short-range sampling fanout so 30-minute pattern refreshes stay bounded instead of exploding into excessive backend raw-log window fetches.
+
 ## [1.6.1] - 2026-04-17
 
 ### Bug Fixes
