@@ -238,6 +238,8 @@ func TestLabelValuesServiceName_StripsFieldStagesForDrilldownQueries(t *testing.
 	var receivedQuery string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			http.NotFound(w, r)
 		case "/select/logsql/field_names":
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintln(w, `{"values":[{"value":"service.name","hits":1}]}`)

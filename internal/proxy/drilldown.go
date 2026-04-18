@@ -38,26 +38,6 @@ var serviceNameSourceFields = []string{
 	"k8s_job_name",
 }
 
-var serviceNameNativeValueFields = []string{
-	"service.name",
-	"service",
-	"app",
-	"application",
-	"app_name",
-	"name",
-	"app_kubernetes_io_name",
-	"container",
-	"container_name",
-	"k8s.container.name",
-	"k8s_container_name",
-	"component",
-	"workload",
-	"job",
-	"k8s.job.name",
-	"k8s_job_name",
-	"service_name",
-}
-
 type detectedFieldSummary struct {
 	label       string
 	typ         string
@@ -401,34 +381,85 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 }
 
 func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, start, end string) ([]string, error) {
-	fieldNames, err := p.fetchNativeFieldNames(ctx, query, start, end)
-	if err != nil {
-		return nil, err
-	}
-
-	available := make(map[string]struct{}, len(fieldNames))
-	for _, field := range fieldNames {
-		available[field] = struct{}{}
-	}
-
+	values := make([]string, 0, 16)
+	seen := make(map[string]struct{}, 16)
 	var lastErr error
-	for _, field := range serviceNameNativeValueFields {
-		if _, ok := available[field]; !ok {
-			continue
+	appendFieldValues := func(fieldValues []string) {
+		for _, value := range fieldValues {
+			value = strings.TrimSpace(value)
+			if value == "" {
+				continue
+			}
+			if _, ok := seen[value]; ok {
+				continue
+			}
+			seen[value] = struct{}{}
+			values = append(values, value)
 		}
-		fieldValues, err := p.fetchNativeFieldValues(ctx, query, start, end, field, 0)
-		if err != nil {
+	}
+
+	params := url.Values{}
+	params.Set("query", defaultFieldDetectionQuery(query))
+	if start != "" {
+		params.Set("start", start)
+	}
+	if end != "" {
+		params.Set("end", end)
+	}
+
+	if p.supportsStreamMetadataEndpoints() {
+		streamFields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
+		if err == nil {
+			streamFields = appendUniqueStrings(streamFields, p.snapshotDeclaredLabelFields()...)
+			available := make(map[string]struct{}, len(streamFields))
+			for _, field := range streamFields {
+				available[field] = struct{}{}
+			}
+			for _, field := range serviceNameSourceFields {
+				if _, ok := available[field]; !ok {
+					continue
+				}
+				queryParams := cloneURLValues(params)
+				queryParams.Set("field", field)
+				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/stream_field_values", queryParams)
+				if fieldErr != nil && shouldFallbackToGenericMetadata(fieldErr) {
+					fieldValues, fieldErr = p.fetchNativeFieldValues(ctx, query, start, end, field, 0)
+				}
+				if fieldErr != nil {
+					lastErr = fieldErr
+					continue
+				}
+				appendFieldValues(fieldValues)
+			}
+		} else if !shouldFallbackToGenericMetadata(err) {
 			lastErr = err
-			continue
 		}
-		if len(fieldValues) == 0 {
-			continue
+	}
+
+	fieldNames, err := p.fetchNativeFieldNames(ctx, query, start, end)
+	if err == nil {
+		available := make(map[string]struct{}, len(fieldNames))
+		for _, field := range fieldNames {
+			available[field] = struct{}{}
 		}
-		values := uniqueSortedNonEmptyStrings(fieldValues)
-		sort.Strings(values)
-		if len(values) > 0 {
-			return values, nil
+		for _, field := range serviceNameSourceFields {
+			if _, ok := available[field]; !ok {
+				continue
+			}
+			fieldValues, fieldErr := p.fetchNativeFieldValues(ctx, query, start, end, field, 0)
+			if fieldErr != nil {
+				lastErr = fieldErr
+				continue
+			}
+			appendFieldValues(fieldValues)
 		}
+	} else if lastErr == nil {
+		lastErr = err
+	}
+
+	values = uniqueSortedNonEmptyStrings(values)
+	if len(values) > 0 {
+		return values, nil
 	}
 	return nil, lastErr
 }

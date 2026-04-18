@@ -3212,6 +3212,8 @@ func TestCache_DetectedFieldServiceNameHitOnRepeat(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callCount++
 		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			http.NotFound(w, r)
 		case "/select/logsql/field_names":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"values":[{"value":"service.name","hits":1}]}`))
@@ -3232,13 +3234,13 @@ func TestCache_DetectedFieldServiceNameHitOnRepeat(t *testing.T) {
 
 	w1 := httptest.NewRecorder()
 	p.handleDetectedFieldValues(w1, httptest.NewRequest(http.MethodGet, path, nil))
-	if callCount != 2 {
-		t.Fatalf("expected 2 backend calls on cache miss (field_names + field_values), got %d", callCount)
+	if callCount != 3 {
+		t.Fatalf("expected 3 backend calls on cache miss (stream_field_names probe + field_names + field_values), got %d", callCount)
 	}
 
 	w2 := httptest.NewRecorder()
 	p.handleDetectedFieldValues(w2, httptest.NewRequest(http.MethodGet, path, nil))
-	if callCount != 2 {
+	if callCount != 3 {
 		t.Fatalf("expected cache hit before backend call, got %d", callCount)
 	}
 

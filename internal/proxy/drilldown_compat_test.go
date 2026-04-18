@@ -595,10 +595,11 @@ func TestDrilldown_IndexVolumeRange_TargetLabelsServiceName_FillsFullRangeBucket
 func TestDrilldown_LabelValues_ServiceNameUsesNativeFieldValues(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			http.NotFound(w, r)
 		case "/select/logsql/field_names":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"values": []map[string]interface{}{
-					{"value": "app", "hits": 12},
 					{"value": "service.name", "hits": 12},
 				},
 			})
@@ -627,6 +628,8 @@ func TestDrilldown_LabelValues_ServiceNameUsesNativeFieldValues(t *testing.T) {
 func TestDrilldown_LabelValues_ServiceNamePrefersConcreteNativeFieldInventory(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			http.NotFound(w, r)
 		case "/select/logsql/field_names":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"values": []map[string]interface{}{
@@ -635,15 +638,23 @@ func TestDrilldown_LabelValues_ServiceNamePrefersConcreteNativeFieldInventory(t 
 				},
 			})
 		case "/select/logsql/field_values":
-			if got := r.URL.Query().Get("field"); got != "app" {
-				t.Fatalf("expected service_name values to prefer concrete app inventory over sparse service_name inventory, got %q", got)
+			switch got := r.URL.Query().Get("field"); got {
+			case "app":
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"values": []map[string]interface{}{
+						{"value": "api-gateway", "hits": 12},
+						{"value": "worker", "hits": 5},
+					},
+				})
+			case "service_name":
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"values": []map[string]interface{}{
+						{"value": "otel-auth-service", "hits": 2},
+					},
+				})
+			default:
+				t.Fatalf("expected service_name values to use concrete app inventory and merge any sparse service_name values, got %q", got)
 			}
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"values": []map[string]interface{}{
-					{"value": "api-gateway", "hits": 12},
-					{"value": "worker", "hits": 5},
-				},
-			})
 		case "/select/logsql/streams", "/select/logsql/query":
 			t.Fatalf("service_name native inventory must not fall back to stream scans when app inventory is available, got %s", r.URL.Path)
 		default:
@@ -654,11 +665,60 @@ func TestDrilldown_LabelValues_ServiceNamePrefersConcreteNativeFieldInventory(t 
 
 	resp := doGet(t, vlBackend.URL, "/loki/api/v1/label/service_name/values")
 	data := assertDataIsStringArray(t, resp)
-	if len(data) != 2 {
-		t.Fatalf("expected 2 service_name values from concrete inventory, got %v", data)
+	assertContains(t, data, "api-gateway")
+	assertContains(t, data, "worker")
+}
+
+func TestDrilldown_LabelValues_ServiceNameMergesStreamAndStructuredMetadataInventory(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"values": []map[string]interface{}{
+					{"value": "app", "hits": 12},
+				},
+			})
+		case "/select/logsql/stream_field_values":
+			if got := r.URL.Query().Get("field"); got != "app" {
+				t.Fatalf("expected stream service inventory lookup to use app field, got %q", got)
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"values": []map[string]interface{}{
+					{"value": "api-gateway", "hits": 12},
+					{"value": "worker", "hits": 5},
+				},
+			})
+		case "/select/logsql/field_names":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"values": []map[string]interface{}{
+					{"value": "service.name", "hits": 4},
+				},
+			})
+		case "/select/logsql/field_values":
+			if got := r.URL.Query().Get("field"); got != "service.name" {
+				t.Fatalf("expected structured metadata lookup to use service.name field, got %q", got)
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"values": []map[string]interface{}{
+					{"value": "otel-auth-service", "hits": 4},
+				},
+			})
+		case "/select/logsql/streams", "/select/logsql/query":
+			t.Fatalf("service_name label values must be resolved from metadata inventory before stream scans, got %s", r.URL.Path)
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	resp := doGet(t, vlBackend.URL, "/loki/api/v1/label/service_name/values?query=*")
+	data := assertDataIsStringArray(t, resp)
+	if len(data) != 3 {
+		t.Fatalf("expected merged service inventory from stream and structured metadata fields, got %v", data)
 	}
 	assertContains(t, data, "api-gateway")
 	assertContains(t, data, "worker")
+	assertContains(t, data, "otel-auth-service")
 }
 
 func TestDrilldown_DetectedFields_ParseStructuredLogsInsteadOfIndexedLabels(t *testing.T) {
@@ -1059,10 +1119,12 @@ func TestDrilldown_DetectedFieldValues_ServiceNameUsesFastPath(t *testing.T) {
 	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/stream_field_names":
+			http.NotFound(w, r)
 		case "/select/logsql/field_names":
 			sawFieldNames = true
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"values":[{"value":"service.name","hits":2},{"value":"app","hits":1}]}`))
+			w.Write([]byte(`{"values":[{"value":"service.name","hits":2}]}`))
 		case "/select/logsql/field_values":
 			sawFieldValues = true
 			if r.URL.Query().Get("field") != "service.name" {
