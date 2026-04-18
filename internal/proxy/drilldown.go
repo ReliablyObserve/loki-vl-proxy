@@ -38,6 +38,26 @@ var serviceNameSourceFields = []string{
 	"k8s_job_name",
 }
 
+var serviceNameNativeValueFields = []string{
+	"service.name",
+	"service",
+	"app",
+	"application",
+	"app_name",
+	"name",
+	"app_kubernetes_io_name",
+	"container",
+	"container_name",
+	"k8s.container.name",
+	"k8s_container_name",
+	"component",
+	"workload",
+	"job",
+	"k8s.job.name",
+	"k8s_job_name",
+	"service_name",
+}
+
 type detectedFieldSummary struct {
 	label       string
 	typ         string
@@ -392,7 +412,7 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 	}
 
 	var lastErr error
-	for _, field := range serviceNameSourceFields {
+	for _, field := range serviceNameNativeValueFields {
 		if _, ok := available[field]; !ok {
 			continue
 		}
@@ -404,25 +424,31 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 		if len(fieldValues) == 0 {
 			continue
 		}
-		values := make([]string, 0, len(fieldValues))
-		seen := make(map[string]struct{}, len(fieldValues))
-		for _, value := range fieldValues {
-			value = strings.TrimSpace(value)
-			if value == "" {
-				continue
-			}
-			if _, ok := seen[value]; ok {
-				continue
-			}
-			seen[value] = struct{}{}
-			values = append(values, value)
-		}
+		values := uniqueSortedNonEmptyStrings(fieldValues)
 		sort.Strings(values)
 		if len(values) > 0 {
 			return values, nil
 		}
 	}
 	return nil, lastErr
+}
+
+func uniqueSortedNonEmptyStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func streamSelectorPrefix(query string) string {

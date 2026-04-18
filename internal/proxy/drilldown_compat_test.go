@@ -624,6 +624,43 @@ func TestDrilldown_LabelValues_ServiceNameUsesNativeFieldValues(t *testing.T) {
 	assertContains(t, data, "worker")
 }
 
+func TestDrilldown_LabelValues_ServiceNamePrefersConcreteNativeFieldInventory(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"values": []map[string]interface{}{
+					{"value": "service_name", "hits": 3},
+					{"value": "app", "hits": 12},
+				},
+			})
+		case "/select/logsql/field_values":
+			if got := r.URL.Query().Get("field"); got != "app" {
+				t.Fatalf("expected service_name values to prefer concrete app inventory over sparse service_name inventory, got %q", got)
+			}
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"values": []map[string]interface{}{
+					{"value": "api-gateway", "hits": 12},
+					{"value": "worker", "hits": 5},
+				},
+			})
+		case "/select/logsql/streams", "/select/logsql/query":
+			t.Fatalf("service_name native inventory must not fall back to stream scans when app inventory is available, got %s", r.URL.Path)
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	resp := doGet(t, vlBackend.URL, "/loki/api/v1/label/service_name/values")
+	data := assertDataIsStringArray(t, resp)
+	if len(data) != 2 {
+		t.Fatalf("expected 2 service_name values from concrete inventory, got %v", data)
+	}
+	assertContains(t, data, "api-gateway")
+	assertContains(t, data, "worker")
+}
+
 func TestDrilldown_DetectedFields_ParseStructuredLogsInsteadOfIndexedLabels(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
