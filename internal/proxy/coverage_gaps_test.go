@@ -584,7 +584,7 @@ func TestDetectedFields_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
 	}
 }
 
-func TestDetectedFieldValues_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
+func TestDetectedFieldValues_EmptyStrictQueryRelaxesCandidates(t *testing.T) {
 	const strictToken = "strict-only"
 
 	var fieldValueQueries []string
@@ -641,12 +641,18 @@ func TestDetectedFieldValues_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if len(fieldValueQueries) != 1 {
-		t.Fatalf("expected only the strict native field-value lookup, got %v", fieldValueQueries)
+	if len(fieldValueQueries) != 2 {
+		t.Fatalf("expected strict+relaxed native field-value lookups, got %v", fieldValueQueries)
+	}
+	if !strings.Contains(fieldValueQueries[0], strictToken) {
+		t.Fatalf("expected strict native field-value lookup to preserve strict filter, got %q", fieldValueQueries[0])
+	}
+	if strings.Contains(fieldValueQueries[1], strictToken) {
+		t.Fatalf("expected relaxed native field-value lookup to strip strict-only filter, got %q", fieldValueQueries[1])
 	}
 	for _, got := range append(streamQueries, scanQueries...) {
-		if !strings.Contains(got, strictToken) {
-			t.Fatalf("expected fallback discovery to preserve strict filter, got %q", got)
+		if strings.Contains(got, strictToken) {
+			t.Fatalf("expected native field-value relaxation to avoid label/scan fallback, got %q", got)
 		}
 	}
 
@@ -655,8 +661,8 @@ func TestDetectedFieldValues_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	values, _ := resp["values"].([]interface{})
-	if len(values) != 0 {
-		t.Fatalf("expected empty detected_field values payload for strict empty query, got %v", resp)
+	if len(values) != 1 || values[0] != "200" {
+		t.Fatalf("expected relaxed detected_field values payload to preserve native values, got %v", resp)
 	}
 }
 

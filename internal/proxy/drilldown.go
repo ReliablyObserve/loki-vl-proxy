@@ -1429,7 +1429,9 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 			values = append(values, item.Value)
 		}
 		sort.Strings(values)
-		return values, nil
+		if len(values) > 0 {
+			return values, nil
+		}
 	}
 	return nil, lastErr
 }
