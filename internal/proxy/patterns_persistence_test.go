@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -140,6 +142,9 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 		if r.URL.Path != "/_cache/get" {
 			t.Fatalf("unexpected peer path: %s", r.URL.Path)
 		}
+		if got := r.Header.Get("X-Peer-Token"); got != "shared-secret" {
+			t.Fatalf("unexpected peer token header: got %q", got)
+		}
 		if _, err := w.Write(peerBody); err != nil {
 			t.Fatalf("write peer snapshot: %v", err)
 		}
@@ -158,6 +163,7 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 	t.Cleanup(func() {
 		p.peerCache.Close()
 	})
+	p.peerAuthToken = "shared-secret"
 
 	// Empty peer address branch.
 	if snap, bodyBytes, err := p.fetchPatternsSnapshotFromPeer("", 50*time.Millisecond); err != nil || snap != nil || bodyBytes != 0 {
@@ -186,6 +192,98 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 	}
 	if ok {
 		t.Fatal("expected restorePatternsFromPeers to no-op when minSavedAt is current")
+	}
+}
+
+func TestPatternsPersistSnapshotCache_StaysLocalWithoutWriteThrough(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	var remoteSetCalls atomic.Int32
+	ownerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/_cache/set" {
+			remoteSetCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ownerSrv.Close()
+
+	ownerURL, err := url.Parse(ownerSrv.URL)
+	if err != nil {
+		t.Fatalf("parse owner URL: %v", err)
+	}
+
+	var pc *cache.PeerCache
+	for i := 0; i < 256; i++ {
+		candidate := cache.NewPeerCache(cache.PeerConfig{
+			SelfAddr:           fmt.Sprintf("self-%d:3100", i),
+			DiscoveryType:      "static",
+			StaticPeers:        fmt.Sprintf("%s,%s", fmt.Sprintf("self-%d:3100", i), ownerURL.Host),
+			Timeout:            50 * time.Millisecond,
+			WriteThrough:       true,
+			WriteThroughMinTTL: 5 * time.Second,
+		})
+		if !candidate.IsOwner(patternsSnapshotCacheKey) {
+			pc = candidate
+			break
+		}
+		candidate.Close()
+	}
+	if pc == nil {
+		t.Fatal("expected non-owner peer-cache test setup for snapshot key")
+	}
+	defer pc.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	c.SetL3(pc)
+	defer c.Close()
+
+	enabled := true
+	persistPath := filepath.Join(t.TempDir(), "patterns.snapshot.json")
+	p, err := New(Config{
+		BackendURL:              backend.URL,
+		Cache:                   c,
+		PeerCache:               pc,
+		LogLevel:                "error",
+		PatternsEnabled:         &enabled,
+		PatternsPersistPath:     persistPath,
+		PatternsPersistInterval: 30 * time.Second,
+		PatternsStartupStale:    5 * time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("create proxy: %v", err)
+	}
+
+	payload := mustMarshalJSON(t, map[string]any{
+		"status": "success",
+		"data": []map[string]any{
+			{"pattern": "request <_> completed"},
+		},
+	})
+	now := time.Now().UTC().UnixNano()
+	p.patternsSnapshotEntries["patterns:test"] = patternSnapshotEntry{
+		Value:             payload,
+		UpdatedAtUnixNano: now,
+		PatternCount:      1,
+	}
+	p.patternsSnapshotPatternCount = 1
+	p.patternsSnapshotPayloadBytes = int64(len(payload))
+	p.patternsPersistDirty.Store(true)
+
+	if err := p.persistPatternsNow("periodic"); err != nil {
+		t.Fatalf("persistPatternsNow returned error: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	if got := remoteSetCalls.Load(); got != 0 {
+		t.Fatalf("expected snapshot cache blob to stay local, got %d remote /_cache/set calls", got)
+	}
+	if _, _, ok := c.GetWithTTL(patternsSnapshotCacheKey); !ok {
+		t.Fatalf("expected snapshot cache blob %q to be stored locally", patternsSnapshotCacheKey)
 	}
 }
 

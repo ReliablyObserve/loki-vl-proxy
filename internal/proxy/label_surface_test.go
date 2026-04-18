@@ -451,6 +451,9 @@ func TestLabelSurface_LabelValuesIndexStartupWarmsFromPeersWhenDiskStale(t *test
 
 	ownerPeer := cache.NewPeerCache(cache.PeerConfig{SelfAddr: "owner:3100"})
 	peerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Peer-Token"); got != "shared-secret" {
+			t.Fatalf("unexpected peer token header: got %q", got)
+		}
 		if r.URL.Path != "/_cache/get" {
 			http.NotFound(w, r)
 			return
@@ -502,6 +505,7 @@ func TestLabelSurface_LabelValuesIndexStartupWarmsFromPeersWhenDiskStale(t *test
 		LabelValuesIndexPersistInterval: time.Hour,
 		LabelValuesIndexStartupStale:    30 * time.Second,
 		LabelValuesIndexPeerWarmTimeout: 2 * time.Second,
+		PeerAuthToken:                   "shared-secret",
 	})
 	if err != nil {
 		t.Fatalf("create proxy: %v", err)
@@ -513,7 +517,7 @@ func TestLabelSurface_LabelValuesIndexStartupWarmsFromPeersWhenDiskStale(t *test
 	if !ok {
 		t.Fatalf("expected peer-warmed label-values index to be available")
 	}
-	want := []string{"from-peer"}
+	want := []string{"from-peer", "from-disk"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected peer-warmed values: want=%v got=%v", want, got)
 	}

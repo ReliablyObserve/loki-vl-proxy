@@ -788,6 +788,9 @@ func TestTenant_MultiTenantDetectedFieldsKeepsNativeCardinalityFloor(t *testing.
 		case strings.HasPrefix(r.URL.Path, "/select/logsql/field_names"):
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"values":[{"value":"native.only","hits":1}]}`))
+		case strings.HasPrefix(r.URL.Path, "/select/logsql/streams"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[{"value":"{app=\"api\"}","hits":1}]}`))
 		case strings.HasPrefix(r.URL.Path, "/select/logsql/query"):
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			_, _ = w.Write([]byte(""))

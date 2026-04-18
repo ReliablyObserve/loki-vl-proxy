@@ -542,6 +542,7 @@ const (
 	maxSyntheticTailSeenEntries       = 4096
 	maxBufferedBackendBodyBytes       = 64 << 20
 	maxPatternsPeerSnapshotBytes      = 8 << 20
+	maxLabelValuesPeerSnapshotBytes   = 8 << 20
 	maxUpstreamErrorBodyBytes         = 4 << 10
 	labelValuesIndexSnapshotCacheKey  = "__label_values_index_snapshot:v1"
 	patternsSnapshotCacheKey          = "__patterns_snapshot:v1"
@@ -2789,6 +2790,13 @@ func patternCountFromSnapshot(snapshot patternsSnapshot) int {
 	return total
 }
 
+func (p *Proxy) cacheSnapshotBlobLocally(key string, data []byte, ttl time.Duration) {
+	if p.cache == nil || strings.TrimSpace(key) == "" || len(data) == 0 || ttl <= 0 {
+		return
+	}
+	p.cache.SetLocalOnlyWithTTL(key, data, ttl)
+}
+
 func (p *Proxy) updatePatternSnapshotMetricsLocked() {
 	if p == nil || p.metrics == nil {
 		return
@@ -3110,7 +3118,7 @@ func (p *Proxy) persistPatternsNow(reason string) error {
 		if ttl <= 0 {
 			ttl = 5 * time.Minute
 		}
-		p.cache.SetWithTTL(patternsSnapshotCacheKey, data, ttl)
+		p.cacheSnapshotBlobLocally(patternsSnapshotCacheKey, data, ttl)
 	}
 
 	entryCount := len(snapshot.EntriesByKey)
@@ -3168,7 +3176,7 @@ func (p *Proxy) restorePatternsFromDisk() (bool, int64, error) {
 		if ttl <= 0 {
 			ttl = 5 * time.Minute
 		}
-		p.cache.SetWithTTL(patternsSnapshotCacheKey, data, ttl)
+		p.cacheSnapshotBlobLocally(patternsSnapshotCacheKey, data, ttl)
 	}
 	p.log.Info(
 		"patterns snapshot restored from disk",
@@ -3195,7 +3203,7 @@ func (p *Proxy) fetchPatternsSnapshotFromPeer(peerAddr string, timeout time.Dura
 		return nil, 0, err
 	}
 	if p.peerAuthToken != "" {
-		req.Header.Set("X-Cache-Auth", p.peerAuthToken)
+		req.Header.Set("X-Peer-Token", p.peerAuthToken)
 	}
 
 	resp, err := p.client.Do(req)
@@ -3524,7 +3532,7 @@ func (p *Proxy) persistLabelValuesIndexNow(reason string) error {
 		if ttl <= 0 {
 			ttl = 5 * time.Minute
 		}
-		p.cache.SetWithTTL(labelValuesIndexSnapshotCacheKey, data, ttl)
+		p.cacheSnapshotBlobLocally(labelValuesIndexSnapshotCacheKey, data, ttl)
 	}
 
 	states, values := p.labelValuesIndexCardinality()
@@ -3568,7 +3576,7 @@ func (p *Proxy) restoreLabelValuesIndexFromDisk() (bool, int64, error) {
 		if ttl <= 0 {
 			ttl = 5 * time.Minute
 		}
-		p.cache.SetWithTTL(labelValuesIndexSnapshotCacheKey, data, ttl)
+		p.cacheSnapshotBlobLocally(labelValuesIndexSnapshotCacheKey, data, ttl)
 	}
 	p.log.Info(
 		"label values index restored from disk",
@@ -3582,37 +3590,173 @@ func (p *Proxy) restoreLabelValuesIndexFromDisk() (bool, int64, error) {
 	return true, snapshot.SavedAtUnixNano, nil
 }
 
+func (p *Proxy) fetchLabelValuesIndexSnapshotFromPeer(peerAddr string, timeout time.Duration) (*labelValuesIndexSnapshot, int, error) {
+	if strings.TrimSpace(peerAddr) == "" {
+		return nil, 0, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	endpoint := fmt.Sprintf("http://%s/_cache/get?key=%s", peerAddr, url.QueryEscape(labelValuesIndexSnapshotCacheKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	if p.peerAuthToken != "" {
+		req.Header.Set("X-Peer-Token", p.peerAuthToken)
+	}
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, 0, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return nil, 0, fmt.Errorf("peer %s status %d: %s", peerAddr, resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	body, err := readBodyLimited(resp.Body, maxLabelValuesPeerSnapshotBytes)
+	if err != nil {
+		return nil, 0, err
+	}
+	var snapshot labelValuesIndexSnapshot
+	if err := json.Unmarshal(body, &snapshot); err != nil {
+		return nil, 0, err
+	}
+	if snapshot.Version != 1 || snapshot.SavedAtUnixNano <= 0 {
+		return nil, 0, fmt.Errorf("invalid label-values snapshot metadata from peer %s", peerAddr)
+	}
+	return &snapshot, len(body), nil
+}
+
+func mergeLabelValuesIndexEntry(existing, incoming labelValueIndexEntry) labelValueIndexEntry {
+	if incoming.SeenCount > existing.SeenCount {
+		existing.SeenCount = incoming.SeenCount
+	}
+	if incoming.LastSeen > existing.LastSeen {
+		existing.LastSeen = incoming.LastSeen
+	}
+	return existing
+}
+
+func mergeLabelValuesIndexSnapshot(dst *labelValuesIndexSnapshot, src *labelValuesIndexSnapshot) {
+	if dst == nil || src == nil {
+		return
+	}
+	if dst.StatesByKey == nil {
+		dst.StatesByKey = make(map[string]map[string]labelValueIndexEntry)
+	}
+	if src.SavedAtUnixNano > dst.SavedAtUnixNano {
+		dst.SavedAtUnixNano = src.SavedAtUnixNano
+	}
+	for key, entries := range src.StatesByKey {
+		if len(entries) == 0 {
+			continue
+		}
+		dstEntries, ok := dst.StatesByKey[key]
+		if !ok {
+			dstEntries = make(map[string]labelValueIndexEntry, len(entries))
+			dst.StatesByKey[key] = dstEntries
+		}
+		for value, entry := range entries {
+			if strings.TrimSpace(value) == "" {
+				continue
+			}
+			if existing, exists := dstEntries[value]; exists {
+				dstEntries[value] = mergeLabelValuesIndexEntry(existing, entry)
+				continue
+			}
+			dstEntries[value] = entry
+		}
+	}
+}
+
 func (p *Proxy) restoreLabelValuesIndexFromPeers(minSavedAt int64) (bool, int64, error) {
-	if !p.labelValuesIndexedCache || p.cache == nil || p.peerCache == nil {
+	if !p.labelValuesIndexedCache || p.peerCache == nil {
 		return false, 0, nil
 	}
 	startedAt := time.Now()
-	data, ok := p.cache.Get(labelValuesIndexSnapshotCacheKey)
-	if !ok {
+	peers := p.peerCache.Peers()
+	if len(peers) == 0 {
 		return false, 0, nil
 	}
 
-	var snapshot labelValuesIndexSnapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return false, 0, fmt.Errorf("decode peer label index snapshot: %w", err)
-	}
-	if snapshot.Version != 1 || snapshot.SavedAtUnixNano <= 0 {
-		return false, 0, fmt.Errorf("invalid peer label index snapshot metadata")
-	}
-	if snapshot.SavedAtUnixNano <= minSavedAt {
-		return false, snapshot.SavedAtUnixNano, nil
+	timeout := p.labelValuesIndexPeerWarmTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Second
 	}
 
-	states, values := p.applyLabelValuesIndexSnapshot(snapshot)
+	type peerResult struct {
+		snapshot  *labelValuesIndexSnapshot
+		bodyBytes int
+		err       error
+		peer      string
+	}
+	resCh := make(chan peerResult, len(peers))
+	for _, peerAddr := range peers {
+		peerAddr := strings.TrimSpace(peerAddr)
+		if peerAddr == "" {
+			continue
+		}
+		go func(addr string) {
+			snapshot, bodyBytes, err := p.fetchLabelValuesIndexSnapshotFromPeer(addr, timeout)
+			resCh <- peerResult{snapshot: snapshot, bodyBytes: bodyBytes, err: err, peer: addr}
+		}(peerAddr)
+	}
+
+	merged := p.buildLabelValuesIndexSnapshot(time.Now().UTC())
+	if merged.Version == 0 {
+		merged.Version = 1
+	}
+	if merged.StatesByKey == nil {
+		merged.StatesByKey = make(map[string]map[string]labelValueIndexEntry)
+	}
+	mergedSavedAt := minSavedAt
+	sawNewer := false
+	totalPeerBytes := 0
+	deadline := time.After(timeout)
+	received := 0
+	for received < len(peers) {
+		select {
+		case res := <-resCh:
+			received++
+			if res.err != nil {
+				p.log.Debug("label values peer warm fetch failed", "peer", res.peer, "error", res.err)
+				continue
+			}
+			totalPeerBytes += res.bodyBytes
+			if res.snapshot == nil || len(res.snapshot.StatesByKey) == 0 || res.snapshot.SavedAtUnixNano <= minSavedAt {
+				continue
+			}
+			sawNewer = true
+			if res.snapshot.SavedAtUnixNano > mergedSavedAt {
+				mergedSavedAt = res.snapshot.SavedAtUnixNano
+			}
+			mergeLabelValuesIndexSnapshot(&merged, res.snapshot)
+		case <-deadline:
+			received = len(peers)
+		}
+	}
+	if !sawNewer {
+		return false, mergedSavedAt, nil
+	}
+
+	states, values := p.applyLabelValuesIndexSnapshot(merged)
 	p.log.Info(
 		"label values index warmed from peers",
-		"saved_at", time.Unix(0, snapshot.SavedAtUnixNano).UTC().Format(time.RFC3339Nano),
+		"saved_at", time.Unix(0, mergedSavedAt).UTC().Format(time.RFC3339Nano),
 		"states", states,
 		"values", values,
-		"bytes", len(data),
+		"peers", len(peers),
+		"bytes", totalPeerBytes,
 		"duration_ms", time.Since(startedAt).Milliseconds(),
 	)
-	return true, snapshot.SavedAtUnixNano, nil
+	return true, mergedSavedAt, nil
 }
 
 func (p *Proxy) warmLabelValuesIndexOnStartup() {
@@ -4027,36 +4171,9 @@ func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName,
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
 			}
-
-			var (
-				values  []string
-				errVals error
-			)
-			if nativeField, ok, resolveErr := p.resolveNativeDetectedField(ctx, query, start, end, fieldName); resolveErr == nil && ok {
-				values, errVals = p.fetchNativeFieldValues(ctx, query, start, end, nativeField, lineLimit)
-				if errVals == nil && len(values) == 0 {
-					// Keep Drilldown UX non-empty for synthetic/derived labels when native values are empty.
-					values = nil
-				}
-			}
-			if values == nil && errVals == nil {
-				_, fieldValues, detectErr := p.detectFields(ctx, query, start, end, lineLimit)
-				if detectErr != nil {
-					return nil, detectErr
-				}
-				values = fieldValues[fieldName]
-				if values == nil && fieldName == "level" {
-					values = fieldValues["detected_level"]
-				}
-			}
-			if len(values) == 0 {
-				values = p.detectedLabelValuesForField(ctx, fieldName, query, start, end, lineLimit)
-			}
-			if errVals != nil {
-				return nil, errVals
-			}
-			if values == nil {
-				values = []string{}
+			values, err := p.resolveDetectedFieldValues(ctx, fieldName, query, start, end, lineLimit, true)
+			if err != nil {
+				return nil, err
 			}
 
 			payload := map[string]interface{}{
@@ -4072,6 +4189,47 @@ func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName,
 			p.log.Debug("background detected_field_values refresh failed", "cache_key", cacheKey, "field", fieldName, "error", err)
 		}
 	}()
+}
+
+func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query, start, end string, lineLimit int, relaxOnEmpty bool) ([]string, error) {
+	var (
+		values  []string
+		errVals error
+	)
+	if nativeField, ok, resolveErr := p.resolveNativeDetectedField(ctx, query, start, end, fieldName); resolveErr == nil && ok {
+		values, errVals = p.fetchNativeFieldValues(ctx, query, start, end, nativeField, lineLimit)
+		if errVals == nil && len(values) == 0 {
+			// Keep Drilldown UX non-empty for synthetic/derived labels when native values are empty.
+			values = nil
+		}
+	}
+	if values == nil && errVals == nil {
+		_, fieldValues, detectErr := p.detectFields(ctx, query, start, end, lineLimit)
+		if detectErr != nil {
+			return nil, detectErr
+		}
+		values = fieldValues[fieldName]
+		if values == nil && fieldName == "level" {
+			values = fieldValues["detected_level"]
+		}
+	}
+	if len(values) == 0 {
+		values = p.detectedLabelValuesForField(ctx, fieldName, query, start, end, lineLimit)
+	}
+	if errVals != nil {
+		return nil, errVals
+	}
+	if len(values) == 0 && relaxOnEmpty {
+		primary := defaultFieldDetectionQuery(query)
+		relaxed := relaxedFieldDetectionQuery(query)
+		if relaxed != "" && relaxed != primary {
+			return p.resolveDetectedFieldValues(ctx, fieldName, relaxed, start, end, lineLimit, false)
+		}
+	}
+	if values == nil {
+		values = []string{}
+	}
+	return values, nil
 }
 
 // handleLabels returns label names.
@@ -4817,24 +4975,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	if nativeField, ok, err := p.resolveNativeDetectedField(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), fieldName); err == nil && ok {
-		if values, valuesErr := p.fetchNativeFieldValues(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), nativeField, lineLimit); valuesErr == nil {
-			if len(values) > 0 {
-				payload := map[string]interface{}{
-					"status": "success",
-					"data":   values,
-					"values": values,
-					"limit":  lineLimit,
-				}
-				p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_field_values"], payload)
-				p.writeJSON(w, payload)
-				p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
-				return
-			}
-		}
-	}
-
-	_, fieldValues, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
+	values, err := p.resolveDetectedFieldValues(r.Context(), fieldName, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit, true)
 	if err != nil {
 		payload := map[string]interface{}{
 			"status": "success",
@@ -4845,16 +4986,6 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		p.writeJSON(w, payload)
 		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 		return
-	}
-	values := fieldValues[fieldName]
-	if values == nil && fieldName == "level" {
-		values = fieldValues["detected_level"]
-	}
-	if len(values) == 0 {
-		values = p.detectedLabelValuesForField(r.Context(), fieldName, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
-	}
-	if values == nil {
-		values = []string{}
 	}
 
 	payload := map[string]interface{}{

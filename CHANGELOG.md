@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- drilldown/fields: retry native field and stream discovery with relaxed candidates when parser or comparison stages make Drilldown field lookups unstable, treat backend `5xx` scan responses as failed windows instead of empty results, and preserve native-only fallback for structured metadata without leaking indexed labels.
+- peer-cache/persistence: keep persisted patterns and label-values snapshot blobs local instead of distributing them through the ring owner path, merge label-values startup warm state directly from peer-local snapshots, and use the correct peer auth header during snapshot fetches so fleet warmups stay compatible when `peer-auth-token` is enabled.
+
+### Tests
+
+- drilldown: add regression coverage for duration-filtered detected field and detected field value requests so future changes catch strict-vs-relaxed discovery regressions before release.
+- cache/persistence: add regression coverage proving fleet snapshot blobs skip write-through owner pushes and that peer-warmed label-values state merges correctly under shared peer auth.
+
 ## [1.6.3] - 2026-04-17
 
 ### Features

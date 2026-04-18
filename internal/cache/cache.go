@@ -203,6 +203,39 @@ func (c *Cache) SetShadowWithTTL(key string, value []byte, ttl time.Duration) {
 	c.setWithTTL(key, value, ttl, false)
 }
 
+// SetLocalOnlyWithTTL stores a value only in local L1 memory.
+// It skips L2 disk writes, L3 peer propagation, and non-owner TTL clamping.
+func (c *Cache) SetLocalOnlyWithTTL(key string, value []byte, ttl time.Duration) {
+	size := len(value)
+	if size > c.maxBytes/10 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if old, ok := c.entries[key]; ok {
+		c.curBytes -= old.sizeBytes
+		if elem, found := c.lruIndex[key]; found {
+			c.lruList.MoveToFront(elem)
+		}
+	}
+
+	c.evictIfNeeded(size)
+
+	c.entries[key] = entry{
+		value:     value,
+		expiresAt: time.Now().Add(ttl),
+		sizeBytes: size,
+	}
+	c.curBytes += size
+
+	if _, found := c.lruIndex[key]; !found {
+		elem := c.lruList.PushFront(&lruEntry{key: key})
+		c.lruIndex[key] = elem
+	}
+}
+
 // SetWithTTL stores a value with a specific TTL.
 func (c *Cache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 	c.setWithTTL(key, value, ttl, true)

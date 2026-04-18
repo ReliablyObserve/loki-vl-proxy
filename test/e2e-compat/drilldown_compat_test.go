@@ -578,8 +578,9 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 
 		valuesResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_field/status/values?"+params.Encode())
-		if len(extractStrings(valuesResp, "values")) != 0 {
-			t.Fatalf("expected empty detected_field values payload for empty query, got %v", valuesResp)
+		values := extractStrings(valuesResp, "values")
+		if len(values) != 1 || values[0] != "200" {
+			t.Fatalf("expected relaxed detected_field values fallback to keep staging status=200 visible, got %v", valuesResp)
 		}
 	})
 
