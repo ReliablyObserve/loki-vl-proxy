@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-04-18
+
 ### Bug Fixes
 
 - drilldown/fields: retry native field and stream discovery with relaxed candidates when parser or comparison stages make Drilldown field lookups unstable, treat backend `5xx` scan responses as failed windows instead of empty results, and preserve native-only fallback for structured metadata without leaking indexed labels.
