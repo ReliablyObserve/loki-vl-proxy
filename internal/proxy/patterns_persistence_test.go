@@ -218,7 +218,7 @@ func TestPatternsPersistSnapshotCache_StaysLocalWithoutWriteThrough(t *testing.T
 	}
 
 	var pc *cache.PeerCache
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 256; i++ {
 		candidate := cache.NewPeerCache(cache.PeerConfig{
 			SelfAddr:           fmt.Sprintf("self-%d:3100", i),
 			DiscoveryType:      "static",

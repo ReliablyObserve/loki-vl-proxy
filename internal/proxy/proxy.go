@@ -4171,36 +4171,9 @@ func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName,
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
 			}
-
-			var (
-				values  []string
-				errVals error
-			)
-			if nativeField, ok, resolveErr := p.resolveNativeDetectedField(ctx, query, start, end, fieldName); resolveErr == nil && ok {
-				values, errVals = p.fetchNativeFieldValues(ctx, query, start, end, nativeField, lineLimit)
-				if errVals == nil && len(values) == 0 {
-					// Keep Drilldown UX non-empty for synthetic/derived labels when native values are empty.
-					values = nil
-				}
-			}
-			if values == nil && errVals == nil {
-				_, fieldValues, detectErr := p.detectFields(ctx, query, start, end, lineLimit)
-				if detectErr != nil {
-					return nil, detectErr
-				}
-				values = fieldValues[fieldName]
-				if values == nil && fieldName == "level" {
-					values = fieldValues["detected_level"]
-				}
-			}
-			if len(values) == 0 {
-				values = p.detectedLabelValuesForField(ctx, fieldName, query, start, end, lineLimit)
-			}
-			if errVals != nil {
-				return nil, errVals
-			}
-			if values == nil {
-				values = []string{}
+			values, err := p.resolveDetectedFieldValues(ctx, fieldName, query, start, end, lineLimit, true)
+			if err != nil {
+				return nil, err
 			}
 
 			payload := map[string]interface{}{
@@ -4216,6 +4189,47 @@ func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName,
 			p.log.Debug("background detected_field_values refresh failed", "cache_key", cacheKey, "field", fieldName, "error", err)
 		}
 	}()
+}
+
+func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query, start, end string, lineLimit int, relaxOnEmpty bool) ([]string, error) {
+	var (
+		values  []string
+		errVals error
+	)
+	if nativeField, ok, resolveErr := p.resolveNativeDetectedField(ctx, query, start, end, fieldName); resolveErr == nil && ok {
+		values, errVals = p.fetchNativeFieldValues(ctx, query, start, end, nativeField, lineLimit)
+		if errVals == nil && len(values) == 0 {
+			// Keep Drilldown UX non-empty for synthetic/derived labels when native values are empty.
+			values = nil
+		}
+	}
+	if values == nil && errVals == nil {
+		_, fieldValues, detectErr := p.detectFields(ctx, query, start, end, lineLimit)
+		if detectErr != nil {
+			return nil, detectErr
+		}
+		values = fieldValues[fieldName]
+		if values == nil && fieldName == "level" {
+			values = fieldValues["detected_level"]
+		}
+	}
+	if len(values) == 0 {
+		values = p.detectedLabelValuesForField(ctx, fieldName, query, start, end, lineLimit)
+	}
+	if errVals != nil {
+		return nil, errVals
+	}
+	if len(values) == 0 && relaxOnEmpty {
+		primary := defaultFieldDetectionQuery(query)
+		relaxed := relaxedFieldDetectionQuery(query)
+		if relaxed != "" && relaxed != primary {
+			return p.resolveDetectedFieldValues(ctx, fieldName, relaxed, start, end, lineLimit, false)
+		}
+	}
+	if values == nil {
+		values = []string{}
+	}
+	return values, nil
 }
 
 // handleLabels returns label names.
@@ -4961,24 +4975,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	if nativeField, ok, err := p.resolveNativeDetectedField(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), fieldName); err == nil && ok {
-		if values, valuesErr := p.fetchNativeFieldValues(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), nativeField, lineLimit); valuesErr == nil {
-			if len(values) > 0 {
-				payload := map[string]interface{}{
-					"status": "success",
-					"data":   values,
-					"values": values,
-					"limit":  lineLimit,
-				}
-				p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_field_values"], payload)
-				p.writeJSON(w, payload)
-				p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
-				return
-			}
-		}
-	}
-
-	_, fieldValues, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
+	values, err := p.resolveDetectedFieldValues(r.Context(), fieldName, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit, true)
 	if err != nil {
 		payload := map[string]interface{}{
 			"status": "success",
@@ -4989,16 +4986,6 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		p.writeJSON(w, payload)
 		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 		return
-	}
-	values := fieldValues[fieldName]
-	if values == nil && fieldName == "level" {
-		values = fieldValues["detected_level"]
-	}
-	if len(values) == 0 {
-		values = p.detectedLabelValuesForField(r.Context(), fieldName, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
-	}
-	if values == nil {
-		values = []string{}
 	}
 
 	payload := map[string]interface{}{

@@ -681,6 +681,73 @@ func TestDetectedFieldValues_EmptyStrictQueryRelaxesCandidates(t *testing.T) {
 	}
 }
 
+func TestDetectedFieldValues_EmptyStrictQueryRelaxesWholeLookup(t *testing.T) {
+	const strictToken = "strict-only"
+
+	var fieldNameQueries []string
+	var scanQueries []string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		got := r.Form.Get("query")
+		strict := strings.Contains(got, strictToken)
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			fieldNameQueries = append(fieldNameQueries, got)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			scanQueries = append(scanQueries, got)
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			if !strict {
+				_, _ = w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"status\":200}","_stream":"{service_name=\"api-gateway\",namespace=\"staging\"}","service_name":"api-gateway","namespace":"staging","status":200}` + "\n"))
+			}
+		case "/select/logsql/streams":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	q := url.Values{
+		"query": {`{service_name="api-gateway",namespace="staging"} | probe="strict-only"`},
+		"start": {"1"},
+		"end":   {"2"},
+	}
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/status/values?"+q.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(fieldNameQueries) == 0 || !strings.Contains(fieldNameQueries[0], strictToken) {
+		t.Fatalf("expected strict native field-name lookup before whole-query relaxation, got %v", fieldNameQueries)
+	}
+	if len(scanQueries) < 2 {
+		t.Fatalf("expected strict+relaxed field scans, got %v", scanQueries)
+	}
+	if !strings.Contains(scanQueries[0], strictToken) {
+		t.Fatalf("expected strict field scan to preserve strict filter, got %q", scanQueries[0])
+	}
+	if strings.Contains(scanQueries[len(scanQueries)-1], strictToken) {
+		t.Fatalf("expected relaxed field scan to strip strict-only filter, got %q", scanQueries[len(scanQueries)-1])
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	values, _ := resp["values"].([]interface{})
+	if len(values) != 1 || values[0] != "200" {
+		t.Fatalf("expected relaxed whole-query fallback to preserve status=200, got %v", resp)
+	}
+}
+
 func TestHandleLabels_BareSelectorQuery(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got := r.URL.Query().Get("query")
