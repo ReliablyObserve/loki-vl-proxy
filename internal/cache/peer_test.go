@@ -366,6 +366,46 @@ func TestPeerCache_FetchFromPeer(t *testing.T) {
 	t.Log("no key mapped to peer — acceptable for small hash ring")
 }
 
+func TestPeerCache_FetchFromPeer_EncodesCacheKey(t *testing.T) {
+	peerCache := New(60*time.Second, 1000)
+	defer peerCache.Close()
+
+	peerPC := NewPeerCache(PeerConfig{SelfAddr: "peer"})
+	defer peerPC.Close()
+
+	peerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peerPC.ServeHTTP(w, r, peerCache)
+	}))
+	defer peerServer.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "self:3100",
+		DiscoveryType: "static",
+		StaticPeers:   peerServer.Listener.Addr().String(),
+		Timeout:       2 * time.Second,
+	})
+	defer pc.Close()
+
+	for i := 0; i < 100; i++ {
+		key := fmt.Sprintf("labels:tenant-a:query={service_name=\"api\"}&start=1&end=2:%d", i)
+		peerCache.Set(key, []byte("peer-data"))
+
+		pc.mu.RLock()
+		owner := pc.ring.get(key)
+		pc.mu.RUnlock()
+
+		if owner != peerServer.Listener.Addr().String() {
+			continue
+		}
+		value, _, found := pc.Get(key)
+		if !found || string(value) != "peer-data" {
+			t.Fatalf("expected encoded peer hit for key %q, got found=%v value=%q", key, found, string(value))
+		}
+		return
+	}
+	t.Fatal("no key mapped to peer")
+}
+
 func TestPeerCache_Get_DecodesCompressedPeerPayload(t *testing.T) {
 	payload := []byte(strings.Repeat("peer-data", 128))
 	var badAcceptEncoding atomic.Value
@@ -916,6 +956,48 @@ func TestPeerCache_WriteThroughPushesToOwner(t *testing.T) {
 		}
 		stats := pc.Stats()
 		return stats["wt_pushes"].(int64) >= 1
+	})
+}
+
+func TestPeerCache_WriteThroughPushesEncodedCacheKeyToOwner(t *testing.T) {
+	ownerCache := NewWithMaxBytes(60*time.Second, 1000, 1024*1024)
+	defer ownerCache.Close()
+	ownerPC := NewPeerCache(PeerConfig{SelfAddr: "owner"})
+	defer ownerPC.Close()
+	ownerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ownerPC.ServeHTTP(w, r, ownerCache)
+	}))
+	defer ownerServer.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:           "self:3100",
+		DiscoveryType:      "static",
+		StaticPeers:        "self:3100," + ownerServer.Listener.Addr().String(),
+		Timeout:            500 * time.Millisecond,
+		WriteThrough:       true,
+		WriteThroughMinTTL: 5 * time.Second,
+	})
+	defer pc.Close()
+
+	var key string
+	for i := 0; i < 512; i++ {
+		candidate := fmt.Sprintf("detected_fields:tenant-a:{service_name=\"api\"}&start=1&end=2:%d", i)
+		pc.mu.RLock()
+		owner := pc.ring.get(candidate)
+		pc.mu.RUnlock()
+		if owner == ownerServer.Listener.Addr().String() {
+			key = candidate
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("failed to find key mapped to owner peer")
+	}
+
+	pc.SetWithTTL(key, []byte("value"), 30*time.Second)
+	requireEventually(t, 3*time.Second, func() bool {
+		got, ok := ownerCache.Get(key)
+		return ok && string(got) == "value"
 	})
 }
 

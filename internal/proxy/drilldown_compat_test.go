@@ -1246,6 +1246,61 @@ func TestDrilldown_DetectedFieldValues_ServiceNameUsesFastPath(t *testing.T) {
 	}
 }
 
+func TestDrilldown_DetectedFieldValues_IgnoreZeroHitNativeValues(t *testing.T) {
+	var sawFieldValues bool
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"shared_log_type","hits":4}]}`))
+		case "/select/logsql/field_values":
+			sawFieldValues = true
+			if got := r.URL.Query().Get("field"); got != "shared_log_type" {
+				t.Fatalf("expected shared_log_type lookup, got %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"access","hits":4},{"value":"common","hits":0}]}`))
+		case "/select/logsql/streams", "/select/logsql/query":
+			t.Fatalf("positive-hit native values should avoid fallback scans, got %s", r.URL.Path)
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	params := url.Values{}
+	params.Set("query", `{deployment_environment="dev",k8s_cluster_name="ops-sand"}`)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/shared_log_type/values?"+params.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	values, ok := resp["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array, got %v", resp)
+	}
+	if !sawFieldValues {
+		t.Fatalf("expected native field_values fast path to be used")
+	}
+	if len(values) != 1 || values[0].(string) != "access" {
+		t.Fatalf("expected only positive-hit native values, got %v", values)
+	}
+}
+
 func TestDetectedLabelValuesForField_ResolvesKnownUnderscoreAlias(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

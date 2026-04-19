@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -323,11 +324,11 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	}()
 
 	// Fetch from owner
-	url := fmt.Sprintf("http://%s/_cache/get?key=%s", owner, key)
+	endpoint := fmt.Sprintf("http://%s/_cache/get?%s", owner, url.Values{"key": []string{key}}.Encode())
 	ctx, cancel := context.WithTimeout(context.Background(), pc.client.Timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		pc.recordPeerFailure(owner)
 		pc.RecordPeerErrorReason("request_build")
@@ -432,7 +433,14 @@ func (pc *PeerCache) pushToOwner(owner, key string, value []byte, ttl time.Durat
 	if ttl > 0 {
 		ttlMs = ttl.Milliseconds()
 	}
-	endpoint := fmt.Sprintf("http://%s/_cache/set?key=%s&ttl_ms=%d", owner, key, ttlMs)
+	endpoint := fmt.Sprintf(
+		"http://%s/_cache/set?%s",
+		owner,
+		url.Values{
+			"key":    []string{key},
+			"ttl_ms": []string{strconv.FormatInt(ttlMs, 10)},
+		}.Encode(),
+	)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(value))
 	if err != nil {
 		pc.recordPeerFailure(owner)

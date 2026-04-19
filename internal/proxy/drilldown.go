@@ -1574,6 +1574,9 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 		}
 		values := make([]string, 0, len(parsed.Values))
 		for _, item := range parsed.Values {
+			if item.Hits <= 0 || strings.TrimSpace(item.Value) == "" {
+				continue
+			}
 			values = append(values, item.Value)
 		}
 		sort.Strings(values)
