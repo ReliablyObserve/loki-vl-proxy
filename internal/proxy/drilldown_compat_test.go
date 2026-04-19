@@ -232,25 +232,41 @@ func TestDrilldown_DetectedLabelSupplementHelpers(t *testing.T) {
 	}) {
 		t.Fatal("summaries without level should require scan supplement")
 	}
-	if needsDetectedLabelScanSupplement(map[string]*detectedLabelSummary{
+	if !needsDetectedLabelScanSupplement(map[string]*detectedLabelSummary{
 		"level": {label: "level", values: map[string]struct{}{"info": {}}},
 	}) {
-		t.Fatal("summaries with level should not require scan supplement")
+		t.Fatal("summaries without service_name should require scan supplement")
+	}
+	if !needsDetectedLabelScanSupplement(map[string]*detectedLabelSummary{
+		"level":        {label: "level", values: map[string]struct{}{"info": {}}},
+		"service_name": {label: "service_name", values: map[string]struct{}{unknownServiceName: {}}},
+	}) {
+		t.Fatal("summaries with only unknown_service should require scan supplement")
+	}
+	if needsDetectedLabelScanSupplement(map[string]*detectedLabelSummary{
+		"level":        {label: "level", values: map[string]struct{}{"info": {}}},
+		"service_name": {label: "service_name", values: map[string]struct{}{"svc": {}}},
+	}) {
+		t.Fatal("summaries with level and service_name should not require scan supplement")
 	}
 
 	dst := map[string]*detectedLabelSummary{
-		"service_name": {label: "service_name", values: map[string]struct{}{"svc": {}}},
+		"level":        {label: "level", values: map[string]struct{}{"info": {}}},
+		"service_name": {label: "service_name", values: map[string]struct{}{unknownServiceName: {}}},
 	}
 	scanned := map[string]*detectedLabelSummary{
-		"level":        {label: "level", values: map[string]struct{}{"info": {}}},
-		"service_name": {label: "service_name", values: map[string]struct{}{"other": {}}},
+		"level":        {label: "level", values: map[string]struct{}{"warn": {}}},
+		"service_name": {label: "service_name", values: map[string]struct{}{"svc": {}}},
 	}
 	mergeDetectedLabelSupplements(dst, scanned)
-	if dst["level"] == nil {
-		t.Fatalf("expected mergeDetectedLabelSupplements to backfill level, got %v", dst)
+	if dst["service_name"] == nil || len(dst["service_name"].values) != 1 {
+		t.Fatalf("expected mergeDetectedLabelSupplements to backfill service_name, got %v", dst)
 	}
-	if len(dst["service_name"].values) != 1 {
-		t.Fatalf("expected existing non-derived labels to remain unchanged, got %v", dst["service_name"].values)
+	if _, ok := dst["service_name"].values["svc"]; !ok {
+		t.Fatalf("expected mergeDetectedLabelSupplements to replace unknown_service, got %v", dst["service_name"].values)
+	}
+	if len(dst["level"].values) != 1 {
+		t.Fatalf("expected existing non-derived labels to remain unchanged, got %v", dst["level"].values)
 	}
 }
 
@@ -979,6 +995,63 @@ func TestDrilldown_DetectedLabels_ExcludeRawStructuredMetadata(t *testing.T) {
 	}
 	if _, ok := got["service_namespace"]; ok {
 		t.Fatalf("raw structured metadata must not become detected label: %v", got)
+	}
+}
+
+func TestDrilldown_DetectedLabels_BackfillsServiceNameFromScanWhenNativeStreamsMissIt(t *testing.T) {
+	var streamCalls, scanCalls int
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/streams":
+			streamCalls++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[{"value":"{cluster=\"ops-sand\",k8s.cluster.name=\"ops-sand\",level=\"info\"}","hits":5}]}`))
+		case "/select/logsql/query":
+			scanCalls++
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write([]byte(`{"_time":"2026-04-19T07:00:00Z","_msg":"request ok","k8s.cluster.name":"ops-sand","service.name":"otel-auth-service","level":"info"}` + "\n"))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_labels?query=%7Bk8s_cluster_name%3D%22ops-sand%22%7D&limit=25", nil)
+	p.handleDetectedLabels(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	items, ok := resp["detectedLabels"].([]interface{})
+	if !ok {
+		t.Fatalf("expected detectedLabels array, got %v", resp)
+	}
+
+	got := map[string]float64{}
+	for _, item := range items {
+		obj := item.(map[string]interface{})
+		got[obj["label"].(string)] = obj["cardinality"].(float64)
+	}
+
+	if _, ok := got["service_name"]; !ok {
+		t.Fatalf("expected service_name in detected labels after scan supplement, got %v", got)
+	}
+	if got["service_name"] != 1 {
+		t.Fatalf("expected service_name cardinality 1 after scan supplement, got %v", got)
+	}
+	if streamCalls == 0 || scanCalls == 0 {
+		t.Fatalf("expected both native streams and scan supplement paths, got streamCalls=%d scanCalls=%d", streamCalls, scanCalls)
 	}
 }
 

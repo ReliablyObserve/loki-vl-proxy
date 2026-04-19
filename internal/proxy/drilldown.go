@@ -116,6 +116,14 @@ func buildEntryLabels(entry map[string]interface{}) map[string]string {
 
 func buildDetectedLabels(entry map[string]interface{}) map[string]string {
 	labels := parseStreamLabels(asString(entry["_stream"]))
+	for _, key := range serviceNameSourceFields {
+		if _, ok := labels[key]; ok {
+			continue
+		}
+		if value, ok := stringifyEntryValue(entry[key]); ok && strings.TrimSpace(value) != "" {
+			labels[key] = value
+		}
+	}
 	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
 		labels["level"] = value
 	}
@@ -1362,19 +1370,44 @@ func needsDetectedLabelScanSupplement(summaries map[string]*detectedLabelSummary
 	if len(summaries) == 0 {
 		return true
 	}
-	_, ok := summaries["level"]
-	return !ok
+	for _, label := range []string{"level", "service_name"} {
+		summary := summaries[label]
+		if summary == nil {
+			return true
+		}
+		if label == "service_name" && detectedServiceNameSummaryNeedsReplacement(summary) {
+			return true
+		}
+	}
+	return false
 }
 
 func mergeDetectedLabelSupplements(dst, scanned map[string]*detectedLabelSummary) {
-	for _, label := range []string{"level"} {
-		if _, ok := dst[label]; ok {
+	for _, label := range []string{"level", "service_name"} {
+		summary := scanned[label]
+		if summary == nil {
 			continue
 		}
-		if summary := scanned[label]; summary != nil {
+		existing := dst[label]
+		if existing == nil {
+			dst[label] = summary
+			continue
+		}
+		if label == "service_name" && detectedServiceNameSummaryNeedsReplacement(existing) {
 			dst[label] = summary
 		}
 	}
+}
+
+func detectedServiceNameSummaryNeedsReplacement(summary *detectedLabelSummary) bool {
+	if summary == nil || len(summary.values) == 0 {
+		return true
+	}
+	if len(summary.values) == 1 {
+		_, onlyUnknown := summary.values[unknownServiceName]
+		return onlyUnknown
+	}
+	return false
 }
 
 func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string) (map[string]*detectedFieldSummary, error) {
