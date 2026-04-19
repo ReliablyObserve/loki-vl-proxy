@@ -321,6 +321,158 @@ func TestQueryRangeWindow_MultiTenantCompatibility(t *testing.T) {
 	}
 }
 
+func TestQueryRangeWindow_FetchStoresCacheLocallyWhenPeerWriteThroughEnabled(t *testing.T) {
+	var remoteSetCalls atomic.Int64
+	ownerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/_cache/set" {
+			remoteSetCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ownerSrv.Close()
+
+	ownerURL, err := url.Parse(ownerSrv.URL)
+	if err != nil {
+		t.Fatalf("parse owner URL: %v", err)
+	}
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		_ = r.ParseForm()
+		startNs, _ := strconv.ParseInt(r.Form.Get("start"), 10, 64)
+		_, _ = fmt.Fprintf(w, "{\"_time\":%q,\"_msg\":\"window-cache\",\"_stream\":\"{app=\\\"api\\\"}\"}\n", time.Unix(0, startNs).UTC().Format(time.RFC3339Nano))
+	}))
+	defer backend.Close()
+
+	window := queryRangeWindow{
+		startNs: time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Hour).UnixNano(),
+	}
+	window.endNs = window.startNs + int64(time.Hour) - 1
+	req := httptest.NewRequest("GET", fmt.Sprintf("/loki/api/v1/query_range?query=%s&limit=100", url.QueryEscape(`{app="api"}`)), nil)
+	if err := req.ParseForm(); err != nil {
+		t.Fatalf("parse form: %v", err)
+	}
+	cacheKey := (&Proxy{}).queryRangeWindowCacheKey(req, `{app="api"}`, "100", window, false, false)
+
+	pc := newNonOwnerPeerCacheForKey(t, ownerURL.Host, cacheKey)
+	defer pc.Close()
+	c := cache.New(60*time.Second, 1000)
+	c.SetL3(pc)
+	defer c.Close()
+
+	p, err := New(Config{
+		BackendURL:                 backend.URL,
+		Cache:                      c,
+		PeerCache:                  pc,
+		LogLevel:                   "error",
+		QueryRangeWindowingEnabled: true,
+		QueryRangeFreshness:        10 * time.Minute,
+		QueryRangeRecentCacheTTL:   0,
+		QueryRangeHistoryCacheTTL:  time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("create proxy: %v", err)
+	}
+
+	if _, err := p.fetchQueryRangeWindow(context.Background(), req, `{app="api"}`, "100", 100, window, false, false); err != nil {
+		t.Fatalf("fetchQueryRangeWindow returned error: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	if got := remoteSetCalls.Load(); got != 0 {
+		t.Fatalf("expected window cache entry to stay local, got %d remote /_cache/set calls", got)
+	}
+	if got := pc.WTPushes.Load(); got != 0 {
+		t.Fatalf("expected local-only window cache write to skip write-through pushes, got %d", got)
+	}
+	if got := pc.WTErrors.Load(); got != 0 {
+		t.Fatalf("expected local-only window cache write to skip write-through errors, got %d", got)
+	}
+	if _, ok := p.cache.Get(cacheKey); !ok {
+		t.Fatalf("expected local cache key %q to be stored", cacheKey)
+	}
+}
+
+func TestQueryRangeWindowHitEstimate_CachesLocallyWhenPeerWriteThroughEnabled(t *testing.T) {
+	var remoteSetCalls atomic.Int64
+	ownerSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/_cache/set" {
+			remoteSetCalls.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ownerSrv.Close()
+
+	ownerURL, err := url.Parse(ownerSrv.URL)
+	if err != nil {
+		t.Fatalf("parse owner URL: %v", err)
+	}
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/hits" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":[{"timestamps":["1710000000"],"values":[7]}]}`))
+	}))
+	defer backend.Close()
+
+	window := queryRangeWindow{
+		startNs: time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Hour).UnixNano(),
+	}
+	window.endNs = window.startNs + int64(time.Hour) - 1
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range", nil)
+	cacheKey := (&Proxy{}).queryRangeWindowHasHitsCacheKey(req, `{app="api"}`, window)
+
+	pc := newNonOwnerPeerCacheForKey(t, ownerURL.Host, cacheKey)
+	defer pc.Close()
+	c := cache.New(60*time.Second, 1000)
+	c.SetL3(pc)
+	defer c.Close()
+
+	p, err := New(Config{
+		BackendURL:                 backend.URL,
+		Cache:                      c,
+		PeerCache:                  pc,
+		LogLevel:                   "error",
+		QueryRangeWindowingEnabled: true,
+		QueryRangeFreshness:        10 * time.Minute,
+		QueryRangeRecentCacheTTL:   0,
+		QueryRangeHistoryCacheTTL:  time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("create proxy: %v", err)
+	}
+
+	got, err := p.queryRangeWindowHitEstimate(context.Background(), req, `{app="api"}`, window)
+	if err != nil {
+		t.Fatalf("queryRangeWindowHitEstimate returned error: %v", err)
+	}
+	if got != 7 {
+		t.Fatalf("expected hit estimate 7, got %d", got)
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	if got := remoteSetCalls.Load(); got != 0 {
+		t.Fatalf("expected hit-estimate cache entry to stay local, got %d remote /_cache/set calls", got)
+	}
+	if got := pc.WTPushes.Load(); got != 0 {
+		t.Fatalf("expected local-only hit-estimate cache write to skip write-through pushes, got %d", got)
+	}
+	if got := pc.WTErrors.Load(); got != 0 {
+		t.Fatalf("expected local-only hit-estimate cache write to skip write-through errors, got %d", got)
+	}
+	if _, ok := p.cache.Get(cacheKey); !ok {
+		t.Fatalf("expected local prefilter cache key %q to be stored", cacheKey)
+	}
+}
+
 func TestQueryRangeWindow_SevenDayRangeUsesParallelWindowFetch(t *testing.T) {
 	var calls atomic.Int64
 	var inFlight atomic.Int64
@@ -1438,6 +1590,26 @@ func newWindowingTestProxy(t *testing.T, backendURL string) *Proxy {
 		t.Fatalf("failed to create proxy: %v", err)
 	}
 	return p
+}
+
+func newNonOwnerPeerCacheForKey(t *testing.T, ownerHost, key string) *cache.PeerCache {
+	t.Helper()
+	for i := 0; i < 1024; i++ {
+		candidate := cache.NewPeerCache(cache.PeerConfig{
+			SelfAddr:           fmt.Sprintf("self-%d:3100", i),
+			DiscoveryType:      "static",
+			StaticPeers:        fmt.Sprintf("%s,remote-a:3100,remote-b:3100,%s", fmt.Sprintf("self-%d:3100", i), ownerHost),
+			Timeout:            50 * time.Millisecond,
+			WriteThrough:       true,
+			WriteThroughMinTTL: 5 * time.Second,
+		})
+		if !candidate.IsOwner(key) {
+			return candidate
+		}
+		candidate.Close()
+	}
+	t.Fatalf("expected non-owner peer cache setup for key %q", key)
+	return nil
 }
 
 func assertQueryRangeFirstTimestamp(t *testing.T, rec *httptest.ResponseRecorder, expectedTs int64) {

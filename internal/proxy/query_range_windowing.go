@@ -382,7 +382,10 @@ func (p *Proxy) fetchQueryRangeWindow(
 			entry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
 				if encoded, err := json.Marshal(entry); err == nil {
-					p.cache.SetWithTTL(cacheKey, encoded, ttl)
+					// Window fragments are short-lived and high churn. Keeping them
+					// local avoids concentrating peer-cache write-through on a single
+					// ring owner when Drilldown or Explore fans a read into many windows.
+					p.cache.SetLocalOnlyWithTTL(cacheKey, encoded, ttl)
 				}
 			}
 			return entry, nil
@@ -512,7 +515,9 @@ func (p *Proxy) queryRangeWindowHitEstimate(
 				hitEstimate = 0
 			}
 			if ttl := p.queryRangeWindowPrefilterTTL(window.endNs); ttl > 0 {
-				p.cache.SetWithTTL(cacheKey, []byte(strconv.FormatInt(hitEstimate, 10)), ttl)
+				// Prefilter hit estimates are window-scoped scratch state. They are
+				// cheap to recompute and do not justify peer write-through churn.
+				p.cache.SetLocalOnlyWithTTL(cacheKey, []byte(strconv.FormatInt(hitEstimate, 10)), ttl)
 			}
 			return hitEstimate, nil
 		}
