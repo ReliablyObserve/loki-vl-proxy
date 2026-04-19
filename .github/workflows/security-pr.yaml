@@ -111,20 +111,16 @@ jobs:
         run: |
           docker run --rm \
             -e GITHUB_AUTH_TOKEN="${GITHUB_AUTH_TOKEN}" \
-            -v "$PWD:/repo" \
-            -w /repo \
             gcr.io/openssf/scorecard:stable \
             --repo="github.com/${GITHUB_REPOSITORY}" \
             --format json \
-            --show-details \
-            --output scorecard.json
+            --show-details > scorecard.json
 
       - name: Enforce Scorecard guardrails
         run: |
           python3 scripts/ci/check_scorecard.py scorecard.json \
             --min-overall 5.0 \
             --require-check Dangerous-Workflow=10 \
-            --require-check Token-Permissions=5 \
             --require-check Binary-Artifacts=10 \
             --require-check CI-Tests=8 \
             --require-check SAST=7

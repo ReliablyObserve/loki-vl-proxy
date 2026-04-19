@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ci/security: add layered GitHub Actions security lanes with fast PR blockers for secrets, SAST, supply-chain, workflow, and container linting, plus runtime ZAP coverage on PRs and deeper scheduled scanning with SBOM, Semgrep, fuzzing, and curated Nuclei checks.
 
+### Bug Fixes
+
+- proxy/security: apply baseline hardening headers (`nosniff`, frame-deny, same-origin resource policy, and non-cacheable responses) across normal, error, and disabled-admin responses, keep the container runtime non-root, and tighten the security test fixtures so the static scanners stay focused on actionable findings.
+
 ## [1.8.1] - 2026-04-19
 
 ### Bug Fixes

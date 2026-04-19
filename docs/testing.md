@@ -87,6 +87,20 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
 docker run --rm -i -v "$PWD/.hadolint.yaml:/root/.config/hadolint.yaml:ro" \
   hadolint/hadolint:v2.12.0 < Dockerfile
 
+# supply-chain posture
+docker run --rm \
+  -e GITHUB_AUTH_TOKEN="${GITHUB_TOKEN}" \
+  gcr.io/openssf/scorecard:stable \
+  --repo="github.com/ReliablyObserve/Loki-VL-proxy" \
+  --format json \
+  --show-details > scorecard.json
+python3 scripts/ci/check_scorecard.py scorecard.json \
+  --min-overall 5.0 \
+  --require-check Dangerous-Workflow=10 \
+  --require-check Binary-Artifacts=10 \
+  --require-check CI-Tests=8 \
+  --require-check SAST=7
+
 # repo-specific runtime checks
 ./scripts/ci/run_security_regressions.sh
 ./scripts/ci/run_zap_scan.sh baseline
@@ -94,6 +108,8 @@ docker run --rm -i -v "$PWD/.hadolint.yaml:/root/.config/hadolint.yaml:ro" \
 ```
 
 The scheduled heavy lane also runs longer fuzzing, image scanning, SBOM generation, broader `Semgrep`, and an OWASP ZAP active scan.
+
+Local ZAP baseline runs may still report `10049 Non-Storable Content` on intentional `404` discovery paths such as `/` or disabled `/debug/*` URLs. That output is expected visibility noise unless it points at a real user-facing route.
 
 ## Test Coverage by Category
 
@@ -137,6 +153,7 @@ Recent PRs added targeted guards in areas that were previously flaky in live Gra
 | `internal/proxy/proxy_test.go` | Loki API contract tests, response format validation |
 | `internal/proxy/gaps_test.go` | Feature gap coverage tests |
 | `internal/proxy/hardening_test.go` | Security and input validation |
+| `cmd/proxy/main_test.go` | Global HTTP wrapper hardening, compression, and not-found edge-path protections |
 | `internal/proxy/tenant_test.go` | Multitenancy routing |
 | `internal/proxy/critical_fixes_test.go` | Data race, binary ops, delete endpoint, CB metrics |
 | `internal/translator/translator_test.go` | LogQL translation unit tests |

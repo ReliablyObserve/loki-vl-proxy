@@ -71,7 +71,7 @@ Also defined in `.github/workflows/security-pr.yaml`.
 - custom Go security regressions from `scripts/ci/run_security_regressions.sh`
 - OWASP ZAP baseline scan from `scripts/ci/run_zap_scan.sh baseline`
 
-This lane validates the running stack rather than just the source tree.
+This lane validates the running stack rather than just the source tree. It is intentionally pointed at a short allowlist in `security/zap/targets.txt` so the baseline scan exercises the real user and admin/debug surface without wandering into unrelated compose internals.
 
 ### Heavy Scheduled Security
 
@@ -99,6 +99,19 @@ Generic scanners are useful here, but the highest-risk bugs for this project are
 - debug/admin exposure on non-loopback listeners
 
 The custom regression suite is biased toward these risks rather than only generic scanner output.
+
+## Response-Header Baseline
+
+The proxy now applies the same baseline security response headers across normal routes, `404`s, and disabled admin/debug endpoints:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Cross-Origin-Resource-Policy: same-origin`
+- `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`
+- `Pragma: no-cache`
+- `Expires: 0`
+
+That removes the weaker edge-path behavior where scanners could still reach missing or disabled routes without the same browser and cache protections as the main API surface.
 
 ## Container And Chart Posture
 
@@ -165,11 +178,27 @@ docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
 docker run --rm -i -v "$PWD/.hadolint.yaml:/root/.config/hadolint.yaml:ro" \
   hadolint/hadolint:v2.12.0 < Dockerfile
 
+# supply-chain posture gate
+docker run --rm \
+  -e GITHUB_AUTH_TOKEN="${GITHUB_TOKEN}" \
+  gcr.io/openssf/scorecard:stable \
+  --repo="github.com/ReliablyObserve/Loki-VL-proxy" \
+  --format json \
+  --show-details > scorecard.json
+python3 scripts/ci/check_scorecard.py scorecard.json \
+  --min-overall 5.0 \
+  --require-check Dangerous-Workflow=10 \
+  --require-check Binary-Artifacts=10 \
+  --require-check CI-Tests=8 \
+  --require-check SAST=7
+
 # repo-specific runtime checks
 ./scripts/ci/run_security_regressions.sh
 ./scripts/ci/run_zap_scan.sh baseline
 ./scripts/ci/run_nuclei_scan.sh
 ```
+
+When reproducing ZAP locally, expect occasional `10049 Non-Storable Content` warnings on deliberate `404` discovery paths such as `/` or disabled `/debug/*` endpoints. Those reports are useful for visibility but are not currently treated as exploitable proxy issues.
 
 ## Related Docs
 

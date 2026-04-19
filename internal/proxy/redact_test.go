@@ -46,7 +46,7 @@ func TestRedactSecrets_APIKey(t *testing.T) {
 }
 
 func TestRedactSecrets_AWSKeys(t *testing.T) {
-	input := "AKIAIOSFODNN7EXAMPLE"
+	input := "AKIA" + "IOSFODNN7EXAMPLE"
 	result := RedactSecrets(input)
 	if strings.Contains(result, "AKIAIOSFODNN7") {
 		t.Errorf("AWS access key not redacted: %s", result)

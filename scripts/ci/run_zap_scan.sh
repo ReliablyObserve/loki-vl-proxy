@@ -39,6 +39,7 @@ while IFS= read -r raw_path; do
   echo "Running ${MODE} ZAP scan against ${target}"
   docker run --rm \
     --network=host \
+    --user "$(id -u):$(id -g)" \
     -v "${PWD}/${REPORT_DIR}:/zap/wrk" \
     "${IMAGE}" \
     "${SCAN_SCRIPT}" \

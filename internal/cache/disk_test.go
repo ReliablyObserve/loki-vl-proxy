@@ -217,6 +217,7 @@ func TestEncodeDiskEntryRejectsOverflowSizedValue(t *testing.T) {
 	headerSize := 8
 	hugeLen := math.MaxInt - headerSize + 1
 
+	// #nosec G103 -- test-only slice-header mutation to force an overflow-sized len without allocating it.
 	valueHeader := (*[3]uintptr)(unsafe.Pointer(&entry.Value))
 	valueHeader[1] = uintptr(hugeLen)
 	valueHeader[2] = uintptr(hugeLen)

@@ -22,6 +22,11 @@ type longRangeDrilldownSeedConfig struct {
 	batchSize               int
 }
 
+type longRangeSplitWindow struct {
+	start time.Time
+	end   time.Time
+}
+
 const (
 	longRangePatternsService = "drilldown-longrange-patterns"
 	longRangeVolumeService   = "drilldown-longrange-volume"
@@ -125,60 +130,7 @@ func TestDrilldown_LongRangeVolume_SplitQueriesStayDense(t *testing.T) {
 	waitForDrilldownServiceVisible(t, serviceName, start, end)
 
 	expr := fmt.Sprintf(`sum by (detected_level) (count_over_time({service_name="%s"}[%ds]))`, serviceName, int(cfg.step/time.Second))
-	result := queryRangeMatrixResult(t, expr, start, end, cfg.step)
-	if len(result) < 2 {
-		t.Fatalf("expected at least info/error series for long-range volume query, got %d: %v", len(result), result)
-	}
-
-	startBucket, endBucket, expectedBuckets := denseExpectedBuckets(start, end, cfg.step)
-	minPoints := expectedBuckets - 2
-	if minPoints < 1 {
-		minPoints = 1
-	}
-	stepSeconds := int64(cfg.step / time.Second)
-	seenLevels := map[string]bool{}
-
-	for _, item := range result {
-		series, _ := item.(map[string]interface{})
-		metric, _ := series["metric"].(map[string]interface{})
-		level, _ := metric["detected_level"].(string)
-		values, _ := series["values"].([]interface{})
-		if level == "" {
-			t.Fatalf("expected detected_level label on long-range volume series: %v", series)
-		}
-		if len(values) < minPoints {
-			t.Fatalf("expected dense volume series for detected_level=%s, got %d/%d points", level, len(values), expectedBuckets)
-		}
-
-		var prevTS int64
-		for i, raw := range values {
-			pair, _ := raw.([]interface{})
-			if len(pair) != 2 {
-				t.Fatalf("expected [ts,value] pair for detected_level=%s, got %v", level, raw)
-			}
-			ts, ok := denseSampleTs(pair[0])
-			if !ok {
-				t.Fatalf("expected numeric timestamp for detected_level=%s, got %T", level, pair[0])
-			}
-			if i == 0 && ts > startBucket+(2*stepSeconds) {
-				t.Fatalf("expected early coverage for detected_level=%s, first_ts=%d start_bucket=%d", level, ts, startBucket)
-			}
-			if i > 0 && ts-prevTS > (2*stepSeconds) {
-				t.Fatalf("expected contiguous long-range volume buckets for detected_level=%s, prev=%d current=%d", level, prevTS, ts)
-			}
-			prevTS = ts
-		}
-		if prevTS < endBucket-(2*stepSeconds) {
-			t.Fatalf("expected late coverage for detected_level=%s, last_ts=%d end_bucket=%d", level, prevTS, endBucket)
-		}
-		seenLevels[level] = true
-	}
-
-	for _, want := range []string{"info", "error"} {
-		if !seenLevels[want] {
-			t.Fatalf("expected long-range volume result to include detected_level=%s, got %v", want, seenLevels)
-		}
-	}
+	_ = waitForLongRangeVolumeMatrixCoverage(t, expr, start, end, cfg.step)
 }
 
 func TestDrilldown_LongRangeVolume_GrafanaStyleSplitQueriesStayDense(t *testing.T) {
@@ -201,18 +153,13 @@ func TestDrilldown_LongRangeVolume_GrafanaStyleSplitQueriesStayDense(t *testing.
 	queryStep := time.Hour
 	expr := fmt.Sprintf(`sum by (detected_level) (count_over_time({service_name="%s"}[1h]))`, serviceName)
 
-	type splitWindow struct {
-		start time.Time
-		end   time.Time
-	}
-
-	windows := make([]splitWindow, 0, 3)
+	windows := make([]longRangeSplitWindow, 0, 3)
 	for chunkStart := start; !chunkStart.After(end); {
 		chunkEnd := chunkStart.Add(23 * queryStep)
 		if chunkEnd.After(end) {
 			chunkEnd = end
 		}
-		windows = append(windows, splitWindow{start: chunkStart, end: chunkEnd})
+		windows = append(windows, longRangeSplitWindow{start: chunkStart, end: chunkEnd})
 		if !chunkEnd.Before(end) {
 			break
 		}
@@ -222,68 +169,7 @@ func TestDrilldown_LongRangeVolume_GrafanaStyleSplitQueriesStayDense(t *testing.
 		t.Fatalf("expected multi-window long-range split, got %#v", windows)
 	}
 
-	merged := map[string][]int64{}
-	for _, window := range windows {
-		windowResult := queryRangeMatrixResult(t, expr, window.start, window.end, queryStep)
-		for _, item := range windowResult {
-			series, _ := item.(map[string]interface{})
-			metric, _ := series["metric"].(map[string]interface{})
-			level, _ := metric["detected_level"].(string)
-			values, _ := series["values"].([]interface{})
-			for _, raw := range values {
-				pair, _ := raw.([]interface{})
-				if len(pair) != 2 {
-					t.Fatalf("expected [ts,value] pair for split volume series, got %v", raw)
-				}
-				ts, ok := denseSampleTs(pair[0])
-				if !ok {
-					t.Fatalf("expected numeric timestamp for detected_level=%s, got %T", level, pair[0])
-				}
-				merged[level] = append(merged[level], ts)
-			}
-		}
-	}
-
-	startBucket, endBucket, expectedBuckets := denseExpectedBuckets(start, end, queryStep)
-	if queryStep <= 0 {
-		t.Fatalf("queryStep must be positive, got %s", queryStep)
-	}
-	if expectedBuckets <= 0 {
-		t.Fatalf("denseExpectedBuckets returned non-positive bucket count for queryStep=%s: %d", queryStep, expectedBuckets)
-	}
-	if endBucket < startBucket {
-		t.Fatalf("denseExpectedBuckets returned inverted range for queryStep=%s: start_bucket=%d end_bucket=%d", queryStep, startBucket, endBucket)
-	}
-	span := endBucket - startBucket
-	stepSeconds := int64(queryStep / time.Second)
-	if stepSeconds <= 0 {
-		t.Fatalf("queryStep must be at least one second for second-based bucket math, got %s", queryStep)
-	}
-	if span > 0 && span < stepSeconds {
-		t.Fatalf("denseExpectedBuckets span too small for queryStep=%s: start_bucket=%d end_bucket=%d span=%d", queryStep, startBucket, endBucket, span)
-	}
-	minPoints := expectedBuckets - 1
-	for _, level := range []string{"info", "error"} {
-		series := merged[level]
-		if len(series) < minPoints {
-			t.Fatalf("expected dense merged split coverage for detected_level=%s, got %d/%d points", level, len(series), expectedBuckets)
-		}
-		series = uniqueSortedInt64s(series)
-		if len(series) < minPoints {
-			t.Fatalf("expected dense unique split coverage for detected_level=%s, got %d/%d points", level, len(series), expectedBuckets)
-		}
-		if series[0] > startBucket+(2*stepSeconds) {
-			t.Fatalf("expected early split coverage for detected_level=%s, first_ts=%d start_bucket=%d", level, series[0], startBucket)
-		}
-		for i := 1; i < len(series); i++ {
-			if gap := series[i] - series[i-1]; gap > stepSeconds {
-				t.Fatalf("expected contiguous merged split buckets for detected_level=%s, prev=%d current=%d gap=%d", level, series[i-1], series[i], gap)
-			}
-		}
-		if series[len(series)-1] < endBucket-(2*stepSeconds) {
-			t.Fatalf("expected late split coverage for detected_level=%s, last_ts=%d end_bucket=%d", level, series[len(series)-1], endBucket)
-		}
-	}
+	_ = waitForLongRangeSplitVolumeCoverage(t, expr, windows, start, end, queryStep)
 }
 
 func seedLongRangeDrilldownServiceData(t *testing.T, serviceName string, start, end time.Time, cfg longRangeDrilldownSeedConfig) {
@@ -454,6 +340,203 @@ func patternSampleStats(samples [][]interface{}) (nonzero int, firstTS int64, la
 		}
 	}
 	return nonzero, firstTS, lastTS, maxGapSeconds
+}
+
+func waitForLongRangeVolumeMatrixCoverage(t *testing.T, expr string, start, end time.Time, step time.Duration) []interface{} {
+	t.Helper()
+
+	var (
+		lastResult []interface{}
+		lastErr    error
+	)
+	deadline := time.Now().Add(45 * time.Second)
+	poll := 200 * time.Millisecond
+	maxPoll := 2 * time.Second
+	for {
+		lastResult = queryRangeMatrixResult(t, expr, start, end, step)
+		lastErr = validateLongRangeVolumeMatrix(lastResult, start, end, step)
+		if lastErr == nil {
+			return lastResult
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("long-range volume matrix did not stabilize in time: %v", lastErr)
+		}
+		sleepFor := poll
+		if remaining := time.Until(deadline); sleepFor > remaining {
+			sleepFor = remaining
+		}
+		time.Sleep(sleepFor)
+		if poll < maxPoll {
+			poll *= 2
+			if poll > maxPoll {
+				poll = maxPoll
+			}
+		}
+	}
+}
+
+func validateLongRangeVolumeMatrix(result []interface{}, start, end time.Time, step time.Duration) error {
+	if len(result) < 2 {
+		return fmt.Errorf("expected at least info/error series for long-range volume query, got %d", len(result))
+	}
+
+	startBucket, endBucket, expectedBuckets := denseExpectedBuckets(start, end, step)
+	minPoints := expectedBuckets - 2
+	if minPoints < 1 {
+		minPoints = 1
+	}
+	stepSeconds := int64(step / time.Second)
+	seenLevels := map[string]bool{}
+
+	for _, item := range result {
+		series, _ := item.(map[string]interface{})
+		metric, _ := series["metric"].(map[string]interface{})
+		level, _ := metric["detected_level"].(string)
+		values, _ := series["values"].([]interface{})
+		if level == "" {
+			return fmt.Errorf("expected detected_level label on long-range volume series: %v", series)
+		}
+		if len(values) < minPoints {
+			return fmt.Errorf("expected dense volume series for detected_level=%s, got %d/%d points", level, len(values), expectedBuckets)
+		}
+
+		var prevTS int64
+		for i, raw := range values {
+			pair, _ := raw.([]interface{})
+			if len(pair) != 2 {
+				return fmt.Errorf("expected [ts,value] pair for detected_level=%s, got %v", level, raw)
+			}
+			ts, ok := denseSampleTs(pair[0])
+			if !ok {
+				return fmt.Errorf("expected numeric timestamp for detected_level=%s, got %T", level, pair[0])
+			}
+			if i == 0 && ts > startBucket+(2*stepSeconds) {
+				return fmt.Errorf("expected early coverage for detected_level=%s, first_ts=%d start_bucket=%d", level, ts, startBucket)
+			}
+			if i > 0 && ts-prevTS > (2*stepSeconds) {
+				return fmt.Errorf("expected contiguous long-range volume buckets for detected_level=%s, prev=%d current=%d", level, prevTS, ts)
+			}
+			prevTS = ts
+		}
+		if prevTS < endBucket-(2*stepSeconds) {
+			return fmt.Errorf("expected late coverage for detected_level=%s, last_ts=%d end_bucket=%d", level, prevTS, endBucket)
+		}
+		seenLevels[level] = true
+	}
+
+	for _, want := range []string{"info", "error"} {
+		if !seenLevels[want] {
+			return fmt.Errorf("expected long-range volume result to include detected_level=%s, got %v", want, seenLevels)
+		}
+	}
+
+	return nil
+}
+
+func waitForLongRangeSplitVolumeCoverage(t *testing.T, expr string, windows []longRangeSplitWindow, start, end time.Time, queryStep time.Duration) map[string][]int64 {
+	t.Helper()
+
+	var (
+		lastMerged map[string][]int64
+		lastErr    error
+	)
+	deadline := time.Now().Add(45 * time.Second)
+	poll := 200 * time.Millisecond
+	maxPoll := 2 * time.Second
+	for {
+		lastMerged = buildLongRangeSplitVolumeCoverage(t, expr, windows, queryStep)
+		lastErr = validateLongRangeSplitCoverage(lastMerged, start, end, queryStep)
+		if lastErr == nil {
+			return lastMerged
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("long-range split volume coverage did not stabilize in time: %v", lastErr)
+		}
+		sleepFor := poll
+		if remaining := time.Until(deadline); sleepFor > remaining {
+			sleepFor = remaining
+		}
+		time.Sleep(sleepFor)
+		if poll < maxPoll {
+			poll *= 2
+			if poll > maxPoll {
+				poll = maxPoll
+			}
+		}
+	}
+}
+
+func buildLongRangeSplitVolumeCoverage(t *testing.T, expr string, windows []longRangeSplitWindow, queryStep time.Duration) map[string][]int64 {
+	t.Helper()
+
+	merged := map[string][]int64{}
+	for _, window := range windows {
+		windowResult := queryRangeMatrixResult(t, expr, window.start, window.end, queryStep)
+		for _, item := range windowResult {
+			series, _ := item.(map[string]interface{})
+			metric, _ := series["metric"].(map[string]interface{})
+			level, _ := metric["detected_level"].(string)
+			values, _ := series["values"].([]interface{})
+			for _, raw := range values {
+				pair, _ := raw.([]interface{})
+				if len(pair) != 2 {
+					t.Fatalf("expected [ts,value] pair for split volume series, got %v", raw)
+				}
+				ts, ok := denseSampleTs(pair[0])
+				if !ok {
+					t.Fatalf("expected numeric timestamp for detected_level=%s, got %T", level, pair[0])
+				}
+				merged[level] = append(merged[level], ts)
+			}
+		}
+	}
+	return merged
+}
+
+func validateLongRangeSplitCoverage(merged map[string][]int64, start, end time.Time, queryStep time.Duration) error {
+	startBucket, endBucket, expectedBuckets := denseExpectedBuckets(start, end, queryStep)
+	if queryStep <= 0 {
+		return fmt.Errorf("queryStep must be positive, got %s", queryStep)
+	}
+	if expectedBuckets <= 0 {
+		return fmt.Errorf("denseExpectedBuckets returned non-positive bucket count for queryStep=%s: %d", queryStep, expectedBuckets)
+	}
+	if endBucket < startBucket {
+		return fmt.Errorf("denseExpectedBuckets returned inverted range for queryStep=%s: start_bucket=%d end_bucket=%d", queryStep, startBucket, endBucket)
+	}
+	span := endBucket - startBucket
+	stepSeconds := int64(queryStep / time.Second)
+	if stepSeconds <= 0 {
+		return fmt.Errorf("queryStep must be at least one second for second-based bucket math, got %s", queryStep)
+	}
+	if span > 0 && span < stepSeconds {
+		return fmt.Errorf("denseExpectedBuckets span too small for queryStep=%s: start_bucket=%d end_bucket=%d span=%d", queryStep, startBucket, endBucket, span)
+	}
+
+	minPoints := expectedBuckets - 1
+	for _, level := range []string{"info", "error"} {
+		series := merged[level]
+		if len(series) < minPoints {
+			return fmt.Errorf("expected dense merged split coverage for detected_level=%s, got %d/%d points", level, len(series), expectedBuckets)
+		}
+		series = uniqueSortedInt64s(series)
+		if len(series) < minPoints {
+			return fmt.Errorf("expected dense unique split coverage for detected_level=%s, got %d/%d points", level, len(series), expectedBuckets)
+		}
+		if series[0] > startBucket+(2*stepSeconds) {
+			return fmt.Errorf("expected early split coverage for detected_level=%s, first_ts=%d start_bucket=%d", level, series[0], startBucket)
+		}
+		for i := 1; i < len(series); i++ {
+			if gap := series[i] - series[i-1]; gap > stepSeconds {
+				return fmt.Errorf("expected contiguous merged split buckets for detected_level=%s, prev=%d current=%d gap=%d", level, series[i-1], series[i], gap)
+			}
+		}
+		if series[len(series)-1] < endBucket-(2*stepSeconds) {
+			return fmt.Errorf("expected late split coverage for detected_level=%s, last_ts=%d end_bucket=%d", level, series[len(series)-1], endBucket)
+		}
+	}
+
+	return nil
 }
 
 func queryRangeMatrixResult(t *testing.T, expr string, start, end time.Time, step time.Duration) []interface{} {

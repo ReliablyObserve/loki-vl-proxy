@@ -76,6 +76,7 @@ Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Patterns](d
 
 - Read-focused API surface by default: `/push` blocked, delete gated, debug/admin disabled unless explicitly enabled.
 - Non-root runtime image plus read-only root filesystem and restricted chart/container security contexts.
+- Consistent hardening headers on the whole HTTP surface, including normal API responses, `404`s, and disabled admin/debug routes.
 - Layered CI security gates: `gitleaks`, `gosec`, `Trivy`, `actionlint`, `hadolint`, `OpenSSF Scorecard`, custom runtime regressions, OWASP ZAP, and curated `Nuclei`.
 - Proxy-specific security coverage for tenant isolation, cache boundaries, browser-origin enforcement on `/tail`, forwarded auth/header handling, and debug/admin exposure.
 

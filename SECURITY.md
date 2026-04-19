@@ -33,6 +33,7 @@ Do NOT open a public issue for security vulnerabilities.
 - **Rate limiting**: Per-client token bucket using `RemoteAddr` (not spoofable `X-Forwarded-For`)
 - **Query length limit**: 64KB max to prevent abuse
 - **Security headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cache-Control: no-store`
+- **Consistent response hardening**: the proxy now applies the same baseline security headers on success, `404`, and disabled admin/debug responses so scanners and browsers do not see a weaker edge path
 - **HTTP hardening**: Configurable read/write/idle timeouts, max header/body bytes
 - **TLS support**: Server-side HTTPS via `-tls-cert-file`/`-tls-key-file`
 - **Tail browser-origin controls**: `/tail` can enforce explicit allowed origins
@@ -63,6 +64,8 @@ These lanes are intended to catch different classes of failures:
 - container hardening regressions
 - tenant-isolation and auth-boundary regressions
 - live HTTP surface issues in the running stack
+
+The PR runtime lane targets a short allowlist of user-facing and admin/debug URLs. Local ZAP runs may still report `10049 Non-Storable Content` on intentional `404` discovery paths such as `/` or disabled `/debug/*` endpoints; CI treats that as report noise rather than an exploitable proxy-path failure.
 
 ## Recommended Production Baseline
 
