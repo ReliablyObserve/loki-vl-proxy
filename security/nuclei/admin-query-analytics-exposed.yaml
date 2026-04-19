@@ -1,0 +1,21 @@
+id: loki-vl-proxy-admin-query-analytics-exposed
+
+info:
+  name: Loki-VL-proxy query analytics endpoint exposed without admin auth
+  author: codex
+  severity: high
+  tags: loki-vl-proxy,admin,analytics
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/debug/queries"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: header
+        words:
+          - "application/json"

@@ -567,6 +567,53 @@ func TestWrapHandler_AutoUsesGzipForCompatibleClients(t *testing.T) {
 	}
 }
 
+func TestWrapHandler_SetsSecurityHeaders(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/labels", nil)
+	w := httptest.NewRecorder()
+	wrapHandler(next, 1024, "none", 0, nil).ServeHTTP(w, req)
+
+	if got := w.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Fatalf("expected Cache-Control to include no-store, got %q", got)
+	}
+	if got := w.Header().Get("Pragma"); got != "no-cache" {
+		t.Fatalf("expected Pragma no-cache, got %q", got)
+	}
+	if got := w.Header().Get("Expires"); got != "0" {
+		t.Fatalf("expected Expires 0, got %q", got)
+	}
+	if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("expected X-Frame-Options DENY, got %q", got)
+	}
+	if got := w.Header().Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+		t.Fatalf("expected Cross-Origin-Resource-Policy same-origin, got %q", got)
+	}
+}
+
+func TestWrapHandler_SetsSecurityHeadersOnNotFound(t *testing.T) {
+	mux := http.NewServeMux()
+
+	req := httptest.NewRequest(http.MethodGet, "/missing", nil)
+	w := httptest.NewRecorder()
+	wrapHandler(mux, 1024, "none", 0, nil).ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", w.Code)
+	}
+	if got := w.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Fatalf("expected Cache-Control to include no-store, got %q", got)
+	}
+	if got := w.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Fatalf("expected X-Frame-Options DENY, got %q", got)
+	}
+	if got := w.Header().Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+		t.Fatalf("expected Cross-Origin-Resource-Policy same-origin, got %q", got)
+	}
+}
+
 func TestBuildOTLPConfig(t *testing.T) {
 	cfg := buildOTLPConfig(otlpRuntimeConfig{
 		endpoint:              "http://collector:4318/v1/metrics",

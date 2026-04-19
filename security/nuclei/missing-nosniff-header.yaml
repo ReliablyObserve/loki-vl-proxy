@@ -1,0 +1,20 @@
+id: loki-vl-proxy-missing-nosniff-header
+
+info:
+  name: Loki-VL-proxy labels endpoint missing nosniff header
+  author: codex
+  severity: medium
+  tags: loki-vl-proxy,headers
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/loki/api/v1/labels"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: dsl
+        dsl:
+          - "!contains(tolower(all_headers), 'x-content-type-options: nosniff')"

@@ -74,6 +74,18 @@ func TestHardening_SecurityHeaders(t *testing.T) {
 	if resp2.Header.Get("X-Frame-Options") != "DENY" {
 		t.Error("expected X-Frame-Options: DENY")
 	}
+	if resp2.Header.Get("Cross-Origin-Resource-Policy") != "same-origin" {
+		t.Error("expected Cross-Origin-Resource-Policy: same-origin")
+	}
+	if !strings.Contains(resp2.Header.Get("Cache-Control"), "no-store") {
+		t.Errorf("expected Cache-Control to include no-store, got %q", resp2.Header.Get("Cache-Control"))
+	}
+	if resp2.Header.Get("Pragma") != "no-cache" {
+		t.Error("expected Pragma: no-cache")
+	}
+	if resp2.Header.Get("Expires") != "0" {
+		t.Error("expected Expires: 0")
+	}
 }
 
 func TestHardening_EmptyQuery(t *testing.T) {

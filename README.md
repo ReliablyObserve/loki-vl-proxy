@@ -66,10 +66,21 @@ Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/
 - Packaged operator dashboard covering `Client -> Proxy -> VictoriaLogs`, query-range resilience, cache behavior, and operational resources.
 - Helm-ready deployment model for production clusters.
 - Compatibility CI tracks for Loki, Logs Drilldown, and VictoriaLogs.
+- Dedicated security CI lanes for secret scanning, SAST, Dockerfile/workflow linting, supply-chain checks, runtime regressions, and DAST.
 - CI guardrails to keep new app metrics under the `loki_vl_proxy_*` prefix.
 - Runbook-backed alerting assets for operational response.
 
-Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Patterns](docs/patterns.md), [Observability](docs/observability.md), [Testing](docs/testing.md)
+Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Patterns](docs/patterns.md), [Observability](docs/observability.md), [Testing](docs/testing.md), [Security](docs/security.md)
+
+## Security And Hardening
+
+- Read-focused API surface by default: `/push` blocked, delete gated, debug/admin disabled unless explicitly enabled.
+- Non-root runtime image plus read-only root filesystem and restricted chart/container security contexts.
+- Consistent hardening headers on the whole HTTP surface, including normal API responses, `404`s, and disabled admin/debug routes.
+- Layered CI security gates: `gitleaks`, `gosec`, `Trivy`, `actionlint`, `hadolint`, `OpenSSF Scorecard`, custom runtime regressions, OWASP ZAP, and curated `Nuclei`.
+- Proxy-specific security coverage for tenant isolation, cache boundaries, browser-origin enforcement on `/tail`, forwarded auth/header handling, and debug/admin exposure.
+
+Related docs: [Security](docs/security.md), [Security Policy](SECURITY.md), [Testing](docs/testing.md)
 
 ## UI Gallery
 

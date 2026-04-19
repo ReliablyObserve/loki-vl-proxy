@@ -54,6 +54,63 @@ go build -o loki-vl-proxy ./cmd/proxy
 PROXY_URL=http://127.0.0.1:3100 ./scripts/smoke-test.sh
 ```
 
+## Security Validation
+
+The repository now has a dedicated security lane in CI. These are the closest local equivalents when changing auth, tenant isolation, Dockerfile hardening, or workflow security.
+
+```bash
+# secret scanning
+docker run --rm -v "$PWD:/repo" -w /repo \
+  ghcr.io/gitleaks/gitleaks:v8.28.0 \
+  detect --source . --report-format sarif --report-path gitleaks.sarif --exit-code 1
+
+# Go SAST
+go install github.com/securego/gosec/v2/cmd/gosec@v2.22.7
+"$(go env GOPATH)/bin/gosec" \
+  -exclude=G104,G108,G115,G301,G302,G304,G306,G402,G404 \
+  -exclude-generated \
+  ./...
+
+# filesystem vuln/misconfig/secret scan
+docker run --rm -v "$PWD:/repo" -w /repo \
+  aquasec/trivy:0.69.3 \
+  fs . \
+  --ignorefile .trivyignore.yaml \
+  --scanners vuln,misconfig,secret \
+  --severity HIGH,CRITICAL \
+  --ignore-unfixed \
+  --exit-code 1 \
+  --skip-version-check
+
+# workflow + Dockerfile linting
+docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
+docker run --rm -i -v "$PWD/.hadolint.yaml:/root/.config/hadolint.yaml:ro" \
+  hadolint/hadolint:v2.12.0 < Dockerfile
+
+# supply-chain posture
+docker run --rm \
+  -e GITHUB_AUTH_TOKEN="${GITHUB_TOKEN}" \
+  gcr.io/openssf/scorecard:stable \
+  --repo="github.com/ReliablyObserve/Loki-VL-proxy" \
+  --format json \
+  --show-details > scorecard.json
+python3 scripts/ci/check_scorecard.py scorecard.json \
+  --min-overall 5.0 \
+  --require-check Dangerous-Workflow=10 \
+  --require-check Binary-Artifacts=10 \
+  --require-check CI-Tests=8 \
+  --require-check SAST=7
+
+# repo-specific runtime checks
+./scripts/ci/run_security_regressions.sh
+./scripts/ci/run_zap_scan.sh baseline
+./scripts/ci/run_nuclei_scan.sh
+```
+
+The scheduled heavy lane also runs longer fuzzing, image scanning, SBOM generation, broader `Semgrep`, and an OWASP ZAP active scan.
+
+Local ZAP baseline runs may still report `10049 Non-Storable Content` on intentional `404` discovery paths such as `/` or disabled `/debug/*` URLs. That output is expected visibility noise unless it points at a real user-facing route.
+
 ## Test Coverage by Category
 
 Exact counts move often. Treat the categories below as the stable map of what is covered; CI and PR reporting publish current counts and deltas.
@@ -71,6 +128,8 @@ Exact counts move often. Treat the categories below as the stable map of what is
 | OTLP pusher | 4 | Push, custom headers, error handling, payload structure |
 | Hardening | 4 | Query length limit, limit sanitization, security headers |
 | Middleware | 12 | Coalescing, rate limiting, circuit breaker |
+| Security CI static | Dedicated workflow | gitleaks, gosec, Trivy, actionlint, hadolint, Scorecard |
+| Security CI runtime | Dedicated workflow | custom regressions, ZAP baseline, curated nuclei |
 | Critical fixes | 30+ | Data race, binary operators, delete safeguards, without() |
 | Benchmarks | 10+ | Translation hot paths, Tier0 response-cache hits, and warm fleet shadow-copy reads |
 | E2E basic (Loki vs proxy) | 11 | Side-by-side API response comparison |
@@ -94,6 +153,7 @@ Recent PRs added targeted guards in areas that were previously flaky in live Gra
 | `internal/proxy/proxy_test.go` | Loki API contract tests, response format validation |
 | `internal/proxy/gaps_test.go` | Feature gap coverage tests |
 | `internal/proxy/hardening_test.go` | Security and input validation |
+| `cmd/proxy/main_test.go` | Global HTTP wrapper hardening, compression, and not-found edge-path protections |
 | `internal/proxy/tenant_test.go` | Multitenancy routing |
 | `internal/proxy/critical_fixes_test.go` | Data race, binary ops, delete endpoint, CB metrics |
 | `internal/translator/translator_test.go` | LogQL translation unit tests |
@@ -106,6 +166,9 @@ Recent PRs added targeted guards in areas that were previously flaky in live Gra
 | `internal/cache/peer_test.go` | L3 peer cache behavior, distribution, 3-peer shadow-copy efficiency, hot-index serving, and tenant-fair bounded read-ahead prefetch |
 | `internal/cache/disk_test.go` | L2 disk cache |
 | `internal/middleware/middleware_test.go` | Rate limiter, circuit breaker |
+| `scripts/ci/run_security_regressions.sh` | Repo-specific auth, tenant, cache, and hardening smoke gates used by CI |
+| `scripts/ci/run_zap_scan.sh` | ZAP baseline/active scan wrapper |
+| `scripts/ci/run_nuclei_scan.sh` | Curated nuclei HTTP security checks |
 | `test/e2e-compat/` | Docker-based Loki vs proxy comparison |
 | `test/e2e-compat/drilldown_compat_test.go` | Grafana Logs Drilldown resource contracts via Grafana datasource proxy |
 | `test/e2e-compat/explore_contract_test.go` | HTTP-level Explore contracts for line filters, parsers, direction, metric shape, `label_format`, invalid-query handling |

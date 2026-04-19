@@ -1332,12 +1332,31 @@ func (p *Proxy) GetMetrics() *metrics.Metrics { return p.metrics }
 // GetQueryTracker returns the query analytics tracker.
 func (p *Proxy) GetQueryTracker() *metrics.QueryTracker { return p.queryTracker }
 
-// securityHeaders wraps a handler with security response headers.
+func setSecurityHeaders(header http.Header) {
+	if strings.TrimSpace(header.Get("X-Content-Type-Options")) == "" {
+		header.Set("X-Content-Type-Options", "nosniff")
+	}
+	if strings.TrimSpace(header.Get("X-Frame-Options")) == "" {
+		header.Set("X-Frame-Options", "DENY")
+	}
+	if strings.TrimSpace(header.Get("Cross-Origin-Resource-Policy")) == "" {
+		header.Set("Cross-Origin-Resource-Policy", "same-origin")
+	}
+	if strings.TrimSpace(header.Get("Cache-Control")) == "" {
+		header.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	}
+	if strings.TrimSpace(header.Get("Pragma")) == "" {
+		header.Set("Pragma", "no-cache")
+	}
+	if strings.TrimSpace(header.Get("Expires")) == "" {
+		header.Set("Expires", "0")
+	}
+}
+
+// securityHeaders wraps a handler with baseline security response headers.
 func securityHeaders(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Cache-Control", "no-store")
+		setSecurityHeaders(w.Header())
 		h.ServeHTTP(w, r)
 	})
 }

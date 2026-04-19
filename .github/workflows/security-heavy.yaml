@@ -1,0 +1,151 @@
+name: Security Heavy
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * *"
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  image-and-sbom:
+    name: Heavy / image and sbom
+    runs-on: ubuntu-latest
+    env:
+      PROXY_IMAGE: loki-vl-proxy:security-heavy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=security-heavy-proxy
+          cache-to: type=gha,mode=max,scope=security-heavy-proxy
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ env.PROXY_IMAGE }}
+          exit-code: "1"
+          format: sarif
+          output: trivy-image.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          scanners: vuln,misconfig,secret
+
+      - name: Upload Trivy image SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.PROXY_IMAGE }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload image security artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: image-security
+          path: |
+            trivy-image.sarif
+            sbom.spdx.json
+
+  semgrep:
+    name: Heavy / semgrep
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: returntocorp/semgrep@v1
+        with:
+          config: >
+            p/default
+            p/dockerfile
+            p/github-actions
+            p/golang
+            p/owasp-top-ten
+            p/secrets
+
+  fuzz:
+    name: Heavy / fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.2"
+          cache: true
+
+      - name: Longer fuzzing
+        run: |
+          go test ./internal/proxy -run '^$' -fuzz=FuzzNormalizeMetadataPairsFromJSON -fuzztime=2m
+          go test ./internal/proxy -run '^$' -fuzz=FuzzMergeLokiQueryResponsesStructuredMetadataContract -fuzztime=2m
+          go test ./internal/proxy -run '^$' -fuzz=FuzzExtractLogPatterns -fuzztime=2m
+
+  dast:
+    name: Heavy / dast
+    runs-on: ubuntu-latest
+    env:
+      PROXY_IMAGE: loki-vl-proxy:security-heavy
+      PROXY_BASE_URL: http://127.0.0.1:3100
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.2"
+          cache: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=security-heavy-proxy
+          cache-to: type=gha,mode=max,scope=security-heavy-proxy
+
+      - name: Start e2e stack
+        working-directory: test/e2e-compat
+        run: |
+          docker compose up -d --no-build
+          ../../scripts/ci/wait_e2e_stack.sh 180
+
+      - name: Seed smoke data
+        run: go test -v -tags=e2e -run '^TestSetup_IngestLogs$' ./test/e2e-compat/
+
+      - name: ZAP active scan
+        run: ./scripts/ci/run_zap_scan.sh active
+
+      - name: Curated Nuclei scan
+        run: ./scripts/ci/run_nuclei_scan.sh
+
+      - name: Upload heavy dast artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: heavy-dast
+          path: |
+            security-reports/zap
+            security-reports/nuclei
+
+      - name: Tear down e2e stack
+        if: always()
+        working-directory: test/e2e-compat
+        run: docker compose down -v

@@ -882,10 +882,16 @@ func TestFeature_SecurityHeaders(t *testing.T) {
 		score.fail("security", fmt.Sprintf("expected DENY, got %q", v))
 	}
 
-	if v := resp.Header.Get("Cache-Control"); v == "no-store" {
-		score.pass("security", "Cache-Control: no-store")
+	if v := resp.Header.Get("Cache-Control"); strings.Contains(v, "no-store") {
+		score.pass("security", "Cache-Control includes no-store")
 	} else {
-		score.fail("security", fmt.Sprintf("expected no-store, got %q", v))
+		score.fail("security", fmt.Sprintf("expected Cache-Control to include no-store, got %q", v))
+	}
+
+	if v := resp.Header.Get("Cross-Origin-Resource-Policy"); v == "same-origin" {
+		score.pass("security", "Cross-Origin-Resource-Policy: same-origin")
+	} else {
+		score.fail("security", fmt.Sprintf("expected same-origin, got %q", v))
 	}
 
 	score.report(t)
