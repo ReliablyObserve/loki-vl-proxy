@@ -47,6 +47,68 @@ The only write-path exception is `/loki/api/v1/delete`, gated by strict safeguar
 - controlled forwarding of auth headers/cookies to backend
 - optional peer-cache shared-token protection via `-peer-auth-token`
 
+## CI Security Lanes
+
+The repository now treats security validation as its own layered test surface instead of burying it inside generic CI.
+
+### Fast PR Blockers
+
+Defined in `.github/workflows/security-pr.yaml`.
+
+- `gitleaks` for secret detection in the repository
+- `gosec` for Go-focused SAST on the proxy and related packages
+- `Trivy` filesystem scanning for vulnerabilities, misconfigurations, and secrets
+- `actionlint` for GitHub Actions workflow validation
+- `hadolint` for Dockerfile hygiene and hardening
+- `OpenSSF Scorecard` for repository and supply-chain posture
+
+This lane is supposed to fail quickly on issues that should never merge.
+
+### Runtime PR Security
+
+Also defined in `.github/workflows/security-pr.yaml`.
+
+- custom Go security regressions from `scripts/ci/run_security_regressions.sh`
+- OWASP ZAP baseline scan from `scripts/ci/run_zap_scan.sh baseline`
+
+This lane validates the running stack rather than just the source tree.
+
+### Heavy Scheduled Security
+
+Defined in `.github/workflows/security-heavy.yaml`.
+
+- Trivy image scan against the built runtime image
+- SBOM generation for downstream review and artifact retention
+- longer fuzz runs
+- broader `Semgrep` coverage
+- OWASP ZAP active scan
+- curated `Nuclei` templates from `security/nuclei/`
+
+This lane is intentionally heavier and is meant for scheduled or manual deep validation rather than fast PR feedback.
+
+## Repository-Specific Threat Model
+
+Generic scanners are useful here, but the highest-risk bugs for this project are still proxy-specific:
+
+- tenant isolation around `X-Scope-OrgID` and any tenant-derived cache keys
+- cache isolation across memory, disk, and peer cache layers
+- metadata, label, and field enumeration leaks between tenants
+- auth-boundary confusion across downstream requests, upstream requests, and forwarded headers/cookies
+- `/tail` browser-origin enforcement and websocket handling
+- oversized bodies, oversized headers, huge query windows, and malformed LogQL payloads
+- debug/admin exposure on non-loopback listeners
+
+The custom regression suite is biased toward these risks rather than only generic scanner output.
+
+## Container And Chart Posture
+
+- the runtime image now runs as a non-root user
+- the runtime image keeps a read-only root filesystem
+- Helm drops all capabilities and blocks privilege escalation
+- the chart can optionally mount host `/proc` read-only for richer process/system metrics
+
+The host `/proc` mount is intentional. Trivy would normally flag this, so CI uses a narrow `.trivyignore.yaml` exception for the specific chart template path rather than disabling the broader class of checks.
+
 ## Admin and Debug Endpoints
 
 The following are disabled by default and should stay restricted:
@@ -70,9 +132,49 @@ Enable only for controlled troubleshooting windows. On non-loopback listen addre
 - `-peer-auth-token` when peer cache crosses network trust boundaries
 - avoid exposing debug/admin endpoints publicly
 
+## Local Security Validation
+
+Useful local commands while working on hardening or CI changes:
+
+```bash
+# repo secret scan
+docker run --rm -v "$PWD:/repo" -w /repo \
+  ghcr.io/gitleaks/gitleaks:v8.28.0 \
+  detect --source . --report-format sarif --report-path gitleaks.sarif --exit-code 1
+
+# Go SAST
+go install github.com/securego/gosec/v2/cmd/gosec@v2.22.7
+"$(go env GOPATH)/bin/gosec" \
+  -exclude=G104,G108,G115,G301,G302,G304,G306,G402,G404 \
+  -exclude-generated \
+  ./...
+
+# filesystem scan with the same allowlist CI uses
+docker run --rm -v "$PWD:/repo" -w /repo \
+  aquasec/trivy:0.69.3 \
+  fs . \
+  --ignorefile .trivyignore.yaml \
+  --scanners vuln,misconfig,secret \
+  --severity HIGH,CRITICAL \
+  --ignore-unfixed \
+  --exit-code 1 \
+  --skip-version-check
+
+# workflow and Dockerfile linting
+docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
+docker run --rm -i -v "$PWD/.hadolint.yaml:/root/.config/hadolint.yaml:ro" \
+  hadolint/hadolint:v2.12.0 < Dockerfile
+
+# repo-specific runtime checks
+./scripts/ci/run_security_regressions.sh
+./scripts/ci/run_zap_scan.sh baseline
+./scripts/ci/run_nuclei_scan.sh
+```
+
 ## Related Docs
 
 - [Configuration](configuration.md)
+- [Testing](testing.md)
 - [API Reference](api-reference.md)
 - [Observability](observability.md)
 - [Known Issues](KNOWN_ISSUES.md)

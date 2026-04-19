@@ -225,9 +225,11 @@ jobs:
           go test ./... -coverprofile=coverage.out -count=1 >/dev/null 2>&1
           COV=$(go tool cover -func=coverage.out | tail -1 | awk '{print $NF}' | tr -d '%')
           CODE_LINES=$(git ls-files '*.go' | xargs wc -l | tail -1 | awk '{print $1}')
-          echo "tests=${TESTS}" >> "$GITHUB_OUTPUT"
-          echo "coverage_pct=${COV}" >> "$GITHUB_OUTPUT"
-          echo "code_lines=${CODE_LINES}" >> "$GITHUB_OUTPUT"
+          {
+            echo "tests=${TESTS}"
+            echo "coverage_pct=${COV}"
+            echo "code_lines=${CODE_LINES}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Helm lint
         run: helm lint charts/loki-vl-proxy/
@@ -274,6 +276,7 @@ jobs:
             echo "tag=${TAG}"
             echo "version=${VERSION}"
             echo "prev_tag=${PREV_TAG}"
+            echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo "notes_file=${NOTES_FILE}"
           } >> "$GITHUB_OUTPUT"
       - name: Create release tag
@@ -383,7 +386,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
             REVISION=${{ github.sha }}
-            BUILD_TIME=${{ github.run_started_at }}
+            BUILD_TIME=${{ steps.meta.outputs.build_time }}
           tags: ${{ steps.image-tags.outputs.tags }}
           labels: |
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}

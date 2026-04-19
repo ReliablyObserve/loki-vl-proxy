@@ -1,0 +1,5 @@
+/loki/api/v1/labels
+/loki/api/v1/label/app/values
+/loki/api/v1/query_range?query=%7Bapp%3D%22e2e-test%22%7D&limit=10&start=1&end=2
+/debug/pprof/
+/debug/queries

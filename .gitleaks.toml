@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "intentional secret fixtures for redaction tests"
+paths = [
+  '''internal/proxy/redact_test\.go''',
+]

@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - query-range/cache: keep window fragment results and prefilter hit estimates local to the serving pod instead of distributing those short-lived scratch entries through peer-cache write-through, reducing avoidable owner hot spots, network churn, and disk activity during Drilldown or Explore fanout.
 
+### Features
+
+- ci/security: add layered GitHub Actions security lanes with fast PR blockers for secrets, SAST, supply-chain, workflow, and container linting, plus runtime ZAP coverage on PRs and deeper scheduled scanning with SBOM, Semgrep, fuzzing, and curated Nuclei checks.
+
 ## [1.8.1] - 2026-04-19
 
 ### Bug Fixes

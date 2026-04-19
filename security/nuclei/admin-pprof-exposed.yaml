@@ -1,0 +1,21 @@
+id: loki-vl-proxy-admin-pprof-exposed
+
+info:
+  name: Loki-VL-proxy pprof endpoint exposed without admin auth
+  author: codex
+  severity: high
+  tags: loki-vl-proxy,admin,pprof
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/debug/pprof/"
+    matchers-condition: and
+    matchers:
+      - type: status
+        status:
+          - 200
+      - type: word
+        part: body
+        words:
+          - "profile"

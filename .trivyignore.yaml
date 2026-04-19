@@ -1,0 +1,4 @@
+misconfigurations:
+  - id: KSV-0121
+    paths:
+      - charts/loki-vl-proxy/templates/deployment.yaml
