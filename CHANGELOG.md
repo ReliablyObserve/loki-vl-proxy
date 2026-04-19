@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.9.2] - 2026-04-19
+
 ### Bug Fixes
 
 - cache/read-path: keep full `query_range`, label, volume, and detected-* response caches local to the serving pod when those handlers only read cache through L1 `GetWithTTL`, avoiding redundant disk writes and peer write-through churn that do not provide any fallback benefit.
