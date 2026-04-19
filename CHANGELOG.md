@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-04-19
+
 ### Bug Fixes
 
 - query-range/cache: keep window fragment results and prefilter hit estimates local to the serving pod instead of distributing those short-lived scratch entries through peer-cache write-through, reducing avoidable owner hot spots, network churn, and disk activity during Drilldown or Explore fanout.
