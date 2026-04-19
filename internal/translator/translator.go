@@ -1616,6 +1616,12 @@ func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
 			parts = append(parts, fmt.Sprintf(`%s%s%s`, name, op, formattedValue))
 		}
 	}
+	if value == "" && !isRegex {
+		if neg {
+			return "(" + strings.Join(parts, " OR ") + ")"
+		}
+		return strings.Join(parts, " ")
+	}
 	if neg {
 		return strings.Join(parts, " ")
 	}

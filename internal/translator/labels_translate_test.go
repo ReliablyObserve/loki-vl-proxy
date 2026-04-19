@@ -84,7 +84,17 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "non empty app matcher",
 			logql: `{app!="",service_name!=""}`,
-			want:  `app:!"" service_name:!"" "service.name":!"" service:!"" app:!"" application:!"" app_name:!"" name:!"" app_kubernetes_io_name:!"" container:!"" container_name:!"" "k8s.container.name":!"" k8s_container_name:!"" component:!"" workload:!"" job:!"" "k8s.job.name":!"" k8s_job_name:!""`,
+			want:  `app:!"" (service_name:!"" OR "service.name":!"" OR service:!"" OR app:!"" OR application:!"" OR app_name:!"" OR name:!"" OR app_kubernetes_io_name:!"" OR container:!"" OR container_name:!"" OR "k8s.container.name":!"" OR k8s_container_name:!"" OR component:!"" OR workload:!"" OR job:!"" OR "k8s.job.name":!"" OR k8s_job_name:!"")`,
+		},
+		{
+			name:  "synthetic empty service_name requires all source fields empty",
+			logql: `{service_name=""}`,
+			want:  `service_name:="" "service.name":="" service:="" app:="" application:="" app_name:="" name:="" app_kubernetes_io_name:="" container:="" container_name:="" "k8s.container.name":="" k8s_container_name:="" component:="" workload:="" job:="" "k8s.job.name":="" k8s_job_name:=""`,
+		},
+		{
+			name:  "synthetic non empty service_name uses any non empty source field",
+			logql: `{service_name!=""}`,
+			want:  `(service_name:!"" OR "service.name":!"" OR service:!"" OR app:!"" OR application:!"" OR app_name:!"" OR name:!"" OR app_kubernetes_io_name:!"" OR container:!"" OR container_name:!"" OR "k8s.container.name":!"" OR k8s_container_name:!"" OR component:!"" OR workload:!"" OR job:!"" OR "k8s.job.name":!"" OR k8s_job_name:!"")`,
 		},
 		{
 			name:  "parsed field non empty filter",

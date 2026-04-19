@@ -1332,6 +1332,84 @@ func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 	}
 }
 
+func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAnyMatch(t *testing.T) {
+	var statsQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			statsQuery = r.Form.Get("query")
+			if strings.Contains(statsQuery, `service_name:!"" "service.name":!""`) {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"status": "success",
+					"data": map[string]interface{}{
+						"resultType": "matrix",
+						"result":     []map[string]interface{}{},
+					},
+				})
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "success",
+				"data": map[string]interface{}{
+					"resultType": "matrix",
+					"result": []map[string]interface{}{
+						{
+							"metric": map[string]string{"service.name": "argocd"},
+							"values": [][]interface{}{{float64(1712538000), "42"}},
+						},
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      cache.New(60*time.Second, 1000),
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	q := url.Values{}
+	q.Set("query", `sum(count_over_time({service_name="argocd",service_name != ""}[5s])) by (service_name)`)
+	q.Set("start", "2026-04-04T17:00:00Z")
+	q.Set("end", "2026-04-04T17:30:00Z")
+	q.Set("step", "300")
+	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
+	p.handleQueryRange(w, r)
+
+	if statsQuery == "" {
+		t.Fatal("expected stats query_range request to be issued")
+	}
+	if !strings.Contains(statsQuery, `(service_name:!"" OR "service.name":!""`) {
+		t.Fatalf("expected synthetic service_name non-empty matcher to use OR across source fields, got %q", statsQuery)
+	}
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsObject(t, resp)
+	result := assertResultIsArray(t, data)
+	if len(result) != 1 {
+		t.Fatalf("expected one matrix series, got %v", result)
+	}
+	metric := result[0].(map[string]interface{})["metric"].(map[string]interface{})
+	if metric["service_name"] != "argocd" {
+		t.Fatalf("expected translated service_name label in metric response, got %v", metric)
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
