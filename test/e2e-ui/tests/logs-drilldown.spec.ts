@@ -29,7 +29,7 @@ async function waitForDrilldownDetails(page: Page) {
   await expect(page.getByRole("combobox", { name: "Filter by fields" })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByRole("tab", { name: /Logs\d+/ })).toBeVisible({
+  await expect(page.getByRole("tab", { name: /^Logs/i }).first()).toBeVisible({
     timeout: 30_000,
   });
 }
