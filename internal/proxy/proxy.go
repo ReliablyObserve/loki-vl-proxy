@@ -8002,10 +8002,8 @@ func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params ur
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
-	if p.proxyStatsQueryRangeWindowed(w, r, logsqlQuery) {
-		return
-	}
-
+	// Keep metric query_range as a single backend request. Window splitting and
+	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
@@ -8033,115 +8031,6 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	w.Write(wrapAsLokiResponse(body, "matrix"))
 }
 
-func (p *Proxy) proxyStatsQueryRangeWindowed(w http.ResponseWriter, r *http.Request, logsqlQuery string) bool {
-	if !p.queryRangeWindowing {
-		return false
-	}
-
-	startNs, endNs, ok := parseLokiTimeRangeToUnixNano(r.FormValue("start"), r.FormValue("end"))
-	if !ok {
-		return false
-	}
-
-	windows := splitQueryRangeWindowsWithOptions(
-		startNs,
-		endNs,
-		p.queryRangeSplitInterval,
-		"forward",
-		p.queryRangeAlignWindows,
-	)
-	if len(windows) <= 1 {
-		return false
-	}
-
-	p.metrics.RecordQueryRangeWindowCount(len(windows))
-	mergedBody, err := p.fetchAndMergeStatsQueryRangeWindows(r.Context(), r, logsqlQuery, windows)
-	if err != nil {
-		p.writeError(w, statusFromQueryRangeWindowErr(err), err.Error())
-		return true
-	}
-
-	mergedBody = p.translateStatsResponseLabelsWithContext(r.Context(), mergedBody, r.FormValue("query"))
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(wrapAsLokiResponse(mergedBody, "matrix"))
-	return true
-}
-
-func (p *Proxy) fetchAndMergeStatsQueryRangeWindows(ctx context.Context, r *http.Request, logsqlQuery string, windows []queryRangeWindow) ([]byte, error) {
-	bodies := make([][]byte, 0, len(windows))
-	for _, window := range windows {
-		body, err := p.fetchStatsQueryRangeWindow(ctx, r, logsqlQuery, window)
-		if err != nil {
-			return nil, err
-		}
-		bodies = append(bodies, body)
-	}
-	return mergeStatsQueryRangeResponses(bodies)
-}
-
-func (p *Proxy) fetchStatsQueryRangeWindow(ctx context.Context, r *http.Request, logsqlQuery string, window queryRangeWindow) ([]byte, error) {
-	fetchCtx := ctx
-	cancel := func() {}
-	if p.queryRangeWindowTimeout > 0 {
-		fetchCtx, cancel = context.WithTimeout(ctx, p.queryRangeWindowTimeout)
-	}
-	defer cancel()
-
-	params := buildStatsQueryRangeParams(
-		logsqlQuery,
-		strconv.FormatInt(window.startNs, 10),
-		strconv.FormatInt(window.endNs, 10),
-		r.FormValue("step"),
-	)
-
-	for attempt := 1; attempt <= queryRangeWindowFetchAttempts; attempt++ {
-		fetchStart := time.Now()
-		resp, err := p.vlPost(fetchCtx, "/select/logsql/stats_query_range", params)
-		fetchDuration := time.Since(fetchStart)
-		p.metrics.RecordQueryRangeWindowFetchDuration(fetchDuration)
-
-		if err == nil {
-			body, readErr := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-			_ = resp.Body.Close()
-			if readErr != nil {
-				err = readErr
-			} else if resp.StatusCode < http.StatusBadRequest {
-				body = trimStatsQueryRangeResponseToEnd(body, strconv.FormatInt(window.endNs, 10))
-				p.observeQueryRangeWindowFetch(fetchDuration, false)
-				return body, nil
-			} else {
-				msg := strings.TrimSpace(string(body))
-				if msg == "" {
-					msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
-				}
-				err = &queryRangeWindowHTTPError{status: resp.StatusCode, msg: msg}
-			}
-		}
-
-		p.observeQueryRangeWindowFetch(fetchDuration, true)
-		if attempt >= queryRangeWindowFetchAttempts || !shouldRetryQueryRangeWindow(err) {
-			return nil, err
-		}
-
-		p.metrics.RecordQueryRangeWindowRetry()
-		backoff := queryRangeWindowRetryBackoff(attempt)
-		p.log.Warn(
-			"stats_query_range window fetch retrying",
-			"attempt", attempt+1,
-			"max_attempts", queryRangeWindowFetchAttempts,
-			"backoff", backoff.String(),
-			"error", err,
-		)
-		select {
-		case <-fetchCtx.Done():
-			return nil, fetchCtx.Err()
-		case <-time.After(backoff):
-		}
-	}
-
-	return nil, errors.New("stats_query_range window fetch failed")
-}
-
 type statsQueryRangeSeries struct {
 	Metric map[string]interface{} `json:"metric"`
 	Values [][]interface{}        `json:"values"`
@@ -8152,85 +8041,6 @@ type statsQueryRangeResponse struct {
 		Result []statsQueryRangeSeries `json:"result"`
 	} `json:"data"`
 	Results []statsQueryRangeSeries `json:"results"`
-}
-
-type mergedStatsQueryRangeSeries struct {
-	metric map[string]interface{}
-	values [][]interface{}
-	seen   map[string]struct{}
-}
-
-func mergeStatsQueryRangeResponses(bodies [][]byte) ([]byte, error) {
-	seriesByKey := make(map[string]*mergedStatsQueryRangeSeries, len(bodies))
-	keys := make([]string, 0, len(bodies))
-
-	for _, body := range bodies {
-		var resp statsQueryRangeResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, err
-		}
-
-		results := resp.Results
-		if len(results) == 0 {
-			results = resp.Data.Result
-		}
-		for _, series := range results {
-			key := metricKey(series.Metric)
-			merged, ok := seriesByKey[key]
-			if !ok {
-				merged = &mergedStatsQueryRangeSeries{
-					metric: cloneStatsQueryRangeMetric(series.Metric),
-					values: make([][]interface{}, 0, len(series.Values)),
-					seen:   make(map[string]struct{}, len(series.Values)),
-				}
-				seriesByKey[key] = merged
-				keys = append(keys, key)
-			}
-			for _, point := range series.Values {
-				pointKey := statsQueryRangePointKey(point)
-				if _, exists := merged.seen[pointKey]; exists {
-					continue
-				}
-				merged.seen[pointKey] = struct{}{}
-				merged.values = append(merged.values, cloneStatsQueryRangePoint(point))
-			}
-		}
-	}
-
-	sort.Strings(keys)
-	results := make([]map[string]interface{}, 0, len(keys))
-	for _, key := range keys {
-		merged := seriesByKey[key]
-		sort.Slice(merged.values, func(i, j int) bool {
-			return statsQueryRangePointTimestamp(merged.values[i]) < statsQueryRangePointTimestamp(merged.values[j])
-		})
-		results = append(results, map[string]interface{}{
-			"metric": merged.metric,
-			"values": merged.values,
-		})
-	}
-
-	return json.Marshal(map[string]interface{}{
-		"resultType": "matrix",
-		"result":     results,
-	})
-}
-
-func cloneStatsQueryRangeMetric(metric map[string]interface{}) map[string]interface{} {
-	if len(metric) == 0 {
-		return map[string]interface{}{}
-	}
-	cloned := make(map[string]interface{}, len(metric))
-	for k, v := range metric {
-		cloned[k] = v
-	}
-	return cloned
-}
-
-func cloneStatsQueryRangePoint(point []interface{}) []interface{} {
-	cloned := make([]interface{}, len(point))
-	copy(cloned, point)
-	return cloned
 }
 
 func buildStatsQueryRangeParams(logsqlQuery, startRaw, endRaw, stepRaw string) url.Values {
@@ -8308,39 +8118,6 @@ func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
 		return body
 	}
 	return encoded
-}
-
-func statsQueryRangePointKey(point []interface{}) string {
-	if len(point) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("%v", point[0])
-}
-
-func statsQueryRangePointTimestamp(point []interface{}) float64 {
-	if len(point) == 0 {
-		return 0
-	}
-	switch ts := point[0].(type) {
-	case float64:
-		return ts
-	case float32:
-		return float64(ts)
-	case int:
-		return float64(ts)
-	case int64:
-		return float64(ts)
-	case int32:
-		return float64(ts)
-	case json.Number:
-		value, _ := ts.Float64()
-		return value
-	case string:
-		value, _ := strconv.ParseFloat(ts, 64)
-		return value
-	default:
-		return 0
-	}
 }
 
 func statsQueryRangePointUnixNano(point []interface{}) int64 {

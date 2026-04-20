@@ -459,7 +459,7 @@ func TestContract_QueryRange_MatrixFormat(t *testing.T) {
 	assertLokiSuccess(t, resp)
 }
 
-func TestContract_QueryRange_MatrixFormat_SplitsLongRangeStatsQueries(t *testing.T) {
+func TestContract_QueryRange_MatrixFormat_DoesNotSplitLongRangeStatsQueries(t *testing.T) {
 	var (
 		mu             sync.Mutex
 		receivedStarts []int64
@@ -482,10 +482,13 @@ func TestContract_QueryRange_MatrixFormat_SplitsLongRangeStatsQueries(t *testing
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"results": []map[string]interface{}{
-				{
-					"metric": map[string]string{"app": "nginx"},
-					"values": [][]interface{}{{start, strconv.FormatInt(start, 10)}},
+			"data": map[string]interface{}{
+				"resultType": "matrix",
+				"result": []map[string]interface{}{
+					{
+						"metric": map[string]string{"app": "nginx"},
+						"values": [][]interface{}{{start, strconv.FormatInt(start, 10)}},
+					},
 				},
 			},
 		})
@@ -507,8 +510,8 @@ func TestContract_QueryRange_MatrixFormat_SplitsLongRangeStatsQueries(t *testing
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 response, got %d: %s", w.Code, w.Body.String())
 	}
-	if len(receivedStarts) < 2 {
-		t.Fatalf("expected split stats_query_range fanout, got %d calls", len(receivedStarts))
+	if len(receivedStarts) != 1 {
+		t.Fatalf("expected one stats_query_range call, got %d", len(receivedStarts))
 	}
 
 	var resp struct {
@@ -529,22 +532,11 @@ func TestContract_QueryRange_MatrixFormat_SplitsLongRangeStatsQueries(t *testing
 	if len(resp.Data.Result) != 1 {
 		t.Fatalf("expected single merged series, got %#v", resp.Data.Result)
 	}
-	if got := len(resp.Data.Result[0].Values); got != len(receivedStarts) {
-		t.Fatalf("expected %d merged points, got %d", len(receivedStarts), got)
+	if got := len(resp.Data.Result[0].Values); got != 1 {
+		t.Fatalf("expected backend matrix payload to remain intact, got %d points", got)
 	}
-	prev := -1.0
-	for _, point := range resp.Data.Result[0].Values {
-		if len(point) < 2 {
-			t.Fatalf("expected matrix point pair, got %#v", point)
-		}
-		ts, ok := point[0].(float64)
-		if !ok {
-			t.Fatalf("expected numeric timestamp, got %T (%#v)", point[0], point[0])
-		}
-		if ts <= prev {
-			t.Fatalf("expected strictly increasing merged timestamps, got %#v", resp.Data.Result[0].Values)
-		}
-		prev = ts
+	if got := resp.Data.Result[0].Values[0][0]; got != float64(1705312200) {
+		t.Fatalf("expected untouched backend point timestamp, got %#v", got)
 	}
 }
 

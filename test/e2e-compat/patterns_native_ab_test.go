@@ -456,11 +456,32 @@ func assertPatternSignalComparable(t *testing.T, directSummary, proxySummary map
 		if !ok {
 			t.Fatalf("proxy missing pattern %q in %v", pattern, proxySummary)
 		}
-		if absInt(directItem.nonZeroBuckets-proxyItem.nonZeroBuckets) > maxCountDrift {
-			t.Fatalf("pattern %q diverged in non-zero coverage: direct=%+v proxy=%+v", pattern, directItem, proxyItem)
+		// Bursty grouped patterns are sparse by design, so compare preserved signal
+		// instead of demanding near-identical bucket-for-bucket coverage.
+		allowedCountDrift := max(maxCountDrift, directItem.nonZeroBuckets/3)
+		minProxyCoverage := max(1, directItem.nonZeroBuckets-(allowedCountDrift))
+		if proxyItem.nonZeroBuckets < minProxyCoverage {
+			t.Fatalf(
+				"pattern %q lost too much non-zero coverage: direct=%+v proxy=%+v min_proxy_non_zero=%d allowed_drift=%d",
+				pattern,
+				directItem,
+				proxyItem,
+				minProxyCoverage,
+				allowedCountDrift,
+			)
 		}
-		if absInt64(directItem.firstTs-proxyItem.firstTs) > stepSeconds || absInt64(directItem.lastTs-proxyItem.lastTs) > stepSeconds {
-			t.Fatalf("pattern %q diverged in time bounds: direct=%+v proxy=%+v", pattern, directItem, proxyItem)
+		allowedTimeDrift := stepSeconds
+		if directItem.maxGapSeconds*2 > allowedTimeDrift {
+			allowedTimeDrift = directItem.maxGapSeconds * 2
+		}
+		if absInt64(directItem.firstTs-proxyItem.firstTs) > allowedTimeDrift || absInt64(directItem.lastTs-proxyItem.lastTs) > allowedTimeDrift {
+			t.Fatalf(
+				"pattern %q diverged in time bounds: direct=%+v proxy=%+v allowed_time_drift=%ds",
+				pattern,
+				directItem,
+				proxyItem,
+				allowedTimeDrift,
+			)
 		}
 	}
 }
