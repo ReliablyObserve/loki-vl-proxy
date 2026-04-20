@@ -100,75 +100,75 @@ spec:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
           args:
             {{- range $key, $value := .Values.extraArgs }}
-            - "-{{ $key }}={{ $value }}"
+            - {{ printf "-%s=%v" $key $value | quote }}
             {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "deployment-environment")) (ne (default "" (get $observability "deploymentEnvironment")) "") }}
-            - "-deployment-environment={{ get $observability "deploymentEnvironment" }}"
+            - {{ printf "-deployment-environment=%v" (get $observability "deploymentEnvironment") | quote }}
             {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "otel-service-name")) (ne (default "" (get $observabilityOTEL "serviceName")) "") }}
-            - "-otel-service-name={{ get $observabilityOTEL "serviceName" }}"
+            - {{ printf "-otel-service-name=%v" (get $observabilityOTEL "serviceName") | quote }}
             {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "otel-service-namespace")) (ne (default "" (get $observabilityOTEL "serviceNamespace")) "") }}
-            - "-otel-service-namespace={{ get $observabilityOTEL "serviceNamespace" }}"
+            - {{ printf "-otel-service-namespace=%v" (get $observabilityOTEL "serviceNamespace") | quote }}
             {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "otel-service-instance-id")) (ne (default "" (get $observabilityOTEL "serviceInstanceId")) "") }}
-            - "-otel-service-instance-id={{ get $observabilityOTEL "serviceInstanceId" }}"
+            - {{ printf "-otel-service-instance-id=%v" (get $observabilityOTEL "serviceInstanceId") | quote }}
             {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "otlp-endpoint")) (ne (default "" (get $observabilityOTLP "endpoint")) "") }}
-            - "-otlp-endpoint={{ get $observabilityOTLP "endpoint" }}"
+            - {{ printf "-otlp-endpoint=%v" (get $observabilityOTLP "endpoint") | quote }}
             {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "otlp-interval")) (ne (default "" (get $observabilityOTLP "interval")) "") }}
-            - "-otlp-interval={{ get $observabilityOTLP "interval" }}"
+            - {{ printf "-otlp-interval=%v" (get $observabilityOTLP "interval") | quote }}
             {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "otlp-compression")) (ne (default "" (get $observabilityOTLP "compression")) "") }}
-            - "-otlp-compression={{ get $observabilityOTLP "compression" }}"
+            - {{ printf "-otlp-compression=%v" (get $observabilityOTLP "compression") | quote }}
             {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "otlp-timeout")) (ne (default "" (get $observabilityOTLP "timeout")) "") }}
-            - "-otlp-timeout={{ get $observabilityOTLP "timeout" }}"
+            - {{ printf "-otlp-timeout=%v" (get $observabilityOTLP "timeout") | quote }}
             {{- end }}
             {{- if and (not (hasKey .Values.extraArgs "otlp-headers")) (ne (default "" (get $observabilityOTLP "headers")) "") }}
-            - "-otlp-headers={{ get $observabilityOTLP "headers" }}"
+            - {{ printf "-otlp-headers=%v" (get $observabilityOTLP "headers") | quote }}
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "otlp-tls-skip-verify") }}
-            - "-otlp-tls-skip-verify={{ ternary "true" "false" (default false (get $observabilityOTLP "tlsSkipVerify")) }}"
+            - {{ printf "-otlp-tls-skip-verify=%s" (ternary "true" "false" (default false (get $observabilityOTLP "tlsSkipVerify"))) | quote }}
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "metrics.max-tenants") }}
-            - "-metrics.max-tenants={{ default 256 (get $observabilityMetrics "maxTenants") }}"
+            - {{ printf "-metrics.max-tenants=%v" (default 256 (get $observabilityMetrics "maxTenants")) | quote }}
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "metrics.max-clients") }}
-            - "-metrics.max-clients={{ default 256 (get $observabilityMetrics "maxClients") }}"
+            - {{ printf "-metrics.max-clients=%v" (default 256 (get $observabilityMetrics "maxClients")) | quote }}
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "metrics.trust-proxy-headers") }}
-            - "-metrics.trust-proxy-headers={{ ternary "true" "false" (default false (get $observabilityMetrics "trustProxyHeaders")) }}"
+            - {{ printf "-metrics.trust-proxy-headers=%s" (ternary "true" "false" (default false (get $observabilityMetrics "trustProxyHeaders"))) | quote }}
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "metrics.export-sensitive-labels") }}
-            - "-metrics.export-sensitive-labels={{ ternary "true" "false" (default false (get $observabilityMetrics "exportSensitiveLabels")) }}"
+            - {{ printf "-metrics.export-sensitive-labels=%s" (ternary "true" "false" (default false (get $observabilityMetrics "exportSensitiveLabels"))) | quote }}
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "server.register-instrumentation") }}
-            - "-server.register-instrumentation={{ ternary "true" "false" (default true (get $observabilityServer "registerInstrumentation")) }}"
+            - {{ printf "-server.register-instrumentation=%s" (ternary "true" "false" (default true (get $observabilityServer "registerInstrumentation"))) | quote }}
             {{- end }}
             {{- if not (hasKey .Values.extraArgs "server.metrics-max-concurrency") }}
-            - "-server.metrics-max-concurrency={{ default 1 (get $observabilityServer "metricsMaxConcurrency") }}"
+            - {{ printf "-server.metrics-max-concurrency=%v" (default 1 (get $observabilityServer "metricsMaxConcurrency")) | quote }}
             {{- end }}
             {{- if and $hostProcEnabled (not (hasKey .Values.extraArgs "proc-root")) }}
-            - "-proc-root={{ $hostProcMountPath }}"
+            - {{ printf "-proc-root=%s" $hostProcMountPath | quote }}
             {{- end }}
             {{- if and .Values.persistence.enabled (not (hasKey .Values.extraArgs "disk-cache-path")) }}
-            - "-disk-cache-path={{ include "loki-vl-proxy.diskCachePath" . }}"
+            - {{ printf "-disk-cache-path=%s" (include "loki-vl-proxy.diskCachePath" .) | quote }}
             {{- end }}
             {{- if and (gt (len .Values.patternsCustom.inline) 0) (not (hasKey .Values.extraArgs "patterns-custom")) }}
-            - '-patterns-custom={{ toJson .Values.patternsCustom.inline }}'
+            - {{ printf "-patterns-custom=%s" (toJson .Values.patternsCustom.inline) | quote }}
             {{- end }}
             {{- if and $customPatternsFileEnabled (not (hasKey .Values.extraArgs "patterns-custom-file")) }}
-            - "-patterns-custom-file={{ $customPatternsFilePath }}"
+            - {{ printf "-patterns-custom-file=%s" $customPatternsFilePath | quote }}
             {{- end }}
             {{- if .Values.peerCache.enabled }}
-            - "-peer-self=$(POD_IP):3100"
-            - "-peer-discovery={{ .Values.peerCache.discovery }}"
+            - {{ "-peer-self=$(POD_IP):3100" | quote }}
+            - {{ printf "-peer-discovery=%s" .Values.peerCache.discovery | quote }}
             {{- if eq .Values.peerCache.discovery "dns" }}
-            - "-peer-dns={{ include "loki-vl-proxy.peerServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local"
+            - {{ printf "-peer-dns=%s.%s.svc.cluster.local" (include "loki-vl-proxy.peerServiceName" .) .Release.Namespace | quote }}
             {{- else if eq .Values.peerCache.discovery "static" }}
-            - "-peer-static={{ join "," .Values.peerCache.peers }}"
+            - {{ printf "-peer-static=%s" (join "," .Values.peerCache.peers) | quote }}
             {{- end }}
             {{- end }}
           {{- if or .Values.peerCache.enabled .Values.env $goMemLimitValue $injectOTELFromPod }}

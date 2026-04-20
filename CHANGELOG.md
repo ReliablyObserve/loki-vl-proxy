@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- chart/helm: quote rendered container args in the chart deployment template so values containing JSON, commas, colons, or embedded delimiters survive Helm rendering unchanged instead of being split or reinterpreted by YAML parsing.
+
+### Tests
+
+- chart/ci: add a quoted-args Helm template regression case covering structured `extraArgs` values such as auth pairs, field-mapping JSON, and tenant limit JSON blobs.
+
 ## [1.10.0] - 2026-04-20
 
 ### Bug Fixes
