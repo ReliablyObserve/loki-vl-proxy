@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- cache/tiering: move helper/read caches onto shared fresh reads with local-memory plus local-disk persistence, keep stale fallback local-first, and expose per-tier cache lookup metrics.
+
+### Tests
+
+- cache/tiering: add regression coverage for TTL-aware disk fresh/stale reads, shared L2 promotion into L1, and helper cache locality.
+
 ## [1.9.6] - 2026-04-20
 
 ### Bug Fixes
