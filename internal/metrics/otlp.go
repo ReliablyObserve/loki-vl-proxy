@@ -269,6 +269,7 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 		p.gaugeMetric("loki_vl_proxy_uptime_seconds", "Proxy uptime.", "s", p.gaugeDP("loki_vl_proxy_uptime_seconds", time.Since(p.metrics.startTime).Seconds(), now)),
 		p.gaugeMetric("loki_vl_proxy_active_requests", "Current in-flight requests.", "{request}", p.gaugeDP("loki_vl_proxy_active_requests", float64(p.metrics.activeRequests.Load()), now)),
 	)
+	metrics = append(metrics, p.cacheTierMetrics(now)...)
 
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
@@ -323,6 +324,67 @@ func (p *OTLPPusher) buildPayload() map[string]interface{} {
 				},
 			},
 		},
+	}
+}
+
+func (p *OTLPPusher) cacheTierMetrics(now int64) []map[string]interface{} {
+	stats, ok := p.metrics.cacheStatsSnapshot()
+	if !ok {
+		return nil
+	}
+	return []map[string]interface{}{
+		p.sumMetric(
+			"loki_vl_proxy_cache_tier_requests_total",
+			"Cache tier lookup attempts by tier.",
+			"",
+			p.counterDP("loki_vl_proxy_cache_tier_requests_total", stats.L1.Requests, now, attr("tier", "l1_memory")),
+			p.counterDP("loki_vl_proxy_cache_tier_requests_total", stats.L2.Requests, now, attr("tier", "l2_disk")),
+			p.counterDP("loki_vl_proxy_cache_tier_requests_total", stats.L3.Requests, now, attr("tier", "l3_peer")),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_cache_tier_hits_total",
+			"Cache hits by tier.",
+			"",
+			p.counterDP("loki_vl_proxy_cache_tier_hits_total", stats.L1.Hits, now, attr("tier", "l1_memory")),
+			p.counterDP("loki_vl_proxy_cache_tier_hits_total", stats.L2.Hits, now, attr("tier", "l2_disk")),
+			p.counterDP("loki_vl_proxy_cache_tier_hits_total", stats.L3.Hits, now, attr("tier", "l3_peer")),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_cache_tier_misses_total",
+			"Cache misses by tier.",
+			"",
+			p.counterDP("loki_vl_proxy_cache_tier_misses_total", stats.L1.Misses, now, attr("tier", "l1_memory")),
+			p.counterDP("loki_vl_proxy_cache_tier_misses_total", stats.L2.Misses, now, attr("tier", "l2_disk")),
+			p.counterDP("loki_vl_proxy_cache_tier_misses_total", stats.L3.Misses, now, attr("tier", "l3_peer")),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_cache_tier_stale_hits_total",
+			"Stale responses served from local cache tiers.",
+			"",
+			p.counterDP("loki_vl_proxy_cache_tier_stale_hits_total", stats.L1.StaleHits, now, attr("tier", "l1_memory")),
+			p.counterDP("loki_vl_proxy_cache_tier_stale_hits_total", stats.L2.StaleHits, now, attr("tier", "l2_disk")),
+			p.counterDP("loki_vl_proxy_cache_tier_stale_hits_total", stats.L3.StaleHits, now, attr("tier", "l3_peer")),
+		),
+		p.sumMetric(
+			"loki_vl_proxy_cache_backend_fallthrough_total",
+			"Cache lookups that missed every tier and fell through to backend.",
+			"",
+			p.counterDP("loki_vl_proxy_cache_backend_fallthrough_total", stats.BackendFallthrough, now),
+		),
+		p.gaugeMetric(
+			"loki_vl_proxy_cache_objects",
+			"Current object count by cache tier.",
+			"",
+			p.gaugeDP("loki_vl_proxy_cache_objects", float64(stats.Entries), now, attr("tier", "l1_memory")),
+			p.gaugeDP("loki_vl_proxy_cache_objects", float64(stats.DiskEntries), now, attr("tier", "l2_disk")),
+		),
+		p.gaugeMetric(
+			"loki_vl_proxy_cache_bytes",
+			"Current stored bytes by cache tier.",
+			"By",
+			p.gaugeDP("loki_vl_proxy_cache_bytes", float64(stats.Bytes), now, attr("tier", "l1_memory")),
+			p.gaugeDP("loki_vl_proxy_cache_bytes", float64(stats.DiskBytes), now, attr("tier", "l2_disk")),
+		),
 	}
 }
 

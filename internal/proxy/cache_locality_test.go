@@ -105,7 +105,7 @@ func TestLabelsCache_StoresResponsesInLocalDiskCacheWhenPeerWriteThroughEnabled(
 	defer backend.Close()
 
 	req := httptest.NewRequest("GET", "/loki/api/v1/labels?query=%7Bservice_name%3D%22api%22%7D", nil)
-	cacheKey := "labels::" + req.URL.RawQuery
+	cacheKey := (&Proxy{}).canonicalReadCacheKey("labels", "", req)
 	c, dc, pc, remoteSetCalls := newLocalOnlyCacheFixture(t, cacheKey)
 
 	p, err := New(Config{

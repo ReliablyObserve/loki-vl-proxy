@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 // Metrics collects proxy metrics in Prometheus exposition format.
@@ -141,6 +143,7 @@ type Metrics struct {
 	exportSensitiveLabels bool
 	knownTenants          map[string]struct{}
 	knownClients          map[string]struct{}
+	cacheStatsProvider    func() cache.StatsSnapshot
 }
 
 type histogram struct {
@@ -375,6 +378,31 @@ func NewMetricsWithOptions(maxTenantLabels, maxClientLabels int, exportSensitive
 	return m
 }
 
+// SetCacheStatsProvider attaches an optional cache stats snapshot source so
+// Prometheus and OTLP export can expose tiered cache visibility from the same
+// source of truth.
+func (m *Metrics) SetCacheStatsProvider(fn func() cache.StatsSnapshot) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.cacheStatsProvider = fn
+	m.mu.Unlock()
+}
+
+func (m *Metrics) cacheStatsSnapshot() (cache.StatsSnapshot, bool) {
+	if m == nil {
+		return cache.StatsSnapshot{}, false
+	}
+	m.mu.RLock()
+	fn := m.cacheStatsProvider
+	m.mu.RUnlock()
+	if fn == nil {
+		return cache.StatsSnapshot{}, false
+	}
+	return fn(), true
+}
+
 func (m *Metrics) preRegisterZeroSeries() {
 	for _, seed := range defaultMetricSeedRoutes {
 		requestRouteKey := joinMetricKey(lokiSystemLabel, downstreamDirection, seed.endpoint, seed.route)
@@ -461,6 +489,46 @@ func (m *Metrics) preRegisterZeroSeries() {
 			m.connectionRotations[reason] = &atomic.Int64{}
 		}
 	}
+}
+
+func writeCacheTierMetrics(sb *strings.Builder, stats cache.StatsSnapshot) {
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_requests_total Cache tier lookup attempts by tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_requests_total counter\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l1_memory", stats.L1.Requests)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l2_disk", stats.L2.Requests)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l3_peer", stats.L3.Requests)
+
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_hits_total Cache hits by tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_hits_total counter\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l1_memory", stats.L1.Hits)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l2_disk", stats.L2.Hits)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l3_peer", stats.L3.Hits)
+
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_misses_total Cache misses by tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_misses_total counter\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l1_memory", stats.L1.Misses)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l2_disk", stats.L2.Misses)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l3_peer", stats.L3.Misses)
+
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_stale_hits_total Stale responses served from local cache tiers.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_stale_hits_total counter\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_stale_hits_total{tier=%q} %d\n", "l1_memory", stats.L1.StaleHits)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_stale_hits_total{tier=%q} %d\n", "l2_disk", stats.L2.StaleHits)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_stale_hits_total{tier=%q} %d\n", "l3_peer", stats.L3.StaleHits)
+
+	sb.WriteString("# HELP loki_vl_proxy_cache_backend_fallthrough_total Cache lookups that missed every tier and fell through to backend.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_backend_fallthrough_total counter\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_backend_fallthrough_total %d\n", stats.BackendFallthrough)
+
+	sb.WriteString("# HELP loki_vl_proxy_cache_objects Current object count by cache tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_objects gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_objects{tier=%q} %d\n", "l1_memory", stats.Entries)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_objects{tier=%q} %d\n", "l2_disk", stats.DiskEntries)
+
+	sb.WriteString("# HELP loki_vl_proxy_cache_bytes Current stored bytes by cache tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_bytes gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l1_memory", stats.Bytes)
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l2_disk", stats.DiskBytes)
 }
 
 // SetCircuitBreakerFunc sets the function to query CB state for metrics export.
@@ -1455,6 +1523,9 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_cache_misses_total Cache misses.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_misses_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_cache_misses_total %d\n", m.cacheMisses.Load())
+	if stats, ok := m.cacheStatsSnapshot(); ok {
+		writeCacheTierMetrics(&sb, stats)
+	}
 
 	sb.WriteString("# HELP loki_vl_proxy_translations_total LogQL to LogsQL translations.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_translations_total counter\n")

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
@@ -100,6 +101,64 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 			t.Fatal("expected level supplement to be merged")
 		}
 	})
+}
+
+func TestFetchNativeFieldValues_DoesNotRelaxOnSuccessfulEmptyPrimary(t *testing.T) {
+	var calls atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/field_values" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		call := calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		if call == 1 {
+			_, _ = w.Write([]byte(`{"values":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"values":[{"value":"unexpected","hits":3}]}`))
+	}))
+	defer backend.Close()
+
+	p := newTestProxy(t, backend.URL)
+	values, err := p.fetchNativeFieldValues(context.Background(), `{app="api"} | duration>1s`, "", "", "service.name", 10)
+	if err != nil {
+		t.Fatalf("fetchNativeFieldValues returned error: %v", err)
+	}
+	if len(values) != 0 {
+		t.Fatalf("expected empty primary response to stop without relaxed fallback, got %v", values)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("expected exactly one backend request, got %d", got)
+	}
+}
+
+func TestDetectScannedLabels_DoesNotRelaxOnSuccessfulEmptyPrimary(t *testing.T) {
+	var calls atomic.Int32
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path: %s", r.URL.Path)
+		}
+		call := calls.Add(1)
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		if call == 1 {
+			_, _ = w.Write([]byte(""))
+			return
+		}
+		_, _ = w.Write([]byte("{\"_time\":\"2026-04-20T10:00:00Z\",\"_msg\":\"ok\",\"_stream\":\"{service_name=\\\"should-not-appear\\\"}\"}\n"))
+	}))
+	defer backend.Close()
+
+	p := newTestProxy(t, backend.URL)
+	labels, err := p.detectScannedLabels(context.Background(), `{app="api"} | duration>1s`, "", "", 100)
+	if err != nil {
+		t.Fatalf("detectScannedLabels returned error: %v", err)
+	}
+	if len(labels) != 0 {
+		t.Fatalf("expected empty primary response to stop without relaxed fallback, got %#v", labels)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("expected exactly one backend request, got %d", got)
+	}
 }
 
 func TestDrilldownBackendHelpers_AdditionalCoverage(t *testing.T) {

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -50,5 +51,31 @@ func TestProxyHelpers_HostOnlyAndKnownPeerHost(t *testing.T) {
 	}
 	if p.isKnownPeerHost("10.0.0.9") {
 		t.Fatal("expected unknown host to be rejected")
+	}
+}
+
+func TestProxyHelpers_CanonicalReadCacheKey_NormalizesEquivalentHelperRequests(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+
+	reqA := httptest.NewRequest("GET", "/loki/api/v1/labels?from=10&to=20&q=svc&query=%7Bapp%3D%22demo%22%7D", nil)
+	reqB := httptest.NewRequest("GET", "/loki/api/v1/labels?search=svc&end=20&start=10&query=%7Bapp%3D%22demo%22%7D", nil)
+
+	keyA := p.canonicalReadCacheKey("labels", "tenant-a", reqA)
+	keyB := p.canonicalReadCacheKey("labels", "tenant-a", reqB)
+	if keyA != keyB {
+		t.Fatalf("expected equivalent helper requests to share cache key, got %q != %q", keyA, keyB)
+	}
+}
+
+func TestProxyHelpers_CanonicalReadCacheKey_NormalizesDetectedLimitsAndDefaults(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+
+	reqA := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?line_limit=1000", nil)
+	reqB := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?limit=1000&query=*", nil)
+
+	keyA := p.canonicalReadCacheKey("detected_fields", "tenant-a", reqA)
+	keyB := p.canonicalReadCacheKey("detected_fields", "tenant-a", reqB)
+	if keyA != keyB {
+		t.Fatalf("expected equivalent detected_fields requests to share cache key, got %q != %q", keyA, keyB)
 	}
 }

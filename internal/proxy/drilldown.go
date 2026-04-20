@@ -392,6 +392,10 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 	values := make([]string, 0, 16)
 	seen := make(map[string]struct{}, 16)
 	var lastErr error
+	params, err := p.metadataQueryParams(ctx, relaxedFieldDetectionQuery(query), start, end, "", "")
+	if err != nil {
+		return nil, err
+	}
 	appendFieldValues := func(fieldValues []string) {
 		for _, value := range fieldValues {
 			value = strings.TrimSpace(value)
@@ -404,15 +408,6 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 			seen[value] = struct{}{}
 			values = append(values, value)
 		}
-	}
-
-	params := url.Values{}
-	params.Set("query", defaultFieldDetectionQuery(query))
-	if start != "" {
-		params.Set("start", start)
-	}
-	if end != "" {
-		params.Set("end", end)
 	}
 
 	if p.supportsStreamMetadataEndpoints() {
@@ -431,7 +426,7 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 				queryParams.Set("field", field)
 				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/stream_field_values", queryParams)
 				if fieldErr != nil && shouldFallbackToGenericMetadata(fieldErr) {
-					fieldValues, fieldErr = p.fetchNativeFieldValues(ctx, query, start, end, field, 0)
+					fieldValues, fieldErr = p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
 				}
 				if fieldErr != nil {
 					lastErr = fieldErr
@@ -444,7 +439,7 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 		}
 	}
 
-	fieldNames, err := p.fetchNativeFieldNames(ctx, query, start, end)
+	fieldNames, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
 	if err == nil {
 		available := make(map[string]struct{}, len(fieldNames))
 		for _, field := range fieldNames {
@@ -454,7 +449,9 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 			if _, ok := available[field]; !ok {
 				continue
 			}
-			fieldValues, fieldErr := p.fetchNativeFieldValues(ctx, query, start, end, field, 0)
+			queryParams := cloneURLValues(params)
+			queryParams.Set("field", field)
+			fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
 			if fieldErr != nil {
 				lastErr = fieldErr
 				continue
@@ -979,11 +976,7 @@ func fieldDetectionQueryCandidates(query string) []string {
 }
 
 func metadataQueryCandidates(query string) []string {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return []string{"*"}
-	}
-	return fieldDetectionQueryCandidates(query)
+	return []string{relaxedFieldDetectionQuery(query)}
 }
 
 func normalizeBareSelectorQuery(query string) string {
@@ -1480,37 +1473,43 @@ func mergeNativeDetectedFields(scanned []map[string]interface{}, scannedValues m
 	return out, outValues
 }
 
+func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate, start, end string) ([]string, error) {
+	logsqlQuery, err := p.translateQuery(candidate)
+	if err != nil {
+		return nil, err
+	}
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	if start != "" {
+		params.Set("start", start)
+	}
+	if end != "" {
+		params.Set("end", end)
+	}
+	body, err := p.vlGetCoalesced(ctx, "native_fields:"+params.Encode(), "/select/logsql/field_names", params)
+	if err != nil {
+		return nil, err
+	}
+	var resp vlFieldNamesResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(resp.Values))
+	for _, item := range resp.Values {
+		out = append(out, item.Value)
+	}
+	return out, nil
+}
+
 func (p *Proxy) fetchNativeFieldNames(ctx context.Context, query, start, end string) ([]string, error) {
 	var lastErr error
 	for _, candidate := range fieldDetectionQueryCandidates(query) {
-		logsqlQuery, err := p.translateQuery(candidate)
+		fields, err := p.fetchNativeFieldNamesForCandidate(ctx, candidate, start, end)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		params := url.Values{}
-		params.Set("query", logsqlQuery)
-		if start != "" {
-			params.Set("start", start)
-		}
-		if end != "" {
-			params.Set("end", end)
-		}
-		body, err := p.vlGetCoalesced(ctx, "native_fields:"+params.Encode(), "/select/logsql/field_names", params)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		var resp vlFieldNamesResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
-			lastErr = err
-			continue
-		}
-		out := make([]string, 0, len(resp.Values))
-		for _, item := range resp.Values {
-			out = append(out, item.Value)
-		}
-		return out, nil
+		return fields, nil
 	}
 	return nil, lastErr
 }
@@ -1534,10 +1533,14 @@ func (p *Proxy) fetchNativeStreamLabelSet(ctx context.Context, query, start, end
 
 func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, field string, limit int) ([]string, error) {
 	var lastErr error
-	for _, candidate := range fieldDetectionQueryCandidates(query) {
+	candidates := fieldDetectionQueryCandidates(query)
+	for i, candidate := range candidates {
 		logsqlQuery, err := p.translateQuery(candidate)
 		if err != nil {
 			lastErr = err
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "native_field_values_relaxed_after_error", 0)
+			}
 			continue
 		}
 		params := url.Values{}
@@ -1555,6 +1558,9 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 		resp, err := p.vlGet(ctx, "/select/logsql/field_values", params)
 		if err != nil {
 			lastErr = err
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "native_field_values_relaxed_after_error", 0)
+			}
 			continue
 		}
 		body, _ := io.ReadAll(resp.Body)
@@ -1565,6 +1571,9 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 				msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
 			}
 			lastErr = fmt.Errorf("%s", msg)
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "native_field_values_relaxed_after_error", 0)
+			}
 			continue
 		}
 		var parsed vlFieldValuesResponse
@@ -1580,27 +1589,33 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 			values = append(values, item.Value)
 		}
 		sort.Strings(values)
-		if len(values) > 0 {
-			return values, nil
+		if len(values) == 0 && i+1 < len(candidates) {
+			p.observeInternalOperation(ctx, "discovery_fallback", "native_field_values_empty_primary", 0)
 		}
+		return values, nil
 	}
 	return nil, lastErr
 }
 
 func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, end, fieldName string) (string, bool, error) {
 	var lastErr error
-	for _, candidate := range fieldDetectionQueryCandidates(query) {
-		fieldNames, err := p.fetchNativeFieldNames(ctx, candidate, start, end)
+	queryCandidates := fieldDetectionQueryCandidates(query)
+	for i, candidate := range queryCandidates {
+		fieldNames, err := p.fetchNativeFieldNamesForCandidate(ctx, candidate, start, end)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		candidates := make([]string, 0, len(fieldNames))
-		candidates = append(candidates, fieldNames...)
-		resolution := p.labelTranslator.ResolveMetadataCandidates(fieldName, candidates, p.metadataFieldMode)
+		fieldCandidates := make([]string, 0, len(fieldNames))
+		fieldCandidates = append(fieldCandidates, fieldNames...)
+		resolution := p.labelTranslator.ResolveMetadataCandidates(fieldName, fieldCandidates, p.metadataFieldMode)
 		if len(resolution.candidates) == 1 {
 			return resolution.candidates[0], true, nil
 		}
+		if i+1 < len(queryCandidates) {
+			p.observeInternalOperation(ctx, "discovery_fallback", "native_detected_field_empty_primary", 0)
+		}
+		return "", false, nil
 	}
 	if lastErr != nil {
 		return "", false, lastErr
@@ -1696,6 +1711,9 @@ func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end strin
 		logsqlQuery, err := p.translateQuery(candidate)
 		if err != nil {
 			lastErr = err
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "detected_labels_relaxed_after_error", 0)
+			}
 			continue
 		}
 
@@ -1712,6 +1730,9 @@ func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end strin
 		resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 		if err != nil {
 			lastErr = err
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "detected_labels_relaxed_after_error", 0)
+			}
 			continue
 		}
 
@@ -1723,13 +1744,17 @@ func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end strin
 				msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
 			}
 			lastErr = fmt.Errorf("%s", msg)
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "detected_labels_relaxed_after_error", 0)
+			}
 			continue
 		}
 
 		summaries := scanDetectedLabelSummaries(body, p.labelTranslator)
-		if len(summaries) > 0 || i == len(candidates)-1 {
-			return summaries, nil
+		if len(summaries) == 0 && i+1 < len(candidates) {
+			p.observeInternalOperation(ctx, "discovery_fallback", "detected_labels_empty_primary", 0)
 		}
+		return summaries, nil
 	}
 	return nil, lastErr
 }
@@ -1745,11 +1770,11 @@ type detectedLabelsCachePayload struct {
 }
 
 func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	return "detect_fields:" + getOrgID(ctx) + ":" + query + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	return "detect_fields:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
 }
 
 func (p *Proxy) detectedLabelsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	return "detect_labels:" + getOrgID(ctx) + ":" + query + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	return "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
 }
 
 func (p *Proxy) getCachedDetectedFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, bool) {

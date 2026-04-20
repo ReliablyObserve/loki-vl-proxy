@@ -21,11 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - read-path/hardening: stop converting backend failures on Drilldown `detected_fields`, `detected_labels`, detected field values, `/index/volume`, and `/index/volume_range` into empty success payloads; these handlers now serve stale last-good cache entries when available and otherwise return real upstream-style errors, and volume helpers now reject non-success `/select/logsql/hits` responses instead of silently parsing them as empty data.
 - cache/tiering: move helper/read caches (`labels`, `label_values`, `index_stats`, `volume`, `volume_range`, and detected-* helpers) onto shared fresh reads with local-memory plus local-disk persistence, add per-tier cache metrics for L1/L2/L3 lookup paths and backend fallthrough, and stop `index_stats` from fabricating zero-success responses when the backend fails.
+- cache/keys: canonicalize helper/read cache keys across query-param ordering and alias pairs such as `from`/`start`, `to`/`end`, and `q`/`search`, plus normalize effective detected-field limits so Grafana refreshes can reuse the same helper cache entries instead of churning near-identical keys.
+- drilldown/discovery: stop relaxing helper discovery queries after a successful empty primary result for label names, label values, native field values, and detected-label scans; relaxed candidates are now only used after real translation or backend errors so Grafana does not get broadened fields or labels from a different query shape.
+- metrics/cache: promote cache-tier stats into the shared metrics pipeline so `/metrics` and OTLP now export the same L1/L2/L3 request, hit, miss, stale-hit, backend-fallthrough, object, and byte series instead of keeping them as proxy-local text-only metrics.
 
 ### Tests
 
 - drilldown/cache: add regression coverage for stale-on-error recovery on detected fields, detected labels, detected field values, and near-now volume refreshes, plus cache coverage for reusing expired L1 entries as last-good fallback data.
 - cache/tiering: add regression coverage for TTL-aware disk fresh/stale reads, shared L2 promotion into L1, and helper cache locality so read surfaces persist to local disk without forcing peer write-through.
+- discovery/keys: add regression coverage for canonical helper cache keys, for stopping relaxed discovery fallback after a successful empty primary result, and for OTLP/Prometheus cache-tier metric export.
 
 ## [1.9.5] - 2026-04-20
 

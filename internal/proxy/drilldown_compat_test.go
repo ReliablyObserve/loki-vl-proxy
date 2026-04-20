@@ -1308,7 +1308,8 @@ func TestDrilldown_DetectedFields_ServesStaleCacheOnBackendError(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	cacheKey := "detected_fields::query=%7Bservice_name%3D%22cached-svc%22%7D"
+	req := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?query=%7Bservice_name%3D%22cached-svc%22%7D", nil)
+	cacheKey := p.canonicalReadCacheKey("detected_fields", "", req)
 	p.setJSONCacheWithTTL(cacheKey, time.Millisecond, map[string]interface{}{
 		"status": "success",
 		"data": []map[string]interface{}{
@@ -1322,7 +1323,7 @@ func TestDrilldown_DetectedFields_ServesStaleCacheOnBackendError(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?query=%7Bservice_name%3D%22cached-svc%22%7D", nil)
+	r := req
 	p.handleDetectedFields(w, r)
 
 	if w.Code != http.StatusOK {
@@ -1359,7 +1360,8 @@ func TestDrilldown_DetectedLabels_ServesStaleCacheOnBackendError(t *testing.T) {
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	cacheKey := "detected_labels::query=%7Bk8s_cluster_name%3D%22ops-sand%22%7D"
+	req := httptest.NewRequest("GET", "/loki/api/v1/detected_labels?query=%7Bk8s_cluster_name%3D%22ops-sand%22%7D", nil)
+	cacheKey := p.canonicalReadCacheKey("detected_labels", "", req)
 	p.setJSONCacheWithTTL(cacheKey, time.Millisecond, map[string]interface{}{
 		"status": "success",
 		"data": []map[string]interface{}{
@@ -1373,7 +1375,7 @@ func TestDrilldown_DetectedLabels_ServesStaleCacheOnBackendError(t *testing.T) {
 	time.Sleep(5 * time.Millisecond)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/detected_labels?query=%7Bk8s_cluster_name%3D%22ops-sand%22%7D", nil)
+	r := req
 	p.handleDetectedLabels(w, r)
 
 	if w.Code != http.StatusOK {
@@ -1394,7 +1396,8 @@ func TestDrilldown_DetectedFieldValues_ServesStaleCacheOnBackendError(t *testing
 	defer vlBackend.Close()
 
 	p := newGapTestProxy(t, vlBackend.URL)
-	cacheKey := "detected_field_values::service_name:query=%7Bservice_name%3D%22cached-svc%22%7D"
+	req := httptest.NewRequest("GET", "/loki/api/v1/detected_field/service_name/values?query=%7Bservice_name%3D%22cached-svc%22%7D", nil)
+	cacheKey := p.canonicalReadCacheKey("detected_field_values", "", req, "service_name")
 	p.setJSONCacheWithTTL(cacheKey, time.Millisecond, map[string]interface{}{
 		"status": "success",
 		"data":   []string{"cached-svc"},
@@ -1404,7 +1407,7 @@ func TestDrilldown_DetectedFieldValues_ServesStaleCacheOnBackendError(t *testing
 	time.Sleep(5 * time.Millisecond)
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/service_name/values?query=%7Bservice_name%3D%22cached-svc%22%7D", nil)
+	r := req
 	p.handleDetectedFieldValues(w, r)
 
 	if w.Code != http.StatusOK {

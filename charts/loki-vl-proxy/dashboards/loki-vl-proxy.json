@@ -831,13 +831,67 @@
     {
       "title": "Fanout & Internal Ops",
       "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 137},
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 145},
       "collapsed": false
+    },
+    {
+      "title": "Helper Cache Tier Requests / Hits",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 137},
+      "targets": [
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tier) or vector(0)",
+          "legendFormat": "{{tier}} requests/s"
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_hits_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tier) or vector(0)",
+          "legendFormat": "{{tier}} hits/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "Helper Cache Stale / Backend Fallthrough",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 137},
+      "targets": [
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_stale_hits_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tier) or vector(0)",
+          "legendFormat": "{{tier}} stale/s"
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_backend_fallthrough_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "backend fallthrough/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
+      }
+    },
+    {
+      "title": "Cache Objects / Bytes by Tier",
+      "type": "timeseries",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 137},
+      "targets": [
+        {
+          "expr": "sum(loki_vl_proxy_cache_objects{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) by (tier) or vector(0)",
+          "legendFormat": "{{tier}} objects"
+        },
+        {
+          "expr": "sum(loki_vl_proxy_cache_bytes{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) by (tier) or vector(0)",
+          "legendFormat": "{{tier}} bytes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"unit": "decbytes", "custom": {"fillOpacity": 10}}
+      }
     },
     {
       "title": "VL Child P99 Latency by Upstream Endpoint",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 138},
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 146},
       "targets": [
         {
           "expr": "histogram_quantile(0.99, sum(rate(loki_vl_proxy_backend_duration_seconds_bucket{system=\"vl\",direction=\"upstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
@@ -851,7 +905,7 @@
     {
       "title": "P95 Upstream Calls per Downstream Request",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 138},
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 146},
       "targets": [
         {
           "expr": "histogram_quantile(0.95, sum(rate(loki_vl_proxy_upstream_calls_per_request_bucket{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
@@ -865,7 +919,7 @@
     {
       "title": "Internal Operations by Outcome",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 138},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 146},
       "targets": [
         {
           "expr": "sum(rate(loki_vl_proxy_internal_operation_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (operation, outcome)",
@@ -972,5 +1026,5 @@
   "timezone": "browser",
   "title": "Loki-VL-proxy Operations",
   "uid": "loki-vl-proxy-metrics",
-  "version": 13
+  "version": 14
 }

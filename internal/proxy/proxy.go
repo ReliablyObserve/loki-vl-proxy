@@ -1072,6 +1072,10 @@ func New(cfg Config) (*Proxy, error) {
 	tenantDefaultLimits := cloneStringAnyMap(cfg.TenantDefaultLimits)
 	tenantLimits := cloneTenantLimitsMap(cfg.TenantLimits)
 	patternsCustom := normalizeCustomPatterns(cfg.PatternsCustom)
+	proxyMetrics := metrics.NewMetricsWithOptions(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels)
+	if cfg.Cache != nil {
+		proxyMetrics.SetCacheStatsProvider(cfg.Cache.Stats)
+	}
 
 	return &Proxy{
 		backend:       u,
@@ -1087,7 +1091,7 @@ func New(cfg Config) (*Proxy, error) {
 		cache:                                 cfg.Cache,
 		compatCache:                           cfg.CompatCache,
 		log:                                   logger,
-		metrics:                               metrics.NewMetricsWithOptions(cfg.MetricsMaxTenants, cfg.MetricsMaxClients, cfg.MetricsExportSensitiveLabels),
+		metrics:                               proxyMetrics,
 		queryTracker:                          metrics.NewQueryTracker(10000),
 		coalescer:                             mw.NewCoalescer(),
 		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
@@ -1984,49 +1988,9 @@ func (p *Proxy) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if p.peerCache != nil {
 		_, _ = rec.Body.WriteString(p.peerCacheMetrics())
 	}
-	if p.cache != nil {
-		_, _ = rec.Body.WriteString(p.cacheMetrics())
-	}
 
 	w.WriteHeader(rec.Code)
 	_, _ = w.Write(rec.Body.Bytes())
-}
-
-func (p *Proxy) cacheMetrics() string {
-	stats := p.cache.Stats()
-	var sb strings.Builder
-	sb.WriteString("# HELP loki_vl_proxy_cache_tier_requests_total Cache tier lookup attempts by tier.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_requests_total counter\n")
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l1_memory", stats.L1.Requests)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l2_disk", stats.L2.Requests)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l3_peer", stats.L3.Requests)
-	sb.WriteString("# HELP loki_vl_proxy_cache_tier_hits_total Cache hits by tier.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_hits_total counter\n")
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l1_memory", stats.L1.Hits)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l2_disk", stats.L2.Hits)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l3_peer", stats.L3.Hits)
-	sb.WriteString("# HELP loki_vl_proxy_cache_tier_misses_total Cache misses by tier.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_misses_total counter\n")
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l1_memory", stats.L1.Misses)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l2_disk", stats.L2.Misses)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l3_peer", stats.L3.Misses)
-	sb.WriteString("# HELP loki_vl_proxy_cache_tier_stale_hits_total Stale responses served from local cache tiers.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_stale_hits_total counter\n")
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_stale_hits_total{tier=%q} %d\n", "l1_memory", stats.L1.StaleHits)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_stale_hits_total{tier=%q} %d\n", "l2_disk", stats.L2.StaleHits)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_stale_hits_total{tier=%q} %d\n", "l3_peer", stats.L3.StaleHits)
-	sb.WriteString("# HELP loki_vl_proxy_cache_backend_fallthrough_total Cache lookups that missed every tier and fell through to backend.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_cache_backend_fallthrough_total counter\n")
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_backend_fallthrough_total %d\n", stats.BackendFallthrough)
-	sb.WriteString("# HELP loki_vl_proxy_cache_objects Current object count by cache tier.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_cache_objects gauge\n")
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_objects{tier=%q} %d\n", "l1_memory", stats.Entries)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_objects{tier=%q} %d\n", "l2_disk", stats.DiskEntries)
-	sb.WriteString("# HELP loki_vl_proxy_cache_bytes Current stored bytes by cache tier.\n")
-	sb.WriteString("# TYPE loki_vl_proxy_cache_bytes gauge\n")
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l1_memory", stats.Bytes)
-	fmt.Fprintf(&sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l2_disk", stats.DiskBytes)
-	return sb.String()
 }
 
 func (p *Proxy) peerCacheMetrics() string {
@@ -2476,14 +2440,14 @@ func (p *Proxy) metadataQueryParams(ctx context.Context, candidate, start, end, 
 
 func (p *Proxy) fetchScopedLabelNames(ctx context.Context, rawQuery, start, end, search string, useInventoryCache bool) ([]string, error) {
 	candidates := metadataQueryCandidates(rawQuery)
-	var (
-		lastErr   error
-		lastEmpty []string
-	)
+	var lastErr error
 	for i, candidate := range candidates {
 		params, err := p.metadataQueryParams(ctx, candidate, start, end, "", search)
 		if err != nil {
 			lastErr = err
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "label_names_relaxed_after_error", 0)
+			}
 			continue
 		}
 		var labels []string
@@ -2494,43 +2458,43 @@ func (p *Proxy) fetchScopedLabelNames(ctx context.Context, rawQuery, start, end,
 		}
 		if err != nil {
 			lastErr = err
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "label_names_relaxed_after_error", 0)
+			}
 			continue
 		}
-		if len(labels) > 0 || i == len(candidates)-1 {
-			return labels, nil
+		if len(labels) == 0 && i+1 < len(candidates) {
+			p.observeInternalOperation(ctx, "discovery_fallback", "label_names_empty_primary", 0)
 		}
-		lastEmpty = labels
-	}
-	if lastEmpty != nil {
-		return lastEmpty, nil
+		return labels, nil
 	}
 	return nil, lastErr
 }
 
 func (p *Proxy) fetchScopedLabelValues(ctx context.Context, labelName, rawQuery, start, end, limit, search string) ([]string, error) {
 	candidates := metadataQueryCandidates(rawQuery)
-	var (
-		lastErr   error
-		lastEmpty []string
-	)
+	var lastErr error
 	for i, candidate := range candidates {
 		params, err := p.metadataQueryParams(ctx, candidate, start, end, limit, search)
 		if err != nil {
 			lastErr = err
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "label_values_relaxed_after_error", 0)
+			}
 			continue
 		}
 		values, err := p.fetchPreferredLabelValues(ctx, labelName, params)
 		if err != nil {
 			lastErr = err
+			if i+1 < len(candidates) {
+				p.observeInternalOperation(ctx, "discovery_fallback", "label_values_relaxed_after_error", 0)
+			}
 			continue
 		}
-		if len(values) > 0 || i == len(candidates)-1 {
-			return values, nil
+		if len(values) == 0 && i+1 < len(candidates) {
+			p.observeInternalOperation(ctx, "discovery_fallback", "label_values_empty_primary", 0)
 		}
-		lastEmpty = values
-	}
-	if lastEmpty != nil {
-		return lastEmpty, nil
+		return values, nil
 	}
 	return nil, lastErr
 }
@@ -4321,6 +4285,72 @@ func endpointForReadCacheKey(cacheKey string) string {
 	}
 }
 
+func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, extraParts ...string) string {
+	params := r.URL.Query()
+	normalizeReadCacheParams(endpoint, params)
+	switch endpoint {
+	case "detected_fields", "detected_field_values", "detected_labels":
+		params.Set("limit", strconv.Itoa(parseDetectedLineLimit(r)))
+	}
+	if endpoint == "volume" || endpoint == "volume_range" {
+		query := strings.TrimSpace(params.Get("query"))
+		if query == "" {
+			query = "*"
+		}
+		if strings.TrimSpace(params.Get("targetLabels")) == "" {
+			if inferred := inferPrimaryTargetLabel(query); inferred != "" {
+				params.Set("targetLabels", inferred)
+			}
+		}
+		if endpoint == "volume_range" {
+			if step := strings.TrimSpace(params.Get("step")); step != "" {
+				params.Set("step", formatVLStep(step))
+			}
+		}
+	}
+
+	parts := make([]string, 0, 3+len(extraParts))
+	parts = append(parts, endpoint, orgID)
+	for _, part := range extraParts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	parts = append(parts, params.Encode())
+	return strings.Join(parts, ":")
+}
+
+func normalizeReadCacheParams(endpoint string, params url.Values) {
+	if params == nil {
+		return
+	}
+	if start := strings.TrimSpace(firstNonEmpty(params.Get("start"), params.Get("from"))); start != "" {
+		params.Set("start", start)
+	}
+	params.Del("from")
+	if end := strings.TrimSpace(firstNonEmpty(params.Get("end"), params.Get("to"))); end != "" {
+		params.Set("end", end)
+	}
+	params.Del("to")
+
+	if search := strings.TrimSpace(firstNonEmpty(params.Get("search"), params.Get("q"))); search != "" {
+		params.Set("search", search)
+	}
+	params.Del("q")
+	params.Del("line_limit")
+
+	switch endpoint {
+	case "labels", "label_values", "index_stats", "volume", "volume_range", "detected_fields", "detected_field_values", "detected_labels":
+		if query := strings.TrimSpace(params.Get("query")); query == "" {
+			params.Set("query", "*")
+		} else {
+			params.Set("query", query)
+		}
+	}
+}
+
 func (p *Proxy) setJSONCacheWithTTL(cacheKey string, ttl time.Duration, value interface{}) {
 	p.setEndpointJSONCacheWithTTL(endpointForReadCacheKey(cacheKey), cacheKey, ttl, value)
 }
@@ -4526,13 +4556,6 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	if errVals != nil {
 		return nil, errVals
 	}
-	if len(values) == 0 && relaxOnEmpty {
-		primary := defaultFieldDetectionQuery(query)
-		relaxed := relaxedFieldDetectionQuery(query)
-		if relaxed != "" && relaxed != primary {
-			return p.resolveDetectedFieldValues(ctx, fieldName, relaxed, start, end, lineLimit, false)
-		}
-	}
 	if values == nil {
 		values = []string{}
 	}
@@ -4550,7 +4573,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
-	cacheKey := "labels:" + orgID + ":" + r.URL.RawQuery
+	cacheKey := p.canonicalReadCacheKey("labels", orgID, r)
 
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
@@ -4629,7 +4652,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
-	cacheKey := "label_values:" + orgID + ":" + labelName + ":" + r.URL.RawQuery
+	cacheKey := p.canonicalReadCacheKey("label_values", orgID, r, labelName)
 	rawQuery := r.FormValue("query")
 	rawLimit := r.FormValue("limit")
 	rawOffset := r.FormValue("offset")
@@ -4808,7 +4831,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
-	cacheKey := "index_stats:" + orgID + ":" + r.URL.RawQuery
+	cacheKey := p.canonicalReadCacheKey("index_stats", orgID, r)
 	if cached, _, _, ok := p.endpointReadCacheEntry("index_stats", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
@@ -4960,7 +4983,7 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	startParam := strings.TrimSpace(firstNonEmpty(r.FormValue("start"), r.FormValue("from")))
 	endParam := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
 	targetLabels := r.FormValue("targetLabels")
-	cacheKey := "volume:" + orgID + ":" + r.URL.RawQuery
+	cacheKey := p.canonicalReadCacheKey("volume", orgID, r)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("volume", cacheKey); ok {
 		if !p.shouldBypassRecentTailCache("volume", remaining, r) {
 			w.Header().Set("Content-Type", "application/json")
@@ -5080,7 +5103,7 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	endParam := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
 	stepParam := r.FormValue("step")
 	targetLabels := r.FormValue("targetLabels")
-	cacheKey := "volume_range:" + orgID + ":" + r.URL.RawQuery
+	cacheKey := p.canonicalReadCacheKey("volume_range", orgID, r)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("volume_range", cacheKey); ok {
 		if !p.shouldBypassRecentTailCache("volume_range", remaining, r) {
 			w.Header().Set("Content-Type", "application/json")
@@ -5191,7 +5214,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
-	cacheKey := "detected_fields:" + orgID + ":" + r.URL.RawQuery
+	cacheKey := p.canonicalReadCacheKey("detected_fields", orgID, r)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_fields", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
@@ -5253,7 +5276,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 	}
 
 	lineLimit := parseDetectedLineLimit(r)
-	cacheKey := "detected_field_values:" + orgID + ":" + fieldName + ":" + r.URL.RawQuery
+	cacheKey := p.canonicalReadCacheKey("detected_field_values", orgID, r, fieldName)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_field_values", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
@@ -5457,7 +5480,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 
 	cacheWriteKey := cacheLookupKeys[0]
 	if cacheWriteKey == "" {
-		cacheWriteKey = "patterns:" + orgID + ":" + r.URL.RawQuery
+		cacheWriteKey = "patterns:" + orgID + ":" + r.URL.Query().Encode()
 	}
 
 	for _, key := range cacheLookupKeys {
@@ -5490,7 +5513,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 		// generated by query/query_range autodetect path (empty step key).
 		cacheWriteKey = p.patternsAutodetectCacheKey(orgID, query, startParam, endParam, "")
 		if cacheWriteKey == "" {
-			cacheWriteKey = "patterns:" + orgID + ":" + r.URL.RawQuery
+			cacheWriteKey = "patterns:" + orgID + ":" + r.URL.Query().Encode()
 		}
 	}
 	derivedStepCacheKey := ""
@@ -6647,7 +6670,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
-	cacheKey := "detected_labels:" + orgID + ":" + r.URL.RawQuery
+	cacheKey := p.canonicalReadCacheKey("detected_labels", orgID, r)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_labels", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
@@ -10069,6 +10092,25 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 	}
 	if endpoint == "patterns" || endpoint == "index_stats" || endpoint == "volume" || endpoint == "volume_range" || endpoint == "detected_labels" || endpoint == "detected_fields" || endpoint == "detected_field_values" || endpoint == "series" || endpoint == "labels" || endpoint == "label_values" || endpoint == "query" || endpoint == "query_range" {
 		key := "mt:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.RawQuery
+		switch endpoint {
+		case "labels", "index_stats", "volume", "volume_range", "detected_labels", "detected_fields":
+			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r)
+		case "label_values":
+			parts := strings.Split(r.URL.Path, "/")
+			if len(parts) >= 7 {
+				key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, parts[5])
+			}
+		case "detected_field_values":
+			parts := strings.Split(r.URL.Path, "/")
+			for i, part := range parts {
+				if part == "detected_field" && i+1 < len(parts) {
+					key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, parts[i+1])
+					break
+				}
+			}
+		case "patterns":
+			key = "mt:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Query().Encode()
+		}
 		if endpoint == "query" || endpoint == "query_range" {
 			key += ":" + p.tupleModeCacheKey(r)
 		}
