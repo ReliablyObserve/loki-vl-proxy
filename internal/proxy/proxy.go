@@ -691,6 +691,17 @@ type Proxy struct {
 	labelValuesIndex                      map[string]*labelValuesIndexState
 	labelValuesIndexPersistDigest         [sha256.Size]byte
 	labelValuesIndexPersistDigestReady    bool
+	readCacheKeyMemoMu                    sync.RWMutex
+	readCacheKeyMemo                      map[canonicalReadCacheMemoKey]string
+}
+
+const maxReadCacheKeyMemoEntries = 16384
+
+type canonicalReadCacheMemoKey struct {
+	endpoint string
+	orgID    string
+	extra    string
+	rawQuery string
 }
 
 var defaultTenantLimitsAllowPublish = []string{
@@ -1182,6 +1193,7 @@ func New(cfg Config) (*Proxy, error) {
 		labelValuesIndexPersistStop:           make(chan struct{}),
 		labelValuesIndexPersistDone:           make(chan struct{}),
 		labelValuesIndex:                      make(map[string]*labelValuesIndexState),
+		readCacheKeyMemo:                      make(map[canonicalReadCacheMemoKey]string, 2048),
 	}, nil
 }
 
@@ -4329,6 +4341,42 @@ func endpointForReadCacheKey(cacheKey string) string {
 }
 
 func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, extraParts ...string) string {
+	if memoKey, ok := buildCanonicalReadCacheMemoKey(endpoint, orgID, r, extraParts); ok && p != nil {
+		p.readCacheKeyMemoMu.RLock()
+		if cached, hit := p.readCacheKeyMemo[memoKey]; hit {
+			p.readCacheKeyMemoMu.RUnlock()
+			return cached
+		}
+		p.readCacheKeyMemoMu.RUnlock()
+
+		computed := computeCanonicalReadCacheKey(endpoint, orgID, r, extraParts...)
+		p.readCacheKeyMemoMu.Lock()
+		if p.readCacheKeyMemo == nil || len(p.readCacheKeyMemo) >= maxReadCacheKeyMemoEntries {
+			p.readCacheKeyMemo = make(map[canonicalReadCacheMemoKey]string, 2048)
+		}
+		p.readCacheKeyMemo[memoKey] = computed
+		p.readCacheKeyMemoMu.Unlock()
+		return computed
+	}
+	return computeCanonicalReadCacheKey(endpoint, orgID, r, extraParts...)
+}
+
+func buildCanonicalReadCacheMemoKey(endpoint, orgID string, r *http.Request, extraParts []string) (canonicalReadCacheMemoKey, bool) {
+	if r == nil || len(extraParts) > 1 {
+		return canonicalReadCacheMemoKey{}, false
+	}
+	key := canonicalReadCacheMemoKey{
+		endpoint: endpoint,
+		orgID:    orgID,
+		rawQuery: r.URL.RawQuery,
+	}
+	if len(extraParts) == 1 {
+		key.extra = strings.TrimSpace(extraParts[0])
+	}
+	return key, true
+}
+
+func computeCanonicalReadCacheKey(endpoint, orgID string, r *http.Request, extraParts ...string) string {
 	params := r.URL.Query()
 	normalizeReadCacheParams(endpoint, params)
 	switch endpoint {

@@ -1591,6 +1591,7 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 		sort.Strings(values)
 		if len(values) == 0 && i+1 < len(candidates) {
 			p.observeInternalOperation(ctx, "discovery_fallback", "native_field_values_empty_primary", 0)
+			continue
 		}
 		return values, nil
 	}

@@ -103,7 +103,7 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 	})
 }
 
-func TestFetchNativeFieldValues_DoesNotRelaxOnSuccessfulEmptyPrimary(t *testing.T) {
+func TestFetchNativeFieldValues_RelaxesAfterSuccessfulEmptyPrimary(t *testing.T) {
 	var calls atomic.Int32
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/field_values" {
@@ -124,11 +124,11 @@ func TestFetchNativeFieldValues_DoesNotRelaxOnSuccessfulEmptyPrimary(t *testing.
 	if err != nil {
 		t.Fatalf("fetchNativeFieldValues returned error: %v", err)
 	}
-	if len(values) != 0 {
-		t.Fatalf("expected empty primary response to stop without relaxed fallback, got %v", values)
+	if len(values) != 1 || values[0] != "unexpected" {
+		t.Fatalf("expected relaxed fallback values after empty primary response, got %v", values)
 	}
-	if got := calls.Load(); got != 1 {
-		t.Fatalf("expected exactly one backend request, got %d", got)
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("expected strict+relaxed backend requests, got %d", got)
 	}
 }
 

@@ -663,7 +663,7 @@ func encodePeerRequestBody(body []byte, encoding string) ([]byte, error) {
 			return nil, err
 		}
 		if _, err := zw.Write(body); err != nil {
-			zw.Close()
+			_ = zw.Close()
 			return nil, err
 		}
 		if err := zw.Close(); err != nil {
@@ -677,7 +677,7 @@ func encodePeerRequestBody(body []byte, encoding string) ([]byte, error) {
 			return nil, err
 		}
 		if _, err := zw.Write(body); err != nil {
-			zw.Close()
+			_ = zw.Close()
 			return nil, err
 		}
 		if err := zw.Close(); err != nil {
