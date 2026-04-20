@@ -9582,19 +9582,51 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	}
 
 	// If VL already returned status/data format, pass through
-	if _, ok := promResp["data"]; ok {
+	if rawData, ok := promResp["data"]; ok {
+		if dataMap, ok := rawData.(map[string]interface{}); ok {
+			normalizeLokiResultDataShape(dataMap, resultType)
+			result, _ := json.Marshal(map[string]interface{}{
+				"status": "success",
+				"data":   dataMap,
+			})
+			return result
+		}
 		result, _ := json.Marshal(map[string]interface{}{
 			"status": "success",
-			"data":   promResp["data"],
+			"data": map[string]interface{}{
+				"resultType": resultType,
+				"result":     []interface{}{},
+			},
 		})
 		return result
 	}
+
+	normalizeLokiResultDataShape(promResp, resultType)
 
 	result, _ := json.Marshal(map[string]interface{}{
 		"status": "success",
 		"data":   promResp,
 	})
 	return result
+}
+
+func normalizeLokiResultDataShape(data map[string]interface{}, defaultResultType string) {
+	if data == nil {
+		return
+	}
+
+	if _, hasResult := data["result"]; !hasResult {
+		if rawResults, ok := data["results"]; ok {
+			data["result"] = rawResults
+		} else {
+			data["result"] = []interface{}{}
+		}
+	}
+
+	currentResultType, _ := data["resultType"].(string)
+	if strings.TrimSpace(currentResultType) == "" && strings.TrimSpace(defaultResultType) != "" {
+		data["resultType"] = defaultResultType
+	}
 }
 
 // --- VL hits response conversion helpers ---

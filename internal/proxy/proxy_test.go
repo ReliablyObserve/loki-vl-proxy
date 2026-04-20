@@ -3875,6 +3875,58 @@ func TestContract_WrapAsLokiResponse_VLStatusError(t *testing.T) {
 	}
 }
 
+func TestContract_WrapAsLokiResponse_FillsMissingResultTypeFromContext(t *testing.T) {
+	// Some backend variants omit data.resultType on empty or degraded stats responses.
+	vlBody := []byte(`{"status":"success","data":{"result":[{"metric":{"service_name":"api"},"values":[[1705312200,"1"]]}]}}`)
+	result := wrapAsLokiResponse(vlBody, "matrix")
+
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string            `json:"resultType"`
+			Result     []json.RawMessage `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(result, &resp); err != nil {
+		t.Fatalf("decode wrapped response: %v body=%s", err, string(result))
+	}
+	if resp.Status != "success" {
+		t.Fatalf("expected status=success, got %q", resp.Status)
+	}
+	if resp.Data.ResultType != "matrix" {
+		t.Fatalf("expected fallback resultType=matrix, got %q", resp.Data.ResultType)
+	}
+	if len(resp.Data.Result) != 1 {
+		t.Fatalf("expected one series in result, got %d", len(resp.Data.Result))
+	}
+}
+
+func TestContract_WrapAsLokiResponse_NormalizesTopLevelResultsKey(t *testing.T) {
+	// Older/raw payloads can use "results" instead of Loki's "result".
+	vlBody := []byte(`{"results":[{"metric":{"service_name":"api"},"values":[[1705312200,"1"]]}]}`)
+	result := wrapAsLokiResponse(vlBody, "matrix")
+
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string            `json:"resultType"`
+			Result     []json.RawMessage `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(result, &resp); err != nil {
+		t.Fatalf("decode wrapped response: %v body=%s", err, string(result))
+	}
+	if resp.Status != "success" {
+		t.Fatalf("expected status=success, got %q", resp.Status)
+	}
+	if resp.Data.ResultType != "matrix" {
+		t.Fatalf("expected fallback resultType=matrix, got %q", resp.Data.ResultType)
+	}
+	if len(resp.Data.Result) != 1 {
+		t.Fatalf("expected one series in result, got %d", len(resp.Data.Result))
+	}
+}
+
 func TestContract_Query_MetricsRecordActualStatus(t *testing.T) {
 	// Backend returns 502
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
