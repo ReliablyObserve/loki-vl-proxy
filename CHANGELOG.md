@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - release/metadata: synchronized release metadata for v1.10.2.
 
+### Bug Fixes
+
+- drilldown/metadata: retry relaxed metadata candidates after successful-empty strict scans for native streams, native field names, detected fields, and detected labels so Drilldown labels/fields stay populated when strict parser filters over-constrain the sample.
+- translator/patterns: translate `pattern`/`extract` stages without named captures into line filters instead of emitting invalid VictoriaLogs `extract` pipes such as `extract "Metrics"`.
+
+### Tests
+
+- drilldown/translator: update fallback coverage for empty strict scans and add regression cases for literal `extract`/`pattern` stage translation.
+
 ## [1.10.2] - 2026-04-20
 
 ### Bug Fixes

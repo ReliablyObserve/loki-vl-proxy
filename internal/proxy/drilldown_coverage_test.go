@@ -132,7 +132,7 @@ func TestFetchNativeFieldValues_RelaxesAfterSuccessfulEmptyPrimary(t *testing.T)
 	}
 }
 
-func TestDetectScannedLabels_DoesNotRelaxOnSuccessfulEmptyPrimary(t *testing.T) {
+func TestDetectScannedLabels_RelaxesOnSuccessfulEmptyPrimary(t *testing.T) {
 	var calls atomic.Int32
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/query" {
@@ -153,11 +153,11 @@ func TestDetectScannedLabels_DoesNotRelaxOnSuccessfulEmptyPrimary(t *testing.T) 
 	if err != nil {
 		t.Fatalf("detectScannedLabels returned error: %v", err)
 	}
-	if len(labels) != 0 {
-		t.Fatalf("expected empty primary response to stop without relaxed fallback, got %#v", labels)
+	if labels["service_name"] == nil {
+		t.Fatalf("expected relaxed fallback labels, got %#v", labels)
 	}
-	if got := calls.Load(); got != 1 {
-		t.Fatalf("expected exactly one backend request, got %d", got)
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("expected strict+relaxed backend requests, got %d", got)
 	}
 }
 

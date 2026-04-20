@@ -97,6 +97,16 @@ func TestTranslateLogQL(t *testing.T) {
 			want:  `app:=nginx | extract "<ip> - - <_>"`,
 		},
 		{
+			name:  "pattern parser without named field falls back to line filter",
+			logql: `{app="nginx"} | pattern "Metrics"`,
+			want:  `app:=nginx ~"Metrics"`,
+		},
+		{
+			name:  "extract parser without named field falls back to line filter",
+			logql: `{app="nginx"} | extract "Metrics"`,
+			want:  `app:=nginx ~"Metrics"`,
+		},
+		{
 			name:  "pattern wildcard no-op is dropped",
 			logql: `{app="nginx"} | pattern "(.*)" | status="500"`,
 			want:  `app:=nginx status:=500`,

@@ -1133,7 +1133,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	candidates := fieldDetectionQueryCandidates(query)
 	hadScanFailure := false
 	var lastErr error
-	for _, candidate := range candidates {
+	for i, candidate := range candidates {
 		logsqlQuery, err := p.translateQuery(candidate)
 		if err != nil {
 			lastErr = err
@@ -1183,13 +1183,10 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 			p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
 			return fieldList, fieldValues, nil
 		}
-		if len(candidates) > 1 && !hadScanFailure {
-			emptyFields := []map[string]interface{}{}
-			emptyValues := map[string][]string{}
-			p.setCachedDetectedFields(ctx, query, start, end, lineLimit, emptyFields, emptyValues)
-			return emptyFields, emptyValues, nil
+		if i+1 < len(candidates) {
+			p.observeInternalOperation(ctx, "discovery_fallback", "detected_fields_empty_primary", 0)
+			continue
 		}
-		break
 	}
 
 	if len(nativeFields) > 0 {
@@ -1202,6 +1199,12 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		fieldList, fieldValues := mergeNativeDetectedFields(nil, nil, nativeFields)
 		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
 		return fieldList, fieldValues, nil
+	}
+	if !hadScanFailure && lastErr == nil {
+		emptyFields := []map[string]interface{}{}
+		emptyValues := map[string][]string{}
+		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, emptyFields, emptyValues)
+		return emptyFields, emptyValues, nil
 	}
 	return nil, nil, lastErr
 }
@@ -1503,13 +1506,21 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 
 func (p *Proxy) fetchNativeFieldNames(ctx context.Context, query, start, end string) ([]string, error) {
 	var lastErr error
-	for _, candidate := range fieldDetectionQueryCandidates(query) {
+	candidates := fieldDetectionQueryCandidates(query)
+	for i, candidate := range candidates {
 		fields, err := p.fetchNativeFieldNamesForCandidate(ctx, candidate, start, end)
 		if err != nil {
 			lastErr = err
 			continue
 		}
+		if len(fields) == 0 && i+1 < len(candidates) {
+			p.observeInternalOperation(ctx, "discovery_fallback", "native_field_names_empty_primary", 0)
+			continue
+		}
 		return fields, nil
+	}
+	if lastErr == nil {
+		return []string{}, nil
 	}
 	return nil, lastErr
 }
@@ -1615,6 +1626,7 @@ func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, en
 		}
 		if i+1 < len(queryCandidates) {
 			p.observeInternalOperation(ctx, "discovery_fallback", "native_detected_field_empty_primary", 0)
+			continue
 		}
 		return "", false, nil
 	}
@@ -1654,7 +1666,8 @@ func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string
 
 func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string) (*vlStreamsResponse, error) {
 	var lastErr error
-	for _, candidate := range fieldDetectionQueryCandidates(query) {
+	candidates := fieldDetectionQueryCandidates(query)
+	for i, candidate := range candidates {
 		logsqlQuery, err := p.translateQuery(candidate)
 		if err != nil {
 			lastErr = err
@@ -1678,7 +1691,14 @@ func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string
 			lastErr = err
 			continue
 		}
+		if len(parsed.Values) == 0 && i+1 < len(candidates) {
+			p.observeInternalOperation(ctx, "discovery_fallback", "native_streams_empty_primary", 0)
+			continue
+		}
 		return &parsed, nil
+	}
+	if lastErr == nil {
+		return &vlStreamsResponse{}, nil
 	}
 	return &vlStreamsResponse{}, lastErr
 }
@@ -1754,8 +1774,12 @@ func (p *Proxy) detectScannedLabels(ctx context.Context, query, start, end strin
 		summaries := scanDetectedLabelSummaries(body, p.labelTranslator)
 		if len(summaries) == 0 && i+1 < len(candidates) {
 			p.observeInternalOperation(ctx, "discovery_fallback", "detected_labels_empty_primary", 0)
+			continue
 		}
 		return summaries, nil
+	}
+	if lastErr == nil {
+		return map[string]*detectedLabelSummary{}, nil
 	}
 	return nil, lastErr
 }
