@@ -93,6 +93,18 @@ function uniqueQueries(queries: string[]) {
   return result;
 }
 
+function extractExactServiceHint(query: string) {
+  const serviceMatch = query.match(/\{\s*service_name="([^"]+)"/);
+  if (serviceMatch?.[1]) {
+    return serviceMatch[1];
+  }
+  const appMatch = query.match(/\{\s*app="([^"]+)"/);
+  if (appMatch?.[1]) {
+    return appMatch[1];
+  }
+  return "";
+}
+
 async function seedPatternsStream(page: Page) {
   const now = new Date();
   const lines = [
@@ -228,11 +240,19 @@ async function waitForAutodetectedPatterns(
         lastPatternsPayload = null;
       }
 
+      const patternsData = (lastPatternsPayload as { data?: unknown[] } | null)?.data;
+      if (!Array.isArray(patternsData) || patternsData.length === 0) {
+        continue;
+      }
+
+      const exactServiceHint = extractExactServiceHint(query);
+      if (exactServiceHint) {
+        return exactServiceHint;
+      }
+
       if (
         !seedResponse.ok() ||
-        (lastSeedPayload as { status?: string } | null)?.status !== "success" ||
-        !Array.isArray((lastPatternsPayload as { data?: unknown[] } | null)?.data) ||
-        ((lastPatternsPayload as { data?: unknown[] }).data?.length ?? 0) === 0
+        (lastSeedPayload as { status?: string } | null)?.status !== "success"
       ) {
         continue;
       }
