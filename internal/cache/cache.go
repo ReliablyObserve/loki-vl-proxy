@@ -148,6 +148,21 @@ func (c *Cache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
 	return nil, 0, false
 }
 
+// GetStaleWithTTL returns a locally retained value even if its TTL has expired.
+// The returned TTL may be negative when the entry is stale. This never falls
+// back to L2/L3 because stale-on-error is only intended to reuse the serving
+// replica's last known-good payload.
+func (c *Cache) GetStaleWithTTL(key string) ([]byte, time.Duration, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	e, ok := c.entries[key]
+	if !ok {
+		return nil, 0, false
+	}
+	return e.value, time.Until(e.expiresAt), true
+}
+
 func (c *Cache) Get(key string) ([]byte, bool) {
 	c.mu.Lock()
 	e, ok := c.entries[key]

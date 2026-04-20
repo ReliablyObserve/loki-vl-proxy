@@ -89,7 +89,7 @@ func TestHandleDetectedLabelsReuseCachedScan(t *testing.T) {
 	}
 }
 
-func TestHandleDetectedLabels_BackendErrorReturnsEmptySuccess(t *testing.T) {
+func TestHandleDetectedLabels_BackendErrorReturnsGatewayError(t *testing.T) {
 	backend := httptest.NewServer(http.NotFoundHandler())
 	backendURL := backend.URL
 	backend.Close()
@@ -100,20 +100,8 @@ func TestHandleDetectedLabels_BackendErrorReturnsEmptySuccess(t *testing.T) {
 
 	p.handleDetectedLabels(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
-	}
-	var resp struct {
-		Status         string        `json:"status"`
-		Data           []interface{} `json:"data"`
-		DetectedLabels []interface{} `json:"detectedLabels"`
-		Limit          int           `json:"limit"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if resp.Status != "success" || len(resp.Data) != 0 || len(resp.DetectedLabels) != 0 || resp.Limit != 17 {
-		t.Fatalf("expected empty detected_labels success response, got %#v", resp)
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
@@ -144,8 +132,8 @@ func TestHandleDetectedLabels_DoesNotCacheTransientErrorFallback(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	r1 := httptest.NewRequest(http.MethodGet, reqPath, nil)
 	p.handleDetectedLabels(w1, r1)
-	if w1.Code != http.StatusOK {
-		t.Fatalf("first call expected 200, got %d body=%s", w1.Code, w1.Body.String())
+	if w1.Code != http.StatusBadGateway {
+		t.Fatalf("first call expected 502, got %d body=%s", w1.Code, w1.Body.String())
 	}
 
 	fail.Store(false)
@@ -208,8 +196,8 @@ func TestHandleDetectedFields_DoesNotCacheTransientErrorFallback(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	r1 := httptest.NewRequest(http.MethodGet, reqPath, nil)
 	p.handleDetectedFields(w1, r1)
-	if w1.Code != http.StatusOK {
-		t.Fatalf("first call expected 200, got %d body=%s", w1.Code, w1.Body.String())
+	if w1.Code != http.StatusBadGateway {
+		t.Fatalf("first call expected 502, got %d body=%s", w1.Code, w1.Body.String())
 	}
 
 	fail.Store(false)

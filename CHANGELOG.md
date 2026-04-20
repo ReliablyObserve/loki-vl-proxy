@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- read-path/hardening: stop converting backend failures on Drilldown `detected_fields`, `detected_labels`, detected field values, `/index/volume`, and `/index/volume_range` into empty success payloads; these handlers now serve stale last-good cache entries when available and otherwise return real upstream-style errors, and volume helpers now reject non-success `/select/logsql/hits` responses instead of silently parsing them as empty data.
+
+### Tests
+
+- drilldown/cache: add regression coverage for stale-on-error recovery on detected fields, detected labels, detected field values, and near-now volume refreshes, plus cache coverage for reusing expired L1 entries as last-good fallback data.
+
 ## [1.9.5] - 2026-04-20
 
 ### Bug Fixes

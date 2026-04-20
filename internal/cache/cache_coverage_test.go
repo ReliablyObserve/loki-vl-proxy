@@ -48,6 +48,25 @@ func TestGetWithTTL_Miss(t *testing.T) {
 	}
 }
 
+func TestGetStaleWithTTL_ReturnsExpiredEntry(t *testing.T) {
+	c := NewWithMaxBytes(1*time.Millisecond, 100, 1024*1024)
+	defer c.Close()
+
+	c.Set("stale", []byte("payload"))
+	time.Sleep(5 * time.Millisecond)
+
+	val, ttl, ok := c.GetStaleWithTTL("stale")
+	if !ok {
+		t.Fatal("expected stale entry to be returned")
+	}
+	if string(val) != "payload" {
+		t.Fatalf("unexpected stale payload %q", string(val))
+	}
+	if ttl >= 0 {
+		t.Fatalf("expected negative remaining TTL for stale entry, got %v", ttl)
+	}
+}
+
 func TestCache_MaxEntrySizeBytes(t *testing.T) {
 	c := NewWithMaxBytes(10*time.Second, 100, 1000)
 	defer c.Close()

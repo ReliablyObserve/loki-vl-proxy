@@ -1301,6 +1301,123 @@ func TestDrilldown_DetectedFieldValues_IgnoreZeroHitNativeValues(t *testing.T) {
 	}
 }
 
+func TestDrilldown_DetectedFields_ServesStaleCacheOnBackendError(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "backend unavailable", http.StatusBadGateway)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	cacheKey := "detected_fields::query=%7Bservice_name%3D%22cached-svc%22%7D"
+	p.setJSONCacheWithTTL(cacheKey, time.Millisecond, map[string]interface{}{
+		"status": "success",
+		"data": []map[string]interface{}{
+			{"label": "cached_field", "type": "string", "cardinality": 1},
+		},
+		"fields": []map[string]interface{}{
+			{"label": "cached_field", "type": "string", "cardinality": 1},
+		},
+		"limit": 1000,
+	})
+	time.Sleep(5 * time.Millisecond)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?query=%7Bservice_name%3D%22cached-svc%22%7D", nil)
+	p.handleDetectedFields(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected stale cached detected_fields response, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	fields := resp["fields"].([]interface{})
+	if len(fields) != 1 || fields[0].(map[string]interface{})["label"] != "cached_field" {
+		t.Fatalf("expected stale cached detected_fields payload, got %v", resp)
+	}
+}
+
+func TestDrilldown_DetectedFields_ReturnsErrorWithoutCacheOnBackendFailure(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "backend unavailable", http.StatusBadGateway)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?query=%7Bservice_name%3D%22svc%22%7D", nil)
+	p.handleDetectedFields(w, r)
+
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 when detected_fields has no cache fallback, got %d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestDrilldown_DetectedLabels_ServesStaleCacheOnBackendError(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "backend unavailable", http.StatusBadGateway)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	cacheKey := "detected_labels::query=%7Bk8s_cluster_name%3D%22ops-sand%22%7D"
+	p.setJSONCacheWithTTL(cacheKey, time.Millisecond, map[string]interface{}{
+		"status": "success",
+		"data": []map[string]interface{}{
+			{"label": "service_name", "cardinality": 1},
+		},
+		"detectedLabels": []map[string]interface{}{
+			{"label": "service_name", "cardinality": 1},
+		},
+		"limit": 1000,
+	})
+	time.Sleep(5 * time.Millisecond)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_labels?query=%7Bk8s_cluster_name%3D%22ops-sand%22%7D", nil)
+	p.handleDetectedLabels(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected stale cached detected_labels response, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	items := resp["detectedLabels"].([]interface{})
+	if len(items) != 1 || items[0].(map[string]interface{})["label"] != "service_name" {
+		t.Fatalf("expected stale cached detected_labels payload, got %v", resp)
+	}
+}
+
+func TestDrilldown_DetectedFieldValues_ServesStaleCacheOnBackendError(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "backend unavailable", http.StatusBadGateway)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	cacheKey := "detected_field_values::service_name:query=%7Bservice_name%3D%22cached-svc%22%7D"
+	p.setJSONCacheWithTTL(cacheKey, time.Millisecond, map[string]interface{}{
+		"status": "success",
+		"data":   []string{"cached-svc"},
+		"values": []string{"cached-svc"},
+		"limit":  1000,
+	})
+	time.Sleep(5 * time.Millisecond)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/service_name/values?query=%7Bservice_name%3D%22cached-svc%22%7D", nil)
+	p.handleDetectedFieldValues(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected stale cached detected_field_values response, got %d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	values := resp["values"].([]interface{})
+	if len(values) != 1 || values[0].(string) != "cached-svc" {
+		t.Fatalf("expected stale cached detected_field_values payload, got %v", resp)
+	}
+}
+
 func TestDetectedLabelValuesForField_ResolvesKnownUnderscoreAlias(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

@@ -4271,6 +4271,39 @@ func (p *Proxy) setLocalReadCacheWithTTL(cacheKey string, value []byte, ttl time
 	p.cache.SetLocalOnlyWithTTL(cacheKey, value, ttl)
 }
 
+func (p *Proxy) staleReadCacheEntry(cacheKey string) ([]byte, time.Duration, bool) {
+	if p == nil || p.cache == nil || strings.TrimSpace(cacheKey) == "" {
+		return nil, 0, false
+	}
+	return p.cache.GetStaleWithTTL(cacheKey)
+}
+
+func (p *Proxy) serveStaleReadCacheOnError(w http.ResponseWriter, endpoint, cacheKey string, started time.Time, err error) bool {
+	body, remaining, ok := p.staleReadCacheEntry(cacheKey)
+	if !ok || len(body) == 0 {
+		return false
+	}
+	if strings.TrimSpace(w.Header().Get("Content-Type")) == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	_, _ = w.Write(body)
+	if p.metrics != nil {
+		p.metrics.RecordRequest(endpoint, http.StatusOK, time.Since(started))
+	}
+	staleFor := time.Duration(0)
+	if remaining < 0 {
+		staleFor = -remaining
+	}
+	p.log.Warn(
+		"serving stale cached response after backend failure",
+		"endpoint", endpoint,
+		"cache_key", cacheKey,
+		"stale_for", staleFor.String(),
+		"error", err,
+	)
+	return true
+}
+
 func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, end string, lineLimit int) {
 	refreshKey := "refresh:detected_fields:" + cacheKey
 	go func() {
@@ -4807,10 +4840,13 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 
 	result, err := p.computeVolumeResult(r.Context(), query, startParam, endParam, targetLabels)
 	if err != nil {
-		result = map[string]interface{}{
-			"status": "success",
-			"data":   map[string]interface{}{"resultType": "vector", "result": []interface{}{}},
+		if p.serveStaleReadCacheOnError(w, "volume", cacheKey, start, err) {
+			return
 		}
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("volume", status, time.Since(start))
+		return
 	}
 	p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume"], result)
 	p.writeJSON(w, result)
@@ -4860,6 +4896,13 @@ func (p *Proxy) computeVolumeResult(ctx context.Context, query, start, end, targ
 	}
 	defer resp.Body.Close()
 	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	if resp.StatusCode >= http.StatusBadRequest {
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
 
 	return p.hitsToVolumeVector(body), nil
 }
@@ -4917,10 +4960,13 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 
 	result, err := p.computeVolumeRangeResult(r.Context(), query, startParam, endParam, stepParam, targetLabels)
 	if err != nil {
-		result = map[string]interface{}{
-			"status": "success",
-			"data":   map[string]interface{}{"resultType": "matrix", "result": []interface{}{}},
+		if p.serveStaleReadCacheOnError(w, "volume_range", cacheKey, start, err) {
+			return
 		}
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("volume_range", status, time.Since(start))
+		return
 	}
 	p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume_range"], result)
 	p.writeJSON(w, result)
@@ -4969,6 +5015,13 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 	}
 	defer resp.Body.Close()
 	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	if resp.StatusCode >= http.StatusBadRequest {
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
 
 	return p.hitsToVolumeMatrix(body, start, end, step), nil
 }
@@ -5018,14 +5071,12 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	lineLimit := parseDetectedLineLimit(r)
 	fields, _, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
-		payload := map[string]interface{}{
-			"status": "success",
-			"data":   []interface{}{},
-			"fields": []interface{}{},
-			"limit":  lineLimit,
+		if p.serveStaleReadCacheOnError(w, "detected_fields", cacheKey, start, err) {
+			return
 		}
-		p.writeJSON(w, payload)
-		p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("detected_fields", status, time.Since(start))
 		return
 	}
 	payload := map[string]interface{}{
@@ -5095,14 +5146,12 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 
 	values, err := p.resolveDetectedFieldValues(r.Context(), fieldName, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit, true)
 	if err != nil {
-		payload := map[string]interface{}{
-			"status": "success",
-			"data":   []string{},
-			"values": []string{},
-			"limit":  lineLimit,
+		if p.serveStaleReadCacheOnError(w, "detected_field_values", cacheKey, start, err) {
+			return
 		}
-		p.writeJSON(w, payload)
-		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("detected_field_values", status, time.Since(start))
 		return
 	}
 
@@ -6478,14 +6527,12 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	lineLimit := parseDetectedLineLimit(r)
 	detectedLabels, _, err := p.detectLabels(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
-		payload := map[string]interface{}{
-			"status":         "success",
-			"data":           []interface{}{},
-			"detectedLabels": []interface{}{},
-			"limit":          lineLimit,
+		if p.serveStaleReadCacheOnError(w, "detected_labels", cacheKey, start, err) {
+			return
 		}
-		p.writeJSON(w, payload)
-		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("detected_labels", status, time.Since(start))
 		return
 	}
 

@@ -731,7 +731,12 @@ func TestContract_IndexStats_ResponseFormat(t *testing.T) {
 // --- /loki/api/v1/index/volume ---
 
 func TestContract_Volume_ResponseFormat(t *testing.T) {
-	p := newTestProxy(t, "http://unused")
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7B%7D&start=1&end=2", nil)
 	p.handleVolume(w, r)
@@ -750,7 +755,12 @@ func TestContract_Volume_ResponseFormat(t *testing.T) {
 // --- /loki/api/v1/index/volume_range ---
 
 func TestContract_VolumeRange_ResponseFormat(t *testing.T) {
-	p := newTestProxy(t, "http://unused")
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7B%7D&start=1&end=2&step=60", nil)
 	p.handleVolumeRange(w, r)
@@ -1816,6 +1826,67 @@ func TestContract_Volume_BypassesNearNowStaleCache(t *testing.T) {
 	p.handleVolume(w2, httptest.NewRequest("GET", uri, nil))
 	if backendCalls < 2 {
 		t.Fatalf("expected stale near-now cache to be bypassed, backend calls=%d", backendCalls)
+	}
+}
+
+func TestContract_Volume_ServesStaleCacheWhenNearNowRefreshFails(t *testing.T) {
+	var backendCalls int
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendCalls++
+		if backendCalls == 1 {
+			_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[3]}]}`))
+			return
+		}
+		http.Error(w, "backend unavailable", http.StatusBadGateway)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	p.recentTailRefreshEnabled = true
+	p.recentTailRefreshWindow = time.Hour
+	p.recentTailRefreshMaxStaleness = time.Nanosecond
+
+	uri := "/loki/api/v1/index/volume?query=%7Bapp%3D%22api%22%7D&end=now"
+	w1 := httptest.NewRecorder()
+	p.handleVolume(w1, httptest.NewRequest("GET", uri, nil))
+	if w1.Code != http.StatusOK {
+		t.Fatalf("expected first volume call to succeed, got %d body=%s", w1.Code, w1.Body.String())
+	}
+	var firstResp map[string]interface{}
+	mustUnmarshal(t, w1.Body.Bytes(), &firstResp)
+
+	time.Sleep(2 * time.Millisecond)
+
+	w2 := httptest.NewRecorder()
+	p.handleVolume(w2, httptest.NewRequest("GET", uri, nil))
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected stale cached volume response, got %d body=%s", w2.Code, w2.Body.String())
+	}
+	var secondResp map[string]interface{}
+	mustUnmarshal(t, w2.Body.Bytes(), &secondResp)
+	if !reflect.DeepEqual(firstResp, secondResp) {
+		t.Fatalf("expected stale volume response %#v, got %#v", firstResp, secondResp)
+	}
+	if backendCalls != 2 {
+		t.Fatalf("expected refresh attempt to still hit backend, got %d calls", backendCalls)
+	}
+}
+
+func TestContract_Volume_ReturnsGatewayErrorWithoutCacheOnBackendFailure(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "backend unavailable", http.StatusBadGateway)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	w := httptest.NewRecorder()
+	p.handleVolume(w, httptest.NewRequest("GET", "/loki/api/v1/index/volume?query=%7Bapp%3D%22api%22%7D&end=now", nil))
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("expected 502 without cached volume fallback, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(w.Body.String()), "backend unavailable") {
+		t.Fatalf("expected backend error message, got %s", w.Body.String())
 	}
 }
 
