@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.4] - 2026-04-20
+
 ### Bug Fixes
 
 - query-range/metrics: stop splitting metric `query_range` requests into multiple backend `stats_query_range` windows, keeping the read path aligned with the documented log-only windowing contract and reducing avoidable VL request fanout for Drilldown and Explore metric panels.
