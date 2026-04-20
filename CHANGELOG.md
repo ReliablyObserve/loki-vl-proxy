@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.5] - 2026-04-20
+
 ### Bug Fixes
 
 - patterns/persistence: store query-level compact pattern snapshots for persistence instead of range-shaped filled payload variants, reducing snapshot entry churn and write amplification when the same logical Drilldown query is refreshed across different time windows.
