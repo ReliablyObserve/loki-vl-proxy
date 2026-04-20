@@ -423,14 +423,74 @@ func TestPatternSnapshotDedup_Update_RemovesExactDuplicatePayload(t *testing.T) 
 	if len(p.patternsSnapshotEntries) != 1 {
 		t.Fatalf("expected one deduplicated snapshot entry, got %d", len(p.patternsSnapshotEntries))
 	}
-	if _, ok := p.patternsSnapshotEntries[keyNew]; !ok {
-		t.Fatalf("expected newer cache key %q to be retained after deduplication", keyNew)
+	canonicalKey := canonicalPatternSnapshotCacheKey(keyNew)
+	if _, ok := p.patternsSnapshotEntries[canonicalKey]; !ok {
+		t.Fatalf("expected canonical snapshot key %q to be retained after deduplication", canonicalKey)
 	}
-	if _, ok := p.patternsSnapshotEntries[keyOld]; ok {
-		t.Fatalf("expected older duplicate cache key %q to be removed", keyOld)
+	if _, _, hit := p.cache.GetWithTTL(keyOld); !hit {
+		t.Fatalf("expected request-scoped cache key %q to remain untouched", keyOld)
 	}
-	if _, _, hit := p.cache.GetWithTTL(keyOld); hit {
-		t.Fatalf("expected dropped cache key %q to be invalidated", keyOld)
+}
+
+func TestPatternSnapshotEntry_CanonicalizesRangeKeysAndCompactsSamples(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	p := newPatternPersistenceProxy(t, backend.URL, filepath.Join(t.TempDir(), "patterns.snapshot.json"), true)
+	t.Cleanup(func() {
+		_ = p.Shutdown(context.Background())
+	})
+
+	query := `{service_name="api"}`
+	keyA := p.patternsAutodetectCacheKey("org-a", query, "1", "181", "60s")
+	keyB := p.patternsAutodetectCacheKey("org-a", query, "61", "241", "60s")
+	payload := mustMarshalJSON(t, patternsResponse{
+		Status: "success",
+		Data: []patternResultEntry{
+			{
+				Pattern: "request <_> completed",
+				Samples: [][]interface{}{
+					{int64(60), 0},
+					{int64(120), 4},
+					{int64(180), 0},
+				},
+			},
+		},
+	})
+
+	p.recordPatternSnapshotEntry(keyA, payload, time.Unix(1710000000, 0).UTC())
+
+	canonicalKey := canonicalPatternSnapshotCacheKey(keyA)
+	p.patternsSnapshotMu.RLock()
+	entry, ok := p.patternsSnapshotEntries[canonicalKey]
+	p.patternsSnapshotMu.RUnlock()
+	if !ok {
+		t.Fatalf("expected canonical snapshot key %q to be stored", canonicalKey)
+	}
+
+	var stored patternsResponse
+	if err := json.Unmarshal(entry.Value, &stored); err != nil {
+		t.Fatalf("decode stored snapshot payload: %v", err)
+	}
+	if len(stored.Data) != 1 {
+		t.Fatalf("expected one persisted pattern entry, got %#v", stored.Data)
+	}
+	if got := stored.Data[0].Samples; len(got) != 1 || got[0][0] != float64(120) || got[0][1] != float64(4) {
+		t.Fatalf("expected compacted non-zero samples only, got %#v", got)
+	}
+
+	p.patternsPersistDirty.Store(false)
+	p.recordPatternSnapshotEntry(keyB, payload, time.Unix(1710000001, 0).UTC())
+	if p.patternsPersistDirty.Load() {
+		t.Fatal("expected canonical identical snapshot update to avoid marking persistence dirty")
+	}
+
+	p.patternsSnapshotMu.RLock()
+	defer p.patternsSnapshotMu.RUnlock()
+	if len(p.patternsSnapshotEntries) != 1 {
+		t.Fatalf("expected one canonical snapshot entry, got %d", len(p.patternsSnapshotEntries))
 	}
 }
 
@@ -466,8 +526,20 @@ func TestPatternSnapshotDedup_Update_PreservesDistinctPayloads(t *testing.T) {
 
 	p.patternsSnapshotMu.RLock()
 	defer p.patternsSnapshotMu.RUnlock()
-	if len(p.patternsSnapshotEntries) != 2 {
-		t.Fatalf("expected distinct payloads to remain separate, got %d entries", len(p.patternsSnapshotEntries))
+	if len(p.patternsSnapshotEntries) != 1 {
+		t.Fatalf("expected latest query-level snapshot to replace older range variants, got %d entries", len(p.patternsSnapshotEntries))
+	}
+	canonicalKey := canonicalPatternSnapshotCacheKey(keyB)
+	entry, ok := p.patternsSnapshotEntries[canonicalKey]
+	if !ok {
+		t.Fatalf("expected canonical key %q to be retained", canonicalKey)
+	}
+	var stored patternsResponse
+	if err := json.Unmarshal(entry.Value, &stored); err != nil {
+		t.Fatalf("decode stored payload: %v", err)
+	}
+	if len(stored.Data) != 1 || stored.Data[0].Pattern != "request <_> failed" {
+		t.Fatalf("expected latest payload to win for canonical snapshot, got %#v", stored.Data)
 	}
 }
 
@@ -508,8 +580,9 @@ func TestPatternSnapshotDedup_PeerMerge_RemovesExactDuplicates(t *testing.T) {
 	if len(p.patternsSnapshotEntries) != 1 {
 		t.Fatalf("expected peer merge dedup to keep one entry, got %d", len(p.patternsSnapshotEntries))
 	}
-	if _, ok := p.patternsSnapshotEntries[keyB]; !ok {
-		t.Fatalf("expected newer peer key %q to be retained", keyB)
+	canonicalKey := canonicalPatternSnapshotCacheKey(keyB)
+	if _, ok := p.patternsSnapshotEntries[canonicalKey]; !ok {
+		t.Fatalf("expected canonical peer key %q to be retained", canonicalKey)
 	}
 	if _, _, hit := p.cache.GetWithTTL(keyA); hit {
 		t.Fatalf("expected duplicate peer key %q to be invalidated from cache", keyA)

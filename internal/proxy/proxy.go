@@ -2776,6 +2776,11 @@ func (p *Proxy) recordPatternSnapshotEntry(cacheKey string, payload []byte, now 
 	if !p.patternsEnabled {
 		return
 	}
+	canonicalKey := canonicalPatternSnapshotCacheKey(cacheKey)
+	if canonicalKey != "" {
+		cacheKey = canonicalKey
+	}
+	payload = normalizePatternSnapshotPayload(payload)
 	patternCount := patternCountFromPayload(payload)
 	if patternCount > 0 {
 		p.metrics.RecordPatternsStored(patternCount)
@@ -2907,10 +2912,15 @@ func (p *Proxy) applyPatternsSnapshot(snapshot patternsSnapshot, source string) 
 		if strings.TrimSpace(key) == "" || len(incoming.Value) == 0 {
 			continue
 		}
+		canonicalKey := canonicalPatternSnapshotCacheKey(key)
+		if strings.TrimSpace(canonicalKey) == "" {
+			canonicalKey = key
+		}
+		incoming.Value = normalizePatternSnapshotPayload(incoming.Value)
 		if incoming.UpdatedAtUnixNano <= 0 {
 			incoming.UpdatedAtUnixNano = nowUnix
 		}
-		if existing, ok := p.patternsSnapshotEntries[key]; ok && existing.UpdatedAtUnixNano >= incoming.UpdatedAtUnixNano {
+		if existing, ok := p.patternsSnapshotEntries[canonicalKey]; ok && existing.UpdatedAtUnixNano >= incoming.UpdatedAtUnixNano {
 			continue
 		}
 		incomingPatternCount := incoming.PatternCount
@@ -2918,18 +2928,18 @@ func (p *Proxy) applyPatternsSnapshot(snapshot patternsSnapshot, source string) 
 			incomingPatternCount = patternCountFromPayload(incoming.Value)
 		}
 		copied := append([]byte(nil), incoming.Value...)
-		if existing, ok := p.patternsSnapshotEntries[key]; ok {
+		if existing, ok := p.patternsSnapshotEntries[canonicalKey]; ok {
 			p.patternsSnapshotPatternCount -= int64(existing.PatternCount)
 			p.patternsSnapshotPayloadBytes -= int64(len(existing.Value))
 		}
-		p.patternsSnapshotEntries[key] = patternSnapshotEntry{
+		p.patternsSnapshotEntries[canonicalKey] = patternSnapshotEntry{
 			Value:             copied,
 			UpdatedAtUnixNano: incoming.UpdatedAtUnixNano,
 			PatternCount:      incomingPatternCount,
 		}
 		p.patternsSnapshotPatternCount += int64(incomingPatternCount)
 		p.patternsSnapshotPayloadBytes += int64(len(copied))
-		p.cache.SetWithTTL(key, copied, patternsCacheRetention)
+		p.cache.SetWithTTL(canonicalKey, copied, patternsCacheRetention)
 		appliedEntries++
 		appliedPatterns += incomingPatternCount
 	}
@@ -2965,6 +2975,93 @@ func patternSnapshotIdentityFromCacheKey(cacheKey string) string {
 		return ""
 	}
 	return orgID + "\x00" + query
+}
+
+func canonicalPatternSnapshotCacheKey(cacheKey string) string {
+	cacheKey = strings.TrimSpace(cacheKey)
+	if cacheKey == "" {
+		return ""
+	}
+	parts := strings.SplitN(cacheKey, ":", 3)
+	if len(parts) != 3 || parts[0] != "patterns" {
+		return cacheKey
+	}
+	orgID := strings.TrimSpace(parts[1])
+	params, err := url.ParseQuery(parts[2])
+	if err != nil {
+		return cacheKey
+	}
+	query := patternScopeQuery(params.Get("query"))
+	if strings.TrimSpace(query) == "" {
+		return cacheKey
+	}
+	canonical := url.Values{}
+	canonical.Set("query", query)
+	return "patterns:" + orgID + ":" + canonical.Encode()
+}
+
+func normalizePatternSnapshotPayload(payload []byte) []byte {
+	if len(payload) == 0 {
+		return payload
+	}
+	var resp patternsResponse
+	if err := json.Unmarshal(payload, &resp); err != nil {
+		return payload
+	}
+	changed := false
+	for i := range resp.Data {
+		entry := resp.Data[i]
+		if len(entry.Samples) == 0 {
+			continue
+		}
+		compacted := compactPatternSnapshotSamples(entry.Samples)
+		if len(compacted) != len(entry.Samples) {
+			changed = true
+		}
+		entry.Samples = compacted
+		resp.Data[i] = entry
+	}
+	if !changed {
+		return payload
+	}
+	encoded, err := json.Marshal(resp)
+	if err != nil {
+		return payload
+	}
+	return encoded
+}
+
+func compactPatternSnapshotSamples(samples [][]interface{}) [][]interface{} {
+	if len(samples) == 0 {
+		return samples
+	}
+	byTimestamp := make(map[int64]int, len(samples))
+	order := make([]int64, 0, len(samples))
+	for _, pair := range samples {
+		if len(pair) < 2 {
+			continue
+		}
+		ts, okTS := numberToInt64(pair[0])
+		count, okCount := numberToInt(pair[1])
+		if !okTS || !okCount || count <= 0 {
+			continue
+		}
+		if _, seen := byTimestamp[ts]; !seen {
+			order = append(order, ts)
+		}
+		if count > byTimestamp[ts] {
+			byTimestamp[ts] = count
+		}
+	}
+	if len(byTimestamp) == 0 {
+		return [][]interface{}{}
+	}
+	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
+	compacted := make([][]interface{}, 0, len(order))
+	for _, ts := range order {
+		compacted = append(compacted, []interface{}{ts, byTimestamp[ts]})
+	}
+	return compacted
 }
 
 func betterPatternSnapshotEntry(current, incoming patternSnapshotEntry, currentKey, incomingKey string) bool {
@@ -5328,6 +5425,16 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	p.recordPatternFetchDiagnostics(diag)
 	p.metrics.RecordPatternsDetected(len(entries))
+	snapshotBody := []byte(nil)
+	if len(entries) > 0 {
+		rawSnapshotBody, marshalErr := json.Marshal(patternsResponse{
+			Status: "success",
+			Data:   entries,
+		})
+		if marshalErr == nil {
+			snapshotBody = rawSnapshotBody
+		}
+	}
 	entries = p.prependCustomPatternEntries(entries, startParam, stepParam, patternLimit)
 	entries = fillPatternSamplesAcrossRequestedRange(entries, startParam, endParam, stepParam)
 	resultBody, err := json.Marshal(patternsResponse{
@@ -5344,11 +5451,15 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	// Avoid sticky empty results: first-call empty probes should not poison long-lived pattern cache entries.
 	if len(entries) > 0 {
 		now := time.Now().UTC()
+		snapshotPayload := snapshotBody
+		if len(snapshotPayload) == 0 {
+			snapshotPayload = resultBody
+		}
 		p.cache.SetWithTTL(cacheWriteKey, resultBody, patternsCacheRetention)
-		p.recordPatternSnapshotEntry(cacheWriteKey, resultBody, now)
+		p.recordPatternSnapshotEntry(cacheWriteKey, snapshotPayload, now)
 		if derivedStepCacheKey != "" && derivedStepCacheKey != cacheWriteKey {
 			p.cache.SetWithTTL(derivedStepCacheKey, resultBody, patternsCacheRetention)
-			p.recordPatternSnapshotEntry(derivedStepCacheKey, resultBody, now)
+			p.recordPatternSnapshotEntry(derivedStepCacheKey, snapshotPayload, now)
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
