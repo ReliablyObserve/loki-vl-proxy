@@ -294,6 +294,35 @@ func TestPeerCache_ServeHTTP_SetRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPeerCache_ServeHTTP_SetRoundTrip_CompressedRequest(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost"})
+	defer pc.Close()
+
+	payload := []byte(strings.Repeat("hello-compressed-", 128))
+	encoded, err := encodePeerRequestBody(payload, "zstd")
+	if err != nil {
+		t.Fatalf("encode zstd payload: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/_cache/set?key=test-key&ttl_ms=90000", bytes.NewReader(encoded))
+	r.Header.Set("Content-Encoding", "zstd")
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 for compressed set, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	r = httptest.NewRequest(http.MethodGet, "/_cache/get?key=test-key", nil)
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusOK || w.Body.String() != string(payload) {
+		t.Fatalf("expected roundtrip 200/%q, got %d/%q", string(payload), w.Code, w.Body.String())
+	}
+}
+
 func TestPeerCache_ServeHTTP_SetRejectsEmptyBody(t *testing.T) {
 	localCache := New(60*time.Second, 1000)
 	defer localCache.Close()

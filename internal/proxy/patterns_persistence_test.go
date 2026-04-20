@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -145,7 +147,22 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 		if got := r.Header.Get("X-Peer-Token"); got != "shared-secret" {
 			t.Fatalf("unexpected peer token header: got %q", got)
 		}
-		if _, err := w.Write(peerBody); err != nil {
+		if !strings.Contains(strings.ToLower(r.Header.Get("Accept-Encoding")), "gzip") {
+			t.Fatalf("expected peer warm fetch to advertise compression, got %q", r.Header.Get("Accept-Encoding"))
+		}
+		var buf bytes.Buffer
+		zw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+		if err != nil {
+			t.Fatalf("create gzip writer: %v", err)
+		}
+		if _, err := zw.Write(peerBody); err != nil {
+			t.Fatalf("compress peer snapshot: %v", err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatalf("close gzip writer: %v", err)
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		if _, err := w.Write(buf.Bytes()); err != nil {
 			t.Fatalf("write peer snapshot: %v", err)
 		}
 	}))
@@ -193,6 +210,47 @@ func TestPatternsRestoreFromPeers_MergesSnapshot(t *testing.T) {
 	if ok {
 		t.Fatal("expected restorePatternsFromPeers to no-op when minSavedAt is current")
 	}
+}
+
+func TestPatternsPersistence_SkipsUnchangedPeriodicRewrite(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer backend.Close()
+
+	persistPath := filepath.Join(t.TempDir(), "patterns.snapshot.json")
+	p := newPatternPersistenceProxy(t, backend.URL, persistPath, true)
+	t.Cleanup(func() {
+		_ = p.Shutdown(context.Background())
+	})
+
+	payload := mustMarshalJSON(t, patternsResponse{
+		Status: "success",
+		Data: []patternResultEntry{
+			{Pattern: "request <_> completed", Samples: [][]interface{}{{"1710000000000000000", 1}}},
+		},
+	})
+	p.recordPatternSnapshotEntry("patterns:test", payload, time.Unix(1710000000, 0).UTC())
+	if err := p.persistPatternsNow("startup_peer_warm"); err != nil {
+		t.Fatalf("persistPatternsNow first write: %v", err)
+	}
+	infoBefore, err := os.Stat(persistPath)
+	if err != nil {
+		t.Fatalf("stat persisted patterns snapshot: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	p.patternsPersistDirty.Store(true)
+	if err := p.persistPatternsNow("periodic"); err != nil {
+		t.Fatalf("persistPatternsNow second write: %v", err)
+	}
+	infoAfter, err := os.Stat(persistPath)
+	if err != nil {
+		t.Fatalf("stat persisted patterns snapshot after skip: %v", err)
+	}
+	if !infoAfter.ModTime().Equal(infoBefore.ModTime()) {
+		t.Fatalf("expected unchanged periodic persist to skip disk rewrite: before=%s after=%s", infoBefore.ModTime(), infoAfter.ModTime())
+	}
+	requireProxyMetricsContain(t, p, "loki_vl_proxy_patterns_persist_writes_total 1")
 }
 
 func TestPatternsPersistSnapshotCache_StaysLocalWithoutWriteThrough(t *testing.T) {

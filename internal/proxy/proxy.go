@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -671,6 +672,8 @@ type Proxy struct {
 	patternsSnapshotEntries               map[string]patternSnapshotEntry
 	patternsSnapshotPatternCount          int64
 	patternsSnapshotPayloadBytes          int64
+	patternsPersistDigest                 [sha256.Size]byte
+	patternsPersistDigestReady            bool
 	backendVersionMu                      sync.RWMutex
 	backendVersionRaw                     string
 	backendVersionSemver                  string
@@ -686,6 +689,8 @@ type Proxy struct {
 	labelValuesIndexPersistDone           chan struct{}
 	labelValuesIndexMu                    sync.RWMutex
 	labelValuesIndex                      map[string]*labelValuesIndexState
+	labelValuesIndexPersistDigest         [sha256.Size]byte
+	labelValuesIndexPersistDigestReady    bool
 }
 
 var defaultTenantLimitsAllowPublish = []string{
@@ -3240,6 +3245,33 @@ func (p *Proxy) recomputePatternSnapshotStatsLocked() {
 	p.patternsSnapshotPayloadBytes = payloadBytes
 }
 
+func writeSnapshotFileIfChanged(path string, data []byte, compareDigest [sha256.Size]byte, digest *[sha256.Size]byte, ready *bool) (bool, error) {
+	if *ready && *digest == compareDigest {
+		return false, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return false, err
+	}
+	tmpPath := path + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		return false, err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return false, err
+	}
+	*digest = compareDigest
+	*ready = true
+	return true, nil
+}
+
+func mustMarshalSnapshot(v interface{}) []byte {
+	out, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return out
+}
+
 func (p *Proxy) persistPatternsNow(reason string) error {
 	if !p.patternsEnabled || strings.TrimSpace(p.patternsPersistPath) == "" {
 		return nil
@@ -3254,17 +3286,14 @@ func (p *Proxy) persistPatternsNow(reason string) error {
 	if err != nil {
 		return fmt.Errorf("marshal patterns snapshot: %w", err)
 	}
+	snapshotForDigest := snapshot
+	snapshotForDigest.SavedAtUnixNano = 0
+	snapshotDigest := sha256.Sum256(mustMarshalSnapshot(snapshotForDigest))
 
 	path := p.patternsPersistPath
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create patterns snapshot directory: %w", err)
-	}
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-		return fmt.Errorf("write patterns snapshot temp file: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("rename patterns snapshot temp file: %w", err)
+	wrote, err := writeSnapshotFileIfChanged(path, data, snapshotDigest, &p.patternsPersistDigest, &p.patternsPersistDigestReady)
+	if err != nil {
+		return fmt.Errorf("persist patterns snapshot: %w", err)
 	}
 
 	if p.cache != nil {
@@ -3285,13 +3314,16 @@ func (p *Proxy) persistPatternsNow(reason string) error {
 		"patterns snapshot persisted",
 		"reason", reason,
 		"path", path,
+		"wrote_disk", wrote,
 		"entries", entryCount,
 		"patterns", patternCount,
 		"bytes", len(data),
 		"duration_ms", time.Since(startedAt).Milliseconds(),
 	)
 	p.metrics.SetPatternsPersistedDiskState(patternCount, entryCount, int64(len(data)))
-	p.metrics.RecordPatternsPersistWrite(int64(len(data)))
+	if wrote {
+		p.metrics.RecordPatternsPersistWrite(int64(len(data)))
+	}
 	p.patternsPersistDirty.Store(false)
 	return nil
 }
@@ -3311,7 +3343,6 @@ func (p *Proxy) restorePatternsFromDisk() (bool, int64, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return false, 0, nil
 	}
-
 	var snapshot patternsSnapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return false, 0, fmt.Errorf("decode patterns snapshot: %w", err)
@@ -3322,6 +3353,10 @@ func (p *Proxy) restorePatternsFromDisk() (bool, int64, error) {
 	if snapshot.SavedAtUnixNano <= 0 {
 		return false, 0, fmt.Errorf("invalid patterns snapshot timestamp: %d", snapshot.SavedAtUnixNano)
 	}
+	snapshotForDigest := snapshot
+	snapshotForDigest.SavedAtUnixNano = 0
+	p.patternsPersistDigest = sha256.Sum256(mustMarshalSnapshot(snapshotForDigest))
+	p.patternsPersistDigestReady = true
 
 	snapshotEntryCount := len(snapshot.EntriesByKey)
 	snapshotPatternCount := patternCountFromSnapshot(snapshot)
@@ -3363,6 +3398,7 @@ func (p *Proxy) fetchPatternsSnapshotFromPeer(peerAddr string, timeout time.Dura
 	if p.peerAuthToken != "" {
 		req.Header.Set("X-Peer-Token", p.peerAuthToken)
 	}
+	req.Header.Set("Accept-Encoding", "zstd, gzip")
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -3378,6 +3414,9 @@ func (p *Proxy) fetchPatternsSnapshotFromPeer(peerAddr string, timeout time.Dura
 		return nil, 0, fmt.Errorf("peer %s status %d: %s", peerAddr, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
+	if err := decodeCompressedHTTPResponse(resp); err != nil {
+		return nil, 0, err
+	}
 	body, err := readBodyLimited(resp.Body, maxPatternsPeerSnapshotBytes)
 	if err != nil {
 		return nil, 0, err
@@ -3668,17 +3707,14 @@ func (p *Proxy) persistLabelValuesIndexNow(reason string) error {
 	if err != nil {
 		return fmt.Errorf("marshal label index snapshot: %w", err)
 	}
+	snapshotForDigest := snapshot
+	snapshotForDigest.SavedAtUnixNano = 0
+	snapshotDigest := sha256.Sum256(mustMarshalSnapshot(snapshotForDigest))
 
 	path := p.labelValuesIndexPersistPath
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("create label index snapshot directory: %w", err)
-	}
-	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-		return fmt.Errorf("write label index snapshot temp file: %w", err)
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return fmt.Errorf("rename label index snapshot temp file: %w", err)
+	wrote, err := writeSnapshotFileIfChanged(path, data, snapshotDigest, &p.labelValuesIndexPersistDigest, &p.labelValuesIndexPersistDigestReady)
+	if err != nil {
+		return fmt.Errorf("persist label index snapshot: %w", err)
 	}
 
 	if p.cache != nil {
@@ -3695,9 +3731,9 @@ func (p *Proxy) persistLabelValuesIndexNow(reason string) error {
 
 	states, values := p.labelValuesIndexCardinality()
 	if reason == "periodic" {
-		p.log.Debug("label values index snapshot persisted", "path", path, "states", states, "values", values, "bytes", len(data), "duration_ms", time.Since(startedAt).Milliseconds())
+		p.log.Debug("label values index snapshot persisted", "path", path, "wrote_disk", wrote, "states", states, "values", values, "bytes", len(data), "duration_ms", time.Since(startedAt).Milliseconds())
 	} else {
-		p.log.Info("label values index snapshot persisted", "reason", reason, "path", path, "states", states, "values", values, "bytes", len(data), "duration_ms", time.Since(startedAt).Milliseconds())
+		p.log.Info("label values index snapshot persisted", "reason", reason, "path", path, "wrote_disk", wrote, "states", states, "values", values, "bytes", len(data), "duration_ms", time.Since(startedAt).Milliseconds())
 	}
 	p.labelValuesIndexPersistDirty.Store(false)
 	return nil
@@ -3716,7 +3752,6 @@ func (p *Proxy) restoreLabelValuesIndexFromDisk() (bool, int64, error) {
 		}
 		return false, 0, fmt.Errorf("read label index snapshot: %w", err)
 	}
-
 	var snapshot labelValuesIndexSnapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {
 		return false, 0, fmt.Errorf("decode label index snapshot: %w", err)
@@ -3727,6 +3762,10 @@ func (p *Proxy) restoreLabelValuesIndexFromDisk() (bool, int64, error) {
 	if snapshot.SavedAtUnixNano <= 0 {
 		return false, 0, fmt.Errorf("invalid label index snapshot timestamp: %d", snapshot.SavedAtUnixNano)
 	}
+	snapshotForDigest := snapshot
+	snapshotForDigest.SavedAtUnixNano = 0
+	p.labelValuesIndexPersistDigest = sha256.Sum256(mustMarshalSnapshot(snapshotForDigest))
+	p.labelValuesIndexPersistDigestReady = true
 
 	states, values := p.applyLabelValuesIndexSnapshot(snapshot)
 	if p.cache != nil {
@@ -3763,6 +3802,7 @@ func (p *Proxy) fetchLabelValuesIndexSnapshotFromPeer(peerAddr string, timeout t
 	if p.peerAuthToken != "" {
 		req.Header.Set("X-Peer-Token", p.peerAuthToken)
 	}
+	req.Header.Set("Accept-Encoding", "zstd, gzip")
 
 	resp, err := p.client.Do(req)
 	if err != nil {
@@ -3778,6 +3818,9 @@ func (p *Proxy) fetchLabelValuesIndexSnapshotFromPeer(peerAddr string, timeout t
 		return nil, 0, fmt.Errorf("peer %s status %d: %s", peerAddr, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
+	if err := decodeCompressedHTTPResponse(resp); err != nil {
+		return nil, 0, err
+	}
 	body, err := readBodyLimited(resp.Body, maxLabelValuesPeerSnapshotBytes)
 	if err != nil {
 		return nil, 0, err

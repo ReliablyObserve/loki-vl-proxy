@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -454,11 +455,36 @@ func TestLabelSurface_LabelValuesIndexStartupWarmsFromPeersWhenDiskStale(t *test
 		if got := r.Header.Get("X-Peer-Token"); got != "shared-secret" {
 			t.Fatalf("unexpected peer token header: got %q", got)
 		}
+		if !strings.Contains(strings.ToLower(r.Header.Get("Accept-Encoding")), "gzip") {
+			t.Fatalf("expected peer warm fetch to advertise compression, got %q", r.Header.Get("Accept-Encoding"))
+		}
 		if r.URL.Path != "/_cache/get" {
 			http.NotFound(w, r)
 			return
 		}
-		ownerPeer.ServeHTTP(w, r, ownerCache)
+		rec := httptest.NewRecorder()
+		ownerPeer.ServeHTTP(rec, r, ownerCache)
+		for k, vals := range rec.Header() {
+			for _, v := range vals {
+				w.Header().Add(k, v)
+			}
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		w.WriteHeader(rec.Code)
+		var buf bytes.Buffer
+		zw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+		if err != nil {
+			t.Fatalf("create gzip writer: %v", err)
+		}
+		if _, err := zw.Write(rec.Body.Bytes()); err != nil {
+			t.Fatalf("compress label-values snapshot: %v", err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatalf("close gzip writer: %v", err)
+		}
+		if _, err := w.Write(buf.Bytes()); err != nil {
+			t.Fatalf("write compressed label-values snapshot: %v", err)
+		}
 	}))
 	defer peerSrv.Close()
 
@@ -952,14 +978,25 @@ func TestLabelSurface_LabelValuesIndexPersistenceLoop_SkipsUnchangedPeriodicWrit
 	}
 
 	// Wait across multiple persistence ticks without mutating the index.
+	infoBefore, err := os.Stat(persistPath)
+	if err != nil {
+		t.Fatalf("stat persisted snapshot before second read: %v", err)
+	}
 	time.Sleep(120 * time.Millisecond)
 
 	second, err := os.ReadFile(persistPath)
 	if err != nil {
 		t.Fatalf("expected persisted index snapshot file on second read: %v", err)
 	}
+	infoAfter, err := os.Stat(persistPath)
+	if err != nil {
+		t.Fatalf("stat persisted snapshot after second read: %v", err)
+	}
 	if !bytes.Equal(first, second) {
 		t.Fatalf("expected unchanged index to skip periodic rewrite")
+	}
+	if !infoAfter.ModTime().Equal(infoBefore.ModTime()) {
+		t.Fatalf("expected unchanged index to skip disk rewrite: before=%s after=%s", infoBefore.ModTime(), infoAfter.ModTime())
 	}
 }
 

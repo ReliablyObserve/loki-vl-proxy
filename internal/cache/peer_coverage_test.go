@@ -271,6 +271,84 @@ func TestPeerCache_WriteThroughAndReadAheadBranches(t *testing.T) {
 		}
 	})
 
+	t.Run("set with ttl uses compressed push for capable peers", func(t *testing.T) {
+		localCache := New(60*time.Second, 1000)
+		defer localCache.Close()
+
+		type pushResult struct {
+			key      string
+			ttl      string
+			body     []byte
+			encoding string
+		}
+		var (
+			mu     sync.Mutex
+			pushed pushResult
+		)
+		peerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, _ := io.ReadAll(r.Body)
+			mu.Lock()
+			pushed = pushResult{
+				key:      r.URL.Query().Get("key"),
+				ttl:      r.URL.Query().Get("ttl_ms"),
+				body:     append([]byte(nil), body...),
+				encoding: r.Header.Get("Content-Encoding"),
+			}
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer peerServer.Close()
+
+		pc := NewPeerCache(PeerConfig{
+			SelfAddr:           "self:3100",
+			DiscoveryType:      "static",
+			StaticPeers:        peerServer.Listener.Addr().String(),
+			Timeout:            time.Second,
+			WriteThrough:       true,
+			WriteThroughMinTTL: 10 * time.Second,
+		})
+		defer pc.Close()
+		localCache.SetL3(pc)
+
+		var targetKey string
+		for i := 0; i < 100; i++ {
+			key := "write-through-compressed-key-" + strconv.Itoa(i)
+			pc.mu.RLock()
+			owner := pc.ring.get(key)
+			pc.mu.RUnlock()
+			if owner == peerServer.Listener.Addr().String() {
+				targetKey = key
+				break
+			}
+		}
+		if targetKey == "" {
+			t.Fatal("no key mapped to peer")
+		}
+
+		pc.recordPeerSetEncoding(peerServer.Listener.Addr().String(), "zstd")
+		payload := []byte(strings.Repeat("payload-", 256))
+		localCache.SetWithTTL(targetKey, payload, 30*time.Second)
+		requireEventually(t, time.Second, func() bool {
+			mu.Lock()
+			defer mu.Unlock()
+			return pushed.key == targetKey
+		})
+
+		mu.Lock()
+		got := pushed
+		mu.Unlock()
+		if got.encoding != "zstd" {
+			t.Fatalf("expected zstd write-through encoding, got %q", got.encoding)
+		}
+		decoded, err := decodePeerResponseBody(got.encoding, got.body, maxPeerSetBodyBytes)
+		if err != nil {
+			t.Fatalf("decode pushed body: %v", err)
+		}
+		if !bytes.Equal(decoded, payload) {
+			t.Fatalf("unexpected pushed payload len=%d want=%d", len(decoded), len(payload))
+		}
+	})
+
 	t.Run("prefetch hot key additional branches", func(t *testing.T) {
 		pc := NewPeerCache(PeerConfig{
 			SelfAddr:                "self",

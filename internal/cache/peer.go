@@ -31,6 +31,8 @@ const (
 	maxPeerResponseBytes    int64 = 32 << 20
 	maxPeerDecodedBodyBytes int64 = 32 << 20
 	maxPeerHotIndexBytes    int64 = 4 << 20
+	maxPeerSetBodyBytes     int64 = 8 << 20
+	peerCompressionMinBytes       = 1024
 )
 
 // PeerCache implements a sharded distributed cache layer (L3).
@@ -86,6 +88,7 @@ type PeerCache struct {
 
 	// Low-cardinality fetch error reasons for observability.
 	peerErrorReasons sync.Map // string → *atomic.Int64
+	peerSetEncodings sync.Map // string → string
 
 	// Stats
 	PeerHits   atomic.Int64
@@ -351,6 +354,7 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 
 	if resp.StatusCode == http.StatusNotFound {
 		pc.recordPeerSuccess(owner)
+		pc.recordPeerSetEncoding(owner, resp.Header.Get("X-Peer-Set-Encoding"))
 		inf.ok = false
 		pc.PeerMisses.Add(1)
 		return nil, 0, false
@@ -387,6 +391,7 @@ func (pc *PeerCache) Get(key string) ([]byte, time.Duration, bool) {
 	}
 
 	pc.recordPeerSuccess(owner)
+	pc.recordPeerSetEncoding(owner, resp.Header.Get("X-Peer-Set-Encoding"))
 	inf.result = body
 	inf.ttl = remainingTTL
 	inf.ok = true
@@ -433,6 +438,21 @@ func (pc *PeerCache) pushToOwner(owner, key string, value []byte, ttl time.Durat
 	if ttl > 0 {
 		ttlMs = ttl.Milliseconds()
 	}
+	body := value
+	encoding := ""
+	if len(value) >= peerCompressionMinBytes {
+		if supported, ok := pc.peerPreferredSetEncoding(owner); ok && supported == "zstd" {
+			encoded, err := encodePeerRequestBody(value, supported)
+			if err != nil {
+				pc.recordPeerFailure(owner)
+				pc.RecordPeerErrorReason("encode")
+				pc.WTErrors.Add(1)
+				return
+			}
+			body = encoded
+			encoding = supported
+		}
+	}
 	endpoint := fmt.Sprintf(
 		"http://%s/_cache/set?%s",
 		owner,
@@ -441,13 +461,16 @@ func (pc *PeerCache) pushToOwner(owner, key string, value []byte, ttl time.Durat
 			"ttl_ms": []string{strconv.FormatInt(ttlMs, 10)},
 		}.Encode(),
 	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(value))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		pc.recordPeerFailure(owner)
 		pc.WTErrors.Add(1)
 		return
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
+	if encoding != "" {
+		req.Header.Set("Content-Encoding", encoding)
+	}
 	if pc.authToken != "" {
 		req.Header.Set("X-Peer-Token", pc.authToken)
 	}
@@ -513,12 +536,14 @@ func (pc *PeerCache) serveGet(w http.ResponseWriter, r *http.Request, localCache
 	value, remaining, ok := localCache.GetWithTTL(key)
 	if !ok || remaining < MinUsableTTL {
 		// Expired or about to expire — treat as miss (force refresh from VL)
+		w.Header().Set("X-Peer-Set-Encoding", "zstd")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("X-Cache-TTL-Ms", fmt.Sprintf("%d", remaining.Milliseconds()))
+	w.Header().Set("X-Peer-Set-Encoding", "zstd")
 	writePeerEncodedResponse(w, r, value)
 }
 
@@ -539,9 +564,14 @@ func (pc *PeerCache) serveSet(w http.ResponseWriter, r *http.Request, localCache
 	if ttl <= 0 {
 		ttl = 30 * time.Second
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 8<<20))
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxPeerSetBodyBytes))
 	if err != nil {
 		http.Error(w, "read body failed", http.StatusBadRequest)
+		return
+	}
+	body, err = decodePeerResponseBody(r.Header.Get("Content-Encoding"), body, maxPeerSetBodyBytes)
+	if err != nil {
+		http.Error(w, "decode body failed", http.StatusBadRequest)
 		return
 	}
 	if len(body) == 0 {
@@ -549,6 +579,7 @@ func (pc *PeerCache) serveSet(w http.ResponseWriter, r *http.Request, localCache
 		return
 	}
 	localCache.SetWithTTL(key, body, ttl)
+	w.Header().Set("X-Peer-Set-Encoding", "zstd")
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -581,11 +612,11 @@ func (pc *PeerCache) serveHotIndex(w http.ResponseWriter, r *http.Request, local
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Peer-Set-Encoding", "zstd")
 	writePeerEncodedResponse(w, r, body)
 }
 
 func writePeerEncodedResponse(w http.ResponseWriter, r *http.Request, body []byte) {
-	const peerCompressionMinBytes = 1024
 	if len(body) >= peerCompressionMinBytes && acceptsPeerEncoding(r.Header.Get("Accept-Encoding"), "zstd") {
 		w.Header().Set("Content-Encoding", "zstd")
 		zw, err := zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedFastest))
@@ -619,6 +650,43 @@ func writePeerEncodedResponse(w http.ResponseWriter, r *http.Request, body []byt
 		return
 	}
 	_, _ = w.Write(body)
+}
+
+func encodePeerRequestBody(body []byte, encoding string) ([]byte, error) {
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "", "identity":
+		return body, nil
+	case "zstd":
+		var buf bytes.Buffer
+		zw, err := zstd.NewWriter(&buf, zstd.WithEncoderLevel(zstd.SpeedFastest))
+		if err != nil {
+			return nil, err
+		}
+		if _, err := zw.Write(body); err != nil {
+			zw.Close()
+			return nil, err
+		}
+		if err := zw.Close(); err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
+	case "gzip":
+		var buf bytes.Buffer
+		zw, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := zw.Write(body); err != nil {
+			zw.Close()
+			return nil, err
+		}
+		if err := zw.Close(); err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
+	default:
+		return nil, fmt.Errorf("unsupported peer request encoding %q", encoding)
+	}
 }
 
 func acceptsPeerEncoding(header, encoding string) bool {
@@ -901,6 +969,7 @@ func (pc *PeerCache) fetchPeerHotIndex(peerAddr string, limit int) ([]hotIndexEn
 		pc.recordPeerFailure(peerAddr)
 		return nil, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
+	pc.recordPeerSetEncoding(peerAddr, resp.Header.Get("X-Peer-Set-Encoding"))
 	body, err := readPeerBodyLimited(resp.Body, maxPeerHotIndexBytes)
 	if err != nil {
 		pc.recordPeerFailure(peerAddr)
@@ -921,6 +990,31 @@ func (pc *PeerCache) fetchPeerHotIndex(peerAddr string, limit int) ([]hotIndexEn
 		return nil, nil
 	}
 	return payload.Entries, nil
+}
+
+func (pc *PeerCache) recordPeerSetEncoding(peerAddr, encoding string) {
+	if pc == nil || strings.TrimSpace(peerAddr) == "" {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(encoding)) {
+	case "zstd":
+		pc.peerSetEncodings.Store(peerAddr, "zstd")
+	default:
+		pc.peerSetEncodings.Store(peerAddr, "")
+	}
+}
+
+func (pc *PeerCache) peerPreferredSetEncoding(peerAddr string) (string, bool) {
+	if pc == nil || strings.TrimSpace(peerAddr) == "" {
+		return "", false
+	}
+	if v, ok := pc.peerSetEncodings.Load(peerAddr); ok {
+		if encoding, ok := v.(string); ok && strings.TrimSpace(encoding) != "" {
+			return encoding, true
+		}
+		return "", false
+	}
+	return "", false
 }
 
 // PeerCount returns the number of active peers (excluding self).
