@@ -1,0 +1,4 @@
+extraArgs:
+  backend-basic-auth: "user:pass"
+  field-mapping: '[{"vl_field":"custom.field","loki_label":"custom_label"}]'
+  tenant-default-limits: '{"query_timeout":"1m","max_query_series":500,"max_query_lookback":"0s"}'

@@ -689,3 +689,6 @@ jobs:
 
       - name: Helm lint
         run: helm lint charts/loki-vl-proxy/
+
+      - name: Helm template quoted args regression
+        run: helm template loki-vl-proxy charts/loki-vl-proxy -f scripts/ci/helm-quoted-args-values.yaml >/dev/null
