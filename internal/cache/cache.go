@@ -15,6 +15,31 @@ type entry struct {
 	sizeBytes int
 }
 
+type tierStats struct {
+	requests  atomic.Int64
+	hits      atomic.Int64
+	misses    atomic.Int64
+	staleHits atomic.Int64
+}
+
+type TierStatsSnapshot struct {
+	Requests  int64
+	Hits      int64
+	Misses    int64
+	StaleHits int64
+}
+
+type StatsSnapshot struct {
+	L1                TierStatsSnapshot
+	L2                TierStatsSnapshot
+	L3                TierStatsSnapshot
+	BackendFallthrough int64
+	Entries           int
+	Bytes             int
+	DiskEntries       int
+	DiskBytes         int64
+}
+
 // Cache is an in-memory TTL cache with per-key TTL override, max entries, and max bytes.
 // Supports optional L2 disk cache and L3 peer cache for distributed fleet operation.
 // Lookup order: L1 (in-memory) → L2 (disk) → L3 (peer) → VL backend.
@@ -40,6 +65,11 @@ type Cache struct {
 	Hits      atomic.Int64
 	Misses    atomic.Int64
 	Evictions atomic.Int64
+
+	l1Stats            tierStats
+	l2Stats            tierStats
+	l3Stats            tierStats
+	backendFallthrough atomic.Int64
 }
 
 // MaxEntrySizeBytes returns the largest object this cache will retain.
@@ -148,6 +178,50 @@ func (c *Cache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
 	return nil, 0, false
 }
 
+// GetSharedWithTTL returns the value and remaining TTL across the full fresh-cache stack.
+// Lookup order is L1 memory -> L2 disk -> L3 peer. Hits from lower tiers are promoted
+// into local L1 only so read reuse improves without forcing extra disk or peer writes.
+func (c *Cache) GetSharedWithTTL(key string) ([]byte, time.Duration, string, bool) {
+	if v, ttl, ok := c.getL1WithTTL(key); ok {
+		c.recordTierRequest("l1")
+		c.recordTierHit("l1")
+		c.Hits.Add(1)
+		return v, ttl, "l1_memory", true
+	}
+	c.recordTierRequest("l1")
+	c.recordTierMiss("l1")
+
+	if c.l2 != nil {
+		c.recordTierRequest("l2")
+		if v, ttl, ok := c.l2.GetWithTTL(key); ok {
+			c.SetLocalOnlyWithTTL(key, v, ttl)
+			c.recordTierHit("l2")
+			c.Hits.Add(1)
+			return v, ttl, "l2_disk", true
+		}
+		c.recordTierMiss("l2")
+	}
+
+	if c.l3 != nil {
+		c.recordTierRequest("l3")
+		if v, remainingTTL, ok := c.l3.Get(key); ok {
+			shadowTTL := remainingTTL
+			if shadowTTL <= 0 {
+				shadowTTL = 30 * time.Second
+			}
+			c.SetLocalOnlyWithTTL(key, v, shadowTTL)
+			c.recordTierHit("l3")
+			c.Hits.Add(1)
+			return v, shadowTTL, "l3_peer", true
+		}
+		c.recordTierMiss("l3")
+	}
+
+	c.backendFallthrough.Add(1)
+	c.Misses.Add(1)
+	return nil, 0, "", false
+}
+
 // GetStaleWithTTL returns a locally retained value even if its TTL has expired.
 // The returned TTL may be negative when the entry is stale. This never falls
 // back to L2/L3 because stale-on-error is only intended to reuse the serving
@@ -161,6 +235,22 @@ func (c *Cache) GetStaleWithTTL(key string) ([]byte, time.Duration, bool) {
 		return nil, 0, false
 	}
 	return e.value, time.Until(e.expiresAt), true
+}
+
+// GetRecoverableStaleWithTTL returns the last known-good value from local memory or local disk.
+// It never reads peers for stale data, which keeps degraded-path fallback local-first.
+func (c *Cache) GetRecoverableStaleWithTTL(key string) ([]byte, time.Duration, string, bool) {
+	if v, ttl, ok := c.GetStaleWithTTL(key); ok {
+		c.recordTierStaleHit("l1")
+		return v, ttl, "l1_memory", true
+	}
+	if c.l2 != nil {
+		if v, ttl, ok := c.l2.GetStaleWithTTL(key); ok {
+			c.recordTierStaleHit("l2")
+			return v, ttl, "l2_disk", true
+		}
+	}
+	return nil, 0, "", false
 }
 
 func (c *Cache) Get(key string) ([]byte, bool) {
@@ -251,6 +341,24 @@ func (c *Cache) SetLocalOnlyWithTTL(key string, value []byte, ttl time.Duration)
 	}
 }
 
+// SetLocalAndDiskWithTTL stores a value in local L1 and the local L2 disk cache,
+// but skips peer write-through. This is the preferred mode for helper/read caches
+// that should survive pod churn without adding east-west write amplification.
+func (c *Cache) SetLocalAndDiskWithTTL(key string, value []byte, ttl time.Duration) {
+	size := len(value)
+	if size > c.maxBytes/10 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.storeLocalLocked(key, value, ttl, size)
+	if c.l2 != nil && !skipL2WriteForKey(key) {
+		c.l2.Set(key, value, ttl)
+	}
+}
+
 // SetWithTTL stores a value with a specific TTL.
 func (c *Cache) SetWithTTL(key string, value []byte, ttl time.Duration) {
 	c.setWithTTL(key, value, ttl, true)
@@ -278,28 +386,7 @@ func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagat
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// If replacing existing entry, subtract old size and promote in LRU
-	if old, ok := c.entries[key]; ok {
-		c.curBytes -= old.sizeBytes
-		if elem, found := c.lruIndex[key]; found {
-			c.lruList.MoveToFront(elem)
-		}
-	}
-
-	c.evictIfNeeded(size)
-
-	c.entries[key] = entry{
-		value:     value,
-		expiresAt: time.Now().Add(ttl),
-		sizeBytes: size,
-	}
-	c.curBytes += size
-
-	// Add to LRU list if not already there
-	if _, found := c.lruIndex[key]; !found {
-		elem := c.lruList.PushFront(&lruEntry{key: key})
-		c.lruIndex[key] = elem
-	}
+	c.storeLocalLocked(key, value, ttl, size)
 
 	// Write-through to L2 (disk), except keys that already have dedicated
 	// persistence paths and would otherwise double-write to disk.
@@ -316,6 +403,29 @@ func (c *Cache) setWithTTL(key string, value []byte, ttl time.Duration, propagat
 	// traffic scenarios (for example a single hot client pinned to one pod).
 	if propagateL3 && c.l3 != nil {
 		c.l3.SetWithTTL(key, value, ttl)
+	}
+}
+
+func (c *Cache) storeLocalLocked(key string, value []byte, ttl time.Duration, size int) {
+	if old, ok := c.entries[key]; ok {
+		c.curBytes -= old.sizeBytes
+		if elem, found := c.lruIndex[key]; found {
+			c.lruList.MoveToFront(elem)
+		}
+	}
+
+	c.evictIfNeeded(size)
+
+	c.entries[key] = entry{
+		value:     value,
+		expiresAt: time.Now().Add(ttl),
+		sizeBytes: size,
+	}
+	c.curBytes += size
+
+	if _, found := c.lruIndex[key]; !found {
+		elem := c.lruList.PushFront(&lruEntry{key: key})
+		c.lruIndex[key] = elem
 	}
 }
 
@@ -518,6 +628,104 @@ func (c *Cache) TopHotKeys(limit int, minRemainingTTL time.Duration, maxObjectBy
 		out = out[:limit]
 	}
 	return out
+}
+
+func (c *Cache) getL1WithTTL(key string) ([]byte, time.Duration, bool) {
+	c.mu.Lock()
+	e, ok := c.entries[key]
+	if ok {
+		remaining := time.Until(e.expiresAt)
+		if remaining > 0 {
+			if elem, found := c.lruIndex[key]; found {
+				c.lruList.MoveToFront(elem)
+			}
+			if c.hotOn {
+				c.recordHotLocked(key)
+			}
+			c.mu.Unlock()
+			return e.value, remaining, true
+		}
+	}
+	c.mu.Unlock()
+	return nil, 0, false
+}
+
+func (c *Cache) recordTierRequest(tier string) {
+	switch tier {
+	case "l1":
+		c.l1Stats.requests.Add(1)
+	case "l2":
+		c.l2Stats.requests.Add(1)
+	case "l3":
+		c.l3Stats.requests.Add(1)
+	}
+}
+
+func (c *Cache) recordTierHit(tier string) {
+	switch tier {
+	case "l1":
+		c.l1Stats.hits.Add(1)
+	case "l2":
+		c.l2Stats.hits.Add(1)
+	case "l3":
+		c.l3Stats.hits.Add(1)
+	}
+}
+
+func (c *Cache) recordTierMiss(tier string) {
+	switch tier {
+	case "l1":
+		c.l1Stats.misses.Add(1)
+	case "l2":
+		c.l2Stats.misses.Add(1)
+	case "l3":
+		c.l3Stats.misses.Add(1)
+	}
+}
+
+func (c *Cache) recordTierStaleHit(tier string) {
+	switch tier {
+	case "l1":
+		c.l1Stats.staleHits.Add(1)
+	case "l2":
+		c.l2Stats.staleHits.Add(1)
+	case "l3":
+		c.l3Stats.staleHits.Add(1)
+	}
+}
+
+func (c *Cache) Stats() StatsSnapshot {
+	entries, bytes := c.Size()
+	var diskEntries int
+	var diskBytes int64
+	if c.l2 != nil {
+		diskEntries, diskBytes = c.l2.Size()
+	}
+	return StatsSnapshot{
+		L1: TierStatsSnapshot{
+			Requests:  c.l1Stats.requests.Load(),
+			Hits:      c.l1Stats.hits.Load(),
+			Misses:    c.l1Stats.misses.Load(),
+			StaleHits: c.l1Stats.staleHits.Load(),
+		},
+		L2: TierStatsSnapshot{
+			Requests:  c.l2Stats.requests.Load(),
+			Hits:      c.l2Stats.hits.Load(),
+			Misses:    c.l2Stats.misses.Load(),
+			StaleHits: c.l2Stats.staleHits.Load(),
+		},
+		L3: TierStatsSnapshot{
+			Requests:  c.l3Stats.requests.Load(),
+			Hits:      c.l3Stats.hits.Load(),
+			Misses:    c.l3Stats.misses.Load(),
+			StaleHits: c.l3Stats.staleHits.Load(),
+		},
+		BackendFallthrough: c.backendFallthrough.Load(),
+		Entries:            entries,
+		Bytes:              bytes,
+		DiskEntries:        diskEntries,
+		DiskBytes:          diskBytes,
+	}
 }
 
 func tenantFromCacheKey(key string) string {

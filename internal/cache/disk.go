@@ -123,16 +123,33 @@ func NewDiskCache(cfg DiskCacheConfig) (*DiskCache, error) {
 
 // Get retrieves a value from disk cache.
 func (dc *DiskCache) Get(key string) ([]byte, bool) {
+	value, _, ok := dc.GetWithTTL(key)
+	return value, ok
+}
+
+// GetWithTTL retrieves a fresh value from disk cache with its remaining TTL.
+func (dc *DiskCache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
+	return dc.getWithTTL(key, false)
+}
+
+// GetStaleWithTTL retrieves the last retained value from disk, even if expired.
+// The returned TTL may be negative when the entry is stale.
+func (dc *DiskCache) GetStaleWithTTL(key string) ([]byte, time.Duration, bool) {
+	return dc.getWithTTL(key, true)
+}
+
+func (dc *DiskCache) getWithTTL(key string, allowStale bool) ([]byte, time.Duration, bool) {
 	// Check write buffer first
 	dc.writeMu.Lock()
 	if entry, ok := dc.writeBuf[key]; ok {
 		dc.writeMu.Unlock()
-		if time.Now().UnixNano() > entry.ExpiresAt {
+		remaining := time.Until(time.Unix(0, entry.ExpiresAt))
+		if remaining <= 0 && !allowStale {
 			dc.Misses.Add(1)
-			return nil, false
+			return nil, 0, false
 		}
 		dc.Hits.Add(1)
-		return entry.Value, true
+		return entry.Value, remaining, true
 	}
 	dc.writeMu.Unlock()
 
@@ -149,7 +166,7 @@ func (dc *DiskCache) Get(key string) ([]byte, bool) {
 
 	if raw == nil {
 		dc.Misses.Add(1)
-		return nil, false
+		return nil, 0, false
 	}
 
 	// Decompress
@@ -158,24 +175,25 @@ func (dc *DiskCache) Get(key string) ([]byte, bool) {
 		raw, err = decompress(raw)
 		if err != nil {
 			dc.Misses.Add(1)
-			return nil, false
+			return nil, 0, false
 		}
 	}
 
 	// Check expiry (first 8 bytes = expiry timestamp)
 	if len(raw) < 8 {
 		dc.Misses.Add(1)
-		return nil, false
+		return nil, 0, false
 	}
 	expiresAt := int64(binary.BigEndian.Uint64(raw[:8]))
-	if time.Now().UnixNano() > expiresAt {
+	remaining := time.Until(time.Unix(0, expiresAt))
+	if remaining <= 0 && !allowStale {
 		dc.Misses.Add(1)
 		dc.Evictions.Add(1)
-		return nil, false
+		return nil, 0, false
 	}
 
 	dc.Hits.Add(1)
-	return raw[8:], true
+	return raw[8:], remaining, true
 }
 
 // Set stores a value in the write buffer (will be flushed to disk).

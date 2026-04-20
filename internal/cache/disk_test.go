@@ -67,6 +67,57 @@ func TestDiskCache_TTLExpiry(t *testing.T) {
 	}
 }
 
+func TestDiskCache_GetWithTTL_ReturnsRemainingTTL(t *testing.T) {
+	dc, err := NewDiskCache(DiskCacheConfig{
+		Path:        tempDBPath(t),
+		Compression: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dc.Close() }()
+
+	dc.Set("ttl", []byte("value"), 5*time.Second)
+	dc.Flush()
+
+	value, ttl, ok := dc.GetWithTTL("ttl")
+	if !ok {
+		t.Fatal("expected fresh disk hit")
+	}
+	if string(value) != "value" {
+		t.Fatalf("expected value, got %q", value)
+	}
+	if ttl <= 0 || ttl > 5*time.Second {
+		t.Fatalf("expected TTL between 0 and 5s, got %v", ttl)
+	}
+}
+
+func TestDiskCache_GetStaleWithTTL_ReturnsExpiredValue(t *testing.T) {
+	dc, err := NewDiskCache(DiskCacheConfig{
+		Path:        tempDBPath(t),
+		Compression: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dc.Close() }()
+
+	dc.Set("stale", []byte("value"), 20*time.Millisecond)
+	dc.Flush()
+	time.Sleep(30 * time.Millisecond)
+
+	value, ttl, ok := dc.GetStaleWithTTL("stale")
+	if !ok {
+		t.Fatal("expected stale disk value to be returned")
+	}
+	if string(value) != "value" {
+		t.Fatalf("expected value, got %q", value)
+	}
+	if ttl >= 0 {
+		t.Fatalf("expected negative TTL for stale disk value, got %v", ttl)
+	}
+}
+
 func TestDiskCache_Compression(t *testing.T) {
 	dc, err := NewDiskCache(DiskCacheConfig{
 		Path:        tempDBPath(t),

@@ -67,6 +67,81 @@ func TestGetStaleWithTTL_ReturnsExpiredEntry(t *testing.T) {
 	}
 }
 
+func TestGetSharedWithTTL_PromotesFreshDiskHitIntoL1(t *testing.T) {
+	dc, err := NewDiskCache(DiskCacheConfig{
+		Path:        tempDBPath(t),
+		Compression: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dc.Close() }()
+
+	c := NewWithMaxBytes(10*time.Second, 100, 1024*1024)
+	defer c.Close()
+	c.SetL2(dc)
+
+	dc.Set("shared", []byte("payload"), 5*time.Second)
+	dc.Flush()
+
+	value, ttl, tier, ok := c.GetSharedWithTTL("shared")
+	if !ok {
+		t.Fatal("expected shared disk hit")
+	}
+	if string(value) != "payload" {
+		t.Fatalf("unexpected payload %q", value)
+	}
+	if tier != "l2_disk" {
+		t.Fatalf("expected l2_disk tier, got %q", tier)
+	}
+	if ttl <= 0 {
+		t.Fatalf("expected positive TTL, got %v", ttl)
+	}
+	if promoted, _, ok := c.GetWithTTL("shared"); !ok || string(promoted) != "payload" {
+		t.Fatal("expected L2 hit to promote payload into local L1")
+	}
+	stats := c.Stats()
+	if stats.L2.Hits != 1 || stats.L1.Misses != 1 {
+		t.Fatalf("unexpected cache tier stats: %+v", stats)
+	}
+}
+
+func TestGetRecoverableStaleWithTTL_ReturnsDiskStaleValue(t *testing.T) {
+	dc, err := NewDiskCache(DiskCacheConfig{
+		Path:        tempDBPath(t),
+		Compression: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dc.Close() }()
+
+	c := NewWithMaxBytes(10*time.Second, 100, 1024*1024)
+	defer c.Close()
+	c.SetL2(dc)
+
+	dc.Set("disk-stale", []byte("payload"), 10*time.Millisecond)
+	dc.Flush()
+	time.Sleep(20 * time.Millisecond)
+
+	value, ttl, tier, ok := c.GetRecoverableStaleWithTTL("disk-stale")
+	if !ok {
+		t.Fatal("expected stale disk payload")
+	}
+	if string(value) != "payload" {
+		t.Fatalf("unexpected payload %q", value)
+	}
+	if tier != "l2_disk" {
+		t.Fatalf("expected l2_disk tier, got %q", tier)
+	}
+	if ttl >= 0 {
+		t.Fatalf("expected negative TTL, got %v", ttl)
+	}
+	if stats := c.Stats(); stats.L2.StaleHits != 1 {
+		t.Fatalf("expected one stale L2 hit, got %+v", stats)
+	}
+}
+
 func TestCache_MaxEntrySizeBytes(t *testing.T) {
 	c := NewWithMaxBytes(10*time.Second, 100, 1000)
 	defer c.Close()

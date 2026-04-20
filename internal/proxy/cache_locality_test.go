@@ -92,7 +92,7 @@ func TestQueryRangeCache_StoresFullResponsesLocallyWhenPeerWriteThroughEnabled(t
 	}
 }
 
-func TestLabelsCache_StoresResponsesLocallyWhenPeerWriteThroughEnabled(t *testing.T) {
+func TestLabelsCache_StoresResponsesInLocalDiskCacheWhenPeerWriteThroughEnabled(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/stream_field_names":
@@ -124,11 +124,11 @@ func TestLabelsCache_StoresResponsesLocallyWhenPeerWriteThroughEnabled(t *testin
 		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
 	}
 
-	if _, _, ok := p.cache.GetWithTTL(cacheKey); !ok {
-		t.Fatalf("expected local labels cache entry for %q", cacheKey)
+	if _, _, _, ok := p.endpointReadCacheEntry("labels", cacheKey); !ok {
+		t.Fatalf("expected labels cache entry for %q", cacheKey)
 	}
-	if _, ok := dc.Get(cacheKey); ok {
-		t.Fatalf("expected labels cache entry %q to skip L2 disk cache", cacheKey)
+	if _, ok := dc.Get(cacheKey); !ok {
+		t.Fatalf("expected labels cache entry %q to persist in L2 disk cache", cacheKey)
 	}
 	if got := remoteSetCalls.Load(); got != 0 {
 		t.Fatalf("expected labels cache entry to skip remote /_cache/set, got %d", got)
@@ -138,7 +138,7 @@ func TestLabelsCache_StoresResponsesLocallyWhenPeerWriteThroughEnabled(t *testin
 	}
 }
 
-func TestSetJSONCacheWithTTL_StoresResponsesLocally(t *testing.T) {
+func TestSetJSONCacheWithTTL_StoresHelperResponsesInLocalDiskCache(t *testing.T) {
 	cacheKey := "detected_labels:tenant-a:test"
 	c, dc, pc, remoteSetCalls := newLocalOnlyCacheFixture(t, cacheKey)
 	p := &Proxy{cache: c}
@@ -159,8 +159,8 @@ func TestSetJSONCacheWithTTL_StoresResponsesLocally(t *testing.T) {
 	if decoded["status"] != "success" {
 		t.Fatalf("unexpected cached JSON payload: %v", decoded)
 	}
-	if _, ok := dc.Get(cacheKey); ok {
-		t.Fatalf("expected JSON cache entry %q to skip L2 disk cache", cacheKey)
+	if _, ok := dc.Get(cacheKey); !ok {
+		t.Fatalf("expected JSON cache entry %q to persist in L2 disk cache", cacheKey)
 	}
 	if got := remoteSetCalls.Load(); got != 0 {
 		t.Fatalf("expected JSON cache entry to skip remote /_cache/set, got %d", got)

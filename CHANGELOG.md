@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - read-path/hardening: stop converting backend failures on Drilldown `detected_fields`, `detected_labels`, detected field values, `/index/volume`, and `/index/volume_range` into empty success payloads; these handlers now serve stale last-good cache entries when available and otherwise return real upstream-style errors, and volume helpers now reject non-success `/select/logsql/hits` responses instead of silently parsing them as empty data.
+- cache/tiering: move helper/read caches (`labels`, `label_values`, `index_stats`, `volume`, `volume_range`, and detected-* helpers) onto shared fresh reads with local-memory plus local-disk persistence, add per-tier cache metrics for L1/L2/L3 lookup paths and backend fallthrough, and stop `index_stats` from fabricating zero-success responses when the backend fails.
 
 ### Tests
 
 - drilldown/cache: add regression coverage for stale-on-error recovery on detected fields, detected labels, detected field values, and near-now volume refreshes, plus cache coverage for reusing expired L1 entries as last-good fallback data.
+- cache/tiering: add regression coverage for TTL-aware disk fresh/stale reads, shared L2 promotion into L1, and helper cache locality so read surfaces persist to local disk without forcing peer write-through.
 
 ## [1.9.5] - 2026-04-20
 

@@ -706,7 +706,12 @@ func TestContract_Series_ParsesLabelsCorrectly(t *testing.T) {
 // --- /loki/api/v1/index/stats ---
 
 func TestContract_IndexStats_ResponseFormat(t *testing.T) {
-	p := newTestProxy(t, "http://unused")
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"hits":[{"timestamps":["2026-01-01T00:00:00Z"],"values":[7]}]}`))
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/stats?query=%7B%7D", nil)
 	p.handleIndexStats(w, r)

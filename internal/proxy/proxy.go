@@ -1984,9 +1984,49 @@ func (p *Proxy) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	if p.peerCache != nil {
 		_, _ = rec.Body.WriteString(p.peerCacheMetrics())
 	}
+	if p.cache != nil {
+		_, _ = rec.Body.WriteString(p.cacheMetrics())
+	}
 
 	w.WriteHeader(rec.Code)
 	_, _ = w.Write(rec.Body.Bytes())
+}
+
+func (p *Proxy) cacheMetrics() string {
+	stats := p.cache.Stats()
+	var sb strings.Builder
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_requests_total Cache tier lookup attempts by tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_requests_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l1_memory", stats.L1.Requests)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l2_disk", stats.L2.Requests)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l3_peer", stats.L3.Requests)
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_hits_total Cache hits by tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_hits_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l1_memory", stats.L1.Hits)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l2_disk", stats.L2.Hits)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l3_peer", stats.L3.Hits)
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_misses_total Cache misses by tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_misses_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l1_memory", stats.L1.Misses)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l2_disk", stats.L2.Misses)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l3_peer", stats.L3.Misses)
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_stale_hits_total Stale responses served from local cache tiers.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_stale_hits_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_stale_hits_total{tier=%q} %d\n", "l1_memory", stats.L1.StaleHits)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_stale_hits_total{tier=%q} %d\n", "l2_disk", stats.L2.StaleHits)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_tier_stale_hits_total{tier=%q} %d\n", "l3_peer", stats.L3.StaleHits)
+	sb.WriteString("# HELP loki_vl_proxy_cache_backend_fallthrough_total Cache lookups that missed every tier and fell through to backend.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_backend_fallthrough_total counter\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_backend_fallthrough_total %d\n", stats.BackendFallthrough)
+	sb.WriteString("# HELP loki_vl_proxy_cache_objects Current object count by cache tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_objects gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_objects{tier=%q} %d\n", "l1_memory", stats.Entries)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_objects{tier=%q} %d\n", "l2_disk", stats.DiskEntries)
+	sb.WriteString("# HELP loki_vl_proxy_cache_bytes Current stored bytes by cache tier.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_cache_bytes gauge\n")
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l1_memory", stats.Bytes)
+	fmt.Fprintf(&sb, "loki_vl_proxy_cache_bytes{tier=%q} %d\n", "l2_disk", stats.DiskBytes)
+	return sb.String()
 }
 
 func (p *Proxy) peerCacheMetrics() string {
@@ -2724,7 +2764,7 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 			}
 			labels = p.labelTranslator.TranslateLabelsList(filtered)
 			labels = appendSyntheticLabels(labels)
-			p.setLocalReadCacheWithTTL(cacheKey, lokiLabelsResponse(labels), CacheTTLs["labels"])
+			p.setEndpointReadCacheWithTTL("labels", cacheKey, lokiLabelsResponse(labels), CacheTTLs["labels"])
 			return nil, nil
 		})
 		if err != nil {
@@ -2763,7 +2803,7 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 					values = indexedValues
 				}
 			}
-			p.setLocalReadCacheWithTTL(cacheKey, lokiLabelsResponse(values), CacheTTLs["label_values"])
+			p.setEndpointReadCacheWithTTL("label_values", cacheKey, lokiLabelsResponse(values), CacheTTLs["label_values"])
 			return nil, nil
 		})
 		if err != nil {
@@ -4249,7 +4289,43 @@ func selectLabelValuesWindow(values []string, search string, offset, limit int) 
 	return out
 }
 
+func (p *Proxy) endpointUsesSharedReadCache(endpoint string) bool {
+	switch endpoint {
+	case "labels", "label_values", "index_stats", "volume", "volume_range", "detected_fields", "detected_field_values", "detected_labels":
+		return true
+	default:
+		return false
+	}
+}
+
+func endpointForReadCacheKey(cacheKey string) string {
+	switch {
+	case strings.HasPrefix(cacheKey, "labels:"):
+		return "labels"
+	case strings.HasPrefix(cacheKey, "label_values:"):
+		return "label_values"
+	case strings.HasPrefix(cacheKey, "index_stats:"):
+		return "index_stats"
+	case strings.HasPrefix(cacheKey, "volume_range:"):
+		return "volume_range"
+	case strings.HasPrefix(cacheKey, "volume:"):
+		return "volume"
+	case strings.HasPrefix(cacheKey, "detected_fields:"):
+		return "detected_fields"
+	case strings.HasPrefix(cacheKey, "detected_field_values:"):
+		return "detected_field_values"
+	case strings.HasPrefix(cacheKey, "detected_labels:"):
+		return "detected_labels"
+	default:
+		return ""
+	}
+}
+
 func (p *Proxy) setJSONCacheWithTTL(cacheKey string, ttl time.Duration, value interface{}) {
+	p.setEndpointJSONCacheWithTTL(endpointForReadCacheKey(cacheKey), cacheKey, ttl, value)
+}
+
+func (p *Proxy) setEndpointJSONCacheWithTTL(endpoint, cacheKey string, ttl time.Duration, value interface{}) {
 	if p == nil || p.cache == nil {
 		return
 	}
@@ -4257,7 +4333,7 @@ func (p *Proxy) setJSONCacheWithTTL(cacheKey string, ttl time.Duration, value in
 	if err != nil {
 		return
 	}
-	p.setLocalReadCacheWithTTL(cacheKey, encoded, ttl)
+	p.setEndpointReadCacheWithTTL(endpoint, cacheKey, encoded, ttl)
 }
 
 // setLocalReadCacheWithTTL stores response bodies for handlers that only read
@@ -4271,15 +4347,47 @@ func (p *Proxy) setLocalReadCacheWithTTL(cacheKey string, value []byte, ttl time
 	p.cache.SetLocalOnlyWithTTL(cacheKey, value, ttl)
 }
 
-func (p *Proxy) staleReadCacheEntry(cacheKey string) ([]byte, time.Duration, bool) {
-	if p == nil || p.cache == nil || strings.TrimSpace(cacheKey) == "" {
-		return nil, 0, false
+func (p *Proxy) setEndpointReadCacheWithTTL(endpoint, cacheKey string, value []byte, ttl time.Duration) {
+	if p == nil || p.cache == nil {
+		return
 	}
-	return p.cache.GetStaleWithTTL(cacheKey)
+	if p.endpointUsesSharedReadCache(endpoint) {
+		p.cache.SetLocalAndDiskWithTTL(cacheKey, value, ttl)
+		return
+	}
+	p.cache.SetLocalOnlyWithTTL(cacheKey, value, ttl)
+}
+
+func (p *Proxy) endpointReadCacheEntry(endpoint, cacheKey string) ([]byte, time.Duration, string, bool) {
+	if p == nil || p.cache == nil || strings.TrimSpace(cacheKey) == "" {
+		return nil, 0, "", false
+	}
+	if p.endpointUsesSharedReadCache(endpoint) {
+		return p.cache.GetSharedWithTTL(cacheKey)
+	}
+	body, ttl, ok := p.cache.GetWithTTL(cacheKey)
+	if !ok {
+		return nil, 0, "", false
+	}
+	return body, ttl, "l1_memory", true
+}
+
+func (p *Proxy) staleEndpointCacheEntry(endpoint, cacheKey string) ([]byte, time.Duration, string, bool) {
+	if p == nil || p.cache == nil || strings.TrimSpace(cacheKey) == "" {
+		return nil, 0, "", false
+	}
+	if p.endpointUsesSharedReadCache(endpoint) {
+		return p.cache.GetRecoverableStaleWithTTL(cacheKey)
+	}
+	body, ttl, ok := p.cache.GetStaleWithTTL(cacheKey)
+	if !ok {
+		return nil, 0, "", false
+	}
+	return body, ttl, "l1_memory", true
 }
 
 func (p *Proxy) serveStaleReadCacheOnError(w http.ResponseWriter, endpoint, cacheKey string, started time.Time, err error) bool {
-	body, remaining, ok := p.staleReadCacheEntry(cacheKey)
+	body, remaining, tier, ok := p.staleEndpointCacheEntry(endpoint, cacheKey)
 	if !ok || len(body) == 0 {
 		return false
 	}
@@ -4298,6 +4406,7 @@ func (p *Proxy) serveStaleReadCacheOnError(w http.ResponseWriter, endpoint, cach
 		"serving stale cached response after backend failure",
 		"endpoint", endpoint,
 		"cache_key", cacheKey,
+		"cache_tier", tier,
 		"stale_for", staleFor.String(),
 		"error", err,
 	)
@@ -4323,7 +4432,7 @@ func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, e
 				"fields": fields,
 				"limit":  lineLimit,
 			}
-			p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_fields"], payload)
+			p.setEndpointJSONCacheWithTTL("detected_fields", cacheKey, CacheTTLs["detected_fields"], payload)
 			return nil, nil
 		})
 		if err != nil {
@@ -4351,7 +4460,7 @@ func (p *Proxy) refreshDetectedLabelsCacheAsync(orgID, cacheKey, query, start, e
 				"detectedLabels": labels,
 				"limit":          lineLimit,
 			}
-			p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_labels"], payload)
+			p.setEndpointJSONCacheWithTTL("detected_labels", cacheKey, CacheTTLs["detected_labels"], payload)
 			return nil, nil
 		})
 		if err != nil {
@@ -4380,7 +4489,7 @@ func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName,
 				"values": values,
 				"limit":  lineLimit,
 			}
-			p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_field_values"], payload)
+			p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, CacheTTLs["detected_field_values"], payload)
 			return nil, nil
 		})
 		if err != nil {
@@ -4443,7 +4552,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := "labels:" + orgID + ":" + r.URL.RawQuery
 
-	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
@@ -4487,7 +4596,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	labels = appendSyntheticLabels(labels)
 
 	result := lokiLabelsResponse(labels)
-	p.setLocalReadCacheWithTTL(cacheKey, result, CacheTTLs["labels"])
+	p.setEndpointReadCacheWithTTL("labels", cacheKey, result, CacheTTLs["labels"])
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
@@ -4534,7 +4643,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		limit = maxLimitValue
 	}
 
-	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry("label_values", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -4558,7 +4667,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	if p.labelValuesBrowseMode(rawQuery) {
 		if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, search, offset, limit); ok {
 			result := lokiLabelsResponse(indexedValues)
-			p.setLocalReadCacheWithTTL(cacheKey, result, CacheTTLs["label_values"])
+			p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, CacheTTLs["label_values"])
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(result)
 			p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -4583,7 +4692,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result := lokiLabelsResponse(values)
-		p.setLocalReadCacheWithTTL(cacheKey, result, CacheTTLs["label_values"])
+		p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, CacheTTLs["label_values"])
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -4610,7 +4719,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := lokiLabelsResponse(values)
-	p.setLocalReadCacheWithTTL(cacheKey, result, CacheTTLs["label_values"])
+	p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, CacheTTLs["label_values"])
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -4698,35 +4807,65 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	if p.handleMultiTenantFanout(w, r, "index_stats", p.handleIndexStats) {
 		return
 	}
+	orgID := r.Header.Get("X-Scope-OrgID")
+	cacheKey := "index_stats:" + orgID + ":" + r.URL.RawQuery
+	if cached, _, _, ok := p.endpointReadCacheEntry("index_stats", cacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(cached)
+		p.metrics.RecordRequest("index_stats", http.StatusOK, time.Since(start))
+		p.metrics.RecordCacheHit()
+		return
+	}
+	p.metrics.RecordCacheMiss()
+
 	r = withOrgID(r)
-	query := r.FormValue("query")
+	result, err := p.computeIndexStatsResult(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
+	if err != nil {
+		if p.serveStaleReadCacheOnError(w, "index_stats", cacheKey, start, err) {
+			return
+		}
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("index_stats", status, time.Since(start))
+		return
+	}
+	p.setEndpointReadCacheWithTTL("index_stats", cacheKey, result, CacheTTLs["index_stats"])
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+	p.metrics.RecordRequest("index_stats", http.StatusOK, time.Since(start))
+}
+
+func (p *Proxy) computeIndexStatsResult(ctx context.Context, query, start, end string) ([]byte, error) {
 	if query == "" {
 		query = "*"
 	}
-	logsqlQuery, _ := p.translateQueryWithContext(r.Context(), query)
+	logsqlQuery, _ := p.translateQueryWithContext(ctx, query)
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
-	if s := r.FormValue("start"); s != "" {
+	if s := start; s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}
-	if e := r.FormValue("end"); e != "" {
+	if e := end; e != "" {
 		params.Set("end", formatVLTimestamp(e))
 	}
-	// VL v1.49+ requires step for hits — use large step to get one bucket (total count)
 	if params.Get("step") == "" {
 		params.Set("step", "1h")
 	}
 
-	resp, err := p.vlGet(r.Context(), "/select/logsql/hits", params)
+	resp, err := p.vlGet(ctx, "/select/logsql/hits", params)
 	if err != nil {
-		// Fallback to zeros on error
-		p.writeJSON(w, map[string]interface{}{"streams": 0, "chunks": 0, "bytes": 0, "entries": 0})
-		p.metrics.RecordRequest("index_stats", http.StatusOK, time.Since(start))
-		return
+		return nil, err
 	}
 	defer resp.Body.Close()
 	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	if resp.StatusCode >= http.StatusBadRequest {
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
 
 	entries := sumHitsValues(body)
 	hits := parseHits(body)
@@ -4737,12 +4876,10 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	result, _ := json.Marshal(map[string]interface{}{
 		"streams": streams,
 		"chunks":  streams,
-		"bytes":   entries * 100, // approximate — VL doesn't expose bytes
+		"bytes":   entries * 100,
 		"entries": entries,
 	})
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(result)
-	p.metrics.RecordRequest("index_stats", http.StatusOK, time.Since(start))
+	return result, nil
 }
 
 func (p *Proxy) resolveTargetLabelFields(ctx context.Context, targetLabels string, params url.Values) []string {
@@ -4824,7 +4961,7 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	endParam := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
 	targetLabels := r.FormValue("targetLabels")
 	cacheKey := "volume:" + orgID + ":" + r.URL.RawQuery
-	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry("volume", cacheKey); ok {
 		if !p.shouldBypassRecentTailCache("volume", remaining, r) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cached)
@@ -4848,7 +4985,7 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("volume", status, time.Since(start))
 		return
 	}
-	p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume"], result)
+	p.setEndpointJSONCacheWithTTL("volume", cacheKey, CacheTTLs["volume"], result)
 	p.writeJSON(w, result)
 	p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
 }
@@ -4918,7 +5055,7 @@ func (p *Proxy) refreshVolumeCacheAsync(orgID, cacheKey, rawQuery, start, end, t
 			}
 			result, err := p.computeVolumeResult(ctx, rawQuery, start, end, targetLabels)
 			if err == nil {
-				p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume"], result)
+				p.setEndpointJSONCacheWithTTL("volume", cacheKey, CacheTTLs["volume"], result)
 			}
 			return nil, err
 		})
@@ -4944,7 +5081,7 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	stepParam := r.FormValue("step")
 	targetLabels := r.FormValue("targetLabels")
 	cacheKey := "volume_range:" + orgID + ":" + r.URL.RawQuery
-	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry("volume_range", cacheKey); ok {
 		if !p.shouldBypassRecentTailCache("volume_range", remaining, r) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(cached)
@@ -4968,7 +5105,7 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("volume_range", status, time.Since(start))
 		return
 	}
-	p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume_range"], result)
+	p.setEndpointJSONCacheWithTTL("volume_range", cacheKey, CacheTTLs["volume_range"], result)
 	p.writeJSON(w, result)
 	p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
 }
@@ -5037,7 +5174,7 @@ func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, e
 			}
 			result, err := p.computeVolumeRangeResult(ctx, rawQuery, start, end, step, targetLabels)
 			if err == nil {
-				p.setJSONCacheWithTTL(cacheKey, CacheTTLs["volume_range"], result)
+				p.setEndpointJSONCacheWithTTL("volume_range", cacheKey, CacheTTLs["volume_range"], result)
 			}
 			return nil, err
 		})
@@ -5055,7 +5192,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := "detected_fields:" + orgID + ":" + r.URL.RawQuery
-	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_fields", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
@@ -5085,7 +5222,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		"fields": fields,
 		"limit":  lineLimit,
 	}
-	p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_fields"], payload)
+	p.setEndpointJSONCacheWithTTL("detected_fields", cacheKey, CacheTTLs["detected_fields"], payload)
 	p.writeJSON(w, payload)
 	p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
 }
@@ -5117,7 +5254,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 
 	lineLimit := parseDetectedLineLimit(r)
 	cacheKey := "detected_field_values:" + orgID + ":" + fieldName + ":" + r.URL.RawQuery
-	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_field_values", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
@@ -5137,7 +5274,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 				"values": values,
 				"limit":  lineLimit,
 			}
-			p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_field_values"], payload)
+			p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, CacheTTLs["detected_field_values"], payload)
 			p.writeJSON(w, payload)
 			p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 			return
@@ -5161,7 +5298,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		"values": values,
 		"limit":  lineLimit,
 	}
-	p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_field_values"], payload)
+	p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, CacheTTLs["detected_field_values"], payload)
 	p.writeJSON(w, payload)
 	p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 }
@@ -6511,7 +6648,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := "detected_labels:" + orgID + ":" + r.URL.RawQuery
-	if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {
+	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_labels", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
@@ -6542,7 +6679,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 		"detectedLabels": detectedLabels,
 		"limit":          lineLimit,
 	}
-	p.setJSONCacheWithTTL(cacheKey, CacheTTLs["detected_labels"], payload)
+	p.setEndpointJSONCacheWithTTL("detected_labels", cacheKey, CacheTTLs["detected_labels"], payload)
 	p.writeJSON(w, payload)
 	p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 }
