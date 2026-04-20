@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - chart/helm: quote rendered container args in the chart deployment template so values containing JSON, commas, colons, or embedded delimiters survive Helm rendering unchanged instead of being split or reinterpreted by YAML parsing.
+- proxy/wrapping: normalize wrapped stats responses to always include Loki `data.resultType` and `data.result` (including fallback mapping from legacy/top-level `results`) so Grafana Loki datasource queries no longer fail with `no resultType found` when backend payloads omit result metadata.
 
 ### Tests
 
