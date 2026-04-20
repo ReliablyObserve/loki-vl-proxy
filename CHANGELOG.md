@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- patterns/persistence: store query-level compact pattern snapshots for persistence instead of range-shaped filled payload variants, reducing snapshot entry churn and write amplification when the same logical Drilldown query is refreshed across different time windows.
+
 ## [1.9.4] - 2026-04-20
 
 ### Bug Fixes
@@ -22,7 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
 - drilldown/discovery: ignore zero-hit native `field_values` entries so detected field value pickers stop advertising values that are not actually present in the current selector and time window, and query-escape peer-cache GET/SET keys so discovery caches with embedded query strings survive peer transport correctly instead of truncating on `&`-style separators.
-- patterns/persistence: store query-level compact pattern snapshots for persistence instead of range-shaped filled payload variants, reducing snapshot entry churn and write amplification when the same logical Drilldown query is refreshed across different time windows.
 
 ### Tests
 
