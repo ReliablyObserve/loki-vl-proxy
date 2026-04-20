@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.3] - 2026-04-20
+
 ### Bug Fixes
 
 - drilldown/discovery: ignore zero-hit native `field_values` entries so detected field value pickers stop advertising values that are not actually present in the current selector and time window, and query-escape peer-cache GET/SET keys so discovery caches with embedded query strings survive peer transport correctly instead of truncating on `&`-style separators.
