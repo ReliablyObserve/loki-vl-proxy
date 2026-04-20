@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- query-range/metrics: stop splitting metric `query_range` requests into multiple backend `stats_query_range` windows, keeping the read path aligned with the documented log-only windowing contract and reducing avoidable VL request fanout for Drilldown and Explore metric panels.
+
+### Tests
+
+- patterns/e2e: compare bursty mixed-pattern Drilldown compatibility by preserved signal and time bounds instead of demanding near-identical sparse bucket coverage between native Loki and grouped proxy mining.
+
 ## [1.9.3] - 2026-04-20
 
 ### Bug Fixes
 
 - drilldown/discovery: ignore zero-hit native `field_values` entries so detected field value pickers stop advertising values that are not actually present in the current selector and time window, and query-escape peer-cache GET/SET keys so discovery caches with embedded query strings survive peer transport correctly instead of truncating on `&`-style separators.
-- query-range/metrics: stop splitting metric `query_range` requests into multiple backend `stats_query_range` windows, keeping the read path aligned with the documented log-only windowing contract and reducing avoidable VL request fanout for Drilldown and Explore metric panels.
 
 ### Tests
 
