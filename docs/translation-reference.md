@@ -75,8 +75,8 @@ These stages are executed at the proxy level (VL has no native equivalents):
 |---|---|
 | `rate({...}[5m])` | `... \| stats rate()` |
 | `count_over_time({...}[5m])` | `... \| stats count()` |
-| `bytes_over_time({...}[5m])` | `... \| stats sum(len(_msg))` |
-| `bytes_rate({...}[5m])` | `... \| stats rate_sum(len(_msg))` |
+| `bytes_over_time({...}[5m])` | `... \| stats sum_len(_msg)` |
+| `bytes_rate({...}[5m])` | proxy binary expression: `(... \| stats sum_len(_msg)) / window_seconds` |
 | `sum_over_time({...} \| unwrap f [5m])` | `... \| stats sum(f)` |
 | `avg_over_time({...} \| unwrap f [5m])` | `... \| stats avg(f)` |
 | `max_over_time({...} \| unwrap f [5m])` | `... \| stats max(f)` |
@@ -84,7 +84,7 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | `first_over_time({...} \| unwrap f [5m])` | `... \| stats first(f)` |
 | `last_over_time({...} \| unwrap f [5m])` | `... \| stats last(f)` |
 | `stddev_over_time({...} \| unwrap f [5m])` | `... \| stats stddev(f)` |
-| `stdvar_over_time({...} \| unwrap f [5m])` | `... \| stats stdvar(f)` |
+| `stdvar_over_time({...} \| unwrap f [5m])` | proxy binary expression: `(... \| stats stddev(f)) ^ 2` |
 | `quantile_over_time(0.95, {...} \| unwrap f [5m])` | `... \| stats quantile(0.95, f)` |
 | `absent_over_time({...}[5m])` | `... \| stats count()` |
 

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -799,8 +800,8 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 	metricFuncs := map[string]string{
 		"rate":             "rate()",
 		"count_over_time":  "count()",
-		"bytes_over_time":  "sum(len(_msg))",
-		"bytes_rate":       "rate_sum(len(_msg))",
+		"bytes_over_time":  "sum_len(_msg)",
+		"bytes_rate":       "sum_len(_msg)",
 		"sum_over_time":    "sum",
 		"avg_over_time":    "avg",
 		"max_over_time":    "max",
@@ -808,7 +809,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		"first_over_time":  "first",
 		"last_over_time":   "last",
 		"stddev_over_time": "stddev",
-		"stdvar_over_time": "stdvar",
+		"stdvar_over_time": "stddev",
 		"absent_over_time": "count()",
 	}
 
@@ -841,7 +842,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		inner = inner[:end]
 
 		// Extract the query and duration: {stream} | pipeline [5m]
-		query, _ := extractQueryAndDuration(inner)
+		query, duration := extractQueryAndDuration(inner)
 
 		// Translate the inner log query part
 		logsqlQuery, err := translateLogQuery(query, labelFn)
@@ -870,10 +871,75 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 			}
 		}
 
+		// bytes_rate(window) ~= bytes_over_time(window) / window_seconds
+		if funcName == "bytes_rate" {
+			seconds := durationSeconds(duration)
+			if seconds > 0 {
+				return fmt.Sprintf("%s/:%s|||%s", BinaryMetricPrefix, result, strconv.FormatFloat(seconds, 'f', -1, 64)), true
+			}
+		}
+
+		// stdvar_over_time(window) ~= stddev_over_time(window)^2
+		if funcName == "stdvar_over_time" {
+			return fmt.Sprintf("%s^:%s|||2", BinaryMetricPrefix, result), true
+		}
+
 		return result, true
 	}
 
 	return "", false
+}
+
+func durationSeconds(duration string) float64 {
+	duration = strings.TrimSpace(duration)
+	if duration == "" {
+		return 0
+	}
+	if d, err := time.ParseDuration(duration); err == nil {
+		return d.Seconds()
+	}
+
+	partRE := regexp.MustCompile(`([0-9]*\.?[0-9]+)(ns|us|µs|ms|s|m|h|d|w|y)`)
+	parts := partRE.FindAllStringSubmatch(duration, -1)
+	if len(parts) == 0 {
+		return 0
+	}
+
+	total := 0.0
+	consumed := strings.Builder{}
+	for _, part := range parts {
+		value, err := strconv.ParseFloat(part[1], 64)
+		if err != nil {
+			return 0
+		}
+		switch part[2] {
+		case "ns":
+			total += value / 1e9
+		case "us", "µs":
+			total += value / 1e6
+		case "ms":
+			total += value / 1e3
+		case "s":
+			total += value
+		case "m":
+			total += value * 60
+		case "h":
+			total += value * 3600
+		case "d":
+			total += value * 86400
+		case "w":
+			total += value * 7 * 86400
+		case "y":
+			total += value * 365 * 86400
+		default:
+			return 0
+		}
+		consumed.WriteString(part[0])
+	}
+	if consumed.String() != duration {
+		return 0
+	}
+	return total
 }
 
 // BinaryMetricOp represents a binary arithmetic expression between two metric queries.

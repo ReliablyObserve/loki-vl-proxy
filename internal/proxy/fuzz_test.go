@@ -2,6 +2,8 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"testing"
 )
 
@@ -145,6 +147,55 @@ func FuzzNormalizeMetadataPairs(f *testing.F) {
 			if key == "" {
 				t.Fatalf("normalizeMetadataPairs produced empty key for input=%q", string(input))
 			}
+		}
+	})
+}
+
+// FuzzCombineBinaryMetricResultsScalarPath validates scalar/vector merge shaping for all operators.
+func FuzzCombineBinaryMetricResultsScalarPath(f *testing.F) {
+	ops := []string{"+", "-", "*", "/", "%", "^", "==", "!=", ">", "<", ">=", "<=", "unknown"}
+	for _, op := range ops {
+		f.Add(op, 10.0, 3.0, false, true)
+		f.Add(op, 10.0, 3.0, true, false)
+		f.Add(op, 10.0, 3.0, false, false)
+	}
+
+	f.Fuzz(func(t *testing.T, op string, metricValue, scalarValue float64, leftScalar, rightScalar bool) {
+		if !isFinite(metricValue) || !isFinite(scalarValue) {
+			return
+		}
+
+		metricBody := []byte(fmt.Sprintf(
+			`{"results":[{"metric":{"app":"fuzz"},"values":[[1,"%s"]]}]}`,
+			strconv.FormatFloat(metricValue, 'f', -1, 64),
+		))
+		scalarBody := []byte(fmt.Sprintf(
+			`{"status":"success","data":{"resultType":"scalar","result":[0,"%s"]}}`,
+			strconv.FormatFloat(scalarValue, 'f', -1, 64),
+		))
+
+		leftBody := metricBody
+		rightBody := metricBody
+		leftQL := ""
+		rightQL := ""
+
+		if leftScalar {
+			leftBody = scalarBody
+			leftQL = strconv.FormatFloat(scalarValue, 'f', -1, 64)
+		}
+		if rightScalar {
+			rightBody = scalarBody
+			rightQL = strconv.FormatFloat(scalarValue, 'f', -1, 64)
+		}
+
+		out := combineBinaryMetricResults(leftBody, rightBody, op, "matrix", leftScalar, rightScalar, leftQL, rightQL)
+		var payload map[string]interface{}
+		if err := json.Unmarshal(out, &payload); err != nil {
+			t.Fatalf("combined output must stay valid JSON: %v; body=%s", err, string(out))
+		}
+		status, _ := payload["status"].(string)
+		if status == "" {
+			t.Fatalf("combined output missing status field: %#v", payload)
 		}
 	})
 }
