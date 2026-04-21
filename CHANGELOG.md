@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.2] - 2026-04-21
+
 ### Bug Fixes
 
 - chart: tolerate reserved scalar `env` values by rendering list-typed `env`/`envFrom` only when they are real lists, and add `extraEnv` / `extraEnvFrom` compatibility aliases for chart consumers that need explicit container env injection without colliding with scalar environment selectors.
