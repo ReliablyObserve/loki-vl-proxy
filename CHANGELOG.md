@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- drilldown/volume: stop injecting synthetic `service_name="unknown_service"` into `index/volume` and `index/volume_range` buckets when requests are grouped by non-service labels (for example `cluster`), while preserving service-aware grouping behavior.
+
+### Tests
+
+- drilldown/volume: add regression coverage that inferred non-service target labels do not emit synthetic `unknown_service` buckets for both vector and matrix volume endpoints.
+
 ## [1.9.5] - 2026-04-20
 
 ### Bug Fixes

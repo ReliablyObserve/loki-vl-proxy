@@ -9509,7 +9509,17 @@ func (p *Proxy) translateVolumeMetric(fields map[string]string) map[string]strin
 	if translated == nil {
 		return nil
 	}
+	serviceSignal := false
+	for _, key := range serviceNameSourceFields {
+		if strings.TrimSpace(translated[key]) != "" {
+			serviceSignal = true
+			break
+		}
+	}
 	ensureSyntheticServiceName(translated)
+	if !serviceSignal && strings.TrimSpace(translated["service_name"]) == unknownServiceName {
+		delete(translated, "service_name")
+	}
 	return translated
 }
 
