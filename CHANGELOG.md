@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- drilldown/volume: stop injecting synthetic `service_name="unknown_service"` into `index/volume` and `index/volume_range` buckets when requests are grouped by non-service labels (for example `cluster`), while preserving service-aware grouping behavior.
+- drilldown/volume: honor Drilldown grouping hints (`drillDownLabel`, `fieldBy`, and `var-fieldBy`) as target-label fallbacks when `targetLabels` is omitted, so field/label include-exclude actions keep grouping on the selected dimension instead of falling back to selector-order inference.
+- translator/metrics: make `rate` and `bytes_rate` preserve Loki per-second semantics via window normalization, make parser+unwrap metric paths preserve Loki-like cardinality with outer-aggregation composition, emit VictoriaLogs-compatible byte aggregations via `sum_len(_msg)`, and implement `stdvar_over_time` via proxy-side `stddev^2` composition to avoid backend `stdvar` parser failures.
+- proxy/binary-metrics: fix scalar and binary post-processing to mutate both legacy `results` payloads and Prometheus-style `data.result` payloads (including instant-vector `value` samples), preventing silent no-op arithmetic on valid `stats_query` responses.
+
+### Tests
+
+- drilldown/volume: add regression coverage for inferred non-service target labels (no synthetic `unknown_service`) and for Drilldown `fieldBy` fallback mapping on both vector and matrix volume endpoints.
+- compat/matrix: add operation/filter/function matrix coverage across translator and proxy scalar paths, with deterministic e2e checks for binary scalar operators, filter operators, and metric function families (cross-engine parity for compatible functions plus proxy-local expected-value checks where semantics intentionally differ), and add scalar/binary fuzz coverage for response-shape robustness.
+
 ## [1.11.0] - 2026-04-21
 
 ### Bug Fixes

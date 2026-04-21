@@ -162,7 +162,7 @@ func TestRealWorld_MetricAlerts(t *testing.T) {
 		{
 			name:  "error rate sum by job",
 			logql: `sum by (job) (rate({app="foo",env="production"} |= "error" [5m]))`,
-			want:  `app:=foo env:=production ~"error" | stats by (job) rate()`,
+			want:  `app:=foo env:=production ~"error" | stats by (job) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (job) sum(__lvp_rate)`,
 		},
 		{
 			name:  "count by level",
@@ -172,7 +172,7 @@ func TestRealWorld_MetricAlerts(t *testing.T) {
 		{
 			name:  "bytes rate by namespace",
 			logql: `sum by (namespace) (bytes_rate({cluster="prod-k8s"}[5m]))`,
-			want:  `cluster:=prod-k8s | stats by (namespace) rate_sum(len(_msg))`,
+			want:  `cluster:=prod-k8s | stats by (namespace) sum_len(_msg) as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (namespace) sum(__lvp_rate)`,
 		},
 	}
 	for _, tt := range tests {

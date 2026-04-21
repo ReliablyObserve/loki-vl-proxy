@@ -5316,6 +5316,34 @@ func (p *Proxy) resolveTargetLabelFields(ctx context.Context, targetLabels strin
 	return resolved
 }
 
+func normalizeDrilldownGroupingLabel(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	switch strings.ToLower(raw) {
+	case "$__all", "__all":
+		return ""
+	default:
+		return raw
+	}
+}
+
+func requestedVolumeTargetLabels(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if direct := strings.TrimSpace(r.FormValue("targetLabels")); direct != "" {
+		return direct
+	}
+	for _, key := range []string{"drillDownLabel", "fieldBy", "labelBy", "var-fieldBy", "var-labelBy"} {
+		if candidate := normalizeDrilldownGroupingLabel(r.FormValue(key)); candidate != "" {
+			return candidate
+		}
+	}
+	return ""
+}
+
 // handleVolume returns volume data via VL /select/logsql/hits with field grouping.
 // Loki: GET /loki/api/v1/index/volume?query={...}&start=...&end=...
 // Response: {"status":"success","data":{"resultType":"vector","result":[{"metric":{...},"value":[ts,"count"]}]}}
@@ -5329,7 +5357,7 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	query := r.FormValue("query")
 	startParam := strings.TrimSpace(firstNonEmpty(r.FormValue("start"), r.FormValue("from")))
 	endParam := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
-	targetLabels := r.FormValue("targetLabels")
+	targetLabels := requestedVolumeTargetLabels(r)
 	cacheKey := p.canonicalReadCacheKey("volume", orgID, r)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("volume", cacheKey); ok {
 		if !p.shouldBypassRecentTailCache("volume", remaining, r) {
@@ -5449,7 +5477,7 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	startParam := strings.TrimSpace(firstNonEmpty(r.FormValue("start"), r.FormValue("from")))
 	endParam := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
 	stepParam := r.FormValue("step")
-	targetLabels := r.FormValue("targetLabels")
+	targetLabels := requestedVolumeTargetLabels(r)
 	cacheKey := p.canonicalReadCacheKey("volume_range", orgID, r)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("volume_range", cacheKey); ok {
 		if !p.shouldBypassRecentTailCache("volume_range", remaining, r) {
@@ -8897,21 +8925,10 @@ func applyScalarOp(body []byte, op string, scalar float64, resultType string) []
 		return wrapAsLokiResponse(body, resultType)
 	}
 
-	// VL stats_query_range returns {"results": [{"metric":{}, "values": [[ts, val]...]}...]}
-	results, _ := vlResp["results"].([]interface{})
+	results, _ := extractMetricResults(vlResp)
 	for _, r := range results {
 		rm, _ := r.(map[string]interface{})
-		values, _ := rm["values"].([]interface{})
-		for i, v := range values {
-			point, _ := v.([]interface{})
-			if len(point) >= 2 {
-				valStr, _ := point[1].(string)
-				val, _ := strconv.ParseFloat(valStr, 64)
-				newVal := applyOp(val, scalar, op)
-				point[1] = strconv.FormatFloat(newVal, 'f', -1, 64)
-				values[i] = point
-			}
-		}
+		applyScalarToSample(rm, scalar, op, false)
 	}
 
 	result, _ := json.Marshal(vlResp)
@@ -8924,24 +8941,26 @@ func applyScalarOpReverse(body []byte, op string, scalar float64, resultType str
 		return wrapAsLokiResponse(body, resultType)
 	}
 
-	results, _ := vlResp["results"].([]interface{})
+	results, _ := extractMetricResults(vlResp)
 	for _, r := range results {
 		rm, _ := r.(map[string]interface{})
-		values, _ := rm["values"].([]interface{})
-		for i, v := range values {
-			point, _ := v.([]interface{})
-			if len(point) >= 2 {
-				valStr, _ := point[1].(string)
-				val, _ := strconv.ParseFloat(valStr, 64)
-				newVal := applyOp(scalar, val, op)
-				point[1] = strconv.FormatFloat(newVal, 'f', -1, 64)
-				values[i] = point
-			}
-		}
+		applyScalarToSample(rm, scalar, op, true)
 	}
 
 	result, _ := json.Marshal(vlResp)
 	return wrapAsLokiResponse(result, resultType)
+}
+
+func parsePointValue(raw interface{}) float64 {
+	switch v := raw.(type) {
+	case float64:
+		return v
+	case string:
+		parsed, _ := strconv.ParseFloat(v, 64)
+		return parsed
+	default:
+		return 0
+	}
 }
 
 func combineMetricResults(leftBody, rightBody []byte, op, resultType string) []byte {
@@ -8950,17 +8969,16 @@ func combineMetricResults(leftBody, rightBody []byte, op, resultType string) []b
 	json.Unmarshal(leftBody, &leftResp)
 	json.Unmarshal(rightBody, &rightResp)
 
-	leftResults, _ := leftResp["results"].([]interface{})
-	rightResults, _ := rightResp["results"].([]interface{})
+	leftResults, _ := extractMetricResults(leftResp)
+	rightResults, _ := extractMetricResults(rightResp)
 
 	// Build a map of right results by metric labels for joining
-	rightMap := make(map[string][]interface{})
+	rightMap := make(map[string]map[string]float64)
 	for _, r := range rightResults {
 		rm, _ := r.(map[string]interface{})
 		metric, _ := rm["metric"].(map[string]interface{})
 		key := metricKey(metric)
-		values, _ := rm["values"].([]interface{})
-		rightMap[key] = values
+		rightMap[key] = samplePointIndex(rm)
 	}
 
 	// Combine: for each left result, find matching right result and apply op
@@ -8968,41 +8986,108 @@ func combineMetricResults(leftBody, rightBody []byte, op, resultType string) []b
 		rm, _ := r.(map[string]interface{})
 		metric, _ := rm["metric"].(map[string]interface{})
 		key := metricKey(metric)
-		leftValues, _ := rm["values"].([]interface{})
-		rightValues := rightMap[key]
-
-		if len(rightValues) > 0 {
-			// Build timestamp→value index for right side
-			rightIdx := make(map[string]float64)
-			for _, v := range rightValues {
-				point, _ := v.([]interface{})
-				if len(point) >= 2 {
-					ts := fmt.Sprintf("%v", point[0])
-					valStr, _ := point[1].(string)
-					val, _ := strconv.ParseFloat(valStr, 64)
-					rightIdx[ts] = val
-				}
-			}
-
-			// Apply op point-by-point
-			for i, v := range leftValues {
-				point, _ := v.([]interface{})
-				if len(point) >= 2 {
-					ts := fmt.Sprintf("%v", point[0])
-					leftValStr, _ := point[1].(string)
-					leftVal, _ := strconv.ParseFloat(leftValStr, 64)
-					if rightVal, ok := rightIdx[ts]; ok {
-						newVal := applyOp(leftVal, rightVal, op)
-						point[1] = strconv.FormatFloat(newVal, 'f', -1, 64)
-					}
-					leftValues[i] = point
-				}
-			}
+		rightIdx := rightMap[key]
+		if len(rightIdx) > 0 {
+			applyBinaryToSample(rm, rightIdx, op)
 		}
 	}
 
 	result, _ := json.Marshal(leftResp)
 	return wrapAsLokiResponse(result, resultType)
+}
+
+func extractMetricResults(payload map[string]interface{}) ([]interface{}, bool) {
+	if results, ok := payload["results"].([]interface{}); ok {
+		return results, true
+	}
+	if data, ok := payload["data"].(map[string]interface{}); ok {
+		if result, ok := data["result"].([]interface{}); ok {
+			return result, true
+		}
+	}
+	if result, ok := payload["result"].([]interface{}); ok {
+		return result, true
+	}
+	return nil, false
+}
+
+func applyScalarToSample(sample map[string]interface{}, scalar float64, op string, reverse bool) {
+	values, _ := sample["values"].([]interface{})
+	for i, raw := range values {
+		point, _ := raw.([]interface{})
+		if len(point) < 2 {
+			continue
+		}
+		val := parsePointValue(point[1])
+		newVal := applyOp(val, scalar, op)
+		if reverse {
+			newVal = applyOp(scalar, val, op)
+		}
+		point[1] = strconv.FormatFloat(newVal, 'f', -1, 64)
+		values[i] = point
+	}
+	if len(values) > 0 {
+		sample["values"] = values
+	}
+
+	if value, ok := sample["value"].([]interface{}); ok && len(value) >= 2 {
+		val := parsePointValue(value[1])
+		newVal := applyOp(val, scalar, op)
+		if reverse {
+			newVal = applyOp(scalar, val, op)
+		}
+		value[1] = strconv.FormatFloat(newVal, 'f', -1, 64)
+		sample["value"] = value
+	}
+}
+
+func samplePointIndex(sample map[string]interface{}) map[string]float64 {
+	index := map[string]float64{}
+
+	values, _ := sample["values"].([]interface{})
+	for _, raw := range values {
+		point, _ := raw.([]interface{})
+		if len(point) < 2 {
+			continue
+		}
+		index[fmt.Sprintf("%v", point[0])] = parsePointValue(point[1])
+	}
+
+	if value, ok := sample["value"].([]interface{}); ok && len(value) >= 2 {
+		index[fmt.Sprintf("%v", value[0])] = parsePointValue(value[1])
+	}
+
+	return index
+}
+
+func applyBinaryToSample(sample map[string]interface{}, rightIndex map[string]float64, op string) {
+	values, _ := sample["values"].([]interface{})
+	for i, raw := range values {
+		point, _ := raw.([]interface{})
+		if len(point) < 2 {
+			continue
+		}
+		ts := fmt.Sprintf("%v", point[0])
+		rightVal, ok := rightIndex[ts]
+		if !ok {
+			continue
+		}
+		leftVal := parsePointValue(point[1])
+		point[1] = strconv.FormatFloat(applyOp(leftVal, rightVal, op), 'f', -1, 64)
+		values[i] = point
+	}
+	if len(values) > 0 {
+		sample["values"] = values
+	}
+
+	if value, ok := sample["value"].([]interface{}); ok && len(value) >= 2 {
+		ts := fmt.Sprintf("%v", value[0])
+		if rightVal, ok := rightIndex[ts]; ok {
+			leftVal := parsePointValue(value[1])
+			value[1] = strconv.FormatFloat(applyOp(leftVal, rightVal, op), 'f', -1, 64)
+			sample["value"] = value
+		}
+	}
 }
 
 func applyOp(a, b float64, op string) float64 {
@@ -10164,7 +10249,17 @@ func (p *Proxy) translateVolumeMetric(fields map[string]string) map[string]strin
 	if translated == nil {
 		return nil
 	}
+	serviceSignal := false
+	for _, key := range serviceNameSourceFields {
+		if strings.TrimSpace(translated[key]) != "" {
+			serviceSignal = true
+			break
+		}
+	}
 	ensureSyntheticServiceName(translated)
+	if !serviceSignal && strings.TrimSpace(translated["service_name"]) == unknownServiceName {
+		delete(translated, "service_name")
+	}
 	return translated
 }
 

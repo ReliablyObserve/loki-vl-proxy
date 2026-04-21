@@ -407,6 +407,12 @@ func TestDrilldown_IndexVolume_InfersPrimaryTargetLabelForAdditionalTabs(t *test
 	if len(result) != 2 {
 		t.Fatalf("expected cluster buckets, got %v", result)
 	}
+	for _, item := range result {
+		metric := item.(map[string]interface{})["metric"].(map[string]interface{})
+		if _, ok := metric["service_name"]; ok {
+			t.Fatalf("expected inferred cluster volume metrics to omit synthetic unknown service_name, got %v", metric)
+		}
+	}
 }
 
 func TestDrilldown_IndexVolume_TranslatesInferredTargetLabelMetrics(t *testing.T) {
@@ -458,6 +464,140 @@ func TestDrilldown_IndexVolume_TranslatesInferredTargetLabelMetrics(t *testing.T
 	metric := result[0].(map[string]interface{})["metric"].(map[string]interface{})
 	if metric["k8s_pod_name"] != "api-1" {
 		t.Fatalf("expected translated metric key k8s_pod_name, got %v", metric)
+	}
+}
+
+func TestDrilldown_IndexVolume_UsesDrilldownFieldByFallbackForTargetLabels(t *testing.T) {
+	var receivedField string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/hits" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		receivedField = r.URL.Query().Get("field")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"hints": map[string]interface{}{},
+			"hits": []map[string]interface{}{
+				{
+					"fields":     map[string]string{"method": "GET"},
+					"timestamps": []string{"2026-04-04T17:18:49Z"},
+					"values":     []int{4},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(
+		"GET",
+		"/loki/api/v1/index/volume?query=%7Bcluster%3D~%60.%2B%60%7D&start=1&end=2&var-fieldBy=method&drillDownLabel=method",
+		nil,
+	)
+	p.handleVolume(w, r)
+
+	if receivedField != "method" {
+		t.Fatalf("expected drilldown fieldBy fallback to drive target label mapping, got %q", receivedField)
+	}
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsObject(t, resp)
+	result := assertResultIsArray(t, data)
+	if len(result) != 1 {
+		t.Fatalf("expected one method bucket, got %v", result)
+	}
+	metric := result[0].(map[string]interface{})["metric"].(map[string]interface{})
+	if metric["method"] != "GET" {
+		t.Fatalf("expected method grouping bucket in metric, got %v", metric)
+	}
+}
+
+func TestDrilldown_IndexVolumeRange_InfersPrimaryTargetLabelWithoutUnknownService(t *testing.T) {
+	var receivedField string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/hits" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		receivedField = r.URL.Query().Get("field")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"hints": map[string]interface{}{},
+			"hits": []map[string]interface{}{
+				{
+					"fields":     map[string]string{"cluster": "us-east-1"},
+					"timestamps": []string{"2026-04-04T17:18:49Z"},
+					"values":     []int{12},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7Bcluster%3D~%60.%2B%60%7D&start=1&end=2&step=60", nil)
+	p.handleVolumeRange(w, r)
+
+	if receivedField != "cluster" {
+		t.Fatalf("expected inferred volume_range field=cluster, got %q", receivedField)
+	}
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsObject(t, resp)
+	result := assertResultIsArray(t, data)
+	if len(result) != 1 {
+		t.Fatalf("expected one cluster series, got %v", result)
+	}
+	metric := result[0].(map[string]interface{})["metric"].(map[string]interface{})
+	if _, ok := metric["service_name"]; ok {
+		t.Fatalf("expected inferred cluster volume_range metric to omit synthetic unknown service_name, got %v", metric)
+	}
+}
+
+func TestDrilldown_IndexVolumeRange_UsesDrilldownFieldByFallbackForTargetLabels(t *testing.T) {
+	var receivedField string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/hits" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		receivedField = r.URL.Query().Get("field")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"hints": map[string]interface{}{},
+			"hits": []map[string]interface{}{
+				{
+					"fields":     map[string]string{"method": "POST"},
+					"timestamps": []string{"2026-04-04T17:18:49Z"},
+					"values":     []int{6},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(
+		"GET",
+		"/loki/api/v1/index/volume_range?query=%7Bcluster%3D~%60.%2B%60%7D&start=1&end=2&step=60&var-fieldBy=method&drillDownLabel=method",
+		nil,
+	)
+	p.handleVolumeRange(w, r)
+
+	if receivedField != "method" {
+		t.Fatalf("expected drilldown fieldBy fallback to drive volume_range target label mapping, got %q", receivedField)
+	}
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsObject(t, resp)
+	result := assertResultIsArray(t, data)
+	if len(result) != 1 {
+		t.Fatalf("expected one method series, got %v", result)
+	}
+	metric := result[0].(map[string]interface{})["metric"].(map[string]interface{})
+	if metric["method"] != "POST" {
+		t.Fatalf("expected method grouping series in volume_range metric, got %v", metric)
 	}
 }
 

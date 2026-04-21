@@ -252,7 +252,7 @@ func TestMetricQueryTranslation(t *testing.T) {
 		{
 			name:  "rate",
 			logql: `rate({app="nginx"}[5m])`,
-			want:  `app:=nginx | stats rate()`,
+			want:  `app:=nginx | stats by (_stream, level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (_stream, level) sum(__lvp_rate)`,
 		},
 		{
 			name:  "count_over_time",
@@ -262,17 +262,17 @@ func TestMetricQueryTranslation(t *testing.T) {
 		{
 			name:  "sum of rate by label",
 			logql: `sum(rate({app="nginx"}[5m])) by (host)`,
-			want:  `app:=nginx | stats by (host) rate()`,
+			want:  `app:=nginx | stats by (host) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (host) sum(__lvp_rate)`,
 		},
 		{
 			name:  "stddev outer aggregation",
 			logql: `stddev(rate({app="nginx"}[5m])) by (host)`,
-			want:  `app:=nginx | stats by (host) rate()`,
+			want:  `app:=nginx | stats by (host) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (host) sum(__lvp_rate)`,
 		},
 		{
 			name:  "stdvar outer aggregation",
 			logql: `stdvar(rate({app="nginx"}[5m])) by (host)`,
-			want:  `app:=nginx | stats by (host) rate()`,
+			want:  `app:=nginx | stats by (host) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (host) sum(__lvp_rate)`,
 		},
 		// without() clause tests moved to fixes_test.go — now correctly returns error
 		{
