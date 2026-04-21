@@ -798,7 +798,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 	// or: rate({...}[5m])
 
 	metricFuncs := map[string]string{
-		"rate":             "rate()",
+		"rate":             "count()",
 		"count_over_time":  "count()",
 		"bytes_over_time":  "sum_len(_msg)",
 		"bytes_rate":       "sum_len(_msg)",
@@ -850,15 +850,45 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 			continue
 		}
 
+		if funcName == "rate" || funcName == "bytes_rate" {
+			if rateResult, ok := buildRateLikeQuery(logsqlQuery, logsqlFunc, duration, outerAgg, byLabels, labelFn); ok {
+				return rateResult, true
+			}
+		}
+
 		// Build the LogsQL stats query
 		var result string
 		if isUnwrapFunc(funcName) {
 			// For unwrap functions, extract the unwrap field
 			unwrapField := extractUnwrapField(inner)
+			statsExpr := logsqlFunc
 			if unwrapField != "" {
-				result = fmt.Sprintf("%s | stats %s(%s)", logsqlQuery, logsqlFunc, unwrapField)
+				statsExpr = fmt.Sprintf("%s(%s)", logsqlFunc, unwrapField)
+			}
+			innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn)
+
+			// stdvar_over_time uses stddev + square, since VL doesn't have stdvar().
+			if funcName == "stdvar_over_time" {
+				if outerAgg != "" && byLabels == "" {
+					innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
+					withVariance := innerAliased + " | math __lvp_inner*__lvp_inner as __lvp_inner_var"
+					if outerResult, ok := applyOuterAggregation(withVariance, outerAgg, "__lvp_inner_var"); ok {
+						return outerResult, true
+					}
+				}
+				baseStddev := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "")
+				return fmt.Sprintf("%s^:%s|||2", BinaryMetricPrefix, baseStddev), true
+			}
+
+			if outerAgg != "" && byLabels == "" {
+				innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
+				if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
+					result = outerResult
+				} else {
+					result = buildStatsQuery(logsqlQuery, statsExpr, innerBy, "")
+				}
 			} else {
-				result = fmt.Sprintf("%s | stats %s", logsqlQuery, logsqlFunc)
+				result = buildStatsQuery(logsqlQuery, statsExpr, innerBy, "")
 			}
 		} else {
 			result = fmt.Sprintf("%s | stats %s", logsqlQuery, logsqlFunc)
@@ -871,23 +901,101 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 			}
 		}
 
-		// bytes_rate(window) ~= bytes_over_time(window) / window_seconds
-		if funcName == "bytes_rate" {
-			seconds := durationSeconds(duration)
-			if seconds > 0 {
-				return fmt.Sprintf("%s/:%s|||%s", BinaryMetricPrefix, result, strconv.FormatFloat(seconds, 'f', -1, 64)), true
-			}
-		}
-
-		// stdvar_over_time(window) ~= stddev_over_time(window)^2
-		if funcName == "stdvar_over_time" {
-			return fmt.Sprintf("%s^:%s|||2", BinaryMetricPrefix, result), true
-		}
-
 		return result, true
 	}
 
 	return "", false
+}
+
+func buildRateLikeQuery(logsqlQuery, statsExpr, duration, outerAgg, byLabels string, labelFn LabelTranslateFunc) (string, bool) {
+	seconds := durationSeconds(duration)
+	if seconds <= 0 {
+		return "", false
+	}
+
+	innerBy := "_stream"
+	if byLabels != "" {
+		innerBy = normalizeByLabels(byLabels, labelFn)
+	}
+
+	innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
+	withRate := fmt.Sprintf("%s | math __lvp_inner/%s as __lvp_rate", innerAliased, strconv.FormatFloat(seconds, 'f', -1, 64))
+
+	if outerAgg != "" && byLabels == "" {
+		if outerResult, ok := applyOuterAggregation(withRate, outerAgg, "__lvp_rate"); ok {
+			return outerResult, true
+		}
+	}
+
+	return buildStatsQuery(withRate, "sum(__lvp_rate)", innerBy, ""), true
+}
+
+func buildStatsQuery(baseQuery, statsExpr, byLabels, alias string) string {
+	query := strings.TrimSpace(baseQuery)
+	if query == "" {
+		query = "*"
+	}
+	if byLabels != "" {
+		query = fmt.Sprintf("%s | stats by (%s) %s", query, byLabels, statsExpr)
+	} else {
+		query = fmt.Sprintf("%s | stats %s", query, statsExpr)
+	}
+	if alias != "" {
+		query += " as " + alias
+	}
+	return query
+}
+
+func outerAggregationStatsFn(outerAgg string) (statsFn string, pow2 bool) {
+	switch outerAgg {
+	case "sum":
+		return "sum", false
+	case "avg":
+		return "avg", false
+	case "max":
+		return "max", false
+	case "min":
+		return "min", false
+	case "count":
+		return "count", false
+	case "stddev":
+		return "stddev", false
+	case "stdvar":
+		return "stddev", true
+	default:
+		return "", false
+	}
+}
+
+func applyOuterAggregation(baseQuery, outerAgg, field string) (string, bool) {
+	statsFn, pow2 := outerAggregationStatsFn(outerAgg)
+	if statsFn == "" {
+		return "", false
+	}
+	result := fmt.Sprintf("%s | stats %s(%s)", baseQuery, statsFn, field)
+	if pow2 {
+		result = fmt.Sprintf("%s^:%s|||2", BinaryMetricPrefix, result)
+	}
+	return result, true
+}
+
+var parserStageForUnwrapRE = regexp.MustCompile(`\|\s*(json|logfmt|pattern|regexp|unpack)\b`)
+
+func hasParserPipeline(query string) bool {
+	return parserStageForUnwrapRE.MatchString(query)
+}
+
+func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslateFunc) string {
+	if byLabels != "" {
+		return normalizeByLabels(byLabels, labelFn)
+	}
+	if hasParserPipeline(query) {
+		return "_stream, _msg"
+	}
+	if outerAgg != "" {
+		return "_stream"
+	}
+	return ""
 }
 
 func durationSeconds(duration string) float64 {
@@ -1219,7 +1327,7 @@ func extractUnwrapField(inner string) string {
 
 // tryTranslateQuantileOverTime handles quantile_over_time(phi, {query} | unwrap field [duration]).
 // Maps to VL: query | stats quantile(phi, field)
-func tryTranslateQuantileOverTime(innerExpr, _, byLabels string, labelFn LabelTranslateFunc) (string, bool) {
+func tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels string, labelFn LabelTranslateFunc) (string, bool) {
 	prefix := "quantile_over_time("
 	if !strings.HasPrefix(innerExpr, prefix) {
 		return "", false
@@ -1255,13 +1363,17 @@ func tryTranslateQuantileOverTime(innerExpr, _, byLabels string, labelFn LabelTr
 		unwrapField = "_msg"
 	}
 
-	result := fmt.Sprintf("%s | stats quantile(%s, %s)", logsqlQuery, phi, unwrapField)
+	statsExpr := fmt.Sprintf("quantile(%s, %s)", phi, unwrapField)
+	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn)
 
-	if byLabels != "" {
-		result = addByClause(result, byLabels, labelFn)
+	if outerAgg != "" && byLabels == "" {
+		innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
+		if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
+			return outerResult, true
+		}
 	}
 
-	return result, true
+	return buildStatsQuery(logsqlQuery, statsExpr, innerBy, ""), true
 }
 
 func addByClause(query, labels string, labelFn LabelTranslateFunc) string {
