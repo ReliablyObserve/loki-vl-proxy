@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-04-21
+
 ### Bug Fixes
 
 - drilldown/volume: stop injecting synthetic `service_name="unknown_service"` into `index/volume` and `index/volume_range` buckets when requests are grouped by non-service labels (for example `cluster`), while preserving service-aware grouping behavior.
