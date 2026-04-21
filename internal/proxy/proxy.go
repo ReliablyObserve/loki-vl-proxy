@@ -10249,13 +10249,7 @@ func (p *Proxy) translateVolumeMetric(fields map[string]string) map[string]strin
 	if translated == nil {
 		return nil
 	}
-	serviceSignal := false
-	for _, key := range serviceNameSourceFields {
-		if strings.TrimSpace(translated[key]) != "" {
-			serviceSignal = true
-			break
-		}
-	}
+	serviceSignal := hasServiceSignal(translated)
 	ensureSyntheticServiceName(translated)
 	if !serviceSignal && strings.TrimSpace(translated["service_name"]) == unknownServiceName {
 		delete(translated, "service_name")
@@ -13095,9 +13089,13 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 						syntheticLabels[key] = s
 					}
 				}
+				serviceSignal := hasServiceSignal(syntheticLabels)
 				beforeSyntheticCount := len(syntheticLabels)
 				ensureDetectedLevel(syntheticLabels)
 				ensureSyntheticServiceName(syntheticLabels)
+				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
+					delete(syntheticLabels, "service_name")
+				}
 				if len(syntheticLabels) != beforeSyntheticCount {
 					changed = true
 				}

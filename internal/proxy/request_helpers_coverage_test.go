@@ -105,4 +105,23 @@ func TestTranslateStatsResponseLabelsWithContext_Coverage(t *testing.T) {
 	if metric["service_name"] != "api" || metric["detected_level"] != "warn" {
 		t.Fatalf("unexpected translated metric labels %#v", metric)
 	}
+
+	noServiceBody := []byte(`{"result":[{"metric":{"k8s_cluster_name":"ops-sand"}}]}`)
+	noServiceGot := p.translateStatsResponseLabelsWithContext(context.Background(), noServiceBody, `sum by(k8s_cluster_name) (rate({deployment_environment="dev"}[1m]))`)
+
+	var noServiceResp struct {
+		Result []struct {
+			Metric map[string]interface{} `json:"metric"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(noServiceGot, &noServiceResp); err != nil {
+		t.Fatalf("decode no-service stats response: %v", err)
+	}
+	noServiceMetric := noServiceResp.Result[0].Metric
+	if _, exists := noServiceMetric["service_name"]; exists {
+		t.Fatalf("unexpected synthetic service_name for metric without service signal: %#v", noServiceMetric)
+	}
+	if noServiceMetric["k8s_cluster_name"] != "ops-sand" {
+		t.Fatalf("expected original metric labels to remain intact, got %#v", noServiceMetric)
+	}
 }

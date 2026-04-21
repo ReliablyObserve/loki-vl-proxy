@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- metrics/query-range: stop injecting synthetic `service_name="unknown_service"` into metric `query`/`query_range` responses when the result labelset has no real service signal (for example `sum by(cluster)(rate(...))`).
+- drilldown/fields: suppress high-cardinality terminal timestamp fields (`timestamp_end`, `observed_timestamp_end`) from `detected_fields` responses to keep Drilldown field discovery stable under repeated refreshes.
+
+### Tests
+
+- drilldown/compat: add unit and e2e regressions for non-service metric aggregations (no synthetic `unknown_service`) and detected-field suppression of terminal timestamp keys.
+
 ## [1.12.0] - 2026-04-21
 
 ### Bug Fixes

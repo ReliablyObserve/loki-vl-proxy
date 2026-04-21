@@ -89,6 +89,7 @@ Promotion criteria for a new family:
 - `index/volume_range` must expose non-empty `detected_level` series names
 - `detected_fields` must show parsed fields like `method`, `path`, `status`, `duration_ms`
 - `detected_fields` must not leak indexed labels like `app`, `cluster`, or `namespace`
+- `detected_fields` must suppress high-cardinality terminal timestamp fields (`timestamp_end`, `observed_timestamp_end`) so Drilldown field discovery does not trigger expensive backend stats paths that can flap into intermittent no-data responses
 - In hybrid field mode, `detected_fields` may expose both native dotted fields and translated aliases such as `service.name` and `service_name`
 - `labels` and `label/{name}/values` should stay stream-shaped; they should prefer VictoriaLogs stream metadata endpoints and only fall back to generic field endpoints for older backend versions
 - `detected_fields`, `detected_labels`, and `detected_field/{name}/values` should prefer native VictoriaLogs metadata lookups where they map cleanly, then fall back to bounded raw-log sampling for parsed and derived fields
@@ -103,6 +104,7 @@ Promotion criteria for a new family:
 - Mixed parser query path: `| json ... | logfmt | drop __error__, __error_details__`
 - Labels object parsing in returned log frames
 - App-level field suppression for `detected_level`, `level`, and `level_extracted`
+- High-cardinality terminal timestamp keys (`timestamp_end`, `observed_timestamp_end`) are excluded from Drilldown detected-field responses while regular parsed fields stay visible
 - `1.x` service-selection buckets, detected-fields filtering, and labels field parsing stay explicit in the source-contract checks
 - `2.x` detected-level default columns, field-values breakdown scenes, and additional label-tab wiring stay explicit in the source-contract checks
 - Grafana runtime `11.x` explicitly asserts `1.x`-style service buckets, filtered detected fields, and extra label values at runtime

@@ -120,6 +120,7 @@ The required matrix is intentionally not limited to happy-path selectors. It now
 - `pattern` parser extraction semantics
 - set-style binary operators such as `or` and `unless`
 - `bool` comparison semantics on metric expressions
+- metric aggregations that do not group by service labels must not receive synthetic `service_name="unknown_service"` in query/query_range responses
 - invalid log/metric shape rejections that must fail with the same class of error as Loki
 
 When a new LogQL family is implemented or fixed in the proxy, the expectation is to add:

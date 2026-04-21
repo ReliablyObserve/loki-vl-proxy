@@ -203,6 +203,77 @@ func TestDrilldown_DetectedFieldsMatchStructuredLogs(t *testing.T) {
 	}
 }
 
+func TestDrilldown_DetectedFieldsSuppressTimestampTerminalFields(t *testing.T) {
+	ensureDataIngested(t)
+
+	now := time.Now()
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "timestamp-heavy-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "pod": "timestamp-heavy-service-abc123",
+			"container": "timestamp-heavy-service", "level": "info",
+		},
+		Lines: []string{
+			`{"method":"GET","path":"/api/v1/slow","status":200,"timestamp_end":"2026-04-21T08:34:59.661518472Z","observed_timestamp_end":"2026-04-21T08:34:59.661518472Z"}`,
+			`{"method":"POST","path":"/api/v1/slow","status":201,"timestamp_end":"2026-04-21T08:35:00.139166515Z","observed_timestamp_end":"2026-04-21T08:35:00.139166515Z"}`,
+		},
+	})
+	time.Sleep(3 * time.Second)
+
+	params := url.Values{}
+	params.Set("query", `{service_name="timestamp-heavy-service"}`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-15*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.Add(15*time.Minute).UnixNano()))
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/detected_fields?"+params.Encode())
+	proxyFields, _ := proxyResp["fields"].([]interface{})
+	if len(proxyFields) == 0 {
+		t.Fatalf("proxy detected_fields empty for timestamp-heavy service query: %v", proxyResp)
+	}
+
+	proxyLabels := make(map[string]bool, len(proxyFields))
+	for _, field := range proxyFields {
+		proxyLabels[field.(map[string]interface{})["label"].(string)] = true
+	}
+
+	if !proxyLabels["method"] {
+		t.Fatalf("proxy detected_fields missing parsed method field: %v", proxyResp)
+	}
+	for _, suppressed := range []string{"timestamp_end", "observed_timestamp_end"} {
+		if proxyLabels[suppressed] {
+			t.Fatalf("proxy detected_fields must suppress high-cardinality field %q: %v", suppressed, proxyResp)
+		}
+	}
+}
+
+func TestDrilldown_StatsQueryDoesNotInjectUnknownServiceName(t *testing.T) {
+	ensureDataIngested(t)
+	now := time.Now()
+
+	params := url.Values{}
+	params.Set("query", `sum by(cluster) (rate({env="production",cluster="us-east-1"}[1m]))`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-15*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	params.Set("step", "60")
+
+	proxyResp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+	data := extractMap(proxyResp, "data")
+	if data == nil {
+		t.Fatalf("expected query_range data envelope, got %v", proxyResp)
+	}
+	result := extractArray(data, "result")
+	if len(result) == 0 {
+		t.Fatalf("expected non-empty stats result for cluster aggregation query, got %v", proxyResp)
+	}
+
+	for _, item := range result {
+		metric := item.(map[string]interface{})["metric"].(map[string]interface{})
+		if _, exists := metric["service_name"]; exists {
+			t.Fatalf("stats metric without service grouping must not inject synthetic service_name: %v", metric)
+		}
+	}
+}
+
 func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 	ensureDataIngested(t)
 	ingestPatternData(t)

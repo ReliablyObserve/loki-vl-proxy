@@ -54,6 +54,8 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 		addDetectedField(fields, "", "", "string", nil, "ignored")
 		addDetectedField(fields, "duration", "json", "int", []string{"duration"}, "10")
 		addDetectedField(fields, "duration", "logfmt", "string", nil, "ten")
+		addDetectedField(fields, "timestamp_end", "json", "string", nil, "2026-04-21T10:00:00Z")
+		addDetectedField(fields, "observed_timestamp_end", "json", "string", nil, "2026-04-21T10:00:00Z")
 
 		summary := fields["duration"]
 		if summary == nil {
@@ -67,6 +69,15 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 		}
 		if len(summary.jsonPath) != 1 || summary.jsonPath[0] != "duration" {
 			t.Fatalf("expected original json path to be preserved, got %#v", summary.jsonPath)
+		}
+		if _, exists := fields["timestamp_end"]; exists {
+			t.Fatal("expected suppressed high-cardinality timestamp_end field to be ignored")
+		}
+		if _, exists := fields["observed_timestamp_end"]; exists {
+			t.Fatal("expected suppressed high-cardinality observed_timestamp_end field to be ignored")
+		}
+		if !shouldSuppressDetectedField("timestamp_end") {
+			t.Fatal("expected timestamp_end to be part of suppression list")
 		}
 		if got := asString(map[string]any{"line": "hello\nworld"}); !strings.Contains(got, "hello") || strings.Contains(got, "\n") {
 			t.Fatalf("expected asString to flatten JSON, got %q", got)

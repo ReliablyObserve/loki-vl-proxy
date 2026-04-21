@@ -18,6 +18,11 @@ import (
 const unknownServiceName = "unknown_service"
 const detectedFieldsSampleLimit = 500
 
+var suppressedDetectedFieldNames = map[string]struct{}{
+	"timestamp_end":          {},
+	"observed_timestamp_end": {},
+}
+
 var serviceNameSourceFields = []string{
 	"service_name",
 	"service.name",
@@ -50,6 +55,27 @@ type detectedFieldSummary struct {
 type detectedLabelSummary struct {
 	label  string
 	values map[string]struct{}
+}
+
+func shouldSuppressDetectedField(label string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(label))
+	if normalized == "" {
+		return false
+	}
+	_, suppressed := suppressedDetectedFieldNames[normalized]
+	return suppressed
+}
+
+func hasServiceSignal(labels map[string]string) bool {
+	if len(labels) == 0 {
+		return false
+	}
+	for _, key := range serviceNameSourceFields {
+		if strings.TrimSpace(labels[key]) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func deriveServiceName(labels map[string]string) string {
@@ -175,6 +201,9 @@ func (p *Proxy) metadataFieldExposures(vlField string) []metadataFieldExposure {
 
 func addDetectedField(fields map[string]*detectedFieldSummary, label, parser, typ string, jsonPath []string, value string) {
 	if label == "" || strings.TrimSpace(value) == "" {
+		return
+	}
+	if shouldSuppressDetectedField(label) {
 		return
 	}
 	summary := fields[label]
@@ -1411,6 +1440,9 @@ func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string
 	out := make(map[string]*detectedFieldSummary, len(fieldNames))
 	for _, field := range fieldNames {
 		for _, exposure := range p.metadataFieldExposures(field) {
+			if shouldSuppressDetectedField(exposure.name) {
+				continue
+			}
 			out[exposure.name] = &detectedFieldSummary{
 				label:       exposure.name,
 				typ:         "string",
@@ -1443,6 +1475,9 @@ func mergeNativeDetectedFields(scanned []map[string]interface{}, scannedValues m
 		merged[label] = copied
 	}
 	for label, summary := range native {
+		if shouldSuppressDetectedField(label) {
+			continue
+		}
 		if existing, ok := merged[label]; ok {
 			if card, ok := existing["cardinality"].(int); ok && card > 0 {
 				continue

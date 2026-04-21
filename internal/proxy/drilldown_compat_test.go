@@ -925,6 +925,47 @@ func TestDrilldown_DetectedFields_ParseStructuredLogsInsteadOfIndexedLabels(t *t
 	}
 }
 
+func TestDrilldown_DetectedFields_SuppressHighCardinalityTimestampTerminals(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":1},{"value":"cluster","hits":1},{"value":"timestamp_end","hits":1},{"value":"observed_timestamp_end","hits":1}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users\",\"timestamp_end\":\"2026-04-04T17:18:49.971082Z\",\"observed_timestamp_end\":\"2026-04-04T17:18:49.971082Z\"}","_stream":"{app=\"api-gateway\",cluster=\"us-east-1\"}","app":"api-gateway","cluster":"us-east-1","timestamp_end":"2026-04-04T17:18:49.971082Z","observed_timestamp_end":"2026-04-04T17:18:49.971082Z","level":"info"}` + "\n"))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	resp := doGet(t, vlBackend.URL, "/loki/api/v1/detected_fields?query=%7Bapp%3D%22api-gateway%22%7D")
+	fields, ok := resp["fields"].([]interface{})
+	if !ok {
+		t.Fatalf("expected fields array, got %v", resp)
+	}
+
+	got := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		obj := field.(map[string]interface{})
+		got[obj["label"].(string)] = struct{}{}
+	}
+
+	if _, exists := got["timestamp_end"]; exists {
+		t.Fatalf("timestamp_end must be suppressed from detected_fields: %v", got)
+	}
+	if _, exists := got["observed_timestamp_end"]; exists {
+		t.Fatalf("observed_timestamp_end must be suppressed from detected_fields: %v", got)
+	}
+	if _, exists := got["method"]; !exists {
+		t.Fatalf("expected parsed field method to remain discoverable, got %v", got)
+	}
+	if _, exists := got["detected_level"]; !exists {
+		t.Fatalf("expected detected_level summary to remain discoverable, got %v", got)
+	}
+}
+
 func TestDrilldown_DetectedFields_ExposeStructuredMetadataWithDottedNames(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
