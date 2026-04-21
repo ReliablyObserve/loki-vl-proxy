@@ -520,7 +520,7 @@ func TestDetectedFieldValues_FieldFilterFallbackKeepsValuesVisible(t *testing.T)
 	}
 }
 
-func TestDetectedFields_EmptyStrictQueryRelaxesCandidates(t *testing.T) {
+func TestDetectedFields_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
 	const strictToken = "strict-only"
 
 	var fieldNameQueries []string
@@ -565,23 +565,13 @@ func TestDetectedFields_EmptyStrictQueryRelaxesCandidates(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if len(fieldNameQueries) < 2 {
-		t.Fatalf("expected strict+relaxed native field-name lookups, got %v", fieldNameQueries)
+	if len(fieldNameQueries) != 1 {
+		t.Fatalf("expected only the strict native field-name lookup, got %v", fieldNameQueries)
 	}
-	if !strings.Contains(fieldNameQueries[0], strictToken) {
-		t.Fatalf("expected first native field-name lookup to stay strict, got %v", fieldNameQueries)
-	}
-	if strings.Contains(fieldNameQueries[len(fieldNameQueries)-1], strictToken) {
-		t.Fatalf("expected final native field-name lookup to relax whole-query filters, got %v", fieldNameQueries)
-	}
-	if len(scanQueries) < 2 {
-		t.Fatalf("expected strict+relaxed field scans, got %v", scanQueries)
-	}
-	if !strings.Contains(scanQueries[0], strictToken) {
-		t.Fatalf("expected first field scan to stay strict, got %v", scanQueries)
-	}
-	if strings.Contains(scanQueries[len(scanQueries)-1], strictToken) {
-		t.Fatalf("expected final field scan to relax whole-query filters, got %v", scanQueries)
+	for _, got := range scanQueries {
+		if !strings.Contains(got, strictToken) {
+			t.Fatalf("expected scan lookup to preserve strict filter, got %q", got)
+		}
 	}
 
 	var resp map[string]interface{}
@@ -589,19 +579,8 @@ func TestDetectedFields_EmptyStrictQueryRelaxesCandidates(t *testing.T) {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	fields, _ := resp["fields"].([]interface{})
-	if len(fields) == 0 {
-		t.Fatalf("expected detected_fields payload after relaxed fallback, got %v", resp)
-	}
-	foundStatus := false
-	for _, raw := range fields {
-		item, _ := raw.(map[string]interface{})
-		if item["label"] == "status" {
-			foundStatus = true
-			break
-		}
-	}
-	if !foundStatus {
-		t.Fatalf("expected relaxed detected_fields payload to include status, got %v", resp)
+	if len(fields) != 0 {
+		t.Fatalf("expected empty detected_fields payload for strict empty query, got %v", resp)
 	}
 }
 

@@ -78,6 +78,10 @@ jobs:
               raise SystemExit(1)
           print(f"Loki compatibility score: {passed}/{total} ({pct_val:.1f}%)")
           PY
+      - name: Run Loki query semantics matrix
+        run: |
+          set -euo pipefail
+          go test -v -tags=e2e -run '^TestQuerySemantics' ./test/e2e-compat/
       - name: Tear down pinned stack
         if: always()
         working-directory: test/e2e-compat
@@ -144,6 +148,12 @@ jobs:
               raise SystemExit(1)
           print(f"Loki compatibility score: {passed}/{total} ({pct_val:.1f}%)")
           PY
+      - name: Run Loki query semantics matrix
+        env:
+          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+        run: |
+          set -euo pipefail
+          go test -v -tags=e2e -run '^TestQuerySemantics' ./test/e2e-compat/
       - name: Tear down matrix stack
         if: always()
         working-directory: test/e2e-compat

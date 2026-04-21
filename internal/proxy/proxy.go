@@ -2123,6 +2123,16 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
+	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
+		p.proxyBareParserMetricQueryRange(w, r, start, logqlQuery, spec)
+		return
+	}
+
+	if postAgg, ok := parseInstantMetricPostAggQuery(logqlQuery); ok {
+		p.handleInstantMetricPostAggregation(w, r, start, logqlQuery, postAgg)
+		return
+	}
+
 	logsqlQuery, err := p.translateQueryWithContext(r.Context(), logqlQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
@@ -2131,6 +2141,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	// Extract without() labels for post-processing
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	p.log.Debug("translated query", "logsql", logsqlQuery, "without", withoutLabels)
 
 	r = withOrgID(r)
@@ -2235,6 +2246,20 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
+	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
+		p.proxyBareParserMetricQuery(w, r, start, logqlQuery, spec)
+		return
+	}
+	if spec, ok := parseAbsentOverTimeCompatSpec(logqlQuery); ok {
+		p.proxyAbsentOverTimeQuery(w, r, start, logqlQuery, spec)
+		return
+	}
+
+	if postAgg, ok := parseInstantMetricPostAggQuery(logqlQuery); ok {
+		p.handleInstantMetricPostAggregation(w, r, start, logqlQuery, postAgg)
+		return
+	}
+
 	logsqlQuery, err := p.translateQueryWithContext(r.Context(), logqlQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
@@ -2244,6 +2269,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	// Extract without() labels for post-processing
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 
 	r = withOrgID(r)
 
@@ -2263,7 +2289,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQuery(sc, r, logsqlQuery)
 	} else {
-		p.proxyLogQuery(sc, r, logsqlQuery)
+		p.writeError(sc, http.StatusBadRequest, "log queries are not supported as an instant query type, please change your query to a range query type")
 	}
 
 	if bw != nil && len(withoutLabels) > 0 {
@@ -2353,6 +2379,230 @@ func parseInstantVectorTime(timeParam string) int64 {
 		return int64(f)
 	}
 	return time.Now().UnixNano()
+}
+
+type instantMetricPostAgg struct {
+	name  string
+	inner string
+	k     int
+}
+
+func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
+	logql = strings.TrimSpace(logql)
+	for _, name := range []string{"sort_desc", "sort"} {
+		prefix := name + "("
+		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
+			continue
+		}
+		inner := strings.TrimSpace(logql[len(prefix) : len(logql)-1])
+		if inner == "" {
+			return instantMetricPostAgg{}, false
+		}
+		return instantMetricPostAgg{name: name, inner: inner}, true
+	}
+	for _, name := range []string{"topk", "bottomk"} {
+		prefix := name + "("
+		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
+			continue
+		}
+		args := strings.TrimSpace(logql[len(prefix) : len(logql)-1])
+		comma := topLevelCommaIndex(args)
+		if comma <= 0 {
+			return instantMetricPostAgg{}, false
+		}
+		k, err := strconv.Atoi(strings.TrimSpace(args[:comma]))
+		if err != nil || k <= 0 {
+			return instantMetricPostAgg{}, false
+		}
+		inner := strings.TrimSpace(args[comma+1:])
+		if inner == "" {
+			return instantMetricPostAgg{}, false
+		}
+		return instantMetricPostAgg{name: name, inner: inner, k: k}, true
+	}
+	return instantMetricPostAgg{}, false
+}
+
+func topLevelCommaIndex(s string) int {
+	depth := 0
+	inQuote := false
+	for i, r := range s {
+		switch r {
+		case '"':
+			inQuote = !inQuote
+		case '(':
+			if !inQuote {
+				depth++
+			}
+		case ')':
+			if !inQuote && depth > 0 {
+				depth--
+			}
+		case ',':
+			if !inQuote && depth == 0 {
+				return i
+			}
+		}
+	}
+	return -1
+}
+
+func preserveMetricStreamIdentity(originalLogQL, translatedLogsQL string, withoutLabels []string) string {
+	if !isStatsQuery(translatedLogsQL) {
+		return translatedLogsQL
+	}
+	if strings.Contains(translatedLogsQL, "| stats by (") {
+		return translatedLogsQL
+	}
+	if len(withoutLabels) > 0 || isBareMetricFunctionQuery(strings.TrimSpace(originalLogQL)) {
+		return addStatsByStreamClause(translatedLogsQL)
+	}
+	return translatedLogsQL
+}
+
+func isBareMetricFunctionQuery(logql string) bool {
+	for _, prefix := range []string{
+		"rate(",
+		"count_over_time(",
+		"bytes_over_time(",
+		"bytes_rate(",
+		"sum_over_time(",
+		"avg_over_time(",
+		"max_over_time(",
+		"min_over_time(",
+		"first_over_time(",
+		"last_over_time(",
+		"stddev_over_time(",
+		"stdvar_over_time(",
+		"absent_over_time(",
+		"quantile_over_time(",
+	} {
+		if strings.HasPrefix(logql, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func addStatsByStreamClause(logsqlQuery string) string {
+	idx := strings.Index(logsqlQuery, "| stats ")
+	if idx < 0 {
+		return logsqlQuery
+	}
+	statsStart := idx + len("| stats ")
+	return logsqlQuery[:statsStart] + "by (_stream, level) " + logsqlQuery[statsStart:]
+}
+
+func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
+	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
+	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
+
+	r = withOrgID(r)
+
+	bw := &bufferedResponseWriter{header: make(http.Header)}
+	sc := &statusCapture{ResponseWriter: bw, code: 200}
+	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(translatedInner); ok {
+		p.proxySubquery(sc, r, outerFunc, innerQL, rng, step)
+	} else if op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(translatedInner); ok {
+		p.proxyBinaryMetricQueryVM(sc, r, op, left, right, vm)
+	} else if isStatsQuery(translatedInner) {
+		p.proxyStatsQuery(sc, r, translatedInner)
+	} else {
+		p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
+		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+		return
+	}
+
+	if len(withoutLabels) > 0 {
+		bw.body = applyWithoutGrouping(bw.body, withoutLabels)
+	}
+
+	if sc.code >= http.StatusBadRequest {
+		copyHeaders(w.Header(), bw.Header())
+		if w.Header().Get("Content-Type") == "" {
+			w.Header().Set("Content-Type", "application/json")
+		}
+		w.WriteHeader(sc.code)
+		_, _ = w.Write(bw.body)
+		elapsed := time.Since(start)
+		p.metrics.RecordRequest("query", sc.code, elapsed)
+		p.queryTracker.Record("query", originalQuery, elapsed, true)
+		return
+	}
+
+	result := applyInstantVectorPostAggregation(bw.body, postAgg)
+	copyHeaders(w.Header(), bw.Header())
+	if w.Header().Get("Content-Type") == "" {
+		w.Header().Set("Content-Type", "application/json")
+	}
+	_, _ = w.Write(result)
+	elapsed := time.Since(start)
+	p.metrics.RecordRequest("query", http.StatusOK, elapsed)
+	p.queryTracker.Record("query", originalQuery, elapsed, false)
+}
+
+func applyInstantVectorPostAggregation(body []byte, postAgg instantMetricPostAgg) []byte {
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]interface{} `json:"metric"`
+				Value  []interface{}          `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "vector" {
+		return body
+	}
+
+	sort.SliceStable(resp.Data.Result, func(i, j int) bool {
+		left := vectorPointValue(resp.Data.Result[i].Value)
+		right := vectorPointValue(resp.Data.Result[j].Value)
+		switch postAgg.name {
+		case "sort", "bottomk":
+			if left == right {
+				return metricKey(resp.Data.Result[i].Metric) < metricKey(resp.Data.Result[j].Metric)
+			}
+			return left < right
+		default:
+			if left == right {
+				return metricKey(resp.Data.Result[i].Metric) < metricKey(resp.Data.Result[j].Metric)
+			}
+			return left > right
+		}
+	})
+
+	if (postAgg.name == "topk" || postAgg.name == "bottomk") && postAgg.k < len(resp.Data.Result) {
+		resp.Data.Result = resp.Data.Result[:postAgg.k]
+	}
+
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+func vectorPointValue(value []interface{}) float64 {
+	if len(value) < 2 {
+		return 0
+	}
+	switch raw := value[1].(type) {
+	case string:
+		parsed, _ := strconv.ParseFloat(raw, 64)
+		return parsed
+	case float64:
+		return raw
+	default:
+		return 0
+	}
 }
 
 func applyConstantBinaryOp(left, right float64, op string) (float64, bool) {
@@ -8544,6 +8794,10 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 	if len(vm.On) > 0 {
 		result = applyOnMatching(leftBody, rightBody, op, vm.On, resultType)
 	} else if len(vm.Ignoring) > 0 {
+		if err := validateVectorMatchCardinality(leftBody, rightBody, nil, vm.Ignoring, len(vm.GroupLeft) > 0, len(vm.GroupRight) > 0); err != nil {
+			p.writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
 		result = applyIgnoringMatching(leftBody, rightBody, op, vm.Ignoring, resultType)
 	} else {
 		// group_left/group_right without on/ignoring — use default matching
@@ -9685,6 +9939,24 @@ type requestedBucketRange struct {
 	count int
 }
 
+type bareParserMetricCompatSpec struct {
+	funcName    string
+	baseQuery   string
+	rangeWindow time.Duration
+	unwrapField string
+	quantile    float64
+}
+
+type bareParserMetricSample struct {
+	tsNanos int64
+	value   float64
+}
+
+type bareParserMetricSeries struct {
+	metric  map[string]string
+	samples []bareParserMetricSample
+}
+
 func parseFlexibleUnixSeconds(raw string) (int64, bool) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -9715,6 +9987,36 @@ func parseFlexibleUnixSeconds(raw string) (int64, bool) {
 	return 0, false
 }
 
+func parseFlexibleUnixNanos(raw string) (int64, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return 0, false
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return parsed.UnixNano(), true
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		return parsed.UnixNano(), true
+	}
+	if integer, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return normalizeUnixNanos(integer), true
+	}
+	if floating, err := strconv.ParseFloat(value, 64); err == nil {
+		abs := math.Abs(floating)
+		switch {
+		case abs >= 1_000_000_000_000_000_000:
+			return int64(floating), true
+		case abs >= 1_000_000_000_000_000:
+			return int64(floating * 1_000), true
+		case abs >= 1_000_000_000_000:
+			return int64(floating * 1_000_000), true
+		default:
+			return int64(floating * float64(time.Second)), true
+		}
+	}
+	return 0, false
+}
+
 func normalizeUnixSeconds(v int64) int64 {
 	abs := v
 	if abs < 0 {
@@ -9729,6 +10031,23 @@ func normalizeUnixSeconds(v int64) int64 {
 		return v / 1_000
 	default:
 		return v
+	}
+}
+
+func normalizeUnixNanos(v int64) int64 {
+	abs := v
+	if abs < 0 {
+		abs = -abs
+	}
+	switch {
+	case abs >= 1_000_000_000_000_000_000:
+		return v
+	case abs >= 1_000_000_000_000_000:
+		return v * 1_000
+	case abs >= 1_000_000_000_000:
+		return v * 1_000_000
+	default:
+		return v * int64(time.Second)
 	}
 }
 
@@ -12044,12 +12363,570 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 
 var metricParserProbeRE = regexp.MustCompile(`(?s)(?:count_over_time|bytes_over_time|rate|bytes_rate|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time|quantile_over_time)\((.*?)\[[^][]+\]\)`)
 
+var (
+	absentOverTimeCompatRE         = regexp.MustCompile(`(?s)^\s*absent_over_time\(\s*(.*)\[([^][]+)\]\s*\)\s*$`)
+	bareParserMetricCompatRE       = regexp.MustCompile(`(?s)^\s*(count_over_time|bytes_over_time|rate|bytes_rate|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time)\((.*)\[([^][]+)\]\)\s*$`)
+	bareParserQuantileCompatRE     = regexp.MustCompile(`(?s)^\s*quantile_over_time\(\s*([0-9.]+)\s*,\s*(.*)\[([^][]+)\]\)\s*$`)
+	bareParserUnwrapFieldRE        = regexp.MustCompile(`\|\s*unwrap\s+(?:(?:duration|bytes)\(([^)]+)\)|([A-Za-z0-9_.-]+))`)
+	regexpExtractingParserStageRE  = regexp.MustCompile(`\|\s*regexp(?:\s+[^|]+)?`)
+	patternExtractingParserStageRE = regexp.MustCompile(`\|\s*pattern(?:\s+[^|]+)?`)
+	otherExtractingParserStageRE   = regexp.MustCompile(`\|\s*(?:unpack|extract|extract_regexp)(?:\s+[^|]+)?`)
+)
+
 func extractParserProbeQuery(logql string) string {
 	matches := metricParserProbeRE.FindStringSubmatch(logql)
 	if len(matches) == 2 {
 		return strings.TrimSpace(matches[1])
 	}
 	return strings.TrimSpace(logql)
+}
+
+func hasExtractingParserStage(logql string) bool {
+	for _, re := range []*regexp.Regexp{
+		jsonParserStageRE,
+		logfmtParserStageRE,
+		regexpExtractingParserStageRE,
+		patternExtractingParserStageRE,
+		otherExtractingParserStageRE,
+	} {
+		if re.MatchString(logql) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, bool) {
+	if matches := bareParserQuantileCompatRE.FindStringSubmatch(strings.TrimSpace(logql)); len(matches) == 4 {
+		baseQuery := strings.TrimSpace(matches[2])
+		if baseQuery == "" || !hasExtractingParserStage(baseQuery) {
+			return bareParserMetricCompatSpec{}, false
+		}
+		window, ok := parsePositiveStepDuration(matches[3])
+		if !ok {
+			return bareParserMetricCompatSpec{}, false
+		}
+		phi, err := strconv.ParseFloat(matches[1], 64)
+		if err != nil || phi < 0 || phi > 1 {
+			return bareParserMetricCompatSpec{}, false
+		}
+		unwrapField := extractBareParserUnwrapField(baseQuery)
+		if unwrapField == "" {
+			return bareParserMetricCompatSpec{}, false
+		}
+		return bareParserMetricCompatSpec{
+			funcName:    "quantile_over_time",
+			baseQuery:   baseQuery,
+			rangeWindow: window,
+			unwrapField: unwrapField,
+			quantile:    phi,
+		}, true
+	}
+
+	matches := bareParserMetricCompatRE.FindStringSubmatch(strings.TrimSpace(logql))
+	if len(matches) != 4 {
+		return bareParserMetricCompatSpec{}, false
+	}
+	baseQuery := strings.TrimSpace(matches[2])
+	if baseQuery == "" || !hasExtractingParserStage(baseQuery) {
+		return bareParserMetricCompatSpec{}, false
+	}
+	window, ok := parsePositiveStepDuration(matches[3])
+	if !ok {
+		return bareParserMetricCompatSpec{}, false
+	}
+	unwrapField := ""
+	switch matches[1] {
+	case "sum_over_time", "avg_over_time", "max_over_time", "min_over_time", "first_over_time", "last_over_time", "stddev_over_time", "stdvar_over_time":
+		unwrapField = extractBareParserUnwrapField(baseQuery)
+		if unwrapField == "" {
+			return bareParserMetricCompatSpec{}, false
+		}
+	}
+	return bareParserMetricCompatSpec{
+		funcName:    matches[1],
+		baseQuery:   baseQuery,
+		rangeWindow: window,
+		unwrapField: unwrapField,
+	}, true
+}
+
+func extractBareParserUnwrapField(query string) string {
+	matches := bareParserUnwrapFieldRE.FindStringSubmatch(query)
+	if len(matches) != 3 {
+		return ""
+	}
+	if field := strings.TrimSpace(matches[1]); field != "" {
+		return field
+	}
+	return strings.TrimSpace(matches[2])
+}
+
+func formatMetricSampleValue(v float64) string {
+	if math.IsNaN(v) {
+		return "NaN"
+	}
+	if math.IsInf(v, 1) {
+		return "+Inf"
+	}
+	if math.IsInf(v, -1) {
+		return "-Inf"
+	}
+	if math.Mod(v, 1) == 0 {
+		return strconv.FormatInt(int64(v), 10)
+	}
+	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+func metricWindowValue(funcName string, total float64, rangeWindow time.Duration) float64 {
+	switch funcName {
+	case "rate", "bytes_rate":
+		if rangeWindow <= 0 {
+			return 0
+		}
+		return total / rangeWindow.Seconds()
+	default:
+		return total
+	}
+}
+
+func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery string, spec bareParserMetricCompatSpec, start, end string) ([]bareParserMetricSeries, error) {
+	logsqlQuery, err := p.translateQueryWithContext(ctx, spec.baseQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery+" | sort by (_time)")
+	if start != "" {
+		params.Set("start", formatVLTimestamp(start))
+	}
+	if end != "" {
+		params.Set("end", formatVLTimestamp(end))
+	}
+
+	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
+		}
+		return nil, &vlAPIError{status: resp.StatusCode, body: msg}
+	}
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	seriesByKey := make(map[string]*bareParserMetricSeries, 16)
+	streamLabelCache := make(map[string]map[string]string, 16)
+	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
+	exposureCache := make(map[string][]metadataFieldExposure, 16)
+
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+
+		entry := vlEntryPool.Get().(map[string]interface{})
+		for key := range entry {
+			delete(entry, key)
+		}
+		if err := json.Unmarshal(line, &entry); err != nil {
+			vlEntryPool.Put(entry)
+			continue
+		}
+
+		tsNanos, ok := parseFlexibleUnixNanos(asString(entry["_time"]))
+		if !ok {
+			vlEntryPool.Put(entry)
+			continue
+		}
+		msg, _ := stringifyEntryValue(entry["_msg"])
+		desc := p.logQueryStreamDescriptor(asString(entry["_stream"]), asString(entry["level"]), streamLabelCache, streamDescriptorCache)
+		_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache)
+		metric := cloneStringMap(desc.translatedLabels)
+		for key, value := range parsedFields {
+			if spec.unwrapField != "" && key == spec.unwrapField {
+				continue
+			}
+			metric[key] = value
+		}
+		seriesKey := canonicalLabelsKey(metric)
+		series, ok := seriesByKey[seriesKey]
+		if !ok {
+			series = &bareParserMetricSeries{
+				metric:  metric,
+				samples: make([]bareParserMetricSample, 0, 8),
+			}
+			seriesByKey[seriesKey] = series
+		}
+		weight := 1.0
+		if spec.unwrapField != "" {
+			rawValue, ok := stringifyEntryValue(entry[spec.unwrapField])
+			if !ok {
+				vlEntryPool.Put(entry)
+				continue
+			}
+			parsedValue, err := strconv.ParseFloat(rawValue, 64)
+			if err != nil {
+				vlEntryPool.Put(entry)
+				continue
+			}
+			weight = parsedValue
+		} else if spec.funcName == "bytes_over_time" || spec.funcName == "bytes_rate" {
+			weight = float64(len(msg))
+		}
+		series.samples = append(series.samples, bareParserMetricSample{tsNanos: tsNanos, value: weight})
+		vlEntryPool.Put(entry)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]bareParserMetricSeries, 0, len(seriesByKey))
+	for _, series := range seriesByKey {
+		result = append(result, *series)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return canonicalLabelsKey(result[i].metric) < canonicalLabelsKey(result[j].metric)
+	})
+	return result, nil
+}
+
+func bareParserMetricWindowValue(funcName string, window []bareParserMetricSample, spec bareParserMetricCompatSpec) float64 {
+	if len(window) == 0 {
+		return 0
+	}
+	switch funcName {
+	case "count_over_time", "rate", "bytes_over_time", "bytes_rate", "sum_over_time":
+		total := 0.0
+		for _, sample := range window {
+			total += sample.value
+		}
+		return metricWindowValue(funcName, total, spec.rangeWindow)
+	case "avg_over_time":
+		total := 0.0
+		for _, sample := range window {
+			total += sample.value
+		}
+		return total / float64(len(window))
+	case "max_over_time":
+		maxValue := window[0].value
+		for _, sample := range window[1:] {
+			if sample.value > maxValue {
+				maxValue = sample.value
+			}
+		}
+		return maxValue
+	case "min_over_time":
+		minValue := window[0].value
+		for _, sample := range window[1:] {
+			if sample.value < minValue {
+				minValue = sample.value
+			}
+		}
+		return minValue
+	case "first_over_time":
+		return window[0].value
+	case "last_over_time":
+		return window[len(window)-1].value
+	case "stddev_over_time", "stdvar_over_time":
+		mean := 0.0
+		for _, sample := range window {
+			mean += sample.value
+		}
+		mean /= float64(len(window))
+		variance := 0.0
+		for _, sample := range window {
+			delta := sample.value - mean
+			variance += delta * delta
+		}
+		variance /= float64(len(window))
+		if funcName == "stddev_over_time" {
+			return math.Sqrt(variance)
+		}
+		return variance
+	case "quantile_over_time":
+		values := make([]float64, 0, len(window))
+		for _, sample := range window {
+			values = append(values, sample.value)
+		}
+		sort.Float64s(values)
+		if len(values) == 1 {
+			return values[0]
+		}
+		pos := spec.quantile * float64(len(values)-1)
+		lower := int(math.Floor(pos))
+		upper := int(math.Ceil(pos))
+		if lower == upper {
+			return values[lower]
+		}
+		weight := pos - float64(lower)
+		return values[lower] + ((values[upper] - values[lower]) * weight)
+	default:
+		return 0
+	}
+}
+
+func buildBareParserMetricMatrix(series []bareParserMetricSeries, startNanos, endNanos, stepNanos int64, spec bareParserMetricCompatSpec) map[string]interface{} {
+	result := make([]lokiMatrixResult, 0, len(series))
+	windowNanos := int64(spec.rangeWindow)
+	for _, seriesItem := range series {
+		values := make([][]interface{}, 0, int(((endNanos-startNanos)/stepNanos)+1))
+		samples := seriesItem.samples
+		left := 0
+		right := 0
+		for eval := startNanos; eval <= endNanos; eval += stepNanos {
+			lower := eval - windowNanos
+			for right < len(samples) && samples[right].tsNanos <= eval {
+				right++
+			}
+			for left < right && samples[left].tsNanos < lower {
+				left++
+			}
+			window := samples[left:right]
+			values = append(values, []interface{}{float64(eval) / float64(time.Second), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))})
+		}
+		result = append(result, lokiMatrixResult{Metric: seriesItem.metric, Values: values})
+	}
+	return map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "matrix",
+			"result":     result,
+		},
+	}
+}
+
+func buildBareParserMetricVector(series []bareParserMetricSeries, evalNanos int64, spec bareParserMetricCompatSpec) map[string]interface{} {
+	result := make([]lokiVectorResult, 0, len(series))
+	windowNanos := int64(spec.rangeWindow)
+	for _, seriesItem := range series {
+		lower := evalNanos - windowNanos
+		window := make([]bareParserMetricSample, 0, len(seriesItem.samples))
+		for _, sample := range seriesItem.samples {
+			if sample.tsNanos >= lower && sample.tsNanos <= evalNanos {
+				window = append(window, sample)
+			}
+		}
+		result = append(result, lokiVectorResult{
+			Metric: seriesItem.metric,
+			Value:  []interface{}{float64(evalNanos) / float64(time.Second), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))},
+		})
+	}
+	return map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "vector",
+			"result":     result,
+		},
+	}
+}
+
+type absentOverTimeCompatSpec struct {
+	baseQuery   string
+	rangeWindow time.Duration
+}
+
+func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool) {
+	matches := absentOverTimeCompatRE.FindStringSubmatch(strings.TrimSpace(logql))
+	if len(matches) != 3 {
+		return absentOverTimeCompatSpec{}, false
+	}
+	window, ok := parsePositiveStepDuration(matches[2])
+	if !ok {
+		return absentOverTimeCompatSpec{}, false
+	}
+	baseQuery := strings.TrimSpace(matches[1])
+	if baseQuery == "" {
+		return absentOverTimeCompatSpec{}, false
+	}
+	return absentOverTimeCompatSpec{baseQuery: baseQuery, rangeWindow: window}, true
+}
+
+func extractAbsentMetricLabels(query string) map[string]string {
+	selector, _, ok := splitLeadingSelector(strings.TrimSpace(query))
+	if !ok || len(selector) < 2 {
+		return map[string]string{}
+	}
+	matchers := splitSelectorMatchers(selector[1 : len(selector)-1])
+	labels := make(map[string]string, len(matchers))
+	for _, matcher := range matchers {
+		matcher = strings.TrimSpace(matcher)
+		if strings.Contains(matcher, "!=") || strings.Contains(matcher, "=~") || strings.Contains(matcher, "!~") {
+			continue
+		}
+		idx := strings.Index(matcher, "=")
+		if idx <= 0 {
+			continue
+		}
+		label := strings.TrimSpace(matcher[:idx])
+		value := strings.TrimSpace(matcher[idx+1:])
+		value = strings.Trim(value, "\"`")
+		if label == "" || value == "" {
+			continue
+		}
+		labels[label] = value
+	}
+	return labels
+}
+
+func statsResponseIsEmpty(body []byte) bool {
+	var resp struct {
+		Data struct {
+			Result []lokiVectorResult `json:"result"`
+		} `json:"data"`
+		Results []lokiVectorResult `json:"results"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return false
+	}
+	results := resp.Results
+	if len(results) == 0 {
+		results = resp.Data.Result
+	}
+	if len(results) == 0 {
+		return true
+	}
+	for _, item := range results {
+		if len(item.Value) < 2 {
+			continue
+		}
+		raw := fmt.Sprint(item.Value[1])
+		raw = strings.Trim(raw, "\"")
+		value, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return false
+		}
+		if value != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func buildAbsentInstantVector(evalRaw string, metric map[string]string) map[string]interface{} {
+	evalNs, ok := parseFlexibleUnixNanos(evalRaw)
+	if !ok {
+		evalNs = time.Now().UnixNano()
+	}
+	return map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "vector",
+			"result": []lokiVectorResult{{
+				Metric: metric,
+				Value:  []interface{}{float64(evalNs) / float64(time.Second), "1"},
+			}},
+		},
+	}
+}
+
+func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), originalQuery)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+		return
+	}
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	if t := r.FormValue("time"); t != "" {
+		params.Set("time", formatVLTimestamp(t))
+	}
+
+	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query", params)
+	if err != nil {
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("query", status, time.Since(start))
+		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	if resp.StatusCode >= http.StatusBadRequest {
+		p.writeError(w, resp.StatusCode, string(body))
+		p.metrics.RecordRequest("query", resp.StatusCode, time.Since(start))
+		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
+		return
+	}
+
+	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, originalQuery)
+	var out []byte
+	if statsResponseIsEmpty(body) {
+		out, _ = json.Marshal(buildAbsentInstantVector(r.FormValue("time"), extractAbsentMetricLabels(spec.baseQuery)))
+	} else {
+		out = wrapAsLokiResponse([]byte(`{"result":[]}`), "vector")
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(out)
+	elapsed := time.Since(start)
+	p.metrics.RecordRequest("query", http.StatusOK, elapsed)
+	p.queryTracker.Record("query", originalQuery, elapsed, false)
+}
+
+func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
+	startNanos, ok := parseFlexibleUnixNanos(r.FormValue("start"))
+	if !ok {
+		p.writeError(w, http.StatusBadRequest, "invalid start timestamp")
+		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	endNanos, ok := parseFlexibleUnixNanos(r.FormValue("end"))
+	if !ok || endNanos < startNanos {
+		p.writeError(w, http.StatusBadRequest, "invalid end timestamp")
+		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	stepDur, ok := parsePositiveStepDuration(r.FormValue("step"))
+	if !ok {
+		p.writeError(w, http.StatusBadRequest, "invalid step")
+		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, r.FormValue("start"), r.FormValue("end"))
+	if err != nil {
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("query_range", status, time.Since(start))
+		p.queryTracker.Record("query_range", originalQuery, time.Since(start), true)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	marshalJSON(w, buildBareParserMetricMatrix(series, startNanos, endNanos, int64(stepDur), spec))
+	elapsed := time.Since(start)
+	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+}
+
+func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
+	evalNanos, ok := parseFlexibleUnixNanos(r.FormValue("time"))
+	if !ok {
+		evalNanos = time.Now().UnixNano()
+	}
+	startWindow := strconv.FormatInt(evalNanos-int64(spec.rangeWindow), 10)
+	endWindow := strconv.FormatInt(evalNanos, 10)
+	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, startWindow, endWindow)
+	if err != nil {
+		status := statusFromUpstreamErr(err)
+		p.writeError(w, status, err.Error())
+		p.metrics.RecordRequest("query", status, time.Since(start))
+		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	marshalJSON(w, buildBareParserMetricVector(series, evalNanos, spec))
+	elapsed := time.Since(start)
+	p.metrics.RecordRequest("query", http.StatusOK, elapsed)
+	p.queryTracker.Record("query", originalQuery, elapsed, false)
 }
 
 func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
@@ -12095,6 +12972,19 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 						changed = true
 						continue
 					}
+					if k == "_stream" {
+						if rawStream, ok := v.(string); ok {
+							for streamKey, streamValue := range parseStreamLabels(rawStream) {
+								lokiKey := streamKey
+								if !p.labelTranslator.IsPassthrough() {
+									lokiKey = p.labelTranslator.ToLoki(streamKey)
+								}
+								translated[lokiKey] = streamValue
+							}
+							changed = true
+							continue
+						}
+					}
 					lokiKey := k
 					if !p.labelTranslator.IsPassthrough() {
 						lokiKey = p.labelTranslator.ToLoki(k)
@@ -12104,14 +12994,24 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 					}
 					translated[lokiKey] = v
 				}
-				if strings.Contains(originalQuery, "detected_level") {
-					if _, ok := translated["detected_level"]; !ok {
-						if value, ok := translated["level"]; ok {
-							translated["detected_level"] = value
-							delete(translated, "level")
-							changed = true
-						}
+				syntheticLabels := make(map[string]string, len(translated))
+				for key, value := range translated {
+					if s, ok := value.(string); ok {
+						syntheticLabels[key] = s
 					}
+				}
+				beforeSyntheticCount := len(syntheticLabels)
+				ensureDetectedLevel(syntheticLabels)
+				ensureSyntheticServiceName(syntheticLabels)
+				if len(syntheticLabels) != beforeSyntheticCount {
+					changed = true
+				}
+				for key, value := range syntheticLabels {
+					if existing, ok := translated[key]; ok && existing == value {
+						continue
+					}
+					translated[key] = value
+					changed = true
 				}
 				if changed {
 					translatedMetrics++

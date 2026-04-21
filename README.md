@@ -13,9 +13,9 @@
 [![VictoriaLogs Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/ReliablyObserve/Loki-VL-proxy)](https://go.dev/)
 [![Release](https://img.shields.io/github/v/release/ReliablyObserve/Loki-VL-proxy)](https://github.com/ReliablyObserve/Loki-VL-proxy/releases)
-[![Lines of Code](https://img.shields.io/badge/go%20loc-79.3k-blue)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-1811%20passed-brightgreen)](#tests)
-[![Coverage](https://img.shields.io/badge/coverage-89.1%25-green)](#tests)
+[![Lines of Code](https://img.shields.io/badge/go%20loc-79.2k-blue)](https://github.com/ReliablyObserve/Loki-VL-proxy)
+[![Tests](https://img.shields.io/badge/tests-1809%20passed-brightgreen)](#tests)
+[![Coverage](https://img.shields.io/badge/coverage-89.2%25-green)](#tests)
 [![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -44,6 +44,9 @@ Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/
 
 - Loki-compatible read API for Grafana datasource, Explore, Drilldown, and API clients.
 - Strict tuple contracts: default 2-tuple, explicit 3-tuple only via `categorize-labels`.
+- Manifest-driven Loki query semantics parity tests against a real Loki oracle for valid and invalid LogQL combinations, backed by an explicit Loki operation inventory that is machine-checked in CI.
+- Required coverage now includes parser pipelines, bare `unwrap` range functions, `absent_over_time`, scalar `bool` comparisons, vector set operators, and invalid LogQL forms that must fail the same way as Loki.
+- Required PR compatibility gate for Loki-facing query semantics through the pinned `compat-loki` workflow.
 - Grafana Logs Drilldown patterns support through `/loki/api/v1/patterns`, with explicit `-patterns-enabled` control when deployments need it disabled.
 - Loki-compatible patterns endpoint with optional restart-safe persistence.
 - Automatic pattern autodetection from successful `query`/`query_range` responses (`-patterns-autodetect-from-queries`) to keep Drilldown patterns warm behind the scenes.
@@ -80,7 +83,7 @@ Related docs: [Compatibility Matrix](docs/compatibility-matrix.md), [Patterns](d
 - Layered CI security gates: `gitleaks`, `gosec`, `Trivy`, `actionlint`, `hadolint`, `OpenSSF Scorecard`, custom runtime regressions, OWASP ZAP, and curated `Nuclei`.
 - Proxy-specific security coverage for tenant isolation, cache boundaries, browser-origin enforcement on `/tail`, forwarded auth/header handling, and debug/admin exposure.
 
-Related docs: [Security](docs/security.md), [Security Policy](SECURITY.md), [Testing](docs/testing.md)
+Related docs: [Security](docs/security.md), [Security Policy](SECURITY.md), [Testing](docs/testing.md), [Compatibility Matrix](docs/compatibility-matrix.md)
 
 ## UI Gallery
 

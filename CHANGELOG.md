@@ -7,20 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.10.3] - 2026-04-20
+### Bug Fixes
+
+- compat/loki: preserve Loki semantics for bare parser-derived metric queries and `absent_over_time(...)` on the direct `query` and `query_range` paths so valid Loki operations keep their parser-derived label cardinality, unwrap behavior, and empty-series semantics instead of collapsing into proxy-specific aggregated fallback results.
 
 ### Changed
 
 - release/metadata: synchronized release metadata for v1.10.2.
 
-### Bug Fixes
-
-- drilldown/metadata: retry relaxed metadata candidates after successful-empty strict scans for native streams, native field names, detected fields, and detected labels so Drilldown labels/fields stay populated when strict parser filters over-constrain the sample.
-- translator/patterns: translate `pattern`/`extract` stages without named captures into line filters instead of emitting invalid VictoriaLogs `extract` pipes such as `extract "Metrics"`.
-
 ### Tests
 
-- drilldown/translator: update fallback coverage for empty strict scans and add regression cases for literal `extract`/`pattern` stage translation.
+- compat/loki: make the query-semantics matrix and operation inventory required in CI, expand positive and negative Loki operation coverage across parser pipelines, unwrap range functions, boolean/set operators, and invalid log/metric combinations, and add unit coverage for the bare parser metric and `absent_over_time(...)` compatibility handlers plus cache-tier coverage for the current mainline helper cache paths.
 
 ## [1.10.2] - 2026-04-20
 

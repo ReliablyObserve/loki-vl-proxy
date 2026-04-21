@@ -35,8 +35,10 @@ test("buildServiceDrilldownUrl preserves service filter state across reloadable 
   );
   expect(built.pathname).toBe(`${DRILLDOWN_URL}/service/api-gateway/logs`);
   expect(built.searchParams.get("var-ds")).toBe("proxy-uid");
+  expect(built.searchParams.get("var-primary_label")).toBe("service_name|=~|.+");
   expect(built.searchParams.get("var-filters")).toBe("service_name|=|api-gateway");
   expect(built.searchParams.get("var-fields")).toBe("method|=|GET");
+  expect(built.searchParams.get("var-all-fields")).toBe("method|=|GET");
 });
 
 test("buildServiceDrilldownUrl keeps dotted field triplet for event-details filters @drilldown-core", async () => {

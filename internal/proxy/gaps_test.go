@@ -708,8 +708,8 @@ func TestCoverage_HandleQuery_LogQuery(t *testing.T) {
 	r := httptest.NewRequest("GET", `/loki/api/v1/query?query={app="nginx"}`, nil)
 	p.handleQuery(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
 	}
 }
 

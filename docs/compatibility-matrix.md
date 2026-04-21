@@ -16,6 +16,57 @@ The GitHub Actions compatibility workflows read their matrix lists directly from
 VictoriaLogs capability profiles (used by runtime version sensing in proxy code) are tracked in the same manifest under `stack.victorialogs.capability_profiles`.
 Grafana runtime and client-surface capability profiles are tracked under `stack.grafana_loki_datasource_contract.capability_profiles` and `stack.logs_drilldown_contract.capability_profiles`.
 
+## Query Semantics Matrix
+
+Version coverage and query semantics are tracked separately on purpose.
+
+- [compatibility-matrix.json](../test/e2e-compat/compatibility-matrix.json) answers which runtime families we support in CI.
+- [query-semantics-matrix.json](../test/e2e-compat/query-semantics-matrix.json) answers which Loki-facing query combinations must behave the same as real Loki.
+- [query-semantics-operations.json](../test/e2e-compat/query-semantics-operations.json) answers which Loki operations are explicitly tracked by the required semantics gate.
+
+The query semantics matrix is manifest-driven and runs against a live Docker Compose stack with:
+
+- real Loki as the oracle
+- Loki-VL-proxy against VictoriaLogs as the system under test
+- the required `compat-loki` GitHub Actions workflow as the enforcement gate on pull requests
+- the `loki-pinned` PR job as the stable required runtime check, with wider Loki-family coverage in the scheduled matrix
+
+Each case declares:
+
+- query family such as selector, parser pipeline, metric aggregation, binary op, or invalid syntax
+- endpoint shape: `query` or `query_range`
+- expected outcome: `success`, `client_error`, or `server_error`
+- expected `resultType` when the query is valid
+- comparison mode such as exact line-count parity, exact series-count parity, or exact metric-label-set parity
+
+The operation inventory is machine-checked alongside the matrix so the repo does not quietly drift into “tested cases” without a visible coverage model.
+
+Representative covered combinations now include:
+
+- selector + regex / negative-regex combinations
+- chained line filters including exclusion cases
+- parser pipelines with exact, numeric, regex, and pattern field filters
+- parser-inside-range metric queries and bare `unwrap` range functions
+- `absent_over_time(...)` semantics for missing selectors
+- scalar `bool` comparisons and vector set operators like `or` / `unless`
+- instant post-aggregations like `topk`, `bottomk`, `sort`, and `sort_desc`
+- invalid log-query aggregations that must fail the same way as Loki
+
+This keeps the repo explicit about what must match Loki exactly versus what is a proxy-only Grafana contract.
+
+## Proxy-Only Contract Matrix
+
+Some important behaviors are intentionally not judged against Loki because they only exist in the proxy compatibility layer.
+
+Examples:
+
+- synthetic label translation such as `service_name`
+- Grafana Drilldown helper endpoints like detected labels, detected fields, field values, volume, and patterns
+- stale-on-error helper behavior
+- bounded fallback and recovery behavior when VictoriaLogs discovery endpoints fail
+
+Those cases belong in the proxy contract suite, not the strict Loki semantics parity matrix.
+
 ## Support Window Policy
 
 The matrix is intentionally not open-ended. For every upstream we support a moving window that advances as new releases land:

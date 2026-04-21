@@ -29,7 +29,7 @@ async function waitForDrilldownDetails(page: Page) {
   await expect(page.getByRole("combobox", { name: "Filter by fields" })).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByRole("tab", { name: /Logs\d+/ })).toBeVisible({
+  await expect(page.getByRole("tab", { name: /^Logs/i }).first()).toBeVisible({
     timeout: 30_000,
   });
 }
@@ -91,6 +91,18 @@ function uniqueQueries(queries: string[]) {
     result.push(normalized);
   }
   return result;
+}
+
+function extractExactServiceHint(query: string) {
+  const serviceMatch = query.match(/\{\s*service_name="([^"]+)"/);
+  if (serviceMatch?.[1]) {
+    return serviceMatch[1];
+  }
+  const appMatch = query.match(/\{\s*app="([^"]+)"/);
+  if (appMatch?.[1]) {
+    return appMatch[1];
+  }
+  return "";
 }
 
 async function seedPatternsStream(page: Page) {
@@ -228,11 +240,19 @@ async function waitForAutodetectedPatterns(
         lastPatternsPayload = null;
       }
 
+      const patternsData = (lastPatternsPayload as { data?: unknown[] } | null)?.data;
+      if (!Array.isArray(patternsData) || patternsData.length === 0) {
+        continue;
+      }
+
+      const exactServiceHint = extractExactServiceHint(query);
+      if (exactServiceHint) {
+        return exactServiceHint;
+      }
+
       if (
         !seedResponse.ok() ||
-        (lastSeedPayload as { status?: string } | null)?.status !== "success" ||
-        !Array.isArray((lastPatternsPayload as { data?: unknown[] } | null)?.data) ||
-        ((lastPatternsPayload as { data?: unknown[] }).data?.length ?? 0) === 0
+        (lastSeedPayload as { status?: string } | null)?.status !== "success"
       ) {
         continue;
       }

@@ -18,6 +18,9 @@ docker compose up -d --build
 ../../scripts/ci/wait_e2e_stack.sh 180
 go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
 
+# Manifest-driven Loki query semantics parity + inventory
+go test -v -tags=e2e -run '^TestQuerySemantics' ./test/e2e-compat/
+
 # Track-specific scores
 go test -v -tags=e2e -run '^TestLokiTrackScore$' ./test/e2e-compat/
 go test -v -tags=e2e -run '^TestDrilldownTrackScore$' ./test/e2e-compat/
@@ -172,6 +175,8 @@ Recent PRs added targeted guards in areas that were previously flaky in live Gra
 | `test/e2e-compat/` | Docker-based Loki vs proxy comparison |
 | `test/e2e-compat/drilldown_compat_test.go` | Grafana Logs Drilldown resource contracts via Grafana datasource proxy |
 | `test/e2e-compat/explore_contract_test.go` | HTTP-level Explore contracts for line filters, parsers, direction, metric shape, `label_format`, invalid-query handling |
+| `test/e2e-compat/query_semantics_matrix_test.go` | Manifest-driven Loki query semantics parity against the real Loki Compose oracle |
+| `test/e2e-compat/query-semantics-matrix.json` | Single source of truth for valid/invalid query combinations and edge-case expectations |
 | `test/e2e-compat/grafana_surface_test.go` | Grafana datasource catalog, datasource health, proxy bootstrap/control-plane surface |
 | `test/e2e-compat/features_test.go` | Live Grafana-facing edge cases including multi-tenant `__tenant_id__`, long-lived tail sessions, and Drilldown level-filter regressions |
 | `test/e2e-ui/tests/url-state.spec.ts` | Pure URL/state builder tests for Explore and Logs Drilldown reloadable state |
@@ -227,6 +232,13 @@ CI prefers the runner's existing Chrome/Chromium binary for these shards and fal
 
 ## E2E Compatibility Matrix
 
+The repo now keeps two different matrix files in `test/e2e-compat`:
+
+- `compatibility-matrix.json` for runtime/version coverage
+- `query-semantics-matrix.json` for manifest-driven Loki query/operator parity
+
+They solve different problems and should evolve independently.
+
 The Docker-backed `test/e2e-compat` suite now runs as four functional PR shards instead of one monolithic job. Each shard builds the stack, waits on explicit HTTP readiness checks, and runs only its own test family.
 
 | Shard | Primary scope |
@@ -242,6 +254,53 @@ The GitHub-hosted Docker jobs now also prebuild the proxy image once per job thr
 
 Compose-backed fleet cache smoke now runs on pull requests and post-merge `main` in CI (`e2e-fleet`), using the dedicated `TestFleetSmoke_*` suite.
 Tuple smoke contract canary also runs automatically in CI (`tuple-smoke`) by seeding e2e data then executing `scripts/smoke-test.sh`.
+
+## Query Semantics Matrix
+
+`TestQuerySemanticsMatrix` reads [`query-semantics-matrix.json`](../test/e2e-compat/query-semantics-matrix.json) and executes each case against:
+
+- real Loki in the Compose stack
+- Loki-VL-proxy backed by VictoriaLogs
+- the required `compat-loki` CI workflow for pull-request enforcement
+
+`TestQuerySemanticsOperationsInventory` reads [`query-semantics-operations.json`](../test/e2e-compat/query-semantics-operations.json) and enforces:
+
+- every tracked Loki-facing operation references one or more live matrix cases
+- every live matrix case is tracked by the operation inventory
+
+Each manifest entry declares:
+
+- query family
+- endpoint shape: `query` or `query_range`
+- expected outcome: `success`, `client_error`, or `server_error`
+- expected `resultType` for valid queries
+- exact comparison mode such as line-count parity, series-count parity, or exact metric-label-set parity
+
+This is where the repo makes tricky edge cases explicit instead of relying on scattered ad hoc tests. Representative cases include:
+
+- valid parser pipelines like `| json`, `| logfmt`, `| regexp`, and `| pattern`
+- valid parser regex and numeric filters
+- grouped metric queries such as `sum by(level)(count_over_time(...))`
+- parser-inside-range metric queries such as `count_over_time({selector} | json | status >= 500 [5m])`
+- byte-oriented parser metrics such as `bytes_over_time(...)` and `bytes_rate(...)`
+- bare `unwrap` metrics such as `sum/avg/max/min/first/last/stddev/stdvar/quantile_over_time(... | unwrap field [5m])`
+- `absent_over_time(...)` semantics for missing selectors
+- instant post-aggregations such as `topk`, `bottomk`, `sort`, and `sort_desc`
+- scalar and vector binary operations over valid metric expressions, including scalar `bool` comparison and vector `or` / `unless`
+- invalid forms like `sum by(job) ({selector})`
+- invalid forms like `topk(2, {selector})` and `sort({selector})`
+- invalid forms like `rate({selector})` without a range
+
+Proxy-only Grafana helper behavior such as synthetic labels, Drilldown fields, stale-on-error helpers, and detected-label recovery stays outside this matrix and belongs in the dedicated proxy contract tests.
+
+Valid Loki behavior is not an accepted exclusion class. If a query works in real Loki and diverges in the proxy, it should be fixed and added to the required matrix or tracked immediately as a parity bug with a dedicated regression target.
+
+Detailed docs are part of the gate now. When the manifest grows into a new LogQL family, update:
+
+- `docs/compatibility-loki.md`
+- `docs/compatibility-matrix.md`
+- `docs/testing.md`
+- `README.md`
 
 ### `datasource` shard
 
@@ -380,7 +439,7 @@ Required-check note:
 
 That report is part of the required PR gate. It is still a smoke signal rather than a full benchmark lab run, but it now blocks obvious regressions in coverage, compatibility, and the tracked performance signals.
 
-See [compatibility-matrix.md](compatibility-matrix.md), [compatibility-loki.md](compatibility-loki.md), [compatibility-drilldown.md](compatibility-drilldown.md), [compatibility-victorialogs.md](compatibility-victorialogs.md), and [compatibility-matrix.json](../test/e2e-compat/compatibility-matrix.json).
+See [compatibility-matrix.md](compatibility-matrix.md), [compatibility-loki.md](compatibility-loki.md), [compatibility-drilldown.md](compatibility-drilldown.md), [compatibility-victorialogs.md](compatibility-victorialogs.md), [compatibility-matrix.json](../test/e2e-compat/compatibility-matrix.json), and [query-semantics-matrix.json](../test/e2e-compat/query-semantics-matrix.json).
 
 ## Running Specific Tests
 

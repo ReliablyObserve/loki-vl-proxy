@@ -251,10 +251,12 @@ func TestQuery_DefaultRequestStaysTwoTupleForStrictDecoders(t *testing.T) {
 	p := newStreamMetadataProxy(t, vlBackend.URL, true, false)
 	q := url.Values{}
 	q.Set("query", `{job="otel-proxy"}`)
-	req := httptest.NewRequest("GET", "/loki/api/v1/query?"+q.Encode(), nil)
+	q.Set("start", "1")
+	q.Set("end", "2")
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
 	rec := httptest.NewRecorder()
 
-	p.handleQuery(rec, req)
+	p.handleQueryRange(rec, req)
 	tuple := decodeFirstTuple(t, rec.Body.Bytes())
 	if len(tuple) != 2 {
 		t.Fatalf("expected strict 2-tuple default query response, got %#v", tuple)
@@ -268,11 +270,13 @@ func TestQuery_CategorizeLabelsReturnsThreeTuple(t *testing.T) {
 	p := newStreamMetadataProxy(t, vlBackend.URL, true, false)
 	q := url.Values{}
 	q.Set("query", `{job="otel-proxy"}`)
-	req := httptest.NewRequest("GET", "/loki/api/v1/query?"+q.Encode(), nil)
+	q.Set("start", "1")
+	q.Set("end", "2")
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
 	req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
 	rec := httptest.NewRecorder()
 
-	p.handleQuery(rec, req)
+	p.handleQueryRange(rec, req)
 	tuple := decodeFirstTuple(t, rec.Body.Bytes())
 	if len(tuple) != 3 {
 		t.Fatalf("expected 3-tuple categorize-labels query response, got %#v", tuple)

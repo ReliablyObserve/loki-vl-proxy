@@ -1,0 +1,596 @@
+{
+  "description": "Manifest-driven Loki semantics parity cases. These use real Loki in the compose stack as the oracle for Loki-facing query behavior.",
+  "oracle": "docker-compose Loki reference",
+  "cases": [
+    {
+      "id": "selector_exact_instant",
+      "family": "selector",
+      "endpoint": "query",
+      "query": "{app=\"api-gateway\",namespace=\"prod\",level=\"error\"}",
+      "expectation": "client_error"
+    },
+    {
+      "id": "selector_exact_range",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",namespace=\"prod\",level=\"error\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "multi_label_regex_range",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app=~\"api-.*\",namespace=\"prod\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "multi_label_negative_regex",
+      "family": "selector",
+      "endpoint": "query_range",
+      "query": "{app=~\"api-.*|payment-.*|nginx-.*|java-.*\",namespace!~\"kube-.*\"}",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filters_chained",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\",level=\"error\"} |= \"error\" != \"not found\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filters_chain_mixed",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} |= \"api\" |~ \"GET|POST\" != \"health\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "line_filters_negative_regex",
+      "family": "line_filter",
+      "endpoint": "query_range",
+      "query": "{app=\"nginx-ingress\"} !~ \"sqlmap\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "json_pipeline_field_filter",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} | json | method=\"GET\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "json_pipeline_numeric_filter",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\", level=\"info\"} | json | duration_ms>100",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "json_pipeline_regex_filter",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} | json | path=~\"/api/v1/.*\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "regexp_pipeline_field_filter",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} | regexp \"\\\"status\\\":(?P<status>[0-9]+)\" | status=~\"5..\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "pattern_pipeline_field_filter",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"nginx-ingress\"} | pattern \"<_> - - <_> \\\"<method> <uri> <_>\\\" <status> <size>\" | status >= 400",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "logfmt_pipeline_field_filter",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"payment-service\"} | logfmt | level=\"error\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "json_then_line_format",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "count_over_time_by_level",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (level) (count_over_time({app=\"api-gateway\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "sum_rate_by_app",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum by (app) (rate({namespace=\"prod\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "negative_regex_metric_range",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"nginx-ingress\"} !~ \"sqlmap\"[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "parser_metric_range_filter",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"api-gateway\"} | json | status >= 500 [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "parser_bytes_metric_range_filter",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "bytes_over_time({app=\"api-gateway\"} | json | status >= 500 [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "parser_bytes_rate_metric_range_filter",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "bytes_rate({app=\"api-gateway\"} | json | status >= 500 [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "sum_over_time_unwrap",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "avg_over_time_unwrap",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "avg_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "max_over_time_unwrap",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "max_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "min_over_time_unwrap",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "min_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "first_over_time_unwrap",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "first_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "last_over_time_unwrap",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "last_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "stddev_over_time_unwrap",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "stddev_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "stdvar_over_time_unwrap",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "stdvar_over_time({app=\"api-gateway\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "unwrap_quantile_over_time",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "quantile_over_time(0.95, {app=\"api-gateway\"} | json | unwrap duration_ms [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "metric_keys",
+      "require_non_empty": true
+    },
+    {
+      "id": "absent_over_time_missing",
+      "family": "metric_aggregation",
+      "endpoint": "query",
+      "query": "absent_over_time({app=\"definitely-missing-app\"}[5m])",
+      "expectation": "success",
+      "expect_result_type": "vector",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "comparison_scalar_metric_gt_zero",
+      "family": "binary_scalar",
+      "endpoint": "query_range",
+      "query": "sum by (level) (count_over_time({app=\"api-gateway\"}[5m])) > 0",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "comparison_scalar_metric_bool_gt_zero",
+      "family": "binary_scalar",
+      "endpoint": "query_range",
+      "query": "sum by (app) (count_over_time({namespace=\"prod\"}[5m])) > bool 0",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "without_grouping_metric",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "sum without (level) (count_over_time({app=\"api-gateway\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "scalar_binary_metric",
+      "family": "binary_scalar",
+      "endpoint": "query_range",
+      "query": "sum by (level) (count_over_time({app=\"api-gateway\"}[5m])) * 100",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "rate_with_line_filter",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "rate({app=\"api-gateway\"} |= \"GET\"[5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "vector_or_metric",
+      "family": "binary_vector",
+      "endpoint": "query_range",
+      "query": "sum by (level) (count_over_time({app=\"api-gateway\"}[5m])) or sum by (level) (count_over_time({app=\"api-gateway\",level=\"debug\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "vector_unless_metric",
+      "family": "binary_vector",
+      "endpoint": "query_range",
+      "query": "sum by (level) (count_over_time({app=\"api-gateway\"}[5m])) unless sum by (level) (count_over_time({app=\"api-gateway\",level=\"debug\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "vector_binary_metric",
+      "family": "binary_vector",
+      "endpoint": "query_range",
+      "query": "sum by (level) (count_over_time({app=\"api-gateway\"}[5m])) / sum by (level) (count_over_time({app=\"api-gateway\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "on_grouping_metric",
+      "family": "binary_vector",
+      "endpoint": "query_range",
+      "query": "sum by (app, pod) (count_over_time({cluster=\"us-east-1\"}[5m])) / on(app) sum by (app) (count_over_time({cluster=\"us-east-1\", level=\"error\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "ignoring_grouping_metric",
+      "family": "binary_vector",
+      "endpoint": "query_range",
+      "query": "sum by (app, level) (count_over_time({app=\"api-gateway\"}[5m])) / ignoring(level) sum by (app) (count_over_time({app=\"api-gateway\"}[5m]))",
+      "step": "60",
+      "expectation": "server_error"
+    },
+    {
+      "id": "group_left_join_metric",
+      "family": "binary_vector",
+      "endpoint": "query_range",
+      "query": "sum by (app, pod) (count_over_time({cluster=\"us-east-1\"}[5m])) * on(app) group_left(level) sum by (app, level) (count_over_time({cluster=\"us-east-1\", level=\"error\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "vector_and_metric",
+      "family": "binary_vector",
+      "endpoint": "query_range",
+      "query": "sum by (level) (count_over_time({app=\"api-gateway\"}[5m])) and sum by (level) (count_over_time({app=\"api-gateway\"}[5m]))",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "topk_metric",
+      "family": "aggregation",
+      "endpoint": "query",
+      "query": "topk(2, sum by (app) (count_over_time({namespace=\"prod\"}[5m])))",
+      "expectation": "success",
+      "expect_result_type": "vector",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "sort_desc_metric",
+      "family": "aggregation",
+      "endpoint": "query",
+      "query": "sort_desc(sum by (app) (count_over_time({namespace=\"prod\"}[5m])))",
+      "expectation": "success",
+      "expect_result_type": "vector",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "bottomk_metric",
+      "family": "aggregation",
+      "endpoint": "query",
+      "query": "bottomk(1, sum by (app) (count_over_time({namespace=\"prod\"}[5m])))",
+      "expectation": "success",
+      "expect_result_type": "vector",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "sort_metric",
+      "family": "aggregation",
+      "endpoint": "query",
+      "query": "sort(sum by (app) (count_over_time({namespace=\"prod\"}[5m])))",
+      "expectation": "success",
+      "expect_result_type": "vector",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "label_format_pipeline",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} | json | label_format method_alias=\"{{.method}}\", status_code=\"{{.status}}\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "keep_pipeline",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} | json | keep method, path, status",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "drop_pipeline",
+      "family": "formatting",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} | json | drop trace_id, upstream",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "impossible_filter_empty_success",
+      "family": "empty_result",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} |= \"IMPOSSIBLE_STRING_THAT_NEVER_EXISTS_12345\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count"
+    },
+    {
+      "id": "invalid_metric_aggregation_on_log_query",
+      "family": "invalid",
+      "endpoint": "query",
+      "query": "sum by(job) ({deployment_environment=\"dev\", k8s_cluster_name=\"ops-sand\"})",
+      "expectation": "client_error"
+    },
+    {
+      "id": "invalid_topk_on_log_query",
+      "family": "invalid",
+      "endpoint": "query",
+      "query": "topk(2, {app=\"api-gateway\"})",
+      "expectation": "client_error"
+    },
+    {
+      "id": "invalid_sort_on_log_query",
+      "family": "invalid",
+      "endpoint": "query",
+      "query": "sort({app=\"api-gateway\"})",
+      "expectation": "client_error"
+    },
+    {
+      "id": "invalid_bottomk_on_log_query",
+      "family": "invalid",
+      "endpoint": "query",
+      "query": "bottomk(1, {app=\"api-gateway\"})",
+      "expectation": "client_error"
+    },
+    {
+      "id": "invalid_sort_desc_on_log_query",
+      "family": "invalid",
+      "endpoint": "query",
+      "query": "sort_desc({app=\"api-gateway\"})",
+      "expectation": "client_error"
+    },
+    {
+      "id": "invalid_rate_missing_range",
+      "family": "invalid",
+      "endpoint": "query",
+      "query": "rate({app=\"api-gateway\"})",
+      "expectation": "client_error"
+    },
+    {
+      "id": "invalid_comparison_log_query_scalar",
+      "family": "invalid",
+      "endpoint": "query",
+      "query": "{app=\"api-gateway\"} > 0",
+      "expectation": "client_error"
+    },
+    {
+      "id": "invalid_malformed_selector",
+      "family": "invalid",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"",
+      "expectation": "client_error"
+    },
+    {
+      "id": "invalid_parser_tail",
+      "family": "invalid",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} | json |",
+      "expectation": "client_error"
+    },
+    {
+      "id": "invalid_binary_log_query_scalar",
+      "family": "invalid",
+      "endpoint": "query",
+      "query": "{app=\"api-gateway\"} / 2",
+      "expectation": "client_error"
+    }
+  ]
+}

@@ -64,3 +64,16 @@ func TestWithoutInQuotes_NotRejected(t *testing.T) {
 		t.Errorf("should not reject 'without' inside quotes: %v", err)
 	}
 }
+
+func TestMetricQuery_MissingRangeDoesNotTranslate(t *testing.T) {
+	tests := []string{
+		`rate({app="nginx"})`,
+		`count_over_time({app="nginx"})`,
+		`quantile_over_time(0.95, {app="nginx"} | unwrap latency)`,
+	}
+	for _, logql := range tests {
+		if translated, err := TranslateLogQL(logql); err == nil && strings.Contains(translated, "| stats ") {
+			t.Fatalf("expected missing-range metric query to stay non-metric, got %q", translated)
+		}
+	}
+}

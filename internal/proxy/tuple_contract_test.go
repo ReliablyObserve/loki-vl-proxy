@@ -199,11 +199,12 @@ func TestTupleContract_DefaultQueryStrictTwoTuple(t *testing.T) {
 	p := newTupleContractProxy(t, backend.URL, false)
 	params := url.Values{}
 	params.Set("query", `{job="tuple-contract"} |= "api" | json | logfmt | drop __error__, __error_details__`)
-	params.Set("time", "2")
-	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+params.Encode(), nil)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
 
 	rec := httptest.NewRecorder()
-	p.handleQuery(rec, req)
+	p.handleQueryRange(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -279,12 +280,13 @@ func TestTupleContract_CategorizeLabelsQueryThreeTuple(t *testing.T) {
 	p := newTupleContractProxy(t, backend.URL, false)
 	params := url.Values{}
 	params.Set("query", `{job="tuple-contract"} |= "api" | json | logfmt | drop __error__, __error_details__`)
-	params.Set("time", "2")
-	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+params.Encode(), nil)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
 	req.Header.Set("X-Loki-Response-Encoding-Flags", "categorize-labels")
 
 	rec := httptest.NewRecorder()
-	p.handleQuery(rec, req)
+	p.handleQueryRange(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
 	}

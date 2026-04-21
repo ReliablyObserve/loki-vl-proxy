@@ -322,12 +322,6 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 			// rejects these, so treat them as a no-op stage.
 			return ""
 		}
-		if !hasNamedExtractPlaceholder(patternExpr) {
-			if filter, ok := patternExpressionToLineFilter(patternExpr); ok {
-				return filter
-			}
-			return ""
-		}
 		return "| extract " + patternExpr
 	}
 	if strings.HasPrefix(stage, "regexp ") {
@@ -338,12 +332,6 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 		// Defensive pass-through for pre-translated queries.
 		patternExpr := normalizeQuotedStageExpr(stage[8:])
 		if isNoopPatternExpression(patternExpr) {
-			return ""
-		}
-		if !hasNamedExtractPlaceholder(patternExpr) {
-			if filter, ok := patternExpressionToLineFilter(patternExpr); ok {
-				return filter
-			}
 			return ""
 		}
 		return "| extract " + patternExpr
@@ -410,52 +398,6 @@ func isNoopPatternExpression(expr string) bool {
 	default:
 		return false
 	}
-}
-
-func hasNamedExtractPlaceholder(expr string) bool {
-	pattern, ok := extractPatternExpressionValue(expr)
-	if !ok {
-		return false
-	}
-	for {
-		start := strings.IndexByte(pattern, '<')
-		if start < 0 {
-			return false
-		}
-		pattern = pattern[start+1:]
-		end := strings.IndexByte(pattern, '>')
-		if end < 0 {
-			return false
-		}
-		token := strings.TrimSpace(pattern[:end])
-		if token != "" && token != "_" {
-			return true
-		}
-		pattern = pattern[end+1:]
-	}
-}
-
-func patternExpressionToLineFilter(expr string) (string, bool) {
-	pattern, ok := extractPatternExpressionValue(expr)
-	if !ok {
-		return "", false
-	}
-	return "~" + strconv.Quote(patternFilterValueToRegex(pattern)), true
-}
-
-func extractPatternExpressionValue(expr string) (string, bool) {
-	expr = strings.TrimSpace(expr)
-	if expr == "" {
-		return "", false
-	}
-	if strings.HasPrefix(expr, "`") && strings.HasSuffix(expr, "`") && len(expr) >= 2 {
-		return expr[1 : len(expr)-1], true
-	}
-	unquoted, err := strconv.Unquote(expr)
-	if err != nil {
-		return "", false
-	}
-	return unquoted, true
 }
 
 // translateLabelFilter handles label comparison filters.
@@ -899,7 +841,10 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		inner = inner[:end]
 
 		// Extract the query and duration: {stream} | pipeline [5m]
-		query, _ := extractQueryAndDuration(inner)
+		query, duration := extractQueryAndDuration(inner)
+		if strings.TrimSpace(duration) == "" {
+			continue
+		}
 
 		// Translate the inner log query part
 		logsqlQuery, err := translateLogQuery(query, labelFn)
@@ -1233,7 +1178,10 @@ func tryTranslateQuantileOverTime(innerExpr, _, byLabels string, labelFn LabelTr
 	queryPart := strings.TrimSpace(body[commaIdx+1:])
 
 	// Extract query and duration
-	query, _ := extractQueryAndDuration(queryPart)
+	query, duration := extractQueryAndDuration(queryPart)
+	if strings.TrimSpace(duration) == "" {
+		return "", false
+	}
 
 	// Translate the inner log query
 	logsqlQuery, err := translateLogQuery(query, labelFn)

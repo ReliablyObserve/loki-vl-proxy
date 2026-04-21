@@ -1,0 +1,146 @@
+{
+  "description": "Tracked Loki-facing query operations that must stay covered by the e2e semantics matrix.",
+  "operations": [
+    {
+      "name": "selector_exact",
+      "category": "selector",
+      "cases": ["selector_exact_instant", "selector_exact_range"]
+    },
+    {
+      "name": "selector_regex",
+      "category": "selector",
+      "cases": ["multi_label_regex_range", "multi_label_negative_regex"]
+    },
+    {
+      "name": "line_filter_substring",
+      "category": "line_filter",
+      "cases": ["line_filters_chained", "line_filters_chain_mixed"]
+    },
+    {
+      "name": "line_filter_negative_regex",
+      "category": "line_filter",
+      "cases": ["line_filters_negative_regex"]
+    },
+    {
+      "name": "parser_json",
+      "category": "parser",
+      "cases": ["json_pipeline_field_filter", "json_pipeline_numeric_filter", "json_pipeline_regex_filter"]
+    },
+    {
+      "name": "parser_logfmt",
+      "category": "parser",
+      "cases": ["logfmt_pipeline_field_filter"]
+    },
+    {
+      "name": "parser_regexp",
+      "category": "parser",
+      "cases": ["regexp_pipeline_field_filter"]
+    },
+    {
+      "name": "parser_pattern",
+      "category": "parser",
+      "cases": ["pattern_pipeline_field_filter"]
+    },
+    {
+      "name": "format_line",
+      "category": "formatting",
+      "cases": ["json_then_line_format"]
+    },
+    {
+      "name": "format_label",
+      "category": "formatting",
+      "cases": ["label_format_pipeline"]
+    },
+    {
+      "name": "format_keep_drop",
+      "category": "formatting",
+      "cases": ["keep_pipeline", "drop_pipeline"]
+    },
+    {
+      "name": "metric_count_rate",
+      "category": "metric_function",
+      "cases": ["count_over_time_by_level", "sum_rate_by_app", "rate_with_line_filter"]
+    },
+    {
+      "name": "metric_bytes",
+      "category": "metric_function",
+      "cases": ["parser_bytes_metric_range_filter", "parser_bytes_rate_metric_range_filter"]
+    },
+    {
+      "name": "metric_parser_cardinality",
+      "category": "metric_function",
+      "cases": ["parser_metric_range_filter", "unwrap_quantile_over_time"]
+    },
+    {
+      "name": "metric_unwrap_range_functions",
+      "category": "metric_function",
+      "cases": [
+        "sum_over_time_unwrap",
+        "avg_over_time_unwrap",
+        "max_over_time_unwrap",
+        "min_over_time_unwrap",
+        "first_over_time_unwrap",
+        "last_over_time_unwrap",
+        "stddev_over_time_unwrap",
+        "stdvar_over_time_unwrap",
+        "unwrap_quantile_over_time"
+      ]
+    },
+    {
+      "name": "metric_absent",
+      "category": "metric_function",
+      "cases": ["absent_over_time_missing"]
+    },
+    {
+      "name": "metric_grouping",
+      "category": "aggregation",
+      "cases": ["without_grouping_metric", "negative_regex_metric_range"]
+    },
+    {
+      "name": "instant_post_aggregation",
+      "category": "aggregation",
+      "cases": ["topk_metric", "bottomk_metric", "sort_metric", "sort_desc_metric"]
+    },
+    {
+      "name": "binary_scalar",
+      "category": "binary",
+      "cases": ["comparison_scalar_metric_gt_zero", "comparison_scalar_metric_bool_gt_zero", "scalar_binary_metric"]
+    },
+    {
+      "name": "binary_vector",
+      "category": "binary",
+      "cases": ["vector_binary_metric", "on_grouping_metric", "group_left_join_metric", "vector_and_metric", "vector_or_metric", "vector_unless_metric"]
+    },
+    {
+      "name": "binary_vector_invalid_matching",
+      "category": "binary",
+      "cases": ["ignoring_grouping_metric"]
+    },
+    {
+      "name": "empty_success",
+      "category": "result_shape",
+      "cases": ["impossible_filter_empty_success"]
+    },
+    {
+      "name": "invalid_log_metric_mix",
+      "category": "invalid",
+      "cases": [
+        "invalid_metric_aggregation_on_log_query",
+        "invalid_topk_on_log_query",
+        "invalid_sort_on_log_query",
+        "invalid_bottomk_on_log_query",
+        "invalid_sort_desc_on_log_query"
+      ]
+    },
+    {
+      "name": "invalid_metric_forms",
+      "category": "invalid",
+      "cases": ["invalid_rate_missing_range", "invalid_comparison_log_query_scalar", "invalid_binary_log_query_scalar"]
+    },
+    {
+      "name": "invalid_syntax",
+      "category": "invalid",
+      "cases": ["invalid_malformed_selector", "invalid_parser_tail"]
+    }
+  ]
+}

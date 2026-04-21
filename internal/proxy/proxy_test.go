@@ -619,7 +619,9 @@ func TestContract_Query_ResponseFormat(t *testing.T) {
 	defer vlBackend.Close()
 
 	resp := doGet(t, vlBackend.URL, "/loki/api/v1/query?query=*&limit=10")
-	assertLokiSuccess(t, resp)
+	if resp["status"] != "error" {
+		t.Fatalf("expected instant log query to fail, got %#v", resp)
+	}
 }
 
 // --- /loki/api/v1/series ---

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -147,8 +148,12 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool) []byte {
 		return body
 	}
 
-	// For matrix, just strip the excluded labels (don't re-aggregate across time)
-	var result []map[string]interface{}
+	type groupedSeries struct {
+		metric map[string]interface{}
+		values map[string]float64
+		order  map[string]interface{}
+	}
+	groups := make(map[string]*groupedSeries)
 	for _, series := range resp.Data.Result {
 		filtered := make(map[string]string)
 		for k, v := range series.Metric {
@@ -156,9 +161,55 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool) []byte {
 				filtered[k] = v
 			}
 		}
+		key := metricKeyStr(filtered)
+		group := groups[key]
+		if group == nil {
+			metric := make(map[string]interface{}, len(filtered))
+			for k, v := range filtered {
+				metric[k] = v
+			}
+			group = &groupedSeries{
+				metric: metric,
+				values: make(map[string]float64, len(series.Values)),
+				order:  make(map[string]interface{}, len(series.Values)),
+			}
+			groups[key] = group
+		}
+		for _, point := range series.Values {
+			if len(point) < 2 {
+				continue
+			}
+			tsKey := fmt.Sprintf("%v", point[0])
+			group.order[tsKey] = point[0]
+			switch raw := point[1].(type) {
+			case string:
+				parsed, _ := strconv.ParseFloat(raw, 64)
+				group.values[tsKey] += parsed
+			case float64:
+				group.values[tsKey] += raw
+			}
+		}
+	}
+
+	var result []map[string]interface{}
+	for _, group := range groups {
+		timestamps := make([]string, 0, len(group.values))
+		for ts := range group.values {
+			timestamps = append(timestamps, ts)
+		}
+		sort.Slice(timestamps, func(i, j int) bool {
+			return timestamps[i] < timestamps[j]
+		})
+		values := make([][]interface{}, 0, len(timestamps))
+		for _, ts := range timestamps {
+			values = append(values, []interface{}{
+				group.order[ts],
+				strconv.FormatFloat(group.values[ts], 'f', -1, 64),
+			})
+		}
 		result = append(result, map[string]interface{}{
-			"metric": filtered,
-			"values": series.Values,
+			"metric": group.metric,
+			"values": values,
 		})
 	}
 
@@ -170,6 +221,53 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool) []byte {
 		},
 	})
 	return out
+}
+
+func validateVectorMatchCardinality(leftBody, rightBody []byte, onLabels []string, ignoringLabels []string, allowGroupLeft, allowGroupRight bool) error {
+	if allowGroupLeft || allowGroupRight {
+		return nil
+	}
+
+	leftSeries := parseMetricSeries(leftBody)
+	rightSeries := parseMetricSeries(rightBody)
+	if len(leftSeries) == 0 || len(rightSeries) == 0 {
+		return nil
+	}
+
+	var keyFn func(map[string]string) string
+	if len(onLabels) > 0 {
+		keyFn = func(metric map[string]string) string {
+			return subsetKey(metric, onLabels)
+		}
+	} else {
+		ignore := make(map[string]bool, len(ignoringLabels))
+		for _, label := range ignoringLabels {
+			ignore[strings.TrimSpace(label)] = true
+		}
+		keyFn = func(metric map[string]string) string {
+			return excludeKey(metric, ignore)
+		}
+	}
+
+	leftCounts := make(map[string]int)
+	rightCounts := make(map[string]int)
+	for _, series := range leftSeries {
+		leftCounts[keyFn(series.metric)]++
+	}
+	for _, series := range rightSeries {
+		rightCounts[keyFn(series.metric)]++
+	}
+
+	for key, leftCount := range leftCounts {
+		rightCount := rightCounts[key]
+		if rightCount == 0 {
+			continue
+		}
+		if leftCount > 1 || rightCount > 1 {
+			return fmt.Errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
+		}
+	}
+	return nil
 }
 
 // applyOnMatching joins two metric results by a specified label subset.

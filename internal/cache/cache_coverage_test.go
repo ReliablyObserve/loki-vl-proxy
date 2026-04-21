@@ -106,6 +106,71 @@ func TestGetSharedWithTTL_PromotesFreshDiskHitIntoL1(t *testing.T) {
 	}
 }
 
+func TestGetSharedWithTTL_ReturnsFreshL1Hit(t *testing.T) {
+	c := NewWithMaxBytes(10*time.Second, 100, 1024*1024)
+	defer c.Close()
+
+	c.SetWithTTL("l1-only", []byte("payload"), 5*time.Second)
+
+	value, ttl, tier, ok := c.GetSharedWithTTL("l1-only")
+	if !ok {
+		t.Fatal("expected shared L1 hit")
+	}
+	if string(value) != "payload" {
+		t.Fatalf("unexpected payload %q", value)
+	}
+	if tier != "l1_memory" {
+		t.Fatalf("expected l1_memory tier, got %q", tier)
+	}
+	if ttl <= 0 {
+		t.Fatalf("expected positive TTL, got %v", ttl)
+	}
+	if stats := c.Stats(); stats.L1.Requests != 1 || stats.L1.Hits != 1 {
+		t.Fatalf("unexpected L1 stats after shared hit: %+v", stats)
+	}
+}
+
+func TestGetSharedWithTTL_MissRecordsBackendFallthrough(t *testing.T) {
+	c := NewWithMaxBytes(10*time.Second, 100, 1024*1024)
+	defer c.Close()
+
+	if value, ttl, tier, ok := c.GetSharedWithTTL("missing"); ok || value != nil || ttl != 0 || tier != "" {
+		t.Fatalf("expected shared miss, got ok=%v value=%q ttl=%v tier=%q", ok, string(value), ttl, tier)
+	}
+	stats := c.Stats()
+	if stats.L1.Requests != 1 || stats.L1.Misses != 1 {
+		t.Fatalf("unexpected L1 miss stats: %+v", stats)
+	}
+	if stats.BackendFallthrough != 1 {
+		t.Fatalf("expected one backend fallthrough, got %+v", stats)
+	}
+}
+
+func TestSetLocalAndDiskWithTTL_PersistsWithoutNeedingPeerTier(t *testing.T) {
+	dc, err := NewDiskCache(DiskCacheConfig{
+		Path:        tempDBPath(t),
+		Compression: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = dc.Close() }()
+
+	c := NewWithMaxBytes(10*time.Second, 100, 1024*1024)
+	defer c.Close()
+	c.SetL2(dc)
+
+	c.SetLocalAndDiskWithTTL("local-disk", []byte("payload"), 5*time.Second)
+	dc.Flush()
+
+	if value, ttl, ok := c.GetWithTTL("local-disk"); !ok || string(value) != "payload" || ttl <= 0 {
+		t.Fatalf("expected local L1 payload, got ok=%v value=%q ttl=%v", ok, string(value), ttl)
+	}
+	if value, ttl, ok := dc.GetWithTTL("local-disk"); !ok || string(value) != "payload" || ttl <= 0 {
+		t.Fatalf("expected local disk payload, got ok=%v value=%q ttl=%v", ok, string(value), ttl)
+	}
+}
+
 func TestGetRecoverableStaleWithTTL_ReturnsDiskStaleValue(t *testing.T) {
 	dc, err := NewDiskCache(DiskCacheConfig{
 		Path:        tempDBPath(t),
@@ -139,6 +204,31 @@ func TestGetRecoverableStaleWithTTL_ReturnsDiskStaleValue(t *testing.T) {
 	}
 	if stats := c.Stats(); stats.L2.StaleHits != 1 {
 		t.Fatalf("expected one stale L2 hit, got %+v", stats)
+	}
+}
+
+func TestGetRecoverableStaleWithTTL_PrefersL1StaleValue(t *testing.T) {
+	c := NewWithMaxBytes(1*time.Millisecond, 100, 1024*1024)
+	defer c.Close()
+
+	c.Set("stale-l1", []byte("payload"))
+	time.Sleep(5 * time.Millisecond)
+
+	value, ttl, tier, ok := c.GetRecoverableStaleWithTTL("stale-l1")
+	if !ok {
+		t.Fatal("expected stale L1 payload")
+	}
+	if string(value) != "payload" {
+		t.Fatalf("unexpected payload %q", value)
+	}
+	if ttl >= 0 {
+		t.Fatalf("expected negative stale TTL, got %v", ttl)
+	}
+	if tier != "l1_memory" {
+		t.Fatalf("expected l1_memory stale tier, got %q", tier)
+	}
+	if stats := c.Stats(); stats.L1.StaleHits != 1 {
+		t.Fatalf("expected one stale L1 hit, got %+v", stats)
 	}
 }
 

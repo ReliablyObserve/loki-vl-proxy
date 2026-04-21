@@ -139,6 +139,23 @@ fetch_query_categorized() {
     "${base_url}/loki/api/v1/query"
 }
 
+check_instant_log_query_error() {
+  local payload="$1"
+  local endpoint="$2"
+
+  if ! echo "$payload" | jq -e '
+    .status == "error"
+    and .errorType == "bad_data"
+    and (.error | type == "string")
+    and (.error | contains("log queries are not supported as an instant query type"))
+  ' >/dev/null; then
+    local sample
+    sample="$(echo "$payload" | jq -c '.')"
+    echo "expected Loki-compatible bad_data error for ${endpoint}; payload=${sample:-<none>}" >&2
+    return 1
+  fi
+}
+
 fetch_with_retry() {
   local fetcher="$1"
   local endpoint="$2"
@@ -165,13 +182,13 @@ fetch_with_retry() {
 }
 
 range_payload="$(fetch_with_retry fetch_query_range "/query_range" "$DEFAULT_PROXY_URL")"
-query_payload="$(fetch_with_retry fetch_query "/query" "$DEFAULT_PROXY_URL")"
 range_categorized_payload="$(fetch_with_retry fetch_query_range_categorized "/query_range categorize-labels" "$CATEGORIZED_PROXY_URL")"
-query_categorized_payload="$(fetch_with_retry fetch_query_categorized "/query categorize-labels" "$CATEGORIZED_PROXY_URL")"
+query_payload="$(fetch_query "$DEFAULT_PROXY_URL")"
+query_categorized_payload="$(fetch_query_categorized "$CATEGORIZED_PROXY_URL")"
 
 check_strict_two_tuple "$range_payload" "/query_range"
-check_strict_two_tuple "$query_payload" "/query"
 check_categorize_three_tuple "$range_categorized_payload" "/query_range"
-check_categorize_three_tuple "$query_categorized_payload" "/query"
+check_instant_log_query_error "$query_payload" "/query"
+check_instant_log_query_error "$query_categorized_payload" "/query categorize-labels"
 
-echo "tuple contract smoke check passed (default=${DEFAULT_PROXY_URL} strict 2-tuple; categorized=${CATEGORIZED_PROXY_URL} 3-tuple)"
+echo "tuple contract smoke check passed (query_range strict 2-tuple; query_range categorize-labels 3-tuple; query instant log selector returns Loki-compatible bad_data)"
