@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // proxySubqueryRange evaluates a subquery for query_range requests.
@@ -118,9 +120,9 @@ func (p *Proxy) proxySubquery(w http.ResponseWriter, r *http.Request, outerFunc,
 // Returns a map from series key → collected values, and series key → metric labels.
 func (p *Proxy) evaluateSubqueryWindow(ctx context.Context, innerQuery string, start, end time.Time, subStep time.Duration, stepStr string) (map[string][]float64, map[string]map[string]string, error) {
 	type subStepResult struct {
-		ts     time.Time
-		body   []byte
-		err    error
+		ts   time.Time
+		body []byte
+		err  error
 	}
 
 	// Calculate sub-step time points
@@ -142,17 +144,11 @@ func (p *Proxy) evaluateSubqueryWindow(ctx context.Context, innerQuery string, s
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			params := url.Values{}
-			params.Set("query", innerQuery)
-			params.Set("time", strconv.FormatInt(t.Unix(), 10))
-
-			resp, err := p.vlPost(ctx, "/select/logsql/stats_query", params)
+			body, err := p.executeSubqueryStepQuery(ctx, innerQuery, t)
 			if err != nil {
 				results[idx] = subStepResult{ts: t, err: err}
 				return
 			}
-			defer resp.Body.Close()
-			body, _ := io.ReadAll(resp.Body)
 			results[idx] = subStepResult{ts: t, body: body}
 		}(i, tp)
 	}
@@ -170,6 +166,72 @@ func (p *Proxy) evaluateSubqueryWindow(ctx context.Context, innerQuery string, s
 	}
 
 	return seriesValues, seriesLabels, nil
+}
+
+func (p *Proxy) executeSubqueryStepQuery(ctx context.Context, query string, ts time.Time) ([]byte, error) {
+	// Support translated binary expressions inside subqueries
+	// (for example rate()/bytes_rate() normalization wrappers).
+	if op, leftQL, rightQL, _, ok := translator.ParseBinaryMetricExprFull(query); ok {
+		leftScalar := translator.IsScalar(leftQL)
+		rightScalar := translator.IsScalar(rightQL)
+
+		fetchMetric := func(q string) ([]byte, error) {
+			params := url.Values{}
+			params.Set("query", q)
+			params.Set("time", strconv.FormatInt(ts.Unix(), 10))
+			resp, err := p.vlPost(ctx, "/select/logsql/stats_query", params)
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return nil, err
+			}
+			return body, nil
+		}
+
+		var (
+			leftBody  []byte
+			rightBody []byte
+			err       error
+		)
+
+		if !leftScalar {
+			leftBody, err = fetchMetric(leftQL)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
+		}
+
+		if !rightScalar {
+			rightBody, err = fetchMetric(rightQL)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
+		}
+
+		return combineBinaryMetricResults(leftBody, rightBody, op, "vector", leftScalar, rightScalar, leftQL, rightQL), nil
+	}
+
+	params := url.Values{}
+	params.Set("query", query)
+	params.Set("time", strconv.FormatInt(ts.Unix(), 10))
+
+	resp, err := p.vlPost(ctx, "/select/logsql/stats_query", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return body, nil
 }
 
 // extractValuesFromStatsResult parses a VL stats_query response and adds values to the maps.

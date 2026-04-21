@@ -129,7 +129,7 @@ func TestOperationsMatrix_LokiMetricFunctionsParity(t *testing.T) {
 	app := ensureOperationsMatrixData(t)
 	at := time.Now()
 
-	// Cross-engine parity for functions where semantics should match exactly.
+	// Cross-engine parity for scalar-compatible expressions.
 	parityCases := []struct {
 		name  string
 		query string
@@ -137,6 +137,14 @@ func TestOperationsMatrix_LokiMetricFunctionsParity(t *testing.T) {
 		{name: "count_over_time", query: fmt.Sprintf(`sum(count_over_time({app="%s"}[10m]))`, app)},
 		{name: "bytes_over_time", query: fmt.Sprintf(`sum(bytes_over_time({app="%s"}[10m]))`, app)},
 		{name: "bytes_rate", query: fmt.Sprintf(`sum(bytes_rate({app="%s"}[10m]))`, app)},
+		{name: "rate", query: fmt.Sprintf(`sum(rate({app="%s"}[10m]))`, app)},
+		{name: "sum_over_time", query: fmt.Sprintf(`sum(sum_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
+		{name: "avg_over_time", query: fmt.Sprintf(`sum(avg_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
+		{name: "max_over_time", query: fmt.Sprintf(`sum(max_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
+		{name: "min_over_time", query: fmt.Sprintf(`sum(min_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
+		{name: "stddev_over_time", query: fmt.Sprintf(`sum(stddev_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
+		{name: "stdvar_over_time", query: fmt.Sprintf(`sum(stdvar_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
+		{name: "quantile_over_time", query: fmt.Sprintf(`sum(quantile_over_time(0.95, {app="%s"} | json | unwrap duration_ms [10m]))`, app)},
 	}
 	for _, tc := range parityCases {
 		t.Run("parity_"+tc.name, func(t *testing.T) {
@@ -148,52 +156,38 @@ func TestOperationsMatrix_LokiMetricFunctionsParity(t *testing.T) {
 		})
 	}
 
-	// Proxy-local deterministic checks over seeded fixture values:
-	// duration_ms values are [10,20,100,1,2] => sum=133, avg=26.6, min=1, max=100.
-	proxyExpectations := []struct {
+	// Vector parity for unwrap queries that keep per-label/per-line cardinality.
+	vectorCases := []struct {
 		name  string
 		query string
-		want  float64
 	}{
-		{name: "sum_over_time", query: fmt.Sprintf(`sum(sum_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app), want: 133},
-		{name: "avg_over_time", query: fmt.Sprintf(`sum(avg_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app), want: 26.6},
-		{name: "max_over_time", query: fmt.Sprintf(`sum(max_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app), want: 100},
-		{name: "min_over_time", query: fmt.Sprintf(`sum(min_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app), want: 1},
-		{name: "stddev_over_time", query: fmt.Sprintf(`sum(stddev_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app), want: 37.328809249693464},
-		{name: "stdvar_over_time", query: fmt.Sprintf(`sum(stdvar_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app), want: 1393.4400000000003},
+		{name: "sum_over_time_vector", query: fmt.Sprintf(`sum_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
+		{name: "avg_over_time_vector", query: fmt.Sprintf(`avg_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
+		{name: "max_over_time_vector", query: fmt.Sprintf(`max_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
+		{name: "min_over_time_vector", query: fmt.Sprintf(`min_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
+		{name: "stddev_over_time_vector", query: fmt.Sprintf(`stddev_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
+		{name: "stdvar_over_time_vector", query: fmt.Sprintf(`stdvar_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
+		{name: "quantile_over_time_vector", query: fmt.Sprintf(`quantile_over_time(0.95, {app="%s"} | json | unwrap duration_ms [10m])`, app)},
 	}
-	for _, tc := range proxyExpectations {
-		t.Run("proxy_"+tc.name, func(t *testing.T) {
-			got := querySingleInstantValue(t, proxyURL, tc.query, at)
-			if !nearlyEqual(got, tc.want) {
-				t.Fatalf("proxy function mismatch for %q: got=%v want=%v", tc.query, got, tc.want)
+	for _, tc := range vectorCases {
+		t.Run("vector_"+tc.name, func(t *testing.T) {
+			proxyStatus, proxyBody, proxyResp := queryInstantGET(t, proxyURL, tc.query, at)
+			lokiStatus, lokiBody, lokiResp := queryInstantGET(t, lokiURL, tc.query, at)
+			if proxyStatus != http.StatusOK || lokiStatus != http.StatusOK {
+				t.Fatalf("expected 200 query responses, proxy=%d loki=%d query=%q proxyBody=%s lokiBody=%s", proxyStatus, lokiStatus, tc.query, proxyBody, lokiBody)
 			}
+			if !checkStatus(proxyResp) || !checkStatus(lokiResp) {
+				t.Fatalf("expected successful responses for %q, proxy=%v loki=%v", tc.query, proxyResp, lokiResp)
+			}
+
+			proxyData := extractMap(proxyResp, "data")
+			lokiData := extractMap(lokiResp, "data")
+			if proxyData["resultType"] != "vector" || lokiData["resultType"] != "vector" {
+				t.Fatalf("expected vector result type for %q, proxy=%v loki=%v", tc.query, proxyData["resultType"], lokiData["resultType"])
+			}
+			assertVectorParity(t, tc.query, extractInstantVector(t, proxyResp), extractInstantVector(t, lokiResp))
 		})
 	}
-
-	t.Run("proxy_quantile_over_time", func(t *testing.T) {
-		query := fmt.Sprintf(`sum(quantile_over_time(0.95, {app="%s"} | json | unwrap duration_ms [10m]))`, app)
-		got := querySingleInstantValue(t, proxyURL, query, at)
-		if got < 20 || got > 100 {
-			t.Fatalf("unexpected quantile_over_time value for %q: got=%v want in [20,100]", query, got)
-		}
-	})
-
-	t.Run("loki_rate_success", func(t *testing.T) {
-		query := fmt.Sprintf(`sum(rate({app="%s"}[10m]))`, app)
-		got := querySingleInstantValue(t, lokiURL, query, at)
-		if got <= 0 {
-			t.Fatalf("expected positive loki rate for %q, got=%v", query, got)
-		}
-	})
-
-	t.Run("proxy_rate_success", func(t *testing.T) {
-		query := fmt.Sprintf(`sum(rate({app="%s"}[10m]))`, app)
-		got := querySingleInstantValue(t, proxyURL, query, at)
-		if got <= 0 {
-			t.Fatalf("expected positive proxy rate for %q, got=%v", query, got)
-		}
-	})
 }
 
 func queryInstantGET(t *testing.T, baseURL, expr string, at time.Time) (int, string, map[string]interface{}) {

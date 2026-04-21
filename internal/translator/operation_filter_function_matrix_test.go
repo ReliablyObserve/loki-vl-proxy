@@ -27,7 +27,7 @@ func TestMatrix_BinaryMetricOperators_AllSupported(t *testing.T) {
 			if parsedOp != op {
 				t.Fatalf("unexpected parsed op: got=%q want=%q", parsedOp, op)
 			}
-			if !strings.Contains(left, "stats rate()") {
+			if !strings.Contains(left, "__lvp_rate") {
 				t.Fatalf("expected translated metric query on left, got %q", left)
 			}
 			if right != "2" {
@@ -55,7 +55,7 @@ func TestMatrix_BinaryMetricOperators_AllSupported(t *testing.T) {
 			if left != "2" {
 				t.Fatalf("expected scalar LHS=2, got %q", left)
 			}
-			if !strings.Contains(right, "stats rate()") {
+			if !strings.Contains(right, "__lvp_rate") {
 				t.Fatalf("expected translated metric query on right, got %q", right)
 			}
 		})
@@ -140,10 +140,10 @@ func TestMatrix_MetricFunctions_AllSupported(t *testing.T) {
 		logql         string
 		wantFragments []string
 	}{
-		{name: "rate", logql: `rate({app="x"}[5m])`, wantFragments: []string{"| stats rate()"}},
+		{name: "rate", logql: `rate({app="x"}[5m])`, wantFragments: []string{"| stats by (_stream) count() as __lvp_inner", "| math __lvp_inner/300 as __lvp_rate", "| stats by (_stream) sum(__lvp_rate)"}},
 		{name: "count_over_time", logql: `count_over_time({app="x"}[5m])`, wantFragments: []string{"| stats count()"}},
 		{name: "bytes_over_time", logql: `bytes_over_time({app="x"}[5m])`, wantFragments: []string{"| stats sum_len(_msg)"}},
-		{name: "bytes_rate", logql: `bytes_rate({app="x"}[5m])`, wantFragments: []string{BinaryMetricPrefix + "/:", "| stats sum_len(_msg)", "|||300"}},
+		{name: "bytes_rate", logql: `bytes_rate({app="x"}[5m])`, wantFragments: []string{"| stats by (_stream) sum_len(_msg) as __lvp_inner", "| math __lvp_inner/300 as __lvp_rate", "| stats by (_stream) sum(__lvp_rate)"}},
 		{name: "sum_over_time", logql: `sum_over_time({app="x"} | unwrap duration [5m])`, wantFragments: []string{"| stats sum(duration)"}},
 		{name: "avg_over_time", logql: `avg_over_time({app="x"} | unwrap duration [5m])`, wantFragments: []string{"| stats avg(duration)"}},
 		{name: "max_over_time", logql: `max_over_time({app="x"} | unwrap duration [5m])`, wantFragments: []string{"| stats max(duration)"}},

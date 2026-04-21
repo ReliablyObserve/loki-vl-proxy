@@ -23,27 +23,27 @@ func TestAdvanced_MetricQueries(t *testing.T) {
 		{
 			name:  "bytes_rate",
 			logql: `bytes_rate({app="nginx"}[5m])`,
-			want:  `__binary__:/:app:=nginx | stats sum_len(_msg)|||300`,
+			want:  `app:=nginx | stats by (_stream) sum_len(_msg) as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (_stream) sum(__lvp_rate)`,
 		},
 		{
 			name:  "avg_over_time with unwrap",
 			logql: `avg_over_time({app="api"} | json | unwrap duration [5m])`,
-			want:  `app:=api | unpack_json | stats avg(duration)`,
+			want:  `app:=api | unpack_json | stats by (_stream, _msg) avg(duration)`,
 		},
 		{
 			name:  "max_over_time with unwrap",
 			logql: `max_over_time({app="api"} | logfmt | unwrap response_size [5m])`,
-			want:  `app:=api | unpack_logfmt | stats max(response_size)`,
+			want:  `app:=api | unpack_logfmt | stats by (_stream, _msg) max(response_size)`,
 		},
 		{
 			name:  "sum by namespace of rate",
 			logql: `sum by (namespace) (rate({cluster="prod"}[5m]))`,
-			want:  `cluster:=prod | stats by (namespace) rate()`,
+			want:  `cluster:=prod | stats by (namespace) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (namespace) sum(__lvp_rate)`,
 		},
 		{
 			name:  "topk of rate — simplified",
 			logql: `topk(10, rate({region="us-east-1"}[5m]))`,
-			want:  `region:=us-east-1 | stats rate()`,
+			want:  `region:=us-east-1 | stats by (_stream) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (_stream) sum(__lvp_rate)`,
 		},
 		{
 			name:  "count_over_time with line filter",

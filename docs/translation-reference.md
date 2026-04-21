@@ -73,10 +73,10 @@ These stages are executed at the proxy level (VL has no native equivalents):
 
 | LogQL | LogsQL |
 |---|---|
-| `rate({...}[5m])` | `... \| stats rate()` |
+| `rate({...}[5m])` | `stats count()` + `math` normalization by window seconds, then `stats sum(...)` per grouping |
 | `count_over_time({...}[5m])` | `... \| stats count()` |
 | `bytes_over_time({...}[5m])` | `... \| stats sum_len(_msg)` |
-| `bytes_rate({...}[5m])` | proxy binary expression: `(... \| stats sum_len(_msg)) / window_seconds` |
+| `bytes_rate({...}[5m])` | `stats sum_len(_msg)` + `math` normalization by window seconds, then `stats sum(...)` per grouping |
 | `sum_over_time({...} \| unwrap f [5m])` | `... \| stats sum(f)` |
 | `avg_over_time({...} \| unwrap f [5m])` | `... \| stats avg(f)` |
 | `max_over_time({...} \| unwrap f [5m])` | `... \| stats max(f)` |
@@ -92,10 +92,10 @@ These stages are executed at the proxy level (VL has no native equivalents):
 
 | LogQL | LogsQL |
 |---|---|
-| `sum(rate({...}[5m]))` | `... \| stats rate()` |
-| `sum(rate({...}[5m])) by (x)` | `... \| stats by (x) rate()` |
-| `avg(rate({...}[5m])) by (x)` | `... \| stats by (x) rate()` |
-| `topk(10, rate({...}[5m]))` | `... \| stats rate()` |
+| `sum(rate({...}[5m]))` | normalized per-stream/per-group rate, then proxy applies outer aggregation where supported |
+| `sum(rate({...}[5m])) by (x)` | `... \| stats by (x) count() as __lvp_inner \| math __lvp_inner/window as __lvp_rate \| stats by (x) sum(__lvp_rate)` |
+| `avg(rate({...}[5m])) by (x)` | same normalized-rate path grouped by `(x)` |
+| `topk(10, rate({...}[5m]))` | normalized-rate path with stream grouping; top-level selection remains simplified |
 
 Supported: `sum`, `avg`, `max`, `min`, `count`, `topk`, `bottomk`, `stddev`, `stdvar`, `sort`, `sort_desc`.
 
