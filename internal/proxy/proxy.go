@@ -4310,6 +4310,10 @@ func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params ur
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	if p.handleStatsCompatRange(w, r, r.FormValue("query"), logsqlQuery) {
+		return
+	}
+
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if s := r.FormValue("start"); s != "" {
@@ -4346,6 +4350,10 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 }
 
 func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	if p.handleStatsCompatInstant(w, r, r.FormValue("query"), logsqlQuery) {
+		return
+	}
+
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if t := r.FormValue("time"); t != "" {
@@ -7176,7 +7184,7 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	}
 }
 
-var metricParserProbeRE = regexp.MustCompile(`(?s)(?:count_over_time|bytes_over_time|rate|bytes_rate|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time|quantile_over_time)\((.*?)\[[^][]+\]\)`)
+var metricParserProbeRE = regexp.MustCompile(`(?s)(?:count_over_time|bytes_over_time|rate|rate_counter|bytes_rate|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time|quantile_over_time)\((.*?)\[[^][]+\]\)`)
 
 func extractParserProbeQuery(logql string) string {
 	matches := metricParserProbeRE.FindStringSubmatch(logql)

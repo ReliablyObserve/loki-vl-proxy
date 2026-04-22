@@ -869,10 +869,117 @@ func TestDrilldown_DetectedFieldValues_ReturnStructuredMetadataValues(t *testing
 	}
 }
 
+func TestDrilldown_DetectedFieldValues_ServiceNameFallsBackToDetectedLabels(t *testing.T) {
+	var (
+		sawFieldValues bool
+		sawStreams     bool
+	)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"service.name","hits":2}]}`))
+		case "/select/logsql/field_values":
+			sawFieldValues = true
+			if got := r.URL.Query().Get("field"); got != "service.name" {
+				t.Fatalf("expected native service.name field lookup, got %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			// Simulate an environment where service_name exists only as a stream-derived label.
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"ok","_stream":"{service=\"checkout\",level=\"info\"}","service":"checkout","level":"info"}` + "\n"))
+		case "/select/logsql/streams":
+			sawStreams = true
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"{service=\"checkout\",level=\"info\"}","hits":2}]}`))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+	direct := p.detectedLabelValuesForField(context.Background(), "service_name", `{service_name="checkout"}`, "", "", 1000)
+	if len(direct) != 1 || direct[0] != "checkout" {
+		t.Fatalf("expected direct detected-label values for service_name, got %v", direct)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/service_name/values?query=%7Bservice_name%3D%22checkout%22%7D", nil)
+	p.handleDetectedFieldValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	values, ok := resp["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array, got %v", resp)
+	}
+	if len(values) != 1 || values[0].(string) != "checkout" {
+		t.Fatalf("expected fallback service_name values from detected labels, got %v (sawFieldValues=%v sawStreams=%v body=%s)", values, sawFieldValues, sawStreams, w.Body.String())
+	}
+	if !sawFieldValues {
+		t.Fatalf("expected native field_values lookup to be attempted before fallback")
+	}
+	if !sawStreams {
+		t.Fatalf("expected detected_labels fallback to query streams")
+	}
+}
+
+func TestDrilldown_DetectedLabels_IncludeServiceAndSyntheticServiceName(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/streams" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"values":[{"value":"{service=\"checkout\",level=\"info\"}","hits":3}]}`))
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      c,
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	labels, _, err := p.detectLabels(context.Background(), `{service_name="checkout"}`, "1", "2", 50)
+	if err != nil {
+		t.Fatalf("detectLabels returned error: %v", err)
+	}
+
+	got := map[string]struct{}{}
+	for _, item := range labels {
+		label, _ := item["label"].(string)
+		got[label] = struct{}{}
+	}
+	if _, ok := got["service"]; !ok {
+		t.Fatalf("expected native service label to be present, got %v", labels)
+	}
+	if _, ok := got["service_name"]; !ok {
+		t.Fatalf("expected synthetic service_name label to be present, got %v", labels)
+	}
+}
+
 func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 	var (
 		sampleQueries []string
 		statsQuery    string
+		manualQuery   string
 	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -880,6 +987,9 @@ func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/select/logsql/query":
+			if r.Form.Get("limit") == "1000000" {
+				manualQuery = r.Form.Get("query")
+			}
 			sampleQueries = append(sampleQueries, r.Form.Get("query"))
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users\",\"status\":200}","_stream":"{app=\"api-gateway\"}","app":"api-gateway","level":"info"}` + "\n"))
@@ -916,11 +1026,19 @@ func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 	if strings.Contains(sampleQueries[0], "count_over_time") {
 		t.Fatalf("expected parser probe to use extracted inner log query, got %q", sampleQueries[0])
 	}
-	if strings.Contains(statsQuery, "unpack_logfmt") {
-		t.Fatalf("expected stats query to keep only the working parser, got %q", statsQuery)
+
+	effectiveMetricQuery := statsQuery
+	if effectiveMetricQuery == "" {
+		effectiveMetricQuery = manualQuery
 	}
-	if !strings.Contains(statsQuery, "unpack_json") {
-		t.Fatalf("expected stats query to keep json parser, got %q", statsQuery)
+	if effectiveMetricQuery == "" {
+		t.Fatalf("expected either stats query or manual metric query to be issued")
+	}
+	if strings.Contains(effectiveMetricQuery, "unpack_logfmt") {
+		t.Fatalf("expected metric query to keep only the working parser, got %q", effectiveMetricQuery)
+	}
+	if !strings.Contains(effectiveMetricQuery, "unpack_json") {
+		t.Fatalf("expected metric query to keep json parser, got %q", effectiveMetricQuery)
 	}
 }
 

@@ -75,8 +75,8 @@ These stages are executed at the proxy level (VL has no native equivalents):
 |---|---|
 | `rate({...}[5m])` | `... \| stats rate()` |
 | `count_over_time({...}[5m])` | `... \| stats count()` |
-| `bytes_over_time({...}[5m])` | `... \| stats sum(len(_msg))` |
-| `bytes_rate({...}[5m])` | `... \| stats rate_sum(len(_msg))` |
+| `bytes_over_time({...}[5m])` | `... \| stats sum_len(_msg)` |
+| `bytes_rate({...}[5m])` | `... \| stats sum_len(_msg)` (proxy applies per-second normalization) |
 | `sum_over_time({...} \| unwrap f [5m])` | `... \| stats sum(f)` |
 | `avg_over_time({...} \| unwrap f [5m])` | `... \| stats avg(f)` |
 | `max_over_time({...} \| unwrap f [5m])` | `... \| stats max(f)` |
@@ -86,6 +86,7 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | `stddev_over_time({...} \| unwrap f [5m])` | `... \| stats stddev(f)` |
 | `stdvar_over_time({...} \| unwrap f [5m])` | `... \| stats stdvar(f)` |
 | `quantile_over_time(0.95, {...} \| unwrap f [5m])` | `... \| stats quantile(0.95, f)` |
+| `rate_counter({...} \| unwrap f [5m])` | `... \| stats __rate_counter__(f)` |
 | `absent_over_time({...}[5m])` | `... \| stats count()` |
 
 ### Outer Aggregations
@@ -120,6 +121,7 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 | `offset` modifier | Normalized in translation; query time bounds handled by the proxy request path |
 | `@ <timestamp>` modifier | Normalized/stripped in translation for VictoriaLogs backend requests |
 | Subquery `rate(...)[1h:5m]` | Proxy runs inner query across sub-steps and applies outer aggregation |
+| Range-vector metric windows (`*_over_time`, `rate`, `count_over_time`, `bytes_*`, `rate_counter`) | Proxy applies Loki-compatible sliding-window evaluation over step-aligned timestamps and emits matrix/vector responses |
 
 ### Formatting and Normalization
 
@@ -128,6 +130,7 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 | `line_format` / `label_format` templates | Go-template based compatibility formatting in response pipeline |
 | `decolorize` | ANSI escape sequence stripping |
 | `unwrap duration()/bytes()` helpers | Unit-aware unwrap compatibility logic before aggregation |
+| Missing unwrap on unwrap-required functions | Proxy returns Loki-style `invalid aggregation <func> without unwrap` error |
 | `bool` modifier on comparisons | Compatibility normalization to Loki-style boolean vector output |
 | `without()` grouping | Compatibility label projection after backend aggregation |
 | `on()` / `ignoring()` / `group_left()` / `group_right()` | Loki-style vector matching and join cardinality handling in proxy evaluation |

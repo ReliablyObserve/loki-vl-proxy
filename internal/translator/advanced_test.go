@@ -18,12 +18,12 @@ func TestAdvanced_MetricQueries(t *testing.T) {
 		{
 			name:  "bytes_over_time",
 			logql: `bytes_over_time({app="nginx"}[5m])`,
-			want:  `app:=nginx | stats sum(len(_msg))`,
+			want:  `app:=nginx | stats sum_len(_msg)`,
 		},
 		{
 			name:  "bytes_rate",
 			logql: `bytes_rate({app="nginx"}[5m])`,
-			want:  `app:=nginx | stats rate_sum(len(_msg))`,
+			want:  `app:=nginx | stats sum_len(_msg)`,
 		},
 		{
 			name:  "avg_over_time with unwrap",

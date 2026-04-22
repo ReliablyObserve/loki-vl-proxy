@@ -260,6 +260,11 @@ func TestMetricQueryTranslation(t *testing.T) {
 			logql: `avg_over_time({app="nginx"} | unwrap response_time [5m])`,
 			want:  `app:=nginx | stats avg(response_time)`,
 		},
+		{
+			name:  "rate_counter with unwrap",
+			logql: `rate_counter({app="nginx"} | unwrap requests_total [5m])`,
+			want:  `app:=nginx | stats __rate_counter__(requests_total)`,
+		},
 	}
 
 	for _, tt := range tests {

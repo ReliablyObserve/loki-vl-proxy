@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix release asset upload globs to avoid duplicate `.tgz` matches in GitHub Release publishing, which could fail with REST asset update `Not Found`
 
+### Reliability
+
+- add query_range safety fallback from window-split execution to direct backend query path on transient upstream failures, reducing user-facing 5xx during long-range requests
+
 ## [0.27.34] - 2026-04-11
 
 ### Configuration

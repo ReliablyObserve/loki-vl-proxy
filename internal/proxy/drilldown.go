@@ -267,11 +267,13 @@ func formatDetectedLabelSummaries(summaries map[string]*detectedLabelSummary) []
 			"label":       summary.label,
 			"cardinality": len(summary.values),
 		})
-		delete(summaries, "service_name")
 	}
 
 	names := make([]string, 0, len(summaries))
 	for label := range summaries {
+		if label == "service_name" {
+			continue
+		}
 		names = append(names, label)
 	}
 	sort.Strings(names)

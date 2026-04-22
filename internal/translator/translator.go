@@ -652,8 +652,8 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 	metricFuncs := map[string]string{
 		"rate":             "rate()",
 		"count_over_time":  "count()",
-		"bytes_over_time":  "sum(len(_msg))",
-		"bytes_rate":       "rate_sum(len(_msg))",
+		"bytes_over_time":  "sum_len(_msg)",
+		"bytes_rate":       "sum_len(_msg)",
 		"sum_over_time":    "sum",
 		"avg_over_time":    "avg",
 		"max_over_time":    "max",
@@ -662,6 +662,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		"last_over_time":   "last",
 		"stddev_over_time": "stddev",
 		"stdvar_over_time": "stdvar",
+		"rate_counter":     "__rate_counter__",
 		"absent_over_time": "count()",
 	}
 
@@ -904,7 +905,7 @@ func isUnwrapFunc(name string) bool {
 		"max_over_time": true, "min_over_time": true,
 		"first_over_time": true, "last_over_time": true,
 		"stddev_over_time": true, "stdvar_over_time": true,
-		"quantile_over_time": true,
+		"quantile_over_time": true, "rate_counter": true,
 	}
 	return unwrapFuncs[name]
 }

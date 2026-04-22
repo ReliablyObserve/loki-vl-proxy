@@ -172,7 +172,7 @@ func TestRealWorld_MetricAlerts(t *testing.T) {
 		{
 			name:  "bytes rate by namespace",
 			logql: `sum by (namespace) (bytes_rate({cluster="prod-k8s"}[5m]))`,
-			want:  `cluster:=prod-k8s | stats by (namespace) rate_sum(len(_msg))`,
+			want:  `cluster:=prod-k8s | stats by (namespace) sum_len(_msg)`,
 		},
 	}
 	for _, tt := range tests {
