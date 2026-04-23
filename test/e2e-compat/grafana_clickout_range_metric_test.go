@@ -19,6 +19,13 @@ type grafanaDSQueryResult struct {
 	Body   string
 }
 
+func containsMissingUnwrapError(errText string) bool {
+	errText = strings.ToLower(strings.TrimSpace(errText))
+	return strings.Contains(errText, "without unwrap") ||
+		strings.Contains(errText, "requires `| unwrap") ||
+		strings.Contains(errText, "requires | unwrap")
+}
+
 func queryGrafanaLokiDatasource(t *testing.T, datasourceUID, expr string) grafanaDSQueryResult {
 	t.Helper()
 
@@ -154,10 +161,10 @@ func TestGrafanaClickout_RangeMetricMissingUnwrapParity(t *testing.T) {
 
 			proxyErr := strings.ToLower(proxyRes.Error)
 			directErr := strings.ToLower(directRes.Error)
-			if !strings.Contains(proxyErr, "without unwrap") {
+			if !containsMissingUnwrapError(proxyErr) {
 				t.Fatalf("expected proxy missing-unwrap error shape expr=%s got=%s", tc.expr, proxyRes.Error)
 			}
-			if !strings.Contains(directErr, "without unwrap") {
+			if !containsMissingUnwrapError(directErr) {
 				t.Fatalf("expected direct missing-unwrap error shape expr=%s got=%s", tc.expr, directRes.Error)
 			}
 		})
@@ -203,6 +210,45 @@ func TestGrafanaClickout_RangeMetricAutoWindowUnwrapSuccess(t *testing.T) {
 			}
 			if strings.TrimSpace(directRes.Error) != "" {
 				t.Fatalf("direct returned unexpected error expr=%s err=%s body=%s", tc.expr, directRes.Error, directRes.Body)
+			}
+		})
+	}
+}
+
+func TestGrafanaClickout_RangeMetricSelectorOptionsParity(t *testing.T) {
+	ensureRangeMetricCompatData(t)
+	waitForReady(t, grafanaURL+"/api/health", 30*time.Second)
+
+	proxyUID := grafanaDatasourceUID(t, "Loki (via VL proxy)")
+	directUID := grafanaDatasourceUID(t, "Loki (direct)")
+
+	windows := []string{
+		"$__auto",
+		"$__interval",
+		"${__interval}",
+		"5m",
+		"1h",
+		"1d",
+	}
+
+	for _, window := range windows {
+		t.Run(window, func(t *testing.T) {
+			expr := fmt.Sprintf(`sum_over_time({app="api-gateway"} | json | unwrap duration [%s])`, window)
+
+			proxyRes := queryGrafanaLokiDatasource(t, proxyUID, expr)
+			directRes := queryGrafanaLokiDatasource(t, directUID, expr)
+
+			if proxyRes.Status != directRes.Status {
+				t.Fatalf("status mismatch proxy=%d direct=%d window=%s expr=%s proxyBody=%s directBody=%s", proxyRes.Status, directRes.Status, window, expr, proxyRes.Body, directRes.Body)
+			}
+			if proxyRes.Status != http.StatusOK {
+				t.Fatalf("expected 200 for selector option window=%s expr=%s proxy=%s direct=%s", window, expr, proxyRes.Body, directRes.Body)
+			}
+			if strings.TrimSpace(proxyRes.Error) != "" {
+				t.Fatalf("proxy returned unexpected error window=%s expr=%s err=%s body=%s", window, expr, proxyRes.Error, proxyRes.Body)
+			}
+			if strings.TrimSpace(directRes.Error) != "" {
+				t.Fatalf("direct returned unexpected error window=%s expr=%s err=%s body=%s", window, expr, directRes.Error, directRes.Body)
 			}
 		})
 	}

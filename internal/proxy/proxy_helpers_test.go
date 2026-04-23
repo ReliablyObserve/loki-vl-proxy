@@ -156,14 +156,32 @@ func TestProxyHelpers_ParseBareParserMetricCompatSpec_AcceptsRateCounterWithTemp
 	}
 }
 
+func TestProxyHelpers_ParseBareParserMetricCompatSpec_AcceptsBracedTemplateWindow(t *testing.T) {
+	spec, ok := parseBareParserMetricCompatSpec(`rate_counter({app="api-gateway"} | json | unwrap counter [${__rate_interval}])`)
+	if !ok {
+		t.Fatal("expected braced template window to be recognized")
+	}
+	if spec.rangeWindowExpr != "${__rate_interval}" {
+		t.Fatalf("unexpected rangeWindowExpr %q", spec.rangeWindowExpr)
+	}
+
+	resolved, ok := resolveBareParserMetricRangeWindow(spec, "2026-01-01T00:00:00Z", "2026-01-01T00:10:00Z", "10s")
+	if !ok {
+		t.Fatal("expected braced template window to resolve with request step")
+	}
+	if resolved.rangeWindow != time.Minute {
+		t.Fatalf("expected $__rate_interval minimum 1m, got %v", resolved.rangeWindow)
+	}
+}
+
 func TestProxyHelpers_ResolveGrafanaRangeTemplateTokens(t *testing.T) {
-	query := `rate({app="api-gateway"}[$__auto]) + rate_counter({app="api-gateway"} | json | unwrap counter [$__rate_interval]) + count_over_time({app="api-gateway"}[$__range_s])`
+	query := `rate({app="api-gateway"}[$__auto]) + rate_counter({app="api-gateway"} | json | unwrap counter [${__rate_interval}]) + count_over_time({app="api-gateway"}[$__range_s]) + sum_over_time({app="api-gateway"} | json | unwrap duration [${__interval_ms}])`
 	got := resolveGrafanaRangeTemplateTokens(query, "2026-01-01T00:00:00Z", "2026-01-01T00:05:00Z", "15s")
-	if strings.Contains(got, "$__") {
+	if strings.Contains(got, "$__") || strings.Contains(got, "${__") {
 		t.Fatalf("expected all Grafana template tokens to resolve, got %q", got)
 	}
 	if !strings.Contains(got, "[15s]") {
-		t.Fatalf("expected $__auto to resolve to step, got %q", got)
+		t.Fatalf("expected $__auto/$__interval_ms to resolve to step, got %q", got)
 	}
 	if !strings.Contains(got, "[1m]") {
 		t.Fatalf("expected $__rate_interval to clamp to 1m minimum, got %q", got)

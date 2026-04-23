@@ -425,6 +425,11 @@ func parseLokiDuration(s string) time.Duration {
 		return d
 	}
 
+	// Fall back to Prometheus/Loki units (d/w/y) and mixed-unit forms.
+	if d, ok := parsePrometheusStyleDuration(s); ok {
+		return d
+	}
+
 	// Handle "d" suffix (days) — not supported by Go
 	if strings.HasSuffix(s, "d") {
 		n, err := strconv.Atoi(s[:len(s)-1])

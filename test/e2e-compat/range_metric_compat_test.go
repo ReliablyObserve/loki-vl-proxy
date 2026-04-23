@@ -19,6 +19,13 @@ import (
 
 var rangeMetricCompatOnce sync.Once
 
+func containsUnwrapErrorText(body string) bool {
+	body = strings.ToLower(strings.TrimSpace(body))
+	return strings.Contains(body, "without unwrap") ||
+		strings.Contains(body, "requires `| unwrap") ||
+		strings.Contains(body, "requires | unwrap")
+}
+
 func ensureRangeMetricCompatData(t *testing.T) {
 	t.Helper()
 	ensureDataIngested(t)
@@ -139,10 +146,10 @@ func TestRangeMetricCompatibilityMissingUnwrapErrors(t *testing.T) {
 			if proxyResult.StatusCode != http.StatusBadRequest {
 				t.Fatalf("expected 400 for missing unwrap query=%s proxy=%s", query, proxyResult.Body)
 			}
-			if !strings.Contains(strings.ToLower(lokiResult.Body), "without unwrap") {
+			if !containsUnwrapErrorText(lokiResult.Body) {
 				t.Fatalf("expected Loki unwrap error query=%s body=%s", query, lokiResult.Body)
 			}
-			if !strings.Contains(strings.ToLower(proxyResult.Body), "without unwrap") {
+			if !containsUnwrapErrorText(proxyResult.Body) {
 				t.Fatalf("expected proxy unwrap error query=%s body=%s", query, proxyResult.Body)
 			}
 		})

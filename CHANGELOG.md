@@ -7,11 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.13.1] - 2026-04-23
+### Bug Fixes
+
+- metrics/range-selectors: align Grafana clickout range-selector handling closer to Loki behavior by normalizing braced selector templates (`${__interval}` variants), honoring Loki-style duration units (`d/w/y`) in proxy compatibility paths, and ensuring stats compatibility paths use token-resolved original queries instead of raw unresolved request text.
+- metrics/range-selectors: normalize missing-unwrap error handling in compatibility paths so explicit unwrap-required range functions return stable Loki-compatible bad-data errors instead of falling through to generic invalid-range responses.
 
 ### Tests
 
 - e2e/clickout: add Grafana `/api/ds/query` parity coverage for range-metric functions (missing-unwrap 400 parity and unwrap + `$__auto` success parity) across direct Loki and Loki-via-proxy datasources.
+- e2e/grafana-clickout: add selector-option parity coverage for `sum_over_time(... | unwrap ...)` across `$__auto`, `$__interval`, `${__interval}`, and fixed window options (`5m`, `1h`, `1d`) against direct Loki.
+- compat/helpers: expand unit coverage for Prometheus/Loki duration parsing (`1d`, mixed `w/d/h`), braced Grafana token resolution, and selector-token recognition.
+
+## [1.13.1] - 2026-04-23
 
 ## [1.13.0] - 2026-04-23
 

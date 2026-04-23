@@ -305,6 +305,12 @@ func TestCompatHelpers_TimeParsingAndDurationFormatting(t *testing.T) {
 	if d, ok := parsePositiveStepDuration("2.5"); !ok || d != 2500*time.Millisecond {
 		t.Fatalf("expected float step parse, got %v,%v", d, ok)
 	}
+	if d, ok := parsePositiveStepDuration("1d"); !ok || d != 24*time.Hour {
+		t.Fatalf("expected day step parse, got %v,%v", d, ok)
+	}
+	if d, ok := parsePositiveStepDuration("1w2d3h"); !ok || d != (9*24+3)*time.Hour {
+		t.Fatalf("expected week/day/hour step parse, got %v,%v", d, ok)
+	}
 	if _, ok := parsePositiveStepDuration("-1"); ok {
 		t.Fatal("expected negative step parse to fail")
 	}
@@ -315,17 +321,29 @@ func TestCompatHelpers_TimeParsingAndDurationFormatting(t *testing.T) {
 	if d, ok := resolveGrafanaTemplateTokenDuration("$__rate_interval", "1700000000", "1700000600", "30s"); !ok || d != time.Minute*2 {
 		t.Fatalf("expected $__rate_interval to resolve to 2m, got %v,%v", d, ok)
 	}
+	if d, ok := resolveGrafanaTemplateTokenDuration("${__rate_interval_ms}", "1700000000", "1700000600", "30s"); !ok || d != time.Minute*2 {
+		t.Fatalf("expected ${__rate_interval_ms} to resolve to 2m, got %v,%v", d, ok)
+	}
 	if d, ok := resolveGrafanaTemplateTokenDuration("$__range", "1700000000", "1700000600", "30s"); !ok || d != 10*time.Minute {
 		t.Fatalf("expected $__range to resolve to 10m, got %v,%v", d, ok)
 	}
 	if d, ok := resolveGrafanaTemplateTokenDuration("$__interval", "1700000000", "1700000600", "30s"); !ok || d != 30*time.Second {
 		t.Fatalf("expected $__interval to resolve to step, got %v,%v", d, ok)
 	}
+	if d, ok := resolveGrafanaTemplateTokenDuration("${__interval_ms}", "1700000000", "1700000600", "30s"); !ok || d != 30*time.Second {
+		t.Fatalf("expected ${__interval_ms} to resolve to step, got %v,%v", d, ok)
+	}
+	if !isGrafanaRangeTemplateSelector("${__range_s}") {
+		t.Fatal("expected braced $__range_s selector to be recognized")
+	}
+	if isGrafanaRangeTemplateSelector("${__unknown}") {
+		t.Fatal("expected unknown braced selector to be rejected")
+	}
 	if _, ok := resolveGrafanaTemplateTokenDuration("$__unknown", "1700000000", "1700000600", "30s"); ok {
 		t.Fatal("expected unknown grafana token to fail resolution")
 	}
-	if got := resolveGrafanaRangeTemplateTokens(`rate({app="api"}[$__auto])`, "1700000000", "1700000600", "30s"); got != `rate({app="api"}[30s])` {
-		t.Fatalf("expected $__auto replacement, got %q", got)
+	if got := resolveGrafanaRangeTemplateTokens(`rate({app="api"}[${__interval}]) + count_over_time({app="api"}[$__auto])`, "1700000000", "1700000600", "30s"); got != `rate({app="api"}[30s]) + count_over_time({app="api"}[30s])` {
+		t.Fatalf("expected Grafana token replacement, got %q", got)
 	}
 
 	if bucketRange, ok := parseRequestedBucketRange("1700000000", "1700000060", "30s"); !ok {

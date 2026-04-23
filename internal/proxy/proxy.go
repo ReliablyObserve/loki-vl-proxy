@@ -8608,7 +8608,8 @@ func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params ur
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
-	if p.handleStatsCompatRange(w, r, r.FormValue("query"), logsqlQuery) {
+	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	if p.handleStatsCompatRange(w, r, originalLogql, logsqlQuery) {
 		return
 	}
 
@@ -8758,7 +8759,8 @@ func statsQueryRangePointUnixNano(point []interface{}) int64 {
 }
 
 func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
-	if p.handleStatsCompatInstant(w, r, r.FormValue("query"), logsqlQuery) {
+	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	if p.handleStatsCompatInstant(w, r, originalLogql, logsqlQuery) {
 		return
 	}
 
@@ -10173,12 +10175,29 @@ func normalizeUnixNanos(v int64) int64 {
 	}
 }
 
+var (
+	prometheusDurationPartRE = regexp.MustCompile(`(?i)([0-9]*\.?[0-9]+)(ns|us|µs|ms|s|m|h|d|w|y)`)
+	grafanaRangeTokens       = []string{
+		"$__rate_interval_ms",
+		"$__interval_ms",
+		"$__range_ms",
+		"$__rate_interval",
+		"$__range_s",
+		"$__interval",
+		"$__range",
+		"$__auto",
+	}
+)
+
 func parsePositiveStepDuration(step string) (time.Duration, bool) {
 	value := strings.TrimSpace(step)
 	if value == "" {
 		return 0, false
 	}
 	if d, err := time.ParseDuration(value); err == nil && d > 0 {
+		return d, true
+	}
+	if d, ok := parsePrometheusStyleDuration(value); ok {
 		return d, true
 	}
 	seconds, err := strconv.ParseFloat(value, 64)
@@ -10196,20 +10215,69 @@ func parsePositiveStepDuration(step string) (time.Duration, bool) {
 	return d, true
 }
 
+func parsePrometheusStyleDuration(value string) (time.Duration, bool) {
+	parts := prometheusDurationPartRE.FindAllStringSubmatch(value, -1)
+	if len(parts) == 0 {
+		return 0, false
+	}
+
+	totalSeconds := 0.0
+	var consumed strings.Builder
+	for _, part := range parts {
+		numeric, err := strconv.ParseFloat(part[1], 64)
+		if err != nil || numeric <= 0 {
+			return 0, false
+		}
+
+		switch strings.ToLower(part[2]) {
+		case "ns":
+			totalSeconds += numeric / 1e9
+		case "us", "µs":
+			totalSeconds += numeric / 1e6
+		case "ms":
+			totalSeconds += numeric / 1e3
+		case "s":
+			totalSeconds += numeric
+		case "m":
+			totalSeconds += numeric * 60
+		case "h":
+			totalSeconds += numeric * 3600
+		case "d":
+			totalSeconds += numeric * 86400
+		case "w":
+			totalSeconds += numeric * 7 * 86400
+		case "y":
+			totalSeconds += numeric * 365 * 86400
+		default:
+			return 0, false
+		}
+
+		consumed.WriteString(part[0])
+	}
+
+	if consumed.String() != value {
+		return 0, false
+	}
+
+	nanos := totalSeconds * float64(time.Second)
+	if nanos <= 0 || nanos > float64(math.MaxInt64) {
+		return 0, false
+	}
+
+	d := time.Duration(nanos)
+	if d <= 0 {
+		return 0, false
+	}
+	return d, true
+}
+
 func resolveGrafanaRangeTemplateTokens(query, start, end, step string) string {
-	if !strings.Contains(query, "$__") {
+	if !strings.Contains(query, "$__") && !strings.Contains(query, "${__") {
 		return query
 	}
 
 	replacements := map[string]string{}
-	for _, token := range []string{
-		"$__range_ms",
-		"$__rate_interval",
-		"$__interval",
-		"$__range_s",
-		"$__range",
-		"$__auto",
-	} {
+	for _, token := range grafanaRangeTokens {
 		if duration, ok := resolveGrafanaTemplateTokenDuration(token, start, end, step); ok {
 			replacements[token] = formatLogQLDuration(duration)
 		}
@@ -10220,24 +10288,24 @@ func resolveGrafanaRangeTemplateTokens(query, start, end, step string) string {
 	}
 
 	normalized := query
-	for _, token := range []string{
-		"$__range_ms",
-		"$__rate_interval",
-		"$__interval",
-		"$__range_s",
-		"$__range",
-		"$__auto",
-	} {
+	for _, token := range grafanaRangeTokens {
 		replacement, ok := replacements[token]
 		if !ok {
 			continue
 		}
+		braced := "${" + strings.TrimPrefix(token, "$") + "}"
+		normalized = strings.ReplaceAll(normalized, braced, replacement)
 		normalized = strings.ReplaceAll(normalized, token, replacement)
 	}
 	return normalized
 }
 
 func resolveGrafanaTemplateTokenDuration(token, start, end, step string) (time.Duration, bool) {
+	canonicalToken, ok := canonicalGrafanaRangeToken(token)
+	if !ok {
+		return 0, false
+	}
+
 	stepDur, stepOK := parsePositiveStepDuration(step)
 	if !stepOK {
 		stepDur = time.Minute
@@ -10253,10 +10321,10 @@ func resolveGrafanaTemplateTokenDuration(token, start, end, step string) (time.D
 		rangeDur = stepDur
 	}
 
-	switch strings.ToLower(strings.TrimSpace(token)) {
-	case "$__auto", "$__interval":
+	switch canonicalToken {
+	case "$__auto", "$__interval", "$__interval_ms":
 		return stepDur, true
-	case "$__rate_interval":
+	case "$__rate_interval", "$__rate_interval_ms":
 		rateInterval := stepDur * 4
 		if rateInterval < time.Minute {
 			rateInterval = time.Minute
@@ -10266,6 +10334,33 @@ func resolveGrafanaTemplateTokenDuration(token, start, end, step string) (time.D
 		return rangeDur, true
 	default:
 		return 0, false
+	}
+}
+
+func canonicalGrafanaRangeToken(token string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(token))
+	if normalized == "" {
+		return "", false
+	}
+	if strings.HasPrefix(normalized, "${") && strings.HasSuffix(normalized, "}") {
+		normalized = "$" + strings.TrimSuffix(strings.TrimPrefix(normalized, "${"), "}")
+	}
+	if strings.HasPrefix(normalized, "__") {
+		normalized = "$" + normalized
+	}
+
+	switch normalized {
+	case "$__auto",
+		"$__interval",
+		"$__interval_ms",
+		"$__rate_interval",
+		"$__rate_interval_ms",
+		"$__range",
+		"$__range_s",
+		"$__range_ms":
+		return normalized, true
+	default:
+		return "", false
 	}
 }
 
@@ -12687,12 +12782,8 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 }
 
 func isGrafanaRangeTemplateSelector(window string) bool {
-	switch strings.ToLower(strings.TrimSpace(window)) {
-	case "$__auto", "$__interval", "$__rate_interval", "$__range", "$__range_s", "$__range_ms":
-		return true
-	default:
-		return false
-	}
+	_, ok := canonicalGrafanaRangeToken(window)
+	return ok
 }
 
 func resolveBareParserMetricRangeWindow(spec bareParserMetricCompatSpec, start, end, step string) (bareParserMetricCompatSpec, bool) {
