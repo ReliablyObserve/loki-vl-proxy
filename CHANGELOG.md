@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-04-23
+
 ### Tests
 
 - e2e/clickout: add Grafana `/api/ds/query` parity coverage for range-metric functions (missing-unwrap 400 parity and unwrap + `$__auto` success parity) across direct Loki and Loki-via-proxy datasources.
