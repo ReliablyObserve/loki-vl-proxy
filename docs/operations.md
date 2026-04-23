@@ -77,7 +77,7 @@ Treat these as one versioned operational package:
 
 | Asset | Canonical source | Purpose |
 |------|------------------|---------|
-| Grafana operations dashboard | [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | Operator view for `Client -> Proxy -> VictoriaLogs`, route-aware RED signals, cache behavior, long-range query tuning, and operational resources |
+| Grafana operations dashboard | [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | Explicit `Client-Side Loki`, `Proxy Internal`, and `Backend-Side VictoriaLogs` row groups with route-aware RED signals, cache/fanout tuning, and operational resources |
 | Alert rules | [`alerting/loki-vl-proxy-prometheusrule.yaml`](../alerting/loki-vl-proxy-prometheusrule.yaml) | PrometheusRule/vmalert-oriented alert set with standardized labels and annotations |
 | SRE runbooks | [`docs/runbooks/alerts.md`](runbooks/alerts.md) | Index plus per-alert runbook files referenced directly from alert `runbook_url` |
 

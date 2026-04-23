@@ -457,12 +457,26 @@ The packaged `Loki-VL-Proxy` dashboard includes an `Operational Resources` secti
 - PSI pressure (cpu/memory/io)
 - process RSS and open file descriptors by pod
 
-The top of the dashboard is organized as a left-to-right operator flow:
+The dashboard is explicitly grouped so you can attribute failures by perspective without guessing:
 
-- `Main Overview - Client -> Proxy -> VictoriaLogs`
-- `Client Edge - Request Quality & Shape`
-- `Heavy Consumers - Client Load Drivers`
-- `Proxy -> VictoriaLogs Query Pipeline`
+- `Client-Side Loki API Visibility`
+- `Client-Side Loki Latency`
+- `Client-Side Request Shape`
+- `Client-Side Tenant/Client Impact`
+- `Proxy Internal - Cache Core`
+- `Proxy Internal - Query-Range Windowing`
+- `Proxy Internal - Long-Range Resilience KPIs`
+- `Proxy Internal - Connection Stickiness`
+- `Proxy Internal - HTTP Connection Visibility`
+- `Proxy Internal - Fleet Cache & Redistribution`
+- `Proxy Internal - Runtime Resources & Capacity`
+- `Backend-Side VictoriaLogs & Internal Fanout`
+
+Suggested triage path:
+
+1. Start on `Client-Side Loki API Visibility` and `Client-Side Loki Latency` to confirm user-visible impact.
+2. Move to `Backend-Side VictoriaLogs & Internal Fanout` to separate upstream pressure/fanout amplification from client-side issues.
+3. Use `Proxy Internal` sections to isolate cache, windowing, connection stickiness, and runtime resource bottlenecks.
 
 It also includes a `Query-Range Windowing` section for cache/tuning signals:
 

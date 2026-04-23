@@ -10,7 +10,7 @@
   "links": [],
   "panels": [
     {
-      "title": "Overview",
+      "title": "Client-Side Loki API Visibility",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
       "collapsed": false
@@ -101,7 +101,7 @@
       }
     },
     {
-      "title": "Latency",
+      "title": "Client-Side Loki Latency",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9},
       "collapsed": false
@@ -135,7 +135,7 @@
       }
     },
     {
-      "title": "Cache",
+      "title": "Proxy Internal - Cache Core",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18},
       "collapsed": false
@@ -177,7 +177,7 @@
       }
     },
     {
-      "title": "Request Breakdown",
+      "title": "Client-Side Request Shape",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 27},
       "collapsed": false
@@ -219,7 +219,7 @@
       }
     },
     {
-      "title": "Tenants",
+      "title": "Client-Side Tenant/Client Impact",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36},
       "collapsed": false
@@ -314,7 +314,7 @@
       }
     },
     {
-      "title": "Process Resources & Runtime",
+      "title": "Proxy Internal - Runtime Resources & Capacity",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 61},
       "collapsed": false
@@ -521,7 +521,7 @@
       }
     },
     {
-      "title": "Query-Range Windowing",
+      "title": "Proxy Internal - Query-Range Windowing",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 84},
       "collapsed": false
@@ -609,7 +609,7 @@
       }
     },
     {
-      "title": "Long-Range Resilience KPIs",
+      "title": "Proxy Internal - Long-Range Resilience KPIs",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 101},
       "collapsed": false
@@ -669,7 +669,7 @@
       }
     },
     {
-      "title": "Connection Stickiness",
+      "title": "Proxy Internal - Connection Stickiness",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 110},
       "collapsed": false
@@ -717,7 +717,7 @@
       }
     },
     {
-      "title": "HTTP Connection Visibility",
+      "title": "Proxy Internal - HTTP Connection Visibility",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 119},
       "collapsed": false
@@ -765,7 +765,7 @@
       }
     },
     {
-      "title": "Fleet Cache and Redistribution",
+      "title": "Proxy Internal - Fleet Cache & Redistribution",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 128},
       "collapsed": false
@@ -829,7 +829,7 @@
       }
     },
     {
-      "title": "Fanout & Internal Ops",
+      "title": "Backend-Side VictoriaLogs & Internal Fanout",
       "type": "row",
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 145},
       "collapsed": false

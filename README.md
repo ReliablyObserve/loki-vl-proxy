@@ -67,6 +67,7 @@ Related docs: [Architecture](docs/architecture.md), [Compatibility Matrix](docs/
 - Route-aware upstream/downstream metrics and semconv-aligned structured logs for client, proxy, and VictoriaLogs visibility.
 - Better read-path control: per-route visibility, user-pattern attribution from trusted Grafana headers, and separate northbound/southbound auth boundaries.
 - Packaged operator dashboard covering `Client -> Proxy -> VictoriaLogs`, query-range resilience, cache behavior, and operational resources.
+- Explicit dashboard row grouping for `Client-Side Loki API Visibility`, `Proxy Internal` sections, and `Backend-Side VictoriaLogs` fanout visibility for faster incident attribution.
 - Helm-ready deployment model for production clusters.
 - Compatibility CI tracks for Loki, Logs Drilldown, and VictoriaLogs.
 - Dedicated security CI lanes for secret scanning, SAST, Dockerfile/workflow linting, supply-chain checks, runtime regressions, and DAST.

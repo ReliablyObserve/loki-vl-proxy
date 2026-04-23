@@ -895,6 +895,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - improve app-scoped metrics compatibility for dashboard/runtime process telemetry by keeping `loki_vl_proxy_*` metric families consistently queryable across scrape and OTLP flows
 
+### Observability
+
+- redesign the packaged metrics dashboard into explicit attribution rows for `client-side Loki`, `proxy internals`, and `backend-side VictoriaLogs`, with deeper drilldown-discovery, peer-cache, query-range tuning, and per-pod resource skew visibility
+
+### Documentation
+
+- refresh README with recent delivery highlights and an operational visibility model that maps incident triage to client/proxy/backend perspectives
+- expand observability guidance with a row-by-row dashboard playbook for fast root-cause attribution
+
 ## [0.27.34] - 2026-04-11
 
 ### Configuration
