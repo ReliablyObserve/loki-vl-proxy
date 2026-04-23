@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.2] - 2026-04-23
+
 ### Bug Fixes
 
 - metrics/range-selectors: align Grafana clickout range-selector handling closer to Loki behavior by normalizing braced selector templates (`${__interval}` variants), honoring Loki-style duration units (`d/w/y`) in proxy compatibility paths, and ensuring stats compatibility paths use token-resolved original queries instead of raw unresolved request text.
