@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- metrics/compat: harden range-function compatibility by requiring explicit `| unwrap <field>` for unwrap-dependent range functions, resolve Grafana range template selectors (`$__auto`, `$__interval`, `$__rate_interval`, `$__range*`) before compatibility handling, and reject unsupported bare metric range queries early instead of silently falling through.
+- metrics/compat: add `rate_counter(...)` support on parser+unwrap compatibility paths, including counter-reset aware rate calculation.
+
+### Tests
+
+- proxy/translator: add regressions for unwrap-required function errors, Grafana template token resolution, parser probe unquoting, template-window resolution for `rate_counter`, and counter-reset handling in compatibility window evaluation.
+
 ## [1.12.2] - 2026-04-21
 
 ### Bug Fixes
