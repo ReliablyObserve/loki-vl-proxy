@@ -1637,6 +1637,7 @@ func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 	var (
 		sampleQueries []string
 		statsQuery    string
+		manualQuery   string
 	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -1644,6 +1645,9 @@ func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/select/logsql/query":
+			if r.Form.Get("limit") == "1000000" {
+				manualQuery = r.Form.Get("query")
+			}
 			sampleQueries = append(sampleQueries, r.Form.Get("query"))
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"method\":\"GET\",\"path\":\"/api/v1/users\",\"status\":200}","_stream":"{app=\"api-gateway\"}","app":"api-gateway","level":"info"}` + "\n"))
@@ -1680,11 +1684,19 @@ func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 	if strings.Contains(sampleQueries[0], "count_over_time") {
 		t.Fatalf("expected parser probe to use extracted inner log query, got %q", sampleQueries[0])
 	}
-	if strings.Contains(statsQuery, "unpack_logfmt") {
-		t.Fatalf("expected stats query to keep only the working parser, got %q", statsQuery)
+
+	effectiveMetricQuery := statsQuery
+	if effectiveMetricQuery == "" {
+		effectiveMetricQuery = manualQuery
 	}
-	if !strings.Contains(statsQuery, "unpack_json") {
-		t.Fatalf("expected stats query to keep json parser, got %q", statsQuery)
+	if effectiveMetricQuery == "" {
+		t.Fatalf("expected either stats query or manual metric query to be issued")
+	}
+	if strings.Contains(effectiveMetricQuery, "unpack_logfmt") {
+		t.Fatalf("expected metric query to keep only the working parser, got %q", effectiveMetricQuery)
+	}
+	if !strings.Contains(effectiveMetricQuery, "unpack_json") {
+		t.Fatalf("expected metric query to keep json parser, got %q", effectiveMetricQuery)
 	}
 }
 

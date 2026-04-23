@@ -814,6 +814,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		"stddev_over_time": "stddev",
 		"stdvar_over_time": "stddev",
 		"absent_over_time": "count()",
+		"rate_counter":     "__rate_counter__",
 	}
 
 	// Try to match outer aggregation: sum(...) by (labels)
@@ -1237,7 +1238,7 @@ func isUnwrapFunc(name string) bool {
 		"max_over_time": true, "min_over_time": true,
 		"first_over_time": true, "last_over_time": true,
 		"stddev_over_time": true, "stdvar_over_time": true,
-		"quantile_over_time": true,
+		"quantile_over_time": true, "rate_counter": true,
 	}
 	return unwrapFuncs[name]
 }

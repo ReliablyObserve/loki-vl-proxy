@@ -291,6 +291,13 @@ This is where the repo makes tricky edge cases explicit instead of relying on sc
 - invalid forms like `topk(2, {selector})` and `sort({selector})`
 - invalid forms like `rate({selector})` without a range
 
+Additional required parity edge cases for parser-stage metric compatibility:
+
+- `rate_counter(... | unwrap <field> [window])` must keep reset-aware behavior and match Loki outcome class while preserving parser-derived labels
+- parser-stage range metrics must preserve exact metric label-set parity (not only result counts) against Loki
+- unwrap-required range functions without `unwrap` must fail with Loki-style invalid-aggregation errors
+- parser-probe compatibility fallback must be deterministic (single working parser path), so repeated runs do not switch between incompatible query plans
+
 Proxy-only Grafana helper behavior such as synthetic labels, Drilldown fields, stale-on-error helpers, and detected-label recovery stays outside this matrix and belongs in the dedicated proxy contract tests.
 
 Valid Loki behavior is not an accepted exclusion class. If a query works in real Loki and diverges in the proxy, it should be fixed and added to the required matrix or tracked immediately as a parity bug with a dedicated regression target.

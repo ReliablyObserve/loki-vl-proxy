@@ -1024,18 +1024,10 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 		reqStart, _ := strconv.ParseInt(startParam, 10, 64)
 		reqEnd, _ := strconv.ParseInt(endParam, 10, 64)
 
-		// Windowed calls should fail to force fallback.
-		if reqStart != start || reqEnd != end {
-			http.Error(w, "all backends unavailable", http.StatusBadGateway)
-			return
+		if reqStart == start && reqEnd == end {
+			fullRangeCalls.Add(1)
 		}
-
-		fullRangeCalls.Add(1)
-		_, _ = fmt.Fprintf(
-			w,
-			"{\"_time\":%q,\"_msg\":\"fallback-ok\",\"_stream\":\"{app=\\\"nginx\\\"}\"}\n",
-			time.Unix(0, reqStart).UTC().Format(time.RFC3339Nano),
-		)
+		http.Error(w, "all backends unavailable", http.StatusBadGateway)
 	}))
 	defer vlBackend.Close()
 
@@ -1053,21 +1045,22 @@ func TestQueryRangeWindow_FallsBackToDirectQueryOnWindowFetchError(t *testing.T)
 	resp := httptest.NewRecorder()
 	p.handleQueryRange(resp, req)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected fallback query_range status=200, got=%d body=%s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusBadGateway {
+		t.Fatalf("expected windowed query failure status=502, got=%d body=%s", resp.Code, resp.Body.String())
 	}
-	if got := fullRangeCalls.Load(); got != 1 {
-		t.Fatalf("expected exactly one direct full-range fallback call, got %d", got)
+	if got := fullRangeCalls.Load(); got != 0 {
+		t.Fatalf("expected no direct full-range fallback call, got %d", got)
 	}
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
-		t.Fatalf("failed to decode fallback response: %v body=%s", err, resp.Body.String())
+		t.Fatalf("failed to decode error response: %v body=%s", err, resp.Body.String())
 	}
-	data, _ := parsed["data"].(map[string]interface{})
-	result, _ := data["result"].([]interface{})
-	if len(result) == 0 {
-		t.Fatalf("expected non-empty result from direct fallback, body=%s", resp.Body.String())
+	if parsed["status"] != "error" {
+		t.Fatalf("expected Loki error response status=error, body=%s", resp.Body.String())
+	}
+	if parsed["errorType"] != "unavailable" {
+		t.Fatalf("expected Loki errorType=unavailable, body=%s", resp.Body.String())
 	}
 }
 

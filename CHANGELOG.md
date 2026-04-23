@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- metrics/query-range-compat: route parser-stage metric queries (translated `unpack_*` / `extract*`) through proxy-side range evaluation for `query` and `query_range`, preserving parser label cardinality and unwrap semantics when direct `stats_query(_range)` behavior diverges from Loki.
+- metrics/rate-counter: force `rate_counter` onto the compatibility path so counter-reset-aware behavior is consistent across parser and non-parser shapes instead of depending on backend parser acceptance.
+- query-range/windowing: return explicit Loki-style backend errors when split-window fetches fail after retries instead of silently falling back to full-range direct query execution.
+- query-range/error-contract: keep failure shape stable for Grafana and API clients by surfacing the real upstream failure class on split execution errors.
+- drilldown/cache: normalize empty detected-field-value refresh payloads to `[]` (not `null`) to keep downstream consumers stable during cache refreshes.
+
+### Tests
+
+- compat/query-range: add parser-stage/manual evaluation coverage for `rate`, `bytes_rate`, `first_over_time`, `quantile_over_time`, and `rate_counter`, and keep `stdvar_over_time` compatibility covered through matrix/binary evaluation paths.
+- compat/query-range: add explicit parser-probe and path-selection coverage to enforce when manual compatibility evaluation is required vs when backend stats execution remains valid.
+- query-range/windowing: add regressions proving split-window failures return upstream errors and transient per-window backend failures are retried.
+- drilldown/compat: harden parser-probe expectations so metric compatibility tests accept both direct stats and manual compatibility execution paths while still enforcing "single working parser" behavior.
+
+### Documentation
+
+- docs/translation-reference: document `rate_counter` translation and parser-stage range-metric compatibility behavior, including path-selection rules for manual evaluation vs single-shot `stats_query_range`.
+- docs/testing: expand required matrix edge cases for parser-stage range metrics, `rate_counter`, unwrap error shapes, and comparison expectations across Loki/proxy parity checks.
+
 ## [1.12.3] - 2026-04-23
 
 ### Bug Fixes

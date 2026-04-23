@@ -4878,6 +4878,9 @@ func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName,
 			if err != nil {
 				return nil, err
 			}
+			if values == nil {
+				values = []string{}
+			}
 
 			payload := map[string]interface{}{
 				"status": "success",
@@ -8605,6 +8608,10 @@ func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params ur
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	if p.handleStatsCompatRange(w, r, r.FormValue("query"), logsqlQuery) {
+		return
+	}
+
 	// Keep metric query_range as a single backend request. Window splitting and
 	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -8751,6 +8758,10 @@ func statsQueryRangePointUnixNano(point []interface{}) int64 {
 }
 
 func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	if p.handleStatsCompatInstant(w, r, r.FormValue("query"), logsqlQuery) {
+		return
+	}
+
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if t := r.FormValue("time"); t != "" {

@@ -86,6 +86,7 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | `stddev_over_time({...} \| unwrap f [5m])` | `... \| stats stddev(f)` |
 | `stdvar_over_time({...} \| unwrap f [5m])` | proxy binary expression: `(... \| stats stddev(f)) ^ 2` |
 | `quantile_over_time(0.95, {...} \| unwrap f [5m])` | `... \| stats quantile(0.95, f)` |
+| `rate_counter({...} \| unwrap f [5m])` | `... \| stats __rate_counter__(f)` |
 | `absent_over_time({...}[5m])` | `... \| stats count()` |
 
 ### Outer Aggregations
@@ -120,6 +121,32 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 | `offset` modifier | Normalized in translation; query time bounds handled by the proxy request path |
 | `@ <timestamp>` modifier | Normalized/stripped in translation for VictoriaLogs backend requests |
 | Subquery `rate(...)[1h:5m]` | Proxy runs inner query across sub-steps and applies outer aggregation |
+| Range-vector metric windows (`*_over_time`, `rate`, `count_over_time`, `bytes_*`, `rate_counter`) | Proxy applies Loki-compatible sliding-window evaluation over step-aligned timestamps and emits matrix/vector responses |
+
+### Parser-Stage Metric Compatibility Path
+
+For metric queries that include parser stages after translation (`unpack_*` or `extract*`), the proxy can switch from direct `stats_query(_range)` execution to proxy-side range evaluation so Loki behavior is preserved:
+
+- parser-derived labels remain available in metric output cardinality
+- unwrap-required functions keep Loki unwrap/error semantics
+- `rate_counter` uses the proxy compatibility path by default (including reset-aware handling)
+
+For non-parser metric queries, the default path remains single-shot `stats_query` / `stats_query_range` against VictoriaLogs.
+
+#### Path Selection Rules
+
+| Query shape | Selected execution path | Why |
+|---|---|---|
+| range metric family with parser stages (`unpack_*`, `extract*`) | proxy-side compatibility evaluation | preserves Loki parser-derived labelsets and unwrap semantics |
+| `rate_counter(... \| unwrap ...)` | proxy-side compatibility evaluation | keeps counter-reset handling and behavior stable regardless of backend parser support |
+| range metric family without parser stages | direct `stats_query_range` | fastest path when backend semantics match Loki expectations |
+| instant metric family without parser stages | direct `stats_query` | keeps instant-path behavior aligned with existing VL fast path |
+
+#### Compatibility Guarantees For This Path
+
+- parser labels produced in the query pipeline remain visible in resulting series labels
+- unwrap-required functions fail with Loki-style `invalid aggregation <func> without unwrap` errors when unwrap is omitted
+- manual compatibility execution is scoped to affected metric families and does not replace direct backend stats execution globally
 
 ### Formatting and Normalization
 
@@ -128,6 +155,7 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 | `line_format` / `label_format` templates | Go-template based compatibility formatting in response pipeline |
 | `decolorize` | ANSI escape sequence stripping |
 | `unwrap duration()/bytes()` helpers | Unit-aware unwrap compatibility logic before aggregation |
+| Missing unwrap on unwrap-required functions | Proxy returns Loki-style `invalid aggregation <func> without unwrap` error |
 | `bool` modifier on comparisons | Compatibility normalization to Loki-style boolean vector output |
 | `without()` grouping | Compatibility label projection after backend aggregation |
 | `on()` / `ignoring()` / `group_left()` / `group_right()` | Loki-style vector matching and join cardinality handling in proxy evaluation |

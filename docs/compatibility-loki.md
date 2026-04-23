@@ -44,6 +44,8 @@ The Loki matrix is a moving window. When a new Loki minor becomes current, the m
 - `detected_level` grouped metric queries used by Grafana log volume panels
 - OTel dotted and underscore label parity through the underscore proxy
 - Series and label-value parity for labels synthesized by the proxy
+- parser-stage range metrics where labelset parity must match Loki under compatibility execution
+- `rate_counter(... | unwrap ...)` reset-aware semantics and error-class parity
 
 ## Query Families In The Loki Semantics Matrix
 
@@ -120,6 +122,8 @@ The required matrix is intentionally not limited to happy-path selectors. It now
 - `pattern` parser extraction semantics
 - set-style binary operators such as `or` and `unless`
 - `bool` comparison semantics on metric expressions
+- parser-stage metric compatibility path selection for `query` and `query_range` when backend stats semantics diverge
+- `rate_counter` parity for parser and non-parser query forms
 - metric aggregations that do not group by service labels must not receive synthetic `service_name="unknown_service"` in query/query_range responses
 - invalid log/metric shape rejections that must fail with the same class of error as Loki
 
