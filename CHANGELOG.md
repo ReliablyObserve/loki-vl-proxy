@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix(e2e): add `_msg` field to all JSON-format log generators so VictoriaLogs stores the human-readable message correctly and Grafana renders JSON service logs consistently with Loki.
 
+### Observability
+
+- dashboard/ops: regroup the packaged metrics dashboard into explicit SLO/SLI health, client→proxy→VL operational, and deep proxy internals sections for faster incident triage and tuning.
+
+### Documentation
+
+- docs: comprehensive README rewrite focused on production-readiness, cost comparison, quick setup, and strongest capabilities.
+- docs/ops: document the new dashboard structure and triage flow in observability and operations guides.
+
 ## [1.17.1] - 2026-04-25
 
 ### Fixed
