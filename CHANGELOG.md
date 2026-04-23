@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.3] - 2026-04-23
+
 ### Bug Fixes
 
 - metrics/compat: harden range-function compatibility by requiring explicit `| unwrap <field>` for unwrap-dependent range functions, resolve Grafana range template selectors (`$__auto`, `$__interval`, `$__rate_interval`, `$__range*`) before compatibility handling, and reject unsupported bare metric range queries early instead of silently falling through.
