@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-04-23
+
 ### Bug Fixes
 
 - metrics/query-range-compat: route parser-stage metric queries (translated `unpack_*` / `extract*`) through proxy-side range evaluation for `query` and `query_range`, preserving parser label cardinality and unwrap semantics when direct `stats_query(_range)` behavior diverges from Loki.
