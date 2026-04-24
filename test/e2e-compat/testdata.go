@@ -130,6 +130,50 @@ func ingestRichTestData(t *testing.T) {
 		},
 	})
 
+	// ── Duration/bytes logs (for unwrap duration() / unwrap bytes() tests) ──
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "duration-bytes-test", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		Lines: []string{
+			`{"endpoint":"/api/users","response_time":"15ms","body_size":"1024B","status":200}`,
+			`{"endpoint":"/api/orders","response_time":"142ms","body_size":"2048B","status":201}`,
+			`{"endpoint":"/api/products","response_time":"8ms","body_size":"512B","status":200}`,
+			`{"endpoint":"/api/payments","response_time":"5023ms","body_size":"256B","status":500}`,
+		},
+	})
+
+	// ── Pattern-matchable logs (for |> / !> pattern match line filter tests) ──
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "pattern-filter-test", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		Lines: []string{
+			`user=alice action=login ip=10.0.1.1 result=success`,
+			`user=bob action=purchase ip=10.0.1.2 result=success`,
+			`user=charlie action=login ip=10.0.1.3 result=failure`,
+			`user=alice action=logout ip=10.0.1.1 result=success`,
+			`user=bob action=login ip=10.0.1.4 result=success`,
+			`user=charlie action=purchase ip=10.0.1.3 result=success`,
+		},
+	})
+
+	// ── Unpack parser test logs (standard JSON, unpack is equivalent to json for non-packed lines) ──
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "unpack-test", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		Lines: []string{
+			`{"method":"GET","path":"/api/v1/items","status":200,"latency_ms":12}`,
+			`{"method":"POST","path":"/api/v1/items","status":201,"latency_ms":45}`,
+			`{"method":"DELETE","path":"/api/v1/items/7","status":404,"latency_ms":3}`,
+			`{"method":"PUT","path":"/api/v1/items/1","status":200,"latency_ms":18}`,
+		},
+	})
+
 	time.Sleep(5 * time.Second) // VL needs time to index, especially in CI
 	t.Log("Rich test data ingested successfully")
 }

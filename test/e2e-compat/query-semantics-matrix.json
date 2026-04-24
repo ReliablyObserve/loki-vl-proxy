@@ -591,6 +591,72 @@
       "endpoint": "query",
       "query": "{app=\"api-gateway\"} / 2",
       "expectation": "client_error"
+    },
+
+    {
+      "id": "offset_rate_range",
+      "family": "offset",
+      "endpoint": "query_range",
+      "query": "rate({app=\"api-gateway\"}[5m] offset 1h)",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": false
+    },
+    {
+      "id": "offset_count_over_time_range",
+      "family": "offset",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"api-gateway\"}[5m] offset 30m)",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": false
+    },
+    {
+      "id": "unpack_parser_filter",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "{app=\"api-gateway\"} | unpack | method=\"GET\"",
+      "expectation": "success",
+      "expect_result_type": "streams",
+      "compare": "line_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "unpack_metric_count",
+      "family": "parser_pipeline",
+      "endpoint": "query_range",
+      "query": "count_over_time({app=\"api-gateway\"} | unpack [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": true
+    },
+    {
+      "id": "unwrap_duration_modifier",
+      "family": "metric_aggregation",
+      "endpoint": "query_range",
+      "query": "avg_over_time({app=\"api-gateway\"} | json | unwrap duration(duration_ms) [5m])",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": false
+    },
+    {
+      "id": "label_replace_basic",
+      "family": "label_function",
+      "endpoint": "query_range",
+      "query": "label_replace(rate({app=\"api-gateway\"}[5m]), \"app_short\", \"$1\", \"app\", \"(.*)-.*\")",
+      "step": "60",
+      "expectation": "success",
+      "expect_result_type": "matrix",
+      "compare": "series_count",
+      "require_non_empty": false
     }
   ]
 }

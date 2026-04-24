@@ -27,6 +27,8 @@ operational caveats that still matter in the current codebase.
 | Multi-tenant Drilldown aggregation | Some Drilldown-oriented field and label surfaces still use approximate merged cardinality across tenants. Query fanout works, but merged browse surfaces are not perfect set-theory replicas of native Loki multitenancy. |
 | Wildcard tenant shorthand | `X-Scope-OrgID: *` is a proxy convenience for global/default routing. It is not a Loki-compatible all-tenants shorthand. |
 | Patterns surface | `/loki/api/v1/patterns` is optional (`-patterns-enabled`) and responses are clamped to `1000` patterns per request. |
+| `offset` directive | Silently stripped from queries; results do not reflect time shifting. Implementation requires parsing offset value and adjusting start/end parameters before backend dispatch. |
+| `label_replace()` function | Not implemented in the translator or proxy. Queries using `label_replace` will fail with a translation error. |
 
 ## Translation and Performance Caveats
 

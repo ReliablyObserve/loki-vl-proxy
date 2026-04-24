@@ -40,6 +40,7 @@ npx playwright test --grep @explore-core
 npx playwright test --grep @explore-tail
 npx playwright test --grep @drilldown-core
 npx playwright test --grep @drilldown-mt
+npx playwright test --grep @explore-ops
 
 # macOS fallback: run the same UI tests inside Linux Playwright
 docker run --rm \
@@ -180,6 +181,8 @@ Recent PRs added targeted guards in areas that were previously flaky in live Gra
 | `test/e2e-compat/grafana_surface_test.go` | Grafana datasource catalog, datasource health, proxy bootstrap/control-plane surface |
 | `test/e2e-compat/features_test.go` | Live Grafana-facing edge cases including multi-tenant `__tenant_id__`, long-lived tail sessions, and Drilldown level-filter regressions |
 | `test/e2e-ui/tests/url-state.spec.ts` | Pure URL/state builder tests for Explore and Logs Drilldown reloadable state |
+| `test/e2e-compat/missing_ops_compat_test.go` | offset, unpack, `\|>` pattern match, unwrap duration/bytes, label_replace parity |
+| `test/e2e-ui/tests/explore-operations.spec.ts` | Explore Loki operations browser smoke (12 tests) |
 | `test/e2e-ui/` | Playwright browser smoke tests for datasource UI, Explore, and Logs Drilldown with console/request guardrails |
 
 ## Playwright UI Matrix
@@ -229,6 +232,7 @@ CI prefers the runner's existing Chrome/Chromium binary for these shards and fal
 | `explore-tail` | `npx playwright test --grep @explore-tail` | browser-only multi-tenant (`__tenant_id__` exact and negative regex) plus live-tail recovery |
 | `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke and single-tenant Logs Drilldown smoke |
 | `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | multi-tenant Logs Drilldown landing/service/fields plus URL filter-reload persistence |
+| `explore-ops` | `npx playwright test --grep @explore-ops` | Loki operations parity: parsers (json, logfmt), formatting (line_format, label_format, keep/drop), metric queries (count_over_time, rate, unwrap), line filters (regex, negative), aggregations (topk) |
 
 ## E2E Compatibility Matrix
 
@@ -239,7 +243,7 @@ The repo now keeps two different matrix files in `test/e2e-compat`:
 
 They solve different problems and should evolve independently.
 
-The Docker-backed `test/e2e-compat` suite now runs as four functional PR shards instead of one monolithic job. Each shard builds the stack, waits on explicit HTTP readiness checks, and runs only its own test family.
+The Docker-backed `test/e2e-compat` suite now runs as five functional PR shards instead of one monolithic job. Each shard builds the stack, waits on explicit HTTP readiness checks, and runs only its own test family.
 
 | Shard | Primary scope |
 |---|---|
@@ -247,6 +251,7 @@ The Docker-backed `test/e2e-compat` suite now runs as four functional PR shards 
 | `e2e-compat (drilldown)` | Drilldown contracts, Drilldown runtime-family checks, track-score summaries |
 | `e2e-compat (otel-edge)` | OTel label translation, complex queries, edge-case payloads and parser behavior |
 | `e2e-compat (tail-multitenancy)` | multi-tenant behavior, tail transport semantics, response/security edge checks |
+| `e2e-compat (semantics)` | query semantics matrix, operations matrix, range metric compat, clickout parity, missing ops |
 
 Stack startup now uses [`wait_e2e_stack.sh`](../scripts/ci/wait_e2e_stack.sh) instead of `docker compose --wait` or fixed sleeps. That avoids false failures from services without Docker healthchecks and lets UI and compat jobs share the same readiness logic.
 

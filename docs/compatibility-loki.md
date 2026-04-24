@@ -126,6 +126,11 @@ The required matrix is intentionally not limited to happy-path selectors. It now
 - `rate_counter` parity for parser and non-parser query forms
 - metric aggregations that do not group by service labels must not receive synthetic `service_name="unknown_service"` in query/query_range responses
 - invalid log/metric shape rejections that must fail with the same class of error as Loki
+- `offset` modifier -- time-shifting parity (proxy gap: silently ignored, tracked as known issue)
+- `unpack` parser -- translates to `unpack_json`, e2e parity tested
+- `unwrap duration()` / `unwrap bytes()` conversion modifiers -- proxy-side conversion parity
+- `label_replace()` -- proxy gap: not yet implemented, tracked as known issue
+- `|>` / `!>` pattern match line filter -- Loki 3.7+ support, parity tested
 
 When a new LogQL family is implemented or fixed in the proxy, the expectation is to add:
 

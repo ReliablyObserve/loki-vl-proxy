@@ -4,9 +4,9 @@
 
 | Loki Endpoint | Status | VL Backend | Cached | Tests |
 |---|---|---|---|---|
-| `GET/POST /loki/api/v1/query_range` (logs) | Implemented | `/select/logsql/query` | 10s | 6 |
-| `GET/POST /loki/api/v1/query_range` (metrics) | Implemented | `/select/logsql/stats_query_range` | 10s | 1 |
-| `GET/POST /loki/api/v1/query` | Implemented | `/select/logsql/query` or `stats_query` | 10s | 1 |
+| `GET/POST /loki/api/v1/query_range` (logs) | Implemented | `/select/logsql/query` | 10s | 6+ (1) |
+| `GET/POST /loki/api/v1/query_range` (metrics) | Implemented | `/select/logsql/stats_query_range` | 10s | 1+ (1) |
+| `GET/POST /loki/api/v1/query` | Implemented | `/select/logsql/query` or `stats_query` | 10s | 1+ (1) |
 | `GET /loki/api/v1/labels` | Implemented | `/select/logsql/stream_field_names` with fallback to `/select/logsql/field_names` | 60s | 3 |
 | `GET /loki/api/v1/label/{name}/values` | Implemented | `/select/logsql/stream_field_values` with fallback to `/select/logsql/field_values` | 60s | 3 |
 | `GET /loki/api/v1/series` | Implemented | `/select/logsql/streams` | 30s | 2 |
@@ -19,6 +19,8 @@
 | `GET /loki/api/v1/patterns` | Implemented (toggleable) | `/select/logsql/query` + Drain-like token clustering | `100y` (effectively persistent) | 4 |
 | `GET /loki/api/v1/format_query` | Implemented | - (passthrough) | - | 1 |
 | `WS /loki/api/v1/tail` | Implemented | `/select/logsql/tail` (WebSocket->NDJSON) | - | 2 |
+
+**(1)** Test counts shown are baseline per-endpoint counts. Additional coverage from `missing_ops_compat_test.go` adds cross-cutting e2e compatibility tests for `unpack`, `unwrap duration()/bytes()`, `offset`, `label_replace()`, and pattern match line filters across query and query_range endpoints.
 
 ### Drilldown Field Shaping
 

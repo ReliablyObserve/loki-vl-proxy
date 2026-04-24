@@ -472,6 +472,8 @@ jobs:
             pattern: '^(TestSetup_IngestEdgeCaseData|TestSetup_IngestRichData|TestOTel.*|TestStructuredMetadata_.*|TestQueryDirection_UnderscoreProxy|TestDetectedFields_UnderscoreProxy|TestSeries_UnderscoreProxy|TestMixedLabels_UnderscoreProxy|TestLokiVsProxy_LabelParity|TestGrafanaDrilldown_UnderscoreProxy|TestLabelDeduplication|TestLabelTranslation_EdgeCases|TestOTelCompatibilityScore|TestEdge_.*|TestComplex_.*)$'
           - name: tail-multitenancy
             pattern: '^(TestSetup_IngestLogs|TestFeature_Multitenancy_.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_Tail_.*|TestFeature_QueryAnalytics_Endpoint|TestFeature_SecurityHeaders|TestFeature_MetricsEndpoint|TestFeature_GzipCompression|TestFeature_NoGzipWithoutAccept|TestFeature_DerivedFields_TraceIDInJSON|TestFeature_ResponseStructureConsistency|TestFeature_QueryRange_vs_Query_Consistency|TestFeature_InstantVectorExpression_Compatibility|TestEdge_ConcurrentIdenticalQueries|TestEdge_LongQueryString|TestEdge_CombinedFilterTypes|TestEdge_EmptyResults|TestEdge_RapidSequentialQueries|TestEdge_InstantQuery)$'
+          - name: semantics
+            pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrixManifest|TestQuerySemanticsOperationsInventory|TestQuerySemanticsMatrix|TestOperationsMatrix_.*|TestRangeMetricCompatibilityMatrix|TestRangeMetricCompatibilityMissingUnwrapErrors|TestGrafanaClickout_.*|TestMissingOps_.*)$'
     name: e2e-compat (${{ matrix.group.name }})
     steps:
       - uses: actions/checkout@v4
@@ -600,6 +602,8 @@ jobs:
             command: --grep @drilldown-core
           - name: drilldown-multitenant
             command: --grep @drilldown-mt
+          - name: explore-ops
+            command: --grep @explore-ops
     name: e2e-ui (${{ matrix.shard.name }})
     steps:
       - uses: actions/checkout@v4

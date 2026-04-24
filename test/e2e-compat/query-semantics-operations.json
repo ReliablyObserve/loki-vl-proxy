@@ -141,6 +141,26 @@
       "name": "invalid_syntax",
       "category": "invalid",
       "cases": ["invalid_malformed_selector", "invalid_parser_tail"]
+    },
+    {
+      "name": "offset_modifier",
+      "category": "metric_function",
+      "cases": ["offset_rate_range", "offset_count_over_time_range"]
+    },
+    {
+      "name": "parser_unpack",
+      "category": "parser",
+      "cases": ["unpack_parser_filter", "unpack_metric_count"]
+    },
+    {
+      "name": "metric_unwrap_conversion",
+      "category": "metric_function",
+      "cases": ["unwrap_duration_modifier"]
+    },
+    {
+      "name": "label_replace_function",
+      "category": "label_function",
+      "cases": ["label_replace_basic"]
     }
   ]
 }

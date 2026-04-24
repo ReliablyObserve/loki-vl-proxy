@@ -31,6 +31,7 @@ All stream matchers are converted to field filters (not VL `{...}` stream select
 | `\| logfmt` | `\| unpack_logfmt` |
 | `\| pattern "<ip> ..."` | `\| extract "<ip> ..."` |
 | `\| regexp "..."` | `\| extract_regexp "..."` |
+| `\|> "pattern"` | Pattern match line filter (Loki 3.7+) |
 
 ## Label Filters
 
@@ -118,10 +119,11 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 
 | LogQL feature | Proxy behavior |
 |---|---|
-| `offset` modifier | Normalized in translation; query time bounds handled by the proxy request path |
+| `offset 1h` on range vectors | NOT YET IMPLEMENTED -- time-window shifting gap; offset is silently stripped |
 | `@ <timestamp>` modifier | Normalized/stripped in translation for VictoriaLogs backend requests |
 | Subquery `rate(...)[1h:5m]` | Proxy runs inner query across sub-steps and applies outer aggregation |
 | Range-vector metric windows (`*_over_time`, `rate`, `count_over_time`, `bytes_*`, `rate_counter`) | Proxy applies Loki-compatible sliding-window evaluation over step-aligned timestamps and emits matrix/vector responses |
+| `label_replace(expr, dst, repl, src, regex)` | NOT YET IMPLEMENTED -- queries using `label_replace` will fail with a translation error |
 
 ### Parser-Stage Metric Compatibility Path
 
@@ -154,7 +156,8 @@ For non-parser metric queries, the default path remains single-shot `stats_query
 |---|---|
 | `line_format` / `label_format` templates | Go-template based compatibility formatting in response pipeline |
 | `decolorize` | ANSI escape sequence stripping |
-| `unwrap duration()/bytes()` helpers | Unit-aware unwrap compatibility logic before aggregation |
+| `\| unwrap duration(field)` | Unwrap with duration string conversion (proxy-side) |
+| `\| unwrap bytes(field)` | Unwrap with byte size conversion (proxy-side) |
 | Missing unwrap on unwrap-required functions | Proxy returns Loki-style `invalid aggregation <func> without unwrap` error |
 | `bool` modifier on comparisons | Compatibility normalization to Loki-style boolean vector output |
 | `without()` grouping | Compatibility label projection after backend aggregation |
