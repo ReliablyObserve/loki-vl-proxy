@@ -12,8 +12,8 @@ func TestShouldFilterTranslatedLabel_VLInternal(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		label     string
+		name       string
+		label      string
 		wantFilter bool
 	}{
 		// VL internal fields SHOULD be filtered
@@ -51,11 +51,11 @@ func TestShouldFilterTranslatedLabel_VLInternal(t *testing.T) {
 // filtered, even if they look like VL internal fields.
 func TestShouldFilterTranslatedLabel_DeclaredFields(t *testing.T) {
 	tests := []struct {
-		name              string
-		declaredFields    []string
-		label             string
-		wantFilter        bool
-		description       string
+		name           string
+		declaredFields []string
+		label          string
+		wantFilter     bool
+		description    string
 	}{
 		{
 			name:           "declared_exact_match",
