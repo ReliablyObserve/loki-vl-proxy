@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-04-24
+
 ### Tests
 
 - e2e/missing-ops: add dual-write parity tests for `offset`, `unpack`, `|>`/`!>` pattern match, `unwrap duration()`/`bytes()`, and `label_replace()` comparing Loki vs proxy responses.
