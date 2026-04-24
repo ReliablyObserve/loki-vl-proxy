@@ -12207,7 +12207,8 @@ func (p *Proxy) shouldFilterTranslatedLabel(name string) bool {
 			return false
 		}
 		// Also check dot-to-underscore conversion (in case config has dots)
-		if strings.ReplaceAll(declared, ".", "_") == name {
+		// Only convert if declared field contains dots (optimization)
+		if strings.Contains(declared, ".") && strings.ReplaceAll(declared, ".", "_") == name {
 			return false
 		}
 	}
