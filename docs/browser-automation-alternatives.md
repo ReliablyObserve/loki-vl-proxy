@@ -146,12 +146,12 @@ If and when Obscura reaches v1.0+:
 ### Performance Baseline
 - **File**: `test/e2e-ui/tests/performance-baseline.spec.ts`
 - **Metrics Tracked**:
-  - Explore page load time (target: <3s)
-  - Simple query response (target: <5s)
-  - JSON parsed logs query (target: <5s)
-  - Log entry expansion (target: <500ms)
-  - Label selector load (target: <1s)
-  - Rapid filter changes (target: <5s)
+  - Explore page load time (target: &lt;3s)
+  - Simple query response (target: &lt;5s)
+  - JSON parsed logs query (target: &lt;5s)
+  - Log entry expansion (target: &lt;500ms)
+  - Label selector load (target: &lt;1s)
+  - Rapid filter changes (target: &lt;5s)
 
 ---
 

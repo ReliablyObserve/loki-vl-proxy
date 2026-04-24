@@ -92,12 +92,12 @@ UI Interaction Time (avg): 180ms
 
 | Metric | Target | Why Important |
 |--------|--------|---------------|
-| Page load time | <3000ms | Affects user perception of responsiveness |
-| Simple query response | <5000ms | Basic metric queries should be fast |
-| JSON parsed logs query | <5000ms | Parsed logs are common queries |
-| Log entry expansion | <500ms | UI responsiveness for interactions |
-| Label selector load | <1000ms | Label filtering must be snappy |
-| Rapid filter changes | <5000ms | Debouncing should handle quick changes |
+| Page load time | &lt;3000ms | Affects user perception of responsiveness |
+| Simple query response | &lt;5000ms | Basic metric queries should be fast |
+| JSON parsed logs query | &lt;5000ms | Parsed logs are common queries |
+| Log entry expansion | &lt;500ms | UI responsiveness for interactions |
+| Label selector load | &lt;1000ms | Label filtering must be snappy |
+| Rapid filter changes | &lt;5000ms | Debouncing should handle quick changes |
 
 #### Running Performance Baseline
 
