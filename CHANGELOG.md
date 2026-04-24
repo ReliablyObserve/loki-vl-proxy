@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- e2e/ui-comprehensive: add 30+ comprehensive Playwright tests covering all Loki Explorer UI interactions (page load, query editor, field explorer, filters, time range picker, drilldown integration, edge cases).
+- e2e/ui-performance: add performance baseline tests measuring page load (<3s), query response (<5s), UI interactions (<500ms), label selector (<1s), and rapid filter changes (<5s).
+- e2e/browser-automation: research and document browser automation alternatives, evaluating Obscura (v0.1.0 early-stage) vs Playwright (production-ready).
+
+### Documentation
+
+- docs: create standalone `performance-testing-guide.md` with comprehensive guide for running, interpreting, and tracking performance tests locally and in CI.
+- docs: create `browser-automation-alternatives.md` evaluating Obscura (Rust headless browser) as potential future Playwright replacement.
+- docs: update `testing.md` with performance testing section, CI shard documentation, and new test file inventory.
+
+## [1.14.0] - 2026-04-24
+
+### Tests
+
 - e2e/missing-ops: add dual-write parity tests for `offset`, `unpack`, `|>`/`!>` pattern match, `unwrap duration()`/`bytes()`, and `label_replace()` comparing Loki vs proxy responses.
 - e2e/playwright: add 12 Explore operations browser tests (parsers, formatters, metric queries, line filters, aggregations) in new `explore-ops` CI shard.
 - e2e/ci: add 5th e2e-compat group (`semantics`) running query semantics matrix, operations matrix, range metric compat, and clickout parity on every PR.
