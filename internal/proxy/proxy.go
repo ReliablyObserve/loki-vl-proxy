@@ -12195,8 +12195,26 @@ func (p *Proxy) shouldFilterLabelField(name string) bool {
 
 // shouldFilterTranslatedLabel filters labels AFTER translation (dots → underscores).
 // This checks underscore-prefixed OTel semantic convention labels.
+// Edge cases:
+// - Custom fields starting with OTel prefixes are NOT filtered (they're user-defined)
+// - Declared fields are ALWAYS preserved, even if they match OTel prefixes
+// - Both dot and underscore versions of declared fields are supported
 func (p *Proxy) shouldFilterTranslatedLabel(name string) bool {
+	// Check if this field was explicitly declared by the operator
+	// Support both underscore and dot versions of the name
+	for _, declared := range p.declaredLabelFields {
+		if declared == name {
+			return false
+		}
+		// Also check dot-to-underscore conversion (in case config has dots)
+		if strings.ReplaceAll(declared, ".", "_") == name {
+			return false
+		}
+	}
+
 	// OTel semantic convention prefixes (after translation: dots become underscores)
+	// Only filter if it's a KNOWN OTel namespace, not a custom field that happens
+	// to start with an OTel-like prefix
 	otelPrefixes := [...]string{
 		"cloud_", "container_", "k8s_", "telemetry_",
 		"process_", "host_", "service_", "net_", "os_",
@@ -12206,12 +12224,6 @@ func (p *Proxy) shouldFilterTranslatedLabel(name string) bool {
 	}
 	for _, prefix := range otelPrefixes {
 		if strings.HasPrefix(name, prefix) {
-			// Do not filter if operator explicitly declared this as a label surface
-			for _, declared := range p.declaredLabelFields {
-				if declared == name {
-					return false
-				}
-			}
 			return true
 		}
 	}
