@@ -81,6 +81,24 @@ def extract_unreleased_section(text: str) -> str:
     return match.group("body").strip()
 
 
+def extract_bullet_points(text: str) -> set[str]:
+    """Return every bullet-point line from a changelog block (normalised)."""
+    return {line.strip() for line in text.splitlines() if line.strip().startswith("- ")}
+
+
+def has_genuinely_new_unreleased_entries(head_unreleased: str, base_full_changelog: str) -> bool:
+    """True only if [Unreleased] on HEAD has bullets absent from every section of BASE.
+
+    Guards against stale feature branches whose [Unreleased] section still
+    carries entries that were already released on main (e.g. moved to [1.15.0]).
+    Comparing file-states at base vs head would pass in that case because the
+    files differ, even though no new entry was added in this PR.
+    """
+    base_all_bullets = extract_bullet_points(base_full_changelog)
+    head_new_bullets = extract_bullet_points(head_unreleased) - base_all_bullets
+    return bool(head_new_bullets)
+
+
 def has_meaningful_changelog_content(section: str) -> bool:
     if not section.strip():
         return False
@@ -195,9 +213,10 @@ def main() -> int:
         )
         return 1
 
-    if head_unreleased.strip() == base_unreleased.strip():
+    if not has_genuinely_new_unreleased_entries(head_unreleased, base_text):
         print(
-            "changelog gate: Unreleased section was not updated in this PR",
+            "changelog gate: Unreleased section must contain entries not already present in a released version "
+            "(stale feature branch entries carried over from before a release do not count)",
             file=sys.stderr,
         )
         return 1

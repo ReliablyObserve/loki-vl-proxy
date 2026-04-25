@@ -2,6 +2,7 @@ import unittest
 
 from scripts.ci.check_changelog_pr import (
     extract_unreleased_section,
+    has_genuinely_new_unreleased_entries,
     has_meaningful_changelog_content,
     is_release_metadata_sync,
     should_require_changelog,
@@ -63,6 +64,39 @@ class CheckChangelogPRTests(unittest.TestCase):
                 ],
             )
         )
+
+    def test_has_genuinely_new_unreleased_entries_detects_new(self):
+        base_changelog = "## [1.0.0]\n\n- fix: old bug\n"
+        head_unreleased = "- fix: brand new fix\n"
+        self.assertTrue(has_genuinely_new_unreleased_entries(head_unreleased, base_changelog))
+
+    def test_has_genuinely_new_unreleased_entries_rejects_stale_branch(self):
+        # Simulates a feature branch that still has entries from before the last release.
+        # Those same bullets now appear in [1.15.0] on main — must NOT count as new.
+        base_changelog = (
+            "## [Unreleased]\n\n"
+            "## [1.15.0] - 2026-04-25\n\n"
+            "- feat(otel): hierarchical OTel detection\n"
+            "- fix(otel): service_name suppression\n"
+        )
+        head_unreleased = (
+            "### Added\n\n"
+            "- feat(otel): hierarchical OTel detection\n"
+            "- fix(otel): service_name suppression\n"
+        )
+        self.assertFalse(has_genuinely_new_unreleased_entries(head_unreleased, base_changelog))
+
+    def test_has_genuinely_new_unreleased_entries_mixed(self):
+        # One stale entry + one genuinely new one → should pass.
+        base_changelog = (
+            "## [1.15.0] - 2026-04-25\n\n"
+            "- feat(otel): old feature\n"
+        )
+        head_unreleased = (
+            "- feat(otel): old feature\n"
+            "- fix: new fix added in this PR\n"
+        )
+        self.assertTrue(has_genuinely_new_unreleased_entries(head_unreleased, base_changelog))
 
     def test_release_metadata_sync_detection(self):
         self.assertTrue(

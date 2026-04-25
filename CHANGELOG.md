@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(detected_fields): infer `int`/`float` types for logfmt string values so Grafana's unwrap field selector correctly lists numeric fields.
+- fix(detected_fields): strip bare `| unwrap` (without field name) from field detection queries, preventing VictoriaLogs parse errors when Grafana sends an incomplete query to the `detected_fields` endpoint.
+- fix(compat): `| json | status >= 400` no longer incorrectly rejected as a binary op on a log query by the LogQL syntax validator.
+
 ## [1.16.0] - 2026-04-25
 
 ### Added
