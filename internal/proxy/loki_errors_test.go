@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -47,30 +48,21 @@ func TestLokiError_ResponseFormat(t *testing.T) {
 	c := cache.New(60*time.Second, 10000)
 	p, _ := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
 
-	// Send a request with a query that has an unmatched brace — triggers bad_data error
+	// Send a request with a query that has an unmatched brace — triggers parse error
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={unclosed&start=1&end=2&step=1`, nil)
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 	mux.ServeHTTP(w, r)
 
-	var resp struct {
-		Status    string `json:"status"`
-		ErrorType string `json:"errorType"`
-		Error     string `json:"error"`
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to parse error response: %v\nbody: %s", err, w.Body.String())
-	}
-
-	if resp.Status != "error" {
-		t.Errorf("expected status=error, got %q", resp.Status)
-	}
-	if resp.ErrorType != "bad_data" {
-		t.Errorf("expected errorType=bad_data, got %q", resp.ErrorType)
-	}
-	if resp.Error == "" {
-		t.Error("error message should not be empty")
+	body := w.Body.String()
+	// Loki returns plain text "parse error ..." for syntax errors.
+	// Accept either plain text parse error or JSON error response.
+	if !strings.Contains(body, "parse error") && !strings.Contains(body, "bad_data") {
+		t.Errorf("expected parse error or bad_data in response, got %q", body)
 	}
 }
 
@@ -110,11 +102,17 @@ func TestLokiError_BadQuery_ReturnsBadData(t *testing.T) {
 	p.RegisterRoutes(mux)
 	mux.ServeHTTP(w, r)
 
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("bad query should return 400, got %d", w.Code)
+	}
+	body := w.Body.String()
+	// Loki returns plain text parse errors for syntax issues.
+	// Accept either plain text "parse error" or JSON errorType=bad_data.
 	var resp struct {
 		ErrorType string `json:"errorType"`
 	}
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.ErrorType != "bad_data" {
-		t.Errorf("bad query should return errorType=bad_data, got %q", resp.ErrorType)
+	if resp.ErrorType != "bad_data" && !strings.Contains(body, "parse error") {
+		t.Errorf("bad query should return errorType=bad_data or parse error, got %q", body)
 	}
 }

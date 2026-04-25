@@ -12007,7 +12007,123 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
+	if err := validateLogQLSyntax(query); err != "" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, err)
+		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
+		return "", false
+	}
 	return query, true
+}
+
+// validateLogQLSyntax performs lightweight LogQL syntax validation to catch
+// queries that Loki would reject with a parse error. Returns the error message
+// (matching Loki's format) or empty string if valid.
+//
+// This catches:
+// - Empty queries
+// - Queries without a stream selector (e.g., "| json")
+// - Malformed stream selectors (e.g., "{app=}")
+// - Binary operations on log/pipeline expressions (e.g., "{app=...} == 2")
+func validateLogQLSyntax(query string) string {
+	query = strings.TrimSpace(query)
+
+	// Empty query
+	if query == "" {
+		return "parse error : syntax error: unexpected $end"
+	}
+
+	// No stream selector — starts with pipeline
+	if strings.HasPrefix(query, "|") {
+		return "parse error at line 1, col 1: syntax error: unexpected |"
+	}
+
+	// Malformed selector: unclosed or empty values
+	if strings.HasPrefix(query, "{") {
+		braceDepth := 0
+		selectorEnd := -1
+		for i, ch := range query {
+			if ch == '{' {
+				braceDepth++
+			} else if ch == '}' {
+				braceDepth--
+				if braceDepth == 0 {
+					selectorEnd = i
+					break
+				}
+			}
+		}
+		if selectorEnd < 0 {
+			return "parse error at line 1, col 1: syntax error: unexpected end of input"
+		}
+		selector := query[:selectorEnd+1]
+		// Check for empty values like {app=} or {app= }
+		if emptyValueRe.MatchString(selector) {
+			return "parse error at line 1, col " + strconv.Itoa(strings.Index(selector, "=}")+2) + ": syntax error: unexpected }, expecting STRING"
+		}
+
+		// Check for binary operations on log queries
+		// Pattern: {selector} [| pipeline...] <binary_op> <number>
+		// This is invalid unless wrapped in a metric function
+		rest := strings.TrimSpace(query[selectorEnd+1:])
+		if isBinaryOpOnLogQuery(rest) {
+			op := extractBinaryOp(rest)
+			exprType := "*syntax.MatchersExpr"
+			if strings.Contains(rest, "|") {
+				exprType = "*syntax.PipelineExpr"
+			}
+			return "parse error : unexpected type for left leg of binary operation (" + op + "): " + exprType
+		}
+	}
+
+	return ""
+}
+
+var emptyValueRe = regexp.MustCompile(`[=!~]=?\s*[,}]`)
+
+// binaryOpOnLogRe matches a binary operator followed by a number at the end
+// of a pipeline expression (not inside a metric function).
+var binaryOpOnLogRe = regexp.MustCompile(`(?:^|\s)\s*(==|!=|<=|>=|<|>|\+|-|\*|/|%|\^)\s*\d+\s*$`)
+
+// labelFilterRe matches a standalone label filter stage: identifier <op> number.
+var labelFilterRe = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:==|!=|<=|>=|<|>)\s*\d+(\.\d+)?\s*$`)
+
+// logParserKeywords is the set of LogQL parser stage keywords that cannot be field names
+// in a label filter comparison (e.g. "| json == 2" is invalid; "| status >= 400" is valid).
+var logParserKeywords = map[string]bool{
+	"json": true, "logfmt": true, "unpack": true, "regexp": true,
+	"pattern": true, "decolorize": true,
+}
+
+func isBinaryOpOnLogQuery(rest string) bool {
+	if rest == "" {
+		return false
+	}
+	if !binaryOpOnLogRe.MatchString(rest) {
+		return false
+	}
+	// If the last pipe-separated segment is a label filter (field op number) where
+	// the field is not a parser keyword, it's a valid stage — e.g. "| json | status >= 400".
+	lastPipe := strings.LastIndex(rest, "|")
+	lastSeg := strings.TrimSpace(rest)
+	if lastPipe >= 0 {
+		lastSeg = strings.TrimSpace(rest[lastPipe+1:])
+	}
+	if m := labelFilterRe.FindStringSubmatch(lastSeg); m != nil {
+		if !logParserKeywords[m[1]] {
+			return false
+		}
+	}
+	return true
+}
+
+func extractBinaryOp(rest string) string {
+	m := binaryOpOnLogRe.FindStringSubmatch(rest)
+	if len(m) >= 2 {
+		return m[1]
+	}
+	return "?"
 }
 
 // sanitizeLimit caps and validates the limit parameter.
