@@ -123,7 +123,6 @@ def gen_api_gateway(n: int) -> list[str]:
         dur    = random.randint(1, 5000) if status >= 500 else random.randint(1, 300)
         level  = "error" if status >= 500 else ("warn" if status >= 400 else "info")
         entry  = {
-            "service_name": "api-gateway",
             "service": {"name": "api-gateway"},
             "method": method, "path": path, "status": status,
             "duration_ms": dur, "trace_id": rand_id(12),
@@ -190,7 +189,6 @@ def gen_auth_service(n: int) -> list[str]:
         method = random.choice(["password", "oauth", "sso", "api_key"])
         ok     = random.random() > 0.05
         entry  = {
-            "service_name": "auth-service",
             "service": {"name": "auth-service"},
             "event": evt, "user_id": uid, "ip": ip, "success": ok,
             "auth_method": method, "mfa": random.choice([True, False]),
@@ -383,7 +381,6 @@ def gen_frontend_ssr(n: int) -> list[str]:
         sess    = rand_id(16)
         load_ms = random.randint(50, 5000)
         entry   = {
-            "service_name": "frontend-ssr",
             "service": {"name": "frontend-ssr"},
             "event": evt, "path": path, "user_id": uid,
             "session_id": sess, "load_ms": load_ms,
@@ -420,7 +417,6 @@ def gen_batch_etl(n: int) -> list[str]:
                                   "complete", "failed"])
         dur      = round(random.uniform(0.5, 300.0), 2)
         entry    = {
-            "service_name": "batch-etl",
             "service": {"name": "batch-etl"},
             "job": job, "batch_id": batch_id, "phase": phase,
             "total": total, "processed": done, "failed": failed,
@@ -451,7 +447,6 @@ def gen_ml_serving(n: int) -> list[str]:
         batch     = random.randint(1, 64)
         ok        = random.random() > 0.02
         entry     = {
-            "service_name": "ml-serving",
             "service": {"name": "ml-serving"},
             "model": model, "request_id": req_id,
             "latency_ms": lat_ms, "confidence": conf,
