@@ -141,7 +141,7 @@ func ingestRichTestData(t *testing.T) {
 	pushStream(t, now, streamDef{
 		VLOnly: true,
 		Labels: map[string]string{
-			"app": "otel-api-service", "namespace": "prod", "env": "production",
+			"app": "otel-api-service", "namespace": "prod",
 			"cluster": "us-east-1", "level": "info",
 		},
 		Lines: []string{
