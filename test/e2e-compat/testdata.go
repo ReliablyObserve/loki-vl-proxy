@@ -105,6 +105,74 @@ func ingestRichTestData(t *testing.T) {
 		},
 	})
 
+	// ── Service: otel-auth-service (OTel with full semantic conventions) ──
+	// Mechanism: Loki push API + VL JSON with dotted label names
+	// This tests OTel data where resource attributes are set as stream labels
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"service.name":           "otel-auth-service",
+			"service.namespace":      "auth-namespace",
+			"k8s.cluster.name":       "us-east-1",
+			"k8s.namespace.name":     "prod",
+			"k8s.pod.name":           "auth-svc-xyz789",
+			"k8s.pod.uid":            "pod-uid-12345",
+			"k8s.container.name":     "auth-container",
+			"k8s.node.name":          "worker-node-1",
+			"deployment.name":        "auth-service",
+			"deployment.environment": "production",
+			"deployment.version":     "v2.1.0",
+			"host.name":              "host-auth-1",
+			"host.arch":              "amd64",
+			"telemetry.sdk.name":     "opentelemetry",
+			"telemetry.sdk.language": "go",
+			"telemetry.sdk.version":  "1.21.0",
+			"level":                  "info",
+		},
+		Lines: []string{
+			`{"client_ip":"10.0.1.1","method":"POST","path":"/auth/login","status":200,"duration_ms":45,"trace_id":"otel001trace","span_id":"otel001span","user":"alice","request_id":"req-001"}`,
+			`{"client_ip":"10.0.1.2","method":"POST","path":"/auth/verify","status":200,"duration_ms":12,"trace_id":"otel002trace","span_id":"otel002span","user":"bob","request_id":"req-002"}`,
+			`{"client_ip":"10.0.1.3","method":"POST","path":"/auth/logout","status":200,"duration_ms":8,"trace_id":"otel003trace","span_id":"otel003span","user":"charlie","request_id":"req-003"}`,
+		},
+	})
+
+	// ── Service: otel-api-service (OTel data with minimal stream labels) ──
+	// Mechanism: OTel spans with resource attributes embedded in structured JSON
+	// Tests case where OTel attributes come from message parsing, not stream labels
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "otel-api-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		Lines: []string{
+			`{"service.name":"otel-api-service","k8s.pod.name":"api-xyz123","span_id":"span-001","trace_id":"trace-001","http.method":"GET","http.status_code":200,"http.url":"/api/endpoint","duration_ms":25}`,
+			`{"service.name":"otel-api-service","k8s.pod.name":"api-xyz123","span_id":"span-002","trace_id":"trace-002","http.method":"POST","http.status_code":201,"http.url":"/api/resource","duration_ms":145}`,
+			`{"service.name":"otel-api-service","k8s.pod.name":"api-xyz123","span_id":"span-003","trace_id":"trace-003","http.method":"GET","http.status_code":404,"http.url":"/api/notfound","duration_ms":3}`,
+		},
+	})
+
+	// ── Service: otel-collector-native (OTel collector with underscore-translated labels) ──
+	// Mechanism: OTel data where semantic conventions are pre-translated to underscores
+	// Tests compatibility when OTel systems use underscore naming convention
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"service_name":           "otel-collector",
+			"service_namespace":      "observability",
+			"k8s_cluster_name":       "us-east-1",
+			"k8s_namespace_name":     "observability",
+			"k8s_pod_name":           "otel-collector-uvw456",
+			"k8s_container_name":     "otel-collector",
+			"deployment_environment": "prod",
+			"telemetry_sdk_name":     "opentelemetry",
+			"telemetry_sdk_language": "go",
+			"level":                  "info",
+		},
+		Lines: []string{
+			`{"spans_received":1337,"spans_exported":1334,"spans_dropped":3,"exporter":"otlp","backend":"victorialogs","duration_ms":42}`,
+			`{"metrics_received":5000,"metrics_exported":4998,"metrics_dropped":2,"exporter":"prometheus","backend":"victoriametrics","duration_ms":31}`,
+			`{"logs_received":2500,"logs_exported":2500,"logs_dropped":0,"exporter":"loki","backend":"loki","duration_ms":18}`,
+		},
+	})
+
 	// ── Service: with dots in labels (OTel-style) ──
 	pushStream(t, now, streamDef{
 		Labels: map[string]string{
