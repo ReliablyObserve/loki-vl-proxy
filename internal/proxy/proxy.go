@@ -12084,7 +12084,9 @@ var emptyValueRe = regexp.MustCompile(`[=!~]=?\s*[,}]`)
 
 // binaryOpOnLogRe matches a binary operator followed by a number at the end
 // of a pipeline expression (not inside a metric function).
-var binaryOpOnLogRe = regexp.MustCompile(`(?:^|\|[^|]*?)\s*(==|!=|<=|>=|<|>|\+|-|\*|/|%|\^)\s*\d+\s*$`)
+// Excludes field filter comparisons like "| json | status>=400" where the
+// operator is preceded by an identifier (field name).
+var binaryOpOnLogRe = regexp.MustCompile(`(?:^|\s)\s*(==|!=|<=|>=|<|>|\+|-|\*|/|%|\^)\s*\d+\s*$`)
 
 func isBinaryOpOnLogQuery(rest string) bool {
 	// If rest is empty or starts with nothing after pipeline, no binary op
