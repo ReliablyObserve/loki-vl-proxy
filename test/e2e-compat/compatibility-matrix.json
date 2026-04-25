@@ -112,7 +112,7 @@
           "test_regex": "^(TestDrilldownTrackScore|TestDrilldown_RuntimeFamilyContracts)$"
         },
         {
-          "version": "13.0.0",
+          "version": "13.0.1",
           "profile": "current_smoke",
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
