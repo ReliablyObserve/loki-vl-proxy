@@ -24,8 +24,7 @@ var suppressedDetectedFieldNames = map[string]struct{}{
 	"app":                    {},
 	"cluster":                {},
 	"namespace":              {},
-	"service_name":           {}, // Indexed label from stream
-	"service.name":           {}, // OTel structured metadata
+	"service_name":           {}, // Synthetic label - suppressed by detectFieldSummaries when non-OTel
 }
 
 var serviceNameSourceFields = []string{
@@ -1276,8 +1275,15 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 
 		for key, value := range entry {
 			// Skip indexed labels that should not appear as detected fields
-			if key == "app" || key == "cluster" || key == "namespace" || key == "service_name" || key == "service.name" {
+			if key == "app" || key == "cluster" || key == "namespace" {
 				continue
+			}
+			// Skip synthetic service_name (only expose service.name, which will be translated to both forms via metadataFieldExposures)
+			if key == "service_name" {
+				if _, hasRealServiceName := entry["service.name"]; !hasRealServiceName {
+					// Synthetic service_name with no real service.name - skip it
+					continue
+				}
 			}
 			if !shouldExposeStructuredField(key, streamLabels, p.labelTranslator) {
 				continue
@@ -1286,20 +1292,10 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 			if !ok {
 				continue
 			}
+			// For stream labels (structured metadata), apply label translation for OTel compatibility.
+			// This converts dotted names like "service.name" to "service_name" for Loki API compatibility.
 			for _, exposure := range p.metadataFieldExposures(key) {
 				if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
-					continue
-				}
-				// Skip service_name unless it's an alias (i.e., for OTel data where service.name is a real label)
-				if exposure.name == "service_name" && !exposure.isAlias {
-					continue
-				}
-				// Skip service.name unless it's an alias (i.e., for OTel data where service.name is a real label)
-				if exposure.name == "service.name" && !exposure.isAlias {
-					continue
-				}
-				// Also skip if the name ends up being one of the indexed labels after translation
-				if exposure.name == "app" || exposure.name == "cluster" || exposure.name == "namespace" {
 					continue
 				}
 				addDetectedField(fields, exposure.name, "", inferDetectedType(value), nil, stringValue)
@@ -1317,20 +1313,16 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 				if key == "" {
 					continue
 				}
-				for _, exposure := range p.metadataFieldExposures(key) {
-					if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
-						continue
-					}
-					// Skip service_name unless it's an alias (i.e., for OTel data where service.name is a real label)
-					if exposure.name == "service_name" && !exposure.isAlias {
-						// DEBUG
-						if p.log != nil {
-							p.log.Info("DEBUG: Skipping service_name from JSON key", "key", key, "isAlias", exposure.isAlias)
-						}
-						continue
-					}
-					addDetectedField(fields, exposure.name, "json", inferDetectedType(value), []string{key}, formatDetectedValue(value))
+				// For parsed message fields, use field name as-is without applying label translation.
+				// Label translation is only for stream labels (indexed labels), not message content fields.
+				// Skip indexed label names that should never appear in detected_fields.
+				if shouldSuppressDetectedField(key) {
+					continue
 				}
+				if _, conflict := labelNames[key]; conflict {
+					continue
+				}
+				addDetectedField(fields, key, "json", inferDetectedType(value), []string{key}, formatDetectedValue(value))
 			}
 		}
 
@@ -1342,16 +1334,16 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 				addDetectedField(fields, "detected_level", "", "string", nil, value)
 				continue
 			}
-			for _, exposure := range p.metadataFieldExposures(key) {
-				if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
-					continue
-				}
-				// Skip service_name unless it's an alias (i.e., for OTel data where service.name is a real label)
-				if exposure.name == "service_name" && !exposure.isAlias {
-					continue
-				}
-				addDetectedField(fields, exposure.name, "logfmt", inferDetectedType(value), nil, value)
+			// For parsed message fields, use field name as-is without applying label translation.
+			// Label translation is only for stream labels (indexed labels), not message content fields.
+			// Skip indexed label names that should never appear in detected_fields.
+			if shouldSuppressDetectedField(key) {
+				continue
 			}
+			if _, conflict := labelNames[key]; conflict {
+				continue
+			}
+			addDetectedField(fields, key, "logfmt", inferDetectedType(value), nil, value)
 		}
 	}
 
@@ -1474,10 +1466,6 @@ func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string
 	for _, field := range fieldNames {
 		for _, exposure := range p.metadataFieldExposures(field) {
 			if shouldSuppressDetectedField(exposure.name) {
-				continue
-			}
-			// Skip service_name and service.name unless they're aliases (for OTel data)
-			if (exposure.name == "service_name" || exposure.name == "service.name") && !exposure.isAlias {
 				continue
 			}
 			out[exposure.name] = &detectedFieldSummary{
