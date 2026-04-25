@@ -72,9 +72,37 @@ def push(payload: dict) -> bool:
         print(f"[WARN] Loki push failed: {e}", file=sys.stderr)
         return False
 
+def _inject_vl_msg(payload: dict) -> dict:
+    """Return a copy of payload with _msg set to the original JSON log line.
+
+    VictoriaLogs v1.50+ auto-parses JSON and uses _msg as the message field.
+    We set _msg = the original JSON string BEFORE adding it, so:
+    - VL stores _msg = full JSON (Grafana can prettify it)
+    - VL also indexes all other JSON fields (session_id, event, etc.) as VL fields
+    - Loki stores the outer JSON line as-is (which also contains _msg)
+    Non-JSON lines (logfmt, nginx) carry msg= or work as plain text already.
+    """
+    result = {"streams": []}
+    for s in payload["streams"]:
+        new_values = []
+        for ts, line in s["values"]:
+            if line.startswith("{"):
+                try:
+                    d = json.loads(line)
+                    if "_msg" not in d:
+                        # Keep all original fields (VL indexes them) + add _msg
+                        d["_msg"] = line
+                        line = json.dumps(d)
+                except Exception:
+                    pass
+            new_values.append([ts, line])
+        result["streams"].append({"stream": s["stream"], "values": new_values})
+    return result
+
+
 def push_vl(payload: dict) -> bool:
     """Push to VictoriaLogs (same JSON format as Loki push)."""
-    body = json.dumps(payload).encode()
+    body = json.dumps(_inject_vl_msg(payload)).encode()
     req = urllib.request.Request(
         f"{VL_URL}/insert/loki/api/v1/push",
         data=body,
@@ -124,7 +152,6 @@ def gen_api_gateway(n: int) -> list[str]:
         level  = "error" if status >= 500 else ("warn" if status >= 400 else "info")
         entry  = {
             "service": {"name": "api-gateway"},
-            "_msg": f"{method} {path} {status} {dur}ms",
             "method": method, "path": path, "status": status,
             "duration_ms": dur, "trace_id": rand_id(12),
             "user_id": rand_user(), "level": level,
@@ -191,7 +218,6 @@ def gen_auth_service(n: int) -> list[str]:
         ok     = random.random() > 0.05
         entry  = {
             "service": {"name": "auth-service"},
-            "_msg": f"auth {evt} {'ok' if ok else 'failed'}",
             "event": evt, "user_id": uid, "ip": ip, "success": ok,
             "auth_method": method, "mfa": random.choice([True, False]),
             "session_id": rand_id(16), "trace_id": rand_id(12),
@@ -384,7 +410,6 @@ def gen_frontend_ssr(n: int) -> list[str]:
         load_ms = random.randint(50, 5000)
         entry   = {
             "service": {"name": "frontend-ssr"},
-            "_msg": f"{evt} {path} {load_ms}ms",
             "event": evt, "path": path, "user_id": uid,
             "session_id": sess, "load_ms": load_ms,
             "region": random.choice(["us-east-1", "us-west-2"]),
@@ -421,7 +446,6 @@ def gen_batch_etl(n: int) -> list[str]:
         dur      = round(random.uniform(0.5, 300.0), 2)
         entry    = {
             "service": {"name": "batch-etl"},
-            "_msg": f"{job} {phase} {done}/{total} records",
             "job": job, "batch_id": batch_id, "phase": phase,
             "total": total, "processed": done, "failed": failed,
             "duration_s": dur, "throughput_rps": round(done / max(dur, 0.1), 1),
@@ -452,7 +476,6 @@ def gen_ml_serving(n: int) -> list[str]:
         ok        = random.random() > 0.02
         entry     = {
             "service": {"name": "ml-serving"},
-            "_msg": f"{model} inference {'ok' if ok else 'failed'} {lat_ms}ms",
             "model": model, "request_id": req_id,
             "latency_ms": lat_ms, "confidence": conf,
             "batch_size": batch, "success": ok,
@@ -492,26 +515,42 @@ def make_labels(app: str, namespace: str, cluster: str, level: str,
         labels.update(extra)
     return labels
 
+def _split_json_by_level(lines: list[str]) -> dict[str, list[str]]:
+    """Group JSON log lines into per-level buckets matching their content level.
+
+    Ensures the stream-label level always matches the entry's JSON level field,
+    preventing VL from returning mismatched entries when level filters are applied.
+    Lines without a parseable level default to 'info'.
+    """
+    buckets: dict[str, list[str]] = {}
+    for line in lines:
+        try:
+            lvl = json.loads(line).get("level", "info") or "info"
+        except Exception:
+            lvl = "info"
+        buckets.setdefault(lvl, []).append(line)
+    return buckets
+
+
 def services_batch(n: int) -> list[dict]:
     """Generate one batch of streams for all services."""
     streams = []
 
-    # ── api-gateway us-east-1 ──────────────────────────────────────────────
-    for level, lines in [
-        ("info",  gen_api_gateway(max(1, n * 6 // 10))),
-        ("error", gen_api_gateway(max(1, n * 2 // 10))),
-        ("warn",  gen_api_gateway(max(1, n * 2 // 10))),
-    ]:
+    # ── api-gateway us-east-1 ─────────────────────────────────────────────
+    # Generate a larger pool so each level bucket has sufficient entries,
+    # then split by actual JSON level to keep stream label ≡ content level.
+    for level, lines in _split_json_by_level(gen_api_gateway(n * 2)).items():
         streams.append(stream(make_labels(
             "api-gateway", "prod", "us-east-1", level,
             extra={"version": "v2"},
         ), lines))
 
     # ── api-gateway us-west-2 (second region — tests multi-cluster queries) ─
-    streams.append(stream(make_labels(
-        "api-gateway", "prod", "us-west-2", "info",
-        extra={"version": "v2"},
-    ), gen_api_gateway(max(1, n // 3))))
+    for level, lines in _split_json_by_level(gen_api_gateway(max(1, n // 3))).items():
+        streams.append(stream(make_labels(
+            "api-gateway", "prod", "us-west-2", level,
+            extra={"version": "v2"},
+        ), lines))
 
     # ── payment-service ───────────────────────────────────────────────────
     streams.append(stream(make_labels(
@@ -519,9 +558,10 @@ def services_batch(n: int) -> list[dict]:
     ), gen_payment_service(n)))
 
     # ── auth-service ──────────────────────────────────────────────────────
-    streams.append(stream(make_labels(
-        "auth-service", "prod", "us-east-1", "info",
-    ), gen_auth_service(n)))
+    for level, lines in _split_json_by_level(gen_auth_service(n)).items():
+        streams.append(stream(make_labels(
+            "auth-service", "prod", "us-east-1", level,
+        ), lines))
 
     # ── nginx-ingress ─────────────────────────────────────────────────────
     streams.append(stream(make_labels(
@@ -530,13 +570,9 @@ def services_batch(n: int) -> list[dict]:
     ), gen_nginx_ingress(n)))
 
     # ── worker-service ────────────────────────────────────────────────────
-    for level, subset in [
-        ("info",  gen_worker_service(max(1, n * 7 // 10))),
-        ("error", gen_worker_service(max(1, n * 3 // 10))),
-    ]:
-        streams.append(stream(make_labels(
-            "worker-service", "prod", "us-east-1", level,
-        ), subset))
+    streams.append(stream(make_labels(
+        "worker-service", "prod", "us-east-1", "info",
+    ), gen_worker_service(n)))
 
     # ── db-postgres ───────────────────────────────────────────────────────
     streams.append(stream(make_labels(
@@ -551,25 +587,29 @@ def services_batch(n: int) -> list[dict]:
     ), gen_redis(n)))
 
     # ── frontend-ssr us-east-1 ────────────────────────────────────────────
-    streams.append(stream(make_labels(
-        "frontend-ssr", "prod", "us-east-1", "info",
-    ), gen_frontend_ssr(n)))
+    for level, lines in _split_json_by_level(gen_frontend_ssr(n)).items():
+        streams.append(stream(make_labels(
+            "frontend-ssr", "prod", "us-east-1", level,
+        ), lines))
 
     # ── frontend-ssr us-west-2 ────────────────────────────────────────────
-    streams.append(stream(make_labels(
-        "frontend-ssr", "prod", "us-west-2", "info",
-    ), gen_frontend_ssr(max(1, n // 2))))
+    for level, lines in _split_json_by_level(gen_frontend_ssr(max(1, n // 2))).items():
+        streams.append(stream(make_labels(
+            "frontend-ssr", "prod", "us-west-2", level,
+        ), lines))
 
     # ── batch-etl ─────────────────────────────────────────────────────────
-    streams.append(stream(make_labels(
-        "batch-etl", "batch", "us-east-1", "info",
-    ), gen_batch_etl(max(1, n // 2))))
+    for level, lines in _split_json_by_level(gen_batch_etl(max(1, n // 2))).items():
+        streams.append(stream(make_labels(
+            "batch-etl", "batch", "us-east-1", level,
+        ), lines))
 
     # ── ml-serving ────────────────────────────────────────────────────────
-    streams.append(stream(make_labels(
-        "ml-serving", "ml", "us-east-1", "info",
-        extra={"gpu": "nvidia-a100"},
-    ), gen_ml_serving(n)))
+    for level, lines in _split_json_by_level(gen_ml_serving(n)).items():
+        streams.append(stream(make_labels(
+            "ml-serving", "ml", "us-east-1", level,
+            extra={"gpu": "nvidia-a100"},
+        ), lines))
 
     return streams
 

@@ -233,6 +233,10 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=hybrid"
       - "-emit-structured-metadata=true"
+      - "-patterns-enabled=true"
+      - "-patterns-autodetect-from-queries=true"
+      - "-patterns-persist-path=/cache/patterns-snapshot.json"
+      - "-patterns-persist-interval=5s"
     depends_on:
       victorialogs:
         condition: service_healthy

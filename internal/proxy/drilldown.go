@@ -1415,6 +1415,12 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 				if key == "" {
 					continue
 				}
+				// Skip nested objects and arrays — they are not filterable scalar fields
+				// and break Grafana Drilldown's field breakdown view (e.g. service={name:...}).
+				switch value.(type) {
+				case map[string]interface{}, []interface{}:
+					continue
+				}
 				// For parsed message fields, use field name as-is without applying label translation.
 				// Label translation is only for stream labels (indexed labels), not message content fields.
 				// Skip indexed label names that should never appear in detected_fields.

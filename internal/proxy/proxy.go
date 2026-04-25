@@ -13673,7 +13673,16 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 				}
 				serviceSignal := hasServiceSignal(syntheticLabels)
 				beforeSyntheticCount := len(syntheticLabels)
+				hadLevel := syntheticLabels["level"] != ""
 				ensureDetectedLevel(syntheticLabels)
+				// If detected_level was synthesized from level, remove the raw level label.
+				// Metric aggregations like "sum by (detected_level)" translate to VL's
+				// "sum by (level)" and back — the result should only carry detected_level,
+				// matching Loki's behavior where both labels don't coexist in metric output.
+				if hadLevel && syntheticLabels["detected_level"] != "" {
+					delete(syntheticLabels, "level")
+					delete(translated, "level")
+				}
 				ensureSyntheticServiceName(syntheticLabels)
 				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
 					delete(syntheticLabels, "service_name")

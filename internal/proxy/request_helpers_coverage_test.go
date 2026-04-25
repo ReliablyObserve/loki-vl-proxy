@@ -99,8 +99,10 @@ func TestTranslateStatsResponseLabelsWithContext_Coverage(t *testing.T) {
 	if _, ok := metric["__name__"]; ok {
 		t.Fatalf("expected __name__ to be removed, got %#v", metric)
 	}
-	if metric["level"] != "warn" {
-		t.Fatalf("expected original level to be preserved, got %#v", metric)
+	// level is removed from metric results when detected_level is synthesized from it,
+	// matching Loki's behavior where both labels don't coexist in metric output.
+	if _, ok := metric["level"]; ok {
+		t.Fatalf("expected level to be removed from metric when detected_level is present, got %#v", metric)
 	}
 	if metric["service_name"] != "api" || metric["detected_level"] != "warn" {
 		t.Fatalf("unexpected translated metric labels %#v", metric)

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(log-generator): split JSON log entries by their actual content `level` before pushing to VictoriaLogs streams, eliminating stream-label/content mismatch that caused `detected_level=error` filters to return `warn` entries.
+- fix(detected_fields): skip nested JSON objects and arrays from the body-scan detected fields list; `service={"name":"..."}` no longer appears as a filterable field, preventing Grafana Drilldown field breakdown from breaking.
+- fix(metrics): remove raw `level` label from metric aggregation results when `detected_level` is synthesized from it, so `sum by (detected_level)` returns only `{detected_level:"error"}` matching Loki's output; this unblocks the Drilldown include button for `detected_level` values.
+
 ## [1.17.0] - 2026-04-25
 
 ### Fixed

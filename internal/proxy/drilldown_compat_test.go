@@ -925,6 +925,101 @@ func TestDrilldown_DetectedFields_ParseStructuredLogsInsteadOfIndexedLabels(t *t
 	}
 }
 
+// TestDrilldown_DetectedFields_NoExtractedSuffixForJSONFields guards the compliance decision
+// that the proxy exposes raw VL field names (service.name, session_id, load_ms) rather than
+// adding Loki's _extracted suffix convention (service_name_extracted, level_extracted, etc.).
+// Loki renames JSON fields that conflict with stream labels using _extracted; the proxy does not.
+// This behavior is intentionally different and must not be changed. Stamped compliant 2026-04-25.
+func TestDrilldown_DetectedFields_NoExtractedSuffixForJSONFields(t *testing.T) {
+	// VL returns flat indexed fields plus _msg containing the original nested JSON.
+	// This mirrors what VictoriaLogs v1.50+ returns when JSON logs with nested objects
+	// like {"service": {"name": "frontend-ssr"}} are auto-parsed.
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"service_name","hits":10},{"value":"service.name","hits":10},{"value":"session_id","hits":10},{"value":"load_ms","hits":10},{"value":"level","hits":10}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			// VL response: _msg = original JSON (without _msg key), plus all fields indexed flat.
+			// level is both a VL indexed field and a stream label — exactly the case where
+			// Loki would emit level_extracted, but the proxy must not.
+			line := `{"_time":"2026-04-25T19:00:00Z","_msg":"{\"service\":{\"name\":\"frontend-ssr\"},\"session_id\":\"abc123\",\"load_ms\":500,\"level\":\"info\"}","_stream":"{level=\"info\",service_name=\"frontend-ssr\"}","service.name":"frontend-ssr","service_name":"frontend-ssr","session_id":"abc123","load_ms":"500","level":"info"}` + "\n"
+			w.Write([]byte(line))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	resp := doGet(t, vlBackend.URL, "/loki/api/v1/detected_fields?query=%7Bservice_name%3D%22frontend-ssr%22%7D")
+	fields, ok := resp["fields"].([]interface{})
+	if !ok {
+		t.Fatalf("expected fields array, got %v", resp)
+	}
+
+	got := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		obj := field.(map[string]interface{})
+		got[obj["label"].(string)] = struct{}{}
+	}
+
+	// Proxy must NOT produce any _extracted suffix — that is Loki's convention, not ours.
+	for label := range got {
+		if strings.HasSuffix(label, "_extracted") {
+			t.Errorf("proxy must not emit _extracted suffix (Loki convention); got label %q in %v", label, got)
+		}
+	}
+
+	// Core JSON fields must appear under their original names.
+	for _, want := range []string{"session_id", "load_ms"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("expected JSON field %q to appear in detected_fields; got %v", want, got)
+		}
+	}
+}
+
+// TestDrilldown_DetectedFields_LevelStreamConflictDroppedNotRenamedExtracted guards that when
+// the stream label "level" conflicts with a JSON field "level" in _msg, the proxy drops the
+// JSON-parsed level from detected_fields entirely — it does NOT rename it to level_extracted
+// (which is Loki's behaviour). detected_level must still be synthesised from the stream label.
+func TestDrilldown_DetectedFields_LevelStreamConflictDroppedNotRenamedExtracted(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":5},{"value":"level","hits":5},{"value":"status","hits":5}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			// level is a stream label AND present inside _msg JSON — conflict case.
+			line := `{"_time":"2026-04-25T19:00:00Z","_msg":"{\"level\":\"warn\",\"status\":500}","_stream":"{app=\"api-gw\",level=\"warn\"}","app":"api-gw","level":"warn","status":"500"}` + "\n"
+			w.Write([]byte(line))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	resp := doGet(t, vlBackend.URL, "/loki/api/v1/detected_fields?query=%7Bapp%3D%22api-gw%22%7D")
+	fields, ok := resp["fields"].([]interface{})
+	if !ok {
+		t.Fatalf("expected fields array, got %v", resp)
+	}
+
+	got := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		obj := field.(map[string]interface{})
+		got[obj["label"].(string)] = struct{}{}
+	}
+
+	if _, exists := got["level_extracted"]; exists {
+		t.Errorf("proxy must not emit level_extracted (Loki convention); it must drop level entirely when it conflicts with a stream label; got %v", got)
+	}
+	if _, exists := got["detected_level"]; !exists {
+		t.Errorf("detected_level must still be synthesised even when level conflicts with stream label; got %v", got)
+	}
+}
+
 func TestDrilldown_DetectedFields_SuppressHighCardinalityTimestampTerminals(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
