@@ -1161,6 +1161,12 @@ func inferDetectedType(value interface{}) string {
 		if _, err := time.ParseDuration(v); err == nil {
 			return "duration"
 		}
+		if _, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return "int"
+		}
+		if _, err := strconv.ParseFloat(v, 64); err == nil {
+			return "float"
+		}
 		return "string"
 	default:
 		return "string"
