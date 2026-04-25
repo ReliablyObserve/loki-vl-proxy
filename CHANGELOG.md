@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0] - 2026-04-25
+
 ### Fixed
 
 - fix(detected_fields): infer `int`/`float` types for logfmt string values so Grafana's unwrap field selector correctly lists numeric fields.
