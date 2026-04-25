@@ -24,7 +24,7 @@ var suppressedDetectedFieldNames = map[string]struct{}{
 	"app":                    {},
 	"cluster":                {},
 	"namespace":              {},
-	// service_name suppression is conditional - handled in detectFieldSummaries based on OTel presence
+	"service_name":           {},
 }
 
 // OTel semantic convention patterns (dotted form) - priority 1 signals
@@ -135,7 +135,7 @@ func isOTelData(entry map[string]interface{}) bool {
 
 		// Check other OTel underscore prefixes in stream labels
 		for _, prefix := range otelUnderscorePrefixes {
-			if strings.HasPrefix(key, prefix) && strings.Contains(key, "_") {
+			if strings.HasPrefix(key, prefix) {
 				return true // Found a Priority 2 indicator in stream labels
 			}
 		}
@@ -1337,6 +1337,12 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 	_, labelNames := scanDetectedLabels(body, p.labelTranslator)
 	fields := make(map[string]*detectedFieldSummary)
 
+	// Track OTel presence across ALL entries in the batch.
+	// service_name suppression is decided AFTER all entries are processed,
+	// because the fields map accumulates across entries and a per-entry
+	// delete would incorrectly remove aliases added by earlier OTel entries.
+	anyOTelWithServiceName := false
+
 	startIdx := 0
 	for startIdx < len(body) {
 		endIdx := startIdx
@@ -1362,15 +1368,10 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 			addDetectedField(fields, "detected_level", "", "string", nil, detectedLevel)
 		}
 
-		// Detect whether this is OTel data - affects service_name suppression logic
-		isOTel := isOTelData(entry)
-
-		// Determine if we have a real service.name from OTel (vs synthetic)
-		hasRealServiceName := false
-		if isOTel {
-			// In OTel data, service.name comes from stream labels
+		// Detect whether this entry is OTel data
+		if isOTelData(entry) {
 			if _, ok := streamLabels["service.name"]; ok {
-				hasRealServiceName = true
+				anyOTelWithServiceName = true
 			}
 		}
 
@@ -1394,23 +1395,6 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 					continue
 				}
 				addDetectedField(fields, exposure.name, "", inferDetectedType(value), nil, stringValue)
-			}
-		}
-
-		// Handle service_name alias conditional suppression after stream labels have been processed
-		// If OTel data with real service.name exists, ensure service_name alias is exposed
-		// If non-OTel or OTel without real service.name, suppress service_name
-		if _, ok := fields["service_name"]; ok {
-			// service_name was added during label processing
-			if !isOTel || !hasRealServiceName {
-				// Remove it - it's synthetic for non-OTel, or paired service.name missing for OTel
-				delete(fields, "service_name")
-			} else {
-				// Verify we have service.name as the real label (should exist for OTel)
-				if _, hasServiceDotName := fields["service.name"]; !hasServiceDotName {
-					// OTel without matching service.name field - suppress the alias
-					delete(fields, "service_name")
-				}
 			}
 		}
 
@@ -1456,6 +1440,21 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 				continue
 			}
 			addDetectedField(fields, key, "logfmt", inferDetectedType(value), nil, value)
+		}
+	}
+
+	// Post-scan OTel alias exposure: service_name is unconditionally suppressed
+	// by addDetectedField via suppressedDetectedFieldNames. For OTel data with
+	// real service.name in stream labels, explicitly add service_name as an alias
+	// so Drilldown and Explore can use both dotted and underscore forms.
+	if anyOTelWithServiceName {
+		if serviceDot, ok := fields["service.name"]; ok {
+			fields["service_name"] = &detectedFieldSummary{
+				label:       "service_name",
+				typ:         serviceDot.typ,
+				values:      serviceDot.values,
+				cardinality: serviceDot.cardinality,
+			}
 		}
 	}
 
