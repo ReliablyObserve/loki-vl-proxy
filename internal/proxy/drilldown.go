@@ -1123,7 +1123,7 @@ func stripFieldDetectionStages(query string) string {
 
 	dropStage := regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
 	parserStage := regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
-	unwrapStage := regexp.MustCompile(`\|\s*unwrap\s+[^|]+`)
+	unwrapStage := regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
 
 	query = dropStage.ReplaceAllString(query, " ")
 	query = parserStage.ReplaceAllString(query, " ")
