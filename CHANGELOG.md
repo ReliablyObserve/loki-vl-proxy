@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-04-25
+
 ### Added
 
 - feat(compat): LogQL syntax validation that returns Loki-compatible HTTP 400 errors for invalid queries (binary ops on log expressions, malformed selectors, empty queries).
