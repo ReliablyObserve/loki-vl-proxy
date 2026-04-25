@@ -23,20 +23,20 @@
       "id": "multi_label_regex_range",
       "family": "selector",
       "endpoint": "query_range",
-      "query": "{app=~\"api-gateway\",namespace=\"prod\",level=\"info\"}",
+      "query": "{app=~\"api-gateway\",namespace=\"prod\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "series_count",
+      "compare": "line_count",
       "require_non_empty": true
     },
     {
       "id": "multi_label_negative_regex",
       "family": "selector",
       "endpoint": "query_range",
-      "query": "{app=~\"api-gateway|payment-service\",namespace=\"prod\"}",
+      "query": "{app=~\"api-gateway|payment-service\",namespace=\"prod\",env=\"production\"}",
       "expectation": "success",
       "expect_result_type": "streams",
-      "compare": "series_count",
+      "compare": "line_count",
       "require_non_empty": true
     },
     {
