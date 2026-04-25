@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.1] - 2026-04-25
+
 ### Fixed
 
 - fix(log-generator): split JSON log entries by their actual content `level` before pushing to VictoriaLogs streams, eliminating stream-label/content mismatch that caused `detected_level=error` filters to return `warn` entries.
