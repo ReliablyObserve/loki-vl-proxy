@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-04-25
+
 ### Added
 
 - feat(otel): hierarchical OTel detection for detected_fields — detects OTel-instrumented services from stream labels (service.name, k8s.*, deployment.*, telemetry.*) and correctly exposes both dotted and underscore alias forms in detected_fields API.
