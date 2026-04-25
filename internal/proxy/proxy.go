@@ -12010,7 +12010,7 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 	if err := validateLogQLSyntax(query); err != "" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, err)
+		_, _ = fmt.Fprint(w, err)
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
@@ -12084,16 +12084,38 @@ var emptyValueRe = regexp.MustCompile(`[=!~]=?\s*[,}]`)
 
 // binaryOpOnLogRe matches a binary operator followed by a number at the end
 // of a pipeline expression (not inside a metric function).
-// Excludes field filter comparisons like "| json | status>=400" where the
-// operator is preceded by an identifier (field name).
 var binaryOpOnLogRe = regexp.MustCompile(`(?:^|\s)\s*(==|!=|<=|>=|<|>|\+|-|\*|/|%|\^)\s*\d+\s*$`)
 
+// labelFilterRe matches a standalone label filter stage: identifier <op> number.
+var labelFilterRe = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:==|!=|<=|>=|<|>)\s*\d+(\.\d+)?\s*$`)
+
+// logParserKeywords is the set of LogQL parser stage keywords that cannot be field names
+// in a label filter comparison (e.g. "| json == 2" is invalid; "| status >= 400" is valid).
+var logParserKeywords = map[string]bool{
+	"json": true, "logfmt": true, "unpack": true, "regexp": true,
+	"pattern": true, "decolorize": true,
+}
+
 func isBinaryOpOnLogQuery(rest string) bool {
-	// If rest is empty or starts with nothing after pipeline, no binary op
 	if rest == "" {
 		return false
 	}
-	return binaryOpOnLogRe.MatchString(rest)
+	if !binaryOpOnLogRe.MatchString(rest) {
+		return false
+	}
+	// If the last pipe-separated segment is a label filter (field op number) where
+	// the field is not a parser keyword, it's a valid stage — e.g. "| json | status >= 400".
+	lastPipe := strings.LastIndex(rest, "|")
+	lastSeg := strings.TrimSpace(rest)
+	if lastPipe >= 0 {
+		lastSeg = strings.TrimSpace(rest[lastPipe+1:])
+	}
+	if m := labelFilterRe.FindStringSubmatch(lastSeg); m != nil {
+		if !logParserKeywords[m[1]] {
+			return false
+		}
+	}
+	return true
 }
 
 func extractBinaryOp(rest string) string {
