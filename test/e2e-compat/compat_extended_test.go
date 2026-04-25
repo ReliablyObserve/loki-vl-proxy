@@ -408,7 +408,7 @@ func TestExtended_RegexSelector_MultiApp(t *testing.T) {
 
 func TestExtended_RegexSelector_Prefix(t *testing.T) {
 	ensureDataIngested(t)
-	compareQuery(t, "regex_prefix", `{app=~"api.*"}`)
+	compareQuery(t, "regex_prefix", `{app=~"api.*",env="production"}`)
 }
 
 func TestExtended_NegativeRegexSelector(t *testing.T) {

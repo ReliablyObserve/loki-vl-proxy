@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(otel): hierarchical OTel detection for detected_fields — detects OTel-instrumented services from stream labels (service.name, k8s.*, deployment.*, telemetry.*) and correctly exposes both dotted and underscore alias forms in detected_fields API.
+- feat(otel): conditional service_name suppression — synthetic service_name is suppressed for non-OTel data but exposed as alias pair for OTel data with real service.name in stream labels.
+- feat(compat): add Grafana 13.x to Drilldown RuntimeFamilyContracts (same contract as 12.x).
+
+### Fixed
+
+- fix(detected_fields): service_name was incorrectly appearing in detected_fields for non-OTel data (e.g., api-gateway) — now unconditionally suppressed and only re-added for OTel data with real service.name.
+- fix(detected_fields): service_name alias not exposed in MetadataFieldModeTranslated — now correctly creates alias entry when dotted source is absent.
+- fix(tests): semantics matrix queries isolated from continuous log generator using env=production filter for deterministic line/series count comparisons.
+
+### Tests
+
+- e2e/otel: add comprehensive OTel test data covering 4 delivery mechanisms — Loki push with dotted labels, OTel attributes in message JSON, pre-translated underscore conventions.
+- e2e/ui-comprehensive: add 30+ comprehensive Playwright tests covering all Loki Explorer UI interactions (page load, query editor, field explorer, filters, time range picker, drilldown integration, edge cases).
+- e2e/ui-performance: add performance baseline tests measuring page load (<3s), query response (<5s), UI interactions (<500ms), label selector (<1s), and rapid filter changes (<5s).
+- e2e/browser-automation: research and document browser automation alternatives, evaluating Obscura (v0.1.0 early-stage) vs Playwright (production-ready).
+
+### Documentation
+
+- docs: create standalone `performance-testing-guide.md` with comprehensive guide for running, interpreting, and tracking performance tests locally and in CI.
+- docs: create `browser-automation-alternatives.md` evaluating Obscura (Rust headless browser) as potential future Playwright replacement.
+- docs: update `testing.md` with performance testing section, CI shard documentation, and new test file inventory.
+
 ## [1.14.0] - 2026-04-24
 
 ### Tests

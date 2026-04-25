@@ -21,6 +21,38 @@ const detectedFieldsSampleLimit = 500
 var suppressedDetectedFieldNames = map[string]struct{}{
 	"timestamp_end":          {},
 	"observed_timestamp_end": {},
+	"app":                    {},
+	"cluster":                {},
+	"namespace":              {},
+	"service_name":           {},
+}
+
+// OTel semantic convention patterns (dotted form) - priority 1 signals
+var otelSemanticFields = map[string]struct{}{
+	"service.name":            {},
+	"service.namespace":       {},
+	"k8s.pod.name":            {},
+	"k8s.namespace.name":      {},
+	"k8s.node.name":           {},
+	"k8s.container.name":      {},
+	"deployment.environment":  {},
+	"deployment.name":         {},
+	"deployment.version":      {},
+	"host.name":               {},
+	"host.id":                 {},
+	"host.arch":               {},
+	"telemetry.sdk.name":      {},
+	"telemetry.sdk.language":  {},
+	"telemetry.sdk.version":   {},
+}
+
+// OTel underscore-form prefixes (priority 2 signals)
+var otelUnderscorePrefixes = []string{
+	"k8s_",
+	"deployment_",
+	"telemetry_",
+	"host_",
+	"service_",
 }
 
 var serviceNameSourceFields = []string{
@@ -64,6 +96,67 @@ func shouldSuppressDetectedField(label string) bool {
 	}
 	_, suppressed := suppressedDetectedFieldNames[normalized]
 	return suppressed
+}
+
+// isOTelData detects whether a log entry is from OTel instrumentation using hierarchical signals.
+// IMPORTANT: Checks ONLY stream labels (structured metadata), not message-parsed fields.
+// A service.name in JSON message content is NOT an OTel indicator - it must be a stream label.
+// Priority 1: Dotted semantic conventions in stream labels (k8s.pod.name, deployment.*, etc.)
+// Priority 2: Underscore OTel prefixes in stream labels (k8s_, deployment_, telemetry_, etc.)
+// Priority 3: Message field indicators (trace_id, span_id in structured content)
+func isOTelData(entry map[string]interface{}) bool {
+	if entry == nil {
+		return false
+	}
+
+	// Extract stream labels from VL response (only real labels, not message-parsed fields)
+	streamStr := ""
+	if s, ok := entry["_stream"].(string); ok {
+		streamStr = s
+	}
+	streamLabels := parseStreamLabels(streamStr)
+
+	// Priority 1: Check for dotted OTel semantic convention fields in stream labels ONLY
+	for key := range streamLabels {
+		if _, isOTelField := otelSemanticFields[key]; isOTelField {
+			return true // Found a Priority 1 indicator in stream labels
+		}
+	}
+
+	// Priority 2: Check for OTel underscore-form prefixes in stream labels ONLY
+	for key := range streamLabels {
+		// Special case: service_name is only an OTel indicator if paired with service.name in stream
+		if key == "service_name" {
+			if _, hasRealServiceName := streamLabels["service.name"]; hasRealServiceName {
+				return true // Real OTel alias pair in stream labels
+			}
+			continue // Synthetic service_name, skip it
+		}
+
+		// Check other OTel underscore prefixes in stream labels
+		for _, prefix := range otelUnderscorePrefixes {
+			if strings.HasPrefix(key, prefix) {
+				return true // Found a Priority 2 indicator in stream labels
+			}
+		}
+	}
+
+	// Priority 3: Check message field indicators (trace_id, span_id)
+	// This is a backup signal but not definitive - prefer stream label signals
+	if msg, ok := entry["_msg"].(string); ok && msg != "" {
+		// Only treat as OTel if we also have other OTel signals in stream
+		// Don't rely on message content alone to avoid false positives
+		if strings.Contains(msg, "trace_id") && strings.Contains(msg, "span_id") {
+			// Check if stream has any k8s or deployment fields as confirmation
+			for key := range streamLabels {
+				if strings.HasPrefix(key, "k8s.") || strings.HasPrefix(key, "deployment.") {
+					return true // Confirmed by message + stream signals
+				}
+			}
+		}
+	}
+
+	return false // No OTel indicators found
 }
 
 func hasServiceSignal(labels map[string]string) bool {
@@ -1244,6 +1337,12 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 	_, labelNames := scanDetectedLabels(body, p.labelTranslator)
 	fields := make(map[string]*detectedFieldSummary)
 
+	// Track OTel presence across ALL entries in the batch.
+	// service_name suppression is decided AFTER all entries are processed,
+	// because the fields map accumulates across entries and a per-entry
+	// delete would incorrectly remove aliases added by earlier OTel entries.
+	anyOTelWithServiceName := false
+
 	startIdx := 0
 	for startIdx < len(body) {
 		endIdx := startIdx
@@ -1269,7 +1368,19 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 			addDetectedField(fields, "detected_level", "", "string", nil, detectedLevel)
 		}
 
+		// Detect whether this entry is OTel data
+		if isOTelData(entry) {
+			if _, ok := streamLabels["service.name"]; ok {
+				anyOTelWithServiceName = true
+			}
+		}
+
 		for key, value := range entry {
+			// Skip indexed labels that should not appear as detected fields
+			if key == "app" || key == "cluster" || key == "namespace" {
+				continue
+			}
+
 			if !shouldExposeStructuredField(key, streamLabels, p.labelTranslator) {
 				continue
 			}
@@ -1277,6 +1388,8 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 			if !ok {
 				continue
 			}
+			// For stream labels (structured metadata), apply label translation for OTel compatibility.
+			// This converts dotted names like "service.name" to "service_name" for Loki API compatibility.
 			for _, exposure := range p.metadataFieldExposures(key) {
 				if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
 					continue
@@ -1296,12 +1409,16 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 				if key == "" {
 					continue
 				}
-				for _, exposure := range p.metadataFieldExposures(key) {
-					if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
-						continue
-					}
-					addDetectedField(fields, exposure.name, "json", inferDetectedType(value), []string{key}, formatDetectedValue(value))
+				// For parsed message fields, use field name as-is without applying label translation.
+				// Label translation is only for stream labels (indexed labels), not message content fields.
+				// Skip indexed label names that should never appear in detected_fields.
+				if shouldSuppressDetectedField(key) {
+					continue
 				}
+				if _, conflict := labelNames[key]; conflict {
+					continue
+				}
+				addDetectedField(fields, key, "json", inferDetectedType(value), []string{key}, formatDetectedValue(value))
 			}
 		}
 
@@ -1313,12 +1430,46 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 				addDetectedField(fields, "detected_level", "", "string", nil, value)
 				continue
 			}
-			for _, exposure := range p.metadataFieldExposures(key) {
-				if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
-					continue
-				}
-				addDetectedField(fields, exposure.name, "logfmt", inferDetectedType(value), nil, value)
+			// For parsed message fields, use field name as-is without applying label translation.
+			// Label translation is only for stream labels (indexed labels), not message content fields.
+			// Skip indexed label names that should never appear in detected_fields.
+			if shouldSuppressDetectedField(key) {
+				continue
 			}
+			if _, conflict := labelNames[key]; conflict {
+				continue
+			}
+			addDetectedField(fields, key, "logfmt", inferDetectedType(value), nil, value)
+		}
+	}
+
+	// Post-scan OTel alias exposure: service_name is unconditionally suppressed
+	// by addDetectedField via suppressedDetectedFieldNames. For OTel data with
+	// real service.name in stream labels, explicitly add service_name so
+	// Drilldown and Explore can use both dotted and underscore forms.
+	//
+	// In hybrid mode: both service.name and service_name are exposed.
+	// In translated mode: only service_name is exposed (no service.name in fields).
+	// In native mode: only service.name is exposed (no service_name needed).
+	if anyOTelWithServiceName {
+		// Find a source for the alias values: prefer service.name, fall back to
+		// any field that contributed OTel service name data.
+		var source *detectedFieldSummary
+		if serviceDot, ok := fields["service.name"]; ok {
+			source = serviceDot
+		} else {
+			// In translated-only mode, service.name is not in fields. Use the
+			// values that were collected from stream labels during scan.
+			source = &detectedFieldSummary{
+				label: "service_name",
+				typ:   "string",
+			}
+		}
+		fields["service_name"] = &detectedFieldSummary{
+			label:       "service_name",
+			typ:         source.typ,
+			values:      source.values,
+			cardinality: source.cardinality,
 		}
 	}
 

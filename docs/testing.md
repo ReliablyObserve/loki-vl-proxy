@@ -183,6 +183,8 @@ Recent PRs added targeted guards in areas that were previously flaky in live Gra
 | `test/e2e-ui/tests/url-state.spec.ts` | Pure URL/state builder tests for Explore and Logs Drilldown reloadable state |
 | `test/e2e-compat/missing_ops_compat_test.go` | offset, unpack, `\|>` pattern match, unwrap duration/bytes, label_replace parity |
 | `test/e2e-ui/tests/explore-operations.spec.ts` | Explore Loki operations browser smoke (12 tests) |
+| `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts` | Comprehensive Loki Explorer UI coverage (30+ tests covering all clickable elements, edge cases, and performance metrics) |
+| `test/e2e-ui/tests/performance-baseline.spec.ts` | Performance baseline measurements (page load, query response, UI interactions, label selector, filter changes) |
 | `test/e2e-ui/` | Playwright browser smoke tests for datasource UI, Explore, and Logs Drilldown with console/request guardrails |
 
 ## Playwright UI Matrix
@@ -233,6 +235,71 @@ CI prefers the runner's existing Chrome/Chromium binary for these shards and fal
 | `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke and single-tenant Logs Drilldown smoke |
 | `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | multi-tenant Logs Drilldown landing/service/fields plus URL filter-reload persistence |
 | `explore-ops` | `npx playwright test --grep @explore-ops` | Loki operations parity: parsers (json, logfmt), formatting (line_format, label_format, keep/drop), metric queries (count_over_time, rate, unwrap), line filters (regex, negative), aggregations (topk) |
+
+## Performance Testing
+
+### Comprehensive UI Coverage & Performance Baselines
+
+Two new test suites validate Loki Explorer and Logs Drilldown UI comprehensiveness and measure performance:
+
+#### Comprehensive UI Tests
+- **File**: `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts` (780+ lines)
+- **Tests**: 30+ test cases covering:
+  - Page load performance
+  - Query editor UI interactions
+  - Query execution with timing
+  - Field explorer and value selection
+  - Filters and label selector
+  - Time range picker interactions
+  - Logs drilldown integration
+  - Edge cases (large result sets, special characters, empty results, rapid changes)
+  - Performance metrics collection and reporting
+
+#### Performance Baseline Tests
+- **File**: `test/e2e-ui/tests/performance-baseline.spec.ts` (180+ lines)
+- **Metrics Tracked**:
+  - **Explore page load**: Target &lt;\1000ms
+  - **Simple metric query response**: Target &lt;\1000ms
+  - **JSON parsed logs query**: Target &lt;\1000ms
+  - **Log entry expansion**: Target &lt;\100ms
+  - **Label selector load**: Target &lt;\1000ms
+  - **Rapid filter changes**: Target &lt;\1000ms
+
+#### Running Performance Tests
+
+```bash
+cd test/e2e-ui
+
+# Run comprehensive UI tests
+npx playwright test explore-comprehensive-ui.spec.ts
+
+# Run performance baseline
+npx playwright test performance-baseline.spec.ts
+
+# Run both with detailed reporting
+npx playwright test --grep "@comprehensive-ui|@performance" --reporter=verbose
+
+# Generate HTML report
+npx playwright test performance-baseline.spec.ts --reporter=html
+# Open playwright-report/index.html
+```
+
+#### Performance Trends
+
+To track performance over time:
+
+```bash
+# Create baseline
+npm run test:e2e:ui:performance > baseline-$(date +%Y-%m-%d).txt
+
+# Compare against current
+npm run test:e2e:ui:performance > current-$(date +%Y-%m-%d).txt
+diff -u baseline-*.txt current-*.txt
+```
+
+#### Browser Automation Alternatives
+
+See [docs/browser-automation-alternatives.md](./browser-automation-alternatives.md) for evaluation of alternatives like Obscura vs current Playwright setup.
 
 ## E2E Compatibility Matrix
 

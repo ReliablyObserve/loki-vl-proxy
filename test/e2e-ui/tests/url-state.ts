@@ -41,7 +41,7 @@ export function buildExploreUrl(datasourceUid: string, expr = ""): string {
         },
       ],
       range: {
-        from: "now-1h",
+        from: "now-7d",
         to: "now",
       },
       compact: false,

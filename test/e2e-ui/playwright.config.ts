@@ -7,7 +7,8 @@ export default defineConfig({
   timeout: 60_000,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: process.env.CI ? 1 : process.env.WORKERS ? parseInt(process.env.WORKERS) : 4,
+  fullyParallel: !process.env.CI,
   use: {
     baseURL: process.env.GRAFANA_URL || "http://127.0.0.1:3002",
     viewport: {

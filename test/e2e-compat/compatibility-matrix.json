@@ -96,28 +96,29 @@
     },
     "grafana": {
       "image_repo": "grafana/grafana",
-      "pinned_version": "12.4.2",
+      "pinned_version": "13.0.1",
       "role": "runtime hosting the Loki datasource and bundled Drilldown app",
       "support_window": {
         "policy": "latest_full_plus_current_and_previous_smoke",
-        "description": "Run the fuller Drilldown compatibility track on the pinned current Grafana family, and keep smaller current-family and previous-family datasource-plus-Drilldown smoke profiles on pull requests so browser/runtime regressions are caught across real Grafana builds without exploding cost.",
-        "current_family": "12.x",
-        "previous_family": "11.x"
+        "description": "Run the fuller Drilldown compatibility track on the pinned current Grafana family (13.x), and keep smaller current-family, previous-family, and lts datasource-plus-Drilldown smoke profiles on pull requests so browser/runtime regressions are caught across real Grafana builds without exploding cost.",
+        "current_family": "13.x",
+        "previous_family": "12.x",
+        "lts_family": "11.x"
       },
       "runtime_profiles": [
         {
-          "version": "12.4.2",
+          "version": "13.0.1",
           "profile": "full",
           "test_regex": "^(TestDrilldownTrackScore|TestDrilldown_RuntimeFamilyContracts)$"
         },
         {
-          "version": "12.4.1",
+          "version": "13.0.1",
           "profile": "current_smoke",
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
         },
         {
-          "version": "11.6.6",
+          "version": "12.4.2",
           "profile": "previous_smoke",
           "run_on_pr": true,
           "test_regex": "^(TestGrafanaDatasourceCatalogAndHealth|TestDrilldown_GrafanaResourceContracts|TestDrilldown_RuntimeFamilyContracts)$"
@@ -125,8 +126,16 @@
       ],
       "capability_profiles": [
         {
+          "profile": "grafana-runtime-v13-plus",
+          "version_range": ">= 13.0.0",
+          "capabilities": [
+            "drilldown_source_tag",
+            "runtime_family_v13_contracts"
+          ]
+        },
+        {
           "profile": "grafana-runtime-v12-plus",
-          "version_range": ">= 12.0.0",
+          "version_range": ">= 12.0.0 < 13.0.0",
           "capabilities": [
             "drilldown_source_tag",
             "runtime_family_v12_contracts"

@@ -29,7 +29,7 @@ func TestComplex_MultiLabel_ExactMatch(t *testing.T) {
 }
 
 func TestComplex_MultiLabel_RegexApp(t *testing.T) {
-	q := `{app=~"api-.*",namespace="prod"}`
+	q := `{app=~"api-.*",namespace="prod",env="production"}`
 	compareQuery(t, "multi_label_regex_app", q)
 }
 

@@ -639,10 +639,10 @@ jobs:
           cache-from: type=gha,scope=e2e-proxy
           cache-to: type=gha,mode=max,scope=e2e-proxy
 
-      - name: Start e2e stack
+      - name: Start e2e stack (with log generator for UI tests)
         working-directory: test/e2e-compat
         run: |
-          docker compose up -d --no-build
+          docker compose --profile ui up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 180
 
       - name: Resolve UI browser

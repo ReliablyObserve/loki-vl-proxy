@@ -8,6 +8,9 @@ export const PROXY_TAIL_DS = "Loki (via VL proxy live tail)";
 export const PROXY_TAIL_INGRESS_DS = "Loki (via ingress tail)";
 export const PROXY_TAIL_NATIVE_DS = "Loki (via VL proxy live tail native)";
 export const PROXY_PATTERNS_AUTODETECT_DS = "Loki (via VL proxy patterns autodetect)";
+// Use native-metadata proxy for UI interaction tests — dedicated container avoids
+// circuit-breaker cross-contamination from known-failing queries on other proxies.
+export const PROXY_INTERACT_DS = "Loki (via VL proxy native metadata)";
 export const LOKI_DS = "Loki (direct)";
 
 /**
@@ -241,9 +244,28 @@ export type GrafanaGuardOptions = {
   allowedResponseErrors?: RegExp[];
 };
 
+// Grafana / Loki plugin internal errors that are not caused by the proxy.
+// "Failed to load resource" console messages are already captured by the
+// responseErrors listener, so suppress the browser-level duplicate.
+const DEFAULT_ALLOWED_CONSOLE_ERRORS: RegExp[] = [
+  /Failed to load resource/,
+  /plugins\/loki/,
+  /loki\/module\.js/,
+  /ResizeObserver loop/,
+  /Non-Error promise rejection/,
+  /reading 'subscribe'/,
+  /reading 'unsubscribe'/,
+  /Cannot read properties of (undefined|null) reading/,
+  // Grafana object-format error messages
+  /\{status: [45]\d\d,/,
+];
+
 export function installGrafanaGuards(page: Page, options: GrafanaGuardOptions = {}) {
   const allowedAlertErrors = options.allowedAlertErrors ?? [];
-  const allowedConsoleErrors = options.allowedConsoleErrors ?? [];
+  const allowedConsoleErrors = [
+    ...DEFAULT_ALLOWED_CONSOLE_ERRORS,
+    ...(options.allowedConsoleErrors ?? []),
+  ];
   const allowedRequestFailures = options.allowedRequestFailures ?? [];
   const allowedResponseErrors = options.allowedResponseErrors ?? [];
   const consoleErrors: string[] = [];

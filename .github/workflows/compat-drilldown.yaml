@@ -37,8 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       LOKI_IMAGE: grafana/loki:3.7.1
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
-      GRAFANA_IMAGE: grafana/grafana:12.4.2
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.50.0
+      GRAFANA_IMAGE: grafana/grafana:13.0.1
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
       - uses: actions/checkout@v4
@@ -67,7 +67,7 @@ jobs:
         working-directory: test/e2e-compat
         run: docker compose down -v
 
-  drilldown-previous-family-smoke:
+  drilldown-grafana-pr-matrix:
     if: github.event_name != 'schedule'
     needs: drilldown-matrix-source
     runs-on: ubuntu-latest
@@ -77,7 +77,7 @@ jobs:
         include: ${{ fromJson(needs.drilldown-matrix-source.outputs.grafana_pr_runtime_profiles) }}
     env:
       LOKI_IMAGE: grafana/loki:3.7.1
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.50.0
       GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
@@ -95,14 +95,14 @@ jobs:
           load: true
           cache-from: type=gha,scope=compat-proxy
           cache-to: type=gha,mode=max,scope=compat-proxy
-      - name: Start Grafana PR smoke stack (${{ matrix.profile }} / ${{ matrix.version }})
+      - name: Start Grafana ${{ matrix.profile }} stack (${{ matrix.version }})
         working-directory: test/e2e-compat
         run: |
           docker compose up -d --no-build
           ../../scripts/ci/wait_e2e_stack.sh 180
-      - name: Run Grafana PR smoke profile
+      - name: Run Grafana ${{ matrix.profile }} profile
         run: go test -v -tags=e2e -run '${{ matrix.test_regex }}' ./test/e2e-compat/
-      - name: Tear down Grafana PR smoke stack
+      - name: Tear down Grafana ${{ matrix.profile }} stack
         if: always()
         working-directory: test/e2e-compat
         run: docker compose down -v
@@ -130,7 +130,7 @@ jobs:
         include: ${{ fromJson(needs.drilldown-matrix-source.outputs.grafana_runtime_profiles) }}
     env:
       LOKI_IMAGE: grafana/loki:3.7.1
-      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.49.0
+      VICTORIALOGS_IMAGE: victoriametrics/victoria-logs:v1.50.0
       GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
