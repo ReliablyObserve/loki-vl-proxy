@@ -532,9 +532,11 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 		}
 	}
 
+	phase1Succeeded := false
 	if p.supportsStreamMetadataEndpoints() {
 		streamFields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
 		if err == nil {
+			phase1Succeeded = true
 			streamFields = appendUniqueStrings(streamFields, p.snapshotDeclaredLabelFields()...)
 			available := make(map[string]struct{}, len(streamFields))
 			for _, field := range streamFields {
@@ -561,6 +563,12 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 		}
 	}
 
+	// Phase 2: supplement with document-level fields (e.g. OTel service.name).
+	// When Phase 1 succeeded via stream labels, restrict Phase 2 to dotted-name
+	// fields only: stream labels cannot contain dots, so dotted names must come
+	// from structured document fields. Skipping plain underscore names prevents
+	// logfmt-parsed document fields like "job=sync-users" from appearing as
+	// service names when stream labels already provide the correct service list.
 	fieldNames, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
 	if err == nil {
 		available := make(map[string]struct{}, len(fieldNames))
@@ -568,6 +576,9 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 			available[field] = struct{}{}
 		}
 		for _, field := range serviceNameSourceFields {
+			if phase1Succeeded && !strings.ContainsAny(field, ".-") {
+				continue
+			}
 			if _, ok := available[field]; !ok {
 				continue
 			}
