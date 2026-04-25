@@ -298,7 +298,7 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 		}
 	}
 
-	resp, err = http.Post(
+	resp, err := http.Post(
 		vlURL+"/insert/jsonline?_stream_fields="+strings.Join(streamFields, ","),
 		"application/stream+json",
 		strings.NewReader(strings.Join(vlLines, "\n")),
