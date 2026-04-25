@@ -1123,7 +1123,7 @@ func stripFieldDetectionStages(query string) string {
 
 	dropStage := regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
 	parserStage := regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
-	unwrapStage := regexp.MustCompile(`\|\s*unwrap\s+[^|]+`)
+	unwrapStage := regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
 
 	query = dropStage.ReplaceAllString(query, " ")
 	query = parserStage.ReplaceAllString(query, " ")
@@ -1160,6 +1160,12 @@ func inferDetectedType(value interface{}) string {
 	case string:
 		if _, err := time.ParseDuration(v); err == nil {
 			return "duration"
+		}
+		if _, err := strconv.ParseInt(v, 10, 64); err == nil {
+			return "int"
+		}
+		if _, err := strconv.ParseFloat(v, 64); err == nil {
+			return "float"
 		}
 		return "string"
 	default:

@@ -13,14 +13,14 @@ services:
     volumes:
       - vl-data:/vlogs
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:9428/health"]
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:9428/health"]
       interval: 3s
       timeout: 2s
       retries: 10
       start_period: 5s
 
   loki-vl-proxy:
-    build: .
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:1.16.0
     container_name: loki-vl-proxy
     ports:
       - "3100:3100"
@@ -32,6 +32,19 @@ services:
     depends_on:
       victorialogs:
         condition: service_healthy
+
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: loki-direct
+    ports:
+      - "3200:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 10s
 
   grafana:
     image: grafana/grafana:12.4.2

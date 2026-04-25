@@ -3,7 +3,14 @@ datasources:
   - name: Loki (via VL proxy)
     type: loki
     access: proxy
-    url: http://loki-vl-proxy-underscore:3100
+    url: http://loki-vl-proxy:3100
     isDefault: true
+    jsonData:
+      maxLines: 1000
+
+  - name: Loki (direct)
+    type: loki
+    access: proxy
+    url: http://loki-direct:3100
     jsonData:
       maxLines: 1000
