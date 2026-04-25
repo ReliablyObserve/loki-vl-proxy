@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(compat): LogQL syntax validation that returns Loki-compatible HTTP 400 errors for invalid queries (binary ops on log expressions, malformed selectors, empty queries).
+
+### Fixed
+
+- fix(compat): label filter stages like `| json | status >= 400` no longer incorrectly rejected by syntax validator.
+- fix(config): increase max_query_series from 500 to 5000 to prevent false series truncation in high-cardinality environments.
+
+### Tests
+
+- test(parity): exhaustive LogQL parity machine with 116 cases covering all LogQL operations — error parity (31 cases) and query parity (85 cases).
+
 ## [1.15.0] - 2026-04-25
 
 ### Added
