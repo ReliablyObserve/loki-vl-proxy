@@ -1365,23 +1365,19 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 		// Detect whether this is OTel data - affects service_name suppression logic
 		isOTel := isOTelData(entry)
 
+		// Determine if we have a real service.name from OTel (vs synthetic)
+		hasRealServiceName := false
+		if isOTel {
+			// In OTel data, service.name comes from stream labels
+			if _, ok := streamLabels["service.name"]; ok {
+				hasRealServiceName = true
+			}
+		}
+
 		for key, value := range entry {
 			// Skip indexed labels that should not appear as detected fields
 			if key == "app" || key == "cluster" || key == "namespace" {
 				continue
-			}
-
-			// Service_name suppression: conditional based on OTel presence
-			if key == "service_name" {
-				if !isOTel {
-					// Non-OTel data: service_name is synthetic, always suppress
-					continue
-				}
-				if _, hasRealServiceName := entry["service.name"]; !hasRealServiceName {
-					// OTel data but no real service.name paired with it, suppress
-					continue
-				}
-				// OTel data with real service.name: keep service_name as alias
 			}
 
 			if !shouldExposeStructuredField(key, streamLabels, p.labelTranslator) {
@@ -1398,6 +1394,23 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 					continue
 				}
 				addDetectedField(fields, exposure.name, "", inferDetectedType(value), nil, stringValue)
+			}
+		}
+
+		// Handle service_name alias conditional suppression after stream labels have been processed
+		// If OTel data with real service.name exists, ensure service_name alias is exposed
+		// If non-OTel or OTel without real service.name, suppress service_name
+		if _, ok := fields["service_name"]; ok {
+			// service_name was added during label processing
+			if !isOTel || !hasRealServiceName {
+				// Remove it - it's synthetic for non-OTel, or paired service.name missing for OTel
+				delete(fields, "service_name")
+			} else {
+				// Verify we have service.name as the real label (should exist for OTel)
+				if _, hasServiceDotName := fields["service.name"]; !hasServiceDotName {
+					// OTel without matching service.name field - suppress the alias
+					delete(fields, "service_name")
+				}
 			}
 		}
 
