@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - fix(circuitbreaker): replace consecutive failure counting with a sliding time-window (default 30 s, tunable via `-cb-window-duration`); sporadic slow-query connection resets from VictoriaLogs no longer trip the breaker during cold-cache warmup — only a burst of N failures within the window opens the circuit.
+- fix(circuitbreaker): couple circuit breaker with request coalescing via `DoWithGuard`; when the breaker is open the CB probe starts one in-flight call and all simultaneous identical requests join it rather than each failing with 503 — eliminates retry amplification under VL load. Circuit breaker errors now return HTTP 503 (Service Unavailable) instead of 502.
 
 ### Performance
 
