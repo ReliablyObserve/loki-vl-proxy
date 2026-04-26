@@ -431,8 +431,8 @@ even further.
 At scale, the operational equation becomes:
 
 ```
-Loki (1 TB/day):    431 vCPU + 857 GB RAM + RF=3 cross-AZ egress + 5 component types
-VL + proxy fleet:    33 vCPU +  70 GB RAM + no replication overhead + 2 component types
+Loki (1 TB/day):    431 vCPU + 857 GB RAM + RF=3 cross-AZ egress + 6–7 component types
+VL + proxy fleet:    33 vCPU +  70 GB RAM + no replication overhead + 3–5 component types
                     ──────────────────────────────────────────────────────────────────
                     13× less CPU, 12× less RAM, zero API migration cost
 ```

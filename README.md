@@ -95,7 +95,7 @@ VictoriaLogs runs as a single binary with no mandatory replication overhead. Its
 
 **Where the proxy fits:**
 
-| Scale | Loki cluster | VL | Proxy | Proxy % of total |
+| Scale | Loki cluster | VL | Proxy (per instance) | Proxy % of Loki |
 |-------|:---:|:---:|:---:|:---:|
 | Small (1 GB/day) | 16 vCPU / 32 GB RAM | 2 vCPU / 4 GB | 0.1 vCPU / 0.5 GB | ~2.5% |
 | Medium (50 GB/day) | 64 vCPU / 128 GB RAM | 8 vCPU / 16 GB | 0.2 vCPU / 1 GB | ~5% |
