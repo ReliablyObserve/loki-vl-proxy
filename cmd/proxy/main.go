@@ -72,6 +72,8 @@ type proxyRuntimeConfig struct {
 	tenantLimitsJSON                    string
 	maxLines                            int
 	backendTimeout                      time.Duration
+	cbFailThreshold                     int
+	cbOpenDuration                      time.Duration
 	backendMinVersion                   string
 	backendAllowUnsupportedVersion      bool
 	backendVersionCheckTimeout          time.Duration
@@ -384,6 +386,8 @@ func run(
 	// Grafana datasource compatibility
 	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
 	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend")
+	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: consecutive failures before opening (set to 0 to disable)")
+	cbOpenDuration := fs.Duration("cb-open-duration", 10*time.Second, "Circuit breaker: how long to stay open before allowing probe requests")
 	backendMinVersion := fs.String("backend-min-version", "v1.30.0", "Minimum VictoriaLogs version considered fully supported at startup")
 	backendAllowUnsupportedVersion := fs.Bool("backend-allow-unsupported-version", false, "Allow startup with backend versions lower than -backend-min-version (at your own risk)")
 	backendVersionCheckTimeout := fs.Duration("backend-version-check-timeout", 5*time.Second, "Timeout for startup backend version compatibility check")
@@ -574,6 +578,8 @@ func run(
 			tenantLimitsJSON:                    envCfg.tenantLimitsJSON,
 			maxLines:                            *maxLines,
 			backendTimeout:                      *backendTimeout,
+			cbFailThreshold:                     *cbFailThreshold,
+			cbOpenDuration:                      *cbOpenDuration,
 			backendMinVersion:                   *backendMinVersion,
 			backendAllowUnsupportedVersion:      *backendAllowUnsupportedVersion,
 			backendVersionCheckTimeout:          *backendVersionCheckTimeout,
@@ -1432,6 +1438,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		TenantLimits:                       tenantLimits,
 		MaxLines:                           cfg.maxLines,
 		BackendTimeout:                     cfg.backendTimeout,
+		CBFailThreshold:                    cfg.cbFailThreshold,
+		CBOpenDuration:                     cfg.cbOpenDuration,
 		BackendMinVersion:                  cfg.backendMinVersion,
 		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,

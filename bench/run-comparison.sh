@@ -95,6 +95,8 @@ if [ -z "$PROXY_NO_CACHE_URL" ]; then
       -server.enable-pprof \
       "-server.admin-auth-token=${PPROF_AUTH_TOKEN:-bench-pprof-token}" \
       -log-level=warn \
+      -cb-fail-threshold=1000 \
+      -cb-open-duration=1s \
       &>/tmp/proxy-nocache.log &
     NO_CACHE_PID=$!
     trap 'kill "$NO_CACHE_PID" 2>/dev/null; echo "no-cache proxy stopped"' EXIT

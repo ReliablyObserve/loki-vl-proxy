@@ -71,9 +71,17 @@ services:
       # Intern short strings (labels, field names) for up to 15 min to reduce GC
       # pressure during high-concurrency scans (default 5 min).
       - "-internStringCacheExpireDuration=15m"
-      # Allow VL to use up to 75% of host RAM for its in-process caches before
+      # Allow VL to use up to 80% of host RAM for its in-process caches before
       # evicting. Higher than the default 60% is safe given the 5 g mem_limit cap.
-      - "-memory.allowedPercent=75"
+      - "-memory.allowedPercent=80"
+      # Reduce parallel readers per query (default = 2×CPU = 36 on 18-core host).
+      # At c=100 with 36 readers each, that spawns 3600 goroutines fighting for
+      # disk I/O — local SSD has <0.1ms latency so many readers add contention,
+      # not parallelism. 8 readers × 100 concurrent = 800 goroutines, matching
+      # 18 cores without scheduler thrash.
+      - "-defaultParallelReaders=8"
+      # Cap file-system concurrency (default 256 = 16×CPU, but 64 better fits 18 cores).
+      - "-fs.maxConcurrency=64"
     volumes:
       - vl-data:/vlogs
     healthcheck:
