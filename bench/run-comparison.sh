@@ -88,7 +88,7 @@ if [ -z "$PROXY_NO_CACHE_URL" ]; then
     "$PROXY_BINARY" \
       -listen=":$NO_CACHE_PORT" \
       -backend="$VL_URL" \
-      -cache-ttl=1ns \
+      -cache-disabled \
       -log-level=warn \
       &>/tmp/proxy-nocache.log &
     NO_CACHE_PID=$!
