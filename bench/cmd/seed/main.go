@@ -321,15 +321,17 @@ func pushVL(vlURL string, streams []map[string]interface{}) error {
 }
 
 func main() {
-	lokiURL       := flag.String("loki", "http://localhost:3101", "Loki push URL")
-	vlURL         := flag.String("vl", "http://localhost:9428", "VictoriaLogs push URL")
-	days          := flag.Int("days", 7, "Days of historical data to seed")
-	serviceCount  := flag.Int("services", 12, "Number of service streams (cycles through built-in pool; add more regions for >12)")
-	ratePerSvc    := flag.Float64("rate", 0, "Target log lines/sec per service (overrides --lines-per-batch when set)")
-	linesPerBatch := flag.Int("lines-per-batch", 21, "Lines per service per time step (ignored when --rate is set)")
-	batchInterval := flag.Duration("batch-interval", 30*time.Second, "Simulated time step between push batches")
-	skipLoki      := flag.Bool("skip-loki", false, "Skip Loki ingestion")
-	skipVL        := flag.Bool("skip-vl", false, "Skip VictoriaLogs ingestion")
+	lokiURL        := flag.String("loki", "http://localhost:3101", "Loki push URL")
+	vlURL          := flag.String("vl", "http://localhost:9428", "VictoriaLogs push URL")
+	days           := flag.Int("days", 7, "Days of historical data to seed")
+	serviceCount   := flag.Int("services", 12, "Number of service streams (cycles through built-in pool; add more regions for >12)")
+	ratePerSvc     := flag.Float64("rate", 0, "Target log lines/sec per service (overrides --lines-per-batch when set)")
+	linesPerBatch  := flag.Int("lines-per-batch", 21, "Lines per service per time step (ignored when --rate is set)")
+	batchInterval  := flag.Duration("batch-interval", 30*time.Second, "Simulated time step between push batches")
+	skipLoki       := flag.Bool("skip-loki", false, "Skip Loki ingestion")
+	skipVL         := flag.Bool("skip-vl", false, "Skip VictoriaLogs ingestion")
+	highCardinality := flag.Bool("high-cardinality", false, "Add pod as a stream label with --pods-per-service unique pod IDs per service. Creates N×services unique Loki streams, exposing Loki O(streams×retention) memory pressure vs VL columnar model.")
+	podsPerService  := flag.Int("pods-per-service", 50, "Number of unique pod IDs per service when --high-cardinality is set")
 	flag.Parse()
 
 	// When --rate is given, derive lines-per-batch from the target rate.
@@ -352,12 +354,36 @@ func main() {
 		}
 	}
 
+	// Build pod pools for high-cardinality mode: N unique pod IDs per service.
+	// Each batch rotates through the pod pool, creating N×services unique Loki streams.
+	var podPool map[string][]string
+	if *highCardinality {
+		podPool = make(map[string][]string, len(activeServices))
+		for _, svc := range activeServices {
+			key := svc.app + "/" + svc.region
+			if _, ok := podPool[key]; ok {
+				continue
+			}
+			pods := make([]string, *podsPerService)
+			for i := range pods {
+				pods[i] = fmt.Sprintf("%s-%s-%s", svc.app, randID(5), randID(4))
+			}
+			podPool[key] = pods
+		}
+	}
+
 	end := time.Now().Add(-time.Minute)
 	start := end.Add(-time.Duration(*days) * 24 * time.Hour)
 
 	totalBatches := int(end.Sub(start) / *batchInterval)
-	totalLines := totalBatches * *linesPerBatch * len(activeServices)
-	linesPerHour := float64(*linesPerBatch) * float64(len(activeServices)) * (3600.0 / batchInterval.Seconds())
+	// In high-cardinality mode each service fans out into podsPerService streams per batch.
+	streamsPerBatch := len(activeServices)
+	uniqueStreams := len(activeServices)
+	if *highCardinality {
+		uniqueStreams = len(activeServices) * *podsPerService
+	}
+	totalLines := totalBatches * *linesPerBatch * streamsPerBatch
+	linesPerHour := float64(*linesPerBatch) * float64(streamsPerBatch) * (3600.0 / batchInterval.Seconds())
 	linesPerMin := linesPerHour / 60.0
 	effectiveRate := float64(*linesPerBatch) / batchInterval.Seconds()
 
@@ -365,13 +391,16 @@ func main() {
 	fmt.Printf(" Seed Configuration\n")
 	fmt.Printf("═══════════════════════════════════════════════════════════\n")
 	fmt.Printf("  Period:        %d days  (%s → %s)\n", *days, start.Format("2006-01-02 15:04"), end.Format("2006-01-02 15:04"))
-	fmt.Printf("  Services:      %d streams\n", len(activeServices))
+	fmt.Printf("  Services:      %d base streams\n", len(activeServices))
+	if *highCardinality {
+		fmt.Printf("  High-cardinality: %d pods/service → %d unique Loki streams\n", *podsPerService, uniqueStreams)
+	}
 	fmt.Printf("  Rate/service:  %.1f lines/sec  (~%.0f lines/min per service)\n",
 		effectiveRate, effectiveRate*60)
 	fmt.Printf("  Total rate:    %.0f lines/sec  (~%.0f/min  ~%.0f/hr)\n",
-		effectiveRate*float64(len(activeServices)), linesPerMin, linesPerHour)
+		effectiveRate*float64(streamsPerBatch), linesPerMin, linesPerHour)
 	fmt.Printf("  Total volume:  ~%s lines  (%d batches × %d lines × %d streams)\n",
-		fmtCount(totalLines), totalBatches, *linesPerBatch, len(activeServices))
+		fmtCount(totalLines), totalBatches, *linesPerBatch, streamsPerBatch)
 	fmt.Printf("  Targets:       loki=%v  vl=%v\n", !*skipLoki, !*skipVL)
 	fmt.Printf("═══════════════════════════════════════════════════════════\n\n")
 
@@ -382,8 +411,15 @@ func main() {
 		reportEvery = 1
 	}
 
+	batchNum := 0
 	for ts := start; ts.Before(end); ts = ts.Add(*batchInterval) {
-		streams := buildStreamsFor(ts, *linesPerBatch, activeServices)
+		var streams []map[string]interface{}
+		if *highCardinality {
+			streams = buildStreamsHighCardinality(ts, *linesPerBatch, activeServices, podPool, batchNum)
+		} else {
+			streams = buildStreamsFor(ts, *linesPerBatch, activeServices)
+		}
+		batchNum++
 
 		if !*skipLoki {
 			if err := pushLoki(*lokiURL, streams); err != nil {
@@ -422,7 +458,47 @@ func main() {
 	fmt.Printf("  Errors:        %d\n", errCount)
 	fmt.Printf("  Data shape:    %d services  %.1f lines/sec/svc  %.0f lines/hr total\n",
 		len(activeServices), effectiveRate, linesPerHour)
-	fmt.Printf("\nNow run: ./bench/run-comparison.sh --workloads=small,heavy,long_range\n")
+	if *highCardinality {
+		fmt.Printf("  Unique streams: %d (%d services × %d pods)\n",
+			uniqueStreams, len(activeServices), *podsPerService)
+		fmt.Printf("\nNow run: ./bench/run-comparison.sh --workloads=high_cardinality\n")
+	} else {
+		fmt.Printf("\nNow run: ./bench/run-comparison.sh --workloads=small,heavy,long_range\n")
+	}
+}
+
+// buildStreamsHighCardinality builds streams with pod as a stream label, cycling through
+// the pod pool so each batch rotates to a different pod, creating podPool[svc] unique
+// Loki streams per service over time.
+func buildStreamsHighCardinality(ts time.Time, linesPerSvc int, svcs []service, podPool map[string][]string, batchNum int) []map[string]interface{} {
+	streams := make([]map[string]interface{}, 0, len(svcs))
+	for _, svc := range svcs {
+		key := svc.app + "/" + svc.region
+		pods := podPool[key]
+		pod := pods[batchNum%len(pods)]
+
+		values := make([][]string, 0, linesPerSvc)
+		for i := 0; i < linesPerSvc; i++ {
+			lineTS := ts.Add(time.Duration(i) * time.Second / time.Duration(linesPerSvc))
+			line := genLine(svc, lineTS)
+			values = append(values, []string{fmt.Sprintf("%d", lineTS.UnixNano()), line})
+		}
+		streams = append(streams, map[string]interface{}{
+			"stream": map[string]string{
+				"app":        svc.app,
+				"namespace":  svc.namespace,
+				"job":        svc.namespace + "/" + svc.app,
+				"env":        svc.env,
+				"region":     svc.region,
+				"cluster":    svc.cluster,
+				"version":    svc.version,
+				"log_format": svc.format,
+				"pod":        pod, // high-cardinality label — creates unique stream per pod
+			},
+			"values": values,
+		})
+	}
+	return streams
 }
 
 func fmtCount(n int) string {

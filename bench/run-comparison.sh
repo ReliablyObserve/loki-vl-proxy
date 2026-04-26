@@ -87,6 +87,12 @@ if [ -z "$PROXY_NO_CACHE_URL" ]; then
   fi
 
   if [ -n "$PROXY_BINARY" ]; then
+    # Find a free port starting from NO_CACHE_PORT (avoids killing unrelated processes).
+    while lsof -ti:"$NO_CACHE_PORT" &>/dev/null 2>&1; do
+      echo "Port $NO_CACHE_PORT in use — trying $((NO_CACHE_PORT + 1))..."
+      NO_CACHE_PORT=$((NO_CACHE_PORT + 1))
+    done
+
     echo "Starting no-cache proxy on port $NO_CACHE_PORT (binary: $PROXY_BINARY)..."
     "$PROXY_BINARY" \
       -listen=":$NO_CACHE_PORT" \
@@ -100,12 +106,14 @@ if [ -z "$PROXY_NO_CACHE_URL" ]; then
       &>/tmp/proxy-nocache.log &
     NO_CACHE_PID=$!
     trap 'kill "$NO_CACHE_PID" 2>/dev/null; echo "no-cache proxy stopped"' EXIT
-    sleep 1
+    sleep 2
     if curl -sf "http://localhost:$NO_CACHE_PORT/loki/api/v1/labels" -o /dev/null 2>/dev/null; then
       PROXY_NO_CACHE_URL="http://localhost:$NO_CACHE_PORT"
       echo "✓ No-cache proxy ready at $PROXY_NO_CACHE_URL"
     else
       echo "⚠ No-cache proxy did not start — skipping cold-cache comparison"
+      echo "  Last log lines:"
+      tail -5 /tmp/proxy-nocache.log 2>/dev/null | sed 's/^/  /'
       PROXY_NO_CACHE_URL=""
       kill "$NO_CACHE_PID" 2>/dev/null || true
       NO_CACHE_PID=""

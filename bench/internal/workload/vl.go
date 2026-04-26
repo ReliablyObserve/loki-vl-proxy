@@ -362,16 +362,160 @@ func VLCompute(now time.Time) Workload {
 	}}
 }
 
-// VLAll returns all VL-native workloads for the given time reference.
+// VLUnindexedScan mirrors UnindexedScan using VictoriaLogs native LogsQL.
+// The same content-search queries that force full chunk scans in Loki instead
+// use VL's word-level inverted index — expected to be dramatically faster at scale.
+func VLUnindexedScan(now time.Time) Workload {
+	start1h := ns(now.Add(-1 * time.Hour))
+	start6h := ns(now.Add(-6 * time.Hour))
+	start24h := ns(now.Add(-24 * time.Hour))
+	end := ns(now)
+
+	return Workload{Name: "unindexed_scan", Queries: []Query{
+		// Token index lookup — VL has inverted index over all words.
+		{
+			Name:   "word_timeout_1h",
+			Path:   "/select/logsql/query",
+			Params: url.Values{"query": {`namespace:"prod" "timeout"`}, "start": {start1h}, "end": {end}, "limit": {"1000"}},
+		},
+		{
+			Name:   "word_declined_1h",
+			Path:   "/select/logsql/query",
+			Params: url.Values{"query": {`namespace:"prod" "declined"`}, "start": {start1h}, "end": {end}, "limit": {"1000"}},
+		},
+		// Regex — VL narrows via block-level min/max filter before regex application.
+		{
+			Name:   "regex_user_id_1h",
+			Path:   "/select/logsql/query",
+			Params: url.Values{"query": {`namespace:"prod" ~"usr_[0-9]{5}"`}, "start": {start1h}, "end": {end}, "limit": {"500"}},
+		},
+		{
+			Name:   "regex_status_codes_6h",
+			Path:   "/select/logsql/query",
+			Params: url.Values{"query": {`namespace:"prod" ~"status=(4|5)[0-9][0-9]"`}, "start": {start6h}, "end": {end}, "limit": {"500"}},
+		},
+		// Negation — VL can skip blocks whose inverted index lacks the word.
+		{
+			Name:   "exclude_info_1h",
+			Path:   "/select/logsql/query",
+			Params: url.Values{"query": {`namespace:"prod" !"info"`}, "start": {start1h}, "end": {end}, "limit": {"500"}},
+		},
+		// Hits (time-series counts) on content-filtered stream.
+		{
+			Name:   "hits_error_content_1h",
+			Path:   "/select/logsql/hits",
+			Params: url.Values{"query": {`namespace:"prod" "error"`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
+		},
+		{
+			Name:   "hits_timeout_content_1h",
+			Path:   "/select/logsql/hits",
+			Params: url.Values{"query": {`namespace:"prod" "timeout"`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
+		},
+		// Long-window word search — VL uses inverted index across all 24h blocks.
+		{
+			Name:   "word_error_24h",
+			Path:   "/select/logsql/query",
+			Params: url.Values{"query": {`namespace:"prod" "error"`}, "start": {start24h}, "end": {end}, "limit": {"1000"}},
+		},
+		{
+			Name:   "regex_5xx_24h",
+			Path:   "/select/logsql/query",
+			Params: url.Values{"query": {`namespace:"prod" ~"5[0-9][0-9]"`}, "start": {start24h}, "end": {end}, "limit": {"500"}},
+		},
+		// Stats count on content filter — equivalent of count_over_time.
+		{
+			Name:   "stats_count_errors_24h",
+			Path:   "/select/logsql/stats_query",
+			Params: url.Values{"query": {`namespace:"prod" "error" | count()`}, "start": {start24h}, "end": {end}, "step": {"1h"}},
+		},
+	}}
+}
+
+// VLHighCardinality mirrors HighCardinality using VictoriaLogs native LogsQL.
+// VL's columnar model is not stream-count-sensitive — cardinality lives in the
+// column index rather than in-memory stream tracker like Loki's ingester.
+func VLHighCardinality(now time.Time) Workload {
+	start5m := ns(now.Add(-5 * time.Minute))
+	start1h := ns(now.Add(-1 * time.Hour))
+	start24h := ns(now.Add(-24 * time.Hour))
+	end := ns(now)
+
+	return Workload{Name: "high_cardinality", Queries: []Query{
+		// stream_ids — VL equivalent of Loki series.
+		{
+			Name:   "stream_ids_1h",
+			Path:   "/select/logsql/stream_ids",
+			Params: url.Values{"query": {`namespace:"prod"`}, "start": {start1h}, "end": {end}},
+		},
+		{
+			Name:   "stream_ids_24h",
+			Path:   "/select/logsql/stream_ids",
+			Params: url.Values{"query": {`namespace:"prod"`}, "start": {start24h}, "end": {end}},
+		},
+		// Field values for pod — VL column index lookup.
+		{
+			Name:   "field_values_pod_1h",
+			Path:   "/select/logsql/field_values",
+			Params: url.Values{"fieldName": {"pod"}, "query": {`namespace:"prod"`}, "start": {start1h}, "end": {end}},
+		},
+		{
+			Name:   "field_values_pod_24h",
+			Path:   "/select/logsql/field_values",
+			Params: url.Values{"fieldName": {"pod"}, "query": {`namespace:"prod"`}, "start": {start24h}, "end": {end}},
+		},
+		// Log select per pod — VL uses stream filter.
+		{
+			Name:   "log_by_pod_1h",
+			Path:   "/select/logsql/query",
+			Params: url.Values{"query": {`namespace:"prod" app:"api-gateway"`}, "start": {start1h}, "end": {end}, "limit": {"1000"}},
+		},
+		// Hits grouped — VL aggregates per bucket without materializing all stream IDs.
+		{
+			Name:   "hits_prod_1m_step",
+			Path:   "/select/logsql/hits",
+			Params: url.Values{"query": {`namespace:"prod"`}, "start": {start1h}, "end": {end}, "step": {"1m"}},
+		},
+		// count_uniq(pod) — count distinct pod values.
+		{
+			Name:   "count_uniq_pod_1h",
+			Path:   "/select/logsql/stats_query",
+			Params: url.Values{"query": {`namespace:"prod" | count_uniq(pod)`}, "start": {start1h}, "end": {end}, "step": {"5m"}},
+		},
+		// field_names — VL scans column headers, not all log lines.
+		{
+			Name:   "field_names_5m",
+			Path:   "/select/logsql/field_names",
+			Params: url.Values{"query": {`namespace:"prod"`}, "start": {start5m}, "end": {end}},
+		},
+		{
+			Name:   "field_names_1h",
+			Path:   "/select/logsql/field_names",
+			Params: url.Values{"query": {`namespace:"prod"`}, "start": {start1h}, "end": {end}},
+		},
+		// Hits over 24h — tests VL performance at large retention + high cardinality.
+		{
+			Name:   "hits_prod_24h",
+			Path:   "/select/logsql/hits",
+			Params: url.Values{"query": {`namespace:"prod"`}, "start": {start24h}, "end": {end}, "step": {"1h"}},
+		},
+	}}
+}
+
+// VLAll returns all standard VL-native workloads for the given time reference.
 func VLAll(now time.Time) []Workload {
 	return []Workload{VLSmall(now), VLHeavy(now), VLLongRange(now), VLCompute(now)}
 }
 
-// VLByName returns the named VL-native workloads.
+// VLAllEdgeCases returns VL-native edge-case workloads.
+func VLAllEdgeCases(now time.Time) []Workload {
+	return []Workload{VLUnindexedScan(now), VLHighCardinality(now)}
+}
+
+// VLByName returns the named VL-native workloads, including edge-case workloads.
 func VLByName(names []string, now time.Time) []Workload {
-	all := VLAll(now)
+	all := append(VLAll(now), VLAllEdgeCases(now)...)
 	if len(names) == 0 {
-		return all
+		return VLAll(now)
 	}
 	m := make(map[string]Workload, len(all))
 	for _, w := range all {

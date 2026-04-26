@@ -564,16 +564,227 @@ func Compute(now time.Time) Workload {
 	}}
 }
 
-// All returns all workloads for the given time reference.
+// UnindexedScan: content-search queries that expose the fundamental indexing gap between
+// Loki (no content index → full chunk scan) and VictoriaLogs (inverted token index →
+// targeted block lookup). Use this workload with a large dataset to show the O(total_bytes)
+// vs O(matching_blocks) scaling difference.
+//
+// Loki must scan every chunk belonging to the matched streams to find substring/regex
+// matches in log content. VictoriaLogs maintains a word-level inverted index, so most
+// token searches skip non-matching blocks entirely.
+func UnindexedScan(now time.Time) Workload {
+	start1h := ns(now.Add(-1 * time.Hour))
+	start6h := ns(now.Add(-6 * time.Hour))
+	start24h := ns(now.Add(-24 * time.Hour))
+	end := ns(now)
+
+	return Workload{Name: "unindexed_scan", Queries: []Query{
+		// Word match — Loki: full chunk scan. VL: inverted index lookup.
+		{
+			Name: "word_timeout_1h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod"} |= "timeout"`},
+				"start": {start1h}, "end": {end}, "limit": {"1000"},
+			},
+		},
+		{
+			Name: "word_declined_1h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod"} |= "declined"`},
+				"start": {start1h}, "end": {end}, "limit": {"1000"},
+			},
+		},
+		// Regex match — Loki: regex scan of all chunks. VL: regex on candidate blocks.
+		{
+			Name: "regex_user_id_1h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod"} |~ "usr_[0-9]{5}"`},
+				"start": {start1h}, "end": {end}, "limit": {"500"},
+			},
+		},
+		{
+			Name: "regex_status_codes_6h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod"} |~ "status=(4|5)[0-9][0-9]"`},
+				"start": {start6h}, "end": {end}, "limit": {"500"},
+			},
+		},
+		// Negation filter — Loki must still scan all chunks to verify absence.
+		{
+			Name: "exclude_info_1h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod"} != "info"`},
+				"start": {start1h}, "end": {end}, "limit": {"500"},
+			},
+		},
+		// Rate metric over content-filtered stream — full scan per rate window.
+		{
+			Name: "rate_error_content_1h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum(rate({namespace="prod"} |= "error" [5m]))`},
+				"start": {start1h}, "end": {end}, "step": {"60"},
+			},
+		},
+		{
+			Name: "rate_timeout_content_1h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (app) (rate({namespace="prod"} |= "timeout" [5m]))`},
+				"start": {start1h}, "end": {end}, "step": {"60"},
+			},
+		},
+		// Long-window content scan — most expensive case for Loki (24h × all streams).
+		{
+			Name: "word_error_24h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod"} |= "error"`},
+				"start": {start24h}, "end": {end}, "limit": {"1000"},
+			},
+		},
+		{
+			Name: "regex_5xx_24h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod"} |~ "5[0-9][0-9]"`},
+				"start": {start24h}, "end": {end}, "limit": {"500"},
+			},
+		},
+		// Count over content filter — aggregation forces full scan.
+		{
+			Name: "count_errors_24h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (app) (count_over_time({namespace="prod"} |= "error" [1h]))`},
+				"start": {start24h}, "end": {end}, "step": {"3600"},
+			},
+		},
+	}}
+}
+
+// HighCardinality: queries over high-cardinality label streams. These expose Loki's
+// O(streams × retention) memory model — Loki ingesters must track every unique label
+// combination as a separate stream, holding chunk metadata for each in RAM. VictoriaLogs
+// uses columnar storage with a single stream-level index, so cardinality has minimal
+// memory impact beyond index size.
+//
+// Requires seeding with --high-cardinality flag (adds pod as a stream label with
+// --pods-per-service unique pods, creating N×services unique Loki streams).
+func HighCardinality(now time.Time) Workload {
+	start5m := ns(now.Add(-5 * time.Minute))
+	start1h := ns(now.Add(-1 * time.Hour))
+	start24h := ns(now.Add(-24 * time.Hour))
+	end := ns(now)
+
+	return Workload{Name: "high_cardinality", Queries: []Query{
+		// Series count — returns one entry per unique label combination.
+		// At high cardinality, this response is huge and Loki must materialize all stream IDs.
+		{
+			Name: "series_all_1h",
+			Path: "/loki/api/v1/series",
+			Params: url.Values{
+				"match[]": {`{namespace="prod"}`},
+				"start":   {start1h}, "end": {end},
+			},
+		},
+		{
+			Name: "series_all_24h",
+			Path: "/loki/api/v1/series",
+			Params: url.Values{
+				"match[]": {`{namespace="prod"}`},
+				"start":   {start24h}, "end": {end},
+			},
+		},
+		// Label values for a high-cardinality label (pod).
+		{
+			Name: "label_values_pod_1h",
+			Path: "/loki/api/v1/label/pod/values",
+			Params: url.Values{"start": {start1h}, "end": {end}},
+		},
+		{
+			Name: "label_values_pod_24h",
+			Path: "/loki/api/v1/label/pod/values",
+			Params: url.Values{"start": {start24h}, "end": {end}},
+		},
+		// Per-pod selection — fan-out across many streams at query time.
+		{
+			Name: "query_range_by_pod_1h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod",app="api-gateway"}`},
+				"start": {start1h}, "end": {end}, "limit": {"1000"},
+			},
+		},
+		// Aggregation across all high-cardinality streams.
+		{
+			Name: "rate_by_pod_1h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (pod) (rate({namespace="prod"}[5m]))`},
+				"start": {start1h}, "end": {end}, "step": {"60"},
+			},
+		},
+		// Count distinct pods (cardinality measurement).
+		{
+			Name: "count_distinct_pods_1h",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`count(sum by (pod) (count_over_time({namespace="prod"}[1m])))`},
+				"start": {start1h}, "end": {end}, "step": {"300"},
+			},
+		},
+		// Index stats — at high cardinality, Loki must enumerate all matching streams.
+		{
+			Name: "index_stats_prod_1h",
+			Path: "/loki/api/v1/index/stats",
+			Params: url.Values{
+				"query": {`{namespace="prod"}`},
+				"start": {start1h}, "end": {end},
+			},
+		},
+		{
+			Name: "index_stats_prod_24h",
+			Path: "/loki/api/v1/index/stats",
+			Params: url.Values{
+				"query": {`{namespace="prod"}`},
+				"start": {start24h}, "end": {end},
+			},
+		},
+		// Detected fields — must scan all streams to discover fields across high-cardinality data.
+		{
+			Name: "detected_fields_prod_5m",
+			Path: "/loki/api/v1/detected_fields",
+			Params: url.Values{
+				"query": {`{namespace="prod"}`},
+				"start": {start5m}, "end": {end},
+			},
+		},
+	}}
+}
+
+// All returns all standard workloads for the given time reference.
 func All(now time.Time) []Workload {
 	return []Workload{Small(now), Heavy(now), LongRange(now), Compute(now)}
 }
 
-// ByName returns the named workloads.
+// AllEdgeCases returns edge-case workloads that expose architectural trade-offs.
+// These require specific data shapes (unindexed_scan: any data; high_cardinality:
+// seed with --high-cardinality flag) and are not included in the default run.
+func AllEdgeCases(now time.Time) []Workload {
+	return []Workload{UnindexedScan(now), HighCardinality(now)}
+}
+
+// ByName returns the named workloads, including edge-case workloads.
 func ByName(names []string, now time.Time) []Workload {
-	all := All(now)
+	all := append(All(now), AllEdgeCases(now)...)
 	if len(names) == 0 {
-		return all
+		return All(now)
 	}
 	m := make(map[string]Workload, len(all))
 	for _, w := range all {
