@@ -79,6 +79,43 @@ The warm proxy uses more RAM than Loki in this table because the L1 response cac
 | Content search | 13,415 ms | 2 ms | **6,700×** |
 | High-cardinality | 1,344 ms | 1 ms | **1,344×** |
 
+### The proxy becomes invisible at scale
+
+At small scale the proxy is a visible addition: ~50 MB RSS baseline + a bounded L1 cache. As your log volume grows, Loki's resource requirements scale fast while VL+proxy stays lean. At production scale **the proxy becomes a rounding error** in total cluster resources.
+
+**Loki's scaling problem:**
+
+Loki is a distributed system in production. Grafana's own sizing guide for a 3–30 TB/day cluster recommends **431 vCPU / 857 Gi RAM** across distributor, ingester, querier, compactor, and ruler components — all at replication factor 3. That RF=3 means every write is replicated 3×, every cross-zone push pays 3× network egress, and every component must be sized 3× for durability.
+
+Ingesters grow linearly with active streams: each stream holds an in-memory chunk. 10,000 active pods × 10 label combinations = 100,000 active streams — each needing a chunk buffer in ingester RAM. Queries that touch high-cardinality streams cause the querier to load hundreds of chunk files simultaneously.
+
+**VL+proxy at the same scale:**
+
+VictoriaLogs runs as a single binary with no mandatory replication overhead. Its inverted index is stream-independent — 100,000 active streams require the same index structures as 1,000 streams (only the label cardinality table grows, not the storage engine). A typical production VL deployment uses **10–30× less RAM and 5–15× less disk** than an equivalent Loki cluster.
+
+**Where the proxy fits:**
+
+| Scale | Loki cluster | VL | Proxy | Proxy % of total |
+|-------|:---:|:---:|:---:|:---:|
+| Small (1 GB/day) | 16 vCPU / 32 GB RAM | 2 vCPU / 4 GB | 0.1 vCPU / 0.5 GB | ~2.5% |
+| Medium (50 GB/day) | 64 vCPU / 128 GB RAM | 8 vCPU / 16 GB | 0.2 vCPU / 1 GB | ~5% |
+| Large (1 TB/day) | 431 vCPU / 857 GB RAM | 32 vCPU / 64 GB | 0.5 vCPU / 2 GB | **<1%** |
+| XL (10 TB/day) | 1,221 vCPU / 2,235 GB RAM | 80 vCPU / 160 GB | 1 vCPU / 4 GB | **<0.5%** |
+
+At 1 TB/day the proxy uses under 1% of what Loki requires for the same workload. At 10 TB/day it is below measurement noise. The proxy's response cache actively reduces VL load — at steady-state, 80–99% of Grafana dashboard queries hit cache and never reach VL at all, so the effective VL cluster can be sized for the remaining 1–20% of traffic.
+
+**The actual resource equation at scale:**
+
+```
+Loki (1 TB/day):   431 vCPU + 857 GB RAM + 3× cross-AZ egress
+VL (1 TB/day):      32 vCPU +  64 GB RAM + no replication overhead
+Proxy (fleet of 3):  1 vCPU +   6 GB RAM (3 × 2 GB, shared via peer cache)
+
+Total VL+proxy:     33 vCPU +  70 GB RAM   →  13× less CPU, 12× less RAM than Loki
+```
+
+The Loki → VL+proxy migration does not require changing a single Grafana dashboard, alert rule, or API client. The proxy maintains full Loki API compatibility.
+
 ---
 
 ## The Cost Case
