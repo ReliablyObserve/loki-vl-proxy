@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.18.0] - 2026-04-26
+
 ### Added
 
 - bench(pprof): `loki-bench` captures CPU, heap, alloc, and goroutine profiles from proxy `/debug/pprof/*` endpoints during each run; profiles written to `bench/results/pprof/<workload>-c<N>-<target>-<type>.pprof` for flamegraph analysis.
