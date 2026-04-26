@@ -548,28 +548,112 @@ reach VL, so real VL concurrency is far lower than the client-facing rate even a
 
 ---
 
-## Cache Size Sizing Guide
+## Cache Sizing and Efficiency Guide
+
+### How proxy memory grows
+
+The proxy's RSS is dominated by three components:
+
+| Component | Size | Growth model | Notes |
+|---|---|---|---|
+| Process baseline | ~30–50 MB | Fixed | Binary + runtime + goroutine stack |
+| L1 cache | 0 → `-cache-max` | Grows until cap, then stable (LRU) | Default cap: 512 MB |
+| In-flight buffers | ~1–5 MB at c=100 | Proportional to concurrency × response size | Transient |
+
+**Growth curve:** At startup, RSS is ~30–50 MB. As unique queries come in, the L1 cache fills toward `-cache-max`. Once full, LRU eviction keeps RSS bounded. The cache **will not grow beyond `-cache-max`** regardless of traffic volume.
+
+### When cache is efficient (high hit rate)
+
+Cache provides large throughput gains when:
+- The same query repeats frequently — Grafana Drilldown fires the same panel queries on every page load
+- Dashboard queries cover stable windows — last 1h, last 6h panels are repeated every auto-refresh
+- Multiple users share the same dashboards — one cache entry serves all users
+
+Cache provides **no** efficiency gain when:
+- Every query is unique (random time ranges, high jitter, one-shot analytical queries)
+- Working set >> `-cache-max` (LRU evicts entries before they're reused)
+- Queries span live time windows that change every second (tail/streaming queries)
+
+At `--jitter=2h` and c=100, the benchmark shows ~50% birthday-paradox collision rate — roughly the best real-world estimate for busy Grafana dashboards where multiple users open the same panels in the same time window.
+
+### When cache adds RSS without proportional gain
+
+If your workload is:
+- Analytical queries (each query uses a unique 24h window, never repeated)
+- Live dashboards with sub-1s refresh (window moves every refresh, cache entries never reused)
+- Low concurrency (c≤5) with few repeated queries
+
+Then the cache fills with entries that will never be hit. In this case, reduce `-cache-max` to free memory, and let the **coalescer** handle thundering-herd protection (it operates without cache).
+
+**Rule of thumb:** If `loki_vl_proxy_cache_hit_rate < 50%` and the cache is over 256 MB, halving `-cache-max` will cost < 5% throughput and save significant RSS.
 
 ### What `256 MB` default L1 covers
 
-The default `-cache-max-bytes=268435456` (256 MB) holds roughly:
+The default `-cache-max=536870912` (512 MB default as of v1.15+) holds roughly:
 
-| Cache size | Approximate capacity | Eviction behavior |
+| Cache-max | Approximate capacity | Eviction behavior |
 |---|---|---|
-| 256 MB (default) | 500–1,000 medium query results | LRU; hot dashboards stay warm, cold queries evict |
-| 1 GB | 4,000–8,000 results | Large working set; multi-team dashboards stay warm |
-| 4 GB | 16,000–32,000 results | Full-day working set for large teams rarely evicts |
-| L2 disk (bbolt) | Any size; persistent across restarts | `~5–20ms` miss cost vs sub-µs L1, zero VL call on hits |
+| 128 MB | 250–1,000 metadata results | LRU; suits pure metadata workloads |
+| 512 MB (default) | 1,000–5,000 medium results | Hot dashboards stay warm, cold queries evict |
+| 2 GB | 8,000–20,000 results | Large team working set rarely evicts |
+| 8 GB | 32,000–80,000 results | Full-day working set for large orgs |
+| L2 disk (bbolt) | Any size; persistent across restarts | ~5–20ms miss cost vs sub-µs L1 |
 
-Average result size depends heavily on log volume per query. For `query_range` over
-small time windows returning 100 log lines, expect `~100–300 KB` per result. For
-label/series metadata queries, `~5–20 KB` per result.
+Average result size depends on log volume per query. `query_range` over 1h returning 100 log lines: ~100–300 KB. Label/metadata queries: ~5–20 KB. Aggregation results (matrix): ~10–50 KB.
+
+### Peer cache fleet sizing
+
+Without the peer cache (L3), each proxy replica caches independently. A query load-balanced across N replicas may hit all N replicas and miss on N-1 of them.
+
+**With peer cache enabled**, replicas form a fleet and share cache state. A hit on replica A is served to a request arriving on replica B without going to VL.
+
+#### Fleet sizing calculations
+
+**Working set** — the total unique cache content needed for a fleet:
+
+```
+working_set = unique_queries_per_second × avg_TTL × avg_response_bytes
+```
+
+Example: 500 unique queries/s, 5s TTL, 150 KB avg → 375 MB working set
+
+**Per-replica cache-max** — with N replicas and peer cache:
+
+```
+per_replica_cache_max = working_set / N  (minimum — each replica holds 1/N of the fleet's content)
+per_replica_cache_max = working_set      (maximum — each replica can serve the full working set on its own if peers are down)
+```
+
+Practical guidance: set `per_replica_cache_max = working_set / sqrt(N)` — this ensures good
+hit rate with the fleet while giving each replica enough space to handle burst load if peers go down.
+
+| Fleet size | Working set | Recommended per-replica cache | Total fleet cache RSS |
+|---:|---:|---:|---:|
+| 2 replicas | 500 MB | 350 MB | 700 MB |
+| 3 replicas | 500 MB | 290 MB | 870 MB |
+| 5 replicas | 500 MB | 225 MB | 1.1 GB |
+| 10 replicas | 500 MB | 160 MB | 1.6 GB |
+| 20 replicas | 500 MB | 110 MB | 2.2 GB |
+
+At 20 replicas, each replica only needs 110 MB (vs 500 MB without fleet sharing) — 4.5× RSS reduction per pod, 2.3× reduction total fleet footprint vs N×working_set.
+
+#### How proxy RSS grows in a fleet over time
+
+```
+Day 0 (cold): RSS ≈ 50 MB (baseline)
+Day 1 (warming): RSS ≈ 50 MB + (cache fill rate × hours)
+Day N (steady): RSS ≈ 50 MB + per_replica_cache_max (L1 full, stable)
+```
+
+With peer cache and `gossip`-based state sync, a new replica warms from peers in minutes
+rather than hours. The RSS of the fleet as a whole grows sub-linearly with replicas because
+shared cache state means each new replica doesn't need to independently store the full working set.
 
 ### Configuring L1 + L2 for production
 
 ```bash
 # 1 GB L1 in-memory + 10 GB L2 disk, cache survives pod restarts
--cache-max-bytes=1073741824 \
+-cache-max=1073741824 \
 -disk-cache-path=/mnt/cache/proxy.db \
 -disk-cache-max-bytes=10737418240
 ```
@@ -580,10 +664,13 @@ label/series metadata queries, `~5–20 KB` per result.
 # Eviction rate — non-zero means L1 is too small
 rate(loki_vl_proxy_cache_evictions_total[5m])
 
-# If eviction rate > 0 and cache hit rate < 90%, increase -cache-max-bytes
+# Hit rate — below 50% means cache too small or workload not cacheable
 rate(loki_vl_proxy_cache_hits_total[5m])
 /
 (rate(loki_vl_proxy_cache_hits_total[5m]) + rate(loki_vl_proxy_cache_misses_total[5m]))
+
+# Per-replica cache RSS — should stay below -cache-max
+process_resident_memory_bytes{job="loki-vl-proxy"}
 ```
 
 Rule of thumb: `L1 size = (unique active queries per hour) × (average response size)`.
