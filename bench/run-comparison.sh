@@ -88,8 +88,9 @@ if [ -z "$PROXY_NO_CACHE_URL" ]; then
     "$PROXY_BINARY" \
       -listen=":$NO_CACHE_PORT" \
       -backend="$VL_URL" \
-      -cache-max=0 \
-      -cache-max-bytes=0 \
+      -cache-ttl=1ns \
+      -cache-max=1 \
+      -cache-max-bytes=1 \
       -log-level=warn \
       &>/tmp/proxy-nocache.log &
     NO_CACHE_PID=$!
@@ -125,15 +126,20 @@ echo " Output:         $OUTPUT_DIR"
 echo "════════════════════════════════════════════════════════════"
 echo
 
-# Wait for an endpoint to be ready.
+# Wait for an endpoint to be reachable (any HTTP response = up; circuit breaker 502 is ok).
 wait_ready() {
   local url="$1"
   local name="$2"
   local max_wait=30
   local waited=0
   printf "Waiting for %s at %s" "$name" "$url"
-  while ! curl -sf "$url/ready" -o /dev/null 2>/dev/null && \
-        ! curl -sf "$url/loki/api/v1/labels" -o /dev/null 2>/dev/null; do
+  while true; do
+    local code
+    code=$(curl -so /dev/null -w "%{http_code}" "$url/loki/api/v1/labels" 2>/dev/null || echo "000")
+    # Any non-zero, non-connection-refused HTTP code means the process is up.
+    if [ "$code" != "000" ]; then
+      break
+    fi
     if [ $waited -ge $max_wait ]; then
       echo " TIMEOUT — is $name running?"
       exit 1
