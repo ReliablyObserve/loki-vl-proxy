@@ -3,25 +3,35 @@ package middleware
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	"golang.org/x/sync/singleflight"
 )
+
+// ErrGuardRejected is returned by DoWithGuard when guard() returns false and no
+// call for that key is currently in-flight. Callers should treat it as a 503.
+var ErrGuardRejected = errors.New("guard rejected: no in-flight call to join")
 
 // Coalescer deduplicates identical concurrent requests.
 // When N clients send the same query simultaneously, only 1 request
 // goes to the backend. All N clients share the single response.
 type Coalescer struct {
 	group          singleflight.Group
-	ActiveShared   atomic.Int64 // requests currently sharing a coalesced result
-	CoalescedTotal atomic.Int64 // total coalesced (deduplicated) requests
+	inflightMu     sync.Mutex
+	inflight       map[string]int // reference count of goroutines inside DoWithGuard for each key
+	ActiveShared   atomic.Int64  // requests currently sharing a coalesced result
+	CoalescedTotal atomic.Int64  // total coalesced (deduplicated) requests
 }
 
 func NewCoalescer() *Coalescer {
-	return &Coalescer{}
+	return &Coalescer{
+		inflight: make(map[string]int),
+	}
 }
 
 type coalescedResponse struct {
@@ -65,6 +75,40 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 
 	cr := result.(*coalescedResponse)
 	return cr.status, cr.headers, cr.body, nil
+}
+
+// DoWithGuard is like Do but couples the circuit breaker with request coalescing.
+//
+// If a call for key is already in-flight (another goroutine is running fn for
+// this key), this goroutine joins that call and shares the result — the guard
+// is bypassed. This means: when the breaker is open and a probe request is
+// already in flight, subsequent identical requests wait for the probe result
+// rather than each failing independently with a CB-open error.
+//
+// If no call for key is in-flight and guard() returns false, ErrGuardRejected
+// is returned immediately without calling fn or touching the backend.
+//
+// Typical usage: pass p.breaker.Allow as guard and vlGetInner (no CB check) as fn.
+func (c *Coalescer) DoWithGuard(key string, guard func() bool, fn func() (*http.Response, error)) (int, http.Header, []byte, error) {
+	c.inflightMu.Lock()
+	count := c.inflight[key]
+	if count == 0 && !guard() {
+		c.inflightMu.Unlock()
+		return 0, nil, nil, ErrGuardRejected
+	}
+	c.inflight[key]++
+	c.inflightMu.Unlock()
+
+	status, headers, body, err := c.Do(key, fn)
+
+	c.inflightMu.Lock()
+	c.inflight[key]--
+	if c.inflight[key] == 0 {
+		delete(c.inflight, key)
+	}
+	c.inflightMu.Unlock()
+
+	return status, headers, body, err
 }
 
 // RequestKey builds a cache/coalescing key from an HTTP request.

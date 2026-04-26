@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -252,6 +253,101 @@ func TestCircuitBreaker_WindowExpiry(t *testing.T) {
 	cb.RecordFailure()
 	if cb.State() != "closed" {
 		t.Errorf("expected closed (old failures expired from window), got %s", cb.State())
+	}
+}
+
+// TestCoalescer_DoWithGuard_AllowsWhenClosed verifies normal operation when guard passes.
+func TestCoalescer_DoWithGuard_AllowsWhenClosed(t *testing.T) {
+	c := NewCoalescer()
+	called := false
+	guard := func() bool { return true }
+	fn := func() (*http.Response, error) {
+		called = true
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	}
+
+	status, _, _, err := c.DoWithGuard("key", guard, fn)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if status != 200 {
+		t.Errorf("expected 200, got %d", status)
+	}
+	if !called {
+		t.Error("expected fn to be called")
+	}
+}
+
+// TestCoalescer_DoWithGuard_RejectsWhenNoInflight verifies rejection when guard
+// fails and no call is in-flight for the key.
+func TestCoalescer_DoWithGuard_RejectsWhenNoInflight(t *testing.T) {
+	c := NewCoalescer()
+	guard := func() bool { return false }
+	fn := func() (*http.Response, error) {
+		t.Error("fn should not be called when guard rejects")
+		return nil, nil
+	}
+
+	_, _, _, err := c.DoWithGuard("key", guard, fn)
+	if !errors.Is(err, ErrGuardRejected) {
+		t.Errorf("expected ErrGuardRejected, got %v", err)
+	}
+}
+
+// TestCoalescer_DoWithGuard_JoinsInFlight verifies that when a request is in-flight,
+// subsequent requests join it even if the guard would reject them (e.g., CB open).
+func TestCoalescer_DoWithGuard_JoinsInFlight(t *testing.T) {
+	c := NewCoalescer()
+
+	// Gate: fn blocks until we release it, simulating a slow VL response.
+	gate := make(chan struct{})
+	started := make(chan struct{})
+
+	guardOpen := atomic.Bool{} // simulates CB open after first request starts
+	guardOpen.Store(false)
+
+	fn := func() (*http.Response, error) {
+		close(started) // signal that leader is running
+		<-gate         // block until released
+		return &http.Response{StatusCode: 200, Body: http.NoBody}, nil
+	}
+
+	var wg sync.WaitGroup
+	results := make([]error, 3)
+	statuses := make([]int, 3)
+
+	// First goroutine: guard passes (CB closed), becomes leader.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		statuses[0], _, _, results[0] = c.DoWithGuard("key", func() bool { return true }, fn)
+	}()
+
+	// Wait for leader to start, then open the CB.
+	<-started
+	guardOpen.Store(true)
+
+	// Second and third goroutines: guard would reject (CB open), but should join the in-flight.
+	for i := 1; i <= 2; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			statuses[idx], _, _, results[idx] = c.DoWithGuard("key", func() bool { return !guardOpen.Load() }, fn)
+		}(i)
+	}
+
+	// Give joiners time to enter DoWithGuard and block on group.Do.
+	time.Sleep(20 * time.Millisecond)
+	close(gate) // release leader
+	wg.Wait()
+
+	for i, err := range results {
+		if err != nil {
+			t.Errorf("goroutine %d: expected nil error (joined in-flight), got %v", i, err)
+		}
+		if statuses[i] != 200 {
+			t.Errorf("goroutine %d: expected status 200, got %d", i, statuses[i])
+		}
 	}
 }
 
