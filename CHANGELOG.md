@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf(proxy): cache parsed stream label maps by `_stream` string value to eliminate redundant label parsing on repeated log entries; copy on write to prevent cache mutation bugs.
+- perf(proxy): reuse intermediate map in `translateStatsResponseLabelsWithContext` across loop iterations to reduce per-result allocations (~27% of heap at c=100).
+- perf(postprocess): use `sync.Pool` for tokenizer slice buffers in `patternLineTokenizer.Tokenize` to eliminate per-call allocations (~6.6 GB saved at c=100).
+
+## [1.17.3] - 2026-04-26
+
 ### Fixed
 
 - fix(e2e): add `_msg` field to all JSON-format log generators so VictoriaLogs stores the human-readable message correctly and Grafana renders JSON service logs consistently with Loki.

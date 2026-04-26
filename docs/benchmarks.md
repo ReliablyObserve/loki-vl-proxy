@@ -28,7 +28,7 @@ Measured on Apple M5 Pro (18 cores, 64 GB RAM), macOS 26.4.1, Go 1.26.2 darwin/a
 | high (10K rps) | 20,000 | 200 | 39,057 req/s | 26 us | 1,331 MB | 8.7 MB | 0 |
 
 Key observations:
-- **Live heap stays <10 MB** even at 20K requests — GC keeps up
+- **Live heap stays &lt;10 MB** even at 20K requests — GC keeps up
 - **Total alloc is high** (~70 KB/request) due to JSON parse/serialize — this is GC pressure, not leak
 - **No errors** at 200 concurrent connections (after connection pool tuning)
 
@@ -47,7 +47,7 @@ Measured from load tests (proxy overhead only, excludes network I/O):
 
 | Load (req/s) | CPU (single core) | Memory (steady state) | Notes |
 |---|---|---|---|
-| 100 | <1% | ~10 MB | Idle, mostly cache hits |
+| 100 | &lt;1% | ~10 MB | Idle, mostly cache hits |
 | 1,000 | ~8% | ~20 MB | Mix of cache hits/misses |
 | 10,000 | ~30% | ~50 MB | Significant cache miss rate, backend-bound |
 | 40,000+ | ~100% | ~100 MB | CPU-bound, needs horizontal scaling |

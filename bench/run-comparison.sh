@@ -69,19 +69,21 @@ echo "✓ Built /tmp/loki-bench"
 echo
 
 # Auto-spawn no-cache proxy if not pre-configured and binary is available.
-# A no-cache proxy runs with -cache-max=0 -cache-max-bytes=0 so every request
-# hits VL — this measures the proxy translation overhead and raw VL query speed
-# through the Loki-compatible API, without cache masking the numbers.
+# A no-cache proxy runs with -cache-disabled so every request hits VL — this
+# measures the proxy translation overhead and raw VL query speed through the
+# Loki-compatible API, without cache masking the numbers.
+#
+# We always build the proxy binary from source before spawning it. This
+# ensures the no-cache instance runs the same code as the warm proxy and has
+# all current flags (including -server.enable-pprof). Relying on a pre-built
+# binary risks using a stale build that lacks recently added flags.
 if [ -z "$PROXY_NO_CACHE_URL" ]; then
   PROXY_BINARY="${PROXY_BINARY:-}"
   if [ -z "$PROXY_BINARY" ]; then
-    if command -v loki-vl-proxy &>/dev/null; then
-      PROXY_BINARY="loki-vl-proxy"
-    elif [ -f "$REPO_ROOT/dist/loki-vl-proxy" ]; then
-      PROXY_BINARY="$REPO_ROOT/dist/loki-vl-proxy"
-    elif [ -f "/tmp/loki-vl-proxy" ]; then
-      PROXY_BINARY="/tmp/loki-vl-proxy"
-    fi
+    echo "Building loki-vl-proxy for no-cache instance..."
+    go build -o /tmp/loki-vl-proxy "$REPO_ROOT/cmd/proxy/"
+    echo "✓ Built /tmp/loki-vl-proxy"
+    PROXY_BINARY="/tmp/loki-vl-proxy"
   fi
 
   if [ -n "$PROXY_BINARY" ]; then
@@ -90,6 +92,8 @@ if [ -z "$PROXY_NO_CACHE_URL" ]; then
       -listen=":$NO_CACHE_PORT" \
       -backend="$VL_URL" \
       -cache-disabled \
+      -server.enable-pprof \
+      "-server.admin-auth-token=${PPROF_AUTH_TOKEN:-bench-pprof-token}" \
       -log-level=warn \
       &>/tmp/proxy-nocache.log &
     NO_CACHE_PID=$!
@@ -164,6 +168,9 @@ mkdir -p "$OUTPUT_DIR"
   --loki-metrics="$LOKI_METRICS" \
   --proxy-metrics="$PROXY_METRICS" \
   --vl-metrics="$VL_METRICS" \
+  --pprof-proxy="$PROXY_URL" \
+  --pprof-no-cache="${PROXY_NO_CACHE_URL}" \
+  --pprof-auth-token="${PPROF_AUTH_TOKEN:-bench-pprof-token}" \
   --output="$OUTPUT_DIR" \
   "$@"
 

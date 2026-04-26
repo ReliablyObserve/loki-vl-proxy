@@ -171,6 +171,9 @@ services:
       - "-label-values-index-persist-interval=5s"
       - "-label-values-index-startup-stale-threshold=30s"
       - "-label-values-index-startup-peer-warm-timeout=2s"
+      # pprof for benchmark profiling (CPU/heap/alloc capture during bench runs).
+      - "-server.enable-pprof"
+      - "-server.admin-auth-token=bench-pprof-token"
     depends_on:
       victorialogs:
         condition: service_healthy

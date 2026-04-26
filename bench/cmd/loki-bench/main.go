@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/metricscrape"
+	benchpprof "github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/pprof"
 	"github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/report"
 	"github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/runner"
 	"github.com/ReliablyObserve/Loki-VL-proxy/bench/internal/verify"
@@ -58,7 +59,11 @@ func main() {
 		version      = flag.String("version", "", "Version tag attached to results (e.g. v1.17.1)")
 		doVerify     = flag.Bool("verify", false, "Before benchmarking, verify Loki and proxy return equivalent data for each query")
 		verifyStrict = flag.Bool("verify-strict", false, "Exit non-zero if any verification diff is found")
-		jitter       = flag.Duration("jitter", 0, "Per-request time-window jitter: shifts each query's start/end/time by a random amount in [0, jitter] backward. Produces a realistic mix of cache hits, partial hits, and misses. Example: --jitter=2h")
+		jitter            = flag.Duration("jitter", 0, "Per-request time-window jitter: shifts each query's start/end/time by a random amount in [0, jitter] backward. Produces a realistic mix of cache hits, partial hits, and misses. Example: --jitter=2h")
+		pprofProxy        = flag.String("pprof-proxy", "", "Base URL of proxy pprof endpoint (e.g. http://localhost:3100). Captures CPU/heap/alloc profiles during each proxy run.")
+		pprofNoCache      = flag.String("pprof-no-cache", "", "Base URL of no-cache proxy pprof endpoint. Captures CPU/heap/alloc profiles during each no-cache run.")
+		pprofDuration     = flag.Duration("pprof-duration", 30*time.Second, "Duration of CPU profile capture (should match or be shorter than --duration)")
+		pprofAuthToken    = flag.String("pprof-auth-token", "", "Bearer token for proxy admin/pprof endpoints (set via -server.admin-auth-token)")
 	)
 	flag.Parse()
 
@@ -184,12 +189,40 @@ func main() {
 					}
 				}
 
-				// Benchmark run.
+				// Benchmark run — optionally concurrent CPU profile capture.
 				jitterStr := ""
 				if *jitter > 0 {
 					jitterStr = fmt.Sprintf("  jitter=%s", *jitter)
 				}
 				fmt.Printf("  running %s (concurrency=%d duration=%s%s)...\n", tgt.name, conc, *duration, jitterStr)
+
+				// Determine pprof base URL for this target.
+				pprofBase := ""
+				switch tgt.name {
+				case "proxy":
+					pprofBase = *pprofProxy
+				case "proxy_nocache":
+					pprofBase = *pprofNoCache
+				}
+
+				// Start CPU profile concurrently with the bench run.
+				type cpuResult struct {
+					data []byte
+					err  error
+				}
+				var cpuCh chan cpuResult
+				if pprofBase != "" {
+					cpuCh = make(chan cpuResult, 1)
+					go func() {
+						d := *pprofDuration
+						if d > *duration {
+							d = *duration
+						}
+						data, err := benchpprof.CaptureCPU(ctx, pprofBase, *pprofAuthToken, d)
+						cpuCh <- cpuResult{data, err}
+					}()
+				}
+
 				cfg := runner.Config{
 					TargetURL:   tgt.url,
 					Concurrency: conc,
@@ -199,6 +232,43 @@ func main() {
 					TimeJitter:  *jitter,
 				}
 				result := runner.Run(ctx, cfg)
+
+				// Collect CPU profile and capture heap/alloc/goroutine snapshots.
+				if pprofBase != "" && cpuCh != nil {
+					pprofDir := filepath.Join(*outputDir, "pprof")
+					prefix := fmt.Sprintf("%s-c%d-%s", wl.Name, conc, tgt.name)
+					cpuRes := <-cpuCh
+					if cpuRes.err != nil {
+						fmt.Fprintf(os.Stderr, "  warn: pprof CPU capture: %v\n", cpuRes.err)
+					} else {
+						p := filepath.Join(pprofDir, prefix+"-cpu.pprof")
+						if err := benchpprof.Save(cpuRes.data, p); err != nil {
+							fmt.Fprintf(os.Stderr, "  warn: pprof CPU save: %v\n", err)
+						} else {
+							fmt.Printf("  pprof cpu  → %s\n", p)
+						}
+					}
+					for _, kind := range []struct {
+						name string
+						fn   func(context.Context, string, string) ([]byte, error)
+					}{
+						{"heap", benchpprof.CaptureHeap},
+						{"allocs", benchpprof.CaptureAllocs},
+						{"goroutine", benchpprof.CaptureGoroutine},
+					} {
+						data, err := kind.fn(ctx, pprofBase, *pprofAuthToken)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "  warn: pprof %s: %v\n", kind.name, err)
+							continue
+						}
+						p := filepath.Join(pprofDir, prefix+"-"+kind.name+".pprof")
+						if err := benchpprof.Save(data, p); err != nil {
+							fmt.Fprintf(os.Stderr, "  warn: pprof %s save: %v\n", kind.name, err)
+						} else {
+							fmt.Printf("  pprof %-10s → %s\n", kind.name, p)
+						}
+					}
+				}
 				result.Workload = wl.Name
 
 				// Snapshot after.

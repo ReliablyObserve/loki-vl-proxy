@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 	"unicode"
@@ -634,6 +635,22 @@ type patternLineTokenizer struct {
 	excludeDelimiters [128]rune
 }
 
+// tokenizerBuf holds pre-allocated slices reused across Tokenize calls via a pool.
+// The caller must call pool.Put after it is done with the returned slices.
+type tokenizerBuf struct {
+	tokens      []string
+	spacesAfter []int
+}
+
+var tokenizerBufPool = sync.Pool{
+	New: func() interface{} {
+		return &tokenizerBuf{
+			tokens:      make([]string, 0, 128),
+			spacesAfter: make([]int, 0, 64),
+		}
+	},
+}
+
 func newPatternLineTokenizer() *patternLineTokenizer {
 	var included [128]rune
 	var excluded [128]rune
@@ -653,8 +670,9 @@ func (p *patternLineTokenizer) Tokenize(line string) ([]string, []int, bool) {
 	if len(line) == 0 || len(line) > patternMaxLineLength {
 		return nil, nil, false
 	}
-	tokens := make([]string, 0, 128)
-	spacesAfter := make([]int, 0, 64)
+	buf := tokenizerBufPool.Get().(*tokenizerBuf)
+	tokens := buf.tokens[:0]
+	spacesAfter := buf.spacesAfter[:0]
 
 	start := 0
 	for i, char := range line {
@@ -682,9 +700,21 @@ func (p *patternLineTokenizer) Tokenize(line string) ([]string, []int, bool) {
 	}
 
 	if len(tokens) < patternMinTokens || len(tokens) > patternMaxTokens {
+		buf.tokens = tokens
+		buf.spacesAfter = spacesAfter
+		tokenizerBufPool.Put(buf)
 		return nil, nil, false
 	}
-	return tokens, spacesAfter, true
+	// Copy results to fresh slices before returning the pool buffer.
+	// The caller holds the returned slices across multiple Tokenize calls.
+	outTokens := make([]string, len(tokens))
+	copy(outTokens, tokens)
+	outSpaces := make([]int, len(spacesAfter))
+	copy(outSpaces, spacesAfter)
+	buf.tokens = tokens
+	buf.spacesAfter = spacesAfter
+	tokenizerBufPool.Put(buf)
+	return outTokens, outSpaces, true
 }
 
 func (p *patternLineTokenizer) Join(tokens []string, spacesAfter []int) string {

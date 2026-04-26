@@ -1311,7 +1311,7 @@ func TestBuildCacheLayer_WithoutDiskCache(t *testing.T) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
-	c, cleanup, err := buildCacheLayer(15*time.Second, 123, defaultCacheMaxBytes, cache.DiskCacheConfig{}, logger)
+	c, cleanup, err := buildCacheLayer(15*time.Second, 123, defaultCacheMaxBytes, false, cache.DiskCacheConfig{}, logger)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1329,7 +1329,7 @@ func TestBuildCacheLayer_WithDiskCache(t *testing.T) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
 
-	c, cleanup, err := buildCacheLayer(15*time.Second, 123, defaultCacheMaxBytes, cache.DiskCacheConfig{
+	c, cleanup, err := buildCacheLayer(15*time.Second, 123, defaultCacheMaxBytes, false, cache.DiskCacheConfig{
 		Path:          filepath.Join(t.TempDir(), "cache.db"),
 		Compression:   true,
 		FlushSize:     7,
@@ -1351,7 +1351,7 @@ func TestBuildCacheLayer_WithDiskCache(t *testing.T) {
 
 func TestBuildCacheLayer_InvalidDiskCache(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	if _, cleanup, err := buildCacheLayer(15*time.Second, 123, defaultCacheMaxBytes, cache.DiskCacheConfig{
+	if _, cleanup, err := buildCacheLayer(15*time.Second, 123, defaultCacheMaxBytes, false, cache.DiskCacheConfig{
 		Path:          t.TempDir(),
 		Compression:   true,
 		FlushSize:     7,

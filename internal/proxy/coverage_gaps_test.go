@@ -1043,10 +1043,15 @@ func TestMetrics_RecordTenantRequest(t *testing.T) {
 // =============================================================================
 
 func TestSplitLabelPairs_QuotedComma(t *testing.T) {
-	input := `app="he,llo",namespace="world"`
-	pairs := splitLabelPairs(input)
-	if len(pairs) != 2 {
-		t.Errorf("expected 2 pairs (comma in quotes ignored), got %d: %v", len(pairs), pairs)
+	// splitLabelPairs is inlined into parseStreamLabels — verify comma inside
+	// quotes is not treated as a pair separator.
+	input := `{app="he,llo",namespace="world"}`
+	labels := parseStreamLabels(input)
+	if len(labels) != 2 {
+		t.Errorf("expected 2 labels (comma in quotes ignored), got %d: %v", len(labels), labels)
+	}
+	if labels["app"] != "he,llo" {
+		t.Errorf("expected app=he,llo, got %q", labels["app"])
 	}
 }
 

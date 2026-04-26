@@ -5331,12 +5331,18 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 
 	series := make([]map[string]string, 0, len(vlResp.Values))
 	for _, v := range vlResp.Values {
-		labels := parseStreamLabels(v.Value)
-		if len(labels) > 0 {
-			labels = p.labelTranslator.TranslateLabelsMap(labels)
-			ensureSyntheticServiceName(labels)
-			series = append(series, labels)
+		stream := parseStreamLabels(v.Value)
+		if len(stream) == 0 {
+			continue
 		}
+		// Copy before translation/mutation — parseStreamLabels returns a cached map.
+		labels := make(map[string]string, len(stream))
+		for k, val := range stream {
+			labels[k] = val
+		}
+		labels = p.labelTranslator.TranslateLabelsMap(labels)
+		ensureSyntheticServiceName(labels)
+		series = append(series, labels)
 	}
 
 	result, _ := json.Marshal(map[string]interface{}{
@@ -9979,7 +9985,11 @@ func metadataFieldMap(fields map[string]string) map[string]string {
 }
 
 func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string) (map[string]string, map[string]string, map[string]string) {
-	labels := parseStreamLabels(asString(entry["_stream"]))
+	stream := parseStreamLabels(asString(entry["_stream"]))
+	labels := make(map[string]string, len(stream))
+	for k, v := range stream {
+		labels[k] = v
+	}
 	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
 		labels["level"] = value
 	}
@@ -10024,46 +10034,72 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 	return labels, structuredMetadataFields, parsedFields
 }
 
-// parseStreamLabels parses {key="value",key2="value2"} into a map.
-func parseStreamLabels(s string) map[string]string {
-	labels := make(map[string]string)
-	s = strings.Trim(s, "{}")
-	if s == "" {
-		return labels
-	}
+// streamLabelsCacheMu guards streamLabelsCache to prevent concurrent map writes.
+// The cache avoids re-parsing the same _stream value (identical for all log lines
+// in a stream), which was the top allocation hot path in pprof (10-15% of totals).
+var (
+	streamLabelsCacheMu sync.RWMutex
+	streamLabelsCache   = make(map[string]map[string]string, 256)
+)
 
-	// Simple parser for key="value" pairs
-	for _, pair := range splitLabelPairs(s) {
-		pair = strings.TrimSpace(pair)
-		eqIdx := strings.Index(pair, "=")
-		if eqIdx <= 0 {
-			continue
-		}
-		key := strings.TrimSpace(pair[:eqIdx])
-		val := strings.TrimSpace(pair[eqIdx+1:])
-		val = strings.Trim(val, `"`)
-		labels[key] = val
+// parseStreamLabels parses {key="value",key2="value2"} into a map.
+// Results are cached by the raw string — _stream values repeat heavily across
+// a result set, so the cache eliminates redundant allocations.
+// Callers must not mutate the returned map.
+func parseStreamLabels(s string) map[string]string {
+	streamLabelsCacheMu.RLock()
+	if m, ok := streamLabelsCache[s]; ok {
+		streamLabelsCacheMu.RUnlock()
+		return m
 	}
-	return labels
+	streamLabelsCacheMu.RUnlock()
+
+	m := parseStreamLabelsUncached(s)
+
+	streamLabelsCacheMu.Lock()
+	// Bound cache size to avoid unbounded growth.
+	if len(streamLabelsCache) < 4096 {
+		streamLabelsCache[s] = m
+	}
+	streamLabelsCacheMu.Unlock()
+	return m
 }
 
-func splitLabelPairs(s string) []string {
-	var pairs []string
+// parseStreamLabelsUncached parses without cache lookup. Inlines the split loop
+// to avoid allocating an intermediate []string of pairs.
+func parseStreamLabelsUncached(s string) map[string]string {
+	s = strings.Trim(s, "{}")
+	if s == "" {
+		return map[string]string{}
+	}
+	labels := make(map[string]string, 4)
 	inQuote := false
 	start := 0
-	for i, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
 		if c == '"' {
 			inQuote = !inQuote
 		}
 		if c == ',' && !inQuote {
-			pairs = append(pairs, s[start:i])
+			appendLabelPair(s[start:i], labels)
 			start = i + 1
 		}
 	}
-	if start < len(s) {
-		pairs = append(pairs, s[start:])
+	appendLabelPair(s[start:], labels)
+	return labels
+}
+
+// appendLabelPair parses a single key="value" token into dst.
+func appendLabelPair(pair string, dst map[string]string) {
+	pair = strings.TrimSpace(pair)
+	eq := strings.IndexByte(pair, '=')
+	if eq <= 0 {
+		return
 	}
-	return pairs
+	k := strings.TrimSpace(pair[:eq])
+	v := strings.TrimSpace(pair[eq+1:])
+	v = strings.Trim(v, `"`)
+	dst[k] = v
 }
 
 func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
@@ -13627,6 +13663,11 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 		return body
 	}
 
+	// Allocate once and reuse across result entries to avoid per-result map
+	// allocations (was the #3 hot path in pprof: ~81 GB cumulative).
+	translated := make(map[string]interface{}, 8)
+	syntheticLabels := make(map[string]string, 8)
+
 	translatedMetrics := 0
 	for _, r := range results {
 		entry, ok := r.(map[string]interface{})
@@ -13636,7 +13677,10 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 		// Translate "metric" labels map
 		if metricRaw, ok := entry["metric"]; ok {
 			if metric, ok := metricRaw.(map[string]interface{}); ok {
-				translated := make(map[string]interface{}, len(metric))
+				// Clear reused maps instead of allocating new ones each iteration.
+				for k := range translated {
+					delete(translated, k)
+				}
 				changed := false
 				for k, v := range metric {
 					if k == "__name__" {
@@ -13665,7 +13709,9 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 					}
 					translated[lokiKey] = v
 				}
-				syntheticLabels := make(map[string]string, len(translated))
+				for k := range syntheticLabels {
+					delete(syntheticLabels, k)
+				}
 				for key, value := range translated {
 					if s, ok := value.(string); ok {
 						syntheticLabels[key] = s
@@ -13700,7 +13746,13 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 				if changed {
 					translatedMetrics++
 				}
-				entry["metric"] = translated
+				// entry["metric"] must point to a new map — the reused translated map
+				// is mutated on the next iteration. Copy it for the JSON encoder.
+				out := make(map[string]interface{}, len(translated))
+				for k, v := range translated {
+					out[k] = v
+				}
+				entry["metric"] = out
 			}
 		}
 	}

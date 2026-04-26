@@ -219,7 +219,13 @@ func ensureDetectedLevel(labels map[string]string) {
 }
 
 func buildEntryLabels(entry map[string]interface{}) map[string]string {
-	labels := parseStreamLabels(asString(entry["_stream"]))
+	// parseStreamLabels returns a cached read-only map — copy into a fresh map
+	// before adding entry fields so the cache is not mutated.
+	stream := parseStreamLabels(asString(entry["_stream"]))
+	labels := make(map[string]string, len(stream))
+	for k, v := range stream {
+		labels[k] = v
+	}
 	for key, value := range entry {
 		if isVLInternalField(key) || key == "_stream_id" {
 			continue
@@ -234,7 +240,12 @@ func buildEntryLabels(entry map[string]interface{}) map[string]string {
 }
 
 func buildDetectedLabels(entry map[string]interface{}) map[string]string {
-	labels := parseStreamLabels(asString(entry["_stream"]))
+	// parseStreamLabels returns a cached read-only map — copy before mutating.
+	stream := parseStreamLabels(asString(entry["_stream"]))
+	labels := make(map[string]string, len(stream))
+	for k, v := range stream {
+		labels[k] = v
+	}
 	for _, key := range serviceNameSourceFields {
 		if _, ok := labels[key]; ok {
 			continue
