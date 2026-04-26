@@ -497,6 +497,10 @@ Operational notes:
 | `-http-idle-timeout` | — | `120s` | Server idle timeout |
 | `-http-max-header-bytes` | — | `1MB` | Maximum header size |
 | `-http-max-body-bytes` | — | `10MB` | Maximum request body size |
+| `-http-conn-max-age` | — | `10m` | Maximum lifetime for downstream HTTP/1.x keepalive connections |
+| `-http-conn-max-age-jitter` | — | `2m` | Jitter applied to downstream connection age rotation |
+| `-http-conn-max-requests` | — | `256` | Maximum requests per keepalive connection |
+| `-http-conn-overload-max-age` | — | `90s` | Shorter connection lifetime during backpressure |
 
 ## Grafana Compatibility
 

@@ -46,7 +46,7 @@ All stream matchers are converted to field filters (not VL `{...}` stream select
 | `\| label < 200` | `label:<200` |
 | `\| label <= 200` | `label:<=200` |
 
-After a parser stage, label filters are wrapped as `| filter <expr>`.
+After a parser stage, label filters are wrapped as `| filter <expr>`. For example `| json | status >= 400` is correctly supported; earlier proxy versions incorrectly rejected such filters at the syntax validation stage.
 
 ## Formatting Stages
 
@@ -158,6 +158,7 @@ For non-parser metric queries, the default path remains single-shot `stats_query
 | `decolorize` | ANSI escape sequence stripping |
 | `\| unwrap duration(field)` | Unwrap with duration string conversion (proxy-side) |
 | `\| unwrap bytes(field)` | Unwrap with byte size conversion (proxy-side) |
+| `\| unwrap` (no field name) | Silently stripped; no translation error |
 | Missing unwrap on unwrap-required functions | Proxy returns Loki-style `invalid aggregation <func> without unwrap` error |
 | `bool` modifier on comparisons | Compatibility normalization to Loki-style boolean vector output |
 | `without()` grouping | Compatibility label projection after backend aggregation |

@@ -58,6 +58,8 @@ The proxy detects these via OTel underscore prefix patterns (`k8s_`, `deployment
 
 ## OTel Detection Hierarchy
 
+_Introduced in v1.15.0._
+
 The proxy uses a three-layer hierarchy to detect whether log data is OTel-instrumented. Detection happens per-entry by inspecting stream labels from the `_stream` field.
 
 ### Priority 1: Dotted Semantic Conventions (Strongest Signal)
@@ -144,11 +146,14 @@ For standard Kubernetes logs pushed via Loki (labels: `app`, `cluster`, `namespa
 
 ### OTel Data (Semantic Conventions)
 
+_Alias pair exposure introduced in v1.15.0._
+
 For OTel-instrumented services with `service.name` in stream labels:
 
 - `service.name` is a **real stream label** — it appears in `detected_fields`
 - `service_name` is exposed as an **alias** of `service.name` — also in `detected_fields`
 - Both forms appear so Grafana Explore field picker and Logs Drilldown can use either
+- `service_name` is suppressed for non-OTel data (e.g., `api-gateway` with only standard K8s labels) but exposed as the alias pair when real `service.name` exists in stream labels
 
 ### Implementation
 
@@ -158,6 +163,12 @@ This two-phase approach ensures:
 - Non-OTel data never leaks synthetic `service_name` into `detected_fields`
 - OTel data correctly exposes the alias pair
 - Native field merging cannot re-introduce suppressed fields
+
+### Logfmt Job Fields (v1.17.1)
+
+Logfmt-parsed document fields in the log body (e.g., `job=sync-users` from a logfmt-formatted message) are no longer picked up as service names when stream label inventory is available.
+
+When stream labels are present, only dotted OTel-style names (e.g., `service.name`) are read from the full field inventory as service name candidates. This prevents logfmt fields like `job` from polluting the Drilldown service list for non-OTel data.
 
 ## Test Coverage
 

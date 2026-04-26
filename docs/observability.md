@@ -214,6 +214,13 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_cache_misses_total` | counter | none | `Low` | global cache misses |
 | `loki_vl_proxy_cache_hits_by_endpoint` | counter | `system`, `direction`, `endpoint`, `route` | `Low` | cache hits per normalized route |
 | `loki_vl_proxy_cache_misses_by_endpoint` | counter | `system`, `direction`, `endpoint`, `route` | `Low` | cache misses per normalized route |
+| `loki_vl_proxy_cache_tier_hits_total` | counter | `tier` | `Low` | cache hits per tier (`l1_memory`, `l2_disk`, `l3_peer`) |
+| `loki_vl_proxy_cache_tier_misses_total` | counter | `tier` | `Low` | cache misses per tier (`l1_memory`, `l2_disk`, `l3_peer`) |
+| `loki_vl_proxy_cache_tier_requests_total` | counter | `tier` | `Low` | total lookup attempts per tier (`l1_memory`, `l2_disk`, `l3_peer`) |
+| `loki_vl_proxy_cache_tier_stale_hits_total` | counter | `tier` | `Low` | responses served from an expired TTL entry per tier (`l1_memory`, `l2_disk`, `l3_peer`) |
+| `loki_vl_proxy_cache_bytes` | gauge | `tier` | `Low` | stored bytes per cache tier (`l1_memory`, `l2_disk`) |
+| `loki_vl_proxy_cache_objects` | gauge | `tier` | `Low` | object count per cache tier (`l1_memory`, `l2_disk`) |
+| `loki_vl_proxy_cache_backend_fallthrough_total` | counter | none | `Low` | requests that missed every cache tier and fell through to the backend |
 | `loki_vl_proxy_translations_total` | counter | none | `Low` | successful LogQL to LogsQL translations |
 | `loki_vl_proxy_translation_errors_total` | counter | none | `Low` | failed translations |
 | `loki_vl_proxy_internal_operation_total` | counter | `operation`, `outcome` | `Medium` | proxy-only work such as translation, parser preference, and response-label rewrites |
@@ -448,7 +455,7 @@ Use these queries to quickly isolate downstream client pain, upstream slowness, 
 
 For latency histograms, keep dashboards on `p50`, `p95`, and `p99` rather than averages. Averages hide tail latency incidents. For exact proxy-only overhead, use structured logs (`proxy.overhead_ms`) alongside the latency histograms; subtracting histogram quantiles is not mathematically reliable.
 
-The packaged `Loki-VL-Proxy` dashboard includes an `Operational Resources` section with:
+The packaged `Loki-VL-Proxy` dashboard includes a `Process Resources` row (Section 2) with:
 
 - memory saturation and memory footprint/headroom
 - CPU usage split by mode
@@ -457,36 +464,39 @@ The packaged `Loki-VL-Proxy` dashboard includes an `Operational Resources` secti
 - PSI pressure (cpu/memory/io)
 - process RSS and open file descriptors by pod
 
-The dashboard is explicitly grouped so you can attribute failures by perspective without guessing:
+The dashboard is organized into three collapsible sections:
 
-- `Client-Side Loki API Visibility`
-- `Client-Side Loki Latency`
-- `Client-Side Request Shape`
-- `Client-Side Tenant/Client Impact`
-- `Proxy Internal - Cache Core`
-- `Proxy Internal - Query-Range Windowing`
-- `Proxy Internal - Long-Range Resilience KPIs`
-- `Proxy Internal - Connection Stickiness`
-- `Proxy Internal - HTTP Connection Visibility`
-- `Proxy Internal - Fleet Cache & Redistribution`
-- `Proxy Internal - Runtime Resources & Capacity`
-- `Backend-Side VictoriaLogs & Internal Fanout`
+**Section 1: SLO / SLI + Health** — SLO stat strip and SLI time-series for request rate, error rate, latency, cache hit ratio, and circuit breaker state.
+
+**Section 2: Client → Proxy → VL + Resources (Operational)** — four rows covering all operational perspectives end-to-end:
+
+- `Client-Side Loki API Visibility` — downstream request rate, errors by reason, query length
+- `Proxy Internal Visibility` — proxy internals, internal operations by type and latency
+- `Backend — VictoriaLogs Visibility` — upstream backend latency, duration by endpoint, upstream fanout
+- `Process Resources` — memory, CPU, disk I/O, network, PSI pressure, RSS, open FDs
+
+**Section 3: Deep Proxy Internals (Tuning & Visibility)** — six rows for deep investigation and tuning:
+
+- `Cache Tiers (T0/L1/L2/L3)` — per-tier hit/miss/stale rates, cache size (objects and bytes), backend fallthrough
+- `Peer Cache Fleet Distribution` — active peers, peer hit/miss, peer error breakdown
+- `Query-Range Windowing & Prefilter` — window cache hit/miss, prefilter efficiency, retries, partial responses
+- `Patterns Engine (Grafana Logs Drilldown)` — patterns in memory, cache keys, memory bytes, mining rate, persistence
+- `HTTP Connection Lifecycle` — downstream connection state, transitions, rotations
+- `Tenant Deep Dive` — per-tenant request rate, P99 latency, error rate
 
 Suggested triage path:
 
-1. Start on `Client-Side Loki API Visibility` and `Client-Side Loki Latency` to confirm user-visible impact.
-2. Move to `Backend-Side VictoriaLogs & Internal Fanout` to separate upstream pressure/fanout amplification from client-side issues.
-3. Use `Proxy Internal` sections to isolate cache, windowing, connection stickiness, and runtime resource bottlenecks.
+1. Start on Section 1 (SLO / SLI) to confirm user-visible impact and overall health.
+2. Move to Section 2, `Backend — VictoriaLogs Visibility` to separate upstream pressure from proxy-side issues.
+3. Use Section 2, `Client-Side Loki API Visibility` to identify offending routes, clients, or tenants.
+4. Drill into Section 3 to isolate cache tier behavior, windowing, peer distribution, and runtime resource bottlenecks.
 
-It also includes a `Query-Range Windowing` section for cache/tuning signals:
+The `Query-Range Windowing & Prefilter` row (Section 3) covers both windowing cache/tuning signals and long-range resilience KPIs:
 
 - window fetch p50/p95 latency
 - window merge p50/p95 latency
 - window cache hit ratio
 - adaptive window parallelism + EWMA latency/error
-
-It also includes a `Long-Range Resilience KPIs` section for phase tuning:
-
 - prefilter kept/skipped rate
 - retry/degraded-batch/partial-response rate
 - prefilter hit ratio
