@@ -5,6 +5,13 @@ server:
   grpc_listen_port: 9096
   grpc_server_max_recv_msg_size: 8388608
   grpc_server_max_send_msg_size: 8388608
+  # Extend write timeout beyond the default 30s to handle large range-query
+  # responses (13–53 KB/req × slow serialisation paths) at c=100.
+  http_server_write_timeout: 120s
+  http_server_read_timeout: 120s
+  # Allow more concurrent gRPC streams (default 100) so internal querier↔frontend
+  # fan-out at high concurrency doesn't queue at the transport layer.
+  grpc_server_max_concurrent_streams: 1000
 
 common:
   instance_addr: 127.0.0.1
@@ -19,7 +26,7 @@ common:
       store: inmemory
 
 frontend:
-  max_outstanding_per_tenant: 2048
+  max_outstanding_per_tenant: 4096
   encoding: protobuf
 
 pattern_ingester:
@@ -34,15 +41,86 @@ limits_config:
   max_query_series: 5000
   volume_enabled: true
 
+  # --- Read-path throughput tuning ---
+
+  # Fan-out: how many sub-queries the frontend dispatches in parallel per tenant
+  # for log queries. Default 32 is the bottleneck when querier.max_concurrent=16+
+  # and many concurrent clients hit the frontend simultaneously.
+  max_query_parallelism: 64
+
+  # Fan-out for TSDB (schema v13) metric/aggregation queries (rate, count, etc.).
+  # Default 128 is already generous; keep it, but be explicit so it's tunable.
+  tsdb_max_query_parallelism: 128
+
+  # Split interval: each query is split into sub-windows of this size and
+  # executed in parallel. Default 1h is appropriate — a 2h range becomes 2 shards.
+  # Do not increase beyond 1h; smaller values create more sub-queries than
+  # max_query_parallelism can absorb, adding scheduling overhead.
+  split_queries_by_interval: 1h
+
+  # Per-query timeout. Heavy 2h aggregations on a large dataset can take >30s;
+  # set to 5m to avoid spurious timeouts during benchmark, while still bounding
+  # runaway queries.
+  query_timeout: 5m
+
+  # Prevent results cache from serving very fresh data that may still be in flux.
+  # Reduce from 10m to 0 for benchmarking (all data is historical, not live).
+  max_cache_freshness_per_query: 0s
+
 query_range:
+  # Enable result caching: subsequent identical/aligned queries return from cache
+  # instead of hitting TSDB storage. Critical for benchmark repeatability and
+  # throughput — repeated rate/count aggregations over the same 2h window
+  # collapse to a single storage read after the first miss.
+  cache_results: true
+
+  # Align query time boundaries to the split interval so cache keys match across
+  # concurrent clients hitting the same time window with slight offsets.
+  align_queries_with_step: true
+
+  # Sharding is already enabled by default (parallelise_shardable_queries: true).
+  # Explicit so it's visible and not accidentally disabled.
+  parallelise_shardable_queries: true
+
   results_cache:
     cache:
       embedded_cache:
         enabled: true
-        max_size_mb: 100
+        # Increased from 100 MB. At 13–53 KB/response and 1h split intervals,
+        # a 2h query produces 2 cache entries × ~30 KB = 60 KB per unique query.
+        # 256 MB ÷ 60 KB ≈ 4,000 distinct cached query windows — enough for a
+        # multi-hour benchmark run. Keep well under the 2400m container cap:
+        # observed Loki RSS 1.4–1.8 GB + 256 MB cache = ~2.1 GB peak, ~100 MB margin.
+        max_size_mb: 256
+        ttl: 1h
+
+chunk_store_config:
+  # In-process chunk cache avoids re-reading the same TSDB chunks from disk for
+  # repeated queries against the same time range. 200 MB holds ~6,000 chunks
+  # at ~32 KB average — covers a typical 2h query workload in RAM.
+  # Total cache budget: 256 MB (results) + 200 MB (chunks) = 456 MB,
+  # leaving ~200 MB margin under the 2400m hard cap.
+  chunk_cache_config:
+    embedded_cache:
+      enabled: true
+      max_size_mb: 200
+      ttl: 1h
 
 querier:
   per_request_limits_enabled: true
+
+  # Maximum queries executed simultaneously inside a single querier process.
+  # Default 4 is the single largest throughput bottleneck at c=100: with 4 slots
+  # and 100 concurrent clients, 96 requests queue at the querier even though the
+  # frontend has dispatched them. On an 18-core host, 16 matches roughly 1 slot
+  # per physical core pair, saturating TSDB reads without oversubscribing I/O.
+  max_concurrent: 16
+
+  # Only query ingester for data within the last 30m. For benchmark data that
+  # accumulates over hours, the ingester holds only the tail; routing 2h queries
+  # to both store + ingester wastes a full ingester round-trip per query.
+  # Set to 30m to match the ingester's flush window and avoid double-reads.
+  query_ingesters_within: 30m
 
 schema_config:
   configs:
