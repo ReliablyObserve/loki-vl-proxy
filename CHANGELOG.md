@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(circuitbreaker): couple circuit breaker with request coalescing via `DoWithGuard`; when the breaker is open the CB probe starts one in-flight call and all simultaneous identical requests join it rather than each failing with 503 — eliminates retry amplification under VL load. Circuit breaker errors now return HTTP 503 (Service Unavailable) instead of 502.
 - feat(coalescer): add `-coalescer-disabled` flag to bypass singleflight for benchmarking raw translation overhead; coalescer remains active by default even with `-cache-disabled` to protect VL from thundering-herd.
 
+## [1.17.4] - 2026-04-26
+
 ### Performance
 
 - perf(proxy): cache parsed stream label maps by `_stream` string value to eliminate redundant label parsing on repeated log entries; copy on write to prevent cache mutation bugs.
