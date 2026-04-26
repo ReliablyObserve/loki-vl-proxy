@@ -1,8 +1,30 @@
 {
+  "__inputs": [
+    {
+      "name": "datasource",
+      "label": "Prometheus datasource",
+      "type": "datasource",
+      "pluginId": "prometheus"
+    }
+  ],
+  "__requires": [
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.0"
+    }
+  ],
   "annotations": {
     "list": []
   },
-  "description": "Loki-VL-proxy operations dashboard — request quality, query-range recovery, connection stickiness, HTTP/1.x rotation visibility, and fleet cache health for long-lived Grafana/Loki-compatible clients.",
+  "description": "loki-vl-proxy operations: SLO/SLI health, Client\u2192Proxy\u2192VL operational view, deep proxy internals for tuning.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -10,1283 +32,3959 @@
   "links": [],
   "panels": [
     {
-      "title": "Top Health Snapshot + Client-Side Loki API Visibility",
       "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
-      "collapsed": false
+      "id": 1,
+      "title": "\u2500\u2500 Section 1: SLO / SLI + Health",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
     },
     {
-      "title": "RED Request Rate (Client / Backend / Internal)",
+      "type": "stat",
+      "id": 2,
+      "title": "Circuit Breaker",
+      "description": "0 = closed (healthy), 1 = open (backend down)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_circuit_breaker_state",
+          "legendFormat": "state",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 3,
+      "title": "Active Requests",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 3,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_active_requests",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 4,
+      "title": "Request Rate",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(loki_vl_proxy_requests_total[5m]))",
+          "legendFormat": "req/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 5,
+      "title": "Error Rate",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
+                "color": "red",
+                "value": 0.05
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(loki_vl_proxy_requests_total{status=~\"5..\"}[5m])) / sum(rate(loki_vl_proxy_requests_total[5m]))",
+          "legendFormat": "errors",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 6,
+      "title": "Client P99 Latency",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(loki_vl_proxy_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 7,
+      "title": "Backend P95 Latency",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.8
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(loki_vl_proxy_backend_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "gauge",
+      "id": 8,
+      "title": "Cache Hit Ratio",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_cache_hits_total / (loki_vl_proxy_cache_hits_total + loki_vl_proxy_cache_misses_total)",
+          "legendFormat": "ratio",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 9,
+      "title": "Uptime",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 21,
+        "y": 1,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_uptime_seconds",
+          "legendFormat": "uptime",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
       "type": "timeseries",
-      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 4},
+      "id": 10,
+      "title": "Request Rate by Status",
+      "description": "Request rate per second split by HTTP status class. Watch for 5xx growth.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "barAlignment": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum(rate(loki_vl_proxy_requests_total{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "to clients"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_requests_total{system=\"vl\",direction=\"upstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "to backend"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_internal_operation_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "proxy internal"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(status) (rate(loki_vl_proxy_requests_total[5m]))",
+          "legendFormat": "{{status}}",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "RED Error Rate (Client / Backend / Internal)",
       "type": "timeseries",
-      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 4},
+      "id": 11,
+      "title": "Error Rate %",
+      "description": "% of requests resulting in 4xx or 5xx responses.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 5,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "fillOpacity": 1.0,
+          "min": 0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum(rate(loki_vl_proxy_requests_total{system=\"loki\",direction=\"downstream\",status=~\"4..|5..\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "to clients"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "100 * sum(rate(loki_vl_proxy_requests_total{status=~\"5..\"}[5m])) / sum(rate(loki_vl_proxy_requests_total[5m]))",
+          "legendFormat": "5xx %",
+          "refId": "A"
         },
         {
-          "expr": "sum(rate(loki_vl_proxy_requests_total{system=\"vl\",direction=\"upstream\",status=~\"4..|5..\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "to backend"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_internal_operation_total{outcome=~\".*error.*\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "proxy internal"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "100 * sum(rate(loki_vl_proxy_requests_total{status=~\"4..\"}[5m])) / sum(rate(loki_vl_proxy_requests_total[5m]))",
+          "legendFormat": "4xx %",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}, "color": {"mode": "palette-classic"}}
-      }
+      ]
     },
     {
-      "title": "RED Duration P95 (Client / Backend / Internal)",
       "type": "timeseries",
-      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 4},
+      "id": 12,
+      "title": "Client Latency Percentiles",
+      "description": "End-to-end client latency as seen by Grafana / API clients.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 5,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(loki_vl_proxy_request_duration_seconds_bucket{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "to clients"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(loki_vl_proxy_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(loki_vl_proxy_backend_duration_seconds_bucket{system=\"vl\",direction=\"upstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "to backend"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.90, sum by(le) (rate(loki_vl_proxy_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p90",
+          "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(loki_vl_proxy_internal_operation_duration_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "proxy internal"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(loki_vl_proxy_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Uptime (Youngest Pod)",
-      "type": "stat",
-      "gridPos": {"h": 3, "w": 4, "x": 0, "y": 1},
-      "targets": [
-        {
-          "expr": "min(loki_vl_proxy_uptime_seconds{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "youngest uptime"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s"}
-      }
-    },
-    {
-      "title": "Client Request Rate",
-      "type": "stat",
-      "gridPos": {"h": 3, "w": 4, "x": 4, "y": 1},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_requests_total{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "to clients"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps"}
-      }
-    },
-    {
-      "title": "Backend Request Rate",
-      "type": "stat",
-      "gridPos": {"h": 3, "w": 4, "x": 8, "y": 1},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_requests_total{system=\"vl\",direction=\"upstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "to backend"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps"}
-      }
-    },
-    {
-      "title": "Proxy Internal Ops Rate",
-      "type": "stat",
-      "gridPos": {"h": 3, "w": 4, "x": 12, "y": 1},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_internal_operation_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "internal"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps"}
-      }
-    },
-    {
-      "title": "Proxy Internal Error Rate",
-      "type": "stat",
-      "gridPos": {"h": 3, "w": 4, "x": 16, "y": 1},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_internal_operation_total{outcome=~\".*error.*\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "internal errors"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.1}]}}
-      }
-    },
-    {
-      "title": "Cache Hit/Miss Rate",
       "type": "timeseries",
-      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 4},
+      "id": 13,
+      "title": "Backend Latency Percentiles",
+      "description": "Latency for VictoriaLogs backend calls. Separates proxy overhead from backend pressure.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum(rate(loki_vl_proxy_cache_hits_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "hits/s"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(loki_vl_proxy_backend_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
         },
         {
-          "expr": "sum(rate(loki_vl_proxy_cache_misses_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "misses/s"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.90, sum by(le) (rate(loki_vl_proxy_backend_duration_seconds_bucket[5m])))",
+          "legendFormat": "p90",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by(le) (rate(loki_vl_proxy_backend_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(loki_vl_proxy_backend_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
+      "type": "timeseries",
+      "id": 14,
       "title": "Translation Errors",
-      "type": "stat",
-      "gridPos": {"h": 3, "w": 4, "x": 20, "y": 1},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_translation_errors_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "cluster errors/s"
+      "description": "LogQL\u2192LogsQL translation success and error rates. Errors mean a client query could not be translated.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
         }
-      ],
+      },
       "fieldConfig": {
-        "defaults": {"unit": "reqps", "thresholds": {"steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.1}]}}
-      }
-    },
-    {
-      "title": "Latency",
-      "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 9},
-      "collapsed": false
-    },
-    {
-      "title": "Client Latency (p50 / p90 / p99)",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 10},
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "histogram_quantile(0.5, sum(rate(loki_vl_proxy_request_duration_seconds_bucket{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "p50"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_translation_errors_total[5m])",
+          "legendFormat": "errors/s",
+          "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.9, sum(rate(loki_vl_proxy_request_duration_seconds_bucket{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "p90"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(loki_vl_proxy_request_duration_seconds_bucket{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "p99"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Proxy Internal Latency (p50 / p90 / p99)",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 10},
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, sum(rate(loki_vl_proxy_internal_operation_duration_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.9, sum(rate(loki_vl_proxy_internal_operation_duration_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "p90"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(loki_vl_proxy_internal_operation_duration_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "p99"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "VL Backend Latency (p50 / p90 / p99)",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 10},
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, sum(rate(loki_vl_proxy_backend_duration_seconds_bucket{system=\"vl\",direction=\"upstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.9, sum(rate(loki_vl_proxy_backend_duration_seconds_bucket{system=\"vl\",direction=\"upstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "p90"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(loki_vl_proxy_backend_duration_seconds_bucket{system=\"vl\",direction=\"upstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le)) or vector(0)",
-          "legendFormat": "p99"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Proxy Internal - Cache Core",
-      "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 18},
-      "collapsed": false
-    },
-    {
-      "title": "Cache Hits vs Misses",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 19},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_cache_hits_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "hits/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_cache_misses_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "misses/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Translations",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 19},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_translations_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "translations/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_translation_errors_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "errors/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Request Breakdown",
-      "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 27},
-      "collapsed": false
-    },
-    {
-      "title": "Requests by Tenant",
-      "type": "piechart",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 28},
-      "targets": [
-        {
-          "expr": "sum(increase(loki_vl_proxy_tenant_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__range])) by (tenant)",
-          "legendFormat": "{{tenant}}"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_translations_total[5m])",
+          "legendFormat": "translations/s",
+          "refId": "A"
         }
       ]
     },
     {
-      "title": "Requests by Status Code",
-      "type": "piechart",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 28},
-      "targets": [
-        {
-          "expr": "sum(increase(loki_vl_proxy_requests_total{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__range])) by (status)",
-          "legendFormat": "{{status}}"
-        }
-      ]
-    },
-    {
-      "title": "Requests by Loki API Path",
-      "type": "piechart",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 28},
-      "targets": [
-        {
-          "expr": "sum(increase(loki_vl_proxy_requests_total{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__range])) by (route)",
-          "legendFormat": "{{route}}"
-        }
-      ]
-    },
-    {
-      "title": "Client-Side Tenant/Client Impact + Resource Insights",
       "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 36},
-      "collapsed": false
+      "id": 15,
+      "title": "\u2500\u2500 Section 2: Client \u2192 Proxy \u2192 VL + Resources (Operational)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
     },
     {
-      "title": "Request Rate by Tenant",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 37},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_tenant_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tenant)",
-          "legendFormat": "{{tenant}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
+      "type": "row",
+      "id": 16,
+      "title": "Client-Side Loki API Visibility",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
     },
     {
-      "title": "Tenant P99 Latency",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 37},
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(loki_vl_proxy_tenant_request_duration_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tenant, le))",
-          "legendFormat": "p99 {{tenant}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Tenant Error Rate",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 45},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_tenant_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\",status=~\"5..\"}[$__rate_interval])) by (tenant)",
-          "legendFormat": "5xx {{tenant}}"
+      "id": 17,
+      "title": "Client Request Rate by Route",
+      "description": "Request rate broken down by Loki API route (query_range, labels, tail, etc.).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 23,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         },
-        {
-          "expr": "sum(rate(loki_vl_proxy_tenant_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\",status=~\"4..\"}[$__rate_interval])) by (tenant)",
-          "legendFormat": "4xx {{tenant}}"
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
         }
-      ],
+      },
       "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
+        "defaults": {
+          "unit": "reqps",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(route) (rate(loki_vl_proxy_client_requests_total[5m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
     },
     {
+      "type": "timeseries",
+      "id": 18,
       "title": "Client Errors by Reason",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 45},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_client_errors_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, reason)",
-          "legendFormat": "{{endpoint}}/{{reason}}"
+      "description": "Client-attributed errors by reason (bad_request, rate_limited, etc.).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 23,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
         }
-      ],
+      },
       "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Top Tenants by Request Volume",
-      "type": "table",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 53},
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "topk(10, sum(increase(loki_vl_proxy_tenant_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__range])) by (tenant))",
-          "legendFormat": "{{tenant}}",
-          "format": "table",
-          "instant": true
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(reason) (rate(loki_vl_proxy_client_errors_total[5m]))",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
         }
       ]
     },
     {
-      "title": "Top Tenants by Latency",
-      "type": "table",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 53},
+      "type": "timeseries",
+      "id": 19,
+      "title": "Client Query Length (chars)",
+      "description": "Query character length distribution. Very long queries signal complex pipeline stages.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 23,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "topk(10, sum(rate(loki_vl_proxy_tenant_request_duration_seconds_sum{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tenant) / sum(rate(loki_vl_proxy_tenant_request_duration_seconds_count{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tenant))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(loki_vl_proxy_client_query_length_chars_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.90, sum by(le) (rate(loki_vl_proxy_client_query_length_chars_bucket[5m])))",
+          "legendFormat": "p90",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(loki_vl_proxy_client_query_length_chars_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 20,
+      "title": "Client Latency by Route (P99)",
+      "description": "P99 client latency per route. Identify which endpoints are slow for clients.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(route, le) (rate(loki_vl_proxy_client_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 21,
+      "title": "Inflight Requests per Client",
+      "description": "Active in-flight requests per client. Helps identify heavy consumers.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_client_inflight_requests",
+          "legendFormat": "{{client}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 22,
+      "title": "Proxy Internal Visibility",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 23,
+      "title": "Request Coalescing (Saved Calls)",
+      "description": "Duplicate in-flight requests collapsed into one backend call. Saved = backend calls avoided.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_coalesced_total[5m])",
+          "legendFormat": "coalesced total/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_coalesced_saved_total[5m])",
+          "legendFormat": "saved backend calls/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 24,
+      "title": "Internal Operations by Type",
+      "description": "Proxy-internal operation breakdown (translate_query, cache_hit, etc.) with outcome.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 40,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(operation, outcome) (rate(loki_vl_proxy_internal_operation_total[5m]))",
+          "legendFormat": "{{operation}}/{{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 25,
+      "title": "Internal Operation Latency (P99)",
+      "description": "P99 latency for internal proxy operations. High translate_query latency = complex LogQL.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 40,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(operation, le) (rate(loki_vl_proxy_internal_operation_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{operation}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 26,
+      "title": "Response Tuple Mode",
+      "description": "2-tuple (default Loki) vs 3-tuple (structured metadata, when categorize-labels requested). Unexpected 3-tuple spikes may indicate client config drift.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_response_tuple_mode_total[5m])",
+          "legendFormat": "{{mode}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 27,
+      "title": "Tenant Request Rate",
+      "description": "Request rate per tenant (X-Scope-OrgID). Identify dominant tenants for capacity planning.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(tenant) (rate(loki_vl_proxy_tenant_requests_total[5m]))",
           "legendFormat": "{{tenant}}",
-          "format": "table",
-          "instant": true
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s"}
-      }
+      ]
     },
     {
-      "title": "CPU Saturation by Pod",
+      "type": "row",
+      "id": 28,
+      "title": "Backend \u2014 VictoriaLogs Visibility",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 61},
+      "id": 29,
+      "title": "Upstream Calls per Request (Fanout)",
+      "description": "Backend calls per client request. >1 = window fanout active. High p99 = large time ranges.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 57,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0,
+          "decimals": 1
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum(max by (pod, mode) (loki_vl_proxy_process_cpu_usage_ratio{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})) by (pod)",
-          "legendFormat": "{{pod}}"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(loki_vl_proxy_upstream_calls_per_request_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.90, sum by(le) (rate(loki_vl_proxy_upstream_calls_per_request_bucket[5m])))",
+          "legendFormat": "p90",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(loki_vl_proxy_upstream_calls_per_request_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "A"
         }
-      ],
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 30,
+      "title": "Window Count Distribution",
+      "description": "Number of 1h windows per query_range request. High counts = clients querying large time ranges.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 57,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(loki_vl_proxy_window_count_bucket[5m])))",
+          "legendFormat": "p50 windows",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.90, sum by(le) (rate(loki_vl_proxy_window_count_bucket[5m])))",
+          "legendFormat": "p90 windows",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(loki_vl_proxy_window_count_bucket[5m])))",
+          "legendFormat": "p99 windows",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 31,
+      "title": "Backend Duration by Endpoint",
+      "description": "P95 backend latency split by VL endpoint (select_logsql_query, hits, etc.).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 57,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by(endpoint, le) (rate(loki_vl_proxy_backend_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{endpoint}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 32,
+      "title": "Window Fetch Latency",
+      "description": "Per-window fetch latency (backend round-trip). Use with adaptive parallelism panels.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(loki_vl_proxy_window_fetch_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.90, sum by(le) (rate(loki_vl_proxy_window_fetch_seconds_bucket[5m])))",
+          "legendFormat": "p90",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(loki_vl_proxy_window_fetch_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 33,
+      "title": "Window Merge Latency",
+      "description": "Time to merge window results into final Loki response. High = many windows or large responses.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 65,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(loki_vl_proxy_window_merge_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(loki_vl_proxy_window_merge_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 34,
+      "title": "Adaptive Parallelism",
+      "description": "Current adaptive window parallelism (2\u20138 by default). EWMA latency/error drives adjustments.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 65,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_window_adaptive_parallel_current",
+          "legendFormat": "current parallelism",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_window_adaptive_latency_ewma_seconds",
+          "legendFormat": "EWMA latency (s)",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_window_adaptive_error_ewma",
+          "legendFormat": "EWMA error ratio",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 35,
+      "title": "Process Resources",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 73,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 36,
+      "title": "CPU Usage",
+      "description": "Proxy process CPU usage ratio (0\u20131). user = LogQL work, system = OS syscalls.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 74,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
-          "custom": {"fillOpacity": 10},
-          "thresholds": {
-            "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 0.6},
-              {"color": "red", "value": 0.85}
-            ]
-          }
-        }
-      }
-    },
-    {
-      "title": "Memory Usage Ratio by Pod",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 61},
+          "fillOpacity": 1.0,
+          "min": 0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "max by (pod) (loki_vl_proxy_process_memory_usage_ratio{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})",
-          "legendFormat": "{{pod}}"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_process_cpu_usage_ratio{mode=\"user\"}",
+          "legendFormat": "user",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_process_cpu_usage_ratio{mode=\"system\"}",
+          "legendFormat": "system",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit",
-          "custom": {"fillOpacity": 10},
-          "thresholds": {
-            "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 0.7},
-              {"color": "red", "value": 0.85}
-            ]
-          }
-        }
-      }
+      ]
     },
     {
-      "title": "Memory Footprint by Pod",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 61},
-      "targets": [
-        {
-          "expr": "max by (pod) (loki_vl_proxy_process_resident_memory_bytes{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})",
-          "legendFormat": "{{pod}} rss"
+      "id": 37,
+      "title": "Memory",
+      "description": "RSS = OS view. Heap in-use = Go allocator view. Large gap = GC pressure or cache overhead.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 74,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         },
-        {
-          "expr": "max by (pod) (loki_vl_proxy_go_memstats_alloc_bytes{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})",
-          "legendFormat": "{{pod}} alloc"
-        },
-        {
-          "expr": "max by (pod) (loki_vl_proxy_go_memstats_heap_inuse_bytes{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})",
-          "legendFormat": "{{pod}} heap inuse"
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
         }
-      ],
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
-          "custom": {"fillOpacity": 10}
-        }
-      }
-    },
-    {
-      "title": "Goroutines by Pod",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 61},
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "max by (pod) (loki_vl_proxy_go_goroutines{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})",
-          "legendFormat": "{{pod}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "short", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "GC Cycles / s by Pod",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 69},
-      "targets": [
-        {
-          "expr": "sum by (pod) (rate(loki_vl_proxy_go_gc_cycles_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{pod}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "ops", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Open File Descriptors by Pod",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 69},
-      "targets": [
-        {
-          "expr": "max by (pod) (loki_vl_proxy_process_open_fds{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"})",
-          "legendFormat": "{{pod}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "none", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "PSI Pressure (60s) by Pod",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 69},
-      "targets": [
-        {
-          "expr": "max by (pod) (loki_vl_proxy_process_pressure_cpu_some_ratio{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\",window=\"60s\"})",
-          "legendFormat": "{{pod}} cpu some"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_process_resident_memory_bytes",
+          "legendFormat": "RSS",
+          "refId": "A"
         },
         {
-          "expr": "max by (pod) (loki_vl_proxy_process_pressure_memory_some_ratio{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\",window=\"60s\"})",
-          "legendFormat": "{{pod}} memory some"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_go_memstats_heap_inuse_bytes",
+          "legendFormat": "heap in-use",
+          "refId": "A"
         },
         {
-          "expr": "max by (pod) (loki_vl_proxy_process_pressure_io_some_ratio{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\",window=\"60s\"})",
-          "legendFormat": "{{pod}} io some"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_go_memstats_alloc_bytes",
+          "legendFormat": "heap alloc",
+          "refId": "A"
         }
-      ],
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 38,
+      "title": "Goroutines & GC",
+      "description": "Goroutine count correlates with active window-fanout concurrency. GC cycles indicate memory pressure.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 74,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_go_goroutines",
+          "legendFormat": "goroutines",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_go_gc_cycles_total",
+          "legendFormat": "GC cycles",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 39,
+      "title": "Network I/O",
+      "description": "Network bytes per second. High rx = large backend responses. High tx = large client responses (compression helps).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 82,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_process_network_receive_bytes_total[5m])",
+          "legendFormat": "rx bytes/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_process_network_transmit_bytes_total[5m])",
+          "legendFormat": "tx bytes/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 40,
+      "title": "Disk I/O (L2 Cache)",
+      "description": "Disk read/write from L2 disk cache (bbolt). Only active when -disk-cache-path is set.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 82,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_process_disk_read_bytes_total[5m])",
+          "legendFormat": "read bytes/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_process_disk_written_bytes_total[5m])",
+          "legendFormat": "write bytes/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 41,
+      "title": "System Pressure",
+      "description": "Linux PSI (pressure stall info). Non-zero = host resource contention affecting the proxy.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 82,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
-          "custom": {"fillOpacity": 10},
+          "fillOpacity": 1.0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_process_pressure_cpu_some_ratio{window=\"10\"}",
+          "legendFormat": "CPU pressure (10s)",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_process_pressure_memory_some_ratio{window=\"10\"}",
+          "legendFormat": "Mem pressure (10s)",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_process_pressure_io_some_ratio{window=\"10\"}",
+          "legendFormat": "IO pressure (10s)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 42,
+      "title": "\u2500\u2500 Section 3: Deep Proxy Internals (Tuning & Visibility)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 90,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "row",
+      "id": 43,
+      "title": "Cache Tiers (T0/L1/L2/L3)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 91,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "gauge",
+      "id": 44,
+      "title": "Overall Cache Hit Ratio",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 92,
+        "w": 4,
+        "h": 8
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
           "thresholds": {
+            "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 0.1},
-              {"color": "red", "value": 0.2}
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
-        }
-      }
-    },
-    {
-      "title": "Network Throughput by Pod",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 69},
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum by (pod) (rate(loki_vl_proxy_process_network_receive_bytes_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{pod}} rx"
-        },
-        {
-          "expr": "sum by (pod) (rate(loki_vl_proxy_process_network_transmit_bytes_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{pod}} tx"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_cache_hits_total / (loki_vl_proxy_cache_hits_total + loki_vl_proxy_cache_misses_total)",
+          "legendFormat": "ratio",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "Bps", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Disk Throughput by Pod",
       "type": "timeseries",
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 77},
+      "id": 45,
+      "title": "Cache Hit Rate by Tier",
+      "description": "Cache hits per tier per second. High T0 = repeated identical requests served at edge. High L1/L2 = window reuse active.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 92,
+        "w": 10,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum by (pod) (rate(loki_vl_proxy_process_disk_read_bytes_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{pod}} read"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"compat\"}[5m])",
+          "legendFormat": "T0 compat hits/s",
+          "refId": "A"
         },
         {
-          "expr": "sum by (pod) (rate(loki_vl_proxy_process_disk_written_bytes_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{pod}} write"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"memory\"}[5m])",
+          "legendFormat": "L1 memory hits/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_tier_hits_total{tier=\"disk\"}[5m])",
+          "legendFormat": "L2 disk hits/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_hits_total[5m])",
+          "legendFormat": "L3 peer hits/s",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "Bps", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Disk Operations / s by Pod",
       "type": "timeseries",
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 77},
+      "id": 46,
+      "title": "Cache Miss Rate by Tier",
+      "description": "Cache misses per tier \u2014 each miss cascades to the next tier or backend.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 92,
+        "w": 10,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum by (pod) (rate(loki_vl_proxy_process_disk_read_operations_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{pod}} read ops"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"compat\"}[5m])",
+          "legendFormat": "T0 misses/s",
+          "refId": "A"
         },
         {
-          "expr": "sum by (pod) (rate(loki_vl_proxy_process_disk_write_operations_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval]))",
-          "legendFormat": "{{pod}} write ops"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"memory\"}[5m])",
+          "legendFormat": "L1 misses/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_tier_misses_total{tier=\"disk\"}[5m])",
+          "legendFormat": "L2 misses/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_misses_total[5m])",
+          "legendFormat": "L3 peer misses/s",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "ops", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Proxy Internal - Query-Range Windowing",
+      "type": "timeseries",
+      "id": 47,
+      "title": "Cache Size (Objects & Bytes)",
+      "description": "In-memory and disk cache utilization. Near -cache-max or -cache-max-bytes = eviction pressure.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 100,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_cache_objects{tier=\"memory\"}",
+          "legendFormat": "L1 objects",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_cache_bytes{tier=\"memory\"}",
+          "legendFormat": "L1 bytes",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_cache_bytes{tier=\"disk\"}",
+          "legendFormat": "L2 bytes",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 48,
+      "title": "Cache Stale Hits & Backend Fallthrough",
+      "description": "Stale hits = TTL expired but served. Backend fallthrough = compat cache missed, went to L1+.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 100,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_tier_stale_hits_total[5m])",
+          "legendFormat": "stale hits/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_cache_backend_fallthrough_total[5m])",
+          "legendFormat": "backend fallthrough/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 84},
-      "collapsed": false
+      "id": 49,
+      "title": "Peer Cache Fleet Distribution",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 108,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
     },
     {
-      "title": "Window Fetch Latency",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 85},
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, sum(rate(loki_vl_proxy_window_fetch_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(loki_vl_proxy_window_fetch_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p95"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Window Merge Latency",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 85},
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.5, sum(rate(loki_vl_proxy_window_merge_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(loki_vl_proxy_window_merge_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (le))",
-          "legendFormat": "p95"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Window Cache Hit Ratio",
       "type": "stat",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 93},
+      "id": 50,
+      "title": "Cluster Members",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 109,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "green",
+                "value": 2
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "(100 * sum(rate(loki_vl_proxy_window_cache_hit_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) / clamp_min(sum(rate(loki_vl_proxy_window_cache_hit_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) + sum(rate(loki_vl_proxy_window_cache_miss_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])), 0.000001)) or vector(0)",
-          "legendFormat": "hit %"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_peer_cache_cluster_members",
+          "legendFormat": "members",
+          "refId": "A",
+          "instant": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "percent", "min": 0, "max": 100}
-      }
+      ]
     },
     {
-      "title": "Adaptive Parallelism",
       "type": "stat",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 93},
+      "id": 51,
+      "title": "Active Peers",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 3,
+        "y": 109,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "yellow",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "max(loki_vl_proxy_window_adaptive_parallel_current{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "parallel"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_peer_cache_peers",
+          "legendFormat": "peers",
+          "refId": "A",
+          "instant": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "none", "min": 1}
-      }
+      ]
     },
     {
-      "title": "Adaptive EWMA",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 93},
+      "id": 52,
+      "title": "Peer Cache Hit/Miss",
+      "description": "Peer cache activity. Errors = network problems with peer nodes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 109,
+        "w": 9,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "max(loki_vl_proxy_window_adaptive_latency_ewma_seconds{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "latency ewma"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_hits_total[5m])",
+          "legendFormat": "hits/s",
+          "refId": "A"
         },
         {
-          "expr": "max(loki_vl_proxy_window_adaptive_error_ewma{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "error ewma"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_misses_total[5m])",
+          "legendFormat": "misses/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_errors_total[5m])",
+          "legendFormat": "errors/s",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "short", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Proxy Internal - Long-Range Resilience KPIs",
+      "type": "timeseries",
+      "id": 53,
+      "title": "Write-Through Pushes",
+      "description": "Writes pushed from non-owner to owner peers. High push errors = peer network issues.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 109,
+        "w": 9,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_write_through_pushes_total[5m])",
+          "legendFormat": "pushes/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_write_through_errors_total[5m])",
+          "legendFormat": "push errors/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 54,
+      "title": "Hot Read-Ahead Prefetching",
+      "description": "Proactive peer hot-key prefetching. Budget drops = byte/key limits enforced. Tenant skips = fairness applied.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 117,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_read_ahead_prefetches_total[5m])",
+          "legendFormat": "prefetches/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_read_ahead_prefetch_bytes_total[5m])",
+          "legendFormat": "prefetch bytes/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_read_ahead_budget_drops_total[5m])",
+          "legendFormat": "budget drops/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total[5m])",
+          "legendFormat": "tenant skips/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 55,
+      "title": "Peer Error Breakdown",
+      "description": "Peer cache errors broken down by reason (timeout, connection_refused, etc.).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 117,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_peer_cache_error_reason_total[5m])",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 101},
-      "collapsed": false
+      "id": 56,
+      "title": "Query-Range Windowing & Prefilter",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 125,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
     },
     {
-      "title": "Prefilter Keep/Skip Rate",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 102},
+      "id": 57,
+      "title": "Window Cache Hit vs Miss",
+      "description": "Per-window cache efficiency. High hit rate = historical windows reused from L1/L2/L3.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 126,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum(rate(loki_vl_proxy_window_prefilter_kept_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "kept/s"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_window_cache_hit_total[5m])",
+          "legendFormat": "cache hits/s",
+          "refId": "A"
         },
         {
-          "expr": "sum(rate(loki_vl_proxy_window_prefilter_skipped_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "skipped/s"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_window_cache_miss_total[5m])",
+          "legendFormat": "cache misses/s",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Retry/Degraded/Partial Rate",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 102},
+      "id": 58,
+      "title": "Prefilter Efficiency (Skipped Windows)",
+      "description": "Windows skipped by /hits index prefilter = VL queries avoided. High skip ratio = good prefilter ROI.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 126,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum(rate(loki_vl_proxy_window_retry_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "retry/s"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_window_prefilter_kept_total[5m])",
+          "legendFormat": "kept/s",
+          "refId": "A"
         },
         {
-          "expr": "sum(rate(loki_vl_proxy_window_degraded_batch_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "degraded/s"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_window_prefilter_skipped_total[5m])",
+          "legendFormat": "skipped/s",
+          "refId": "A"
         },
         {
-          "expr": "sum(rate(loki_vl_proxy_window_partial_response_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "partial/s"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_window_prefilter_error_total[5m])",
+          "legendFormat": "errors/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_window_prefilter_hit_ratio",
+          "legendFormat": "hit ratio",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Prefilter Hit Ratio",
+      "type": "timeseries",
+      "id": 59,
+      "title": "Window Retries & Partial Responses",
+      "description": "Retries = backend transient errors. Partial responses = returned despite some window failures. Degraded batches = stream-aware throttling.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 126,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_window_retry_total[5m])",
+          "legendFormat": "retries/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_window_partial_response_total[5m])",
+          "legendFormat": "partial responses/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_window_degraded_batch_total[5m])",
+          "legendFormat": "degraded batches/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 60,
+      "title": "Prefilter Duration",
+      "description": "Time spent on prefilter /hits calls. Should be fast (<50ms p99). Slow prefilter = skip it with fewer windows threshold.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 134,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.50, sum by(le) (rate(loki_vl_proxy_window_prefilter_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(le) (rate(loki_vl_proxy_window_prefilter_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 61,
+      "title": "Adaptive Parallelism Over Time",
+      "description": "Adaptive parallelism trace. Drops = backend latency/error backpressure applied. Increases = backend recovered.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 134,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_window_adaptive_parallel_current",
+          "legendFormat": "current parallelism",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_window_adaptive_latency_ewma_seconds * 1000",
+          "legendFormat": "EWMA latency ms",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_window_adaptive_error_ewma * 100",
+          "legendFormat": "EWMA error %",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 62,
+      "title": "Patterns Engine (Grafana Logs Drilldown)",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 142,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
       "type": "stat",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 102},
+      "id": 63,
+      "title": "Patterns In Memory",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 143,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10000
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "100 * max(loki_vl_proxy_window_prefilter_hit_ratio{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "hit ratio %"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_patterns_in_memory",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "percent", "min": 0, "max": 100}
-      }
+      ]
     },
     {
-      "title": "Proxy Internal - Connection Stickiness",
+      "type": "stat",
+      "id": 64,
+      "title": "Pattern Cache Keys",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 3,
+        "y": 143,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_patterns_cache_keys",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 65,
+      "title": "Patterns Memory Bytes",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 143,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 52428800
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_patterns_in_memory_bytes",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "id": 66,
+      "title": "Last Response Patterns",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 143,
+        "w": 3,
+        "h": 4
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "thresholds",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "textMode": "auto",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_patterns_last_response_patterns",
+          "legendFormat": "",
+          "refId": "A",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 67,
+      "title": "Pattern Mining Rate",
+      "description": "Pattern mining pipeline. Pre > post = merge deduplication active. Stored = net new patterns.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 143,
+        "w": 12,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_mined_pre_merge_total[5m])",
+          "legendFormat": "mined pre-merge/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_mined_post_merge_total[5m])",
+          "legendFormat": "mined post-merge/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_stored_total[5m])",
+          "legendFormat": "stored/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_deduplicated_total[5m])",
+          "legendFormat": "deduplicated/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 68,
+      "title": "Source Lines Observed vs Scanned",
+      "description": "Pattern mining input pipeline. Scanned < observed = sampling active.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 151,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_source_lines_observed_total[5m])",
+          "legendFormat": "observed/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_source_lines_scanned_total[5m])",
+          "legendFormat": "scanned/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_source_lines_requested_total[5m])",
+          "legendFormat": "requested/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 69,
+      "title": "Snapshot Hits & Reuse",
+      "description": "Pattern snapshot cache efficiency. High reuse = pattern computation avoided.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 151,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_snapshot_hits_total[5m])",
+          "legendFormat": "snapshot hits/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_snapshot_misses_total[5m])",
+          "legendFormat": "snapshot misses/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_snapshot_reused_total[5m])",
+          "legendFormat": "snapshot reused/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 70,
+      "title": "Persistence (Disk & Peer)",
+      "description": "Pattern snapshot persistence. Restoration bytes = how much pattern state survived restarts.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 151,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_persist_write_bytes_total[5m])",
+          "legendFormat": "disk write bytes/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_restored_disk_bytes_total[5m])",
+          "legendFormat": "restored from disk bytes/s",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_patterns_restored_peer_bytes_total[5m])",
+          "legendFormat": "restored from peer bytes/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 110},
-      "collapsed": false
+      "id": 71,
+      "title": "HTTP Connection Lifecycle",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 159,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
     },
     {
-      "title": "Requests by Pod",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 111},
+      "id": 72,
+      "title": "Connections by State",
+      "description": "Active HTTP connections by state (new, active, idle, hijacked). High idle = keepalive working.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 160,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum(rate(loki_vl_proxy_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (pod)",
-          "legendFormat": "{{pod}}"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "loki_vl_proxy_http_connections{state=~\".+\"}",
+          "legendFormat": "{{state}}",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Top Client -> Pod Request Rate",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 111},
+      "id": 73,
+      "title": "Connection Rotations by Reason",
+      "description": "Connection rotation reasons (max_age, max_requests, overload). Overload = backpressure shedding active.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 160,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "topk(10, sum(rate(loki_vl_proxy_client_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (client, pod))",
-          "legendFormat": "{{client}} -> {{pod}}"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_http_connection_rotations_total[5m])",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Client Inflight by Pod",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 111},
+      "id": 74,
+      "title": "Connection Transitions",
+      "description": "Connection lifecycle state machine transitions. Rapid transitions = short-lived connection pressure.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 160,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "topk(10, max(loki_vl_proxy_client_inflight_requests{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) by (client, pod))",
-          "legendFormat": "{{client}} -> {{pod}}"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "rate(loki_vl_proxy_http_connection_transitions_total[5m])",
+          "legendFormat": "{{state}}",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "none", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Proxy Internal - HTTP Connection Visibility",
       "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 119},
-      "collapsed": false
+      "id": 75,
+      "title": "Tenant Deep Dive",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 168,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
     },
     {
-      "title": "HTTP Connections by State",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 120},
+      "id": 76,
+      "title": "Per-Tenant Request Rate",
+      "description": "Request rate per X-Scope-OrgID tenant. Identify dominant tenants.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 169,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum(loki_vl_proxy_http_connections{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) by (state) or vector(0)",
-          "legendFormat": "{{state}}"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(tenant) (rate(loki_vl_proxy_tenant_requests_total[5m]))",
+          "legendFormat": "{{tenant}}",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "none", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "HTTP Connection Transition Rate",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 120},
+      "id": 77,
+      "title": "Per-Tenant P99 Latency",
+      "description": "P99 latency by tenant. Noisy-tenant isolation: one tenant's slow queries don't explain another's.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 169,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "sum(rate(loki_vl_proxy_http_connection_transitions_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (state) or vector(0)",
-          "legendFormat": "{{state}}/s"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by(tenant, le) (rate(loki_vl_proxy_tenant_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{tenant}}",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
+      ]
     },
     {
-      "title": "Top Client -> Pod p95",
       "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 120},
+      "id": 78,
+      "title": "Per-Tenant Error Rate",
+      "description": "Error rate per tenant. Tenant-scoped backend failures or bad queries.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 169,
+        "w": 8,
+        "h": 8
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "fillOpacity": 1.0
+        },
+        "overrides": []
+      },
       "targets": [
         {
-          "expr": "topk(10, histogram_quantile(0.95, sum(rate(loki_vl_proxy_client_request_duration_seconds_bucket{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (client, pod, le)))",
-          "legendFormat": "{{client}} -> {{pod}}"
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by(tenant) (rate(loki_vl_proxy_tenant_requests_total{status=~\"5..\"}[5m])) / sum by(tenant) (rate(loki_vl_proxy_tenant_requests_total[5m]))",
+          "legendFormat": "{{tenant}}",
+          "refId": "A"
         }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Proxy Internal - Fleet Cache & Redistribution",
-      "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 128},
-      "collapsed": false
-    },
-    {
-      "title": "Peer Cache Hits / Misses / Errors",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 129},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_peer_cache_hits_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "hits/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_peer_cache_misses_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "misses/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_peer_cache_errors_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "errors/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Connection Rotations by Pod / Reason",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 129},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_http_connection_rotations_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (pod, reason) or vector(0)",
-          "legendFormat": "{{pod}} {{reason}}/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Active Requests / Active Connections by Pod",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 129},
-      "targets": [
-        {
-          "expr": "sum(loki_vl_proxy_active_requests{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) by (pod) or vector(0)",
-          "legendFormat": "{{pod}} active req"
-        },
-        {
-          "expr": "sum(loki_vl_proxy_http_connections{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\",state=\"active\"}) by (pod) or vector(0)",
-          "legendFormat": "{{pod}} active conn"
-        },
-        {
-          "expr": "sum(loki_vl_proxy_http_connections{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\",state=\"idle\"}) by (pod) or vector(0)",
-          "legendFormat": "{{pod}} idle conn"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "none", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Backend-Side VictoriaLogs & Internal Fanout",
-      "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 145},
-      "collapsed": false
-    },
-    {
-      "title": "Helper Cache Tier Requests / Hits",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 137},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_cache_tier_requests_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tier) or vector(0)",
-          "legendFormat": "{{tier}} requests/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_cache_tier_hits_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tier) or vector(0)",
-          "legendFormat": "{{tier}} hits/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Helper Cache Stale / Backend Fallthrough",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 137},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_cache_tier_misses_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tier) or vector(0)",
-          "legendFormat": "{{tier}} miss/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_cache_tier_stale_hits_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (tier) or vector(0)",
-          "legendFormat": "{{tier}} stale/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_cache_backend_fallthrough_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "backend fallthrough/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Cache Objects / Bytes by Tier",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 137},
-      "targets": [
-        {
-          "expr": "sum(loki_vl_proxy_cache_objects{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) by (tier) or vector(0)",
-          "legendFormat": "{{tier}} objects"
-        },
-        {
-          "expr": "sum(loki_vl_proxy_cache_bytes{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) by (tier) or vector(0)",
-          "legendFormat": "{{tier}} bytes"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "decbytes", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "VL Child P99 Latency by Upstream Endpoint",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 146},
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(loki_vl_proxy_backend_duration_seconds_bucket{system=\"vl\",direction=\"upstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
-          "legendFormat": "p99 {{endpoint}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "s", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "P95 Upstream Calls per Downstream Request",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 146},
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(loki_vl_proxy_upstream_calls_per_request_bucket{system=\"loki\",direction=\"downstream\",job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (endpoint, le))",
-          "legendFormat": "p95 {{endpoint}}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "short", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Internal Operations by Outcome",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 146},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_internal_operation_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (operation, outcome)",
-          "legendFormat": "{{operation}} {{outcome}}/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Backend-Side VictoriaLogs Patterns Pipeline",
-      "type": "row",
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 154},
-      "collapsed": false
-    },
-    {
-      "title": "Patterns Mining / Storage Rate",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 155},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_detected_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "detected/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_stored_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "stored/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_deduplicated_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) by (source) or vector(0)",
-          "legendFormat": "dedup {{source}}/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Patterns Snapshot Reuse / Restore Rate",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 155},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_snapshot_hits_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "snapshot hit/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_snapshot_misses_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "snapshot miss/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_snapshot_reused_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "snapshot reused/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_restored_from_disk_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "restore disk/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_restored_from_peers_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "restore peer/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "reqps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Patterns Persistence / Restore Bytes",
-      "type": "timeseries",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 155},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_persist_write_bytes_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "persist bytes/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_restored_disk_bytes_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "restore disk bytes/s"
-        },
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_restored_peer_bytes_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "restore peer bytes/s"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "Bps", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Patterns In-Memory/Key Footprint",
-      "type": "timeseries",
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 163},
-      "targets": [
-        {
-          "expr": "sum(loki_vl_proxy_patterns_in_memory{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "patterns in mem"
-        },
-        {
-          "expr": "sum(loki_vl_proxy_patterns_cache_keys{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "cache keys"
-        },
-        {
-          "expr": "sum(loki_vl_proxy_patterns_persisted_disk_patterns{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "disk patterns"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "short", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Patterns Byte Footprint / Last Response",
-      "type": "timeseries",
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 163},
-      "targets": [
-        {
-          "expr": "sum(loki_vl_proxy_patterns_in_memory_bytes{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "mem bytes"
-        },
-        {
-          "expr": "sum(loki_vl_proxy_patterns_persisted_disk_bytes{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "disk bytes"
-        },
-        {
-          "expr": "sum(loki_vl_proxy_patterns_last_response_bytes{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}) or vector(0)",
-          "legendFormat": "last response bytes"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "decbytes", "custom": {"fillOpacity": 10}}
-      }
-    },
-    {
-      "title": "Patterns Coverage / Window Stress",
-      "type": "timeseries",
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 163},
-      "targets": [
-        {
-          "expr": "sum(rate(loki_vl_proxy_patterns_low_coverage_responses_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "low coverage/s"
-        },
-        {
-          "expr": "(100 * sum(rate(loki_vl_proxy_patterns_source_lines_observed_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) / clamp_min(sum(rate(loki_vl_proxy_patterns_source_lines_requested_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])), 0.000001)) or vector(0)",
-          "legendFormat": "line acceptance %"
-        },
-        {
-          "expr": "(100 * sum(rate(loki_vl_proxy_patterns_windows_capped_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])) / clamp_min(sum(rate(loki_vl_proxy_patterns_windows_attempted_total{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\",pod=~\"${pod:regex}\"}[$__rate_interval])), 0.000001)) or vector(0)",
-          "legendFormat": "window capped %"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {"unit": "percent", "custom": {"fillOpacity": 10}}
-      }
+      ]
     }
   ],
+  "refresh": "30s",
   "schemaVersion": 39,
-  "tags": ["loki-vl-proxy", "observability", "proxy"],
+  "tags": [
+    "loki-vl-proxy",
+    "observability",
+    "production"
+  ],
   "templating": {
     "list": [
       {
-        "name": "datasource",
-        "label": "Datasource",
-        "type": "datasource",
-        "query": "prometheus",
-        "regex": "/.*/",
-        "refresh": 1,
+        "current": {},
         "hide": 0,
         "includeAll": false,
+        "label": "Datasource",
         "multi": false,
-        "options": []
+        "name": "datasource",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "type": "datasource"
       },
       {
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(loki_vl_proxy_requests_total, job)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Job",
+        "multi": true,
         "name": "job",
-        "type": "query",
-        "query": "label_values(loki_vl_proxy_uptime_seconds, job)",
-        "datasource": "$datasource",
-        "current": {"text": "All", "value": "$__all"},
-        "allValue": ".*",
+        "query": {
+          "query": "label_values(loki_vl_proxy_requests_total, job)",
+          "refId": "A"
+        },
         "refresh": 2,
-        "includeAll": true,
-        "multi": true,
-        "sort": 1
+        "sort": 1,
+        "type": "query"
       },
       {
-        "name": "cluster",
-        "type": "query",
-        "query": "label_values(loki_vl_proxy_uptime_seconds{job=~\"${job:regex}|${job:regex}-headless\"}, cluster)",
-        "datasource": "$datasource",
-        "current": {"text": "All", "value": "$__all"},
-        "allValue": ".*",
-        "refresh": 2,
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(loki_vl_proxy_requests_total, instance)",
+        "hide": 0,
         "includeAll": true,
+        "label": "Instance",
         "multi": true,
-        "sort": 1
-      },
-      {
-        "name": "env",
-        "type": "query",
-        "query": "label_values(loki_vl_proxy_uptime_seconds{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\"}, env)",
-        "datasource": "$datasource",
-        "current": {"text": "All", "value": "$__all"},
-        "allValue": ".*",
+        "name": "instance",
+        "query": {
+          "query": "label_values(loki_vl_proxy_requests_total, instance)",
+          "refId": "A"
+        },
         "refresh": 2,
-        "includeAll": true,
-        "multi": true,
-        "sort": 1
-      },
-      {
-        "name": "namespace",
-        "type": "query",
-        "query": "label_values(loki_vl_proxy_uptime_seconds{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\"}, namespace)",
-        "datasource": "$datasource",
-        "current": {"text": "All", "value": "$__all"},
-        "allValue": ".*",
-        "refresh": 2,
-        "includeAll": true,
-        "multi": true,
-        "sort": 1
-      },
-      {
-        "name": "service",
-        "type": "query",
-        "query": "label_values(loki_vl_proxy_uptime_seconds{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\"}, service)",
-        "datasource": "$datasource",
-        "current": {"text": "All", "value": "$__all"},
-        "allValue": ".*",
-        "refresh": 2,
-        "includeAll": true,
-        "multi": true,
-        "sort": 1
-      },
-      {
-        "name": "pod",
-        "type": "query",
-        "query": "label_values(loki_vl_proxy_uptime_seconds{job=~\"${job:regex}|${job:regex}-headless\",cluster=~\"${cluster:regex}\",env=~\"${env:regex}\",namespace=~\"${namespace:regex}|loki-vl-proxy\",service=~\"${service:regex}|${service:regex}-headless|\"}, pod)",
-        "datasource": "$datasource",
-        "current": {"text": "All", "value": "$__all"},
-        "allValue": ".*",
-        "refresh": 2,
-        "includeAll": true,
-        "multi": true,
-        "sort": 1
+        "sort": 1,
+        "type": "query"
       }
     ]
   },
-  "time": {"from": "now-1h", "to": "now"},
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Loki-VL-proxy Operations",
-  "uid": "loki-vl-proxy-metrics",
-  "version": 14
+  "title": "Loki-VL-proxy \u2014 Operations",
+  "uid": "loki-vl-proxy-ops",
+  "version": 1
 }
