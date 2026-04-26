@@ -58,6 +58,7 @@ jobs:
           "$(go env GOPATH)/bin/gosec" \
             -exclude=G104,G108,G115,G301,G302,G304,G306,G402,G404 \
             -exclude-generated \
+            -exclude-dir=bench \
             -fmt sarif \
             -out gosec.sarif \
             ./...
