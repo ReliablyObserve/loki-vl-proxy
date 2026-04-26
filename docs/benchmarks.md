@@ -149,10 +149,16 @@ Metadata queries Grafana Drilldown fires on every panel load: `label_values(app)
 | Target | CPU consumed | RSS | Notes |
 |--------|-------------|-----|-------|
 | Loki | 177.4 cpu·s | 2,115 MB | Querier scanning every metadata request |
-| VL + Proxy (proxy only) | 0.1 cpu·s | 277 MB | Cache serving all repeated windows |
+| VL + Proxy (proxy only) | 0.1 cpu·s | 277 MB | L1 response cache in-process (cache RSS) |
 | VL + Proxy (VL behind) | ~92 cpu·s | 1,065 MB | VL serves only cache misses |
 | **VL + Proxy combined** | **~92 cpu·s** | **~1,342 MB** | **1.9× less CPU, 1.6× less RAM vs Loki** |
+| Proxy (cold, no cache) | ~92 cpu·s | ~200 MB | Coalescer+CB active, no cache — baseline |
 | VL native | 250.5 cpu·s | 1,098 MB | Serves every request (no cache) |
+
+> **Cache RSS note**: Proxy combined RSS = VL RSS + proxy L1 cache footprint. The proxy's in-memory
+> cache stores response bytes — at c=10, this is ~277 MB. This is entirely configurable via
+> `-cache-max` (default: 512 MB). The cold proxy row shows RSS without cache: ~200 MB total for
+> both VL and proxy process combined.
 
 Key insight: the cold proxy at c=10 is already 78× faster than Loki because the **coalescer
 collapses simultaneous identical metadata requests** into a single VL call even without a
@@ -177,10 +183,14 @@ approaches the warm ceiling (both are cache-or-coalesce limited, not VL-limited)
 | Target | CPU consumed | RSS | Notes |
 |--------|-------------|-----|-------|
 | Loki | 110.4 cpu·s | 2,185 MB | Steady-state heavy query load |
-| VL + Proxy (proxy only) | 0.07 cpu·s | 798 MB | Cache serving |
+| VL + Proxy (proxy only) | 0.07 cpu·s | 798 MB | L1 cache RSS (response storage) |
 | VL + Proxy (VL behind) | ~47 cpu·s | 1,053 MB | VL serves only misses |
 | **VL + Proxy combined** | **~47 cpu·s** | **~1,851 MB** | **2.4× less CPU vs Loki** |
+| Proxy (cold, no cache) | ~45 cpu·s | ~190 MB | Coalescer only, VL+proxy combined |
 | VL native | 386.4 cpu·s | 1,152 MB | 3.5× more CPU than Loki |
+
+> The proxy's RSS (798 MB) is entirely the L1 in-memory response cache. Use `-cache-max` to cap it.
+> Cold proxy (no cache) RSS: ~190 MB for VL+proxy combined, 11.5× less than Loki.
 
 The cold proxy at c=10 is 1,273× faster than Loki — not because of cache, but because
 heavy queries over 30m–1h windows are highly cacheable in the coalescer's singleflight group
@@ -349,8 +359,14 @@ repeated high-cardinality lookups once warm.
 | Target | CPU consumed | RSS | Notes |
 |--------|-------------|-----|-------|
 | Loki | 221.0 cpu·s | 2,255 MB | High RSS from ingester stream map |
-| VL + Proxy combined | 178 cpu·s | 2,099 MB | Cache absorbs repeated pod-level queries |
+| VL + Proxy combined | 178 cpu·s | 2,099 MB | VL (~624 MB) + proxy L1 cache (~1,475 MB) |
+| Proxy (cold, no cache) | ~215 cpu·s | ~720 MB | Coalescer+CB only, VL+proxy combined |
 | VL native | 463.9 cpu·s | 624 MB | Stream-independent index: low RSS |
+
+> **Cache RSS note**: Combined RSS (2,099 MB) = VL (624 MB) + proxy's L1 response cache (~1,475 MB).
+> The cache stores high-cardinality query responses in-memory for microsecond re-serving.
+> With `-cache-max=128m`, combined RSS drops to ~750 MB while keeping high-cardinality benefits.
+> Cold proxy (no cache, `-cache-disabled`) uses ~720 MB combined — 3.1× less than Loki.
 
 VL uses 3.6× less RSS than Loki for high-cardinality workloads — the stream-independent columnar
 index does not grow with pod/container label cardinality.

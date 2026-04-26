@@ -30,6 +30,57 @@ Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
 
 ---
 
+## Real-World Improvements Over Loki
+
+Benchmarked against a tuned Loki on the same hardware (Apple M5 Pro, 18 cores, 64 GB RAM, ~8M log entries, 7-day dataset). Numbers are from [six-workload comparison](docs/benchmarks.md#six-workload-read-path-comparison-loki-vs-vlproxy-vs-vl-native).
+
+### Throughput at c=100 concurrent clients
+
+| Workload | Proxy (warm) vs Loki | Proxy (cold, no cache) vs Loki | Why |
+|----------|:--------------------:|:------------------------------:|-----|
+| Metadata / label values | **68×** | **122×** | Coalescer deduplicates Grafana panel fan-out at source |
+| Heavy aggregations (JSON, logfmt) | **1,006×** | **1,717×** | Aggregation results cached; coalescer eliminates repeated work |
+| Content search (`\|= "word"`) | **4,522×** | **6,332×** | VL inverted token index vs Loki full chunk scan |
+| Compute (rate, quantile, topk) | **22.5×** | **101×** | Coalescer collapses ~50% of concurrent identical queries |
+| Historical (7-day windows) | **244×** | ~1× | Cache-only win; without cache, VL native is 6.9× faster |
+| High-cardinality (pod/container) | **55.9×** | **6.4×** | VL stream-independent index; cache absorbs repeated pod queries |
+
+The **cold proxy** column (cache disabled, coalescer + circuit breaker active) is the best measure of VL's raw query speed with thundering-herd protection. Its large advantage over VL native comes entirely from the coalescer collapsing concurrent duplicate requests before they reach VL.
+
+### Content search: architectural advantage
+
+Loki has no content index — every `|= "word"` filter scans every compressed chunk in the time range. A 24-hour search over high-volume logs can take 30–90 seconds regardless of hardware. VictoriaLogs maintains a word-level inverted token index — the same query completes in milliseconds. The proxy makes this transparent.
+
+### High-cardinality workloads
+
+Loki's ingester holds one in-memory chunk per active stream. High pod cardinality (hundreds of pods × services) multiplies memory linearly. VictoriaLogs uses a stream-independent columnar index — cardinality affects only the label index, not the storage engine. In the benchmark:
+
+- **Loki**: 2,255 MB RSS at c=10 for high-cardinality queries
+- **VL native**: 624 MB RSS — **3.6× less memory than Loki**
+- Previously this workload caused 100% errors on the proxy (circuit breaker tripping from slow-query connection resets); fixed with sliding-window CB + coalescer coupling → **0% errors**
+
+### Resource efficiency (heavy workload, c=10)
+
+| | CPU consumed | RSS | Notes |
+|---|---|---|---|
+| Loki | 110.4 cpu·s | 2,185 MB | — |
+| VL + Proxy (warm cache) | ~47 cpu·s | ~1,851 MB | Cache RSS ~798 MB (configurable via `-cache-max`) |
+| VL + Proxy (no cache) | ~45 cpu·s | ~190 MB | Coalescer-only, 11.5× less RAM than Loki |
+| VL native | 386.4 cpu·s | 1,152 MB | 3.5× more CPU than Loki |
+
+The warm proxy uses more RAM than Loki in this table because the L1 response cache stores responses in-memory for microsecond re-serving. Reduce `-cache-max` to trade cache hit rate for memory. Without cache, VL+proxy combined uses **11.5× less RAM** than Loki at steady-state.
+
+### Latency at c=100
+
+| Workload | Loki P50 | Proxy warm P50 | Speedup |
+|----------|----------|----------------|---------|
+| Metadata | 196 ms | 2 ms | **98×** |
+| Heavy aggregation | 2,399 ms | 2 ms | **1,200×** |
+| Content search | 13,415 ms | 2 ms | **6,700×** |
+| High-cardinality | 1,344 ms | 1 ms | **1,344×** |
+
+---
+
 ## The Cost Case
 
 At scale, Loki is expensive. Grafana's own sizing guide puts a 3–30 TB/day cluster at **431 vCPU / 857 Gi RAM**, and a ~30 TB/day cluster at **1,221 vCPU / 2,235 Gi RAM**. Loki's replication factor 3 also means 3x cross-zone write traffic — significant in cloud environments with AZ egress costs.
