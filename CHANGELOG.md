@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(proxy): stable log stream ordering on repeated refreshes — Go map iteration was non-deterministic, causing entire streams to swap positions between requests; fixed by tracking insertion order and iterating in that order when building the response.
+- fix(proxy): `stringifyEntryValue` now JSON-marshals `map[string]interface{}` and `[]interface{}` values instead of using `fmt.Sprintf("%v")`; VL-parsed JSON objects come back as valid JSON strings so Grafana can detect and pretty-print log lines.
+- fix(e2e): `ensureRangeMetricCompatData` now waits for `{app="range-metric-counter"}` chunks to seal in Loki (up to 90 s) instead of sleeping 3 s; prevents spurious `sum_rate_by_app` series-count mismatches in the query semantics matrix test.
+
+### Added
+
+- test(proxy): 16 hardening tests for stream ordering determinism (same result across 15 repeated calls) and `stringifyEntryValue` JSON-object handling (map/slice values produce valid JSON, not `map[k:v]`).
+
+### Documentation
+
+- docs: fix comparison table in README — "15x less" figure is CPU, not Disk, per VictoriaLogs vendor benchmarks.
+- docs(bench): clarify VL native heavy-workload CPU note — "3.5× more total CPU; 18.5× more throughput — 5.3× more efficient per request" replaces the misleading "3.5× more CPU than Loki".
+
 ## [1.18.0] - 2026-04-26
 
 
