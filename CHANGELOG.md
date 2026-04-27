@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.19.0] - 2026-04-27
+
 ### Fixed
 
 - fix(proxy): stable log stream ordering on repeated refreshes — Go map iteration was non-deterministic, causing entire streams to swap positions between requests; fixed by tracking insertion order and iterating in that order when building the response.
