@@ -881,7 +881,9 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	cbOpen := cfg.CBOpenDuration
 	if cbOpen == 0 {
-		cbOpen = 10 * time.Second
+		// 2 s is short enough that users barely notice a trip while still damping
+		// burst storms. Coalescing and caching protect the backend between probes.
+		cbOpen = 2 * time.Second
 	}
 	cbWindow := cfg.CBWindowDuration
 	if cbWindow <= 0 {
@@ -2159,8 +2161,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
-	// Extract without() labels for post-processing
+	// Extract without() labels and label-transform markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
+	logsqlQuery, labelReplaceSpec := translator.ParseLabelReplaceMarker(logsqlQuery)
+	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
@@ -2171,12 +2176,13 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 
 	r = withOrgID(r)
 
+	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
 	var (
 		sc       = &statusCapture{ResponseWriter: w, code: 200}
 		capture  *bufferedResponseWriter
 		cacheTap *compatCacheCaptureWriter
 	)
-	if len(withoutLabels) > 0 {
+	if needsCapture {
 		capture = &bufferedResponseWriter{header: make(http.Header)}
 		sc = &statusCapture{ResponseWriter: capture, code: 200}
 	} else if cacheable {
@@ -2202,6 +2208,15 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		cacheOut := capture.body
 		if len(withoutLabels) > 0 {
 			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels)
+		}
+		if isGroupQuery {
+			cacheOut = applyGroupNormalization(cacheOut)
+		}
+		if labelReplaceSpec != nil {
+			cacheOut = applyLabelReplace(cacheOut, *labelReplaceSpec)
+		}
+		if labelJoinSpec != nil {
+			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
 		}
 		copyHeaders(w.Header(), capture.Header())
 		if w.Header().Get("Content-Type") == "" {
@@ -2299,8 +2314,11 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract without() labels for post-processing
+	// Extract without() labels and label-transform markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
+	logsqlQuery, labelReplaceSpec := translator.ParseLabelReplaceMarker(logsqlQuery)
+	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
@@ -2313,8 +2331,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
+	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
 	var bw *bufferedResponseWriter
-	if len(withoutLabels) > 0 {
+	if needsCapture {
 		bw = &bufferedResponseWriter{header: w.Header()}
 		sc = &statusCapture{ResponseWriter: bw, code: 200}
 	}
@@ -2329,8 +2348,20 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		p.writeError(sc, http.StatusBadRequest, "log queries are not supported as an instant query type, please change your query to a range query type")
 	}
 
-	if bw != nil && len(withoutLabels) > 0 {
-		result := applyWithoutGrouping(bw.body, withoutLabels)
+	if bw != nil && needsCapture {
+		result := bw.body
+		if len(withoutLabels) > 0 {
+			result = applyWithoutGrouping(result, withoutLabels)
+		}
+		if isGroupQuery {
+			result = applyGroupNormalization(result)
+		}
+		if labelReplaceSpec != nil {
+			result = applyLabelReplace(result, *labelReplaceSpec)
+		}
+		if labelJoinSpec != nil {
+			result = applyLabelJoin(result, *labelJoinSpec)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)
 	}

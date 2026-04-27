@@ -629,3 +629,153 @@ func TestTopkTranslation(t *testing.T) {
 		}
 	}
 }
+
+func TestGroupTranslation(t *testing.T) {
+	cases := []struct {
+		in      string
+		wantHas string
+		wantErr string
+	}{
+		{
+			in:      `group(rate({app="api"}[5m])) by (level)`,
+			wantHas: "__lvp_group__",
+		},
+		{
+			in:      `group(count_over_time({app="api"}[5m])) by (status)`,
+			wantHas: "__lvp_group__",
+		},
+		{
+			// group result must still contain a by-label clause
+			in:      `group(rate({app="api"}[5m])) by (level)`,
+			wantHas: "level",
+		},
+	}
+	for _, tc := range cases {
+		result, err := TranslateLogQL(tc.in)
+		if tc.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("query %q: want error %q, got result=%q err=%v", tc.in, tc.wantErr, result, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("query %q: unexpected error: %v", tc.in, err)
+			continue
+		}
+		if !strings.Contains(result, tc.wantHas) {
+			t.Errorf("query %q:\n  got:  %q\n  want substring: %q", tc.in, result, tc.wantHas)
+		}
+		// Parsed group marker must round-trip cleanly
+		clean, ok := ParseGroupMarker(result)
+		if !ok {
+			t.Errorf("query %q: ParseGroupMarker found no marker in %q", tc.in, result)
+		}
+		if strings.Contains(clean, "__lvp_group__") {
+			t.Errorf("query %q: marker not fully stripped: %q", tc.in, clean)
+		}
+	}
+}
+
+func TestCountValuesError(t *testing.T) {
+	cases := []string{
+		`count_values("status", count_over_time({app="api"}[5m]))`,
+		`count_values("level", rate({app="api"}[5m]))`,
+	}
+	for _, in := range cases {
+		_, err := TranslateLogQL(in)
+		if err == nil || !strings.Contains(err.Error(), "count_values") {
+			t.Errorf("query %q: want count_values error, got err=%v", in, err)
+		}
+	}
+}
+
+func TestLabelReplaceTranslation(t *testing.T) {
+	cases := []struct {
+		in      string
+		wantHas string // in VL part
+		specDst string
+		specSrc string
+	}{
+		{
+			in:      `label_replace(rate({app="api"}[5m]), "host", "$1", "instance", "(.*):.+")`,
+			wantHas: "app:=api",
+			specDst: "host",
+			specSrc: "instance",
+		},
+		{
+			in:      `label_replace(count_over_time({job="x"}[1m]), "svc", "$1", "job", "(.*)")`,
+			wantHas: "job:=x",
+			specDst: "svc",
+			specSrc: "job",
+		},
+	}
+	for _, tc := range cases {
+		result, err := TranslateLogQL(tc.in)
+		if err != nil {
+			t.Errorf("query %q: unexpected error: %v", tc.in, err)
+			continue
+		}
+		if !strings.Contains(result, tc.wantHas) {
+			t.Errorf("query %q: VL part missing %q in %q", tc.in, tc.wantHas, result)
+		}
+		clean, spec := ParseLabelReplaceMarker(result)
+		if spec == nil {
+			t.Errorf("query %q: ParseLabelReplaceMarker returned nil in %q", tc.in, result)
+			continue
+		}
+		if spec.DstLabel != tc.specDst {
+			t.Errorf("query %q: DstLabel=%q want %q", tc.in, spec.DstLabel, tc.specDst)
+		}
+		if spec.SrcLabel != tc.specSrc {
+			t.Errorf("query %q: SrcLabel=%q want %q", tc.in, spec.SrcLabel, tc.specSrc)
+		}
+		if strings.Contains(clean, "__lvp_lr:") {
+			t.Errorf("query %q: marker not stripped from clean query %q", tc.in, clean)
+		}
+	}
+}
+
+func TestLabelJoinTranslation(t *testing.T) {
+	cases := []struct {
+		in      string
+		wantHas string
+		specDst string
+		specSep string
+		specSrc []string
+	}{
+		{
+			in:      `label_join(rate({app="api"}[5m]), "service_host", "/", "service", "host")`,
+			wantHas: "app:=api",
+			specDst: "service_host",
+			specSep: "/",
+			specSrc: []string{"service", "host"},
+		},
+	}
+	for _, tc := range cases {
+		result, err := TranslateLogQL(tc.in)
+		if err != nil {
+			t.Errorf("query %q: unexpected error: %v", tc.in, err)
+			continue
+		}
+		if !strings.Contains(result, tc.wantHas) {
+			t.Errorf("query %q: VL part missing %q in %q", tc.in, tc.wantHas, result)
+		}
+		clean, spec := ParseLabelJoinMarker(result)
+		if spec == nil {
+			t.Errorf("query %q: ParseLabelJoinMarker returned nil in %q", tc.in, result)
+			continue
+		}
+		if spec.DstLabel != tc.specDst {
+			t.Errorf("query %q: DstLabel=%q want %q", tc.in, spec.DstLabel, tc.specDst)
+		}
+		if spec.Separator != tc.specSep {
+			t.Errorf("query %q: Separator=%q want %q", tc.in, spec.Separator, tc.specSep)
+		}
+		if len(spec.SrcLabels) != len(tc.specSrc) {
+			t.Errorf("query %q: SrcLabels=%v want %v", tc.in, spec.SrcLabels, tc.specSrc)
+		}
+		if strings.Contains(clean, "__lvp_lj:") {
+			t.Errorf("query %q: marker not stripped from clean query %q", tc.in, clean)
+		}
+	}
+}
