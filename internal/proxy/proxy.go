@@ -881,7 +881,9 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	cbOpen := cfg.CBOpenDuration
 	if cbOpen == 0 {
-		cbOpen = 10 * time.Second
+		// 2 s is short enough that users barely notice a trip while still damping
+		// burst storms. Coalescing and caching protect the backend between probes.
+		cbOpen = 2 * time.Second
 	}
 	cbWindow := cfg.CBWindowDuration
 	if cbWindow <= 0 {
@@ -2159,8 +2161,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
-	// Extract without() labels for post-processing
+	// Extract without() labels and label-transform markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
+	logsqlQuery, labelReplaceSpec := translator.ParseLabelReplaceMarker(logsqlQuery)
+	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
@@ -2171,12 +2176,13 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 
 	r = withOrgID(r)
 
+	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
 	var (
 		sc       = &statusCapture{ResponseWriter: w, code: 200}
 		capture  *bufferedResponseWriter
 		cacheTap *compatCacheCaptureWriter
 	)
-	if len(withoutLabels) > 0 {
+	if needsCapture {
 		capture = &bufferedResponseWriter{header: make(http.Header)}
 		sc = &statusCapture{ResponseWriter: capture, code: 200}
 	} else if cacheable {
@@ -2202,6 +2208,15 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		cacheOut := capture.body
 		if len(withoutLabels) > 0 {
 			cacheOut = applyWithoutGrouping(cacheOut, withoutLabels)
+		}
+		if isGroupQuery {
+			cacheOut = applyGroupNormalization(cacheOut)
+		}
+		if labelReplaceSpec != nil {
+			cacheOut = applyLabelReplace(cacheOut, *labelReplaceSpec)
+		}
+		if labelJoinSpec != nil {
+			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
 		}
 		copyHeaders(w.Header(), capture.Header())
 		if w.Header().Get("Content-Type") == "" {
@@ -2299,8 +2314,11 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract without() labels for post-processing
+	// Extract without() labels and label-transform markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
+	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
+	logsqlQuery, labelReplaceSpec := translator.ParseLabelReplaceMarker(logsqlQuery)
+	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
@@ -2313,8 +2331,9 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
+	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
 	var bw *bufferedResponseWriter
-	if len(withoutLabels) > 0 {
+	if needsCapture {
 		bw = &bufferedResponseWriter{header: w.Header()}
 		sc = &statusCapture{ResponseWriter: bw, code: 200}
 	}
@@ -2329,8 +2348,20 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		p.writeError(sc, http.StatusBadRequest, "log queries are not supported as an instant query type, please change your query to a range query type")
 	}
 
-	if bw != nil && len(withoutLabels) > 0 {
-		result := applyWithoutGrouping(bw.body, withoutLabels)
+	if bw != nil && needsCapture {
+		result := bw.body
+		if len(withoutLabels) > 0 {
+			result = applyWithoutGrouping(result, withoutLabels)
+		}
+		if isGroupQuery {
+			result = applyGroupNormalization(result)
+		}
+		if labelReplaceSpec != nil {
+			result = applyLabelReplace(result, *labelReplaceSpec)
+		}
+		if labelJoinSpec != nil {
+			result = applyLabelJoin(result, *labelJoinSpec)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)
 	}
@@ -5097,6 +5128,12 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 			p.observeInternalOperation(ctx, "discovery_fallback", "detected_field_values_relaxed_after_empty", 0)
 			return p.resolveDetectedFieldValues(ctx, fieldName, relaxed, start, end, lineLimit, false)
 		}
+	}
+	// Last resort: field is inside JSON or logfmt _msg (not VL-indexed) and was
+	// not found by scan or relaxed-query. Only reached when no relaxed query is
+	// available (relaxOnEmpty=false or query already relaxed).
+	if len(values) == 0 {
+		values, _ = p.fetchUnpackedFieldValues(ctx, query, start, end, fieldName, lineLimit)
 	}
 	if values == nil {
 		values = []string{}
@@ -9738,15 +9775,22 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		se.Values = append(se.Values, []string{tsNanos, msg})
 	}
 
+	// Sort streams by key for stable cross-stream ordering. VL returns entries
+	// in non-deterministic stream order; without this, same-timestamp entries
+	// from different streams reorder between requests.
+	sort.Strings(streamOrder)
 	result := make([]map[string]interface{}, 0, len(streamMap))
 	for _, key := range streamOrder {
 		se := streamMap[key]
-		// Stable secondary sort within same-nanosecond timestamps.
+		// Only tie-break entries with identical nanosecond timestamps by message
+		// content. Different-timestamp entries are left in VL's returned order
+		// (which already reflects the requested direction: ascending/descending).
 		sort.SliceStable(se.Values, func(i, j int) bool {
-			if se.Values[i][0] == se.Values[j][0] {
-				return se.Values[i][1] < se.Values[j][1]
+			ti, tj := se.Values[i][0], se.Values[j][0]
+			if ti != tj {
+				return false
 			}
-			return false // preserve VL's time-sorted order
+			return se.Values[i][1] < se.Values[j][1]
 		})
 		result = append(result, map[string]interface{}{
 			"stream": se.Labels,
@@ -9857,20 +9901,27 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		return nil, nil, err
 	}
 
+	sort.Strings(streamOrder)
 	result := make([]map[string]interface{}, 0, len(streamMap))
 	for _, key := range streamOrder {
 		se := streamMap[key]
-		// Stable secondary sort within same-nanosecond timestamps so that
-		// repeated refreshes return entries in the same order.
+		// Only tie-break entries with identical nanosecond timestamps by message
+		// content. Different-timestamp entries are left in VL's returned order
+		// (which already reflects the requested direction: ascending/descending).
 		sort.SliceStable(se.Values, func(i, j int) bool {
 			vi, _ := se.Values[i].([]interface{})
 			vj, _ := se.Values[j].([]interface{})
-			if len(vi) >= 2 && len(vj) >= 2 && vi[0] == vj[0] {
-				msgi, _ := vi[1].(string)
-				msgj, _ := vj[1].(string)
-				return msgi < msgj
+			if len(vi) < 2 || len(vj) < 2 {
+				return false
 			}
-			return false // preserve VL's time-sorted order
+			ti, _ := vi[0].(string)
+			tj, _ := vj[0].(string)
+			if ti != tj {
+				return false
+			}
+			msgi, _ := vi[1].(string)
+			msgj, _ := vj[1].(string)
+			return msgi < msgj
 		})
 		result = append(result, map[string]interface{}{
 			"stream": se.Labels,
@@ -10060,6 +10111,16 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 	}
 	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
 		labels["level"] = value
+	}
+	// Mirror Loki's ingest-time level detection: if VL did not surface level as
+	// a top-level field (native field or OTel severity), try to extract it from
+	// the raw _msg string (JSON or logfmt) so detected_level matches Loki.
+	if labels["level"] == "" && labels["detected_level"] == "" {
+		if msgStr, ok := entry["_msg"].(string); ok {
+			if lvl, ok := extractLevelFromMsg(msgStr); ok {
+				labels["level"] = lvl
+			}
+		}
 	}
 	ensureDetectedLevel(labels)
 	ensureSyntheticServiceName(labels)

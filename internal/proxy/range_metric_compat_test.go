@@ -28,6 +28,72 @@ func TestParseStatsCompatSpec(t *testing.T) {
 	}
 }
 
+func TestParseStatsCompatSpecByEmpty(t *testing.T) {
+	spec, ok := parseStatsCompatSpec(`app:=nginx | unpack_json | stats by () avg(confidence)`)
+	if !ok {
+		t.Fatalf("expected parse success")
+	}
+	if !spec.ByExplicit {
+		t.Fatalf("expected ByExplicit=true for by () clause")
+	}
+	if len(spec.GroupBy) != 0 {
+		t.Fatalf("expected empty GroupBy, got %v", spec.GroupBy)
+	}
+	if spec.Func != "avg" || spec.Field != "confidence" {
+		t.Fatalf("unexpected function spec: %+v", spec)
+	}
+}
+
+func TestQueryRange_AvgOverTimeByEmptyReturnsSingleSeries(t *testing.T) {
+	base := time.Unix(1700000000, 0).UTC()
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		// Return 3 log entries from 3 different streams, each with a confidence field.
+		lines := []string{
+			fmt.Sprintf(`{"_time":%q,"_msg":"{\"confidence\":0.9}","_stream":"{app=\"api\",env=\"prod\"}","confidence":0.9}`, base.Format(time.RFC3339Nano)),
+			fmt.Sprintf(`{"_time":%q,"_msg":"{\"confidence\":0.7}","_stream":"{app=\"web\",env=\"prod\"}","confidence":0.7}`, base.Add(10*time.Second).Format(time.RFC3339Nano)),
+			fmt.Sprintf(`{"_time":%q,"_msg":"{\"confidence\":0.5}","_stream":"{app=\"ml\",env=\"prod\"}","confidence":0.5}`, base.Add(20*time.Second).Format(time.RFC3339Nano)),
+		}
+		_, _ = w.Write([]byte(strings.Join(lines, "\n") + "\n"))
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	params.Set("query", `avg_over_time({env="prod"} | json | unwrap confidence [5m]) by ()`)
+	params.Set("start", strconv.FormatInt(base.Add(60*time.Second).Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(120*time.Second).Unix(), 10))
+	params.Set("step", "60")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	// by () must produce exactly ONE series with empty metric labels.
+	if len(resp.Data.Result) != 1 {
+		t.Fatalf("expected 1 series from by (), got %d: %s", len(resp.Data.Result), rec.Body.String())
+	}
+	if len(resp.Data.Result[0].Metric) != 0 {
+		t.Fatalf("expected empty metric labels, got %v", resp.Data.Result[0].Metric)
+	}
+}
+
 func TestParseOriginalRangeMetricSpecRate(t *testing.T) {
 	spec, ok := parseOriginalRangeMetricSpec(`rate({app="nginx"}[5m])`)
 	if !ok {

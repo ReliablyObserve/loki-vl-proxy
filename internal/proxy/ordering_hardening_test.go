@@ -425,6 +425,271 @@ func TestStringifyEntryValue_UsedInVlLogsToLokiStreams(t *testing.T) {
 	}
 }
 
+// =============================================================================
+// Fix 2: JSON pretty-printing regression guards
+//
+// stringifyEntryValue must use json.Marshal for map[string]interface{} and
+// []interface{} types. If fmt.Sprintf("%v") is used instead, Grafana receives
+// Go's map[key:val] representation which is not valid JSON and breaks
+// pretty-printing in Logs Drilldown and Explore.
+//
+// The tests below guard every layer of the pipeline against this regression:
+// the function itself (isolated), and the full vlLogsToLokiStreams path.
+// =============================================================================
+
+// TestJSONPrettyPrint_GoFormatNeverEmitted is the primary regression sentinel.
+// It explicitly documents every Go collection type that fmt.Sprintf("%v") would
+// format incorrectly and verifies json.Marshal output is always returned instead.
+func TestJSONPrettyPrint_GoFormatNeverEmitted(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    interface{}
+		wantJSON bool // true = must be valid JSON
+		mustNot  []string
+	}{
+		{
+			name:     "flat_map",
+			input:    map[string]interface{}{"key": "value", "num": 42.0},
+			wantJSON: true,
+			mustNot:  []string{"map[", "map[key:"},
+		},
+		{
+			name:     "nested_map",
+			input:    map[string]interface{}{"outer": map[string]interface{}{"inner": "val"}},
+			wantJSON: true,
+			mustNot:  []string{"map[", "map[outer:map["},
+		},
+		{
+			name:     "flat_slice",
+			input:    []interface{}{"a", "b", "c"},
+			wantJSON: true,
+			mustNot:  []string{"[a b c]"},
+		},
+		{
+			name:     "slice_of_maps",
+			input:    []interface{}{map[string]interface{}{"k": "v"}},
+			wantJSON: true,
+			mustNot:  []string{"map[", "[map["},
+		},
+		{
+			name:     "empty_map",
+			input:    map[string]interface{}{},
+			wantJSON: true,
+			mustNot:  []string{"map[]"},
+		},
+		{
+			name:    "empty_slice",
+			input:   []interface{}{},
+			wantJSON: true,
+			mustNot: []string{}, // [] is identical in both JSON and Go fmt — just verify valid JSON
+		},
+		{
+			name:     "map_with_null",
+			input:    map[string]interface{}{"k": nil},
+			wantJSON: true,
+			mustNot:  []string{"map[", "map[k:<nil>]"},
+		},
+		{
+			name:     "map_with_bool",
+			input:    map[string]interface{}{"flag": true},
+			wantJSON: true,
+			mustNot:  []string{"map[flag:true]"},
+		},
+		{
+			name:     "deeply_nested",
+			input:    map[string]interface{}{"l1": map[string]interface{}{"l2": map[string]interface{}{"l3": "deep"}}},
+			wantJSON: true,
+			mustNot:  []string{"map[", "l1:map[l2:map["},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := stringifyEntryValue(tc.input)
+			if !ok {
+				t.Fatalf("%s: expected ok=true, got false", tc.name)
+			}
+			if tc.wantJSON && !json.Valid([]byte(got)) {
+				t.Errorf("%s: result is not valid JSON: %q", tc.name, got)
+			}
+			for _, bad := range tc.mustNot {
+				if strings.Contains(got, bad) {
+					t.Errorf("%s: result contains forbidden Go-format substring %q: full result: %q", tc.name, bad, got)
+				}
+			}
+		})
+	}
+}
+
+// TestJSONPrettyPrint_ArrayMsgThroughPipeline verifies that when VL returns a
+// log entry where _msg is a JSON array (parsed by VL), vlLogsToLokiStreams
+// emits a valid JSON array string — not Go's [elem elem] slice formatting.
+func TestJSONPrettyPrint_ArrayMsgThroughPipeline(t *testing.T) {
+	record := map[string]interface{}{
+		"_time":   "2024-01-01T00:00:00Z",
+		"_stream": `{app="array-msg-test"}`,
+		"_msg":    []interface{}{"step1", "step2", "step3"},
+	}
+	body := buildNDJSON([]map[string]interface{}{record})
+
+	streams := vlLogsToLokiStreams(body)
+	if len(streams) != 1 {
+		t.Fatalf("expected 1 stream, got %d", len(streams))
+	}
+	values, ok := streams[0]["values"].([][]string)
+	if !ok {
+		t.Fatalf("values have unexpected type %T", streams[0]["values"])
+	}
+	if len(values) != 1 {
+		t.Fatalf("expected 1 log entry, got %d", len(values))
+	}
+	msg := values[0][1]
+	if !json.Valid([]byte(msg)) {
+		t.Errorf("_msg was a JSON array but rendered as non-JSON: %q", msg)
+	}
+	if strings.HasPrefix(msg, "[step") {
+		t.Errorf("_msg rendered as Go slice format (not JSON): %q", msg)
+	}
+	var decoded []interface{}
+	if err := json.Unmarshal([]byte(msg), &decoded); err != nil {
+		t.Fatalf("cannot unmarshal array msg: %v (raw: %q)", err, msg)
+	}
+	if len(decoded) != 3 || decoded[0] != "step1" {
+		t.Errorf("unexpected decoded content: %v", decoded)
+	}
+}
+
+// TestJSONPrettyPrint_MixedMsgTypesSameResponse covers the common VL pattern
+// where some log entries have string _msg (logfmt lines) and others have
+// map _msg (parsed JSON lines) in the same NDJSON response body. Both must
+// render correctly — the string unchanged, the map as valid JSON.
+func TestJSONPrettyPrint_MixedMsgTypesSameResponse(t *testing.T) {
+	records := []map[string]interface{}{
+		{
+			"_time":   "2024-01-01T00:00:01Z",
+			"_stream": `{app="mixed-test"}`,
+			"_msg":    "plain text log line",
+		},
+		{
+			"_time":   "2024-01-01T00:00:02Z",
+			"_stream": `{app="mixed-test"}`,
+			"_msg":    map[string]interface{}{"event": "purchase", "amount": 99.95},
+		},
+		{
+			"_time":   "2024-01-01T00:00:03Z",
+			"_stream": `{app="mixed-test"}`,
+			"_msg":    "another plain log",
+		},
+	}
+	body := buildNDJSON(records)
+
+	streams := vlLogsToLokiStreams(body)
+	if len(streams) != 1 {
+		t.Fatalf("expected 1 stream, got %d", len(streams))
+	}
+	values, ok := streams[0]["values"].([][]string)
+	if !ok {
+		t.Fatalf("values have unexpected type %T", streams[0]["values"])
+	}
+	if len(values) != 3 {
+		t.Fatalf("expected 3 log entries, got %d", len(values))
+	}
+
+	// Entry 0: plain string — must pass through unchanged.
+	if values[0][1] != "plain text log line" {
+		t.Errorf("entry 0: expected plain string, got %q", values[0][1])
+	}
+	// Entry 1: JSON object — must be valid JSON, not map[...].
+	msg1 := values[1][1]
+	if !json.Valid([]byte(msg1)) {
+		t.Errorf("entry 1 (map _msg): not valid JSON: %q", msg1)
+	}
+	if strings.HasPrefix(msg1, "map[") {
+		t.Errorf("entry 1 (map _msg): Go format leaked: %q", msg1)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(msg1), &decoded); err != nil {
+		t.Fatalf("entry 1: cannot unmarshal: %v", err)
+	}
+	if decoded["event"] != "purchase" {
+		t.Errorf("entry 1: wrong event: %v", decoded["event"])
+	}
+	// Entry 2: plain string — must also pass through unchanged.
+	if values[2][1] != "another plain log" {
+		t.Errorf("entry 2: expected plain string, got %q", values[2][1])
+	}
+}
+
+// TestJSONPrettyPrint_DeepNestedMsgThroughPipeline verifies that multi-level
+// JSON nesting in _msg survives the full pipeline as valid JSON without any
+// loss of structure or Go formatting leakage.
+func TestJSONPrettyPrint_DeepNestedMsgThroughPipeline(t *testing.T) {
+	nested := map[string]interface{}{
+		"request": map[string]interface{}{
+			"method": "POST",
+			"path":   "/api/v1/users",
+			"headers": map[string]interface{}{
+				"content-type": "application/json",
+				"x-request-id": "abc-123",
+			},
+		},
+		"response": map[string]interface{}{
+			"status": 201.0,
+			"body":   map[string]interface{}{"id": "user-456", "created": true},
+		},
+		"errors": []interface{}{},
+	}
+	record := map[string]interface{}{
+		"_time":   "2024-01-01T00:00:00Z",
+		"_stream": `{app="deep-nested-test"}`,
+		"_msg":    nested,
+	}
+	body := buildNDJSON([]map[string]interface{}{record})
+
+	streams := vlLogsToLokiStreams(body)
+	if len(streams) != 1 {
+		t.Fatalf("expected 1 stream, got %d", len(streams))
+	}
+	values := streams[0]["values"].([][]string)
+	msg := values[0][1]
+
+	if !json.Valid([]byte(msg)) {
+		t.Errorf("deeply nested _msg not valid JSON: %q", msg)
+	}
+	if strings.Contains(msg, "map[") {
+		t.Errorf("Go map format leaked into deeply nested _msg: %q", msg)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal([]byte(msg), &decoded); err != nil {
+		t.Fatalf("cannot unmarshal deep nested msg: %v", err)
+	}
+	req, ok := decoded["request"].(map[string]interface{})
+	if !ok || req["method"] != "POST" {
+		t.Errorf("request.method not preserved: %v", decoded["request"])
+	}
+}
+
+// TestJSONPrettyPrint_NilMsgIsEmpty confirms that a nil _msg field results in
+// an empty string entry (not a panic or "null" string), which is the correct
+// Grafana-facing behavior for missing messages.
+func TestJSONPrettyPrint_NilMsgIsEmpty(t *testing.T) {
+	record := map[string]interface{}{
+		"_time":   "2024-01-01T00:00:00Z",
+		"_stream": `{app="nil-msg-test"}`,
+		"_msg":    nil,
+	}
+	body := buildNDJSON([]map[string]interface{}{record})
+	streams := vlLogsToLokiStreams(body)
+	if len(streams) != 1 {
+		t.Fatalf("expected 1 stream, got %d", len(streams))
+	}
+	values := streams[0]["values"].([][]string)
+	if values[0][1] != "" {
+		t.Errorf("nil _msg: expected empty string, got %q", values[0][1])
+	}
+}
+
 // Prevent "imported and not used" errors for packages that appear only in
 // generated formatting inside test closures.
 var _ = fmt.Sprintf

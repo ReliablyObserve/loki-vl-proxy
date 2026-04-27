@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1880,4 +1881,473 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// =============================================================================
+// detected_level inference from _msg content (Loki parity)
+//
+// Loki 3.x adds detected_level as a stream label at ingest time by parsing
+// the log line. The proxy must replicate this on the read path so Explore and
+// Drilldown show detected_level even when level is not a VL stream field.
+// =============================================================================
+
+func TestExtractLevelFromMsg_JSON(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+		ok    bool
+	}{
+		{"json_level_error", `{"level":"error","message":"failed"}`, "error", true},
+		{"json_level_warn", `{"level":"warn","msg":"slow"}`, "warn", true},
+		{"json_severity_key", `{"severity":"INFO","msg":"ok"}`, "INFO", true},
+		{"json_lvl_key", `{"lvl":"debug","msg":"trace"}`, "debug", true},
+		{"json_no_level", `{"message":"no level here"}`, "", false},
+		{"plain_text_no_level", `something happened at the server`, "", false},
+		{"empty", ``, "", false},
+		{"json_empty_level", `{"level":""}`, "", false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := extractLevelFromMsg(tc.input)
+			if ok != tc.ok {
+				t.Errorf("%s: ok=%v want %v (got level=%q)", tc.name, ok, tc.ok, got)
+			}
+			if ok && got != tc.want {
+				t.Errorf("%s: level=%q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExtractLevelFromMsg_Logfmt(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+		ok    bool
+	}{
+		{"logfmt_level", `level=error ts=2024-01-01 msg="bad"`, "error", true},
+		{"logfmt_level_quoted", `level="warn" msg="slow"`, "warn", true},
+		{"logfmt_severity", `severity=info msg=ok`, "info", true},
+		{"logfmt_lvl", `lvl=debug caller=main.go`, "debug", true},
+		{"logfmt_no_level", `msg=ok caller=main.go`, "", false},
+		{"logfmt_level_in_middle", `ts=2024 level=fatal msg=crash`, "fatal", true},
+		{"logfmt_partial_key", `notlevel=error msg=ok`, "", false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := extractLevelFromMsg(tc.input)
+			if ok != tc.ok {
+				t.Errorf("%s: ok=%v want %v (got level=%q)", tc.name, ok, tc.ok, got)
+			}
+			if ok && got != tc.want {
+				t.Errorf("%s: level=%q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestBuildEntryLabels_InfersDetectedLevelFromJSONMsg verifies that
+// buildEntryLabels populates detected_level from a JSON _msg field even when
+// VL has not extracted level as a top-level NDJSON field.
+func TestBuildEntryLabels_InfersDetectedLevelFromJSONMsg(t *testing.T) {
+	entry := map[string]interface{}{
+		"_time":   "2024-01-01T00:00:00Z",
+		"_stream": `{app="json-test"}`,
+		"_msg":    `{"level":"error","message":"something failed","code":500}`,
+	}
+	labels := buildEntryLabels(entry)
+	if labels["detected_level"] != "error" {
+		t.Errorf("expected detected_level=error from JSON _msg, got %q", labels["detected_level"])
+	}
+	if labels["level"] != "error" {
+		t.Errorf("expected level=error synthesized, got %q", labels["level"])
+	}
+}
+
+// TestBuildEntryLabels_InfersDetectedLevelFromLogfmtMsg verifies logfmt _msg
+// parsing for detected_level synthesis.
+func TestBuildEntryLabels_InfersDetectedLevelFromLogfmtMsg(t *testing.T) {
+	entry := map[string]interface{}{
+		"_time":   "2024-01-01T00:00:00Z",
+		"_stream": `{app="payment-service"}`,
+		"_msg":    `level=warn ts=2024-01-01 msg="slow query"`,
+	}
+	labels := buildEntryLabels(entry)
+	if labels["detected_level"] != "warn" {
+		t.Errorf("expected detected_level=warn from logfmt _msg, got %q", labels["detected_level"])
+	}
+}
+
+// TestBuildEntryLabels_NativeLevelTakesPrecedenceOverMsg verifies that when VL
+// surfaces level as a top-level NDJSON field (native VL or OTel severity),
+// it takes precedence over parsing _msg.
+func TestBuildEntryLabels_NativeLevelTakesPrecedenceOverMsg(t *testing.T) {
+	entry := map[string]interface{}{
+		"_time":   "2024-01-01T00:00:00Z",
+		"_stream": `{app="api"}`,
+		"_msg":    `{"level":"error","message":"should be overridden"}`,
+		"level":   "info", // native VL field wins
+	}
+	labels := buildEntryLabels(entry)
+	if labels["detected_level"] != "info" {
+		t.Errorf("expected native level=info to win over JSON _msg level=error, got detected_level=%q", labels["detected_level"])
+	}
+}
+
+// TestVlLogsToLokiStreams_SplitsStreamsByDetectedLevelFromJSONMsg verifies that
+// vlLogsToLokiStreams creates separate Loki streams per detected_level when
+// entries have JSON _msg with different level values — matching Loki's ingest
+// behavior of splitting streams by detected_level.
+func TestVlLogsToLokiStreams_SplitsStreamsByDetectedLevelFromJSONMsg(t *testing.T) {
+	records := []map[string]interface{}{
+		{"_time": "2024-01-01T00:00:01Z", "_stream": `{app="json-test"}`, "_msg": `{"level":"error","message":"failed"}`},
+		{"_time": "2024-01-01T00:00:02Z", "_stream": `{app="json-test"}`, "_msg": `{"level":"warn","message":"slow"}`},
+		{"_time": "2024-01-01T00:00:03Z", "_stream": `{app="json-test"}`, "_msg": `{"level":"info","message":"ok"}`},
+	}
+	body := buildNDJSON(records)
+
+	streams := vlLogsToLokiStreams(body)
+	if len(streams) != 3 {
+		t.Fatalf("expected 3 streams (one per level), got %d: %v", len(streams), streamsDebug(streams))
+	}
+	levels := map[string]bool{}
+	for _, s := range streams {
+		labels := s["stream"].(map[string]string)
+		lvl := labels["detected_level"]
+		if lvl == "" {
+			t.Errorf("stream missing detected_level: %v", labels)
+			continue
+		}
+		levels[lvl] = true
+	}
+	for _, want := range []string{"error", "warn", "info"} {
+		if !levels[want] {
+			t.Errorf("missing stream for detected_level=%q; got levels: %v", want, levels)
+		}
+	}
+}
+
+// TestVlLogsToLokiStreams_SplitsStreamsByDetectedLevelFromLogfmtMsg verifies
+// the same stream-splitting behavior for logfmt _msg entries.
+func TestVlLogsToLokiStreams_SplitsStreamsByDetectedLevelFromLogfmtMsg(t *testing.T) {
+	records := []map[string]interface{}{
+		{"_time": "2024-01-01T00:00:01Z", "_stream": `{app="svc"}`, "_msg": `level=error msg="db timeout"`},
+		{"_time": "2024-01-01T00:00:02Z", "_stream": `{app="svc"}`, "_msg": `level=info msg="started"`},
+	}
+	body := buildNDJSON(records)
+
+	streams := vlLogsToLokiStreams(body)
+	if len(streams) != 2 {
+		t.Fatalf("expected 2 streams (error+info), got %d: %v", len(streams), streamsDebug(streams))
+	}
+	for _, s := range streams {
+		labels := s["stream"].(map[string]string)
+		if labels["detected_level"] == "" {
+			t.Errorf("stream missing detected_level for logfmt _msg: %v", labels)
+		}
+	}
+}
+
+// =============================================================================
+// detected_field/{name}/values — hits=0 regression guards
+//
+// VL returns hits=0 for valid non-indexed fields (trace_id, amount, ttl, etc.)
+// where it found the values but did not count occurrences. The proxy must
+// include these instead of filtering them out, matching Loki's behavior of
+// returning all discovered values regardless of hit counts.
+// =============================================================================
+
+// TestFetchNativeFieldValues_AllZeroHitsIncluded guards against the regression
+// where all-zero-hit values (VL's response for high-cardinality non-indexed
+// fields like trace_id) were filtered out, leaving the Drilldown fields panel
+// showing repeated field names instead of actual values.
+func TestFetchNativeFieldValues_AllZeroHitsIncluded(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names", "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"trace_id","hits":0}]}`))
+		case "/select/logsql/field_values":
+			w.Header().Set("Content-Type", "application/json")
+			// All hits=0: VL found the values but didn't count occurrences.
+			w.Write([]byte(`{"values":[{"value":"abc-123","hits":0},{"value":"def-456","hits":0},{"value":"","hits":0}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	params := url.Values{}
+	params.Set("query", `{env="production"}`)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/trace_id/values?"+params.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	values, ok := resp["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array, got %T: %v", resp["values"], resp)
+	}
+	// Must include all non-blank values even with hits=0; blank ("") must be excluded.
+	if len(values) != 2 {
+		t.Fatalf("expected 2 values (abc-123, def-456), got %d: %v", len(values), values)
+	}
+	got := map[string]bool{}
+	for _, v := range values {
+		got[v.(string)] = true
+	}
+	for _, want := range []string{"abc-123", "def-456"} {
+		if !got[want] {
+			t.Errorf("expected value %q in response, got %v", want, values)
+		}
+	}
+	if got[""] {
+		t.Errorf("blank value must not be included in response")
+	}
+}
+
+// TestFetchNativeFieldValues_MixedHitsStillFiltersZeros guards the other side:
+// when VL returns a mix of hits>0 and hits=0, only positive-hit values are
+// returned (hits=0 in a mixed set means stale indexed names with no data).
+func TestFetchNativeFieldValues_MixedHitsStillFiltersZeros(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names", "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"status","hits":10}]}`))
+		case "/select/logsql/field_values":
+			w.Header().Set("Content-Type", "application/json")
+			// Mix: active=10, stale=0. Stale must be excluded.
+			w.Write([]byte(`{"values":[{"value":"active","hits":10},{"value":"stale","hits":0}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	params := url.Values{}
+	params.Set("query", `{env="production"}`)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/status/values?"+params.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	values, ok := resp["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array, got %v", resp)
+	}
+	if len(values) != 1 || values[0].(string) != "active" {
+		t.Fatalf("expected only positive-hit value 'active', got %v", values)
+	}
+}
+
+// =============================================================================
+// parsers inference: VL auto-extracted JSON body fields
+// =============================================================================
+
+// TestDetectFieldSummaries_VLAutoExtractedFieldsGetJSONParser guards that
+// top-level VL fields auto-extracted from JSON log bodies (not in _stream,
+// not dotted OTel names) receive parsers:["json"] and jsonPath:[field].
+// Without this, Grafana Drilldown uses label_values (stream-label path)
+// instead of detected_field/values, showing repeated field names as values.
+func TestDetectFieldSummaries_VLAutoExtractedFieldsGetJSONParser(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			// VL auto-extracted: _msg is the inner plain-text message, but
+			// confidence/latency_ms/model came from the original JSON body.
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T17:18:49Z","_msg":"inference ok 330ms","_stream":"{app=\"ml-serving\",cluster=\"us-east-1\",service_name=\"ml-serving\"}","app":"ml-serving","cluster":"us-east-1","service_name":"ml-serving","confidence":"0.9295","latency_ms":"330","model":"rec-v3"}` + "\n"))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newCompatTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?query=%7Bapp%3D%22ml-serving%22%7D&start=1&end=2", nil)
+	p.handleDetectedFields(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	fields, _ := resp["fields"].([]interface{})
+	byLabel := make(map[string]map[string]interface{}, len(fields))
+	for _, f := range fields {
+		obj := f.(map[string]interface{})
+		byLabel[obj["label"].(string)] = obj
+	}
+
+	for _, name := range []string{"confidence", "latency_ms", "model"} {
+		f, ok := byLabel[name]
+		if !ok {
+			t.Errorf("expected field %q in detected_fields, got labels: %v", name, func() []string {
+				keys := make([]string, 0, len(byLabel))
+				for k := range byLabel {
+					keys = append(keys, k)
+				}
+				return keys
+			}())
+			continue
+		}
+		parsers, _ := f["parsers"].([]interface{})
+		if len(parsers) == 0 || parsers[0] != "json" {
+			t.Errorf("VL auto-extracted field %q must have parsers:[\"json\"], got %v", name, f["parsers"])
+		}
+		jp, _ := f["jsonPath"].([]interface{})
+		if len(jp) == 0 {
+			t.Errorf("VL auto-extracted field %q must have jsonPath:[%q], got %v", name, name, f["jsonPath"])
+		}
+	}
+
+	// Stream labels must keep parsers:null
+	for _, name := range []string{"service_name"} {
+		if f, ok := byLabel[name]; ok {
+			if f["parsers"] != nil {
+				t.Errorf("stream label %q must have parsers:null, got %v", name, f["parsers"])
+			}
+		}
+	}
+}
+
+// TestDetectFieldSummaries_DottedOTelFieldsKeepNullParsers guards that
+// OTel dotted-name fields (service.name, k8s.pod.name) are NOT inferred as
+// json-parser fields. They are structured metadata, not JSON body fields.
+func TestDetectFieldSummaries_DottedOTelFieldsKeepNullParsers(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T17:18:49Z","_msg":"trace ok","_stream":"{app=\"otel-svc\",service.name=\"otel-svc\"}","app":"otel-svc","service.name":"otel-svc","k8s.pod.name":"pod-123","confidence":"0.85"}` + "\n"))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newCompatTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?query=%7Bapp%3D%22otel-svc%22%7D&start=1&end=2", nil)
+	p.handleDetectedFields(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	fields, _ := resp["fields"].([]interface{})
+	byLabel := make(map[string]map[string]interface{}, len(fields))
+	for _, f := range fields {
+		obj := f.(map[string]interface{})
+		byLabel[obj["label"].(string)] = obj
+	}
+
+	// OTel dotted fields must keep parsers:null
+	for _, name := range []string{"service.name", "k8s.pod.name"} {
+		if f, ok := byLabel[name]; ok {
+			if f["parsers"] != nil {
+				t.Errorf("OTel dotted field %q must keep parsers:null (not json), got %v", name, f["parsers"])
+			}
+		}
+	}
+
+	// But plain scalar fields like confidence (no dot) must get parsers:["json"]
+	if f, ok := byLabel["confidence"]; ok {
+		parsers, _ := f["parsers"].([]interface{})
+		if len(parsers) == 0 || parsers[0] != "json" {
+			t.Errorf("field confidence must have parsers:[\"json\"], got %v", f["parsers"])
+		}
+	}
+}
+
+// TestDetectFieldSummaries_LogfmtMsgFieldsKeepLogfmtParser guards that fields
+// detected from logfmt _msg content keep parsers:["logfmt"], not overridden to
+// "json" by the VL auto-extraction inference.
+func TestDetectFieldSummaries_LogfmtMsgFieldsKeepLogfmtParser(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			// Logfmt log: _msg is logfmt, amount is NOT a top-level VL field
+			_, _ = w.Write([]byte(`{"_time":"2026-04-04T17:18:49Z","_msg":"level=info msg=\"payment processed\" amount=42.50 currency=USD","_stream":"{app=\"payment-service\"}","app":"payment-service"}` + "\n"))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newCompatTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?query=%7Bapp%3D%22payment-service%22%7D&start=1&end=2", nil)
+	p.handleDetectedFields(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	fields, _ := resp["fields"].([]interface{})
+	byLabel := make(map[string]map[string]interface{}, len(fields))
+	for _, f := range fields {
+		obj := f.(map[string]interface{})
+		byLabel[obj["label"].(string)] = obj
+	}
+
+	if f, ok := byLabel["amount"]; ok {
+		parsers, _ := f["parsers"].([]interface{})
+		if len(parsers) == 0 || parsers[0] != "logfmt" {
+			t.Errorf("logfmt-detected field 'amount' must keep parsers:[\"logfmt\"], got %v", f["parsers"])
+		}
+	} else {
+		t.Errorf("expected 'amount' in detected_fields for logfmt log, got %v", byLabel)
+	}
+}
+
+func streamsDebug(streams []map[string]interface{}) []string {
+	out := make([]string, len(streams))
+	for i, s := range streams {
+		labels, _ := s["stream"].(map[string]string)
+		out[i] = fmt.Sprintf("%v", labels)
+	}
+	return out
 }

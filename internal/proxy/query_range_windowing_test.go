@@ -1548,6 +1548,27 @@ func TestQueryRangePrefilterQuery(t *testing.T) {
 			input: ``,
 			want:  ``,
 		},
+		// Regression: the prefilter must pass through translated VL field-filter
+		// queries unchanged. Specifically, queries built from `{app="json-test"}`
+		// and `{level="warn"}` translate to `app:=json-test` and `level:=warn`
+		// respectively. The prefilter must NOT mangle them into the buggy
+		// double-quoted form `"app="json-test""` / `"level="warn""` that was
+		// observed against e2e-proxy-underscore.
+		{
+			name:  "translated app field filter passes through",
+			input: `app:=json-test`,
+			want:  `app:=json-test`,
+		},
+		{
+			name:  "translated level field filter passes through",
+			input: `level:=warn`,
+			want:  `level:=warn`,
+		},
+		{
+			name:  "translated field filter with pipeline strips pipe",
+			input: `app:=json-test | unpack_json`,
+			want:  `app:=json-test`,
+		},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -1658,4 +1679,142 @@ func maxInt64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// TestQueryRange_DoesNotEmitDoubleQuotedSelectorToVL is the end-to-end regression
+// guard for the production bug observed against e2e-proxy-underscore. The proxy
+// MUST translate `{app="json-test"}` to the VL field filter `app:=json-test`
+// (and `{level="warn"}` to `level:=warn`) before sending the query to VL —
+// never the malformed phrase-filter form `"app="json-test""` / `"level="warn""`
+// that VL rejected with parse errors on /select/logsql/hits and
+// /select/logsql/query.
+//
+// This test wires up a fake VL backend that records the `query` parameter on
+// every backend call (covering both the windowed-batch fetches against
+// /select/logsql/query and the prefilter probes against /select/logsql/hits)
+// and asserts that no recorded query is the buggy double-quoted form. It runs
+// against an underscore-style proxy with hybrid metadata mode, matching the
+// exact configuration of the proxy that emitted the bad queries.
+func TestQueryRange_DoesNotEmitDoubleQuotedSelectorToVL(t *testing.T) {
+	cases := []struct {
+		name         string
+		logqlQuery   string
+		wantVLQuery  string // VL field filter we expect to see
+		bannedSubstr string // the buggy form that must never appear
+	}{
+		{
+			name:         "app matcher",
+			logqlQuery:   `{app="json-test"}`,
+			wantVLQuery:  `app:=json-test`,
+			bannedSubstr: `"app="json-test""`,
+		},
+		{
+			name:         "level matcher",
+			logqlQuery:   `{level="warn"}`,
+			wantVLQuery:  `level:=warn`,
+			bannedSubstr: `"level="warn""`,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				mu               sync.Mutex
+				recordedQueries  []string
+				recordedPathsAll []string
+			)
+
+			vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_ = r.ParseForm()
+				q := r.Form.Get("query")
+				mu.Lock()
+				recordedQueries = append(recordedQueries, q)
+				recordedPathsAll = append(recordedPathsAll, r.URL.Path)
+				mu.Unlock()
+
+				switch r.URL.Path {
+				case "/select/logsql/hits":
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = fmt.Fprint(w, `{"hits":[{"timestamps":[],"values":[1]}]}`)
+				case "/select/logsql/query":
+					w.Header().Set("Content-Type", "application/x-ndjson")
+					_, _ = fmt.Fprint(w, `{"_time":"2026-04-10T10:00:00Z","_msg":"hello","_stream":"{app=\"json-test\"}"}`+"\n")
+				default:
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer vlBackend.Close()
+
+			p, err := New(Config{
+				BackendURL:                      vlBackend.URL,
+				Cache:                           cache.New(60*time.Second, 1000),
+				LogLevel:                        "error",
+				LabelStyle:                      LabelStyleUnderscores,
+				MetadataFieldMode:               MetadataFieldModeHybrid,
+				EmitStructuredMetadata:          true,
+				QueryRangeWindowingEnabled:      true,
+				QueryRangeSplitInterval:         time.Hour,
+				QueryRangeMaxParallel:           4,
+				QueryRangeAdaptiveParallel:      false,
+				QueryRangeParallelMin:           1,
+				QueryRangeParallelMax:           4,
+				QueryRangeLatencyTarget:         1500 * time.Millisecond,
+				QueryRangeLatencyBackoff:        3 * time.Second,
+				QueryRangeAdaptiveCooldown:      30 * time.Second,
+				QueryRangeErrorBackoffThreshold: 0.02,
+				QueryRangeFreshness:             10 * time.Minute,
+				QueryRangeRecentCacheTTL:        0,
+				QueryRangeHistoryCacheTTL:       24 * time.Hour,
+			})
+			if err != nil {
+				t.Fatalf("failed to create proxy: %v", err)
+			}
+
+			// Use a multi-hour range so windowing splits into 8+ windows and
+			// the prefilter (queryRangePrefilterMinWindows=8 default) actually
+			// runs — the production bug surfaced via the prefilter call to
+			// /select/logsql/hits.
+			start := time.Now().Add(-24 * time.Hour).UTC().Truncate(time.Hour).UnixNano()
+			end := start + int64(12*time.Hour) - 1
+
+			req := httptest.NewRequest(
+				http.MethodGet,
+				fmt.Sprintf("/loki/api/v1/query_range?query=%s&start=%d&end=%d&limit=5",
+					url.QueryEscape(tc.logqlQuery), start, end),
+				nil,
+			)
+			rec := httptest.NewRecorder()
+			p.handleQueryRange(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+			}
+
+			mu.Lock()
+			defer mu.Unlock()
+
+			if len(recordedQueries) == 0 {
+				t.Fatal("expected at least one VL backend call, got none")
+			}
+
+			sawExpected := false
+			for i, q := range recordedQueries {
+				path := recordedPathsAll[i]
+				// The query may have a trailing pipeline (e.g., "| sort by (_time desc)")
+				// for /select/logsql/query, but it must START with the expected
+				// VL field filter, not the buggy double-quoted form.
+				if strings.Contains(q, tc.bannedSubstr) {
+					t.Fatalf("BUG: VL backend at %s received malformed query containing %q\n  full query: %q\n  expected VL field filter: %q",
+						path, tc.bannedSubstr, q, tc.wantVLQuery)
+				}
+				if strings.Contains(q, tc.wantVLQuery) {
+					sawExpected = true
+				}
+			}
+			if !sawExpected {
+				t.Fatalf("VL backend never received expected field filter %q\n  recorded queries: %#v", tc.wantVLQuery, recordedQueries)
+			}
+		})
+	}
 }
