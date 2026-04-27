@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- docs: restructure website sidebar navigation and add SEO landing pages; update marketing numbers to reflect current deployment scale.
+
 ### Fixed
 
 - fix(translator): bare label matchers like `app="json-test"` (without braces) no longer translate to the malformed VL phrase filter `"app="json-test""`; the translator now returns an error for unbraced label matchers so they are rejected at query time rather than silently producing invalid VL LogsQL — was only visible when Grafana issued queries spanning 8+ hours (windowing prefilter threshold).
