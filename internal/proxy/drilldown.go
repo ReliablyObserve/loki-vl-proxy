@@ -1936,9 +1936,82 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 			p.observeInternalOperation(ctx, "discovery_fallback", "native_field_values_empty_primary", 0)
 			continue
 		}
+		if len(values) > 0 {
+			return values, nil
+		}
+		// No values from native index — field may be inside JSON or logfmt _msg.
+		// Retry once with unpack pipes so VL extracts the field from _msg content.
+		if !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
+			unpackQuery := logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+			params.Set("query", unpackQuery)
+			resp2, err2 := p.vlGet(ctx, "/select/logsql/field_values", params)
+			if err2 == nil {
+				body2, _ := io.ReadAll(resp2.Body)
+				_ = resp2.Body.Close()
+				if resp2.StatusCode < http.StatusBadRequest {
+					var parsed2 vlFieldValuesResponse
+					if json.Unmarshal(body2, &parsed2) == nil {
+						for _, item := range parsed2.Values {
+							if item.Hits >= 0 && strings.TrimSpace(item.Value) != "" {
+								values = append(values, item.Value)
+							}
+						}
+						sort.Strings(values)
+					}
+				}
+			}
+		}
 		return values, nil
 	}
 	return nil, lastErr
+}
+
+// fetchUnpackedFieldValues queries VL with | unpack_json from _msg |
+// unpack_logfmt from _msg to extract values for fields that are not
+// VL-indexed (inside JSON or logfmt _msg). Used as a last-resort fallback
+// when neither native field_values nor log-line scanning produced values.
+func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end, field string, limit int) ([]string, error) {
+	logsqlQuery, err := p.translateQuery(defaultQuery(query))
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(logsqlQuery, "unpack_json") || strings.Contains(logsqlQuery, "unpack_logfmt") {
+		return nil, nil
+	}
+	unpackQuery := logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+	params := url.Values{}
+	params.Set("query", unpackQuery)
+	params.Set("field", field)
+	if start != "" {
+		params.Set("start", formatVLTimestamp(start))
+	}
+	if end != "" {
+		params.Set("end", formatVLTimestamp(end))
+	}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	}
+	resp, err := p.vlGet(ctx, "/select/logsql/field_values", params)
+	if err != nil {
+		return nil, err
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, nil
+	}
+	var parsed vlFieldValuesResponse
+	if json.Unmarshal(body, &parsed) != nil {
+		return nil, nil
+	}
+	values := make([]string, 0, len(parsed.Values))
+	for _, item := range parsed.Values {
+		if item.Hits >= 0 && strings.TrimSpace(item.Value) != "" {
+			values = append(values, item.Value)
+		}
+	}
+	sort.Strings(values)
+	return values, nil
 }
 
 func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, end, fieldName string) (string, bool, error) {

@@ -5098,6 +5098,12 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 			return p.resolveDetectedFieldValues(ctx, fieldName, relaxed, start, end, lineLimit, false)
 		}
 	}
+	// Last resort: field is inside JSON or logfmt _msg (not VL-indexed) and was
+	// not found by scan or relaxed-query. Only reached when no relaxed query is
+	// available (relaxOnEmpty=false or query already relaxed).
+	if len(values) == 0 {
+		values, _ = p.fetchUnpackedFieldValues(ctx, query, start, end, fieldName, lineLimit)
+	}
 	if values == nil {
 		values = []string{}
 	}
