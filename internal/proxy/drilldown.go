@@ -1909,9 +1909,24 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 			lastErr = err
 			continue
 		}
+		// VL returns hits=0 for valid non-indexed fields (e.g. trace_id, amount)
+		// where it has the values but does not count occurrences. Only exclude
+		// explicitly negative hits (sentinel/error) and blank values.
+		allZero := true
+		for _, item := range parsed.Values {
+			if item.Hits > 0 {
+				allZero = false
+				break
+			}
+		}
 		values := make([]string, 0, len(parsed.Values))
 		for _, item := range parsed.Values {
-			if item.Hits <= 0 || strings.TrimSpace(item.Value) == "" {
+			if item.Hits < 0 || strings.TrimSpace(item.Value) == "" {
+				continue
+			}
+			// When a mix of zero and positive hits exists, zero-hit entries are
+			// stale indexed names with no matching lines — skip them.
+			if !allZero && item.Hits == 0 {
 				continue
 			}
 			values = append(values, item.Value)

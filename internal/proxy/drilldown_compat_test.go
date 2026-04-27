@@ -2052,6 +2052,117 @@ func TestVlLogsToLokiStreams_SplitsStreamsByDetectedLevelFromLogfmtMsg(t *testin
 	}
 }
 
+// =============================================================================
+// detected_field/{name}/values — hits=0 regression guards
+//
+// VL returns hits=0 for valid non-indexed fields (trace_id, amount, ttl, etc.)
+// where it found the values but did not count occurrences. The proxy must
+// include these instead of filtering them out, matching Loki's behavior of
+// returning all discovered values regardless of hit counts.
+// =============================================================================
+
+// TestFetchNativeFieldValues_AllZeroHitsIncluded guards against the regression
+// where all-zero-hit values (VL's response for high-cardinality non-indexed
+// fields like trace_id) were filtered out, leaving the Drilldown fields panel
+// showing repeated field names instead of actual values.
+func TestFetchNativeFieldValues_AllZeroHitsIncluded(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names", "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"trace_id","hits":0}]}`))
+		case "/select/logsql/field_values":
+			w.Header().Set("Content-Type", "application/json")
+			// All hits=0: VL found the values but didn't count occurrences.
+			w.Write([]byte(`{"values":[{"value":"abc-123","hits":0},{"value":"def-456","hits":0},{"value":"","hits":0}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	params := url.Values{}
+	params.Set("query", `{env="production"}`)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/trace_id/values?"+params.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	values, ok := resp["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array, got %T: %v", resp["values"], resp)
+	}
+	// Must include all non-blank values even with hits=0; blank ("") must be excluded.
+	if len(values) != 2 {
+		t.Fatalf("expected 2 values (abc-123, def-456), got %d: %v", len(values), values)
+	}
+	got := map[string]bool{}
+	for _, v := range values {
+		got[v.(string)] = true
+	}
+	for _, want := range []string{"abc-123", "def-456"} {
+		if !got[want] {
+			t.Errorf("expected value %q in response, got %v", want, values)
+		}
+	}
+	if got[""] {
+		t.Errorf("blank value must not be included in response")
+	}
+}
+
+// TestFetchNativeFieldValues_MixedHitsStillFiltersZeros guards the other side:
+// when VL returns a mix of hits>0 and hits=0, only positive-hit values are
+// returned (hits=0 in a mixed set means stale indexed names with no data).
+func TestFetchNativeFieldValues_MixedHitsStillFiltersZeros(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names", "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"status","hits":10}]}`))
+		case "/select/logsql/field_values":
+			w.Header().Set("Content-Type", "application/json")
+			// Mix: active=10, stale=0. Stale must be excluded.
+			w.Write([]byte(`{"values":[{"value":"active","hits":10},{"value":"stale","hits":0}]}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer vlBackend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, err := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
+	if err != nil {
+		t.Fatalf("failed to create proxy: %v", err)
+	}
+
+	params := url.Values{}
+	params.Set("query", `{env="production"}`)
+	params.Set("start", "1")
+	params.Set("end", "2")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/status/values?"+params.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	values, ok := resp["values"].([]interface{})
+	if !ok {
+		t.Fatalf("expected values array, got %v", resp)
+	}
+	if len(values) != 1 || values[0].(string) != "active" {
+		t.Fatalf("expected only positive-hit value 'active', got %v", values)
+	}
+}
+
 func streamsDebug(streams []map[string]interface{}) []string {
 	out := make([]string, len(streams))
 	for i, s := range streams {
