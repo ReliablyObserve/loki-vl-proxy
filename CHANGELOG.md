@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- docs: restructure website sidebar navigation and add SEO landing pages; update marketing numbers to reflect current deployment scale.
+
 ## [1.20.0] - 2026-04-27
 
 ### Fixed
@@ -39,6 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - docs: fix comparison table in README — "15x less" figure is CPU, not Disk, per VictoriaLogs vendor benchmarks.
 - docs(bench): clarify VL native heavy-workload CPU note — "3.5× more total CPU; 18.5× more throughput — 5.3× more efficient per request" replaces the misleading "3.5× more CPU than Loki".
+- docs(website): restructure Docusaurus sidebar into 11 named category groups (Start Here, Architecture, Configuration, Cost & Comparison, Compatibility, Operations, Caching, Observability, Testing, Reference, Runbooks); add sidebar_label and description frontmatter to all docs.
+- docs(website): update marketing pages with current measured numbers — proxy throughput (1,006–1,717× vs Loki), 54.9× real-tested compression, 4-tier cache stack, circuit breaker (30s/5-failure), 81.6% prefilter savings, resource sizing (33 vCPU / 70 GiB vs 431 vCPU / 857 GiB).
+- docs(website): add two new SEO pages — Kubernetes deployment guide with Helm install snippet and resource sizing table; OTel Collector config guide with field mapping table, translation modes, and detected_fields in Grafana Explore/Drilldown.
 
 ## [1.18.0] - 2026-04-26
 

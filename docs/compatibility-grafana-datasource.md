@@ -1,3 +1,8 @@
+---
+sidebar_label: Grafana Datasource Compatibility
+description: Grafana Loki datasource version compatibility, response format support, and known rendering behaviors.
+---
+
 # Grafana Loki Datasource Compatibility
 
 This track focuses on the built-in Grafana Loki datasource contract (`/api/datasources/.../resources` and datasource proxy calls), separate from app-specific Drilldown behavior.

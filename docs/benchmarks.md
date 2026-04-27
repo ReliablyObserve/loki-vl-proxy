@@ -1,3 +1,8 @@
+---
+sidebar_label: Benchmarks
+description: "Six-workload read-path comparison: Loki vs VL+Proxy (warm/cold) vs VL native. CPU, RSS, P50 latency, and throughput across metadata, heavy, long-range, and compute workloads."
+---
+
 # Benchmarks
 
 Measured on Apple M5 Pro (18 cores, 64 GB RAM), macOS 26.4.1, Go 1.26.2 darwin/arm64, `-benchmem`.

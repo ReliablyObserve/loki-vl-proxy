@@ -1,3 +1,8 @@
+---
+sidebar_label: Rules & Alerts Migration
+description: Migrating Loki alerting rules and recording rules to work with VictoriaLogs via the proxy.
+---
+
 # Rules And Alerts Migration
 
 This project treats alerting and ruler compatibility as a read path:

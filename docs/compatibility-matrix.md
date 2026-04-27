@@ -1,3 +1,8 @@
+---
+sidebar_label: Compatibility Matrix
+description: Side-by-side feature support table across Loki, VictoriaLogs, and loki-vl-proxy for every Grafana-facing capability.
+---
+
 # Compatibility Matrix
 
 This project tracks compatibility on four separate layers. They are intentionally split because each layer has different contracts, failure modes, and supported version ranges.

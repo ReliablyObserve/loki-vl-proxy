@@ -1,3 +1,8 @@
+---
+sidebar_label: LogQL → LogsQL Reference
+description: Complete mapping of LogQL operators, parsers, metric functions, and filter expressions to VictoriaLogs LogsQL.
+---
+
 # LogQL to LogsQL Translation Reference
 
 For label/field exposure mode behavior (`label-style`, `metadata-field-mode`, `emit-structured-metadata`, and custom mappings), see [Translation Modes Guide](translation-modes.md).

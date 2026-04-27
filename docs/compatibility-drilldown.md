@@ -1,3 +1,8 @@
+---
+sidebar_label: Logs Drilldown Compatibility
+description: Grafana Logs Drilldown plugin compatibility — patterns, detected_fields, label filters, and metric queries.
+---
+
 # Logs Drilldown Compatibility
 
 This track measures compatibility with the Grafana Logs Drilldown app, not generic Loki clients.

@@ -1,3 +1,8 @@
+---
+sidebar_label: Observability Guide
+description: Metrics, dashboards, alert rules, and structured logging for loki-vl-proxy. Covers Prometheus, OTLP, and Grafana dashboard.
+---
+
 # Observability Guide
 
 Loki-VL-proxy emits the same core operational signals in two forms:

@@ -1,3 +1,8 @@
+---
+sidebar_label: Roadmap
+description: Planned features, known gaps, and the contribution priority list for loki-vl-proxy.
+---
+
 # Roadmap
 
 ## Completed

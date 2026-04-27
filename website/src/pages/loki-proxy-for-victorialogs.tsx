@@ -18,24 +18,24 @@ export default function LokiProxyForVictoriaLogs(): ReactNode {
       secondaryCta={{label: 'See architecture details', to: '/docs/architecture/'}}
       highlights={[
         {
-          value: 'Read compatibility',
-          label: 'Grafana and Loki API tooling keep the Loki read path',
-          detail: 'Datasource, Explore, and Drilldown stay in scope.',
+          value: '1,006–1,717×',
+          label: 'Throughput vs Loki on heavy aggregation workloads (warm and cold proxy)',
+          detail: '30-second bench on Apple M5 Pro against Loki baseline.',
         },
         {
-          value: 'VictoriaLogs backend',
-          label: 'The backend remains VictoriaLogs plus optional rules or alerts backends',
-          detail: 'No change to the storage target.',
+          value: '~14 MB',
+          label: 'Static Go binary — no runtime dependencies',
+          detail: 'Sits in front of any VictoriaLogs single-node or cluster deployment.',
         },
         {
-          value: 'Translation controls',
-          label: 'Label style, metadata field mode, and field mappings are explicit',
-          detail: 'Useful for dotted OTel fields.',
+          value: '4-tier cache',
+          label: 'Tier0, L1 memory (256 MB default), L2 disk (bbolt), L3 peer (consistent hash + zstd)',
+          detail: 'Circuit breaker and request coalescer protect the backend.',
         },
         {
-          value: 'Operational visibility',
-          label: 'Metrics and logs split downstream, proxy, cache, and upstream work',
-          detail: 'Prometheus scrape or OTLP push.',
+          value: '~15–30 ms',
+          label: 'Added latency on a cold cache miss — near-zero on a warm hit',
+          detail: 'Prefilter eliminates ~81.6% of empty-window backend calls.',
         },
       ]}
       faqs={coreFaqs}
@@ -48,7 +48,8 @@ export default function LokiProxyForVictoriaLogs(): ReactNode {
               <li>Accepts Loki-compatible read and metadata requests.</li>
               <li>Translates query and metadata paths toward VictoriaLogs and optional rules backends.</li>
               <li>Shapes responses into the tuple and field contracts Grafana expects.</li>
-              <li>Adds protective caching, coalescing, fanout limits, and circuit-breaking.</li>
+              <li>Adds a 4-tier cache stack (Tier0, L1 memory, L2 bbolt disk, L3 peer) plus request coalescing and a sliding-window circuit breaker (30s window, 5 failure threshold) to protect the backend.</li>
+              <li>Prefilters long-range queries and eliminates ~81.6% of empty-window backend calls.</li>
             </ul>
           </div>
           <div className={styles.card}>
@@ -61,6 +62,58 @@ export default function LokiProxyForVictoriaLogs(): ReactNode {
             </ul>
           </div>
         </div>
+      </section>
+
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <Heading as="h2" className={styles.sectionTitle}>
+            Measured throughput vs Loki baseline (30s bench, Apple M5 Pro)
+          </Heading>
+          <p className={styles.sectionLead}>
+            All figures are multiples of the Loki baseline at the same workload.
+            &ldquo;Warm&rdquo; means L1 cache was populated; &ldquo;cold&rdquo;
+            means a fresh process with no prior cache state.
+          </p>
+        </div>
+        <div className={styles.tableWrap}>
+          <table className={styles.comparisonTable}>
+            <thead>
+              <tr>
+                <th>Workload</th>
+                <th>Proxy warm</th>
+                <th>Proxy cold</th>
+                <th>VL native</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Small / metadata</td>
+                <td>13.7×</td>
+                <td>78×</td>
+                <td>4.8×</td>
+              </tr>
+              <tr>
+                <td>Heavy / aggregations</td>
+                <td>1,006×</td>
+                <td>1,717×</td>
+                <td>25.6×</td>
+              </tr>
+              <tr>
+                <td>Compute (c=100)</td>
+                <td>—</td>
+                <td>101×</td>
+                <td>19× (5.3× slower than cold proxy)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Cold proxy at c=100 concurrency is 101× faster than Loki and 5.3×
+          faster than VictoriaLogs native on the compute workload. The proxy&apos;s
+          request coalescer collapses redundant parallel requests, which is why
+          the cold-proxy number often beats the VL native number on concurrent
+          read patterns.
+        </p>
       </section>
 
       <section className={styles.section}>

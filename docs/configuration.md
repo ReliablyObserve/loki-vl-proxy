@@ -1,3 +1,8 @@
+---
+sidebar_label: Configuration Reference
+description: All loki-vl-proxy flags, environment variables, and Helm values. Covers cache, circuit breaker, multi-tenancy, label translation, and OTel.
+---
+
 # Configuration
 
 All flags follow VictoriaMetrics naming conventions (`-flagName=value`).

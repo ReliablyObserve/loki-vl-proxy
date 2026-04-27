@@ -1,3 +1,8 @@
+---
+sidebar_label: Release Info
+description: Release cadence, versioning policy, and how to follow loki-vl-proxy releases.
+---
+
 # Release Info
 
 ## Auto Release Precedence

@@ -1,3 +1,8 @@
+---
+sidebar_label: Known Issues
+description: Known differences between loki-vl-proxy and native Loki, and workarounds where available.
+---
+
 # Known Differences and Known Issues
 
 Last updated against `main`.

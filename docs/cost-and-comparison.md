@@ -1,5 +1,5 @@
 ---
-sidebar_position: 16
+sidebar_label: Comparison Matrix
 description: Source-backed comparison matrix for Loki, VictoriaLogs, and Loki-VL-proxy across indexing, search behavior, high-cardinality handling, deployment shape, read path performance, and resource usage.
 ---
 

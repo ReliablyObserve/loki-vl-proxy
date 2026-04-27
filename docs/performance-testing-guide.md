@@ -1,3 +1,8 @@
+---
+sidebar_label: Performance Testing Guide
+description: Running loki-bench 4-way comparisons and interpreting results against Loki, VL+proxy, and VL native.
+---
+
 # Performance Testing Guide
 
 This guide explains how to run, interpret, and use the Loki Explorer performance tests added in PR #246.

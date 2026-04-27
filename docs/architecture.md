@@ -1,3 +1,8 @@
+---
+sidebar_label: Architecture Overview
+description: How loki-vl-proxy works — runtime paths, protection layers, cache tiers, LogQL translation, and component design.
+---
+
 # Architecture
 
 ## Overview

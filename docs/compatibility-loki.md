@@ -1,3 +1,8 @@
+---
+sidebar_label: Loki API Compatibility
+description: Which Loki API endpoints, query types, and LogQL features are supported, partially supported, or intentionally unsupported.
+---
+
 # Loki Compatibility
 
 This track measures how closely the proxy behaves like Loki on Loki-facing APIs and LogQL behavior.

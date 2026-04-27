@@ -1,3 +1,8 @@
+---
+sidebar_label: OpenTelemetry Compatibility
+description: How OpenTelemetry labels (dotted and underscore-translated) flow through loki-vl-proxy and appear in Grafana.
+---
+
 # OpenTelemetry Compatibility
 
 The proxy provides full OpenTelemetry (OTel) label compatibility between VictoriaLogs and Grafana's Loki API surface. This document explains how OTel data flows through the system, what the proxy detects, and how it maintains Loki compatibility.

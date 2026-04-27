@@ -40,29 +40,29 @@ export default function CacheTiersAndFleetCacheForVictoriaLogs(): ReactNode {
       description="Understand how Tier0, L1, L2, L3, and long-range query window cache reduce repeated VictoriaLogs work and improve user-visible latency on Loki-compatible read paths."
       eyebrow="Cache and cost control"
       headline="Use cache tiers and fleet cache to suppress repeated backend work"
-      lede="The strongest practical efficiency story in Loki-VL-proxy is not a generic head-to-head marketing claim. It is the concrete read-path work the proxy can eliminate with Tier0, local cache, disk cache, peer cache, and long-range query window reuse."
+      lede="The strongest practical efficiency story in Loki-VL-proxy is not a generic head-to-head marketing claim. It is the concrete read-path work the proxy can eliminate with its 4-tier cache stack: Tier0 (compat), L1 in-memory (256 MB default), L2 disk (bbolt), and L3 peer cache (consistent hash + zstd) — plus a circuit breaker and request coalescer that protect the backend under load."
       primaryCta={{label: 'Open the performance docs', to: '/docs/performance/'}}
       secondaryCta={{label: 'Read fleet-cache architecture', to: '/docs/fleet-cache/'}}
       highlights={[
         {
-          value: 'Tier0 edge cache',
+          value: 'Tier0 compat cache',
           label: 'Safe GET Loki-shaped responses can return before most compatibility work runs',
           detail: 'Best for hot repeated read paths.',
         },
         {
-          value: 'L1 to L3 stack',
-          label: 'Memory, disk, and peer reuse reduce repeated backend work at different scopes',
-          detail: 'Local pod, persistent pod, or fleet-wide.',
+          value: 'L1: 256 MB in-memory',
+          label: 'Hot in-process LRU cache with near-zero overhead on repeated dashboard hits',
+          detail: 'Default 256 MB, tunable per deployment.',
         },
         {
-          value: 'Window cache for long ranges',
-          label: 'Long query_range requests can reuse split history windows instead of refetching them whole',
-          detail: 'Useful for 2d and 7d dashboards.',
+          value: 'L2: bbolt disk cache',
+          label: 'Persistent local cache survives RAM pressure and pod restarts',
+          detail: '0.45 µs uncompressed read, 3.9 µs compressed read.',
         },
         {
-          value: 'Operator-visible levers',
-          label: 'The project exports the metrics needed to decide whether the cache stack is paying off',
-          detail: 'This is not hidden magic.',
+          value: 'L3: peer cache (consistent hash + zstd)',
+          label: 'Fleet-wide reuse across replicas via consistent-hash ownership and zstd-compressed transfer',
+          detail: '52 ns warm shadow-copy hit after first owner fetch.',
         },
       ]}
       faqs={coreFaqs}
@@ -79,24 +79,24 @@ export default function CacheTiersAndFleetCacheForVictoriaLogs(): ReactNode {
             </thead>
             <tbody>
               <tr>
-                <td>Tier0</td>
-                <td>Fast answer cache at the Loki-compatible frontend.</td>
-                <td>Repeated Grafana reads can return before most proxy logic runs.</td>
+                <td>Tier0 (compat)</td>
+                <td>Fast answer cache at the Loki-compatible frontend — keyed on exact request shape.</td>
+                <td>Repeated Grafana reads can return before most proxy logic runs. <code>query_range</code> warm hit: 0.64–0.67 µs.</td>
               </tr>
               <tr>
-                <td>L1 memory</td>
-                <td>Hot cache inside the local process.</td>
-                <td>Best-case latency for repeated dashboards and Explore refreshes.</td>
+                <td>L1 in-memory (256 MB default)</td>
+                <td>Hot LRU cache inside the local process.</td>
+                <td>Best-case latency for repeated dashboards and Explore refreshes. Tunable per deployment.</td>
               </tr>
               <tr>
-                <td>L2 disk</td>
-                <td>Persistent local cache.</td>
-                <td>Useful cache survives beyond RAM pressure and restarts.</td>
+                <td>L2 disk (bbolt)</td>
+                <td>Persistent local cache backed by bbolt B-tree.</td>
+                <td>Survives RAM pressure and pod restarts. 0.45 µs uncompressed, 3.9 µs compressed read.</td>
               </tr>
               <tr>
-                <td>L3 peer cache</td>
-                <td>Fleet-wide reuse between replicas.</td>
-                <td>One warm pod can make the rest of the fleet cheaper and faster.</td>
+                <td>L3 peer cache (consistent hash + zstd)</td>
+                <td>Fleet-wide reuse between replicas using consistent-hash ownership and zstd-compressed transfer.</td>
+                <td>52 ns warm shadow-copy hit. One warm pod serves the rest of the fleet without backend round-trips.</td>
               </tr>
             </tbody>
           </table>
@@ -130,6 +130,15 @@ export default function CacheTiersAndFleetCacheForVictoriaLogs(): ReactNode {
 
       <section className={styles.section}>
         <div className={styles.cardGrid}>
+          <div className={styles.card}>
+            <h2 className={styles.cardTitle}>Circuit breaker and request coalescer</h2>
+            <ul className={styles.list}>
+              <li>Sliding 30s window circuit breaker opens after 5 failures, shielding VictoriaLogs from cascading retries.</li>
+              <li>Request coalescer deduplicates in-flight identical requests — concurrent Grafana panel refreshes become a single backend call.</li>
+              <li>Prefilter eliminates ~81.6% of empty-window backend calls on long-range queries before they reach VictoriaLogs.</li>
+              <li>These mechanisms work alongside the cache tiers: coalescing prevents parallel requests from causing redundant cache misses.</li>
+            </ul>
+          </div>
           <div className={styles.card}>
             <h2 className={styles.cardTitle}>Where the proxy can be cheaper than an uncached read path</h2>
             <ul className={styles.list}>

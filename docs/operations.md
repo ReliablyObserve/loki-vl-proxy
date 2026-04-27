@@ -1,3 +1,8 @@
+---
+sidebar_label: Operations Guide
+description: "Day-2 operations: health checks, graceful shutdown, multi-tenancy, rate limiting, and production deployment patterns."
+---
+
 # Operations Guide
 
 ## Deployment

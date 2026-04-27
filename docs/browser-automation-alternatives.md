@@ -1,3 +1,8 @@
+---
+sidebar_label: Browser Automation
+description: Alternatives to browser-based automation for Grafana datasource compatibility testing.
+---
+
 # Browser Automation Alternatives
 
 This document evaluates alternative browser automation tools for the Loki-VL-proxy e2e test suite.

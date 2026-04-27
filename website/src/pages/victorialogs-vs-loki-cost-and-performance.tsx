@@ -54,7 +54,7 @@ const comparisonRows = [
   {
     dimension: 'Published large-workload sizing',
     loki:
-      'Grafana’s own sizing guide reaches `431 vCPU / 857 Gi` at `3-30 TB/day` and `1221 vCPU / 2235 Gi` around `30 TB/day` before query spikes.',
+      'Grafana\'s own sizing guide reaches `431 vCPU / 857 Gi` at `3-30 TB/day` and `1221 vCPU / 2235 Gi` around `30 TB/day` before query spikes.',
     victorialogs:
       'VictoriaLogs docs do not publish an equivalent distributed tier matrix on the same shape; the safer claim is lower-resource posture plus stronger compression and search behavior on published comparisons.',
     proxy:
@@ -274,34 +274,34 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
       description="Source-backed comparison of Loki and VictoriaLogs for cost and search performance, plus what Loki-VL-proxy adds on the Grafana read path with cache tiers, route-aware telemetry, and migration control."
       eyebrow="Cost and performance"
       headline="Compare VictoriaLogs and Loki with a source-backed cost lens"
-      lede="The cost story is not that a proxy magically makes every logging stack cheap. The defensible argument is narrower: Loki's own docs describe a label-indexed system that is sensitive to high-cardinality labels, VictoriaLogs publishes an all-field index and lower-resource claims, and Loki-VL-proxy adds concrete read-path caches plus observability so repeated Grafana traffic can cost less."
+      lede="The cost story is not that a proxy magically makes every logging stack cheap. The defensible argument is narrower: Loki\'s own docs describe a label-indexed system sensitive to high-cardinality labels, VictoriaLogs publishes an all-field index and lower-resource claims, and Loki-VL-proxy adds a 4-tier cache, circuit breaker, and request coalescer so repeated Grafana traffic can cost significantly less. Real-tested: 800M log entries, 310 GiB ingested, 40.5 GiB on disk at 54.9× compression."
       primaryCta={{label: 'Read the cache guide', to: '/cache-tiers-and-fleet-cache-for-victorialogs/'}}
       secondaryCta={{label: 'Read the monitoring guide', to: '/monitor-loki-vl-proxy/'}}
       highlights={[
         {
-          value: 'Label-only vs all-field',
-          label: 'Loki indexes labels; VictoriaLogs indexes all fields',
-          detail: 'That difference matters most on broad or text-heavy searches.',
+          value: '78–92% cost reduction',
+          label: 'VL + proxy vs Loki EC2 compute floor at the same ingest tier',
+          detail: '~33 vCPU / 70 GiB vs 431 vCPU / 857 GiB at 3–30 TB/day.',
         },
         {
-          value: 'High-cardinality posture',
-          label: 'Loki warns about high-cardinality labels; VictoriaLogs supports high-cardinality fields',
-          detail: 'The proxy keeps those richer fields usable without forcing Grafana off Loki semantics.',
+          value: '54.9× compression',
+          label: 'Real-tested: 800M entries, 310 GiB ingested → 40.5 GiB on disk (7.14-day retention)',
+          detail: 'Observed on production workload, not a synthetic benchmark.',
         },
         {
-          value: 'Cache stack on top',
-          label: 'Tier0, L1, L2, L3, and window cache can suppress repeated read work',
-          detail: 'This is where the proxy adds its own efficiency story.',
+          value: '1,006–1,717×',
+          label: 'Proxy throughput vs Loki on heavy aggregation workloads (warm and cold)',
+          detail: '30-second bench, Apple M5 Pro. Prefilter cuts ~81.6% of empty backend calls.',
+        },
+        {
+          value: '$13,403/month',
+          label: 'Loki EC2 compute floor at 3–30 TB/day (Grafana published sizing, c7i.4xlarge on-demand)',
+          detail: 'VL + proxy at same workload: ~$1,100–$2,400/month depending on scale.',
         },
         {
           value: 'Workload dependent',
           label: 'The right answer depends on retention, search mix, and dashboard repetition',
           detail: 'This page separates vendor claims from project benchmarks and third-party reports.',
-        },
-        {
-          value: 'Loki docs publish big tiers',
-          label: 'Grafana’s own sizing guide reaches 431 vCPU / 857 Gi at 3-30 TB/day',
-          detail: 'That gives the cost discussion a real published compute floor instead of a hand-wavy cluster sketch.',
         },
       ]}
       faqs={coreFaqs}
@@ -338,7 +338,7 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
             <ul className={styles.list}>
               <li>Grafana already publishes large distributed Loki sizing floors by ingest throughput, so the high-end compute side is not a vague anti-Loki argument.</li>
               <li>At `3-30 TB/day`, the published Loki floor is `431 vCPU / 857 Gi` before storage and before the `10x` querier-spike warning in the same docs.</li>
-              <li>That is why this project’s cost page converts Loki’s own sizing guide into on-demand EC2 floors before comparing it with a smaller `VictoriaLogs + Loki-VL-proxy` reference pack.</li>
+              <li>That is why this project\'s cost page converts Loki\'s own sizing guide into on-demand EC2 floors before comparing it with a smaller `VictoriaLogs + Loki-VL-proxy` reference pack.</li>
               <li>The proxy layer is intentionally modeled as a small read-path tax, not as the source of backend ingest savings.</li>
             </ul>
           </div>
@@ -363,8 +363,9 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
           <div className={styles.card}>
             <h2 className={styles.cardTitle}>What the proxy measurably contributes</h2>
             <ul className={styles.list}>
-              <li>`query_range` warm hits in the published project benchmark land at `0.64-0.67 us` versus `4.58 ms` on the cold delayed path.</li>
-              <li>`detected_field_values` warm hits land at `0.71 us` versus `2.76 ms` without Tier0.</li>
+              <li>Throughput vs Loki: 13.7× warm / 78× cold on small/metadata workloads; 1,006× warm / 1,717× cold on heavy aggregations; 101× cold at c=100 on compute workloads (5.3× faster than VL native).</li>
+              <li>`query_range` warm hits in the published project benchmark land at `0.64–0.67 µs` versus `4.58 ms` on the cold delayed path.</li>
+              <li>`detected_field_values` warm hits land at `0.71 µs` versus `2.76 ms` without Tier0.</li>
               <li>Peer-cache warm shadow-copy hits land at `52 ns` after the first owner fetch.</li>
               <li>Long-range prefiltering cut backend query calls by about `81.6%` on the published benchmark shape.</li>
             </ul>
@@ -555,10 +556,10 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
           <div className={styles.card}>
             <h2 className={styles.cardTitle}>What this comparison means</h2>
             <ul className={styles.list}>
-              <li>At the exact real-life tested baseline, the VictoriaLogs service envelope is small enough to fit on a single `c7i.xlarge`, while Loki’s published throughput floor for the same ingest tier is already `3 x c7i.4xlarge`.</li>
-              <li>Even when the measured VictoriaLogs envelope is scaled linearly, Loki’s published floor stays materially larger on both CPU and memory.</li>
-              <li>This does not prove that VictoriaLogs scales perfectly linearly; it shows that the real-life tested baseline is far below Loki’s published distributed floor at the same ingest tier.</li>
-              <li>That is the right way to compare here: a real-life tested VictoriaLogs envelope versus Loki’s own published cluster-sizing floor, not marketing slogans versus marketing slogans.</li>
+              <li>At the exact real-life tested baseline, the VictoriaLogs service envelope is small enough to fit on a single `c7i.xlarge`, while Loki\'s published throughput floor for the same ingest tier is already `3 x c7i.4xlarge`.</li>
+              <li>Even when the measured VictoriaLogs envelope is scaled linearly, Loki\'s published floor stays materially larger on both CPU and memory.</li>
+              <li>This does not prove that VictoriaLogs scales perfectly linearly; it shows that the real-life tested baseline is far below Loki\'s published distributed floor at the same ingest tier.</li>
+              <li>That is the right way to compare here: a real-life tested VictoriaLogs envelope versus Loki\'s own published cluster-sizing floor, not marketing slogans versus marketing slogans.</li>
             </ul>
           </div>
         </div>
@@ -604,7 +605,7 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
           <ul className={styles.list}>
             <li>This row uses the higher real-life tested envelope of about `2.5k` events per second and about `6.5 MB/s` raw ingest bandwidth.</li>
             <li>It is intentionally separate from the daily average snapshot so the page shows both the average storage baseline and the heavier sustained operating shape.</li>
-            <li>Even at this higher steady-state envelope, the tested VictoriaLogs setup remains far below Loki’s first published distributed compute floor.</li>
+            <li>Even at this higher steady-state envelope, the tested VictoriaLogs setup remains far below Loki\'s first published distributed compute floor.</li>
           </ul>
         </div>
       </section>
@@ -699,7 +700,7 @@ export default function VictoriaLogsVsLokiCostAndPerformance(): ReactNode {
               <li>Some real deployments observe `50-60x` VictoriaLogs compression ratios on the data-block metric, but that excludes `indexdb` and should be treated as a lower-bound, not the full storage bill.</li>
               <li>TrueFoundry `500 GB / 7 day` benchmark: `≈40%` less storage and materially lower CPU and RAM than Loki on its workload.</li>
               <li>TrueFoundry broad-search results: VictoriaLogs was faster on its needle-in-haystack and negative-match tests.</li>
-              <li>Grafana’s own Loki sizing guide publishes a `3-30 TB/day` base cluster at `431 vCPU / 857 Gi` and a `~30 TB/day` cluster at `1221 vCPU / 2235 Gi` before query spikes, which makes the compute side of the cost story concrete.</li>
+              <li>Grafana\'s own Loki sizing guide publishes a `3-30 TB/day` base cluster at `431 vCPU / 857 Gi` and a `~30 TB/day` cluster at `1221 vCPU / 2235 Gi` before query spikes, which makes the compute side of the cost story concrete.</li>
             </ul>
           </div>
           <div className={styles.card}>

@@ -1,3 +1,8 @@
+---
+sidebar_label: Log Patterns
+description: How loki-vl-proxy implements Loki-compatible log pattern clustering for Grafana Logs Drilldown.
+---
+
 # Patterns
 
 This document covers Loki-compatible patterns behavior in Loki-VL-proxy, including persistence and sizing guidance.

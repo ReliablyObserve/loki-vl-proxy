@@ -1,3 +1,8 @@
+---
+sidebar_label: API Reference
+description: Complete list of Loki-compatible HTTP endpoints exposed by loki-vl-proxy with request/response formats.
+---
+
 # API Reference
 
 ## Loki-Compatible Endpoints
