@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -586,4 +587,45 @@ func hasSubstr(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestTopkTranslation(t *testing.T) {
+	cases := []struct {
+		in      string
+		wantHas string
+		wantErr string
+	}{
+		{
+			in:      `topk by(level) (5, rate({cluster="us-east-1"} [5m]))`,
+			wantHas: "cluster:=us-east-1",
+		},
+		{
+			in:      `topk(5, rate({cluster="us-east-1"} [5m]))`,
+			wantHas: "cluster:=us-east-1",
+		},
+		{
+			in:      `sum by(level) ({cluster="us-east-1"})`,
+			wantErr: "requires a range metric",
+		},
+		{
+			in:      `topk by() (5, rate({cluster="us-east-1"} [5m]))`,
+			wantHas: "cluster:=us-east-1",
+		},
+	}
+	for _, tc := range cases {
+		result, err := TranslateLogQL(tc.in)
+		if tc.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("query %q: want error containing %q, got result=%q err=%v", tc.in, tc.wantErr, result, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("query %q: unexpected error: %v", tc.in, err)
+			continue
+		}
+		if !strings.Contains(result, tc.wantHas) {
+			t.Errorf("query %q:\n  got:  %q\n  want substring: %q", tc.in, result, tc.wantHas)
+		}
+	}
 }

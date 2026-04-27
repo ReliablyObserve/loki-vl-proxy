@@ -77,6 +77,13 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 		return "", fmt.Errorf("%s requires `| unwrap <field>` for range aggregation", unwrapFunc)
 	}
 
+	// Guard: metric aggregation (sum/avg/topk/etc) applied directly to a log stream
+	// without a range vector has no meaning and would fall through to bare-text wrapping,
+	// producing malformed VL queries. Return a clear error instead.
+	if outerAgg, _, _ := extractOuterAggregation(logql); outerAgg != "" && !strings.Contains(logql, "[") {
+		return "", fmt.Errorf("%s() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))", outerAgg)
+	}
+
 	return translateLogQuery(logql, labelFn, streamFields)
 }
 
@@ -1389,7 +1396,7 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	aggList := `sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc`
 
 	// Try form 2 first: sum by (labels) (...) or sum without (labels) (...)
-	byBeforeRe := regexp.MustCompile(`^(` + aggList + `)\s+(?:by|without)\s*\(([^)]+)\)\s*\(`)
+	byBeforeRe := regexp.MustCompile(`^(` + aggList + `)\s+(?:by|without)\s*\(([^)]*)\)\s*\(`)
 	bm := byBeforeRe.FindStringSubmatch(logql)
 	if bm != nil {
 		agg = bm[1]
@@ -1398,6 +1405,13 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 		end := findLastMatchingParen(rest)
 		if end >= 0 {
 			inner = rest[:end]
+			// topk/bottomk carry a leading K arg: topk by (l) (K, inner_expr)
+			// Strip it so innerExpr starts with the actual metric expression.
+			if agg == "topk" || agg == "bottomk" {
+				if commaIdx := strings.Index(inner, ","); commaIdx >= 0 {
+					inner = strings.TrimSpace(inner[commaIdx+1:])
+				}
+			}
 			return agg, inner, byLabels
 		}
 	}
