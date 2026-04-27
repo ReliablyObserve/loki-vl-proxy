@@ -429,6 +429,90 @@ func TestBinaryOps_Extended(t *testing.T) {
 	}
 }
 
+// TestBareLabelMatcherMustNotProduceDoubleQuotedString is a regression guard for
+// a production bug observed against e2e-proxy-underscore. When a LogQL stream
+// matcher arrived without surrounding `{...}` (e.g., `app="json-test"` instead
+// of `{app="json-test"}`), the translator's bare-text fallback wrapped the
+// raw matcher in double quotes and produced LogsQL like `"app="json-test""`,
+// which VictoriaLogs rejects with an "unexpected token" parse error.
+//
+// The correct VL LogsQL output for the equivalent braced query is `app:=json-test`.
+// `translateBareFilter` is a phrase-filter fallback for arbitrary text and must
+// never be reached for label-matcher syntax — callers are responsible for
+// ensuring the input is a valid LogQL stream selector. This test pins the
+// observed bug so it cannot silently regress: the buggy double-quoted output
+// must not be emitted by any translation path that the proxy invokes.
+func TestBareLabelMatcherMustNotProduceDoubleQuotedString(t *testing.T) {
+	cases := []struct {
+		name  string
+		logql string
+		// notWant is the buggy output observed against VL. The translator
+		// must never emit this string — it is a malformed phrase filter that
+		// VL parses as `"app=` ... `json-test` ... `""` and rejects.
+		notWant string
+	}{
+		{
+			name:    "app matcher without braces (production bug repro)",
+			logql:   `app="json-test"`,
+			notWant: `"app="json-test""`,
+		},
+		{
+			name:    "level matcher without braces (production bug repro)",
+			logql:   `level="warn"`,
+			notWant: `"level="warn""`,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := TranslateLogQL(tc.logql)
+			if err != nil {
+				// Erroring out is an acceptable outcome — it just must not
+				// silently emit the malformed phrase filter.
+				return
+			}
+			if got == tc.notWant {
+				t.Fatalf("BUG: translator wrapped raw matcher in double quotes\n  input: %q\n  got:   %q (this is the production bug)", tc.logql, got)
+			}
+		})
+	}
+}
+
+// TestBracedLabelMatcherTranslatesToVLFieldFilter pins the correct translation
+// for the matchers that triggered the production bug above. These are the
+// queries the proxy actually receives from Grafana / Drilldown and they MUST
+// translate to VL `:=` field filters (not LogQL `=` matchers wrapped in quotes).
+func TestBracedLabelMatcherTranslatesToVLFieldFilter(t *testing.T) {
+	cases := []struct {
+		name  string
+		logql string
+		want  string
+	}{
+		{
+			name:  "app=json-test braced",
+			logql: `{app="json-test"}`,
+			want:  `app:=json-test`,
+		},
+		{
+			name:  "level=warn braced",
+			logql: `{level="warn"}`,
+			want:  `level:=warn`,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := TranslateLogQL(tc.logql)
+			if err != nil {
+				t.Fatalf("TranslateLogQL(%q) returned error: %v", tc.logql, err)
+			}
+			if got != tc.want {
+				t.Fatalf("TranslateLogQL(%q)\n  got:  %q\n  want: %q", tc.logql, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestTranslateLabelFormat_MultiRename(t *testing.T) {
 	tests := []struct {
 		name  string

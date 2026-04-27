@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(translator): bare label matchers like `app="json-test"` (without braces) no longer translate to the malformed VL phrase filter `"app="json-test""`; the translator now returns an error for unbraced label matchers so they are rejected at query time rather than silently producing invalid VL LogsQL — was only visible when Grafana issued queries spanning 8+ hours (windowing prefilter threshold).
+
+### Added
+
+- test(proxy): 14 JSON pretty-printing regression guards — table-driven `TestJSONPrettyPrint_GoFormatNeverEmitted` (9 collection-type sub-cases), plus full-pipeline `vlLogsToLokiStreams` tests for array `_msg`, mixed string/map entries in the same response, deeply nested JSON, and nil `_msg`; these tests will fail immediately if `fmt.Sprintf("%v")` is reinstated for map/slice values.
+- test(translator): `TestBareLabelMatcherMustNotProduceDoubleQuotedString` and `TestBracedLabelMatcherTranslatesToVLFieldFilter` prevent regression of the bare-label-matcher translation bug.
+- test(proxy): `TestQueryRange_DoesNotEmitDoubleQuotedSelectorToVL` — end-to-end test with fake VL backend over a 12-hour range (triggers windowing prefilter) asserting no query to VL contains the `"app="json-test""` double-quoted form.
+
 ## [1.19.0] - 2026-04-27
 
 ### Fixed

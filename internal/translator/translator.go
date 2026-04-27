@@ -241,7 +241,18 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 		}
 
 		if !strings.HasPrefix(remaining, "|") {
-			// Might be bare text — treat as filter
+			// Bare text after stream selector — treat as a phrase filter.
+			//
+			// Guard against a class of malformed inputs where a label matcher
+			// arrives without surrounding `{...}` (e.g. `app="json-test"`
+			// instead of `{app="json-test"}`). Loki rejects such queries with
+			// a parse error and the bare-text fallback would otherwise emit
+			// LogsQL like `"app="json-test""`, which VictoriaLogs cannot
+			// parse. Surface this as a translation error so the proxy returns
+			// 400, matching Loki's behavior.
+			if looksLikeBareLabelMatcher(remaining) {
+				return "", fmt.Errorf("parse error : syntax error: stream selector must be wrapped in braces, got %q", remaining)
+			}
 			parts = append(parts, translateBareFilter(remaining))
 			break
 		}
@@ -1933,6 +1944,80 @@ func translateBareFilter(s string) string {
 	}
 	// Bare text after stream selector — treat as phrase filter
 	return `"` + s + `"`
+}
+
+// looksLikeBareLabelMatcher reports whether s is an unbraced LogQL
+// stream matcher such as `app="json-test"` or `level=~"warn|error"`. Such
+// inputs must be rejected before falling into translateBareFilter, otherwise
+// the translator emits malformed LogsQL like `"app="json-test""` that
+// VictoriaLogs rejects.
+//
+// The check is intentionally conservative: it only matches strings that BEGIN
+// with `<identifier> [op] "value"` (or backtick value). This avoids
+// false-positives on text-with-equals or expressions that contain matchers
+// nested inside parens (e.g. `sum(rate({app="x"}[5m])) by (app)` — those
+// reach this code path only after the metric/binary/subquery extractors
+// declined them, but the leading char would be `s` followed by `u`, not an
+// identifier directly followed by `=`).
+func looksLikeBareLabelMatcher(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	// Must contain a quote and an `=`.
+	if !strings.ContainsAny(s, "\"`") || !strings.Contains(s, "=") {
+		return false
+	}
+	// Must START with an identifier (label name).
+	i := 0
+	for i < len(s) {
+		c := s[i]
+		if c == '_' || c == '.' || c == '-' ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') {
+			i++
+			continue
+		}
+		break
+	}
+	if i == 0 {
+		// Doesn't start with an identifier (might start with `(`, `{`, `"`, etc.)
+		return false
+	}
+	// Skip optional whitespace.
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	// Must be followed by an operator: `=`, `=~`, `!=`, `!~`.
+	switch s[i] {
+	case '=':
+		i++
+	case '!':
+		i++
+		if i >= len(s) || (s[i] != '=' && s[i] != '~') {
+			return false
+		}
+		i++
+	default:
+		return false
+	}
+	// Tolerate `=~` after the leading `=`.
+	if i < len(s) && s[i] == '~' {
+		i++
+	}
+	// Skip optional whitespace.
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	// Must be followed by an opening quote (`"` or `` ` ``).
+	return s[i] == '"' || s[i] == '`'
 }
 
 // =============================================================================
