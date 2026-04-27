@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -785,8 +786,31 @@ func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry) []map[string]
 		}
 		stream.values = append(stream.values, entry.Value)
 	}
+	// Sort stream keys for deterministic output order. Go map iteration is
+	// non-deterministic; without this, stream order fluctuates across requests
+	// whenever the same query spans multiple windows.
+	keys := make([]string, 0, len(streams))
+	for k := range streams {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	out := make([]map[string]interface{}, 0, len(streams))
-	for _, stream := range streams {
+	for _, k := range keys {
+		stream := streams[k]
+		// Sort values within each stream by timestamp so that entries from
+		// parallel window fetches are always in ascending timestamp order,
+		// regardless of which goroutine finished first.
+		sort.SliceStable(stream.values, func(i, j int) bool {
+			vi, _ := stream.values[i].([]interface{})
+			vj, _ := stream.values[j].([]interface{})
+			if len(vi) == 0 || len(vj) == 0 {
+				return false
+			}
+			ti, _ := vi[0].(string)
+			tj, _ := vj[0].(string)
+			return ti < tj
+		})
 		out = append(out, map[string]interface{}{
 			"stream": stream.labels,
 			"values": stream.values,
