@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // bufferedResponseWriter captures the response body for post-processing.
@@ -468,4 +471,93 @@ func applyArithmeticOp(left, right float64, op string) float64 {
 	default:
 		return left
 	}
+}
+
+// --- group() / label_replace() / label_join() post-processing ---
+
+// matrixResponseRW is a minimal struct for parsing and re-encoding a Loki matrix response.
+type matrixResponseRW struct {
+	Status string `json:"status"`
+	Data   struct {
+		ResultType string `json:"resultType"`
+		Result     []struct {
+			Metric map[string]string `json:"metric"`
+			Values [][]interface{}   `json:"values"`
+		} `json:"result"`
+	} `json:"data"`
+}
+
+// applyGroupNormalization sets every sample value in a matrix response to "1",
+// implementing group() semantics (return 1 for each series that has data).
+func applyGroupNormalization(body []byte) []byte {
+	var resp matrixResponseRW
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ResultType != "matrix" {
+		return body
+	}
+	for i := range resp.Data.Result {
+		for j := range resp.Data.Result[i].Values {
+			if len(resp.Data.Result[i].Values[j]) >= 2 {
+				resp.Data.Result[i].Values[j][1] = "1"
+			}
+		}
+	}
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// applyLabelReplace applies label_replace semantics to all series in a matrix response.
+// For each series: new_value = regexp.ReplaceAll(src_label_value, replacement).
+// If new_value is non-empty, dst_label is set; otherwise dst_label is deleted.
+func applyLabelReplace(body []byte, spec translator.LabelReplaceSpec) []byte {
+	re, err := regexp.Compile("^(?:" + spec.Regex + ")$")
+	if err != nil {
+		return body
+	}
+	var resp matrixResponseRW
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ResultType != "matrix" {
+		return body
+	}
+	for i, s := range resp.Data.Result {
+		src := s.Metric[spec.SrcLabel]
+		// Prometheus semantics: if regex matches, apply replacement; if not, series unchanged.
+		if re.MatchString(src) {
+			newVal := re.ReplaceAllString(src, spec.Replacement)
+			if newVal != "" {
+				resp.Data.Result[i].Metric[spec.DstLabel] = newVal
+			} else {
+				delete(resp.Data.Result[i].Metric, spec.DstLabel)
+			}
+		}
+	}
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// applyLabelJoin applies label_join semantics to all series in a matrix response.
+// dst_label is set to the src_labels values joined by separator.
+func applyLabelJoin(body []byte, spec translator.LabelJoinSpec) []byte {
+	var resp matrixResponseRW
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Data.ResultType != "matrix" {
+		return body
+	}
+	for i, s := range resp.Data.Result {
+		parts := make([]string, 0, len(spec.SrcLabels))
+		for _, src := range spec.SrcLabels {
+			if v := s.Metric[src]; v != "" {
+				parts = append(parts, v)
+			}
+		}
+		resp.Data.Result[i].Metric[spec.DstLabel] = strings.Join(parts, spec.Separator)
+	}
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return out
 }

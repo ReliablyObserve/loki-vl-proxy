@@ -751,6 +751,138 @@ func TestDetectedFieldValues_EmptyStrictQueryRelaxesWholeLookup(t *testing.T) {
 	}
 }
 
+// TestDetectedFieldValues_UnpackFallbackCalledForMsgOnlyFields guards that
+// fetchUnpackedFieldValues is invoked as a last resort when:
+//   - The field is not in VL's native field_names index
+//   - Log-line scanning finds nothing
+//   - No valid relaxed query is available (simple selector, nothing to relax)
+//
+// This covers logfmt fields like "amount" or "ttl" that live inside _msg and
+// are only reachable via | unpack_logfmt from _msg.
+func TestDetectedFieldValues_UnpackFallbackCalledForMsgOnlyFields(t *testing.T) {
+	var fieldValuesQueries []string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		q := r.Form.Get("query")
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			// amount is not a native VL indexed field → resolveNativeDetectedField returns ok=false
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			// Scan returns nothing — field is buried inside logfmt _msg
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		case "/select/logsql/streams":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/field_values":
+			fieldValuesQueries = append(fieldValuesQueries, q)
+			w.Header().Set("Content-Type", "application/json")
+			if strings.Contains(q, "unpack_logfmt") {
+				// Simulate VL returning values extracted by the unpack pipe
+				_, _ = w.Write([]byte(`{"values":[{"value":"42.50","hits":0},{"value":"100.00","hits":0}]}`))
+			} else {
+				_, _ = w.Write([]byte(`{"values":[]}`))
+			}
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	q := url.Values{
+		"query": {`{app="logfmt-test"}`},
+		"start": {"1"},
+		"end":   {"2"},
+	}
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/amount/values?"+q.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	// At least one field_values call must contain unpack pipes
+	hasUnpack := false
+	for _, fvq := range fieldValuesQueries {
+		if strings.Contains(fvq, "unpack_logfmt") {
+			hasUnpack = true
+		}
+	}
+	if !hasUnpack {
+		t.Fatalf("expected fetchUnpackedFieldValues to call field_values with unpack pipes, got queries: %v", fieldValuesQueries)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	values, _ := resp["values"].([]interface{})
+	if len(values) != 2 {
+		t.Fatalf("expected 2 values from unpack fallback, got %v", resp)
+	}
+}
+
+// TestDetectedFieldValues_RelaxedScanPreventsUnpackFallback guards the ordering
+// invariant: fetchUnpackedFieldValues (field_values) must NOT be called before
+// the relaxed-query scan has had a chance to find values. If relaxed scan
+// succeeds, field_values must never be called.
+//
+// This is the companion to TestDetectedFieldValues_EmptyStrictQueryRelaxesWholeLookup.
+// The existing test already enforces this implicitly (backend t.Fatalf on any
+// unexpected path including field_values). This test makes the intent explicit
+// and verifies the returned value is from the relaxed scan, not the unpack path.
+func TestDetectedFieldValues_RelaxedScanPreventsUnpackFallback(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		got := r.Form.Get("query")
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			if !strings.Contains(got, "strict-filter") {
+				// Relaxed scan returns the field value
+				_, _ = w.Write([]byte(`{"_time":"2026-04-04T17:18:49Z","_msg":"level=info amount=99","_stream":"{app=\"logfmt-test\"}","app":"logfmt-test","amount":"99"}` + "\n"))
+			}
+		case "/select/logsql/streams":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		default:
+			// field_values must NOT be called when relaxed scan succeeds
+			t.Fatalf("fetchUnpackedFieldValues called unexpectedly — field_values before relaxed scan: path=%s query=%q", r.URL.Path, got)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	q := url.Values{
+		"query": {`{app="logfmt-test"} | strict-filter="yes"`},
+		"start": {"1"},
+		"end":   {"2"},
+	}
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/amount/values?"+q.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	values, _ := resp["values"].([]interface{})
+	if len(values) == 0 {
+		t.Fatalf("expected value from relaxed scan, got empty: %v", resp)
+	}
+}
+
 func TestHandleLabels_BareSelectorQuery(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got := r.URL.Query().Get("query")

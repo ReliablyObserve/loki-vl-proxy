@@ -4,6 +4,7 @@
 package translator
 
 import (
+	"encoding/base64"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -15,6 +16,99 @@ import (
 // LabelTranslateFunc translates a Loki label name to a VL field name (query direction).
 // If nil, no translation is performed.
 type LabelTranslateFunc func(lokiLabel string) string
+
+// emptyByGrouping is a sentinel value used as the byLabels argument to buildStatsQuery
+// to indicate an explicit "by ()" clause (aggregate all into one series).
+// This is distinct from an empty string, which means "no grouping clause at all".
+const emptyByGrouping = "__lvp_by_empty__"
+
+// Marker suffixes embedded in translated queries for proxy post-processing.
+// The proxy strips them before forwarding to VL and applies the corresponding transform.
+const (
+	groupMarker        = "__lvp_group__"
+	labelReplacePrefix = "__lvp_lr:"
+	labelJoinPrefix    = "__lvp_lj:"
+)
+
+// LabelReplaceSpec holds the parsed arguments of a label_replace() expression.
+type LabelReplaceSpec struct {
+	DstLabel    string
+	Replacement string
+	SrcLabel    string
+	Regex       string
+}
+
+// LabelJoinSpec holds the parsed arguments of a label_join() expression.
+type LabelJoinSpec struct {
+	DstLabel  string
+	Separator string
+	SrcLabels []string
+}
+
+// ParseGroupMarker reports whether the translated query carries a group-normalization
+// marker, and returns the clean query (marker stripped).
+func ParseGroupMarker(query string) (string, bool) {
+	if strings.HasSuffix(query, groupMarker) {
+		return query[:len(query)-len(groupMarker)], true
+	}
+	return query, false
+}
+
+// ParseLabelReplaceMarker extracts a label_replace spec embedded in a translated query.
+// Returns the clean query (marker stripped) and the spec, or nil if absent.
+func ParseLabelReplaceMarker(query string) (string, *LabelReplaceSpec) {
+	idx := strings.LastIndex(query, labelReplacePrefix)
+	if idx < 0 {
+		return query, nil
+	}
+	payload := strings.TrimSuffix(query[idx+len(labelReplacePrefix):], "__")
+	b, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return query, nil
+	}
+	parts := strings.SplitN(string(b), "\x00", 4)
+	if len(parts) != 4 {
+		return query, nil
+	}
+	return query[:idx], &LabelReplaceSpec{
+		DstLabel:    parts[0],
+		Replacement: parts[1],
+		SrcLabel:    parts[2],
+		Regex:       parts[3],
+	}
+}
+
+// ParseLabelJoinMarker extracts a label_join spec embedded in a translated query.
+// Returns the clean query (marker stripped) and the spec, or nil if absent.
+func ParseLabelJoinMarker(query string) (string, *LabelJoinSpec) {
+	idx := strings.LastIndex(query, labelJoinPrefix)
+	if idx < 0 {
+		return query, nil
+	}
+	payload := strings.TrimSuffix(query[idx+len(labelJoinPrefix):], "__")
+	b, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		return query, nil
+	}
+	s := string(b)
+	n1 := strings.IndexByte(s, 0)
+	if n1 < 0 {
+		return query, nil
+	}
+	dst := s[:n1]
+	rest := s[n1+1:]
+	n2 := strings.IndexByte(rest, 0)
+	if n2 < 0 {
+		return query, nil
+	}
+	sep := rest[:n2]
+	srcsRaw := rest[n2+1:]
+	var srcs []string
+	if srcsRaw != "" {
+		srcs = strings.Split(srcsRaw, "\x01")
+	}
+	return query[:idx], &LabelJoinSpec{DstLabel: dst, Separator: sep, SrcLabels: srcs}
+}
 
 // TranslateLogQL converts a LogQL query string to a LogsQL query string.
 // It handles stream selectors, line filters, label filters, parsers, and metric queries.
@@ -47,6 +141,16 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 		return result, nil
 	}
 
+	// label_replace and label_join are transform wrappers around a complete metric
+	// expression. Handle them before the without/binary/metric path so the inner
+	// expression is translated correctly and the marker is appended last.
+	if result, ok := tryTranslateLabelReplace(logql, labelFn); ok {
+		return result, nil
+	}
+	if result, ok := tryTranslateLabelJoin(logql, labelFn); ok {
+		return result, nil
+	}
+
 	// Extract without() labels before translation.
 	// The proxy will post-process VL results to remove these labels from metric grouping.
 	var withoutLabels []string
@@ -57,6 +161,11 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// returns 1/0 for comparisons, so "bool" is a no-op — just strip it.
 	boolRe := regexp.MustCompile(`\s+bool\s+`)
 	logql = boolRe.ReplaceAllString(logql, " ")
+
+	// count_values groups by the VALUES of the inner metric — VL cannot compute this.
+	if outerAgg, _, _ := extractOuterAggregation(logql); outerAgg == "count_values" {
+		return "", fmt.Errorf("count_values is not supported: it groups by metric values which VictoriaLogs cannot compute; use count() grouped by an existing label instead")
+	}
 
 	// Check binary metric expressions FIRST — they may contain metric sub-expressions.
 	// E.g., "rate({...}[5m]) > 0" is a binary expr, not just a metric query.
@@ -70,6 +179,13 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	}
 	if unwrapFunc := missingUnwrapRangeMetricFunc(logql); unwrapFunc != "" {
 		return "", fmt.Errorf("%s requires `| unwrap <field>` for range aggregation", unwrapFunc)
+	}
+
+	// Guard: metric aggregation (sum/avg/topk/etc) applied directly to a log stream
+	// without a range vector has no meaning and would fall through to bare-text wrapping,
+	// producing malformed VL queries. Return a clear error instead.
+	if outerAgg, _, _ := extractOuterAggregation(logql); outerAgg != "" && !strings.Contains(logql, "[") {
+		return "", fmt.Errorf("%s() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))", outerAgg)
 	}
 
 	return translateLogQuery(logql, labelFn, streamFields)
@@ -241,7 +357,18 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 		}
 
 		if !strings.HasPrefix(remaining, "|") {
-			// Might be bare text — treat as filter
+			// Bare text after stream selector — treat as a phrase filter.
+			//
+			// Guard against a class of malformed inputs where a label matcher
+			// arrives without surrounding `{...}` (e.g. `app="json-test"`
+			// instead of `{app="json-test"}`). Loki rejects such queries with
+			// a parse error and the bare-text fallback would otherwise emit
+			// LogsQL like `"app="json-test""`, which VictoriaLogs cannot
+			// parse. Surface this as a translation error so the proxy returns
+			// 400, matching Loki's behavior.
+			if looksLikeBareLabelMatcher(remaining) {
+				return "", fmt.Errorf("parse error : syntax error: stream selector must be wrapped in braces, got %q", remaining)
+			}
 			parts = append(parts, translateBareFilter(remaining))
 			break
 		}
@@ -834,6 +961,105 @@ func convertGoTemplate(tmpl string) string {
 	return `"` + result + `"`
 }
 
+// splitFuncFirstArg splits the first argument from a parenthesised function arg list,
+// returning (firstArg, rest, ok). rest is the text after the first comma at depth 0.
+// Input starts right after the opening '(' of the outer function.
+func splitFuncFirstArg(s string) (first, rest string, ok bool) {
+	depth := 0
+	for i, c := range s {
+		switch c {
+		case '(':
+			depth++
+		case ')':
+			if depth == 0 {
+				return strings.TrimSpace(s[:i]), "", true
+			}
+			depth--
+		case ',':
+			if depth == 0 {
+				return strings.TrimSpace(s[:i]), strings.TrimSpace(s[i+1:]), true
+			}
+		}
+	}
+	return "", "", false
+}
+
+// parseAllStringArgs parses all quoted string arguments (double- or back-tick-quoted)
+// from a comma-separated list, stopping at ')' or unrecognised input.
+func parseAllStringArgs(s string) []string {
+	var args []string
+	for {
+		s = strings.TrimSpace(s)
+		if s == "" || s[0] == ')' {
+			break
+		}
+		if s[0] != '"' && s[0] != '`' {
+			break
+		}
+		q := s[0]
+		end := strings.IndexByte(s[1:], q)
+		if end < 0 {
+			break
+		}
+		args = append(args, s[1:end+1])
+		s = strings.TrimSpace(s[end+2:])
+		if len(s) > 0 && s[0] == ',' {
+			s = strings.TrimSpace(s[1:])
+		}
+	}
+	return args
+}
+
+// tryTranslateLabelReplace handles label_replace(v, "dst", "repl", "src", "regex").
+// It translates the inner expression and embeds a marker for proxy post-processing.
+func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string, bool) {
+	const prefix = "label_replace("
+	if !strings.HasPrefix(logql, prefix) {
+		return "", false
+	}
+	inner, rest, ok := splitFuncFirstArg(logql[len(prefix):])
+	if !ok {
+		return "", false
+	}
+	args := parseAllStringArgs(rest)
+	if len(args) != 4 {
+		return "", false
+	}
+	translated, err := translateLogQLFull(inner, labelFn, nil)
+	if err != nil {
+		return "", false
+	}
+	payload := base64.StdEncoding.EncodeToString([]byte(
+		args[0] + "\x00" + args[1] + "\x00" + args[2] + "\x00" + args[3],
+	))
+	return translated + labelReplacePrefix + payload + "__", true
+}
+
+// tryTranslateLabelJoin handles label_join(v, "dst", "sep", "src1", ...).
+// It translates the inner expression and embeds a marker for proxy post-processing.
+func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bool) {
+	const prefix = "label_join("
+	if !strings.HasPrefix(logql, prefix) {
+		return "", false
+	}
+	inner, rest, ok := splitFuncFirstArg(logql[len(prefix):])
+	if !ok {
+		return "", false
+	}
+	args := parseAllStringArgs(rest)
+	if len(args) < 3 { // dst + sep + at least one src
+		return "", false
+	}
+	translated, err := translateLogQLFull(inner, labelFn, nil)
+	if err != nil {
+		return "", false
+	}
+	payload := base64.StdEncoding.EncodeToString([]byte(
+		args[0] + "\x00" + args[1] + "\x00" + strings.Join(args[2:], "\x01"),
+	))
+	return translated + labelJoinPrefix + payload + "__", true
+}
+
 // tryTranslateMetricQuery attempts to translate a metric/aggregation query.
 func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, bool) {
 	// Match patterns like: sum(rate({...}[5m])) by (label)
@@ -860,6 +1086,18 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 	// Try to match outer aggregation: sum(...) by (labels)
 	outerAgg, innerExpr, byLabels := extractOuterAggregation(logql)
 
+	// group() returns 1 for every series that has data. Translate the inner metric
+	// normally (for grouping/presence), then the proxy normalises all values to 1.
+	isGroup := outerAgg == "group"
+	if isGroup {
+		outerAgg = ""
+	}
+
+	// count_values() groups by the VALUES of the inner metric — VL has no equivalent.
+	if outerAgg == "count_values" {
+		return "", false // caught by the count_values guard in translateLogQLFull
+	}
+
 	// If no outer aggregation, work with the raw expression
 	if innerExpr == "" {
 		innerExpr = logql
@@ -867,6 +1105,9 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 
 	// Special handling for quantile_over_time(phi, {query} | unwrap field [duration])
 	if result, ok := tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels, labelFn); ok {
+		if isGroup {
+			return result + groupMarker, true
+		}
 		return result, true
 	}
 
@@ -878,12 +1119,15 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		}
 
 		// Find the matching closing paren
-		inner := innerExpr[len(prefix):]
-		end := findLastMatchingParen(inner)
+		fullRest := innerExpr[len(prefix):]
+		end := findLastMatchingParen(fullRest)
 		if end < 0 {
 			continue
 		}
-		inner = inner[:end]
+		inner := fullRest[:end]
+		// Detect trailing by (...) modifier on the range aggregation, e.g.
+		// avg_over_time({...} | json | unwrap field [5s]) by ()
+		rangeByLabels, rangeByExplicit := extractRangeByClause(strings.TrimSpace(fullRest[end+1:]))
 
 		// Extract the query and duration: {stream} | pipeline [5m]
 		query, duration := extractQueryAndDuration(inner)
@@ -899,6 +1143,9 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 
 		if funcName == "rate" || funcName == "bytes_rate" {
 			if rateResult, ok := buildRateLikeQuery(logsqlQuery, query, logsqlFunc, duration, outerAgg, byLabels, labelFn); ok {
+				if isGroup {
+					return rateResult + groupMarker, true
+				}
 				return rateResult, true
 			}
 		}
@@ -912,7 +1159,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 				continue
 			}
 			statsExpr := fmt.Sprintf("%s(%s)", logsqlFunc, unwrapField)
-			innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn)
+			innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels)
 
 			// stdvar_over_time uses stddev + square, since VL doesn't have stdvar().
 			if funcName == "stdvar_over_time" {
@@ -948,6 +1195,9 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 			}
 		}
 
+		if isGroup {
+			return result + groupMarker, true
+		}
 		return result, true
 	}
 
@@ -990,10 +1240,14 @@ func buildStatsQuery(baseQuery, statsExpr, byLabels, alias string) string {
 	if query == "" {
 		query = "*"
 	}
-	if byLabels != "" {
-		query = fmt.Sprintf("%s | stats by (%s) %s", query, byLabels, statsExpr)
-	} else {
+	switch byLabels {
+	case emptyByGrouping:
+		// Explicit by () — emit the clause so the proxy can detect it and return one series.
+		query = fmt.Sprintf("%s | stats by () %s", query, statsExpr)
+	case "":
 		query = fmt.Sprintf("%s | stats %s", query, statsExpr)
+	default:
+		query = fmt.Sprintf("%s | stats by (%s) %s", query, byLabels, statsExpr)
 	}
 	if alias != "" {
 		query += " as " + alias
@@ -1040,7 +1294,30 @@ func hasParserPipeline(query string) bool {
 	return parserStageForUnwrapRE.MatchString(query)
 }
 
-func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslateFunc) string {
+var rangeByClauseRE = regexp.MustCompile(`^by\s*\(([^)]*)\)`)
+
+// extractRangeByClause parses a trailing "by (...)" modifier that appears after
+// the closing paren of a range aggregation, e.g. "avg_over_time(...[5s]) by ()".
+// Returns the label list (empty string for "by ()") and whether the clause was present.
+func extractRangeByClause(suffix string) (labels string, explicit bool) {
+	m := rangeByClauseRE.FindStringSubmatch(suffix)
+	if m == nil {
+		return "", false
+	}
+	return strings.TrimSpace(m[1]), true
+}
+
+func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslateFunc, rangeByExplicit bool, rangeByLabels string) string {
+	// Explicit range-level by (...) takes precedence over all heuristics.
+	// by () means aggregate all entries into one series (no label grouping).
+	if rangeByExplicit {
+		if rangeByLabels == "" {
+			// by () means aggregate all entries into one series — use sentinel so
+			// buildStatsQuery emits "by ()" and the proxy can detect it downstream.
+			return emptyByGrouping
+		}
+		return normalizeByLabels(rangeByLabels, labelFn)
+	}
 	if byLabels != "" {
 		return normalizeByLabels(byLabels, labelFn)
 	}
@@ -1340,10 +1617,10 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	// 2. sum by (labels) (...)    — by BEFORE
 	// 3. topk(K, sum by (labels) (...))  — nested
 
-	aggList := `sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc`
+	aggList := `sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values`
 
 	// Try form 2 first: sum by (labels) (...) or sum without (labels) (...)
-	byBeforeRe := regexp.MustCompile(`^(` + aggList + `)\s+(?:by|without)\s*\(([^)]+)\)\s*\(`)
+	byBeforeRe := regexp.MustCompile(`^(` + aggList + `)\s+(?:by|without)\s*\(([^)]*)\)\s*\(`)
 	bm := byBeforeRe.FindStringSubmatch(logql)
 	if bm != nil {
 		agg = bm[1]
@@ -1352,6 +1629,26 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 		end := findLastMatchingParen(rest)
 		if end >= 0 {
 			inner = rest[:end]
+			// topk/bottomk carry a leading K arg: topk by (l) (K, inner_expr).
+			// count_values carries a quoted label-name first arg: count_values("l", expr).
+			// Strip both so innerExpr starts with the actual metric expression.
+			switch agg {
+			case "topk", "bottomk":
+				if commaIdx := strings.Index(inner, ","); commaIdx >= 0 {
+					inner = strings.TrimSpace(inner[commaIdx+1:])
+				}
+			case "count_values":
+				args := parseAllStringArgs(inner)
+				if len(args) >= 1 {
+					q := `"` + args[0] + `"`
+					if idx := strings.Index(inner, q); idx >= 0 {
+						rest2 := strings.TrimSpace(inner[idx+len(q):])
+						if strings.HasPrefix(rest2, ",") {
+							inner = strings.TrimSpace(rest2[1:])
+						}
+					}
+				}
+			}
 			return agg, inner, byLabels
 		}
 	}
@@ -1367,10 +1664,23 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	rest := logql[len(m[0]):]
 
 	// For topk/bottomk, skip the first numeric arg: topk(10, ...)
-	if agg == "topk" || agg == "bottomk" {
+	// For count_values, skip the first quoted string arg: count_values("label", ...)
+	switch agg {
+	case "topk", "bottomk":
 		commaIdx := strings.Index(rest, ",")
 		if commaIdx >= 0 {
 			rest = strings.TrimSpace(rest[commaIdx+1:])
+		}
+	case "count_values":
+		args := parseAllStringArgs(rest)
+		if len(args) >= 1 {
+			q := `"` + args[0] + `"`
+			if idx := strings.Index(rest, q); idx >= 0 {
+				rest2 := strings.TrimSpace(rest[idx+len(q):])
+				if strings.HasPrefix(rest2, ",") {
+					rest = strings.TrimSpace(rest2[1:])
+				}
+			}
 		}
 	}
 
@@ -1473,7 +1783,7 @@ func tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels string, labelFn 
 	}
 
 	statsExpr := fmt.Sprintf("quantile(%s, %s)", phi, unwrapField)
-	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn)
+	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, false, "")
 
 	if outerAgg != "" && byLabels == "" {
 		innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
@@ -1933,6 +2243,80 @@ func translateBareFilter(s string) string {
 	}
 	// Bare text after stream selector — treat as phrase filter
 	return `"` + s + `"`
+}
+
+// looksLikeBareLabelMatcher reports whether s is an unbraced LogQL
+// stream matcher such as `app="json-test"` or `level=~"warn|error"`. Such
+// inputs must be rejected before falling into translateBareFilter, otherwise
+// the translator emits malformed LogsQL like `"app="json-test""` that
+// VictoriaLogs rejects.
+//
+// The check is intentionally conservative: it only matches strings that BEGIN
+// with `<identifier> [op] "value"` (or backtick value). This avoids
+// false-positives on text-with-equals or expressions that contain matchers
+// nested inside parens (e.g. `sum(rate({app="x"}[5m])) by (app)` — those
+// reach this code path only after the metric/binary/subquery extractors
+// declined them, but the leading char would be `s` followed by `u`, not an
+// identifier directly followed by `=`).
+func looksLikeBareLabelMatcher(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	// Must contain a quote and an `=`.
+	if !strings.ContainsAny(s, "\"`") || !strings.Contains(s, "=") {
+		return false
+	}
+	// Must START with an identifier (label name).
+	i := 0
+	for i < len(s) {
+		c := s[i]
+		if c == '_' || c == '.' || c == '-' ||
+			(c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') {
+			i++
+			continue
+		}
+		break
+	}
+	if i == 0 {
+		// Doesn't start with an identifier (might start with `(`, `{`, `"`, etc.)
+		return false
+	}
+	// Skip optional whitespace.
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	// Must be followed by an operator: `=`, `=~`, `!=`, `!~`.
+	switch s[i] {
+	case '=':
+		i++
+	case '!':
+		i++
+		if i >= len(s) || (s[i] != '=' && s[i] != '~') {
+			return false
+		}
+		i++
+	default:
+		return false
+	}
+	// Tolerate `=~` after the leading `=`.
+	if i < len(s) && s[i] == '~' {
+		i++
+	}
+	// Skip optional whitespace.
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	if i >= len(s) {
+		return false
+	}
+	// Must be followed by an opening quote (`"` or `` ` ``).
+	return s[i] == '"' || s[i] == '`'
 }
 
 // =============================================================================

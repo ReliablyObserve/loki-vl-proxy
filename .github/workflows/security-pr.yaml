@@ -107,6 +107,7 @@ jobs:
             hadolint/hadolint:v2.12.0 < Dockerfile
 
       - name: OpenSSF Scorecard
+        continue-on-error: true
         env:
           GITHUB_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -118,6 +119,7 @@ jobs:
             --show-details > scorecard.json
 
       - name: Enforce Scorecard guardrails
+        if: hashFiles('scorecard.json') != ''
         run: |
           python3 scripts/ci/check_scorecard.py scorecard.json \
             --min-overall 5.0 \

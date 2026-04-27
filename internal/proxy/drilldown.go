@@ -218,6 +218,87 @@ func ensureDetectedLevel(labels map[string]string) {
 	}
 }
 
+// extractLevelFromMsg attempts to detect a log level from a raw log line,
+// matching Loki's ingest-time automatic level detection behavior.
+// Handles JSON ({"level":"error"}) and logfmt (level=error key=val).
+// Returns ("", false) when no level can be detected.
+func extractLevelFromMsg(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return "", false
+	}
+	if s[0] == '{' {
+		return extractLevelFromJSONMsg(s)
+	}
+	return extractLevelFromLogfmtMsg(s)
+}
+
+// levelJSONKeys is the ordered list of JSON keys the proxy checks for level,
+// matching Loki's automatic level detection priority.
+var levelJSONKeys = []string{"level", "severity", "lvl", "loglevel", "LEVEL", "SEVERITY"}
+
+// levelLogfmtKeys is the ordered list of logfmt key prefixes checked for level.
+var levelLogfmtKeys = []string{"level=", "severity=", "lvl=", "loglevel="}
+
+func extractLevelFromJSONMsg(s string) (string, bool) {
+	var parsed map[string]json.RawMessage
+	if json.Unmarshal([]byte(s), &parsed) != nil {
+		return "", false
+	}
+	for _, key := range levelJSONKeys {
+		raw, ok := parsed[key]
+		if !ok {
+			continue
+		}
+		var level string
+		if json.Unmarshal(raw, &level) != nil {
+			continue
+		}
+		level = strings.TrimSpace(level)
+		if level != "" {
+			return level, true
+		}
+	}
+	return "", false
+}
+
+// extractLevelFromLogfmtMsg scans a logfmt line for level=<value> (and
+// aliases). Only reads the first matching key — does not allocate a full map.
+func extractLevelFromLogfmtMsg(s string) (string, bool) {
+	for _, key := range levelLogfmtKeys {
+		idx := strings.Index(s, key)
+		if idx < 0 {
+			continue
+		}
+		// Require word boundary: start-of-line or preceded by whitespace.
+		if idx > 0 && s[idx-1] != ' ' && s[idx-1] != '\t' {
+			continue
+		}
+		val := s[idx+len(key):]
+		if len(val) == 0 {
+			continue
+		}
+		var level string
+		if val[0] == '"' {
+			end := strings.IndexByte(val[1:], '"')
+			if end < 0 {
+				continue
+			}
+			level = strings.TrimSpace(val[1 : end+1])
+		} else {
+			end := strings.IndexAny(val, " \t")
+			if end < 0 {
+				end = len(val)
+			}
+			level = strings.TrimSpace(val[:end])
+		}
+		if level != "" {
+			return level, true
+		}
+	}
+	return "", false
+}
+
 func buildEntryLabels(entry map[string]interface{}) map[string]string {
 	// parseStreamLabels returns a cached read-only map — copy into a fresh map
 	// before adding entry fields so the cache is not mutated.
@@ -232,6 +313,17 @@ func buildEntryLabels(entry map[string]interface{}) map[string]string {
 		}
 		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
 			labels[key] = s
+		}
+	}
+	// Loki detects level at ingest and adds detected_level as a stream label
+	// even without a parser (JSON, logfmt). Replicate on the read path: if
+	// level is not yet known from VL fields or OTel, try to extract it from
+	// the raw _msg string so detected_level is populated identically to Loki.
+	if labels["level"] == "" && labels["detected_level"] == "" {
+		if msgStr, ok := entry["_msg"].(string); ok {
+			if lvl, ok := extractLevelFromMsg(msgStr); ok {
+				labels["level"] = lvl
+			}
 		}
 	}
 	ensureDetectedLevel(labels)
@@ -371,17 +463,32 @@ func asString(value interface{}) string {
 	}
 }
 
-func scanDetectedLabels(body []byte, lt *LabelTranslator) ([]map[string]interface{}, map[string]struct{}) {
-	summaries := scanDetectedLabelSummaries(body, lt)
-
-	labelSet := make(map[string]struct{}, len(summaries))
-	result := formatDetectedLabelSummaries(summaries)
-	for _, item := range result {
-		if label, _ := item["label"].(string); label != "" {
-			labelSet[label] = struct{}{}
+// scanStreamLabelNames returns the set of label names found in _stream fields
+// across all NDJSON entries. It does not include serviceNameSourceFields,
+// so it accurately represents what VL indexed as stream labels vs.
+// auto-extracted body fields.
+func scanStreamLabelNames(body []byte, lt *LabelTranslator) map[string]struct{} {
+	names := map[string]struct{}{}
+	for _, rawLine := range bytes.Split(body, []byte{'\n'}) {
+		line := strings.TrimSpace(string(rawLine))
+		if line == "" {
+			continue
+		}
+		var entry map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		for key := range parseStreamLabels(asString(entry["_stream"])) {
+			lokiLabel := key
+			if lt != nil {
+				if t := lt.ToLoki(key); t != "" {
+					lokiLabel = t
+				}
+			}
+			names[lokiLabel] = struct{}{}
 		}
 	}
-	return result, labelSet
+	return names
 }
 
 func scanDetectedLabelSummaries(body []byte, lt *LabelTranslator) map[string]*detectedLabelSummary {
@@ -888,7 +995,23 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 		return nil, err
 	}
 
+	// When detected_level is a target, VL must extract level from _msg because
+	// level is not a VL stream field for JSON/logfmt logs — it lives inside _msg.
+	// Chaining unpack_json then unpack_logfmt covers both formats: unpack_json
+	// extracts level from JSON objects; unpack_logfmt handles key=value lines.
+	// Logs that are neither JSON nor logfmt leave level unset (graceful no-op).
 	targets := splitTargetLabels(targetLabels)
+	needsLevelUnpack := false
+	for _, t := range targets {
+		if t == "detected_level" {
+			needsLevelUnpack = true
+			break
+		}
+	}
+	if needsLevelUnpack && !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
+		logsqlQuery = logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+	}
+
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if start != "" {
@@ -1362,7 +1485,9 @@ func (p *Proxy) detectFieldsFromBody(body []byte) ([]map[string]interface{}, map
 }
 
 func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map[string][]string, map[string]*detectedFieldSummary) {
-	_, labelNames := scanDetectedLabels(body, p.labelTranslator)
+	// Use stream-label-only set so that VL auto-extracted body fields sharing
+	// a name with a serviceNameSourceField (e.g. "job") are not suppressed.
+	labelNames := scanStreamLabelNames(body, p.labelTranslator)
 	fields := make(map[string]*detectedFieldSummary)
 
 	// Track OTel presence across ALL entries in the batch.
@@ -1403,13 +1528,18 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 			}
 		}
 
+		// Use only the actual _stream labels for field-exposure checks so that
+		// VL auto-extracted body fields (e.g. "job", "container") that share a
+		// name with a serviceNameSourceField are not incorrectly suppressed.
+		rawStreamLabels := parseStreamLabels(asString(entry["_stream"]))
+
 		for key, value := range entry {
 			// Skip indexed labels that should not appear as detected fields
 			if key == "app" || key == "cluster" || key == "namespace" {
 				continue
 			}
 
-			if !shouldExposeStructuredField(key, streamLabels, p.labelTranslator) {
+			if !shouldExposeStructuredField(key, rawStreamLabels, p.labelTranslator) {
 				continue
 			}
 			stringValue, ok := stringifyEntryValue(value)
@@ -1504,6 +1634,32 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 			typ:         source.typ,
 			values:      source.values,
 			cardinality: source.cardinality,
+		}
+	}
+
+	// Post-process: fields detected only via VL top-level auto-extracted path
+	// (no parser assigned) and NOT true stream labels get parsers:["json"].
+	//
+	// Why: VictoriaLogs auto-extracts JSON body fields to top-level indexed
+	// fields and replaces _msg with the inner message string. The proxy scans
+	// VL NDJSON output and sees plain-text _msg, so JSON-origin fields are not
+	// detected via _msg parsing. Loki sees the original JSON body and marks them
+	// parsers:["json"]. We match that so Grafana Drilldown uses the correct
+	// detected_field/values endpoint rather than label_values (stream-label only).
+	//
+	// Dotted-name fields (e.g. service.name, k8s.pod.name) are excluded: those
+	// are OTel structured metadata, not JSON body fields, and must keep parsers:null.
+	for _, summary := range fields {
+		if len(summary.parsers) == 0 && !strings.ContainsAny(summary.label, ".") {
+			if _, isStreamLabel := labelNames[summary.label]; !isStreamLabel {
+				if summary.parsers == nil {
+					summary.parsers = map[string]struct{}{}
+				}
+				summary.parsers["json"] = struct{}{}
+				if len(summary.jsonPath) == 0 {
+					summary.jsonPath = []string{summary.label}
+				}
+			}
 		}
 	}
 
@@ -1801,9 +1957,24 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 			lastErr = err
 			continue
 		}
+		// VL returns hits=0 for valid non-indexed fields (e.g. trace_id, amount)
+		// where it has the values but does not count occurrences. Only exclude
+		// explicitly negative hits (sentinel/error) and blank values.
+		allZero := true
+		for _, item := range parsed.Values {
+			if item.Hits > 0 {
+				allZero = false
+				break
+			}
+		}
 		values := make([]string, 0, len(parsed.Values))
 		for _, item := range parsed.Values {
-			if item.Hits <= 0 || strings.TrimSpace(item.Value) == "" {
+			if item.Hits < 0 || strings.TrimSpace(item.Value) == "" {
+				continue
+			}
+			// When a mix of zero and positive hits exists, zero-hit entries are
+			// stale indexed names with no matching lines — skip them.
+			if !allZero && item.Hits == 0 {
 				continue
 			}
 			values = append(values, item.Value)
@@ -1813,9 +1984,82 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 			p.observeInternalOperation(ctx, "discovery_fallback", "native_field_values_empty_primary", 0)
 			continue
 		}
+		if len(values) > 0 {
+			return values, nil
+		}
+		// No values from native index — field may be inside JSON or logfmt _msg.
+		// Retry once with unpack pipes so VL extracts the field from _msg content.
+		if !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
+			unpackQuery := logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+			params.Set("query", unpackQuery)
+			resp2, err2 := p.vlGet(ctx, "/select/logsql/field_values", params)
+			if err2 == nil {
+				body2, _ := io.ReadAll(resp2.Body)
+				_ = resp2.Body.Close()
+				if resp2.StatusCode < http.StatusBadRequest {
+					var parsed2 vlFieldValuesResponse
+					if json.Unmarshal(body2, &parsed2) == nil {
+						for _, item := range parsed2.Values {
+							if item.Hits >= 0 && strings.TrimSpace(item.Value) != "" {
+								values = append(values, item.Value)
+							}
+						}
+						sort.Strings(values)
+					}
+				}
+			}
+		}
 		return values, nil
 	}
 	return nil, lastErr
+}
+
+// fetchUnpackedFieldValues queries VL with | unpack_json from _msg |
+// unpack_logfmt from _msg to extract values for fields that are not
+// VL-indexed (inside JSON or logfmt _msg). Used as a last-resort fallback
+// when neither native field_values nor log-line scanning produced values.
+func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end, field string, limit int) ([]string, error) {
+	logsqlQuery, err := p.translateQuery(defaultQuery(query))
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(logsqlQuery, "unpack_json") || strings.Contains(logsqlQuery, "unpack_logfmt") {
+		return nil, nil
+	}
+	unpackQuery := logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+	params := url.Values{}
+	params.Set("query", unpackQuery)
+	params.Set("field", field)
+	if start != "" {
+		params.Set("start", formatVLTimestamp(start))
+	}
+	if end != "" {
+		params.Set("end", formatVLTimestamp(end))
+	}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
+	}
+	resp, err := p.vlGet(ctx, "/select/logsql/field_values", params)
+	if err != nil {
+		return nil, err
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, nil
+	}
+	var parsed vlFieldValuesResponse
+	if json.Unmarshal(body, &parsed) != nil {
+		return nil, nil
+	}
+	values := make([]string, 0, len(parsed.Values))
+	for _, item := range parsed.Values {
+		if item.Hits >= 0 && strings.TrimSpace(item.Value) != "" {
+			values = append(values, item.Value)
+		}
+	}
+	sort.Strings(values)
+	return values, nil
 }
 
 func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, end, fieldName string) (string, bool, error) {
