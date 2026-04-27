@@ -543,3 +543,47 @@ func TestTranslateLabelFormat_MultiRename(t *testing.T) {
 		})
 	}
 }
+
+func TestRangeByClauseTranslation(t *testing.T) {
+	cases := []struct {
+		query   string
+		wantHas string
+		wantNot string
+	}{
+		{
+			// by () on a range aggregation with parser stage: must aggregate everything
+			// into ONE series. Translator must emit "by ()" so the proxy can detect it
+			// and return a single empty-label series instead of N per-stream series.
+			query:   `avg_over_time({env="production"} | json confidence="[\"confidence\"]" | drop __error__, __error_details__ | confidence!="" | unwrap confidence | __error__="" [5s]) by ()`,
+			wantHas: "stats by () avg(confidence)",
+			wantNot: "_msg",
+		},
+		{
+			query:   `avg_over_time({env="production"} | json | unwrap duration_s [5s]) by ()`,
+			wantHas: "stats by () avg(duration_s)",
+			wantNot: "_msg",
+		},
+	}
+	for _, tc := range cases {
+		result, err := TranslateLogQL(tc.query)
+		if err != nil {
+			t.Errorf("query %q: unexpected error: %v", tc.query[:60], err)
+			continue
+		}
+		if tc.wantHas != "" && !hasSubstr(result, tc.wantHas) {
+			t.Errorf("query %q:\n  got:  %q\n  want substring: %q", tc.query[:60], result, tc.wantHas)
+		}
+		if tc.wantNot != "" && hasSubstr(result, tc.wantNot) {
+			t.Errorf("query %q:\n  got:  %q\n  must NOT contain: %q", tc.query[:60], result, tc.wantNot)
+		}
+	}
+}
+
+func hasSubstr(s, sub string) bool {
+	for i := 0; i <= len(s)-len(sub); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}

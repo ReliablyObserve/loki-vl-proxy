@@ -16,6 +16,11 @@ import (
 // If nil, no translation is performed.
 type LabelTranslateFunc func(lokiLabel string) string
 
+// emptyByGrouping is a sentinel value used as the byLabels argument to buildStatsQuery
+// to indicate an explicit "by ()" clause (aggregate all into one series).
+// This is distinct from an empty string, which means "no grouping clause at all".
+const emptyByGrouping = "__lvp_by_empty__"
+
 // TranslateLogQL converts a LogQL query string to a LogsQL query string.
 // It handles stream selectors, line filters, label filters, parsers, and metric queries.
 func TranslateLogQL(logql string) (string, error) {
@@ -889,12 +894,15 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		}
 
 		// Find the matching closing paren
-		inner := innerExpr[len(prefix):]
-		end := findLastMatchingParen(inner)
+		fullRest := innerExpr[len(prefix):]
+		end := findLastMatchingParen(fullRest)
 		if end < 0 {
 			continue
 		}
-		inner = inner[:end]
+		inner := fullRest[:end]
+		// Detect trailing by (...) modifier on the range aggregation, e.g.
+		// avg_over_time({...} | json | unwrap field [5s]) by ()
+		rangeByLabels, rangeByExplicit := extractRangeByClause(strings.TrimSpace(fullRest[end+1:]))
 
 		// Extract the query and duration: {stream} | pipeline [5m]
 		query, duration := extractQueryAndDuration(inner)
@@ -923,7 +931,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 				continue
 			}
 			statsExpr := fmt.Sprintf("%s(%s)", logsqlFunc, unwrapField)
-			innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn)
+			innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels)
 
 			// stdvar_over_time uses stddev + square, since VL doesn't have stdvar().
 			if funcName == "stdvar_over_time" {
@@ -1001,10 +1009,14 @@ func buildStatsQuery(baseQuery, statsExpr, byLabels, alias string) string {
 	if query == "" {
 		query = "*"
 	}
-	if byLabels != "" {
-		query = fmt.Sprintf("%s | stats by (%s) %s", query, byLabels, statsExpr)
-	} else {
+	switch byLabels {
+	case emptyByGrouping:
+		// Explicit by () — emit the clause so the proxy can detect it and return one series.
+		query = fmt.Sprintf("%s | stats by () %s", query, statsExpr)
+	case "":
 		query = fmt.Sprintf("%s | stats %s", query, statsExpr)
+	default:
+		query = fmt.Sprintf("%s | stats by (%s) %s", query, byLabels, statsExpr)
 	}
 	if alias != "" {
 		query += " as " + alias
@@ -1051,7 +1063,30 @@ func hasParserPipeline(query string) bool {
 	return parserStageForUnwrapRE.MatchString(query)
 }
 
-func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslateFunc) string {
+var rangeByClauseRE = regexp.MustCompile(`^by\s*\(([^)]*)\)`)
+
+// extractRangeByClause parses a trailing "by (...)" modifier that appears after
+// the closing paren of a range aggregation, e.g. "avg_over_time(...[5s]) by ()".
+// Returns the label list (empty string for "by ()") and whether the clause was present.
+func extractRangeByClause(suffix string) (labels string, explicit bool) {
+	m := rangeByClauseRE.FindStringSubmatch(suffix)
+	if m == nil {
+		return "", false
+	}
+	return strings.TrimSpace(m[1]), true
+}
+
+func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslateFunc, rangeByExplicit bool, rangeByLabels string) string {
+	// Explicit range-level by (...) takes precedence over all heuristics.
+	// by () means aggregate all entries into one series (no label grouping).
+	if rangeByExplicit {
+		if rangeByLabels == "" {
+			// by () means aggregate all entries into one series — use sentinel so
+			// buildStatsQuery emits "by ()" and the proxy can detect it downstream.
+			return emptyByGrouping
+		}
+		return normalizeByLabels(rangeByLabels, labelFn)
+	}
 	if byLabels != "" {
 		return normalizeByLabels(byLabels, labelFn)
 	}
@@ -1484,7 +1519,7 @@ func tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels string, labelFn 
 	}
 
 	statsExpr := fmt.Sprintf("quantile(%s, %s)", phi, unwrapField)
-	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn)
+	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, false, "")
 
 	if outerAgg != "" && byLabels == "" {
 		innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
