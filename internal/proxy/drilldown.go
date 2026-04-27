@@ -464,9 +464,9 @@ func asString(value interface{}) string {
 }
 
 // scanStreamLabelNames returns the set of label names found in _stream fields
-// across all NDJSON entries. Unlike scanDetectedLabels, it does NOT include
-// serviceNameSourceFields, so it accurately represents what VL indexed as
-// stream labels vs. auto-extracted body fields.
+// across all NDJSON entries. It does not include serviceNameSourceFields,
+// so it accurately represents what VL indexed as stream labels vs.
+// auto-extracted body fields.
 func scanStreamLabelNames(body []byte, lt *LabelTranslator) map[string]struct{} {
 	names := map[string]struct{}{}
 	for _, rawLine := range bytes.Split(body, []byte{'\n'}) {
@@ -489,19 +489,6 @@ func scanStreamLabelNames(body []byte, lt *LabelTranslator) map[string]struct{} 
 		}
 	}
 	return names
-}
-
-func scanDetectedLabels(body []byte, lt *LabelTranslator) ([]map[string]interface{}, map[string]struct{}) {
-	summaries := scanDetectedLabelSummaries(body, lt)
-
-	labelSet := make(map[string]struct{}, len(summaries))
-	result := formatDetectedLabelSummaries(summaries)
-	for _, item := range result {
-		if label, _ := item["label"].(string); label != "" {
-			labelSet[label] = struct{}{}
-		}
-	}
-	return result, labelSet
 }
 
 func scanDetectedLabelSummaries(body []byte, lt *LabelTranslator) map[string]*detectedLabelSummary {
