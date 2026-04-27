@@ -10061,6 +10061,16 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
 		labels["level"] = value
 	}
+	// Mirror Loki's ingest-time level detection: if VL did not surface level as
+	// a top-level field (native field or OTel severity), try to extract it from
+	// the raw _msg string (JSON or logfmt) so detected_level matches Loki.
+	if labels["level"] == "" && labels["detected_level"] == "" {
+		if msgStr, ok := entry["_msg"].(string); ok {
+			if lvl, ok := extractLevelFromMsg(msgStr); ok {
+				labels["level"] = lvl
+			}
+		}
+	}
 	ensureDetectedLevel(labels)
 	ensureSyntheticServiceName(labels)
 

@@ -218,6 +218,87 @@ func ensureDetectedLevel(labels map[string]string) {
 	}
 }
 
+// extractLevelFromMsg attempts to detect a log level from a raw log line,
+// matching Loki's ingest-time automatic level detection behavior.
+// Handles JSON ({"level":"error"}) and logfmt (level=error key=val).
+// Returns ("", false) when no level can be detected.
+func extractLevelFromMsg(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	if len(s) == 0 {
+		return "", false
+	}
+	if s[0] == '{' {
+		return extractLevelFromJSONMsg(s)
+	}
+	return extractLevelFromLogfmtMsg(s)
+}
+
+// levelJSONKeys is the ordered list of JSON keys the proxy checks for level,
+// matching Loki's automatic level detection priority.
+var levelJSONKeys = []string{"level", "severity", "lvl", "loglevel", "LEVEL", "SEVERITY"}
+
+// levelLogfmtKeys is the ordered list of logfmt key prefixes checked for level.
+var levelLogfmtKeys = []string{"level=", "severity=", "lvl=", "loglevel="}
+
+func extractLevelFromJSONMsg(s string) (string, bool) {
+	var parsed map[string]json.RawMessage
+	if json.Unmarshal([]byte(s), &parsed) != nil {
+		return "", false
+	}
+	for _, key := range levelJSONKeys {
+		raw, ok := parsed[key]
+		if !ok {
+			continue
+		}
+		var level string
+		if json.Unmarshal(raw, &level) != nil {
+			continue
+		}
+		level = strings.TrimSpace(level)
+		if level != "" {
+			return level, true
+		}
+	}
+	return "", false
+}
+
+// extractLevelFromLogfmtMsg scans a logfmt line for level=<value> (and
+// aliases). Only reads the first matching key — does not allocate a full map.
+func extractLevelFromLogfmtMsg(s string) (string, bool) {
+	for _, key := range levelLogfmtKeys {
+		idx := strings.Index(s, key)
+		if idx < 0 {
+			continue
+		}
+		// Require word boundary: start-of-line or preceded by whitespace.
+		if idx > 0 && s[idx-1] != ' ' && s[idx-1] != '\t' {
+			continue
+		}
+		val := s[idx+len(key):]
+		if len(val) == 0 {
+			continue
+		}
+		var level string
+		if val[0] == '"' {
+			end := strings.IndexByte(val[1:], '"')
+			if end < 0 {
+				continue
+			}
+			level = strings.TrimSpace(val[1 : end+1])
+		} else {
+			end := strings.IndexAny(val, " \t")
+			if end < 0 {
+				end = len(val)
+			}
+			level = strings.TrimSpace(val[:end])
+		}
+		if level != "" {
+			return level, true
+		}
+	}
+	return "", false
+}
+
 func buildEntryLabels(entry map[string]interface{}) map[string]string {
 	// parseStreamLabels returns a cached read-only map — copy into a fresh map
 	// before adding entry fields so the cache is not mutated.
@@ -232,6 +313,17 @@ func buildEntryLabels(entry map[string]interface{}) map[string]string {
 		}
 		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
 			labels[key] = s
+		}
+	}
+	// Loki detects level at ingest and adds detected_level as a stream label
+	// even without a parser (JSON, logfmt). Replicate on the read path: if
+	// level is not yet known from VL fields or OTel, try to extract it from
+	// the raw _msg string so detected_level is populated identically to Loki.
+	if labels["level"] == "" && labels["detected_level"] == "" {
+		if msgStr, ok := entry["_msg"].(string); ok {
+			if lvl, ok := extractLevelFromMsg(msgStr); ok {
+				labels["level"] = lvl
+			}
 		}
 	}
 	ensureDetectedLevel(labels)
@@ -888,7 +980,23 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 		return nil, err
 	}
 
+	// When detected_level is a target, VL must extract level from _msg because
+	// level is not a VL stream field for JSON/logfmt logs — it lives inside _msg.
+	// Chaining unpack_json then unpack_logfmt covers both formats: unpack_json
+	// extracts level from JSON objects; unpack_logfmt handles key=value lines.
+	// Logs that are neither JSON nor logfmt leave level unset (graceful no-op).
 	targets := splitTargetLabels(targetLabels)
+	needsLevelUnpack := false
+	for _, t := range targets {
+		if t == "detected_level" {
+			needsLevelUnpack = true
+			break
+		}
+	}
+	if needsLevelUnpack && !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
+		logsqlQuery = logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+	}
+
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if start != "" {

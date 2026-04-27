@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- feat(drilldown): infer `detected_level` from raw `_msg` content at read time to match Loki 3.x ingest-time level detection — handles JSON (`{"level":"error"}`), logfmt (`level=error`), and aliases (`severity`, `lvl`, `loglevel`); native VL `level` and OTel severity fields always take precedence. Stream grouping now splits by `detected_level` per Loki's behavior, so Drilldown and Explore show correct level breakdown for JSON and logfmt log lines without requiring an explicit `| json` or `| logfmt` parser in the query.
+- feat(drilldown): volume API appends `| unpack_json from _msg | unpack_logfmt from _msg` to VL hits query when `detected_level` is a target label and no parser is present — enables Drilldown level breakdown for streams where level is inside `_msg` rather than a VL stream field.
+
 - test(proxy): 14 JSON pretty-printing regression guards — table-driven `TestJSONPrettyPrint_GoFormatNeverEmitted` (9 collection-type sub-cases), plus full-pipeline `vlLogsToLokiStreams` tests for array `_msg`, mixed string/map entries in the same response, deeply nested JSON, and nil `_msg`; these tests will fail immediately if `fmt.Sprintf("%v")` is reinstated for map/slice values.
 - test(translator): `TestBareLabelMatcherMustNotProduceDoubleQuotedString` and `TestBracedLabelMatcherTranslatesToVLFieldFilter` prevent regression of the bare-label-matcher translation bug.
 - test(proxy): `TestQueryRange_DoesNotEmitDoubleQuotedSelectorToVL` — end-to-end test with fake VL backend over a 12-hour range (triggers windowing prefilter) asserting no query to VL contains the `"app="json-test""` double-quoted form.

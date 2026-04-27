@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1880,4 +1881,182 @@ func contains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// =============================================================================
+// detected_level inference from _msg content (Loki parity)
+//
+// Loki 3.x adds detected_level as a stream label at ingest time by parsing
+// the log line. The proxy must replicate this on the read path so Explore and
+// Drilldown show detected_level even when level is not a VL stream field.
+// =============================================================================
+
+func TestExtractLevelFromMsg_JSON(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+		ok    bool
+	}{
+		{"json_level_error", `{"level":"error","message":"failed"}`, "error", true},
+		{"json_level_warn", `{"level":"warn","msg":"slow"}`, "warn", true},
+		{"json_severity_key", `{"severity":"INFO","msg":"ok"}`, "INFO", true},
+		{"json_lvl_key", `{"lvl":"debug","msg":"trace"}`, "debug", true},
+		{"json_no_level", `{"message":"no level here"}`, "", false},
+		{"plain_text_no_level", `something happened at the server`, "", false},
+		{"empty", ``, "", false},
+		{"json_empty_level", `{"level":""}`, "", false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := extractLevelFromMsg(tc.input)
+			if ok != tc.ok {
+				t.Errorf("%s: ok=%v want %v (got level=%q)", tc.name, ok, tc.ok, got)
+			}
+			if ok && got != tc.want {
+				t.Errorf("%s: level=%q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestExtractLevelFromMsg_Logfmt(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		want  string
+		ok    bool
+	}{
+		{"logfmt_level", `level=error ts=2024-01-01 msg="bad"`, "error", true},
+		{"logfmt_level_quoted", `level="warn" msg="slow"`, "warn", true},
+		{"logfmt_severity", `severity=info msg=ok`, "info", true},
+		{"logfmt_lvl", `lvl=debug caller=main.go`, "debug", true},
+		{"logfmt_no_level", `msg=ok caller=main.go`, "", false},
+		{"logfmt_level_in_middle", `ts=2024 level=fatal msg=crash`, "fatal", true},
+		{"logfmt_partial_key", `notlevel=error msg=ok`, "", false},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := extractLevelFromMsg(tc.input)
+			if ok != tc.ok {
+				t.Errorf("%s: ok=%v want %v (got level=%q)", tc.name, ok, tc.ok, got)
+			}
+			if ok && got != tc.want {
+				t.Errorf("%s: level=%q want %q", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestBuildEntryLabels_InfersDetectedLevelFromJSONMsg verifies that
+// buildEntryLabels populates detected_level from a JSON _msg field even when
+// VL has not extracted level as a top-level NDJSON field.
+func TestBuildEntryLabels_InfersDetectedLevelFromJSONMsg(t *testing.T) {
+	entry := map[string]interface{}{
+		"_time":   "2024-01-01T00:00:00Z",
+		"_stream": `{app="json-test"}`,
+		"_msg":    `{"level":"error","message":"something failed","code":500}`,
+	}
+	labels := buildEntryLabels(entry)
+	if labels["detected_level"] != "error" {
+		t.Errorf("expected detected_level=error from JSON _msg, got %q", labels["detected_level"])
+	}
+	if labels["level"] != "error" {
+		t.Errorf("expected level=error synthesized, got %q", labels["level"])
+	}
+}
+
+// TestBuildEntryLabels_InfersDetectedLevelFromLogfmtMsg verifies logfmt _msg
+// parsing for detected_level synthesis.
+func TestBuildEntryLabels_InfersDetectedLevelFromLogfmtMsg(t *testing.T) {
+	entry := map[string]interface{}{
+		"_time":   "2024-01-01T00:00:00Z",
+		"_stream": `{app="payment-service"}`,
+		"_msg":    `level=warn ts=2024-01-01 msg="slow query"`,
+	}
+	labels := buildEntryLabels(entry)
+	if labels["detected_level"] != "warn" {
+		t.Errorf("expected detected_level=warn from logfmt _msg, got %q", labels["detected_level"])
+	}
+}
+
+// TestBuildEntryLabels_NativeLevelTakesPrecedenceOverMsg verifies that when VL
+// surfaces level as a top-level NDJSON field (native VL or OTel severity),
+// it takes precedence over parsing _msg.
+func TestBuildEntryLabels_NativeLevelTakesPrecedenceOverMsg(t *testing.T) {
+	entry := map[string]interface{}{
+		"_time":   "2024-01-01T00:00:00Z",
+		"_stream": `{app="api"}`,
+		"_msg":    `{"level":"error","message":"should be overridden"}`,
+		"level":   "info", // native VL field wins
+	}
+	labels := buildEntryLabels(entry)
+	if labels["detected_level"] != "info" {
+		t.Errorf("expected native level=info to win over JSON _msg level=error, got detected_level=%q", labels["detected_level"])
+	}
+}
+
+// TestVlLogsToLokiStreams_SplitsStreamsByDetectedLevelFromJSONMsg verifies that
+// vlLogsToLokiStreams creates separate Loki streams per detected_level when
+// entries have JSON _msg with different level values — matching Loki's ingest
+// behavior of splitting streams by detected_level.
+func TestVlLogsToLokiStreams_SplitsStreamsByDetectedLevelFromJSONMsg(t *testing.T) {
+	records := []map[string]interface{}{
+		{"_time": "2024-01-01T00:00:01Z", "_stream": `{app="json-test"}`, "_msg": `{"level":"error","message":"failed"}`},
+		{"_time": "2024-01-01T00:00:02Z", "_stream": `{app="json-test"}`, "_msg": `{"level":"warn","message":"slow"}`},
+		{"_time": "2024-01-01T00:00:03Z", "_stream": `{app="json-test"}`, "_msg": `{"level":"info","message":"ok"}`},
+	}
+	body := buildNDJSON(records)
+
+	streams := vlLogsToLokiStreams(body)
+	if len(streams) != 3 {
+		t.Fatalf("expected 3 streams (one per level), got %d: %v", len(streams), streamsDebug(streams))
+	}
+	levels := map[string]bool{}
+	for _, s := range streams {
+		labels := s["stream"].(map[string]string)
+		lvl := labels["detected_level"]
+		if lvl == "" {
+			t.Errorf("stream missing detected_level: %v", labels)
+			continue
+		}
+		levels[lvl] = true
+	}
+	for _, want := range []string{"error", "warn", "info"} {
+		if !levels[want] {
+			t.Errorf("missing stream for detected_level=%q; got levels: %v", want, levels)
+		}
+	}
+}
+
+// TestVlLogsToLokiStreams_SplitsStreamsByDetectedLevelFromLogfmtMsg verifies
+// the same stream-splitting behavior for logfmt _msg entries.
+func TestVlLogsToLokiStreams_SplitsStreamsByDetectedLevelFromLogfmtMsg(t *testing.T) {
+	records := []map[string]interface{}{
+		{"_time": "2024-01-01T00:00:01Z", "_stream": `{app="svc"}`, "_msg": `level=error msg="db timeout"`},
+		{"_time": "2024-01-01T00:00:02Z", "_stream": `{app="svc"}`, "_msg": `level=info msg="started"`},
+	}
+	body := buildNDJSON(records)
+
+	streams := vlLogsToLokiStreams(body)
+	if len(streams) != 2 {
+		t.Fatalf("expected 2 streams (error+info), got %d: %v", len(streams), streamsDebug(streams))
+	}
+	for _, s := range streams {
+		labels := s["stream"].(map[string]string)
+		if labels["detected_level"] == "" {
+			t.Errorf("stream missing detected_level for logfmt _msg: %v", labels)
+		}
+	}
+}
+
+func streamsDebug(streams []map[string]interface{}) []string {
+	out := make([]string, len(streams))
+	for i, s := range streams {
+		labels, _ := s["stream"].(map[string]string)
+		out[i] = fmt.Sprintf("%v", labels)
+	}
+	return out
 }
