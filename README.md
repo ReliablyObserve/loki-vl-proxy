@@ -127,7 +127,7 @@ VictoriaLogs can be deployed AZ-local with no replication overhead, and the prox
 | | Loki | VictoriaLogs + proxy |
 |---|---|---|
 | RAM (vendor benchmarks) | baseline | up to 30x less |
-| Disk (vendor benchmarks) | baseline | up to 15x less |
+| CPU (vendor benchmarks) | baseline | up to 15x less |
 | Storage (TrueFoundry 500 GB / 7 day) | baseline | ~40% less |
 | Cross-AZ writes | 3x (RF=3) | AZ-local possible |
 | Index model | Chunk-based, heavy | Inverted index, lean |

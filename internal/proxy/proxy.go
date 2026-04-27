@@ -9666,6 +9666,7 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 	// Estimate line count from body size (~200 bytes/line average)
 	estimatedLines := len(body)/200 + 1
 	streamMap := make(map[string]*streamEntry, estimatedLines/10+1)
+	streamOrder := make([]string, 0, estimatedLines/10+1)
 
 	// Scan lines without copying the entire body to a string.
 	start := 0
@@ -9704,7 +9705,7 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 
 		// Extract _time, _msg, _stream, and remaining fields as labels
 		timeStr, _ := entry["_time"].(string)
-		msg, _ := entry["_msg"].(string)
+		msg, _ := stringifyEntryValue(entry["_msg"])
 		if timeStr == "" {
 			vlEntryPool.Put(entry)
 			continue
@@ -9728,6 +9729,7 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 				Values: make([][]string, 0),
 			}
 			streamMap[streamKey] = se
+			streamOrder = append(streamOrder, streamKey)
 		}
 
 		// Return pooled entry after extracting all needed data
@@ -9737,7 +9739,15 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 	}
 
 	result := make([]map[string]interface{}, 0, len(streamMap))
-	for _, se := range streamMap {
+	for _, key := range streamOrder {
+		se := streamMap[key]
+		// Stable secondary sort within same-nanosecond timestamps.
+		sort.SliceStable(se.Values, func(i, j int) bool {
+			if se.Values[i][0] == se.Values[j][0] {
+				return se.Values[i][1] < se.Values[j][1]
+			}
+			return false // preserve VL's time-sorted order
+		})
 		result = append(result, map[string]interface{}{
 			"stream": se.Labels,
 			"values": se.Values,
@@ -9762,6 +9772,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 
 	streamMap := make(map[string]*streamEntry, 32)
+	streamOrder := make([]string, 0, 32)
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
 	streamLabelCache := make(map[string]map[string]string, 16)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
@@ -9821,6 +9832,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 				Values: make([]interface{}, 0, 8),
 			}
 			streamMap[desc.key] = se
+			streamOrder = append(streamOrder, desc.key)
 		}
 		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels))
 
@@ -9846,7 +9858,20 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	}
 
 	result := make([]map[string]interface{}, 0, len(streamMap))
-	for _, se := range streamMap {
+	for _, key := range streamOrder {
+		se := streamMap[key]
+		// Stable secondary sort within same-nanosecond timestamps so that
+		// repeated refreshes return entries in the same order.
+		sort.SliceStable(se.Values, func(i, j int) bool {
+			vi, _ := se.Values[i].([]interface{})
+			vj, _ := se.Values[j].([]interface{})
+			if len(vi) >= 2 && len(vj) >= 2 && vi[0] == vj[0] {
+				msgi, _ := vi[1].(string)
+				msgj, _ := vj[1].(string)
+				return msgi < msgj
+			}
+			return false // preserve VL's time-sorted order
+		})
 		result = append(result, map[string]interface{}{
 			"stream": se.Labels,
 			"values": se.Values,
@@ -9964,6 +9989,14 @@ func stringifyEntryValue(value interface{}) (string, bool) {
 	switch v := value.(type) {
 	case string:
 		return v, true
+	case map[string]interface{}, []interface{}:
+		// VL may parse JSON-looking _msg fields into objects; re-serialize to
+		// preserve valid JSON so Grafana can pretty-print the log line.
+		b, err := json.Marshal(v)
+		if err == nil {
+			return string(b), true
+		}
+		return fmt.Sprintf("%v", v), true
 	default:
 		return fmt.Sprintf("%v", v), true
 	}

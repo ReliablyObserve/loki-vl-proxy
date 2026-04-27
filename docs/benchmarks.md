@@ -187,7 +187,7 @@ approaches the warm ceiling (both are cache-or-coalesce limited, not VL-limited)
 | VL + Proxy (VL behind) | ~47 cpu·s | 1,053 MB | VL serves only misses |
 | **VL + Proxy combined** | **~47 cpu·s** | **~1,851 MB** | **2.4× less CPU vs Loki** |
 | Proxy (cold, no cache) | ~45 cpu·s | ~190 MB | Coalescer only, VL+proxy combined |
-| VL native | 386.4 cpu·s | 1,152 MB | 3.5× more CPU than Loki |
+| VL native | 386.4 cpu·s | 1,152 MB | 3.5× more total CPU; 18.5× more throughput — 5.3× more efficient per request |
 
 > The proxy's RSS (798 MB) is entirely the L1 in-memory response cache. Use `-cache-max` to cap it.
 > Cold proxy (no cache) RSS: ~190 MB for VL+proxy combined, 11.5× less than Loki.
