@@ -1632,11 +1632,12 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 			// topk/bottomk carry a leading K arg: topk by (l) (K, inner_expr).
 			// count_values carries a quoted label-name first arg: count_values("l", expr).
 			// Strip both so innerExpr starts with the actual metric expression.
-			if agg == "topk" || agg == "bottomk" {
+			switch agg {
+			case "topk", "bottomk":
 				if commaIdx := strings.Index(inner, ","); commaIdx >= 0 {
 					inner = strings.TrimSpace(inner[commaIdx+1:])
 				}
-			} else if agg == "count_values" {
+			case "count_values":
 				args := parseAllStringArgs(inner)
 				if len(args) >= 1 {
 					q := `"` + args[0] + `"`
@@ -1664,12 +1665,13 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 
 	// For topk/bottomk, skip the first numeric arg: topk(10, ...)
 	// For count_values, skip the first quoted string arg: count_values("label", ...)
-	if agg == "topk" || agg == "bottomk" {
+	switch agg {
+	case "topk", "bottomk":
 		commaIdx := strings.Index(rest, ",")
 		if commaIdx >= 0 {
 			rest = strings.TrimSpace(rest[commaIdx+1:])
 		}
-	} else if agg == "count_values" {
+	case "count_values":
 		args := parseAllStringArgs(rest)
 		if len(args) >= 1 {
 			q := `"` + args[0] + `"`

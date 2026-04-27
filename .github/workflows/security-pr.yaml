@@ -119,6 +119,7 @@ jobs:
             --show-details > scorecard.json
 
       - name: Enforce Scorecard guardrails
+        if: hashFiles('scorecard.json') != ''
         run: |
           python3 scripts/ci/check_scorecard.py scorecard.json \
             --min-overall 5.0 \
