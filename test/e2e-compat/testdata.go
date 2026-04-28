@@ -15,7 +15,9 @@ import (
 // Loki and VictoriaLogs for comprehensive compatibility testing.
 func ingestRichTestData(t *testing.T) {
 	t.Helper()
-	now := time.Now()
+	// Use a past timestamp so all entries are guaranteed to be in Loki's chunk
+	// storage (not the ingester head block) by the time metric queries run.
+	now := time.Now().Add(-3 * time.Minute)
 
 	// ── Service: api-gateway ──
 	pushStream(t, now, streamDef{
