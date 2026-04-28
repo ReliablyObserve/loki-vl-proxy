@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(cache): disk cache size cap no longer self-poisons on long-lived deployments — expired entries found on read are now deleted from bolt in a background goroutine so dead bytes are reclaimed; overwrites inside `Flush()` now deduct the existing stored size before checking the cap, preventing the cap from triggering before the effective working set is full.
+- fix(proxy): `Shutdown` now stops the rate-limiter cleanup goroutine and the peer-cache discovery/read-ahead loops before flushing persistence state; previously these goroutines leaked on repeated start/stop cycles (tests, embeddings).
+- fix(proxy): `/metrics` handler no longer double-buffers the full Prometheus output — it now streams directly from the metrics registry to the client and appends peer-cache metrics via a single `io.WriteString`, halving scrape-time memory cost on high-cardinality installs.
+- fix(proxy): synthetic tail dedup window no longer allocates a new backing slice on every 4096-entry overflow — replaced `append([]string(nil), ...)` with an in-place `copy`+reslice, removing allocation and GC pressure in the hot tail path.
+- fix(test): `TestHardening_SecurityHeaders` now wraps the mux through `SecurityHeadersMiddleware` (matching the production `wrapHandler` path) so header-clobbering regressions on the shipped server path are caught by tests; `SecurityHeadersMiddleware` extracted from `cmd/proxy` into `internal/proxy` for reuse.
+
+### Testing
+
+- test(reliability): 16 real integration tests added — 3 disk cache tests (overwrite accounting, lazy expiry reclaim, steady-state long-run), 2 shutdown goroutine tests (rate-limiter, peer-cache), 3 metrics streaming tests (peer metrics present, no-peer-cache baseline, method-not-allowed), 3 tail dedup tests (eviction order, in-place backing array, duplicates ignored), 5 security header tests (wrapped handler, bare-vs-wrapped, backend clobber survival, copyBackendHeaders unit, alerting-backend no-broadcast).
+
 ## [1.21.2] - 2026-04-28
 
 ### Security

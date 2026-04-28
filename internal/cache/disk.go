@@ -189,6 +189,11 @@ func (dc *DiskCache) getWithTTL(key string, allowStale bool) ([]byte, time.Durat
 	if remaining <= 0 && !allowStale {
 		dc.Misses.Add(1)
 		dc.Evictions.Add(1)
+		go func() {
+			_ = dc.db.Update(func(tx *bolt.Tx) error {
+				return tx.Bucket(dataBucket).Delete([]byte(key))
+			})
+		}()
 		return nil, 0, false
 	}
 
@@ -253,6 +258,9 @@ func (dc *DiskCache) Flush() {
 				}
 			}
 			if dc.maxBytes > 0 {
+				if existing := b.Get([]byte(key)); existing != nil {
+					currentBytes -= int64(len(existing)) // reclaim overwrite space
+				}
 				if currentBytes+int64(len(encoded)) > dc.maxBytes {
 					dc.Evictions.Add(1)
 					continue

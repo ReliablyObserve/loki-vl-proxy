@@ -1324,6 +1324,12 @@ func (p *Proxy) Init() {
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
+	if p.limiter != nil {
+		p.limiter.Stop()
+	}
+	if p.peerCache != nil {
+		p.peerCache.Close()
+	}
 	p.stopPatternsPersistenceLoop(ctx)
 	p.stopLabelValuesIndexPersistenceLoop(ctx)
 	if err := p.persistPatternsNow("shutdown"); err != nil {
@@ -2014,20 +2020,10 @@ func (p *Proxy) handleMetrics(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	rec := httptest.NewRecorder()
-	p.metrics.Handler(rec, r)
-
-	for k, vals := range rec.Header() {
-		for _, v := range vals {
-			w.Header().Add(k, v)
-		}
-	}
+	p.metrics.Handler(w, r)
 	if p.peerCache != nil {
-		_, _ = rec.Body.WriteString(p.peerCacheMetrics())
+		_, _ = io.WriteString(w, p.peerCacheMetrics())
 	}
-
-	w.WriteHeader(rec.Code)
-	_, _ = w.Write(rec.Body.Bytes())
 }
 
 func (p *Proxy) peerCacheMetrics() string {
@@ -7811,7 +7807,8 @@ func (s *syntheticTailSeen) Add(key string) {
 	for _, oldKey := range s.order[:drop] {
 		delete(s.seen, oldKey)
 	}
-	s.order = append([]string(nil), s.order[drop:]...)
+	n := copy(s.order, s.order[drop:])
+	s.order = s.order[:n]
 }
 func (p *Proxy) writeTailMessage(conn tailConn, messageType int, data []byte) error {
 	if err := conn.SetWriteDeadline(time.Now().Add(tailWriteTimeout)); err != nil {

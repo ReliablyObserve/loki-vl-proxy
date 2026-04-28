@@ -942,28 +942,7 @@ func wrapHandler(next http.Handler, maxBodyBytes int64, responseCompression stri
 }
 
 func withSecurityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := w.Header()
-		if strings.TrimSpace(header.Get("X-Content-Type-Options")) == "" {
-			header.Set("X-Content-Type-Options", "nosniff")
-		}
-		if strings.TrimSpace(header.Get("X-Frame-Options")) == "" {
-			header.Set("X-Frame-Options", "DENY")
-		}
-		if strings.TrimSpace(header.Get("Cross-Origin-Resource-Policy")) == "" {
-			header.Set("Cross-Origin-Resource-Policy", "same-origin")
-		}
-		if strings.TrimSpace(header.Get("Cache-Control")) == "" {
-			header.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-		}
-		if strings.TrimSpace(header.Get("Pragma")) == "" {
-			header.Set("Pragma", "no-cache")
-		}
-		if strings.TrimSpace(header.Get("Expires")) == "" {
-			header.Set("Expires", "0")
-		}
-		next.ServeHTTP(w, r)
-	})
+	return proxy.SecurityHeadersMiddleware(next)
 }
 
 func resolveResponseCompression(explicit string, legacyEnabled bool) (string, error) {
