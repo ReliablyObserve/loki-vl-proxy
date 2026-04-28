@@ -14,13 +14,14 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
-  packages: write
-  pull-requests: write
+  contents: read
 
 jobs:
   prepare-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
@@ -186,6 +187,8 @@ jobs:
     needs: prepare-release
     if: needs.prepare-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       test_count: ${{ steps.metrics.outputs.tests }}
       coverage_pct: ${{ steps.metrics.outputs.coverage_pct }}
@@ -238,6 +241,9 @@ jobs:
     needs: [prepare-release, validate-release]
     if: needs.prepare-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}

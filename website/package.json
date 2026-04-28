@@ -29,7 +29,8 @@
     "typescript": "~6.0.2"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.0"
+    "serialize-javascript": "^7.0.0",
+    "uuid": ">=14.0.0"
   },
   "browserslist": {
     "production": [

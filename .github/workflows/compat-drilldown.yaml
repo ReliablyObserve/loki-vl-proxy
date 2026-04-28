@@ -14,6 +14,9 @@ on:
   schedule:
     - cron: "45 3 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
   drilldown-matrix-source:
     runs-on: ubuntu-latest

@@ -45,13 +45,13 @@ services:
       - "-peer-self=proxy-a:3100"
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
-    volumes:
-      - cache-a:/cache
+    tmpfs:
+      - /cache
     depends_on:
       victorialogs:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -78,13 +78,13 @@ services:
       - "-peer-self=proxy-b:3100"
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
-    volumes:
-      - cache-b:/cache
+    tmpfs:
+      - /cache
     depends_on:
       victorialogs:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -111,13 +111,13 @@ services:
       - "-peer-self=proxy-c:3100"
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
-    volumes:
-      - cache-c:/cache
+    tmpfs:
+      - /cache
     depends_on:
       victorialogs:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -125,6 +125,3 @@ services:
 
 volumes:
   vl-data:
-  cache-a:
-  cache-b:
-  cache-c:

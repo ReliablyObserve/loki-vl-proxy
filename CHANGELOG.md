@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- fix(security): Docker image switched from `alpine:3.22.2` to `gcr.io/distroless/static-debian12:nonroot` — Alpine's openssl, musl, zlib, and busybox packages carried 20+ unfixed CVEs (several CRITICAL/HIGH: CVE-2026-40200, CVE-2026-28387, CVE-2026-28388, CVE-2026-28389, CVE-2026-31789, CVE-2026-22184, et al). The statically-linked Go binary requires no libc or system packages; distroless provides only CA certificates and runs as a non-root user by default, eliminating all OS-layer CVE exposure.
+- fix(security): website `uuid` transitive dependency forced to `>=14.0.0` via npm `overrides` — `webpack-dev-server` → `sockjs` depended on `uuid@^8.3.2` which is missing a buffer bounds check in `v3`/`v5`/`v6` when the `buf` parameter is provided (GitHub Advisory).
+
+### Changed
+
+- ci: semgrep action updated from deprecated `returntocorp/semgrep@v1` to `semgrep/semgrep-action@v1` — the `returntocorp` organisation was renamed to `semgrep`; the old tag no longer resolves, breaking the `Heavy / semgrep` CI job.
+- ci: `github/codeql-action` bumped from `v3` to `v4` across `codeql.yaml`, `security-pr.yaml`, and `security-heavy.yaml` — v3 is scheduled for deprecation December 2026; affects Scorecard SAST check score.
+- ci: Dockerfile `USER nonroot` instruction added explicitly — Trivy `DS-0002` flags Dockerfiles without a USER statement even when the distroless base image already defaults to UID 65532; the explicit declaration satisfies the static check.
+- ci: `permissions: contents: read` added at top level of `ci.yaml`, `compat-drilldown.yaml`, `compat-loki.yaml`, `compat-vl.yaml` (previously had no permission block, triggering OpenSSF Scorecard `Token-Permissions` = 0/10); write permissions in `auto-release.yaml` and `codeql.yaml` moved to job level so the top-level default is read-only.
+- build: `cmd/healthcheck` minimal HTTP binary added to the distroless image (`/usr/local/bin/healthcheck`) — distroless has no shell or utilities; Docker health checks that used `CMD wget` failed inside the container. All 9 proxy service health checks in `test/e2e-compat/docker-compose.yml` and 3 in `test/e2e-fleet/docker-compose.yml` updated to use the new binary, restoring `service_healthy` dependency chains.
+- ci: nginx tail-ingress Docker health check now uses a self-contained `/nginx-health` stub (returns 200 directly from nginx, no proxy_pass) — the previous health check probed `/ready` via `proxy_pass` to the backend proxy, which added a multi-hop round-trip and could mark the nginx container unhealthy even when it was serving correctly; the actual proxy-to-VL readiness path remains accessible via `/ready` and is verified by `wait_e2e_stack.sh`.
+- ci: proxy service cache volumes replaced with `tmpfs` mounts in both e2e-compat and e2e-fleet docker-compose files — named Docker volumes are created root-owned, but the distroless image now runs as UID 65532 (nonroot); writing persistence files (`label-values-index.json`, `patterns-snapshot.json`, `proxy-*.db`) to root-owned volumes failed with `permission denied`. `tmpfs` provides a writable in-memory filesystem scoped to the container's user; no persistence across restarts is needed in ephemeral CI environments.
+
 ## [1.22.0] - 2026-04-28
 
 ### Fixed
