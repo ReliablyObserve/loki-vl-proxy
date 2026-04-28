@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.21.2] - 2026-04-28
+
 ### Security
 
 - fix(security): delete 30-day cap now enforced for RFC3339 timestamps — the guard previously only activated when start/end parsed as floats; RFC3339 inputs silently bypassed it and reached VL with an unbounded range. `parseDeleteTimestamp` now normalises all accepted formats (float-seconds, float-nanoseconds, RFC3339, RFC3339Nano) and rejects unrecognised input with HTTP 400.
