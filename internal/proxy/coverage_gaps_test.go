@@ -1205,3 +1205,258 @@ func TestIsVLInternalField(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// Security regression tests (audit fixes)
+// =============================================================================
+
+// TestParseDeleteTimestamp_RFC3339BeyondCapRejected guards against the bypass
+// where RFC3339 timestamps skipped the 30-day guard because the old code only
+// enforced it when both values parsed as floats.
+func TestParseDeleteTimestamp_RFC3339BeyondCapRejected(t *testing.T) {
+	var receivedDelete bool
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/delete" {
+			receivedDelete = true
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+
+	// 60-day range expressed as RFC3339 — previously bypassed the 30-day guard.
+	startISO := time.Now().Add(-60 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	endISO := time.Now().UTC().Format(time.RFC3339)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST",
+		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%s&end=%s`,
+			url.QueryEscape(startISO), url.QueryEscape(endISO)), nil)
+	r.Header.Set("X-Delete-Confirmation", "true")
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for RFC3339 delete range >30 days, got %d body=%s", w.Code, w.Body.String())
+	}
+	if receivedDelete {
+		t.Error("VL delete endpoint must not be reached when time range exceeds cap")
+	}
+}
+
+// TestParseDeleteTimestamp_RFC3339WithinCapAllowed ensures that RFC3339
+// timestamps within the 30-day cap are forwarded normally.
+func TestParseDeleteTimestamp_RFC3339WithinCapAllowed(t *testing.T) {
+	var receivedPath string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+
+	startISO := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
+	endISO := time.Now().UTC().Format(time.RFC3339)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST",
+		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%s&end=%s`,
+			url.QueryEscape(startISO), url.QueryEscape(endISO)), nil)
+	r.Header.Set("X-Delete-Confirmation", "true")
+	mux.ServeHTTP(w, r)
+
+	if w.Code == http.StatusBadRequest {
+		t.Errorf("RFC3339 delete within cap should not be rejected: %s", w.Body.String())
+	}
+	if receivedPath != "/select/logsql/delete" {
+		t.Errorf("expected VL delete path, got %q", receivedPath)
+	}
+}
+
+// TestParseDeleteTimestamp_Func exercises the parser directly for all formats.
+func TestParseDeleteTimestamp_Func(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		input   string
+		wantNs  int64
+		wantErr bool
+	}{
+		// Unix seconds
+		{fmt.Sprintf("%d", now.Unix()), now.UnixNano(), false},
+		// Unix nanoseconds (>1e15)
+		{fmt.Sprintf("%d", now.UnixNano()), now.UnixNano(), false},
+		// RFC3339
+		{now.Format(time.RFC3339), now.Unix() * int64(time.Second), false},
+		// RFC3339Nano
+		{now.Format(time.RFC3339Nano), now.UnixNano(), false},
+		// Unrecognized
+		{"not-a-timestamp", 0, true},
+		{"2026/01/01", 0, true},
+	}
+
+	for _, tc := range cases {
+		got, err := parseDeleteTimestamp(tc.input)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("input %q: expected error, got ns=%d", tc.input, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("input %q: unexpected error: %v", tc.input, err)
+			continue
+		}
+		// Allow 1 second tolerance for RFC3339 (no sub-second precision).
+		diff := got - tc.wantNs
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > int64(time.Second) {
+			t.Errorf("input %q: got %d, want %d (diff=%d)", tc.input, got, tc.wantNs, diff)
+		}
+	}
+}
+
+// TestCopyBackendHeaders_SecurityHeadersPreserved guards against the regression
+// where copyHeaders overwrote proxy-set security headers with backend values.
+func TestCopyBackendHeaders_SecurityHeadersPreserved(t *testing.T) {
+	dst := http.Header{}
+	dst.Set("X-Content-Type-Options", "nosniff")
+	dst.Set("X-Frame-Options", "DENY")
+	dst.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	dst.Set("Cross-Origin-Resource-Policy", "same-origin")
+	dst.Set("Pragma", "no-cache")
+	dst.Set("Expires", "0")
+	dst.Set("Content-Type", "application/json")
+
+	// Backend tries to overwrite security headers and add its own Content-Type.
+	src := http.Header{}
+	src.Set("X-Content-Type-Options", "allow")
+	src.Set("X-Frame-Options", "SAMEORIGIN")
+	src.Set("Cache-Control", "max-age=3600, public")
+	src.Set("Cross-Origin-Resource-Policy", "cross-origin")
+	src.Set("Pragma", "no-store")
+	src.Set("Expires", "86400")
+	src.Set("Content-Type", "text/plain")
+	src.Set("X-Backend-Custom", "backend-value")
+
+	copyBackendHeaders(dst, src)
+
+	// Security headers must not be overwritten.
+	if got := dst.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options: got %q, want %q", got, "nosniff")
+	}
+	if got := dst.Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options: got %q, want %q", got, "DENY")
+	}
+	if got := dst.Get("Cache-Control"); got != "no-store, no-cache, must-revalidate, max-age=0" {
+		t.Errorf("Cache-Control: got %q, want proxy value", got)
+	}
+	if got := dst.Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+		t.Errorf("Cross-Origin-Resource-Policy: got %q, want same-origin", got)
+	}
+	// Non-security headers from backend ARE copied.
+	if got := dst.Get("Content-Type"); got != "text/plain" {
+		t.Errorf("Content-Type: got %q, want text/plain (backend value)", got)
+	}
+	if got := dst.Get("X-Backend-Custom"); got != "backend-value" {
+		t.Errorf("X-Backend-Custom: got %q, want backend-value", got)
+	}
+}
+
+// TestForwardedAuthFingerprint_EmptyWithoutConfig ensures no fingerprint is
+// computed when no header/cookie forwarding is configured.
+func TestForwardedAuthFingerprint_EmptyWithoutConfig(t *testing.T) {
+	p := &Proxy{}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Bearer secret")
+	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+		t.Errorf("expected empty fingerprint with no forwarding configured, got %q", fp)
+	}
+}
+
+// TestForwardedAuthFingerprint_IsolatesUsers ensures that two requests with
+// different Authorization values produce different fingerprints.
+func TestForwardedAuthFingerprint_IsolatesUsers(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	r1 := httptest.NewRequest("GET", "/", nil)
+	r1.Header.Set("Authorization", "Bearer user-alice-token")
+
+	r2 := httptest.NewRequest("GET", "/", nil)
+	r2.Header.Set("Authorization", "Bearer user-bob-token")
+
+	fp1 := p.forwardedAuthFingerprint(r1)
+	fp2 := p.forwardedAuthFingerprint(r2)
+
+	if fp1 == "" {
+		t.Error("expected non-empty fingerprint for request with Authorization")
+	}
+	if fp1 == fp2 {
+		t.Errorf("different auth tokens must produce different fingerprints; both got %q", fp1)
+	}
+	// Same token must produce same fingerprint (deterministic).
+	if p.forwardedAuthFingerprint(r1) != fp1 {
+		t.Error("fingerprint must be deterministic for same input")
+	}
+}
+
+// TestCompatCacheKey_AuthFingerprintIncluded ensures that when forward headers
+// are configured, the compat cache key differs between users.
+func TestCompatCacheKey_AuthFingerprintIncluded(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	r1 := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	r1.Header.Set("X-Scope-OrgID", "tenant1")
+	r1.Header.Set("Authorization", "Bearer alice")
+
+	r2 := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	r2.Header.Set("X-Scope-OrgID", "tenant1")
+	r2.Header.Set("Authorization", "Bearer bob")
+
+	key1, ok1 := p.compatCacheKey("labels", r1)
+	key2, ok2 := p.compatCacheKey("labels", r2)
+
+	if !ok1 || !ok2 {
+		t.Skip("compat cache not applicable for this endpoint in test config")
+	}
+	if key1 == key2 {
+		t.Errorf("cache keys must differ for different Authorization values; both: %q", key1)
+	}
+}
+
+// TestAlertingBackendHeaders_NoBroadcast ensures VL backend credentials
+// (set via BackendBasicAuth) are NOT forwarded to the ruler/alerts backend.
+func TestAlertingBackendHeaders_NoBroadcast(t *testing.T) {
+	var receivedAuth string
+	alertingBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`[]`))
+	}))
+	defer alertingBackend.Close()
+
+	backendURL, _ := url.Parse(alertingBackend.URL)
+
+	p := newGapTestProxy(t, "http://does-not-matter")
+	// Inject VL credentials into backendHeaders (as BackendBasicAuth would do).
+	p.backendHeaders = map[string]string{
+		"Authorization": "Basic " + base64Encode("vluser:vlpass"),
+	}
+	p.rulerBackend = backendURL
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/rules", nil)
+	r.Header.Set("X-Scope-OrgID", "tenant1")
+	p.handleRules(w, r)
+
+	if receivedAuth != "" {
+		t.Errorf("VL backend credentials must NOT be forwarded to ruler backend, got Authorization=%q", receivedAuth)
+	}
+}
