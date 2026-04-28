@@ -234,15 +234,18 @@ func (dc *DiskCache) Flush() {
 	dc.writeBuf = make(map[string]diskEntry)
 	dc.writeMu.Unlock()
 
-	currentBytes := int64(0)
-	if dc.maxBytes > 0 {
-		if _, bytesOnDisk := dc.Size(); bytesOnDisk > 0 {
-			currentBytes = bytesOnDisk
-		}
-	}
-
 	_ = dc.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(dataBucket)
+
+		// Use LeafInuse (actual stored key+value bytes in leaf pages) rather
+		// than the bbolt file size, which never shrinks after deletes and
+		// includes B-tree overhead and free pages. This prevents the cap from
+		// triggering before the effective working set is full.
+		currentBytes := int64(0)
+		if dc.maxBytes > 0 {
+			currentBytes = int64(b.Stats().LeafInuse)
+		}
+
 		for key, entry := range buf {
 			encoded, ok := encodeDiskEntry(entry)
 			if !ok {
@@ -258,8 +261,10 @@ func (dc *DiskCache) Flush() {
 				}
 			}
 			if dc.maxBytes > 0 {
+				// Deduct the old entry size on overwrites so the cap reflects
+				// net content bytes rather than cumulative write volume.
 				if existing := b.Get([]byte(key)); existing != nil {
-					currentBytes -= int64(len(existing)) // reclaim overwrite space
+					currentBytes -= int64(len(existing))
 				}
 				if currentBytes+int64(len(encoded)) > dc.maxBytes {
 					dc.Evictions.Add(1)

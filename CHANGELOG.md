@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Testing
 
-- test(reliability): 16 real integration tests added — 3 disk cache tests (overwrite accounting, lazy expiry reclaim, steady-state long-run), 2 shutdown goroutine tests (rate-limiter, peer-cache), 3 metrics streaming tests (peer metrics present, no-peer-cache baseline, method-not-allowed), 3 tail dedup tests (eviction order, in-place backing array, duplicates ignored), 5 security header tests (wrapped handler, bare-vs-wrapped, backend clobber survival, copyBackendHeaders unit, alerting-backend no-broadcast).
+- test(reliability): 16 real integration tests covering all five reliability fixes — disk cache overwrite/expiry accounting (3 tests including a 20-cycle steady-state run), shutdown goroutine cleanup (2), metrics streaming correctness with/without peer cache (3), synthetic tail dedup window overflow invariants (3), and security header survival through backend responses on multiple endpoint types (3); all exercise live implementations with real disk/HTTP/goroutines rather than mocks. Docker Compose manual test runbook at `docs/manual-testing-reliability.md`.
 
 ## [1.21.2] - 2026-04-28
 
