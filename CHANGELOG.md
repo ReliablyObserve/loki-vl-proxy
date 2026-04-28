@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.0] - 2026-04-28
+
 ### Fixed
 
 - fix(cache): disk cache size cap no longer self-poisons on long-lived deployments — expired entries found on read are now deleted from bolt in a background goroutine so dead bytes are reclaimed; overwrites inside `Flush()` now deduct the existing stored size before checking the cap, preventing the cap from triggering before the effective working set is full.
