@@ -10,5 +10,6 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION} -X main.re
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /loki-vl-proxy /usr/local/bin/loki-vl-proxy
+USER nonroot
 EXPOSE 3100
 ENTRYPOINT ["/usr/local/bin/loki-vl-proxy"]
