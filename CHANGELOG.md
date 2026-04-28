@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.1] - 2026-04-28
+
 ### Security
 
 - fix(security): Docker image switched from `alpine:3.22.2` to `gcr.io/distroless/static-debian12:nonroot` — Alpine's openssl, musl, zlib, and busybox packages carried 20+ unfixed CVEs (several CRITICAL/HIGH: CVE-2026-40200, CVE-2026-28387, CVE-2026-28388, CVE-2026-28389, CVE-2026-31789, CVE-2026-22184, et al). The statically-linked Go binary requires no libc or system packages; distroless provides only CA certificates and runs as a non-root user by default, eliminating all OS-layer CVE exposure.
