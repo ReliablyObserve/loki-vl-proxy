@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1660,7 +1661,11 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	if !p.shouldUseCompatCache(endpoint, r) {
 		return "", false
 	}
-	return "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + r.URL.RawQuery, true
+	key := "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + r.URL.RawQuery
+	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+		key += ":auth:" + fp
+	}
+	return key, true
 }
 
 func compatCacheVariantKey(baseKey, encoding string) string {
@@ -2218,7 +2223,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if labelJoinSpec != nil {
 			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
 		}
-		copyHeaders(w.Header(), capture.Header())
+		copyBackendHeaders(w.Header(), capture.Header())
 		if w.Header().Get("Content-Type") == "" {
 			w.Header().Set("Content-Type", "application/json")
 		}
@@ -2995,6 +3000,13 @@ func (p *Proxy) snapshotDeclaredLabelFields() []string {
 
 func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params url.Values) (int, []byte, error) {
 	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode()
+	// Include per-user auth fingerprint to prevent cross-user coalescing when
+	// forwarded auth headers/cookies are configured.
+	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
+		if fp := p.forwardedAuthFingerprint(origReq); fp != "" {
+			key += ":auth:" + fp
+		}
+	}
 	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
 		return p.vlGetInner(ctx, path, params)
 	})
@@ -4814,6 +4826,13 @@ func endpointForReadCacheKey(cacheKey string) string {
 }
 
 func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, extraParts ...string) string {
+	// Include the per-user auth fingerprint so requests with different forwarded
+	// credentials land in different cache namespaces.
+	if r != nil {
+		if fp := p.forwardedAuthFingerprint(r); fp != "" {
+			extraParts = append(extraParts, "auth:"+fp)
+		}
+	}
 	if memoKey, ok := buildCanonicalReadCacheMemoKey(endpoint, orgID, r, extraParts); ok && p != nil {
 		p.readCacheKeyMemoMu.RLock()
 		if cached, hit := p.readCacheKeyMemo[memoKey]; hit {
@@ -7386,30 +7405,32 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Safeguard 4: Limit time range to maxDeleteTimeRange (30 days)
-	startSec, err1 := strconv.ParseFloat(startTS, 64)
-	endSec, err2 := strconv.ParseFloat(endTS, 64)
-	if err1 == nil && err2 == nil {
-		// Handle nanosecond timestamps (>1e15 is clearly nanoseconds)
-		if startSec > 1e15 {
-			startSec = startSec / 1e9
-		}
-		if endSec > 1e15 {
-			endSec = endSec / 1e9
-		}
-		rangeDur := time.Duration(int64(endSec-startSec)) * time.Second
-		if rangeDur > maxDeleteTimeRange {
-			p.writeError(w, http.StatusBadRequest,
-				fmt.Sprintf("delete time range too wide: %s exceeds maximum %s",
-					rangeDur.Round(time.Hour), maxDeleteTimeRange))
-			p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
-			return
-		}
-		if rangeDur < 0 {
-			p.writeError(w, http.StatusBadRequest, "end must be after start")
-			p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
-			return
-		}
+	// Safeguard 4: Limit time range to maxDeleteTimeRange (30 days).
+	// Use the unified parser so RFC3339 timestamps are also subject to the cap.
+	startNS, err1 := parseDeleteTimestamp(startTS)
+	endNS, err2 := parseDeleteTimestamp(endTS)
+	if err1 != nil {
+		p.writeError(w, http.StatusBadRequest, "invalid start timestamp: "+err1.Error())
+		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	if err2 != nil {
+		p.writeError(w, http.StatusBadRequest, "invalid end timestamp: "+err2.Error())
+		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	rangeDur := time.Duration(endNS - startNS)
+	if rangeDur > maxDeleteTimeRange {
+		p.writeError(w, http.StatusBadRequest,
+			fmt.Sprintf("delete time range too wide: %s exceeds maximum %s",
+				rangeDur.Round(time.Hour), maxDeleteTimeRange))
+		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	if rangeDur < 0 {
+		p.writeError(w, http.StatusBadRequest, "end must be after start")
+		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
+		return
 	}
 
 	// Translate query
@@ -7978,13 +7999,33 @@ func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backen
 	}
 	defer resp.Body.Close()
 
-	copyHeaders(w.Header(), resp.Header)
+	copyBackendHeaders(w.Header(), resp.Header)
 	w.WriteHeader(resp.StatusCode)
 	_, _ = io.Copy(w, resp.Body)
 }
 
 func (p *Proxy) alertingBackendGet(r *http.Request, backend *url.URL, path string) (*http.Response, error) {
 	return p.alertingBackendGetWithParams(r, backend, path, r.URL.Query())
+}
+
+// applyAlertingBackendHeaders sets only the Accept-Encoding header on requests
+// to alerting/ruler backends. It intentionally does NOT apply p.backendHeaders
+// (which carry VL credentials) and does NOT forward client auth headers or
+// cookies, so VictoriaLogs credentials and per-user tokens are never sent to a
+// different backend service.
+func (p *Proxy) applyAlertingBackendHeaders(req *http.Request) {
+	if req.Header.Get("Accept-Encoding") == "" {
+		switch p.backendCompression {
+		case "none":
+			req.Header.Set("Accept-Encoding", "identity")
+		case "gzip":
+			req.Header.Set("Accept-Encoding", "gzip")
+		case "zstd":
+			req.Header.Set("Accept-Encoding", "zstd")
+		default:
+			req.Header.Set("Accept-Encoding", "zstd, gzip")
+		}
+	}
 }
 
 func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, path string, params url.Values) (*http.Response, error) {
@@ -8001,7 +8042,7 @@ func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, 
 		return nil, err
 	}
 	p.forwardTenantHeaders(req)
-	p.applyBackendHeaders(req)
+	p.applyAlertingBackendHeaders(req)
 	start := time.Now()
 	resp, err := p.client.Do(req)
 	duration := time.Since(start)
@@ -10909,6 +10950,28 @@ func isStatsQuery(logsqlQuery string) bool {
 	return false
 }
 
+// parseDeleteTimestamp parses a timestamp string used in delete requests and
+// returns Unix nanoseconds. It accepts float seconds, float nanoseconds (>1e15),
+// RFC3339Nano, and RFC3339. Returns an error for unrecognized formats so callers
+// can reject them rather than forwarding an unbounded time range.
+func parseDeleteTimestamp(ts string) (int64, error) {
+	if f, err := strconv.ParseFloat(ts, 64); err == nil {
+		if f > 1e15 {
+			// Already nanoseconds — keep as-is (truncated to int64).
+			return int64(f), nil
+		}
+		// Seconds — multiply to nanoseconds.
+		return int64(f * 1e9), nil
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, ts); err == nil {
+		return parsed.UnixNano(), nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
+		return parsed.UnixNano(), nil
+	}
+	return 0, fmt.Errorf("unrecognized timestamp format: %q", ts)
+}
+
 func formatVLTimestamp(ts string) string {
 	// Loki sends Unix timestamps (seconds or nanoseconds).
 	// Grafana drilldown resource endpoints send RFC3339 timestamps, while
@@ -12431,6 +12494,35 @@ func copyHeaders(dst, src http.Header) {
 	}
 }
 
+// proxyControlledResponseHeaders is the set of response headers that the proxy
+// sets via withSecurityHeaders. copyBackendHeaders must not overwrite them with
+// backend values, otherwise the security posture set by the proxy is silently
+// erased by whatever the backend returns.
+var proxyControlledResponseHeaders = map[string]bool{
+	"X-Content-Type-Options":       true,
+	"X-Frame-Options":              true,
+	"Cross-Origin-Resource-Policy": true,
+	"Cache-Control":                true,
+	"Pragma":                       true,
+	"Expires":                      true,
+}
+
+// copyBackendHeaders copies backend response headers to dst while skipping
+// headers in proxyControlledResponseHeaders that the proxy itself manages.
+// Use this (instead of copyHeaders) when copying a backend response to the
+// client so proxy-set security headers are not overwritten.
+func copyBackendHeaders(dst, src http.Header) {
+	for key, values := range src {
+		if proxyControlledResponseHeaders[http.CanonicalHeaderKey(key)] {
+			continue
+		}
+		dst.Del(key)
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
+}
+
 var trustedIdentityHeaders = []string{
 	"X-Grafana-User",
 	"X-Forwarded-User",
@@ -12554,6 +12646,39 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 			}
 		}
 	}
+}
+
+// forwardedAuthFingerprint returns a short hash (16 hex chars) of the
+// per-user auth context forwarded with a request (configured forward headers
+// and cookies). Returns "" when no forwarding is configured, so callers can
+// skip the extra allocation when the cache namespace is already user-agnostic.
+func (p *Proxy) forwardedAuthFingerprint(r *http.Request) string {
+	if len(p.forwardHeaders) == 0 && len(p.forwardCookies) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, hdr := range p.forwardHeaders {
+		if val := r.Header.Get(hdr); val != "" {
+			b.WriteString(hdr)
+			b.WriteByte('=')
+			b.WriteString(val)
+			b.WriteByte(';')
+		}
+	}
+	for _, cookie := range r.Cookies() {
+		if p.forwardCookies["*"] || p.forwardCookies[cookie.Name] {
+			b.WriteString("cookie:")
+			b.WriteString(cookie.Name)
+			b.WriteByte('=')
+			b.WriteString(cookie.Value)
+			b.WriteByte(';')
+		}
+	}
+	if b.Len() == 0 {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])[:16]
 }
 
 func normalizeBackendCompression(mode string) string {

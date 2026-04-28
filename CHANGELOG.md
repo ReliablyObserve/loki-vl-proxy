@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- fix(security): delete 30-day cap now enforced for RFC3339 timestamps — the guard previously only activated when start/end parsed as floats; RFC3339 inputs silently bypassed it and reached VL with an unbounded range. `parseDeleteTimestamp` now normalises all accepted formats (float-seconds, float-nanoseconds, RFC3339, RFC3339Nano) and rejects unrecognised input with HTTP 400.
+- fix(security): cache and coalescing keys include a fingerprint of forwarded auth context — when `Authorization` or other per-user headers/cookies are forwarded to VL, cache and singleflight keys now include a 16-hex-char SHA-256 fingerprint of the forwarded values; without this, two users in the same tenant could receive each other's cached results.
+- fix(security): VL backend credentials are not broadcast to ruler/alerts backends — `alertingBackendGetWithParams` previously called `applyBackendHeaders`, which applied `p.backendHeaders` (containing the VL `Authorization` from `-backend-basic-auth`) to requests to the ruler and alerts backends. These are separate services; VL credentials should not cross that trust boundary. A new `applyAlertingBackendHeaders` helper sets only `Accept-Encoding` and telemetry headers on alerting-backend requests.
+- fix(security): proxy-set hardening headers are no longer overwritten by backend responses — `copyBackendHeaders` (new, replaces `copyHeaders` on the client-response path) skips `X-Content-Type-Options`, `X-Frame-Options`, `Cross-Origin-Resource-Policy`, `Cache-Control`, `Pragma`, and `Expires` when copying backend headers to the client, so security headers set by the `withSecurityHeaders` middleware cannot be silently erased by whatever the backend returns.
+
 ## [1.21.1] - 2026-04-28
 
 ### Fixed
