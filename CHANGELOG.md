@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ci: semgrep action updated from deprecated `returntocorp/semgrep@v1` to `semgrep/semgrep-action@v1` — the `returntocorp` organisation was renamed to `semgrep`; the old tag no longer resolves, breaking the `Heavy / semgrep` CI job.
 - ci: `github/codeql-action` bumped from `v3` to `v4` across `codeql.yaml`, `security-pr.yaml`, and `security-heavy.yaml` — v3 is scheduled for deprecation December 2026; affects Scorecard SAST check score.
 - ci: Dockerfile `USER nonroot` instruction added explicitly — Trivy `DS-0002` flags Dockerfiles without a USER statement even when the distroless base image already defaults to UID 65532; the explicit declaration satisfies the static check.
+- ci: `permissions: contents: read` added at top level of `ci.yaml`, `compat-drilldown.yaml`, `compat-loki.yaml`, `compat-vl.yaml` (previously had no permission block, triggering OpenSSF Scorecard `Token-Permissions` = 0/10); write permissions in `auto-release.yaml` and `codeql.yaml` moved to job level so the top-level default is read-only.
+- build: `cmd/healthcheck` minimal HTTP binary added to the distroless image (`/usr/local/bin/healthcheck`) — distroless has no shell or utilities; Docker health checks that used `CMD wget` failed inside the container. All 9 proxy service health checks in `test/e2e-compat/docker-compose.yml` updated to use the new binary, restoring `service_healthy` dependency chains (e.g. `tail-ingress` waiting for `proxy-tail`).
 
 ## [1.22.0] - 2026-04-28
 
