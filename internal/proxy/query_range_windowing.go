@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -221,7 +222,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		r.FormValue("step"),
 		collected,
 	)
-	streams := groupQueryRangeWindowEntries(collected)
+	streams := groupQueryRangeWindowEntries(collected, r.FormValue("direction"))
 	p.metrics.RecordQueryRangeWindowMergeDuration(time.Since(mergeStart))
 
 	if len(p.derivedFields) > 0 {
@@ -767,7 +768,7 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 	return entries
 }
 
-func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry) []map[string]interface{} {
+func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction string) []map[string]interface{} {
 	type streamEntry struct {
 		labels map[string]string
 		values []interface{}
@@ -785,8 +786,35 @@ func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry) []map[string]
 		}
 		stream.values = append(stream.values, entry.Value)
 	}
+	// Sort stream keys for deterministic output order. Go map iteration is
+	// non-deterministic; without this, stream order fluctuates across requests
+	// whenever the same query spans multiple windows.
+	keys := make([]string, 0, len(streams))
+	for k := range streams {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	out := make([]map[string]interface{}, 0, len(streams))
-	for _, stream := range streams {
+	for _, k := range keys {
+		stream := streams[k]
+		// Sort values within each stream by timestamp to stabilise window
+		// boundaries from parallel fetches. Forward = ascending; backward
+		// (default) = descending to match Loki's newest-first contract.
+		forward := direction == "forward"
+		sort.SliceStable(stream.values, func(i, j int) bool {
+			vi, _ := stream.values[i].([]interface{})
+			vj, _ := stream.values[j].([]interface{})
+			if len(vi) == 0 || len(vj) == 0 {
+				return false
+			}
+			ti, _ := vi[0].(string)
+			tj, _ := vj[0].(string)
+			if forward {
+				return ti < tj
+			}
+			return ti > tj
+		})
 		out = append(out, map[string]interface{}{
 			"stream": stream.labels,
 			"values": stream.values,

@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +22,77 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 )
+
+// TestGroupQueryRangeWindowEntries_DeterministicOrder guards against the
+// non-deterministic map iteration bug: stream order and per-stream value order
+// must be identical across repeated calls with the same input.
+func TestGroupQueryRangeWindowEntries_DeterministicOrder(t *testing.T) {
+	entries := []queryRangeWindowEntry{
+		{Stream: map[string]string{"app": "b", "env": "prod"}, Value: []interface{}{"1700000000000000002", "line-b2"}},
+		{Stream: map[string]string{"app": "a", "env": "prod"}, Value: []interface{}{"1700000000000000003", "line-a3"}},
+		{Stream: map[string]string{"app": "b", "env": "prod"}, Value: []interface{}{"1700000000000000001", "line-b1"}},
+		{Stream: map[string]string{"app": "a", "env": "prod"}, Value: []interface{}{"1700000000000000001", "line-a1"}},
+		{Stream: map[string]string{"app": "c", "env": "prod"}, Value: []interface{}{"1700000000000000001", "line-c1"}},
+		{Stream: map[string]string{"app": "a", "env": "prod"}, Value: []interface{}{"1700000000000000002", "line-a2"}},
+	}
+
+	for _, dir := range []string{"forward", ""} {
+		dir := dir
+		t.Run("direction="+dir, func(t *testing.T) {
+			// Run many times to expose any non-determinism.
+			var first []map[string]interface{}
+			for i := 0; i < 50; i++ {
+				result := groupQueryRangeWindowEntries(entries, dir)
+				if first == nil {
+					first = result
+					continue
+				}
+				if len(result) != len(first) {
+					t.Fatalf("iteration %d: stream count changed: got %d want %d", i, len(result), len(first))
+				}
+				for s := range result {
+					r := result[s]["stream"].(map[string]string)
+					f := first[s]["stream"].(map[string]string)
+					if !reflect.DeepEqual(r, f) {
+						t.Fatalf("iteration %d: stream[%d] labels changed: got %v want %v", i, s, r, f)
+					}
+					rv := result[s]["values"].([]interface{})
+					fv := first[s]["values"].([]interface{})
+					if len(rv) != len(fv) {
+						t.Fatalf("iteration %d: stream[%d] value count changed", i, s)
+					}
+				}
+			}
+
+			// Verify stream order is ascending by canonical key.
+			var streamKeys []string
+			for _, s := range first {
+				streamKeys = append(streamKeys, canonicalLabelsKey(s["stream"].(map[string]string)))
+			}
+			if !sort.StringsAreSorted(streamKeys) {
+				t.Errorf("streams not sorted by canonical key: %v", streamKeys)
+			}
+
+			// Verify per-stream values are sorted by timestamp in direction order.
+			forward := dir == "forward"
+			for _, s := range first {
+				vals := s["values"].([]interface{})
+				for i := 1; i < len(vals); i++ {
+					prev := vals[i-1].([]interface{})[0].(string)
+					cur := vals[i].([]interface{})[0].(string)
+					if forward && prev > cur {
+						t.Errorf("stream %v: value[%d] timestamp %s > value[%d] timestamp %s (not ascending)",
+							s["stream"], i-1, prev, i, cur)
+					}
+					if !forward && prev < cur {
+						t.Errorf("stream %v: value[%d] timestamp %s < value[%d] timestamp %s (not descending)",
+							s["stream"], i-1, prev, i, cur)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestQueryRangeWindow_ExpandingRangeReusesCachedWindows(t *testing.T) {
 	var backendCalls atomic.Int64

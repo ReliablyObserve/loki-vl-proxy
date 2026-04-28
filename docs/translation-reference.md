@@ -104,7 +104,13 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | `avg(rate({...}[5m])) by (x)` | same normalized-rate path grouped by `(x)` |
 | `topk(10, rate({...}[5m]))` | normalized-rate path with stream grouping; top-level selection remains simplified |
 
-Supported: `sum`, `avg`, `max`, `min`, `count`, `topk`, `bottomk`, `stddev`, `stdvar`, `sort`, `sort_desc`.
+Supported: `sum`, `avg`, `max`, `min`, `count`, `topk`, `bottomk`, `stddev`, `stdvar`, `sort`, `sort_desc`, `group`, `label_replace`, `label_join`.
+
+`group()` returns `1` for every series that has data. The inner metric is translated normally for grouping/presence detection; the proxy normalises all result values to `1` in post-processing.
+
+`label_replace(v, dst, repl, src, regex)` and `label_join(v, dst, sep, src1, ...)` are handled via a marker-suffix pattern: the inner expression is translated to VL, the spec is base64-encoded and embedded as a query suffix, the proxy strips the marker before sending to VL and applies the label operation to the matrix response.
+
+`count_values(label, v)` is not translatable — VictoriaLogs has no primitive that groups by metric values. Queries using `count_values` return a descriptive error.
 
 ### Binary Expressions
 
@@ -128,7 +134,8 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 | `@ <timestamp>` modifier | Normalized/stripped in translation for VictoriaLogs backend requests |
 | Subquery `rate(...)[1h:5m]` | Proxy runs inner query across sub-steps and applies outer aggregation |
 | Range-vector metric windows (`*_over_time`, `rate`, `count_over_time`, `bytes_*`, `rate_counter`) | Proxy applies Loki-compatible sliding-window evaluation over step-aligned timestamps and emits matrix/vector responses |
-| `label_replace(expr, dst, repl, src, regex)` | NOT YET IMPLEMENTED -- queries using `label_replace` will fail with a translation error |
+| `label_replace(expr, dst, repl, src, regex)` | Proxy post-processing: inner expr translated to VL, spec embedded as marker, applied to matrix response (Prometheus semantics: no-match leaves dst unchanged) |
+| `label_join(v, dst, sep, src1, ...)` | Proxy post-processing: same marker pattern as `label_replace`; missing src labels are skipped |
 
 ### Parser-Stage Metric Compatibility Path
 
