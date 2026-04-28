@@ -188,7 +188,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -224,7 +224,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -255,7 +255,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -286,7 +286,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -317,7 +317,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -348,7 +348,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -379,7 +379,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -410,7 +410,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -440,7 +440,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
