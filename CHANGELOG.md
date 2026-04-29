@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.25.0] - 2026-04-29
+
 ### Fixed
 
 - fix(e2e): add `_msg` field to all JSON-format log generators so VictoriaLogs stores the human-readable message correctly and Grafana renders JSON service logs consistently with Loki.
