@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(proxy): reconstruct JSON log lines so `|= "text"` line filters match any JSON field, not only the extracted `_msg` value; VL entries with extra fields are re-serialised as `{"_msg":"...","field":"value"}` before returning to Grafana.
 - fix(translator): revert line filter translation from invalid `*:~"text"` VictoriaLogs syntax to `~"text"` (regex/substring on `_msg`), which is valid across all supported VL versions.
 - fix(proxy): explicit logfmt/JSON `level=warn` field now always wins over VictoriaLogs auto-detected `detected_level`; previously VL could surface `detected_level=info` from `_msg` while also providing `level=warn`, causing Grafana to display the wrong log level badge.
+- fix(loki): raise `max_query_series` from 500 to 5000 to match Loki defaults and prevent truncated series results on high-cardinality label queries.
+
+### Changed
+
+- perf: replace `sync.Pool`-based gzip writer pool with a buffered-channel pool (`gzipWriterChan`) that survives GC cycles, eliminating pool churn under sustained load and reducing per-request allocation overhead on the response compression path.
+- perf: amortise `metadataFieldExposures` lookup across all NDJSON entries in a batch via a per-batch `exposureCache` map, and pool the `smBuf`/`pfBuf` structured-metadata and parsed-field accumulator maps with `metadataMapPool` to cut per-entry heap allocations by ~5 GB/30 s under load.
+- perf: use a typed `vlStreamEntry` struct for NDJSON `_stream` field unmarshalling (replaces `map[string]interface{}`), and eliminate double string/byte conversions in the drilldown NDJSON hot path; pool the per-entry label buffer in `scanDetectedLabelSummaries` and `detectFieldSummaries` to reduce detected-labels allocations by ~1.8 GB/30 s.
 
 ## [1.24.0] - 2026-04-29
 
