@@ -15,6 +15,13 @@
 #   ./bench/run-comparison.sh --skip-loki              # proxy only (no Loki comparison)
 #   ./bench/run-comparison.sh --version=v1.17.1        # tag results for tracking
 #   PROXY_NO_CACHE_URL=http://localhost:3199 ./bench/run-comparison.sh  # pre-started no-cache proxy
+#   PROXY_PARTIAL_URL=http://localhost:3198 ./bench/run-comparison.sh   # pre-started partial-cache proxy
+#
+# Partial-cache proxy auto-spawn:
+#   Spawned automatically with -cache-ttl=6s (≈20% hit rate for 30s run) and
+#   coalescer enabled (≈25% backend forwarding at moderate concurrency).
+#   Models a partially-warm production scenario between warm and cold extremes.
+#   Override port: PARTIAL_PORT=3198 (default)
 #
 # No-cache proxy auto-spawn:
 #   If loki-vl-proxy binary is in $PATH or at $PROXY_BINARY, the script starts a no-cache
@@ -31,8 +38,11 @@ PROXY_METRICS="${PROXY_METRICS:-http://localhost:3100/metrics}"
 VL_METRICS="${VL_METRICS:-}"
 VL_DIRECT_URL="${VL_DIRECT_URL:-}"
 PROXY_NO_CACHE_URL="${PROXY_NO_CACHE_URL:-}"
+PROXY_PARTIAL_URL="${PROXY_PARTIAL_URL:-}"
 NO_CACHE_PORT="${NO_CACHE_PORT:-3199}"
+PARTIAL_PORT="${PARTIAL_PORT:-3198}"
 NO_CACHE_PID=""
+PARTIAL_PID=""
 
 # Auto-detect Loki metrics if available.
 if [ -z "$LOKI_METRICS" ]; then
@@ -126,12 +136,60 @@ if [ -z "$PROXY_NO_CACHE_URL" ]; then
   fi
 fi
 
+# Auto-spawn partial-cache proxy if not pre-configured and binary is available.
+# Partial-cache proxy uses a short cache TTL (6s) so only ~20% of requests hit
+# the cache during a 30s run. The singleflight coalescer remains enabled, giving
+# ~25% backend forwarding at moderate concurrency. This models a partially-warm
+# production instance between the warm (high hit rate) and cold (0% hit rate) extremes.
+if [ -z "$PROXY_PARTIAL_URL" ]; then
+  PROXY_BINARY="${PROXY_BINARY:-/tmp/loki-vl-proxy}"
+  if [ -n "$PROXY_BINARY" ] && [ -x "$PROXY_BINARY" ]; then
+    # Find a free port.
+    while lsof -ti:"$PARTIAL_PORT" &>/dev/null 2>&1; do
+      echo "Port $PARTIAL_PORT in use — trying $((PARTIAL_PORT + 1))..."
+      PARTIAL_PORT=$((PARTIAL_PORT + 1))
+    done
+
+    echo "Starting partial-cache proxy on port $PARTIAL_PORT (cache-ttl=6s, coalescer=on)..."
+    "$PROXY_BINARY" \
+      -listen=":$PARTIAL_PORT" \
+      -backend="$VL_URL" \
+      -cache-ttl=6s \
+      -query-range-history-cache-ttl=6s \
+      -query-range-recent-cache-ttl=0 \
+      -server.enable-pprof \
+      "-server.admin-auth-token=${PPROF_AUTH_TOKEN:-bench-pprof-token}" \
+      -log-level=warn \
+      -cb-fail-threshold=1000 \
+      -cb-open-duration=1s \
+      &>/tmp/proxy-partial.log &
+    PARTIAL_PID=$!
+    OLD_TRAP=$(trap -p EXIT | sed "s/trap -- '//;s/' EXIT//")
+    trap "${OLD_TRAP}; kill \"$PARTIAL_PID\" 2>/dev/null; echo \"partial-cache proxy stopped\"" EXIT
+    sleep 2
+    if curl -sf "http://localhost:$PARTIAL_PORT/loki/api/v1/labels" -o /dev/null 2>/dev/null; then
+      PROXY_PARTIAL_URL="http://localhost:$PARTIAL_PORT"
+      echo "✓ Partial-cache proxy ready at $PROXY_PARTIAL_URL"
+    else
+      echo "⚠ Partial-cache proxy did not start — skipping partial-cache comparison"
+      echo "  Last log lines:"
+      tail -5 /tmp/proxy-partial.log 2>/dev/null | sed 's/^/  /'
+      PROXY_PARTIAL_URL=""
+      kill "$PARTIAL_PID" 2>/dev/null || true
+      PARTIAL_PID=""
+    fi
+  else
+    echo "ℹ No loki-vl-proxy binary at $PROXY_BINARY — skipping partial-cache comparison"
+  fi
+fi
+
 echo "════════════════════════════════════════════════════════════"
 echo " loki-vl-proxy Read Performance Benchmark"
 echo "════════════════════════════════════════════════════════════"
 echo " Loki target:    $LOKI_URL"
 echo " Proxy (warm):   $PROXY_URL"
 echo " Proxy (cold):   ${PROXY_NO_CACHE_URL:-not configured}"
+echo " Proxy (partial): ${PROXY_PARTIAL_URL:-not configured (cache-ttl=6s, ~20% hit rate)}"
 echo " VL backend:     ${VL_URL:-not configured}"
 echo " VL native:      ${VL_DIRECT_URL:-not configured (2-way only)}"
 echo " Loki metrics:   ${LOKI_METRICS:-not configured}"
@@ -175,13 +233,16 @@ mkdir -p "$OUTPUT_DIR"
   --loki="$LOKI_URL" \
   --proxy="$PROXY_URL" \
   --proxy-no-cache="${PROXY_NO_CACHE_URL}" \
+  --proxy-partial="${PROXY_PARTIAL_URL}" \
   --vl="$VL_URL" \
   --vl-direct="${VL_DIRECT_URL}" \
   --loki-metrics="$LOKI_METRICS" \
   --proxy-metrics="$PROXY_METRICS" \
   --vl-metrics="$VL_METRICS" \
+  --proxy-partial-metrics="${PROXY_PARTIAL_URL:+${PROXY_PARTIAL_URL}/metrics}" \
   --pprof-proxy="$PROXY_URL" \
   --pprof-no-cache="${PROXY_NO_CACHE_URL}" \
+  --pprof-partial="${PROXY_PARTIAL_URL}" \
   --pprof-auth-token="${PPROF_AUTH_TOKEN:-bench-pprof-token}" \
   --output="$OUTPUT_DIR" \
   "$@"

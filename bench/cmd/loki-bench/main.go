@@ -43,9 +43,11 @@ func main() {
 		vlDirectURL       = flag.String("vl-direct", "", "VictoriaLogs native LogsQL API URL (optional; enables 3-way comparison)")
 		proxyNoCacheURL     = flag.String("proxy-no-cache", "", "loki-vl-proxy instance started with cache disabled (enables cold-cache comparison)")
 		proxyCoalescerURL   = flag.String("proxy-coalescer", "", "loki-vl-proxy with coalescer but no cache (measures singleflight deduplication benefit)")
+		proxyPartialURL     = flag.String("proxy-partial", "", "loki-vl-proxy with short cache TTL (~20% hit rate) and coalescing enabled (~25% forward rate)")
 		lokiMetrics         = flag.String("loki-metrics", "", "Loki /metrics URL for resource tracking (optional)")
 		proxyMetrics        = flag.String("proxy-metrics", "", "Proxy /metrics URL for resource tracking (optional)")
 		proxyNoCacheMetrics = flag.String("proxy-no-cache-metrics", "", "No-cache proxy /metrics URL (optional)")
+		proxyPartialMetrics = flag.String("proxy-partial-metrics", "", "Partial-cache proxy /metrics URL (optional)")
 		vlMetrics           = flag.String("vl-metrics", "", "VictoriaLogs /metrics URL for resource tracking (optional)")
 		workloadList      = flag.String("workloads", "small,heavy,long_range", "Comma-separated workloads: small,heavy,long_range")
 		clientList        = flag.String("clients", "10,50,100,500", "Comma-separated concurrency levels")
@@ -56,6 +58,7 @@ func main() {
 		skipProxy         = flag.Bool("skip-proxy", false, "Skip proxy target (benchmark Loki only)")
 		skipVLDirect      = flag.Bool("skip-vl-direct", false, "Skip VL-direct target (LogsQL native benchmark)")
 		skipProxyNocache  = flag.Bool("skip-proxy-no-cache", false, "Skip no-cache proxy target")
+		skipProxyPartial  = flag.Bool("skip-proxy-partial", false, "Skip partial-cache proxy target")
 		verbose      = flag.Bool("verbose", false, "Print per-request errors")
 		version      = flag.String("version", "", "Version tag attached to results (e.g. v1.17.1)")
 		doVerify     = flag.Bool("verify", false, "Before benchmarking, verify Loki and proxy return equivalent data for each query")
@@ -64,6 +67,7 @@ func main() {
 		uniqueWindows     = flag.Bool("unique-windows", false, "Give each worker a distinct, non-overlapping time window (workerID × 1s offset). Defeats both the singleflight coalescer and the response cache, exposing raw proxy machinery overhead: translation + HTTP proxying + response shaping only.")
 		pprofProxy        = flag.String("pprof-proxy", "", "Base URL of proxy pprof endpoint (e.g. http://localhost:3100). Captures CPU/heap/alloc profiles during each proxy run.")
 		pprofNoCache      = flag.String("pprof-no-cache", "", "Base URL of no-cache proxy pprof endpoint. Captures CPU/heap/alloc profiles during each no-cache run.")
+		pprofPartial      = flag.String("pprof-partial", "", "Base URL of partial-cache proxy pprof endpoint.")
 		pprofDuration     = flag.Duration("pprof-duration", 30*time.Second, "Duration of CPU profile capture (should match or be shorter than --duration)")
 		pprofAuthToken    = flag.String("pprof-auth-token", "", "Bearer token for proxy admin/pprof endpoints (set via -server.admin-auth-token)")
 	)
@@ -149,6 +153,7 @@ func main() {
 				{"proxy", *proxyURL, wl.Queries, *proxyMetrics, vlMetricsURL, *skipProxy, false},
 				{"proxy_coalescer", *proxyCoalescerURL, wl.Queries, "", vlMetricsURL, *proxyCoalescerURL == "", true},
 				{"proxy_nocache", *proxyNoCacheURL, wl.Queries, *proxyNoCacheMetrics, vlMetricsURL, *skipProxyNocache || *proxyNoCacheURL == "", true},
+				{"proxy_partial", *proxyPartialURL, wl.Queries, *proxyPartialMetrics, vlMetricsURL, *skipProxyPartial || *proxyPartialURL == "", true},
 				{"vl_direct", *vlDirectURL, vlDirectQueries, vlDirectMetrics, "", *skipVLDirect || *vlDirectURL == "", false},
 			}
 
@@ -207,6 +212,8 @@ func main() {
 					pprofBase = *pprofProxy
 				case "proxy_nocache":
 					pprofBase = *pprofNoCache
+				case "proxy_partial":
+					pprofBase = *pprofPartial
 				}
 
 				// Start CPU profile concurrently with the bench run.

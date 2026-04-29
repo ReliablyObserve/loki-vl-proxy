@@ -47,18 +47,18 @@ type ComparisonRow struct {
 
 // WriteText writes a human-readable table to w.
 func WriteText(w io.Writer, records []RunRecord) {
-	// Group by workload × concurrency: loki vs proxy vs proxy_nocache vs vl_direct.
+	// Group by workload × concurrency: loki vs proxy vs proxy_nocache vs proxy_coalescer vs proxy_partial vs vl_direct.
 	type key struct {
 		workload    string
 		concurrency int
 	}
-	type quartet struct{ loki, proxy, proxyNocache, vlDirect *RunRecord }
-	grouped := make(map[key]*quartet)
+	type quintet struct{ loki, proxy, proxyNocache, proxyCoalescer, proxyPartial, vlDirect *RunRecord }
+	grouped := make(map[key]*quintet)
 	for i := range records {
 		r := &records[i]
 		k := key{r.WorkloadName, r.Concurrency}
 		if _, ok := grouped[k]; !ok {
-			grouped[k] = &quartet{}
+			grouped[k] = &quintet{}
 		}
 		switch r.Target {
 		case "loki":
@@ -67,6 +67,10 @@ func WriteText(w io.Writer, records []RunRecord) {
 			grouped[k].proxy = r
 		case "proxy_nocache":
 			grouped[k].proxyNocache = r
+		case "proxy_coalescer":
+			grouped[k].proxyCoalescer = r
+		case "proxy_partial":
+			grouped[k].proxyPartial = r
 		case "vl_direct":
 			grouped[k].vlDirect = r
 		}
@@ -136,7 +140,7 @@ func WriteText(w io.Writer, records []RunRecord) {
 			return fmt.Sprintf("%s%.0f (%.2fx)", sign, p-l, p/l)
 		}
 
-		lStats, pStats, ncStats, vStats := histogram.Stats{}, histogram.Stats{}, histogram.Stats{}, histogram.Stats{}
+		lStats, pStats, ncStats, csStats, ptStats, vStats := histogram.Stats{}, histogram.Stats{}, histogram.Stats{}, histogram.Stats{}, histogram.Stats{}, histogram.Stats{}
 		if p.loki != nil {
 			lStats = p.loki.Result.Overall
 		}
@@ -145,6 +149,12 @@ func WriteText(w io.Writer, records []RunRecord) {
 		}
 		if p.proxyNocache != nil {
 			ncStats = p.proxyNocache.Result.Overall
+		}
+		if p.proxyCoalescer != nil {
+			csStats = p.proxyCoalescer.Result.Overall
+		}
+		if p.proxyPartial != nil {
+			ptStats = p.proxyPartial.Result.Overall
 		}
 		if p.vlDirect != nil {
 			vStats = p.vlDirect.Result.Overall
@@ -180,6 +190,12 @@ func WriteText(w io.Writer, records []RunRecord) {
 				if p.proxyNocache != nil {
 					parts = append(parts, "cold:"+rateRatio(lStats.Throughput, ncStats.Throughput))
 				}
+				if p.proxyCoalescer != nil {
+					parts = append(parts, "coalescer:"+rateRatio(lStats.Throughput, csStats.Throughput))
+				}
+				if p.proxyPartial != nil {
+					parts = append(parts, "partial:"+rateRatio(lStats.Throughput, ptStats.Throughput))
+				}
 				if len(parts) == 0 {
 					return na
 				}
@@ -188,14 +204,14 @@ func WriteText(w io.Writer, records []RunRecord) {
 
 		// Latencies
 		for _, row := range []struct {
-			label          string
-			lv, pv, ncv, vv time.Duration
+			label                    string
+			lv, pv, ncv, csv, ptv, vv time.Duration
 		}{
-			{"P50 Latency", lStats.P50, pStats.P50, ncStats.P50, vStats.P50},
-			{"P90 Latency", lStats.P90, pStats.P90, ncStats.P90, vStats.P90},
-			{"P99 Latency", lStats.P99, pStats.P99, ncStats.P99, vStats.P99},
-			{"P99.9 Latency", lStats.P999, pStats.P999, ncStats.P999, vStats.P999},
-			{"Max Latency", lStats.Max, pStats.Max, ncStats.Max, vStats.Max},
+			{"P50 Latency", lStats.P50, pStats.P50, ncStats.P50, csStats.P50, ptStats.P50, vStats.P50},
+			{"P90 Latency", lStats.P90, pStats.P90, ncStats.P90, csStats.P90, ptStats.P90, vStats.P90},
+			{"P99 Latency", lStats.P99, pStats.P99, ncStats.P99, csStats.P99, ptStats.P99, vStats.P99},
+			{"P99.9 Latency", lStats.P999, pStats.P999, ncStats.P999, csStats.P999, ptStats.P999, vStats.P999},
+			{"Max Latency", lStats.Max, pStats.Max, ncStats.Max, csStats.Max, ptStats.Max, vStats.Max},
 		} {
 			delta := na
 			if p.loki != nil {
@@ -205,6 +221,12 @@ func WriteText(w io.Writer, records []RunRecord) {
 				}
 				if p.proxyNocache != nil {
 					parts = append(parts, "cold:"+durRatio(row.lv, row.ncv))
+				}
+				if p.proxyCoalescer != nil {
+					parts = append(parts, "coalescer:"+durRatio(row.lv, row.csv))
+				}
+				if p.proxyPartial != nil {
+					parts = append(parts, "partial:"+durRatio(row.lv, row.ptv))
 				}
 				if len(parts) > 0 {
 					delta = strings.Join(parts, "  ")
@@ -389,18 +411,26 @@ func WriteText(w io.Writer, records []RunRecord) {
 			}
 		}
 
-		// Per-query breakdown for proxy, proxy_nocache, and VL-direct side by side.
+		// Per-query breakdown for proxy, proxy_nocache, proxy_coalescer, proxy_partial, and VL-direct side by side.
 		hasProxyQ := p.proxy != nil && len(p.proxy.Result.ByQuery) > 0
 		hasNoCacheQ := p.proxyNocache != nil && len(p.proxyNocache.Result.ByQuery) > 0
+		hasCoalescerQ := p.proxyCoalescer != nil && len(p.proxyCoalescer.Result.ByQuery) > 0
+		hasPartialQ := p.proxyPartial != nil && len(p.proxyPartial.Result.ByQuery) > 0
 		hasVLQ := p.vlDirect != nil && len(p.vlDirect.Result.ByQuery) > 0
-		if hasProxyQ || hasNoCacheQ || hasVLQ {
+		if hasProxyQ || hasNoCacheQ || hasCoalescerQ || hasPartialQ || hasVLQ {
 			fmt.Fprintf(w, "%s\n", sep70)
 			fmt.Fprintf(w, "  Per-Query Breakdown\n")
 			fmt.Fprintf(w, "%s\n", sep70)
-			fmt.Fprintf(w, "  %-36s  %-26s  %-26s  %-24s\n", "Query", "Proxy warm (P50/P99/rps)", "Proxy cold (P50/P99/rps)", "VL Native (P50/P99/rps)")
+			fmt.Fprintf(w, "  %-36s  %-26s  %-26s  %-26s  %-26s  %-24s\n", "Query", "Proxy warm (P50/P99/rps)", "Proxy cold (P50/P99/rps)", "Proxy coalescer (P50/P99/rps)", "Proxy partial (P50/P99/rps)", "VL Native (P50/P99/rps)")
 			src := p.proxy
 			if src == nil {
 				src = p.proxyNocache
+			}
+			if src == nil {
+				src = p.proxyCoalescer
+			}
+			if src == nil {
+				src = p.proxyPartial
 			}
 			if src != nil {
 				names := make([]string, 0, len(src.Result.ByQuery))
@@ -409,7 +439,7 @@ func WriteText(w io.Writer, records []RunRecord) {
 				}
 				sort.Strings(names)
 				for _, n := range names {
-					warmCol, coldCol, vlCol := na, na, na
+					warmCol, coldCol, coalescerCol, partialCol, vlCol := na, na, na, na, na
 					if hasProxyQ {
 						if s := p.proxy.Result.ByQuery[n]; s != nil && s.Count > 0 {
 							warmCol = fmt.Sprintf("%s/%s/%.0f", fmtDur(s.P50), fmtDur(s.P99), s.Throughput)
@@ -420,12 +450,22 @@ func WriteText(w io.Writer, records []RunRecord) {
 							coldCol = fmt.Sprintf("%s/%s/%.0f", fmtDur(s.P50), fmtDur(s.P99), s.Throughput)
 						}
 					}
+					if hasCoalescerQ {
+						if s := p.proxyCoalescer.Result.ByQuery[n]; s != nil && s.Count > 0 {
+							coalescerCol = fmt.Sprintf("%s/%s/%.0f", fmtDur(s.P50), fmtDur(s.P99), s.Throughput)
+						}
+					}
+					if hasPartialQ {
+						if s := p.proxyPartial.Result.ByQuery[n]; s != nil && s.Count > 0 {
+							partialCol = fmt.Sprintf("%s/%s/%.0f", fmtDur(s.P50), fmtDur(s.P99), s.Throughput)
+						}
+					}
 					if hasVLQ {
 						if vs := p.vlDirect.Result.ByQuery[n]; vs != nil && vs.Count > 0 {
 							vlCol = fmt.Sprintf("%s/%s/%.0f", fmtDur(vs.P50), fmtDur(vs.P99), vs.Throughput)
 						}
 					}
-					fmt.Fprintf(w, "  %-36s  %-26s  %-26s  %-24s\n", n, warmCol, coldCol, vlCol)
+					fmt.Fprintf(w, "  %-36s  %-26s  %-26s  %-26s  %-26s  %-24s\n", n, warmCol, coldCol, coalescerCol, partialCol, vlCol)
 				}
 			}
 		}
@@ -467,13 +507,13 @@ func WriteMarkdown(path string, records []RunRecord) error {
 		workload    string
 		concurrency int
 	}
-	type quartet struct{ loki, proxy, proxyNocache, vlDirect *RunRecord }
-	grouped := make(map[key]*quartet)
+	type quintet struct{ loki, proxy, proxyNocache, proxyCoalescer, proxyPartial, vlDirect *RunRecord }
+	grouped := make(map[key]*quintet)
 	for i := range records {
 		r := &records[i]
 		k := key{r.WorkloadName, r.Concurrency}
 		if _, ok := grouped[k]; !ok {
-			grouped[k] = &quartet{}
+			grouped[k] = &quintet{}
 		}
 		switch r.Target {
 		case "loki":
@@ -482,6 +522,10 @@ func WriteMarkdown(path string, records []RunRecord) error {
 			grouped[k].proxy = r
 		case "proxy_nocache":
 			grouped[k].proxyNocache = r
+		case "proxy_coalescer":
+			grouped[k].proxyCoalescer = r
+		case "proxy_partial":
+			grouped[k].proxyPartial = r
 		case "vl_direct":
 			grouped[k].vlDirect = r
 		}
@@ -508,11 +552,11 @@ func WriteMarkdown(path string, records []RunRecord) error {
 	for _, k := range keys {
 		p := grouped[k]
 		fmt.Fprintf(f, "## %s — %d clients\n\n", k.workload, k.concurrency)
-		fmt.Fprintf(f, "| Metric | Loki (direct) | VL+Proxy (warm) | VL+Proxy (cold) | VL (native) | Δ warm vs Loki | Δ cold vs Loki |\n")
-		fmt.Fprintf(f, "|--------|:-------------:|:---------------:|:---------------:|:-----------:|:--------------:|:--------------:|\n")
+		fmt.Fprintf(f, "| Metric | Loki (direct) | VL+Proxy (warm) | VL+Proxy (cold) | VL+Proxy (coalescer) | VL+Proxy (partial) | VL (native) | Δ warm vs Loki | Δ cold vs Loki |\n")
+		fmt.Fprintf(f, "|--------|:-------------:|:---------------:|:---------------:|:--------------------:|:------------------:|:-----------:|:--------------:|:--------------:|\n")
 
 		na := "—"
-		ls, ps, ncs, vs := histogram.Stats{}, histogram.Stats{}, histogram.Stats{}, histogram.Stats{}
+		ls, ps, ncs, css, pts, vs := histogram.Stats{}, histogram.Stats{}, histogram.Stats{}, histogram.Stats{}, histogram.Stats{}, histogram.Stats{}
 		if p.loki != nil {
 			ls = p.loki.Result.Overall
 		}
@@ -522,12 +566,18 @@ func WriteMarkdown(path string, records []RunRecord) error {
 		if p.proxyNocache != nil {
 			ncs = p.proxyNocache.Result.Overall
 		}
+		if p.proxyCoalescer != nil {
+			css = p.proxyCoalescer.Result.Overall
+		}
+		if p.proxyPartial != nil {
+			pts = p.proxyPartial.Result.Overall
+		}
 		if p.vlDirect != nil {
 			vs = p.vlDirect.Result.Overall
 		}
 
-		row := func(name, l, pw, pc, vv, dw, dc string) {
-			fmt.Fprintf(f, "| %s | %s | %s | %s | %s | %s | %s |\n", name, l, pw, pc, vv, dw, dc)
+		row := func(name, l, pw, pc, pcs, ppt, vv, dw, dc string) {
+			fmt.Fprintf(f, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", name, l, pw, pc, pcs, ppt, vv, dw, dc)
 		}
 		maybeRate := func(s histogram.Stats) string {
 			if s.Count == 0 {
@@ -555,14 +605,14 @@ func WriteMarkdown(path string, records []RunRecord) error {
 		}
 
 		row("Throughput",
-			maybeRate(ls), maybeRate(ps), maybeRate(ncs), maybeRate(vs),
+			maybeRate(ls), maybeRate(ps), maybeRate(ncs), maybeRate(css), maybeRate(pts), maybeRate(vs),
 			maybeRateRatio(ls.Throughput, ps.Throughput),
 			maybeRateRatio(ls.Throughput, ncs.Throughput))
-		row("P50", maybeDur(ls.P50), maybeDur(ps.P50), maybeDur(ncs.P50), maybeDur(vs.P50),
+		row("P50", maybeDur(ls.P50), maybeDur(ps.P50), maybeDur(ncs.P50), maybeDur(css.P50), maybeDur(pts.P50), maybeDur(vs.P50),
 			maybeRatio(ls.P50, ps.P50), maybeRatio(ls.P50, ncs.P50))
-		row("P90", maybeDur(ls.P90), maybeDur(ps.P90), maybeDur(ncs.P90), maybeDur(vs.P90),
+		row("P90", maybeDur(ls.P90), maybeDur(ps.P90), maybeDur(ncs.P90), maybeDur(css.P90), maybeDur(pts.P90), maybeDur(vs.P90),
 			maybeRatio(ls.P90, ps.P90), maybeRatio(ls.P90, ncs.P90))
-		row("P99", maybeDur(ls.P99), maybeDur(ps.P99), maybeDur(ncs.P99), maybeDur(vs.P99),
+		row("P99", maybeDur(ls.P99), maybeDur(ps.P99), maybeDur(ncs.P99), maybeDur(css.P99), maybeDur(pts.P99), maybeDur(vs.P99),
 			maybeRatio(ls.P99, ps.P99), maybeRatio(ls.P99, ncs.P99))
 		row("Error Rate",
 			fmt.Sprintf("%.2f%%", ls.ErrorRate*100),
@@ -573,12 +623,24 @@ func WriteMarkdown(path string, records []RunRecord) error {
 				}
 				return fmt.Sprintf("%.2f%%", ncs.ErrorRate*100)
 			}(),
+			func() string {
+				if p.proxyCoalescer == nil {
+					return na
+				}
+				return fmt.Sprintf("%.2f%%", css.ErrorRate*100)
+			}(),
+			func() string {
+				if p.proxyPartial == nil {
+					return na
+				}
+				return fmt.Sprintf("%.2f%%", pts.ErrorRate*100)
+			}(),
 			fmt.Sprintf("%.2f%%", vs.ErrorRate*100),
 			na, na)
 
 		// Resource rows.
-		lCPUStr, pCPUStr, ncCPUStr, vCPUStr := na, na, na, na
-		lRSSStr, pRSSStr, ncRSSStr, vRSSStr := na, na, na, na
+		lCPUStr, pCPUStr, ncCPUStr, csCPUStr, ptCPUStr, vCPUStr := na, na, na, na, na, na
+		lRSSStr, pRSSStr, ncRSSStr, csRSSStr, ptRSSStr, vRSSStr := na, na, na, na, na, na
 		if p.loki != nil {
 			lCPUStr = fmt.Sprintf("%.3f s", p.loki.ResourceDelta.CPUSeconds)
 			lRSSStr = fmt.Sprintf("%.0f MB", p.loki.ResourceDelta.MemRSSBytes/1e6)
@@ -591,12 +653,20 @@ func WriteMarkdown(path string, records []RunRecord) error {
 			ncCPUStr = fmt.Sprintf("%.3f s", p.proxyNocache.ResourceDelta.CPUSeconds)
 			ncRSSStr = fmt.Sprintf("%.0f MB", p.proxyNocache.ResourceDelta.MemRSSBytes/1e6)
 		}
+		if p.proxyCoalescer != nil {
+			csCPUStr = fmt.Sprintf("%.3f s", p.proxyCoalescer.ResourceDelta.CPUSeconds)
+			csRSSStr = fmt.Sprintf("%.0f MB", p.proxyCoalescer.ResourceDelta.MemRSSBytes/1e6)
+		}
+		if p.proxyPartial != nil {
+			ptCPUStr = fmt.Sprintf("%.3f s", p.proxyPartial.ResourceDelta.CPUSeconds)
+			ptRSSStr = fmt.Sprintf("%.0f MB", p.proxyPartial.ResourceDelta.MemRSSBytes/1e6)
+		}
 		if p.vlDirect != nil {
 			vCPUStr = fmt.Sprintf("%.3f s", p.vlDirect.ResourceDelta.CPUSeconds)
 			vRSSStr = fmt.Sprintf("%.0f MB", p.vlDirect.ResourceDelta.MemRSSBytes/1e6)
 		}
-		row("CPU consumed", lCPUStr, pCPUStr, ncCPUStr, vCPUStr, na, na)
-		row("RSS Memory", lRSSStr, pRSSStr, ncRSSStr, vRSSStr, na, na)
+		row("CPU consumed", lCPUStr, pCPUStr, ncCPUStr, csCPUStr, ptCPUStr, vCPUStr, na, na)
+		row("RSS Memory", lRSSStr, pRSSStr, ncRSSStr, csRSSStr, ptRSSStr, vRSSStr, na, na)
 
 		// Combined proxy+VL row when VL backend metrics are available.
 		if p.proxy != nil && p.proxy.VLDelta.CPUSeconds > 0 && p.loki != nil {
@@ -607,7 +677,7 @@ func WriteMarkdown(path string, records []RunRecord) error {
 			row("CPU (proxy+VL combined)",
 				fmt.Sprintf("%.3f s", lCPUv),
 				fmt.Sprintf("%.3f s", combinedCPU),
-				na, na,
+				na, na, na, na,
 				func() string {
 					if lCPUv == 0 {
 						return na
@@ -618,7 +688,7 @@ func WriteMarkdown(path string, records []RunRecord) error {
 			row("RSS (proxy+VL combined)",
 				fmt.Sprintf("%.0f MB", lRSSv/1e6),
 				fmt.Sprintf("%.0f MB", combinedRSS/1e6),
-				na, na,
+				na, na, na, na,
 				func() string {
 					if lRSSv == 0 {
 						return na
