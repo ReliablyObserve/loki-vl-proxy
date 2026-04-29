@@ -41,11 +41,12 @@ func main() {
 		proxyURL     = flag.String("proxy", "http://localhost:3100", "loki-vl-proxy base URL")
 		vlURL        = flag.String("vl", "", "VictoriaLogs API base URL (optional; for resource tracking)")
 		vlDirectURL       = flag.String("vl-direct", "", "VictoriaLogs native LogsQL API URL (optional; enables 3-way comparison)")
-		proxyNoCacheURL   = flag.String("proxy-no-cache", "", "loki-vl-proxy instance started with cache disabled (enables cold-cache comparison)")
-		lokiMetrics       = flag.String("loki-metrics", "", "Loki /metrics URL for resource tracking (optional)")
-		proxyMetrics      = flag.String("proxy-metrics", "", "Proxy /metrics URL for resource tracking (optional)")
+		proxyNoCacheURL     = flag.String("proxy-no-cache", "", "loki-vl-proxy instance started with cache disabled (enables cold-cache comparison)")
+		proxyCoalescerURL   = flag.String("proxy-coalescer", "", "loki-vl-proxy with coalescer but no cache (measures singleflight deduplication benefit)")
+		lokiMetrics         = flag.String("loki-metrics", "", "Loki /metrics URL for resource tracking (optional)")
+		proxyMetrics        = flag.String("proxy-metrics", "", "Proxy /metrics URL for resource tracking (optional)")
 		proxyNoCacheMetrics = flag.String("proxy-no-cache-metrics", "", "No-cache proxy /metrics URL (optional)")
-		vlMetrics         = flag.String("vl-metrics", "", "VictoriaLogs /metrics URL for resource tracking (optional)")
+		vlMetrics           = flag.String("vl-metrics", "", "VictoriaLogs /metrics URL for resource tracking (optional)")
 		workloadList      = flag.String("workloads", "small,heavy,long_range", "Comma-separated workloads: small,heavy,long_range")
 		clientList        = flag.String("clients", "10,50,100,500", "Comma-separated concurrency levels")
 		duration          = flag.Duration("duration", 30*time.Second, "Test duration per concurrency level per workload")
@@ -146,6 +147,7 @@ func main() {
 			targets := []target{
 				{"loki", *lokiURL, wl.Queries, *lokiMetrics, "", *skipLoki, false},
 				{"proxy", *proxyURL, wl.Queries, *proxyMetrics, vlMetricsURL, *skipProxy, false},
+				{"proxy_coalescer", *proxyCoalescerURL, wl.Queries, "", vlMetricsURL, *proxyCoalescerURL == "", true},
 				{"proxy_nocache", *proxyNoCacheURL, wl.Queries, *proxyNoCacheMetrics, vlMetricsURL, *skipProxyNocache || *proxyNoCacheURL == "", true},
 				{"vl_direct", *vlDirectURL, vlDirectQueries, vlDirectMetrics, "", *skipVLDirect || *vlDirectURL == "", false},
 			}
@@ -293,10 +295,20 @@ func main() {
 
 				// Print quick summary.
 				s := result.Overall
-				fmt.Printf("  ✓ throughput=%.0f req/s  p50=%s  p90=%s  p99=%s  errors=%.2f%%  bytes=%.1f KB/req\n",
+				statusStr := ""
+				if s.Status4xx > 0 || s.Status5xx > 0 {
+					statusStr = fmt.Sprintf("  4xx=%d  5xx=%d", s.Status4xx, s.Status5xx)
+				}
+				symbol := "✓"
+				if s.ErrorRate > 0.01 {
+					symbol = "✗"
+				}
+				fmt.Printf("  %s throughput=%.0f req/s  p50=%s  p90=%s  p99=%s  errors=%.2f%%%s  bytes=%.1f KB/req\n",
+					symbol,
 					s.Throughput,
 					fmtDur(s.P50), fmtDur(s.P90), fmtDur(s.P99),
 					s.ErrorRate*100,
+					statusStr,
 					float64(s.TotalBytes)/float64(max(s.Count, 1))/1e3,
 				)
 				if tgt.metricsURL != "" {

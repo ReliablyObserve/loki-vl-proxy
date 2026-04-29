@@ -558,7 +558,7 @@ func run(
 		cacheMax:              *cacheMax,
 		cacheMaxBytes:         *cacheMaxBytes,
 		cacheDisabled:         *cacheDisabled,
-		compatCacheEnabled:    *compatCacheEnabled,
+		compatCacheEnabled:    *compatCacheEnabled && !*cacheDisabled,
 		compatCacheMaxPercent: *compatCacheMaxPercent,
 		diskCfg: cache.DiskCacheConfig{
 			Path:          *diskCachePath,

@@ -67,10 +67,11 @@ func Run(ctx context.Context, cfg Config) Result {
 	}
 
 	type sample struct {
-		name      string
-		latency   time.Duration
-		bytes     int64
-		isErr     bool
+		name       string
+		latency    time.Duration
+		bytes      int64
+		isErr      bool
+		statusCode int
 	}
 
 	samples := make(chan sample, cfg.Concurrency*4)
@@ -114,14 +115,14 @@ func Run(ctx context.Context, cfg Config) Result {
 					rawURL = applyJitter(rawURL, cfg.TimeJitter, rng)
 				}
 				start := time.Now()
-				n, err := doRequest(rawURL)
+				n, statusCode, err := doRequest(rawURL)
 				elapsed := time.Since(start)
-
 				samples <- sample{
-					name:    q.Name,
-					latency: elapsed,
-					bytes:   n,
-					isErr:   err != nil,
+					name:       q.Name,
+					latency:    elapsed,
+					bytes:      n,
+					isErr:      err != nil,
+					statusCode: statusCode,
 				}
 			}
 		}(i)
@@ -143,8 +144,8 @@ func Run(ctx context.Context, cfg Config) Result {
 			h = histogram.New()
 			hists[s.name] = h
 		}
-		h.Record(s.latency, s.bytes, s.isErr)
-		overall.Record(s.latency, s.bytes, s.isErr)
+		h.Record(s.latency, s.bytes, s.isErr, s.statusCode)
+		overall.Record(s.latency, s.bytes, s.isErr, s.statusCode)
 	}
 
 	byQuery := make(map[string]*histogram.Stats, len(hists))
@@ -202,18 +203,18 @@ func shiftTimeParams(rawURL string, shift time.Duration) string {
 	return u.String()
 }
 
-func doRequest(url string) (int64, error) {
+func doRequest(url string) (int64, int, error) {
 	resp, err := httpClient.Get(url)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer resp.Body.Close()
 	n, err := io.Copy(io.Discard, resp.Body)
 	if err != nil {
-		return n, err
+		return n, resp.StatusCode, err
 	}
-	if resp.StatusCode >= 500 {
-		return n, fmt.Errorf("HTTP %d", resp.StatusCode)
+	if resp.StatusCode >= 400 {
+		return n, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return n, nil
+	return n, resp.StatusCode, nil
 }
