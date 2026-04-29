@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.4] - 2026-04-29
+
 ### Changed
 
 - ci: semgrep scan excludes three blanket false-positive rules for this codebase: `go.lang.security.audit.xss.no-direct-write-to-responsewriter` and `no-fprintf-to-responsewriter` (JSON/binary proxy writes are not XSS), `javascript.lang.security.detect-insecure-websocket` (JavaScript rule misapplied to Go).
