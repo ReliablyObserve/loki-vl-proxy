@@ -315,6 +315,11 @@ func buildEntryLabels(entry map[string]interface{}) map[string]string {
 			labels[key] = s
 		}
 	}
+	// VL may surface detected_level="info" from _msg even when the logfmt key
+	// level=warn was also parsed. Explicit level= always wins.
+	if labels["level"] != "" {
+		delete(labels, "detected_level")
+	}
 	// Loki detects level at ingest and adds detected_level as a stream label
 	// even without a parser (JSON, logfmt). Replicate on the read path: if
 	// level is not yet known from VL fields or OTel, try to extract it from

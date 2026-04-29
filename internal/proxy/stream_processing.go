@@ -711,6 +711,10 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 	}
 	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
 		labels["level"] = value
+		// Explicit level field always wins over VL's auto-detected level.
+		// VL may set detected_level="info" from _msg when the message body has no
+		// level keyword, even if the logfmt key level=warn was parsed separately.
+		delete(labels, "detected_level")
 	}
 	// Mirror Loki's ingest-time level detection: if VL did not surface level as
 	// a top-level field (native field or OTel severity), try to extract it from
