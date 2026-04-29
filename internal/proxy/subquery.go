@@ -69,7 +69,7 @@ func (p *Proxy) proxySubqueryRange(w http.ResponseWriter, r *http.Request, outer
 	// Format as Loki matrix response
 	result := formatSubqueryMatrixResult(resultSeries)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(result)
+	w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 }
 
 // proxySubquery evaluates a subquery for instant query requests.
@@ -113,7 +113,7 @@ func (p *Proxy) proxySubquery(w http.ResponseWriter, r *http.Request, outerFunc,
 		},
 	})
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(result)
+	w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 }
 
 // evaluateSubqueryWindow runs the inner query at each sub-step within [start, end].

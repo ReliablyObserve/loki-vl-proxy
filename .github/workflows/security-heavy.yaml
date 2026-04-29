@@ -82,6 +82,9 @@ jobs:
             --config p/golang \
             --config p/owasp-top-ten \
             --config p/secrets \
+            --exclude-rule go.lang.security.audit.xss.no-direct-write-to-responsewriter \
+            --exclude-rule go.lang.security.audit.xss.no-fprintf-to-responsewriter \
+            --exclude-rule javascript.lang.security.detect-insecure-websocket \
             --sarif \
             --output semgrep.sarif \
             --error

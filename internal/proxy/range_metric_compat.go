@@ -354,7 +354,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 
 	result := buildManualRangeMetricMatrix(manualFunc, quantile, series, startTS, endTS, step, origSpec.Window)
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(result)
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
 }
 
@@ -381,7 +381,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 
 	result := buildManualRangeMetricVector(manualFunc, quantile, series, evalTS, origSpec.Window)
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(result)
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
 }
 

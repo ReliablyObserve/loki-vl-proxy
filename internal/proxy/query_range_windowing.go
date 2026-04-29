@@ -106,7 +106,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 			}(),
 		})
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(result)
+		_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 		return true
 	}
 
@@ -254,7 +254,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		}(),
 	})
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(result)
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
 }
 
