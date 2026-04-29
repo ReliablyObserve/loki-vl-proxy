@@ -69,10 +69,10 @@ func TestMatrix_FilterOperators_AllSupported(t *testing.T) {
 		wantSubstring  string
 		secondaryCheck string
 	}{
-		{name: "line_contains", logql: `{app="x"} |= "error"`, wantSubstring: `~"error"`},
-		{name: "line_not_contains", logql: `{app="x"} != "debug"`, wantSubstring: `NOT ~"debug"`},
-		{name: "line_regex", logql: `{app="x"} |~ "err.*"`, wantSubstring: `~"err.*"`},
-		{name: "line_not_regex", logql: `{app="x"} !~ "dbg.*"`, wantSubstring: `NOT ~"dbg.*"`},
+		{name: "line_contains", logql: `{app="x"} |= "error"`, wantSubstring: `*:~"error"`},
+		{name: "line_not_contains", logql: `{app="x"} != "debug"`, wantSubstring: `NOT *:~"debug"`},
+		{name: "line_regex", logql: `{app="x"} |~ "err.*"`, wantSubstring: `*:~"err.*"`},
+		{name: "line_not_regex", logql: `{app="x"} !~ "dbg.*"`, wantSubstring: `NOT *:~"dbg.*"`},
 		{name: "label_eq", logql: `{app="x"} | status == 200`, wantSubstring: `status:=200`},
 		{name: "label_assign_eq", logql: `{app="x"} | status = 200`, wantSubstring: `status:=200`},
 		{name: "label_ne", logql: `{app="x"} | status != 200`, wantSubstring: `-status:=200`},

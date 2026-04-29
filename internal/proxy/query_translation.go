@@ -383,9 +383,22 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 }
 
 var (
-	jsonParserStageRE   = regexp.MustCompile(`\|\s*json(?:\s+[^|]+)?`)
-	logfmtParserStageRE = regexp.MustCompile(`\|\s*logfmt(?:\s+[^|]+)?`)
+	jsonParserStageRE    = regexp.MustCompile(`\|\s*json(?:\s+[^|]+)?`)
+	logfmtParserStageRE  = regexp.MustCompile(`\|\s*logfmt(?:\s+[^|]+)?`)
+	regexpParserStageRE  = regexp.MustCompile(`\|\s*regexp\b`)
+	patternParserStageRE = regexp.MustCompile(`\|\s*pattern\b`)
 )
+
+// hasTextExtractionParser returns true when the LogQL query contains a
+// text-extraction parser other than | json. These parsers (logfmt, regexp,
+// pattern) produce extra VL fields at query time from text log lines; the
+// original log line is NOT JSON, so reconstructing it as JSON would be wrong.
+// | json is excluded because with JSON logs the reconstruction is correct.
+func hasTextExtractionParser(logql string) bool {
+	return logfmtParserStageRE.MatchString(logql) ||
+		regexpParserStageRE.MatchString(logql) ||
+		patternParserStageRE.MatchString(logql)
+}
 
 func hasParserStage(logql, parser string) bool {
 	re := jsonParserStageRE

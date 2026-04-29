@@ -48,7 +48,7 @@ func TestAdvanced_MetricQueries(t *testing.T) {
 		{
 			name:  "count_over_time with line filter",
 			logql: `count_over_time({app="nginx"} |= "error" [5m])`,
-			want:  `app:=nginx ~"error" | stats count()`,
+			want:  `app:=nginx *:~"error" | stats count()`,
 		},
 	}
 
@@ -84,17 +84,17 @@ func TestAdvanced_ComplexPipelines(t *testing.T) {
 		{
 			name:  "chained negative line filters",
 			logql: `{app="nginx"} != "/health" != "/ready" != "/metrics"`,
-			want:  `app:=nginx NOT ~"/health" NOT ~"/ready" NOT ~"/metrics"`,
+			want:  `app:=nginx NOT *:~"/health" NOT *:~"/ready" NOT *:~"/metrics"`,
 		},
 		{
 			name:  "line filter then regex then json",
 			logql: `{app="api"} |= "error" |~ "status=[45]\\d{2}" | json`,
-			want:  `app:=api ~"error" ~"status=[45]\\d{2}" | unpack_json`,
+			want:  `app:=api *:~"error" *:~"status=[45]\\d{2}" | unpack_json`,
 		},
 		{
 			name:  "five stage pipeline",
 			logql: `{app="api"} |= "POST" | json | status >= 400 | line_format "{{.method}} {{.path}}" | keep method, path`,
-			want:  `app:=api ~"POST" | unpack_json | filter status:>=400 | format "<method> <path>" | fields _time, _msg, _stream, method, path`,
+			want:  `app:=api *:~"POST" | unpack_json | filter status:>=400 | format "<method> <path>" | fields _time, _msg, _stream, method, path`,
 		},
 	}
 
@@ -132,9 +132,9 @@ func TestAdvanced_EmptyStreamSelector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	// Empty stream selector → just the line filter
-	if got != `~"error"` {
-		t.Errorf("got %q, want %q", got, `~"error"`)
+	// Empty stream selector → just the line filter (searches all VL fields)
+	if got != `*:~"error"` {
+		t.Errorf("got %q, want %q", got, `*:~"error"`)
 	}
 }
 

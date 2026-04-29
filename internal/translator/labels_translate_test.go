@@ -64,7 +64,7 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "service_name with line filter",
 			logql: `{service_name="auth"} |= "error"`,
-			want:  `(service_name:=auth OR "service.name":=auth OR service:=auth OR app:=auth OR application:=auth OR app_name:=auth OR name:=auth OR app_kubernetes_io_name:=auth OR container:=auth OR container_name:=auth OR "k8s.container.name":=auth OR k8s_container_name:=auth OR component:=auth OR workload:=auth OR job:=auth OR "k8s.job.name":=auth OR k8s_job_name:=auth) ~"error"`,
+			want:  `(service_name:=auth OR "service.name":=auth OR service:=auth OR app:=auth OR application:=auth OR app_name:=auth OR name:=auth OR app_kubernetes_io_name:=auth OR container:=auth OR container_name:=auth OR "k8s.container.name":=auth OR k8s_container_name:=auth OR component:=auth OR workload:=auth OR job:=auth OR "k8s.job.name":=auth OR k8s_job_name:=auth) *:~"error"`,
 		},
 		{
 			name:  "pattern include filter expands placeholder span",
