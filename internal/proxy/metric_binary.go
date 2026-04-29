@@ -66,13 +66,13 @@ func buildStatsQueryRangeParams(logsqlQuery, startRaw, endRaw, stepRaw string) u
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if s := strings.TrimSpace(startRaw); s != "" {
-		params.Set("start", formatVLTimestamp(s))
+		params.Set("start", formatVLStatsTimestamp(s))
 	}
 	if e := strings.TrimSpace(endRaw); e != "" {
 		if extendedEnd, ok := extendStatsQueryRangeEnd(e, stepRaw); ok {
 			params.Set("end", extendedEnd)
 		} else {
-			params.Set("end", formatVLTimestamp(e))
+			params.Set("end", formatVLStatsTimestamp(e))
 		}
 	}
 	if step := strings.TrimSpace(stepRaw); step != "" {
@@ -178,7 +178,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	if evalTime == "" {
 		evalTime = strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
-	params.Set("time", formatVLTimestamp(evalTime))
+	params.Set("time", formatVLStatsTimestamp(evalTime))
 
 	// Constrain VL to the original LogQL range window so stats_query scans only
 	// [time-window, time] instead of ALL historical data. Without start/end,
@@ -234,17 +234,17 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 		params := url.Values{"query": {query}}
 		if isRange {
 			if s := r.FormValue("start"); s != "" {
-				params.Set("start", formatVLTimestamp(s))
+				params.Set("start", formatVLStatsTimestamp(s))
 			}
 			if e := r.FormValue("end"); e != "" {
-				params.Set("end", formatVLTimestamp(e))
+				params.Set("end", formatVLStatsTimestamp(e))
 			}
 			if step := r.FormValue("step"); step != "" {
 				params.Set("step", formatVLStep(step))
 			}
 		} else {
 			if t := r.FormValue("time"); t != "" {
-				params.Set("time", formatVLTimestamp(t))
+				params.Set("time", formatVLStatsTimestamp(t))
 			}
 		}
 		return params
@@ -304,17 +304,17 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 		params := url.Values{"query": {query}}
 		if isRange {
 			if s := r.FormValue("start"); s != "" {
-				params.Set("start", formatVLTimestamp(s))
+				params.Set("start", formatVLStatsTimestamp(s))
 			}
 			if e := r.FormValue("end"); e != "" {
-				params.Set("end", formatVLTimestamp(e))
+				params.Set("end", formatVLStatsTimestamp(e))
 			}
 			if step := r.FormValue("step"); step != "" {
 				params.Set("step", formatVLStep(step))
 			}
 		} else {
 			if t := r.FormValue("time"); t != "" {
-				params.Set("time", formatVLTimestamp(t))
+				params.Set("time", formatVLStatsTimestamp(t))
 			}
 		}
 		return params

@@ -1440,6 +1440,11 @@ type vlStreamsResponse struct {
 	} `json:"values"`
 }
 
+type detectNativeResult struct {
+	fields map[string]*detectedFieldSummary
+	err    error
+}
+
 func (p *Proxy) detectFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, error) {
 	if lineLimit > maxDetectedScanLines {
 		lineLimit = maxDetectedScanLines
@@ -1447,17 +1452,30 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	if cachedFields, cachedValues, ok := p.getCachedDetectedFields(ctx, query, start, end, lineLimit); ok {
 		return cachedFields, cachedValues, nil
 	}
-	nativeFields, err := p.detectNativeFields(ctx, query, start, end)
-	if err != nil {
-		nativeFields = nil
-	}
+
+	// Start native field detection in parallel with the log scan to eliminate
+	// sequential round-trip overhead. Previously: 2× VL RTT. Now: 1× VL RTT.
+	// Native fields provide OTel/stream-label metadata; the log scan samples
+	// actual log lines to infer field names and types.
+	nativeCh := make(chan detectNativeResult, 1)
+	go func() {
+		fields, err := p.detectNativeFields(ctx, query, start, end)
+		nativeCh <- detectNativeResult{fields: fields, err: err}
+	}()
+
+	// Use detectedFieldsSampleLimit as a safe conservative scan size.
+	// When native fields exist they would cap the scan at this limit anyway,
+	// and without native fields it is still enough for reliable field detection.
 	scanLimit := lineLimit
-	if len(nativeFields) > 0 && scanLimit > detectedFieldsSampleLimit {
+	if scanLimit > detectedFieldsSampleLimit {
 		scanLimit = detectedFieldsSampleLimit
 	}
+
 	candidates := fieldDetectionQueryCandidates(query)
 	hadScanFailure := false
 	var lastErr error
+	var scanBody []byte
+
 	for _, candidate := range candidates {
 		logsqlQuery, err := p.translateQuery(candidate)
 		if err != nil {
@@ -1483,10 +1501,10 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 			continue
 		}
 
-		body, _ := io.ReadAll(resp.Body)
+		rawBody, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		if resp.StatusCode >= http.StatusInternalServerError {
-			msg := strings.TrimSpace(string(body))
+			msg := strings.TrimSpace(string(rawBody))
 			if msg == "" {
 				msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
 			}
@@ -1495,26 +1513,36 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 			continue
 		}
 		if resp.StatusCode >= http.StatusBadRequest {
-			msg := strings.TrimSpace(string(body))
+			msg := strings.TrimSpace(string(rawBody))
 			if msg == "" {
 				msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
 			}
+			// Collect native result before returning so the goroutine doesn't leak.
+			<-nativeCh
 			return nil, nil, fmt.Errorf("%s", msg)
 		}
-
-		fieldList, fieldValues := p.detectFieldsFromBody(body)
-		if len(fieldList) > 0 {
-			fieldList, fieldValues = mergeNativeDetectedFields(fieldList, fieldValues, filterNativeDetectedFields(nativeFields, scanNativeStreamLabelSet(body), p.labelTranslator))
-			p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
-			return fieldList, fieldValues, nil
-		}
-		if len(candidates) > 1 && !hadScanFailure {
-			emptyFields := []map[string]interface{}{}
-			emptyValues := map[string][]string{}
-			p.setCachedDetectedFields(ctx, query, start, end, lineLimit, emptyFields, emptyValues)
-			return emptyFields, emptyValues, nil
-		}
+		scanBody = rawBody
 		break
+	}
+
+	// Collect native fields result (always, to avoid goroutine leak).
+	nativeResult := <-nativeCh
+	nativeFields := nativeResult.fields
+	if nativeResult.err != nil {
+		nativeFields = nil
+	}
+
+	fieldList, fieldValues := p.detectFieldsFromBody(scanBody)
+	if len(fieldList) > 0 {
+		fieldList, fieldValues = mergeNativeDetectedFields(fieldList, fieldValues, filterNativeDetectedFields(nativeFields, scanNativeStreamLabelSet(scanBody), p.labelTranslator))
+		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
+		return fieldList, fieldValues, nil
+	}
+	if len(candidates) > 1 && !hadScanFailure {
+		emptyFields := []map[string]interface{}{}
+		emptyValues := map[string][]string{}
+		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, emptyFields, emptyValues)
+		return emptyFields, emptyValues, nil
 	}
 
 	if len(nativeFields) > 0 {
@@ -1524,7 +1552,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 				nativeFields = filterNativeDetectedFields(nativeFields, streamLabels, p.labelTranslator)
 			}
 		}
-		fieldList, fieldValues := mergeNativeDetectedFields(nil, nil, nativeFields)
+		fieldList, fieldValues = mergeNativeDetectedFields(nil, nil, nativeFields)
 		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
 		return fieldList, fieldValues, nil
 	}

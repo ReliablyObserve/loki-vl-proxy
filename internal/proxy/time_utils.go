@@ -93,6 +93,21 @@ func nanosToVLTimestamp(nanos int64) string {
 	return strconv.FormatInt(nanos/int64(time.Second), 10)
 }
 
+// formatVLStatsTimestamp normalizes any Loki/Grafana timestamp representation
+// (Unix seconds, Unix nanoseconds, or RFC3339) to the Unix-seconds string that
+// VictoriaLogs requires for stats_query and stats_query_range start/end/time params.
+//
+// Use this (not formatVLTimestamp) whenever building params for VL stats endpoints.
+// formatVLTimestamp passes numeric inputs through unchanged — correct for log query
+// endpoints that accept nanoseconds, but silently wrong for stats endpoints.
+func formatVLStatsTimestamp(raw string) string {
+	nanos, ok := parseLokiTimeToUnixNano(raw)
+	if !ok {
+		return raw
+	}
+	return nanosToVLTimestamp(nanos)
+}
+
 func normalizeUnixNanos(v int64) int64 {
 	abs := v
 	if abs < 0 {
