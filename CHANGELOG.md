@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - ci: Trivy updated from `0.69.3` to `0.70.0` (`security-pr.yaml` docker image tag, `security-heavy.yaml` trivy-action pinned to `ed142fd` / `v0.36.0`).
+- ci: replace `semgrep/semgrep-action@v1` (broken — uses removed `returntocorp/semgrep-agent:v1` Docker image) with `pip install semgrep==1.161.0` + `semgrep scan` CLI in `security-heavy.yaml`; adds SARIF upload step.
 
 ## [1.22.2] - 2026-04-29
 
