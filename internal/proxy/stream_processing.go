@@ -287,6 +287,16 @@ var vlEntryPool = sync.Pool{
 	},
 }
 
+// metadataMapPool pools map[string]string used for per-entry structured metadata
+// and parsed fields in vlReaderToLokiStreams. The maps are reused across log
+// entries within a single response; metadataFieldMap copies content before the
+// map is cleared, so reuse is safe.
+var metadataMapPool = sync.Pool{
+	New: func() interface{} {
+		return make(map[string]string, 8)
+	},
+}
+
 // vlLogsToLokiStreams converts VL newline-delimited JSON logs to Loki streams format.
 // Optimized: byte scanning, pooled maps, pre-allocated slices.
 func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
@@ -431,6 +441,19 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		stepSeconds = parsePatternStepSeconds(step)
 	}
 
+	smBuf := metadataMapPool.Get().(map[string]string)
+	pfBuf := metadataMapPool.Get().(map[string]string)
+	defer func() {
+		for k := range smBuf {
+			delete(smBuf, k)
+		}
+		for k := range pfBuf {
+			delete(pfBuf, k)
+		}
+		metadataMapPool.Put(smBuf)
+		metadataMapPool.Put(pfBuf)
+	}()
+
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
@@ -468,7 +491,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		level, _ := stringifyEntryValue(entry["level"])
 
 		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
-		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache)
+		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 		se, ok := streamMap[desc.key]
 		if !ok {
 			se = &streamEntry{
@@ -571,11 +594,17 @@ func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCac
 	return desc
 }
 
-func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure) (map[string]string, map[string]string) {
-	var (
-		parsedFields             map[string]string
-		structuredMetadataFields map[string]string
-	)
+// classifyEntryMetadataFields fills smBuf and pfBuf with structured metadata
+// and parsed fields for the given log entry. Both buffers must be pre-allocated
+// and are cleared before use; callers must copy or consume content before the
+// next call (metadataFieldMap makes the required copy inside buildStreamValue).
+func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
+	for k := range smBuf {
+		delete(smBuf, k)
+	}
+	for k := range pfBuf {
+		delete(pfBuf, k)
+	}
 
 	for key, value := range entry {
 		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
@@ -594,20 +623,21 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 				continue
 			}
 			if classifyAsParsed {
-				if parsedFields == nil {
-					parsedFields = make(map[string]string, 4)
-				}
-				parsedFields[exposure.name] = stringValue
+				pfBuf[exposure.name] = stringValue
 				continue
 			}
-			if structuredMetadataFields == nil {
-				structuredMetadataFields = make(map[string]string, 4)
-			}
-			structuredMetadataFields[exposure.name] = stringValue
+			smBuf[exposure.name] = stringValue
 		}
 	}
 
-	return structuredMetadataFields, parsedFields
+	var sm, pf map[string]string
+	if len(smBuf) > 0 {
+		sm = smBuf
+	}
+	if len(pfBuf) > 0 {
+		pf = pfBuf
+	}
+	return sm, pf
 }
 
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {

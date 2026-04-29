@@ -18,6 +18,13 @@ import (
 const unknownServiceName = "unknown_service"
 const detectedFieldsSampleLimit = 500
 
+// vlStreamEntry unmarshals only the _stream field from NDJSON log entries,
+// avoiding the cost of allocating a full map[string]interface{} when only
+// the stream label string is needed.
+type vlStreamEntry struct {
+	Stream string `json:"_stream"`
+}
+
 var suppressedDetectedFieldNames = map[string]struct{}{
 	"timestamp_end":          {},
 	"observed_timestamp_end": {},
@@ -377,16 +384,26 @@ func shouldExposeStructuredField(key string, streamLabels map[string]string, lt 
 
 func scanNativeStreamLabelSet(body []byte) map[string]string {
 	labels := make(map[string]string)
-	for _, rawLine := range bytes.Split(body, []byte{'\n'}) {
-		line := strings.TrimSpace(string(rawLine))
-		if line == "" {
+	start := 0
+	for start < len(body) {
+		end := start
+		for end < len(body) && body[end] != '\n' {
+			end++
+		}
+		line := bytes.TrimSpace(body[start:end])
+		if end < len(body) {
+			start = end + 1
+		} else {
+			start = len(body)
+		}
+		if len(line) == 0 {
 			continue
 		}
-		var entry map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		var entry vlStreamEntry
+		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
 		}
-		for key, value := range parseStreamLabels(asString(entry["_stream"])) {
+		for key, value := range parseStreamLabels(entry.Stream) {
 			if strings.TrimSpace(value) == "" {
 				continue
 			}
@@ -474,16 +491,26 @@ func asString(value interface{}) string {
 // auto-extracted body fields.
 func scanStreamLabelNames(body []byte, lt *LabelTranslator) map[string]struct{} {
 	names := map[string]struct{}{}
-	for _, rawLine := range bytes.Split(body, []byte{'\n'}) {
-		line := strings.TrimSpace(string(rawLine))
-		if line == "" {
+	start := 0
+	for start < len(body) {
+		end := start
+		for end < len(body) && body[end] != '\n' {
+			end++
+		}
+		line := bytes.TrimSpace(body[start:end])
+		if end < len(body) {
+			start = end + 1
+		} else {
+			start = len(body)
+		}
+		if len(line) == 0 {
 			continue
 		}
-		var entry map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		var entry vlStreamEntry
+		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
 		}
-		for key := range parseStreamLabels(asString(entry["_stream"])) {
+		for key := range parseStreamLabels(entry.Stream) {
 			lokiLabel := key
 			if lt != nil {
 				if t := lt.ToLoki(key); t != "" {
@@ -505,18 +532,18 @@ func scanDetectedLabelSummaries(body []byte, lt *LabelTranslator) map[string]*de
 		for endIdx < len(body) && body[endIdx] != '\n' {
 			endIdx++
 		}
-		line := strings.TrimSpace(string(body[startIdx:endIdx]))
+		line := bytes.TrimSpace(body[startIdx:endIdx])
 		if endIdx < len(body) {
 			startIdx = endIdx + 1
 		} else {
 			startIdx = len(body)
 		}
-		if line == "" {
+		if len(line) == 0 {
 			continue
 		}
 
 		var entry map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 
@@ -1507,18 +1534,18 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 		for endIdx < len(body) && body[endIdx] != '\n' {
 			endIdx++
 		}
-		line := strings.TrimSpace(string(body[startIdx:endIdx]))
+		line := bytes.TrimSpace(body[startIdx:endIdx])
 		if endIdx < len(body) {
 			startIdx = endIdx + 1
 		} else {
 			startIdx = len(body)
 		}
-		if line == "" {
+		if len(line) == 0 {
 			continue
 		}
 
 		var entry map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 		streamLabels := buildDetectedLabels(entry)
