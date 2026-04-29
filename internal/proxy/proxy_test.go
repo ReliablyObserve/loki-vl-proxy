@@ -2004,7 +2004,7 @@ func TestContract_PatternHelpers_ParseAndLimitPayload(t *testing.T) {
 func TestContract_PatternsCacheKey_NormalizesRelativeRangeBoundaries(t *testing.T) {
 	p := newTestProxy(t, "http://127.0.0.1:65535")
 
-	key := p.patternsAutodetectCacheKey("org-a", `{app="web"}`, "now-1h", "now", "60s")
+	key := p.patternsAutodetectCacheKey("org-a", "", `{app="web"}`, "now-1h", "now", "60s")
 	if key == "" {
 		t.Fatal("expected non-empty patterns cache key")
 	}
@@ -2308,7 +2308,7 @@ func TestContract_Patterns_CachedPayloadStillPrependsCustomPatterns(t *testing.T
 		t.Fatalf("failed to create proxy: %v", err)
 	}
 
-	cacheKey := p.patternsAutodetectCacheKey("", `{app="web"}`, "1", "2", "1m")
+	cacheKey := p.patternsAutodetectCacheKey("", "", `{app="web"}`, "1", "2", "1m")
 	payload, err := json.Marshal(patternsResponse{
 		Status: "success",
 		Data: []patternResultEntry{
@@ -2348,7 +2348,7 @@ func TestContract_RefreshVolumeCacheAsync_PopulatesCache(t *testing.T) {
 
 	p := newTestProxy(t, vlBackend.URL)
 	cacheKey := "volume:test-refresh"
-	p.refreshVolumeCacheAsync("", cacheKey, `{app="api"}`, "", "", "")
+	p.refreshVolumeCacheAsync("", cacheKey, `{app="api"}`, "", "", "", nil)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -2380,7 +2380,7 @@ func TestContract_RefreshVolumeRangeCacheAsync_PopulatesCache(t *testing.T) {
 
 	p := newTestProxy(t, vlBackend.URL)
 	cacheKey := "volume_range:test-refresh"
-	p.refreshVolumeRangeCacheAsync("", cacheKey, `{app="api"}`, "", "", "60", "")
+	p.refreshVolumeRangeCacheAsync("", cacheKey, `{app="api"}`, "", "", "60", "", nil)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {

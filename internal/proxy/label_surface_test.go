@@ -604,19 +604,19 @@ func TestLabelSurface_AsyncRefreshPathsPopulateCache(t *testing.T) {
 		t.Fatalf("failed to create proxy: %v", err)
 	}
 
-	p.refreshLabelValuesCacheAsync("", "label_values:async", "app", "", "", "", "", "")
+	p.refreshLabelValuesCacheAsync("", "label_values:async", "app", "", "", "", "", "", nil)
 	waitForCachedKey(t, c, "label_values:async")
 
-	p.refreshDetectedFieldsCacheAsync("", "detected_fields:async", `{service_name="svc-a"}`, "", "", 100)
+	p.refreshDetectedFieldsCacheAsync("", "detected_fields:async", `{service_name="svc-a"}`, "", "", 100, nil)
 	waitForCachedKey(t, c, "detected_fields:async")
 
-	p.refreshDetectedLabelsCacheAsync("", "detected_labels:async", `{service_name="svc-a"}`, "", "", 100)
+	p.refreshDetectedLabelsCacheAsync("", "detected_labels:async", `{service_name="svc-a"}`, "", "", 100, nil)
 	waitForCachedKey(t, c, "detected_labels:async")
 
-	p.refreshDetectedFieldValuesCacheAsync("", "detected_field_values:async:service_name", "service_name", `{service_name="svc-a"}`, "", "", 100)
+	p.refreshDetectedFieldValuesCacheAsync("", "detected_field_values:async:service_name", "service_name", `{service_name="svc-a"}`, "", "", 100, nil)
 	waitForCachedKey(t, c, "detected_field_values:async:service_name")
 
-	p.refreshDetectedFieldValuesCacheAsync("", "detected_field_values:async:level", "level", `{service_name="svc-a"}`, "", "", 100)
+	p.refreshDetectedFieldValuesCacheAsync("", "detected_field_values:async:level", "level", `{service_name="svc-a"}`, "", "", 100, nil)
 	waitForCachedKey(t, c, "detected_field_values:async:level")
 
 	if fieldValuesCalls.Load() == 0 {
@@ -680,7 +680,7 @@ func TestLabelSurface_RefreshLabelsCacheAsyncPopulatesCache(t *testing.T) {
 	}
 
 	cacheKey := "labels:async"
-	p.refreshLabelsCacheAsync("", cacheKey, `{service_name="svc-a"}`, "", "", "")
+	p.refreshLabelsCacheAsync("", cacheKey, `{service_name="svc-a"}`, "", "", "", nil)
 	raw := waitForCachedKey(t, c, cacheKey)
 
 	if streamFieldNamesCalls.Load() == 0 {
@@ -728,7 +728,7 @@ func TestLabelSurface_RefreshLabelsCacheAsync_ForwardsSubstringFilterWhenSupport
 	p.observeBackendVersionFromHeaders(http.Header{"Server": []string{"VictoriaLogs/v1.49.0"}})
 
 	cacheKey := "labels:async:substring"
-	p.refreshLabelsCacheAsync("", cacheKey, `{service_name="svc-a"}`, "", "", "svc")
+	p.refreshLabelsCacheAsync("", cacheKey, `{service_name="svc-a"}`, "", "", "svc", nil)
 	_ = waitForCachedKey(t, c, cacheKey)
 
 	if v, _ := gotQ.Load().(string); v != "svc" {
@@ -771,7 +771,7 @@ func TestLabelSurface_RefreshLabelValuesCacheAsync_ForwardsSubstringFilterWhenSu
 	p.observeBackendVersionFromHeaders(http.Header{"Server": []string{"VictoriaLogs/v1.49.0"}})
 
 	cacheKey := "label_values:async:substring"
-	p.refreshLabelValuesCacheAsync("", cacheKey, "app", `{service_name="svc-a"}`, "", "", "", "svc")
+	p.refreshLabelValuesCacheAsync("", cacheKey, "app", `{service_name="svc-a"}`, "", "", "", "svc", nil)
 	_ = waitForCachedKey(t, c, cacheKey)
 
 	if v, _ := gotQ.Load().(string); v != "svc" {

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -1458,5 +1459,243 @@ func TestAlertingBackendHeaders_NoBroadcast(t *testing.T) {
 
 	if receivedAuth != "" {
 		t.Errorf("VL backend credentials must NOT be forwarded to ruler backend, got Authorization=%q", receivedAuth)
+	}
+}
+
+// =============================================================================
+// Cache auth-isolation fixes (security review follow-up)
+// =============================================================================
+
+// ctxWithOrgAndAuth returns a context that carries both the orgID and an
+// origRequestKey pointing at r, so nativeCoalescerKey / detectedFieldsCacheKey
+// can extract the auth fingerprint.
+func ctxWithOrgAndAuth(orgID string, r *http.Request) context.Context {
+	ctx := context.WithValue(context.Background(), orgIDKey, orgID)
+	return context.WithValue(ctx, origRequestKey, r)
+}
+
+// TestNativeCoalescerKey_TenantIsolated verifies that native_fields / native_streams
+// coalescer keys differ between tenants so concurrent misses don't share a VL response.
+func TestNativeCoalescerKey_TenantIsolated(t *testing.T) {
+	p := &Proxy{}
+	params := url.Values{}
+	params.Set("query", `{app="api"}`)
+
+	ctx1 := ctxWithOrgAndAuth("tenant-a", nil)
+	ctx2 := ctxWithOrgAndAuth("tenant-b", nil)
+
+	key1 := p.nativeCoalescerKey("native_fields", ctx1, params)
+	key2 := p.nativeCoalescerKey("native_fields", ctx2, params)
+
+	if key1 == key2 {
+		t.Errorf("native_fields coalescer key must differ between tenants; both: %q", key1)
+	}
+}
+
+// TestNativeCoalescerKey_AuthIsolated verifies that native_fields / native_streams
+// coalescer keys differ between users when forwarded auth is configured.
+func TestNativeCoalescerKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	params := url.Values{}
+	params.Set("query", `{app="api"}`)
+
+	rAlice := httptest.NewRequest("GET", "/", nil)
+	rAlice.Header.Set("Authorization", "Bearer alice-token")
+
+	rBob := httptest.NewRequest("GET", "/", nil)
+	rBob.Header.Set("Authorization", "Bearer bob-token")
+
+	ctxA := ctxWithOrgAndAuth("tenant1", rAlice)
+	ctxB := ctxWithOrgAndAuth("tenant1", rBob)
+
+	key1 := p.nativeCoalescerKey("native_fields", ctxA, params)
+	key2 := p.nativeCoalescerKey("native_fields", ctxB, params)
+
+	if key1 == key2 {
+		t.Errorf("native_fields coalescer key must differ for different auth tokens; both: %q", key1)
+	}
+
+	key3 := p.nativeCoalescerKey("native_streams", ctxA, params)
+	key4 := p.nativeCoalescerKey("native_streams", ctxB, params)
+	if key3 == key4 {
+		t.Errorf("native_streams coalescer key must differ for different auth tokens; both: %q", key3)
+	}
+}
+
+// TestDetectedFieldsCacheKey_AuthIsolated verifies detect_fields / detect_labels
+// cache keys include the per-user auth fingerprint.
+func TestDetectedFieldsCacheKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	rAlice := httptest.NewRequest("GET", "/", nil)
+	rAlice.Header.Set("Authorization", "Bearer alice")
+
+	rBob := httptest.NewRequest("GET", "/", nil)
+	rBob.Header.Set("Authorization", "Bearer bob")
+
+	ctxA := ctxWithOrgAndAuth("t1", rAlice)
+	ctxB := ctxWithOrgAndAuth("t1", rBob)
+
+	fk1 := p.detectedFieldsCacheKey(ctxA, `{app="x"}`, "1000", "2000", 100)
+	fk2 := p.detectedFieldsCacheKey(ctxB, `{app="x"}`, "1000", "2000", 100)
+	if fk1 == fk2 {
+		t.Errorf("detect_fields cache key must differ for different auth tokens; both: %q", fk1)
+	}
+
+	lk1 := p.detectedLabelsCacheKey(ctxA, `{app="x"}`, "1000", "2000", 100)
+	lk2 := p.detectedLabelsCacheKey(ctxB, `{app="x"}`, "1000", "2000", 100)
+	if lk1 == lk2 {
+		t.Errorf("detect_labels cache key must differ for different auth tokens; both: %q", lk1)
+	}
+}
+
+// TestQueryRangeCacheKey_AuthIsolated verifies the query_range window cache key
+// includes the per-user auth fingerprint.
+func TestQueryRangeCacheKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	r1 := httptest.NewRequest("GET", "/?query=%7Bapp%3D%22x%22%7D&start=1000&end=2000&step=15", nil)
+	r1.Header.Set("X-Scope-OrgID", "tenant1")
+	r1.Header.Set("Authorization", "Bearer alice")
+
+	r2 := httptest.NewRequest("GET", "/?query=%7Bapp%3D%22x%22%7D&start=1000&end=2000&step=15", nil)
+	r2.Header.Set("X-Scope-OrgID", "tenant1")
+	r2.Header.Set("Authorization", "Bearer bob")
+
+	key1 := p.queryRangeCacheKey(r1, `{app="x"}`)
+	key2 := p.queryRangeCacheKey(r2, `{app="x"}`)
+
+	if key1 == key2 {
+		t.Errorf("queryRangeCacheKey must differ for different auth tokens; both: %q", key1)
+	}
+}
+
+// TestMultiTenantCacheKey_AuthIsolated verifies that mt: keys for query, query_range,
+// patterns, and series include the per-user auth fingerprint.
+func TestMultiTenantCacheKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	for _, endpoint := range []string{"query", "query_range", "patterns", "series"} {
+		r1 := httptest.NewRequest("GET", "/?query=%7Bapp%3D%22x%22%7D&start=1000&end=2000", nil)
+		r1.Header.Set("X-Scope-OrgID", "tenant1")
+		r1.Header.Set("Authorization", "Bearer alice")
+
+		r2 := httptest.NewRequest("GET", "/?query=%7Bapp%3D%22x%22%7D&start=1000&end=2000", nil)
+		r2.Header.Set("X-Scope-OrgID", "tenant1")
+		r2.Header.Set("Authorization", "Bearer bob")
+
+		key1, ok1 := p.multiTenantCacheKey(r1, endpoint)
+		key2, ok2 := p.multiTenantCacheKey(r2, endpoint)
+
+		if !ok1 || !ok2 {
+			t.Errorf("endpoint %q: multiTenantCacheKey should be applicable for GET", endpoint)
+			continue
+		}
+		if key1 == key2 {
+			t.Errorf("endpoint %q: mt key must differ for different auth tokens; both: %q", endpoint, key1)
+		}
+	}
+}
+
+// TestPatternsAutodetectCacheKey_AuthIsolated verifies pattern autodetect cache keys
+// are scoped per user when forwarded auth is configured.
+func TestPatternsAutodetectCacheKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	rAlice := httptest.NewRequest("GET", "/", nil)
+	rAlice.Header.Set("Authorization", "Bearer alice")
+	rBob := httptest.NewRequest("GET", "/", nil)
+	rBob.Header.Set("Authorization", "Bearer bob")
+
+	fpAlice := p.forwardedAuthFingerprint(rAlice)
+	fpBob := p.forwardedAuthFingerprint(rBob)
+
+	key1 := p.patternsAutodetectCacheKey("tenant1", fpAlice, `{app="x"}`, "1000", "2000", "15")
+	key2 := p.patternsAutodetectCacheKey("tenant1", fpBob, `{app="x"}`, "1000", "2000", "15")
+
+	if key1 == key2 {
+		t.Errorf("patterns autodetect cache key must differ for different auth tokens; both: %q", key1)
+	}
+	// Same fingerprint must produce same key (deterministic).
+	key3 := p.patternsAutodetectCacheKey("tenant1", fpAlice, `{app="x"}`, "1000", "2000", "15")
+	if key1 != key3 {
+		t.Error("patternsAutodetectCacheKey must be deterministic for the same inputs")
+	}
+}
+
+// TestSnapshotForwardedAuth_CapturesHeaders verifies that snapshotForwardedAuth
+// copies configured forward headers/cookies and returns nil when none are configured.
+func TestSnapshotForwardedAuth_CapturesHeaders(t *testing.T) {
+	t.Run("nil_when_no_forwarding_configured", func(t *testing.T) {
+		p := &Proxy{}
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("Authorization", "Bearer secret")
+		if snap := p.snapshotForwardedAuth(r); snap != nil {
+			t.Error("expected nil snapshot when no forwarding configured")
+		}
+	})
+
+	t.Run("captures_configured_headers_only", func(t *testing.T) {
+		p := &Proxy{forwardHeaders: []string{"Authorization", "X-Custom"}}
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("Authorization", "Bearer tok")
+		r.Header.Set("X-Custom", "val")
+		r.Header.Set("X-Not-Forwarded", "should-not-appear")
+
+		snap := p.snapshotForwardedAuth(r)
+		if snap == nil {
+			t.Fatal("expected non-nil snapshot")
+		}
+		if got := snap.Header.Get("Authorization"); got != "Bearer tok" {
+			t.Errorf("Authorization not captured: got %q", got)
+		}
+		if got := snap.Header.Get("X-Custom"); got != "val" {
+			t.Errorf("X-Custom not captured: got %q", got)
+		}
+		if got := snap.Header.Get("X-Not-Forwarded"); got != "" {
+			t.Errorf("non-forwarded header must not appear in snapshot: got %q", got)
+		}
+	})
+
+	t.Run("fingerprint_matches_original", func(t *testing.T) {
+		p := &Proxy{forwardHeaders: []string{"Authorization"}}
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("Authorization", "Bearer tok")
+
+		snap := p.snapshotForwardedAuth(r)
+		if snap == nil {
+			t.Fatal("expected non-nil snapshot")
+		}
+		if p.forwardedAuthFingerprint(snap) != p.forwardedAuthFingerprint(r) {
+			t.Error("snapshot fingerprint must match original request fingerprint")
+		}
+	})
+}
+
+// TestSnapshotForwardedAuth_UsableAsOrigRequestKey verifies that a snapshot can be
+// attached as origRequestKey in a background context so refresh workers carry the
+// correct forwarded credentials.
+func TestSnapshotForwardedAuth_UsableAsOrigRequestKey(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Bearer alice-refresh-token")
+
+	snap := p.snapshotForwardedAuth(r)
+	if snap == nil {
+		t.Fatal("expected snapshot for request with forwarded header")
+	}
+
+	// Simulate the background context that refresh workers build.
+	bgCtx := context.WithValue(context.Background(), origRequestKey, snap)
+
+	origFP := p.forwardedAuthFingerprint(r)
+	origReq, ok := bgCtx.Value(origRequestKey).(*http.Request)
+	if !ok || origReq == nil {
+		t.Fatal("origRequestKey not accessible from background context")
+	}
+	if bgFP := p.forwardedAuthFingerprint(origReq); bgFP != origFP {
+		t.Errorf("background context fingerprint %q must match original %q", bgFP, origFP)
 	}
 }

@@ -2261,7 +2261,11 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 		}
 		rawQuery = b.String()
 	}
-	return "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + rawQuery + ":" + p.tupleModeCacheKey(r)
+	key := "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + rawQuery + ":" + p.tupleModeCacheKey(r)
+	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+		key += ":auth:" + fp
+	}
+	return key
 }
 
 // handleQuery translates Loki instant queries.
@@ -2994,6 +2998,19 @@ func (p *Proxy) snapshotDeclaredLabelFields() []string {
 	return out
 }
 
+// nativeCoalescerKey builds a coalescer key for raw VL backend calls (field_names, streams).
+// It scopes by orgID and per-user auth fingerprint so concurrent requests from different tenants
+// or users (when downstream ACLs depend on forwarded credentials) do not share one backend response.
+func (p *Proxy) nativeCoalescerKey(prefix string, ctx context.Context, params url.Values) string {
+	key := prefix + ":" + getOrgID(ctx) + ":" + params.Encode()
+	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
+		if fp := p.forwardedAuthFingerprint(origReq); fp != "" {
+			key += ":auth:" + fp
+		}
+	}
+	return key
+}
+
 func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params url.Values) (int, []byte, error) {
 	key := "vlmeta:get:" + getOrgID(ctx) + ":" + path + "?" + params.Encode()
 	// Include per-user auth fingerprint to prevent cross-user coalescing when
@@ -3067,6 +3084,11 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 	}
 
 	cacheKey := "label_inventory:" + getOrgID(ctx) + ":" + params.Encode()
+	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
+		if fp := p.forwardedAuthFingerprint(origReq); fp != "" {
+			cacheKey += ":auth:" + fp
+		}
+	}
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		var labels []string
 		if err := json.Unmarshal(cached, &labels); err == nil {
@@ -3193,6 +3215,27 @@ func (p *Proxy) shouldBypassRecentTailCache(endpoint string, remaining time.Dura
 	return p.requestEndsNearNow(r)
 }
 
+// snapshotForwardedAuth captures the configured forward headers and cookies from r into
+// a minimal synthetic request that is safe to use from background goroutines after the
+// original request has been closed. Returns nil when no forwarding is configured.
+func (p *Proxy) snapshotForwardedAuth(r *http.Request) *http.Request {
+	if r == nil || (len(p.forwardHeaders) == 0 && len(p.forwardCookies) == 0) {
+		return nil
+	}
+	snap := &http.Request{Header: make(http.Header)}
+	for _, hdr := range p.forwardHeaders {
+		if val := r.Header.Get(hdr); val != "" {
+			snap.Header.Set(hdr, val)
+		}
+	}
+	for _, cookie := range r.Cookies() {
+		if p.forwardCookies["*"] || p.forwardCookies[cookie.Name] {
+			snap.AddCookie(cookie)
+		}
+	}
+	return snap
+}
+
 func (p *Proxy) labelBackgroundTimeout() time.Duration {
 	if p.client != nil && p.client.Timeout > 0 && p.client.Timeout < 10*time.Second {
 		return p.client.Timeout
@@ -3200,7 +3243,7 @@ func (p *Proxy) labelBackgroundTimeout() time.Duration {
 	return 10 * time.Second
 }
 
-func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, search string) {
+func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, search string, savedReq *http.Request) {
 	refreshKey := "refresh:labels:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -3208,6 +3251,9 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 			defer cancel()
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
+			}
+			if savedReq != nil {
+				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
 
 			labels, fetchErr := p.fetchScopedLabelNames(ctx, rawQuery, start, end, search, false)
@@ -3235,7 +3281,7 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 	}()
 }
 
-func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuery, start, end, limit, search string) {
+func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuery, start, end, limit, search string, savedReq *http.Request) {
 	refreshKey := "refresh:label_values:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -3243,6 +3289,9 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 			defer cancel()
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
+			}
+			if savedReq != nil {
+				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
 
 			var (
@@ -5022,7 +5071,7 @@ func (p *Proxy) serveStaleReadCacheOnError(w http.ResponseWriter, endpoint, cach
 	return true
 }
 
-func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, end string, lineLimit int) {
+func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, end string, lineLimit int, savedReq *http.Request) {
 	refreshKey := "refresh:detected_fields:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -5030,6 +5079,9 @@ func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, e
 			defer cancel()
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
+			}
+			if savedReq != nil {
+				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
 			fields, _, detectErr := p.detectFields(ctx, query, start, end, lineLimit)
 			if detectErr != nil {
@@ -5050,7 +5102,7 @@ func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, e
 	}()
 }
 
-func (p *Proxy) refreshDetectedLabelsCacheAsync(orgID, cacheKey, query, start, end string, lineLimit int) {
+func (p *Proxy) refreshDetectedLabelsCacheAsync(orgID, cacheKey, query, start, end string, lineLimit int, savedReq *http.Request) {
 	refreshKey := "refresh:detected_labels:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -5058,6 +5110,9 @@ func (p *Proxy) refreshDetectedLabelsCacheAsync(orgID, cacheKey, query, start, e
 			defer cancel()
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
+			}
+			if savedReq != nil {
+				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
 			labels, _, detectErr := p.detectLabels(ctx, query, start, end, lineLimit)
 			if detectErr != nil {
@@ -5078,7 +5133,7 @@ func (p *Proxy) refreshDetectedLabelsCacheAsync(orgID, cacheKey, query, start, e
 	}()
 }
 
-func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName, query, start, end string, lineLimit int) {
+func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName, query, start, end string, lineLimit int, savedReq *http.Request) {
 	refreshKey := "refresh:detected_field_values:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -5086,6 +5141,9 @@ func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName,
 			defer cancel()
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
+			}
+			if savedReq != nil {
+				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
 			values, err := p.resolveDetectedFieldValues(ctx, fieldName, query, start, end, lineLimit, true)
 			if err != nil {
@@ -5179,7 +5237,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 			if search == "" {
 				search = strings.TrimSpace(r.FormValue("q"))
 			}
-			p.refreshLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), search)
+			p.refreshLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), search, p.snapshotForwardedAuth(r))
 		}
 		return
 	}
@@ -5275,6 +5333,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 				r.FormValue("end"),
 				r.FormValue("limit"),
 				search,
+				p.snapshotForwardedAuth(r),
 			)
 		}
 		return
@@ -5619,7 +5678,7 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 			p.metrics.RecordRequest("volume", http.StatusOK, time.Since(start))
 			p.metrics.RecordCacheHit()
 			if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume"]) {
-				p.refreshVolumeCacheAsync(orgID, cacheKey, query, startParam, endParam, targetLabels)
+				p.refreshVolumeCacheAsync(orgID, cacheKey, query, startParam, endParam, targetLabels, p.snapshotForwardedAuth(r))
 			}
 			return
 		}
@@ -5695,7 +5754,7 @@ func (p *Proxy) computeVolumeResult(ctx context.Context, query, start, end, targ
 	return p.hitsToVolumeVector(body), nil
 }
 
-func (p *Proxy) refreshVolumeCacheAsync(orgID, cacheKey, rawQuery, start, end, targetLabels string) {
+func (p *Proxy) refreshVolumeCacheAsync(orgID, cacheKey, rawQuery, start, end, targetLabels string, savedReq *http.Request) {
 	refreshKey := "refresh:volume:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -5703,6 +5762,9 @@ func (p *Proxy) refreshVolumeCacheAsync(orgID, cacheKey, rawQuery, start, end, t
 			defer cancel()
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
+			}
+			if savedReq != nil {
+				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
 			result, err := p.computeVolumeResult(ctx, rawQuery, start, end, targetLabels)
 			if err == nil {
@@ -5739,7 +5801,7 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 			p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
 			p.metrics.RecordCacheHit()
 			if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume_range"]) {
-				p.refreshVolumeRangeCacheAsync(orgID, cacheKey, query, startParam, endParam, stepParam, targetLabels)
+				p.refreshVolumeRangeCacheAsync(orgID, cacheKey, query, startParam, endParam, stepParam, targetLabels, p.snapshotForwardedAuth(r))
 			}
 			return
 		}
@@ -5814,7 +5876,7 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 	return p.hitsToVolumeMatrix(body, start, end, step), nil
 }
 
-func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, end, step, targetLabels string) {
+func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, end, step, targetLabels string, savedReq *http.Request) {
 	refreshKey := "refresh:volume_range:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -5822,6 +5884,9 @@ func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, e
 			defer cancel()
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
+			}
+			if savedReq != nil {
+				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
 			result, err := p.computeVolumeRangeResult(ctx, rawQuery, start, end, step, targetLabels)
 			if err == nil {
@@ -5849,7 +5914,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
 		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["detected_fields"]) {
-			p.refreshDetectedFieldsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), parseDetectedLineLimit(r))
+			p.refreshDetectedFieldsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), parseDetectedLineLimit(r), p.snapshotForwardedAuth(r))
 		}
 		return
 	}
@@ -5911,7 +5976,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
 		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["detected_field_values"]) {
-			p.refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
+			p.refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit, p.snapshotForwardedAuth(r))
 		}
 		return
 	}
@@ -6099,9 +6164,10 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	patternLimit := parsePatternLimit(r.FormValue("limit"))
 	sourceLimit := parsePatternSourceLineLimit(r.FormValue("line_limit"), startParam, endParam, stepParam)
-	cacheLookupKeys := []string{p.patternsAutodetectCacheKey(orgID, query, startParam, endParam, requestStepParam)}
+	authFP := p.forwardedAuthFingerprint(r)
+	cacheLookupKeys := []string{p.patternsAutodetectCacheKey(orgID, authFP, query, startParam, endParam, requestStepParam)}
 	if requestStepParam == "" {
-		if derived := p.patternsAutodetectCacheKey(orgID, query, startParam, endParam, stepParam); derived != "" {
+		if derived := p.patternsAutodetectCacheKey(orgID, authFP, query, startParam, endParam, stepParam); derived != "" {
 			cacheLookupKeys = append(cacheLookupKeys, derived)
 		}
 	}
@@ -6109,6 +6175,9 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	cacheWriteKey := cacheLookupKeys[0]
 	if cacheWriteKey == "" {
 		cacheWriteKey = "patterns:" + orgID + ":" + r.URL.Query().Encode()
+		if authFP != "" {
+			cacheWriteKey += ":auth:" + authFP
+		}
 	}
 
 	for _, key := range cacheLookupKeys {
@@ -6139,14 +6208,17 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	if requestStepParam == "" {
 		// When request step is omitted, keep cache compatibility with warm payloads
 		// generated by query/query_range autodetect path (empty step key).
-		cacheWriteKey = p.patternsAutodetectCacheKey(orgID, query, startParam, endParam, "")
+		cacheWriteKey = p.patternsAutodetectCacheKey(orgID, authFP, query, startParam, endParam, "")
 		if cacheWriteKey == "" {
 			cacheWriteKey = "patterns:" + orgID + ":" + r.URL.Query().Encode()
+			if authFP != "" {
+				cacheWriteKey += ":auth:" + authFP
+			}
 		}
 	}
 	derivedStepCacheKey := ""
 	if requestStepParam == "" && stepParam != "" {
-		derivedStepCacheKey = p.patternsAutodetectCacheKey(orgID, query, startParam, endParam, stepParam)
+		derivedStepCacheKey = p.patternsAutodetectCacheKey(orgID, authFP, query, startParam, endParam, stepParam)
 	}
 
 	logsqlQuery, err := p.translatePatternQuery(query)
@@ -6976,7 +7048,7 @@ func (p *Proxy) applyCustomPatternsToPayload(payload []byte, startParam, endPara
 	return encoded
 }
 
-func (p *Proxy) patternsAutodetectCacheKey(orgID, query, start, end, step string) string {
+func (p *Proxy) patternsAutodetectCacheKey(orgID, authFP, query, start, end, step string) string {
 	query = patternScopeQuery(query)
 	if strings.TrimSpace(query) == "" {
 		return ""
@@ -6993,7 +7065,11 @@ func (p *Proxy) patternsAutodetectCacheKey(orgID, query, start, end, step string
 	if trimmed := strings.TrimSpace(normalizedStep); trimmed != "" {
 		params.Set("step", trimmed)
 	}
-	return "patterns:" + orgID + ":" + params.Encode()
+	key := "patterns:" + orgID + ":" + params.Encode()
+	if authFP != "" {
+		key += ":auth:" + authFP
+	}
+	return key
 }
 
 func normalizePatternCacheBoundary(raw, normalizedStep string) string {
@@ -7133,11 +7209,11 @@ func normalizePatternCacheStep(step string) string {
 	return dur.String()
 }
 
-func (p *Proxy) storeAutodetectedPatterns(orgID, query, start, end, step string, patterns []map[string]interface{}) {
+func (p *Proxy) storeAutodetectedPatterns(orgID, authFP, query, start, end, step string, patterns []map[string]interface{}) {
 	if !p.patternsEnabled || !p.patternsAutodetectFromQueries || len(patterns) == 0 {
 		return
 	}
-	cacheKey := p.patternsAutodetectCacheKey(orgID, query, start, end, step)
+	cacheKey := p.patternsAutodetectCacheKey(orgID, authFP, query, start, end, step)
 	if cacheKey == "" {
 		return
 	}
@@ -7154,12 +7230,12 @@ func (p *Proxy) storeAutodetectedPatterns(orgID, query, start, end, step string,
 	p.recordPatternSnapshotEntry(cacheKey, resultBody, now)
 }
 
-func (p *Proxy) maybeAutodetectPatternsFromWindowEntries(orgID, query, start, end, step string, entries []queryRangeWindowEntry) {
+func (p *Proxy) maybeAutodetectPatternsFromWindowEntries(orgID, authFP, query, start, end, step string, entries []queryRangeWindowEntry) {
 	if !p.patternsEnabled || !p.patternsAutodetectFromQueries || len(entries) == 0 {
 		return
 	}
 	patterns := extractLogPatternsFromWindowEntries(entries, step, maxPatternResponseLimit)
-	p.storeAutodetectedPatterns(orgID, query, start, end, step, patterns)
+	p.storeAutodetectedPatterns(orgID, authFP, query, start, end, step, patterns)
 }
 
 // handleFormatQuery returns the query as-is (pretty-printing is client-side for LogQL).
@@ -7305,7 +7381,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
 		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["detected_labels"]) {
-			p.refreshDetectedLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), parseDetectedLineLimit(r))
+			p.refreshDetectedLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), parseDetectedLineLimit(r), p.snapshotForwardedAuth(r))
 		}
 		return
 	}
@@ -9527,6 +9603,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	}
 	p.storeAutodetectedPatterns(
 		r.Header.Get("X-Scope-OrgID"),
+		p.forwardedAuthFingerprint(r),
 		r.FormValue("query"),
 		r.FormValue("start"),
 		r.FormValue("end"),
@@ -11245,11 +11322,11 @@ func (p *Proxy) multiTenantCacheKey(r *http.Request, endpoint string) (string, b
 					break
 				}
 			}
-		case "patterns":
-			key = "mt:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Query().Encode()
+		case "patterns", "series":
+			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r)
 		}
 		if endpoint == "query" || endpoint == "query_range" {
-			key += ":" + p.tupleModeCacheKey(r)
+			key = "mt:" + p.canonicalReadCacheKey(endpoint, r.Header.Get("X-Scope-OrgID"), r, p.tupleModeCacheKey(r))
 		}
 		return key, true
 	}

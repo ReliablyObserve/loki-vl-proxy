@@ -216,6 +216,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	mergeStart := time.Now()
 	p.maybeAutodetectPatternsFromWindowEntries(
 		r.Header.Get("X-Scope-OrgID"),
+		p.forwardedAuthFingerprint(r),
 		r.FormValue("query"),
 		r.FormValue("start"),
 		r.FormValue("end"),
@@ -579,13 +580,17 @@ func (p *Proxy) queryRangeWindowHasHitsCacheKey(
 	logsqlQuery string,
 	window queryRangeWindow,
 ) string {
-	return strings.Join([]string{
+	parts := []string{
 		"query_range_window_has_hits",
 		r.Header.Get("X-Scope-OrgID"),
 		logsqlQuery,
 		strconv.FormatInt(window.startNs, 10),
 		strconv.FormatInt(window.endNs, 10),
-	}, ":")
+	}
+	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+		parts = append(parts, "auth:"+fp)
+	}
+	return strings.Join(parts, ":")
 }
 
 func (p *Proxy) queryRangeWindowPrefilterTTL(windowEndNs int64) time.Duration {
@@ -687,7 +692,7 @@ func (p *Proxy) queryRangeWindowCacheKey(
 	categorizedLabels bool,
 	emitStructuredMetadata bool,
 ) string {
-	return strings.Join([]string{
+	parts := []string{
 		"query_range_window",
 		r.Header.Get("X-Scope-OrgID"),
 		logsqlQuery,
@@ -697,7 +702,11 @@ func (p *Proxy) queryRangeWindowCacheKey(
 		strconv.FormatInt(window.endNs, 10),
 		strconv.FormatBool(categorizedLabels),
 		strconv.FormatBool(emitStructuredMetadata),
-	}, ":")
+	}
+	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+		parts = append(parts, "auth:"+fp)
+	}
+	return strings.Join(parts, ":")
 }
 
 func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {

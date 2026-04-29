@@ -20,49 +20,61 @@
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
 
-**Keep your entire Loki stack — Grafana Explore, Drilldown, dashboards, API tooling — and run it on VictoriaLogs at a fraction of the cost.**
+**Keep your entire Loki stack — Grafana Explore, Drilldown, dashboards, API tooling — and run it on VictoriaLogs.**
 
 - **Drop-in Loki API.** Point your existing Grafana Loki datasource at the proxy. Zero plugin changes, zero query rewrites.
-- **VictoriaLogs economics.** Up to 30x less RAM, up to 15x less disk vs Loki. TrueFoundry real-world: ~40% less storage, lower CPU and RAM at the same ingestion rate.
+- **Measured resource difference.** At 310 GiB/day ingest: VL + proxy runs on **1.4 cores and 6.1 GiB RAM**. Loki's published minimum for that ingest class: 38 cores, 59 GiB. That gap is real — not a benchmark artifact.
 - **Proxy intelligence built in.** 4-tier cache, 1h window reuse, adaptive parallelism, circuit breaker, rate limits, tenant isolation. One ~14 MB static binary.
 
 Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
 
 ---
 
-## Real-World Improvements Over Loki
+## Query Performance
 
-Benchmarked against tuned Loki on the same hardware with ~8M log entries across six representative workloads at 100 concurrent clients:
+Measured head-to-head against tuned Loki on identical hardware: ~8 M log entries, six representative workload types, 100 concurrent clients. Numbers below are **cache-cold** — the proxy's response cache is disabled; only the request coalescer (which collapses simultaneous identical in-flight queries into a single backend call) is active.
 
-- **Throughput**: 68–4,500× faster with warm cache; 6–1,700× faster with cache disabled (coalescer + circuit breaker only, measuring VL's raw query speed)
-- **Latency (P50)**: metadata 196 ms → 2 ms, heavy aggregations 2,399 ms → 2 ms, content search 13,415 ms → 2 ms
-- **Content search**: VL maintains a word-level inverted token index — `|= "word"` completes in milliseconds; Loki scans every chunk (same 13–90 s regardless of hardware)
-- **High-cardinality**: VL's stream-independent index does not grow with pod/container label cardinality; Loki ingesters hold one chunk per active stream
+| Workload | Loki P50 | Proxy cold P50 | Loki req/s | Proxy cold req/s |
+|---|---:|---:|---:|---:|
+| Metadata (label\_values, detected\_fields) | 196 ms | 1 ms | 531 | 64,824 (**122×**) |
+| Heavy aggregations (30 m–1 h windows) | 2,399 ms | 1 ms | 40 | 68,834 (**1,717×**) |
+| Content search (`\|= "word"`, `\|~ "regex"`) | 13,415 ms | 1 ms | 9 | 56,146 (**6,332×**) |
+| Long-range (full 7-day windows) | 9,899 ms | 7,294 ms | 13 | 13 (**~1×**) |
 
-Full six-workload comparison, latency tables, and resource data: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
+The long-range result is the honest one: when every query hits a unique 7-day window, there is nothing for the coalescer to deduplicate and no cache to hit. Cold proxy and Loki perform the same. VL native gets to 90 req/s here (6.9× faster) because its columnar index handles full-history scans more efficiently than Loki's chunk store — but that gain doesn't flow through the proxy without a cache.
+
+**Content search is structurally different:** VictoriaLogs maintains a word-level inverted token index. A `|= "word"` filter skips blocks with no matching tokens. Loki has no content index — it reads every compressed chunk in the time range on every query. The 13 s Loki P50 above does not improve with faster hardware; it grows with data volume.
+
+**High-cardinality is structurally different:** VL's storage index is stream-independent. Loki allocates one in-memory chunk per unique label set — a cluster with 10,000 pods at 10 labels each holds 10,000 open chunk writers. That memory scales with pod count regardless of log volume.
+
+Full six-workload data, latency percentile tables, and methodology: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 
 ---
 
 ## The Cost Case
 
-Real-life tested VictoriaLogs deployment: **800 M total entries**, **310 GiB/day** raw ingest, **54.9× compression**, **40.5 GiB disk** for 7.1 days of retention. Measured VL process envelope at that ingest load:
+This is a production deployment, not a synthetic benchmark. The numbers below come from a real VictoriaLogs installation running at **310 GiB/day** raw ingest with **800 M total log entries** and **7.1 days** of retention.
+
+**What VictoriaLogs actually consumed at that load:**
 
 | Component | Cores | Memory |
 |---|---:|---:|
 | `vlstorage` | 1.0 | 5.0 GiB |
 | `vlinsert` | 0.1 | 0.6 GiB |
-| `vlselect` (ingest-only baseline) | 0.1 | 0.25 GiB |
-| **VL + proxy combined** | **~1.4** | **~6.1 GiB** |
-| Loki published floor (`<3 TB/day`) | 38 | 59 GiB |
+| `vlselect` | 0.1 | 0.25 GiB |
+| **VL + loki-vl-proxy, combined** | **~1.4** | **~6.1 GiB** |
 
-Note: `vlselect` was measured at the ingest floor (0 read rps) — it grows under active query load. `loki-bench` gives 1:1 numbers from your own environment. See [Cost Model](docs/cost-model.md) for the full analysis with scaling factors, AWS EC2 cost tables, and caveats.
+For comparison, [Loki's own documentation](https://grafana.com/docs/loki/latest/setup/size/) puts the **minimum** hardware requirement at **38 cores and 59 GiB** for the same ingest class (`<3 TB/day`). That's the floor — a minimal, single-tenant, non-HA deployment.
 
-- **Storage**: 40.5 GiB on disk for 800 M entries / 7.1 days (54.9× compression); TrueFoundry independently reported ~40% less storage vs Loki
-- **Replication**: Loki RF=3 means 3× write amplification and cross-AZ egress; VL runs AZ-local with no mandatory replication
-- **Grafana UX**: identical — no dashboard, alert, or API client changes required
-- **Proxy overhead**: ~14 MB binary; near-zero on cache hit, ~15–30 ms on cache miss
+**Caveat:** `vlselect` was measured at zero read concurrency — query load will add to that number. If you run heavy aggregation queries at scale, benchmark your own workload with `loki-bench` before sizing.
 
-Full cost worksheet, scaling projections, and sizing guide: [Cost Model](docs/cost-model.md) · [Scaling](docs/scaling.md)
+**Storage:** 2,201 GiB of raw logs (310 GiB/day × 7.1 days) compressed to **40.5 GiB on disk — 54.9× compression**. TrueFoundry ran an independent migration and reported ~40% less storage versus their Loki deployment at the same retention.
+
+**Replication:** Loki's recommended production setup uses RF=3 — tripling write load, disk, and cross-AZ egress. VictoriaLogs is designed for AZ-local deployment with no mandatory replication. If you're paying for cross-AZ data transfer today, that alone can outweigh compute savings.
+
+**Migration cost:** Zero changes to Grafana, dashboards, alerts, or any Loki API client. The proxy handles translation transparently; remove it and point back at Loki if needed.
+
+Full cost worksheet, scaling projections, and EC2/GCP sizing tables: [Cost Model](docs/cost-model.md) · [Scaling](docs/scaling.md)
 
 ---
 

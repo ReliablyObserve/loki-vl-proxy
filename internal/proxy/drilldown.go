@@ -1862,7 +1862,7 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 	if end != "" {
 		params.Set("end", end)
 	}
-	body, err := p.vlGetCoalesced(ctx, "native_fields:"+params.Encode(), "/select/logsql/field_names", params)
+	body, err := p.vlGetCoalesced(ctx, p.nativeCoalescerKey("native_fields", ctx, params), "/select/logsql/field_names", params)
 	if err != nil {
 		return nil, err
 	}
@@ -2132,7 +2132,7 @@ func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string
 		if end != "" {
 			params.Set("end", end)
 		}
-		body, err := p.vlGetCoalesced(ctx, "native_streams:"+params.Encode(), "/select/logsql/streams", params)
+		body, err := p.vlGetCoalesced(ctx, p.nativeCoalescerKey("native_streams", ctx, params), "/select/logsql/streams", params)
 		if err != nil {
 			lastErr = err
 			continue
@@ -2235,11 +2235,23 @@ type detectedLabelsCachePayload struct {
 }
 
 func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	return "detect_fields:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	key := "detect_fields:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
+		if fp := p.forwardedAuthFingerprint(origReq); fp != "" {
+			key += ":auth:" + fp
+		}
+	}
+	return key
 }
 
 func (p *Proxy) detectedLabelsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	return "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	key := "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
+		if fp := p.forwardedAuthFingerprint(origReq); fp != "" {
+			key += ":auth:" + fp
+		}
+	}
+	return key
 }
 
 func (p *Proxy) getCachedDetectedFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, bool) {

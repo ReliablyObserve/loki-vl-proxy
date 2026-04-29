@@ -7,12 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- security: all cache keys (label_inventory, queryRange, detected_fields/labels, native_fields/streams coalescer, patterns autodetect, volume/range) now include an auth fingerprint (SHA-256 of configured forward headers + cookies), preventing tenants from receiving each other's cached metadata responses in multi-tenant deployments with forwarded auth.
+- security: async background cache refresh goroutines now capture forwarded-auth credentials at request time via `snapshotForwardedAuth`, eliminating cross-tenant credential bleed when refresh workers use `context.Background()`.
+- security: `multiTenantCacheKey` now includes auth fingerprint for `patterns`, `series`, `query`, and `query_range` endpoints.
+
 ## [1.22.4] - 2026-04-29
 
 ### Changed
 
 - ci: semgrep scan excludes three blanket false-positive rules for this codebase: `go.lang.security.audit.xss.no-direct-write-to-responsewriter` and `no-fprintf-to-responsewriter` (JSON/binary proxy writes are not XSS), `javascript.lang.security.detect-insecure-websocket` (JavaScript rule misapplied to Go).
 - security: `nosemgrep` annotations added to four specific false-positive locations: `w.Write()` calls in `subquery.go`, `range_metric_compat.go`, and `query_range_windowing.go` (Content-Type set immediately before each write); `upgrader.Upgrade()` in `handleTail` (origin enforced via `tailUpgrader()` `CheckOrigin`); `translateQueryWithContext` in `handleDelete` (LogQL/LogsQL sent over HTTP, not SQL).
+- ci: Trivy updated from `0.69.3` to `0.70.0` (`security-pr.yaml` docker image tag, `security-heavy.yaml` trivy-action pinned to `ed142fd` / `v0.36.0`).
+- ci: replace `semgrep/semgrep-action@v1` (broken — uses removed `returntocorp/semgrep-agent:v1` Docker image) with `pip install semgrep==1.161.0` + `semgrep scan` CLI in `security-heavy.yaml`; adds SARIF upload step.
+- ci: all GitHub Actions in `release.yaml` pinned to immutable commit SHAs to prevent supply-chain attacks via mutable version tags.
+- ci: `govulncheck` pinned to `v1.1.4` in `ci.yaml`.
+- docs: README "The Cost Case" and "Query Performance" sections rewritten with real production numbers (310 GiB/day, 1.4 cores, 6.1 GiB RAM) and cold-cache query latency table.
 
 ## [1.22.3] - 2026-04-29
 
@@ -20,6 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ci: Trivy updated from `0.69.3` to `0.70.0` (`security-pr.yaml` docker image tag, `security-heavy.yaml` trivy-action pinned to `ed142fd` / `v0.36.0`).
 - ci: replace `semgrep/semgrep-action@v1` (broken — uses removed `returntocorp/semgrep-agent:v1` Docker image) with `pip install semgrep==1.161.0` + `semgrep scan` CLI in `security-heavy.yaml`; adds SARIF upload step.
+- ci: all GitHub Actions in `release.yaml` pinned to immutable commit SHAs to prevent supply-chain attacks via mutable version tags.
+- ci: `govulncheck` pinned to `v1.1.4` in `ci.yaml`.
+- docs: README "The Cost Case" and "Query Performance" sections rewritten with real production numbers (310 GiB/day, 1.4 cores, 6.1 GiB RAM) and cold-cache query latency table.
 
 ## [1.22.2] - 2026-04-29
 
