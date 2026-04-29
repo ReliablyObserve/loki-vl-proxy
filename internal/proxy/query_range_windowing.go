@@ -711,6 +711,19 @@ func (p *Proxy) queryRangeWindowCacheKey(
 
 func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
 	entries := make([]queryRangeWindowEntry, 0, len(body)/256+1)
+	exposureCache := make(map[string][]metadataFieldExposure, 16)
+	smBuf := metadataMapPool.Get().(map[string]string)
+	pfBuf := metadataMapPool.Get().(map[string]string)
+	defer func() {
+		for k := range smBuf {
+			delete(smBuf, k)
+		}
+		for k := range pfBuf {
+			delete(pfBuf, k)
+		}
+		metadataMapPool.Put(smBuf)
+		metadataMapPool.Put(pfBuf)
+	}()
 	start := 0
 	for start < len(body) {
 		end := start
@@ -755,7 +768,7 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 		msg, _ := stringifyEntryValue(entry["_msg"])
 		msg = reconstructLogLine(msg, entry, originalQuery)
 
-		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery)
+		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf, pfBuf)
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)

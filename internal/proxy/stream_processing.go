@@ -145,6 +145,20 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
+	exposureCache := make(map[string][]metadataFieldExposure, 16)
+	smBuf2 := metadataMapPool.Get().(map[string]string)
+	pfBuf2 := metadataMapPool.Get().(map[string]string)
+	defer func() {
+		for k := range smBuf2 {
+			delete(smBuf2, k)
+		}
+		for k := range pfBuf2 {
+			delete(pfBuf2, k)
+		}
+		metadataMapPool.Put(smBuf2)
+		metadataMapPool.Put(pfBuf2)
+	}()
+
 	first := true
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -169,7 +183,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 			continue
 		}
 
-		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery)
+		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf2, pfBuf2)
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
@@ -733,7 +747,12 @@ func metadataFieldMap(fields map[string]string) map[string]string {
 	return pairs
 }
 
-func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string) (map[string]string, map[string]string, map[string]string) {
+// classifyEntryFields classifies log entry fields into stream labels, structured
+// metadata, and parsed fields. smBuf and pfBuf are pre-allocated reusable maps
+// that are cleared and filled; callers must copy content before the next call
+// (buildStreamValue → metadataFieldMap makes the required copy). exposureCache
+// is a per-batch cache keyed by VL field name to avoid repeated slice allocs.
+func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string, map[string]string) {
 	stream := parseStreamLabels(asString(entry["_stream"]))
 	labels := make(map[string]string, len(stream))
 	for k, v := range stream {
@@ -759,10 +778,12 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 	ensureDetectedLevel(labels)
 	ensureSyntheticServiceName(labels)
 
-	var (
-		parsedFields             map[string]string
-		structuredMetadataFields map[string]string
-	)
+	for k := range smBuf {
+		delete(smBuf, k)
+	}
+	for k := range pfBuf {
+		delete(pfBuf, k)
+	}
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 
 	for key, value := range entry {
@@ -776,25 +797,26 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 		if !ok || strings.TrimSpace(stringValue) == "" {
 			continue
 		}
-		for _, exposure := range p.metadataFieldExposures(key) {
+		for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
 			if _, exists := labels[exposure.name]; exists && !exposure.isAlias {
 				continue
 			}
 			if classifyAsParsed {
-				if parsedFields == nil {
-					parsedFields = make(map[string]string, 4)
-				}
-				parsedFields[exposure.name] = stringValue
+				pfBuf[exposure.name] = stringValue
 				continue
 			}
-			if structuredMetadataFields == nil {
-				structuredMetadataFields = make(map[string]string, 4)
-			}
-			structuredMetadataFields[exposure.name] = stringValue
+			smBuf[exposure.name] = stringValue
 		}
 	}
 
-	return labels, structuredMetadataFields, parsedFields
+	var sm, pf map[string]string
+	if len(smBuf) > 0 {
+		sm = smBuf
+	}
+	if len(pfBuf) > 0 {
+		pf = pfBuf
+	}
+	return labels, sm, pf
 }
 
 // streamLabelsCacheMu guards streamLabelsCache to prevent concurrent map writes.

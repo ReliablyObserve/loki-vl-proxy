@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -343,27 +344,43 @@ func buildEntryLabels(entry map[string]interface{}) map[string]string {
 	return labels
 }
 
+// detectedLabelsBufPool pools map[string]string for buildDetectedLabels callers
+// that iterate the result immediately and discard it within the same loop tick.
+var detectedLabelsBufPool = sync.Pool{
+	New: func() interface{} {
+		return make(map[string]string, 16)
+	},
+}
+
 func buildDetectedLabels(entry map[string]interface{}) map[string]string {
-	// parseStreamLabels returns a cached read-only map — copy before mutating.
+	labels := make(map[string]string, 16)
+	fillDetectedLabels(entry, labels)
+	return labels
+}
+
+// fillDetectedLabels fills buf with stream labels for entry. Buf is cleared
+// before filling; callers must not retain the map past the next fillDetectedLabels call on the same buf.
+func fillDetectedLabels(entry map[string]interface{}, buf map[string]string) {
+	for k := range buf {
+		delete(buf, k)
+	}
 	stream := parseStreamLabels(asString(entry["_stream"]))
-	labels := make(map[string]string, len(stream))
 	for k, v := range stream {
-		labels[k] = v
+		buf[k] = v
 	}
 	for _, key := range serviceNameSourceFields {
-		if _, ok := labels[key]; ok {
+		if _, ok := buf[key]; ok {
 			continue
 		}
 		if value, ok := stringifyEntryValue(entry[key]); ok && strings.TrimSpace(value) != "" {
-			labels[key] = value
+			buf[key] = value
 		}
 	}
 	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
-		labels["level"] = value
+		buf["level"] = value
 	}
-	ensureDetectedLevel(labels)
-	ensureSyntheticServiceName(labels)
-	return labels
+	ensureDetectedLevel(buf)
+	ensureSyntheticServiceName(buf)
 }
 
 func shouldExposeStructuredField(key string, streamLabels map[string]string, lt *LabelTranslator) bool {
@@ -526,6 +543,14 @@ func scanStreamLabelNames(body []byte, lt *LabelTranslator) map[string]struct{} 
 func scanDetectedLabelSummaries(body []byte, lt *LabelTranslator) map[string]*detectedLabelSummary {
 	summaries := map[string]*detectedLabelSummary{}
 
+	labelBuf := detectedLabelsBufPool.Get().(map[string]string)
+	defer func() {
+		for k := range labelBuf {
+			delete(labelBuf, k)
+		}
+		detectedLabelsBufPool.Put(labelBuf)
+	}()
+
 	startIdx := 0
 	for startIdx < len(body) {
 		endIdx := startIdx
@@ -547,7 +572,8 @@ func scanDetectedLabelSummaries(body []byte, lt *LabelTranslator) map[string]*de
 			continue
 		}
 
-		labels := buildDetectedLabels(entry)
+		fillDetectedLabels(entry, labelBuf)
+		labels := labelBuf
 		delete(labels, "detected_level")
 
 		for key, value := range labels {
@@ -1528,6 +1554,14 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 	// delete would incorrectly remove aliases added by earlier OTel entries.
 	anyOTelWithServiceName := false
 
+	streamLabelBuf := detectedLabelsBufPool.Get().(map[string]string)
+	defer func() {
+		for k := range streamLabelBuf {
+			delete(streamLabelBuf, k)
+		}
+		detectedLabelsBufPool.Put(streamLabelBuf)
+	}()
+
 	startIdx := 0
 	for startIdx < len(body) {
 		endIdx := startIdx
@@ -1548,7 +1582,8 @@ func (p *Proxy) detectFieldSummaries(body []byte) ([]map[string]interface{}, map
 		if err := json.Unmarshal(line, &entry); err != nil {
 			continue
 		}
-		streamLabels := buildDetectedLabels(entry)
+		fillDetectedLabels(entry, streamLabelBuf)
+		streamLabels := streamLabelBuf
 		if detectedLevel := strings.TrimSpace(streamLabels["detected_level"]); detectedLevel != "" {
 			addDetectedField(fields, "detected_level", "", "string", nil, detectedLevel)
 		}
