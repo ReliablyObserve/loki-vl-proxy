@@ -494,6 +494,16 @@ func (c *Cache) Invalidate(key string) {
 	}
 }
 
+// PurgeAll removes all entries from all cache tiers (L1 memory and L2 disk).
+// L3 peer entries on remote nodes are not purged — only the local shard is cleared.
+// Intended for admin/bench use only; do not call in normal request handling.
+func (c *Cache) PurgeAll() {
+	c.InvalidatePrefix("")
+	if c.l2 != nil {
+		c.l2.Purge()
+	}
+}
+
 // InvalidatePrefix removes all keys with the given prefix.
 func (c *Cache) InvalidatePrefix(prefix string) {
 	c.mu.Lock()

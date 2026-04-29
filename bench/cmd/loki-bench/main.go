@@ -165,6 +165,16 @@ func main() {
 				fmt.Printf("\n▶ workload=%-12s  concurrency=%4d  target=%s\n",
 					wl.Name, conc, tgt.name)
 
+				// Flush proxy cache before each run so targets start cold.
+				// Skipped for Loki / VL-direct (no cache) and when the auth
+				// token is not set (flush endpoint requires it). Failure is
+				// non-fatal — benchmarks proceed whether or not the flush succeeds.
+				isProxyTarget := tgt.name == "proxy" || tgt.name == "proxy_nocache" ||
+					tgt.name == "proxy_partial" || tgt.name == "proxy_coalescer"
+				if isProxyTarget && tgt.url != "" && *pprofAuthToken != "" {
+					flushProxyCache(ctx, tgt.url, *pprofAuthToken)
+				}
+
 				// Warmup phase (warms caches, esp. proxy window cache).
 				// Runs at full benchmark concurrency with jitter so the cache
 				// is populated across the same time-window space the real run
@@ -411,4 +421,30 @@ func max(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// flushProxyCache calls POST /admin/cache/flush on a proxy instance to clear
+// all in-memory cache entries before a benchmark run. This ensures each target
+// run starts from a cold cache rather than inheriting warmup state.
+// Errors are printed as warnings but never abort the benchmark.
+func flushProxyCache(ctx context.Context, baseURL, authToken string) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/admin/cache/flush", nil)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warn: cache flush request: %v\n", err)
+		return
+	}
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "  warn: cache flush: %v\n", err)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "  warn: cache flush returned %d\n", resp.StatusCode)
+	} else {
+		fmt.Printf("  ✓ cache flushed\n")
+	}
 }
