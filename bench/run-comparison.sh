@@ -157,6 +157,8 @@ if [ -z "$PROXY_PARTIAL_URL" ]; then
       -cache-ttl=6s \
       -query-range-history-cache-ttl=6s \
       -query-range-recent-cache-ttl=0 \
+      -rate-limit-per-second=0 \
+      -rate-limit-burst=0 \
       -server.enable-pprof \
       "-server.admin-auth-token=${PPROF_AUTH_TOKEN:-bench-pprof-token}" \
       -log-level=warn \
