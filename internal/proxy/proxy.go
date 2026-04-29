@@ -7430,7 +7430,7 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Translate query
-	logsqlQuery, err := p.translateQueryWithContext(r.Context(), query)
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), query) // nosemgrep: go.lang.security.injection.tainted-sql-string -- logsqlQuery is LogQL/LogsQL sent via HTTP params to VL, not SQL
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, "failed to translate query: "+err.Error())
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
@@ -7527,7 +7527,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	// headers do not break the client handshake. Native tail remains a best-effort
 	// path; if it stalls or isn't available, synthetic polling takes over.
 	upgrader := p.tailUpgrader()
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := upgrader.Upgrade(w, r, nil) // nosemgrep: go.gorilla.security.audit.websocket-missing-origin-check -- CheckOrigin is set in tailUpgrader()
 	if err != nil {
 		p.log.Error("websocket upgrade failed", "error", err)
 		p.metrics.RecordRequest("tail", http.StatusBadRequest, time.Since(start))
