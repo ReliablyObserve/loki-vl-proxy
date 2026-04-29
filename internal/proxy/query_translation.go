@@ -1190,12 +1190,14 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 					delete(translated, k)
 				}
 				changed := false
+				hadStream := false
 				for k, v := range metric {
 					if k == "__name__" {
 						changed = true
 						continue
 					}
 					if k == "_stream" {
+						hadStream = true
 						if rawStream, ok := v.(string); ok {
 							for streamKey, streamValue := range parseStreamLabels(rawStream) {
 								lokiKey := streamKey
@@ -1229,11 +1231,12 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 				beforeSyntheticCount := len(syntheticLabels)
 				hadLevel := syntheticLabels["level"] != ""
 				ensureDetectedLevel(syntheticLabels)
-				// If detected_level was synthesized from level, remove the raw level label.
-				// Metric aggregations like "sum by (detected_level)" translate to VL's
-				// "sum by (level)" and back — the result should only carry detected_level,
-				// matching Loki's behavior where both labels don't coexist in metric output.
-				if hadLevel && syntheticLabels["detected_level"] != "" {
+				// Remove the raw level label only when it came from an explicit VL grouping
+				// dimension (no _stream in the response), i.e. "sum by (detected_level)"
+				// translates to VL's "sum by (level)" and back. In that case level must be
+				// replaced by detected_level. When _stream IS present, level is a genuine
+				// stream label that Loki also returns alongside detected_level — keep both.
+				if hadLevel && !hadStream && syntheticLabels["detected_level"] != "" {
 					delete(syntheticLabels, "level")
 					delete(translated, "level")
 				}

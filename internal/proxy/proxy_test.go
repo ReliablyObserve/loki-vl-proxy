@@ -573,7 +573,7 @@ func TestContract_QueryRange_MatrixFormat_ExtendsBackendEndByStepAndTrimsExtraPo
 	resp := doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query=rate(%7Bapp%3D%22nginx%22%7D%5B5m%5D)&start=1705312200&end=1705312260&step=60")
 	assertLokiSuccess(t, resp)
 
-	expectedEnd := strconv.FormatInt((1705312260+60)*int64(time.Second), 10)
+	expectedEnd := strconv.FormatInt(1705312260+60, 10)
 	if receivedEnd != expectedEnd {
 		t.Fatalf("expected compensated backend end %q, got %q", expectedEnd, receivedEnd)
 	}
