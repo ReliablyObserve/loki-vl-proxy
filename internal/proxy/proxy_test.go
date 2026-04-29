@@ -3115,9 +3115,9 @@ func TestTranslation_LineFilterForwarded(t *testing.T) {
 
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bapp%3D%22nginx%22%7D+%7C%3D+%22error%22&start=1&end=2&limit=10`)
 
-	// |= "error" must become *:~"error" (all-field substring, matching Loki's full log line search)
+	// |= "error" becomes ~"text" (VL regex/substring filter on _msg, which contains reconstructed JSON)
 	// proxyLogQuery appends sort by _time desc by default (Loki backward direction)
-	if receivedQuery != `app:=nginx *:~"error" | sort by (_time desc)` {
+	if receivedQuery != `app:=nginx ~"error" | sort by (_time desc)` {
 		t.Errorf("expected translated query, got %q", receivedQuery)
 	}
 }
@@ -3133,7 +3133,7 @@ func TestTranslation_NegativeFilter(t *testing.T) {
 
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bapp%3D%22nginx%22%7D+%21%3D+%22debug%22&start=1&end=2&limit=10`)
 
-	if receivedQuery != `app:=nginx NOT *:~"debug" | sort by (_time desc)` {
+	if receivedQuery != `app:=nginx NOT ~"debug" | sort by (_time desc)` {
 		t.Errorf("expected translated negative filter, got %q", receivedQuery)
 	}
 }

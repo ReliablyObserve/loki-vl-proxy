@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(proxy): reconstruct JSON log lines so `|= "text"` line filters match any JSON field, not only the extracted `_msg` value; VL entries with extra fields are re-serialised as `{"_msg":"...","field":"value"}` before returning to Grafana.
+- fix(translator): revert line filter translation from invalid `*:~"text"` VictoriaLogs syntax to `~"text"` (regex/substring on `_msg`), which is valid across all supported VL versions.
+
 ## [1.24.0] - 2026-04-29
 
 ### Changed

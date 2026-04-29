@@ -52,17 +52,17 @@ func TestRealWorld_NegativeLineFilters(t *testing.T) {
 		{
 			name:  "exclude health ready metrics — three chained",
 			logql: `{app="nginx"} != "/health" != "/ready" != "/metrics"`,
-			want:  `app:=nginx NOT *:~"/health" NOT *:~"/ready" NOT *:~"/metrics"`,
+			want:  `app:=nginx NOT ~"/health" NOT ~"/ready" NOT ~"/metrics"`,
 		},
 		{
 			name:  "kafka exclude replica manager noise",
 			logql: `{instance=~"kafka-[23]",name="kafka"} != "kafka.server:type=ReplicaManager"`,
-			want:  `instance:~"kafka-[23]" name:=kafka NOT *:~"kafka.server:type=ReplicaManager"`,
+			want:  `instance:~"kafka-[23]" name:=kafka NOT ~"kafka.server:type=ReplicaManager"`,
 		},
 		{
 			name:  "case insensitive regex match",
 			logql: `{job="nginx"} |~ "(?i)error|exception|fatal"`,
-			want:  `job:=nginx *:~"(?i)error|exception|fatal"`,
+			want:  `job:=nginx ~"(?i)error|exception|fatal"`,
 		},
 	}
 	for _, tt := range tests {
@@ -87,7 +87,7 @@ func TestRealWorld_ComplexKubernetes(t *testing.T) {
 		{
 			name:  "k8s OOMKilled events",
 			logql: `{job="integrations/kubernetes/eventhandler"} |= "OOMKilled" | json`,
-			want:  `job:=integrations/kubernetes/eventhandler *:~"OOMKilled" | unpack_json`,
+			want:  `job:=integrations/kubernetes/eventhandler ~"OOMKilled" | unpack_json`,
 		},
 		{
 			name:  "cross cluster pod search with json filter",
@@ -97,7 +97,7 @@ func TestRealWorld_ComplexKubernetes(t *testing.T) {
 		{
 			name:  "container restart correlation",
 			logql: `{namespace=~"prod.*",container!=""} |= "Back-off restarting failed container"`,
-			want:  `namespace:~"prod.*" container:!"" *:~"Back-off restarting failed container"`,
+			want:  `namespace:~"prod.*" container:!"" ~"Back-off restarting failed container"`,
 		},
 	}
 	for _, tt := range tests {
@@ -122,7 +122,7 @@ func TestRealWorld_MultiStage(t *testing.T) {
 		{
 			name:  "logfmt filter compound or",
 			logql: `{job="loki-dev/query-frontend"} |= "metrics.go" != "out of order" | logfmt | duration > "30s"`,
-			want:  `job:=loki-dev/query-frontend *:~"metrics.go" NOT *:~"out of order" | unpack_logfmt | filter duration:>30s`,
+			want:  `job:=loki-dev/query-frontend ~"metrics.go" NOT ~"out of order" | unpack_logfmt | filter duration:>30s`,
 		},
 		{
 			name:  "json then label_format then line_format",
@@ -162,7 +162,7 @@ func TestRealWorld_MetricAlerts(t *testing.T) {
 		{
 			name:  "error rate sum by job",
 			logql: `sum by (job) (rate({app="foo",env="production"} |= "error" [5m]))`,
-			want:  `app:=foo env:=production *:~"error" | stats by (job) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (job) sum(__lvp_rate)`,
+			want:  `app:=foo env:=production ~"error" | stats by (job) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (job) sum(__lvp_rate)`,
 		},
 		{
 			name:  "count by level",

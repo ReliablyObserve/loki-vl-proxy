@@ -30,27 +30,27 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "line contains filter — substring semantics",
 			logql: `{app="nginx"} |= "error"`,
-			want:  `app:=nginx *:~"error"`,
+			want:  `app:=nginx ~"error"`,
 		},
 		{
 			name:  "line contains filter with backtick raw string",
 			logql: "{app=\"nginx\"} |= `api`",
-			want:  `app:=nginx *:~"api"`,
+			want:  `app:=nginx ~"api"`,
 		},
 		{
 			name:  "line contains backtick raw string with logfmt pipeline",
 			logql: "{app=\"nginx\"} |= `api` | logfmt",
-			want:  `app:=nginx *:~"api" | unpack_logfmt`,
+			want:  `app:=nginx ~"api" | unpack_logfmt`,
 		},
 		{
 			name:  "line contains backtick raw string containing pipe char",
 			logql: "{app=\"nginx\"} |= `api|v1` | logfmt",
-			want:  `app:=nginx *:~"api|v1" | unpack_logfmt`,
+			want:  `app:=nginx ~"api|v1" | unpack_logfmt`,
 		},
 		{
 			name:  "line not contains filter — substring semantics",
 			logql: `{app="nginx"} != "debug"`,
-			want:  `app:=nginx NOT *:~"debug"`,
+			want:  `app:=nginx NOT ~"debug"`,
 		},
 		{
 			name:    "invalid selector syntax returns error",
@@ -60,12 +60,12 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "regexp filter",
 			logql: `{app="nginx"} |~ "err.*"`,
-			want:  `app:=nginx *:~"err.*"`,
+			want:  `app:=nginx ~"err.*"`,
 		},
 		{
 			name:  "negative regexp filter",
 			logql: `{app="nginx"} !~ "debug.*"`,
-			want:  `app:=nginx NOT *:~"debug.*"`,
+			want:  `app:=nginx NOT ~"debug.*"`,
 		},
 		{
 			name:  "pattern line filter",
@@ -135,7 +135,7 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "multiple line filters — both substring",
 			logql: `{app="nginx"} |= "error" |= "timeout"`,
-			want:  `app:=nginx *:~"error" *:~"timeout"`,
+			want:  `app:=nginx ~"error" ~"timeout"`,
 		},
 		{
 			name:  "go template to logsql format",
@@ -171,13 +171,13 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "substring matches partial words like Loki does",
 			logql: `{app="nginx"} |= "err"`,
-			// Must use *:~"err" — searches all fields including extracted JSON, matching Loki's full-line search.
-			want: `app:=nginx *:~"err"`,
+			// ~"err" is VL regex/substring on _msg; with reconstructLogLine, _msg contains the full JSON.
+			want: `app:=nginx ~"err"`,
 		},
 		{
 			name:  "chained substring + negative substring",
 			logql: `{app="nginx"} |= "error" != "timeout"`,
-			want:  `app:=nginx *:~"error" NOT *:~"timeout"`,
+			want:  `app:=nginx ~"error" NOT ~"timeout"`,
 		},
 		// Parser + filter chain tests
 		{

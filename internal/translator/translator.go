@@ -300,39 +300,40 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 		}
 
 		// Check for line filter operators first (these are NOT pipe stages)
-		// CRITICAL: Loki |= / |~ search the entire raw log line, including any
-		// JSON fields embedded in it. VL stores JSON fields separately from _msg.
-		// Using *:~"text" searches ALL VL fields (both _msg and extracted JSON
-		// fields), matching Loki's behavior where the log line contains JSON.
+		// CRITICAL: Loki |= is SUBSTRING match, not word match.
+		// VL's "text" is word-only; VL's ~"text" is substring/regexp.
+		// We must use ~"text" to match Loki's substring semantics.
+		// The proxy's reconstructLogLine puts the full JSON into _msg, so
+		// searching _msg via ~"text" finds text in any original JSON field.
 		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") {
-			// Substring match: |= "text" → *:~"text" (all fields, substring)
+			// Substring match: |= "text" → ~"text"
 			remaining = strings.TrimSpace(remaining[2:])
 			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "*:~"+val)
+			parts = append(parts, "~"+val)
 			remaining = rest
 			continue
 		}
 		if strings.HasPrefix(remaining, "!= ") || strings.HasPrefix(remaining, "!=\"") {
-			// Negative substring: != "text" → NOT *:~"text"
+			// Negative substring: != "text" → NOT ~"text"
 			remaining = strings.TrimSpace(remaining[2:])
 			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "NOT *:~"+val)
+			parts = append(parts, "NOT ~"+val)
 			remaining = rest
 			continue
 		}
 		if strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") {
-			// Regexp match: |~ "regexp" → *:~"regexp" (all fields, regexp)
+			// Regexp match: |~ "regexp" → ~"regexp"
 			remaining = strings.TrimSpace(remaining[2:])
 			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "*:~"+val)
+			parts = append(parts, "~"+val)
 			remaining = rest
 			continue
 		}
 		if strings.HasPrefix(remaining, "!~ ") || strings.HasPrefix(remaining, "!~\"") {
-			// Negative regexp: !~ "regexp" → NOT *:~"regexp"
+			// Negative regexp: !~ "regexp" → NOT ~"regexp"
 			remaining = strings.TrimSpace(remaining[2:])
 			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "NOT *:~"+val)
+			parts = append(parts, "NOT ~"+val)
 			remaining = rest
 			continue
 		}
