@@ -344,18 +344,12 @@ func buildEntryLabels(entry map[string]interface{}) map[string]string {
 	return labels
 }
 
-// detectedLabelsBufPool pools map[string]string for buildDetectedLabels callers
+// detectedLabelsBufPool pools map[string]string for fillDetectedLabels callers
 // that iterate the result immediately and discard it within the same loop tick.
 var detectedLabelsBufPool = sync.Pool{
 	New: func() interface{} {
 		return make(map[string]string, 16)
 	},
-}
-
-func buildDetectedLabels(entry map[string]interface{}) map[string]string {
-	labels := make(map[string]string, 16)
-	fillDetectedLabels(entry, labels)
-	return labels
 }
 
 // fillDetectedLabels fills buf with stream labels for entry. Buf is cleared

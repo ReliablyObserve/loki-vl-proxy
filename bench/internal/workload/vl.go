@@ -11,7 +11,6 @@
 package workload
 
 import (
-	"fmt"
 	"net/url"
 	"time"
 )
@@ -530,13 +529,3 @@ func VLByName(names []string, now time.Time) []Workload {
 	return result
 }
 
-// vlStep converts seconds to a VL-compatible duration string (unused but kept for reference).
-func vlStep(seconds int) string {
-	if seconds%3600 == 0 {
-		return fmt.Sprintf("%dh", seconds/3600)
-	}
-	if seconds%60 == 0 {
-		return fmt.Sprintf("%dm", seconds/60)
-	}
-	return fmt.Sprintf("%ds", seconds)
-}
