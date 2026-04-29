@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -25,18 +26,17 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
-	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
+	// Coalesce concurrent identical range metric queries.
+	key := "stats_query_range:" + getOrgID(r.Context()) + ":" + params.Encode()
+	status, body, err := p.vlPostCoalesced(r.Context(), key, "/select/logsql/stats_query_range", params)
 	if err != nil {
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return
 	}
-	defer resp.Body.Close()
-
-	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	// Propagate VL error status
-	if resp.StatusCode >= 400 {
-		p.writeError(w, resp.StatusCode, string(body))
+	if status >= 400 {
+		p.writeError(w, status, string(body))
 		return
 	}
 
@@ -90,7 +90,7 @@ func extendStatsQueryRangeEnd(endRaw, stepRaw string) (string, bool) {
 	if !ok || stepDur <= 0 {
 		return "", false
 	}
-	return strconv.FormatInt(endNs+stepDur.Nanoseconds(), 10), true
+	return nanosToVLTimestamp(endNs + stepDur.Nanoseconds()), true
 }
 
 func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
@@ -174,22 +174,37 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
-	if t := r.FormValue("time"); t != "" {
-		params.Set("time", formatVLTimestamp(t))
+	evalTime := r.FormValue("time")
+	if evalTime == "" {
+		evalTime = strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
+	params.Set("time", formatVLTimestamp(evalTime))
+
+	// Constrain VL to the original LogQL range window so stats_query scans only
+	// [time-window, time] instead of ALL historical data. Without start/end,
+	// VL's stats_query returns every stream ever seen (O(all_time)) rather than
+	// just streams active in the window (O(window)).
+	if origSpec, ok := parseOriginalRangeMetricSpec(originalLogql); ok && origSpec.Window > 0 {
+		if evalNanos, ok2 := parseFlexibleUnixNanos(evalTime); ok2 {
+			startNanos := evalNanos - int64(origSpec.Window)
+			params.Set("start", nanosToVLTimestamp(startNanos))
+			params.Set("end", nanosToVLTimestamp(evalNanos))
+		}
 	}
 
-	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query", params)
+	// Coalesce concurrent identical requests to avoid thundering herd when the
+	// compat cache expires under high concurrency. All 50 concurrent clients
+	// asking for the same instant metric query share one VL round-trip.
+	key := "stats_query:" + getOrgID(r.Context()) + ":" + params.Encode()
+	status, body, err := p.vlPostCoalesced(r.Context(), key, "/select/logsql/stats_query", params)
 	if err != nil {
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return
 	}
-	defer resp.Body.Close()
-
-	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	// Propagate VL error status
-	if resp.StatusCode >= 400 {
-		p.writeError(w, resp.StatusCode, string(body))
+	if status >= 400 {
+		p.writeError(w, status, string(body))
 		return
 	}
 

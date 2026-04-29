@@ -85,6 +85,14 @@ func normalizeUnixSeconds(v int64) int64 {
 	}
 }
 
+// nanosToVLTimestamp converts a nanosecond Unix timestamp to the Unix-seconds
+// string that VictoriaLogs expects for start/end params. Using this helper
+// prevents accidentally forwarding nanosecond values to VL endpoints that
+// only accept second precision, which would silently scan the wrong time range.
+func nanosToVLTimestamp(nanos int64) string {
+	return strconv.FormatInt(nanos/int64(time.Second), 10)
+}
+
 func normalizeUnixNanos(v int64) int64 {
 	abs := v
 	if abs < 0 {
