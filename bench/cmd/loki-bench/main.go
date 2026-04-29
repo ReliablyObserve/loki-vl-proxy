@@ -60,6 +60,7 @@ func main() {
 		doVerify     = flag.Bool("verify", false, "Before benchmarking, verify Loki and proxy return equivalent data for each query")
 		verifyStrict = flag.Bool("verify-strict", false, "Exit non-zero if any verification diff is found")
 		jitter            = flag.Duration("jitter", 0, "Per-request time-window jitter: shifts each query's start/end/time by a random amount in [0, jitter] backward. Produces a realistic mix of cache hits, partial hits, and misses. Example: --jitter=2h")
+		uniqueWindows     = flag.Bool("unique-windows", false, "Give each worker a distinct, non-overlapping time window (workerID × 1s offset). Defeats both the singleflight coalescer and the response cache, exposing raw proxy machinery overhead: translation + HTTP proxying + response shaping only.")
 		pprofProxy        = flag.String("pprof-proxy", "", "Base URL of proxy pprof endpoint (e.g. http://localhost:3100). Captures CPU/heap/alloc profiles during each proxy run.")
 		pprofNoCache      = flag.String("pprof-no-cache", "", "Base URL of no-cache proxy pprof endpoint. Captures CPU/heap/alloc profiles during each no-cache run.")
 		pprofDuration     = flag.Duration("pprof-duration", 30*time.Second, "Duration of CPU profile capture (should match or be shorter than --duration)")
@@ -161,8 +162,9 @@ func main() {
 				// Runs at full benchmark concurrency with jitter so the cache
 				// is populated across the same time-window space the real run
 				// will hit — warmup time is not counted in benchmark results.
-				// Skipped for no-cache targets where warmup provides no benefit.
-				if *warmup > 0 && !tgt.noWarmup {
+				// Skipped for no-cache targets and when --unique-windows is set
+				// (unique-windows defeats the cache, so warmup provides nothing).
+				if *warmup > 0 && !tgt.noWarmup && !*uniqueWindows {
 					fmt.Printf("  warming up for %s (concurrency=%d, jitter=%s)...\n", *warmup, conc, *jitter)
 					wCfg := runner.Config{
 						TargetURL:   tgt.url,
@@ -224,12 +226,13 @@ func main() {
 				}
 
 				cfg := runner.Config{
-					TargetURL:   tgt.url,
-					Concurrency: conc,
-					Duration:    *duration,
-					Queries:     tgt.queries,
-					Verbose:     *verbose,
-					TimeJitter:  *jitter,
+					TargetURL:     tgt.url,
+					Concurrency:   conc,
+					Duration:      *duration,
+					Queries:       tgt.queries,
+					Verbose:       *verbose,
+					TimeJitter:    *jitter,
+					UniqueWindows: *uniqueWindows,
 				}
 				result := runner.Run(ctx, cfg)
 

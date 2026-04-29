@@ -220,7 +220,7 @@ OTel label handling is controlled by the proxy's label style and metadata field 
 
 ```yaml
 # Label style: how dots are translated
-label-style: underscores  # dots → underscores (default, recommended)
+label-style: underscores  # dots → underscores (recommended for OTel; default is passthrough)
 
 # Metadata field mode: what detected_fields exposes
 metadata-field-mode: hybrid  # both forms (default, recommended for OTel)

@@ -768,6 +768,126 @@ func HighCardinality(now time.Time) Workload {
 	}}
 }
 
+// Machinery: a curated mix of representative proxy operations designed to
+// measure raw proxy overhead — LogQL→LogsQL translation, HTTP proxying,
+// response shaping — without the coalescer or cache short-circuiting results.
+//
+// Always run with --unique-windows so every worker sends a distinct URL.
+// The window sizes are intentionally small (1–15 m) to keep per-request
+// backend latency low and let the proxy overhead dominate the measurement.
+//
+// Each query exercises a distinct proxy code path:
+//   - labels / label_values: metadata path (Tier0 cache, field-index)
+//   - query_range log select: VL→Loki stream conversion
+//   - query_range | json: field parse translation
+//   - query_range rate: metric aggregation shaping
+//   - detected_fields: OTel field detection
+//   - series: stream-label enumeration
+func Machinery(now time.Time) Workload {
+	start1m := ns(now.Add(-1 * time.Minute))
+	start5m := ns(now.Add(-5 * time.Minute))
+	start15m := ns(now.Add(-15 * time.Minute))
+	end := ns(now)
+
+	return Workload{Name: "machinery", Queries: []Query{
+		// Metadata path — exercises proxy label index and Tier0 cache bypass.
+		{
+			Name:   "labels_1m",
+			Path:   "/loki/api/v1/labels",
+			Params: url.Values{"start": {start1m}, "end": {end}},
+		},
+		{
+			Name:   "label_values_app_5m",
+			Path:   "/loki/api/v1/label/app/values",
+			Params: url.Values{"start": {start5m}, "end": {end}},
+		},
+		// Log select — VL NDJSON → Loki streams conversion.
+		{
+			Name: "log_select_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="api-gateway"}`},
+				"start": {start5m},
+				"end":   {end},
+				"limit": {"200"},
+			},
+		},
+		// JSON parse pipeline — exercises | json → | unpack_json translation.
+		{
+			Name: "json_parse_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="api-gateway"} | json | status >= 400`},
+				"start": {start5m},
+				"end":   {end},
+				"limit": {"200"},
+			},
+		},
+		// Logfmt parse — exercises | logfmt → | unpack_logfmt translation.
+		{
+			Name: "logfmt_parse_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="worker-service"} | logfmt | level="error"`},
+				"start": {start5m},
+				"end":   {end},
+				"limit": {"100"},
+			},
+		},
+		// Metric rate — exercises metric aggregation and response shaping.
+		{
+			Name: "rate_by_app_15m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (app) (rate({namespace="prod"}[1m]))`},
+				"start": {start15m},
+				"end":   {end},
+				"step":  {"60"},
+			},
+		},
+		// Metric count — count_over_time, exercises scalar result shaping.
+		{
+			Name: "count_by_level_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (level) (count_over_time({namespace="prod"}[1m]))`},
+				"start": {start5m},
+				"end":   {end},
+				"step":  {"60"},
+			},
+		},
+		// Detected fields — OTel field detection, field-index and VL metadata query.
+		{
+			Name: "detected_fields_5m",
+			Path: "/loki/api/v1/detected_fields",
+			Params: url.Values{
+				"query": {`{app="api-gateway"}`},
+				"start": {start5m},
+				"end":   {end},
+			},
+		},
+		// Series — stream-label enumeration, tests VL series endpoint translation.
+		{
+			Name: "series_5m",
+			Path: "/loki/api/v1/series",
+			Params: url.Values{
+				"match[]": {`{app=~".+"}`},
+				"start":   {start5m},
+				"end":     {end},
+			},
+		},
+		// Instant vector — tests /loki/api/v1/query path (not query_range).
+		{
+			Name: "instant_rate_1m",
+			Path: "/loki/api/v1/query",
+			Params: url.Values{
+				"query": {`sum(rate({namespace="prod"}[1m]))`},
+				"time":  {end},
+			},
+		},
+	}}
+}
+
 // All returns all standard workloads for the given time reference.
 func All(now time.Time) []Workload {
 	return []Workload{Small(now), Heavy(now), LongRange(now), Compute(now)}
@@ -780,9 +900,10 @@ func AllEdgeCases(now time.Time) []Workload {
 	return []Workload{UnindexedScan(now), HighCardinality(now)}
 }
 
-// ByName returns the named workloads, including edge-case workloads.
+// ByName returns the named workloads, including edge-case and machinery workloads.
 func ByName(names []string, now time.Time) []Workload {
 	all := append(All(now), AllEdgeCases(now)...)
+	all = append(all, Machinery(now))
 	if len(names) == 0 {
 		return All(now)
 	}

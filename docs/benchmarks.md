@@ -136,6 +136,46 @@ backend call. This is the correct production baseline for cache-cold traffic.
 The delta between `proxy (cold)` and `vl_direct` is the pure proxy overhead per request:
 LogQL→LogsQL translation (~5µs) + HTTP proxying + response envelope conversion.
 
+### Measuring pure proxy machinery — `--unique-windows`
+
+The coalescer key is the full request URL. When all workers send the same query at the same
+time, the coalescer reduces N backend calls to 1 and P50 drops to near-zero. This is a real
+production benefit (thundering-herd protection), but it obscures the proxy's own overhead.
+
+To measure **raw proxy machinery** — translation, HTTP proxying, response shaping — without
+coalescer or cache short-circuiting:
+
+```bash
+loki-bench \
+  --workloads=machinery \
+  --proxy=http://localhost:3100 \
+  --proxy-no-cache=http://localhost:3102 \
+  --vl-direct=http://localhost:9428 \
+  --unique-windows \
+  --clients=10,50,100 \
+  --duration=30s
+```
+
+`--unique-windows` applies a deterministic per-worker time offset (`workerID × 1 s` backward)
+so every worker sends a distinct URL on every request.  The singleflight coalescer never fires
+and the response cache never warms.  The resulting P50 is the cost of one proxy round-trip:
+LogQL→LogsQL translation + VL HTTP call + response envelope conversion.
+
+The `machinery` workload covers every distinct proxy code path in a single run:
+
+| Query | Code path exercised |
+|---|---|
+| `labels` | metadata route → VL `field_names` → label response shaping |
+| `label_values` | metadata route → VL `field_values` → values shaping |
+| `query_range` (log select) | translation → VL NDJSON parse → Loki streams conversion |
+| `query_range \| json` | `\| json` → `\| unpack_json` translation + field filter |
+| `query_range \| logfmt` | `\| logfmt` → `\| unpack_logfmt` translation |
+| `query_range` (rate metric) | metric aggregation → shaping |
+| `query_range` (count metric) | count_over_time → scalar shaping |
+| `detected_fields` | OTel field detection → field-type inference |
+| `series` | stream-label enumeration → Loki series response |
+| `query` (instant) | `/query` path → instant vector → shaping |
+
 ---
 
 ### Small workload — label values, detected\_fields, index stats, series

@@ -170,7 +170,7 @@ The required matrix is intentionally not limited to happy-path selectors. It now
 - `offset` modifier -- time-shifting parity (proxy gap: silently ignored, tracked as known issue)
 - `unpack` parser -- translates to `unpack_json`, e2e parity tested
 - `unwrap duration()` / `unwrap bytes()` conversion modifiers -- proxy-side conversion parity
-- `label_replace()` -- proxy gap: not yet implemented, tracked as known issue
+- `label_replace()` -- proxy-side post-processing implementation, parity tested
 - `|>` / `!>` pattern match line filter -- Loki 3.7+ support, parity tested
 
 When a new LogQL family is implemented or fixed in the proxy, the expectation is to add:

@@ -95,6 +95,6 @@ The table below tracks changelog-relevant LogSQL and metadata behavior between `
 
 When adding a new profile or changing a gate, update three places in the same PR:
 
-- runtime derivation in `internal/proxy/proxy.go`
+- runtime derivation in `internal/proxy/backend.go`
 - capability metadata in `test/e2e-compat/compatibility-matrix.json`
 - this document section

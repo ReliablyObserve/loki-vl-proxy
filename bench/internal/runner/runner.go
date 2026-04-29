@@ -28,6 +28,13 @@ type Config struct {
 	// queries valid (no future timestamps) while producing a realistic mix of
 	// cache hits (small shift → overlapping windows), partial hits, and misses.
 	TimeJitter time.Duration
+	// UniqueWindows, if true, applies a deterministic per-worker time offset so
+	// every worker sends a distinct URL on every request.  The offset is
+	// workerID × 1 s shifted backward, guaranteeing the singleflight coalescer
+	// never fires and the response cache never warms.  Use this to measure raw
+	// proxy machinery overhead (translation + HTTP proxying + response shaping)
+	// without cache or coalescer short-circuiting the result.
+	UniqueWindows bool
 }
 
 // Result holds the outcome of one benchmark run.
@@ -78,6 +85,15 @@ func Run(ctx context.Context, cfg Config) Result {
 			defer wg.Done()
 			qi := workerID % len(cfg.Queries) // round-robin query selection
 			rng := rand.New(rand.NewSource(int64(workerID) ^ time.Now().UnixNano()))
+			// Deterministic per-worker offset: each worker shifts its queries
+			// backward by workerID × 1 s.  Combined with the per-request
+			// request-count increment below, this guarantees every URL is unique
+			// across all workers and all requests within a worker, so the
+			// singleflight coalescer never fires and the response cache never
+			// warms.  The shift stays well within any workload window (even a
+			// 1-minute window accommodates up to 60 unique workers).
+			workerOffset := time.Duration(workerID) * time.Second
+			requestSeq := 0 // monotonically increments per request within worker
 			for {
 				if ctx.Err() != nil || time.Now().After(deadline) {
 					return
@@ -86,7 +102,15 @@ func Run(ctx context.Context, cfg Config) Result {
 				qi++
 
 				rawURL := q.URL(cfg.TargetURL)
-				if cfg.TimeJitter > 0 {
+				switch {
+				case cfg.UniqueWindows:
+					// Deterministic offset = worker offset + per-request sequential
+					// step (1 ms per request) so even within a single worker no two
+					// requests share the same URL key.
+					uniqueShift := workerOffset + time.Duration(requestSeq)*time.Millisecond
+					rawURL = shiftTimeParams(rawURL, uniqueShift)
+					requestSeq++
+				case cfg.TimeJitter > 0:
 					rawURL = applyJitter(rawURL, cfg.TimeJitter, rng)
 				}
 				start := time.Now()
@@ -146,12 +170,18 @@ func Run(ctx context.Context, cfg Config) Result {
 // shifted by the same offset so window sizes are preserved; shifting only
 // backward keeps every timestamp in the past (no future queries).
 func applyJitter(rawURL string, jitter time.Duration, rng *rand.Rand) string {
+	shift := time.Duration(rng.Int63n(int64(jitter))) // uniform in [0, jitter)
+	return shiftTimeParams(rawURL, shift)
+}
+
+// shiftTimeParams shifts start/end/time nanosecond params of a query URL
+// backward by exactly shift.  Window sizes are preserved.
+func shiftTimeParams(rawURL string, shift time.Duration) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return rawURL
 	}
 	q := u.Query()
-	shift := time.Duration(rng.Int63n(int64(jitter))) // uniform in [0, jitter)
 	changed := false
 	for _, key := range []string{"start", "end", "time"} {
 		v := q.Get(key)
