@@ -176,7 +176,8 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 			continue
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
-		msg = reconstructLogLine(msg, entry, originalQuery)
+		streamLabels := parseStreamLabels(asString(entry["_stream"]))
+		msg = reconstructLogLine(msg, entry, streamLabels, originalQuery)
 
 		tsNanos, ok := formatEntryTimestamp(timeStr)
 		if !ok {
@@ -377,7 +378,8 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		// Reconstruct JSON log line from VL's extracted fields. No originalQuery
 		// context is available here — pass empty string so only auto-ingestion
 		// fields are reconstructed (no text-extraction parser stages present).
-		msg = reconstructLogLine(msg, entry, "")
+		tailStreamLabels := parseStreamLabels(asString(entry["_stream"]))
+		msg = reconstructLogLine(msg, entry, tailStreamLabels, "")
 
 		labels := buildEntryLabels(entry)
 		streamKey := canonicalLabelsKey(labels)
@@ -500,11 +502,13 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			continue
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
-		msg = reconstructLogLine(msg, entry, originalQuery)
 		rawStream := asString(entry["_stream"])
 		level, _ := stringifyEntryValue(entry["level"])
 
+		// Compute stream descriptor first so reconstructLogLine can reuse the
+		// already-parsed stream labels instead of re-parsing _stream itself.
 		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
+		msg = reconstructLogLine(msg, entry, desc.rawLabels, originalQuery)
 		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 		se, ok := streamMap[desc.key]
 		if !ok {

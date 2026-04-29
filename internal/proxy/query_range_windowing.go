@@ -766,7 +766,8 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 			continue
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
-		msg = reconstructLogLine(msg, entry, originalQuery)
+		windowStreamLabels := parseStreamLabels(asString(entry["_stream"]))
+		msg = reconstructLogLine(msg, entry, windowStreamLabels, originalQuery)
 
 		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf, pfBuf)
 		translatedLabels := labels

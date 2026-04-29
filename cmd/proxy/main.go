@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
@@ -435,6 +436,10 @@ func run(
 	recentTailRefreshWindow := fs.Duration("recent-tail-refresh-window", 2*time.Minute, "How close request end must be to now to enable near-now cache freshness bypass")
 	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 15*time.Second, "Maximum acceptable cache age for near-now requests before cache bypass")
 
+	// Go runtime tuning
+	goMemLimitBytes := fs.Int64("go-mem-limit", 0, "Explicit GOMEMLIMIT in bytes. Overrides -go-mem-limit-percent. 0 = use percentage or GOMEMLIMIT env var.")
+	goMemLimitPercent := fs.Int("go-mem-limit-percent", 85, "Percentage of the detected container memory limit (cgroups) to set as GOMEMLIMIT. 0 disables auto-detection. Ignored when GOMEMLIMIT env var or -go-mem-limit is set.")
+
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
 	registerInstrumentation := fs.Bool("server.register-instrumentation", true, "Register instrumentation handlers such as /metrics")
@@ -545,6 +550,7 @@ func run(
 		serviceInstanceID:     envCfg.serviceInstanceID,
 		deploymentEnvironment: envCfg.deploymentEnv,
 	})
+	memlimit.Apply(*goMemLimitBytes, *goMemLimitPercent, logger)
 	metrics.SetProcRoot(envCfg.procRoot)
 	logSystemMetricsStartup(logger)
 

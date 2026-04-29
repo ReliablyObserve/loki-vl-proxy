@@ -17,11 +17,16 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/klauspost/compress/zstd"
 )
+
+// jsonBuilderPool recycles strings.Builder values used by reconstructLogLine to
+// avoid per-entry heap allocations when building the flat JSON log body.
+var jsonBuilderPool = sync.Pool{New: func() interface{} { return new(strings.Builder) }}
 
 // validateQuery checks query string length and returns a sanitized version.
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
@@ -363,18 +368,45 @@ func isVLInternalField(name string) bool {
 // extracted fields in the VL response would come from logfmt/regexp/pattern
 // parsing at query time rather than from JSON ingestion, so wrapping the
 // original text line in JSON would be incorrect.
-func reconstructLogLine(msg string, entry map[string]interface{}, originalQuery string) string {
+// reconstructLogLine returns a Loki-compatible log line for a VL entry.
+//
+// streamLabels is the pre-parsed set of stream label keys for this entry (from
+// the caller's logQueryStreamDescriptor cache). Passing them in avoids
+// re-parsing the _stream value and avoids allocating a fresh map per call.
+//
+// When VL auto-parses a JSON log at ingestion time it stores all JSON fields as
+// top-level VL fields while keeping only the _msg value as the log-line string.
+// Loki, by contrast, stores the original raw JSON bytes and returns them as-is.
+// This causes |= text-filter and | json parser mismatches: a user who pushes
+// {"method":"GET","status":401} expects |= "method=GET" to match, but the proxy
+// would return only the _msg string.
+//
+// Detection: if any top-level VL field is neither a VL internal (_time/_msg/…)
+// nor a stream label (from _stream), it was extracted from the original JSON log
+// body at ingestion time → the original log was JSON-formatted.
+//
+// When reconstruction applies, a flat JSON object is returned with _msg and the
+// extra non-stream fields. Stream label fields (app, namespace, pod, …) are
+// excluded because they were part of the Loki stream metadata, not the log line
+// body — matching Loki's native format. Values are always strings because VL
+// does not preserve original JSON types (numbers, booleans become strings).
+//
+// originalQuery is the raw Loki LogQL query string. Reconstruction is skipped
+// when the query contains text-extraction parsers other than | json: the
+// extracted fields in the VL response would come from logfmt/regexp/pattern
+// parsing at query time rather than from JSON ingestion, so wrapping the
+// original text line in JSON would be incorrect.
+func reconstructLogLine(msg string, entry map[string]interface{}, streamLabels map[string]string, originalQuery string) string {
 	if hasTextExtractionParser(originalQuery) {
 		return msg
 	}
-	stream := parseStreamLabels(asString(entry["_stream"]))
 
 	hasExtra := false
 	for key := range entry {
 		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
 			continue
 		}
-		if _, ok := stream[key]; ok {
+		if _, ok := streamLabels[key]; ok {
 			continue
 		}
 		hasExtra = true
@@ -384,33 +416,37 @@ func reconstructLogLine(msg string, entry map[string]interface{}, originalQuery 
 		return msg
 	}
 
-	// Build the flat JSON using only fields that were NOT stream labels.
-	// Stream label fields (app, namespace, pod, …) were set on the Loki stream
-	// metadata and were never part of the original JSON log line body — Loki
-	// stores only the log line bytes, not the stream labels inside it.
-	// Fields that appear in BOTH places (e.g. level, version) are excluded here
-	// since they are already accessible via stream labels; including them would
-	// bloat the wire payload beyond Loki's native size.
-	obj := make(map[string]interface{}, len(entry))
-	obj["_msg"] = msg
+	// Build flat JSON directly into a pooled builder, avoiding an intermediate
+	// map[string]interface{} allocation and the reflection-heavy json.Marshal
+	// map encoder. Per-field json.Marshal calls for individual strings are cheap
+	// (no reflection) and correct for all UTF-8 input including escape sequences.
+	b := jsonBuilderPool.Get().(*strings.Builder)
+	b.Reset()
+	b.WriteString(`{"_msg":`)
+	msgJSON, _ := json.Marshal(msg)
+	b.Write(msgJSON)
 	for key, value := range entry {
 		if isVLInternalField(key) || key == "_stream_id" {
 			continue
 		}
-		if _, isStreamLabel := stream[key]; isStreamLabel {
+		if _, isStreamLabel := streamLabels[key]; isStreamLabel {
 			continue
 		}
 		sv, ok := stringifyEntryValue(value)
 		if !ok || strings.TrimSpace(sv) == "" {
 			continue
 		}
-		obj[key] = sv
+		b.WriteByte(',')
+		keyJSON, _ := json.Marshal(key)
+		b.Write(keyJSON)
+		b.WriteByte(':')
+		valJSON, _ := json.Marshal(sv)
+		b.Write(valJSON)
 	}
-	b, err := json.Marshal(obj)
-	if err != nil {
-		return msg
-	}
-	return string(b)
+	b.WriteByte('}')
+	result := b.String()
+	jsonBuilderPool.Put(b)
+	return result
 }
 
 // isVLNonLokiLabelField returns true for fields that VictoriaLogs exposes in

@@ -168,7 +168,8 @@ func TestReconstructLogLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := reconstructLogLine(tt.msg, tt.entry, tt.originalQuery)
+			streamLabels := parseStreamLabels(asString(tt.entry["_stream"]))
+			result := reconstructLogLine(tt.msg, tt.entry, streamLabels, tt.originalQuery)
 
 			if tt.wantPlain {
 				if result != tt.msg {
@@ -214,7 +215,8 @@ func TestReconstructLogLine_StreamLabelExclusion(t *testing.T) {
 		"trace_id":  "abc123",
 	}
 
-	result := reconstructLogLine("request processed", entry, "")
+	streamLabels := parseStreamLabels(asString(entry["_stream"]))
+	result := reconstructLogLine("request processed", entry, streamLabels, "")
 
 	var parsed map[string]interface{}
 	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
