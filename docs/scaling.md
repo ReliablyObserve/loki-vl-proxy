@@ -1,3 +1,8 @@
+---
+sidebar_label: Scaling & Capacity
+description: Capacity planning, replica sizing, horizontal scaling strategy, and resource budgets for loki-vl-proxy in production.
+---
+
 # Scaling & Capacity Planning
 
 ## Resource Model

@@ -19,6 +19,11 @@ services:
     container_name: e2e-loki
     ports:
       - "3101:3100"
+    # Bench peak: 1,798 MB (heavy c=100). +30% headroom = 2,337 MB → 2.4g.
+    # Loki RSS is stable across all workloads (1.4–1.8 GB range), so this
+    # cap is not expected to trigger; it guards against runaway situations.
+    mem_limit: 2400m
+    restart: unless-stopped
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./loki-local-config.yaml:/etc/loki/local-config.yaml:ro
@@ -33,11 +38,50 @@ services:
     container_name: e2e-victorialogs
     ports:
       - "9428:9428"
+    # Hard memory cap: Docker OOM-kills and restarts the container rather than
+    # letting unconstrained query memory exhaust the host. Without this, 50+
+    # concurrent 48–72h queries each allocate ~100–200 MB of working buffers,
+    # totalling 5–10 GB before the kernel OOM-kills the whole process silently.
+    # Bench peaks (no query guards): heavy c=100=2,429 MB; long_range c=50=5,237 MB (crash).
+    # With -search.maxQueryDuration=60s + -search.maxQueryTimeRange=72h, long queries
+    # are cancelled before full materialization → expected ceiling ~4,000 MB.
+    # +30% headroom: 4,000 × 1.3 = 5,200 MB → 5g. Container auto-restarts on OOM.
+    mem_limit: 5g
+    restart: unless-stopped
     command:
       - "-storageDataPath=/vlogs"
       # Keep enough history for long-range Drilldown regressions (>24h).
       - "-retentionPeriod=7d"
       - "-httpListenAddr=:9428"
+      # Allow high concurrency for benchmark comparisons (default 16 causes 100% errors at c≥50).
+      - "-search.maxConcurrentRequests=100"
+      # Increase queue wait time: at c=100 some requests will queue behind the
+      # concurrency limit; give them up to 60s before returning 503.
+      - "-search.maxQueueDuration=60s"
+      # Cap individual query execution time. Default is 30s; long-range queries
+      # that hit the memory limit get cancelled rather than hanging indefinitely.
+      # NOTE: -search.maxQueryTimeRange is intentionally omitted. It rejects queries
+      # with no time range (the proxy omits bounds on metadata queries), which trips
+      # the circuit breaker on every label/series request. The mem_limit + maxQueryDuration
+      # guards are sufficient protection without this flag.
+      - "-search.maxQueryDuration=60s"
+      # Cache tuning: cache from the first miss (default=2) to maximise hit rate
+      # for repeated benchmark runs and warm-cache proxy measurements.
+      - "-blockcache.missesBeforeCaching=1"
+      # Intern short strings (labels, field names) for up to 15 min to reduce GC
+      # pressure during high-concurrency scans (default 5 min).
+      - "-internStringCacheExpireDuration=15m"
+      # Allow VL to use up to 80% of host RAM for its in-process caches before
+      # evicting. Higher than the default 60% is safe given the 5 g mem_limit cap.
+      - "-memory.allowedPercent=80"
+      # Reduce parallel readers per query (default = 2×CPU = 36 on 18-core host).
+      # At c=100 with 36 readers each, that spawns 3600 goroutines fighting for
+      # disk I/O — local SSD has <0.1ms latency so many readers add contention,
+      # not parallelism. 8 readers × 100 concurrent = 800 goroutines, matching
+      # 18 cores without scheduler thrash.
+      - "-defaultParallelReaders=8"
+      # Cap file-system concurrency (default 256 = 16×CPU, but 64 better fits 18 cores).
+      - "-fs.maxConcurrency=64"
     volumes:
       - vl-data:/vlogs
     healthcheck:
@@ -119,8 +163,8 @@ services:
     container_name: e2e-proxy
     ports:
       - "3100:3100"
-    volumes:
-      - proxy-cache:/cache
+    tmpfs:
+      - /cache
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -144,7 +188,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -159,8 +203,8 @@ services:
     container_name: e2e-proxy-patterns-autodetect
     ports:
       - "3110:3100"
-    volumes:
-      - proxy-patterns-cache:/cache
+    tmpfs:
+      - /cache
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -180,7 +224,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -211,7 +255,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -242,7 +286,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -273,7 +317,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -304,7 +348,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -335,7 +379,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -366,7 +410,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -396,7 +440,7 @@ services:
       vmalert:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:3100/ready"]
+      test: ["CMD", "/usr/local/bin/healthcheck"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -413,7 +457,7 @@ services:
       loki-vl-proxy-tail:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/ready"]
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/nginx-health"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -467,5 +511,3 @@ services:
 volumes:
   vl-data:
   vm-data:
-  proxy-cache:
-  proxy-patterns-cache:

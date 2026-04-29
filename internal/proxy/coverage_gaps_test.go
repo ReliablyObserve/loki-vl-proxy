@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -751,6 +752,138 @@ func TestDetectedFieldValues_EmptyStrictQueryRelaxesWholeLookup(t *testing.T) {
 	}
 }
 
+// TestDetectedFieldValues_UnpackFallbackCalledForMsgOnlyFields guards that
+// fetchUnpackedFieldValues is invoked as a last resort when:
+//   - The field is not in VL's native field_names index
+//   - Log-line scanning finds nothing
+//   - No valid relaxed query is available (simple selector, nothing to relax)
+//
+// This covers logfmt fields like "amount" or "ttl" that live inside _msg and
+// are only reachable via | unpack_logfmt from _msg.
+func TestDetectedFieldValues_UnpackFallbackCalledForMsgOnlyFields(t *testing.T) {
+	var fieldValuesQueries []string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		q := r.Form.Get("query")
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			// amount is not a native VL indexed field → resolveNativeDetectedField returns ok=false
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			// Scan returns nothing — field is buried inside logfmt _msg
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		case "/select/logsql/streams":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/field_values":
+			fieldValuesQueries = append(fieldValuesQueries, q)
+			w.Header().Set("Content-Type", "application/json")
+			if strings.Contains(q, "unpack_logfmt") {
+				// Simulate VL returning values extracted by the unpack pipe
+				_, _ = w.Write([]byte(`{"values":[{"value":"42.50","hits":0},{"value":"100.00","hits":0}]}`))
+			} else {
+				_, _ = w.Write([]byte(`{"values":[]}`))
+			}
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	q := url.Values{
+		"query": {`{app="logfmt-test"}`},
+		"start": {"1"},
+		"end":   {"2"},
+	}
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/amount/values?"+q.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	// At least one field_values call must contain unpack pipes
+	hasUnpack := false
+	for _, fvq := range fieldValuesQueries {
+		if strings.Contains(fvq, "unpack_logfmt") {
+			hasUnpack = true
+		}
+	}
+	if !hasUnpack {
+		t.Fatalf("expected fetchUnpackedFieldValues to call field_values with unpack pipes, got queries: %v", fieldValuesQueries)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	values, _ := resp["values"].([]interface{})
+	if len(values) != 2 {
+		t.Fatalf("expected 2 values from unpack fallback, got %v", resp)
+	}
+}
+
+// TestDetectedFieldValues_RelaxedScanPreventsUnpackFallback guards the ordering
+// invariant: fetchUnpackedFieldValues (field_values) must NOT be called before
+// the relaxed-query scan has had a chance to find values. If relaxed scan
+// succeeds, field_values must never be called.
+//
+// This is the companion to TestDetectedFieldValues_EmptyStrictQueryRelaxesWholeLookup.
+// The existing test already enforces this implicitly (backend t.Fatalf on any
+// unexpected path including field_values). This test makes the intent explicit
+// and verifies the returned value is from the relaxed scan, not the unpack path.
+func TestDetectedFieldValues_RelaxedScanPreventsUnpackFallback(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		got := r.Form.Get("query")
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			if !strings.Contains(got, "strict-filter") {
+				// Relaxed scan returns the field value
+				_, _ = w.Write([]byte(`{"_time":"2026-04-04T17:18:49Z","_msg":"level=info amount=99","_stream":"{app=\"logfmt-test\"}","app":"logfmt-test","amount":"99"}` + "\n"))
+			}
+		case "/select/logsql/streams":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[]}`))
+		default:
+			// field_values must NOT be called when relaxed scan succeeds
+			t.Fatalf("fetchUnpackedFieldValues called unexpectedly — field_values before relaxed scan: path=%s query=%q", r.URL.Path, got)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	q := url.Values{
+		"query": {`{app="logfmt-test"} | strict-filter="yes"`},
+		"start": {"1"},
+		"end":   {"2"},
+	}
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_field/amount/values?"+q.Encode(), nil)
+	p.handleDetectedFieldValues(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	values, _ := resp["values"].([]interface{})
+	if len(values) == 0 {
+		t.Fatalf("expected value from relaxed scan, got empty: %v", resp)
+	}
+}
+
 func TestHandleLabels_BareSelectorQuery(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got := r.URL.Query().Get("query")
@@ -1043,10 +1176,15 @@ func TestMetrics_RecordTenantRequest(t *testing.T) {
 // =============================================================================
 
 func TestSplitLabelPairs_QuotedComma(t *testing.T) {
-	input := `app="he,llo",namespace="world"`
-	pairs := splitLabelPairs(input)
-	if len(pairs) != 2 {
-		t.Errorf("expected 2 pairs (comma in quotes ignored), got %d: %v", len(pairs), pairs)
+	// splitLabelPairs is inlined into parseStreamLabels — verify comma inside
+	// quotes is not treated as a pair separator.
+	input := `{app="he,llo",namespace="world"}`
+	labels := parseStreamLabels(input)
+	if len(labels) != 2 {
+		t.Errorf("expected 2 labels (comma in quotes ignored), got %d: %v", len(labels), labels)
+	}
+	if labels["app"] != "he,llo" {
+		t.Errorf("expected app=he,llo, got %q", labels["app"])
 	}
 }
 
@@ -1066,5 +1204,498 @@ func TestIsVLInternalField(t *testing.T) {
 		if isVLInternalField(f) {
 			t.Errorf("expected %q to NOT be internal field", f)
 		}
+	}
+}
+
+// =============================================================================
+// Security regression tests (audit fixes)
+// =============================================================================
+
+// TestParseDeleteTimestamp_RFC3339BeyondCapRejected guards against the bypass
+// where RFC3339 timestamps skipped the 30-day guard because the old code only
+// enforced it when both values parsed as floats.
+func TestParseDeleteTimestamp_RFC3339BeyondCapRejected(t *testing.T) {
+	var receivedDelete bool
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/delete" {
+			receivedDelete = true
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+
+	// 60-day range expressed as RFC3339 — previously bypassed the 30-day guard.
+	startISO := time.Now().Add(-60 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	endISO := time.Now().UTC().Format(time.RFC3339)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST",
+		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%s&end=%s`,
+			url.QueryEscape(startISO), url.QueryEscape(endISO)), nil)
+	r.Header.Set("X-Delete-Confirmation", "true")
+	mux.ServeHTTP(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for RFC3339 delete range >30 days, got %d body=%s", w.Code, w.Body.String())
+	}
+	if receivedDelete {
+		t.Error("VL delete endpoint must not be reached when time range exceeds cap")
+	}
+}
+
+// TestParseDeleteTimestamp_RFC3339WithinCapAllowed ensures that RFC3339
+// timestamps within the 30-day cap are forwarded normally.
+func TestParseDeleteTimestamp_RFC3339WithinCapAllowed(t *testing.T) {
+	var receivedPath string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+
+	startISO := time.Now().Add(-1 * time.Hour).UTC().Format(time.RFC3339)
+	endISO := time.Now().UTC().Format(time.RFC3339)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST",
+		fmt.Sprintf(`/loki/api/v1/delete?query={app="nginx"}&start=%s&end=%s`,
+			url.QueryEscape(startISO), url.QueryEscape(endISO)), nil)
+	r.Header.Set("X-Delete-Confirmation", "true")
+	mux.ServeHTTP(w, r)
+
+	if w.Code == http.StatusBadRequest {
+		t.Errorf("RFC3339 delete within cap should not be rejected: %s", w.Body.String())
+	}
+	if receivedPath != "/select/logsql/delete" {
+		t.Errorf("expected VL delete path, got %q", receivedPath)
+	}
+}
+
+// TestParseDeleteTimestamp_Func exercises the parser directly for all formats.
+func TestParseDeleteTimestamp_Func(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		input   string
+		wantNs  int64
+		wantErr bool
+	}{
+		// Unix seconds
+		{fmt.Sprintf("%d", now.Unix()), now.UnixNano(), false},
+		// Unix nanoseconds (>1e15)
+		{fmt.Sprintf("%d", now.UnixNano()), now.UnixNano(), false},
+		// RFC3339
+		{now.Format(time.RFC3339), now.Unix() * int64(time.Second), false},
+		// RFC3339Nano
+		{now.Format(time.RFC3339Nano), now.UnixNano(), false},
+		// Unrecognized
+		{"not-a-timestamp", 0, true},
+		{"2026/01/01", 0, true},
+	}
+
+	for _, tc := range cases {
+		got, err := parseDeleteTimestamp(tc.input)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("input %q: expected error, got ns=%d", tc.input, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("input %q: unexpected error: %v", tc.input, err)
+			continue
+		}
+		// Allow 1 second tolerance for RFC3339 (no sub-second precision).
+		diff := got - tc.wantNs
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff > int64(time.Second) {
+			t.Errorf("input %q: got %d, want %d (diff=%d)", tc.input, got, tc.wantNs, diff)
+		}
+	}
+}
+
+// TestCopyBackendHeaders_SecurityHeadersPreserved guards against the regression
+// where copyHeaders overwrote proxy-set security headers with backend values.
+func TestCopyBackendHeaders_SecurityHeadersPreserved(t *testing.T) {
+	dst := http.Header{}
+	dst.Set("X-Content-Type-Options", "nosniff")
+	dst.Set("X-Frame-Options", "DENY")
+	dst.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	dst.Set("Cross-Origin-Resource-Policy", "same-origin")
+	dst.Set("Pragma", "no-cache")
+	dst.Set("Expires", "0")
+	dst.Set("Content-Type", "application/json")
+
+	// Backend tries to overwrite security headers and add its own Content-Type.
+	src := http.Header{}
+	src.Set("X-Content-Type-Options", "allow")
+	src.Set("X-Frame-Options", "SAMEORIGIN")
+	src.Set("Cache-Control", "max-age=3600, public")
+	src.Set("Cross-Origin-Resource-Policy", "cross-origin")
+	src.Set("Pragma", "no-store")
+	src.Set("Expires", "86400")
+	src.Set("Content-Type", "text/plain")
+	src.Set("X-Backend-Custom", "backend-value")
+
+	copyBackendHeaders(dst, src)
+
+	// Security headers must not be overwritten.
+	if got := dst.Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options: got %q, want %q", got, "nosniff")
+	}
+	if got := dst.Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options: got %q, want %q", got, "DENY")
+	}
+	if got := dst.Get("Cache-Control"); got != "no-store, no-cache, must-revalidate, max-age=0" {
+		t.Errorf("Cache-Control: got %q, want proxy value", got)
+	}
+	if got := dst.Get("Cross-Origin-Resource-Policy"); got != "same-origin" {
+		t.Errorf("Cross-Origin-Resource-Policy: got %q, want same-origin", got)
+	}
+	// Non-security headers from backend ARE copied.
+	if got := dst.Get("Content-Type"); got != "text/plain" {
+		t.Errorf("Content-Type: got %q, want text/plain (backend value)", got)
+	}
+	if got := dst.Get("X-Backend-Custom"); got != "backend-value" {
+		t.Errorf("X-Backend-Custom: got %q, want backend-value", got)
+	}
+}
+
+// TestForwardedAuthFingerprint_EmptyWithoutConfig ensures no fingerprint is
+// computed when no header/cookie forwarding is configured.
+func TestForwardedAuthFingerprint_EmptyWithoutConfig(t *testing.T) {
+	p := &Proxy{}
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Bearer secret")
+	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+		t.Errorf("expected empty fingerprint with no forwarding configured, got %q", fp)
+	}
+}
+
+// TestForwardedAuthFingerprint_IsolatesUsers ensures that two requests with
+// different Authorization values produce different fingerprints.
+func TestForwardedAuthFingerprint_IsolatesUsers(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	r1 := httptest.NewRequest("GET", "/", nil)
+	r1.Header.Set("Authorization", "Bearer user-alice-token")
+
+	r2 := httptest.NewRequest("GET", "/", nil)
+	r2.Header.Set("Authorization", "Bearer user-bob-token")
+
+	fp1 := p.forwardedAuthFingerprint(r1)
+	fp2 := p.forwardedAuthFingerprint(r2)
+
+	if fp1 == "" {
+		t.Error("expected non-empty fingerprint for request with Authorization")
+	}
+	if fp1 == fp2 {
+		t.Errorf("different auth tokens must produce different fingerprints; both got %q", fp1)
+	}
+	// Same token must produce same fingerprint (deterministic).
+	if p.forwardedAuthFingerprint(r1) != fp1 {
+		t.Error("fingerprint must be deterministic for same input")
+	}
+}
+
+// TestCompatCacheKey_AuthFingerprintIncluded ensures that when forward headers
+// are configured, the compat cache key differs between users.
+func TestCompatCacheKey_AuthFingerprintIncluded(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	r1 := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	r1.Header.Set("X-Scope-OrgID", "tenant1")
+	r1.Header.Set("Authorization", "Bearer alice")
+
+	r2 := httptest.NewRequest("GET", "/loki/api/v1/labels", nil)
+	r2.Header.Set("X-Scope-OrgID", "tenant1")
+	r2.Header.Set("Authorization", "Bearer bob")
+
+	key1, ok1 := p.compatCacheKey("labels", r1)
+	key2, ok2 := p.compatCacheKey("labels", r2)
+
+	if !ok1 || !ok2 {
+		t.Skip("compat cache not applicable for this endpoint in test config")
+	}
+	if key1 == key2 {
+		t.Errorf("cache keys must differ for different Authorization values; both: %q", key1)
+	}
+}
+
+// TestAlertingBackendHeaders_NoBroadcast ensures VL backend credentials
+// (set via BackendBasicAuth) are NOT forwarded to the ruler/alerts backend.
+func TestAlertingBackendHeaders_NoBroadcast(t *testing.T) {
+	var receivedAuth string
+	alertingBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth = r.Header.Get("Authorization")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`[]`))
+	}))
+	defer alertingBackend.Close()
+
+	backendURL, _ := url.Parse(alertingBackend.URL)
+
+	p := newGapTestProxy(t, "http://does-not-matter")
+	// Inject VL credentials into backendHeaders (as BackendBasicAuth would do).
+	p.backendHeaders = map[string]string{
+		"Authorization": "Basic " + base64Encode("vluser:vlpass"),
+	}
+	p.rulerBackend = backendURL
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/loki/api/v1/rules", nil)
+	r.Header.Set("X-Scope-OrgID", "tenant1")
+	p.handleRules(w, r)
+
+	if receivedAuth != "" {
+		t.Errorf("VL backend credentials must NOT be forwarded to ruler backend, got Authorization=%q", receivedAuth)
+	}
+}
+
+// =============================================================================
+// Cache auth-isolation fixes (security review follow-up)
+// =============================================================================
+
+// ctxWithOrgAndAuth returns a context that carries both the orgID and an
+// origRequestKey pointing at r, so nativeCoalescerKey / detectedFieldsCacheKey
+// can extract the auth fingerprint.
+func ctxWithOrgAndAuth(orgID string, r *http.Request) context.Context {
+	ctx := context.WithValue(context.Background(), orgIDKey, orgID)
+	return context.WithValue(ctx, origRequestKey, r)
+}
+
+// TestNativeCoalescerKey_TenantIsolated verifies that native_fields / native_streams
+// coalescer keys differ between tenants so concurrent misses don't share a VL response.
+func TestNativeCoalescerKey_TenantIsolated(t *testing.T) {
+	p := &Proxy{}
+	params := url.Values{}
+	params.Set("query", `{app="api"}`)
+
+	ctx1 := ctxWithOrgAndAuth("tenant-a", nil)
+	ctx2 := ctxWithOrgAndAuth("tenant-b", nil)
+
+	key1 := p.nativeCoalescerKey("native_fields", ctx1, params)
+	key2 := p.nativeCoalescerKey("native_fields", ctx2, params)
+
+	if key1 == key2 {
+		t.Errorf("native_fields coalescer key must differ between tenants; both: %q", key1)
+	}
+}
+
+// TestNativeCoalescerKey_AuthIsolated verifies that native_fields / native_streams
+// coalescer keys differ between users when forwarded auth is configured.
+func TestNativeCoalescerKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	params := url.Values{}
+	params.Set("query", `{app="api"}`)
+
+	rAlice := httptest.NewRequest("GET", "/", nil)
+	rAlice.Header.Set("Authorization", "Bearer alice-token")
+
+	rBob := httptest.NewRequest("GET", "/", nil)
+	rBob.Header.Set("Authorization", "Bearer bob-token")
+
+	ctxA := ctxWithOrgAndAuth("tenant1", rAlice)
+	ctxB := ctxWithOrgAndAuth("tenant1", rBob)
+
+	key1 := p.nativeCoalescerKey("native_fields", ctxA, params)
+	key2 := p.nativeCoalescerKey("native_fields", ctxB, params)
+
+	if key1 == key2 {
+		t.Errorf("native_fields coalescer key must differ for different auth tokens; both: %q", key1)
+	}
+
+	key3 := p.nativeCoalescerKey("native_streams", ctxA, params)
+	key4 := p.nativeCoalescerKey("native_streams", ctxB, params)
+	if key3 == key4 {
+		t.Errorf("native_streams coalescer key must differ for different auth tokens; both: %q", key3)
+	}
+}
+
+// TestDetectedFieldsCacheKey_AuthIsolated verifies detect_fields / detect_labels
+// cache keys include the per-user auth fingerprint.
+func TestDetectedFieldsCacheKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	rAlice := httptest.NewRequest("GET", "/", nil)
+	rAlice.Header.Set("Authorization", "Bearer alice")
+
+	rBob := httptest.NewRequest("GET", "/", nil)
+	rBob.Header.Set("Authorization", "Bearer bob")
+
+	ctxA := ctxWithOrgAndAuth("t1", rAlice)
+	ctxB := ctxWithOrgAndAuth("t1", rBob)
+
+	fk1 := p.detectedFieldsCacheKey(ctxA, `{app="x"}`, "1000", "2000", 100)
+	fk2 := p.detectedFieldsCacheKey(ctxB, `{app="x"}`, "1000", "2000", 100)
+	if fk1 == fk2 {
+		t.Errorf("detect_fields cache key must differ for different auth tokens; both: %q", fk1)
+	}
+
+	lk1 := p.detectedLabelsCacheKey(ctxA, `{app="x"}`, "1000", "2000", 100)
+	lk2 := p.detectedLabelsCacheKey(ctxB, `{app="x"}`, "1000", "2000", 100)
+	if lk1 == lk2 {
+		t.Errorf("detect_labels cache key must differ for different auth tokens; both: %q", lk1)
+	}
+}
+
+// TestQueryRangeCacheKey_AuthIsolated verifies the query_range window cache key
+// includes the per-user auth fingerprint.
+func TestQueryRangeCacheKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	r1 := httptest.NewRequest("GET", "/?query=%7Bapp%3D%22x%22%7D&start=1000&end=2000&step=15", nil)
+	r1.Header.Set("X-Scope-OrgID", "tenant1")
+	r1.Header.Set("Authorization", "Bearer alice")
+
+	r2 := httptest.NewRequest("GET", "/?query=%7Bapp%3D%22x%22%7D&start=1000&end=2000&step=15", nil)
+	r2.Header.Set("X-Scope-OrgID", "tenant1")
+	r2.Header.Set("Authorization", "Bearer bob")
+
+	key1 := p.queryRangeCacheKey(r1, `{app="x"}`)
+	key2 := p.queryRangeCacheKey(r2, `{app="x"}`)
+
+	if key1 == key2 {
+		t.Errorf("queryRangeCacheKey must differ for different auth tokens; both: %q", key1)
+	}
+}
+
+// TestMultiTenantCacheKey_AuthIsolated verifies that mt: keys for query, query_range,
+// patterns, and series include the per-user auth fingerprint.
+func TestMultiTenantCacheKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	for _, endpoint := range []string{"query", "query_range", "patterns", "series"} {
+		r1 := httptest.NewRequest("GET", "/?query=%7Bapp%3D%22x%22%7D&start=1000&end=2000", nil)
+		r1.Header.Set("X-Scope-OrgID", "tenant1")
+		r1.Header.Set("Authorization", "Bearer alice")
+
+		r2 := httptest.NewRequest("GET", "/?query=%7Bapp%3D%22x%22%7D&start=1000&end=2000", nil)
+		r2.Header.Set("X-Scope-OrgID", "tenant1")
+		r2.Header.Set("Authorization", "Bearer bob")
+
+		key1, ok1 := p.multiTenantCacheKey(r1, endpoint)
+		key2, ok2 := p.multiTenantCacheKey(r2, endpoint)
+
+		if !ok1 || !ok2 {
+			t.Errorf("endpoint %q: multiTenantCacheKey should be applicable for GET", endpoint)
+			continue
+		}
+		if key1 == key2 {
+			t.Errorf("endpoint %q: mt key must differ for different auth tokens; both: %q", endpoint, key1)
+		}
+	}
+}
+
+// TestPatternsAutodetectCacheKey_AuthIsolated verifies pattern autodetect cache keys
+// are scoped per user when forwarded auth is configured.
+func TestPatternsAutodetectCacheKey_AuthIsolated(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	rAlice := httptest.NewRequest("GET", "/", nil)
+	rAlice.Header.Set("Authorization", "Bearer alice")
+	rBob := httptest.NewRequest("GET", "/", nil)
+	rBob.Header.Set("Authorization", "Bearer bob")
+
+	fpAlice := p.forwardedAuthFingerprint(rAlice)
+	fpBob := p.forwardedAuthFingerprint(rBob)
+
+	key1 := p.patternsAutodetectCacheKey("tenant1", fpAlice, `{app="x"}`, "1000", "2000", "15")
+	key2 := p.patternsAutodetectCacheKey("tenant1", fpBob, `{app="x"}`, "1000", "2000", "15")
+
+	if key1 == key2 {
+		t.Errorf("patterns autodetect cache key must differ for different auth tokens; both: %q", key1)
+	}
+	// Same fingerprint must produce same key (deterministic).
+	key3 := p.patternsAutodetectCacheKey("tenant1", fpAlice, `{app="x"}`, "1000", "2000", "15")
+	if key1 != key3 {
+		t.Error("patternsAutodetectCacheKey must be deterministic for the same inputs")
+	}
+}
+
+// TestSnapshotForwardedAuth_CapturesHeaders verifies that snapshotForwardedAuth
+// copies configured forward headers/cookies and returns nil when none are configured.
+func TestSnapshotForwardedAuth_CapturesHeaders(t *testing.T) {
+	t.Run("nil_when_no_forwarding_configured", func(t *testing.T) {
+		p := &Proxy{}
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("Authorization", "Bearer secret")
+		if snap := p.snapshotForwardedAuth(r); snap != nil {
+			t.Error("expected nil snapshot when no forwarding configured")
+		}
+	})
+
+	t.Run("captures_configured_headers_only", func(t *testing.T) {
+		p := &Proxy{forwardHeaders: []string{"Authorization", "X-Custom"}}
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("Authorization", "Bearer tok")
+		r.Header.Set("X-Custom", "val")
+		r.Header.Set("X-Not-Forwarded", "should-not-appear")
+
+		snap := p.snapshotForwardedAuth(r)
+		if snap == nil {
+			t.Fatal("expected non-nil snapshot")
+		}
+		if got := snap.Header.Get("Authorization"); got != "Bearer tok" {
+			t.Errorf("Authorization not captured: got %q", got)
+		}
+		if got := snap.Header.Get("X-Custom"); got != "val" {
+			t.Errorf("X-Custom not captured: got %q", got)
+		}
+		if got := snap.Header.Get("X-Not-Forwarded"); got != "" {
+			t.Errorf("non-forwarded header must not appear in snapshot: got %q", got)
+		}
+	})
+
+	t.Run("fingerprint_matches_original", func(t *testing.T) {
+		p := &Proxy{forwardHeaders: []string{"Authorization"}}
+		r := httptest.NewRequest("GET", "/", nil)
+		r.Header.Set("Authorization", "Bearer tok")
+
+		snap := p.snapshotForwardedAuth(r)
+		if snap == nil {
+			t.Fatal("expected non-nil snapshot")
+		}
+		if p.forwardedAuthFingerprint(snap) != p.forwardedAuthFingerprint(r) {
+			t.Error("snapshot fingerprint must match original request fingerprint")
+		}
+	})
+}
+
+// TestSnapshotForwardedAuth_UsableAsOrigRequestKey verifies that a snapshot can be
+// attached as origRequestKey in a background context so refresh workers carry the
+// correct forwarded credentials.
+func TestSnapshotForwardedAuth_UsableAsOrigRequestKey(t *testing.T) {
+	p := &Proxy{forwardHeaders: []string{"Authorization"}}
+
+	r := httptest.NewRequest("GET", "/", nil)
+	r.Header.Set("Authorization", "Bearer alice-refresh-token")
+
+	snap := p.snapshotForwardedAuth(r)
+	if snap == nil {
+		t.Fatal("expected snapshot for request with forwarded header")
+	}
+
+	// Simulate the background context that refresh workers build.
+	bgCtx := context.WithValue(context.Background(), origRequestKey, snap)
+
+	origFP := p.forwardedAuthFingerprint(r)
+	origReq, ok := bgCtx.Value(origRequestKey).(*http.Request)
+	if !ok || origReq == nil {
+		t.Fatal("origRequestKey not accessible from background context")
+	}
+	if bgFP := p.forwardedAuthFingerprint(origReq); bgFP != origFP {
+		t.Errorf("background context fingerprint %q must match original %q", bgFP, origFP)
 	}
 }

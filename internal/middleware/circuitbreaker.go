@@ -8,18 +8,23 @@ import (
 
 // CircuitBreaker protects the VL backend from cascading failures.
 // States: Closed (normal) → Open (failing) → HalfOpen (probing).
+//
+// Failure counting uses a sliding time window rather than consecutive
+// failures. This prevents sporadic slow-query connection resets (which look
+// like transport errors) from opening the breaker when VL is healthy overall.
+// Only a burst of N failures within windowDuration opens the circuit.
 type CircuitBreaker struct {
 	mu sync.Mutex
 
 	state          cbState
-	failures       int
+	failureTimes   []time.Time // ring of recent failure timestamps (pruned by window)
 	successes      int
 	halfOpenProbes int // number of probes allowed in half-open
-	lastFailure    time.Time
 	openUntil      time.Time
 
 	// Config
-	failureThreshold int           // failures before opening
+	failureThreshold int           // failures within window before opening
+	windowDuration   time.Duration // sliding window for failure counting
 	successThreshold int           // successes in half-open before closing
 	openDuration     time.Duration // how long to stay open before probing
 
@@ -35,12 +40,21 @@ const (
 	cbHalfOpen
 )
 
-func NewCircuitBreaker(failureThreshold, successThreshold int, openDuration time.Duration) *CircuitBreaker {
+// NewCircuitBreaker creates a circuit breaker.
+// failureThreshold: failures within windowDuration before opening.
+// successThreshold: consecutive successes in half-open before closing.
+// openDuration: how long to stay open before probing.
+// windowDuration: sliding window for failure rate (0 defaults to 30s).
+func NewCircuitBreaker(failureThreshold, successThreshold int, openDuration, windowDuration time.Duration) *CircuitBreaker {
+	if windowDuration <= 0 {
+		windowDuration = 30 * time.Second
+	}
 	return &CircuitBreaker{
 		state:            cbClosed,
 		failureThreshold: failureThreshold,
 		successThreshold: successThreshold,
 		openDuration:     openDuration,
+		windowDuration:   windowDuration,
 	}
 }
 
@@ -61,7 +75,7 @@ func (cb *CircuitBreaker) Allow() bool {
 		}
 		return false
 	case cbHalfOpen:
-		// Only allow up to successThreshold probe requests
+		// Only allow up to successThreshold probe requests.
 		if cb.halfOpenProbes < cb.successThreshold {
 			cb.halfOpenProbes++
 			return true
@@ -81,30 +95,33 @@ func (cb *CircuitBreaker) RecordSuccess() {
 		cb.successes++
 		if cb.successes >= cb.successThreshold {
 			cb.state = cbClosed
-			cb.failures = 0
+			cb.failureTimes = cb.failureTimes[:0]
 		}
 	case cbClosed:
-		cb.failures = 0 // reset consecutive failures
+		// Prune expired failures but do NOT reset the window on success.
+		// A success between two failures doesn't make the failures disappear;
+		// they still happened and still count toward the burst threshold.
+		cb.pruneWindow()
 	}
 }
 
-// RecordFailure records a failed backend response.
+// RecordFailure records a failed backend response (transport-level errors only;
+// callers must exclude timeouts and context cancellations before calling this).
 func (cb *CircuitBreaker) RecordFailure() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
-	cb.lastFailure = time.Now()
-
 	switch cb.state {
 	case cbClosed:
-		cb.failures++
-		if cb.failures >= cb.failureThreshold {
+		cb.pruneWindow()
+		cb.failureTimes = append(cb.failureTimes, time.Now())
+		if len(cb.failureTimes) >= cb.failureThreshold {
 			cb.state = cbOpen
 			cb.openUntil = time.Now().Add(cb.openDuration)
 			cb.TripsTotal.Add(1)
 		}
 	case cbHalfOpen:
-		// Probe failed — go back to open
+		// Probe failed — go back to open.
 		cb.state = cbOpen
 		cb.openUntil = time.Now().Add(cb.openDuration)
 		cb.TripsTotal.Add(1)
@@ -124,4 +141,15 @@ func (cb *CircuitBreaker) State() string {
 		return "half_open"
 	}
 	return "unknown"
+}
+
+// pruneWindow removes failure timestamps older than windowDuration.
+// Must be called with mu held.
+func (cb *CircuitBreaker) pruneWindow() {
+	cutoff := time.Now().Add(-cb.windowDuration)
+	i := 0
+	for i < len(cb.failureTimes) && cb.failureTimes[i].Before(cutoff) {
+		i++
+	}
+	cb.failureTimes = cb.failureTimes[i:]
 }

@@ -1,3 +1,8 @@
+---
+sidebar_label: Logs Drilldown Compatibility
+description: Grafana Logs Drilldown plugin compatibility — patterns, detected_fields, label filters, and metric queries.
+---
+
 # Logs Drilldown Compatibility
 
 This track measures compatibility with the Grafana Logs Drilldown app, not generic Loki clients.
@@ -23,6 +28,7 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Grafana version | Coverage path | Version-specific focus |
 |---|---|---|
+| `13.x` | Scheduled/manual runtime matrix | Same contract as `12.x` — `2.x` Drilldown runtime-family assertions, explicit `RuntimeFamilyContracts` entry added in v1.15.0 |
 | `12.4.2` | PR/main pinned runtime + scheduled/manual runtime matrix | full Drilldown runtime score on the pinned current build |
 | `12.4.1` | PR/main current-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
 | `11.6.6` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `1.x` runtime-family assertions |
@@ -98,6 +104,8 @@ Promotion criteria for a new family:
 - Unknown label and detected-field lookups should keep a success payload shape instead of flipping into transport errors
 - `patterns` must return non-empty grouped pattern payloads with sample buckets for Drilldown
 - Multi-tenant Drilldown queries with repeated `var-levels=detected_level|=|...` selections must stay valid and return logs instead of backend parse errors
+- _(v1.17.1)_ When `detected_level` is synthesized in metric results, the raw `level` label is removed from those same results to prevent Drilldown from showing both labels simultaneously — the include button for `detected_level` values must work correctly without `level` duplication
+- _(v1.17.1)_ Nested JSON objects in the log body (e.g., `service={"name":"api-gateway"}`) must be excluded from the `detected_fields` field breakdown; exposing them previously broke the field breakdown view when users clicked on such a field
 
 ## Edge Cases Covered
 
@@ -109,9 +117,12 @@ Promotion criteria for a new family:
 - `2.x` detected-level default columns, field-values breakdown scenes, and additional label-tab wiring stay explicit in the source-contract checks
 - Grafana runtime `11.x` explicitly asserts `1.x`-style service buckets, filtered detected fields, and extra label values at runtime
 - Grafana runtime `12.x` explicitly asserts `2.x`-style detected-level series, field-value breakdowns, and extra label values at runtime
+- Grafana runtime `13.x` uses the same `2.x`-style contract as `12.x` — added to `RuntimeFamilyContracts` in v1.15.0
 - Service-detail field breakdowns and additional label filters
 - Multi-tenant Drilldown log views filtered by `cluster` plus multiple selected `detected_level` values
 - Multi-tenant Grafana resource calls with `__tenant_id__!~...` and `__tenant_id__="missing"` keep the correct narrowed or empty-success behavior
 - Native field-value discovery for indexed metadata such as `service.name`, with parser-stage stripping before the backend lookup
 - Fallback scanning for parsed-only fields such as `method` when no safe native metadata path exists
 - Patterns grouping across repeated request shapes
+- _(v1.17.1)_ `detected_level`/`level` metric deduplication: raw `level` label removed from metric results when `detected_level` is synthesized, fixing the Drilldown include button for `detected_level` filter selections
+- _(v1.17.1)_ Nested JSON object field suppression: `service={"name":"..."}` and similar compound body fields are excluded from the field breakdown to prevent broken Drilldown field-click behavior

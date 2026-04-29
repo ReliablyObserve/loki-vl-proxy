@@ -1,3 +1,8 @@
+---
+sidebar_label: VictoriaLogs Compatibility
+description: How loki-vl-proxy integrates with VictoriaLogs versions, endpoints, and query features.
+---
+
 # VictoriaLogs Compatibility
 
 This track measures whether the proxy keeps VictoriaLogs behavior usable and stable while exposing Loki-compatible semantics on top.

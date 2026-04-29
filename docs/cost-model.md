@@ -1,5 +1,5 @@
 ---
-sidebar_position: 17
+sidebar_label: Cost Model (AWS)
 description: Illustrative AWS EC2 cost model for Loki versus VictoriaLogs plus Loki-VL-proxy across three user and ingestion scenarios, with explicit assumptions and formulas.
 ---
 

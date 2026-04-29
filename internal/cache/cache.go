@@ -50,6 +50,7 @@ type Cache struct {
 	maxEntries int
 	maxBytes   int
 	curBytes   int
+	disabled   bool
 	l2         *DiskCache    // optional L2 disk cache
 	l3         *PeerCache    // optional L3 peer fleet cache
 	done       chan struct{} // signals cleanup goroutine to stop
@@ -76,7 +77,7 @@ type Cache struct {
 // Entries larger than this threshold are rejected to protect the cache from
 // a single oversized response consuming a disproportionate share of memory.
 func (c *Cache) MaxEntrySizeBytes() int {
-	if c == nil || c.maxBytes <= 0 {
+	if c == nil || c.disabled || c.maxBytes <= 0 {
 		return 0
 	}
 	return c.maxBytes / 10
@@ -108,12 +109,18 @@ const maxHotIndexQueryLimit = 2000
 // SetL2 attaches an L2 disk cache. On L1 miss, L2 is checked.
 // On L1 set, values are also written to L2.
 func (c *Cache) SetL2(dc *DiskCache) {
+	if c == nil || c.disabled {
+		return
+	}
 	c.l2 = dc
 }
 
 // SetL3 attaches an L3 peer cache for distributed fleet operation.
 // On L1+L2 miss, the owning peer is queried before hitting VL.
 func (c *Cache) SetL3(pc *PeerCache) {
+	if c == nil || c.disabled {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.l3 = pc
@@ -124,6 +131,12 @@ func (c *Cache) SetL3(pc *PeerCache) {
 	if pc != nil {
 		pc.AttachLocalCache(c)
 	}
+}
+
+func NewDisabled() *Cache {
+	c := &Cache{disabled: true, done: make(chan struct{})}
+	close(c.done)
+	return c
 }
 
 func New(ttl time.Duration, maxEntries int) *Cache {
@@ -148,6 +161,9 @@ func NewWithMaxBytes(ttl time.Duration, maxEntries, maxBytes int) *Cache {
 
 // Close stops the background cleanup goroutine.
 func (c *Cache) Close() {
+	if c == nil || c.disabled {
+		return
+	}
 	select {
 	case <-c.done:
 	default:
@@ -158,6 +174,9 @@ func (c *Cache) Close() {
 // GetWithTTL returns the value and remaining TTL for a key.
 // Returns (nil, 0, false) on miss.
 func (c *Cache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
+	if c == nil || c.disabled {
+		return nil, 0, false
+	}
 	c.mu.Lock()
 	e, ok := c.entries[key]
 	if ok {
@@ -182,6 +201,9 @@ func (c *Cache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
 // Lookup order is L1 memory -> L2 disk -> L3 peer. Hits from lower tiers are promoted
 // into local L1 only so read reuse improves without forcing extra disk or peer writes.
 func (c *Cache) GetSharedWithTTL(key string) ([]byte, time.Duration, string, bool) {
+	if c == nil || c.disabled {
+		return nil, 0, "", false
+	}
 	if v, ttl, ok := c.getL1WithTTL(key); ok {
 		c.recordTierRequest("l1")
 		c.recordTierHit("l1")
@@ -227,6 +249,9 @@ func (c *Cache) GetSharedWithTTL(key string) ([]byte, time.Duration, string, boo
 // back to L2/L3 because stale-on-error is only intended to reuse the serving
 // replica's last known-good payload.
 func (c *Cache) GetStaleWithTTL(key string) ([]byte, time.Duration, bool) {
+	if c == nil || c.disabled {
+		return nil, 0, false
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -240,6 +265,9 @@ func (c *Cache) GetStaleWithTTL(key string) ([]byte, time.Duration, bool) {
 // GetRecoverableStaleWithTTL returns the last known-good value from local memory or local disk.
 // It never reads peers for stale data, which keeps degraded-path fallback local-first.
 func (c *Cache) GetRecoverableStaleWithTTL(key string) ([]byte, time.Duration, string, bool) {
+	if c == nil || c.disabled {
+		return nil, 0, "", false
+	}
 	if v, ttl, ok := c.GetStaleWithTTL(key); ok {
 		c.recordTierStaleHit("l1")
 		return v, ttl, "l1_memory", true
@@ -254,6 +282,9 @@ func (c *Cache) GetRecoverableStaleWithTTL(key string) ([]byte, time.Duration, s
 }
 
 func (c *Cache) Get(key string) ([]byte, bool) {
+	if c == nil || c.disabled {
+		return nil, false
+	}
 	c.mu.Lock()
 	e, ok := c.entries[key]
 	if ok && !time.Now().After(e.expiresAt) {
@@ -300,17 +331,26 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 
 // Set stores a value with the default TTL.
 func (c *Cache) Set(key string, value []byte) {
+	if c == nil || c.disabled {
+		return
+	}
 	c.SetWithTTL(key, value, c.defaultTTL)
 }
 
 // SetShadowWithTTL stores a shadow value locally without re-propagating it to peers.
 func (c *Cache) SetShadowWithTTL(key string, value []byte, ttl time.Duration) {
+	if c == nil || c.disabled {
+		return
+	}
 	c.setWithTTL(key, value, ttl, false)
 }
 
 // SetLocalOnlyWithTTL stores a value only in local L1 memory.
 // It skips L2 disk writes, L3 peer propagation, and non-owner TTL clamping.
 func (c *Cache) SetLocalOnlyWithTTL(key string, value []byte, ttl time.Duration) {
+	if c == nil || c.disabled {
+		return
+	}
 	size := len(value)
 	if size > c.maxBytes/10 {
 		return
@@ -345,6 +385,9 @@ func (c *Cache) SetLocalOnlyWithTTL(key string, value []byte, ttl time.Duration)
 // but skips peer write-through. This is the preferred mode for helper/read caches
 // that should survive pod churn without adding east-west write amplification.
 func (c *Cache) SetLocalAndDiskWithTTL(key string, value []byte, ttl time.Duration) {
+	if c == nil || c.disabled {
+		return
+	}
 	size := len(value)
 	if size > c.maxBytes/10 {
 		return
@@ -361,6 +404,9 @@ func (c *Cache) SetLocalAndDiskWithTTL(key string, value []byte, ttl time.Durati
 
 // SetWithTTL stores a value with a specific TTL.
 func (c *Cache) SetWithTTL(key string, value []byte, ttl time.Duration) {
+	if c == nil || c.disabled {
+		return
+	}
 	c.setWithTTL(key, value, ttl, true)
 }
 

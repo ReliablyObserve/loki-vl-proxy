@@ -1,3 +1,8 @@
+---
+sidebar_label: Testing Guide
+description: Unit, integration, and E2E test architecture. Covers parity tests, fuzz tests, and the query semantics matrix.
+---
+
 # Testing
 
 ## Quick Start

@@ -132,7 +132,7 @@ func TestAdvanced_EmptyStreamSelector(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
-	// Empty stream selector → just the line filter
+	// Empty stream selector → just the line filter (searches all VL fields)
 	if got != `~"error"` {
 		t.Errorf("got %q, want %q", got, `~"error"`)
 	}

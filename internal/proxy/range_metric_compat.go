@@ -17,10 +17,11 @@ import (
 )
 
 type statsCompatSpec struct {
-	BaseQuery string
-	GroupBy   []string
-	Func      string
-	Field     string
+	BaseQuery  string
+	GroupBy    []string
+	ByExplicit bool // true when "by ()" was present — aggregate all into one series
+	Func       string
+	Field      string
 }
 
 type originalRangeMetricSpec struct {
@@ -66,6 +67,10 @@ func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
 					}
 				}
 			}
+			rest = strings.TrimSpace(rest[closeIdx+1:])
+		} else if closeIdx == len("by (") {
+			// "by ()" — explicit empty grouping: one series, no label dimensions.
+			spec.ByExplicit = true
 			rest = strings.TrimSpace(rest[closeIdx+1:])
 		}
 	}
@@ -341,7 +346,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
-	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), endTS)
+	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), endTS)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return true
@@ -349,7 +354,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 
 	result := buildManualRangeMetricMatrix(manualFunc, quantile, series, startTS, endTS, step, origSpec.Window)
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(result)
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
 }
 
@@ -368,7 +373,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), evalTS)
+	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), evalTS)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return true
@@ -376,7 +381,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 
 	result := buildManualRangeMetricVector(manualFunc, quantile, series, evalTS, origSpec.Window)
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(result)
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
 }
 
@@ -410,7 +415,7 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 	return p.labelTranslator.ToVL(field), 0, nil
 }
 
-func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy []string, field, unwrapConv string, start, end time.Time) (map[string]manualSeriesSamples, error) {
+func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy []string, byExplicit bool, field, unwrapConv string, start, end time.Time) (map[string]manualSeriesSamples, error) {
 	params := url.Values{}
 	params.Set("query", baseQuery)
 	params.Set("start", formatVLTimestamp(start.UTC().Format(time.RFC3339Nano)))
@@ -472,8 +477,8 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 			streamLabels["detected_level"] = "unknown"
 		}
 		ensureSyntheticServiceName(streamLabels)
-		metricLabels := buildManualMetricLabels(streamLabels, groupBy)
-		if includeParsedLabels {
+		metricLabels := buildManualMetricLabels(streamLabels, groupBy, byExplicit)
+		if includeParsedLabels && !byExplicit {
 			addParsedEntryLabels(metricLabels, entry, field)
 		}
 		translated := p.labelTranslator.TranslateLabelsMap(metricLabels)
@@ -549,7 +554,11 @@ type manualSeriesSamples struct {
 	Samples []rangeMetricSample
 }
 
-func buildManualMetricLabels(streamLabels map[string]string, groupBy []string) map[string]string {
+func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
+	if byExplicit && len(groupBy) == 0 {
+		// Explicit "by ()" — one series total, no label dimensions.
+		return map[string]string{}
+	}
 	if len(groupBy) == 0 {
 		labels := make(map[string]string, len(streamLabels))
 		for k, v := range streamLabels {

@@ -1,3 +1,8 @@
+---
+sidebar_label: Known Issues
+description: Known differences between loki-vl-proxy and native Loki, and workarounds where available.
+---
+
 # Known Differences and Known Issues
 
 Last updated against `main`.
@@ -27,8 +32,9 @@ operational caveats that still matter in the current codebase.
 | Multi-tenant Drilldown aggregation | Some Drilldown-oriented field and label surfaces still use approximate merged cardinality across tenants. Query fanout works, but merged browse surfaces are not perfect set-theory replicas of native Loki multitenancy. |
 | Wildcard tenant shorthand | `X-Scope-OrgID: *` is a proxy convenience for global/default routing. It is not a Loki-compatible all-tenants shorthand. |
 | Patterns surface | `/loki/api/v1/patterns` is optional (`-patterns-enabled`) and responses are clamped to `1000` patterns per request. |
-| `offset` directive | Silently stripped from queries; results do not reflect time shifting. Implementation requires parsing offset value and adjusting start/end parameters before backend dispatch. |
-| `label_replace()` function | Not implemented in the translator or proxy. Queries using `label_replace` will fail with a translation error. |
+| `offset` directive | Silently stripped from queries; results do not reflect time shifting. Implementation requires parsing the offset value and adjusting `start`/`end` parameters before backend dispatch. See [translation-reference.md](translation-reference.md). |
+| `count_values()` aggregation | Not translatable. VictoriaLogs has no equivalent function that groups by metric values. Queries using `count_values` return a descriptive error. |
+| Log stream ordering above split interval | For queries spanning more than one windowing interval, log entries within each stream are sorted ascending by timestamp; however Grafana may display them in the requested `direction` based on the overall response. This is stable as of v1.21.1. |
 
 ## Translation and Performance Caveats
 
@@ -67,6 +73,13 @@ These are not current open issues in this codebase:
 - Loki-compatible `/loki/api/v1/patterns` support with persistence and peer warm
 - route-aware proxy, cache, and upstream request telemetry
 - prefixed app metrics under `loki_vl_proxy_*` with CI guard coverage
+- `label_replace()` — fully implemented in translator with proxy-side post-processing (v1.21.0)
+- `label_join()` — fully implemented in translator with proxy-side post-processing (v1.21.0)
+- `group()` — implemented: inner metric translated normally, proxy normalises all matrix values to `1` (v1.21.0)
+- bare label matcher malformed VL output — queries like `app="value"` (missing braces) now return a descriptive HTTP 400 instead of silently producing double-quoted VL syntax (v1.20.0)
+- `detected_level` inference — proxy infers level from JSON/logfmt `_msg` content when not present in stream labels (v1.20.0)
+- circuit breaker sliding window — failure counting uses a 30-second sliding window; sporadic slow-query resets no longer open the breaker (v1.18.0)
+- deterministic log stream ordering for multi-window queries — streams and per-stream values now sorted stably before response emission (v1.21.1)
 
 ## Related Docs
 

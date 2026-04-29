@@ -1,3 +1,9 @@
+---
+sidebar_position: 1
+sidebar_label: Getting Started
+description: Install and run loki-vl-proxy in minutes — binary, Docker, or Helm. Connect Grafana to VictoriaLogs using the native Loki datasource.
+---
+
 # Getting Started
 
 ## What You Need

@@ -427,10 +427,11 @@ func TestOptimization_NoMemoryLeak_SustainedLoad(t *testing.T) {
 	allocPerReq := float64(memAfter.TotalAlloc-memBefore.TotalAlloc) / 10000
 	t.Logf("10K requests: %.1f MB total alloc, %.0f bytes/req", totalAllocMB, allocPerReq)
 
-	// Should allocate less than 500 KB per request on average (no leak, bounded alloc).
-	// Threshold accounts for race detector overhead (~2x allocations).
-	if allocPerReq > 500*1024 {
-		t.Errorf("excessive allocation: %.0f bytes/req (expected <500KB)", allocPerReq)
+	// Should allocate less than 700 KB per request on average (no leak, bounded alloc).
+	// Threshold accounts for race detector overhead (~2x allocations) plus JSON
+	// log-line reconstruction overhead (reconstructLogLine per entry).
+	if allocPerReq > 700*1024 {
+		t.Errorf("excessive allocation: %.0f bytes/req (expected <700KB)", allocPerReq)
 	}
 }
 

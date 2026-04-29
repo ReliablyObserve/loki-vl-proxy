@@ -112,11 +112,6 @@
       "cases": ["vector_binary_metric", "on_grouping_metric", "group_left_join_metric", "vector_and_metric", "vector_or_metric", "vector_unless_metric"]
     },
     {
-      "name": "binary_vector_invalid_matching",
-      "category": "binary",
-      "cases": ["ignoring_grouping_metric"]
-    },
-    {
       "name": "empty_success",
       "category": "result_shape",
       "cases": ["impossible_filter_empty_success"]

@@ -1,3 +1,8 @@
+---
+sidebar_label: Security
+description: Security model, network exposure, tenant isolation, header forwarding, and TLS configuration.
+---
+
 # Security
 
 ## Security Model

@@ -1,3 +1,8 @@
+---
+sidebar_label: E2E Test Infrastructure
+description: How to run and extend the E2E compatibility tests against a local Docker Compose stack.
+---
+
 # E2E Test Infrastructure Guide
 
 Practical reference for the Loki-VL-proxy end-to-end test suite.

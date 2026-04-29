@@ -358,7 +358,7 @@ func TestPatternsAutodetectFromWindowEntries_PopulatesCacheAndSnapshot(t *testin
 	})
 
 	query := `{app="web"}`
-	cacheKey := p.patternsAutodetectCacheKey("org-a", query, "1", "2", "1m")
+	cacheKey := p.patternsAutodetectCacheKey("org-a", "", query, "1", "2", "1m")
 	if cacheKey == "" {
 		t.Fatal("expected non-empty autodetect cache key")
 	}
@@ -373,7 +373,7 @@ func TestPatternsAutodetectFromWindowEntries_PopulatesCacheAndSnapshot(t *testin
 			Value:  []interface{}{"1710000001000000000", "user 456 action login from 10.0.0.2"},
 		},
 	}
-	p.maybeAutodetectPatternsFromWindowEntries("org-a", query, "1", "2", "1m", entries)
+	p.maybeAutodetectPatternsFromWindowEntries("org-a", "", query, "1", "2", "1m", entries)
 
 	body, _, hit := p.cache.GetWithTTL(cacheKey)
 	if !hit {
@@ -408,6 +408,7 @@ func TestPatternsAutodetectCacheKey_NormalizesTimeAndStepFormats(t *testing.T) {
 
 	numericKey := p.patternsAutodetectCacheKey(
 		"org-a",
+		"",
 		query,
 		strconv.FormatInt(startTime.UnixNano(), 10),
 		strconv.FormatInt(endTime.UnixNano(), 10),
@@ -415,6 +416,7 @@ func TestPatternsAutodetectCacheKey_NormalizesTimeAndStepFormats(t *testing.T) {
 	)
 	rfcKey := p.patternsAutodetectCacheKey(
 		"org-a",
+		"",
 		query,
 		startTime.Format(time.RFC3339Nano),
 		endTime.Format(time.RFC3339Nano),
@@ -462,8 +464,8 @@ func TestPatternSnapshotDedup_Update_RemovesExactDuplicatePayload(t *testing.T) 
 	})
 
 	query := `{service_name="api"}`
-	keyOld := p.patternsAutodetectCacheKey("org-a", query, "1", "2", "1m")
-	keyNew := p.patternsAutodetectCacheKey("org-a", query, "3", "4", "1m")
+	keyOld := p.patternsAutodetectCacheKey("org-a", "", query, "1", "2", "1m")
+	keyNew := p.patternsAutodetectCacheKey("org-a", "", query, "3", "4", "1m")
 	payload := mustMarshalJSON(t, patternsResponse{
 		Status: "success",
 		Data: []patternResultEntry{
@@ -502,8 +504,8 @@ func TestPatternSnapshotEntry_CanonicalizesRangeKeysAndCompactsSamples(t *testin
 	})
 
 	query := `{service_name="api"}`
-	keyA := p.patternsAutodetectCacheKey("org-a", query, "1", "181", "60s")
-	keyB := p.patternsAutodetectCacheKey("org-a", query, "61", "241", "60s")
+	keyA := p.patternsAutodetectCacheKey("org-a", "", query, "1", "181", "60s")
+	keyB := p.patternsAutodetectCacheKey("org-a", "", query, "61", "241", "60s")
 	payload := mustMarshalJSON(t, patternsResponse{
 		Status: "success",
 		Data: []patternResultEntry{
@@ -564,8 +566,8 @@ func TestPatternSnapshotDedup_Update_PreservesDistinctPayloads(t *testing.T) {
 	})
 
 	query := `{service_name="api"}`
-	keyA := p.patternsAutodetectCacheKey("org-a", query, "1", "2", "1m")
-	keyB := p.patternsAutodetectCacheKey("org-a", query, "3", "4", "1m")
+	keyA := p.patternsAutodetectCacheKey("org-a", "", query, "1", "2", "1m")
+	keyB := p.patternsAutodetectCacheKey("org-a", "", query, "3", "4", "1m")
 	payloadA := mustMarshalJSON(t, patternsResponse{
 		Status: "success",
 		Data: []patternResultEntry{
@@ -613,8 +615,8 @@ func TestPatternSnapshotDedup_PeerMerge_RemovesExactDuplicates(t *testing.T) {
 	})
 
 	query := `{service_name="api"}`
-	keyA := p.patternsAutodetectCacheKey("org-a", query, "1", "2", "1m")
-	keyB := p.patternsAutodetectCacheKey("org-a", query, "3", "4", "1m")
+	keyA := p.patternsAutodetectCacheKey("org-a", "", query, "1", "2", "1m")
+	keyB := p.patternsAutodetectCacheKey("org-a", "", query, "3", "4", "1m")
 	payload := mustMarshalJSON(t, patternsResponse{
 		Status: "success",
 		Data: []patternResultEntry{

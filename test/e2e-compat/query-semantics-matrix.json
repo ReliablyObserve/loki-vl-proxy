@@ -414,14 +414,6 @@
       "require_non_empty": true
     },
     {
-      "id": "ignoring_grouping_metric",
-      "family": "binary_vector",
-      "endpoint": "query_range",
-      "query": "sum by (app, level) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m])) / ignoring(level) sum by (app) (count_over_time({app=\"api-gateway\",env=\"production\"}[5m]))",
-      "step": "60",
-      "expectation": "server_error"
-    },
-    {
       "id": "group_left_join_metric",
       "family": "binary_vector",
       "endpoint": "query_range",

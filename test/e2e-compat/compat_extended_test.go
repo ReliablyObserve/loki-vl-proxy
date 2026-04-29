@@ -22,7 +22,37 @@ func ensureDataIngested(t *testing.T) {
 		waitForReady(t, proxyURL+"/ready", 30*time.Second)
 		waitForReady(t, lokiURL+"/ready", 30*time.Second)
 		ingestRichTestData(t)
+		waitForLokiMetricData(t)
 	})
+}
+
+// waitForLokiMetricData polls until Loki returns non-empty metric results for
+// the given stream selector. Metric queries (count_over_time etc.) need chunks
+// to be sealed after ingestion — GHA runners can be slow, so poll up to 90s.
+func waitForLokiMetricData(t *testing.T) {
+	t.Helper()
+	waitForLokiMetricDataSelector(t, `{app="api-gateway"}`)
+}
+
+func waitForLokiMetricDataSelector(t *testing.T, selector string) {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	probe := url.Values{}
+	probe.Set("query", `count_over_time(`+selector+`[5m])`)
+	probe.Set("start", fmt.Sprintf("%d", time.Now().Add(-10*time.Minute).UnixNano()))
+	probe.Set("end", fmt.Sprintf("%d", time.Now().UnixNano()))
+	probe.Set("step", "60")
+	for time.Now().Before(deadline) {
+		status, _, resp := doJSONGET(t, lokiURL+"/loki/api/v1/query_range?"+probe.Encode(), nil)
+		if status == http.StatusOK {
+			data := extractMap(resp, "data")
+			if len(extractArray(data, "result")) > 0 {
+				return
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Logf("warning: Loki metric data not available after 90s for %s — parity tests may show Loki returning empty", selector)
 }
 
 // =============================================================================

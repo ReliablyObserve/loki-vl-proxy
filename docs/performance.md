@@ -1,3 +1,8 @@
+---
+sidebar_label: Performance Guide
+description: Per-request latency, throughput benchmarks, cache hit rates, and connection pool tuning for loki-vl-proxy.
+---
+
 # Performance
 
 ## Architecture Optimizations

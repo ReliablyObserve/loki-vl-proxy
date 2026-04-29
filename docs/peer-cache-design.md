@@ -1,3 +1,8 @@
+---
+sidebar_label: Peer Cache Design
+description: "Internal design of the L3 peer cache: routing, replication, and failure handling."
+---
+
 # Peer Cache Design
 
 > **Note**: This document describes the initial design. For the current implementation, see [Fleet Cache Architecture](fleet-cache.md).

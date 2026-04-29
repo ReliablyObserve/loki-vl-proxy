@@ -10,7 +10,188 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - fix(e2e): add `_msg` field to all JSON-format log generators so VictoriaLogs stores the human-readable message correctly and Grafana renders JSON service logs consistently with Loki.
+- fix(proxy): reconstruct JSON log lines so `|= "text"` line filters match any JSON field, not only the extracted `_msg` value; VL entries with extra fields are re-serialised as `{"_msg":"...","field":"value"}` before returning to Grafana.
+- fix(translator): revert line filter translation from invalid `*:~"text"` VictoriaLogs syntax to `~"text"` (regex/substring on `_msg`), which is valid across all supported VL versions.
+- fix(proxy): explicit logfmt/JSON `level=warn` field now always wins over VictoriaLogs auto-detected `detected_level`; previously VL could surface `detected_level=info` from `_msg` while also providing `level=warn`, causing Grafana to display the wrong log level badge.
 
+## [1.24.0] - 2026-04-29
+
+### Changed
+
+- refactor: split `internal/proxy/proxy.go` (14,105 lines) into 19 domain-focused modules (`middleware.go`, `stream_processing.go`, `multitenant.go`, `patterns.go`, `patterns_persistence.go`, `cache_keys.go`, `label_metadata.go`, `label_handlers.go`, `http_utils.go`, `query_translation.go`, `metric_agg.go`, `metric_binary.go`, `alerting.go`, `tail.go`, `volume.go`, `backend.go`, `label_index.go`, `telemetry.go`, `time_utils.go`), reducing `proxy.go` to 1,577 lines; no functional changes.
+- ci: extend `fuzz-smoke` job with all 23 previously missing fuzz targets across `internal/proxy`, `internal/translator`, `internal/cache`, and `internal/rulesmigrate`.
+
+## [1.23.0] - 2026-04-29
+
+### Fixed
+
+- security: all cache keys (label_inventory, queryRange, detected_fields/labels, native_fields/streams coalescer, patterns autodetect, volume/range) now include an auth fingerprint (SHA-256 of configured forward headers + cookies), preventing tenants from receiving each other's cached metadata responses in multi-tenant deployments with forwarded auth.
+- security: async background cache refresh goroutines now capture forwarded-auth credentials at request time via `snapshotForwardedAuth`, eliminating cross-tenant credential bleed when refresh workers use `context.Background()`.
+- security: `multiTenantCacheKey` now includes auth fingerprint for `patterns`, `series`, `query`, and `query_range` endpoints.
+
+## [1.22.4] - 2026-04-29
+
+### Changed
+
+- ci: semgrep scan excludes three blanket false-positive rules for this codebase: `go.lang.security.audit.xss.no-direct-write-to-responsewriter` and `no-fprintf-to-responsewriter` (JSON/binary proxy writes are not XSS), `javascript.lang.security.detect-insecure-websocket` (JavaScript rule misapplied to Go).
+- security: `nosemgrep` annotations added to four specific false-positive locations: `w.Write()` calls in `subquery.go`, `range_metric_compat.go`, and `query_range_windowing.go` (Content-Type set immediately before each write); `upgrader.Upgrade()` in `handleTail` (origin enforced via `tailUpgrader()` `CheckOrigin`); `translateQueryWithContext` in `handleDelete` (LogQL/LogsQL sent over HTTP, not SQL).
+- ci: Trivy updated from `0.69.3` to `0.70.0` (`security-pr.yaml` docker image tag, `security-heavy.yaml` trivy-action pinned to `ed142fd` / `v0.36.0`).
+- ci: replace `semgrep/semgrep-action@v1` (broken — uses removed `returntocorp/semgrep-agent:v1` Docker image) with `pip install semgrep==1.161.0` + `semgrep scan` CLI in `security-heavy.yaml`; adds SARIF upload step.
+- ci: all GitHub Actions in `release.yaml` pinned to immutable commit SHAs to prevent supply-chain attacks via mutable version tags.
+- ci: `govulncheck` pinned to `v1.1.4` in `ci.yaml`.
+- docs: README "The Cost Case" and "Query Performance" sections rewritten with real production numbers (310 GiB/day, 1.4 cores, 6.1 GiB RAM) and cold-cache query latency table.
+
+## [1.22.3] - 2026-04-29
+
+### Changed
+
+- ci: Trivy updated from `0.69.3` to `0.70.0` (`security-pr.yaml` docker image tag, `security-heavy.yaml` trivy-action pinned to `ed142fd` / `v0.36.0`).
+- ci: replace `semgrep/semgrep-action@v1` (broken — uses removed `returntocorp/semgrep-agent:v1` Docker image) with `pip install semgrep==1.161.0` + `semgrep scan` CLI in `security-heavy.yaml`; adds SARIF upload step.
+- ci: all GitHub Actions in `release.yaml` pinned to immutable commit SHAs to prevent supply-chain attacks via mutable version tags.
+- ci: `govulncheck` pinned to `v1.1.4` in `ci.yaml`.
+- docs: README "The Cost Case" and "Query Performance" sections rewritten with real production numbers (310 GiB/day, 1.4 cores, 6.1 GiB RAM) and cold-cache query latency table.
+
+## [1.22.2] - 2026-04-29
+
+### Changed
+
+- ci: `permissions: contents: read` added at top level of `ci.yaml`, `compat-drilldown.yaml`, `compat-loki.yaml`, `compat-vl.yaml` (previously had no permission block, triggering OpenSSF Scorecard `Token-Permissions` = 0/10); write permissions in `auto-release.yaml` and `codeql.yaml` moved to job level so the top-level default is read-only.
+- build: `cmd/healthcheck` minimal HTTP binary added to the distroless image (`/usr/local/bin/healthcheck`) — distroless has no shell or utilities; Docker health checks that used `CMD wget` failed inside the container. All 9 proxy service health checks in `test/e2e-compat/docker-compose.yml` and 3 in `test/e2e-fleet/docker-compose.yml` updated to use the new binary, restoring `service_healthy` dependency chains.
+- ci: nginx tail-ingress Docker health check now uses a self-contained `/nginx-health` stub (returns 200 directly from nginx, no proxy_pass) — the previous health check probed `/ready` via `proxy_pass` to the backend proxy, which added a multi-hop round-trip and could mark the nginx container unhealthy even when it was serving correctly; the actual proxy-to-VL readiness path remains accessible via `/ready` and is verified by `wait_e2e_stack.sh`.
+- ci: proxy service cache volumes replaced with `tmpfs` mounts in both e2e-compat and e2e-fleet docker-compose files — named Docker volumes are created root-owned, but the distroless image now runs as UID 65532 (nonroot); writing persistence files (`label-values-index.json`, `patterns-snapshot.json`, `proxy-*.db`) to root-owned volumes failed with `permission denied`. `tmpfs` provides a writable in-memory filesystem scoped to the container's user; no persistence across restarts is needed in ephemeral CI environments.
+- test: `ingestRichTestData` base timestamp shifted to `time.Now().Add(-3 * time.Minute)` — Loki's ingester keeps recent entries in head blocks that are not immediately visible to metric queries (`sum_over_time`, `avg_over_time`, etc.); with `now := time.Now()` the 7 info-stream entries arrived within the current ingestion window, causing `TestQuerySemanticsMatrix` `*_over_time_unwrap` subtests to see mismatched cardinality between proxy (10 series) and Loki (6 series). Back-dating by 3 minutes guarantees all entries reside in chunk storage before queries run.
+
+## [1.22.1] - 2026-04-28
+
+### Security
+
+- fix(security): Docker image switched from `alpine:3.22.2` to `gcr.io/distroless/static-debian12:nonroot` — Alpine's openssl, musl, zlib, and busybox packages carried 20+ unfixed CVEs (several CRITICAL/HIGH: CVE-2026-40200, CVE-2026-28387, CVE-2026-28388, CVE-2026-28389, CVE-2026-31789, CVE-2026-22184, et al). The statically-linked Go binary requires no libc or system packages; distroless provides only CA certificates and runs as a non-root user by default, eliminating all OS-layer CVE exposure.
+- fix(security): website `uuid` transitive dependency forced to `>=14.0.0` via npm `overrides` — `webpack-dev-server` → `sockjs` depended on `uuid@^8.3.2` which is missing a buffer bounds check in `v3`/`v5`/`v6` when the `buf` parameter is provided (GitHub Advisory).
+
+### Changed
+
+- ci: semgrep action updated from deprecated `returntocorp/semgrep@v1` to `semgrep/semgrep-action@v1` — the `returntocorp` organisation was renamed to `semgrep`; the old tag no longer resolves, breaking the `Heavy / semgrep` CI job.
+- ci: `github/codeql-action` bumped from `v3` to `v4` across `codeql.yaml`, `security-pr.yaml`, and `security-heavy.yaml` — v3 is scheduled for deprecation December 2026; affects Scorecard SAST check score.
+- ci: Dockerfile `USER nonroot` instruction added explicitly — Trivy `DS-0002` flags Dockerfiles without a USER statement even when the distroless base image already defaults to UID 65532; the explicit declaration satisfies the static check.
+
+## [1.22.0] - 2026-04-28
+
+### Fixed
+
+- fix(cache): disk cache size cap no longer self-poisons on long-lived deployments — expired entries found on read are now deleted from bolt in a background goroutine so dead bytes are reclaimed; overwrites inside `Flush()` now deduct the existing stored size before checking the cap, preventing the cap from triggering before the effective working set is full.
+- fix(proxy): `Shutdown` now stops the rate-limiter cleanup goroutine and the peer-cache discovery/read-ahead loops before flushing persistence state; previously these goroutines leaked on repeated start/stop cycles (tests, embeddings).
+- fix(proxy): `/metrics` handler no longer double-buffers the full Prometheus output — it now streams directly from the metrics registry to the client and appends peer-cache metrics via a single `io.WriteString`, halving scrape-time memory cost on high-cardinality installs.
+- fix(proxy): synthetic tail dedup window no longer allocates a new backing slice on every 4096-entry overflow — replaced `append([]string(nil), ...)` with an in-place `copy`+reslice, removing allocation and GC pressure in the hot tail path.
+- fix(test): `TestHardening_SecurityHeaders` now wraps the mux through `SecurityHeadersMiddleware` (matching the production `wrapHandler` path) so header-clobbering regressions on the shipped server path are caught by tests; `SecurityHeadersMiddleware` extracted from `cmd/proxy` into `internal/proxy` for reuse.
+
+### Testing
+
+- test(reliability): 16 real integration tests covering all five reliability fixes — disk cache overwrite/expiry accounting (3 tests including a 20-cycle steady-state run), shutdown goroutine cleanup (2), metrics streaming correctness with/without peer cache (3), synthetic tail dedup window overflow invariants (3), and security header survival through backend responses on multiple endpoint types (3); all exercise live implementations with real disk/HTTP/goroutines rather than mocks. Docker Compose manual test runbook at `docs/manual-testing-reliability.md`.
+
+## [1.21.2] - 2026-04-28
+
+### Security
+
+- fix(security): delete 30-day cap now enforced for RFC3339 timestamps — the guard previously only activated when start/end parsed as floats; RFC3339 inputs silently bypassed it and reached VL with an unbounded range. `parseDeleteTimestamp` now normalises all accepted formats (float-seconds, float-nanoseconds, RFC3339, RFC3339Nano) and rejects unrecognised input with HTTP 400.
+- fix(security): cache and coalescing keys include a fingerprint of forwarded auth context — when `Authorization` or other per-user headers/cookies are forwarded to VL, cache and singleflight keys now include a 16-hex-char SHA-256 fingerprint of the forwarded values; without this, two users in the same tenant could receive each other's cached results.
+- fix(security): VL backend credentials are not broadcast to ruler/alerts backends — `alertingBackendGetWithParams` previously called `applyBackendHeaders`, which applied `p.backendHeaders` (containing the VL `Authorization` from `-backend-basic-auth`) to requests to the ruler and alerts backends. These are separate services; VL credentials should not cross that trust boundary. A new `applyAlertingBackendHeaders` helper sets only `Accept-Encoding` and telemetry headers on alerting-backend requests.
+- fix(security): proxy-set hardening headers are no longer overwritten by backend responses — `copyBackendHeaders` (new, replaces `copyHeaders` on the client-response path) skips `X-Content-Type-Options`, `X-Frame-Options`, `Cross-Origin-Resource-Policy`, `Cache-Control`, `Pragma`, and `Expires` when copying backend headers to the client, so security headers set by the `withSecurityHeaders` middleware cannot be silently erased by whatever the backend returns.
+
+## [1.21.1] - 2026-04-28
+
+### Fixed
+
+- fix(proxy): deterministic log stream ordering for multi-window queries — `groupQueryRangeWindowEntries` now sorts streams by canonical label key and sorts per-stream values ascending by timestamp before emitting the response; previously Go map iteration produced random stream order on every request, causing visible shuffling in Grafana for time ranges spanning more than one query-split interval (default 15 minutes).
+
+### Changed
+
+- docs: update KNOWN_ISSUES, translation-reference, configuration, and roadmap to reflect features shipped through v1.21.x — remove stale "not implemented" entries for `label_replace`, `label_join`, `group()`, add CB tuning flags and `count_values()` error behavior.
+
+## [1.21.0] - 2026-04-27
+
+### Changed
+
+- docs: restructure website sidebar navigation and add SEO landing pages; update marketing numbers to reflect current deployment scale.
+
+## [1.20.0] - 2026-04-27
+
+### Fixed
+
+- fix(translator): bare label matchers like `app="json-test"` (without braces) no longer translate to the malformed VL phrase filter `"app="json-test""`; the translator now returns an error for unbraced label matchers so they are rejected at query time rather than silently producing invalid VL LogsQL — was only visible when Grafana issued queries spanning 8+ hours (windowing prefilter threshold).
+
+### Added
+
+- feat(drilldown): infer `detected_level` from raw `_msg` content at read time to match Loki 3.x ingest-time level detection — handles JSON (`{"level":"error"}`), logfmt (`level=error`), and aliases (`severity`, `lvl`, `loglevel`); native VL `level` and OTel severity fields always take precedence. Stream grouping now splits by `detected_level` per Loki's behavior, so Drilldown and Explore show correct level breakdown for JSON and logfmt log lines without requiring an explicit `| json` or `| logfmt` parser in the query.
+- fix(drilldown): `detected_field/{name}/values` now returns values for high-cardinality non-indexed fields (`trace_id`, `amount`, `ttl`, etc.) — VL returns `hits: 0` for fields it found but did not count; the proxy was filtering all zero-hit values, leaving Drilldown showing repeated field names instead of real values. Fix: when all returned values have `hits: 0` (VL's "found but uncounted" signal), include them; only filter zero-hit entries when a mix of positive and zero hits exists (stale indexed entries).
+- feat(drilldown): volume API appends `| unpack_json from _msg | unpack_logfmt from _msg` to VL hits query when `detected_level` is a target label and no parser is present — enables Drilldown level breakdown for streams where level is inside `_msg` rather than a VL stream field.
+
+- test(proxy): 14 JSON pretty-printing regression guards — table-driven `TestJSONPrettyPrint_GoFormatNeverEmitted` (9 collection-type sub-cases), plus full-pipeline `vlLogsToLokiStreams` tests for array `_msg`, mixed string/map entries in the same response, deeply nested JSON, and nil `_msg`; these tests will fail immediately if `fmt.Sprintf("%v")` is reinstated for map/slice values.
+- test(translator): `TestBareLabelMatcherMustNotProduceDoubleQuotedString` and `TestBracedLabelMatcherTranslatesToVLFieldFilter` prevent regression of the bare-label-matcher translation bug.
+- test(proxy): `TestQueryRange_DoesNotEmitDoubleQuotedSelectorToVL` — end-to-end test with fake VL backend over a 12-hour range (triggers windowing prefilter) asserting no query to VL contains the `"app="json-test""` double-quoted form.
+
+## [1.19.0] - 2026-04-27
+
+### Fixed
+
+- fix(proxy): stable log stream ordering on repeated refreshes — Go map iteration was non-deterministic, causing entire streams to swap positions between requests; fixed by tracking insertion order and iterating in that order when building the response.
+- fix(proxy): `stringifyEntryValue` now JSON-marshals `map[string]interface{}` and `[]interface{}` values instead of using `fmt.Sprintf("%v")`; VL-parsed JSON objects come back as valid JSON strings so Grafana can detect and pretty-print log lines.
+- fix(e2e): `ensureRangeMetricCompatData` now waits for `{app="range-metric-counter"}` chunks to seal in Loki (up to 90 s) instead of sleeping 3 s; prevents spurious `sum_rate_by_app` series-count mismatches in the query semantics matrix test.
+
+### Added
+
+- test(proxy): 16 hardening tests for stream ordering determinism (same result across 15 repeated calls) and `stringifyEntryValue` JSON-object handling (map/slice values produce valid JSON, not `map[k:v]`).
+
+### Documentation
+
+- docs: fix comparison table in README — "15x less" figure is CPU, not Disk, per VictoriaLogs vendor benchmarks.
+- docs(bench): clarify VL native heavy-workload CPU note — "3.5× more total CPU; 18.5× more throughput — 5.3× more efficient per request" replaces the misleading "3.5× more CPU than Loki".
+- docs(website): restructure Docusaurus sidebar into 11 named category groups (Start Here, Architecture, Configuration, Cost & Comparison, Compatibility, Operations, Caching, Observability, Testing, Reference, Runbooks); add sidebar_label and description frontmatter to all docs.
+- docs(website): update marketing pages with current measured numbers — proxy throughput (1,006–1,717× vs Loki), 54.9× real-tested compression, 4-tier cache stack, circuit breaker (30s/5-failure), 81.6% prefilter savings, resource sizing (33 vCPU / 70 GiB vs 431 vCPU / 857 GiB).
+- docs(website): add two new SEO pages — Kubernetes deployment guide with Helm install snippet and resource sizing table; OTel Collector config guide with field mapping table, translation modes, and detected_fields in Grafana Explore/Drilldown.
+
+## [1.18.0] - 2026-04-26
+
+
+### Added
+
+- bench(pprof): `loki-bench` captures CPU, heap, alloc, and goroutine profiles from proxy `/debug/pprof/*` endpoints during each run; profiles written to `bench/results/pprof/<workload>-c<N>-<target>-<type>.pprof` for flamegraph analysis.
+- bench(cache-disabled): added `-cache-disabled` flag to the proxy so `run-comparison.sh` can spawn a confirmed zero-cache target without TTL tricks; this is the fourth target in the 4-way comparison (`loki`, `proxy-warm`, `proxy-cold`, `vl-native`).
+- bench(verify): added `--verify` flag to `loki-bench` for cross-target result correctness validation before benchmarking.
+
+### Fixed
+
+- fix(circuitbreaker): replace consecutive failure counting with a sliding time-window (default 30 s, tunable via `-cb-window-duration`); sporadic slow-query connection resets from VictoriaLogs no longer trip the breaker during cold-cache warmup — only a burst of N failures within the window opens the circuit.
+- fix(circuitbreaker): couple circuit breaker with request coalescing via `DoWithGuard`; when the breaker is open the CB probe starts one in-flight call and all simultaneous identical requests join it rather than each failing with 503 — eliminates retry amplification under VL load. Circuit breaker errors now return HTTP 503 (Service Unavailable) instead of 502.
+- feat(coalescer): add `-coalescer-disabled` flag to bypass singleflight for benchmarking raw translation overhead; coalescer remains active by default even with `-cache-disabled` to protect VL from thundering-herd.
+
+## [1.17.4] - 2026-04-26
+
+### Performance
+
+- perf(proxy): cache parsed stream label maps by `_stream` string value to eliminate redundant label parsing on repeated log entries; copy on write to prevent cache mutation bugs.
+- perf(proxy): reuse intermediate map in `translateStatsResponseLabelsWithContext` across loop iterations to reduce per-result allocations (~27% of heap at c=100).
+- perf(postprocess): use `sync.Pool` for tokenizer slice buffers in `patternLineTokenizer.Tokenize` to eliminate per-call allocations (~6.6 GB saved at c=100).
+
+## [1.17.3] - 2026-04-26
+
+### Fixed
+
+- fix(e2e): add `_msg` field to all JSON-format log generators so VictoriaLogs stores the human-readable message correctly and Grafana renders JSON service logs consistently with Loki.
+
+### Observability
+
+- dashboard/ops: regroup the packaged metrics dashboard into explicit SLO/SLI health, client→proxy→VL operational, and deep proxy internals sections for faster incident triage and tuning.
+
+### Documentation
+
+- docs: comprehensive README rewrite focused on production-readiness, cost comparison, quick setup, and strongest capabilities.
+- docs/ops: document the new dashboard structure and triage flow in observability and operations guides.
+- docs(bench): update benchmarks.md with 4-way comparison results (warm/cold proxy, VL native, Loki), Apple M5 Pro hardware spec, warmup design notes, and VictoriaLogs long-range tuning guide.
+
+### Performance
+
+- bench: warmup phase now runs at full benchmark concurrency with the same jitter as the real run, so the proxy cache is populated across the same time-window space the benchmark will query; warmup time is never counted in results.
+- e2e(vl): add VictoriaLogs block-cache and memory tuning flags to docker-compose (`-blockcache.missesBeforeCaching=1`, `-internStringCacheExpireDuration=15m`, `-memory.allowedPercent=75`) to improve repeated-query performance.
 ## [1.17.1] - 2026-04-25
 
 ### Fixed
@@ -894,6 +1075,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Observability
 
 - improve app-scoped metrics compatibility for dashboard/runtime process telemetry by keeping `loki_vl_proxy_*` metric families consistently queryable across scrape and OTLP flows
+
+### Observability
+
+- redesign the packaged metrics dashboard into explicit attribution rows for `client-side Loki`, `proxy internals`, and `backend-side VictoriaLogs`, with deeper drilldown-discovery, peer-cache, query-range tuning, and per-pod resource skew visibility
+
+### Documentation
+
+- refresh README with recent delivery highlights and an operational visibility model that maps incident triage to client/proxy/backend perspectives
+- expand observability guidance with a row-by-row dashboard playbook for fast root-cause attribution
 
 ## [0.27.34] - 2026-04-11
 

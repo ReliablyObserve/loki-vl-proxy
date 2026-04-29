@@ -45,7 +45,7 @@ func ensureRangeMetricCompatData(t *testing.T) {
 				`{"counter":30,"latency":4}`,
 			},
 		})
-		time.Sleep(3 * time.Second)
+		waitForLokiMetricDataSelector(t, `{app="range-metric-counter"}`)
 	})
 }
 

@@ -72,6 +72,9 @@ type proxyRuntimeConfig struct {
 	tenantLimitsJSON                    string
 	maxLines                            int
 	backendTimeout                      time.Duration
+	cbFailThreshold                     int
+	cbOpenDuration                      time.Duration
+	cbWindowDuration                    time.Duration
 	backendMinVersion                   string
 	backendAllowUnsupportedVersion      bool
 	backendVersionCheckTimeout          time.Duration
@@ -164,6 +167,7 @@ type proxyRuntimeConfig struct {
 	peerHotReadAheadMaxObjectBytes      int
 	peerHotReadAheadTenantFairShare     int
 	peerHotReadAheadErrorBackoff        time.Duration
+	coalescerDisabled                   bool
 }
 
 type otlpRuntimeConfig struct {
@@ -238,6 +242,7 @@ type runtimeOptions struct {
 	cacheTTL                    time.Duration
 	cacheMax                    int
 	cacheMaxBytes               int
+	cacheDisabled               bool
 	compatCacheEnabled          bool
 	compatCacheMaxPercent       int
 	diskCfg                     cache.DiskCacheConfig
@@ -324,6 +329,8 @@ func run(
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
+	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
+	coalescerDisabled := fs.Bool("coalescer-disabled", false, "Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with -cache-disabled to measure raw translation overhead")
 	compatCacheEnabled := fs.Bool("compat-cache-enabled", true, "Enable the safe Tier0 compatibility-edge response cache for cacheable GET read endpoints")
 	compatCacheMaxPercent := fs.Int("compat-cache-max-percent", defaultCompatCachePercent, "Percent of -cache-max-bytes reserved for the Tier0 compatibility-edge cache (0 disables, max 50)")
 
@@ -382,6 +389,9 @@ func run(
 	// Grafana datasource compatibility
 	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
 	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend")
+	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
+	cbOpenDuration := fs.Duration("cb-open-duration", 10*time.Second, "Circuit breaker: how long to stay open before allowing probe requests")
+	cbWindowDuration := fs.Duration("cb-window-duration", 30*time.Second, "Circuit breaker: sliding window for failure counting; failures older than this are discarded")
 	backendMinVersion := fs.String("backend-min-version", "v1.30.0", "Minimum VictoriaLogs version considered fully supported at startup")
 	backendAllowUnsupportedVersion := fs.Bool("backend-allow-unsupported-version", false, "Allow startup with backend versions lower than -backend-min-version (at your own risk)")
 	backendVersionCheckTimeout := fs.Duration("backend-version-check-timeout", 5*time.Second, "Timeout for startup backend version compatibility check")
@@ -547,6 +557,7 @@ func run(
 		cacheTTL:              *cacheTTL,
 		cacheMax:              *cacheMax,
 		cacheMaxBytes:         *cacheMaxBytes,
+		cacheDisabled:         *cacheDisabled,
 		compatCacheEnabled:    *compatCacheEnabled,
 		compatCacheMaxPercent: *compatCacheMaxPercent,
 		diskCfg: cache.DiskCacheConfig{
@@ -571,6 +582,9 @@ func run(
 			tenantLimitsJSON:                    envCfg.tenantLimitsJSON,
 			maxLines:                            *maxLines,
 			backendTimeout:                      *backendTimeout,
+			cbFailThreshold:                     *cbFailThreshold,
+			cbOpenDuration:                      *cbOpenDuration,
+			cbWindowDuration:                    *cbWindowDuration,
 			backendMinVersion:                   *backendMinVersion,
 			backendAllowUnsupportedVersion:      *backendAllowUnsupportedVersion,
 			backendVersionCheckTimeout:          *backendVersionCheckTimeout,
@@ -663,6 +677,7 @@ func run(
 			peerHotReadAheadMaxObjectBytes:      *peerHotReadAheadMaxObjectBytes,
 			peerHotReadAheadTenantFairShare:     *peerHotReadAheadTenantFairShare,
 			peerHotReadAheadErrorBackoff:        *peerHotReadAheadErrorBackoff,
+			coalescerDisabled:                   *coalescerDisabled,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -717,7 +732,11 @@ func run(
 	return nil
 }
 
-func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, diskCfg cache.DiskCacheConfig, logger *slog.Logger) (*cache.Cache, func(), error) {
+func buildCacheLayer(ttl time.Duration, maxEntries, maxBytes int, disabled bool, diskCfg cache.DiskCacheConfig, logger *slog.Logger) (*cache.Cache, func(), error) {
+	if disabled {
+		c := cache.NewDisabled()
+		return c, func() {}, nil
+	}
 	if maxEntries <= 0 {
 		return nil, nil, fmt.Errorf("cache-max must be greater than 0")
 	}
@@ -783,7 +802,7 @@ func buildCompatCacheLayer(ttl time.Duration, maxEntries, primaryMaxBytes int, e
 }
 
 func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifier, newPusher otlpPusherFactory) (*runtimeState, error) {
-	cacheLayer, cacheCleanup, err := buildCacheLayer(opts.cacheTTL, opts.cacheMax, opts.cacheMaxBytes, opts.diskCfg, logger)
+	cacheLayer, cacheCleanup, err := buildCacheLayer(opts.cacheTTL, opts.cacheMax, opts.cacheMaxBytes, opts.cacheDisabled, opts.diskCfg, logger)
 	if err != nil {
 		return nil, fmt.Errorf("open disk cache: %w", err)
 	}
@@ -923,28 +942,7 @@ func wrapHandler(next http.Handler, maxBodyBytes int64, responseCompression stri
 }
 
 func withSecurityHeaders(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		header := w.Header()
-		if strings.TrimSpace(header.Get("X-Content-Type-Options")) == "" {
-			header.Set("X-Content-Type-Options", "nosniff")
-		}
-		if strings.TrimSpace(header.Get("X-Frame-Options")) == "" {
-			header.Set("X-Frame-Options", "DENY")
-		}
-		if strings.TrimSpace(header.Get("Cross-Origin-Resource-Policy")) == "" {
-			header.Set("Cross-Origin-Resource-Policy", "same-origin")
-		}
-		if strings.TrimSpace(header.Get("Cache-Control")) == "" {
-			header.Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-		}
-		if strings.TrimSpace(header.Get("Pragma")) == "" {
-			header.Set("Pragma", "no-cache")
-		}
-		if strings.TrimSpace(header.Get("Expires")) == "" {
-			header.Set("Expires", "0")
-		}
-		next.ServeHTTP(w, r)
-	})
+	return proxy.SecurityHeadersMiddleware(next)
 }
 
 func resolveResponseCompression(explicit string, legacyEnabled bool) (string, error) {
@@ -1425,6 +1423,10 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		TenantLimits:                       tenantLimits,
 		MaxLines:                           cfg.maxLines,
 		BackendTimeout:                     cfg.backendTimeout,
+		CBFailThreshold:                    cfg.cbFailThreshold,
+		CBOpenDuration:                     cfg.cbOpenDuration,
+		CBWindowDuration:                   cfg.cbWindowDuration,
+		CoalescerDisabled:                  cfg.coalescerDisabled,
 		BackendMinVersion:                  cfg.backendMinVersion,
 		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,

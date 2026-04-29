@@ -31,7 +31,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=security-heavy-proxy
 
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.PROXY_IMAGE }}
           exit-code: "1"
@@ -42,7 +42,7 @@ jobs:
           scanners: vuln,misconfig,secret
 
       - name: Upload Trivy image SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-image.sarif
@@ -66,18 +66,34 @@ jobs:
   semgrep:
     name: Heavy / semgrep
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
-      - uses: returntocorp/semgrep@v1
+      - name: Semgrep scan
+        run: |
+          pip install semgrep==1.161.0
+          semgrep scan \
+            --config p/default \
+            --config p/dockerfile \
+            --config p/github-actions \
+            --config p/golang \
+            --config p/owasp-top-ten \
+            --config p/secrets \
+            --exclude-rule go.lang.security.audit.xss.no-direct-write-to-responsewriter \
+            --exclude-rule go.lang.security.audit.xss.no-fprintf-to-responsewriter \
+            --exclude-rule javascript.lang.security.detect-insecure-websocket \
+            --sarif \
+            --output semgrep.sarif \
+            --error
+
+      - name: Upload Semgrep SARIF
+        uses: github/codeql-action/upload-sarif@v4
+        if: always()
         with:
-          config: >
-            p/default
-            p/dockerfile
-            p/github-actions
-            p/golang
-            p/owasp-top-ten
-            p/secrets
+          sarif_file: semgrep.sarif
 
   fuzz:
     name: Heavy / fuzz

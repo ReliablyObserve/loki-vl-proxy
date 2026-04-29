@@ -1,3 +1,8 @@
+---
+sidebar_label: Translation Modes
+description: "Label-style modes: passthrough, underscores, and hybrid — when to use each and how they affect Grafana queries."
+---
+
 # Translation Modes Guide
 
 This guide explains how field and label translation behaves across proxy surfaces, and how to choose a mode based on whether you want a more Loki-like experience or more OTel-native dotted semantics.

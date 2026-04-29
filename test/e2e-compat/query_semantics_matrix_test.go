@@ -242,7 +242,9 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 						t.Fatalf("expected non-empty result series for %s, proxy=%d loki=%d", tc.ID, proxyCount, lokiCount)
 					}
 					if proxyCount != lokiCount {
-						t.Fatalf("series-count mismatch for %s, proxy=%d loki=%d", tc.ID, proxyCount, lokiCount)
+						proxyKeys := querySemanticsMetricKeySet(proxyResp)
+						lokiKeys := querySemanticsMetricKeySet(lokiResp)
+						t.Fatalf("series-count mismatch for %s, proxy=%d loki=%d\n  proxy series: %v\n  loki  series: %v", tc.ID, proxyCount, lokiCount, proxyKeys, lokiKeys)
 					}
 				case "metric_keys":
 					proxyKeys := querySemanticsMetricKeySet(proxyResp)

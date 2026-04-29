@@ -42,8 +42,9 @@ func TestRulerProxy_LegacyRulesYAML(t *testing.T) {
 		if got := r.Header.Get("ProjectID"); got != "7" {
 			t.Fatalf("expected ProjectID to be forwarded, got %q", got)
 		}
-		if got := r.Header.Get("Authorization"); got != "Basic dXNlcjpwYXNz" {
-			t.Fatalf("expected backend auth header to be applied, got %q", got)
+		// VL backend credentials must NOT be forwarded to the ruler backend.
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Fatalf("VL backend credentials must not be forwarded to ruler backend, got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{

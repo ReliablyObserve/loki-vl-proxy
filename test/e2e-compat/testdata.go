@@ -15,7 +15,9 @@ import (
 // Loki and VictoriaLogs for comprehensive compatibility testing.
 func ingestRichTestData(t *testing.T) {
 	t.Helper()
-	now := time.Now()
+	// Use a past timestamp so all entries are guaranteed to be in Loki's chunk
+	// storage (not the ingester head block) by the time metric queries run.
+	now := time.Now().Add(-3 * time.Minute)
 
 	// ── Service: api-gateway ──
 	pushStream(t, now, streamDef{
@@ -142,7 +144,7 @@ func ingestRichTestData(t *testing.T) {
 		VLOnly: true,
 		Labels: map[string]string{
 			"app": "otel-api-service", "namespace": "prod",
-			"cluster": "us-east-1", "level": "info",
+			"cluster": "us-east-1", "level": "info", "env": "internal",
 		},
 		Lines: []string{
 			`{"service.name":"otel-api-service","k8s.pod.name":"api-xyz123","span_id":"span-001","trace_id":"trace-001","http.method":"GET","http.status_code":200,"http.url":"/api/endpoint","duration_ms":25}`,

@@ -1,3 +1,8 @@
+---
+sidebar_label: Configuration Reference
+description: All loki-vl-proxy flags, environment variables, and Helm values. Covers cache, circuit breaker, multi-tenancy, label translation, and OTel.
+---
+
 # Configuration
 
 All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
@@ -497,6 +502,10 @@ Operational notes:
 | `-http-idle-timeout` | — | `120s` | Server idle timeout |
 | `-http-max-header-bytes` | — | `1MB` | Maximum header size |
 | `-http-max-body-bytes` | — | `10MB` | Maximum request body size |
+| `-http-conn-max-age` | — | `10m` | Maximum lifetime for downstream HTTP/1.x keepalive connections |
+| `-http-conn-max-age-jitter` | — | `2m` | Jitter applied to downstream connection age rotation |
+| `-http-conn-max-requests` | — | `256` | Maximum requests per keepalive connection |
+| `-http-conn-overload-max-age` | — | `90s` | Shorter connection lifetime during backpressure |
 
 ## Grafana Compatibility
 
@@ -542,15 +551,22 @@ Backend version gate notes:
 
 ## Built-In Protection Defaults
 
-The current CLI does not expose direct tuning flags for the in-proxy rate limiter, global concurrent-query guard, or backend circuit breaker. The current built-in defaults in the code are:
+The rate limiter and global concurrency guard use built-in defaults. The circuit breaker and request coalescer are tunable via CLI flags:
+
+| Flag | Env | Default | Description |
+|---|---|---|---|
+| `-cb-fail-threshold` | — | `5` | Number of backend failures within the sliding window required to open the circuit breaker |
+| `-cb-open-duration` | — | `2s` | How long the circuit breaker stays open before entering half-open state |
+| `-cb-window-duration` | — | `30s` | Sliding window duration for failure counting; sporadic failures outside the window do not accumulate |
+| `-coalescer-disabled` | — | `false` | Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with `-cache-disabled` to measure raw translation overhead |
+
+Built-in defaults not exposed as flags:
 
 - per-client rate limit: `50 req/s`
 - per-client burst: `100`
 - global concurrent backend queries: `100`
-- circuit breaker open after `5` failures
-- circuit breaker open duration: `10s`
 
-Treat these as current implementation defaults, not stable configuration API. If you need different behavior today, shape traffic at Grafana, ingress, or an outer proxy layer.
+Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer if you need tighter control.
 
 ## Observability and Admin Surfaces
 

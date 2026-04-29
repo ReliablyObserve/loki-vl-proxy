@@ -20,7 +20,12 @@ export default function GrafanaExploreVictoriaLogs(): ReactNode {
         {
           value: 'query_range + metadata',
           label: 'Explore keeps both search and browsing surfaces',
-          detail: 'Labels, values, fields, and queries all matter.',
+          detail: 'Labels, values, detected_fields, and queries all matter.',
+        },
+        {
+          value: '4-tier cache',
+          label: 'Tier0, L1 memory (256 MB), L2 disk, L3 peer — warm hits at 0.64–0.67 µs on query_range',
+          detail: 'Repeated Explore sessions stop being backend-bound.',
         },
         {
           value: 'Per-route visibility',
@@ -28,13 +33,8 @@ export default function GrafanaExploreVictoriaLogs(): ReactNode {
           detail: 'Good for regressions.',
         },
         {
-          value: 'Cache-aware operation',
-          label: 'The cache layers are visible instead of hidden in generic counters',
-          detail: 'Useful for label browsing and repeated queries.',
-        },
-        {
-          value: 'Dotted field support',
-          label: 'OTel-style fields can stay available without breaking Loki-safe label paths',
+          value: 'OTel field support',
+          label: 'Dotted fields (service.name, k8s.pod.name) available without breaking Loki-safe label paths',
           detail: 'Choose translated, native, or hybrid modes.',
         },
       ]}
@@ -74,6 +74,7 @@ export default function GrafanaExploreVictoriaLogs(): ReactNode {
           <span>/loki/api/v1/labels</span>
           <span>/loki/api/v1/label/&lt;name&gt;/values</span>
           <span>/loki/api/v1/series</span>
+          <span>/loki/api/v1/detected_fields</span>
           <span>/loki/api/v1/index/volume</span>
         </div>
         <div className={styles.cardGrid}>

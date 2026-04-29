@@ -14,6 +14,9 @@ on:
   schedule:
     - cron: "15 4 * * 1"
 
+permissions:
+  contents: read
+
 jobs:
   vl-matrix-source:
     runs-on: ubuntu-latest

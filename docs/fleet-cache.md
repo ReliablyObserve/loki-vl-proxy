@@ -1,3 +1,8 @@
+---
+sidebar_label: Fleet Cache Architecture
+description: "L3 peer cache design: consistent hashing, zstd/gzip transfers, peer discovery, and fleet-wide cache coordination."
+---
+
 # Fleet Cache Architecture
 
 ## Overview

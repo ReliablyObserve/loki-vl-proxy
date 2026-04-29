@@ -52,7 +52,8 @@ func TestHardening_SecurityHeaders(t *testing.T) {
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
-	srv := httptest.NewServer(mux)
+	// Wrap through SecurityHeadersMiddleware to match the production server path.
+	srv := httptest.NewServer(SecurityHeadersMiddleware(mux))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/ready")
@@ -338,5 +339,38 @@ func TestHardening_QueryAnalyticsTracksErrors(t *testing.T) {
 	}
 	if top[0].Errors != 1 {
 		t.Fatalf("expected query error count to be 1, got %d", top[0].Errors)
+	}
+}
+
+func TestHardening_SecurityHeaders_SurviveBackendResponse(t *testing.T) {
+	// Backend tries to overwrite security headers.
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "max-age=3600, public")
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`))
+	}))
+	defer backend.Close()
+
+	c := cache.New(60*time.Second, 1000)
+	p, _ := New(Config{BackendURL: backend.URL, Cache: c, LogLevel: "error"})
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+
+	srv := httptest.NewServer(SecurityHeadersMiddleware(mux))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&step=1`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if got := resp.Header.Get("Cache-Control"); !strings.Contains(got, "no-store") {
+		t.Errorf("Cache-Control must contain no-store after backend response, got %q", got)
+	}
+	if got := resp.Header.Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options must be DENY after backend response, got %q", got)
 	}
 }

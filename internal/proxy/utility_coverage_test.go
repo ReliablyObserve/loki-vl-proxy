@@ -703,8 +703,8 @@ func TestProxyStatsQueryAndRangeBranches(t *testing.T) {
 	wQueryErr := httptest.NewRecorder()
 	rQueryErr := httptest.NewRequest(http.MethodGet, `/loki/api/v1/query?query=sum(rate({app="api"}[1m]))`, nil)
 	p.proxyStatsQuery(wQueryErr, rQueryErr, `sum(rate({app="api"}[1m]))`)
-	if wQueryErr.Code != http.StatusBadGateway {
-		t.Fatalf("expected transport error branch to map to 502, got %d body=%s", wQueryErr.Code, wQueryErr.Body.String())
+	if wQueryErr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected circuit breaker open to map to 503, got %d body=%s", wQueryErr.Code, wQueryErr.Body.String())
 	}
 	if body := wQueryErr.Body.String(); !strings.Contains(strings.ToLower(body), "circuit breaker open") {
 		t.Fatalf("expected circuit breaker error in query response, got %s", body)

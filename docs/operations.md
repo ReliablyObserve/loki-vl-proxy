@@ -1,3 +1,8 @@
+---
+sidebar_label: Operations Guide
+description: "Day-2 operations: health checks, graceful shutdown, multi-tenancy, rate limiting, and production deployment patterns."
+---
+
 # Operations Guide
 
 ## Deployment
@@ -77,7 +82,7 @@ Treat these as one versioned operational package:
 
 | Asset | Canonical source | Purpose |
 |------|------------------|---------|
-| Grafana operations dashboard | [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | Operator view for `Client -> Proxy -> VictoriaLogs`, route-aware RED signals, cache behavior, long-range query tuning, and operational resources |
+| Grafana operations dashboard | [`dashboard/loki-vl-proxy.json`](../dashboard/loki-vl-proxy.json) | Three-section layout: **Section 1 — SLO/SLI + Health** (8-stat top strip: circuit breaker, active requests, QPS, error %, P99 client latency, P95 backend latency, cache hit ratio, uptime; plus SLI time-series rows). **Section 2 — Client → Proxy → VL + Resources** (client visibility: request rate by route, errors by reason, query length, per-client inflight, latency by route; proxy internals: coalescing, internal ops, response tuple mode, tenant QPS; VL backend: upstream fanout, window count, backend latency, fetch/merge latency, adaptive parallelism; process resources: CPU, memory, goroutines, GC, network, disk I/O, PSI pressure). **Section 3 — Deep Proxy Internals** (cache tiers: T0/L1/L2/L3 hit/miss, sizes, stale hits, backend fallthrough; peer cache fleet: cluster members, hit/miss, write-through, hot read-ahead, error breakdown; query-range windowing: window cache, prefilter efficiency, retries, partial responses, prefilter duration, adaptive parallelism trace; patterns engine: in-memory count/bytes, mining rate, source line pipeline, snapshot hits/reuse, persistence; HTTP connection lifecycle: states, rotation reasons, transitions; tenant deep dive: per-tenant QPS/P99/errors) |
 | Alert rules | [`alerting/loki-vl-proxy-prometheusrule.yaml`](../alerting/loki-vl-proxy-prometheusrule.yaml) | PrometheusRule/vmalert-oriented alert set with standardized labels and annotations |
 | SRE runbooks | [`docs/runbooks/alerts.md`](runbooks/alerts.md) | Index plus per-alert runbook files referenced directly from alert `runbook_url` |
 

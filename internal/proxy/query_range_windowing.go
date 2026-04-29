@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -105,7 +106,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 			}(),
 		})
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(result)
+		_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 		return true
 	}
 
@@ -215,13 +216,14 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	mergeStart := time.Now()
 	p.maybeAutodetectPatternsFromWindowEntries(
 		r.Header.Get("X-Scope-OrgID"),
+		p.forwardedAuthFingerprint(r),
 		r.FormValue("query"),
 		r.FormValue("start"),
 		r.FormValue("end"),
 		r.FormValue("step"),
 		collected,
 	)
-	streams := groupQueryRangeWindowEntries(collected)
+	streams := groupQueryRangeWindowEntries(collected, r.FormValue("direction"))
 	p.metrics.RecordQueryRangeWindowMergeDuration(time.Since(mergeStart))
 
 	if len(p.derivedFields) > 0 {
@@ -253,7 +255,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		}(),
 	})
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(result)
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
 }
 
@@ -578,13 +580,17 @@ func (p *Proxy) queryRangeWindowHasHitsCacheKey(
 	logsqlQuery string,
 	window queryRangeWindow,
 ) string {
-	return strings.Join([]string{
+	parts := []string{
 		"query_range_window_has_hits",
 		r.Header.Get("X-Scope-OrgID"),
 		logsqlQuery,
 		strconv.FormatInt(window.startNs, 10),
 		strconv.FormatInt(window.endNs, 10),
-	}, ":")
+	}
+	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+		parts = append(parts, "auth:"+fp)
+	}
+	return strings.Join(parts, ":")
 }
 
 func (p *Proxy) queryRangeWindowPrefilterTTL(windowEndNs int64) time.Duration {
@@ -686,7 +692,7 @@ func (p *Proxy) queryRangeWindowCacheKey(
 	categorizedLabels bool,
 	emitStructuredMetadata bool,
 ) string {
-	return strings.Join([]string{
+	parts := []string{
 		"query_range_window",
 		r.Header.Get("X-Scope-OrgID"),
 		logsqlQuery,
@@ -696,7 +702,11 @@ func (p *Proxy) queryRangeWindowCacheKey(
 		strconv.FormatInt(window.endNs, 10),
 		strconv.FormatBool(categorizedLabels),
 		strconv.FormatBool(emitStructuredMetadata),
-	}, ":")
+	}
+	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+		parts = append(parts, "auth:"+fp)
+	}
+	return strings.Join(parts, ":")
 }
 
 func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
@@ -743,6 +753,7 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 			continue
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
+		msg = reconstructLogLine(msg, entry, originalQuery)
 
 		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery)
 		translatedLabels := labels
@@ -767,7 +778,7 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 	return entries
 }
 
-func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry) []map[string]interface{} {
+func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction string) []map[string]interface{} {
 	type streamEntry struct {
 		labels map[string]string
 		values []interface{}
@@ -785,8 +796,35 @@ func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry) []map[string]
 		}
 		stream.values = append(stream.values, entry.Value)
 	}
+	// Sort stream keys for deterministic output order. Go map iteration is
+	// non-deterministic; without this, stream order fluctuates across requests
+	// whenever the same query spans multiple windows.
+	keys := make([]string, 0, len(streams))
+	for k := range streams {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
 	out := make([]map[string]interface{}, 0, len(streams))
-	for _, stream := range streams {
+	for _, k := range keys {
+		stream := streams[k]
+		// Sort values within each stream by timestamp to stabilise window
+		// boundaries from parallel fetches. Forward = ascending; backward
+		// (default) = descending to match Loki's newest-first contract.
+		forward := direction == "forward"
+		sort.SliceStable(stream.values, func(i, j int) bool {
+			vi, _ := stream.values[i].([]interface{})
+			vj, _ := stream.values[j].([]interface{})
+			if len(vi) == 0 || len(vj) == 0 {
+				return false
+			}
+			ti, _ := vi[0].(string)
+			tj, _ := vj[0].(string)
+			if forward {
+				return ti < tj
+			}
+			return ti > tj
+		})
 		out = append(out, map[string]interface{}{
 			"stream": stream.labels,
 			"values": stream.values,

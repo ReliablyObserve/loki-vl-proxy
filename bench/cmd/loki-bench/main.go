@@ -158,16 +158,18 @@ func main() {
 					wl.Name, conc, tgt.name)
 
 				// Warmup phase (warms caches, esp. proxy window cache).
+				// Runs at full benchmark concurrency with jitter so the cache
+				// is populated across the same time-window space the real run
+				// will hit — warmup time is not counted in benchmark results.
 				// Skipped for no-cache targets where warmup provides no benefit.
 				if *warmup > 0 && !tgt.noWarmup {
-					fmt.Printf("  warming up for %s...\n", *warmup)
+					fmt.Printf("  warming up for %s (concurrency=%d, jitter=%s)...\n", *warmup, conc, *jitter)
 					wCfg := runner.Config{
 						TargetURL:   tgt.url,
-						Concurrency: min(conc, 10),
+						Concurrency: conc,
 						Duration:    *warmup,
 						Queries:     tgt.queries,
-						// No jitter during warmup — we want the cache populated on
-						// the exact windows the benchmark will hit later.
+						TimeJitter:  *jitter,
 					}
 					runner.Run(ctx, wCfg) // discard warmup result
 				}

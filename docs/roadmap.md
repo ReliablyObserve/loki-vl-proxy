@@ -1,3 +1,8 @@
+---
+sidebar_label: Roadmap
+description: Planned features, known gaps, and the contribution priority list for loki-vl-proxy.
+---
+
 # Roadmap
 
 ## Completed
@@ -47,6 +52,14 @@
 - [x] `IsScalar` supports negative and scientific notation
 - [x] Circuit breaker half-open metrics fix
 - [x] Tenant map reload race condition fix
+- [x] `group()` outer aggregation — inner metric translated normally, proxy normalises all values to `1` (v1.21.0)
+- [x] `label_replace()` — proxy post-processing via marker suffix; Prometheus no-match semantics (v1.21.0)
+- [x] `label_join()` — proxy post-processing via marker suffix; missing src labels skipped (v1.21.0)
+- [x] `count_values()` — returns descriptive error (not translatable to VL; VL has no group-by-value primitive) (v1.21.0)
+- [x] Circuit breaker sliding-window failure counting — 30s window replaces consecutive-failure model; sporadic slow-query resets no longer open the breaker (v1.18.0)
+- [x] Bare label matcher error — `app="value"` (missing braces) returns HTTP 400 with descriptive Loki-style parse error instead of silently emitting malformed VL syntax (v1.20.0)
+- [x] `detected_level` inference from `_msg` content — proxy infers level from JSON/logfmt log body when not present in stream labels; Drilldown volume API gains automatic parser unpacking (v1.20.0)
+- [x] Deterministic log stream ordering for multi-window queries — streams sorted by canonical key, per-stream values sorted by timestamp before response emission (v1.21.1)
 
 - [x] `bool` modifier on comparison operators — stripped at translation (applyOp returns 1/0 for all comparisons)
 - [x] Field-specific parser `| json field1, field2` / `| logfmt field1, field2` — maps to full unpack (VL extracts all fields)
