@@ -659,7 +659,7 @@ func New(cfg Config) (*Proxy, error) {
 	transport.ResponseHeaderTimeout = backendTimeout
 	transport.DisableCompression = false // accept gzip from VL if available
 	if cfg.BackendTLSSkip {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- intentional, opt-in via BackendTLSSkip config flag
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- intentional, opt-in via BackendTLSSkip; lgtm[go/insecure-tls]
 	}
 	tailTransport := transport.Clone()
 	tailTransport.ResponseHeaderTimeout = 30 * time.Second
