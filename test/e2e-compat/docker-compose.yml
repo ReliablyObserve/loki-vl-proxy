@@ -179,6 +179,9 @@ services:
       - "-label-values-index-persist-interval=5s"
       - "-label-values-index-startup-stale-threshold=30s"
       - "-label-values-index-startup-peer-warm-timeout=2s"
+      # Disable rate limiting so benchmark clients (single IP) are not throttled.
+      - "-rate-limit-per-second=0"
+      - "-max-concurrent=0"
       # pprof for benchmark profiling (CPU/heap/alloc capture during bench runs).
       - "-server.enable-pprof"
       - "-server.admin-auth-token=bench-pprof-token"

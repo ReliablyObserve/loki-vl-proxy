@@ -98,6 +98,8 @@ if [ -z "$PROXY_NO_CACHE_URL" ]; then
       -listen=":$NO_CACHE_PORT" \
       -backend="$VL_URL" \
       -cache-disabled \
+      -rate-limit-per-second=0 \
+      -max-concurrent=0 \
       -server.enable-pprof \
       "-server.admin-auth-token=${PPROF_AUTH_TOKEN:-bench-pprof-token}" \
       -log-level=warn \
