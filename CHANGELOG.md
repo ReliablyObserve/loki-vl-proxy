@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.22.3] - 2026-04-29
+
 ### Changed
 
 - ci: Trivy updated from `0.69.3` to `0.70.0` (`security-pr.yaml` docker image tag, `security-heavy.yaml` trivy-action pinned to `ed142fd` / `v0.36.0`).
