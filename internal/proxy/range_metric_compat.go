@@ -309,12 +309,11 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string) bool {
 	if !queryUsesParserStages(baseQuery) {
 		return false
 	}
-	// Keep parser-stage count/bytes-over-time on backend stats_query_range.
-	// These families already preserve expected grouping there and avoiding
-	// manual fallback prevents dropping native level-based grouping in
-	// scorecard queries (for example detected_level series checks).
+	// VL stats_query_range handles all of these natively — including numeric
+	// fields from parsed stages — without needing client-side unwrap aggregation.
+	// Only rate_counter must stay on the manual path (monotonic counter semantics).
 	switch manualFunc {
-	case "count_over_time", "bytes_over_time":
+	case "count_over_time", "bytes_over_time", "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
 		return false
 	default:
 		return true
@@ -468,7 +467,13 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 			continue
 		}
 
-		streamLabels := parseStreamLabels(asString(entry["_stream"]))
+		// parseStreamLabels returns a shared cached map — copy before mutating
+		// to prevent concurrent map write panics under high concurrency.
+		rawStreamLabels := parseStreamLabels(asString(entry["_stream"]))
+		streamLabels := make(map[string]string, len(rawStreamLabels)+4)
+		for k, v := range rawStreamLabels {
+			streamLabels[k] = v
+		}
 		if level := strings.TrimSpace(asString(entry["level"])); level != "" {
 			streamLabels["level"] = level
 			streamLabels["detected_level"] = level

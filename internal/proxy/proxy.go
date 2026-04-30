@@ -398,6 +398,7 @@ type Proxy struct {
 	recentTailRefreshWindow               time.Duration
 	recentTailRefreshMaxStaleness         time.Duration
 	labelRefreshGroup                     singleflight.Group
+	streamFieldNamesCache                 *cache.Cache // short-lived internal cache for stream_field_names routing decisions
 	labelValuesIndexedCache               bool
 	labelValuesHotLimit                   int
 	labelValuesIndexMaxEntries            int
@@ -908,6 +909,7 @@ func New(cfg Config) (*Proxy, error) {
 		tenantDefaultLimits:                   tenantDefaultLimits,
 		tenantLimits:                          tenantLimits,
 		translationCache:                      cache.New(5*time.Minute, 5000),
+		streamFieldNamesCache:                 cache.New(15*time.Second, 500),
 		queryRangeWindowing:                   cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,
 		queryRangeSplitInterval:               cfg.QueryRangeSplitInterval,
 		queryRangeMaxParallel:                 queryRangeMaxParallel,

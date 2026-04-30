@@ -216,6 +216,33 @@ func (p *Proxy) fetchVLFieldNames(ctx context.Context, path string, params url.V
 	return fields, nil
 }
 
+// fetchStreamFieldNamesCached wraps the stream_field_names VL call with a short-lived
+// internal cache (15s TTL, always-on regardless of -cache-disabled). All label_values and
+// label_names requests for the same query+timerange share one backend call, eliminating
+// the first of two sequential VL RTTs per label_values request.
+func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
+	cacheKey := "sfn:" + getOrgID(ctx) + ":" + params.Encode()
+	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
+		if fp := p.forwardedAuthFingerprint(origReq); fp != "" {
+			cacheKey += ":auth:" + fp
+		}
+	}
+	if cached, ok := p.streamFieldNamesCache.Get(cacheKey); ok {
+		var fields []string
+		if err := json.Unmarshal(cached, &fields); err == nil {
+			return fields, nil
+		}
+	}
+	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
+	if err != nil {
+		return nil, err
+	}
+	if encoded, encErr := json.Marshal(fields); encErr == nil {
+		p.streamFieldNamesCache.Set(cacheKey, encoded)
+	}
+	return fields, nil
+}
+
 func (p *Proxy) fetchVLFieldValues(ctx context.Context, path string, params url.Values) ([]string, error) {
 	status, body, err := p.vlGetMetadataCoalesced(ctx, path, params)
 	if err != nil {
@@ -229,7 +256,7 @@ func (p *Proxy) fetchVLFieldValues(ctx context.Context, path string, params url.
 
 func (p *Proxy) fetchPreferredLabelNames(ctx context.Context, params url.Values) ([]string, error) {
 	if p.supportsStreamMetadataEndpoints() {
-		labels, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
+		labels, err := p.fetchStreamFieldNamesCached(ctx, params)
 		if err == nil {
 			labels = appendUniqueStrings(labels, p.snapshotDeclaredLabelFields()...)
 			return labels, nil
@@ -279,7 +306,7 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 	streamFields := []string{}
 	if useStreamEndpoint {
 		var err error
-		streamFields, err = p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
+		streamFields, err = p.fetchStreamFieldNamesCached(ctx, params)
 		useStreamEndpoint = err == nil
 		if err != nil && !shouldFallbackToGenericMetadata(err) {
 			return nil, err

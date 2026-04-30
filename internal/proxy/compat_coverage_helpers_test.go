@@ -48,8 +48,8 @@ func TestCompatHelpers_ParseQuantileAndUnwrapErrorName(t *testing.T) {
 	if metricFuncRequiresUnwrap("count_over_time") {
 		t.Fatal("expected count_over_time not to require unwrap")
 	}
-	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "avg") {
-		t.Fatal("expected parser-stage avg to use manual fallback")
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "avg") {
+		t.Fatal("expected parser-stage avg to use VL stats_query_range, not manual NDJSON fallback")
 	}
 	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time") {
 		t.Fatal("expected parser-stage count_over_time to stay on direct stats path")

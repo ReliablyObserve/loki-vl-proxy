@@ -47,16 +47,14 @@ func TestParseStatsCompatSpecByEmpty(t *testing.T) {
 func TestQueryRange_AvgOverTimeByEmptyReturnsSingleSeries(t *testing.T) {
 	base := time.Unix(1700000000, 0).UTC()
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		// Return 3 log entries from 3 different streams, each with a confidence field.
-		lines := []string{
-			fmt.Sprintf(`{"_time":%q,"_msg":"{\"confidence\":0.9}","_stream":"{app=\"api\",env=\"prod\"}","confidence":0.9}`, base.Format(time.RFC3339Nano)),
-			fmt.Sprintf(`{"_time":%q,"_msg":"{\"confidence\":0.7}","_stream":"{app=\"web\",env=\"prod\"}","confidence":0.7}`, base.Add(10*time.Second).Format(time.RFC3339Nano)),
-			fmt.Sprintf(`{"_time":%q,"_msg":"{\"confidence\":0.5}","_stream":"{app=\"ml\",env=\"prod\"}","confidence":0.5}`, base.Add(20*time.Second).Format(time.RFC3339Nano)),
-		}
-		_, _ = w.Write([]byte(strings.Join(lines, "\n") + "\n"))
+		// avg_over_time with by() routes to VL stats_query_range.
+		// VL returns a Prometheus-compatible matrix with one series (no labels).
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"data":{"resultType":"matrix","result":[{"metric":{},"values":[[%d,"0.7"]]}]}}`,
+			base.Add(60*time.Second).Unix())
 	}))
 	defer vlBackend.Close()
 

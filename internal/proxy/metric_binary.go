@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -254,28 +255,65 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 	rightIsScalar := translator.IsScalar(rightQL)
 
 	var leftBody, rightBody []byte
-	if leftIsScalar {
-		leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
-	} else {
-		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
-		if e != nil {
-			p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
-			return
-		}
-		defer resp.Body.Close()
-		leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-	}
+	var leftErr, rightErr error
 
-	if rightIsScalar {
-		rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
-	} else {
-		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
-		if e != nil {
-			p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
+	// Run both non-scalar VL fetches concurrently.
+	if !leftIsScalar && !rightIsScalar {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
+			if e != nil {
+				leftErr = e
+				return
+			}
+			defer resp.Body.Close()
+			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}()
+		go func() {
+			defer wg.Done()
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
+			if e != nil {
+				rightErr = e
+				return
+			}
+			defer resp.Body.Close()
+			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}()
+		wg.Wait()
+		if leftErr != nil {
+			p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
 			return
 		}
-		defer resp.Body.Close()
-		rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		if rightErr != nil {
+			p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
+			return
+		}
+	} else {
+		if leftIsScalar {
+			leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
+		} else {
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
+			if e != nil {
+				p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
+				return
+			}
+			defer resp.Body.Close()
+			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}
+
+		if rightIsScalar {
+			rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
+		} else {
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
+			if e != nil {
+				p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
+				return
+			}
+			defer resp.Body.Close()
+			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}
 	}
 
 	// Apply vector matching: on(), ignoring(), group_left(), group_right()
@@ -325,29 +363,65 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 	rightIsScalar := translator.IsScalar(rightQL)
 
 	var leftBody, rightBody []byte
+	var leftErr, rightErr error
 
-	if leftIsScalar {
-		leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
-	} else {
-		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
-		if e != nil {
-			p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
+	// Run both non-scalar VL fetches concurrently.
+	if !leftIsScalar && !rightIsScalar {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
+			if e != nil {
+				leftErr = e
+				return
+			}
+			defer resp.Body.Close()
+			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}()
+		go func() {
+			defer wg.Done()
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
+			if e != nil {
+				rightErr = e
+				return
+			}
+			defer resp.Body.Close()
+			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}()
+		wg.Wait()
+		if leftErr != nil {
+			p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
 			return
 		}
-		defer resp.Body.Close()
-		leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-	}
-
-	if rightIsScalar {
-		rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
-	} else {
-		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
-		if e != nil {
-			p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
+		if rightErr != nil {
+			p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
 			return
 		}
-		defer resp.Body.Close()
-		rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	} else {
+		if leftIsScalar {
+			leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
+		} else {
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
+			if e != nil {
+				p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
+				return
+			}
+			defer resp.Body.Close()
+			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}
+
+		if rightIsScalar {
+			rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
+		} else {
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
+			if e != nil {
+				p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
+				return
+			}
+			defer resp.Body.Close()
+			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}
 	}
 
 	// Combine results with arithmetic at proxy level

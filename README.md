@@ -32,20 +32,22 @@ Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
 
 ## Query Performance
 
-Measured head-to-head against tuned Loki on identical hardware: ~8 M log entries, six representative workload types, 100 concurrent clients.
+Measured head-to-head against tuned Loki: Apple M5 Pro (18 cores, 64 GB RAM), ~8 M log entries across 15 services, 7-day window, 30 s per level.
 
 ### Warm cache — production steady state
 
 Grafana dashboards reload every 30 s. After the first fetch, every repeated query is served from the L1 memory cache without touching VictoriaLogs.
 
-| Workload | Loki P50 | Proxy warm P50 | VL native P50 |
-|---|---:|---:|---:|
-| Metadata (label\_values, detected\_fields) | 196 ms | 2 ms | 4 ms |
-| Heavy aggregations (30 m–1 h windows) | 2,399 ms | 2 ms | 84 ms |
-| Content search (`\|= "word"`, `\|~ "regex"`) | 13,415 ms | 2 ms | 243 ms |
-| Long-range (full 7-day windows) | 9,899 ms | 1 ms | 773 ms |
+| Workload | Loki req/s | Proxy warm req/s | Ratio | Loki P50 | Proxy warm P50 |
+|---|---:|---:|:---:|---:|---:|
+| Small (label browser, instant, 1–5 min panels) | 2,290 | 27,513 | **12.0×** | 42 ms | 3 ms |
+| Heavy (JSON pipelines, filters, 30 m–1 h) | 162 | 7,134 | **44.1×** | — † | 12 ms |
+| Long-range (6 h–72 h windows) | 16 | 220 | **14.0×** | 4,902 ms | 1 ms |
+| Compute (rate, sum by, quantile, topk) | 1,611 | 16,456 | **10.2×** | 4 ms | 4 ms |
 
-These are the numbers that matter for dashboards and Explore. The cache is always warm after the first load and stays warm as long as the proxy has memory.
+† Loki heavy c=100 was saturated: P50=3 ms is a reporting artifact; P90=1,818 ms, P99=6,950 ms.
+
+CPU cost for warm traffic: proxy+VL combined uses **6–408× less CPU** than Loki across workloads (small: 78–408×, heavy: 81–355×, compute: 6–30×). RSS: 1.7–3.9× less RAM for most workloads.
 
 ### Cold cache + thundering herd — coalescer deduplication
 
@@ -61,21 +63,27 @@ This is not cache — the cache is disabled in this scenario. It is pure singlef
 
 ### Cold cache, unique queries — honest worst case
 
-When every client sends a **different** query with a different time window, the coalescer does not help and the cache never warms. Proxy overhead is translation (~5 µs/request) plus HTTP round-trip — the bottleneck is entirely VictoriaLogs:
+When every client sends a **different** query with a unique time window, the coalescer does not help and the cache never warms. This is the floor: pure translation overhead + HTTP proxying + VL response time.
 
-| Workload | Loki P50 | Proxy cold P50 | VL native P50 |
-|---|---:|---:|---:|
-| Long-range (7-day, unique windows) | 9,899 ms | 7,294 ms | 773 ms |
+| Workload | Loki req/s | Proxy cold req/s | Ratio | Note |
+|---|---:|---:|:---:|---|
+| Small (c=100) | 2,110 | 1,528 | 0.72× | Extra HTTP hop overhead |
+| Heavy (c=50) | 219 | 234 | **~1.0×** | At parity — translation cost below noise |
+| Long-range (c=10) | 9 | 19 | **2.1×** | Proxy's parallel window fetching wins even cold |
+| Long-range (c=100) | 13 | 24 | **1.9×** | Structural advantage: VL parallel scans vs Loki sequential |
+| Compute (c=100) | 899 | 211 | 0.23× | Structural limit: N VL calls per metric query |
 
-Cold proxy and Loki converge because both must fully scan VL for each unique window. VL native reaches 90 req/s (6.9× faster than Loki) because its columnar index handles full-history scans more efficiently than Loki's chunk store — the proxy's translation layer adds only ~5 µs to the VL-native path. To get that VL speed advantage through the proxy, you need the cache warm.
+Long-range is faster than Loki even with a cold cache because the proxy splits long windows into parallel 1 h sub-fetches that complete before Loki finishes a single sequential scan.
+
+Compute is the worst case: LogQL `rate()`, `sum by()`, and `quantile_over_time()` have no VL-native equivalent, so the proxy must issue N raw log fetches and aggregate locally. Historical windows have a 24 h cache TTL — repeat queries hit cache and this overhead disappears.
 
 ### Structural advantages (independent of cache)
 
-**Content search:** VictoriaLogs maintains a word-level inverted token index. A `|= "word"` filter skips blocks with no matching tokens. Loki has no content index — it reads every compressed chunk in the time range on every query. The 13 s Loki P50 above does not improve with faster hardware; it grows with data volume.
+**Content search:** VictoriaLogs maintains a word-level inverted token index. A `|= "word"` filter skips blocks with no matching tokens. Loki has no content index — it reads every compressed chunk in the time range on every query. The latency does not improve with faster hardware; it grows with data volume.
 
 **High-cardinality:** VL's storage index is stream-independent. Loki allocates one in-memory chunk per unique label set — a cluster with 10,000 pods at 10 labels each holds 10,000 open chunk writers. That memory scales with pod count regardless of log volume.
 
-Full six-workload data, P90/P99 latency tables, CPU and RSS breakdowns, and methodology: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
+Full throughput tables, P90/P99 latency, CPU and RSS breakdowns, unique-windows run methodology, and VictoriaLogs tuning flags: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 
 ---
 
