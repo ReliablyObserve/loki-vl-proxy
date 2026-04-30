@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- perf(proxy): add `--unique-windows` benchmark flag so each worker gets a distinct non-overlapping time window, bypassing the singleflight coalescer and response cache to expose raw proxy translation overhead.
+- perf(gc): add `-go-gc-percent` flag (default 200) to reduce GC frequency at the cost of higher peak RSS; overridden by `GOGC` env var. GOGC configuration consolidated into `memlimit` package alongside GOMEMLIMIT.
+
+### Changed
+
+- perf(binary): parallelize VL operand fetches in `proxyBinaryMetric`, `proxyBinaryMetricVM`, and `executeSubqueryStepQuery` — binary expressions now issue both HTTP requests concurrently, halving latency for binary metric queries.
+- perf(stats): route `avg_over_time`, `sum_over_time`, `min_over_time`, `max_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `first_over_time`, and `last_over_time` with parser stages to VL's native `stats_query_range` instead of the manual NDJSON path.
+- perf(stats): use `json.RawMessage` for time-series `value`/`values` fields in stats response structs — raw bytes are copied verbatim through marshal/unmarshal, eliminating interface{} allocation and reflect encoding for time-series data.
+- perf(stats): preserve `resultType` through `trimStatsQueryRangeResponseToEnd` so `wrapAsLokiResponse` fast-path (byte-splice) triggers correctly instead of falling back to full `json.Unmarshal` + `json.Marshal` on every response.
+- perf(stats): skip re-marshal in `translateStatsResponseLabelsWithContext` when no label translation occurred, returning the original body unchanged.
+- perf(proxy): skip `RedactSecrets` regexp patterns for strings that contain no secret-looking keywords, using a fast `strings.Contains` pre-check.
+
 ## [1.25.0] - 2026-04-29
 
 ### Fixed
