@@ -892,6 +892,17 @@ func appendLabelPair(pair string, dst map[string]string) {
 }
 
 func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
+	// Fast path: VL stats_query_range already returns {"data":{"resultType":"matrix","result":[...]}}
+	// normalizeLokiResultDataShape is a no-op when both "result" and "resultType" are present,
+	// so we can skip the full parse+marshal and just prepend the status field as a byte splice.
+	if isVLDataResultTypeResponse(vlBody) {
+		const prefix = `{"status":"success",`
+		out := make([]byte, 0, len(prefix)+len(vlBody)-1)
+		out = append(out, prefix...)
+		out = append(out, vlBody[1:]...) // skip the leading {
+		return out
+	}
+
 	// VL stats endpoints return Prometheus-compatible format already.
 	// Try to parse and re-wrap in Loki envelope.
 	var promResp map[string]interface{}
@@ -961,6 +972,23 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 		"data":   promResp,
 	})
 	return result
+}
+
+// isVLDataResultTypeResponse returns true when vlBody is the compact VL format
+// {"data":{"resultType":"...","result":[...]}} — the fast path for wrapAsLokiResponse.
+// normalizeLokiResultDataShape is a no-op for this format since both "result" and
+// "resultType" are already present, so we can skip parse+marshal entirely.
+func isVLDataResultTypeResponse(vlBody []byte) bool {
+	const needle = `{"data":{"resultType":`
+	if len(vlBody) < len(needle) {
+		return false
+	}
+	for i := range needle {
+		if vlBody[i] != needle[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeLokiResultDataShape(data map[string]interface{}, defaultResultType string) {

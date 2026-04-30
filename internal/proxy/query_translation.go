@@ -1268,15 +1268,16 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 		}
 	}
 
+	if translatedMetrics == 0 {
+		// Nothing changed — skip the re-marshal entirely.
+		p.observeInternalOperation(ctx, "translate_stats_response_labels", "noop", time.Since(start))
+		return body
+	}
 	result, err := json.Marshal(resp)
 	if err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "encode_error", time.Since(start))
 		return body
 	}
-	outcome := "noop"
-	if translatedMetrics > 0 {
-		outcome = "translated"
-	}
-	p.observeInternalOperation(ctx, "translate_stats_response_labels", outcome, time.Since(start))
+	p.observeInternalOperation(ctx, "translate_stats_response_labels", "translated", time.Since(start))
 	return result
 }
