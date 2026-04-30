@@ -52,15 +52,16 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 }
 
 type statsQueryRangeSeries struct {
-	Metric map[string]interface{} `json:"metric"`
-	Values [][]interface{}        `json:"values"`
+	Metric json.RawMessage `json:"metric"`
+	Values [][]interface{} `json:"values"`
 }
 
 type statsQueryRangeResponse struct {
 	Data struct {
-		Result []statsQueryRangeSeries `json:"result"`
+		ResultType string                  `json:"resultType,omitempty"`
+		Result     []statsQueryRangeSeries `json:"result"`
 	} `json:"data"`
-	Results []statsQueryRangeSeries `json:"results"`
+	Results []statsQueryRangeSeries `json:"results,omitempty"`
 }
 
 func buildStatsQueryRangeParams(logsqlQuery, startRaw, endRaw, stepRaw string) url.Values {
