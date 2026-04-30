@@ -1287,6 +1287,10 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "noop", time.Since(start))
 		return body
 	}
+	// Clear Status so the output matches VL's format ({"data":{...}} without status).
+	// wrapAsLokiResponse adds the {"status":"success"} envelope — its fast-path byte-splice
+	// only triggers when the body starts with {"data":{"resultType":, not {"status":...}.
+	resp.Status = ""
 	result, err := json.Marshal(resp)
 	if err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "encode_error", time.Since(start))
