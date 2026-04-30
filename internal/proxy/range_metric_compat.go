@@ -470,7 +470,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		// parseStreamLabels returns a shared cached map — copy before mutating
 		// to prevent concurrent map write panics under high concurrency.
 		rawStreamLabels := parseStreamLabels(asString(entry["_stream"]))
-		streamLabels := make(map[string]string, len(rawStreamLabels)+4)
+		streamLabels := make(map[string]string, len(rawStreamLabels))
 		for k, v := range rawStreamLabels {
 			streamLabels[k] = v
 		}

@@ -897,7 +897,7 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	// so we can skip the full parse+marshal and just prepend the status field as a byte splice.
 	if isVLDataResultTypeResponse(vlBody) {
 		const prefix = `{"status":"success",`
-		out := make([]byte, 0, len(prefix)+len(vlBody)-1)
+		out := make([]byte, 0, len(prefix)+len(vlBody))
 		out = append(out, prefix...)
 		out = append(out, vlBody[1:]...) // skip the leading {
 		return out
