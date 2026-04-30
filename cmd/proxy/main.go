@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -439,6 +440,7 @@ func run(
 	// Go runtime tuning
 	goMemLimitBytes := fs.Int64("go-mem-limit", 0, "Explicit GOMEMLIMIT in bytes. Overrides -go-mem-limit-percent. 0 = use percentage or GOMEMLIMIT env var.")
 	goMemLimitPercent := fs.Int("go-mem-limit-percent", 85, "Percentage of the detected container memory limit (cgroups) to set as GOMEMLIMIT. 0 disables auto-detection. Ignored when GOMEMLIMIT env var or -go-mem-limit is set.")
+	gcPercent := fs.Int("gc-percent", 200, "GOGC target percentage. Higher values reduce GC frequency at the cost of higher peak RSS. Set to 0 to disable GC. Ignored when GOGC env var is already set.")
 
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
@@ -551,6 +553,10 @@ func run(
 		deploymentEnvironment: envCfg.deploymentEnv,
 	})
 	memlimit.Apply(*goMemLimitBytes, *goMemLimitPercent, logger)
+	if os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(*gcPercent)
+		logger.Info("GC target set", "gc_percent", *gcPercent)
+	}
 	metrics.SetProcRoot(envCfg.procRoot)
 	logSystemMetricsStartup(logger)
 
