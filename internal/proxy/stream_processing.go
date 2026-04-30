@@ -896,11 +896,8 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	// normalizeLokiResultDataShape is a no-op when both "result" and "resultType" are present,
 	// so we can skip the full parse+marshal and just prepend the status field as a byte splice.
 	if isVLDataResultTypeResponse(vlBody) {
-		const prefix = `{"status":"success",`
-		out := make([]byte, 0, len(prefix)+len(vlBody))
-		out = append(out, prefix...)
-		out = append(out, vlBody[1:]...) // skip the leading {
-		return out
+		// Prepend status field without any size arithmetic — avoids overflow in capacity calc.
+		return append([]byte(`{"status":"success",`), vlBody[1:]...)
 	}
 
 	// VL stats endpoints return Prometheus-compatible format already.
