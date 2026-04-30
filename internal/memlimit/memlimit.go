@@ -1,12 +1,15 @@
-// Package memlimit sets GOMEMLIMIT from container-awareness or explicit config.
+// Package memlimit sets GOMEMLIMIT and GOGC from container-awareness or explicit config.
 //
-// Priority order at startup:
+// GOMEMLIMIT priority order at startup:
 //  1. GOMEMLIMIT env var (already set externally, e.g., by Helm) — no-op, Go
 //     runtime already read it at program start.
 //  2. Explicit -go-mem-limit flag (non-zero value in bytes).
 //  3. -go-mem-limit-percent of the detected container memory limit (cgroups v2,
-//     then cgroups v1 fallback).  When no cgroup limit is found, nothing is set
-//     and the Go runtime uses its default GC target ratio.
+//     then cgroups v1 fallback).  When no cgroup limit is found, nothing is set.
+//
+// GOGC priority order at startup:
+//  1. GOGC env var (already set externally) — no-op, Go runtime already read it.
+//  2. Explicit -go-gc-percent flag value.
 package memlimit
 
 import (
@@ -25,9 +28,10 @@ const (
 	cgroupV1Unlimited = int64(math.MaxInt64 - (1 << 20))
 )
 
-// Apply sets GOMEMLIMIT according to the configured priority chain.
+// Apply sets GOMEMLIMIT and GOGC according to their respective priority chains.
 // It is safe to call multiple times (idempotent after the first effective set).
-func Apply(explicit int64, percent int, logger *slog.Logger) {
+func Apply(explicit int64, percent int, gcPercent int, logger *slog.Logger) {
+	applyGCPercent(gcPercent, logger)
 	if explicit > 0 {
 		debug.SetMemoryLimit(explicit)
 		logger.Info("GOMEMLIMIT set from explicit flag", "bytes", explicit)
@@ -102,4 +106,16 @@ func readCgroupV1() (int64, bool) {
 		return 0, false // parse error or unlimited sentinel
 	}
 	return v, true
+}
+
+func applyGCPercent(gcPercent int, logger *slog.Logger) {
+	if envVal := os.Getenv("GOGC"); envVal != "" {
+		current := debug.SetGCPercent(-1) // -1 = query only
+		logger.Info("GOGC from environment variable", "gc_percent", current)
+		return
+	}
+	prev := debug.SetGCPercent(gcPercent)
+	if prev != gcPercent {
+		logger.Info("GOGC set", "gc_percent", gcPercent, "previous", prev)
+	}
 }
