@@ -1,10 +1,13 @@
 package proxy
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -19,9 +22,12 @@ import (
 )
 
 const (
-	maxQueryRangeWindows           = 4096
-	queryRangeCollectedInitialCap  = 1024
-	queryRangeWindowFetchAttempts  = 5
+	maxQueryRangeWindows              = 4096
+	queryRangeCollectedInitialCap     = 1024
+	queryRangeWindowFetchAttempts     = 5
+	// windowEntryScannerLineBytes caps NDJSON line size in window streaming.
+	// Typical VL log entry is ≤ 64 KB; 1 MB covers pathological cases.
+	windowEntryScannerLineBytes = 1024 * 1024
 	queryRangeRetryMinBackoff      = 100 * time.Millisecond
 	queryRangeRetryMaxBackoff      = 5 * time.Second
 	queryRangeBatchRetryAttempts   = 3
@@ -372,16 +378,19 @@ func (p *Proxy) fetchQueryRangeWindow(
 	params.Set("end", strconv.FormatInt(window.endNs, 10))
 	params.Set("limit", strconv.Itoa(windowLimit))
 
-	coalesceKey := "query_range_window:" + cacheKey
 	for attempt := 1; attempt <= queryRangeWindowFetchAttempts; attempt++ {
 		fetchStart := time.Now()
-		status, body, err := p.vlPostCoalesced(fetchCtx, coalesceKey, "/select/logsql/query", params)
+		// Stream the VL response directly without buffering the full body.
+		// vlPost checks the circuit breaker; we skip the coalescer to avoid
+		// the 256 MB io.ReadAll allocation in the hot path (8+ parallel windows).
+		resp, err := p.vlPost(fetchCtx, "/select/logsql/query", params)
 		fetchDuration := time.Since(fetchStart)
 		p.metrics.RecordQueryRangeWindowFetchDuration(fetchDuration)
 
-		if err == nil && status < 400 {
+		if err == nil && resp.StatusCode < 400 {
 			p.observeQueryRangeWindowFetch(fetchDuration, false)
-			entries := p.vlLogsToLokiWindowEntries(body, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
+			entries := p.vlLogsToLokiWindowEntriesStream(resp.Body, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
+			_ = resp.Body.Close()
 			entry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
 				if encoded, err := json.Marshal(entry); err == nil {
@@ -398,11 +407,13 @@ func (p *Proxy) fetchQueryRangeWindow(
 		if err != nil {
 			fetchErr = err
 		} else {
-			msg := strings.TrimSpace(string(body))
+			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			msg := strings.TrimSpace(string(errBody))
 			if msg == "" {
-				msg = fmt.Sprintf("VL backend returned %d", status)
+				msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
 			}
-			fetchErr = &queryRangeWindowHTTPError{status: status, msg: msg}
+			fetchErr = &queryRangeWindowHTTPError{status: resp.StatusCode, msg: msg}
 		}
 
 		p.observeQueryRangeWindowFetch(fetchDuration, true)
@@ -709,26 +720,39 @@ func (p *Proxy) queryRangeWindowCacheKey(
 	return strings.Join(parts, ":")
 }
 
+// vlLogsToLokiWindowEntries converts a buffered VL NDJSON body to Loki window
+// entries. Kept for callers that already hold a []byte (tests, cache replay).
+// Hot-path callers should use vlLogsToLokiWindowEntriesStream to avoid the
+// io.ReadAll allocation entirely.
 func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
-	entries := make([]queryRangeWindowEntry, 0, len(body)/256+1)
-	start := 0
-	for start < len(body) {
-		end := start
-		for end < len(body) && body[end] != '\n' {
-			end++
+	return p.vlLogsToLokiWindowEntriesStream(bytes.NewReader(body), originalQuery, categorizedLabels, emitStructuredMetadata)
+}
+
+// vlLogsToLokiWindowEntriesStream streams a VL NDJSON response line-by-line,
+// converting each entry to a Loki window entry without buffering the full body.
+// This eliminates the 0.5–2.5 MB per-request allocation that was previously
+// caused by io.ReadAll in the coalescer for every parallel window fetch.
+func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
+	entries := make([]queryRangeWindowEntry, 0, 64)
+	exposureCache := make(map[string][]metadataFieldExposure, 16)
+	smBuf := metadataMapPool.Get().(map[string]string)
+	pfBuf := metadataMapPool.Get().(map[string]string)
+	defer func() {
+		for k := range smBuf {
+			delete(smBuf, k)
 		}
-		line := body[start:end]
-		if end < len(body) {
-			start = end + 1
-		} else {
-			start = len(body)
+		for k := range pfBuf {
+			delete(pfBuf, k)
 		}
-		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
-			line = line[1:]
-		}
-		for len(line) > 0 && (line[len(line)-1] == ' ' || line[len(line)-1] == '\t' || line[len(line)-1] == '\r') {
-			line = line[:len(line)-1]
-		}
+		metadataMapPool.Put(smBuf)
+		metadataMapPool.Put(pfBuf)
+	}()
+
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), windowEntryScannerLineBytes)
+
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
 			continue
 		}
@@ -753,9 +777,10 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 			continue
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
-		msg = reconstructLogLine(msg, entry, originalQuery)
+		windowStreamLabels := parseStreamLabels(asString(entry["_stream"]))
+		msg = reconstructLogLine(msg, entry, windowStreamLabels, originalQuery)
 
-		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery)
+		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf, pfBuf)
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)

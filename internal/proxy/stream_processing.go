@@ -145,6 +145,20 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
+	exposureCache := make(map[string][]metadataFieldExposure, 16)
+	smBuf2 := metadataMapPool.Get().(map[string]string)
+	pfBuf2 := metadataMapPool.Get().(map[string]string)
+	defer func() {
+		for k := range smBuf2 {
+			delete(smBuf2, k)
+		}
+		for k := range pfBuf2 {
+			delete(pfBuf2, k)
+		}
+		metadataMapPool.Put(smBuf2)
+		metadataMapPool.Put(pfBuf2)
+	}()
+
 	first := true
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -162,14 +176,15 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 			continue
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
-		msg = reconstructLogLine(msg, entry, originalQuery)
+		streamLabels := parseStreamLabels(asString(entry["_stream"]))
+		msg = reconstructLogLine(msg, entry, streamLabels, originalQuery)
 
 		tsNanos, ok := formatEntryTimestamp(timeStr)
 		if !ok {
 			continue
 		}
 
-		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery)
+		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf2, pfBuf2)
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
@@ -287,6 +302,16 @@ var vlEntryPool = sync.Pool{
 	},
 }
 
+// metadataMapPool pools map[string]string used for per-entry structured metadata
+// and parsed fields in vlReaderToLokiStreams. The maps are reused across log
+// entries within a single response; metadataFieldMap copies content before the
+// map is cleared, so reuse is safe.
+var metadataMapPool = sync.Pool{
+	New: func() interface{} {
+		return make(map[string]string, 8)
+	},
+}
+
 // vlLogsToLokiStreams converts VL newline-delimited JSON logs to Loki streams format.
 // Optimized: byte scanning, pooled maps, pre-allocated slices.
 func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
@@ -353,7 +378,8 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		// Reconstruct JSON log line from VL's extracted fields. No originalQuery
 		// context is available here — pass empty string so only auto-ingestion
 		// fields are reconstructed (no text-extraction parser stages present).
-		msg = reconstructLogLine(msg, entry, "")
+		tailStreamLabels := parseStreamLabels(asString(entry["_stream"]))
+		msg = reconstructLogLine(msg, entry, tailStreamLabels, "")
 
 		labels := buildEntryLabels(entry)
 		streamKey := canonicalLabelsKey(labels)
@@ -431,6 +457,19 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		stepSeconds = parsePatternStepSeconds(step)
 	}
 
+	smBuf := metadataMapPool.Get().(map[string]string)
+	pfBuf := metadataMapPool.Get().(map[string]string)
+	defer func() {
+		for k := range smBuf {
+			delete(smBuf, k)
+		}
+		for k := range pfBuf {
+			delete(pfBuf, k)
+		}
+		metadataMapPool.Put(smBuf)
+		metadataMapPool.Put(pfBuf)
+	}()
+
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
@@ -463,12 +502,14 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			continue
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
-		msg = reconstructLogLine(msg, entry, originalQuery)
 		rawStream := asString(entry["_stream"])
 		level, _ := stringifyEntryValue(entry["level"])
 
+		// Compute stream descriptor first so reconstructLogLine can reuse the
+		// already-parsed stream labels instead of re-parsing _stream itself.
 		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
-		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache)
+		msg = reconstructLogLine(msg, entry, desc.rawLabels, originalQuery)
+		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 		se, ok := streamMap[desc.key]
 		if !ok {
 			se = &streamEntry{
@@ -571,11 +612,17 @@ func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCac
 	return desc
 }
 
-func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure) (map[string]string, map[string]string) {
-	var (
-		parsedFields             map[string]string
-		structuredMetadataFields map[string]string
-	)
+// classifyEntryMetadataFields fills smBuf and pfBuf with structured metadata
+// and parsed fields for the given log entry. Both buffers must be pre-allocated
+// and are cleared before use; callers must copy or consume content before the
+// next call (metadataFieldMap makes the required copy inside buildStreamValue).
+func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
+	for k := range smBuf {
+		delete(smBuf, k)
+	}
+	for k := range pfBuf {
+		delete(pfBuf, k)
+	}
 
 	for key, value := range entry {
 		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
@@ -594,20 +641,21 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 				continue
 			}
 			if classifyAsParsed {
-				if parsedFields == nil {
-					parsedFields = make(map[string]string, 4)
-				}
-				parsedFields[exposure.name] = stringValue
+				pfBuf[exposure.name] = stringValue
 				continue
 			}
-			if structuredMetadataFields == nil {
-				structuredMetadataFields = make(map[string]string, 4)
-			}
-			structuredMetadataFields[exposure.name] = stringValue
+			smBuf[exposure.name] = stringValue
 		}
 	}
 
-	return structuredMetadataFields, parsedFields
+	var sm, pf map[string]string
+	if len(smBuf) > 0 {
+		sm = smBuf
+	}
+	if len(pfBuf) > 0 {
+		pf = pfBuf
+	}
+	return sm, pf
 }
 
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {
@@ -703,7 +751,12 @@ func metadataFieldMap(fields map[string]string) map[string]string {
 	return pairs
 }
 
-func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string) (map[string]string, map[string]string, map[string]string) {
+// classifyEntryFields classifies log entry fields into stream labels, structured
+// metadata, and parsed fields. smBuf and pfBuf are pre-allocated reusable maps
+// that are cleared and filled; callers must copy content before the next call
+// (buildStreamValue → metadataFieldMap makes the required copy). exposureCache
+// is a per-batch cache keyed by VL field name to avoid repeated slice allocs.
+func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string, map[string]string) {
 	stream := parseStreamLabels(asString(entry["_stream"]))
 	labels := make(map[string]string, len(stream))
 	for k, v := range stream {
@@ -729,10 +782,12 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 	ensureDetectedLevel(labels)
 	ensureSyntheticServiceName(labels)
 
-	var (
-		parsedFields             map[string]string
-		structuredMetadataFields map[string]string
-	)
+	for k := range smBuf {
+		delete(smBuf, k)
+	}
+	for k := range pfBuf {
+		delete(pfBuf, k)
+	}
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 
 	for key, value := range entry {
@@ -746,25 +801,26 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 		if !ok || strings.TrimSpace(stringValue) == "" {
 			continue
 		}
-		for _, exposure := range p.metadataFieldExposures(key) {
+		for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
 			if _, exists := labels[exposure.name]; exists && !exposure.isAlias {
 				continue
 			}
 			if classifyAsParsed {
-				if parsedFields == nil {
-					parsedFields = make(map[string]string, 4)
-				}
-				parsedFields[exposure.name] = stringValue
+				pfBuf[exposure.name] = stringValue
 				continue
 			}
-			if structuredMetadataFields == nil {
-				structuredMetadataFields = make(map[string]string, 4)
-			}
-			structuredMetadataFields[exposure.name] = stringValue
+			smBuf[exposure.name] = stringValue
 		}
 	}
 
-	return labels, structuredMetadataFields, parsedFields
+	var sm, pf map[string]string
+	if len(smBuf) > 0 {
+		sm = smBuf
+	}
+	if len(pfBuf) > 0 {
+		pf = pfBuf
+	}
+	return labels, sm, pf
 }
 
 // streamLabelsCacheMu guards streamLabelsCache to prevent concurrent map writes.
@@ -836,6 +892,14 @@ func appendLabelPair(pair string, dst map[string]string) {
 }
 
 func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
+	// Fast path: VL stats_query_range already returns {"data":{"resultType":"matrix","result":[...]}}
+	// normalizeLokiResultDataShape is a no-op when both "result" and "resultType" are present,
+	// so we can skip the full parse+marshal and just prepend the status field as a byte splice.
+	if isVLDataResultTypeResponse(vlBody) {
+		// Prepend status field without any size arithmetic — avoids overflow in capacity calc.
+		return append([]byte(`{"status":"success",`), vlBody[1:]...)
+	}
+
 	// VL stats endpoints return Prometheus-compatible format already.
 	// Try to parse and re-wrap in Loki envelope.
 	var promResp map[string]interface{}
@@ -905,6 +969,23 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 		"data":   promResp,
 	})
 	return result
+}
+
+// isVLDataResultTypeResponse returns true when vlBody is the compact VL format
+// {"data":{"resultType":"...","result":[...]}} — the fast path for wrapAsLokiResponse.
+// normalizeLokiResultDataShape is a no-op for this format since both "result" and
+// "resultType" are already present, so we can skip parse+marshal entirely.
+func isVLDataResultTypeResponse(vlBody []byte) bool {
+	const needle = `{"data":{"resultType":`
+	if len(vlBody) < len(needle) {
+		return false
+	}
+	for i := range needle {
+		if vlBody[i] != needle[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeLokiResultDataShape(data map[string]interface{}, defaultResultType string) {

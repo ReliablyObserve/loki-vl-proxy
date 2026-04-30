@@ -310,13 +310,17 @@ patternsCustom:
 # 1) goMemLimit (explicit value) if set
 # 2) goMemLimitPercent% of resources.limits.memory when goMemLimit is empty
 #
-# Example with limits.memory=256Mi and goMemLimitPercent=70:
-#   GOMEMLIMIT=187904819 (bytes)
+# Example with limits.memory=256Mi and goMemLimitPercent=85:
+#   GOMEMLIMIT=228589158 (bytes)
+#
+# 85% is the Go team's recommended starting point: leaves room for non-heap
+# allocations (goroutine stacks, OS thread stacks, mmap regions) while
+# preventing the GC from scavenging memory it will immediately need again.
 #
 # Supported resources.limits.memory units for percentage mode:
 # Ki, Mi, Gi, Ti, Pi, Ei, K, M, G, T, P, E (integer quantities)
 # If memory limit is missing/unsupported, no computed GOMEMLIMIT is injected.
-goMemLimitPercent: 70  # Percentage of resources.limits.memory used when goMemLimit is empty
+goMemLimitPercent: 85  # Percentage of resources.limits.memory used when goMemLimit is empty
 goMemLimit: ""         # Explicit GOMEMLIMIT value (for example 500MiB); overrides goMemLimitPercent
 
 # Environment variables (alternative to flags, also for secrets)

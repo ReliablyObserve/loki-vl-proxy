@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,9 +35,15 @@ func newTenantTestProxy(t *testing.T, backendURL string) *Proxy {
 // testTenantForwarded is a helper that verifies a handler forwards X-Scope-OrgID as AccountID.
 func testTenantForwarded(t *testing.T, handler func(*Proxy) http.HandlerFunc, path string) {
 	t.Helper()
-	var receivedAccountID string
+	var (
+		mu                sync.Mutex
+		receivedAccountID string
+	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedAccountID = r.Header.Get("AccountID")
+		id := r.Header.Get("AccountID")
+		mu.Lock()
+		receivedAccountID = id
+		mu.Unlock()
 		// Return valid VL response for any endpoint
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"values": []interface{}{},
@@ -51,8 +58,11 @@ func testTenantForwarded(t *testing.T, handler func(*Proxy) http.HandlerFunc, pa
 	r.Header.Set("X-Scope-OrgID", "team-a")
 	handler(p)(w, r)
 
-	if receivedAccountID != "100" {
-		t.Errorf("%s: expected AccountID=100 for team-a, got %q", path, receivedAccountID)
+	mu.Lock()
+	got := receivedAccountID
+	mu.Unlock()
+	if got != "100" {
+		t.Errorf("%s: expected AccountID=100 for team-a, got %q", path, got)
 	}
 }
 

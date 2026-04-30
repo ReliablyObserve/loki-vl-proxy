@@ -7,6 +7,15 @@ import (
 	"strings"
 )
 
+// secretScanKeywords is a fast pre-check list. RedactSecrets runs the full regex
+// suite only if at least one keyword is found (lowercased comparison).
+// Most log strings (LogQL queries, paths, backend URLs without passwords) contain
+// none of these, so the regex suite is skipped entirely for them.
+var secretScanKeywords = []string{
+	"bearer", "password", "passwd", "pwd", "secret", "token", "apikey", "api_key", "api-key",
+	"authorization", "credential", "private_key", "akia", "asia",
+}
+
 // secretPatterns matches common secret formats found in queries, URLs, and headers.
 var secretPatterns = []*regexp.Regexp{
 	// Bearer tokens
@@ -32,8 +41,24 @@ var secretPatterns = []*regexp.Regexp{
 // redactReplacement is used for all redacted values.
 const redactReplacement = "***REDACTED***"
 
+// mayContainSecret is a fast pre-check: returns false when s definitely contains
+// no secret patterns, allowing RedactSecrets to skip the full regex suite.
+func mayContainSecret(s string) bool {
+	sl := strings.ToLower(s)
+	for _, kw := range secretScanKeywords {
+		if strings.Contains(sl, kw) {
+			return true
+		}
+	}
+	// Check URL-with-password pattern (user:pass@host) — requires both :// and @.
+	return strings.Contains(s, "://") && strings.Contains(s, "@")
+}
+
 // RedactSecrets replaces potential secrets in a string with a redaction marker.
 func RedactSecrets(s string) string {
+	if !mayContainSecret(s) {
+		return s
+	}
 	for _, re := range secretPatterns {
 		s = re.ReplaceAllStringFunc(s, func(match string) string {
 			loc := re.FindStringSubmatchIndex(match)

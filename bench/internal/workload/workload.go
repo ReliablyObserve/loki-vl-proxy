@@ -768,6 +768,259 @@ func HighCardinality(now time.Time) Workload {
 	}}
 }
 
+// Machinery: a curated mix of representative proxy operations designed to
+// measure raw proxy overhead — LogQL→LogsQL translation, HTTP proxying,
+// response shaping — without the coalescer or cache short-circuiting results.
+//
+// Always run with --unique-windows so every worker sends a distinct URL and
+// against a proxy started with -cache-disabled -label-values-indexed-cache=false
+// to bypass both the L1 response cache and the in-process label-values index.
+//
+// Query variety covers every distinct proxy translation/shaping code path and
+// uses label values that exist in the e2e-compat stack (api-gateway, auth-service,
+// batch-etl, cache-redis, frontend-ssr, ml-serving, nginx-ingress, payment-service,
+// worker-service; namespaces: batch, data, ingress-nginx, ml, prod).
+func Machinery(now time.Time) Workload {
+	start1m := ns(now.Add(-1 * time.Minute))
+	start5m := ns(now.Add(-5 * time.Minute))
+	start15m := ns(now.Add(-15 * time.Minute))
+	end := ns(now)
+
+	return Workload{Name: "machinery", Queries: []Query{
+		// ── Log selects (VL NDJSON → Loki streams conversion) ─────────────────
+		// Simple stream select — baseline log proxy path.
+		{
+			Name: "log_select_api_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="api-gateway"}`},
+				"start": {start5m}, "end": {end}, "limit": {"200"},
+			},
+		},
+		// Different service — exercises different stream data paths.
+		{
+			Name: "log_select_frontend_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="frontend-ssr"}`},
+				"start": {start5m}, "end": {end}, "limit": {"200"},
+			},
+		},
+		// Namespace-scoped select across all services.
+		{
+			Name: "log_select_namespace_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod"}`},
+				"start": {start5m}, "end": {end}, "limit": {"300"},
+			},
+		},
+		// Content filter — exercises |= word filter path (not just stream select).
+		{
+			Name: "log_filter_error_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{namespace="prod"} |= "error"`},
+				"start": {start5m}, "end": {end}, "limit": {"200"},
+			},
+		},
+		// Regex filter — exercises |~ regex path.
+		{
+			Name: "log_regex_status_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="api-gateway"} |~ "5[0-9][0-9]"`},
+				"start": {start5m}, "end": {end}, "limit": {"200"},
+			},
+		},
+
+		// ── JSON parse pipelines (| json → | unpack_json translation) ─────────
+		// JSON parse + numeric field filter.
+		{
+			Name: "json_parse_status_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="api-gateway"} | json | status >= 400`},
+				"start": {start5m}, "end": {end}, "limit": {"200"},
+			},
+		},
+		// JSON parse + multiple field filters.
+		{
+			Name: "json_parse_multi_field_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="api-gateway"} | json | status >= 200 | status < 500`},
+				"start": {start5m}, "end": {end}, "limit": {"100"},
+			},
+		},
+		// JSON parse on different service.
+		{
+			Name: "json_parse_ml_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="ml-serving"} | json`},
+				"start": {start5m}, "end": {end}, "limit": {"100"},
+			},
+		},
+
+		// ── Logfmt parse (| logfmt → | unpack_logfmt translation) ────────────
+		// Logfmt parse + level filter.
+		{
+			Name: "logfmt_level_filter_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="auth-service"} | logfmt | level="error"`},
+				"start": {start5m}, "end": {end}, "limit": {"100"},
+			},
+		},
+		// Logfmt on a different service.
+		{
+			Name: "logfmt_cache_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`{app="cache-redis"} | logfmt`},
+				"start": {start5m}, "end": {end}, "limit": {"100"},
+			},
+		},
+
+		// ── Metric aggregations (rate/count, metric shaping) ──────────────────
+		// rate grouped by app — most common metric query shape.
+		{
+			Name: "rate_by_app_15m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (app) (rate({namespace="prod"}[1m]))`},
+				"start": {start15m}, "end": {end}, "step": {"60"},
+			},
+		},
+		// rate grouped by level — different grouping dimension.
+		{
+			Name: "rate_by_level_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (level) (rate({namespace="prod"}[1m]))`},
+				"start": {start5m}, "end": {end}, "step": {"60"},
+			},
+		},
+		// count_over_time — exercises count aggregation shaping.
+		{
+			Name: "count_by_app_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (app) (count_over_time({namespace="prod"}[1m]))`},
+				"start": {start5m}, "end": {end}, "step": {"60"},
+			},
+		},
+		// bytes_rate — exercises bytes metric translation.
+		{
+			Name: "bytes_rate_prod_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (app) (bytes_rate({namespace="prod"}[1m]))`},
+				"start": {start5m}, "end": {end}, "step": {"60"},
+			},
+		},
+		// rate on filtered stream (json parse + filter + aggregation chain).
+		{
+			Name: "rate_error_json_5m",
+			Path: "/loki/api/v1/query_range",
+			Params: url.Values{
+				"query": {`sum by (app) (rate({app="api-gateway"} | json | status >= 500 [1m]))`},
+				"start": {start5m}, "end": {end}, "step": {"60"},
+			},
+		},
+
+		// ── Detected fields (OTel field detection + VL metadata) ──────────────
+		// detected_fields for api-gateway — json fields.
+		{
+			Name: "detected_fields_api_5m",
+			Path: "/loki/api/v1/detected_fields",
+			Params: url.Values{
+				"query": {`{app="api-gateway"}`},
+				"start": {start5m}, "end": {end},
+			},
+		},
+		// detected_fields across prod namespace — broader field scan.
+		{
+			Name: "detected_fields_prod_5m",
+			Path: "/loki/api/v1/detected_fields",
+			Params: url.Values{
+				"query": {`{namespace="prod"}`},
+				"start": {start5m}, "end": {end},
+			},
+		},
+
+		// ── Metadata endpoints (labels/series via VL — no label index) ─────────
+		// labels with query scope (different per timestamp).
+		{
+			Name:   "labels_scoped_1m",
+			Path:   "/loki/api/v1/labels",
+			Params: url.Values{"query": {`{app="api-gateway"}`}, "start": {start1m}, "end": {end}},
+		},
+		// label_values for app — cardinality query.
+		{
+			Name:   "label_values_app_5m",
+			Path:   "/loki/api/v1/label/app/values",
+			Params: url.Values{"start": {start5m}, "end": {end}},
+		},
+		// label_values for level — low-cardinality dimension.
+		{
+			Name:   "label_values_level_5m",
+			Path:   "/loki/api/v1/label/level/values",
+			Params: url.Values{"start": {start5m}, "end": {end}},
+		},
+		// series — stream label enumeration.
+		{
+			Name: "series_prod_5m",
+			Path: "/loki/api/v1/series",
+			Params: url.Values{
+				"match[]": {`{namespace="prod"}`},
+				"start":   {start5m}, "end": {end},
+			},
+		},
+
+		// ── Instant queries (/query path, not /query_range) ───────────────────
+		// Instant rate — exercises /loki/api/v1/query path.
+		{
+			Name: "instant_rate_prod_1m",
+			Path: "/loki/api/v1/query",
+			Params: url.Values{
+				"query": {`sum by (app) (rate({namespace="prod"}[1m]))`},
+				"time":  {end},
+			},
+		},
+		// Instant count — different aggregation on the same path.
+		{
+			Name: "instant_count_api_1m",
+			Path: "/loki/api/v1/query",
+			Params: url.Values{
+				"query": {`sum(count_over_time({app="api-gateway"}[1m]))`},
+				"time":  {end},
+			},
+		},
+
+		// ── Index stats + volume ───────────────────────────────────────────────
+		// index_stats — exercises stats endpoint translation.
+		{
+			Name: "index_stats_prod_5m",
+			Path: "/loki/api/v1/index/stats",
+			Params: url.Values{
+				"query": {`{namespace="prod"}`},
+				"start": {start5m}, "end": {end},
+			},
+		},
+		// volume — exercises volume endpoint shaping.
+		{
+			Name: "volume_prod_5m",
+			Path: "/loki/api/v1/index/volume",
+			Params: url.Values{
+				"query": {`{namespace="prod"}`},
+				"start": {start5m}, "end": {end},
+			},
+		},
+	}}
+}
+
 // All returns all standard workloads for the given time reference.
 func All(now time.Time) []Workload {
 	return []Workload{Small(now), Heavy(now), LongRange(now), Compute(now)}
@@ -780,9 +1033,10 @@ func AllEdgeCases(now time.Time) []Workload {
 	return []Workload{UnindexedScan(now), HighCardinality(now)}
 }
 
-// ByName returns the named workloads, including edge-case workloads.
+// ByName returns the named workloads, including edge-case and machinery workloads.
 func ByName(names []string, now time.Time) []Workload {
 	all := append(All(now), AllEdgeCases(now)...)
+	all = append(all, Machinery(now))
 	if len(names) == 0 {
 		return All(now)
 	}

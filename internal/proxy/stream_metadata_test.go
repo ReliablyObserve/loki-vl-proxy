@@ -337,12 +337,15 @@ func TestBuildStreamValue_CategorizeLabelsEmitsEmptyObjectWhenNoMetadata(t *test
 
 func TestClassifyEntryFields_UsesLokiCanonicalMetadataKeysOnly(t *testing.T) {
 	p := newStreamMetadataProxy(t, "http://unused", true, false)
+	ec := make(map[string][]metadataFieldExposure, 4)
+	sm := make(map[string]string, 4)
+	pf := make(map[string]string, 4)
 	_, structuredMetadata, parsed := p.classifyEntryFields(map[string]interface{}{
 		"_time":        "2026-01-01T00:00:00Z",
 		"_msg":         "line",
 		"_stream":      `{job="otel-proxy",level="info"}`,
 		"service.name": "otel-app",
-	}, `{job="otel-proxy"}`)
+	}, `{job="otel-proxy"}`, ec, sm, pf)
 
 	tuple, ok := buildStreamValue("1", "line", structuredMetadata, parsed, true, true).([]interface{})
 	if !ok || len(tuple) != 3 {

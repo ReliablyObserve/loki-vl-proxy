@@ -712,6 +712,19 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 
+	smBuf := metadataMapPool.Get().(map[string]string)
+	pfBuf := metadataMapPool.Get().(map[string]string)
+	defer func() {
+		for k := range smBuf {
+			delete(smBuf, k)
+		}
+		for k := range pfBuf {
+			delete(pfBuf, k)
+		}
+		metadataMapPool.Put(smBuf)
+		metadataMapPool.Put(pfBuf)
+	}()
+
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
@@ -734,7 +747,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
 		desc := p.logQueryStreamDescriptor(asString(entry["_stream"]), asString(entry["level"]), streamLabelCache, streamDescriptorCache)
-		_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache)
+		_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache, smBuf, pfBuf)
 		metric := cloneStringMap(desc.translatedLabels)
 		for key, value := range parsedFields {
 			if spec.unwrapField != "" && key == spec.unwrapField {
@@ -1131,136 +1144,158 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 	p.queryTracker.Record("query", originalQuery, elapsed, false)
 }
 
+// translateStatsItem holds one element from the VL stats result array.
+// value/values are kept as json.RawMessage to avoid parsing time-series data
+// (timestamps + floats) that we never inspect — only the metric labels change.
+type translateStatsItem struct {
+	Metric map[string]string `json:"metric"`
+	Value  json.RawMessage   `json:"value,omitempty"`
+	Values json.RawMessage   `json:"values,omitempty"`
+}
+
+type translateStatsData struct {
+	ResultType string               `json:"resultType,omitempty"`
+	Result     []translateStatsItem `json:"result,omitempty"`
+	Stats      json.RawMessage      `json:"stats,omitempty"`
+}
+
+type translateStatsResponseBody struct {
+	Status  string               `json:"status,omitempty"`
+	Data    *translateStatsData  `json:"data,omitempty"`
+	Result  []translateStatsItem `json:"result,omitempty"`
+	Results []translateStatsItem `json:"results,omitempty"`
+	Error   json.RawMessage      `json:"error,omitempty"`
+}
+
 func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
 	start := time.Now()
-	var resp map[string]interface{}
+	var resp translateStatsResponseBody
 	if err := json.Unmarshal(body, &resp); err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "decode_error", time.Since(start))
 		return body
 	}
 
-	// Handle both direct results and nested data.result
-	var results []interface{}
-	if data, ok := resp["data"].(map[string]interface{}); ok {
-		if r, ok := data["result"].([]interface{}); ok {
-			results = r
-		}
+	// Collect pointers to all result slices (handles data.result, result, results).
+	var allResults []*[]translateStatsItem
+	if resp.Data != nil && len(resp.Data.Result) > 0 {
+		allResults = append(allResults, &resp.Data.Result)
 	}
-	if r, ok := resp["result"].([]interface{}); ok {
-		results = r
+	if len(resp.Result) > 0 {
+		allResults = append(allResults, &resp.Result)
 	}
-	if r, ok := resp["results"].([]interface{}); ok {
-		results = r
+	if len(resp.Results) > 0 {
+		allResults = append(allResults, &resp.Results)
 	}
 
-	if len(results) == 0 {
+	if len(allResults) == 0 {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "no_results", time.Since(start))
 		return body
 	}
 
-	// Allocate once and reuse across result entries to avoid per-result map
-	// allocations (was the #3 hot path in pprof: ~81 GB cumulative).
-	translated := make(map[string]interface{}, 8)
+	// Reuse maps across iterations to reduce allocations.
+	translated := make(map[string]string, 8)
 	syntheticLabels := make(map[string]string, 8)
 
 	translatedMetrics := 0
-	for _, r := range results {
-		entry, ok := r.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		// Translate "metric" labels map
-		if metricRaw, ok := entry["metric"]; ok {
-			if metric, ok := metricRaw.(map[string]interface{}); ok {
-				// Clear reused maps instead of allocating new ones each iteration.
-				for k := range translated {
-					delete(translated, k)
+	for _, resultsPtr := range allResults {
+		for i := range *resultsPtr {
+			item := &(*resultsPtr)[i]
+			metric := item.Metric
+			if len(metric) == 0 {
+				continue
+			}
+
+			// Clear reused maps instead of allocating new ones each iteration.
+			for k := range translated {
+				delete(translated, k)
+			}
+			changed := false
+			hadStream := false
+			for k, v := range metric {
+				if k == "__name__" {
+					changed = true
+					continue
 				}
-				changed := false
-				for k, v := range metric {
-					if k == "__name__" {
-						changed = true
-						continue
-					}
-					if k == "_stream" {
-						if rawStream, ok := v.(string); ok {
-							for streamKey, streamValue := range parseStreamLabels(rawStream) {
-								lokiKey := streamKey
-								if !p.labelTranslator.IsPassthrough() {
-									lokiKey = p.labelTranslator.ToLoki(streamKey)
-								}
-								translated[lokiKey] = streamValue
-							}
-							changed = true
-							continue
+				if k == "_stream" {
+					hadStream = true
+					for streamKey, streamValue := range parseStreamLabels(v) {
+						lokiKey := streamKey
+						if !p.labelTranslator.IsPassthrough() {
+							lokiKey = p.labelTranslator.ToLoki(streamKey)
 						}
+						translated[lokiKey] = streamValue
 					}
-					lokiKey := k
-					if !p.labelTranslator.IsPassthrough() {
-						lokiKey = p.labelTranslator.ToLoki(k)
-					}
-					if lokiKey != k {
-						changed = true
-					}
-					translated[lokiKey] = v
+					changed = true
+					continue
 				}
-				for k := range syntheticLabels {
-					delete(syntheticLabels, k)
+				lokiKey := k
+				if !p.labelTranslator.IsPassthrough() {
+					lokiKey = p.labelTranslator.ToLoki(k)
 				}
-				for key, value := range translated {
-					if s, ok := value.(string); ok {
-						syntheticLabels[key] = s
-					}
-				}
-				serviceSignal := hasServiceSignal(syntheticLabels)
-				beforeSyntheticCount := len(syntheticLabels)
-				hadLevel := syntheticLabels["level"] != ""
-				ensureDetectedLevel(syntheticLabels)
-				// If detected_level was synthesized from level, remove the raw level label.
-				// Metric aggregations like "sum by (detected_level)" translate to VL's
-				// "sum by (level)" and back — the result should only carry detected_level,
-				// matching Loki's behavior where both labels don't coexist in metric output.
-				if hadLevel && syntheticLabels["detected_level"] != "" {
-					delete(syntheticLabels, "level")
-					delete(translated, "level")
-				}
-				ensureSyntheticServiceName(syntheticLabels)
-				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
-					delete(syntheticLabels, "service_name")
-				}
-				if len(syntheticLabels) != beforeSyntheticCount {
+				if lokiKey != k {
 					changed = true
 				}
-				for key, value := range syntheticLabels {
-					if existing, ok := translated[key]; ok && existing == value {
-						continue
-					}
-					translated[key] = value
-					changed = true
+				translated[lokiKey] = v
+			}
+			for k := range syntheticLabels {
+				delete(syntheticLabels, k)
+			}
+			for key, value := range translated {
+				syntheticLabels[key] = value
+			}
+			serviceSignal := hasServiceSignal(syntheticLabels)
+			beforeSyntheticCount := len(syntheticLabels)
+			hadLevel := syntheticLabels["level"] != ""
+			ensureDetectedLevel(syntheticLabels)
+			// Remove the raw level label only when it came from an explicit VL grouping
+			// dimension (no _stream in the response), i.e. "sum by (detected_level)"
+			// translates to VL's "sum by (level)" and back. In that case level must be
+			// replaced by detected_level. When _stream IS present, level is a genuine
+			// stream label that Loki also returns alongside detected_level — keep both.
+			if hadLevel && !hadStream && syntheticLabels["detected_level"] != "" {
+				delete(syntheticLabels, "level")
+				delete(translated, "level")
+			}
+			ensureSyntheticServiceName(syntheticLabels)
+			if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
+				delete(syntheticLabels, "service_name")
+			}
+			if len(syntheticLabels) != beforeSyntheticCount {
+				changed = true
+			}
+			for key, value := range syntheticLabels {
+				if existing, ok := translated[key]; ok && existing == value {
+					continue
 				}
-				if changed {
-					translatedMetrics++
-				}
-				// entry["metric"] must point to a new map — the reused translated map
-				// is mutated on the next iteration. Copy it for the JSON encoder.
-				out := make(map[string]interface{}, len(translated))
+				translated[key] = value
+				changed = true
+			}
+			if changed {
+				translatedMetrics++
+				// Copy translated map to item — the reused map is mutated next iteration.
+				newMetric := make(map[string]string, len(translated))
 				for k, v := range translated {
-					out[k] = v
+					newMetric[k] = v
 				}
-				entry["metric"] = out
+				item.Metric = newMetric
 			}
 		}
 	}
 
+	if translatedMetrics == 0 {
+		// Nothing changed — skip the re-marshal entirely.
+		p.observeInternalOperation(ctx, "translate_stats_response_labels", "noop", time.Since(start))
+		return body
+	}
+	// Clear Status so the output matches VL's format ({"data":{...}} without status).
+	// wrapAsLokiResponse adds the {"status":"success"} envelope — its fast-path byte-splice
+	// only triggers when the body starts with {"data":{"resultType":, not {"status":...}.
+	resp.Status = ""
 	result, err := json.Marshal(resp)
 	if err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "encode_error", time.Since(start))
 		return body
 	}
-	outcome := "noop"
-	if translatedMetrics > 0 {
-		outcome = "translated"
-	}
-	p.observeInternalOperation(ctx, "translate_stats_response_labels", outcome, time.Since(start))
+	p.observeInternalOperation(ctx, "translate_stats_response_labels", "translated", time.Since(start))
 	return result
 }

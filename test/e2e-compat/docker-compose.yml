@@ -165,6 +165,13 @@ services:
       - "3100:3100"
     tmpfs:
       - /cache
+    environment:
+      # Soft GC pressure limit: without this, Go's GC only triggers at 2× live
+      # heap, allowing RSS to balloon to 4+ GB under sustained long_range load
+      # (sequential c=10/50/100 runs accumulate heap pages even as LRU cache
+      # evicts entries). 2 GiB keeps GC aggressive without capping the 256 MB
+      # window cache or causing unnecessary collection on small workloads.
+      - GOMEMLIMIT=2GiB
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -179,6 +186,9 @@ services:
       - "-label-values-index-persist-interval=5s"
       - "-label-values-index-startup-stale-threshold=30s"
       - "-label-values-index-startup-peer-warm-timeout=2s"
+      # Disable rate limiting so benchmark clients (single IP) are not throttled.
+      - "-rate-limit-per-second=0"
+      - "-max-concurrent=0"
       # pprof for benchmark profiling (CPU/heap/alloc capture during bench runs).
       - "-server.enable-pprof"
       - "-server.admin-auth-token=bench-pprof-token"
@@ -270,6 +280,12 @@ services:
     container_name: e2e-proxy-underscore
     ports:
       - "3102:3100"
+    environment:
+      # Soft GC pressure limit: hybrid mode + no label-values index = many concurrent
+      # VL NDJSON responses in memory. Without GOMEMLIMIT Go's GC only triggers at
+      # 2× live heap, causing rapid unbounded growth under e2e load.
+      # 2 GiB gives headroom above the 64 MB window cache + streaming buffers.
+      - GOMEMLIMIT=2GiB
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -280,6 +296,13 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=hybrid"
       - "-emit-structured-metadata=true"
+      # Cap the query_range window cache to 64 MB. The default 256 MB is sized for
+      # large deployments; the e2e underscore proxy handles only test load.
+      - "-cache-max-bytes=67108864"
+      # Disable rate limiting and concurrency cap so benchmark clients (single IP)
+      # are not throttled — matches the main proxy benchmark configuration.
+      - "-rate-limit-per-second=0"
+      - "-max-concurrent=0"
     depends_on:
       victorialogs:
         condition: service_healthy

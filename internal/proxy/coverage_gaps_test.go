@@ -916,10 +916,10 @@ func TestHandleLabels_BareSelectorQuery(t *testing.T) {
 // =============================================================================
 
 func TestBinaryMetric_LeftSideVLError(t *testing.T) {
-	callCount := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		if callCount == 1 {
+		// Left side has app="a", right has app="b" — dispatch by query content,
+		// safe for concurrent left+right fetches.
+		if strings.Contains(r.URL.Query().Get("query"), `"a"`) {
 			// Left side fails
 			w.WriteHeader(http.StatusBadGateway)
 			w.Write([]byte(`{"error":"left failed"}`))

@@ -398,6 +398,7 @@ type Proxy struct {
 	recentTailRefreshWindow               time.Duration
 	recentTailRefreshMaxStaleness         time.Duration
 	labelRefreshGroup                     singleflight.Group
+	streamFieldNamesCache                 *cache.Cache // short-lived internal cache for stream_field_names routing decisions
 	labelValuesIndexedCache               bool
 	labelValuesHotLimit                   int
 	labelValuesIndexMaxEntries            int
@@ -908,6 +909,7 @@ func New(cfg Config) (*Proxy, error) {
 		tenantDefaultLimits:                   tenantDefaultLimits,
 		tenantLimits:                          tenantLimits,
 		translationCache:                      cache.New(5*time.Minute, 5000),
+		streamFieldNamesCache:                 cache.New(15*time.Second, 500),
 		queryRangeWindowing:                   cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,
 		queryRangeSplitInterval:               cfg.QueryRangeSplitInterval,
 		queryRangeMaxParallel:                 queryRangeMaxParallel,
@@ -1186,6 +1188,10 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 			mux.Handle("/debug/pprof/cmdline", p.adminMiddleware(http.NotFoundHandler()))
 			mux.Handle("/debug/pprof/", p.adminMiddleware(http.DefaultServeMux))
 		}
+		// Cache flush — POST /admin/cache/flush clears all in-memory cache entries.
+		// Useful for benchmarking (ensures each run starts cold) and debugging.
+		// Protected by the admin auth token.
+		mux.Handle("/admin/cache/flush", p.adminMiddleware(http.HandlerFunc(p.handleCacheFlush)))
 	}
 
 	if p.enableQueryAnalytics {
@@ -1201,6 +1207,23 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 		mux.Handle("/_cache/set", peerCacheHandler)
 		mux.Handle("/_cache/hot", peerCacheHandler)
 	}
+}
+
+func (p *Proxy) handleCacheFlush(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if p.cache != nil {
+		p.cache.PurgeAll()
+	}
+	if p.compatCache != nil {
+		p.compatCache.PurgeAll()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok","message":"cache flushed (L0 hot index + L1 memory + L2 disk)"}`))
 }
 
 func (p *Proxy) handleMetrics(w http.ResponseWriter, r *http.Request) {

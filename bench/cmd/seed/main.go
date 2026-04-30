@@ -288,10 +288,6 @@ func genLine(svc service, ts time.Time) string {
 	}
 }
 
-func buildStreams(ts time.Time, linesPerService int) []map[string]interface{} {
-	return buildStreamsFor(ts, linesPerService, services)
-}
-
 func pushLoki(lokiURL string, streams []map[string]interface{}) error {
 	payload := map[string]interface{}{"streams": streams}
 	body, _ := json.Marshal(payload)

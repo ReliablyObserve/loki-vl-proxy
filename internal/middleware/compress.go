@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 )
 
 type responseCompressor interface {
@@ -239,13 +238,22 @@ func (w *compressedResponseWriter) finalizeEncodedCapture() {
 	w.capture = nil
 }
 
-// gzip.Writer pool to reduce allocations
-var gzipWriterPool = sync.Pool{
-	New: func() interface{} {
+// gzipWriterChan is a GC-resistant pool of gzip.Writers. sync.Pool entries are
+// cleared on every GC cycle; under high allocation pressure (10+ GC/s at c50)
+// this forces flate.NewWriter on every request. A buffered channel survives GC.
+const gzipWriterChanCap = 128
+
+var gzipWriterChan = func() chan *gzip.Writer {
+	ch := make(chan *gzip.Writer, gzipWriterChanCap)
+	// Pre-warm with compressor already initialized so Reset(dst) reuses it.
+	for range 32 {
 		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
-		return w
-	},
-}
+		_ = w.Flush() // forces flate.NewWriter → compressor non-nil after Reset
+		w.Reset(io.Discard)
+		ch <- w
+	}
+	return ch
+}()
 
 // GzipHandler is kept for backward compatibility with existing tests/callers.
 func GzipHandler(next http.Handler) http.Handler {
@@ -410,11 +418,19 @@ func acceptsEncoding(header, encoding string) bool {
 }
 
 func acquireResponseCompressor(encoding string, dst io.Writer) (responseCompressor, func()) {
-	gz := gzipWriterPool.Get().(*gzip.Writer)
-	gz.Reset(dst)
+	var gz *gzip.Writer
+	select {
+	case gz = <-gzipWriterChan:
+		gz.Reset(dst)
+	default:
+		gz, _ = gzip.NewWriterLevel(dst, gzip.BestSpeed)
+	}
 	return gz, func() {
 		gz.Reset(io.Discard)
-		gzipWriterPool.Put(gz)
+		select {
+		case gzipWriterChan <- gz:
+		default: // channel full — let GC collect
+		}
 	}
 }
 

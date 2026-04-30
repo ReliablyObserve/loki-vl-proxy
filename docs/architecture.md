@@ -231,10 +231,40 @@ flowchart LR
 Pure string manipulation parser — no external LogQL parser library. Converts LogQL to LogsQL left-to-right using prefix matching and regex for templates.
 
 ### Proxy (`internal/proxy/`)
-HTTP handlers for Loki-compatible read endpoints. The main execution paths are:
-- query and metadata handlers with tenant validation, optional fanout, translation, cache reuse, and response shaping
-- `/tail` websocket handling with native and synthetic modes
-- rules and alerts read-through compatibility against a configured backend such as `vmalert`
+HTTP handlers for Loki-compatible read endpoints, split into domain-focused modules:
+
+| Module | Responsibility |
+|---|---|
+| `proxy.go` | Proxy struct, configuration, constructor, and HTTP router setup |
+| `middleware.go` | Request middleware chain: security headers, tenant validation, rate limiting, WebSocket upgrade checks |
+| `middleware_security.go` | Security-specific middleware: auth forwarding, token redaction, request fingerprinting |
+| `query_translation.go` | LogQL→LogsQL translation per request, structured request logging |
+| `query_range_windowing.go` | Time-window splitting and stitching for long-range metric queries |
+| `stream_processing.go` | VL→Loki stream conversion, label shaping, log line proxying |
+| `postprocess.go` | Post-query response shaping: limit enforcement, deduplication, sorting |
+| `multitenant.go` | Multi-tenant fanout, per-tenant narrowing, and Loki-shaped response merging |
+| `label_handlers.go` | `/labels`, `/label/{name}/values`, `/series`, `/detected_fields` HTTP handlers |
+| `label_metadata.go` | VL metadata fetching: field discovery, OTel attribute detection |
+| `label_index.go` | In-process label-values index for low-latency label cardinality queries |
+| `cache_keys.go` | Cache key construction: query_range, labels, series, detected_fields, volume |
+| `patterns.go` | Pattern query handling, autodetection from query history, pattern clustering |
+| `patterns_persistence.go` | Pattern snapshot persistence: load, save, and rotation |
+| `metric_agg.go` | Instant-vector queries and post-aggregation metric math |
+| `metric_binary.go` | Stats queries and binary metric expression evaluation |
+| `volume.go` | `/loki/api/v1/index/volume` and `/index/volume_range` handlers |
+| `drilldown.go` | Logs Drilldown plugin metadata endpoints |
+| `tail.go` | WebSocket `/tail` with native VL stream and synthetic polling fallback |
+| `alerting.go` | Health/readiness probes, rules and alerts read-through handlers |
+| `backend.go` | Backend HTTP client construction, TLS config, compression negotiation |
+| `telemetry.go` | Per-route Prometheus instrumentation, OTLP push, request duration histograms |
+| `time_utils.go` | Timestamp parsing, range normalization, step alignment helpers |
+| `http_utils.go` | HTTP error helpers, response header forwarding, Accept-Encoding negotiation |
+| `subquery.go` | Subquery expansion and execution planning |
+| `range_metric_compat.go` | Range metric compatibility shims for Loki 2.x vs 3.x divergences |
+| `vector_matching.go` | Vector matching logic for binary metric operations |
+| `unwrap_convert.go` | `unwrap` expression conversion between LogQL and LogsQL forms |
+| `redact.go` | Token and credential redaction from logs and error messages |
+| `safety.go` | Query safety checks: cardinality limits, expression complexity guards |
 
 ### Middleware (`internal/middleware/`)
 - **Rate limiter**: per-client token bucket + global semaphore (current defaults are built in, not user-exposed flags)

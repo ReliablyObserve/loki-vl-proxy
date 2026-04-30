@@ -293,6 +293,21 @@ func encodeDiskEntry(entry diskEntry) ([]byte, bool) {
 }
 
 // Close stops the background flusher, flushes pending writes, and closes the database.
+// Purge deletes all entries from the disk cache. Used by the admin cache-flush
+// endpoint so benchmarks can start from a completely cold state.
+func (dc *DiskCache) Purge() {
+	dc.writeMu.Lock()
+	dc.writeBuf = make(map[string]diskEntry)
+	dc.writeMu.Unlock()
+	_ = dc.db.Update(func(tx *bolt.Tx) error {
+		if err := tx.DeleteBucket(dataBucket); err != nil {
+			return err
+		}
+		_, err := tx.CreateBucket(dataBucket)
+		return err
+	})
+}
+
 func (dc *DiskCache) Close() error {
 	select {
 	case <-dc.done:

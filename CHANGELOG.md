@@ -7,13 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- perf(proxy): add `--unique-windows` benchmark flag so each worker gets a distinct non-overlapping time window, bypassing the singleflight coalescer and response cache to expose raw proxy translation overhead.
+- perf(gc): add `-go-gc-percent` flag (default 200) to reduce GC frequency at the cost of higher peak RSS; overridden by `GOGC` env var. GOGC configuration consolidated into `memlimit` package alongside GOMEMLIMIT.
+
+### Changed
+
+- perf(binary): parallelize VL operand fetches in `proxyBinaryMetric`, `proxyBinaryMetricVM`, and `executeSubqueryStepQuery` — binary expressions now issue both HTTP requests concurrently, halving latency for binary metric queries.
+- perf(stats): route `avg_over_time`, `sum_over_time`, `min_over_time`, `max_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `first_over_time`, and `last_over_time` with parser stages to VL's native `stats_query_range` instead of the manual NDJSON path.
+- perf(stats): use `json.RawMessage` for time-series `value`/`values` fields in stats response structs — raw bytes are copied verbatim through marshal/unmarshal, eliminating interface{} allocation and reflect encoding for time-series data.
+- perf(stats): preserve `resultType` through `trimStatsQueryRangeResponseToEnd` so `wrapAsLokiResponse` fast-path (byte-splice) triggers correctly instead of falling back to full `json.Unmarshal` + `json.Marshal` on every response.
+- perf(stats): skip re-marshal in `translateStatsResponseLabelsWithContext` when no label translation occurred, returning the original body unchanged.
+- perf(proxy): skip `RedactSecrets` regexp patterns for strings that contain no secret-looking keywords, using a fast `strings.Contains` pre-check.
+
 ## [1.25.0] - 2026-04-29
 
 ### Fixed
 
+- fix(e2e): add `_msg` field to all JSON-format log generators so VictoriaLogs stores the human-readable message correctly and Grafana renders JSON service logs consistently with Loki.
 - fix(proxy): reconstruct JSON log lines so `|= "text"` line filters match any JSON field, not only the extracted `_msg` value; VL entries with extra fields are re-serialised as `{"_msg":"...","field":"value"}` before returning to Grafana.
 - fix(translator): revert line filter translation from invalid `*:~"text"` VictoriaLogs syntax to `~"text"` (regex/substring on `_msg`), which is valid across all supported VL versions.
 - fix(proxy): explicit logfmt/JSON `level=warn` field now always wins over VictoriaLogs auto-detected `detected_level`; previously VL could surface `detected_level=info` from `_msg` while also providing `level=warn`, causing Grafana to display the wrong log level badge.
+- fix(loki): raise `max_query_series` from 500 to 5000 to match Loki defaults and prevent truncated series results on high-cardinality label queries.
+
+### Changed
+
+- perf: replace `sync.Pool`-based gzip writer pool with a buffered-channel pool (`gzipWriterChan`) that survives GC cycles, eliminating pool churn under sustained load and reducing per-request allocation overhead on the response compression path.
+- perf: amortise `metadataFieldExposures` lookup across all NDJSON entries in a batch via a per-batch `exposureCache` map, and pool the `smBuf`/`pfBuf` structured-metadata and parsed-field accumulator maps with `metadataMapPool` to cut per-entry heap allocations by ~5 GB/30 s under load.
+- perf: use a typed `vlStreamEntry` struct for NDJSON `_stream` field unmarshalling (replaces `map[string]interface{}`), and eliminate double string/byte conversions in the drilldown NDJSON hot path; pool the per-entry label buffer in `scanDetectedLabelSummaries` and `detectFieldSummaries` to reduce detected-labels allocations by ~1.8 GB/30 s.
 
 ## [1.24.0] - 2026-04-29
 
@@ -193,7 +215,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - bench: warmup phase now runs at full benchmark concurrency with the same jitter as the real run, so the proxy cache is populated across the same time-window space the benchmark will query; warmup time is never counted in results.
 - e2e(vl): add VictoriaLogs block-cache and memory tuning flags to docker-compose (`-blockcache.missesBeforeCaching=1`, `-internStringCacheExpireDuration=15m`, `-memory.allowedPercent=75`) to improve repeated-query performance.
-
 ## [1.17.1] - 2026-04-25
 
 ### Fixed

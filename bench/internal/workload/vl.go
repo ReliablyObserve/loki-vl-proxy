@@ -11,7 +11,6 @@
 package workload
 
 import (
-	"fmt"
 	"net/url"
 	"time"
 )
@@ -31,17 +30,17 @@ func VLSmall(now time.Time) Workload {
 		{
 			Name:   "field_values_app",
 			Path:   "/select/logsql/field_values",
-			Params: url.Values{"fieldName": {"app"}, "query": {"*"}, "start": {start5m}, "end": {end}},
+			Params: url.Values{"field": {"app"}, "query": {"*"}, "start": {start5m}, "end": {end}},
 		},
 		{
 			Name:   "field_values_namespace",
 			Path:   "/select/logsql/field_values",
-			Params: url.Values{"fieldName": {"namespace"}, "query": {"*"}, "start": {start5m}, "end": {end}},
+			Params: url.Values{"field": {"namespace"}, "query": {"*"}, "start": {start5m}, "end": {end}},
 		},
 		{
 			Name:   "field_values_level",
 			Path:   "/select/logsql/field_values",
-			Params: url.Values{"fieldName": {"level"}, "query": {"*"}, "start": {start5m}, "end": {end}},
+			Params: url.Values{"field": {"level"}, "query": {"*"}, "start": {start5m}, "end": {end}},
 		},
 		{
 			Name:   "stream_ids",
@@ -456,12 +455,12 @@ func VLHighCardinality(now time.Time) Workload {
 		{
 			Name:   "field_values_pod_1h",
 			Path:   "/select/logsql/field_values",
-			Params: url.Values{"fieldName": {"pod"}, "query": {`namespace:"prod"`}, "start": {start1h}, "end": {end}},
+			Params: url.Values{"field": {"pod"}, "query": {`namespace:"prod"`}, "start": {start1h}, "end": {end}},
 		},
 		{
 			Name:   "field_values_pod_24h",
 			Path:   "/select/logsql/field_values",
-			Params: url.Values{"fieldName": {"pod"}, "query": {`namespace:"prod"`}, "start": {start24h}, "end": {end}},
+			Params: url.Values{"field": {"pod"}, "query": {`namespace:"prod"`}, "start": {start24h}, "end": {end}},
 		},
 		// Log select per pod — VL uses stream filter.
 		{
@@ -530,13 +529,3 @@ func VLByName(names []string, now time.Time) []Workload {
 	return result
 }
 
-// vlStep converts seconds to a VL-compatible duration string (unused but kept for reference).
-func vlStep(seconds int) string {
-	if seconds%3600 == 0 {
-		return fmt.Sprintf("%dh", seconds/3600)
-	}
-	if seconds%60 == 0 {
-		return fmt.Sprintf("%dm", seconds/60)
-	}
-	return fmt.Sprintf("%ds", seconds)
-}

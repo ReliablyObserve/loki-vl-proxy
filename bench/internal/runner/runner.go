@@ -28,6 +28,13 @@ type Config struct {
 	// queries valid (no future timestamps) while producing a realistic mix of
 	// cache hits (small shift → overlapping windows), partial hits, and misses.
 	TimeJitter time.Duration
+	// UniqueWindows, if true, applies a deterministic per-worker time offset so
+	// every worker sends a distinct URL on every request.  The offset is
+	// workerID × 1 s shifted backward, guaranteeing the singleflight coalescer
+	// never fires and the response cache never warms.  Use this to measure raw
+	// proxy machinery overhead (translation + HTTP proxying + response shaping)
+	// without cache or coalescer short-circuiting the result.
+	UniqueWindows bool
 }
 
 // Result holds the outcome of one benchmark run.
@@ -60,10 +67,11 @@ func Run(ctx context.Context, cfg Config) Result {
 	}
 
 	type sample struct {
-		name      string
-		latency   time.Duration
-		bytes     int64
-		isErr     bool
+		name       string
+		latency    time.Duration
+		bytes      int64
+		isErr      bool
+		statusCode int
 	}
 
 	samples := make(chan sample, cfg.Concurrency*4)
@@ -78,6 +86,15 @@ func Run(ctx context.Context, cfg Config) Result {
 			defer wg.Done()
 			qi := workerID % len(cfg.Queries) // round-robin query selection
 			rng := rand.New(rand.NewSource(int64(workerID) ^ time.Now().UnixNano()))
+			// Deterministic per-worker offset: each worker shifts its queries
+			// backward by workerID × 1 s.  Combined with the per-request
+			// request-count increment below, this guarantees every URL is unique
+			// across all workers and all requests within a worker, so the
+			// singleflight coalescer never fires and the response cache never
+			// warms.  The shift stays well within any workload window (even a
+			// 1-minute window accommodates up to 60 unique workers).
+			workerOffset := time.Duration(workerID) * time.Second
+			requestSeq := 0 // monotonically increments per request within worker
 			for {
 				if ctx.Err() != nil || time.Now().After(deadline) {
 					return
@@ -86,18 +103,26 @@ func Run(ctx context.Context, cfg Config) Result {
 				qi++
 
 				rawURL := q.URL(cfg.TargetURL)
-				if cfg.TimeJitter > 0 {
+				switch {
+				case cfg.UniqueWindows:
+					// Deterministic offset = worker offset + per-request sequential
+					// step (1 ms per request) so even within a single worker no two
+					// requests share the same URL key.
+					uniqueShift := workerOffset + time.Duration(requestSeq)*time.Millisecond
+					rawURL = shiftTimeParams(rawURL, uniqueShift)
+					requestSeq++
+				case cfg.TimeJitter > 0:
 					rawURL = applyJitter(rawURL, cfg.TimeJitter, rng)
 				}
 				start := time.Now()
-				n, err := doRequest(rawURL)
+				n, statusCode, err := doRequest(rawURL)
 				elapsed := time.Since(start)
-
 				samples <- sample{
-					name:    q.Name,
-					latency: elapsed,
-					bytes:   n,
-					isErr:   err != nil,
+					name:       q.Name,
+					latency:    elapsed,
+					bytes:      n,
+					isErr:      err != nil,
+					statusCode: statusCode,
 				}
 			}
 		}(i)
@@ -119,8 +144,8 @@ func Run(ctx context.Context, cfg Config) Result {
 			h = histogram.New()
 			hists[s.name] = h
 		}
-		h.Record(s.latency, s.bytes, s.isErr)
-		overall.Record(s.latency, s.bytes, s.isErr)
+		h.Record(s.latency, s.bytes, s.isErr, s.statusCode)
+		overall.Record(s.latency, s.bytes, s.isErr, s.statusCode)
 	}
 
 	byQuery := make(map[string]*histogram.Stats, len(hists))
@@ -146,12 +171,18 @@ func Run(ctx context.Context, cfg Config) Result {
 // shifted by the same offset so window sizes are preserved; shifting only
 // backward keeps every timestamp in the past (no future queries).
 func applyJitter(rawURL string, jitter time.Duration, rng *rand.Rand) string {
+	shift := time.Duration(rng.Int63n(int64(jitter))) // uniform in [0, jitter)
+	return shiftTimeParams(rawURL, shift)
+}
+
+// shiftTimeParams shifts start/end/time nanosecond params of a query URL
+// backward by exactly shift.  Window sizes are preserved.
+func shiftTimeParams(rawURL string, shift time.Duration) string {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return rawURL
 	}
 	q := u.Query()
-	shift := time.Duration(rng.Int63n(int64(jitter))) // uniform in [0, jitter)
 	changed := false
 	for _, key := range []string{"start", "end", "time"} {
 		v := q.Get(key)
@@ -172,18 +203,18 @@ func applyJitter(rawURL string, jitter time.Duration, rng *rand.Rand) string {
 	return u.String()
 }
 
-func doRequest(url string) (int64, error) {
+func doRequest(url string) (int64, int, error) {
 	resp, err := httpClient.Get(url)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer resp.Body.Close()
 	n, err := io.Copy(io.Discard, resp.Body)
 	if err != nil {
-		return n, err
+		return n, resp.StatusCode, err
 	}
-	if resp.StatusCode >= 500 {
-		return n, fmt.Errorf("HTTP %d", resp.StatusCode)
+	if resp.StatusCode >= 400 {
+		return n, resp.StatusCode, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
-	return n, nil
+	return n, resp.StatusCode, nil
 }

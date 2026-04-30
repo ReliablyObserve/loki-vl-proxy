@@ -225,21 +225,19 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 		params.Set("end", e)
 	}
 
-	resp, err := p.vlGet(r.Context(), "/select/logsql/streams", params)
+	coalKey := p.nativeCoalescerKey("series", r.Context(), params)
+	status, body, err := p.vlGetCoalescedWithStatus(r.Context(), coalKey, "/select/logsql/streams", params)
 	if err != nil {
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
-		p.metrics.RecordRequest("series", status, time.Since(start))
+		httpStatus := statusFromUpstreamErr(err)
+		p.writeError(w, httpStatus, err.Error())
+		p.metrics.RecordRequest("series", httpStatus, time.Since(start))
 		return
 	}
-	defer resp.Body.Close()
-
-	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	// Propagate VL error status
-	if resp.StatusCode >= 400 {
-		p.writeError(w, resp.StatusCode, string(body))
-		p.metrics.RecordRequest("series", resp.StatusCode, time.Since(start))
+	if status >= 400 {
+		p.writeError(w, status, string(body))
+		p.metrics.RecordRequest("series", status, time.Since(start))
 		return
 	}
 
@@ -269,10 +267,11 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 		series = append(series, labels)
 	}
 
-	result, _ := json.Marshal(map[string]interface{}{
-		"status": "success",
-		"data":   series,
-	})
+	type seriesResponse struct {
+		Status string              `json:"status"`
+		Data   []map[string]string `json:"data"`
+	}
+	result, _ := json.Marshal(seriesResponse{Status: "success", Data: series})
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("series", http.StatusOK, time.Since(start))

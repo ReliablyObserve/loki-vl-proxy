@@ -15,21 +15,30 @@ type Histogram struct {
 	mu      sync.Mutex
 	samples []time.Duration
 
-	count   atomic.Int64
-	sum     atomic.Int64 // nanoseconds
-	errors  atomic.Int64
-	bytes   atomic.Int64 // response bytes
+	count    atomic.Int64
+	sum      atomic.Int64 // nanoseconds
+	errors   atomic.Int64
+	bytes    atomic.Int64 // response bytes
+	status4xx atomic.Int64
+	status5xx atomic.Int64
 }
 
 func New() *Histogram { return &Histogram{} }
 
-// Record adds one latency sample.
-func (h *Histogram) Record(d time.Duration, respBytes int64, err bool) {
+// Record adds one latency sample with HTTP status code tracking.
+func (h *Histogram) Record(d time.Duration, respBytes int64, err bool, statusCode ...int) {
 	h.count.Add(1)
 	h.sum.Add(int64(d))
 	h.bytes.Add(respBytes)
 	if err {
 		h.errors.Add(1)
+	}
+	if len(statusCode) > 0 {
+		if statusCode[0] >= 400 && statusCode[0] < 500 {
+			h.status4xx.Add(1)
+		} else if statusCode[0] >= 500 {
+			h.status5xx.Add(1)
+		}
 	}
 	h.mu.Lock()
 	h.samples = append(h.samples, d)
@@ -49,11 +58,15 @@ func (h *Histogram) Snapshot(wallDuration time.Duration) Stats {
 	errs := h.errors.Load()
 	bytes := h.bytes.Load()
 	sum := h.sum.Load()
+	s4xx := h.status4xx.Load()
+	s5xx := h.status5xx.Load()
 
 	s := Stats{
-		Count:     n,
-		Errors:    errs,
-		ErrorRate: safeDivF(float64(errs), float64(n)),
+		Count:      n,
+		Errors:     errs,
+		ErrorRate:  safeDivF(float64(errs), float64(n)),
+		Status4xx:  s4xx,
+		Status5xx:  s5xx,
 		TotalBytes: bytes,
 	}
 	if n > 0 {
@@ -78,21 +91,23 @@ func (h *Histogram) Snapshot(wallDuration time.Duration) Stats {
 
 // Stats holds computed histogram statistics.
 type Stats struct {
-	Count      int64
-	Errors     int64
-	ErrorRate  float64
-	TotalBytes int64
+	Count       int64
+	Errors      int64
+	ErrorRate   float64
+	Status4xx   int64
+	Status5xx   int64
+	TotalBytes  int64
 	BytesPerSec float64
-	Throughput float64 // req/s
-	Mean       time.Duration
-	Min        time.Duration
-	Max        time.Duration
-	P50        time.Duration
-	P75        time.Duration
-	P90        time.Duration
-	P95        time.Duration
-	P99        time.Duration
-	P999       time.Duration
+	Throughput  float64 // req/s
+	Mean        time.Duration
+	Min         time.Duration
+	Max         time.Duration
+	P50         time.Duration
+	P75         time.Duration
+	P90         time.Duration
+	P95         time.Duration
+	P99         time.Duration
+	P999        time.Duration
 }
 
 func pct(sorted []time.Duration, p float64) time.Duration {

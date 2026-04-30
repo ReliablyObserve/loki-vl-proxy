@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -107,20 +109,20 @@ func TestWithout_MultipleLabels(t *testing.T) {
 // =============================================================================
 
 func TestOn_BinaryMatchesBySubset(t *testing.T) {
-	callNum := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callNum++
 		w.Header().Set("Content-Type", "application/json")
-		if callNum == 1 {
+		// Left side has no "error" in the query; right side has level="error".
+		// Dispatch by query content — safe for concurrent left+right fetches.
+		if strings.Contains(r.URL.Query().Get("query"), "error") {
+			// Right side: rate({app="a",level="error"}[5m])
+			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
+				{"metric":{"app":"a","level":"error"},"value":[1609459200,"10"]}
+			]}}`))
+		} else {
 			// Left side: rate({app="a"}[5m])
 			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
 				{"metric":{"app":"a","pod":"p1"},"value":[1609459200,"100"]},
 				{"metric":{"app":"a","pod":"p2"},"value":[1609459200,"200"]}
-			]}}`))
-		} else {
-			// Right side: rate({app="a",level="error"}[5m])
-			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
-				{"metric":{"app":"a","level":"error"},"value":[1609459200,"10"]}
 			]}}`))
 		}
 	}))
@@ -163,17 +165,17 @@ func TestOn_BinaryMatchesBySubset(t *testing.T) {
 }
 
 func TestIgnoring_ExcludesLabelsFromMatch(t *testing.T) {
-	callNum := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callNum++
 		w.Header().Set("Content-Type", "application/json")
-		if callNum == 1 {
+		// Dispatch by query content — safe for concurrent left+right fetches.
+		// Left has pod="p1", right has pod="p2"; VL queries differ by pod value.
+		if strings.Contains(r.URL.Query().Get("query"), "p2") {
 			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
-				{"metric":{"app":"a","pod":"p1"},"value":[1609459200,"100"]}
+				{"metric":{"app":"a","pod":"p2"},"value":[1609459200,"10"]}
 			]}}`))
 		} else {
 			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
-				{"metric":{"app":"a","pod":"p2"},"value":[1609459200,"10"]}
+				{"metric":{"app":"a","pod":"p1"},"value":[1609459200,"100"]}
 			]}}`))
 		}
 	}))
@@ -182,12 +184,13 @@ func TestIgnoring_ExcludesLabelsFromMatch(t *testing.T) {
 	c := cache.New(60*time.Second, 10000)
 	p, _ := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
 
-	// rate({...}) / ignoring(pod) rate({...})
-	// ignoring(pod) means match on all labels EXCEPT pod
+	// rate({app="a",pod="p1"}[5m]) / ignoring(pod) rate({app="a",pod="p2"}[5m])
+	// ignoring(pod) means match on all labels EXCEPT pod — both have app="a" so they match.
+	// Using distinct pod selectors makes left/right VL queries distinguishable for concurrent fetches.
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/query?time=1609459200", nil)
 	q := r.URL.Query()
-	q.Set("query", `rate({app="a"}[5m]) / ignoring(pod) rate({app="a"}[5m])`)
+	q.Set("query", `rate({app="a",pod="p1"}[5m]) / ignoring(pod) rate({app="a",pod="p2"}[5m])`)
 	r.URL.RawQuery = q.Encode()
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
@@ -214,20 +217,20 @@ func TestIgnoring_ExcludesLabelsFromMatch(t *testing.T) {
 // =============================================================================
 
 func TestGroupLeft_OneToMany(t *testing.T) {
-	callNum := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callNum++
 		w.Header().Set("Content-Type", "application/json")
-		if callNum == 1 {
+		// Dispatch by query content — safe for concurrent left+right fetches.
+		// Left has env="pods" selector, right has env="team" selector.
+		if strings.Contains(r.URL.Query().Get("query"), "team") {
+			// Right: one (single entry per app with team info)
+			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
+				{"metric":{"app":"a","team":"backend"},"value":[1609459200,"1"]}
+			]}}`))
+		} else {
 			// Left: many (multiple pods)
 			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
 				{"metric":{"app":"a","pod":"p1"},"value":[1609459200,"100"]},
 				{"metric":{"app":"a","pod":"p2"},"value":[1609459200,"200"]}
-			]}}`))
-		} else {
-			// Right: one (single entry per app with team info)
-			w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
-				{"metric":{"app":"a","team":"backend"},"value":[1609459200,"1"]}
 			]}}`))
 		}
 	}))
@@ -236,12 +239,13 @@ func TestGroupLeft_OneToMany(t *testing.T) {
 	c := cache.New(60*time.Second, 10000)
 	p, _ := New(Config{BackendURL: vlBackend.URL, Cache: c, LogLevel: "error"})
 
-	// rate({...}) * on(app) group_left(team) rate({...})
-	// group_left means left side is "many" — each left series matches the one right
+	// rate({app="a"}[5m]) * on(app) group_left(team) rate({app="a",team="backend"}[5m])
+	// group_left: each left series matches the one right series; using distinct selectors
+	// makes left/right VL queries distinguishable for concurrent fetches.
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/query?time=1609459200", nil)
 	q := r.URL.Query()
-	q.Set("query", `rate({app="a"}[5m]) * on(app) group_left(team) rate({app="a"}[5m])`)
+	q.Set("query", `rate({app="a"}[5m]) * on(app) group_left(team) rate({app="a",team="backend"}[5m])`)
 	r.URL.RawQuery = q.Encode()
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
@@ -302,10 +306,10 @@ func TestWithout_EmptyLabels(t *testing.T) {
 }
 
 func TestVectorMatching_Passthrough(t *testing.T) {
-	// Test that binary expressions without vector matching still work
-	callNum := 0
+	// Test that binary expressions without vector matching still work.
+	var callNum atomic.Int32
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callNum++
+		callNum.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[
 			{"metric":{"app":"nginx"},"value":[1609459200,"42"]}

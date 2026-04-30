@@ -194,25 +194,46 @@ func (p *Proxy) executeSubqueryStepQuery(ctx context.Context, query string, ts t
 		var (
 			leftBody  []byte
 			rightBody []byte
-			err       error
+			leftErr   error
+			rightErr  error
 		)
 
-		if !leftScalar {
-			leftBody, err = fetchMetric(leftQL)
-			if err != nil {
-				return nil, err
+		if !leftScalar && !rightScalar {
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				leftBody, leftErr = fetchMetric(leftQL)
+			}()
+			go func() {
+				defer wg.Done()
+				rightBody, rightErr = fetchMetric(rightQL)
+			}()
+			wg.Wait()
+			if leftErr != nil {
+				return nil, leftErr
+			}
+			if rightErr != nil {
+				return nil, rightErr
 			}
 		} else {
-			leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
-		}
+			if !leftScalar {
+				leftBody, leftErr = fetchMetric(leftQL)
+				if leftErr != nil {
+					return nil, leftErr
+				}
+			} else {
+				leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
+			}
 
-		if !rightScalar {
-			rightBody, err = fetchMetric(rightQL)
-			if err != nil {
-				return nil, err
+			if !rightScalar {
+				rightBody, rightErr = fetchMetric(rightQL)
+				if rightErr != nil {
+					return nil, rightErr
+				}
+			} else {
+				rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
 			}
-		} else {
-			rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
 		}
 
 		return combineBinaryMetricResults(leftBody, rightBody, op, "vector", leftScalar, rightScalar, leftQL, rightQL), nil

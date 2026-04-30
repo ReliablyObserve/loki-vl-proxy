@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -25,18 +27,17 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
-	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
+	// Coalesce concurrent identical range metric queries.
+	key := "stats_query_range:" + getOrgID(r.Context()) + ":" + params.Encode()
+	status, body, err := p.vlPostCoalesced(r.Context(), key, "/select/logsql/stats_query_range", params)
 	if err != nil {
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return
 	}
-	defer resp.Body.Close()
-
-	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	// Propagate VL error status
-	if resp.StatusCode >= 400 {
-		p.writeError(w, resp.StatusCode, string(body))
+	if status >= 400 {
+		p.writeError(w, status, string(body))
 		return
 	}
 
@@ -51,28 +52,29 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 }
 
 type statsQueryRangeSeries struct {
-	Metric map[string]interface{} `json:"metric"`
-	Values [][]interface{}        `json:"values"`
+	Metric json.RawMessage `json:"metric"`
+	Values [][]interface{} `json:"values"`
 }
 
 type statsQueryRangeResponse struct {
 	Data struct {
-		Result []statsQueryRangeSeries `json:"result"`
+		ResultType string                  `json:"resultType,omitempty"`
+		Result     []statsQueryRangeSeries `json:"result"`
 	} `json:"data"`
-	Results []statsQueryRangeSeries `json:"results"`
+	Results []statsQueryRangeSeries `json:"results,omitempty"`
 }
 
 func buildStatsQueryRangeParams(logsqlQuery, startRaw, endRaw, stepRaw string) url.Values {
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if s := strings.TrimSpace(startRaw); s != "" {
-		params.Set("start", formatVLTimestamp(s))
+		params.Set("start", formatVLStatsTimestamp(s))
 	}
 	if e := strings.TrimSpace(endRaw); e != "" {
 		if extendedEnd, ok := extendStatsQueryRangeEnd(e, stepRaw); ok {
 			params.Set("end", extendedEnd)
 		} else {
-			params.Set("end", formatVLTimestamp(e))
+			params.Set("end", formatVLStatsTimestamp(e))
 		}
 	}
 	if step := strings.TrimSpace(stepRaw); step != "" {
@@ -90,7 +92,7 @@ func extendStatsQueryRangeEnd(endRaw, stepRaw string) (string, bool) {
 	if !ok || stepDur <= 0 {
 		return "", false
 	}
-	return strconv.FormatInt(endNs+stepDur.Nanoseconds(), 10), true
+	return nanosToVLTimestamp(endNs + stepDur.Nanoseconds()), true
 }
 
 func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
@@ -174,22 +176,37 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
-	if t := r.FormValue("time"); t != "" {
-		params.Set("time", formatVLTimestamp(t))
+	evalTime := r.FormValue("time")
+	if evalTime == "" {
+		evalTime = strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
+	params.Set("time", formatVLStatsTimestamp(evalTime))
+
+	// Constrain VL to the original LogQL range window so stats_query scans only
+	// [time-window, time] instead of ALL historical data. Without start/end,
+	// VL's stats_query returns every stream ever seen (O(all_time)) rather than
+	// just streams active in the window (O(window)).
+	if origSpec, ok := parseOriginalRangeMetricSpec(originalLogql); ok && origSpec.Window > 0 {
+		if evalNanos, ok2 := parseFlexibleUnixNanos(evalTime); ok2 {
+			startNanos := evalNanos - int64(origSpec.Window)
+			params.Set("start", nanosToVLTimestamp(startNanos))
+			params.Set("end", nanosToVLTimestamp(evalNanos))
+		}
 	}
 
-	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query", params)
+	// Coalesce concurrent identical requests to avoid thundering herd when the
+	// compat cache expires under high concurrency. All 50 concurrent clients
+	// asking for the same instant metric query share one VL round-trip.
+	key := "stats_query:" + getOrgID(r.Context()) + ":" + params.Encode()
+	status, body, err := p.vlPostCoalesced(r.Context(), key, "/select/logsql/stats_query", params)
 	if err != nil {
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return
 	}
-	defer resp.Body.Close()
-
-	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 
 	// Propagate VL error status
-	if resp.StatusCode >= 400 {
-		p.writeError(w, resp.StatusCode, string(body))
+	if status >= 400 {
+		p.writeError(w, status, string(body))
 		return
 	}
 
@@ -219,17 +236,17 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 		params := url.Values{"query": {query}}
 		if isRange {
 			if s := r.FormValue("start"); s != "" {
-				params.Set("start", formatVLTimestamp(s))
+				params.Set("start", formatVLStatsTimestamp(s))
 			}
 			if e := r.FormValue("end"); e != "" {
-				params.Set("end", formatVLTimestamp(e))
+				params.Set("end", formatVLStatsTimestamp(e))
 			}
 			if step := r.FormValue("step"); step != "" {
 				params.Set("step", formatVLStep(step))
 			}
 		} else {
 			if t := r.FormValue("time"); t != "" {
-				params.Set("time", formatVLTimestamp(t))
+				params.Set("time", formatVLStatsTimestamp(t))
 			}
 		}
 		return params
@@ -239,28 +256,65 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 	rightIsScalar := translator.IsScalar(rightQL)
 
 	var leftBody, rightBody []byte
-	if leftIsScalar {
-		leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
-	} else {
-		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
-		if e != nil {
-			p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
-			return
-		}
-		defer resp.Body.Close()
-		leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-	}
+	var leftErr, rightErr error
 
-	if rightIsScalar {
-		rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
-	} else {
-		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
-		if e != nil {
-			p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
+	// Run both non-scalar VL fetches concurrently.
+	if !leftIsScalar && !rightIsScalar {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
+			if e != nil {
+				leftErr = e
+				return
+			}
+			defer resp.Body.Close()
+			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}()
+		go func() {
+			defer wg.Done()
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
+			if e != nil {
+				rightErr = e
+				return
+			}
+			defer resp.Body.Close()
+			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}()
+		wg.Wait()
+		if leftErr != nil {
+			p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
 			return
 		}
-		defer resp.Body.Close()
-		rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		if rightErr != nil {
+			p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
+			return
+		}
+	} else {
+		if leftIsScalar {
+			leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
+		} else {
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
+			if e != nil {
+				p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
+				return
+			}
+			defer resp.Body.Close()
+			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}
+
+		if rightIsScalar {
+			rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
+		} else {
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
+			if e != nil {
+				p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
+				return
+			}
+			defer resp.Body.Close()
+			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}
 	}
 
 	// Apply vector matching: on(), ignoring(), group_left(), group_right()
@@ -289,17 +343,17 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 		params := url.Values{"query": {query}}
 		if isRange {
 			if s := r.FormValue("start"); s != "" {
-				params.Set("start", formatVLTimestamp(s))
+				params.Set("start", formatVLStatsTimestamp(s))
 			}
 			if e := r.FormValue("end"); e != "" {
-				params.Set("end", formatVLTimestamp(e))
+				params.Set("end", formatVLStatsTimestamp(e))
 			}
 			if step := r.FormValue("step"); step != "" {
 				params.Set("step", formatVLStep(step))
 			}
 		} else {
 			if t := r.FormValue("time"); t != "" {
-				params.Set("time", formatVLTimestamp(t))
+				params.Set("time", formatVLStatsTimestamp(t))
 			}
 		}
 		return params
@@ -310,29 +364,65 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 	rightIsScalar := translator.IsScalar(rightQL)
 
 	var leftBody, rightBody []byte
+	var leftErr, rightErr error
 
-	if leftIsScalar {
-		leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
-	} else {
-		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
-		if e != nil {
-			p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
+	// Run both non-scalar VL fetches concurrently.
+	if !leftIsScalar && !rightIsScalar {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
+			if e != nil {
+				leftErr = e
+				return
+			}
+			defer resp.Body.Close()
+			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}()
+		go func() {
+			defer wg.Done()
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
+			if e != nil {
+				rightErr = e
+				return
+			}
+			defer resp.Body.Close()
+			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}()
+		wg.Wait()
+		if leftErr != nil {
+			p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
 			return
 		}
-		defer resp.Body.Close()
-		leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-	}
-
-	if rightIsScalar {
-		rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
-	} else {
-		resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
-		if e != nil {
-			p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
+		if rightErr != nil {
+			p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
 			return
 		}
-		defer resp.Body.Close()
-		rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	} else {
+		if leftIsScalar {
+			leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
+		} else {
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
+			if e != nil {
+				p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
+				return
+			}
+			defer resp.Body.Close()
+			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}
+
+		if rightIsScalar {
+			rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
+		} else {
+			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
+			if e != nil {
+				p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
+				return
+			}
+			defer resp.Body.Close()
+			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+		}
 	}
 
 	// Combine results with arithmetic at proxy level
