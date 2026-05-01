@@ -201,7 +201,7 @@ func addStatsByStreamClause(logsqlQuery string) string {
 		return logsqlQuery
 	}
 	statsStart := idx + len("| stats ")
-	return logsqlQuery[:statsStart] + "by (_stream, level) " + logsqlQuery[statsStart:]
+	return logsqlQuery[:statsStart] + "by (_stream) " + logsqlQuery[statsStart:]
 }
 
 func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
