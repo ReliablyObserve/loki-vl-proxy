@@ -80,7 +80,10 @@ func NewOTLPPusher(cfg OTLPConfig, m *Metrics) *OTLPPusher {
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if cfg.TLSSkipVerify {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		// #nosec G402 — operator-explicit override; log a warning so it is visible.
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+		slog.Warn("OTLP TLS verification disabled; MITM attacks on metrics traffic are possible",
+			"endpoint", cfg.Endpoint)
 	}
 
 	logger := slog.Default().With("component", "otlp_metrics")

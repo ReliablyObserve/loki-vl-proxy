@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(security): enable NetworkPolicy by default (`networkPolicy.enabled: true`) with restrictive ingress (Grafana→3100) and egress (VictoriaLogs→9428 + DNS) rules; set `networkPolicy.enabled=false` only when a cluster-wide policy already covers this workload.
+- feat(security): add `.github/dependabot.yml` to auto-update GitHub Actions, Go modules, and the Docker builder base image weekly — keeps supply-chain dependencies current without manual SHA management.
+
 ### Fixed
 
 - fix(proxy): move `withOrgID` / `injectAuthFingerprint` before `preferWorkingParser` in `handleQueryRange` and `handleQuery` so all upstream VictoriaLogs calls (parser-probe, bare-parser fast-path, post-aggregation) carry the correct tenant context and forwarded auth headers.
@@ -16,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(proxy): guard synthetic `service_name` derivation behind `hadStream` so that aggregated `sum by (label)` metrics (e.g. for Drilldown volume include/exclude) contain only the grouping label and never gain an unexpected extra key.
 - fix(proxy): Drilldown volume `targetLabels` filter now applies to all stream labels universally, not only `container`; the `buildVolumeMetric` helper strips any label key absent from the `targetLabels` set regardless of which field was requested.
 - fix(proxy): reject negative window durations in `parseOriginalRangeMetricSpec` — `parseLokiDuration` can return `math.MinInt64` for crafted inputs; guard with `if spec.Window < 0 { return …, false }` prevents downstream shift calculations from overflowing.
+- fix(security): emit `slog.Warn` when OTLP `TLSSkipVerify=true` is active so operators can see the insecure configuration in logs; the flag default remains `false`.
 - fix(helm): complete container-level seccomp hardening — add `seccompProfile: type: RuntimeDefault`, `runAsGroup: 65534` to `containerSecurityContext` in `values.yaml` (pod-level profile was present; container-level is now explicit for stricter admission controllers); align test-connection pod containers with the same full security context (`runAsNonRoot`, `runAsUser`, `runAsGroup`, `seccompProfile`) and add `runAsGroup`/`fsGroup` to the test pod spec.
 - fix(e2e): remove hardcoded `_msg` fields from all JSON-format log generators (`gen_api_gateway`, `gen_auth_service`, `gen_frontend_ssr`, `gen_batch_etl`, `gen_ml_serving`) so that `_inject_vl_msg` can set `_msg` to the full JSON line, ensuring consistent Grafana rendering between Loki and VictoriaLogs.
 - fix(e2e): anchor `sharedWindow` start in explore-contract tests to `ingestionAnchor` (set at the moment `ingestRichTestData` runs) rather than `time.Now()`, preventing the window from drifting past ingested data in slow CI environments.

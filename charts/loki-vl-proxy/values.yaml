@@ -552,8 +552,14 @@ horizontalPodAutoscaling:
           averageUtilization: 70
 
 # --- Network Policy ---
+# Enabled by default to restrict pod-to-pod traffic.
+# The default rules allow:
+#   Ingress — from pods with app.kubernetes.io/name=grafana on port 3100
+#   Egress  — to VictoriaLogs backend on port 9428, plus DNS (53/UDP+TCP)
+# Expand ingress.from to allow other datasource consumers (e.g. other namespaces).
+# Set enabled=false only when the cluster has a global network policy that covers this workload.
 networkPolicy:
-  enabled: false
+  enabled: true
   # Allow ingress from Grafana and other datasource consumers
   ingress:
     - from:
