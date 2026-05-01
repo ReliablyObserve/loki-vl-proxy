@@ -1256,6 +1256,8 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 		effectiveR = r
 	}
 
+	// Call the direct path (no compat layer, no shift gate) since effectiveR
+	// already has the shifted start applied above.
 	buf := &bufferedResponseWriter{}
 	p.proxyStatsQueryRangeDirect(buf, effectiveR, logsqlQuery)
 
