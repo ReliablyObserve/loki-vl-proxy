@@ -136,6 +136,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.metrics.RecordCacheMiss()
+	r = withOrgID(r)
 
 	if p.labelValuesBrowseMode(rawQuery) {
 		if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, search, offset, limit); ok {
