@@ -12,6 +12,8 @@ spec:
   securityContext:
     runAsNonRoot: true
     runAsUser: 65534
+    runAsGroup: 65534
+    fsGroup: 65534
     seccompProfile:
       type: RuntimeDefault
   containers:
@@ -22,6 +24,11 @@ spec:
         allowPrivilegeEscalation: false
         capabilities:
           drop: ["ALL"]
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       command: ['wget']
       args:
         - '--spider'
@@ -34,6 +41,11 @@ spec:
         allowPrivilegeEscalation: false
         capabilities:
           drop: ["ALL"]
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       command: ['wget']
       args:
         - '-qO-'
@@ -46,6 +58,11 @@ spec:
         allowPrivilegeEscalation: false
         capabilities:
           drop: ["ALL"]
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       command: ['wget']
       args:
         - '-qO-'

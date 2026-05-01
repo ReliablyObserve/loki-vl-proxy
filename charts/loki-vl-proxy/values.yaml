@@ -595,6 +595,9 @@ containerSecurityContext:
     drop: ["ALL"]
   runAsNonRoot: true
   runAsUser: 65534
+  runAsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
 
 # --- Scheduling ---
 # Empty by default so the chart remains portable.
