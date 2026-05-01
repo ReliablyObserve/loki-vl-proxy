@@ -397,6 +397,11 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	switch manualFunc {
 	case "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
 		return false
+	case "rate":
+		// VL rate() = count/bucket_duration. Equivalent to LogQL rate()[range]
+		// only when range == step (tumbling == sliding). Fall back to manual
+		// for sliding-window queries where range > step.
+		return !rangeEqualsStep
 	default:
 		return true
 	}
