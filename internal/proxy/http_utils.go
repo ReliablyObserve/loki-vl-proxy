@@ -449,6 +449,56 @@ func reconstructLogLine(msg string, entry map[string]interface{}, streamLabels m
 	return result
 }
 
+// reconstructLogLineWithFlag is the hot-path variant of reconstructLogLine for
+// use in tight per-entry loops where the hasTextExtractionParser result is
+// constant for the entire response and can be precomputed once by the caller.
+func reconstructLogLineWithFlag(msg string, entry map[string]interface{}, streamLabels map[string]string, skipReconstruction bool) string {
+	if skipReconstruction {
+		return msg
+	}
+	hasExtra := false
+	for key := range entry {
+		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+			continue
+		}
+		if _, ok := streamLabels[key]; ok {
+			continue
+		}
+		hasExtra = true
+		break
+	}
+	if !hasExtra {
+		return msg
+	}
+	b := jsonBuilderPool.Get().(*strings.Builder)
+	b.Reset()
+	b.WriteString(`{"_msg":`)
+	msgJSON, _ := json.Marshal(msg)
+	b.Write(msgJSON)
+	for key, value := range entry {
+		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+			continue
+		}
+		if _, ok := streamLabels[key]; ok {
+			continue
+		}
+		sv, ok := stringifyEntryValue(value)
+		if !ok {
+			continue
+		}
+		b.WriteByte(',')
+		keyJSON, _ := json.Marshal(key)
+		b.Write(keyJSON)
+		b.WriteByte(':')
+		valJSON, _ := json.Marshal(sv)
+		b.Write(valJSON)
+	}
+	b.WriteByte('}')
+	result := b.String()
+	jsonBuilderPool.Put(b)
+	return result
+}
+
 // isVLNonLokiLabelField returns true for fields that VictoriaLogs exposes in
 // its field_names endpoint but that should not appear in the Loki /labels API.
 // This includes OTel semantic convention fields that VL stores as regular log

@@ -756,10 +756,20 @@ func metadataFieldMap(fields map[string]string) map[string]string {
 // that are cleared and filled; callers must copy content before the next call
 // (buildStreamValue → metadataFieldMap makes the required copy). exposureCache
 // is a per-batch cache keyed by VL field name to avoid repeated slice allocs.
+// For tight per-entry loops use classifyEntryFieldsWithFlags instead to avoid
+// recomputing parser flags and stream labels on every call.
 func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery string, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string, map[string]string) {
-	stream := parseStreamLabels(asString(entry["_stream"]))
-	labels := make(map[string]string, len(stream))
-	for k, v := range stream {
+	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
+	streamLabels := parseStreamLabels(asString(entry["_stream"]))
+	return p.classifyEntryFieldsWithFlags(entry, streamLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+}
+
+// classifyEntryFieldsWithFlags is the hot-path variant of classifyEntryFields
+// for tight per-entry loops where originalQuery and stream labels are constant.
+// classifyAsParsed and streamLabels must be pre-computed once before the loop.
+func (p *Proxy) classifyEntryFieldsWithFlags(entry map[string]interface{}, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string, map[string]string) {
+	labels := make(map[string]string, len(streamLabels))
+	for k, v := range streamLabels {
 		labels[k] = v
 	}
 	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
@@ -788,7 +798,6 @@ func (p *Proxy) classifyEntryFields(entry map[string]interface{}, originalQuery 
 	for k := range pfBuf {
 		delete(pfBuf, k)
 	}
-	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 
 	for key, value := range entry {
 		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
