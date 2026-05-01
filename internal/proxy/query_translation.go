@@ -1156,11 +1156,42 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 		return false
 	}
 
-	sc := &statusCapture{ResponseWriter: w, code: http.StatusOK}
-	p.proxyStatsQueryRange(sc, r, logsqlQuery)
+	// Shift start back by the range window so VL includes the extra initial bucket
+	// that covers the data Loki uses for the first rate() evaluation point at T0
+	// (Loki reads [T0-window, T0]; VL tumbling window without shift gives [T0, T0+step)).
+	// We capture the response, trim the pre-start points, then forward to the client.
+	origStartNs, hasStart := parseLokiTimeToUnixNano(r.FormValue("start"))
+	var effectiveR *http.Request
+	if hasStart && spec.rangeWindow > 0 {
+		shiftedR := r.Clone(r.Context())
+		_ = shiftedR.ParseForm()
+		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-spec.rangeWindow.Nanoseconds()))
+		effectiveR = shiftedR
+	} else {
+		effectiveR = r
+	}
+
+	buf := &bufferedResponseWriter{}
+	p.proxyStatsQueryRange(buf, effectiveR, logsqlQuery)
+
+	body := buf.body
+	if hasStart && spec.rangeWindow > 0 {
+		body = trimStatsQueryRangeResponseFromStart(body, origStartNs)
+	}
+
+	code := buf.code
+	if code == 0 {
+		code = http.StatusOK
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if code != http.StatusOK {
+		w.WriteHeader(code)
+	}
+	_, _ = w.Write(body)
+
 	elapsed := time.Since(reqStart)
-	p.metrics.RecordRequest("query_range", sc.code, elapsed)
-	p.queryTracker.Record("query_range", originalQuery, elapsed, sc.code >= 400)
+	p.metrics.RecordRequest("query_range", code, elapsed)
+	p.queryTracker.Record("query_range", originalQuery, elapsed, code >= 400)
 	return true
 }
 

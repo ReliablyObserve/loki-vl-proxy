@@ -1359,6 +1359,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	p.log.Debug("query_range request", "logql", logqlQuery)
 
+	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser, bare-parser
+	// paths, post-agg paths) so that the tenant context and forwarded auth headers
+	// are available for all upstream requests made on this request's behalf.
+	r = withOrgID(r)
+	r = p.injectAuthFingerprint(r)
+
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
@@ -1396,9 +1402,6 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.log.Debug("translated query", "logsql", logsqlQuery, "without", withoutLabels)
-
-	r = withOrgID(r)
-	r = p.injectAuthFingerprint(r)
 
 	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
 	var (
@@ -1512,6 +1515,11 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser and all
+	// early-return compat paths) so that tenant context is set for upstream requests.
+	r = withOrgID(r)
+	r = p.injectAuthFingerprint(r)
+
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
@@ -1553,9 +1561,6 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
 		return
 	}
-
-	r = withOrgID(r)
-	r = p.injectAuthFingerprint(r)
 
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}

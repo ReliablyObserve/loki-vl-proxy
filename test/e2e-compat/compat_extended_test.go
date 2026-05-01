@@ -14,13 +14,20 @@ import (
 	"time"
 )
 
-var extendedSetupOnce sync.Once
+var (
+	extendedSetupOnce sync.Once
+	// ingestionAnchor is the nominal timestamp of the ingested test data.
+	// ingestRichTestData uses now-3m; capture it so sharedWindow can build a
+	// query window anchored on the actual data timestamp rather than test-run time.
+	ingestionAnchor time.Time
+)
 
 func ensureDataIngested(t *testing.T) {
 	t.Helper()
 	extendedSetupOnce.Do(func() {
 		waitForReady(t, proxyURL+"/ready", 30*time.Second)
 		waitForReady(t, lokiURL+"/ready", 30*time.Second)
+		ingestionAnchor = time.Now().Add(-3 * time.Minute)
 		ingestRichTestData(t)
 		waitForLokiMetricData(t)
 	})

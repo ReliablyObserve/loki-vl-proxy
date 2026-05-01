@@ -118,16 +118,15 @@ func TestExplore_HTTPQueryRangeContracts(t *testing.T) {
 	// sharedWindow builds url.Values with shared start/end timestamps so that
 	// proxy and Loki query the identical time window. Key design choices:
 	//   - end = now-30s  → both backends have fully committed in-flight writes
-	//   - start = now-5m → api-gateway line count stays well under the 1000
-	//     limit; if limit is hit, both backends return different subsets and the
-	//     filter comparison diverges even with identical underlying data
-	//   - testdata is pushed at now-3m so it falls inside this window
+	//   - start = ingestionAnchor-2m → anchored to when ingestRichTestData ran,
+	//     so the window always covers ingested data regardless of test duration;
+	//     using time.Now()-5m could miss data if setup + tests take >2 minutes
+	//   - testdata is pushed at ingestionAnchor so it always falls inside this window
 	sharedWindow := func(query string) url.Values {
-		now := time.Now()
 		p := url.Values{}
 		p.Set("query", query)
-		p.Set("start", fmt.Sprintf("%d", now.Add(-5*time.Minute).UnixNano()))
-		p.Set("end", fmt.Sprintf("%d", now.Add(-30*time.Second).UnixNano()))
+		p.Set("start", fmt.Sprintf("%d", ingestionAnchor.Add(-2*time.Minute).UnixNano()))
+		p.Set("end", fmt.Sprintf("%d", time.Now().Add(-30*time.Second).UnixNano()))
 		p.Set("limit", "1000")
 		return p
 	}

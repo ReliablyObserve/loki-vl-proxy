@@ -65,10 +65,25 @@ type statsQueryRangeResponse struct {
 }
 
 func buildStatsQueryRangeParams(logsqlQuery, startRaw, endRaw, stepRaw string) url.Values {
+	return buildStatsQueryRangeParamsShifted(logsqlQuery, startRaw, endRaw, stepRaw, 0)
+}
+
+// buildStatsQueryRangeParamsShifted builds VL stats params, optionally shifting
+// start back by shiftStart nanoseconds. Used by bare-parser metric fast path to
+// include the pre-start bucket required by Loki's first rate() evaluation point.
+func buildStatsQueryRangeParamsShifted(logsqlQuery, startRaw, endRaw, stepRaw string, shiftStart int64) url.Values {
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if s := strings.TrimSpace(startRaw); s != "" {
-		params.Set("start", formatVLStatsTimestamp(s))
+		if shiftStart > 0 {
+			if ns, ok := parseLokiTimeToUnixNano(s); ok {
+				params.Set("start", nanosToVLTimestamp(ns-shiftStart))
+			} else {
+				params.Set("start", formatVLStatsTimestamp(s))
+			}
+		} else {
+			params.Set("start", formatVLStatsTimestamp(s))
+		}
 	}
 	if e := strings.TrimSpace(endRaw); e != "" {
 		if extendedEnd, ok := extendStatsQueryRangeEnd(e, stepRaw); ok {
@@ -93,6 +108,47 @@ func extendStatsQueryRangeEnd(endRaw, stepRaw string) (string, bool) {
 		return "", false
 	}
 	return nanosToVLTimestamp(endNs + stepDur.Nanoseconds()), true
+}
+
+// trimStatsQueryRangeResponseFromStart removes points with timestamp < startNs.
+// Used when start was shifted back to include the pre-start bucket for rate().
+func trimStatsQueryRangeResponseFromStart(body []byte, startNs int64) []byte {
+	var resp statsQueryRangeResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return body
+	}
+	results := resp.Results
+	target := &resp.Results
+	if len(results) == 0 {
+		results = resp.Data.Result
+		target = &resp.Data.Result
+	}
+	if len(results) == 0 {
+		return body
+	}
+	changed := false
+	trimmed := make([]statsQueryRangeSeries, 0, len(results))
+	for _, series := range results {
+		filtered := make([][]interface{}, 0, len(series.Values))
+		for _, point := range series.Values {
+			if statsQueryRangePointUnixNano(point) >= startNs {
+				filtered = append(filtered, point)
+				continue
+			}
+			changed = true
+		}
+		series.Values = filtered
+		trimmed = append(trimmed, series)
+	}
+	if !changed {
+		return body
+	}
+	*target = trimmed
+	encoded, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return encoded
 }
 
 func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
