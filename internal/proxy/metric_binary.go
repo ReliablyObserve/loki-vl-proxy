@@ -82,10 +82,12 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 }
 
 // statsRateRangeEqualsStepShift detects whether the query contains a rate() or
-// bytes_rate() with range==step so that proxyStatsQueryRange can apply the
-// first-bucket shift. The check scans the full expression (not just the
-// top-level function) so outer aggregations like sum by(x)(rate(...)) and
-// binary expressions are also detected.
+// bytes_rate() with range==step so that the caller can apply the first-bucket
+// start shift. The check scans the full expression (not just the top-level
+// function) so outer aggregations like sum by(x)(rate(...)) are detected.
+// NOTE: binary metric expressions (e.g. rate({a}[1m]) / rate({b}[1m])) are
+// routed through proxyBinaryMetric before reaching this function; apply the
+// shift there independently (see proxyBinaryMetric / proxyBinaryMetricVM).
 // Returns (spec, origStartNs, true) when shifting is needed.
 func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origSpec originalRangeMetricSpec, origStartNs int64, ok bool) {
 	spec, hasSpec := parseOriginalRangeMetricSpec(originalLogql)
@@ -120,7 +122,10 @@ type statsQueryRangeSeries struct {
 }
 
 type statsQueryRangeResponse struct {
-	Data struct {
+	// Status is preserved so that trimStatsQueryRangeResponseFromStart does not
+	// drop the Loki envelope "status":"success" field when re-marshalling.
+	Status string `json:"status,omitempty"`
+	Data   struct {
 		ResultType string                  `json:"resultType,omitempty"`
 		Result     []statsQueryRangeSeries `json:"result"`
 	} `json:"data"`
@@ -351,11 +356,29 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 	}
 
 	isRange := vlEndpoint == "stats_query_range"
+
+	// Apply first-bucket shift if the original LogQL contains rate/bytes_rate with range==step.
+	var origStartNs, shiftNs int64
+	if isRange {
+		if origSpec, startNs, ok := statsRateRangeEqualsStepShift(r.FormValue("query"), r); ok {
+			origStartNs = startNs
+			shiftNs = origSpec.Window.Nanoseconds()
+		}
+	}
+
 	buildParams := func(query string) url.Values {
 		params := url.Values{"query": {query}}
 		if isRange {
 			if s := r.FormValue("start"); s != "" {
-				params.Set("start", formatVLStatsTimestamp(s))
+				if shiftNs > 0 {
+					if ns, ok2 := parseLokiTimeToUnixNano(s); ok2 {
+						params.Set("start", nanosToVLTimestamp(ns-shiftNs))
+					} else {
+						params.Set("start", formatVLStatsTimestamp(s))
+					}
+				} else {
+					params.Set("start", formatVLStatsTimestamp(s))
+				}
 			}
 			if e := r.FormValue("end"); e != "" {
 				params.Set("end", formatVLStatsTimestamp(e))
@@ -451,6 +474,10 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 		result = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
 	}
 
+	if origStartNs > 0 {
+		result = trimStatsQueryRangeResponseFromStart(result, origStartNs)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
@@ -458,11 +485,28 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL, vlEndpoint, resultType string) {
 	isRange := vlEndpoint == "stats_query_range"
 
+	// Apply first-bucket shift if the original LogQL contains rate/bytes_rate with range==step.
+	var origStartNs, shiftNs int64
+	if isRange {
+		if origSpec, startNs, ok := statsRateRangeEqualsStepShift(r.FormValue("query"), r); ok {
+			origStartNs = startNs
+			shiftNs = origSpec.Window.Nanoseconds()
+		}
+	}
+
 	buildParams := func(query string) url.Values {
 		params := url.Values{"query": {query}}
 		if isRange {
 			if s := r.FormValue("start"); s != "" {
-				params.Set("start", formatVLStatsTimestamp(s))
+				if shiftNs > 0 {
+					if ns, ok2 := parseLokiTimeToUnixNano(s); ok2 {
+						params.Set("start", nanosToVLTimestamp(ns-shiftNs))
+					} else {
+						params.Set("start", formatVLStatsTimestamp(s))
+					}
+				} else {
+					params.Set("start", formatVLStatsTimestamp(s))
+				}
 			}
 			if e := r.FormValue("end"); e != "" {
 				params.Set("end", formatVLStatsTimestamp(e))
@@ -546,6 +590,9 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 
 	// Combine results with arithmetic at proxy level
 	result := combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
+	if origStartNs > 0 {
+		result = trimStatsQueryRangeResponseFromStart(result, origStartNs)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)

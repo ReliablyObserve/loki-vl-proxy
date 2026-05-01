@@ -202,14 +202,19 @@ func TestChaining_MetricQuerySumByAfterJSONParser(t *testing.T) {
 			if lokiData["resultType"] != "matrix" || proxyData["resultType"] != "matrix" {
 				t.Fatalf("expected matrix, loki=%v proxy=%v", lokiData["resultType"], proxyData["resultType"])
 			}
+			// Verify top-level status field is present in proxy response.
+			if proxyResult.JSON["status"] != "success" {
+				t.Errorf("%s: proxy response missing status:success, got %v", tc.name, proxyResult.JSON["status"])
+			}
 			lokiFlat := flattenMatrixResult(t, lokiData["result"])
 			proxyFlat := flattenMatrixResult(t, proxyData["result"])
-			if len(lokiFlat) != len(proxyFlat) {
-				t.Logf("%s: series point count mismatch loki=%d proxy=%d (checking intersection)", tc.name, len(lokiFlat), len(proxyFlat))
+			if len(proxyFlat) < len(lokiFlat) {
+				t.Errorf("%s: proxy returned fewer points than Loki (loki=%d proxy=%d) — missing buckets indicate a regression", tc.name, len(lokiFlat), len(proxyFlat))
 			}
 			for key, lokiVal := range lokiFlat {
 				proxyVal, ok := proxyFlat[key]
 				if !ok {
+					t.Errorf("%s: proxy missing point %s present in Loki response", tc.name, key)
 					continue
 				}
 				if math.Abs(lokiVal-proxyVal) > 0.01 {

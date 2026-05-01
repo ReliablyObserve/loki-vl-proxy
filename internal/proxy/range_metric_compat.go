@@ -264,7 +264,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	}
 	step, _ := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := step > 0 && origSpec.Window > 0 && origSpec.Window == step
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep, originalLogql) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -294,7 +294,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	}
 	// Instant queries have no step — keep manual path for rate() to preserve
 	// sliding-window semantics (the window defines the lookback, not a bucket).
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, false) {
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, false, originalLogql) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -316,7 +316,11 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 // step. When true, VL's native rate() — which buckets by the step interval —
 // is semantically identical to LogQL rate()[range]. Pass false to keep the
 // sliding-window manual path for cases where range != step.
-func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsStep bool) bool {
+//
+// originalLogql is the original LogQL query string. When it contains "__error__"
+// (e.g., via `| drop __error__`), the caller has explicitly handled parse errors,
+// making VL native stats semantically correct even for count-like operations.
+func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsStep bool, originalLogql string) bool {
 	manualFunc = strings.TrimSpace(manualFunc)
 	if manualFunc == "rate_counter" {
 		return true
@@ -324,17 +328,35 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	if !queryUsesParserStages(baseQuery) {
 		return false
 	}
-	// VL stats_query_range handles all of these natively — including numeric
-	// fields from parsed stages — without needing client-side unwrap aggregation.
-	// Only rate_counter must stay on the manual path (monotonic counter semantics).
+	// The translated query contains parser stages (unpack_json/unpack_logfmt/extract*).
+	// VL's unpack pipes do not model Loki's __error__ filtering: Loki excludes lines
+	// that fail to parse via the __error__ label; VL may include them.
+	//
+	// For count-like operations this difference is directly observable — non-parseable
+	// lines inflate the count. Force manual log-fetch unless the original LogQL
+	// explicitly handles __error__ (the user has opted into counting all lines) or the
+	// range == step optimization applies (VL tumbling window is semantically identical).
+	//
+	// Unwrap-based aggregations (avg, sum, max, min, …) require the unwrapped field
+	// to be present in the parsed entry; lines that fail to parse naturally produce
+	// no value and are excluded, so the semantic risk is much lower.
 	switch manualFunc {
-	case "count_over_time", "bytes_over_time", "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
-		return false
-	case "rate":
-		// VL rate() = count/bucket_duration. Equivalent to LogQL rate()[range]
-		// only when range == step (tumbling == sliding). Fall back to manual
-		// for sliding-window queries where range > step.
-		return !rangeEqualsStep
+	case "rate", "bytes_rate":
+		// When range == step, VL's native rate/bytes_rate with the first-bucket shift
+		// is semantically identical to LogQL. Use native stats path.
+		if rangeEqualsStep {
+			return false
+		}
+		return true
+	case "count_over_time", "bytes_over_time":
+		// If the original LogQL explicitly references __error__ (e.g., `| drop __error__`),
+		// the user has opted into counting all lines; VL native stats is correct.
+		if strings.Contains(originalLogql, "__error__") {
+			return false
+		}
+		return true // parser failures would inflate counts without explicit __error__ handling
+	case "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
+		return false // unwrap-based; field absence filters naturally
 	default:
 		return true
 	}
@@ -535,6 +557,9 @@ func queryUsesParserStages(baseQuery string) bool {
 		return true
 	}
 	if strings.Contains(baseQuery, "| extract ") {
+		return true
+	}
+	if strings.Contains(baseQuery, "| extract_regexp ") {
 		return true
 	}
 	return false

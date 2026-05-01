@@ -48,23 +48,29 @@ func TestCompatHelpers_ParseQuantileAndUnwrapErrorName(t *testing.T) {
 	if metricFuncRequiresUnwrap("count_over_time") {
 		t.Fatal("expected count_over_time not to require unwrap")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "avg", false) {
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "avg", false, "") {
 		t.Fatal("expected parser-stage avg to use VL stats_query_range, not manual NDJSON fallback")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false) {
-		t.Fatal("expected parser-stage count_over_time to stay on direct stats path")
+	// count_over_time with parser stages uses manual path to avoid __error__ inflation.
+	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, "") {
+		t.Fatal("expected parser-stage count_over_time to use manual path (parser failures inflate counts)")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"}`, "avg", false) {
+	// When the original LogQL explicitly drops __error__, the caller handles parse errors;
+	// VL native stats is semantically correct.
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, `count_over_time({app="api"} | json | drop __error__ [5m])`) {
+		t.Fatal("expected count_over_time with explicit __error__ handling to use VL native stats")
+	}
+	if shouldUseManualRangeMetricCompat(`{app="api"}`, "avg", false, "") {
 		t.Fatal("expected non-parser query not to use manual fallback for avg")
 	}
-	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "rate_counter", false) {
+	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "rate_counter", false, "") {
 		t.Fatal("expected rate_counter to always use manual fallback")
 	}
 	// rate with parser stages: manual when range != step, native VL when range == step
-	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", false) {
+	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", false, "") {
 		t.Fatal("expected parser-stage rate to use manual fallback when range != step")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", true) {
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", true, "") {
 		t.Fatal("expected parser-stage rate to use VL native stats when range == step")
 	}
 }
