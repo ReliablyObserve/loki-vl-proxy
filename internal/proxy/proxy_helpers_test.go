@@ -83,16 +83,16 @@ func TestProxyHelpers_CanonicalReadCacheKey_NormalizesDetectedLimitsAndDefaults(
 	}
 }
 
-func TestProxyHelpers_AddStatsByStreamClause_PreservesLevelIdentity(t *testing.T) {
+func TestProxyHelpers_AddStatsByStreamClause_PreservesStreamIdentity(t *testing.T) {
 	got := addStatsByStreamClause(`app:=api-gateway | stats count()`)
-	if got != `app:=api-gateway | stats by (_stream, level) count()` {
+	if got != `app:=api-gateway | stats by (_stream) count()` {
 		t.Fatalf("unexpected stats identity clause: %q", got)
 	}
 }
 
-func TestProxyHelpers_PreserveMetricStreamIdentity_UsesStreamAndLevelForBareMetrics(t *testing.T) {
+func TestProxyHelpers_PreserveMetricStreamIdentity_UsesStreamForBareMetrics(t *testing.T) {
 	got := preserveMetricStreamIdentity(`rate({app="api-gateway"} |= "GET"[5m])`, `app:=api-gateway ~"GET" | stats rate()`, nil)
-	if got != `app:=api-gateway ~"GET" | stats by (_stream, level) rate()` {
+	if got != `app:=api-gateway ~"GET" | stats by (_stream) rate()` {
 		t.Fatalf("unexpected preserved metric query: %q", got)
 	}
 }
