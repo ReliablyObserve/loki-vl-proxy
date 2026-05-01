@@ -342,6 +342,36 @@ func buildEntryLabels(entry map[string]interface{}) map[string]string {
 	return labels
 }
 
+// buildEntryLabelsWithStream is like buildEntryLabels but accepts an already-parsed
+// stream map to avoid a redundant parseStreamLabels call in hot paths.
+func buildEntryLabelsWithStream(entry map[string]interface{}, stream map[string]string) map[string]string {
+	labels := make(map[string]string, len(stream))
+	for k, v := range stream {
+		labels[k] = v
+	}
+	for key, value := range entry {
+		if isVLInternalField(key) || key == "_stream_id" {
+			continue
+		}
+		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
+			labels[key] = s
+		}
+	}
+	if labels["level"] != "" {
+		delete(labels, "detected_level")
+	}
+	if labels["level"] == "" && labels["detected_level"] == "" {
+		if msgStr, ok := entry["_msg"].(string); ok {
+			if lvl, ok := extractLevelFromMsg(msgStr); ok {
+				labels["level"] = lvl
+			}
+		}
+	}
+	ensureDetectedLevel(labels)
+	ensureSyntheticServiceName(labels)
+	return labels
+}
+
 // detectedLabelsBufPool pools map[string]string for fillDetectedLabels callers
 // that iterate the result immediately and discard it within the same loop tick.
 var detectedLabelsBufPool = sync.Pool{

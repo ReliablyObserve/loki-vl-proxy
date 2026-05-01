@@ -379,9 +379,11 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		// context is available here — pass empty string so only auto-ingestion
 		// fields are reconstructed (no text-extraction parser stages present).
 		tailStreamLabels := parseStreamLabels(asString(entry["_stream"]))
-		msg = reconstructLogLine(msg, entry, tailStreamLabels, "")
+		if len(entry) > len(tailStreamLabels)+5 {
+			msg = reconstructLogLine(msg, entry, tailStreamLabels, "")
+		}
 
-		labels := buildEntryLabels(entry)
+		labels := buildEntryLabelsWithStream(entry, tailStreamLabels)
 		streamKey := canonicalLabelsKey(labels)
 
 		se, ok := streamMap[streamKey]
@@ -508,7 +510,9 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		// Compute stream descriptor first so reconstructLogLine can reuse the
 		// already-parsed stream labels instead of re-parsing _stream itself.
 		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
-		msg = reconstructLogLine(msg, entry, desc.rawLabels, originalQuery)
+		if len(entry) > len(desc.rawLabels)+5 {
+			msg = reconstructLogLine(msg, entry, desc.rawLabels, originalQuery)
+		}
 		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 		se, ok := streamMap[desc.key]
 		if !ok {
