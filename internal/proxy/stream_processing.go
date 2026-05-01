@@ -659,7 +659,7 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 }
 
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {
-	if len(exposureCache) == 0 {
+	if exposureCache == nil {
 		return p.metadataFieldExposures(vlField)
 	}
 	if exposures, ok := exposureCache[vlField]; ok {
