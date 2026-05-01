@@ -636,6 +636,25 @@ func (p *Proxy) forwardedAuthFingerprint(r *http.Request) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
+// injectAuthFingerprint precomputes the forwardedAuthFingerprint for r and
+// stores it in the request context. Call this once at the handler entry point
+// (after withOrgID) so every downstream cache-key helper pays only a
+// context.Value lookup instead of a full header-parse + SHA-256.
+func (p *Proxy) injectAuthFingerprint(r *http.Request) *http.Request {
+	fp := p.forwardedAuthFingerprint(r)
+	return r.WithContext(context.WithValue(r.Context(), authFingerprintKey, fp))
+}
+
+// fingerprintFromCtx returns the memoized auth fingerprint from r's context if
+// injectAuthFingerprint was called earlier in the request chain, otherwise falls
+// back to computing it live. Safe to call even when no fingerprint was injected.
+func (p *Proxy) fingerprintFromCtx(ctx context.Context, r *http.Request) string {
+	if v, ok := ctx.Value(authFingerprintKey).(string); ok {
+		return v
+	}
+	return p.forwardedAuthFingerprint(r)
+}
+
 func normalizeBackendCompression(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case "", "auto":

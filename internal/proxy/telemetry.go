@@ -18,6 +18,7 @@ const (
 	requestTelemetryKey
 	requestRouteMetaKey
 	requestGrafanaClientKey
+	authFingerprintKey // memoized forwardedAuthFingerprint result; set by injectAuthFingerprint
 )
 
 type requestTelemetry struct {

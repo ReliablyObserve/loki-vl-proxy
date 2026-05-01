@@ -120,7 +120,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	}
 	patternLimit := parsePatternLimit(r.FormValue("limit"))
 	sourceLimit := parsePatternSourceLineLimit(r.FormValue("line_limit"), startParam, endParam, stepParam)
-	authFP := p.forwardedAuthFingerprint(r)
+	authFP := p.fingerprintFromCtx(r.Context(), r)
 	cacheLookupKeys := []string{p.patternsAutodetectCacheKey(orgID, authFP, query, startParam, endParam, requestStepParam)}
 	if requestStepParam == "" {
 		if derived := p.patternsAutodetectCacheKey(orgID, authFP, query, startParam, endParam, stepParam); derived != "" {

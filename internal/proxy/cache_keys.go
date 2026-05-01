@@ -37,7 +37,7 @@ func (p *Proxy) canonicalReadCacheKey(endpoint, orgID string, r *http.Request, e
 	// Include the per-user auth fingerprint so requests with different forwarded
 	// credentials land in different cache namespaces.
 	if r != nil {
-		if fp := p.forwardedAuthFingerprint(r); fp != "" {
+		if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 			extraParts = append(extraParts, "auth:"+fp)
 		}
 	}

@@ -1398,6 +1398,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	p.log.Debug("translated query", "logsql", logsqlQuery, "without", withoutLabels)
 
 	r = withOrgID(r)
+	r = p.injectAuthFingerprint(r)
 
 	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
 	var (
@@ -1484,7 +1485,7 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 		rawQuery = b.String()
 	}
 	key := "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + rawQuery + ":" + p.tupleModeCacheKey(r)
-	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		key += ":auth:" + fp
 	}
 	return key
@@ -1554,6 +1555,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r = withOrgID(r)
+	r = p.injectAuthFingerprint(r)
 
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}

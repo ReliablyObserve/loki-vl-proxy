@@ -81,7 +81,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	}
 	p.storeAutodetectedPatterns(
 		r.Header.Get("X-Scope-OrgID"),
-		p.forwardedAuthFingerprint(r),
+		p.fingerprintFromCtx(r.Context(), r),
 		r.FormValue("query"),
 		r.FormValue("start"),
 		r.FormValue("end"),

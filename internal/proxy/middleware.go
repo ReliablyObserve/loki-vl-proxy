@@ -297,7 +297,7 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 		return "", false
 	}
 	key := "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + r.URL.RawQuery
-	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		key += ":auth:" + fp
 	}
 	return key, true
