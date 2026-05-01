@@ -88,6 +88,61 @@ The simplest way to understand the cache stack is by operational outcome:
 
 This is the difference between “it speaks Loki” and “it feels like Loki at runtime.” The project is designed to preserve Loki-compatible UX while reducing repeated backend work aggressively.
 
+## VictoriaLogs Native Stats Offloading
+
+The proxy routes as much metric aggregation as possible to VL's native `/select/logsql/stats_query_range` endpoint, which returns a Prometheus-compatible matrix directly. This eliminates the most expensive proxy path: fetching all raw log lines and aggregating them in-process.
+
+### VL Native Stats API — Feature Timeline
+
+| Feature | Added in VL | Release date | Notes |
+|---|---|---|---|
+| `/select/logsql/stats_query` | v0.29.0 | 2024-09-08 | Instant stats, Prometheus vector format |
+| `/select/logsql/stats_query_range` | v0.29.0 | 2024-09-08 | Range stats, Prometheus matrix format — used by Grafana |
+| `count`, `sum`, `avg`, `min`, `max`, `quantile`, `stddev` | v0.29.0 | 2024-09-08 | In stats pipe |
+| `rate()` and `rate_sum()` | v1.2.0 | 2024-12-06 | Native per-second rate — no proxy aggregation needed |
+| `rate_sum(prefix*)` prefix wildcard | v1.25.0 | 2025-07-07 | |
+
+The proxy's minimum tracked capability profile is `vl-v1.30-plus`. All features above are available on every backend the proxy supports — no version gating required for stats offloading.
+
+### LogQL → VL Native Stats Mapping
+
+| LogQL metric | VL LogsQL (`stats_query_range`) | Condition |
+|---|---|---|
+| `count_over_time({...}[r]) by (l)` | `{...} \| stats by (l) count()` | always |
+| `rate({...}[r]) by (l)` | `{...} \| stats by (l) rate()` | range == step |
+| `bytes_over_time({...}[r]) by (l)` | `{...} \| stats by (l) sum_len(_msg)` | always |
+| `sum_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) sum(f)` | always |
+| `avg_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) avg(f)` | always |
+| `quantile_over_time(q, {...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) quantile(q, f)` | always |
+| `max_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) max(f)` | always |
+| `min_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) min(f)` | always |
+| `stddev_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) stddev(f)` | always |
+| `bytes_rate({...}[r])` | — | manual path (VL has no native bytes/s stat without a numeric field) |
+| `rate_counter({...}\|unwrap f [r])` | — | manual path (monotonic counter reset detection required) |
+
+**`rate()` condition — range == step:** VL's `rate()` computes count/bucket_duration per step interval (tumbling window). LogQL's `rate({...}[r])` computes over a sliding `r` window. These are semantically identical when `r == step`, which is Grafana's default with `$__interval`. Fixed ranges that differ from the step keep the proxy sliding-window path.
+
+### Query Routing Decision
+
+The proxy chooses between native VL stats and the manual log-fetch path based on:
+
+```
+LogQL metric query
+  │
+  ├─ has parser stage (| json, | logfmt, etc.)?
+  │   ├─ NO  → native VL stats (translator emits | stats …)
+  │   └─ YES + function in native list → native VL stats
+  │            function = rate + range == step → native VL stats
+  │            function = rate + range != step → manual sliding-window path
+  │            function = rate_counter → always manual
+  │
+  └─ outer aggregation (sum/avg/topk)?
+      ├─ topk/bottomk/sort → native VL stats + post-filter in proxy
+      └─ sum/avg/min/max by (labels) → folded into | stats by (labels) …
+```
+
+**Why this matters:** the manual path fetches every matching log line from VL (`/select/logsql/query`), buffers them in proxy RAM, and computes rates/sums per step window. A 30-second `query_range` at `step=60s` with 1 M logs/min fetches 30 M lines; the same query via `stats_query_range` returns 30 aggregated data points. The performance ratio scales with log volume.
+
 ## Query-Range Tuning (Long-Range Efficiency)
 
 Default tuning pattern:

@@ -167,37 +167,39 @@ Long-range memory parity (c=50, c=100) reflects the GOMEMLIMIT=2 GiB fix applied
 
 Every worker gets a distinct non-overlapping time window. This defeats both the singleflight coalescer and the response cache. What remains is raw proxy overhead: LogQL→LogsQL translation (~5 µs) + HTTP proxying + response shaping.
 
-Note: small c=10 and c=50 proxy numbers from this run are invalid (restart mid-run caused 99%+ errors). Only small c=100 and all heavy/long\_range/compute results are valid.
-
 ### Throughput (req/s)
 
 | Workload | Concurrency | Loki | Proxy cold | VL native | Proxy / Loki |
 |----------|:-----------:|-----:|-----------:|----------:|:------------:|
-| small | 100 | 2,110 | 1,528 | 4,034 | 0.72× |
+| small | 10 | 1,658 | 1,414 | 2,865 | 0.85× |
+| small | 50 | 2,257 | 2,273 | 4,250 | **1.01× (parity)** |
+| small | 100 | 2,110 | 2,432 | 4,006 | **1.15×** |
 | heavy | 10 | 282 | 196 | 852 | 0.69× |
 | heavy | 50 | 219 | 234 | 1,005 | **1.07× (parity)** |
 | heavy | 100 | 270 | 233 | 1,030 | 0.86× |
 | long\_range | 10 | 9 | 19 | 82 | **2.06×** |
 | long\_range | 50 | 9 | 19 | 84 | **2.05×** |
 | long\_range | 100 | 13 | 24 | 85 | **1.86×** |
-| compute | 10 | 2,281 | 196 | 1,380 | 0.09× |
-| compute | 50 | 1,633 | 233 | 1,372 | 0.14× |
-| compute | 100 | 899 | 211 | 1,331 | 0.23× |
+| compute | 10 | 2,281 | 352 | 1,462 | 0.15× |
+| compute | 50 | 1,633 | 336 | 1,455 | 0.21× |
+| compute | 100 | 899 | 366 | 1,431 | 0.41× |
 
 ### P50 latency (unique-windows)
 
 | Workload | Concurrency | Loki | Proxy cold | VL native |
 |----------|:-----------:|-----:|-----------:|----------:|
-| small | 100 | 46 ms | 14 ms | 6 ms |
+| small | 10 | 4 ms | 5 ms | 1 ms |
+| small | 50 | 20 ms | 15 ms | 4 ms |
+| small | 100 | 46 ms | 26 ms | 5 ms |
 | heavy | 10 | 6 ms | 17 ms | 7 ms |
 | heavy | 50 | 38 ms | 100 ms | 35 ms |
 | heavy | 100 | 16 ms | 262 ms | 82 ms |
 | long\_range | 10 | 464 ms | 39 ms | 99 ms |
 | long\_range | 50 | 5,041 ms | 2,060 ms | 392 ms |
 | long\_range | 100 | 4,276 ms | 3,068 ms | 826 ms |
-| compute | 10 | 1 ms | 22 ms | 7 ms |
-| compute | 50 | 4 ms | 154 ms | 29 ms |
-| compute | 100 | 6 ms | 394 ms | 67 ms |
+| compute | 10 | 1 ms | 10 ms | 6 ms |
+| compute | 50 | 4 ms | 107 ms | 28 ms |
+| compute | 100 | 6 ms | 261 ms | 63 ms |
 
 ### CPU consumed (unique-windows, cpu·s over 30 s)
 
@@ -235,13 +237,13 @@ Note: small c=10 and c=50 proxy numbers from this run are invalid (restart mid-r
 
 What determines proxy performance when cache and coalescer provide no help:
 
-**Small (metadata):** Proxy reaches ~72% of Loki throughput at c=100. The overhead is the extra HTTP hop and envelope conversion on top of VL, which is itself faster than Loki. With any cache warmth, this reverses strongly (12× warm).
+**Small (metadata):** Proxy reaches parity with Loki at c=50 and **beats Loki by 15% at c=100** (2,432 vs 2,110 req/s). VL native is ~1.7× faster than both (4,006 req/s); the proxy's extra HTTP hop and envelope conversion is the gap between proxy and raw VL. With any cache warmth, this reverses strongly (12× warm).
 
 **Heavy (pipeline queries):** At c=50, proxy is at parity with Loki (1.07×). VL is faster than Loki for these queries even when every query is unique — the proxy's translation cost is ~5 µs, which is below measurement noise relative to VL response times.
 
 **Long-range (6 h–72 h windows):** Proxy is **1.86–2.06× faster than Loki even cold**. VL's parallel window fetching within the proxy — splitting long ranges into parallel 1 h sub-windows — completes before Loki can scan its chunk store sequentially. This advantage is structural and does not require cache.
 
-**Compute (metric aggregations):** Proxy runs at 9–23% of Loki throughput cold. This is a structural limit: LogQL `rate()`, `sum by()`, and `quantile_over_time()` have no VL-native equivalent. The proxy must decompose each metric query into N raw log fetches and aggregate locally. With warm cache (24 h TTL on historical windows), compute queries hit cache on repeat and the structural overhead disappears. For analytical workloads with unique queries every time, expect this gap to persist.
+**Compute (metric aggregations):** Proxy runs at 15–41% of Loki throughput cold, improving with higher concurrency. VL native runs compute at 1,431–1,462 req/s; the gap between VL native and proxy (366 vs 1,431 at c=100) is the cost of aggregation in the proxy: LogQL `rate()`, `sum by()`, and `quantile_over_time()` have no VL-native equivalent, so the proxy decomposes each metric query into N raw log fetches and aggregates locally. With warm cache (24 h TTL on historical windows), compute queries hit cache on repeat and the structural overhead disappears. For analytical workloads with unique queries every time, expect this gap to persist.
 
 ---
 

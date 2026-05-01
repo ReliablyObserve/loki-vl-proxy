@@ -690,6 +690,8 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	if end != "" {
 		params.Set("end", formatVLTimestamp(end))
 	}
+	// Keep consistent with collectRangeMetricSamples to avoid unbounded reads.
+	params.Set("limit", "1000000")
 
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
@@ -1346,9 +1348,15 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 				delete(syntheticLabels, "level")
 				delete(translated, "level")
 			}
-			ensureSyntheticServiceName(syntheticLabels)
-			if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
-				delete(syntheticLabels, "service_name")
+			// Only synthesize service_name for raw stream metrics (hadStream=true).
+			// For aggregated results like "sum by (container)", the metric should only
+			// contain the by() labels — adding service_name derived from container would
+			// cause Drilldown include/exclude to fail because the extra label is unexpected.
+			if hadStream {
+				ensureSyntheticServiceName(syntheticLabels)
+				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
+					delete(syntheticLabels, "service_name")
+				}
 			}
 			if len(syntheticLabels) != beforeSyntheticCount {
 				changed = true
