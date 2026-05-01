@@ -23,6 +23,36 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
+	// For rate() with range==step: VL tumbling windows miss the pre-window data
+	// for the first evaluation point (Loki uses a sliding window [T0-W, T0];
+	// VL gives [T0, T0+W)). Shift start back by W, call the direct path, then
+	// trim the extra leading bucket from the response.
+	if origSpec, origStartNs, ok := statsRateRangeEqualsStepShift(originalLogql, r); ok {
+		buf := &bufferedResponseWriter{}
+		shiftedR := r.Clone(r.Context())
+		_ = shiftedR.ParseForm()
+		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-origSpec.Window.Nanoseconds()))
+		p.proxyStatsQueryRangeDirect(buf, shiftedR, logsqlQuery)
+		body := trimStatsQueryRangeResponseFromStart(buf.body, origStartNs)
+		code := buf.code
+		if code == 0 {
+			code = http.StatusOK
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if code != http.StatusOK {
+			w.WriteHeader(code)
+		}
+		_, _ = w.Write(body)
+		return
+	}
+
+	p.proxyStatsQueryRangeDirect(w, r, logsqlQuery)
+}
+
+// proxyStatsQueryRangeDirect issues the VL stats_query_range request directly,
+// bypassing the compat layer and the rate-shift gate. Call this when the caller
+// has already applied any necessary start shift (e.g. proxyBareParserMetricViaStats).
+func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
 	// Keep metric query_range as a single backend request. Window splitting and
 	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -49,6 +79,28 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "matrix"))
+}
+
+// statsRateRangeEqualsStepShift detects whether the query is a rate() with
+// range==step so that proxyStatsQueryRange can apply the first-bucket shift.
+// Returns (spec, origStartNs, true) when shifting is needed.
+func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origSpec originalRangeMetricSpec, origStartNs int64, ok bool) {
+	spec, hasSpec := parseOriginalRangeMetricSpec(originalLogql)
+	if !hasSpec || spec.Window <= 0 {
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(spec.Func), "rate") {
+		return
+	}
+	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
+	if !stepOk || spec.Window != step {
+		return
+	}
+	startNs, hasStart := parseLokiTimeToUnixNano(r.FormValue("start"))
+	if !hasStart {
+		return
+	}
+	return spec, startNs, true
 }
 
 type statsQueryRangeSeries struct {

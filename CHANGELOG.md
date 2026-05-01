@@ -10,11 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - fix(proxy): move `withOrgID` / `injectAuthFingerprint` before `preferWorkingParser` in `handleQueryRange` and `handleQuery` so all upstream VictoriaLogs calls (parser-probe, bare-parser fast-path, post-aggregation) carry the correct tenant context and forwarded auth headers.
-- fix(proxy): shift VL `start` back by the query window when routing bare-parser `rate`/`count_over_time`/`bytes_rate` to `stats_query_range`, then trim the extra leading bucket from the response — matches Loki's sliding-window first-bucket semantics.
+- fix(proxy): apply the first-bucket window shift to all aggregated `rate()` with `range==step` routed through `proxyStatsQueryRange` (e.g. `sum by (level) (rate({app="api"} | json [1m]))`); previously only bare-parser queries were corrected — extracts `proxyStatsQueryRangeDirect` to allow callers to bypass the shift gate.
+- fix(proxy): keep parser stages (`| json`, `| logfmt`) in the query sent to VL `stats_query_range` for the bare-parser fast path; stripping them caused non-parseable lines to be counted where Loki would exclude them via `__error__` semantics.
+- fix(proxy): align `reconstructLogLineWithFlag` with `reconstructLogLine` — remove the spurious `level` exclusion from the emit loop and add blank-value trimming, preventing `level` from being silently dropped from reconstructed JSON log lines in the query-range windowing path.
 - fix(proxy): guard synthetic `service_name` derivation behind `hadStream` so that aggregated `sum by (label)` metrics (e.g. for Drilldown volume include/exclude) contain only the grouping label and never gain an unexpected extra key.
 - fix(proxy): Drilldown volume `targetLabels` filter now applies to all stream labels universally, not only `container`; the `buildVolumeMetric` helper strips any label key absent from the `targetLabels` set regardless of which field was requested.
 - fix(e2e): remove hardcoded `_msg` fields from all JSON-format log generators (`gen_api_gateway`, `gen_auth_service`, `gen_frontend_ssr`, `gen_batch_etl`, `gen_ml_serving`) so that `_inject_vl_msg` can set `_msg` to the full JSON line, ensuring consistent Grafana rendering between Loki and VictoriaLogs.
 - fix(e2e): anchor `sharedWindow` start in explore-contract tests to `ingestionAnchor` (set at the moment `ingestRichTestData` runs) rather than `time.Now()`, preventing the window from drifting past ingested data in slow CI environments.
+- perf(proxy): pass outer request `ctx` (which holds the memoized `authFingerprintKey` set by `injectAuthFingerprint`) instead of `origReq.Context()` in metadata coalescer key helpers (`nativeCoalescerKey`, `vlGetMetadataCoalesced`, `fetchStreamFieldNamesCached`, `fetchPreferredLabelNamesCached`, `detectedFieldsCacheKey`, `detectedLabelsCacheKey`), so the OPT5 fingerprint memoization is actually used rather than recomputed on each call.
 
 ## [1.25.1] - 2026-04-30
 

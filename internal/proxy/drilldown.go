@@ -2231,7 +2231,7 @@ type detectedLabelsCachePayload struct {
 func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
 	key := "detect_fields:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(origReq.Context(), origReq); fp != "" {
+		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
 		}
 	}
@@ -2241,7 +2241,7 @@ func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end st
 func (p *Proxy) detectedLabelsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
 	key := "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(origReq.Context(), origReq); fp != "" {
+		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
 		}
 	}

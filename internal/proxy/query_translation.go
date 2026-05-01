@@ -1130,26 +1130,19 @@ func stripParserStages(baseQuery string) string {
 }
 
 // proxyBareParserMetricViaStats routes bare parser metric queries (e.g.
-// rate({app} | json [5m])) to native VL stats_query_range by stripping the
-// parser stage. This turns an O(N log-lines) full-scan into an O(1) VL stats
-// call, at the cost of grouping by stream labels only (not parsed-field combos).
+// rate({app} | json [5m])) to native VL stats_query_range.
+// Parser stages (| json, | logfmt) are kept in the query so that VL applies
+// the same filtering semantics as Loki: lines that fail parsing are excluded
+// from the count, matching Loki's __error__ behavior for metric queries.
 // Returns true when the fast path handled the request.
 func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Request, reqStart time.Time, originalQuery string, spec bareParserMetricCompatSpec) bool {
-	stripped := stripParserStages(spec.baseQuery)
 	window := "[" + spec.rangeWindowExpr + "]"
-	var reconstructed string
 	switch spec.funcName {
-	case "rate":
-		reconstructed = "rate(" + stripped + " " + window + ")"
-	case "count_over_time":
-		reconstructed = "count_over_time(" + stripped + " " + window + ")"
-	case "bytes_over_time":
-		reconstructed = "bytes_over_time(" + stripped + " " + window + ")"
-	case "bytes_rate":
-		reconstructed = "bytes_rate(" + stripped + " " + window + ")"
+	case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
 	default:
 		return false
 	}
+	reconstructed := spec.funcName + "(" + spec.baseQuery + " " + window + ")"
 
 	logsqlQuery, err := p.translateQueryWithContext(r.Context(), reconstructed)
 	if err != nil || !isStatsQuery(logsqlQuery) {
@@ -1171,8 +1164,10 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 		effectiveR = r
 	}
 
+	// Call the direct path (no compat layer, no shift gate) since effectiveR
+	// already has the shifted start applied above.
 	buf := &bufferedResponseWriter{}
-	p.proxyStatsQueryRange(buf, effectiveR, logsqlQuery)
+	p.proxyStatsQueryRangeDirect(buf, effectiveR, logsqlQuery)
 
 	body := buf.body
 	if hasStart && spec.rangeWindow > 0 {

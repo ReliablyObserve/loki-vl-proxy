@@ -172,7 +172,7 @@ func (p *Proxy) snapshotDeclaredLabelFields() []string {
 func (p *Proxy) nativeCoalescerKey(prefix string, ctx context.Context, params url.Values) string {
 	key := prefix + ":" + getOrgID(ctx) + ":" + params.Encode()
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(origReq.Context(), origReq); fp != "" {
+		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
 		}
 	}
@@ -184,7 +184,7 @@ func (p *Proxy) vlGetMetadataCoalesced(ctx context.Context, path string, params 
 	// Include per-user auth fingerprint to prevent cross-user coalescing when
 	// forwarded auth headers/cookies are configured.
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(origReq.Context(), origReq); fp != "" {
+		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
 		}
 	}
@@ -223,7 +223,7 @@ func (p *Proxy) fetchVLFieldNames(ctx context.Context, path string, params url.V
 func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
 	cacheKey := "sfn:" + getOrgID(ctx) + ":" + params.Encode()
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(origReq.Context(), origReq); fp != "" {
+		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			cacheKey += ":auth:" + fp
 		}
 	}
@@ -280,7 +280,7 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 
 	cacheKey := "label_inventory:" + getOrgID(ctx) + ":" + params.Encode()
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(origReq.Context(), origReq); fp != "" {
+		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			cacheKey += ":auth:" + fp
 		}
 	}

@@ -476,14 +476,14 @@ func reconstructLogLineWithFlag(msg string, entry map[string]interface{}, stream
 	msgJSON, _ := json.Marshal(msg)
 	b.Write(msgJSON)
 	for key, value := range entry {
-		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+		if isVLInternalField(key) || key == "_stream_id" {
 			continue
 		}
 		if _, ok := streamLabels[key]; ok {
 			continue
 		}
 		sv, ok := stringifyEntryValue(value)
-		if !ok {
+		if !ok || strings.TrimSpace(sv) == "" {
 			continue
 		}
 		b.WriteByte(',')
