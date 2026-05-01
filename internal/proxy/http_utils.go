@@ -520,6 +520,7 @@ func appendJSONStringToBuilder(b *strings.Builder, s string) {
 	b.WriteByte('"')
 }
 
+
 // isVLNonLokiLabelField returns true for fields that VictoriaLogs exposes in
 // its field_names endpoint but that should not appear in the Loki /labels API.
 // This includes OTel semantic convention fields that VL stores as regular log
