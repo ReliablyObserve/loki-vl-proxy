@@ -1148,14 +1148,6 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 	if err != nil || !isStatsQuery(logsqlQuery) {
 		return false
 	}
-	// VL's unpack_json / unpack_logfmt does not model Loki's __error__ semantics:
-	// Loki excludes lines that fail to parse; VL may include them. Disable the
-	// fast path when the translated query contains a parser stage so correctness
-	// is preserved. The slow manual path handles these queries correctly.
-	if strings.Contains(logsqlQuery, "unpack_json") || strings.Contains(logsqlQuery, "unpack_logfmt") {
-		return false
-	}
-
 	// Shift start back by the range window so VL includes the extra initial bucket
 	// that covers the data Loki uses for the first rate() evaluation point at T0
 	// (Loki reads [T0-window, T0]; VL tumbling window without shift gives [T0, T0+step)).

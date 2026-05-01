@@ -51,14 +51,11 @@ func TestCompatHelpers_ParseQuantileAndUnwrapErrorName(t *testing.T) {
 	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "avg", false, "") {
 		t.Fatal("expected parser-stage avg to use VL stats_query_range, not manual NDJSON fallback")
 	}
-	// count_over_time with parser stages uses manual path to avoid __error__ inflation.
-	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, "") {
-		t.Fatal("expected parser-stage count_over_time to use manual path (parser failures inflate counts)")
-	}
-	// When the original LogQL explicitly drops __error__, the caller handles parse errors;
-	// VL native stats is semantically correct.
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, `count_over_time({app="api"} | json | drop __error__ [5m])`) {
-		t.Fatal("expected count_over_time with explicit __error__ handling to use VL native stats")
+	// count_over_time: Loki keeps parse-failed lines (adds __error__ label, never drops).
+	// VL's unpack_json also keeps parse-failed log entries. Both count the same lines,
+	// so native VL stats is correct — no manual path needed.
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, "") {
+		t.Fatal("expected parser-stage count_over_time to use VL native stats (Loki keeps parse-failed lines)")
 	}
 	if shouldUseManualRangeMetricCompat(`{app="api"}`, "avg", false, "") {
 		t.Fatal("expected non-parser query not to use manual fallback for avg")

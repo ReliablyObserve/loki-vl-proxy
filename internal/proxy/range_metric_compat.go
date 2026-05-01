@@ -349,12 +349,12 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 		}
 		return true
 	case "count_over_time", "bytes_over_time":
-		// If the original LogQL explicitly references __error__ (e.g., `| drop __error__`),
-		// the user has opted into counting all lines; VL native stats is correct.
-		if strings.Contains(originalLogql, "__error__") {
-			return false
-		}
-		return true // parser failures would inflate counts without explicit __error__ handling
+		// Loki's | json / | logfmt parser stages add __error__ on parse failure but
+		// keep the log line in the stream — they never drop it. VL's unpack_json /
+		// unpack_logfmt behaves the same way (the log entry is retained, only field
+		// extraction is skipped). Both backends therefore count the same set of lines,
+		// so native VL stats is semantically correct here.
+		return false
 	case "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
 		return false // unwrap-based; field absence filters naturally
 	default:
