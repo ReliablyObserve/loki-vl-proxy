@@ -259,7 +259,9 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if manualFunc == "" {
 		return false
 	}
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc) {
+	step, _ := parsePositiveStepDuration(r.FormValue("step"))
+	rangeEqualsStep := step > 0 && origSpec.Window > 0 && origSpec.Window == step
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -287,7 +289,9 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if manualFunc == "" {
 		return false
 	}
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc) {
+	// Instant queries have no step — keep manual path for rate() to preserve
+	// sliding-window semantics (the window defines the lookback, not a bucket).
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, false) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -301,7 +305,15 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	return p.proxyManualRangeMetricInstant(w, r, spec, origSpec, manualFunc)
 }
 
-func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string) bool {
+// shouldUseManualRangeMetricCompat reports whether the given metric function
+// must be aggregated in the proxy (manual path) rather than offloaded to
+// VictoriaLogs /select/logsql/stats_query_range.
+//
+// rangeEqualsStep must be true when the LogQL range window equals the query
+// step. When true, VL's native rate() — which buckets by the step interval —
+// is semantically identical to LogQL rate()[range]. Pass false to keep the
+// sliding-window manual path for cases where range != step.
+func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsStep bool) bool {
 	manualFunc = strings.TrimSpace(manualFunc)
 	if manualFunc == "rate_counter" {
 		return true
@@ -315,6 +327,11 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string) bool {
 	switch manualFunc {
 	case "count_over_time", "bytes_over_time", "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
 		return false
+	case "rate":
+		// VL rate() = count/bucket_duration. Equivalent to LogQL rate()[range]
+		// only when range == step (tumbling == sliding). Fall back to manual
+		// for sliding-window queries where range > step.
+		return !rangeEqualsStep
 	default:
 		return true
 	}

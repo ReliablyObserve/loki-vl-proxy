@@ -160,10 +160,12 @@ def gen_api_gateway(n: int) -> list[str]:
             "version": random.choice(["v1", "v2"]),
         }
         if status >= 400:
-            entry["error"] = random.choice([
+            err = random.choice([
                 "user not found", "rate limit exceeded", "invalid token",
                 "connection refused", "gateway timeout", "service unavailable",
             ])
+            entry["error"] = err
+            entry["_msg"] = f"{method} {path} {status} {dur}ms error={err}"
         lines.append(json.dumps(entry))
     return lines
 
@@ -537,6 +539,24 @@ def _split_json_by_level(lines: list[str]) -> dict[str, list[str]]:
     return buckets
 
 
+def _split_logfmt_by_level(lines: list[str]) -> dict[str, list[str]]:
+    """Group logfmt log lines into per-level buckets matching their content level.
+
+    Ensures the stream-label level always matches the logfmt level= field,
+    preventing Loki/VL semantic divergence when level filters follow a parser stage.
+    Lines without a parseable level default to 'info'.
+    """
+    buckets: dict[str, list[str]] = {}
+    for line in lines:
+        lvl = "info"
+        for part in line.split():
+            if part.startswith("level="):
+                lvl = part[6:].strip('"\'') or "info"
+                break
+        buckets.setdefault(lvl, []).append(line)
+    return buckets
+
+
 def services_batch(n: int) -> list[dict]:
     """Generate one batch of streams for all services."""
     streams = []
@@ -558,9 +578,10 @@ def services_batch(n: int) -> list[dict]:
         ), lines))
 
     # ── payment-service ───────────────────────────────────────────────────
-    streams.append(stream(make_labels(
-        "payment-service", "prod", "us-east-1", "info",
-    ), gen_payment_service(n)))
+    for level, lines in _split_logfmt_by_level(gen_payment_service(n)).items():
+        streams.append(stream(make_labels(
+            "payment-service", "prod", "us-east-1", level,
+        ), lines))
 
     # ── auth-service ──────────────────────────────────────────────────────
     for level, lines in _split_json_by_level(gen_auth_service(n)).items():
