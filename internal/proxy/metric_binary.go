@@ -81,15 +81,26 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	w.Write(wrapAsLokiResponse(body, "matrix"))
 }
 
-// statsRateRangeEqualsStepShift detects whether the query is a rate() with
-// range==step so that proxyStatsQueryRange can apply the first-bucket shift.
+// statsRateRangeEqualsStepShift detects whether the query contains a rate() or
+// bytes_rate() with range==step so that proxyStatsQueryRange can apply the
+// first-bucket shift. The check scans the full expression (not just the
+// top-level function) so outer aggregations like sum by(x)(rate(...)) and
+// binary expressions are also detected.
 // Returns (spec, origStartNs, true) when shifting is needed.
 func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origSpec originalRangeMetricSpec, origStartNs int64, ok bool) {
 	spec, hasSpec := parseOriginalRangeMetricSpec(originalLogql)
 	if !hasSpec || spec.Window <= 0 {
 		return
 	}
-	if !strings.EqualFold(strings.TrimSpace(spec.Func), "rate") {
+	// The tumbling-window first-bucket drift only affects rate() and bytes_rate().
+	// Search the full expression for these function calls — "rate(" is also present
+	// in "rate_counter(" and "rate_sum(", so exclude those explicitly.
+	lq := strings.ToLower(strings.TrimSpace(originalLogql))
+	hasBytesRate := strings.Contains(lq, "bytes_rate(")
+	hasBareRate := strings.Contains(lq, "rate(") &&
+		!strings.Contains(lq, "rate_counter(") &&
+		!strings.Contains(lq, "rate_sum(")
+	if !hasBareRate && !hasBytesRate {
 		return
 	}
 	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))

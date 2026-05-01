@@ -117,10 +117,12 @@ The proxy's minimum tracked capability profile is `vl-v1.30-plus`. All features 
 | `max_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) max(f)` | always |
 | `min_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) min(f)` | always |
 | `stddev_over_time({...}\|unwrap f [r]) by (l)` | `{...} \| <parser> \| stats by (l) stddev(f)` | always |
-| `bytes_rate({...}[r])` | — | manual path (VL has no native bytes/s stat without a numeric field) |
+| `bytes_rate({...}[r])` | `{...} \| stats by (l) sum_len(_msg) as __lvp_inner \| math __lvp_inner/r_s as __lvp_rate` | range == step |
 | `rate_counter({...}\|unwrap f [r])` | — | manual path (monotonic counter reset detection required) |
 
-**`rate()` condition — range == step:** VL's `rate()` computes count/bucket_duration per step interval (tumbling window). LogQL's `rate({...}[r])` computes over a sliding `r` window. These are semantically identical when `r == step`, which is Grafana's default with `$__interval`. Fixed ranges that differ from the step keep the proxy sliding-window path.
+**`rate()` / `bytes_rate()` condition — range == step:** VL's stats pipe uses tumbling windows. LogQL's `rate()` and `bytes_rate()` compute over a sliding `r` window. These are semantically identical when `r == step`, which is Grafana's default with `$__interval`. The proxy shifts the query start back by `r` and trims the pre-start bucket to match Loki's first evaluation point. Fixed ranges that differ from the step keep the proxy sliding-window path.
+
+**Parser stage (`| json` / `| logfmt`) + range metric:** Even when `range == step`, if the translated VL query contains an `unpack_json` or `unpack_logfmt` stage, the fast stats path is disabled. VL's unpack pipes do not model Loki's `__error__` filtering (Loki excludes lines that fail to parse; VL may include them). These queries fall back to the manual log-fetch path.
 
 ### Query Routing Decision
 
@@ -131,9 +133,9 @@ LogQL metric query
   │
   ├─ has parser stage (| json, | logfmt, etc.)?
   │   ├─ NO  → native VL stats (translator emits | stats …)
-  │   └─ YES + function in native list → native VL stats
-  │            function = rate + range == step → native VL stats
-  │            function = rate + range != step → manual sliding-window path
+  │   └─ YES + no post-parser filter + function = rate/count/bytes + range == step
+  │            BUT translated query has unpack_json/unpack_logfmt → manual path
+  │            (VL unpack semantics differ from Loki __error__ filtering)
   │            function = rate_counter → always manual
   │
   └─ outer aggregation (sum/avg/topk)?

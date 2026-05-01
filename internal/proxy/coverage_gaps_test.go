@@ -1699,3 +1699,42 @@ func TestSnapshotForwardedAuth_UsableAsOrigRequestKey(t *testing.T) {
 		t.Errorf("background context fingerprint %q must match original %q", bgFP, origFP)
 	}
 }
+
+// TestStatsRateRangeEqualsStepShift_Detection verifies that
+// statsRateRangeEqualsStepShift detects rate/bytes_rate inside aggregations.
+func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
+	makeReq := func(step, start string) *http.Request {
+		r := httptest.NewRequest("GET", "/", nil)
+		_ = r.ParseForm()
+		r.Form.Set("step", step)
+		r.Form.Set("start", start)
+		return r
+	}
+	const start1m = "1700000060000000000" // arbitrary fixed start
+	const step1m = "60"                  // 60s == 1m
+
+	cases := []struct {
+		name    string
+		logql   string
+		wantOK  bool
+	}{
+		{"bare_rate", `rate({app="x"}[1m])`, true},
+		{"bytes_rate", `bytes_rate({app="x"}[1m])`, true},
+		{"sum_by_rate", `sum by (level) (rate({app="x"} | json [1m]))`, true},
+		{"topk_rate", `topk(3, rate({app="x"}[1m]))`, true},
+		{"sum_by_bytes_rate", `sum by (l) (bytes_rate({app="x"}[1m]))`, true},
+		{"count_over_time", `count_over_time({app="x"}[1m])`, false}, // not rate-like
+		{"rate_counter", `rate_counter({app="x"} | unwrap f [1m])`, false},
+		{"rate_sum", `rate_sum({app="x"} | count() by (l) [1m])`, false},
+		{"wrong_step", `rate({app="x"}[5m])`, false}, // window(5m) != step(1m)
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, ok := statsRateRangeEqualsStepShift(tc.logql, makeReq(step1m, start1m))
+			if ok != tc.wantOK {
+				t.Errorf("statsRateRangeEqualsStepShift(%q) ok=%v want %v", tc.logql, ok, tc.wantOK)
+			}
+		})
+	}
+}

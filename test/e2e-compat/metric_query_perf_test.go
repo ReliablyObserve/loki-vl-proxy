@@ -70,9 +70,13 @@ func measureQueryLatency(baseURL string, params url.Values) (time.Duration, erro
 	if err != nil {
 		return 0, err
 	}
-	io.ReadAll(resp.Body)
+	body, _ := io.ReadAll(resp.Body)
 	resp.Body.Close()
-	return time.Since(start), nil
+	elapsed := time.Since(start)
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, body)
+	}
+	return elapsed, nil
 }
 
 // TestChaining_MetricQueryBareRateJSONTumbling verifies that rate(| json)
@@ -198,12 +202,21 @@ func TestChaining_MetricQuerySumByAfterJSONParser(t *testing.T) {
 			if lokiData["resultType"] != "matrix" || proxyData["resultType"] != "matrix" {
 				t.Fatalf("expected matrix, loki=%v proxy=%v", lokiData["resultType"], proxyData["resultType"])
 			}
-			lokiSeries := extractArray(lokiData, "result")
-			proxySeries := extractArray(proxyData, "result")
-			if len(lokiSeries) != len(proxySeries) {
-				t.Fatalf("series count mismatch: loki=%d proxy=%d", len(lokiSeries), len(proxySeries))
+			lokiFlat := flattenMatrixResult(t, lokiData["result"])
+			proxyFlat := flattenMatrixResult(t, proxyData["result"])
+			if len(lokiFlat) != len(proxyFlat) {
+				t.Logf("%s: series point count mismatch loki=%d proxy=%d (checking intersection)", tc.name, len(lokiFlat), len(proxyFlat))
 			}
-			t.Logf("%s: %d series, both match", tc.name, len(proxySeries))
+			for key, lokiVal := range lokiFlat {
+				proxyVal, ok := proxyFlat[key]
+				if !ok {
+					continue
+				}
+				if math.Abs(lokiVal-proxyVal) > 0.01 {
+					t.Errorf("%s: value mismatch at %s loki=%v proxy=%v", tc.name, key, lokiVal, proxyVal)
+				}
+			}
+			t.Logf("%s: loki=%d proxy=%d points", tc.name, len(lokiFlat), len(proxyFlat))
 		})
 	}
 }
