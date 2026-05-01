@@ -217,6 +217,7 @@ func TestChaining_MetricQuerySumByAfterJSONParser(t *testing.T) {
 			for key, lokiVal := range lokiFlat {
 				proxyVal, ok := proxyFlat[key]
 				if !ok {
+					t.Errorf("%s: proxy missing point %s present in Loki response", tc.name, key)
 					continue
 				}
 				if math.Abs(lokiVal-proxyVal) > 0.01 {
