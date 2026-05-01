@@ -111,6 +111,9 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 		return originalRangeMetricSpec{}, false
 	}
 	spec.Window = parseLokiDuration(strings.TrimSpace(body[bracketOpen+1 : bracketClose]))
+	if spec.Window < 0 {
+		return originalRangeMetricSpec{}, false
+	}
 
 	unwrap := rangeMetricUnwrapRE.FindStringSubmatch(body)
 	if len(unwrap) == 2 {
