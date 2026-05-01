@@ -1700,6 +1700,37 @@ func TestSnapshotForwardedAuth_UsableAsOrigRequestKey(t *testing.T) {
 	}
 }
 
+func TestAllRangeWindowsEqual(t *testing.T) {
+	cases := []struct {
+		name     string
+		logql    string
+		wantDur  string // "" means wantOK=false
+	}{
+		{"uniform_1m", `rate({a}[1m]) / rate({b}[1m])`, "1m0s"},
+		{"uniform_5m", `sum(rate({a}[5m])) + sum(rate({b}[5m]))`, "5m0s"},
+		{"single_window", `rate({a}[2m])`, "2m0s"},
+		{"mixed_ranges", `rate({a}[1m]) / rate({b}[5m])`, ""},
+		{"no_windows", `{app="x"} | json`, ""},
+		{"label_selector_brackets_only", `{app="x"}`, ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dur, ok := allRangeWindowsEqual(tc.logql)
+			if tc.wantDur == "" {
+				if ok {
+					t.Errorf("allRangeWindowsEqual(%q) = %v, want not-ok", tc.logql, dur)
+				}
+			} else {
+				if !ok {
+					t.Errorf("allRangeWindowsEqual(%q) not ok, want %s", tc.logql, tc.wantDur)
+				} else if dur.String() != tc.wantDur {
+					t.Errorf("allRangeWindowsEqual(%q) = %v, want %s", tc.logql, dur, tc.wantDur)
+				}
+			}
+		})
+	}
+}
+
 // TestStatsRateRangeEqualsStepShift_Detection verifies that
 // statsRateRangeEqualsStepShift detects rate/bytes_rate inside aggregations.
 func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {

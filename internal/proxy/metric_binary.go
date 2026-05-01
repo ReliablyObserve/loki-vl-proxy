@@ -81,6 +81,37 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	w.Write(wrapAsLokiResponse(body, "matrix"))
 }
 
+// allRangeWindowsEqual returns (window, true) when every range vector in logql
+// uses the same window duration. A query like rate({a}[1m]) / rate({b}[5m])
+// returns (0, false) because the windows differ. Used to guard binary-expression
+// shift logic against applying a single shift to operands with different windows.
+func allRangeWindowsEqual(logql string) (time.Duration, bool) {
+	var common time.Duration
+	inBracket := false
+	start := 0
+	for i, ch := range logql {
+		switch ch {
+		case '[':
+			inBracket = true
+			start = i + 1
+		case ']':
+			if inBracket {
+				inBracket = false
+				d := parseLokiDuration(strings.TrimSpace(logql[start:i]))
+				if d <= 0 {
+					continue
+				}
+				if common == 0 {
+					common = d
+				} else if d != common {
+					return 0, false
+				}
+			}
+		}
+	}
+	return common, common > 0
+}
+
 // statsRateRangeEqualsStepShift detects whether the query contains a rate() or
 // bytes_rate() with range==step so that the caller can apply the first-bucket
 // start shift. The check scans the full expression (not just the top-level
@@ -358,11 +389,15 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 	isRange := vlEndpoint == "stats_query_range"
 
 	// Apply first-bucket shift if the original LogQL contains rate/bytes_rate with range==step.
+	// Guard: only shift when all range windows in the binary expression are equal — mixed
+	// windows (e.g. rate({a}[1m]) / rate({b}[5m])) cannot share a single shift value.
 	var origStartNs, shiftNs int64
 	if isRange {
-		if origSpec, startNs, ok := statsRateRangeEqualsStepShift(r.FormValue("query"), r); ok {
-			origStartNs = startNs
-			shiftNs = origSpec.Window.Nanoseconds()
+		if _, uniformOk := allRangeWindowsEqual(r.FormValue("query")); uniformOk {
+			if origSpec, startNs, ok := statsRateRangeEqualsStepShift(r.FormValue("query"), r); ok {
+				origStartNs = startNs
+				shiftNs = origSpec.Window.Nanoseconds()
+			}
 		}
 	}
 
@@ -486,11 +521,14 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 	isRange := vlEndpoint == "stats_query_range"
 
 	// Apply first-bucket shift if the original LogQL contains rate/bytes_rate with range==step.
+	// Guard: only shift when all range windows in the binary expression are equal.
 	var origStartNs, shiftNs int64
 	if isRange {
-		if origSpec, startNs, ok := statsRateRangeEqualsStepShift(r.FormValue("query"), r); ok {
-			origStartNs = startNs
-			shiftNs = origSpec.Window.Nanoseconds()
+		if _, uniformOk := allRangeWindowsEqual(r.FormValue("query")); uniformOk {
+			if origSpec, startNs, ok := statsRateRangeEqualsStepShift(r.FormValue("query"), r); ok {
+				origStartNs = startNs
+				shiftNs = origSpec.Window.Nanoseconds()
+			}
 		}
 	}
 
