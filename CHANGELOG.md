@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.25.1] - 2026-04-30
+
 ### Added
 
 - perf(proxy): add `--unique-windows` benchmark flag so each worker gets a distinct non-overlapping time window, bypassing the singleflight coalescer and response cache to expose raw proxy translation overhead.
