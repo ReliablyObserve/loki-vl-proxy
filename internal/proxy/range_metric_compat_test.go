@@ -502,6 +502,49 @@ func TestQueryRange_QuantileManualFallback(t *testing.T) {
 	}
 }
 
+func TestHasPostParserPipeStage(t *testing.T) {
+	cases := []struct {
+		query string
+		want  bool
+	}{
+		{`{app="a"} | json`, false},
+		{`{app="a"} | logfmt`, false},
+		{`{app="a"} | regexp "(?P<f>.+)"`, false},
+		{`{app="a"} | json | status >= 400`, true},
+		{`{app="a"} | logfmt | level="error"`, true},
+		{`{app="a"} | json | method="GET" | path="/api"`, true},
+		{`{app="a"}`, false},
+		{`{app="a"} |= "error"`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			if got := hasPostParserPipeStage(tc.query); got != tc.want {
+				t.Fatalf("hasPostParserPipeStage(%q) = %v, want %v", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStripParserStages(t *testing.T) {
+	cases := []struct {
+		query string
+		want  string
+	}{
+		{`{app="a"} | json`, `{app="a"}`},
+		{`{app="a"} | logfmt`, `{app="a"}`},
+		{`{app="a"}`, `{app="a"}`},
+		{`{app="a"} | json | logfmt`, `{app="a"}`},
+		{`{app="a"} |= "error" | json`, `{app="a"} |= "error"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			if got := stripParserStages(tc.query); got != tc.want {
+				t.Fatalf("stripParserStages(%q) = %q, want %q", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
 func FuzzParseOriginalRangeMetricSpec(f *testing.F) {
 	seeds := []string{
 		`rate({app="api"}[5m])`,

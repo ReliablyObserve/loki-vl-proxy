@@ -500,8 +500,13 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		}
 		ensureSyntheticServiceName(streamLabels)
 		metricLabels := buildManualMetricLabels(streamLabels, groupBy, byExplicit)
-		if includeParsedLabels && !byExplicit {
-			addParsedEntryLabels(metricLabels, entry, field)
+		if includeParsedLabels && len(groupBy) > 0 && !byExplicit {
+			// Only inject parsed labels that appear in the explicit by(...) list.
+			// Adding ALL parsed fields (old behaviour) creates one series per unique
+			// JSON-object combination — O(N) series for N distinct log entries.
+			// Loki groups by stream labels only when no by(...) is present; parsed
+			// fields become metric dimensions only when explicitly named in by(...).
+			addGroupByParsedLabels(metricLabels, entry, groupBy)
 		}
 		translated := p.labelTranslator.TranslateLabelsMap(metricLabels)
 		key := seriesKeyFromMetric(translated)
@@ -530,6 +535,26 @@ func queryUsesParserStages(baseQuery string) bool {
 		return true
 	}
 	return false
+}
+
+// addGroupByParsedLabels injects only the labels named in groupBy from the
+// parsed log entry. This matches Loki's behaviour: without an explicit by(...)
+// clause, rate/count_over_time groups by stream labels only; parsed-field values
+// only become metric dimensions when the caller explicitly names them in by(...).
+func addGroupByParsedLabels(metricLabels map[string]string, entry map[string]interface{}, groupBy []string) {
+	for _, key := range groupBy {
+		if _, exists := metricLabels[key]; exists {
+			continue
+		}
+		if raw, ok := entry[key]; ok {
+			if value, ok := stringifyEntryValue(raw); ok {
+				value = strings.TrimSpace(value)
+				if value != "" {
+					metricLabels[key] = value
+				}
+			}
+		}
+	}
 }
 
 func addParsedEntryLabels(metricLabels map[string]string, entry map[string]interface{}, unwrapField string) {

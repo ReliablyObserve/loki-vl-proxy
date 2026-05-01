@@ -1088,7 +1088,97 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	p.queryTracker.Record("query", originalQuery, elapsed, false)
 }
 
+// hasPostParserPipeStage reports true when the base query has any pipe stage
+// after the last extracting parser (e.g. "| json | status >= 400"). When false,
+// the parser doesn't filter log lines and can be stripped for native VL stats.
+func hasPostParserPipeStage(baseQuery string) bool {
+	lastEnd := -1
+	for _, re := range []*regexp.Regexp{
+		jsonParserStageRE,
+		logfmtParserStageRE,
+		regexpExtractingParserStageRE,
+		patternExtractingParserStageRE,
+		otherExtractingParserStageRE,
+	} {
+		for _, loc := range re.FindAllStringIndex(baseQuery, -1) {
+			if loc[1] > lastEnd {
+				lastEnd = loc[1]
+			}
+		}
+	}
+	if lastEnd < 0 {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(baseQuery[lastEnd:]), "|")
+}
+
+// stripParserStages removes all extracting parser stages from a LogQL base query.
+func stripParserStages(baseQuery string) string {
+	result := baseQuery
+	for _, re := range []*regexp.Regexp{
+		jsonParserStageRE,
+		logfmtParserStageRE,
+		regexpExtractingParserStageRE,
+		patternExtractingParserStageRE,
+		otherExtractingParserStageRE,
+	} {
+		result = re.ReplaceAllString(result, "")
+	}
+	return strings.TrimSpace(result)
+}
+
+// proxyBareParserMetricViaStats routes bare parser metric queries (e.g.
+// rate({app} | json [5m])) to native VL stats_query_range by stripping the
+// parser stage. This turns an O(N log-lines) full-scan into an O(1) VL stats
+// call, at the cost of grouping by stream labels only (not parsed-field combos).
+// Returns true when the fast path handled the request.
+func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Request, reqStart time.Time, originalQuery string, spec bareParserMetricCompatSpec) bool {
+	stripped := stripParserStages(spec.baseQuery)
+	window := "[" + spec.rangeWindowExpr + "]"
+	var reconstructed string
+	switch spec.funcName {
+	case "rate":
+		reconstructed = "rate(" + stripped + " " + window + ")"
+	case "count_over_time":
+		reconstructed = "count_over_time(" + stripped + " " + window + ")"
+	case "bytes_over_time":
+		reconstructed = "bytes_over_time(" + stripped + " " + window + ")"
+	case "bytes_rate":
+		reconstructed = "bytes_rate(" + stripped + " " + window + ")"
+	default:
+		return false
+	}
+
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), reconstructed)
+	if err != nil || !isStatsQuery(logsqlQuery) {
+		return false
+	}
+
+	sc := &statusCapture{ResponseWriter: w, code: http.StatusOK}
+	p.proxyStatsQueryRange(sc, r, logsqlQuery)
+	elapsed := time.Since(reqStart)
+	p.metrics.RecordRequest("query_range", sc.code, elapsed)
+	p.queryTracker.Record("query_range", originalQuery, elapsed, sc.code >= 400)
+	return true
+}
+
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
+	// Fast path: for count-like functions with no post-parser pipeline stages,
+	// no unwrap, and a tumbling window (range == step), strip the parser and
+	// route to native VL stats_query_range. VL native stats is semantically
+	// equivalent to LogQL range metrics only when range == step (no overlap).
+	// For sliding windows (range > step) the slow manual path is required.
+	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
+	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
+	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) {
+		switch spec.funcName {
+		case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
+			if p.proxyBareParserMetricViaStats(w, r, start, originalQuery, spec) {
+				return
+			}
+		}
+	}
+
 	startNanos, ok := parseFlexibleUnixNanos(r.FormValue("start"))
 	if !ok {
 		p.writeError(w, http.StatusBadRequest, "invalid start timestamp")
