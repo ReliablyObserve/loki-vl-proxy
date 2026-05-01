@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1767,5 +1768,223 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 				t.Errorf("statsRateRangeEqualsStepShift(%q) ok=%v want %v", tc.logql, ok, tc.wantOK)
 			}
 		})
+	}
+}
+
+// =============================================================================
+// Coverage gap: trimStatsQueryRangeResponseFromStart
+// =============================================================================
+
+func TestTrimStatsQueryRangeResponseFromStart(t *testing.T) {
+	// Timestamps: 100s, 200s, 300s in nanoseconds.
+	const t100 = int64(100 * 1e9)
+	const t200 = int64(200 * 1e9)
+	const t300 = int64(300 * 1e9)
+
+	makeBody := func(points [][2]interface{}) []byte {
+		series := map[string]interface{}{
+			"metric": map[string]string{"app": "test"},
+			"values": points,
+		}
+		body, _ := json.Marshal(map[string]interface{}{
+			"status": "success",
+			"data": map[string]interface{}{
+				"resultType": "matrix",
+				"result":     []interface{}{series},
+			},
+		})
+		return body
+	}
+
+	body := makeBody([][2]interface{}{
+		{float64(100), "1.0"},
+		{float64(200), "2.0"},
+		{float64(300), "3.0"},
+	})
+
+	t.Run("trims_points_before_start", func(t *testing.T) {
+		out := trimStatsQueryRangeResponseFromStart(body, t200)
+		var resp map[string]interface{}
+		if err := json.Unmarshal(out, &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		if resp["status"] != "success" {
+			t.Errorf("status lost: %v", resp["status"])
+		}
+		result := resp["data"].(map[string]interface{})["result"].([]interface{})
+		vals := result[0].(map[string]interface{})["values"].([]interface{})
+		if len(vals) != 2 {
+			t.Errorf("expected 2 points after trim, got %d", len(vals))
+		}
+	})
+
+	t.Run("no_trim_when_all_at_or_after_start", func(t *testing.T) {
+		out := trimStatsQueryRangeResponseFromStart(body, t100)
+		if string(out) != string(body) {
+			t.Errorf("body should be unchanged when all points are >= start")
+		}
+	})
+
+	t.Run("all_trimmed_when_start_after_last_point", func(t *testing.T) {
+		out := trimStatsQueryRangeResponseFromStart(body, t300+1)
+		var resp map[string]interface{}
+		if err := json.Unmarshal(out, &resp); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		result := resp["data"].(map[string]interface{})["result"].([]interface{})
+		vals := result[0].(map[string]interface{})["values"].([]interface{})
+		if len(vals) != 0 {
+			t.Errorf("expected 0 points, got %d", len(vals))
+		}
+	})
+
+	t.Run("invalid_json_passthrough", func(t *testing.T) {
+		bad := []byte("not-json")
+		out := trimStatsQueryRangeResponseFromStart(bad, t200)
+		if string(out) != "not-json" {
+			t.Errorf("expected passthrough for invalid JSON")
+		}
+	})
+}
+
+// =============================================================================
+// Coverage gap: normalizeManualMetricFunction
+// =============================================================================
+
+func TestNormalizeManualMetricFunction(t *testing.T) {
+	cases := []struct {
+		origFunc string
+		specFunc string
+		want     string
+	}{
+		{"rate", "", "rate"},
+		{"count_over_time", "", "count_over_time"},
+		{"bytes_over_time", "", "bytes_over_time"},
+		{"bytes_rate", "", "bytes_rate"},
+		{"sum_over_time", "", "sum"},
+		{"avg_over_time", "", "avg"},
+		{"max_over_time", "", "max"},
+		{"min_over_time", "", "min"},
+		{"stddev_over_time", "", "stddev"},
+		{"stdvar_over_time", "", "stdvar"},
+		{"first_over_time", "", "first"},
+		{"last_over_time", "", "last"},
+		{"rate_counter", "", "rate_counter"},
+		{"quantile_over_time", "", "quantile"},
+		// Falls through to spec.Func when origSpec.Func is unrecognized.
+		{"", "rate", "rate"},
+		{"", "count", "count_over_time"},
+		{"", "sum", "sum"},
+		{"", "avg", "avg"},
+		{"", "max", "max"},
+		{"", "min", "min"},
+		{"", "quantile", "quantile"},
+		{"", "first", "first"},
+		{"", "last", "last"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.origFunc+"/"+tc.specFunc, func(t *testing.T) {
+			orig := originalRangeMetricSpec{Func: tc.origFunc}
+			spec := statsCompatSpec{Func: tc.specFunc}
+			got := normalizeManualMetricFunction(spec, orig)
+			if got != tc.want {
+				t.Errorf("normalizeManualMetricFunction(%q, %q) = %q, want %q",
+					tc.origFunc, tc.specFunc, got, tc.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
+// Coverage gap: proxyBareParserMetricViaStats (the rate|json fast path)
+// =============================================================================
+
+func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
+	var statsCalled bool
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/stats_query_range" {
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1700000060,"1.5"]]}]}}`))
+			return
+		}
+		// Parser probe
+		if r.URL.Path == "/select/logsql/query" {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			return
+		}
+		// Version check
+		if r.URL.Path == "/metrics" {
+			w.Write([]byte(`metrics_version{} 1`))
+			return
+		}
+		t.Logf("unexpected backend path: %s", r.URL.Path)
+		http.NotFound(w, r)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	base := time.Unix(1700000000, 0)
+	// step=300 == range=[5m] → rangeEqualsStep=true → fast path
+	params := url.Values{}
+	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
+	params.Set("step", "300")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Fatal("expected proxyBareParserMetricViaStats to call stats_query_range (fast path)")
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["status"] != "success" {
+		t.Errorf("expected status=success, got %v", resp["status"])
+	}
+}
+
+func TestProxyBareParserMetricViaStats_SlowPathWhenRangeNeStep(t *testing.T) {
+	manualCalled := false
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			// Manual NDJSON fetch path
+			manualCalled = true
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			return
+		}
+		if r.URL.Path == "/select/logsql/stats_query_range" {
+			t.Error("stats_query_range should NOT be called when range != step")
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if r.URL.Path == "/metrics" {
+			w.Write([]byte(`metrics_version{} 1`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	base := time.Unix(1700000000, 0)
+	// step=60 != range=[5m]=300 → rangeEqualsStep=false → slow manual path
+	params := url.Values{}
+	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
+	params.Set("step", "60")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if !manualCalled {
+		t.Fatal("expected manual NDJSON path to be used when range != step")
 	}
 }
