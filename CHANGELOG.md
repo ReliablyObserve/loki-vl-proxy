@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf: raise HTTP transport `ReadBufferSize`/`WriteBufferSize` from 4 KB (Go default) to 64 KB, reducing syscall count ~7× for typical 27 KB VL responses; set `DisableCompression=true` so proxy fully owns `Accept-Encoding` negotiation (no silent gzip override by net/http)
+
 ## [1.27.0] - 2026-05-02
 
 ### Performance
