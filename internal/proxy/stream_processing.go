@@ -448,6 +448,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	streamLabelCache := make(map[string]map[string]string, 16)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
+	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 
 	var (
 		miner        *patternMiner
@@ -511,7 +512,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		// already-parsed stream labels instead of re-parsing _stream itself.
 		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
 		if len(entry) > len(desc.rawLabels)+5 {
-			msg = reconstructLogLine(msg, entry, desc.rawLabels, originalQuery)
+			msg = reconstructLogLineWithFlag(msg, entry, desc.rawLabels, skipLogLineReconstruction)
 		}
 		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 		se, ok := streamMap[desc.key]
