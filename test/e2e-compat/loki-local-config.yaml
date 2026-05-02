@@ -38,9 +38,9 @@ limits_config:
   ingestion_rate_mb: 50000
   ingestion_burst_size_mb: 50000
   max_global_streams_per_user: 0
-  # Set to 0 (unlimited) for benchmarking — metric queries returning many series
-  # (e.g. rate() with high-cardinality labels at c=50-500) would otherwise 422.
-  max_query_series: 0
+  # Set high to avoid 422 on metric queries with many series (e.g. rate() with
+  # high-cardinality labels). Loki treats 0 as zero series allowed, not unlimited.
+  max_query_series: 100000
   # Set to 0 (unlimited) for benchmarking — high-concurrency runs can produce
   # more log entries per query than the default 5000 cap.
   max_entries_limit_per_query: 0

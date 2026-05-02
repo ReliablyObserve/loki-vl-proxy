@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf: replace stdlib `compress/gzip` with `klauspost/gzip` (2.5–3× faster decode, 2× faster encode) across all proxy–VL and proxy–client paths
+- perf: auto-detect loopback VL backend (`localhost`/`127.x`/`::1`) and request uncompressed responses (`Accept-Encoding: identity`), eliminating 25–35% decompression CPU for co-located deployments; remote backends continue to use gzip
+- perf: migrate `detectFieldSummariesStream` from `encoding/json` to `fastjson`, skip JSON re-parse for non-JSON `_msg` content, pool 64 KB scanner buffers — reduces CPU by ~15–20% on detected_fields hot path
+- perf: compress window cache entries with zstd (5–15× size reduction), eliminate per-entry metadata classification for standard Grafana requests
+- perf: custom stream response serialiser replaces `encoding/json` reflection with direct buffer writes; eliminate `json.Marshal` allocations in log-line reconstruction; adaptive per-stream skip for streams with no extra fields
+
 ## [1.26.0] - 2026-05-02
 
 ### Added
