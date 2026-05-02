@@ -445,6 +445,11 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	needsClassification := emitStructuredMetadata || categorizedLabels
+	// Per-request adaptive skip: tracks which streams have produced only entries
+	// with no extra non-label fields. When true, Object()+reconstruction can be
+	// skipped entirely for entries from that stream. Resets to unknown (absent)
+	// on first encounter; set to true after the first no-op reconstruction.
+	streamNoExtraFields := make(map[string]bool, 8)
 
 	var (
 		miner        *patternMiner
@@ -507,12 +512,29 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		// already-parsed stream labels instead of re-parsing _stream itself.
 		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
 
-		fjObj, fjErr := fjVal.Object()
-		if fjErr != nil {
-			vlFJParserPool.Put(fjParser)
-			continue
+		// Object() is only needed for reconstruction (when !skipLogLineReconstruction
+		// and we haven't proven this stream has no extra fields) or for classification.
+		needsObject := needsClassification || (!skipLogLineReconstruction && !streamNoExtraFields[desc.key])
+		var fjObj *fj.Object
+		if needsObject {
+			obj, fjErr := fjVal.Object()
+			if fjErr != nil {
+				vlFJParserPool.Put(fjParser)
+				continue
+			}
+			fjObj = obj
 		}
-		msg = reconstructLogLineWithFlagFJ(msg, fjObj, desc.rawLabels, skipLogLineReconstruction)
+
+		if !skipLogLineReconstruction && !streamNoExtraFields[desc.key] {
+			origMsg := msg
+			msg = reconstructLogLineWithFlagFJ(msg, fjObj, desc.rawLabels, false)
+			if msg == origMsg {
+				// Reconstruction was a no-op — this stream has no extra fields.
+				// Skip Object()+reconstruction for all subsequent entries of this stream.
+				streamNoExtraFields[desc.key] = true
+			}
+		}
+
 		// classifyEntryMetadataFieldsFJ returns smBuf/pfBuf directly (no copy).
 		// buildStreamValue → metadataFieldMap copies them before the next iteration
 		// clears the buffers. Do not move buildStreamValue below another classify call.
