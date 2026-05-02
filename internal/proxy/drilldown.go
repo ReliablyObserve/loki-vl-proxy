@@ -15,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	gojson "github.com/goccy/go-json"
 )
 
 const unknownServiceName = "unknown_service"
@@ -1514,7 +1512,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		for k := range entry {
 			delete(entry, k)
 		}
-		if err := gojson.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -1703,7 +1701,7 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[stri
 		}
 
 		var entry map[string]interface{}
-		if err := gojson.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 

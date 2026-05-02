@@ -16,7 +16,6 @@ import (
 	"strings"
 	"time"
 
-	gojson "github.com/goccy/go-json"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -738,7 +737,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		for key := range entry {
 			delete(entry, key)
 		}
-		if err := gojson.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}

@@ -1,6 +1,6 @@
 package proxy
 
-// Benchmark: goccy/go-json (current) vs valyala/fastjson for the vlReaderToLokiStreams hot path.
+// Benchmark: encoding/json (current secondary paths) vs valyala/fastjson (vlReaderToLokiStreams hot path).
 //
 // The hot loop does three distinct things for every NDJSON line:
 //   1. Parse the full entry into a Go value
@@ -11,10 +11,10 @@ package proxy
 // These benchmarks simulate all three steps to produce a realistic comparison.
 
 import (
+	stdjson "encoding/json"
 	"testing"
 
 	fj "github.com/valyala/fastjson"
-	gojson "github.com/goccy/go-json"
 )
 
 // Realistic VL NDJSON entry: 4 reserved fields + 8 application fields.
@@ -31,9 +31,9 @@ func vjInternalField(k []byte) bool {
 	return s == "_time" || s == "_msg" || s == "_stream" || s == "_stream_id"
 }
 
-// --- Current approach: pool + gojson.Unmarshal + map access ---
+// --- Current secondary paths: stdlib encoding/json + map access ---
 
-func BenchmarkHotPath_Goccy_FullWork(b *testing.B) {
+func BenchmarkHotPath_Stdlib_FullWork(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -43,7 +43,7 @@ func BenchmarkHotPath_Goccy_FullWork(b *testing.B) {
 		for k := range entry {
 			delete(entry, k)
 		}
-		if err := gojson.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -118,7 +118,7 @@ func BenchmarkHotPath_Fastjson_FullWork(b *testing.B) {
 
 // --- Isolated: just parse + 4 direct lookups, no iteration ---
 
-func BenchmarkHotPath_Goccy_ParseAndLookup(b *testing.B) {
+func BenchmarkHotPath_Stdlib_ParseAndLookup(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -127,7 +127,7 @@ func BenchmarkHotPath_Goccy_ParseAndLookup(b *testing.B) {
 		for k := range entry {
 			delete(entry, k)
 		}
-		if err := gojson.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -162,10 +162,10 @@ func BenchmarkHotPath_Fastjson_ParseAndLookup(b *testing.B) {
 
 // --- Isolated: just the full-iteration step (classifyEntryMetadataFields shape) ---
 
-func BenchmarkHotPath_Goccy_IterateFields(b *testing.B) {
+func BenchmarkHotPath_Stdlib_IterateFields(b *testing.B) {
 	// Pre-parse once outside the loop — isolate the iteration cost.
 	entry := make(map[string]interface{})
-	_ = gojson.Unmarshal(benchEntries[0], &entry)
+	_ = stdjson.Unmarshal(benchEntries[0], &entry)
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

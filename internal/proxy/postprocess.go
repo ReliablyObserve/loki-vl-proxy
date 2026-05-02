@@ -12,8 +12,6 @@ import (
 	"text/template"
 	"time"
 	"unicode"
-
-	gojson "github.com/goccy/go-json"
 )
 
 // ansiEscapeRe matches ANSI escape sequences (color codes, cursor movement, etc.)
@@ -223,7 +221,7 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[s
 		for key := range entry {
 			delete(entry, key)
 		}
-		if err := gojson.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 		msg, ok := patternMessageFromEntry(entry)

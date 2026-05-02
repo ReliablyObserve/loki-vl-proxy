@@ -15,8 +15,6 @@ import (
 	"time"
 
 	fj "github.com/valyala/fastjson"
-
-	gojson "github.com/goccy/go-json"
 )
 
 // proxyLogQuery fetches log lines from VictoriaLogs.
@@ -171,7 +169,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		}
 
 		var entry map[string]interface{}
-		if err := gojson.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 
@@ -363,7 +361,7 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		for k := range entry {
 			delete(entry, k) // clear reused map
 		}
-		if err := gojson.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -1148,7 +1146,7 @@ func parseTimestampToUnix(ts string) float64 {
 
 func parseHits(body []byte) vlHitsResponse {
 	var resp vlHitsResponse
-	if err := gojson.Unmarshal(body, &resp); err != nil {
+	if err := stdjson.Unmarshal(body, &resp); err != nil {
 		return vlHitsResponse{}
 	}
 	return resp
