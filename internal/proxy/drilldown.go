@@ -1703,7 +1703,7 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[stri
 		}
 
 		var entry map[string]interface{}
-		if err := stdjson.Unmarshal(line, &entry); err != nil {
+		if err := gojson.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 
