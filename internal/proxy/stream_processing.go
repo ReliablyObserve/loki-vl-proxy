@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	stdjson "encoding/json"
 	"fmt"
 	"io"
@@ -110,20 +111,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 		applyLineFormatTemplate(streams, tmpl)
 	}
 
-	p.writeJSON(w, map[string]interface{}{
-		"status": "success",
-		"data": func() map[string]interface{} {
-			data := map[string]interface{}{
-				"resultType": "streams",
-				"result":     streams,
-				"stats":      map[string]interface{}{},
-			}
-			if categorizedLabels {
-				data["encodingFlags"] = []string{"categorize-labels"}
-			}
-			return data
-		}(),
-	})
+	writeLokiStreamQueryResponse(w, streams, categorizedLabels)
 }
 
 // streamLogQuery streams VL NDJSON response as chunked Loki-compatible JSON.
@@ -1348,5 +1336,138 @@ func tupleModeForRequest(categorizedLabels bool, emitStructuredMetadata bool) st
 
 func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
 	return p.emitStructuredMetadata && requestWantsCategorizedLabels(r)
+}
+
+// writeLokiStreamQueryResponse writes the Loki stream query JSON response
+// directly to w without reflection. Avoids encoding/json traversal of
+// map[string]interface{} and []interface{} for the common 2-tuple path.
+func writeLokiStreamQueryResponse(w http.ResponseWriter, streams []map[string]interface{}, categorizedLabels bool) {
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer func() {
+		if buf.Cap() <= maxPooledBufSize {
+			jsonBufPool.Put(buf)
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	buf.WriteString(`{"status":"success","data":{"resultType":"streams","result":[`)
+	for i, s := range streams {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`{"stream":`)
+		writeStringMapJSON(buf, s["stream"])
+		buf.WriteString(`,"values":[`)
+		values, _ := s["values"].([]interface{})
+		for j, v := range values {
+			if j > 0 {
+				buf.WriteByte(',')
+			}
+			writeLokiTupleJSON(buf, v, categorizedLabels)
+		}
+		buf.WriteString(`]}`)
+	}
+	if categorizedLabels {
+		buf.WriteString(`],"encodingFlags":["categorize-labels"],"stats":{}}}`)
+	} else {
+		buf.WriteString(`],"stats":{}}}`)
+	}
+	w.Write(buf.Bytes())
+}
+
+// writeStringMapJSON writes a map[string]string value (passed as interface{})
+// as a JSON object directly to buf using no reflection in the hot path.
+func writeStringMapJSON(buf *bytes.Buffer, v interface{}) {
+	m, ok := v.(map[string]string)
+	if !ok {
+		b, _ := stdjson.Marshal(v)
+		buf.Write(b)
+		return
+	}
+	buf.WriteByte('{')
+	first := true
+	for k, val := range m {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		appendJSONStringToBuffer(buf, k)
+		buf.WriteByte(':')
+		appendJSONStringToBuffer(buf, val)
+	}
+	buf.WriteByte('}')
+}
+
+// writeLokiTupleJSON writes a single log entry tuple ([ts, msg] or [ts, msg, meta])
+// to buf without reflection in the 2-tuple hot path.
+func writeLokiTupleJSON(buf *bytes.Buffer, v interface{}, categorizedLabels bool) {
+	pair, ok := v.([]interface{})
+	if !ok || len(pair) < 2 {
+		b, _ := stdjson.Marshal(v)
+		buf.Write(b)
+		return
+	}
+	ts, _ := pair[0].(string)
+	msg, _ := pair[1].(string)
+	buf.WriteByte('[')
+	// Timestamps are nanosecond integers — no JSON escaping needed.
+	buf.WriteByte('"')
+	buf.WriteString(ts)
+	buf.WriteByte('"')
+	buf.WriteByte(',')
+	appendJSONStringToBuffer(buf, msg)
+	if categorizedLabels && len(pair) >= 3 {
+		buf.WriteByte(',')
+		b, _ := stdjson.Marshal(pair[2])
+		buf.Write(b)
+	}
+	buf.WriteByte(']')
+}
+
+// appendJSONStringToBuffer writes s as a JSON-encoded string into buf.
+// Handles JSON special characters inline; multi-byte UTF-8 passes through as-is
+// since valid UTF-8 bytes ≥ 0x80 require no JSON escaping.
+func appendJSONStringToBuffer(buf *bytes.Buffer, s string) {
+	buf.WriteByte('"')
+	start := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		// Characters that need escaping: controls < 0x20, backslash, double-quote,
+		// and the HTML-safe set that json.Marshal escapes by default (<, >, &).
+		if c >= 0x20 && c != '"' && c != '\\' && c != '<' && c != '>' && c != '&' {
+			continue
+		}
+		if start < i {
+			buf.WriteString(s[start:i])
+		}
+		switch c {
+		case '"':
+			buf.WriteString(`\"`)
+		case '\\':
+			buf.WriteString(`\\`)
+		case '\n':
+			buf.WriteString(`\n`)
+		case '\r':
+			buf.WriteString(`\r`)
+		case '\t':
+			buf.WriteString(`\t`)
+		case '<':
+			buf.WriteString(`\u003c`)
+		case '>':
+			buf.WriteString(`\u003e`)
+		case '&':
+			buf.WriteString(`\u0026`)
+		default:
+			buf.WriteString(`\u00`)
+			buf.WriteByte("0123456789abcdef"[c>>4])
+			buf.WriteByte("0123456789abcdef"[c&0xf])
+		}
+		start = i + 1
+	}
+	if start < len(s) {
+		buf.WriteString(s[start:])
+	}
+	buf.WriteByte('"')
 }
 
