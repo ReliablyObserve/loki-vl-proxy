@@ -133,6 +133,14 @@ type Config struct {
 	ClientResponseCompressionMinBytes int
 	BackendTimeout                    time.Duration // bounded timeout for non-streaming backend requests
 	BackendTLSSkip                    bool          // skip TLS verification for VL backend
+	// BackendReadBufferSize is the per-connection read buffer size for VL HTTP responses.
+	// Default 65536 (64 KB) — larger buffers reduce syscall count for multi-KB responses.
+	// Set to 0 to use the Go default (4096).
+	BackendReadBufferSize int `yaml:"backend_read_buffer_size"`
+	// BackendWriteBufferSize is the per-connection write buffer size for VL HTTP requests.
+	// Default 65536 (64 KB).
+	// Set to 0 to use the Go default (4096).
+	BackendWriteBufferSize int `yaml:"backend_write_buffer_size"`
 	// BackendMinVersion defines the minimum VictoriaLogs version considered
 	// fully supported at startup compatibility check time.
 	BackendMinVersion string
@@ -664,6 +672,16 @@ func New(cfg Config) (*Proxy, error) {
 	if cfg.BackendTLSSkip {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- intentional, opt-in via BackendTLSSkip; lgtm[go/insecure-tls]
 	}
+	readBuf := cfg.BackendReadBufferSize
+	if readBuf <= 0 {
+		readBuf = 64 * 1024
+	}
+	writeBuf := cfg.BackendWriteBufferSize
+	if writeBuf <= 0 {
+		writeBuf = 64 * 1024
+	}
+	transport.ReadBufferSize = readBuf
+	transport.WriteBufferSize = writeBuf
 	tailTransport := transport.Clone()
 	tailTransport.ResponseHeaderTimeout = 30 * time.Second
 
