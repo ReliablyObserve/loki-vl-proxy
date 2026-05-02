@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -50,9 +52,16 @@ func TestOPT3_ReconstructFlagMatchesPerEntryCall(t *testing.T) {
 		flag := hasTextExtractionParser(q)
 		withFlag := reconstructLogLineWithFlag(msg, entry, streamLabels, flag)
 
+		// Both functions may produce different JSON key orderings (Go map iteration
+		// is non-deterministic), so compare semantically via unmarshal.
 		if perEntry != withFlag {
-			t.Errorf("query %q: reconstructLogLine=%q, reconstructLogLineWithFlag=%q — must be identical",
-				q, perEntry, withFlag)
+			var a, b interface{}
+			errA := json.Unmarshal([]byte(perEntry), &a)
+			errB := json.Unmarshal([]byte(withFlag), &b)
+			if errA != nil || errB != nil || !reflect.DeepEqual(a, b) {
+				t.Errorf("query %q: reconstructLogLine=%q, reconstructLogLineWithFlag=%q — must be semantically identical",
+					q, perEntry, withFlag)
+			}
 		}
 	}
 }
