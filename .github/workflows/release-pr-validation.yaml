@@ -10,7 +10,7 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -69,7 +69,7 @@ jobs:
           grep -q "\"service.version\": \"${VERSION}\"" docs/observability.md
 
       - name: Helm lint
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Run Helm lint
         run: helm lint charts/loki-vl-proxy/

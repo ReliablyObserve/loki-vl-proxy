@@ -4,6 +4,7 @@ from scripts.ci.check_changelog_pr import (
     extract_unreleased_section,
     has_genuinely_new_unreleased_entries,
     has_meaningful_changelog_content,
+    is_dependency_only_pr,
     is_release_metadata_sync,
     should_require_changelog,
 )
@@ -97,6 +98,42 @@ class CheckChangelogPRTests(unittest.TestCase):
             "- fix: new fix added in this PR\n"
         )
         self.assertTrue(has_genuinely_new_unreleased_entries(head_unreleased, base_changelog))
+
+    def test_dependency_only_pr_go_modules(self):
+        self.assertTrue(
+            is_dependency_only_pr(
+                ["build(deps): bump github.com/klauspost/compress from 1.18.5 to 1.18.6 in the go-minor group"],
+                ["go.mod", "go.sum"],
+            )
+        )
+
+    def test_dependency_only_pr_github_actions(self):
+        self.assertTrue(
+            is_dependency_only_pr(
+                ["build(deps): bump the actions-minor group with 16 updates"],
+                [".github/workflows/ci.yaml", ".github/workflows/release.yaml"],
+            )
+        )
+
+    def test_dependency_only_pr_rejects_mixed_commits(self):
+        self.assertFalse(
+            is_dependency_only_pr(
+                ["build(deps): bump X", "feat: add new feature"],
+                ["go.mod", "go.sum"],
+            )
+        )
+
+    def test_dependency_only_pr_rejects_app_code(self):
+        self.assertFalse(
+            is_dependency_only_pr(
+                ["build(deps): bump X"],
+                ["go.mod", "go.sum", "internal/proxy/proxy.go"],
+            )
+        )
+
+    def test_dependency_only_pr_rejects_empty(self):
+        self.assertFalse(is_dependency_only_pr([], ["go.mod"]))
+        self.assertFalse(is_dependency_only_pr(["build(deps): bump X"], []))
 
     def test_release_metadata_sync_detection(self):
         self.assertTrue(
