@@ -526,6 +526,9 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			continue
 		}
 		msg = reconstructLogLineWithFlagFJ(msg, fjObj, desc.rawLabels, skipLogLineReconstruction)
+		// classifyEntryMetadataFieldsFJ returns smBuf/pfBuf directly (no copy).
+		// buildStreamValue → metadataFieldMap copies them before the next iteration
+		// clears the buffers. Do not move buildStreamValue below another classify call.
 		structuredMetadata, parsedFields := p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 		se, ok := streamMap[desc.key]
 		if !ok {
@@ -773,9 +776,16 @@ func stringifyFJValue(v *fj.Value) (string, bool) {
 		return "", false
 	case fj.TypeString:
 		return string(v.GetStringBytes()), true
+	case fj.TypeObject, fj.TypeArray:
+		// Re-serialize with encoding/json to get HTML-safe output (<, >, & escaped),
+		// matching stringifyEntryValue's stdjson.Marshal behaviour for nested objects.
+		b, err := stdjson.Marshal(stdjson.RawMessage(v.MarshalTo(nil)))
+		if err == nil {
+			return string(b), true
+		}
+		return v.String(), true
 	default:
-		// Numbers, bools, objects, arrays: use fastjson's raw string representation.
-		// Objects/arrays are re-serialized as JSON (matching stringifyEntryValue behaviour).
+		// Numbers and bools: v.String() produces "200", "true" — identical to fmt.Sprintf("%v").
 		return v.String(), true
 	}
 }
