@@ -799,6 +799,87 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	return result, nil
 }
 
+// fetchBareParserMetricSeriesViaHits is the fast path for count_over_time / rate
+// sliding windows. Instead of fetching raw log entries, it calls VL's /select/logsql/hits
+// endpoint which returns pre-aggregated counts per bucket — no log body transfer.
+//
+// evalStart, evalEnd, stepNs are in nanoseconds.
+func (p *Proxy) fetchBareParserMetricSeriesViaHits(
+	ctx context.Context,
+	spec bareParserMetricCompatSpec,
+	evalStart, evalEnd, stepNs int64,
+) ([]bareParserMetricSeries, error) {
+	logsqlQuery, err := p.translateQueryWithContext(ctx, spec.baseQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch one extra range-window of history before evalStart so the first
+	// sliding window evaluation has enough bucketed data.
+	fetchStart := evalStart - spec.rangeWindow.Nanoseconds()
+
+	stepSecs := stepNs / int64(time.Second)
+	if stepSecs < 1 {
+		stepSecs = 1
+	}
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	params.Set("start", nanosToVLTimestamp(fetchStart))
+	params.Set("end", nanosToVLTimestamp(evalEnd))
+	params.Set("step", strconv.FormatInt(stepSecs, 10)+"s")
+
+	// Group by declared stream label fields so we get per-stream series.
+	p.configMu.RLock()
+	declared := p.declaredLabelFields
+	lt := p.labelTranslator
+	p.configMu.RUnlock()
+	for _, f := range declared {
+		params.Add("field", f)
+	}
+
+	resp, err := p.vlGet(ctx, "/select/logsql/hits", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		return nil, fmt.Errorf("hits: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	if err != nil {
+		return nil, err
+	}
+	hits := parseHits(body)
+
+	buckets := make(map[string]map[int64]int64, len(hits.Hits))
+	labelSets := make(map[string]map[string]string, len(hits.Hits))
+	for _, hit := range hits.Hits {
+		// Translate VL field names to Loki label names.
+		translated := make(map[string]string, len(hit.Fields))
+		for k, v := range hit.Fields {
+			translated[lt.ToLoki(k)] = v
+		}
+		key := canonicalLabelsKey(translated)
+		if _, ok := buckets[key]; !ok {
+			buckets[key] = make(map[int64]int64, len(hit.Timestamps))
+			labelSets[key] = translated
+		}
+		for i, ts := range hit.Timestamps {
+			tsNanos, ok := parseFlexibleUnixNanos(string(ts))
+			if !ok || i >= len(hit.Values) {
+				continue
+			}
+			buckets[key][tsNanos] += int64(hit.Values[i])
+		}
+	}
+
+	isRate := spec.funcName == "rate"
+	return buildSlidingWindowSumsFromHits(buckets, labelSets, evalStart, evalEnd, stepNs, spec.rangeWindow.Nanoseconds(), isRate), nil
+}
+
 func bareParserMetricWindowValue(funcName string, window []bareParserMetricSample, spec bareParserMetricCompatSpec) float64 {
 	if len(window) == 0 {
 		return 0
@@ -1221,12 +1302,41 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
-	stepDur, ok := parsePositiveStepDuration(r.FormValue("step"))
+	stepNanos, ok := parseStepToNanos(r.FormValue("step"))
 	if !ok {
 		p.writeError(w, http.StatusBadRequest, "invalid step")
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
+
+	// Sliding-window fast path: for count_over_time / rate without post-parser stages
+	// and with configured stream label fields, use the hits endpoint (pre-aggregated
+	// counts, no log body transfer). Falls back to slow path on any error.
+	p.configMu.RLock()
+	hasDeclaredFields := len(p.declaredLabelFields) > 0
+	p.configMu.RUnlock()
+	if spec.unwrapField == "" && !hasPostParserPipeStage(spec.baseQuery) && hasDeclaredFields {
+		switch spec.funcName {
+		case "rate", "count_over_time":
+			if spec.rangeWindow > 0 && spec.rangeWindow.Nanoseconds() > stepNanos {
+				series, hitsErr := p.fetchBareParserMetricSeriesViaHits(
+					r.Context(), spec,
+					startNanos, endNanos, stepNanos,
+				)
+				if hitsErr == nil {
+					w.Header().Set("Content-Type", "application/json")
+					marshalJSON(w, buildBareParserMetricMatrix(series, startNanos, endNanos, stepNanos, spec))
+					elapsed := time.Since(start)
+					p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+					p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+					return
+				}
+				slog.WarnContext(r.Context(), "hits-based metric path failed, falling back to full-fetch",
+					"err", hitsErr, "query", originalQuery)
+			}
+		}
+	}
+
 	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, r.FormValue("start"), r.FormValue("end"))
 	if err != nil {
 		status := statusFromUpstreamErr(err)
@@ -1236,7 +1346,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	marshalJSON(w, buildBareParserMetricMatrix(series, startNanos, endNanos, int64(stepDur), spec))
+	marshalJSON(w, buildBareParserMetricMatrix(series, startNanos, endNanos, stepNanos, spec))
 	elapsed := time.Since(start)
 	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)

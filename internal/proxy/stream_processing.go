@@ -1195,6 +1195,62 @@ func requestWantsCategorizedLabels(r *http.Request) bool {
 	return false
 }
 
+// buildSlidingWindowSumsFromHits converts pre-aggregated VL hits buckets into
+// bareParserMetricSeries using sliding-window sums.
+//
+// buckets:   canonicalLabelKey → bucketStartNanos → count
+// labelSets: canonicalLabelKey → map[string]string label pairs
+// evalStart, evalEnd, stepNs, rangeNs: all in nanoseconds
+// isRate: if true, divide count by rangeNs/1e9 to get per-second rate
+//
+// Absent evaluation points (sum == 0) are omitted (matches Loki absent-point behaviour).
+func buildSlidingWindowSumsFromHits(
+	buckets map[string]map[int64]int64,
+	labelSets map[string]map[string]string,
+	evalStart, evalEnd, stepNs, rangeNs int64,
+	isRate bool,
+) []bareParserMetricSeries {
+	if len(buckets) == 0 {
+		return nil
+	}
+	result := make([]bareParserMetricSeries, 0, len(buckets))
+	for labelKey, tsBuckets := range buckets {
+		labels := labelSets[labelKey]
+		samples := make([]bareParserMetricSample, 0, (evalEnd-evalStart)/stepNs+2)
+		for evalT := evalStart; evalT <= evalEnd; evalT += stepNs {
+			windowStart := evalT - rangeNs
+			var sum int64
+			for bucketTs, cnt := range tsBuckets {
+				// Include bucket if it overlaps [windowStart, evalT).
+				// A VL hit bucket at bucketTs covers [bucketTs, bucketTs+stepNs).
+				if bucketTs >= windowStart && bucketTs < evalT {
+					sum += cnt
+				}
+			}
+			if sum == 0 {
+				continue // absent point — matches Loki behaviour
+			}
+			value := float64(sum)
+			if isRate {
+				value = float64(sum) / (float64(rangeNs) / 1e9)
+			}
+			samples = append(samples, bareParserMetricSample{tsNanos: evalT, value: value})
+		}
+		if len(samples) == 0 {
+			continue
+		}
+		metric := make(map[string]string, len(labels))
+		for k, v := range labels {
+			metric[k] = v
+		}
+		result = append(result, bareParserMetricSeries{metric: metric, samples: samples})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return canonicalLabelsKey(result[i].metric) < canonicalLabelsKey(result[j].metric)
+	})
+	return result
+}
+
 func tupleModeForRequest(categorizedLabels bool, emitStructuredMetadata bool) string {
 	if emitStructuredMetadata && categorizedLabels {
 		return "categorize_labels_3tuple"
