@@ -101,6 +101,13 @@ extraArgs:
   backend-min-version: "v1.30.0"
   backend-allow-unsupported-version: "false"
   backend-version-check-timeout: "5s"
+  # Backend HTTP transport buffer sizes (bytes).
+  # Go's net/http default is 4096 (4 KB). Raising to 65536 (64 KB) reduces the
+  # number of read syscalls from ~7 to ~1 for a typical 27 KB VL response,
+  # cutting proxy CPU overhead significantly on the small-query path.
+  # Only lower these when running in an extremely memory-constrained environment.
+  backend-read-buffer-size: "65536"
+  backend-write-buffer-size: "65536"
   # Frontend/client-facing compression:
   # - default to gzip for broad Loki/Grafana compatibility
   # - only spend CPU once responses are at least 1KiB
