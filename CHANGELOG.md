@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.26.0] - 2026-05-02
+
 ### Added
 
 - feat(security): enable NetworkPolicy by default (`networkPolicy.enabled: true`) with restrictive ingress (Grafana→3100) and egress (VictoriaLogs→9428 + DNS) rules; set `networkPolicy.enabled=false` only when a cluster-wide policy already covers this workload.
