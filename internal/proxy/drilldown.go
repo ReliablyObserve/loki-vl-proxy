@@ -15,14 +15,24 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	fj "github.com/valyala/fastjson"
 )
 
 const unknownServiceName = "unknown_service"
 const detectedFieldsSampleLimit = 500
+
 // detectedFieldsScannerLineBytes is the maximum NDJSON line length the streaming
 // scanner will accept. VL log entries rarely exceed a few KB; 2 MB is a safe cap
 // that avoids bufio.Scanner token-too-large errors without over-allocating.
 const detectedFieldsScannerLineBytes = 2 * 1024 * 1024
+
+// detectedFieldsScanBufPool pools the initial 64 KB scanner read buffers used by
+// detectFieldSummariesStream. Each call would otherwise allocate a fresh slice;
+// pooling amortises that cost across concurrent requests.
+var detectedFieldsScanBufPool = sync.Pool{
+	New: func() interface{} { b := make([]byte, 64*1024); return &b },
+}
 
 var suppressedDetectedFieldNames = map[string]struct{}{
 	"timestamp_end":          {},
@@ -1472,6 +1482,147 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	return nil, nil, lastErr
 }
 
+// isOTelDataFJ is the fastjson-aware equivalent of isOTelData.
+// It inspects the same fields as isOTelData but via fastjson getters,
+// avoiding the map[string]interface{} allocation.
+func isOTelDataFJ(fjVal *fj.Value) bool {
+	if fjVal == nil {
+		return false
+	}
+	streamStr := string(fjVal.GetStringBytes("_stream"))
+	streamLabels := parseStreamLabels(streamStr)
+
+	for key := range streamLabels {
+		if _, isOTelField := otelSemanticFields[key]; isOTelField {
+			return true
+		}
+	}
+	for key := range streamLabels {
+		if key == "service_name" {
+			if _, hasRealServiceName := streamLabels["service.name"]; hasRealServiceName {
+				return true
+			}
+			continue
+		}
+		for _, prefix := range otelUnderscorePrefixes {
+			if strings.HasPrefix(key, prefix) {
+				return true
+			}
+		}
+	}
+	msg := string(fjVal.GetStringBytes("_msg"))
+	if msg != "" {
+		if strings.Contains(msg, "trace_id") && strings.Contains(msg, "span_id") {
+			for key := range streamLabels {
+				if strings.HasPrefix(key, "k8s.") || strings.HasPrefix(key, "deployment.") {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// fillDetectedLabelsFJ is the fastjson-aware equivalent of fillDetectedLabels.
+// It populates buf with stream labels + service-name fields + level, without
+// the map[string]interface{} intermediate.
+func fillDetectedLabelsFJ(fjVal *fj.Value, buf map[string]string) {
+	for k := range buf {
+		delete(buf, k)
+	}
+	streamStr := string(fjVal.GetStringBytes("_stream"))
+	stream := parseStreamLabels(streamStr)
+	for k, v := range stream {
+		buf[k] = v
+	}
+	for _, key := range serviceNameSourceFields {
+		if _, ok := buf[key]; ok {
+			continue
+		}
+		raw := fjVal.GetStringBytes(key)
+		if len(raw) == 0 {
+			continue
+		}
+		v := fjVal.Get(key)
+		if v == nil {
+			continue
+		}
+		if s, ok := stringifyFJValue(v); ok && strings.TrimSpace(s) != "" {
+			buf[key] = s
+		}
+	}
+	if raw := fjVal.GetStringBytes("level"); len(raw) != 0 {
+		if s := strings.TrimSpace(string(raw)); s != "" {
+			buf["level"] = s
+		}
+	}
+	ensureDetectedLevel(buf)
+	ensureSyntheticServiceName(buf)
+}
+
+// inferDetectedTypeFJ is the fastjson-aware equivalent of inferDetectedType.
+// It determines the Loki field type from a *fj.Value without interface{} boxing.
+func inferDetectedTypeFJ(v *fj.Value) string {
+	if v == nil {
+		return "string"
+	}
+	switch v.Type() {
+	case fj.TypeTrue, fj.TypeFalse:
+		return "boolean"
+	case fj.TypeNumber:
+		// Distinguish int from float by inspecting the raw bytes.
+		raw := v.String() // e.g. "42" or "3.14"
+		if _, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			return "int"
+		}
+		return "float"
+	case fj.TypeString:
+		s := string(v.GetStringBytes())
+		if _, err := time.ParseDuration(s); err == nil {
+			return "duration"
+		}
+		if _, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return "int"
+		}
+		if _, err := strconv.ParseFloat(s, 64); err == nil {
+			return "float"
+		}
+		return "string"
+	default:
+		return "string"
+	}
+}
+
+// formatDetectedValueFJ is the fastjson-aware equivalent of formatDetectedValue.
+func formatDetectedValueFJ(v *fj.Value) string {
+	if v == nil {
+		return ""
+	}
+	switch v.Type() {
+	case fj.TypeString:
+		return string(v.GetStringBytes())
+	case fj.TypeNumber:
+		raw := v.String()
+		// Preserve integer formatting (no decimal point) matching formatDetectedValue.
+		if f, err := strconv.ParseFloat(raw, 64); err == nil {
+			if f == float64(int64(f)) {
+				return strconv.FormatInt(int64(f), 10)
+			}
+			return strconv.FormatFloat(f, 'f', -1, 64)
+		}
+		return raw
+	case fj.TypeTrue:
+		return "true"
+	case fj.TypeFalse:
+		return "false"
+	default:
+		s := strings.TrimSpace(v.String())
+		s = strings.TrimPrefix(s, "\"")
+		s = strings.TrimSuffix(s, "\"")
+		return strings.TrimSpace(strings.ReplaceAll(s, "\n", " "))
+	}
+}
+
 // detectFieldSummariesStream is the streaming equivalent of detectFieldSummaries.
 // It reads NDJSON from r line-by-line using bufio.Scanner, eliminating the
 // 0.5–2.5 MB per-request io.ReadAll buffer that causes memory pressure under load.
@@ -1486,7 +1637,9 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 // passed to filterNativeDetectedFields.
 func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{}, map[string][]string, map[string]string) {
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), detectedFieldsScannerLineBytes)
+	bufPtr := detectedFieldsScanBufPool.Get().(*[]byte)
+	scanner.Buffer(*bufPtr, detectedFieldsScannerLineBytes)
+	defer detectedFieldsScanBufPool.Put(bufPtr)
 
 	fields := make(map[string]*detectedFieldSummary)
 	labelNames := make(map[string]struct{})
@@ -1508,27 +1661,26 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			continue
 		}
 
-		entry := vlEntryPool.Get().(map[string]interface{})
-		for k := range entry {
-			delete(entry, k)
-		}
-		if err := stdjson.Unmarshal(line, &entry); err != nil {
-			vlEntryPool.Put(entry)
+		// T1c: use pooled fastjson parser instead of stdjson.Unmarshal + map[string]interface{}.
+		fjParser := vlFJParserPool.Get()
+		fjVal, err := fjParser.ParseBytes(line)
+		if err != nil {
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
 
-		fillDetectedLabels(entry, streamLabelBuf)
+		fillDetectedLabelsFJ(fjVal, streamLabelBuf)
 		if detectedLevel := strings.TrimSpace(streamLabelBuf["detected_level"]); detectedLevel != "" {
 			addDetectedField(fields, "detected_level", "", "string", nil, detectedLevel)
 		}
 
-		if isOTelData(entry) {
+		if isOTelDataFJ(fjVal) {
 			if _, ok := streamLabelBuf["service.name"]; ok {
 				anyOTelWithServiceName = true
 			}
 		}
 
-		rawStreamLabels := parseStreamLabels(asString(entry["_stream"]))
+		rawStreamLabels := parseStreamLabels(string(fjVal.GetStringBytes("_stream")))
 		for key, value := range rawStreamLabels {
 			lokiLabel := key
 			if p.labelTranslator != nil {
@@ -1542,54 +1694,64 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			}
 		}
 
-		for key, value := range entry {
-			if key == "app" || key == "cluster" || key == "namespace" {
-				continue
-			}
-			if !shouldExposeStructuredField(key, rawStreamLabels, p.labelTranslator) {
-				continue
-			}
-			stringValue, ok := stringifyEntryValue(value)
-			if !ok {
-				continue
-			}
-			for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
-				if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
-					continue
+		obj, objErr := fjVal.Object()
+		if objErr == nil {
+			obj.Visit(func(keyBytes []byte, v *fj.Value) {
+				key := string(keyBytes)
+				if key == "app" || key == "cluster" || key == "namespace" {
+					return
 				}
-				addDetectedField(fields, exposure.name, "", inferDetectedType(value), nil, stringValue)
-			}
+				if !shouldExposeStructuredField(key, rawStreamLabels, p.labelTranslator) {
+					return
+				}
+				stringValue, ok := stringifyFJValue(v)
+				if !ok {
+					return
+				}
+				for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
+					if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
+						continue
+					}
+					addDetectedField(fields, exposure.name, "", inferDetectedTypeFJ(v), nil, stringValue)
+				}
+			})
 		}
 
-		msg, _ := entry["_msg"].(string)
-		vlEntryPool.Put(entry)
-		if msg == "" {
+		msgBytes := fjVal.GetStringBytes("_msg")
+		vlFJParserPool.Put(fjParser)
+
+		if len(msgBytes) == 0 {
 			continue
 		}
+		msg := string(msgBytes)
 
-		parsedJSON := vlEntryPool.Get().(map[string]interface{})
-		for k := range parsedJSON {
-			delete(parsedJSON, k)
-		}
-		if stdjson.Unmarshal([]byte(msg), &parsedJSON) == nil {
-			for key, value := range parsedJSON {
-				if key == "" {
-					continue
+		// T2a: only attempt JSON parse if _msg starts with '{' — skip non-JSON early.
+		if len(msgBytes) >= 2 && msgBytes[0] == '{' {
+			fjParser2 := vlFJParserPool.Get()
+			if fjVal2, err2 := fjParser2.ParseBytes(msgBytes); err2 == nil {
+				if obj2, objErr2 := fjVal2.Object(); objErr2 == nil {
+					obj2.Visit(func(keyBytes []byte, v *fj.Value) {
+						key := string(keyBytes)
+						if key == "" {
+							return
+						}
+						// Skip nested objects and arrays (equivalent to map[string]interface{}/[]interface{} check).
+						vt := v.Type()
+						if vt == fj.TypeObject || vt == fj.TypeArray {
+							return
+						}
+						if shouldSuppressDetectedField(key) {
+							return
+						}
+						if _, conflict := labelNames[key]; conflict {
+							return
+						}
+						addDetectedField(fields, key, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+					})
 				}
-				switch value.(type) {
-				case map[string]interface{}, []interface{}:
-					continue
-				}
-				if shouldSuppressDetectedField(key) {
-					continue
-				}
-				if _, conflict := labelNames[key]; conflict {
-					continue
-				}
-				addDetectedField(fields, key, "json", inferDetectedType(value), []string{key}, formatDetectedValue(value))
 			}
+			vlFJParserPool.Put(fjParser2)
 		}
-		vlEntryPool.Put(parsedJSON)
 
 		for key, value := range parseLogfmtFields(msg) {
 			if key == "msg" {
