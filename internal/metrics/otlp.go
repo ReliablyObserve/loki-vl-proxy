@@ -2,7 +2,7 @@ package metrics
 
 import (
 	"bytes"
-	"compress/gzip"
+	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"crypto/tls"
 	"encoding/json"

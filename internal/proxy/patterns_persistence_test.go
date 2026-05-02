@@ -2,7 +2,7 @@ package proxy
 
 import (
 	"bytes"
-	"compress/gzip"
+	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"

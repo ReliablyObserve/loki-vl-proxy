@@ -2,7 +2,7 @@ package cache
 
 import (
 	"bytes"
-	"compress/gzip"
+	gzip "github.com/klauspost/compress/gzip"
 	"encoding/binary"
 	"fmt"
 	"io"

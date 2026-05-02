@@ -2,7 +2,7 @@ package proxy
 
 import (
 	"bufio"
-	"compress/gzip"
+	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"

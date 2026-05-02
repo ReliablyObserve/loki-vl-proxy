@@ -7,7 +7,7 @@ package e2e_compat
 
 import (
 	"bytes"
-	"compress/gzip"
+	gzip "github.com/klauspost/compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
