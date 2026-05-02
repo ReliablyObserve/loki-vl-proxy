@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"net/url"
@@ -337,6 +338,7 @@ type Proxy struct {
 	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
 	backendHeaders                        map[string]string // static headers on all VL requests
 	backendCompression                    string
+	backendLoopback                       bool // true when backend host resolves to a loopback address
 	clientResponseCompression             string
 	clientResponseCompressionMinBytes     int
 	backendMinVersion                     string
@@ -880,6 +882,7 @@ func New(cfg Config) (*Proxy, error) {
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
 		backendCompression:                    normalizeBackendCompression(cfg.BackendCompression),
+		backendLoopback:                       computeBackendLoopback(u),
 		clientResponseCompression:             cfg.ClientResponseCompression,
 		clientResponseCompressionMinBytes:     cfg.ClientResponseCompressionMinBytes,
 		backendMinVersion:                     backendMinVersion,
@@ -956,6 +959,28 @@ func New(cfg Config) (*Proxy, error) {
 		labelValuesIndex:                      make(map[string]*labelValuesIndexState),
 		readCacheKeyMemo:                      make(map[canonicalReadCacheMemoKey]string, 2048),
 	}, nil
+}
+
+// computeBackendLoopback returns true when u's host is a loopback address or
+// the hostname "localhost". The result is computed once at startup and cached in
+// Proxy.backendLoopback so that applyBackendHeaders never parses URLs per-request.
+func computeBackendLoopback(u *url.URL) bool {
+	if u == nil {
+		return false
+	}
+	host := u.Hostname() // strips port
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// isBackendLoopback reports whether the primary VictoriaLogs backend is
+// co-located (loopback address). Used by applyBackendHeaders to pick the
+// best default Accept-Encoding when backendCompression is "auto".
+func (p *Proxy) isBackendLoopback() bool {
+	return p.backendLoopback
 }
 
 func buildStreamFieldsMap(fields []string) map[string]bool {

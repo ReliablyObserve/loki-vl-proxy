@@ -31,13 +31,55 @@ func newCompressionTestProxy(t *testing.T, backendURL string, backendCompression
 }
 
 func TestApplyBackendHeaders_DefaultsToAutoCompression(t *testing.T) {
+	// Remote host: auto should advertise zstd, gzip.
 	p := newCompressionTestProxy(t, "http://example.com", "")
 	req := httptest.NewRequest(http.MethodGet, "http://example.com", nil)
 
 	p.applyBackendHeaders(req)
 
 	if got := req.Header.Get("Accept-Encoding"); got != "zstd, gzip" {
-		t.Fatalf("expected auto backend compression, got %q", got)
+		t.Fatalf("expected auto backend compression for remote host, got %q", got)
+	}
+}
+
+func TestApplyBackendHeaders_AutoLoopbackUsesIdentity(t *testing.T) {
+	loopbackURLs := []string{
+		"http://localhost:9428",
+		"http://127.0.0.1:9428",
+		"http://[::1]:9428",
+	}
+	for _, backendURL := range loopbackURLs {
+		t.Run(backendURL, func(t *testing.T) {
+			p := newCompressionTestProxy(t, backendURL, "auto")
+			req := httptest.NewRequest(http.MethodGet, backendURL, nil)
+			p.applyBackendHeaders(req)
+			if got := req.Header.Get("Accept-Encoding"); got != "identity" {
+				t.Fatalf("expected identity for loopback backend %s, got %q", backendURL, got)
+			}
+		})
+	}
+}
+
+func TestIsBackendLoopback(t *testing.T) {
+	cases := []struct {
+		backendURL string
+		want       bool
+	}{
+		{"http://localhost:9428", true},
+		{"http://127.0.0.1:9428", true},
+		{"http://[::1]:9428", true},
+		{"http://victorialogs.svc.cluster.local:9428", false},
+		{"http://10.0.0.1:9428", false},
+		{"http://example.com", false},
+		{"http://192.168.1.1:9428", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.backendURL, func(t *testing.T) {
+			p := newCompressionTestProxy(t, tc.backendURL, "auto")
+			if got := p.isBackendLoopback(); got != tc.want {
+				t.Fatalf("isBackendLoopback(%q) = %v, want %v", tc.backendURL, got, tc.want)
+			}
+		})
 	}
 }
 
