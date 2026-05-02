@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"compress/gzip"
+	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"

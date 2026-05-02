@@ -165,6 +165,23 @@ func parsePositiveStepDuration(step string) (time.Duration, bool) {
 	return d, true
 }
 
+// parseStepToNanos converts a step parameter to nanoseconds. It extends
+// parsePositiveStepDuration to also handle raw nanosecond integer values that
+// Grafana occasionally sends (e.g. "60000000000" = 60s in nanoseconds) which
+// parsePositiveStepDuration rejects because the numeric value is too large to
+// be interpreted as seconds.
+func parseStepToNanos(step string) (int64, bool) {
+	if d, ok := parsePositiveStepDuration(step); ok {
+		return int64(d), true
+	}
+	// Try raw nanosecond integer (e.g. from Grafana: 60000000000 = 60s).
+	v := strings.TrimSpace(step)
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+		return n, true
+	}
+	return 0, false
+}
+
 func parsePrometheusStyleDuration(value string) (time.Duration, bool) {
 	parts := prometheusDurationPartRE.FindAllStringSubmatch(value, -1)
 	if len(parts) == 0 {

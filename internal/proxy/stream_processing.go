@@ -2,7 +2,8 @@ package proxy
 
 import (
 	"bufio"
-	"encoding/json"
+	"bytes"
+	stdjson "encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	fj "github.com/valyala/fastjson"
 )
 
 // proxyLogQuery fetches log lines from VictoriaLogs.
@@ -108,20 +111,7 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 		applyLineFormatTemplate(streams, tmpl)
 	}
 
-	p.writeJSON(w, map[string]interface{}{
-		"status": "success",
-		"data": func() map[string]interface{} {
-			data := map[string]interface{}{
-				"resultType": "streams",
-				"result":     streams,
-				"stats":      map[string]interface{}{},
-			}
-			if categorizedLabels {
-				data["encodingFlags"] = []string{"categorize-labels"}
-			}
-			return data
-		}(),
-	})
+	writeLokiStreamQueryResponse(w, streams, categorizedLabels)
 }
 
 // streamLogQuery streams VL NDJSON response as chunked Loki-compatible JSON.
@@ -167,7 +157,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		}
 
 		var entry map[string]interface{}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 
@@ -197,7 +187,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 			"values": buildStreamValues(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels),
 		}
 
-		chunk, _ := json.Marshal(stream)
+		chunk, _ := stdjson.Marshal(stream)
 		if !first {
 			w.Write([]byte(","))
 		}
@@ -288,7 +278,7 @@ func streamStringMap(value interface{}) map[string]string {
 // --- Response converters ---
 
 func lokiLabelsResponse(labels []string) []byte {
-	result, _ := json.Marshal(map[string]interface{}{
+	result, _ := stdjson.Marshal(map[string]interface{}{
 		"status": "success",
 		"data":   labels,
 	})
@@ -301,6 +291,11 @@ var vlEntryPool = sync.Pool{
 		return make(map[string]interface{}, 8)
 	},
 }
+
+// vlFJParserPool pools fastjson.Parser instances for the vlReaderToLokiStreams hot path.
+// fastjson.Parser holds an internal buffer that is reused across ParseBytes calls,
+// giving zero heap allocations per entry vs gojson's 33 allocs/op.
+var vlFJParserPool fj.ParserPool
 
 // metadataMapPool pools map[string]string used for per-entry structured metadata
 // and parsed fields in vlReaderToLokiStreams. The maps are reused across log
@@ -354,7 +349,7 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		for k := range entry {
 			delete(entry, k) // clear reused map
 		}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -448,6 +443,13 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	streamLabelCache := make(map[string]map[string]string, 16)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
+	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
+	needsClassification := emitStructuredMetadata || categorizedLabels
+	// Per-request adaptive skip: tracks which streams have produced only entries
+	// with no extra non-label fields. When true, Object()+reconstruction can be
+	// skipped entirely for entries from that stream. Resets to unknown (absent)
+	// on first encounter; set to true after the first no-op reconstruction.
+	streamNoExtraFields := make(map[string]bool, 8)
 
 	var (
 		miner        *patternMiner
@@ -484,36 +486,64 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			continue
 		}
 
-		entry := vlEntryPool.Get().(map[string]interface{})
-		for k := range entry {
-			delete(entry, k)
-		}
-		if err := json.Unmarshal(line, &entry); err != nil {
-			vlEntryPool.Put(entry)
+		fjParser := vlFJParserPool.Get()
+		fjVal, err := fjParser.ParseBytes(line)
+		if err != nil {
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
 
-		timeStr, ok := stringifyEntryValue(entry["_time"])
-		if !ok || timeStr == "" {
-			vlEntryPool.Put(entry)
+		timeBytes := fjVal.GetStringBytes("_time")
+		if len(timeBytes) == 0 {
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
+		timeStr := string(timeBytes)
 		tsNanos, ok := formatEntryTimestamp(timeStr)
 		if !ok {
-			vlEntryPool.Put(entry)
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
-		msg, _ := stringifyEntryValue(entry["_msg"])
-		rawStream := asString(entry["_stream"])
-		level, _ := stringifyEntryValue(entry["level"])
+		msg := string(fjVal.GetStringBytes("_msg"))
+		rawStream := string(fjVal.GetStringBytes("_stream"))
+		level := string(fjVal.GetStringBytes("level"))
 
 		// Compute stream descriptor first so reconstructLogLine can reuse the
 		// already-parsed stream labels instead of re-parsing _stream itself.
 		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
-		if len(entry) > len(desc.rawLabels)+5 {
-			msg = reconstructLogLine(msg, entry, desc.rawLabels, originalQuery)
+
+		// Object() is only needed for reconstruction (when !skipLogLineReconstruction
+		// and we haven't proven this stream has no extra fields) or for classification.
+		needsObject := needsClassification || (!skipLogLineReconstruction && !streamNoExtraFields[desc.key])
+		var fjObj *fj.Object
+		if needsObject {
+			obj, fjErr := fjVal.Object()
+			if fjErr != nil {
+				vlFJParserPool.Put(fjParser)
+				continue
+			}
+			fjObj = obj
 		}
-		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+
+		if !skipLogLineReconstruction && !streamNoExtraFields[desc.key] {
+			origMsg := msg
+			msg = reconstructLogLineWithFlagFJ(msg, fjObj, desc.rawLabels, false)
+			if msg == origMsg {
+				// Reconstruction was a no-op — this stream has no extra fields.
+				// Skip Object()+reconstruction for all subsequent entries of this stream.
+				streamNoExtraFields[desc.key] = true
+			}
+		}
+
+		// classifyEntryMetadataFieldsFJ returns smBuf/pfBuf directly (no copy).
+		// buildStreamValue → metadataFieldMap copies them before the next iteration
+		// clears the buffers. Do not move buildStreamValue below another classify call.
+		// Standard Grafana requests have emitStructuredMetadata=false and categorizedLabels=false,
+		// so skip the per-field visit entirely — buildStreamValue discards these maps anyway.
+		var structuredMetadata, parsedFields map[string]string
+		if needsClassification {
+			structuredMetadata, parsedFields = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+		}
 		se, ok := streamMap[desc.key]
 		if !ok {
 			se = &streamEntry{
@@ -540,7 +570,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			}
 		}
 
-		vlEntryPool.Put(entry)
+		vlFJParserPool.Put(fjParser)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, nil, err
@@ -662,6 +692,48 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 	return sm, pf
 }
 
+// classifyEntryMetadataFieldsFJ is the fastjson variant of classifyEntryMetadataFields.
+// It uses fj.Object.Visit to iterate fields without allocating a map[string]interface{}.
+func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
+	for k := range smBuf {
+		delete(smBuf, k)
+	}
+	for k := range pfBuf {
+		delete(pfBuf, k)
+	}
+	obj.Visit(func(k []byte, val *fj.Value) {
+		key := string(k)
+		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+			return
+		}
+		if _, exists := streamLabels[key]; exists {
+			return
+		}
+		sv, ok := stringifyFJValue(val)
+		if !ok || strings.TrimSpace(sv) == "" {
+			return
+		}
+		for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
+			if _, exists := streamLabels[exposure.name]; exists && !exposure.isAlias {
+				continue
+			}
+			if classifyAsParsed {
+				pfBuf[exposure.name] = sv
+				continue
+			}
+			smBuf[exposure.name] = sv
+		}
+	})
+	var sm, pf map[string]string
+	if len(smBuf) > 0 {
+		sm = smBuf
+	}
+	if len(pfBuf) > 0 {
+		pf = pfBuf
+	}
+	return sm, pf
+}
+
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {
 	if exposureCache == nil {
 		return p.metadataFieldExposures(vlField)
@@ -695,13 +767,40 @@ func stringifyEntryValue(value interface{}) (string, bool) {
 	case map[string]interface{}, []interface{}:
 		// VL may parse JSON-looking _msg fields into objects; re-serialize to
 		// preserve valid JSON so Grafana can pretty-print the log line.
-		b, err := json.Marshal(v)
+		b, err := stdjson.Marshal(v)
 		if err == nil {
 			return string(b), true
 		}
 		return fmt.Sprintf("%v", v), true
 	default:
 		return fmt.Sprintf("%v", v), true
+	}
+}
+
+// stringifyFJValue is the fastjson equivalent of stringifyEntryValue.
+// It converts a *fj.Value to a string without heap allocations for the
+// common string case. Objects and arrays are re-serialised as JSON to
+// preserve the same behaviour as stringifyEntryValue.
+func stringifyFJValue(v *fj.Value) (string, bool) {
+	if v == nil {
+		return "", false
+	}
+	switch v.Type() {
+	case fj.TypeNull:
+		return "", false
+	case fj.TypeString:
+		return string(v.GetStringBytes()), true
+	case fj.TypeObject, fj.TypeArray:
+		// Re-serialize with encoding/json to get HTML-safe output (<, >, & escaped),
+		// matching stringifyEntryValue's stdjson.Marshal behaviour for nested objects.
+		b, err := stdjson.Marshal(stdjson.RawMessage(v.MarshalTo(nil)))
+		if err == nil {
+			return string(b), true
+		}
+		return v.String(), true
+	default:
+		// Numbers and bools: v.String() produces "200", "true" — identical to fmt.Sprintf("%v").
+		return v.String(), true
 	}
 }
 
@@ -916,9 +1015,9 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	// VL stats endpoints return Prometheus-compatible format already.
 	// Try to parse and re-wrap in Loki envelope.
 	var promResp map[string]interface{}
-	if err := json.Unmarshal(vlBody, &promResp); err != nil {
+	if err := stdjson.Unmarshal(vlBody, &promResp); err != nil {
 		// If we can't parse, return as-is with wrapper
-		result, _ := json.Marshal(map[string]interface{}{
+		result, _ := stdjson.Marshal(map[string]interface{}{
 			"status": "success",
 			"data": map[string]interface{}{
 				"resultType": resultType,
@@ -931,7 +1030,7 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	// Check for VL error responses and translate to Loki error format.
 	// VL may return: {"error":"message"} or {"status":"error","msg":"message"}
 	if errMsg, ok := promResp["error"].(string); ok {
-		result, _ := json.Marshal(map[string]interface{}{
+		result, _ := stdjson.Marshal(map[string]interface{}{
 			"status":    "error",
 			"errorType": "bad_request",
 			"error":     errMsg,
@@ -947,7 +1046,7 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 		} else if msg, ok := promResp["error"].(string); ok {
 			errMsg = msg
 		}
-		result, _ := json.Marshal(map[string]interface{}{
+		result, _ := stdjson.Marshal(map[string]interface{}{
 			"status":    "error",
 			"errorType": "bad_request",
 			"error":     errMsg,
@@ -959,13 +1058,13 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	if rawData, ok := promResp["data"]; ok {
 		if dataMap, ok := rawData.(map[string]interface{}); ok {
 			normalizeLokiResultDataShape(dataMap, resultType)
-			result, _ := json.Marshal(map[string]interface{}{
+			result, _ := stdjson.Marshal(map[string]interface{}{
 				"status": "success",
 				"data":   dataMap,
 			})
 			return result
 		}
-		result, _ := json.Marshal(map[string]interface{}{
+		result, _ := stdjson.Marshal(map[string]interface{}{
 			"status": "success",
 			"data": map[string]interface{}{
 				"resultType": resultType,
@@ -977,7 +1076,7 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 
 	normalizeLokiResultDataShape(promResp, resultType)
 
-	result, _ := json.Marshal(map[string]interface{}{
+	result, _ := stdjson.Marshal(map[string]interface{}{
 		"status": "success",
 		"data":   promResp,
 	})
@@ -1039,14 +1138,14 @@ func (t *vlTimestamp) UnmarshalJSON(data []byte) error {
 	}
 	if data[0] == '"' {
 		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
+		if err := stdjson.Unmarshal(data, &s); err != nil {
 			return err
 		}
 		*t = vlTimestamp(s)
 		return nil
 	}
-	var n json.Number
-	if err := json.Unmarshal(data, &n); err != nil {
+	var n stdjson.Number
+	if err := stdjson.Unmarshal(data, &n); err != nil {
 		return err
 	}
 	*t = vlTimestamp(n.String())
@@ -1063,7 +1162,7 @@ func parseTimestampToUnix(ts string) float64 {
 
 func parseHits(body []byte) vlHitsResponse {
 	var resp vlHitsResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := stdjson.Unmarshal(body, &resp); err != nil {
 		return vlHitsResponse{}
 	}
 	return resp
@@ -1194,6 +1293,62 @@ func requestWantsCategorizedLabels(r *http.Request) bool {
 	return false
 }
 
+// buildSlidingWindowSumsFromHits converts pre-aggregated VL hits buckets into
+// bareParserMetricSeries using sliding-window sums.
+//
+// buckets:   canonicalLabelKey → bucketStartNanos → count
+// labelSets: canonicalLabelKey → map[string]string label pairs
+// evalStart, evalEnd, stepNs, rangeNs: all in nanoseconds
+// isRate: if true, divide count by rangeNs/1e9 to get per-second rate
+//
+// Absent evaluation points (sum == 0) are omitted (matches Loki absent-point behaviour).
+func buildSlidingWindowSumsFromHits(
+	buckets map[string]map[int64]int64,
+	labelSets map[string]map[string]string,
+	evalStart, evalEnd, stepNs, rangeNs int64,
+	isRate bool,
+) []bareParserMetricSeries {
+	if len(buckets) == 0 {
+		return nil
+	}
+	result := make([]bareParserMetricSeries, 0, len(buckets))
+	for labelKey, tsBuckets := range buckets {
+		labels := labelSets[labelKey]
+		samples := make([]bareParserMetricSample, 0, (evalEnd-evalStart)/stepNs+2)
+		for evalT := evalStart; evalT <= evalEnd; evalT += stepNs {
+			windowStart := evalT - rangeNs
+			var sum int64
+			for bucketTs, cnt := range tsBuckets {
+				// Include bucket if it overlaps [windowStart, evalT).
+				// A VL hit bucket at bucketTs covers [bucketTs, bucketTs+stepNs).
+				if bucketTs >= windowStart && bucketTs < evalT {
+					sum += cnt
+				}
+			}
+			if sum == 0 {
+				continue // absent point — matches Loki behaviour
+			}
+			value := float64(sum)
+			if isRate {
+				value = float64(sum) / (float64(rangeNs) / 1e9)
+			}
+			samples = append(samples, bareParserMetricSample{tsNanos: evalT, value: value})
+		}
+		if len(samples) == 0 {
+			continue
+		}
+		metric := make(map[string]string, len(labels))
+		for k, v := range labels {
+			metric[k] = v
+		}
+		result = append(result, bareParserMetricSeries{metric: metric, samples: samples})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return canonicalLabelsKey(result[i].metric) < canonicalLabelsKey(result[j].metric)
+	})
+	return result
+}
+
 func tupleModeForRequest(categorizedLabels bool, emitStructuredMetadata bool) string {
 	if emitStructuredMetadata && categorizedLabels {
 		return "categorize_labels_3tuple"
@@ -1203,5 +1358,138 @@ func tupleModeForRequest(categorizedLabels bool, emitStructuredMetadata bool) st
 
 func (p *Proxy) shouldEmitStructuredMetadata(r *http.Request) bool {
 	return p.emitStructuredMetadata && requestWantsCategorizedLabels(r)
+}
+
+// writeLokiStreamQueryResponse writes the Loki stream query JSON response
+// directly to w without reflection. Avoids encoding/json traversal of
+// map[string]interface{} and []interface{} for the common 2-tuple path.
+func writeLokiStreamQueryResponse(w http.ResponseWriter, streams []map[string]interface{}, categorizedLabels bool) {
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer func() {
+		if buf.Cap() <= maxPooledBufSize {
+			jsonBufPool.Put(buf)
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	buf.WriteString(`{"status":"success","data":{"resultType":"streams","result":[`)
+	for i, s := range streams {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`{"stream":`)
+		writeStringMapJSON(buf, s["stream"])
+		buf.WriteString(`,"values":[`)
+		values, _ := s["values"].([]interface{})
+		for j, v := range values {
+			if j > 0 {
+				buf.WriteByte(',')
+			}
+			writeLokiTupleJSON(buf, v, categorizedLabels)
+		}
+		buf.WriteString(`]}`)
+	}
+	if categorizedLabels {
+		buf.WriteString(`],"encodingFlags":["categorize-labels"],"stats":{}}}`)
+	} else {
+		buf.WriteString(`],"stats":{}}}`)
+	}
+	w.Write(buf.Bytes())
+}
+
+// writeStringMapJSON writes a map[string]string value (passed as interface{})
+// as a JSON object directly to buf using no reflection in the hot path.
+func writeStringMapJSON(buf *bytes.Buffer, v interface{}) {
+	m, ok := v.(map[string]string)
+	if !ok {
+		b, _ := stdjson.Marshal(v)
+		buf.Write(b)
+		return
+	}
+	buf.WriteByte('{')
+	first := true
+	for k, val := range m {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		appendJSONStringToBuffer(buf, k)
+		buf.WriteByte(':')
+		appendJSONStringToBuffer(buf, val)
+	}
+	buf.WriteByte('}')
+}
+
+// writeLokiTupleJSON writes a single log entry tuple ([ts, msg] or [ts, msg, meta])
+// to buf without reflection in the 2-tuple hot path.
+func writeLokiTupleJSON(buf *bytes.Buffer, v interface{}, categorizedLabels bool) {
+	pair, ok := v.([]interface{})
+	if !ok || len(pair) < 2 {
+		b, _ := stdjson.Marshal(v)
+		buf.Write(b)
+		return
+	}
+	ts, _ := pair[0].(string)
+	msg, _ := pair[1].(string)
+	buf.WriteByte('[')
+	// Timestamps are nanosecond integers — no JSON escaping needed.
+	buf.WriteByte('"')
+	buf.WriteString(ts)
+	buf.WriteByte('"')
+	buf.WriteByte(',')
+	appendJSONStringToBuffer(buf, msg)
+	if categorizedLabels && len(pair) >= 3 {
+		buf.WriteByte(',')
+		b, _ := stdjson.Marshal(pair[2])
+		buf.Write(b)
+	}
+	buf.WriteByte(']')
+}
+
+// appendJSONStringToBuffer writes s as a JSON-encoded string into buf.
+// Handles JSON special characters inline; multi-byte UTF-8 passes through as-is
+// since valid UTF-8 bytes ≥ 0x80 require no JSON escaping.
+func appendJSONStringToBuffer(buf *bytes.Buffer, s string) {
+	buf.WriteByte('"')
+	start := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		// Characters that need escaping: controls < 0x20, backslash, double-quote,
+		// and the HTML-safe set that json.Marshal escapes by default (<, >, &).
+		if c >= 0x20 && c != '"' && c != '\\' && c != '<' && c != '>' && c != '&' {
+			continue
+		}
+		if start < i {
+			buf.WriteString(s[start:i])
+		}
+		switch c {
+		case '"':
+			buf.WriteString(`\"`)
+		case '\\':
+			buf.WriteString(`\\`)
+		case '\n':
+			buf.WriteString(`\n`)
+		case '\r':
+			buf.WriteString(`\r`)
+		case '\t':
+			buf.WriteString(`\t`)
+		case '<':
+			buf.WriteString(`\u003c`)
+		case '>':
+			buf.WriteString(`\u003e`)
+		case '&':
+			buf.WriteString(`\u0026`)
+		default:
+			buf.WriteString(`\u00`)
+			buf.WriteByte("0123456789abcdef"[c>>4])
+			buf.WriteByte("0123456789abcdef"[c&0xf])
+		}
+		start = i + 1
+	}
+	if start < len(s) {
+		buf.WriteString(s[start:])
+	}
+	buf.WriteByte('"')
 }
 

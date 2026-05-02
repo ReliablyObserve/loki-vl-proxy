@@ -525,7 +525,7 @@ Operational notes:
 | `-forward-authorization` | — | `false` | Forward client `Authorization` header to VL backend (adds `Authorization` to forwarded headers list) |
 | `-forward-cookies` | — | — | Cookie names to forward to VL |
 | `-backend-basic-auth` | — | — | `user:password` for VL basic auth |
-| `-backend-compression` | — | `auto` | Upstream compression preference: `auto`, `gzip`, `zstd`, `none` |
+| `-backend-compression` | — | `auto` | Upstream compression preference: `auto`, `gzip`, `zstd`, `none`. `auto` detects loopback backends (localhost/127.x/::1) and disables compression for co-located VL, otherwise advertises `zstd, gzip`. |
 | `-backend-tls-skip-verify` | — | `false` | Skip TLS on VL connection |
 | `-tail.allowed-origins` | — | — | Comma-separated WebSocket Origin allowlist for `/loki/api/v1/tail` |
 | `-tail.mode` | — | `auto` | `auto`, `native`, or `synthetic` for `/tail` streaming mode |
@@ -537,7 +537,7 @@ Compression notes:
 - `-response-compression=auto` keeps the optimized gzip path enabled for clients that advertise `gzip`.
 - `-response-compression-min-bytes=1024` keeps small control-plane responses uncompressed and the proxy applies higher effective thresholds on metadata-heavy routes.
 - peer-cache `/_cache/get` fetches follow the same preference order: `zstd`, then `gzip`, then identity.
-- `-backend-compression=auto` advertises `zstd, gzip` upstream and the proxy safely decodes either on the way back.
+- `-backend-compression=auto` auto-detects the backend address at startup: when the host is a loopback address (`localhost`, `127.x.x.x`, `::1`) it sends `Accept-Encoding: identity`, eliminating 25–35% decompression CPU with no bandwidth cost (loopback has no network overhead); when the host is remote it advertises `zstd, gzip` and the proxy safely decodes either on the way back. Use `none` to force identity for non-loopback local deployments (e.g. same host via a non-loopback IP).
 - current VictoriaLogs docs describe HTTP response compression in general terms, not a guaranteed `zstd` select-query path, so in practice many deployments will still observe `gzip` or identity from stock VictoriaLogs today.
 - Grafana `12.4.2` datasource proxy requests advertised `Accept-Encoding: deflate, gzip`, not `zstd`, in local verification, so the proxy keeps the frontend surface on `gzip`/identity only.
 - The Helm chart now pins `-response-compression=gzip` and `-response-compression-min-bytes=1024` by default.
@@ -623,7 +623,7 @@ Use these knobs first:
 - tune `-peer-write-through-min-ttl` so only stable/hot entries are replicated
 - keep `-response-compression=gzip` for explicit Loki/Grafana-safe frontend behavior, or `auto` if you want the same gzip behavior through the legacy default
 - keep `-response-compression-min-bytes` around `1-4KiB` to avoid wasting CPU on small metadata/control responses
-- keep `-backend-compression=auto` for `zstd`/`gzip` upstream negotiation
+- keep `-backend-compression=auto` for smart upstream negotiation: loopback backends get `identity` (no decompression overhead), remote backends get `zstd`/`gzip`
 - keep `query-range-windowing` enabled with long history TTL and near-now freshness controls for mixed historical/live workloads
 
 ### Bounded Hot Read-Ahead

@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	stdjson "encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
@@ -390,7 +390,7 @@ var (
 )
 
 // hasTextExtractionParser returns true when the LogQL query contains a
-// text-extraction parser other than | json. These parsers (logfmt, regexp,
+// text-extraction parser other than | stdjson. These parsers (logfmt, regexp,
 // pattern) produce extra VL fields at query time from text log lines; the
 // original log line is NOT JSON, so reconstructing it as JSON would be wrong.
 // | json is excluded because with JSON logs the reconstruction is correct.
@@ -480,7 +480,7 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		}
 
 		var entry map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		if err := stdjson.Unmarshal([]byte(line), &entry); err != nil {
 			continue
 		}
 		msg, _ := entry["_msg"].(string)
@@ -489,7 +489,7 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		}
 
 		var parsedJSON map[string]interface{}
-		if json.Unmarshal([]byte(msg), &parsedJSON) == nil && len(parsedJSON) > 0 {
+		if stdjson.Unmarshal([]byte(msg), &parsedJSON) == nil && len(parsedJSON) > 0 {
 			jsonHits++
 		}
 		if fields := parseLogfmtFields(msg); len(fields) > 0 {
@@ -737,7 +737,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		for key := range entry {
 			delete(entry, key)
 		}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -797,6 +797,87 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		return canonicalLabelsKey(result[i].metric) < canonicalLabelsKey(result[j].metric)
 	})
 	return result, nil
+}
+
+// fetchBareParserMetricSeriesViaHits is the fast path for count_over_time / rate
+// sliding windows. Instead of fetching raw log entries, it calls VL's /select/logsql/hits
+// endpoint which returns pre-aggregated counts per bucket — no log body transfer.
+//
+// evalStart, evalEnd, stepNs are in nanoseconds.
+func (p *Proxy) fetchBareParserMetricSeriesViaHits(
+	ctx context.Context,
+	spec bareParserMetricCompatSpec,
+	evalStart, evalEnd, stepNs int64,
+) ([]bareParserMetricSeries, error) {
+	logsqlQuery, err := p.translateQueryWithContext(ctx, spec.baseQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fetch one extra range-window of history before evalStart so the first
+	// sliding window evaluation has enough bucketed data.
+	fetchStart := evalStart - spec.rangeWindow.Nanoseconds()
+
+	stepSecs := stepNs / int64(time.Second)
+	if stepSecs < 1 {
+		stepSecs = 1
+	}
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	params.Set("start", nanosToVLTimestamp(fetchStart))
+	params.Set("end", nanosToVLTimestamp(evalEnd))
+	params.Set("step", strconv.FormatInt(stepSecs, 10)+"s")
+
+	// Group by declared stream label fields so we get per-stream series.
+	p.configMu.RLock()
+	declared := p.declaredLabelFields
+	lt := p.labelTranslator
+	p.configMu.RUnlock()
+	for _, f := range declared {
+		params.Add("field", f)
+	}
+
+	resp, err := p.vlGet(ctx, "/select/logsql/hits", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		return nil, fmt.Errorf("hits: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	if err != nil {
+		return nil, err
+	}
+	hits := parseHits(body)
+
+	buckets := make(map[string]map[int64]int64, len(hits.Hits))
+	labelSets := make(map[string]map[string]string, len(hits.Hits))
+	for _, hit := range hits.Hits {
+		// Translate VL field names to Loki label names.
+		translated := make(map[string]string, len(hit.Fields))
+		for k, v := range hit.Fields {
+			translated[lt.ToLoki(k)] = v
+		}
+		key := canonicalLabelsKey(translated)
+		if _, ok := buckets[key]; !ok {
+			buckets[key] = make(map[int64]int64, len(hit.Timestamps))
+			labelSets[key] = translated
+		}
+		for i, ts := range hit.Timestamps {
+			tsNanos, ok := parseFlexibleUnixNanos(string(ts))
+			if !ok || i >= len(hit.Values) {
+				continue
+			}
+			buckets[key][tsNanos] += int64(hit.Values[i])
+		}
+	}
+
+	isRate := spec.funcName == "rate"
+	return buildSlidingWindowSumsFromHits(buckets, labelSets, evalStart, evalEnd, stepNs, spec.rangeWindow.Nanoseconds(), isRate), nil
 }
 
 func bareParserMetricWindowValue(funcName string, window []bareParserMetricSample, spec bareParserMetricCompatSpec) float64 {
@@ -1003,7 +1084,7 @@ func statsResponseIsEmpty(body []byte) bool {
 		} `json:"data"`
 		Results []lokiVectorResult `json:"results"`
 	}
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := stdjson.Unmarshal(body, &resp); err != nil {
 		return false
 	}
 	results := resp.Results
@@ -1082,7 +1163,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, originalQuery)
 	var out []byte
 	if statsResponseIsEmpty(body) {
-		out, _ = json.Marshal(buildAbsentInstantVector(r.FormValue("time"), extractAbsentMetricLabels(spec.baseQuery)))
+		out, _ = stdjson.Marshal(buildAbsentInstantVector(r.FormValue("time"), extractAbsentMetricLabels(spec.baseQuery)))
 	} else {
 		out = wrapAsLokiResponse([]byte(`{"result":[]}`), "vector")
 	}
@@ -1221,12 +1302,41 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
-	stepDur, ok := parsePositiveStepDuration(r.FormValue("step"))
+	stepNanos, ok := parseStepToNanos(r.FormValue("step"))
 	if !ok {
 		p.writeError(w, http.StatusBadRequest, "invalid step")
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
+
+	// Sliding-window fast path: for count_over_time / rate without post-parser stages
+	// and with configured stream label fields, use the hits endpoint (pre-aggregated
+	// counts, no log body transfer). Falls back to slow path on any error.
+	p.configMu.RLock()
+	hasDeclaredFields := len(p.declaredLabelFields) > 0
+	p.configMu.RUnlock()
+	if spec.unwrapField == "" && !hasPostParserPipeStage(spec.baseQuery) && hasDeclaredFields {
+		switch spec.funcName {
+		case "rate", "count_over_time":
+			if spec.rangeWindow > 0 && spec.rangeWindow.Nanoseconds() > stepNanos {
+				series, hitsErr := p.fetchBareParserMetricSeriesViaHits(
+					r.Context(), spec,
+					startNanos, endNanos, stepNanos,
+				)
+				if hitsErr == nil {
+					w.Header().Set("Content-Type", "application/json")
+					marshalJSON(w, buildBareParserMetricMatrix(series, startNanos, endNanos, stepNanos, spec))
+					elapsed := time.Since(start)
+					p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+					p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+					return
+				}
+				slog.WarnContext(r.Context(), "hits-based metric path failed, falling back to full-fetch",
+					"err", hitsErr, "query", originalQuery)
+			}
+		}
+	}
+
 	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, r.FormValue("start"), r.FormValue("end"))
 	if err != nil {
 		status := statusFromUpstreamErr(err)
@@ -1236,7 +1346,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	marshalJSON(w, buildBareParserMetricMatrix(series, startNanos, endNanos, int64(stepDur), spec))
+	marshalJSON(w, buildBareParserMetricMatrix(series, startNanos, endNanos, stepNanos, spec))
 	elapsed := time.Since(start)
 	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
@@ -1265,18 +1375,18 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 }
 
 // translateStatsItem holds one element from the VL stats result array.
-// value/values are kept as json.RawMessage to avoid parsing time-series data
+// value/values are kept as stdjson.RawMessage to avoid parsing time-series data
 // (timestamps + floats) that we never inspect — only the metric labels change.
 type translateStatsItem struct {
 	Metric map[string]string `json:"metric"`
-	Value  json.RawMessage   `json:"value,omitempty"`
-	Values json.RawMessage   `json:"values,omitempty"`
+	Value  stdjson.RawMessage   `json:"value,omitempty"`
+	Values stdjson.RawMessage   `json:"values,omitempty"`
 }
 
 type translateStatsData struct {
 	ResultType string               `json:"resultType,omitempty"`
 	Result     []translateStatsItem `json:"result,omitempty"`
-	Stats      json.RawMessage      `json:"stats,omitempty"`
+	Stats      stdjson.RawMessage      `json:"stats,omitempty"`
 }
 
 type translateStatsResponseBody struct {
@@ -1284,13 +1394,13 @@ type translateStatsResponseBody struct {
 	Data    *translateStatsData  `json:"data,omitempty"`
 	Result  []translateStatsItem `json:"result,omitempty"`
 	Results []translateStatsItem `json:"results,omitempty"`
-	Error   json.RawMessage      `json:"error,omitempty"`
+	Error   stdjson.RawMessage      `json:"error,omitempty"`
 }
 
 func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
 	start := time.Now()
 	var resp translateStatsResponseBody
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := stdjson.Unmarshal(body, &resp); err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "decode_error", time.Since(start))
 		return body
 	}
@@ -1417,7 +1527,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	// wrapAsLokiResponse adds the {"status":"success"} envelope — its fast-path byte-splice
 	// only triggers when the body starts with {"data":{"resultType":, not {"status":...}.
 	resp.Status = ""
-	result, err := json.Marshal(resp)
+	result, err := stdjson.Marshal(resp)
 	if err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "encode_error", time.Since(start))
 		return body

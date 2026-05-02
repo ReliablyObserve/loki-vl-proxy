@@ -209,11 +209,8 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 			if resp.StatusCode >= http.StatusBadRequest {
 				return nil, false
 			}
-			body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-			if err != nil {
-				return nil, false
-			}
-			extracted, stats := extractLogPatternsWithStats(body, stepParam, patternLimit)
+			// Stream the VL NDJSON response directly without io.ReadAll buffering.
+			extracted, stats := extractLogPatternsStreamWithStats(resp.Body, stepParam, patternLimit)
 			diag.recordExtraction(requestedLimit, stats, false)
 			if len(extracted) == 0 {
 				if stats.hitLimit(requestedLimit) {
@@ -415,11 +412,7 @@ func (p *Proxy) fetchPatternsFromWindows(
 			)
 			return nil, patternExtractionStats{}, false
 		}
-		body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-		if err != nil {
-			return nil, patternExtractionStats{}, false
-		}
-		extracted, stats := extractLogPatternsWithStats(body, stepParam, patternLimit)
+		extracted, stats := extractLogPatternsStreamWithStats(resp.Body, stepParam, patternLimit)
 		if len(extracted) == 0 {
 			return nil, stats, false
 		}
