@@ -352,13 +352,20 @@ type compatCacheCaptureWriter struct {
 }
 
 func newCompatCacheCaptureWriter(w http.ResponseWriter, limit int) *compatCacheCaptureWriter {
-	body, holder := acquireCompatCaptureBuf(limit)
-	return &compatCacheCaptureWriter{
+	cw := &compatCacheCaptureWriter{
 		ResponseWriter: w,
-		body:           body,
-		bufHolder:      holder,
 		limit:          limit,
 	}
+	if limit <= 0 {
+		// limit=0 means the cache is disabled or has no capacity — mark overflowed
+		// immediately so capture() is a no-op and no memory is allocated.
+		cw.overflowed = true
+		return cw
+	}
+	body, holder := acquireCompatCaptureBuf(limit)
+	cw.body = body
+	cw.bufHolder = holder
+	return cw
 }
 
 func (w *compatCacheCaptureWriter) WriteHeader(code int) {

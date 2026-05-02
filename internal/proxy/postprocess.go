@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"io"
 	"net"
 	"regexp"
 	"sort"
@@ -202,16 +203,48 @@ func extractLogPatterns(vlBody []byte, step string, limit int) []map[string]inte
 }
 
 func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[string]interface{}, patternExtractionStats) {
+	if len(vlBody) == 0 {
+		return nil, patternExtractionStats{}
+	}
+	patterns, stats := extractLogPatternsStreamWithStats(bytes.NewReader(vlBody), step, limit)
+	if stats.observedLines > 0 {
+		return patterns, stats
+	}
+	// Fallback: body may be a wrapped JSON object ({"results":[...]}) rather
+	// than NDJSON. Try unmarshaling and collecting observations recursively.
+	stepSeconds := parsePatternStepSeconds(step)
+	miner := newPatternMiner()
+	var decoded interface{}
+	if err := json.Unmarshal(vlBody, &decoded); err != nil {
+		return nil, stats
+	}
+	collectPatternObservationsFromJSON(miner, decoded, stepSeconds, "", &stats.observedLines)
+	if stats.observedLines == 0 {
+		return nil, stats
+	}
+	out := buildPatternResponse(miner, limit)
+	stats.patternCount = len(out)
+	return out, stats
+}
+
+// extractLogPatternsStreamWithStats is the streaming variant of
+// extractLogPatternsWithStats. It scans NDJSON from r without buffering the
+// full body — callers should pass resp.Body directly to avoid the io.ReadAll
+// allocation (up to 64 MB per request in the patterns fetch path).
+func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int) ([]map[string]interface{}, patternExtractionStats) {
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
 	stats := patternExtractionStats{}
-	if len(vlBody) == 0 {
-		return nil, stats
-	}
 
-	scanner := bufio.NewScanner(bytes.NewReader(vlBody))
+	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	entry := make(map[string]interface{}, 16)
+	entry := vlEntryPool.Get().(map[string]interface{})
+	defer func() {
+		for k := range entry {
+			delete(entry, k)
+		}
+		vlEntryPool.Put(entry)
+	}()
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
@@ -232,11 +265,9 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[s
 		if !ok {
 			continue
 		}
-		labels := buildEntryLabels(entry)
-		level := strings.TrimSpace(labels["detected_level"])
-		if level == "" {
-			level = strings.TrimSpace(labels["level"])
-		}
+		// Extract level directly from the entry without building the full
+		// labels map — the patterns path only needs level, not all labels.
+		level := patternLevelFromEntry(entry)
 		bucket := unixSeconds
 		if stepSeconds > 0 {
 			bucket = (bucket / stepSeconds) * stepSeconds
@@ -249,18 +280,24 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[s
 		stats.patternCount = len(patterns)
 		return patterns, stats
 	}
+	return nil, stats
+}
 
-	var decoded interface{}
-	if err := json.Unmarshal(vlBody, &decoded); err != nil {
-		return nil, stats
+// patternLevelFromEntry extracts the log level from a VL entry map for the
+// patterns hot path, avoiding the full buildEntryLabels map allocation.
+func patternLevelFromEntry(entry map[string]interface{}) string {
+	if v, _ := entry["detected_level"].(string); strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
 	}
-	collectPatternObservationsFromJSON(miner, decoded, stepSeconds, "", &stats.observedLines)
-	if stats.observedLines == 0 {
-		return nil, stats
+	if v, _ := entry["level"].(string); strings.TrimSpace(v) != "" {
+		return strings.TrimSpace(v)
 	}
-	patterns := buildPatternResponse(miner, limit)
-	stats.patternCount = len(patterns)
-	return patterns, stats
+	if msg, _ := entry["_msg"].(string); msg != "" {
+		if lvl, ok := extractLevelFromMsg(msg); ok {
+			return lvl
+		}
+	}
+	return ""
 }
 
 func extractLogPatternsFromWindowEntries(entries []queryRangeWindowEntry, step string, limit int) []map[string]interface{} {
@@ -364,11 +401,7 @@ func collectPatternObservationsFromJSON(miner *patternMiner, decoded interface{}
 			if unixSeconds, ok := patternUnixSecondsFromEntry(value); ok {
 				level := inheritedLevel
 				if level == "" {
-					labels := buildEntryLabels(value)
-					level = strings.TrimSpace(labels["detected_level"])
-					if level == "" {
-						level = strings.TrimSpace(labels["level"])
-					}
+					level = patternLevelFromEntry(value)
 				}
 				bucket := unixSeconds
 				if stepSeconds > 0 {
