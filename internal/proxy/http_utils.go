@@ -22,6 +22,7 @@ import (
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/klauspost/compress/zstd"
+	fj "github.com/valyala/fastjson"
 )
 
 // jsonBuilderPool recycles strings.Builder values used by reconstructLogLine to
@@ -492,6 +493,48 @@ func reconstructLogLineWithFlag(msg string, entry map[string]interface{}, stream
 		b.WriteByte(':')
 		valJSON, _ := json.Marshal(sv)
 		b.Write(valJSON)
+	}
+	b.WriteByte('}')
+	result := b.String()
+	jsonBuilderPool.Put(b)
+	return result
+}
+
+// reconstructLogLineWithFlagFJ is the fastjson variant of reconstructLogLineWithFlag.
+// obj must be the parsed fastjson Object for the current VL NDJSON entry.
+// It avoids map[string]interface{} allocations by visiting fields directly via Object.Visit.
+func reconstructLogLineWithFlagFJ(msg string, obj *fj.Object, streamLabels map[string]string, skipReconstruction bool) string {
+	if skipReconstruction {
+		return msg
+	}
+	b := jsonBuilderPool.Get().(*strings.Builder)
+	b.Reset()
+	b.WriteString(`{"_msg":`)
+	msgJSON, _ := json.Marshal(msg)
+	b.Write(msgJSON)
+	startLen := b.Len()
+	obj.Visit(func(k []byte, v *fj.Value) {
+		key := string(k)
+		if isVLInternalField(key) || key == "_stream_id" {
+			return
+		}
+		if _, isStreamLabel := streamLabels[key]; isStreamLabel {
+			return
+		}
+		sv, ok := stringifyFJValue(v)
+		if !ok || strings.TrimSpace(sv) == "" {
+			return
+		}
+		b.WriteByte(',')
+		keyJSON, _ := json.Marshal(key)
+		b.Write(keyJSON)
+		b.WriteByte(':')
+		valJSON, _ := json.Marshal(sv)
+		b.Write(valJSON)
+	})
+	if b.Len() == startLen {
+		jsonBuilderPool.Put(b)
+		return msg
 	}
 	b.WriteByte('}')
 	result := b.String()

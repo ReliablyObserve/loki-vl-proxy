@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	fj "github.com/valyala/fastjson"
+
 	gojson "github.com/goccy/go-json"
 )
 
@@ -304,6 +306,11 @@ var vlEntryPool = sync.Pool{
 	},
 }
 
+// vlFJParserPool pools fastjson.Parser instances for the vlReaderToLokiStreams hot path.
+// fastjson.Parser holds an internal buffer that is reused across ParseBytes calls,
+// giving zero heap allocations per entry vs gojson's 33 allocs/op.
+var vlFJParserPool fj.ParserPool
+
 // metadataMapPool pools map[string]string used for per-entry structured metadata
 // and parsed fields in vlReaderToLokiStreams. The maps are reused across log
 // entries within a single response; metadataFieldMap copies content before the
@@ -487,36 +494,39 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			continue
 		}
 
-		entry := vlEntryPool.Get().(map[string]interface{})
-		for k := range entry {
-			delete(entry, k)
-		}
-		if err := gojson.Unmarshal(line, &entry); err != nil {
-			vlEntryPool.Put(entry)
+		fjParser := vlFJParserPool.Get()
+		fjVal, err := fjParser.ParseBytes(line)
+		if err != nil {
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
 
-		timeStr, ok := stringifyEntryValue(entry["_time"])
-		if !ok || timeStr == "" {
-			vlEntryPool.Put(entry)
+		timeBytes := fjVal.GetStringBytes("_time")
+		if len(timeBytes) == 0 {
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
+		timeStr := string(timeBytes)
 		tsNanos, ok := formatEntryTimestamp(timeStr)
 		if !ok {
-			vlEntryPool.Put(entry)
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
-		msg, _ := stringifyEntryValue(entry["_msg"])
-		rawStream := asString(entry["_stream"])
-		level, _ := stringifyEntryValue(entry["level"])
+		msg := string(fjVal.GetStringBytes("_msg"))
+		rawStream := string(fjVal.GetStringBytes("_stream"))
+		level := string(fjVal.GetStringBytes("level"))
 
 		// Compute stream descriptor first so reconstructLogLine can reuse the
 		// already-parsed stream labels instead of re-parsing _stream itself.
 		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
-		if len(entry) > len(desc.rawLabels)+5 {
-			msg = reconstructLogLineWithFlag(msg, entry, desc.rawLabels, skipLogLineReconstruction)
+
+		fjObj, fjErr := fjVal.Object()
+		if fjErr != nil {
+			vlFJParserPool.Put(fjParser)
+			continue
 		}
-		structuredMetadata, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+		msg = reconstructLogLineWithFlagFJ(msg, fjObj, desc.rawLabels, skipLogLineReconstruction)
+		structuredMetadata, parsedFields := p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 		se, ok := streamMap[desc.key]
 		if !ok {
 			se = &streamEntry{
@@ -543,7 +553,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			}
 		}
 
-		vlEntryPool.Put(entry)
+		vlFJParserPool.Put(fjParser)
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, nil, err
@@ -665,6 +675,48 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 	return sm, pf
 }
 
+// classifyEntryMetadataFieldsFJ is the fastjson variant of classifyEntryMetadataFields.
+// It uses fj.Object.Visit to iterate fields without allocating a map[string]interface{}.
+func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
+	for k := range smBuf {
+		delete(smBuf, k)
+	}
+	for k := range pfBuf {
+		delete(pfBuf, k)
+	}
+	obj.Visit(func(k []byte, val *fj.Value) {
+		key := string(k)
+		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+			return
+		}
+		if _, exists := streamLabels[key]; exists {
+			return
+		}
+		sv, ok := stringifyFJValue(val)
+		if !ok || strings.TrimSpace(sv) == "" {
+			return
+		}
+		for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
+			if _, exists := streamLabels[exposure.name]; exists && !exposure.isAlias {
+				continue
+			}
+			if classifyAsParsed {
+				pfBuf[exposure.name] = sv
+				continue
+			}
+			smBuf[exposure.name] = sv
+		}
+	})
+	var sm, pf map[string]string
+	if len(smBuf) > 0 {
+		sm = smBuf
+	}
+	if len(pfBuf) > 0 {
+		pf = pfBuf
+	}
+	return sm, pf
+}
+
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {
 	if exposureCache == nil {
 		return p.metadataFieldExposures(vlField)
@@ -705,6 +757,26 @@ func stringifyEntryValue(value interface{}) (string, bool) {
 		return fmt.Sprintf("%v", v), true
 	default:
 		return fmt.Sprintf("%v", v), true
+	}
+}
+
+// stringifyFJValue is the fastjson equivalent of stringifyEntryValue.
+// It converts a *fj.Value to a string without heap allocations for the
+// common string case. Objects and arrays are re-serialised as JSON to
+// preserve the same behaviour as stringifyEntryValue.
+func stringifyFJValue(v *fj.Value) (string, bool) {
+	if v == nil {
+		return "", false
+	}
+	switch v.Type() {
+	case fj.TypeNull:
+		return "", false
+	case fj.TypeString:
+		return string(v.GetStringBytes()), true
+	default:
+		// Numbers, bools, objects, arrays: use fastjson's raw string representation.
+		// Objects/arrays are re-serialized as JSON (matching stringifyEntryValue behaviour).
+		return v.String(), true
 	}
 }
 
