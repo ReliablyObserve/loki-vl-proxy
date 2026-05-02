@@ -527,6 +527,8 @@ Operational notes:
 | `-backend-basic-auth` | — | — | `user:password` for VL basic auth |
 | `-backend-compression` | — | `auto` | Upstream compression preference: `auto`, `gzip`, `zstd`, `none`. `auto` detects loopback backends (localhost/127.x/::1) and disables compression for co-located VL, otherwise advertises `zstd, gzip`. |
 | `-backend-tls-skip-verify` | — | `false` | Skip TLS on VL connection |
+| `-backend-read-buffer-size` | — | `65536` | Per-connection read buffer size (bytes) for VL HTTP responses. Default 64 KB — reduces syscall count 7× for typical responses vs Go default 4 KB. Decrease (e.g. `8192`) to save memory in high-pod-count environments; increase (e.g. `131072`) when responses routinely exceed 64 KB. |
+| `-backend-write-buffer-size` | — | `65536` | Per-connection write buffer size (bytes) for VL HTTP requests. Default 64 KB. Tune alongside `-backend-read-buffer-size` for memory-constrained pods. |
 | `-tail.allowed-origins` | — | — | Comma-separated WebSocket Origin allowlist for `/loki/api/v1/tail` |
 | `-tail.mode` | — | `auto` | `auto`, `native`, or `synthetic` for `/tail` streaming mode |
 
