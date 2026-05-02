@@ -907,6 +907,9 @@ func buildBareParserMetricMatrix(series []bareParserMetricSeries, startNanos, en
 				left++
 			}
 			window := samples[left:right]
+			if len(window) == 0 {
+				continue // no samples in window — match Loki's absent-point behaviour
+			}
 			values = append(values, []interface{}{float64(eval) / float64(time.Second), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))})
 		}
 		result = append(result, lokiMatrixResult{Metric: seriesItem.metric, Values: values})

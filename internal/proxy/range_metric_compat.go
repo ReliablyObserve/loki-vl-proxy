@@ -39,6 +39,7 @@ type rangeMetricSample struct {
 
 var (
 	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
+	outerAggregationRE  = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
 )
 
 func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
@@ -95,6 +96,15 @@ func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
 
 func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) {
 	logql = strings.TrimSpace(logql)
+	// Strip outer aggregation like "sum by (method) (rate(...))" → "rate(...)"
+	// so we parse the inner range function, not the aggregation operator.
+	if loc := outerAggregationRE.FindStringIndex(logql); loc != nil && loc[0] == 0 && loc[1] < len(logql) {
+		inner := strings.TrimSpace(logql[loc[1]:])
+		if strings.HasPrefix(inner, "(") && strings.HasSuffix(inner, ")") {
+			inner = strings.TrimSpace(inner[1 : len(inner)-1])
+		}
+		logql = inner
+	}
 	openIdx := strings.Index(logql, "(")
 	closeIdx := strings.LastIndex(logql, ")")
 	if openIdx <= 0 || closeIdx <= openIdx {
