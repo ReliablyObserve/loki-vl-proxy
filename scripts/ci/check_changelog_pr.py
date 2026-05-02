@@ -20,6 +20,11 @@ RELEASE_PREFIXES = (
     "revert",
 )
 
+DEPENDENCY_UPDATE_PREFIXES = (
+    "build(deps):",
+    "build(deps-dev):",
+)
+
 IMPACTFUL_PATHS = (
     "cmd/",
     "internal/",
@@ -161,6 +166,26 @@ def should_require_changelog(commits: Iterable[str], files: Iterable[str]) -> bo
     return len(file_list) > 0 and len(non_release) != len(file_list)
 
 
+def is_dependency_only_pr(commits: Iterable[str], files: Iterable[str]) -> bool:
+    """True when every commit is a dependency bump and no app code changed."""
+    commit_list = [c for c in commits if c.strip()]
+    file_list = [f for f in files if f.strip()]
+    if not commit_list or not file_list:
+        return False
+    all_dep_commits = all(
+        any(c.strip().lower().startswith(p) for p in DEPENDENCY_UPDATE_PREFIXES)
+        for c in commit_list
+    )
+    if not all_dep_commits:
+        return False
+    return all(
+        f in IMPACTFUL_FILES
+        or is_non_release_path(f)
+        or f.startswith(".github/")
+        for f in file_list
+    )
+
+
 def is_release_metadata_sync(files: Iterable[str]) -> bool:
     file_list = [f for f in files if f.strip()]
     if not file_list or "CHANGELOG.md" not in file_list:
@@ -184,6 +209,10 @@ def main() -> int:
     head_text = run_git("show", f"{args.head}:CHANGELOG.md")
     base_unreleased = extract_unreleased_section(base_text)
     head_unreleased = extract_unreleased_section(head_text)
+
+    if is_dependency_only_pr(commits, files):
+        print("changelog gate: skipped (dependency-only update)")
+        return 0
 
     if is_release_metadata_sync(files):
         if head_unreleased.strip() == base_unreleased.strip():
