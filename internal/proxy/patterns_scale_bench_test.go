@@ -53,10 +53,8 @@ func buildPatternWindowEntries(lines int) []queryRangeWindowEntry {
 		)
 		entries = append(entries, queryRangeWindowEntry{
 			Stream: map[string]string{"level": "info"},
-			Value: []interface{}{
-				strconv.FormatInt(1_775_296_800_000_000_000+int64(i), 10),
-				msg,
-			},
+			Ts:     strconv.FormatInt(1_775_296_800_000_000_000+int64(i), 10),
+			Msg:    msg,
 		})
 	}
 	return entries

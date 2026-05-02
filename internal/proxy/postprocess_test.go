@@ -383,15 +383,18 @@ func TestExtractLogPatternsFromWindowEntries(t *testing.T) {
 	entries := []queryRangeWindowEntry{
 		{
 			Stream: map[string]string{"detected_level": "info"},
-			Value:  []interface{}{"1712311201000000000", "GET /api/users 200 15ms"},
+			Ts:     "1712311201000000000",
+			Msg:    "GET /api/users 200 15ms",
 		},
 		{
 			Stream: map[string]string{"detected_level": "info"},
-			Value:  []interface{}{"1712311202000000000", "GET /api/users 200 22ms"},
+			Ts:     "1712311202000000000",
+			Msg:    "GET /api/users 200 22ms",
 		},
 		{
 			Stream: map[string]string{"level": "error"},
-			Value:  []interface{}{"1712311203000000000", "POST /api/orders 500 142ms"},
+			Ts:     "1712311203000000000",
+			Msg:    "POST /api/orders 500 142ms",
 		},
 	}
 

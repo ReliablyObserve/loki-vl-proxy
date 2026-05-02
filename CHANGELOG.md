@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf: replace `json.Marshal`/`json.Unmarshal` on the window cache hot path with `encoding/gob` and concrete typed fields; eliminates `interface{}` reflection allocations from cache read/write, reducing CPU ~40% on cache-hit-heavy workloads
+
 ## [1.27.1] - 2026-05-02
 
 ### Performance

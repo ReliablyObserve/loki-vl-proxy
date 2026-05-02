@@ -314,15 +314,15 @@ func extractLogPatternsFromWindowEntriesWithStats(entries []queryRangeWindowEntr
 	stats := patternExtractionStats{}
 	for _, entry := range entries {
 		stats.scannedLines++
-		if len(entry.Value) < 2 {
+		if entry.Ts == "" {
 			continue
 		}
-		unixSeconds, ok := parsePatternUnixSeconds(entry.Value[0])
+		unixSeconds, ok := parsePatternUnixSeconds(entry.Ts)
 		if !ok {
 			continue
 		}
-		msg, ok := stringifyEntryValue(entry.Value[1])
-		if !ok || strings.TrimSpace(msg) == "" {
+		msg := strings.TrimSpace(entry.Msg)
+		if msg == "" {
 			continue
 		}
 		level := strings.TrimSpace(entry.Stream["detected_level"])

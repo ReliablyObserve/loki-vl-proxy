@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,12 +53,17 @@ type queryRangeWindow struct {
 }
 
 type queryRangeWindowEntry struct {
-	Stream map[string]string `json:"stream"`
-	Value  []interface{}     `json:"value"`
+	Stream map[string]string
+	Ts     string
+	Msg    string
+	// SM and Parsed are non-nil only when both categorizedLabels and
+	// emitStructuredMetadata are true for the request that produced this entry.
+	SM     map[string]string
+	Parsed map[string]string
 }
 
 type queryRangeWindowCacheEntry struct {
-	Entries []queryRangeWindowEntry `json:"entries"`
+	Entries []queryRangeWindowEntry
 }
 
 func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, logsqlQuery string) bool {
@@ -240,7 +246,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		r.FormValue("step"),
 		collected,
 	)
-	streams := groupQueryRangeWindowEntries(collected, r.FormValue("direction"))
+	streams := groupQueryRangeWindowEntries(collected, r.FormValue("direction"), emitStructuredMetadata, categorizedLabels)
 	p.metrics.RecordQueryRangeWindowMergeDuration(time.Since(mergeStart))
 
 	if len(p.derivedFields) > 0 {
@@ -374,9 +380,9 @@ func (p *Proxy) fetchQueryRangeWindow(
 
 	cacheKey := p.queryRangeWindowCacheKey(r, logsqlQuery, queryLimit, window, categorizedLabels, emitStructuredMetadata)
 	if cached, ok := p.cache.Get(cacheKey); ok {
-		var entry queryRangeWindowCacheEntry
 		if decompressed, err := windowCacheDec.DecodeAll(cached, make([]byte, 0, len(cached)*4)); err == nil {
-			if err := json.Unmarshal(decompressed, &entry); err == nil {
+			var entry queryRangeWindowCacheEntry
+			if err := gob.NewDecoder(bytes.NewReader(decompressed)).Decode(&entry); err == nil {
 				p.metrics.RecordQueryRangeWindowCacheHit()
 				return entry, nil
 			}
@@ -404,17 +410,18 @@ func (p *Proxy) fetchQueryRangeWindow(
 			p.observeQueryRangeWindowFetch(fetchDuration, false)
 			entries := p.vlLogsToLokiWindowEntriesStream(resp.Body, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 			_ = resp.Body.Close()
-			entry := queryRangeWindowCacheEntry{Entries: entries}
+			cacheEntry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
-				if encoded, err := json.Marshal(entry); err == nil {
-					compressed := windowCacheEnc.EncodeAll(encoded, make([]byte, 0, len(encoded)/8))
+				var gobBuf bytes.Buffer
+				if err := gob.NewEncoder(&gobBuf).Encode(cacheEntry); err == nil {
+					compressed := windowCacheEnc.EncodeAll(gobBuf.Bytes(), make([]byte, 0, gobBuf.Len()/8))
 					// Window fragments are short-lived and high churn. Keeping them
 					// local avoids concentrating peer-cache write-through on a single
 					// ring owner when Drilldown or Explore fans a read into many windows.
 					p.cache.SetLocalOnlyWithTTL(cacheKey, compressed, ttl)
 				}
 			}
-			return entry, nil
+			return cacheEntry, nil
 		}
 
 		var fetchErr error
@@ -806,25 +813,27 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 		ensureDetectedLevel(translatedLabels)
 		ensureSyntheticServiceName(translatedLabels)
 
-		value := buildStreamValue(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels)
-		valueTuple, ok := value.([]interface{})
-		if !ok {
-			vlEntryPool.Put(entry)
-			continue
+		var sm, parsed map[string]string
+		if categorizedLabels && emitStructuredMetadata {
+			sm = metadataFieldMap(structuredMetadata)
+			parsed = metadataFieldMap(parsedFields)
 		}
 		entries = append(entries, queryRangeWindowEntry{
 			Stream: translatedLabels,
-			Value:  valueTuple,
+			Ts:     tsNanos,
+			Msg:    msg,
+			SM:     sm,
+			Parsed: parsed,
 		})
 		vlEntryPool.Put(entry)
 	}
 	return entries
 }
 
-func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction string) []map[string]interface{} {
+func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction string, emitSM, categorizedLabels bool) []map[string]interface{} {
 	type streamEntry struct {
-		labels map[string]string
-		values []interface{}
+		labels  map[string]string
+		entries []queryRangeWindowEntry
 	}
 	streams := make(map[string]*streamEntry, len(entries)/2+1)
 	for _, entry := range entries {
@@ -832,12 +841,12 @@ func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction str
 		stream, ok := streams[key]
 		if !ok {
 			stream = &streamEntry{
-				labels: entry.Stream,
-				values: make([]interface{}, 0, 8),
+				labels:  entry.Stream,
+				entries: make([]queryRangeWindowEntry, 0, 8),
 			}
 			streams[key] = stream
 		}
-		stream.values = append(stream.values, entry.Value)
+		stream.entries = append(stream.entries, entry)
 	}
 	// Sort stream keys for deterministic output order. Go map iteration is
 	// non-deterministic; without this, stream order fluctuates across requests
@@ -851,26 +860,25 @@ func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction str
 	out := make([]map[string]interface{}, 0, len(streams))
 	for _, k := range keys {
 		stream := streams[k]
-		// Sort values within each stream by timestamp to stabilise window
+		// Sort entries within each stream by timestamp to stabilise window
 		// boundaries from parallel fetches. Forward = ascending; backward
 		// (default) = descending to match Loki's newest-first contract.
 		forward := direction == "forward"
-		sort.SliceStable(stream.values, func(i, j int) bool {
-			vi, _ := stream.values[i].([]interface{})
-			vj, _ := stream.values[j].([]interface{})
-			if len(vi) == 0 || len(vj) == 0 {
-				return false
-			}
-			ti, _ := vi[0].(string)
-			tj, _ := vj[0].(string)
+		sort.SliceStable(stream.entries, func(i, j int) bool {
+			ti := stream.entries[i].Ts
+			tj := stream.entries[j].Ts
 			if forward {
 				return ti < tj
 			}
 			return ti > tj
 		})
+		values := make([]interface{}, 0, len(stream.entries))
+		for _, e := range stream.entries {
+			values = append(values, buildStreamValue(e.Ts, e.Msg, e.SM, e.Parsed, emitSM, categorizedLabels))
+		}
 		out = append(out, map[string]interface{}{
 			"stream": stream.labels,
-			"values": stream.values,
+			"values": values,
 		})
 	}
 	return out
