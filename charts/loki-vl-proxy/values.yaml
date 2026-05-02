@@ -53,16 +53,29 @@ fullnameOverride: ""
 extraArgs:
   listen: ":3100"
   backend: "http://victorialogs:9428"
+
+  # --- Concurrency & rate limiting ---
+  # Disabled by default; the proxy sits behind Kubernetes resource limits
+  # and VictoriaLogs has its own rate limiting. Enabling these at proxy level
+  # adds a surprise throttle — set only if you intentionally want per-client caps.
+  max-concurrent: "0"           # 0 = unlimited (binary default: 100)
+  rate-limit-per-second: "0"    # 0 = unlimited (binary default: 50 req/s per client)
+  rate-limit-burst: "0"         # 0 = unlimited (binary default: 100)
+
+  # --- Cache ---
   cache-ttl: "60s"
-  cache-max: "10000"
-  # Loki-aligned query_range window cache defaults:
-  # - split by 1h windows
-  # - keep bounded backend fanout
-  # - do not cache near-now windows
-  # - keep historical windows warm for repeat drilldowns
+  # 50 000 entries × ~1-2 KB average = 50-100 MB — fits well within the 512 Mi
+  # memory limit below after GOMEMLIMIT headroom. Lower if pods are memory-constrained.
+  cache-max: "50000"
+
+  # --- query_range window cache ---
+  # Loki-aligned split/fanout defaults:
+  # - 1h windows match Grafana's default step alignment
+  # - 4 parallel windows gives reasonable throughput on small pods (adaptive can go higher)
+  # - do not cache near-now windows (still in flux); keep historical windows warm
   query-range-windowing: "true"
   query-range-split-interval: "1h"
-  query-range-max-parallel: "2"
+  query-range-max-parallel: "4"
   query-range-adaptive-parallel: "true"
   query-range-adaptive-min-parallel: "2"
   query-range-adaptive-max-parallel: "8"
@@ -87,44 +100,62 @@ extraArgs:
   # query-range-partial-responses: "false"             # return partial response on retryable backend failures
   # query-range-background-warm: "true"                # continue warming failed windows in background
   # query-range-background-warm-max-windows: "24"      # cap background warm fanout
-  # recent-tail-refresh-enabled: "true"                # bypass stale near-now cache hits and fetch latest backend data
-  # recent-tail-refresh-window: "2m"                   # only near-now ranges (end within window) are refreshed
-  # recent-tail-refresh-max-staleness: "15s"           # max near-now cache age before bypass
-  # Indexed label-values browse cache (high-cardinality label UX).
+
+  # --- Indexed label-values browse cache ---
   # Keep disabled by default; enable when label value lists are large and you
   # want hotset-first responses with optional offset/search.
   label-values-indexed-cache: "false"
   label-values-hot-limit: "200"
   label-values-index-max-entries: "200000"
+
+  # --- Patterns ---
   patterns-enabled: "true"
   patterns-autodetect-from-queries: "false"
+
+  # --- Backend connection ---
+  # 120s matches the binary default; explicit here so operators can widen it for
+  # very long-range log queries without hunting for the flag name.
+  backend-timeout: "120s"
   backend-min-version: "v1.30.0"
   backend-allow-unsupported-version: "false"
   backend-version-check-timeout: "5s"
-  # Backend HTTP transport buffer sizes (bytes).
-  # Go's net/http default is 4096 (4 KB). Raising to 65536 (64 KB) reduces the
-  # number of read syscalls from ~7 to ~1 for a typical 27 KB VL response,
-  # cutting proxy CPU overhead significantly on the small-query path.
-  # Only lower these when running in an extremely memory-constrained environment.
+  # Compression negotiation with VictoriaLogs backend.
+  # "auto" detects co-located backends (localhost/127.x/::1) and requests
+  # uncompressed responses, eliminating decompression CPU for in-pod VL.
+  # Remote backends continue to use zstd/gzip. Override with "none", "gzip",
+  # or "zstd" if your deployment topology requires a fixed policy.
+  backend-compression: "auto"
+  # Transport read/write buffer sizes (bytes). Go default is 4 KB.
+  # 64 KB reduces read syscall count ~7× for typical 27 KB VL responses.
+  # Lower only in very memory-constrained environments (many pods, tiny limits).
   backend-read-buffer-size: "65536"
   backend-write-buffer-size: "65536"
-  # Frontend/client-facing compression:
-  # - default to gzip for broad Loki/Grafana compatibility
-  # - only spend CPU once responses are at least 1KiB
-  # - route-aware policy in the proxy raises thresholds for metadata/control paths
+
+  # --- Frontend/client-facing compression ---
+  # gzip for broad Loki/Grafana compatibility; route-aware policy raises the
+  # threshold for metadata/control paths to avoid spending CPU on tiny responses.
   response-compression: "gzip"
   response-compression-min-bytes: "1024"
+
+  # --- Peer cache ---
   peer-timeout: "2s"
   peer-write-through: "true"
   peer-write-through-min-ttl: "30s"
+
   log-level: "info"
-  # Hardening
+
+  # --- HTTP server hardening ---
   http-read-timeout: "30s"
+  # 120s write timeout covers long-range log queries; Grafana's default query
+  # timeout is 60s but custom dashboards can exceed that.
   http-write-timeout: "120s"
-  http-idle-timeout: "120s"
+  # 90s idle timeout: long enough to reuse keepalive connections across
+  # Grafana auto-refresh cycles (default 30s interval) while not holding
+  # sockets open indefinitely.
+  http-idle-timeout: "90s"
   # Downstream HTTP/1.x keepalive rotation to avoid one long-lived datasource
   # connection pinning a single proxy pod indefinitely. These settings do not
-  # affect upstream proxy->VictoriaLogs pooling.
+  # affect upstream proxy→VictoriaLogs pooling.
   http-conn-max-age: "10m"
   http-conn-max-age-jitter: "2m"
   http-conn-max-requests: "256"
@@ -493,15 +524,16 @@ ingress:
     #     - loki-vl-proxy.local
 
 # --- Resources ---
-# Defaults are small and intended for development or light shared use.
-# For production, raise both memory and cpu based on request rate and cache size.
+# Sized for light-to-moderate production use (tens of Grafana users, cache-max=50000).
+# Scale up cpu.limits and memory.limits for heavy dashboards or large cache budgets.
+# Rule of thumb: 1 MB RAM per ~500 cache entries; CPU scales with concurrency × query complexity.
 resources:
   requests:
-    cpu: 50m
-    memory: 64Mi
+    cpu: 100m
+    memory: 128Mi
   limits:
-    cpu: 500m
-    memory: 256Mi
+    cpu: 1000m
+    memory: 512Mi
 
 # --- Probes ---
 # Default probe endpoints:
