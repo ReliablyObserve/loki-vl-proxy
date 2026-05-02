@@ -249,8 +249,58 @@ mkdir -p "$OUTPUT_DIR"
   --output="$OUTPUT_DIR" \
   "$@"
 
+# --- Machinery pass: unique windows defeat cache + coalescer -----------------
+# Every worker gets a distinct non-overlapping time window so the singleflight
+# coalescer never fires and the response cache never warms. This isolates raw
+# proxy translation + HTTP overhead from caching artifacts.
+# Skips partial/coalescer variants (irrelevant: cache can't help) and pprof
+# (already captured in the main pass above).
+# Forwards the same workload/clients/duration/version/jitter flags from $@
+# but overrides --output and injects --unique-windows.
+# ------------------------------------------------------------------------------
+SKIP_MACHINERY="${SKIP_MACHINERY:-false}"
+if [ "$SKIP_MACHINERY" != "true" ]; then
+  # Build passthrough args: drop --output=*, --unique-windows, --pprof-*,
+  # --proxy-partial*, --proxy-coalescer*, and --proxy-*-metrics flags
+  # (those targets are not run in machinery mode).
+  MACHINERY_PASSTHROUGH=()
+  for arg in "$@"; do
+    case "$arg" in
+      --output=*|--unique-windows|--unique-windows=*) ;;
+      --proxy-partial*|--proxy-coalescer*) ;;
+      --pprof-*) ;;
+      *) MACHINERY_PASSTHROUGH+=("$arg") ;;
+    esac
+  done
+
+  MACHINERY_DIR="$OUTPUT_DIR/machinery"
+  mkdir -p "$MACHINERY_DIR"
+
+  echo
+  echo "════════════════════════════════════════════════════════════"
+  echo " Machinery Pass — unique windows, no cache/coalescer benefit"
+  echo " (raw proxy translation + HTTP overhead)"
+  echo "════════════════════════════════════════════════════════════"
+
+  /tmp/loki-bench \
+    --loki="$LOKI_URL" \
+    --proxy="$PROXY_URL" \
+    --proxy-no-cache="${PROXY_NO_CACHE_URL}" \
+    --vl="$VL_URL" \
+    --vl-direct="${VL_DIRECT_URL}" \
+    --loki-metrics="$LOKI_METRICS" \
+    --proxy-metrics="$PROXY_METRICS" \
+    --vl-metrics="$VL_METRICS" \
+    --unique-windows \
+    --skip-proxy-partial \
+    --output="$MACHINERY_DIR" \
+    "${MACHINERY_PASSTHROUGH[@]}"
+fi
+
 echo
 echo "════════════════════════════════════════════════════════════"
 echo " Results saved to $OUTPUT_DIR"
 ls -lh "$OUTPUT_DIR"/*.json "$OUTPUT_DIR"/*.md 2>/dev/null || true
+echo "  Machinery: $MACHINERY_DIR"
+ls -lh "$MACHINERY_DIR"/*.md 2>/dev/null || true
 echo "════════════════════════════════════════════════════════════"

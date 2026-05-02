@@ -38,7 +38,12 @@ limits_config:
   ingestion_rate_mb: 50000
   ingestion_burst_size_mb: 50000
   max_global_streams_per_user: 0
-  max_query_series: 5000
+  # Set to 0 (unlimited) for benchmarking — metric queries returning many series
+  # (e.g. rate() with high-cardinality labels at c=50-500) would otherwise 422.
+  max_query_series: 0
+  # Set to 0 (unlimited) for benchmarking — high-concurrency runs can produce
+  # more log entries per query than the default 5000 cap.
+  max_entries_limit_per_query: 0
   volume_enabled: true
 
   # --- Read-path throughput tuning ---
@@ -110,11 +115,11 @@ querier:
   per_request_limits_enabled: true
 
   # Maximum queries executed simultaneously inside a single querier process.
-  # Default 4 is the single largest throughput bottleneck at c=100: with 4 slots
-  # and 100 concurrent clients, 96 requests queue at the querier even though the
-  # frontend has dispatched them. On an 18-core host, 16 matches roughly 1 slot
-  # per physical core pair, saturating TSDB reads without oversubscribing I/O.
-  max_concurrent: 16
+  # Raised to 64 to match max_query_parallelism — at c=50 clients each split into
+  # up to 2 sub-queries, the querier needs 100 slots to avoid queue stall.
+  # Benchmark host is local/high-core; 64 concurrent TSDB reads saturates storage
+  # without queue-induced 4xx at c=10–50.
+  max_concurrent: 64
 
   # Only query ingester for data within the last 30m. For benchmark data that
   # accumulates over hours, the ingester holds only the tail; routing 2h queries
