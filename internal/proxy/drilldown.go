@@ -1539,12 +1539,8 @@ func fillDetectedLabelsFJ(fjVal *fj.Value, buf map[string]string) {
 		if _, ok := buf[key]; ok {
 			continue
 		}
-		raw := fjVal.GetStringBytes(key)
-		if len(raw) == 0 {
-			continue
-		}
 		v := fjVal.Get(key)
-		if v == nil {
+		if v == nil || v.Type() == fj.TypeNull {
 			continue
 		}
 		if s, ok := stringifyFJValue(v); ok && strings.TrimSpace(s) != "" {
@@ -1570,9 +1566,13 @@ func inferDetectedTypeFJ(v *fj.Value) string {
 	case fj.TypeTrue, fj.TypeFalse:
 		return "boolean"
 	case fj.TypeNumber:
-		// Distinguish int from float by inspecting the raw bytes.
-		raw := v.String() // e.g. "42" or "3.14"
-		if _, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		// Use Float64() to match encoding/json semantics: JSON numbers unmarshal
+		// to float64, and a value with no fractional part (e.g. 1e10) is "int".
+		f, err := v.Float64()
+		if err != nil {
+			return "float"
+		}
+		if f == float64(int64(f)) {
 			return "int"
 		}
 		return "float"
@@ -1661,7 +1661,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			continue
 		}
 
-		// T1c: use pooled fastjson parser instead of stdjson.Unmarshal + map[string]interface{}.
+		// Use pooled fastjson parser instead of stdjson.Unmarshal + map[string]interface{}.
 		fjParser := vlFJParserPool.Get()
 		fjVal, err := fjParser.ParseBytes(line)
 		if err != nil {
@@ -1725,7 +1725,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		}
 		msg := string(msgBytes)
 
-		// T2a: only attempt JSON parse if _msg starts with '{' — skip non-JSON early.
+		// Only attempt JSON parse if _msg starts with '{' — skip non-JSON early.
 		if len(msgBytes) >= 2 && msgBytes[0] == '{' {
 			fjParser2 := vlFJParserPool.Get()
 			if fjVal2, err2 := fjParser2.ParseBytes(msgBytes); err2 == nil {
