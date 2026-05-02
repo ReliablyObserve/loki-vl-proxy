@@ -456,6 +456,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
+	needsClassification := emitStructuredMetadata || categorizedLabels
 
 	var (
 		miner        *patternMiner
@@ -527,7 +528,12 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		// classifyEntryMetadataFieldsFJ returns smBuf/pfBuf directly (no copy).
 		// buildStreamValue → metadataFieldMap copies them before the next iteration
 		// clears the buffers. Do not move buildStreamValue below another classify call.
-		structuredMetadata, parsedFields := p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+		// Standard Grafana requests have emitStructuredMetadata=false and categorizedLabels=false,
+		// so skip the per-field visit entirely — buildStreamValue discards these maps anyway.
+		var structuredMetadata, parsedFields map[string]string
+		if needsClassification {
+			structuredMetadata, parsedFields = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+		}
 		se, ok := streamMap[desc.key]
 		if !ok {
 			se = &streamEntry{

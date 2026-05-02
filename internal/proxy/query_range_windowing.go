@@ -18,8 +18,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
 )
+
+var (
+	windowCacheEnc *zstd.Encoder
+	windowCacheDec *zstd.Decoder
+)
+
+func init() {
+	windowCacheEnc, _ = zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest))
+	windowCacheDec, _ = zstd.NewReader(nil)
+}
 
 const (
 	maxQueryRangeWindows              = 4096
@@ -364,9 +375,11 @@ func (p *Proxy) fetchQueryRangeWindow(
 	cacheKey := p.queryRangeWindowCacheKey(r, logsqlQuery, queryLimit, window, categorizedLabels, emitStructuredMetadata)
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		var entry queryRangeWindowCacheEntry
-		if err := json.Unmarshal(cached, &entry); err == nil {
-			p.metrics.RecordQueryRangeWindowCacheHit()
-			return entry, nil
+		if decompressed, err := windowCacheDec.DecodeAll(cached, make([]byte, 0, len(cached)*4)); err == nil {
+			if err := json.Unmarshal(decompressed, &entry); err == nil {
+				p.metrics.RecordQueryRangeWindowCacheHit()
+				return entry, nil
+			}
 		}
 	}
 	p.metrics.RecordQueryRangeWindowCacheMiss()
@@ -394,10 +407,11 @@ func (p *Proxy) fetchQueryRangeWindow(
 			entry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
 				if encoded, err := json.Marshal(entry); err == nil {
+					compressed := windowCacheEnc.EncodeAll(encoded, make([]byte, 0, len(encoded)/8))
 					// Window fragments are short-lived and high churn. Keeping them
 					// local avoids concentrating peer-cache write-through on a single
 					// ring owner when Drilldown or Explore fans a read into many windows.
-					p.cache.SetLocalOnlyWithTTL(cacheKey, encoded, ttl)
+					p.cache.SetLocalOnlyWithTTL(cacheKey, compressed, ttl)
 				}
 			}
 			return entry, nil
