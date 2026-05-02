@@ -510,8 +510,7 @@ func reconstructLogLineWithFlagFJ(msg string, obj *fj.Object, streamLabels map[s
 	b := jsonBuilderPool.Get().(*strings.Builder)
 	b.Reset()
 	b.WriteString(`{"_msg":`)
-	msgJSON, _ := json.Marshal(msg)
-	b.Write(msgJSON)
+	appendJSONStringToBuilder(b, msg)
 	startLen := b.Len()
 	obj.Visit(func(k []byte, v *fj.Value) {
 		key := string(k)
@@ -526,11 +525,9 @@ func reconstructLogLineWithFlagFJ(msg string, obj *fj.Object, streamLabels map[s
 			return
 		}
 		b.WriteByte(',')
-		keyJSON, _ := json.Marshal(key)
-		b.Write(keyJSON)
+		appendJSONStringToBuilder(b, key)
 		b.WriteByte(':')
-		valJSON, _ := json.Marshal(sv)
-		b.Write(valJSON)
+		appendJSONStringToBuilder(b, sv)
 	})
 	if b.Len() == startLen {
 		jsonBuilderPool.Put(b)
@@ -540,6 +537,49 @@ func reconstructLogLineWithFlagFJ(msg string, obj *fj.Object, streamLabels map[s
 	result := b.String()
 	jsonBuilderPool.Put(b)
 	return result
+}
+
+// appendJSONStringToBuilder writes s as a JSON-encoded string into a strings.Builder.
+// Matches json.Marshal semantics for HTML-safe output without allocating a []byte.
+func appendJSONStringToBuilder(b *strings.Builder, s string) {
+	b.WriteByte('"')
+	start := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 0x20 && c != '"' && c != '\\' && c != '<' && c != '>' && c != '&' {
+			continue
+		}
+		if start < i {
+			b.WriteString(s[start:i])
+		}
+		switch c {
+		case '"':
+			b.WriteString(`\"`)
+		case '\\':
+			b.WriteString(`\\`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '<':
+			b.WriteString(`\u003c`)
+		case '>':
+			b.WriteString(`\u003e`)
+		case '&':
+			b.WriteString(`\u0026`)
+		default:
+			b.WriteString(`\u00`)
+			b.WriteByte("0123456789abcdef"[c>>4])
+			b.WriteByte("0123456789abcdef"[c&0xf])
+		}
+		start = i + 1
+	}
+	if start < len(s) {
+		b.WriteString(s[start:])
+	}
+	b.WriteByte('"')
 }
 
 // isVLNonLokiLabelField returns true for fields that VictoriaLogs exposes in
