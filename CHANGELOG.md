@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.0] - 2026-05-02
+
 ### Performance
 
 - perf: replace stdlib `compress/gzip` with `klauspost/gzip` (2.5–3× faster decode, 2× faster encode) across all proxy–VL and proxy–client paths
