@@ -222,7 +222,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	mergeStart := time.Now()
 	p.maybeAutodetectPatternsFromWindowEntries(
 		r.Header.Get("X-Scope-OrgID"),
-		p.forwardedAuthFingerprint(r),
+		p.fingerprintFromCtx(r.Context(), r),
 		r.FormValue("query"),
 		r.FormValue("start"),
 		r.FormValue("end"),
@@ -598,7 +598,7 @@ func (p *Proxy) queryRangeWindowHasHitsCacheKey(
 		strconv.FormatInt(window.startNs, 10),
 		strconv.FormatInt(window.endNs, 10),
 	}
-	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		parts = append(parts, "auth:"+fp)
 	}
 	return strings.Join(parts, ":")
@@ -714,7 +714,7 @@ func (p *Proxy) queryRangeWindowCacheKey(
 		strconv.FormatBool(categorizedLabels),
 		strconv.FormatBool(emitStructuredMetadata),
 	}
-	if fp := p.forwardedAuthFingerprint(r); fp != "" {
+	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		parts = append(parts, "auth:"+fp)
 	}
 	return strings.Join(parts, ":")
@@ -748,6 +748,10 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 		metadataMapPool.Put(pfBuf)
 	}()
 
+	// Precompute per-response constants so the hot scanner loop pays O(1) not O(n).
+	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
+	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
+
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), windowEntryScannerLineBytes)
 
@@ -778,9 +782,9 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
 		windowStreamLabels := parseStreamLabels(asString(entry["_stream"]))
-		msg = reconstructLogLine(msg, entry, windowStreamLabels, originalQuery)
+		msg = reconstructLogLineWithFlag(msg, entry, windowStreamLabels, skipLogLineReconstruction)
 
-		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf, pfBuf)
+		labels, structuredMetadata, parsedFields := p.classifyEntryFieldsWithFlags(entry, windowStreamLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)

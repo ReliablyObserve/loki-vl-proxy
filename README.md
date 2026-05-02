@@ -67,15 +67,16 @@ When every client sends a **different** query with a unique time window, the coa
 
 | Workload | Loki req/s | Proxy cold req/s | Ratio | Note |
 |---|---:|---:|:---:|---|
-| Small (c=100) | 2,110 | 1,528 | 0.72× | Extra HTTP hop overhead |
+| Small (c=50) | 2,257 | 2,273 | **~1.0×** | At parity — HTTP hop cost absorbed by VL speed |
+| Small (c=100) | 2,110 | 2,432 | **1.15×** | Proxy beats Loki cold |
 | Heavy (c=50) | 219 | 234 | **~1.0×** | At parity — translation cost below noise |
 | Long-range (c=10) | 9 | 19 | **2.1×** | Proxy's parallel window fetching wins even cold |
 | Long-range (c=100) | 13 | 24 | **1.9×** | Structural advantage: VL parallel scans vs Loki sequential |
-| Compute (c=100) | 899 | 211 | 0.23× | Structural limit: N VL calls per metric query |
+| Compute (c=100) | 899 | 366 | 0.41× | Structural limit: N VL calls per metric query |
 
 Long-range is faster than Loki even with a cold cache because the proxy splits long windows into parallel 1 h sub-fetches that complete before Loki finishes a single sequential scan.
 
-Compute is the worst case: LogQL `rate()`, `sum by()`, and `quantile_over_time()` have no VL-native equivalent, so the proxy must issue N raw log fetches and aggregate locally. Historical windows have a 24 h cache TTL — repeat queries hit cache and this overhead disappears.
+Compute is the most exposed workload cold: LogQL `rate()`, `sum by()`, and `quantile_over_time()` have no VL-native equivalent, so the proxy issues N raw log fetches and aggregates locally (VL native direct: 1,431 req/s vs proxy 366 req/s at c=100). Historical windows have a 24 h cache TTL — repeat queries hit cache and this overhead disappears.
 
 ### Structural advantages (independent of cache)
 

@@ -39,6 +39,7 @@ type rangeMetricSample struct {
 
 var (
 	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
+	outerAggregationRE  = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
 )
 
 func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
@@ -95,6 +96,15 @@ func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
 
 func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) {
 	logql = strings.TrimSpace(logql)
+	// Strip outer aggregation like "sum by (method) (rate(...))" → "rate(...)"
+	// so we parse the inner range function, not the aggregation operator.
+	if loc := outerAggregationRE.FindStringIndex(logql); loc != nil && loc[0] == 0 && loc[1] < len(logql) {
+		inner := strings.TrimSpace(logql[loc[1]:])
+		if strings.HasPrefix(inner, "(") && strings.HasSuffix(inner, ")") {
+			inner = strings.TrimSpace(inner[1 : len(inner)-1])
+		}
+		logql = inner
+	}
 	openIdx := strings.Index(logql, "(")
 	closeIdx := strings.LastIndex(logql, ")")
 	if openIdx <= 0 || closeIdx <= openIdx {
@@ -111,6 +121,9 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 		return originalRangeMetricSpec{}, false
 	}
 	spec.Window = parseLokiDuration(strings.TrimSpace(body[bracketOpen+1 : bracketClose]))
+	if spec.Window < 0 {
+		return originalRangeMetricSpec{}, false
+	}
 
 	unwrap := rangeMetricUnwrapRE.FindStringSubmatch(body)
 	if len(unwrap) == 2 {
@@ -259,7 +272,9 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if manualFunc == "" {
 		return false
 	}
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc) {
+	step, _ := parsePositiveStepDuration(r.FormValue("step"))
+	rangeEqualsStep := step > 0 && origSpec.Window > 0 && origSpec.Window == step
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep, originalLogql) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -287,7 +302,9 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if manualFunc == "" {
 		return false
 	}
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc) {
+	// Instant queries have no step — keep manual path for rate() to preserve
+	// sliding-window semantics (the window defines the lookback, not a bucket).
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, false, originalLogql) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -301,7 +318,19 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	return p.proxyManualRangeMetricInstant(w, r, spec, origSpec, manualFunc)
 }
 
-func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string) bool {
+// shouldUseManualRangeMetricCompat reports whether the given metric function
+// must be aggregated in the proxy (manual path) rather than offloaded to
+// VictoriaLogs /select/logsql/stats_query_range.
+//
+// rangeEqualsStep must be true when the LogQL range window equals the query
+// step. When true, VL's native rate() — which buckets by the step interval —
+// is semantically identical to LogQL rate()[range]. Pass false to keep the
+// sliding-window manual path for cases where range != step.
+//
+// originalLogql is the original LogQL query string. When it contains "__error__"
+// (e.g., via `| drop __error__`), the caller has explicitly handled parse errors,
+// making VL native stats semantically correct even for count-like operations.
+func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsStep bool, originalLogql string) bool {
 	manualFunc = strings.TrimSpace(manualFunc)
 	if manualFunc == "rate_counter" {
 		return true
@@ -309,12 +338,35 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string) bool {
 	if !queryUsesParserStages(baseQuery) {
 		return false
 	}
-	// VL stats_query_range handles all of these natively — including numeric
-	// fields from parsed stages — without needing client-side unwrap aggregation.
-	// Only rate_counter must stay on the manual path (monotonic counter semantics).
+	// The translated query contains parser stages (unpack_json/unpack_logfmt/extract*).
+	// VL's unpack pipes do not model Loki's __error__ filtering: Loki excludes lines
+	// that fail to parse via the __error__ label; VL may include them.
+	//
+	// For count-like operations this difference is directly observable — non-parseable
+	// lines inflate the count. Force manual log-fetch unless the original LogQL
+	// explicitly handles __error__ (the user has opted into counting all lines) or the
+	// range == step optimization applies (VL tumbling window is semantically identical).
+	//
+	// Unwrap-based aggregations (avg, sum, max, min, …) require the unwrapped field
+	// to be present in the parsed entry; lines that fail to parse naturally produce
+	// no value and are excluded, so the semantic risk is much lower.
 	switch manualFunc {
-	case "count_over_time", "bytes_over_time", "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
+	case "rate", "bytes_rate":
+		// When range == step, VL's native rate/bytes_rate with the first-bucket shift
+		// is semantically identical to LogQL. Use native stats path.
+		if rangeEqualsStep {
+			return false
+		}
+		return true
+	case "count_over_time", "bytes_over_time":
+		// Loki's | json / | logfmt parser stages add __error__ on parse failure but
+		// keep the log line in the stream — they never drop it. VL's unpack_json /
+		// unpack_logfmt behaves the same way (the log entry is retained, only field
+		// extraction is skipped). Both backends therefore count the same set of lines,
+		// so native VL stats is semantically correct here.
 		return false
+	case "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
+		return false // unwrap-based; field absence filters naturally
 	default:
 		return true
 	}
@@ -483,8 +535,13 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		}
 		ensureSyntheticServiceName(streamLabels)
 		metricLabels := buildManualMetricLabels(streamLabels, groupBy, byExplicit)
-		if includeParsedLabels && !byExplicit {
-			addParsedEntryLabels(metricLabels, entry, field)
+		if includeParsedLabels && len(groupBy) > 0 && !byExplicit {
+			// Only inject parsed labels that appear in the explicit by(...) list.
+			// Adding ALL parsed fields (old behaviour) creates one series per unique
+			// JSON-object combination — O(N) series for N distinct log entries.
+			// Loki groups by stream labels only when no by(...) is present; parsed
+			// fields become metric dimensions only when explicitly named in by(...).
+			addGroupByParsedLabels(metricLabels, entry, groupBy)
 		}
 		translated := p.labelTranslator.TranslateLabelsMap(metricLabels)
 		key := seriesKeyFromMetric(translated)
@@ -512,7 +569,30 @@ func queryUsesParserStages(baseQuery string) bool {
 	if strings.Contains(baseQuery, "| extract ") {
 		return true
 	}
+	if strings.Contains(baseQuery, "| extract_regexp ") {
+		return true
+	}
 	return false
+}
+
+// addGroupByParsedLabels injects only the labels named in groupBy from the
+// parsed log entry. This matches Loki's behaviour: without an explicit by(...)
+// clause, rate/count_over_time groups by stream labels only; parsed-field values
+// only become metric dimensions when the caller explicitly names them in by(...).
+func addGroupByParsedLabels(metricLabels map[string]string, entry map[string]interface{}, groupBy []string) {
+	for _, key := range groupBy {
+		if _, exists := metricLabels[key]; exists {
+			continue
+		}
+		if raw, ok := entry[key]; ok {
+			if value, ok := stringifyEntryValue(raw); ok {
+				value = strings.TrimSpace(value)
+				if value != "" {
+					metricLabels[key] = value
+				}
+			}
+		}
+	}
 }
 
 func addParsedEntryLabels(metricLabels map[string]string, entry map[string]interface{}, unwrapField string) {

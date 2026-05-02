@@ -12,10 +12,21 @@ spec:
   policyTypes:
     - Ingress
     - Egress
-  {{- with .Values.networkPolicy.ingress }}
   ingress:
+    {{- with .Values.networkPolicy.ingress }}
     {{- toYaml . | nindent 4 }}
-  {{- end }}
+    {{- end }}
+    {{- /*
+      Always allow ingress from chart-managed pods (e.g., helm test-connection pod).
+      The test pod carries loki-vl-proxy.labels which include the selector labels.
+    */}}
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "loki-vl-proxy.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 3100
+          protocol: TCP
   {{- with .Values.networkPolicy.egress }}
   egress:
     {{- toYaml . | nindent 4 }}

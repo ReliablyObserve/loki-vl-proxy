@@ -1,0 +1,37 @@
+version: 2
+updates:
+  # Keep GitHub Actions pinned to latest SHA-tagged versions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions-minor:
+        patterns: ["*"]
+    labels:
+      - dependencies
+      - github-actions
+
+  # Keep Go modules up to date.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      go-minor:
+        update-types: ["minor", "patch"]
+    labels:
+      - dependencies
+      - go
+
+  # Keep the builder base image up to date.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    labels:
+      - dependencies
+      - docker

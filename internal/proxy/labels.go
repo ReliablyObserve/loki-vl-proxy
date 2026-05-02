@@ -1,9 +1,9 @@
 package proxy
 
 import (
-	"regexp"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // LabelStyle controls how VL field names are translated to Loki label names in responses,
@@ -51,9 +51,6 @@ type fieldResolution struct {
 	candidates []string
 	ambiguous  bool
 }
-
-// labelSanitizeRe matches characters not allowed in Prometheus/Loki label names.
-var labelSanitizeRe = regexp.MustCompile(`[^a-zA-Z0-9_]`)
 
 // LabelTranslator handles bidirectional label name translation between VL and Loki.
 type LabelTranslator struct {
@@ -420,22 +417,52 @@ func (lt *LabelTranslator) metadataFieldExposures(vlField string, mode MetadataF
 }
 
 // SanitizeLabelName converts a field name to a valid Prometheus/Loki label name.
-// Rules: replace [^a-zA-Z0-9_] with _, prefix "key_" if starts with digit.
+// Rules: replace [^a-zA-Z0-9_] with _, collapse consecutive underscores, trim
+// trailing underscores, prefix "key_" if the result starts with a digit.
+// Single-pass O(n) scan — avoids regex allocation and the O(n²) double-underscore
+// collapse loop of the previous implementation.
 func SanitizeLabelName(name string) string {
-	sanitized := labelSanitizeRe.ReplaceAllString(name, "_")
-	// Collapse multiple consecutive underscores from sanitization
-	for strings.Contains(sanitized, "__") {
-		sanitized = strings.ReplaceAll(sanitized, "__", "_")
-	}
-	// Trim trailing underscores that result from sanitization
-	sanitized = strings.TrimRight(sanitized, "_")
-	if len(sanitized) == 0 {
+	if name == "" {
 		return "key_empty"
 	}
-	if sanitized[0] >= '0' && sanitized[0] <= '9' {
-		sanitized = "key_" + sanitized
+	b := make([]byte, 0, len(name))
+	prevUnderscore := false
+	for i := 0; i < len(name); {
+		r, size := rune(name[i]), 1
+		if name[i] >= utf8.RuneSelf {
+			r, size = utf8.DecodeRuneInString(name[i:])
+		}
+		i += size
+		valid := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
+		if !valid {
+			if prevUnderscore {
+				continue // collapse: invalid char after underscore → skip
+			}
+			b = append(b, '_')
+			prevUnderscore = true
+			continue
+		}
+		if r == '_' {
+			if prevUnderscore {
+				continue // collapse consecutive underscores
+			}
+			prevUnderscore = true
+		} else {
+			prevUnderscore = false
+		}
+		b = append(b, byte(r)) // safe: only ASCII at this point
 	}
-	return sanitized
+	// Trim trailing underscores.
+	for len(b) > 0 && b[len(b)-1] == '_' {
+		b = b[:len(b)-1]
+	}
+	if len(b) == 0 {
+		return "key_empty"
+	}
+	if b[0] >= '0' && b[0] <= '9' {
+		return "key_" + string(b)
+	}
+	return string(b)
 }
 
 // knownUnderscoreToDot maps well-known Loki/Prometheus underscore labels back to

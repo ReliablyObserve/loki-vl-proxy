@@ -690,6 +690,8 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	if end != "" {
 		params.Set("end", formatVLTimestamp(end))
 	}
+	// Keep consistent with collectRangeMetricSamples to avoid unbounded reads.
+	params.Set("limit", "1000000")
 
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
@@ -905,6 +907,9 @@ func buildBareParserMetricMatrix(series []bareParserMetricSeries, startNanos, en
 				left++
 			}
 			window := samples[left:right]
+			if len(window) == 0 {
+				continue // no samples in window — match Loki's absent-point behaviour
+			}
 			values = append(values, []interface{}{float64(eval) / float64(time.Second), formatMetricSampleValue(bareParserMetricWindowValue(spec.funcName, window, spec))})
 		}
 		result = append(result, lokiMatrixResult{Metric: seriesItem.metric, Values: values})
@@ -1088,7 +1093,122 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	p.queryTracker.Record("query", originalQuery, elapsed, false)
 }
 
+// hasPostParserPipeStage reports true when the base query has any pipe stage
+// after the last extracting parser (e.g. "| json | status >= 400"). When false,
+// the parser doesn't filter log lines and can be stripped for native VL stats.
+func hasPostParserPipeStage(baseQuery string) bool {
+	lastEnd := -1
+	for _, re := range []*regexp.Regexp{
+		jsonParserStageRE,
+		logfmtParserStageRE,
+		regexpExtractingParserStageRE,
+		patternExtractingParserStageRE,
+		otherExtractingParserStageRE,
+	} {
+		for _, loc := range re.FindAllStringIndex(baseQuery, -1) {
+			if loc[1] > lastEnd {
+				lastEnd = loc[1]
+			}
+		}
+	}
+	if lastEnd < 0 {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(baseQuery[lastEnd:]), "|")
+}
+
+// stripParserStages removes all extracting parser stages from a LogQL base query.
+func stripParserStages(baseQuery string) string {
+	result := baseQuery
+	for _, re := range []*regexp.Regexp{
+		jsonParserStageRE,
+		logfmtParserStageRE,
+		regexpExtractingParserStageRE,
+		patternExtractingParserStageRE,
+		otherExtractingParserStageRE,
+	} {
+		result = re.ReplaceAllString(result, "")
+	}
+	return strings.TrimSpace(result)
+}
+
+// proxyBareParserMetricViaStats routes bare parser metric queries (e.g.
+// rate({app} | json [5m])) to native VL stats_query_range.
+// Parser stages (| json, | logfmt) are kept in the query so that VL applies
+// the same filtering semantics as Loki: lines that fail parsing are excluded
+// from the count, matching Loki's __error__ behavior for metric queries.
+// Returns true when the fast path handled the request.
+func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Request, reqStart time.Time, originalQuery string, spec bareParserMetricCompatSpec) bool {
+	window := "[" + spec.rangeWindowExpr + "]"
+	switch spec.funcName {
+	case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
+	default:
+		return false
+	}
+	reconstructed := spec.funcName + "(" + spec.baseQuery + " " + window + ")"
+
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), reconstructed)
+	if err != nil || !isStatsQuery(logsqlQuery) {
+		return false
+	}
+	// Shift start back by the range window so VL includes the extra initial bucket
+	// that covers the data Loki uses for the first rate() evaluation point at T0
+	// (Loki reads [T0-window, T0]; VL tumbling window without shift gives [T0, T0+step)).
+	// We capture the response, trim the pre-start points, then forward to the client.
+	origStartNs, hasStart := parseLokiTimeToUnixNano(r.FormValue("start"))
+	var effectiveR *http.Request
+	if hasStart && spec.rangeWindow > 0 {
+		shiftedR := r.Clone(r.Context())
+		_ = shiftedR.ParseForm()
+		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-spec.rangeWindow.Nanoseconds()))
+		effectiveR = shiftedR
+	} else {
+		effectiveR = r
+	}
+
+	// Call the direct path (no compat layer, no shift gate) since effectiveR
+	// already has the shifted start applied above.
+	buf := &bufferedResponseWriter{}
+	p.proxyStatsQueryRangeDirect(buf, effectiveR, logsqlQuery)
+
+	body := buf.body
+	if hasStart && spec.rangeWindow > 0 {
+		body = trimStatsQueryRangeResponseFromStart(body, origStartNs)
+	}
+
+	code := buf.code
+	if code == 0 {
+		code = http.StatusOK
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if code != http.StatusOK {
+		w.WriteHeader(code)
+	}
+	_, _ = w.Write(body)
+
+	elapsed := time.Since(reqStart)
+	p.metrics.RecordRequest("query_range", code, elapsed)
+	p.queryTracker.Record("query_range", originalQuery, elapsed, code >= 400)
+	return true
+}
+
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
+	// Fast path: for count-like functions with no post-parser pipeline stages,
+	// no unwrap, and a tumbling window (range == step), strip the parser and
+	// route to native VL stats_query_range. VL native stats is semantically
+	// equivalent to LogQL range metrics only when range == step (no overlap).
+	// For sliding windows (range > step) the slow manual path is required.
+	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
+	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
+	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) {
+		switch spec.funcName {
+		case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
+			if p.proxyBareParserMetricViaStats(w, r, start, originalQuery, spec) {
+				return
+			}
+		}
+	}
+
 	startNanos, ok := parseFlexibleUnixNanos(r.FormValue("start"))
 	if !ok {
 		p.writeError(w, http.StatusBadRequest, "invalid start timestamp")
@@ -1256,9 +1376,15 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 				delete(syntheticLabels, "level")
 				delete(translated, "level")
 			}
-			ensureSyntheticServiceName(syntheticLabels)
-			if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
-				delete(syntheticLabels, "service_name")
+			// Only synthesize service_name for raw stream metrics (hadStream=true).
+			// For aggregated results like "sum by (container)", the metric should only
+			// contain the by() labels — adding service_name derived from container would
+			// cause Drilldown include/exclude to fail because the extra label is unexpected.
+			if hadStream {
+				ensureSyntheticServiceName(syntheticLabels)
+				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
+					delete(syntheticLabels, "service_name")
+				}
 			}
 			if len(syntheticLabels) != beforeSyntheticCount {
 				changed = true

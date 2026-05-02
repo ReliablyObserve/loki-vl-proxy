@@ -23,6 +23,36 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
+	// For rate() with range==step: VL tumbling windows miss the pre-window data
+	// for the first evaluation point (Loki uses a sliding window [T0-W, T0];
+	// VL gives [T0, T0+W)). Shift start back by W, call the direct path, then
+	// trim the extra leading bucket from the response.
+	if origSpec, origStartNs, ok := statsRateRangeEqualsStepShift(originalLogql, r); ok {
+		buf := &bufferedResponseWriter{}
+		shiftedR := r.Clone(r.Context())
+		_ = shiftedR.ParseForm()
+		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-origSpec.Window.Nanoseconds()))
+		p.proxyStatsQueryRangeDirect(buf, shiftedR, logsqlQuery)
+		body := trimStatsQueryRangeResponseFromStart(buf.body, origStartNs)
+		code := buf.code
+		if code == 0 {
+			code = http.StatusOK
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if code != http.StatusOK {
+			w.WriteHeader(code)
+		}
+		_, _ = w.Write(body)
+		return
+	}
+
+	p.proxyStatsQueryRangeDirect(w, r, logsqlQuery)
+}
+
+// proxyStatsQueryRangeDirect issues the VL stats_query_range request directly,
+// bypassing the compat layer and the rate-shift gate. Call this when the caller
+// has already applied any necessary start shift (e.g. proxyBareParserMetricViaStats).
+func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
 	// Keep metric query_range as a single backend request. Window splitting and
 	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -51,13 +81,82 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	w.Write(wrapAsLokiResponse(body, "matrix"))
 }
 
+// allRangeWindowsEqual returns (window, true) when every range vector in logql
+// uses the same window duration. A query like rate({a}[1m]) / rate({b}[5m])
+// returns (0, false) because the windows differ. Used to guard binary-expression
+// shift logic against applying a single shift to operands with different windows.
+func allRangeWindowsEqual(logql string) (time.Duration, bool) {
+	var common time.Duration
+	inBracket := false
+	start := 0
+	for i, ch := range logql {
+		switch ch {
+		case '[':
+			inBracket = true
+			start = i + 1
+		case ']':
+			if inBracket {
+				inBracket = false
+				d := parseLokiDuration(strings.TrimSpace(logql[start:i]))
+				if d <= 0 {
+					continue
+				}
+				if common == 0 {
+					common = d
+				} else if d != common {
+					return 0, false
+				}
+			}
+		}
+	}
+	return common, common > 0
+}
+
+// statsRateRangeEqualsStepShift detects whether the query contains a rate() or
+// bytes_rate() with range==step so that the caller can apply the first-bucket
+// start shift. The check scans the full expression (not just the top-level
+// function) so outer aggregations like sum by(x)(rate(...)) are detected.
+// NOTE: binary metric expressions (e.g. rate({a}[1m]) / rate({b}[1m])) are
+// routed through proxyBinaryMetric before reaching this function; apply the
+// shift there independently (see proxyBinaryMetric / proxyBinaryMetricVM).
+// Returns (spec, origStartNs, true) when shifting is needed.
+func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origSpec originalRangeMetricSpec, origStartNs int64, ok bool) {
+	spec, hasSpec := parseOriginalRangeMetricSpec(originalLogql)
+	if !hasSpec || spec.Window <= 0 {
+		return
+	}
+	// The tumbling-window first-bucket drift only affects rate() and bytes_rate().
+	// Search the full expression for these function calls — "rate(" is also present
+	// in "rate_counter(" and "rate_sum(", so exclude those explicitly.
+	lq := strings.ToLower(strings.TrimSpace(originalLogql))
+	hasBytesRate := strings.Contains(lq, "bytes_rate(")
+	hasBareRate := strings.Contains(lq, "rate(") &&
+		!strings.Contains(lq, "rate_counter(") &&
+		!strings.Contains(lq, "rate_sum(")
+	if !hasBareRate && !hasBytesRate {
+		return
+	}
+	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
+	if !stepOk || spec.Window != step {
+		return
+	}
+	startNs, hasStart := parseLokiTimeToUnixNano(r.FormValue("start"))
+	if !hasStart {
+		return
+	}
+	return spec, startNs, true
+}
+
 type statsQueryRangeSeries struct {
 	Metric json.RawMessage `json:"metric"`
 	Values [][]interface{} `json:"values"`
 }
 
 type statsQueryRangeResponse struct {
-	Data struct {
+	// Status is preserved so that trimStatsQueryRangeResponseFromStart does not
+	// drop the Loki envelope "status":"success" field when re-marshalling.
+	Status string `json:"status,omitempty"`
+	Data   struct {
 		ResultType string                  `json:"resultType,omitempty"`
 		Result     []statsQueryRangeSeries `json:"result"`
 	} `json:"data"`
@@ -65,10 +164,25 @@ type statsQueryRangeResponse struct {
 }
 
 func buildStatsQueryRangeParams(logsqlQuery, startRaw, endRaw, stepRaw string) url.Values {
+	return buildStatsQueryRangeParamsShifted(logsqlQuery, startRaw, endRaw, stepRaw, 0)
+}
+
+// buildStatsQueryRangeParamsShifted builds VL stats params, optionally shifting
+// start back by shiftStart nanoseconds. Used by bare-parser metric fast path to
+// include the pre-start bucket required by Loki's first rate() evaluation point.
+func buildStatsQueryRangeParamsShifted(logsqlQuery, startRaw, endRaw, stepRaw string, shiftStart int64) url.Values {
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if s := strings.TrimSpace(startRaw); s != "" {
-		params.Set("start", formatVLStatsTimestamp(s))
+		if shiftStart > 0 {
+			if ns, ok := parseLokiTimeToUnixNano(s); ok {
+				params.Set("start", nanosToVLTimestamp(ns-shiftStart))
+			} else {
+				params.Set("start", formatVLStatsTimestamp(s))
+			}
+		} else {
+			params.Set("start", formatVLStatsTimestamp(s))
+		}
 	}
 	if e := strings.TrimSpace(endRaw); e != "" {
 		if extendedEnd, ok := extendStatsQueryRangeEnd(e, stepRaw); ok {
@@ -93,6 +207,47 @@ func extendStatsQueryRangeEnd(endRaw, stepRaw string) (string, bool) {
 		return "", false
 	}
 	return nanosToVLTimestamp(endNs + stepDur.Nanoseconds()), true
+}
+
+// trimStatsQueryRangeResponseFromStart removes points with timestamp < startNs.
+// Used when start was shifted back to include the pre-start bucket for rate().
+func trimStatsQueryRangeResponseFromStart(body []byte, startNs int64) []byte {
+	var resp statsQueryRangeResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return body
+	}
+	results := resp.Results
+	target := &resp.Results
+	if len(results) == 0 {
+		results = resp.Data.Result
+		target = &resp.Data.Result
+	}
+	if len(results) == 0 {
+		return body
+	}
+	changed := false
+	trimmed := make([]statsQueryRangeSeries, 0, len(results))
+	for _, series := range results {
+		filtered := make([][]interface{}, 0, len(series.Values))
+		for _, point := range series.Values {
+			if statsQueryRangePointUnixNano(point) >= startNs {
+				filtered = append(filtered, point)
+				continue
+			}
+			changed = true
+		}
+		series.Values = filtered
+		trimmed = append(trimmed, series)
+	}
+	if !changed {
+		return body
+	}
+	*target = trimmed
+	encoded, err := json.Marshal(resp)
+	if err != nil {
+		return body
+	}
+	return encoded
 }
 
 func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
@@ -232,11 +387,33 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 	}
 
 	isRange := vlEndpoint == "stats_query_range"
+
+	// Apply first-bucket shift if the original LogQL contains rate/bytes_rate with range==step.
+	// Guard: only shift when all range windows in the binary expression are equal — mixed
+	// windows (e.g. rate({a}[1m]) / rate({b}[5m])) cannot share a single shift value.
+	var origStartNs, shiftNs int64
+	if isRange {
+		if _, uniformOk := allRangeWindowsEqual(r.FormValue("query")); uniformOk {
+			if origSpec, startNs, ok := statsRateRangeEqualsStepShift(r.FormValue("query"), r); ok {
+				origStartNs = startNs
+				shiftNs = origSpec.Window.Nanoseconds()
+			}
+		}
+	}
+
 	buildParams := func(query string) url.Values {
 		params := url.Values{"query": {query}}
 		if isRange {
 			if s := r.FormValue("start"); s != "" {
-				params.Set("start", formatVLStatsTimestamp(s))
+				if shiftNs > 0 {
+					if ns, ok2 := parseLokiTimeToUnixNano(s); ok2 {
+						params.Set("start", nanosToVLTimestamp(ns-shiftNs))
+					} else {
+						params.Set("start", formatVLStatsTimestamp(s))
+					}
+				} else {
+					params.Set("start", formatVLStatsTimestamp(s))
+				}
 			}
 			if e := r.FormValue("end"); e != "" {
 				params.Set("end", formatVLStatsTimestamp(e))
@@ -332,6 +509,10 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 		result = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
 	}
 
+	if origStartNs > 0 {
+		result = trimStatsQueryRangeResponseFromStart(result, origStartNs)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 }
@@ -339,11 +520,31 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL, vlEndpoint, resultType string) {
 	isRange := vlEndpoint == "stats_query_range"
 
+	// Apply first-bucket shift if the original LogQL contains rate/bytes_rate with range==step.
+	// Guard: only shift when all range windows in the binary expression are equal.
+	var origStartNs, shiftNs int64
+	if isRange {
+		if _, uniformOk := allRangeWindowsEqual(r.FormValue("query")); uniformOk {
+			if origSpec, startNs, ok := statsRateRangeEqualsStepShift(r.FormValue("query"), r); ok {
+				origStartNs = startNs
+				shiftNs = origSpec.Window.Nanoseconds()
+			}
+		}
+	}
+
 	buildParams := func(query string) url.Values {
 		params := url.Values{"query": {query}}
 		if isRange {
 			if s := r.FormValue("start"); s != "" {
-				params.Set("start", formatVLStatsTimestamp(s))
+				if shiftNs > 0 {
+					if ns, ok2 := parseLokiTimeToUnixNano(s); ok2 {
+						params.Set("start", nanosToVLTimestamp(ns-shiftNs))
+					} else {
+						params.Set("start", formatVLStatsTimestamp(s))
+					}
+				} else {
+					params.Set("start", formatVLStatsTimestamp(s))
+				}
 			}
 			if e := r.FormValue("end"); e != "" {
 				params.Set("end", formatVLStatsTimestamp(e))
@@ -427,6 +628,9 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 
 	// Combine results with arithmetic at proxy level
 	result := combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
+	if origStartNs > 0 {
+		result = trimStatsQueryRangeResponseFromStart(result, origStartNs)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)

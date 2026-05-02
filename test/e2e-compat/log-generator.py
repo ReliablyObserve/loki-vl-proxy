@@ -152,7 +152,6 @@ def gen_api_gateway(n: int) -> list[str]:
         level  = "error" if status >= 500 else ("warn" if status >= 400 else "info")
         entry  = {
             "service": {"name": "api-gateway"},
-            "_msg": f"{method} {path} {status} {dur}ms",
             "method": method, "path": path, "status": status,
             "duration_ms": dur, "trace_id": rand_id(12),
             "user_id": rand_user(), "level": level,
@@ -160,10 +159,11 @@ def gen_api_gateway(n: int) -> list[str]:
             "version": random.choice(["v1", "v2"]),
         }
         if status >= 400:
-            entry["error"] = random.choice([
+            err = random.choice([
                 "user not found", "rate limit exceeded", "invalid token",
                 "connection refused", "gateway timeout", "service unavailable",
             ])
+            entry["error"] = err
         lines.append(json.dumps(entry))
     return lines
 
@@ -219,7 +219,6 @@ def gen_auth_service(n: int) -> list[str]:
         ok     = random.random() > 0.05
         entry  = {
             "service": {"name": "auth-service"},
-            "_msg": f"auth {evt} {'ok' if ok else 'failed'}",
             "event": evt, "user_id": uid, "ip": ip, "success": ok,
             "auth_method": method, "mfa": random.choice([True, False]),
             "session_id": rand_id(16), "trace_id": rand_id(12),
@@ -412,7 +411,6 @@ def gen_frontend_ssr(n: int) -> list[str]:
         load_ms = random.randint(50, 5000)
         entry   = {
             "service": {"name": "frontend-ssr"},
-            "_msg": f"{evt} {path} {load_ms}ms",
             "event": evt, "path": path, "user_id": uid,
             "session_id": sess, "load_ms": load_ms,
             "region": random.choice(["us-east-1", "us-west-2"]),
@@ -449,7 +447,6 @@ def gen_batch_etl(n: int) -> list[str]:
         dur      = round(random.uniform(0.5, 300.0), 2)
         entry    = {
             "service": {"name": "batch-etl"},
-            "_msg": f"{job} {phase} {done}/{total} records",
             "job": job, "batch_id": batch_id, "phase": phase,
             "total": total, "processed": done, "failed": failed,
             "duration_s": dur, "throughput_rps": round(done / max(dur, 0.1), 1),
@@ -480,7 +477,6 @@ def gen_ml_serving(n: int) -> list[str]:
         ok        = random.random() > 0.02
         entry     = {
             "service": {"name": "ml-serving"},
-            "_msg": f"{model} inference {'ok' if ok else 'failed'} {lat_ms}ms",
             "model": model, "request_id": req_id,
             "latency_ms": lat_ms, "confidence": conf,
             "batch_size": batch, "success": ok,
@@ -537,6 +533,24 @@ def _split_json_by_level(lines: list[str]) -> dict[str, list[str]]:
     return buckets
 
 
+def _split_logfmt_by_level(lines: list[str]) -> dict[str, list[str]]:
+    """Group logfmt log lines into per-level buckets matching their content level.
+
+    Ensures the stream-label level always matches the logfmt level= field,
+    preventing Loki/VL semantic divergence when level filters follow a parser stage.
+    Lines without a parseable level default to 'info'.
+    """
+    buckets: dict[str, list[str]] = {}
+    for line in lines:
+        lvl = "info"
+        for part in line.split():
+            if part.startswith("level="):
+                lvl = part[6:].strip('"\'') or "info"
+                break
+        buckets.setdefault(lvl, []).append(line)
+    return buckets
+
+
 def services_batch(n: int) -> list[dict]:
     """Generate one batch of streams for all services."""
     streams = []
@@ -558,9 +572,10 @@ def services_batch(n: int) -> list[dict]:
         ), lines))
 
     # ── payment-service ───────────────────────────────────────────────────
-    streams.append(stream(make_labels(
-        "payment-service", "prod", "us-east-1", "info",
-    ), gen_payment_service(n)))
+    for level, lines in _split_logfmt_by_level(gen_payment_service(n)).items():
+        streams.append(stream(make_labels(
+            "payment-service", "prod", "us-east-1", level,
+        ), lines))
 
     # ── auth-service ──────────────────────────────────────────────────────
     for level, lines in _split_json_by_level(gen_auth_service(n)).items():

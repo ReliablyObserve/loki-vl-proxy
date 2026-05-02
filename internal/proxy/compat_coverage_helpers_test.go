@@ -48,17 +48,27 @@ func TestCompatHelpers_ParseQuantileAndUnwrapErrorName(t *testing.T) {
 	if metricFuncRequiresUnwrap("count_over_time") {
 		t.Fatal("expected count_over_time not to require unwrap")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "avg") {
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "avg", false, "") {
 		t.Fatal("expected parser-stage avg to use VL stats_query_range, not manual NDJSON fallback")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time") {
-		t.Fatal("expected parser-stage count_over_time to stay on direct stats path")
+	// count_over_time: Loki keeps parse-failed lines (adds __error__ label, never drops).
+	// VL's unpack_json also keeps parse-failed log entries. Both count the same lines,
+	// so native VL stats is correct — no manual path needed.
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, "") {
+		t.Fatal("expected parser-stage count_over_time to use VL native stats (Loki keeps parse-failed lines)")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"}`, "avg") {
+	if shouldUseManualRangeMetricCompat(`{app="api"}`, "avg", false, "") {
 		t.Fatal("expected non-parser query not to use manual fallback for avg")
 	}
-	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "rate_counter") {
+	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "rate_counter", false, "") {
 		t.Fatal("expected rate_counter to always use manual fallback")
+	}
+	// rate with parser stages: manual when range != step, native VL when range == step
+	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", false, "") {
+		t.Fatal("expected parser-stage rate to use manual fallback when range != step")
+	}
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", true, "") {
+		t.Fatal("expected parser-stage rate to use VL native stats when range == step")
 	}
 }
 

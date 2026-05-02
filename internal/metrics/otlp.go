@@ -80,7 +80,10 @@ func NewOTLPPusher(cfg OTLPConfig, m *Metrics) *OTLPPusher {
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if cfg.TLSSkipVerify {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+		// #nosec G402 — operator-explicit override; log a warning so it is visible.
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+		slog.Warn("OTLP TLS verification disabled; MITM attacks on metrics traffic are possible",
+			"endpoint", redactEndpointURL(cfg.Endpoint))
 	}
 
 	logger := slog.Default().With("component", "otlp_metrics")
@@ -446,6 +449,16 @@ func attr(key, value string) map[string]interface{} {
 		"key":   key,
 		"value": map[string]interface{}{"stringValue": value},
 	}
+}
+
+func redactEndpointURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	u.User = url.UserPassword("***", "***")
+	u.RawQuery = ""
+	return u.String()
 }
 
 func normalizeMetricsEndpoint(raw string) string {

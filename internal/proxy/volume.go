@@ -40,8 +40,9 @@ func (p *Proxy) translateVolumeMetric(fields map[string]string) map[string]strin
 	return translated
 }
 
-func (p *Proxy) hitsToVolumeVector(body []byte) map[string]interface{} {
+func (p *Proxy) hitsToVolumeVector(body []byte, targetLabels string) map[string]interface{} {
 	hits := parseHits(body)
+	targets := splitTargetLabels(targetLabels)
 	result := make([]map[string]interface{}, 0, len(hits.Hits))
 	for _, h := range hits.Hits {
 		total := 0
@@ -52,8 +53,16 @@ func (p *Proxy) hitsToVolumeVector(body []byte) map[string]interface{} {
 				lastTS = parseTimestampToUnix(string(h.Timestamps[i]))
 			}
 		}
+		translated := p.translateVolumeMetric(h.Fields)
+		// Filter metric to only the requested target labels so that extra stream
+		// labels (e.g. service_name returned alongside container by VL) don't leak
+		// into the response. Drilldown include/exclude breaks when the metric has
+		// more keys than the label being explored.
+		if len(targets) > 0 {
+			translated = buildVolumeMetric(translated, targets)
+		}
 		result = append(result, map[string]interface{}{
-			"metric": p.translateVolumeMetric(h.Fields),
+			"metric": translated,
 			"value":  []interface{}{lastTS, strconv.Itoa(total)},
 		})
 	}
@@ -66,8 +75,9 @@ func (p *Proxy) hitsToVolumeVector(body []byte) map[string]interface{} {
 	}
 }
 
-func (p *Proxy) hitsToVolumeMatrix(body []byte, start, end, step string) map[string]interface{} {
+func (p *Proxy) hitsToVolumeMatrix(body []byte, targetLabels, start, end, step string) map[string]interface{} {
 	hits := parseHits(body)
+	targets := splitTargetLabels(targetLabels)
 	bucketRange, fillMissing := parseRequestedBucketRange(start, end, step)
 	result := make([]map[string]interface{}, 0, len(hits.Hits))
 	for _, h := range hits.Hits {
@@ -98,8 +108,12 @@ func (p *Proxy) hitsToVolumeMatrix(body []byte, start, end, step string) map[str
 				for ts := bucketRange.start; ts <= bucketRange.end; ts += bucketRange.step {
 					values = append(values, []interface{}{float64(ts), strconv.Itoa(counts[ts])})
 				}
+				translated := p.translateVolumeMetric(h.Fields)
+				if len(targets) > 0 {
+					translated = buildVolumeMetric(translated, targets)
+				}
 				result = append(result, map[string]interface{}{
-					"metric": p.translateVolumeMetric(h.Fields),
+					"metric": translated,
 					"values": values,
 				})
 				continue
@@ -114,8 +128,12 @@ func (p *Proxy) hitsToVolumeMatrix(body []byte, start, end, step string) map[str
 			}
 			values = append(values, []interface{}{parseTimestampToUnix(string(ts)), strconv.Itoa(val)})
 		}
+		translated := p.translateVolumeMetric(h.Fields)
+		if len(targets) > 0 {
+			translated = buildVolumeMetric(translated, targets)
+		}
 		result = append(result, map[string]interface{}{
-			"metric": p.translateVolumeMetric(h.Fields),
+			"metric": translated,
 			"values": values,
 		})
 	}
@@ -251,7 +269,7 @@ func (p *Proxy) computeVolumeResult(ctx context.Context, query, start, end, targ
 		return nil, fmt.Errorf("%s", msg)
 	}
 
-	return p.hitsToVolumeVector(body), nil
+	return p.hitsToVolumeVector(body, targetLabels), nil
 }
 
 func (p *Proxy) refreshVolumeCacheAsync(orgID, cacheKey, rawQuery, start, end, targetLabels string, savedReq *http.Request) {
@@ -373,7 +391,7 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 		return nil, fmt.Errorf("%s", msg)
 	}
 
-	return p.hitsToVolumeMatrix(body, start, end, step), nil
+	return p.hitsToVolumeMatrix(body, targetLabels, start, end, step), nil
 }
 
 func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, end, step, targetLabels string, savedReq *http.Request) {

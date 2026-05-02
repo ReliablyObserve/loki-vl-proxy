@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(security): enable NetworkPolicy by default (`networkPolicy.enabled: true`) with restrictive ingress (Grafana→3100) and egress (VictoriaLogs→9428 + DNS) rules; set `networkPolicy.enabled=false` only when a cluster-wide policy already covers this workload.
+- feat(security): add `.github/dependabot.yml` to auto-update GitHub Actions, Go modules, and the Docker builder base image weekly — keeps supply-chain dependencies current without manual SHA management.
+
+### Fixed
+
+- fix(proxy): move `withOrgID` / `injectAuthFingerprint` before `preferWorkingParser` in `handleQueryRange` and `handleQuery` so all upstream VictoriaLogs calls (parser-probe, bare-parser fast-path, post-aggregation) carry the correct tenant context and forwarded auth headers.
+- fix(proxy): expand first-bucket shift detection in `statsRateRangeEqualsStepShift` to cover `bytes_rate()` and outer-aggregated `rate()`/`bytes_rate()` (e.g. `sum by (level) (rate({...} | json [1m]))`); previously only a bare top-level `rate()` was detected — now uses substring scan of the full expression to find the metric function regardless of nesting depth.
+- fix(proxy): disable the bare-parser metric fast path (`proxyBareParserMetricViaStats`) when the translated VL query contains `unpack_json` or `unpack_logfmt` stages; VL's unpack pipes do not model Loki's `__error__` filtering (Loki excludes non-parseable lines, VL may include them), so the fast path is only safe for queries that translate without parser stages.
+- fix(proxy): align `reconstructLogLineWithFlag` with `reconstructLogLine` — remove the spurious `level` exclusion from the emit loop and add blank-value trimming, preventing `level` from being silently dropped from reconstructed JSON log lines in the query-range windowing path.
+- fix(proxy): guard synthetic `service_name` derivation behind `hadStream` so that aggregated `sum by (label)` metrics (e.g. for Drilldown volume include/exclude) contain only the grouping label and never gain an unexpected extra key.
+- fix(proxy): Drilldown volume `targetLabels` filter now applies to all stream labels universally, not only `container`; the `buildVolumeMetric` helper strips any label key absent from the `targetLabels` set regardless of which field was requested.
+- fix(proxy): reject negative window durations in `parseOriginalRangeMetricSpec` — `parseLokiDuration` can return `math.MinInt64` for crafted inputs; guard with `if spec.Window < 0 { return …, false }` prevents downstream shift calculations from overflowing.
+- fix(security): emit `slog.Warn` when OTLP `TLSSkipVerify=true` is active so operators can see the insecure configuration in logs; the flag default remains `false`.
+- fix(helm): complete container-level seccomp hardening — add `seccompProfile: type: RuntimeDefault`, `runAsGroup: 65534` to `containerSecurityContext` in `values.yaml` (pod-level profile was present; container-level is now explicit for stricter admission controllers); align test-connection pod containers with the same full security context (`runAsNonRoot`, `runAsUser`, `runAsGroup`, `seccompProfile`) and add `runAsGroup`/`fsGroup` to the test pod spec.
+- fix(e2e): remove hardcoded `_msg` fields from all JSON-format log generators (`gen_api_gateway`, `gen_auth_service`, `gen_frontend_ssr`, `gen_batch_etl`, `gen_ml_serving`) so that `_inject_vl_msg` can set `_msg` to the full JSON line, ensuring consistent Grafana rendering between Loki and VictoriaLogs.
+- fix(e2e): anchor `sharedWindow` start in explore-contract tests to `ingestionAnchor` (set at the moment `ingestRichTestData` runs) rather than `time.Now()`, preventing the window from drifting past ingested data in slow CI environments.
+- perf(proxy): pass outer request `ctx` (which holds the memoized `authFingerprintKey` set by `injectAuthFingerprint`) instead of `origReq.Context()` in metadata coalescer key helpers (`nativeCoalescerKey`, `vlGetMetadataCoalesced`, `fetchStreamFieldNamesCached`, `fetchPreferredLabelNamesCached`, `detectedFieldsCacheKey`, `detectedLabelsCacheKey`), so the OPT5 fingerprint memoization is actually used rather than recomputed on each call.
+
 ## [1.25.1] - 2026-04-30
 
 ### Added

@@ -449,6 +449,56 @@ func reconstructLogLine(msg string, entry map[string]interface{}, streamLabels m
 	return result
 }
 
+// reconstructLogLineWithFlag is the hot-path variant of reconstructLogLine for
+// use in tight per-entry loops where the hasTextExtractionParser result is
+// constant for the entire response and can be precomputed once by the caller.
+func reconstructLogLineWithFlag(msg string, entry map[string]interface{}, streamLabels map[string]string, skipReconstruction bool) string {
+	if skipReconstruction {
+		return msg
+	}
+	hasExtra := false
+	for key := range entry {
+		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+			continue
+		}
+		if _, ok := streamLabels[key]; ok {
+			continue
+		}
+		hasExtra = true
+		break
+	}
+	if !hasExtra {
+		return msg
+	}
+	b := jsonBuilderPool.Get().(*strings.Builder)
+	b.Reset()
+	b.WriteString(`{"_msg":`)
+	msgJSON, _ := json.Marshal(msg)
+	b.Write(msgJSON)
+	for key, value := range entry {
+		if isVLInternalField(key) || key == "_stream_id" {
+			continue
+		}
+		if _, ok := streamLabels[key]; ok {
+			continue
+		}
+		sv, ok := stringifyEntryValue(value)
+		if !ok || strings.TrimSpace(sv) == "" {
+			continue
+		}
+		b.WriteByte(',')
+		keyJSON, _ := json.Marshal(key)
+		b.Write(keyJSON)
+		b.WriteByte(':')
+		valJSON, _ := json.Marshal(sv)
+		b.Write(valJSON)
+	}
+	b.WriteByte('}')
+	result := b.String()
+	jsonBuilderPool.Put(b)
+	return result
+}
+
 // isVLNonLokiLabelField returns true for fields that VictoriaLogs exposes in
 // its field_names endpoint but that should not appear in the Loki /labels API.
 // This includes OTel semantic convention fields that VL stores as regular log
@@ -584,6 +634,25 @@ func (p *Proxy) forwardedAuthFingerprint(r *http.Request) string {
 	}
 	sum := sha256.Sum256([]byte(b.String()))
 	return hex.EncodeToString(sum[:])[:16]
+}
+
+// injectAuthFingerprint precomputes the forwardedAuthFingerprint for r and
+// stores it in the request context. Call this once at the handler entry point
+// (after withOrgID) so every downstream cache-key helper pays only a
+// context.Value lookup instead of a full header-parse + SHA-256.
+func (p *Proxy) injectAuthFingerprint(r *http.Request) *http.Request {
+	fp := p.forwardedAuthFingerprint(r)
+	return r.WithContext(context.WithValue(r.Context(), authFingerprintKey, fp))
+}
+
+// fingerprintFromCtx returns the memoized auth fingerprint from r's context if
+// injectAuthFingerprint was called earlier in the request chain, otherwise falls
+// back to computing it live. Safe to call even when no fingerprint was injected.
+func (p *Proxy) fingerprintFromCtx(ctx context.Context, r *http.Request) string {
+	if v, ok := ctx.Value(authFingerprintKey).(string); ok {
+		return v
+	}
+	return p.forwardedAuthFingerprint(r)
 }
 
 func normalizeBackendCompression(mode string) string {

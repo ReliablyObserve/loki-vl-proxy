@@ -66,6 +66,11 @@ func testTenantForwarded(t *testing.T, handler func(*Proxy) http.HandlerFunc, pa
 	}
 }
 
+func TestTenantScoping_HandleLabelValues(t *testing.T) {
+	testTenantForwarded(t, func(p *Proxy) http.HandlerFunc { return p.handleLabelValues },
+		"/loki/api/v1/label/env/values")
+}
+
 func TestTenantScoping_HandleSeries(t *testing.T) {
 	testTenantForwarded(t, func(p *Proxy) http.HandlerFunc { return p.handleSeries },
 		`/loki/api/v1/series?match[]={app="nginx"}&start=1&end=2`)

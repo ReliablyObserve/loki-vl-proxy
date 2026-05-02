@@ -115,10 +115,31 @@ func expectMonotonicTimestamps(t *testing.T, timestamps [][]int64, ascending boo
 func TestExplore_HTTPQueryRangeContracts(t *testing.T) {
 	ensureDataIngested(t)
 
+	// sharedWindow builds url.Values with shared start/end timestamps so that
+	// proxy and Loki query the identical time window. Key design choices:
+	//   - end = now-30s  → both backends have fully committed in-flight writes
+	//   - start = ingestionAnchor-2m → anchored to when ingestRichTestData ran,
+	//     so the window always covers ingested data regardless of test duration;
+	//     using time.Now()-5m could miss data if setup + tests take >2 minutes
+	//   - testdata is pushed at ingestionAnchor so it always falls inside this window
+	sharedWindow := func(query string) url.Values {
+		p := url.Values{}
+		p.Set("query", query)
+		p.Set("start", fmt.Sprintf("%d", ingestionAnchor.Add(-2*time.Minute).UnixNano()))
+		p.Set("end", fmt.Sprintf("%d", time.Now().Add(-30*time.Second).UnixNano()))
+		p.Set("limit", "1000")
+		return p
+	}
+	queryBoth := func(t *testing.T, query string) (map[string]interface{}, map[string]interface{}) {
+		t.Helper()
+		p := sharedWindow(query)
+		_, _, proxy := queryRangeGET(t, proxyURL, p, nil)
+		_, _, loki := queryRangeGET(t, lokiURL, p, nil)
+		return proxy, loki
+	}
+
 	t.Run("line_filters_match_loki_counts", func(t *testing.T) {
-		query := `{app="api-gateway"} |= "payments" != "timeout"`
-		proxyResp := queryProxy(t, query)
-		lokiResp := queryLoki(t, query)
+		proxyResp, lokiResp := queryBoth(t, `{app="api-gateway"} |= "payments" != "timeout"`)
 
 		if !checkStatus(proxyResp) || !checkStatus(lokiResp) {
 			t.Fatalf("expected successful responses, proxy=%v loki=%v", proxyResp, lokiResp)
@@ -134,9 +155,7 @@ func TestExplore_HTTPQueryRangeContracts(t *testing.T) {
 	})
 
 	t.Run("json_pipeline_matches_loki_counts", func(t *testing.T) {
-		query := `{app="api-gateway"} | json | method="GET"`
-		proxyResp := queryProxy(t, query)
-		lokiResp := queryLoki(t, query)
+		proxyResp, lokiResp := queryBoth(t, `{app="api-gateway"} | json | method="GET"`)
 
 		if !checkStatus(proxyResp) || !checkStatus(lokiResp) {
 			t.Fatalf("expected successful json pipeline responses, proxy=%v loki=%v", proxyResp, lokiResp)
@@ -152,9 +171,7 @@ func TestExplore_HTTPQueryRangeContracts(t *testing.T) {
 	})
 
 	t.Run("logfmt_pipeline_matches_loki_counts", func(t *testing.T) {
-		query := `{app="payment-service"} | logfmt | level="error"`
-		proxyResp := queryProxy(t, query)
-		lokiResp := queryLoki(t, query)
+		proxyResp, lokiResp := queryBoth(t, `{app="payment-service"} | logfmt | level="error"`)
 
 		if !checkStatus(proxyResp) || !checkStatus(lokiResp) {
 			t.Fatalf("expected successful logfmt pipeline responses, proxy=%v loki=%v", proxyResp, lokiResp)
@@ -216,9 +233,7 @@ func TestExplore_HTTPQueryRangeContracts(t *testing.T) {
 	})
 
 	t.Run("label_format_keeps_browser_visible_stream_labels", func(t *testing.T) {
-		query := `{app="api-gateway"} | json | label_format method_alias="{{.method}}", status_code="{{.status}}"`
-		proxyResp := queryProxy(t, query)
-		lokiResp := queryLoki(t, query)
+		proxyResp, lokiResp := queryBoth(t, `{app="api-gateway"} | json | label_format method_alias="{{.method}}", status_code="{{.status}}"`)
 
 		if !checkStatus(proxyResp) || !checkStatus(lokiResp) {
 			t.Fatalf("expected successful label_format responses, proxy=%v loki=%v", proxyResp, lokiResp)
