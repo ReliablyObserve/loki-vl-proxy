@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	stdjson "encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	gojson "github.com/goccy/go-json"
 )
 
 const unknownServiceName = "unknown_service"
@@ -247,8 +249,8 @@ var levelJSONKeys = []string{"level", "severity", "lvl", "loglevel", "LEVEL", "S
 var levelLogfmtKeys = []string{"level=", "severity=", "lvl=", "loglevel="}
 
 func extractLevelFromJSONMsg(s string) (string, bool) {
-	var parsed map[string]json.RawMessage
-	if json.Unmarshal([]byte(s), &parsed) != nil {
+	var parsed map[string]stdjson.RawMessage
+	if stdjson.Unmarshal([]byte(s), &parsed) != nil {
 		return "", false
 	}
 	for _, key := range levelJSONKeys {
@@ -257,7 +259,7 @@ func extractLevelFromJSONMsg(s string) (string, bool) {
 			continue
 		}
 		var level string
-		if json.Unmarshal(raw, &level) != nil {
+		if stdjson.Unmarshal(raw, &level) != nil {
 			continue
 		}
 		level = strings.TrimSpace(level)
@@ -562,7 +564,7 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 			Hits  int64  `json:"hits"`
 		} `json:"values"`
 	}
-	if err := json.Unmarshal(body, &vlResp); err != nil {
+	if err := stdjson.Unmarshal(body, &vlResp); err != nil {
 		return nil, err
 	}
 
@@ -1512,7 +1514,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		for k := range entry {
 			delete(entry, k)
 		}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := gojson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -1571,7 +1573,7 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		for k := range parsedJSON {
 			delete(parsedJSON, k)
 		}
-		if json.Unmarshal([]byte(msg), &parsedJSON) == nil {
+		if stdjson.Unmarshal([]byte(msg), &parsedJSON) == nil {
 			for key, value := range parsedJSON {
 				if key == "" {
 					continue
@@ -1701,7 +1703,7 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[stri
 		}
 
 		var entry map[string]interface{}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := stdjson.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 
@@ -1890,7 +1892,7 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 		return nil, err
 	}
 	var resp vlFieldNamesResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := stdjson.Unmarshal(body, &resp); err != nil {
 		return nil, err
 	}
 	out := make([]string, 0, len(resp.Values))
@@ -1976,7 +1978,7 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 			continue
 		}
 		var parsed vlFieldValuesResponse
-		if err := json.Unmarshal(body, &parsed); err != nil {
+		if err := stdjson.Unmarshal(body, &parsed); err != nil {
 			lastErr = err
 			continue
 		}
@@ -2021,7 +2023,7 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 				_ = resp2.Body.Close()
 				if resp2.StatusCode < http.StatusBadRequest {
 					var parsed2 vlFieldValuesResponse
-					if json.Unmarshal(body2, &parsed2) == nil {
+					if stdjson.Unmarshal(body2, &parsed2) == nil {
 						for _, item := range parsed2.Values {
 							if item.Hits >= 0 && strings.TrimSpace(item.Value) != "" {
 								values = append(values, item.Value)
@@ -2072,7 +2074,7 @@ func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end,
 		return nil, nil
 	}
 	var parsed vlFieldValuesResponse
-	if json.Unmarshal(body, &parsed) != nil {
+	if stdjson.Unmarshal(body, &parsed) != nil {
 		return nil, nil
 	}
 	values := make([]string, 0, len(parsed.Values))
@@ -2161,7 +2163,7 @@ func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string
 			continue
 		}
 		var parsed vlStreamsResponse
-		if err := json.Unmarshal(body, &parsed); err != nil {
+		if err := stdjson.Unmarshal(body, &parsed); err != nil {
 			lastErr = err
 			continue
 		}
@@ -2287,7 +2289,7 @@ func (p *Proxy) getCachedDetectedFields(ctx context.Context, query, start, end s
 		return nil, nil, false
 	}
 	var payload detectedFieldsCachePayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	if err := stdjson.Unmarshal(raw, &payload); err != nil {
 		return nil, nil, false
 	}
 	return payload.Fields, payload.Values, true
@@ -2297,7 +2299,7 @@ func (p *Proxy) setCachedDetectedFields(ctx context.Context, query, start, end s
 	if p.cache == nil {
 		return
 	}
-	body, err := json.Marshal(detectedFieldsCachePayload{Fields: fields, Values: values})
+	body, err := stdjson.Marshal(detectedFieldsCachePayload{Fields: fields, Values: values})
 	if err != nil {
 		return
 	}
@@ -2313,7 +2315,7 @@ func (p *Proxy) getCachedDetectedLabels(ctx context.Context, query, start, end s
 		return nil, nil, false
 	}
 	var payload detectedLabelsCachePayload
-	if err := json.Unmarshal(raw, &payload); err != nil {
+	if err := stdjson.Unmarshal(raw, &payload); err != nil {
 		return nil, nil, false
 	}
 	summaries := make(map[string]*detectedLabelSummary, len(payload.Values))
@@ -2340,7 +2342,7 @@ func (p *Proxy) setCachedDetectedLabels(ctx context.Context, query, start, end s
 		sort.Strings(sorted)
 		values[label] = sorted
 	}
-	body, err := json.Marshal(detectedLabelsCachePayload{Labels: labels, Values: values})
+	body, err := stdjson.Marshal(detectedLabelsCachePayload{Labels: labels, Values: values})
 	if err != nil {
 		return
 	}
@@ -2367,6 +2369,6 @@ func formatDetectedValue(value interface{}) string {
 }
 
 func mustJSON(value interface{}) []byte {
-	data, _ := json.Marshal(value)
+	data, _ := stdjson.Marshal(value)
 	return data
 }

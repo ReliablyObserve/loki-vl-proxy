@@ -3,7 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
+	stdjson "encoding/json"
 	"net"
 	"regexp"
 	"sort"
@@ -12,6 +12,8 @@ import (
 	"text/template"
 	"time"
 	"unicode"
+
+	gojson "github.com/goccy/go-json"
 )
 
 // ansiEscapeRe matches ANSI escape sequences (color codes, cursor movement, etc.)
@@ -221,7 +223,7 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[s
 		for key := range entry {
 			delete(entry, key)
 		}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := gojson.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 		msg, ok := patternMessageFromEntry(entry)
@@ -251,7 +253,7 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[s
 	}
 
 	var decoded interface{}
-	if err := json.Unmarshal(vlBody, &decoded); err != nil {
+	if err := stdjson.Unmarshal(vlBody, &decoded); err != nil {
 		return nil, stats
 	}
 	collectPatternObservationsFromJSON(miner, decoded, stepSeconds, "", &stats.observedLines)
@@ -1011,7 +1013,7 @@ func isIPLike(s string) bool {
 
 func tokenizeJSONPattern(line string) string {
 	var data map[string]interface{}
-	if err := json.Unmarshal([]byte(line), &data); err != nil {
+	if err := stdjson.Unmarshal([]byte(line), &data); err != nil {
 		return "<_>"
 	}
 	// Create pattern from JSON keys (sorted)

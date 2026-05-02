@@ -2,7 +2,7 @@ package proxy
 
 import (
 	"bufio"
-	"encoding/json"
+	stdjson "encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	gojson "github.com/goccy/go-json"
 )
 
 // proxyLogQuery fetches log lines from VictoriaLogs.
@@ -167,7 +169,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		}
 
 		var entry map[string]interface{}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := gojson.Unmarshal(line, &entry); err != nil {
 			continue
 		}
 
@@ -197,7 +199,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 			"values": buildStreamValues(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels),
 		}
 
-		chunk, _ := json.Marshal(stream)
+		chunk, _ := stdjson.Marshal(stream)
 		if !first {
 			w.Write([]byte(","))
 		}
@@ -288,7 +290,7 @@ func streamStringMap(value interface{}) map[string]string {
 // --- Response converters ---
 
 func lokiLabelsResponse(labels []string) []byte {
-	result, _ := json.Marshal(map[string]interface{}{
+	result, _ := stdjson.Marshal(map[string]interface{}{
 		"status": "success",
 		"data":   labels,
 	})
@@ -354,7 +356,7 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		for k := range entry {
 			delete(entry, k) // clear reused map
 		}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := gojson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -489,7 +491,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		for k := range entry {
 			delete(entry, k)
 		}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := gojson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -696,7 +698,7 @@ func stringifyEntryValue(value interface{}) (string, bool) {
 	case map[string]interface{}, []interface{}:
 		// VL may parse JSON-looking _msg fields into objects; re-serialize to
 		// preserve valid JSON so Grafana can pretty-print the log line.
-		b, err := json.Marshal(v)
+		b, err := stdjson.Marshal(v)
 		if err == nil {
 			return string(b), true
 		}
@@ -917,9 +919,9 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	// VL stats endpoints return Prometheus-compatible format already.
 	// Try to parse and re-wrap in Loki envelope.
 	var promResp map[string]interface{}
-	if err := json.Unmarshal(vlBody, &promResp); err != nil {
+	if err := stdjson.Unmarshal(vlBody, &promResp); err != nil {
 		// If we can't parse, return as-is with wrapper
-		result, _ := json.Marshal(map[string]interface{}{
+		result, _ := stdjson.Marshal(map[string]interface{}{
 			"status": "success",
 			"data": map[string]interface{}{
 				"resultType": resultType,
@@ -932,7 +934,7 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	// Check for VL error responses and translate to Loki error format.
 	// VL may return: {"error":"message"} or {"status":"error","msg":"message"}
 	if errMsg, ok := promResp["error"].(string); ok {
-		result, _ := json.Marshal(map[string]interface{}{
+		result, _ := stdjson.Marshal(map[string]interface{}{
 			"status":    "error",
 			"errorType": "bad_request",
 			"error":     errMsg,
@@ -948,7 +950,7 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 		} else if msg, ok := promResp["error"].(string); ok {
 			errMsg = msg
 		}
-		result, _ := json.Marshal(map[string]interface{}{
+		result, _ := stdjson.Marshal(map[string]interface{}{
 			"status":    "error",
 			"errorType": "bad_request",
 			"error":     errMsg,
@@ -960,13 +962,13 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	if rawData, ok := promResp["data"]; ok {
 		if dataMap, ok := rawData.(map[string]interface{}); ok {
 			normalizeLokiResultDataShape(dataMap, resultType)
-			result, _ := json.Marshal(map[string]interface{}{
+			result, _ := stdjson.Marshal(map[string]interface{}{
 				"status": "success",
 				"data":   dataMap,
 			})
 			return result
 		}
-		result, _ := json.Marshal(map[string]interface{}{
+		result, _ := stdjson.Marshal(map[string]interface{}{
 			"status": "success",
 			"data": map[string]interface{}{
 				"resultType": resultType,
@@ -978,7 +980,7 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 
 	normalizeLokiResultDataShape(promResp, resultType)
 
-	result, _ := json.Marshal(map[string]interface{}{
+	result, _ := stdjson.Marshal(map[string]interface{}{
 		"status": "success",
 		"data":   promResp,
 	})
@@ -1040,14 +1042,14 @@ func (t *vlTimestamp) UnmarshalJSON(data []byte) error {
 	}
 	if data[0] == '"' {
 		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
+		if err := stdjson.Unmarshal(data, &s); err != nil {
 			return err
 		}
 		*t = vlTimestamp(s)
 		return nil
 	}
-	var n json.Number
-	if err := json.Unmarshal(data, &n); err != nil {
+	var n stdjson.Number
+	if err := stdjson.Unmarshal(data, &n); err != nil {
 		return err
 	}
 	*t = vlTimestamp(n.String())
@@ -1064,7 +1066,7 @@ func parseTimestampToUnix(ts string) float64 {
 
 func parseHits(body []byte) vlHitsResponse {
 	var resp vlHitsResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := gojson.Unmarshal(body, &resp); err != nil {
 		return vlHitsResponse{}
 	}
 	return resp

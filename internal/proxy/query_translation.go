@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
+	stdjson "encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	gojson "github.com/goccy/go-json"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -390,7 +391,7 @@ var (
 )
 
 // hasTextExtractionParser returns true when the LogQL query contains a
-// text-extraction parser other than | json. These parsers (logfmt, regexp,
+// text-extraction parser other than | stdjson. These parsers (logfmt, regexp,
 // pattern) produce extra VL fields at query time from text log lines; the
 // original log line is NOT JSON, so reconstructing it as JSON would be wrong.
 // | json is excluded because with JSON logs the reconstruction is correct.
@@ -480,7 +481,7 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		}
 
 		var entry map[string]interface{}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		if err := stdjson.Unmarshal([]byte(line), &entry); err != nil {
 			continue
 		}
 		msg, _ := entry["_msg"].(string)
@@ -489,7 +490,7 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		}
 
 		var parsedJSON map[string]interface{}
-		if json.Unmarshal([]byte(msg), &parsedJSON) == nil && len(parsedJSON) > 0 {
+		if stdjson.Unmarshal([]byte(msg), &parsedJSON) == nil && len(parsedJSON) > 0 {
 			jsonHits++
 		}
 		if fields := parseLogfmtFields(msg); len(fields) > 0 {
@@ -737,7 +738,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		for key := range entry {
 			delete(entry, key)
 		}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		if err := gojson.Unmarshal(line, &entry); err != nil {
 			vlEntryPool.Put(entry)
 			continue
 		}
@@ -1084,7 +1085,7 @@ func statsResponseIsEmpty(body []byte) bool {
 		} `json:"data"`
 		Results []lokiVectorResult `json:"results"`
 	}
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := stdjson.Unmarshal(body, &resp); err != nil {
 		return false
 	}
 	results := resp.Results
@@ -1163,7 +1164,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, originalQuery)
 	var out []byte
 	if statsResponseIsEmpty(body) {
-		out, _ = json.Marshal(buildAbsentInstantVector(r.FormValue("time"), extractAbsentMetricLabels(spec.baseQuery)))
+		out, _ = stdjson.Marshal(buildAbsentInstantVector(r.FormValue("time"), extractAbsentMetricLabels(spec.baseQuery)))
 	} else {
 		out = wrapAsLokiResponse([]byte(`{"result":[]}`), "vector")
 	}
@@ -1375,18 +1376,18 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 }
 
 // translateStatsItem holds one element from the VL stats result array.
-// value/values are kept as json.RawMessage to avoid parsing time-series data
+// value/values are kept as stdjson.RawMessage to avoid parsing time-series data
 // (timestamps + floats) that we never inspect — only the metric labels change.
 type translateStatsItem struct {
 	Metric map[string]string `json:"metric"`
-	Value  json.RawMessage   `json:"value,omitempty"`
-	Values json.RawMessage   `json:"values,omitempty"`
+	Value  stdjson.RawMessage   `json:"value,omitempty"`
+	Values stdjson.RawMessage   `json:"values,omitempty"`
 }
 
 type translateStatsData struct {
 	ResultType string               `json:"resultType,omitempty"`
 	Result     []translateStatsItem `json:"result,omitempty"`
-	Stats      json.RawMessage      `json:"stats,omitempty"`
+	Stats      stdjson.RawMessage      `json:"stats,omitempty"`
 }
 
 type translateStatsResponseBody struct {
@@ -1394,13 +1395,13 @@ type translateStatsResponseBody struct {
 	Data    *translateStatsData  `json:"data,omitempty"`
 	Result  []translateStatsItem `json:"result,omitempty"`
 	Results []translateStatsItem `json:"results,omitempty"`
-	Error   json.RawMessage      `json:"error,omitempty"`
+	Error   stdjson.RawMessage      `json:"error,omitempty"`
 }
 
 func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
 	start := time.Now()
 	var resp translateStatsResponseBody
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := stdjson.Unmarshal(body, &resp); err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "decode_error", time.Since(start))
 		return body
 	}
@@ -1527,7 +1528,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	// wrapAsLokiResponse adds the {"status":"success"} envelope — its fast-path byte-splice
 	// only triggers when the body starts with {"data":{"resultType":, not {"status":...}.
 	resp.Status = ""
-	result, err := json.Marshal(resp)
+	result, err := stdjson.Marshal(resp)
 	if err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "encode_error", time.Since(start))
 		return body
