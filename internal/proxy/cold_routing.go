@@ -256,7 +256,7 @@ func (cr *ColdRouter) ManifestRange() *ManifestRange {
 func MergeNDJSON(hotBody, coldBody io.Reader) io.Reader {
 	pr, pw := io.Pipe()
 	go func() {
-		defer pw.Close()
+		defer func() { _ = pw.Close() }()
 		if coldBody != nil {
 			_, _ = io.Copy(pw, coldBody)
 		}

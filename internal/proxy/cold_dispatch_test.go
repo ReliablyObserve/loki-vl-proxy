@@ -3,10 +3,8 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -288,16 +286,3 @@ func TestColdRouteForRequest_NoTimeRange(t *testing.T) {
 	}
 }
 
-func mustParseURLHelper(s string) *url.URL {
-	u, err := url.Parse(s)
-	if err != nil {
-		panic(err)
-	}
-	return u
-}
-
-// readBodyLimitedForTest is a test helper matching the signature used in cold_dispatch.go
-func readBodyAll(r io.Reader) string {
-	b, _ := io.ReadAll(r)
-	return string(b)
-}
