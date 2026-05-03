@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	fj "github.com/valyala/fastjson"
+
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
 )
@@ -751,11 +753,14 @@ func (p *Proxy) vlLogsToLokiWindowEntries(body []byte, originalQuery string, cat
 
 // vlLogsToLokiWindowEntriesStream streams a VL NDJSON response line-by-line,
 // converting each entry to a Loki window entry without buffering the full body.
-// This eliminates the 0.5–2.5 MB per-request allocation that was previously
-// caused by io.ReadAll in the coalescer for every parallel window fetch.
+// Uses fastjson (no map[string]interface{} allocation per line) and the same
+// stream descriptor cache as vlReaderToLokiStreams to amortize label parsing
+// and translation across entries from the same stream.
 func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery string, categorizedLabels bool, emitStructuredMetadata bool) []queryRangeWindowEntry {
 	entries := make([]queryRangeWindowEntry, 0, 64)
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
+	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
+	streamLabelCache := make(map[string]map[string]string, 16)
 	smBuf := metadataMapPool.Get().(map[string]string)
 	pfBuf := metadataMapPool.Get().(map[string]string)
 	defer func() {
@@ -769,63 +774,83 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 		metadataMapPool.Put(pfBuf)
 	}()
 
-	// Precompute per-response constants so the hot scanner loop pays O(1) not O(n).
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
+	needsClassification := categorizedLabels && emitStructuredMetadata
+	streamNoExtraFields := make(map[string]bool, 8)
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), windowEntryScannerLineBytes)
 
 	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
+		line := scanner.Bytes()
+		for len(line) > 0 && (line[0] == ' ' || line[0] == '\t' || line[0] == '\r') {
+			line = line[1:]
+		}
+		for len(line) > 0 && (line[len(line)-1] == ' ' || line[len(line)-1] == '\t' || line[len(line)-1] == '\r') {
+			line = line[:len(line)-1]
+		}
 		if len(line) == 0 {
 			continue
 		}
 
-		entry := vlEntryPool.Get().(map[string]interface{})
-		for k := range entry {
-			delete(entry, k)
-		}
-		if err := json.Unmarshal(line, &entry); err != nil {
-			vlEntryPool.Put(entry)
+		fjParser := vlFJParserPool.Get()
+		fjVal, err := fjParser.ParseBytes(line)
+		if err != nil {
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
 
-		timeStr, ok := stringifyEntryValue(entry["_time"])
-		if !ok || timeStr == "" {
-			vlEntryPool.Put(entry)
+		timeBytes := fjVal.GetStringBytes("_time")
+		if len(timeBytes) == 0 {
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
-		tsNanos, ok := formatEntryTimestamp(timeStr)
+		tsNanos, ok := formatEntryTimestamp(string(timeBytes))
 		if !ok {
-			vlEntryPool.Put(entry)
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
-		msg, _ := stringifyEntryValue(entry["_msg"])
-		windowStreamLabels := parseStreamLabels(asString(entry["_stream"]))
-		msg = reconstructLogLineWithFlag(msg, entry, windowStreamLabels, skipLogLineReconstruction)
+		msg := string(fjVal.GetStringBytes("_msg"))
+		rawStream := string(fjVal.GetStringBytes("_stream"))
+		level := string(fjVal.GetStringBytes("level"))
 
-		labels, structuredMetadata, parsedFields := p.classifyEntryFieldsWithFlags(entry, windowStreamLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
-		translatedLabels := labels
-		if !p.labelTranslator.IsPassthrough() {
-			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
+		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
+
+		needsObject := needsClassification || (!skipLogLineReconstruction && !streamNoExtraFields[desc.key])
+		var fjObj *fj.Object
+		if needsObject {
+			obj, fjErr := fjVal.Object()
+			if fjErr != nil {
+				vlFJParserPool.Put(fjParser)
+				continue
+			}
+			fjObj = obj
 		}
-		ensureDetectedLevel(translatedLabels)
-		ensureSyntheticServiceName(translatedLabels)
+
+		if !skipLogLineReconstruction && !streamNoExtraFields[desc.key] {
+			origMsg := msg
+			msg = reconstructLogLineWithFlagFJ(msg, fjObj, desc.rawLabels, false)
+			if msg == origMsg {
+				streamNoExtraFields[desc.key] = true
+			}
+		}
 
 		var sm, parsed map[string]string
-		if categorizedLabels && emitStructuredMetadata {
+		if needsClassification {
+			structuredMetadata, parsedFields := p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 			sm = metadataFieldMap(structuredMetadata)
 			parsed = metadataFieldMap(parsedFields)
 		}
+
 		entries = append(entries, queryRangeWindowEntry{
-			Stream: translatedLabels,
+			Stream: desc.translatedLabels,
 			Ts:     tsNanos,
 			Msg:    msg,
 			SM:     sm,
 			Parsed: parsed,
 		})
-		vlEntryPool.Put(entry)
+		vlFJParserPool.Put(fjParser)
 	}
 	return entries
 }
