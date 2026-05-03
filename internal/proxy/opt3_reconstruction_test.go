@@ -15,9 +15,9 @@ func TestOPT3_SkipFlagConsistency(t *testing.T) {
 		{`{app="foo"} | logfmt`, true},
 		{`{app="foo"} | regexp "(?P<msg>.*)"`, true},
 		{`{app="foo"} | pattern "<msg>"`, true},
-		{`{app="foo"} | json`, false},
+		{`{app="foo"} | json`, true},
 		{`{app="foo"}`, false},
-		{`{app="foo"} | json | status >= 400`, false},
+		{`{app="foo"} | json | status >= 400`, true},
 	}
 	for _, tc := range cases {
 		got := hasTextExtractionParser(tc.logql)
@@ -84,22 +84,20 @@ func TestOPT3_LogfmtQuerySkipsReconstruction(t *testing.T) {
 	}
 }
 
-func TestOPT3_JsonQueryDoesReconstruct(t *testing.T) {
-	// For json queries, skipReconstruction=false, so extra fields merge into the line.
-	msg := "{}"
+func TestOPT3_JsonQuerySkipsReconstruction(t *testing.T) {
+	// For | json queries, hasTextExtractionParser returns true → skipReconstruction=true
+	// → original msg returned unchanged.  Loki returns the original log line for | json.
+	msg := `{"method":"POST","status":"200"}`
 	entry := map[string]interface{}{
 		"_msg":    msg,
 		"_stream": `{app="svc"}`,
 		"status":  "200",
-		"method":  "GET",
+		"method":  "POST",
 	}
 	streamLabels := map[string]string{"app": "svc"}
 
-	result := reconstructLogLineWithFlag(msg, entry, streamLabels, false /* don't skip */)
-	if !strings.Contains(result, "status") {
-		t.Errorf("json query: expected 'status' in reconstructed line, got %q", result)
-	}
-	if !strings.HasPrefix(result, `{"_msg":`) {
-		t.Errorf("json query: expected JSON reconstruction, got %q", result)
+	result := reconstructLogLineWithFlag(msg, entry, streamLabels, true /* skip — json query */)
+	if result != msg {
+		t.Errorf("json query: expected original msg %q, got %q", msg, result)
 	}
 }

@@ -1412,6 +1412,35 @@ func TestQueryRangeWindow_SplitAndTTLHelpers(t *testing.T) {
 	}
 }
 
+func TestQueryRangeWindow_NoTailWindowOnExactMultiple(t *testing.T) {
+	// When the query duration is an exact multiple of the split interval, the
+	// loop must NOT produce a 1-ns [endNs, endNs] tail window.
+	for _, tc := range []struct {
+		name     string
+		duration time.Duration
+	}{
+		{"1h/1h", time.Hour},
+		{"2h/1h", 2 * time.Hour},
+		{"3h/1h", 3 * time.Hour},
+	} {
+		startNs := int64(0)
+		endNs := tc.duration.Nanoseconds()
+		windows := splitQueryRangeWindows(startNs, endNs, time.Hour, "forward")
+		expected := int(tc.duration / time.Hour)
+		if len(windows) != expected {
+			t.Errorf("%s: got %d windows, want %d", tc.name, len(windows), expected)
+			for i, w := range windows {
+				t.Logf("  window[%d]: [%d, %d] (len=%d)", i, w.startNs, w.endNs, w.endNs-w.startNs+1)
+			}
+			continue
+		}
+		last := windows[len(windows)-1]
+		if last.endNs != endNs {
+			t.Errorf("%s: last window endNs=%d, want %d", tc.name, last.endNs, endNs)
+		}
+	}
+}
+
 func TestQueryRangeWindow_AdaptiveParallelHelpers(t *testing.T) {
 	nonAdaptive := &Proxy{queryRangeAdaptiveParallel: false, queryRangeMaxParallel: 0}
 	if got := nonAdaptive.queryRangeWindowParallelLimit(); got != 1 {

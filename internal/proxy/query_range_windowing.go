@@ -957,6 +957,13 @@ func splitQueryRangeWindowsWithOptions(startNs, endNs int64, interval time.Durat
 		}
 	}
 	for cursor <= endNs && len(windows) < maxQueryRangeWindows {
+		if cursor == endNs && len(windows) > 0 {
+			// Extend the last window by 1 ns rather than emitting a [endNs,endNs]
+			// tail window.  This happens when the query duration is an exact
+			// multiple of the split interval (e.g. 1 h query with 1 h split).
+			windows[len(windows)-1].endNs = endNs
+			break
+		}
 		windowEnd := cursor + step - 1
 		if windowEnd < cursor || windowEnd > endNs {
 			windowEnd = endNs

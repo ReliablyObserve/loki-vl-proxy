@@ -389,15 +389,19 @@ var (
 	patternParserStageRE = regexp.MustCompile(`\|\s*pattern\b`)
 )
 
-// hasTextExtractionParser returns true when the LogQL query contains a
-// text-extraction parser other than | stdjson. These parsers (logfmt, regexp,
-// pattern) produce extra VL fields at query time from text log lines; the
-// original log line is NOT JSON, so reconstructing it as JSON would be wrong.
-// | json is excluded because with JSON logs the reconstruction is correct.
+// hasTextExtractionParser returns true when the LogQL query contains any
+// parser stage that makes log-line reconstruction unnecessary.  When true,
+// the original _msg value is returned verbatim (matching Loki behaviour);
+// when false, reconstructLogLineWithFlagFJ wraps _msg + extracted fields
+// into a new JSON object, which diverges from Loki for | json queries.
+//
+// | json is included here: Loki returns the original JSON string unchanged;
+// wrapping it in a new JSON envelope is incorrect and adds per-entry CPU cost.
 func hasTextExtractionParser(logql string) bool {
 	return logfmtParserStageRE.MatchString(logql) ||
 		regexpParserStageRE.MatchString(logql) ||
-		patternParserStageRE.MatchString(logql)
+		patternParserStageRE.MatchString(logql) ||
+		jsonParserStageRE.MatchString(logql)
 }
 
 func hasParserStage(logql, parser string) bool {
