@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- perf: eliminate degenerate 1-ns tail window for queries whose duration is an exact multiple of the split interval (e.g. 1h query + 1h split); the loop now extends the last window by 1 ns instead of issuing a redundant second VL round-trip
+- perf: skip `reconstructLogLineWithFlagFJ` for `| json` queries; Loki returns the original log line unchanged for `| json`, so wrapping it in a new JSON envelope was both a parity divergence and unnecessary per-entry CPU cost
 - perf: offload `maybeAutodetectPatternsFromWindowEntries` to a background goroutine, removing ~21% proxy CPU from the client-visible request path (both this function and `groupQueryRangeWindowEntries` are read-only over the entries slice; concurrent execution is safe)
 - perf: rewrite `isIPLike` with a single-pass byte scan, eliminating the `strings.Split` allocation on every call (was 4.88% cumulative CPU in pprof)
 - perf: replace `strings.Trim` in `patternPlaceholderForToken` with a `[256]bool` lookup table, eliminating per-call `strings.makeASCIISet` allocation (was 2.77% flat CPU)
