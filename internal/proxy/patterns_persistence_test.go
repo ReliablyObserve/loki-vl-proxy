@@ -366,11 +366,13 @@ func TestPatternsAutodetectFromWindowEntries_PopulatesCacheAndSnapshot(t *testin
 	entries := []queryRangeWindowEntry{
 		{
 			Stream: map[string]string{"detected_level": "info"},
-			Value:  []interface{}{"1710000000000000000", "user 123 action login from 10.0.0.1"},
+			Ts:     "1710000000000000000",
+			Msg:    "user 123 action login from 10.0.0.1",
 		},
 		{
 			Stream: map[string]string{"detected_level": "info"},
-			Value:  []interface{}{"1710000001000000000", "user 456 action login from 10.0.0.2"},
+			Ts:     "1710000001000000000",
+			Msg:    "user 456 action login from 10.0.0.2",
 		},
 	}
 	p.maybeAutodetectPatternsFromWindowEntries("org-a", "", query, "1", "2", "1m", entries)

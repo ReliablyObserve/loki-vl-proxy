@@ -26,10 +26,10 @@ func TestPostprocessHelperBranchesCoverage(t *testing.T) {
 	}
 
 	entries := []queryRangeWindowEntry{
-		{Value: []interface{}{"only-timestamp"}},
-		{Value: []interface{}{"bad-time", "GET /health 200 1ms"}},
-		{Value: []interface{}{"1712311200000000000", ""}},
-		{Stream: map[string]string{"level": "error"}, Value: []interface{}{"1712311200000000000", "POST /api/orders 500 10ms"}},
+		{Ts: "only-timestamp"},
+		{Ts: "bad-time", Msg: "GET /health 200 1ms"},
+		{Ts: "1712311200000000000", Msg: ""},
+		{Stream: map[string]string{"level": "error"}, Ts: "1712311200000000000", Msg: "POST /api/orders 500 10ms"},
 	}
 	patterns := extractLogPatternsFromWindowEntries(entries, "10s", 10)
 	if len(patterns) != 1 {

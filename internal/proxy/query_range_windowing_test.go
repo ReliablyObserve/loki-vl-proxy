@@ -28,12 +28,12 @@ import (
 // must be identical across repeated calls with the same input.
 func TestGroupQueryRangeWindowEntries_DeterministicOrder(t *testing.T) {
 	entries := []queryRangeWindowEntry{
-		{Stream: map[string]string{"app": "b", "env": "prod"}, Value: []interface{}{"1700000000000000002", "line-b2"}},
-		{Stream: map[string]string{"app": "a", "env": "prod"}, Value: []interface{}{"1700000000000000003", "line-a3"}},
-		{Stream: map[string]string{"app": "b", "env": "prod"}, Value: []interface{}{"1700000000000000001", "line-b1"}},
-		{Stream: map[string]string{"app": "a", "env": "prod"}, Value: []interface{}{"1700000000000000001", "line-a1"}},
-		{Stream: map[string]string{"app": "c", "env": "prod"}, Value: []interface{}{"1700000000000000001", "line-c1"}},
-		{Stream: map[string]string{"app": "a", "env": "prod"}, Value: []interface{}{"1700000000000000002", "line-a2"}},
+		{Stream: map[string]string{"app": "b", "env": "prod"}, Ts: "1700000000000000002", Msg: "line-b2"},
+		{Stream: map[string]string{"app": "a", "env": "prod"}, Ts: "1700000000000000003", Msg: "line-a3"},
+		{Stream: map[string]string{"app": "b", "env": "prod"}, Ts: "1700000000000000001", Msg: "line-b1"},
+		{Stream: map[string]string{"app": "a", "env": "prod"}, Ts: "1700000000000000001", Msg: "line-a1"},
+		{Stream: map[string]string{"app": "c", "env": "prod"}, Ts: "1700000000000000001", Msg: "line-c1"},
+		{Stream: map[string]string{"app": "a", "env": "prod"}, Ts: "1700000000000000002", Msg: "line-a2"},
 	}
 
 	for _, dir := range []string{"forward", ""} {
@@ -42,7 +42,7 @@ func TestGroupQueryRangeWindowEntries_DeterministicOrder(t *testing.T) {
 			// Run many times to expose any non-determinism.
 			var first []map[string]interface{}
 			for i := 0; i < 50; i++ {
-				result := groupQueryRangeWindowEntries(entries, dir)
+				result := groupQueryRangeWindowEntries(entries, dir, false, false)
 				if first == nil {
 					first = result
 					continue

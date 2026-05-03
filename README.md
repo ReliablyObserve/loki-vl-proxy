@@ -67,9 +67,10 @@ When every client sends a **different** query with a unique time window, the coa
 
 | Workload | Loki req/s | Proxy cold req/s | Ratio | Note |
 |---|---:|---:|:---:|---|
-| Small (c=50) | 2,257 | 2,273 | **~1.0×** | At parity — HTTP hop cost absorbed by VL speed |
-| Small (c=100) | 2,110 | 2,432 | **1.15×** | Proxy beats Loki cold |
-| Heavy (c=50) | 219 | 234 | **~1.0×** | At parity — translation cost below noise |
+| Small (c=10) | 1,080 | 1,201 | **1.11×** | Proxy beats Loki cold — fastjson windowing path |
+| Small (c=50) | 1,369 | 1,343 | **~1.0×** | At parity — HTTP hop cost absorbed by VL speed |
+| Heavy (c=10) | 328 | 234 | 0.71× | Translation cost visible at low concurrency |
+| Heavy (c=50) | 176 | 232 | **1.31×** | Proxy beats Loki cold — VL faster under load |
 | Long-range (c=10) | 9 | 19 | **2.1×** | Proxy's parallel window fetching wins even cold |
 | Long-range (c=100) | 13 | 24 | **1.9×** | Structural advantage: VL parallel scans vs Loki sequential |
 | Compute (c=100) | 899 | 366 | 0.41× | Structural limit: N VL calls per metric query |

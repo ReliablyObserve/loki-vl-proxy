@@ -120,7 +120,7 @@ func TestVLLogsToLokiWindowEntries_SkipsInvalidAndDerivesFields(t *testing.T) {
 	if entries[0].Stream["detected_level"] != "warn" {
 		t.Fatalf("expected detected level to be preserved, got %#v", entries[0].Stream)
 	}
-	if got := entries[0].Value[0]; got != strconv.FormatInt(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano(), 10) {
+	if got := entries[0].Ts; got != strconv.FormatInt(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano(), 10) {
 		t.Fatalf("unexpected translated timestamp %v", got)
 	}
 }

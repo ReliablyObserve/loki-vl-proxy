@@ -1373,7 +1373,11 @@ func writeLokiStreamQueryResponse(w http.ResponseWriter, streams []map[string]in
 	}()
 
 	w.Header().Set("Content-Type", "application/json")
-	buf.WriteString(`{"status":"success","data":{"resultType":"streams","result":[`)
+	if categorizedLabels {
+		buf.WriteString(`{"status":"success","data":{"resultType":"streams","encodingFlags":["categorize-labels"],"result":[`)
+	} else {
+		buf.WriteString(`{"status":"success","data":{"resultType":"streams","result":[`)
+	}
 	for i, s := range streams {
 		if i > 0 {
 			buf.WriteByte(',')
@@ -1390,11 +1394,7 @@ func writeLokiStreamQueryResponse(w http.ResponseWriter, streams []map[string]in
 		}
 		buf.WriteString(`]}`)
 	}
-	if categorizedLabels {
-		buf.WriteString(`],"encodingFlags":["categorize-labels"],"stats":{}}}`)
-	} else {
-		buf.WriteString(`],"stats":{}}}`)
-	}
+	buf.WriteString(`],"stats":{}}}`)
 	w.Write(buf.Bytes())
 }
 
