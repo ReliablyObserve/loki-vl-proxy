@@ -239,7 +239,10 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	}
 
 	mergeStart := time.Now()
-	p.maybeAutodetectPatternsFromWindowEntries(
+	// Pattern autodetect reads entries but does not write them; groupQueryRangeWindowEntries
+	// also only reads entries, so both can run concurrently. Offload to a goroutine
+	// to keep it off the request's critical path.
+	go p.maybeAutodetectPatternsFromWindowEntries(
 		r.Header.Get("X-Scope-OrgID"),
 		p.fingerprintFromCtx(r.Context(), r),
 		r.FormValue("query"),

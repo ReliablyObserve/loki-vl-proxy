@@ -894,8 +894,27 @@ func commonPatternPlaceholder(left, right string) string {
 	return patternVarPlaceholder
 }
 
+// patternQuotePunct is the set of punctuation trimmed from tokens before classification.
+// Stored as a lookup table to avoid strings.Trim's ASCIISet allocation per call.
+var patternQuotePunct = [256]bool{
+	'"': true, '\'': true, '(': true, ')': true, '[': true, ']': true,
+	'{': true, '}': true, '<': true, '>': true, ',': true, ';': true,
+}
+
+func trimPatternPunct(s string) string {
+	start := 0
+	for start < len(s) && patternQuotePunct[s[start]] {
+		start++
+	}
+	end := len(s)
+	for end > start && patternQuotePunct[s[end-1]] {
+		end--
+	}
+	return strings.TrimSpace(s[start:end])
+}
+
 func patternPlaceholderForToken(token string) string {
-	token = strings.TrimSpace(strings.Trim(token, `"'()[]{}<>,;`))
+	token = trimPatternPunct(token)
 	if token == "" {
 		return ""
 	}
@@ -1082,21 +1101,31 @@ func isHexLike(s string) bool {
 }
 
 func isIPLike(s string) bool {
-	parts := strings.Split(s, ".")
-	if len(parts) != 4 {
+	// IPv4: 7 (1.1.1.1) to 15 (255.255.255.255) bytes, 3 dots, all-digit octets.
+	// Avoid strings.Split to eliminate heap allocation per call.
+	if len(s) < 7 || len(s) > 15 {
 		return false
 	}
-	for _, p := range parts {
-		if len(p) == 0 || len(p) > 3 {
-			return false
-		}
-		for _, ch := range p {
-			if ch < '0' || ch > '9' {
+	dots := 0
+	partLen := 0
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch >= '0' && ch <= '9' {
+			partLen++
+			if partLen > 3 {
 				return false
 			}
+		} else if ch == '.' {
+			if partLen == 0 {
+				return false
+			}
+			partLen = 0
+			dots++
+		} else {
+			return false
 		}
 	}
-	return true
+	return dots == 3 && partLen > 0
 }
 
 func tokenizeJSONPattern(line string) string {
