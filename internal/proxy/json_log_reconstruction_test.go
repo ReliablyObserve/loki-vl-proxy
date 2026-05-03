@@ -120,7 +120,7 @@ func TestReconstructLogLine(t *testing.T) {
 			wantPlain:     true,
 		},
 		{
-			name: "json query - reconstruction still applies",
+			name: "json query - no reconstruction (Loki returns original msg)",
 			msg:  "POST /login 200 12ms",
 			entry: map[string]interface{}{
 				"_time":   "2026-01-01T00:00:00Z",
@@ -131,11 +131,7 @@ func TestReconstructLogLine(t *testing.T) {
 				"status":  "200",
 			},
 			originalQuery: `{app="auth"} | json`,
-			wantJSON: map[string]string{
-				"_msg":   "POST /login 200 12ms",
-				"method": "POST",
-				"status": "200",
-			},
+			wantPlain:     true,
 		},
 		{
 			name: "no _stream field - reconstructs because method is extra",
@@ -250,13 +246,13 @@ func TestHasTextExtractionParser(t *testing.T) {
 		want  bool
 	}{
 		{`{app="x"}`, false},
-		{`{app="x"} | json`, false},
-		{`{app="x"} | json method, status`, false},
+		{`{app="x"} | json`, true},
+		{`{app="x"} | json method, status`, true},
 		{`{app="x"} | logfmt`, true},
 		{`{app="x"} | logfmt method, status`, true},
 		{`{app="x"} | regexp "(?P<method>[A-Z]+)"`, true},
 		{`{app="x"} | pattern "<method> <path>"`, true},
-		{`{app="x"} | json | logfmt`, true}, // logfmt wins
+		{`{app="x"} | json | logfmt`, true},
 		{`{app="x"} | json | regexp "foo"`, true},
 	}
 
