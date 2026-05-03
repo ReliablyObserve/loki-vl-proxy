@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 
 - perf: replace `json.Marshal`/`json.Unmarshal` on the window cache hot path with `encoding/gob` and concrete typed fields; eliminates `interface{}` reflection allocations from cache read/write, reducing CPU ~40% on cache-hit-heavy workloads
+- perf: offload `maybeAutodetectPatternsFromWindowEntries` to a background goroutine, removing ~21% proxy CPU from the client-visible request path (both this function and `groupQueryRangeWindowEntries` are read-only over the entries slice; concurrent execution is safe)
+- perf: rewrite `isIPLike` with a single-pass byte scan, eliminating the `strings.Split` allocation on every call (was 4.88% cumulative CPU in pprof)
+- perf: replace `strings.Trim` in `patternPlaceholderForToken` with a `[256]bool` lookup table, eliminating per-call `strings.makeASCIISet` allocation (was 2.77% flat CPU)
+- perf: cap background pattern autodetect at 500 stride-sampled entries; `full_volume_1h` queries return up to 5000 entries but pattern clustering converges at ~500, cutting miner CPU 10× for high-volume windows
+- perf: port patterns endpoint NDJSON parser from `encoding/json` + `map[string]interface{}` to `valyala/fastjson`, eliminating per-entry map allocation on the patterns hot path
 
 ## [1.27.1] - 2026-05-02
 
