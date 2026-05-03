@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.0] - 2026-05-03
+
 ### Added
 
 - feat(proxy): add cold storage routing — time-range-based query splitting between hot (EBS VictoriaLogs) and cold (S3 Victoria Lakehouse) backends with configurable boundary, parallel fan-out, NDJSON merge, manifest-aware routing, and graceful degradation on backend failures.
