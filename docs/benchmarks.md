@@ -182,7 +182,7 @@ Every worker gets a distinct non-overlapping time window. This defeats both the 
 | compute | 50 | 1,633 | 336 | 1,455 | 0.21× |
 | compute | 100 | 899 | 366 | 1,431 | 0.41× |
 
-† Loki heavy c=50: 35.63% error rate — saturated under unique-window load. Successful throughput: ~124 req/s.<br>
+† Loki heavy c=50: 35.63% error rate — saturated under unique-window load. Successful throughput: ~124 req/s.<br />
 ‡ 182 proxy req/s (0 errors) vs ~124 Loki successful req/s = 1.47× on delivered traffic.
 
 ### P50 latency (unique-windows)
