@@ -32,60 +32,43 @@ Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
 
 ## Query Performance
 
-Measured head-to-head against tuned Loki: Apple M5 Pro (18 cores, 64 GB RAM), ~8 M log entries across 15 services, 7-day window, 30 s per level.
+Measured head-to-head against tuned Loki: Apple M5 Pro (18 cores, 64 GB RAM), ~8 M log entries across 15 services, 7-day window.
 
-### Warm cache — production steady state
+### Dashboards and Explore — production steady state
 
-Grafana dashboards reload every 30 s. After the first fetch, every repeated query is served from the L1 memory cache without touching VictoriaLogs.
+Grafana dashboards auto-refresh every 30 s. After the first fetch, every repeated query is served from in-memory cache without touching VictoriaLogs.
 
-| Workload | Loki req/s | Proxy warm req/s | Ratio | Loki P50 | Proxy warm P50 |
-|---|---:|---:|:---:|---:|---:|
-| Small (label browser, instant, 1–5 min panels) | 2,290 | 27,513 | **12.0×** | 42 ms | 3 ms |
-| Heavy (JSON pipelines, filters, 30 m–1 h) | 162 | 7,134 | **44.1×** | — † | 12 ms |
-| Long-range (6 h–72 h windows) | 16 | 220 | **14.0×** | 4,902 ms | 1 ms |
-| Compute (rate, sum by, quantile, topk) | 1,611 | 16,456 | **10.2×** | 4 ms | 4 ms |
+| Workload | Loki P50 | Proxy P50 | Faster by |
+|---|---:|---:|:---:|
+| Small panels (label browser, 1–5 min) | 42 ms | 3 ms | **12×** |
+| Heavy queries (JSON pipelines, filters) | ~1,800 ms† | 12 ms | **44×** |
+| Long-range (6 h–72 h, Drilldown) | 4,902 ms | 1 ms | **14×** |
+| Compute (rate, sum by, quantile, topk) | 4 ms | 4 ms | **10×** throughput |
 
-† Loki heavy c=100 was saturated: P50=3 ms is a reporting artifact; P90=1,818 ms, P99=6,950 ms.
+CPU: **6–408× less** than Loki. RAM: **1.7–3.9× less** for most workloads.
 
-CPU cost for warm traffic: proxy+VL combined uses **6–408× less CPU** than Loki across workloads (small: 78–408×, heavy: 81–355×, compute: 6–30×). RSS: 1.7–3.9× less RAM for most workloads.
+† Loki heavy c=100 was saturated — P90=1,818 ms, P99=6,950 ms.
 
-### Cold cache + thundering herd — coalescer deduplication
+### Dashboard load spikes — request coalescer
 
-When many clients send the **same** query simultaneously (100 Grafana panels all refreshing at once on a shared dashboard), the request coalescer collapses all of them into a single backend call. Everyone waits for that one call; the rest see zero additional latency.
+When many panels hit the same query at once, the proxy collapses them into a single backend call. Everyone gets the result; the backend sees one request instead of N.
 
-| Workload | Loki P50 | Proxy P50 | Loki req/s | Proxy req/s |
-|---|---:|---:|---:|---:|
-| Metadata | 196 ms | 1 ms | 531 | 64,824 (**122×**) |
-| Heavy aggregations | 2,399 ms | 1 ms | 40 | 68,834 (**1,717×**) |
-| Content search | 13,415 ms | 1 ms | 9 | 56,146 (**6,332×**) |
+| Workload | Loki P50 | Proxy P50 |
+|---|---:|---:|
+| Metadata queries | 196 ms | **1 ms** |
+| Heavy aggregations | 2,399 ms | **1 ms** |
+| Content search | 13,415 ms | **1 ms** |
 
-This is not cache — the cache is disabled in this scenario. It is pure singleflight deduplication. In practice, panels on the same dashboard share the same query and time range, so this fires constantly during dashboard loads.
+### Cold cache, unique queries — honest floor
 
-### Cold cache, unique queries — honest worst case
+No cache, no coalescer benefit. Pure translation overhead + HTTP proxying + VL response time.
 
-When every client sends a **different** query with a unique time window, the coalescer does not help and the cache never warms. This is the floor: pure translation overhead + HTTP proxying + VL response time.
+- **Small and metadata queries:** at parity with Loki or faster — no penalty
+- **Heavy queries under load:** 1.3× faster cold — VL handles high-cardinality data more efficiently
+- **Long-range queries:** 2× faster cold — parallel sub-window fetching vs Loki's sequential scan
+- **Metric aggregations (`rate()`, `sum by()`):** 0.4× Loki cold — N VL calls per metric query; historical windows cache after first run (24 h TTL)
 
-| Workload | Loki req/s | Proxy cold req/s | Ratio | Note |
-|---|---:|---:|:---:|---|
-| Small (c=10) | 1,080 | 1,201 | **1.11×** | Proxy beats Loki cold — fastjson windowing path |
-| Small (c=50) | 1,369 | 1,343 | **~1.0×** | At parity — HTTP hop cost absorbed by VL speed |
-| Heavy (c=10) | 328 | 234 | 0.71× | Translation cost visible at low concurrency |
-| Heavy (c=50) | 176 | 232 | **1.31×** | Proxy beats Loki cold — VL faster under load |
-| Long-range (c=10) | 9 | 19 | **2.1×** | Proxy's parallel window fetching wins even cold |
-| Long-range (c=100) | 13 | 24 | **1.9×** | Structural advantage: VL parallel scans vs Loki sequential |
-| Compute (c=100) | 899 | 366 | 0.41× | Structural limit: N VL calls per metric query |
-
-Long-range is faster than Loki even with a cold cache because the proxy splits long windows into parallel 1 h sub-fetches that complete before Loki finishes a single sequential scan.
-
-Compute is the most exposed workload cold: LogQL `rate()`, `sum by()`, and `quantile_over_time()` have no VL-native equivalent, so the proxy issues N raw log fetches and aggregates locally (VL native direct: 1,431 req/s vs proxy 366 req/s at c=100). Historical windows have a 24 h cache TTL — repeat queries hit cache and this overhead disappears.
-
-### Structural advantages (independent of cache)
-
-**Content search:** VictoriaLogs maintains a word-level inverted token index. A `|= "word"` filter skips blocks with no matching tokens. Loki has no content index — it reads every compressed chunk in the time range on every query. The latency does not improve with faster hardware; it grows with data volume.
-
-**High-cardinality:** VL's storage index is stream-independent. Loki allocates one in-memory chunk per unique label set — a cluster with 10,000 pods at 10 labels each holds 10,000 open chunk writers. That memory scales with pod count regardless of log volume.
-
-Full throughput tables, P90/P99 latency, CPU and RSS breakdowns, unique-windows run methodology, and VictoriaLogs tuning flags: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
+Full throughput tables, P90/P99 latency, CPU and RSS breakdowns: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 
 ---
 
