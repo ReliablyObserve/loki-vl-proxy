@@ -173,8 +173,8 @@ Every worker gets a distinct non-overlapping time window. This defeats both the 
 |----------|:-----------:|-----:|-----------:|----------:|:------------:|
 | small | 10 | 1,080 | 1,201 | 2,957 | **1.11×** |
 | small | 50 | 1,369 | 1,343 | 3,637 | **0.98× (parity)** |
-| heavy | 10 | 328 | 234 | 994 | 0.71× |
-| heavy | 50 | 176 | 232 | 975 | **1.31×** |
+| heavy | 10 | 133 | 179 | 829 | **1.34×** |
+| heavy | 50 | 193† | 182 | 859 | **1.47× on delivered**‡ |
 | long\_range | 10 | 9 | 19 | 82 | **2.06×** |
 | long\_range | 50 | 9 | 19 | 84 | **2.05×** |
 | long\_range | 100 | 13 | 24 | 85 | **1.86×** |
@@ -182,14 +182,17 @@ Every worker gets a distinct non-overlapping time window. This defeats both the 
 | compute | 50 | 1,633 | 336 | 1,455 | 0.21× |
 | compute | 100 | 899 | 366 | 1,431 | 0.41× |
 
+† Loki heavy c=50: 35.63% error rate — saturated under unique-window load. Successful throughput: ~124 req/s.<br />
+‡ 182 proxy req/s (0 errors) vs ~124 Loki successful req/s = 1.47× on delivered traffic.
+
 ### P50 latency (unique-windows)
 
 | Workload | Concurrency | Loki | Proxy cold | VL native |
 |----------|:-----------:|-----:|-----------:|----------:|
 | small | 10 | 7 ms | 4 ms | 1 ms |
 | small | 50 | 30 ms | 14 ms | 5 ms |
-| heavy | 10 | 8 ms | 21 ms | 6 ms |
-| heavy | 50 | 104 ms | 134 ms | 34 ms |
+| heavy | 10 | 22 ms | 21 ms | 6 ms |
+| heavy | 50 | 5 ms† | 128 ms | 41 ms |
 | long\_range | 10 | 464 ms | 39 ms | 99 ms |
 | long\_range | 50 | 5,041 ms | 2,060 ms | 392 ms |
 | long\_range | 100 | 4,276 ms | 3,068 ms | 826 ms |
@@ -235,7 +238,7 @@ What determines proxy performance when cache and coalescer provide no help:
 
 **Small (metadata):** Proxy **beats Loki at c=10** (1,201 vs 1,080 req/s, **1.11×**) and reaches parity at c=50 (1,343 vs 1,369 req/s). VL native is ~2.7× faster than Loki (2,957 req/s at c=10); the proxy's extra HTTP hop and envelope conversion is the gap between proxy and raw VL. The windowing NDJSON parser was ported to fastjson (eliminating `map[string]interface{}` allocation per entry) to achieve this cold-path parity. With any cache warmth, this reverses strongly (12× warm).
 
-**Heavy (pipeline queries):** At c=50, proxy beats Loki cold (1.31×, 232 vs 176 req/s). At low concurrency (c=10), the translation + response-shaping cost is visible (0.71×, 234 vs 328 req/s) — heavy queries return large payloads where the per-entry parsing cost matters more. VL is faster than Loki for these queries even when every query is unique.
+**Heavy (pipeline queries):** Proxy cold outperforms Loki at both measured concurrency levels. At c=10: 179 vs 133 req/s (1.34× faster). At c=50: Loki saturates with 35.63% errors (successful throughput ~124 req/s) while the proxy handles 182 req/s with zero errors — 1.47× more successful traffic delivered. The fastjson NDJSON parser (no `map[string]interface{}` per entry) and background pattern autodetect (offloaded from the request critical path) were the key cold-path improvements; total proxy CPU dropped 22.8%. VL native remains ~4–5× faster than the proxy; the remaining gap is the network round-trip for each sub-window request.
 
 **Long-range (6 h–72 h windows):** Proxy is **1.86–2.06× faster than Loki even cold**. VL's parallel window fetching within the proxy — splitting long ranges into parallel 1 h sub-windows — completes before Loki can scan its chunk store sequentially. This advantage is structural and does not require cache.
 

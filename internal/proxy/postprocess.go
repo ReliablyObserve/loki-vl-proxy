@@ -13,6 +13,8 @@ import (
 	"text/template"
 	"time"
 	"unicode"
+
+	fj "github.com/valyala/fastjson"
 )
 
 // ansiEscapeRe matches ANSI escape sequences (color codes, cursor movement, etc.)
@@ -227,10 +229,9 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[s
 	return out, stats
 }
 
-// extractLogPatternsStreamWithStats is the streaming variant of
-// extractLogPatternsWithStats. It scans NDJSON from r without buffering the
-// full body — callers should pass resp.Body directly to avoid the io.ReadAll
-// allocation (up to 64 MB per request in the patterns fetch path).
+// extractLogPatternsStreamWithStats scans VL NDJSON from r, extracts the
+// message, timestamp, and level from each line, and feeds them to the pattern
+// miner. Uses fastjson to avoid map[string]interface{} allocation per line.
 func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int) ([]map[string]interface{}, patternExtractionStats) {
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
@@ -238,36 +239,43 @@ func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int) ([]m
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	entry := vlEntryPool.Get().(map[string]interface{})
-	defer func() {
-		for k := range entry {
-			delete(entry, k)
-		}
-		vlEntryPool.Put(entry)
-	}()
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
 			continue
 		}
 		stats.scannedLines++
-		for key := range entry {
-			delete(entry, key)
-		}
-		if err := stdjson.Unmarshal(line, &entry); err != nil {
+
+		fjParser := vlFJParserPool.Get()
+		fjVal, err := fjParser.ParseBytes(line)
+		if err != nil {
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
-		msg, ok := patternMessageFromEntry(entry)
+
+		// Extract all fields before returning the parser — fjVal memory is
+		// owned by the parser's arena and becomes invalid after Put.
+		msg := patternMessageFromFJ(fjVal)
+		var timeStr, level string
+		if msg != "" {
+			for _, key := range []string{"_time", "time", "timestamp", "ts"} {
+				if b := fjVal.GetStringBytes(key); len(b) > 0 {
+					timeStr = string(b)
+					break
+				}
+			}
+			level = patternLevelFromFJ(fjVal)
+		}
+		vlFJParserPool.Put(fjParser)
+
+		if msg == "" || timeStr == "" {
+			continue
+		}
+		unixSeconds, ok := parsePatternUnixSecondsStr(timeStr)
 		if !ok {
 			continue
 		}
-		unixSeconds, ok := patternUnixSecondsFromEntry(entry)
-		if !ok {
-			continue
-		}
-		// Extract level directly from the entry without building the full
-		// labels map — the patterns path only needs level, not all labels.
-		level := patternLevelFromEntry(entry)
+
 		bucket := unixSeconds
 		if stepSeconds > 0 {
 			bucket = (bucket / stepSeconds) * stepSeconds
@@ -281,6 +289,55 @@ func extractLogPatternsStreamWithStats(r io.Reader, step string, limit int) ([]m
 		return patterns, stats
 	}
 	return nil, stats
+}
+
+// patternMessageFromFJ extracts the log message from a fastjson value,
+// trying the same field priority as patternMessageFromEntry.
+func patternMessageFromFJ(v *fj.Value) string {
+	for _, key := range []string{"_msg", "message", "msg", "line", "log"} {
+		b := v.GetStringBytes(key)
+		if len(b) > 0 {
+			s := strings.TrimSpace(string(b))
+			if s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// patternLevelFromFJ extracts the log level from a fastjson value.
+func patternLevelFromFJ(v *fj.Value) string {
+	for _, key := range []string{"detected_level", "level"} {
+		b := v.GetStringBytes(key)
+		if s := strings.TrimSpace(string(b)); s != "" {
+			return s
+		}
+	}
+	if msg := strings.TrimSpace(string(v.GetStringBytes("_msg"))); msg != "" {
+		if lvl, ok := extractLevelFromMsg(msg); ok {
+			return lvl
+		}
+	}
+	return ""
+}
+
+// parsePatternUnixSecondsStr parses a time string to unix seconds.
+func parsePatternUnixSecondsStr(timeStr string) (int64, bool) {
+	timeStr = strings.TrimSpace(timeStr)
+	if timeStr == "" {
+		return 0, false
+	}
+	if parsed, err := time.Parse(time.RFC3339Nano, timeStr); err == nil {
+		return parsed.Unix(), true
+	}
+	if parsed, err := time.Parse(time.RFC3339, timeStr); err == nil {
+		return parsed.Unix(), true
+	}
+	if ns, ok := parseLokiTimeToUnixNano(timeStr); ok {
+		return ns / int64(time.Second), true
+	}
+	return 0, false
 }
 
 // patternLevelFromEntry extracts the log level from a VL entry map for the
@@ -837,8 +894,27 @@ func commonPatternPlaceholder(left, right string) string {
 	return patternVarPlaceholder
 }
 
+// patternQuotePunct is the set of punctuation trimmed from tokens before classification.
+// Stored as a lookup table to avoid strings.Trim's ASCIISet allocation per call.
+var patternQuotePunct = [256]bool{
+	'"': true, '\'': true, '(': true, ')': true, '[': true, ']': true,
+	'{': true, '}': true, '<': true, '>': true, ',': true, ';': true,
+}
+
+func trimPatternPunct(s string) string {
+	start := 0
+	for start < len(s) && patternQuotePunct[s[start]] {
+		start++
+	}
+	end := len(s)
+	for end > start && patternQuotePunct[s[end-1]] {
+		end--
+	}
+	return strings.TrimSpace(s[start:end])
+}
+
 func patternPlaceholderForToken(token string) string {
-	token = strings.TrimSpace(strings.Trim(token, `"'()[]{}<>,;`))
+	token = trimPatternPunct(token)
 	if token == "" {
 		return ""
 	}
@@ -1025,21 +1101,31 @@ func isHexLike(s string) bool {
 }
 
 func isIPLike(s string) bool {
-	parts := strings.Split(s, ".")
-	if len(parts) != 4 {
+	// IPv4: 7 (1.1.1.1) to 15 (255.255.255.255) bytes, 3 dots, all-digit octets.
+	// Avoid strings.Split to eliminate heap allocation per call.
+	if len(s) < 7 || len(s) > 15 {
 		return false
 	}
-	for _, p := range parts {
-		if len(p) == 0 || len(p) > 3 {
-			return false
-		}
-		for _, ch := range p {
-			if ch < '0' || ch > '9' {
+	dots := 0
+	partLen := 0
+	for i := 0; i < len(s); i++ {
+		ch := s[i]
+		if ch >= '0' && ch <= '9' {
+			partLen++
+			if partLen > 3 {
 				return false
 			}
+		} else if ch == '.' {
+			if partLen == 0 {
+				return false
+			}
+			partLen = 0
+			dots++
+		} else {
+			return false
 		}
 	}
-	return true
+	return dots == 3 && partLen > 0
 }
 
 func tokenizeJSONPattern(line string) string {

@@ -1179,11 +1179,29 @@ func (p *Proxy) storeAutodetectedPatterns(orgID, authFP, query, start, end, step
 	p.recordPatternSnapshotEntry(cacheKey, resultBody, now)
 }
 
+// patternAutodetectMaxEntries caps how many entries the background pattern
+// miner observes per windowed query. Pattern detection converges quickly — 500
+// representative entries are enough to detect stable clusters. Capping prevents
+// large log fetches (e.g. 5000-entry full_volume queries) from spending
+// disproportionate CPU on autodetect mining.
+const patternAutodetectMaxEntries = 500
+
 func (p *Proxy) maybeAutodetectPatternsFromWindowEntries(orgID, authFP, query, start, end, step string, entries []queryRangeWindowEntry) {
 	if !p.patternsEnabled || !p.patternsAutodetectFromQueries || len(entries) == 0 {
 		return
 	}
-	patterns := extractLogPatternsFromWindowEntries(entries, step, maxPatternResponseLimit)
+	sample := entries
+	if len(entries) > patternAutodetectMaxEntries {
+		// Stride-sample to preserve temporal distribution rather than only taking
+		// the first N (which may all be from the oldest time bucket).
+		stride := len(entries) / patternAutodetectMaxEntries
+		sampled := make([]queryRangeWindowEntry, 0, patternAutodetectMaxEntries)
+		for i := 0; i < len(entries); i += stride {
+			sampled = append(sampled, entries[i])
+		}
+		sample = sampled
+	}
+	patterns := extractLogPatternsFromWindowEntries(sample, step, maxPatternResponseLimit)
 	p.storeAutodetectedPatterns(orgID, authFP, query, start, end, step, patterns)
 }
 

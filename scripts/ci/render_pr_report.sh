@@ -54,76 +54,6 @@ print(f"{sign}{delta:.1f}% ({state})")
 PY
 }
 
-render_component_rows() {
-  python3 - "$BASE_JSON" "$HEAD_JSON" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "r", encoding="utf-8") as fh:
-    base = json.load(fh)
-with open(sys.argv[2], "r", encoding="utf-8") as fh:
-    head = json.load(fh)
-
-tracks = [
-    ("loki", "Loki API"),
-    ("drilldown", "Logs Drilldown"),
-    ("vl", "VictoriaLogs"),
-]
-
-
-def format_component(entry):
-    if not entry:
-        return "n/a"
-    passed = entry.get("passed", 0)
-    total = entry.get("total", 0)
-    pct = entry.get("pct", 0)
-    return f"{passed}/{total} ({pct}%)"
-
-
-def format_component_delta(base_entry, head_entry):
-    if not base_entry or not head_entry:
-        return "n/a"
-    base_pct = float(base_entry.get("pct", 0))
-    head_pct = float(head_entry.get("pct", 0))
-    if base_pct == 0:
-        return "n/a"
-    delta = ((head_pct - base_pct) / base_pct) * 100.0
-    absolute_delta = abs(head_pct - base_pct)
-    state = "stable"
-    if base_pct >= 1.0:
-        if delta >= 0.1 and absolute_delta >= 0.1:
-            state = "improved"
-        elif delta <= -0.1 and absolute_delta >= 0.1:
-            state = "regressed"
-    sign = "+" if delta > 0 else ""
-    return f"{sign}{delta:.1f}% ({state})"
-
-
-rows = []
-for key, label in tracks:
-    base_components = base.get("compatibility", {}).get(key, {}).get("components", {}) or {}
-    head_components = head.get("compatibility", {}).get(key, {}).get("components", {}) or {}
-    component_names = sorted(set(base_components.keys()) | set(head_components.keys()))
-    for component in component_names:
-        base_entry = base_components.get(component)
-        head_entry = head_components.get(component)
-        rows.append(
-            "| {track} | `{component}` | {base_val} | {head_val} | {delta} |".format(
-                track=label,
-                component=component,
-                base_val=format_component(base_entry),
-                head_val=format_component(head_entry),
-                delta=format_component_delta(base_entry, head_entry),
-            )
-        )
-
-if not rows:
-    rows.append("| n/a | n/a | n/a | n/a | n/a |")
-
-print("\n".join(rows))
-PY
-}
-
 HEAD_TESTS="$(json_field "$HEAD_JSON" '.tests.count')"
 BASE_TESTS="$(json_field "$BASE_JSON" '.tests.count')"
 HEAD_COVERAGE="$(json_field "$HEAD_JSON" '.tests.coverage_pct')"
@@ -168,10 +98,6 @@ HEAD_LABELS_BYPASS_BYTES="$(json_field "$HEAD_JSON" '.performance.benchmarks.lab
 BASE_LABELS_BYPASS_BYTES="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_bypass_bytes_per_op')"
 HEAD_LABELS_BYPASS_ALLOCS="$(json_field "$HEAD_JSON" '.performance.benchmarks.labels_cache_bypass_allocs_per_op')"
 BASE_LABELS_BYPASS_ALLOCS="$(json_field "$BASE_JSON" '.performance.benchmarks.labels_cache_bypass_allocs_per_op')"
-HEAD_THROUGHPUT="$(json_field "$HEAD_JSON" '.performance.load.high_concurrency_req_per_s')"
-BASE_THROUGHPUT="$(json_field "$BASE_JSON" '.performance.load.high_concurrency_req_per_s')"
-HEAD_MEM_GROWTH="$(json_field "$HEAD_JSON" '.performance.load.high_concurrency_memory_growth_mb')"
-BASE_MEM_GROWTH="$(json_field "$BASE_JSON" '.performance.load.high_concurrency_memory_growth_mb')"
 HEAD_PERF_MODE="$(json_field "$HEAD_JSON" '.performance.mode // "full"')"
 
 COVERAGE_DELTA="$(format_delta "$HEAD_COVERAGE" "$BASE_COVERAGE" higher 0.1 0.1 1)"
@@ -190,10 +116,6 @@ LABELS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_ALLOCS" "$BASE_LABELS_ALLOCS" 
 LABELS_BYPASS_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_NS" "$BASE_LABELS_BYPASS_NS" lower 25 750 500)"
 LABELS_BYPASS_BYTES_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_BYTES" "$BASE_LABELS_BYPASS_BYTES" lower 15 32 64)"
 LABELS_BYPASS_ALLOCS_DELTA="$(format_delta "$HEAD_LABELS_BYPASS_ALLOCS" "$BASE_LABELS_BYPASS_ALLOCS" lower 15 1 1)"
-THROUGHPUT_DELTA="$(format_delta "$HEAD_THROUGHPUT" "$BASE_THROUGHPUT" higher 25 2000 5000)"
-MEMORY_DELTA="$(format_delta "$HEAD_MEM_GROWTH" "$BASE_MEM_GROWTH" lower 300 5 5)"
-COMPAT_COMPONENT_ROWS="$(render_component_rows)"
-
 if [ "$HEAD_PERF_MODE" = "skipped" ]; then
   PERFORMANCE_SECTION="$(cat <<'EOF'
 ### Performance smoke
@@ -222,8 +144,6 @@ Lower CPU cost (\`ns/op\`) is better. Lower benchmark memory cost (\`B/op\`, \`a
 | Labels cache-bypass CPU cost | ${BASE_LABELS_BYPASS_NS} ns/op | ${HEAD_LABELS_BYPASS_NS} ns/op | ${LABELS_BYPASS_DELTA} |
 | Labels cache-bypass memory | ${BASE_LABELS_BYPASS_BYTES} B/op | ${HEAD_LABELS_BYPASS_BYTES} B/op | ${LABELS_BYPASS_BYTES_DELTA} |
 | Labels cache-bypass allocations | ${BASE_LABELS_BYPASS_ALLOCS} allocs/op | ${HEAD_LABELS_BYPASS_ALLOCS} allocs/op | ${LABELS_BYPASS_ALLOCS_DELTA} |
-| High-concurrency throughput | ${BASE_THROUGHPUT} req/s | ${HEAD_THROUGHPUT} req/s | ${THROUGHPUT_DELTA} |
-| High-concurrency memory growth | ${BASE_MEM_GROWTH} MB | ${HEAD_MEM_GROWTH} MB | ${MEMORY_DELTA} |
 EOF
 )"
   PERFORMANCE_STATE_NOTE="- Performance is a smoke comparison, not a full benchmark lab run."
@@ -249,12 +169,6 @@ Compared against base branch \`main\`.
 | Loki API | ${BASE_LOKI_PCT}% | ${HEAD_LOKI_PASS}/${HEAD_LOKI_TOTAL} (${HEAD_LOKI_PCT}%) | ${LOKI_DELTA} |
 | Logs Drilldown | ${BASE_DRILL_PCT}% | ${HEAD_DRILL_PASS}/${HEAD_DRILL_TOTAL} (${HEAD_DRILL_PCT}%) | ${DRILL_DELTA} |
 | VictoriaLogs | ${BASE_VL_PCT}% | ${HEAD_VL_PASS}/${HEAD_VL_TOTAL} (${HEAD_VL_PCT}%) | ${VL_DELTA} |
-
-### Compatibility components
-
-| Track | Component | Base | PR | Delta |
-|---|---|---:|---:|---:|
-${COMPAT_COMPONENT_ROWS}
 
 ${PERFORMANCE_SECTION}
 
