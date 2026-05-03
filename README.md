@@ -64,7 +64,7 @@ When many panels hit the same query at once, the proxy collapses them into a sin
 No cache, no coalescer benefit. Pure translation overhead + HTTP proxying + VL response time.
 
 - **Small and metadata queries:** at parity with Loki or faster — no penalty
-- **Heavy queries under load:** 1.3× faster cold — VL handles high-cardinality data more efficiently
+- **Heavy queries under load:** 1.34× faster at c=10 (179 vs 133 req/s); at c=50 Loki saturates with 35.63% errors while the proxy delivers 1.47× more successful traffic — zero proxy errors at both concurrency levels
 - **Long-range queries:** 2× faster cold — parallel sub-window fetching vs Loki's sequential scan
 - **Metric aggregations (`rate()`, `sum by()`):** 0.4× Loki cold — N VL calls per metric query; historical windows cache after first run (24 h TTL)
 
