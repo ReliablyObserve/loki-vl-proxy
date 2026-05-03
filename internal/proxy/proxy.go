@@ -243,6 +243,9 @@ type Config struct {
 	PeerCache     *cache.PeerCache // optional peer cache for distributed fleet
 	PeerAuthToken string
 
+	// Cold storage backend (Victoria Lakehouse)
+	ColdBackend ColdBackendConfig
+
 	// Admin/debug endpoints
 	RegisterInstrumentation *bool
 	EnablePprof             bool
@@ -364,6 +367,7 @@ type Proxy struct {
 	declaredLabelFields                   []string         // configured VL-native label fields (stream_fields + extras)
 	peerCache                             *cache.PeerCache // L3 fleet peer cache
 	peerAuthToken                         string
+	coldRouter                            *ColdRouter
 	registerInstrumentation               bool
 	enablePprof                           bool
 	enableQueryAnalytics                  bool
@@ -873,7 +877,12 @@ func New(cfg Config) (*Proxy, error) {
 		proxyMetrics.SetCacheStatsProvider(cfg.Cache.Stats)
 	}
 
-	return &Proxy{
+	coldRouter, err := NewColdRouter(cfg.ColdBackend, logger)
+	if err != nil {
+		return nil, fmt.Errorf("cold backend: %w", err)
+	}
+
+	p := &Proxy{
 		backend:       u,
 		rulerBackend:  rulerURL,
 		alertsBackend: alertsURL,
@@ -976,7 +985,9 @@ func New(cfg Config) (*Proxy, error) {
 		labelValuesIndexPersistDone:           make(chan struct{}),
 		labelValuesIndex:                      make(map[string]*labelValuesIndexState),
 		readCacheKeyMemo:                      make(map[canonicalReadCacheMemoKey]string, 2048),
-	}, nil
+		coldRouter:                            coldRouter,
+	}
+	return p, nil
 }
 
 // computeBackendLoopback returns true when u's host is a loopback address or
@@ -1108,7 +1119,17 @@ func (p *Proxy) Init() {
 	}
 	p.warmPatternsOnStartup()
 	p.startPatternsPersistenceLoop()
+	if p.coldRouter != nil {
+		p.coldRouter.Start(context.Background())
+		p.log.Info("cold storage routing enabled",
+			"backend", p.coldRouter.coldBackend.String(),
+			"boundary", p.coldRouter.boundary,
+		)
+	}
 }
+
+// ColdRouter returns the cold storage router for testing.
+func (p *Proxy) ColdRouter() *ColdRouter { return p.coldRouter }
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
@@ -1470,7 +1491,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.proxyStatsQueryRange(sc, r, logsqlQuery)
 	} else {
 		if !p.proxyLogQueryWindowed(sc, r, logsqlQuery) {
-			p.proxyLogQuery(sc, r, logsqlQuery)
+			if p.coldRouter != nil {
+				p.proxyLogQueryWithCold(sc, r, logsqlQuery)
+			} else {
+				p.proxyLogQuery(sc, r, logsqlQuery)
+			}
 		}
 	}
 
