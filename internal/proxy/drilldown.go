@@ -1801,16 +1801,18 @@ func scanDetectedLabelSummariesStream(r io.Reader, lt *LabelTranslator) map[stri
 			continue
 		}
 
-		var entry map[string]interface{}
-		if err := stdjson.Unmarshal(line, &entry); err != nil {
+		fjParser := vlFJParserPool.Get()
+		fjVal, err := fjParser.ParseBytes(line)
+		if err != nil {
+			vlFJParserPool.Put(fjParser)
 			continue
 		}
 
-		fillDetectedLabels(entry, labelBuf)
-		labels := labelBuf
-		delete(labels, "detected_level")
+		fillDetectedLabelsFJ(fjVal, labelBuf)
+		vlFJParserPool.Put(fjParser)
+		delete(labelBuf, "detected_level")
 
-		for key, value := range labels {
+		for key, value := range labelBuf {
 			lokiLabel := lt.ToLoki(key)
 			if lokiLabel == "" {
 				continue

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf: migrate `scanDetectedLabelSummariesStream` in drilldown from `encoding/json` + `map[string]interface{}` to `valyala/fastjson`, eliminating per-entry heap allocation on the detected-labels NDJSON scan path
+
 ## [1.28.0] - 2026-05-03
 
 ### Added
