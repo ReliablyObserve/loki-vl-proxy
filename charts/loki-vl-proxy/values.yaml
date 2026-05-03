@@ -283,6 +283,17 @@ extraArgs:
   # tls-key-file: ""
   # tls-client-ca-file: ""
   # tls-require-client-cert: "false"
+  #
+  # --- Cold storage (Victoria Lakehouse) ---
+  # Route historical queries to an S3-backed Victoria Lakehouse instance.
+  # Queries older than cold-boundary go to cold backend; queries spanning
+  # the boundary fan out to both hot and cold with NDJSON merge.
+  # cold-enabled: "true"                          # enable cold storage routing
+  # cold-backend: "http://lakehouse-logs:9428"    # Victoria Lakehouse URL
+  # cold-boundary: "168h"                         # data older than 7d routes to cold (default 168h)
+  # cold-overlap: "1h"                            # overlap window where both tiers are queried
+  # cold-manifest-refresh: "5m"                   # poll interval for cold backend /manifest/range
+  # cold-timeout: "30s"                           # timeout for cold backend requests
 
 # First-class observability flags.
 # The chart renders these as CLI args unless the same key is already set under
