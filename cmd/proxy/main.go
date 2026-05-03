@@ -169,6 +169,12 @@ type proxyRuntimeConfig struct {
 	peerHotReadAheadTenantFairShare     int
 	peerHotReadAheadErrorBackoff        time.Duration
 	coalescerDisabled                   bool
+	coldBackendURL                      string
+	coldBackendBoundary                 time.Duration
+	coldBackendOverlap                  time.Duration
+	coldBackendEnabled                  bool
+	coldBackendManifestRefresh          time.Duration
+	coldBackendTimeout                  time.Duration
 }
 
 type otlpRuntimeConfig struct {
@@ -479,6 +485,14 @@ func run(
 	patternsPeerWarmTimeout := fs.Duration("patterns-startup-peer-warm-timeout", 5*time.Second, "Maximum time to wait for startup patterns snapshot warm from peers")
 	allowGlobalTenant := fs.Bool("tenant.allow-global", false, `Allow X-Scope-OrgID "*" to bypass AccountID/ProjectID scoping and use the backend default tenant`)
 
+	// Cold storage backend (Victoria Lakehouse)
+	coldBackendURL := fs.String("cold-backend", "", "Cold storage backend URL (Victoria Lakehouse). Empty disables cold routing.")
+	coldBackendBoundary := fs.Duration("cold-boundary", 7*24*time.Hour, "Data older than this boundary routes to cold backend")
+	coldBackendOverlap := fs.Duration("cold-overlap", time.Hour, "Overlap window around cold boundary where both hot and cold are queried")
+	coldBackendEnabled := fs.Bool("cold-enabled", false, "Enable cold storage backend routing")
+	coldBackendManifestRefresh := fs.Duration("cold-manifest-refresh", 5*time.Minute, "How often to refresh cold backend manifest range")
+	coldBackendTimeout := fs.Duration("cold-timeout", 30*time.Second, "Timeout for cold backend requests")
+
 	// Peer cache (fleet distribution)
 	peerSelf := fs.String("peer-self", "", `This instance's address for peer cache (e.g., "10.0.0.1:3100"). Empty disables peer cache.`)
 	peerDiscovery := fs.String("peer-discovery", "", `Peer discovery: "dns" (headless service) or "static" (comma-separated)`)
@@ -685,6 +699,12 @@ func run(
 			peerHotReadAheadTenantFairShare:     *peerHotReadAheadTenantFairShare,
 			peerHotReadAheadErrorBackoff:        *peerHotReadAheadErrorBackoff,
 			coalescerDisabled:                   *coalescerDisabled,
+			coldBackendURL:                      *coldBackendURL,
+			coldBackendBoundary:                 *coldBackendBoundary,
+			coldBackendOverlap:                  *coldBackendOverlap,
+			coldBackendEnabled:                  *coldBackendEnabled,
+			coldBackendManifestRefresh:          *coldBackendManifestRefresh,
+			coldBackendTimeout:                  *coldBackendTimeout,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1507,6 +1527,14 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		PatternsPeerWarmTimeout:            cfg.patternsPeerWarmTimeout,
 		PeerCache:                          peerCache,
 		PeerAuthToken:                      cfg.peerAuthToken,
+		ColdBackend: proxy.ColdBackendConfig{
+			URL:             cfg.coldBackendURL,
+			Boundary:        cfg.coldBackendBoundary,
+			Overlap:         cfg.coldBackendOverlap,
+			Enabled:         cfg.coldBackendEnabled,
+			ManifestRefresh: cfg.coldBackendManifestRefresh,
+			Timeout:         cfg.coldBackendTimeout,
+		},
 	}, nil
 }
 
