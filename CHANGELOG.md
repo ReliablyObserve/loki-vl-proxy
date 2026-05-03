@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.27.3] - 2026-05-03
+
 ### Performance
 
 - perf: offload `maybeAutodetectPatternsFromWindowEntries` to a background goroutine, removing ~21% proxy CPU from the client-visible request path (both this function and `groupQueryRangeWindowEntries` are read-only over the entries slice; concurrent execution is safe)
