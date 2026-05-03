@@ -321,37 +321,12 @@ func buildEntryLabelsWithStream(entry map[string]interface{}, stream map[string]
 	return labels
 }
 
-// detectedLabelsBufPool pools map[string]string for fillDetectedLabels callers
+// detectedLabelsBufPool pools map[string]string for detected-label scan callers
 // that iterate the result immediately and discard it within the same loop tick.
 var detectedLabelsBufPool = sync.Pool{
 	New: func() interface{} {
 		return make(map[string]string, 16)
 	},
-}
-
-// fillDetectedLabels fills buf with stream labels for entry. Buf is cleared
-// before filling; callers must not retain the map past the next fillDetectedLabels call on the same buf.
-func fillDetectedLabels(entry map[string]interface{}, buf map[string]string) {
-	for k := range buf {
-		delete(buf, k)
-	}
-	stream := parseStreamLabels(asString(entry["_stream"]))
-	for k, v := range stream {
-		buf[k] = v
-	}
-	for _, key := range serviceNameSourceFields {
-		if _, ok := buf[key]; ok {
-			continue
-		}
-		if value, ok := stringifyEntryValue(entry[key]); ok && strings.TrimSpace(value) != "" {
-			buf[key] = value
-		}
-	}
-	if value, ok := stringifyEntryValue(entry["level"]); ok && strings.TrimSpace(value) != "" {
-		buf["level"] = value
-	}
-	ensureDetectedLevel(buf)
-	ensureSyntheticServiceName(buf)
 }
 
 func shouldExposeStructuredField(key string, streamLabels map[string]string, lt *LabelTranslator) bool {
