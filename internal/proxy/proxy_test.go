@@ -459,39 +459,29 @@ func TestContract_QueryRange_MatrixFormat(t *testing.T) {
 	assertLokiSuccess(t, resp)
 }
 
-func TestContract_QueryRange_MatrixFormat_DoesNotSplitLongRangeStatsQueries(t *testing.T) {
+func TestContract_QueryRange_MatrixFormat_SlidingRateUsesManualLogFetch(t *testing.T) {
+	// rate()[5m] with step=60s is a sliding window (range != step).
+	// The proxy must use the manual log-fetch path, not native VL stats_query_range,
+	// because VL stats uses tumbling per-step buckets which give wrong values for
+	// sliding windows. The manual path makes a single /select/logsql/query call
+	// (no window splitting) and aggregates in-process.
 	var (
-		mu             sync.Mutex
-		receivedStarts []int64
+		mu        sync.Mutex
+		callCount int
 	)
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/stats_query_range" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
-		}
-		if err := r.ParseForm(); err != nil {
-			t.Fatalf("parse form: %v", err)
-		}
-		start, err := strconv.ParseInt(r.FormValue("start"), 10, 64)
-		if err != nil {
-			t.Fatalf("parse start: %v", err)
+		if r.URL.Path != "/select/logsql/query" {
+			t.Errorf("unexpected path %s; sliding rate must use log-fetch not stats", r.URL.Path)
+			http.Error(w, "wrong endpoint", http.StatusBadRequest)
+			return
 		}
 		mu.Lock()
-		receivedStarts = append(receivedStarts, start)
+		callCount++
 		mu.Unlock()
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": map[string]interface{}{
-				"resultType": "matrix",
-				"result": []map[string]interface{}{
-					{
-						"metric": map[string]string{"app": "nginx"},
-						"values": [][]interface{}{{start, strconv.FormatInt(start, 10)}},
-					},
-				},
-			},
-		})
+		// Return one NDJSON entry so the rate aggregation has data to work with.
+		w.Header().Set("Content-Type", "application/stream+json")
+		fmt.Fprintln(w, `{"_time":"2024-01-15T10:10:00Z","_stream":"{\"app\":\"nginx\"}","_msg":"hit"}`)
 	}))
 	defer vlBackend.Close()
 
@@ -510,42 +500,37 @@ func TestContract_QueryRange_MatrixFormat_DoesNotSplitLongRangeStatsQueries(t *t
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 response, got %d: %s", w.Code, w.Body.String())
 	}
-	if len(receivedStarts) != 1 {
-		t.Fatalf("expected one stats_query_range call, got %d", len(receivedStarts))
+	mu.Lock()
+	got := callCount
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("expected exactly one log-fetch call (no window splitting for manual rate), got %d", got)
 	}
 
 	var resp struct {
 		Data struct {
 			ResultType string `json:"resultType"`
-			Result     []struct {
-				Metric map[string]string `json:"metric"`
-				Values [][]interface{}   `json:"values"`
-			} `json:"result"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode response: %v", err)
+		t.Fatalf("decode response: %v\nbody: %s", err, w.Body.String())
 	}
 	if resp.Data.ResultType != "matrix" {
 		t.Fatalf("expected matrix result type, got %q", resp.Data.ResultType)
 	}
-	if len(resp.Data.Result) != 1 {
-		t.Fatalf("expected single merged series, got %#v", resp.Data.Result)
-	}
-	if got := len(resp.Data.Result[0].Values); got != 1 {
-		t.Fatalf("expected backend matrix payload to remain intact, got %d points", got)
-	}
-	if got := resp.Data.Result[0].Values[0][0]; got != float64(1705312200) {
-		t.Fatalf("expected untouched backend point timestamp, got %#v", got)
-	}
 }
 
-func TestContract_QueryRange_MatrixFormat_ExtendsBackendEndByStepAndTrimsExtraPoint(t *testing.T) {
+func TestContract_QueryRange_MatrixFormat_TumblingRateExtendsEndAndTrimsExtraPoint(t *testing.T) {
+	// Tumbling rate: range == step (60s == 60s). The proxy routes this to native
+	// VL stats_query_range, extends end by one step to cover the last bucket, then
+	// trims the extra trailing point from the response.
 	var receivedEnd string
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/stats_query_range" {
-			t.Fatalf("unexpected path %s", r.URL.Path)
+			t.Errorf("unexpected path %s; tumbling rate (range==step) must use stats", r.URL.Path)
+			http.Error(w, "wrong endpoint", http.StatusBadRequest)
+			return
 		}
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("parse form: %v", err)
@@ -570,7 +555,8 @@ func TestContract_QueryRange_MatrixFormat_ExtendsBackendEndByStepAndTrimsExtraPo
 	}))
 	defer vlBackend.Close()
 
-	resp := doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query=rate(%7Bapp%3D%22nginx%22%7D%5B5m%5D)&start=1705312200&end=1705312260&step=60")
+	// rate()[60s] with step=60s → range==step → tumbling → native stats + end-extension
+	resp := doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query=rate(%7Bapp%3D%22nginx%22%7D%5B60s%5D)&start=1705312200&end=1705312260&step=60")
 	assertLokiSuccess(t, resp)
 
 	expectedEnd := strconv.FormatInt(1705312260+60, 10)

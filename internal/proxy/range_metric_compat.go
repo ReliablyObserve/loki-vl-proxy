@@ -40,6 +40,8 @@ type rangeMetricSample struct {
 var (
 	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
 	outerAggregationRE  = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
+	// outerWithoutRE detects "sum|avg|... without (" at the start of a LogQL expression.
+	outerWithoutRE = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar)\s+without\s*\(`)
 )
 
 func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
@@ -273,8 +275,12 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		return false
 	}
 	step, _ := parsePositiveStepDuration(r.FormValue("step"))
-	rangeEqualsStep := step > 0 && origSpec.Window > 0 && origSpec.Window == step
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep, originalLogql) {
+	// noSlidingOverlap is true when consecutive evaluation windows don't overlap:
+	// range == step (tumbling) or range < step (gap between windows). Both are
+	// semantically equivalent for VL native stats — only range > step produces
+	// overlapping sliding windows where VL tumbling-bucket stats diverges from LogQL.
+	noSlidingOverlap := step > 0 && origSpec.Window > 0 && origSpec.Window <= step
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, noSlidingOverlap, originalLogql) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -302,9 +308,10 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if manualFunc == "" {
 		return false
 	}
-	// Instant queries have no step — keep manual path for rate() to preserve
-	// sliding-window semantics (the window defines the lookback, not a bucket).
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, false, originalLogql) {
+	// Instant queries have no step: the range window is the entire lookback interval,
+	// not a sliding window. VL native stats correctly evaluates [time-range, time].
+	// Only rate_counter still requires the manual path (counter-reset semantics).
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, true, originalLogql) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -335,38 +342,36 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	if manualFunc == "rate_counter" {
 		return true
 	}
+
+	// For sliding windows (range != step) VL native stats_query_range buckets by the
+	// step interval (tumbling windows) while LogQL evaluates each point over [T-range, T].
+	// When the data distribution is non-uniform the two diverge. Route to the manual
+	// log-fetch path for correct sliding-window semantics regardless of parser stages.
+	// When range == step windows are non-overlapping and native VL stats is equivalent.
+	//
+	// Exception: outer without() aggregation. The manual path uses collectRangeMetricSamples
+	// with groupBy=["_stream","level"] (from addStatsByStreamClause). buildManualMetricLabels
+	// looks up "_stream" in the already-expanded streamLabels map — it is absent there —
+	// so only "level" survives. After applyWithoutGrouping removes "level" all series
+	// collapse to {} → wrong series count. Native VL stats correctly handles _stream
+	// expansion before applyWithoutGrouping, preserving detected_level differentiation.
+	switch manualFunc {
+	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
+		if !rangeEqualsStep && outerWithoutRE.MatchString(strings.TrimSpace(originalLogql)) {
+			return false
+		}
+		return !rangeEqualsStep
+	}
+
 	if !queryUsesParserStages(baseQuery) {
 		return false
 	}
-	// The translated query contains parser stages (unpack_json/unpack_logfmt/extract*).
-	// VL's unpack pipes do not model Loki's __error__ filtering: Loki excludes lines
-	// that fail to parse via the __error__ label; VL may include them.
-	//
-	// For count-like operations this difference is directly observable — non-parseable
-	// lines inflate the count. Force manual log-fetch unless the original LogQL
-	// explicitly handles __error__ (the user has opted into counting all lines) or the
-	// range == step optimization applies (VL tumbling window is semantically identical).
-	//
-	// Unwrap-based aggregations (avg, sum, max, min, …) require the unwrapped field
-	// to be present in the parsed entry; lines that fail to parse naturally produce
-	// no value and are excluded, so the semantic risk is much lower.
+
+	// Parser stages present — native VL stats is safe for unwrap-based aggregations
+	// (parse failures self-filter via absent fields) and for non-sliding windows.
 	switch manualFunc {
-	case "rate", "bytes_rate":
-		// When range == step, VL's native rate/bytes_rate with the first-bucket shift
-		// is semantically identical to LogQL. Use native stats path.
-		if rangeEqualsStep {
-			return false
-		}
-		return true
-	case "count_over_time", "bytes_over_time":
-		// Loki's | json / | logfmt parser stages add __error__ on parse failure but
-		// keep the log line in the stream — they never drop it. VL's unpack_json /
-		// unpack_logfmt behaves the same way (the log entry is retained, only field
-		// extraction is skipped). Both backends therefore count the same set of lines,
-		// so native VL stats is semantically correct here.
-		return false
 	case "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
-		return false // unwrap-based; field absence filters naturally
+		return false
 	default:
 		return true
 	}
