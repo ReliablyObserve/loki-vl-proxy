@@ -18,3 +18,4 @@ bench/seed
 docker-compose.override.yml
 .claude/
 internal/translator/transdebug_test.go
+.worktrees/
