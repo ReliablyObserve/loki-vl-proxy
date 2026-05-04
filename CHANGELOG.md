@@ -7,12 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.28.4] - 2026-05-04
+### Performance
 
-### Fixed
-
-- fix: remove per-request `streamNoExtraFields` reconstruction cache that could silently suppress log field extraction for later entries in a stream when an earlier entry was a no-op (e.g. plain-text entry followed by a JSON entry with extracted fields)
-- fix: align `addStatsByStreamClause` to group by `(_stream, level)` instead of `(_stream)` alone, matching the translator's existing assumption and preserving level-split stream identity for bare metric queries
+- perf: replace `json.Marshal` with `appendJSONStringToBuilder` in `reconstructLogLine` variants — eliminates per-field `[]byte` allocation; merges duplicate function bodies and adopts `startLen` trick to remove redundant map scan pass
+- perf: replace `stdjson` fallback in `extractLogPatternsWithStats` with fastjson via `vlFJParserPool` — eliminates `interface{}` tree allocation on the wrapped-JSON fallback path; uses `stringifyFJValue` for pair elements
+- perf: replace `stdjson.Marshal` map literals in `wrapAsLokiResponse` with direct byte builders — eliminates reflection allocations from fixed-shape error/envelope responses
+- refactor: move `canonicalLabelsKey` from `drilldown.go` to `labels.go` where other label utilities live
 
 ## [1.28.2] - 2026-05-04
 
