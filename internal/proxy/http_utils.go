@@ -464,6 +464,9 @@ func reconstructLogLineWithFlagFJ(msg string, obj *fj.Object, streamLabels map[s
 
 // appendJSONStringToBuilder writes s as a JSON-encoded string into a strings.Builder.
 // Matches json.Marshal semantics for HTML-safe output without allocating a []byte.
+// Note: unlike encoding/json's HTML encoder, this does NOT escape U+2028 / U+2029
+// (line/paragraph separators); callers concerned about embedding output in <script>
+// tags must escape those code points themselves.
 func appendJSONStringToBuilder(b *strings.Builder, s string) {
 	b.WriteByte('"')
 	start := 0

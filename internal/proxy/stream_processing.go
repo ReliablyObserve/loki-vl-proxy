@@ -1005,25 +1005,13 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 	var promResp map[string]interface{}
 	if err := stdjson.Unmarshal(vlBody, &promResp); err != nil {
 		// If we can't parse, return as-is with wrapper
-		result, _ := stdjson.Marshal(map[string]interface{}{
-			"status": "success",
-			"data": map[string]interface{}{
-				"resultType": resultType,
-				"result":     []interface{}{},
-			},
-		})
-		return result
+		return lokiEmptyResultResponse(resultType)
 	}
 
 	// Check for VL error responses and translate to Loki error format.
 	// VL may return: {"error":"message"} or {"status":"error","msg":"message"}
 	if errMsg, ok := promResp["error"].(string); ok {
-		result, _ := stdjson.Marshal(map[string]interface{}{
-			"status":    "error",
-			"errorType": "bad_request",
-			"error":     errMsg,
-		})
-		return result
+		return lokiErrorResponse(errMsg)
 	}
 	if promResp["status"] == "error" {
 		errMsg := ""
@@ -1034,41 +1022,100 @@ func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
 		} else if msg, ok := promResp["error"].(string); ok {
 			errMsg = msg
 		}
-		result, _ := stdjson.Marshal(map[string]interface{}{
-			"status":    "error",
-			"errorType": "bad_request",
-			"error":     errMsg,
-		})
-		return result
+		return lokiErrorResponse(errMsg)
 	}
 
 	// If VL already returned status/data format, pass through
 	if rawData, ok := promResp["data"]; ok {
 		if dataMap, ok := rawData.(map[string]interface{}); ok {
 			normalizeLokiResultDataShape(dataMap, resultType)
-			result, _ := stdjson.Marshal(map[string]interface{}{
-				"status": "success",
-				"data":   dataMap,
-			})
-			return result
+			dataBytes, _ := stdjson.Marshal(dataMap)
+			return appendLokiSuccessEnvelope(dataBytes)
 		}
-		result, _ := stdjson.Marshal(map[string]interface{}{
-			"status": "success",
-			"data": map[string]interface{}{
-				"resultType": resultType,
-				"result":     []interface{}{},
-			},
-		})
-		return result
+		return lokiEmptyResultResponse(resultType)
 	}
 
 	normalizeLokiResultDataShape(promResp, resultType)
 
-	result, _ := stdjson.Marshal(map[string]interface{}{
-		"status": "success",
-		"data":   promResp,
-	})
-	return result
+	dataBytes, _ := stdjson.Marshal(promResp)
+	return appendLokiSuccessEnvelope(dataBytes)
+}
+
+// lokiEmptyResultResponse builds {"status":"success","data":{"resultType":"<resultType>","result":[]}}
+// directly as bytes, avoiding the reflection-heavy stdjson.Marshal map encoder for this hot
+// fallback path. resultType is JSON-escaped via appendJSONString.
+func lokiEmptyResultResponse(resultType string) []byte {
+	b := make([]byte, 0, 64+len(resultType))
+	b = append(b, `{"status":"success","data":{"resultType":`...)
+	b = appendJSONString(b, resultType)
+	b = append(b, `,"result":[]}}`...)
+	return b
+}
+
+// lokiErrorResponse builds {"status":"error","errorType":"bad_request","error":"<errMsg>"}
+// directly as bytes. errMsg is JSON-escaped.
+func lokiErrorResponse(errMsg string) []byte {
+	b := make([]byte, 0, 64+len(errMsg))
+	b = append(b, `{"status":"error","errorType":"bad_request","error":`...)
+	b = appendJSONString(b, errMsg)
+	b = append(b, '}')
+	return b
+}
+
+// appendJSONString appends s as a JSON-encoded string to dst and returns the
+// extended slice. Mirrors appendJSONStringToBuilder semantics (HTML-safe escapes
+// for <, >, &; no U+2028 / U+2029 escaping) but writes directly into a []byte
+// to avoid the strings.Builder → []byte copy in the [] byte return path.
+func appendJSONString(dst []byte, s string) []byte {
+	dst = append(dst, '"')
+	start := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 0x20 && c != '"' && c != '\\' && c != '<' && c != '>' && c != '&' {
+			continue
+		}
+		if start < i {
+			dst = append(dst, s[start:i]...)
+		}
+		switch c {
+		case '"':
+			dst = append(dst, '\\', '"')
+		case '\\':
+			dst = append(dst, '\\', '\\')
+		case '\n':
+			dst = append(dst, '\\', 'n')
+		case '\r':
+			dst = append(dst, '\\', 'r')
+		case '\t':
+			dst = append(dst, '\\', 't')
+		case '<':
+			dst = append(dst, `\u003c`...)
+		case '>':
+			dst = append(dst, `\u003e`...)
+		case '&':
+			dst = append(dst, `\u0026`...)
+		default:
+			dst = append(dst, `\u00`...)
+			dst = append(dst, "0123456789abcdef"[c>>4], "0123456789abcdef"[c&0xf])
+		}
+		start = i + 1
+	}
+	if start < len(s) {
+		dst = append(dst, s[start:]...)
+	}
+	dst = append(dst, '"')
+	return dst
+}
+
+// appendLokiSuccessEnvelope wraps already-marshaled data bytes in
+// {"status":"success","data":<dataBytes>} via direct byte append, avoiding a
+// second reflection-based stdjson.Marshal pass over a wrapper map.
+func appendLokiSuccessEnvelope(dataBytes []byte) []byte {
+	out := make([]byte, 0, len(dataBytes)+28)
+	out = append(out, `{"status":"success","data":`...)
+	out = append(out, dataBytes...)
+	out = append(out, '}')
+	return out
 }
 
 // isVLDataResultTypeResponse returns true when vlBody is the compact VL format
