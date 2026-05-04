@@ -780,7 +780,6 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	needsClassification := categorizedLabels && emitStructuredMetadata
-	streamNoExtraFields := make(map[string]bool, 8)
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), windowEntryScannerLineBytes)
@@ -820,7 +819,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 
 		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
 
-		needsObject := needsClassification || (!skipLogLineReconstruction && !streamNoExtraFields[desc.key])
+		needsObject := needsClassification || !skipLogLineReconstruction
 		var fjObj *fj.Object
 		if needsObject {
 			obj, fjErr := fjVal.Object()
@@ -831,12 +830,8 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 			fjObj = obj
 		}
 
-		if !skipLogLineReconstruction && !streamNoExtraFields[desc.key] {
-			origMsg := msg
+		if !skipLogLineReconstruction {
 			msg = reconstructLogLineWithFlagFJ(msg, fjObj, desc.rawLabels, false)
-			if msg == origMsg {
-				streamNoExtraFields[desc.key] = true
-			}
 		}
 
 		var sm, parsed map[string]string
