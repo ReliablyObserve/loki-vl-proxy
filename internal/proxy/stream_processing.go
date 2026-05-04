@@ -1055,7 +1055,9 @@ func lokiEmptyResultResponse(resultType string) []byte {
 // lokiErrorResponse builds {"status":"error","errorType":"bad_request","error":"<errMsg>"}
 // directly as bytes. errMsg is JSON-escaped.
 func lokiErrorResponse(errMsg string) []byte {
-	b := make([]byte, 0, 64+min(len(errMsg), 1<<30))
+	// Fixed initial capacity — avoids integer overflow in size arithmetic.
+	// append grows the slice as needed when errMsg is larger than 128 bytes.
+	b := make([]byte, 0, 128)
 	b = append(b, `{"status":"error","errorType":"bad_request","error":`...)
 	b = appendJSONString(b, errMsg)
 	b = append(b, '}')
@@ -1111,7 +1113,9 @@ func appendJSONString(dst []byte, s string) []byte {
 // {"status":"success","data":<dataBytes>} via direct byte append, avoiding a
 // second reflection-based stdjson.Marshal pass over a wrapper map.
 func appendLokiSuccessEnvelope(dataBytes []byte) []byte {
-	out := make([]byte, 0, min(len(dataBytes), 1<<30)+28)
+	// Pre-allocate for the fixed envelope only; dataBytes is appended below.
+	// Avoids integer overflow in size arithmetic while keeping the alloc tight.
+	out := make([]byte, 0, 28)
 	out = append(out, `{"status":"success","data":`...)
 	out = append(out, dataBytes...)
 	out = append(out, '}')
