@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix: remove per-request `streamNoExtraFields` reconstruction cache that could silently suppress log field extraction for later entries in a stream when an earlier entry was a no-op (e.g. plain-text entry followed by a JSON entry with extracted fields)
+- fix: align `addStatsByStreamClause` to group by `(_stream, level)` instead of `(_stream)` alone, matching the translator's existing assumption and preserving level-split stream identity for bare metric queries
+
 ## [1.28.2] - 2026-05-04
 
 ### Changed
