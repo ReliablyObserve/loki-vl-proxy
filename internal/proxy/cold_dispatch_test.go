@@ -85,15 +85,33 @@ func TestBuildLogQueryParams_DefaultLimit(t *testing.T) {
 	}
 }
 
-func TestProxyLogQueryCold_FallbackOnError(t *testing.T) {
-	// Hot backend that returns valid NDJSON
+func TestBuildColdQueryParams_NoSortClause(t *testing.T) {
+	p := &Proxy{maxLines: 1000}
+
+	for _, dir := range []string{"forward", "backward", ""} {
+		r := httptest.NewRequest("GET", "/?direction="+dir+"&start=1714521600&end=1714608000&limit=200", nil)
+		params := p.buildColdQueryParams(r, "*")
+
+		if strings.Contains(params.Get("query"), "sort by") {
+			t.Errorf("direction=%q: cold params must not contain sort clause, got %q", dir, params.Get("query"))
+		}
+		if params.Get("query") != "*" {
+			t.Errorf("direction=%q: cold query modified to %q, want *", dir, params.Get("query"))
+		}
+		if params.Get("limit") != "200" {
+			t.Errorf("direction=%q: limit = %q, want 200", dir, params.Get("limit"))
+		}
+	}
+}
+
+func TestProxyLogQueryCold_PropagatesError(t *testing.T) {
 	hotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/stream+json")
 		fmt.Fprintln(w, `{"_msg":"hot-line","_time":"2026-05-01T00:00:00Z","_stream":"{}"}`)
 	}))
 	defer hotSrv.Close()
 
-	// Cold backend that returns an error
+	// Cold backend that returns an error.
 	coldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	}))
@@ -116,9 +134,10 @@ func TestProxyLogQueryCold_FallbackOnError(t *testing.T) {
 
 	p.proxyLogQueryCold(w, r, "*")
 
-	// Should fall back to hot and succeed
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200 (fallback to hot)", w.Code)
+	// RouteColdOnly means hot has no data for this range — cold failure must surface
+	// as an error rather than a silent empty/hot response.
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 (cold error propagated)", w.Code)
 	}
 }
 
@@ -155,13 +174,18 @@ func TestProxyLogQueryBoth_MergesResults(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Use timestamps that straddle the 7-day boundary so both hot and cold are queried.
+	now := time.Now()
+	startNs := fmt.Sprintf("%d", now.Add(-10*24*time.Hour).UnixNano()) // 10 days ago (cold range)
+	endNs := fmt.Sprintf("%d", now.Add(-1*time.Hour).UnixNano())       // 1 hour ago (hot range)
+
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000", nil)
+	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs, nil)
 
 	p.proxyLogQueryBoth(w, r, "*")
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", w.Code)
+		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
 	}
 
 	body := w.Body.String()
@@ -182,7 +206,7 @@ func TestProxyLogQueryBoth_MergesResults(t *testing.T) {
 		t.Errorf("status = %q, want success", result.Status)
 	}
 
-	// Should contain both hot and cold lines
+	// Should contain both hot and cold lines.
 	allValues := ""
 	for _, stream := range result.Data.Result {
 		for _, v := range stream.Values {
@@ -199,7 +223,7 @@ func TestProxyLogQueryBoth_MergesResults(t *testing.T) {
 	}
 }
 
-func TestProxyLogQueryBoth_ColdFails_ServesHot(t *testing.T) {
+func TestProxyLogQueryBoth_ColdFails_PropagatesError(t *testing.T) {
 	hotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/stream+json")
 		fmt.Fprintln(w, `{"_msg":"hot-only","_time":"2026-05-01T00:00:00Z","_stream":"{}"}`)
@@ -223,16 +247,22 @@ func TestProxyLogQueryBoth_ColdFails_ServesHot(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	now := time.Now()
+	startNs := fmt.Sprintf("%d", now.Add(-10*24*time.Hour).UnixNano())
+	endNs := fmt.Sprintf("%d", now.Add(-1*time.Hour).UnixNano())
+
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000", nil)
+	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs, nil)
 
 	p.proxyLogQueryBoth(w, r, "*")
 
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200", w.Code)
+	// Cold failed for a RouteBoth range — returning hot-only would silently truncate the
+	// result to [boundary, end] without the client knowing cold data is missing.
+	if w.Code == http.StatusOK {
+		t.Errorf("cold failure should not produce a 200 OK silent partial response")
 	}
-	if !strings.Contains(w.Body.String(), "hot-only") {
-		t.Error("should contain hot results when cold fails")
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503 (cold error propagated)", w.Code)
 	}
 }
 
@@ -260,8 +290,12 @@ func TestProxyLogQueryBoth_HotFails_ServesCold(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	now := time.Now()
+	startNs := fmt.Sprintf("%d", now.Add(-10*24*time.Hour).UnixNano())
+	endNs := fmt.Sprintf("%d", now.Add(-1*time.Hour).UnixNano())
+
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000", nil)
+	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs, nil)
 
 	p.proxyLogQueryBoth(w, r, "*")
 

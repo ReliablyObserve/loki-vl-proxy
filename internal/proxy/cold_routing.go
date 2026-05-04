@@ -253,15 +253,19 @@ func (cr *ColdRouter) ManifestRange() *ManifestRange {
 	return &cp
 }
 
-func MergeNDJSON(hotBody, coldBody io.Reader) io.Reader {
+// MergeNDJSON streams firstBody then secondBody into a single NDJSON reader.
+// Callers choose the order based on query direction:
+//   - backward (newest-first): pass hot body first, then cold
+//   - forward  (oldest-first): pass cold body first, then hot
+func MergeNDJSON(firstBody, secondBody io.Reader) io.Reader {
 	pr, pw := io.Pipe()
 	go func() {
 		defer func() { _ = pw.Close() }()
-		if coldBody != nil {
-			_, _ = io.Copy(pw, coldBody)
+		if firstBody != nil {
+			_, _ = io.Copy(pw, firstBody)
 		}
-		if hotBody != nil {
-			_, _ = io.Copy(pw, hotBody)
+		if secondBody != nil {
+			_, _ = io.Copy(pw, secondBody)
 		}
 	}()
 	return pr

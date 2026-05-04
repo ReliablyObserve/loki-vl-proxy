@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -31,6 +32,8 @@ func (p *Proxy) proxyLogQueryWithCold(w http.ResponseWriter, r *http.Request, lo
 	}
 }
 
+// buildLogQueryParams builds request parameters for VictoriaLogs hot storage.
+// It appends a LogsQL sort clause to honour the Loki direction parameter.
 func (p *Proxy) buildLogQueryParams(r *http.Request, logsqlQuery string) url.Values {
 	direction := r.FormValue("direction")
 	if direction == "forward" {
@@ -55,19 +58,58 @@ func (p *Proxy) buildLogQueryParams(r *http.Request, logsqlQuery string) url.Val
 	return params
 }
 
-func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+// buildHotQueryParamsForRange builds VictoriaLogs params with explicit nanosecond timestamps.
+// Used by proxyLogQueryBoth to send a time-bounded hot sub-range.
+func (p *Proxy) buildHotQueryParamsForRange(r *http.Request, logsqlQuery string, startNs, endNs int64) url.Values {
 	params := p.buildLogQueryParams(r, logsqlQuery)
+	params.Set("start", strconv.FormatInt(startNs, 10))
+	params.Set("end", strconv.FormatInt(endNs, 10))
+	return params
+}
+
+// buildColdQueryParams builds request parameters for Victoria Lakehouse cold storage.
+// It does NOT append a LogsQL sort clause: the Lakehouse filter parser only understands
+// simple filter terms, boolean ops, parentheses, and *.  Appending "| sort by (_time desc)"
+// would be tokenised as bare _msg substring filters, returning wrong rows.
+func (p *Proxy) buildColdQueryParams(r *http.Request, logsqlQuery string) url.Values {
+	params := url.Values{}
+	params.Set("query", logsqlQuery)
+	if s := r.FormValue("start"); s != "" {
+		params.Set("start", formatVLTimestamp(s))
+	}
+	if e := r.FormValue("end"); e != "" {
+		params.Set("end", formatVLTimestamp(e))
+	}
+	limit := r.FormValue("limit")
+	if limit == "" {
+		limit = "1000"
+	}
+	params.Set("limit", sanitizeLimit(limit))
+	return params
+}
+
+// buildColdQueryParamsForRange builds cold-storage params with explicit nanosecond timestamps.
+func (p *Proxy) buildColdQueryParamsForRange(r *http.Request, logsqlQuery string, startNs, endNs int64) url.Values {
+	params := p.buildColdQueryParams(r, logsqlQuery)
+	params.Set("start", strconv.FormatInt(startNs, 10))
+	params.Set("end", strconv.FormatInt(endNs, 10))
+	return params
+}
+
+func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	params := p.buildColdQueryParams(r, logsqlQuery)
 	resp, err := p.coldRouter.ColdPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
-		p.log.Warn("cold backend error, falling back to hot", "error", err)
-		p.proxyLogQuery(w, r, logsqlQuery)
+		// RouteColdOnly means the hot backend has no data for this range — a cold
+		// failure must be surfaced rather than silently returning an empty hot response.
+		p.writeError(w, http.StatusBadGateway, "cold backend error: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		p.log.Warn("cold backend returned error, falling back to hot", "status", resp.StatusCode)
-		p.proxyLogQuery(w, r, logsqlQuery)
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		p.writeError(w, resp.StatusCode, string(body))
 		return
 	}
 
@@ -75,7 +117,24 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 }
 
 func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
-	params := p.buildLogQueryParams(r, logsqlQuery)
+	startNs, endNs := ParseTimeRangeFromRequest(r)
+	boundaryNs := p.coldRouter.ColdBoundaryNs()
+
+	// Time-split so each backend only covers its own range:
+	//   cold → [start, boundary]   (Lakehouse parquet data)
+	//   hot  → [boundary, end]     (VictoriaLogs live data)
+	// This prevents boundary overlap from returning duplicate rows.
+	coldEndNs := boundaryNs
+	if endNs < coldEndNs {
+		coldEndNs = endNs
+	}
+	hotStartNs := startNs
+	if boundaryNs > hotStartNs {
+		hotStartNs = boundaryNs
+	}
+
+	coldParams := p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs)
+	hotParams := p.buildHotQueryParamsForRange(r, logsqlQuery, hotStartNs, endNs)
 
 	var (
 		hotResp, coldResp *http.Response
@@ -86,11 +145,11 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		hotResp, hotErr = p.vlPost(r.Context(), "/select/logsql/query", params)
+		hotResp, hotErr = p.vlPost(r.Context(), "/select/logsql/query", hotParams)
 	}()
 	go func() {
 		defer wg.Done()
-		coldResp, coldErr = p.coldRouter.ColdPost(r.Context(), "/select/logsql/query", params)
+		coldResp, coldErr = p.coldRouter.ColdPost(r.Context(), "/select/logsql/query", coldParams)
 	}()
 	wg.Wait()
 
@@ -99,26 +158,26 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		return
 	}
 
-	// Cold failed — serve hot only
-	if coldErr != nil || (coldResp != nil && coldResp.StatusCode >= 400) {
-		if coldResp != nil {
-			coldResp.Body.Close()
+	// Cold failed — propagate error rather than serving a silent hot-only partial response.
+	// Hot covers [boundary, end] only; returning it alone truncates the requested range.
+	if coldErr != nil {
+		if hotResp != nil {
+			hotResp.Body.Close()
 		}
-		if hotErr != nil {
-			p.writeError(w, statusFromUpstreamErr(hotErr), hotErr.Error())
-			return
+		p.writeError(w, http.StatusBadGateway, "cold backend error: "+coldErr.Error())
+		return
+	}
+	if coldResp.StatusCode >= 400 {
+		body, _ := readBodyLimited(coldResp.Body, maxUpstreamErrorBodyBytes)
+		coldResp.Body.Close()
+		if hotResp != nil {
+			hotResp.Body.Close()
 		}
-		defer hotResp.Body.Close()
-		if hotResp.StatusCode >= 400 {
-			body, _ := readBodyLimited(hotResp.Body, maxUpstreamErrorBodyBytes)
-			p.writeError(w, hotResp.StatusCode, string(body))
-			return
-		}
-		p.processLogQueryResponse(w, r, hotResp)
+		p.writeError(w, coldResp.StatusCode, string(body))
 		return
 	}
 
-	// Hot failed — serve cold only
+	// Hot failed — serve cold only (cold fully covers its own time split).
 	if hotErr != nil || (hotResp != nil && hotResp.StatusCode >= 400) {
 		if hotResp != nil {
 			hotResp.Body.Close()
@@ -133,11 +192,19 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		return
 	}
 
-	// Both succeeded — merge
+	// Both succeeded — merge with direction-aware ordering so the stream assembler
+	// receives entries in the order expected by vlReaderToLokiStreams:
+	//   backward (default): hot first (newest), then cold (oldest)
+	//   forward:            cold first (oldest), then hot (newest)
 	defer hotResp.Body.Close()
 	defer coldResp.Body.Close()
 
-	merged := MergeNDJSON(hotResp.Body, coldResp.Body)
+	var merged io.Reader
+	if r.FormValue("direction") == "forward" {
+		merged = MergeNDJSON(coldResp.Body, hotResp.Body)
+	} else {
+		merged = MergeNDJSON(hotResp.Body, coldResp.Body)
+	}
 	mergedBody, err := io.ReadAll(merged)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, "failed to merge hot+cold results")
