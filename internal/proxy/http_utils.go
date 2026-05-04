@@ -347,30 +347,6 @@ func isVLInternalField(name string) bool {
 
 // reconstructLogLine returns a Loki-compatible log line for a VL entry.
 //
-// When VL auto-parses a JSON log at ingestion time it stores all JSON fields as
-// top-level VL fields while keeping only the _msg value as the log-line string.
-// Loki, by contrast, stores the original raw JSON bytes and returns them as-is.
-// This causes |= text-filter and | json parser mismatches: a user who pushes
-// {"method":"GET","status":401} expects |= "method=GET" to match, but the proxy
-// would return only the _msg string.
-//
-// Detection: if any top-level VL field is neither a VL internal (_time/_msg/…)
-// nor a stream label (from _stream), it was extracted from the original JSON log
-// body at ingestion time → the original log was JSON-formatted.
-//
-// When reconstruction applies, a flat JSON object is returned with _msg and the
-// extra non-stream fields. Stream label fields (app, namespace, pod, …) are
-// excluded because they were part of the Loki stream metadata, not the log line
-// body — matching Loki's native format. Values are always strings because VL
-// does not preserve original JSON types (numbers, booleans become strings).
-//
-// originalQuery is the raw Loki LogQL query string. Reconstruction is skipped
-// when the query contains text-extraction parsers other than | json: the
-// extracted fields in the VL response would come from logfmt/regexp/pattern
-// parsing at query time rather than from JSON ingestion, so wrapping the
-// original text line in JSON would be incorrect.
-// reconstructLogLine returns a Loki-compatible log line for a VL entry.
-//
 // streamLabels is the pre-parsed set of stream label keys for this entry (from
 // the caller's logQueryStreamDescriptor cache). Passing them in avoids
 // re-parsing the _stream value and avoids allocating a fresh map per call.
@@ -398,86 +374,31 @@ func isVLInternalField(name string) bool {
 // parsing at query time rather than from JSON ingestion, so wrapping the
 // original text line in JSON would be incorrect.
 func reconstructLogLine(msg string, entry map[string]interface{}, streamLabels map[string]string, originalQuery string) string {
-	if hasTextExtractionParser(originalQuery) {
-		return msg
-	}
-
-	hasExtra := false
-	for key := range entry {
-		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
-			continue
-		}
-		if _, ok := streamLabels[key]; ok {
-			continue
-		}
-		hasExtra = true
-		break
-	}
-	if !hasExtra {
-		return msg
-	}
-
-	// Build flat JSON directly into a pooled builder, avoiding an intermediate
-	// map[string]interface{} allocation and the reflection-heavy json.Marshal
-	// map encoder. Per-field json.Marshal calls for individual strings are cheap
-	// (no reflection) and correct for all UTF-8 input including escape sequences.
-	b := jsonBuilderPool.Get().(*strings.Builder)
-	b.Reset()
-	b.WriteString(`{"_msg":`)
-	msgJSON, _ := json.Marshal(msg)
-	b.Write(msgJSON)
-	for key, value := range entry {
-		if isVLInternalField(key) || key == "_stream_id" {
-			continue
-		}
-		if _, isStreamLabel := streamLabels[key]; isStreamLabel {
-			continue
-		}
-		sv, ok := stringifyEntryValue(value)
-		if !ok || strings.TrimSpace(sv) == "" {
-			continue
-		}
-		b.WriteByte(',')
-		keyJSON, _ := json.Marshal(key)
-		b.Write(keyJSON)
-		b.WriteByte(':')
-		valJSON, _ := json.Marshal(sv)
-		b.Write(valJSON)
-	}
-	b.WriteByte('}')
-	result := b.String()
-	jsonBuilderPool.Put(b)
-	return result
+	return reconstructLogLineWithFlag(msg, entry, streamLabels, hasTextExtractionParser(originalQuery))
 }
 
 // reconstructLogLineWithFlag is the hot-path variant of reconstructLogLine for
 // use in tight per-entry loops where the hasTextExtractionParser result is
 // constant for the entire response and can be precomputed once by the caller.
+//
+// Uses appendJSONStringToBuilder for zero-allocation JSON string escaping and
+// the startLen trick (mirroring reconstructLogLineWithFlagFJ) to avoid a
+// separate hasExtra scan pass over the map.
 func reconstructLogLineWithFlag(msg string, entry map[string]interface{}, streamLabels map[string]string, skipReconstruction bool) string {
 	if skipReconstruction {
 		return msg
 	}
-	hasExtra := false
-	for key := range entry {
-		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
-			continue
-		}
-		if _, ok := streamLabels[key]; ok {
-			continue
-		}
-		hasExtra = true
-		break
-	}
-	if !hasExtra {
-		return msg
-	}
+	// Build flat JSON directly into a pooled builder, avoiding an intermediate
+	// map[string]interface{} allocation and the reflection-heavy json.Marshal
+	// map encoder. appendJSONStringToBuilder writes JSON-escaped strings with
+	// no []byte allocation, matching json.Marshal HTML-safe semantics.
 	b := jsonBuilderPool.Get().(*strings.Builder)
 	b.Reset()
 	b.WriteString(`{"_msg":`)
-	msgJSON, _ := json.Marshal(msg)
-	b.Write(msgJSON)
+	appendJSONStringToBuilder(b, msg)
+	startLen := b.Len()
 	for key, value := range entry {
-		if isVLInternalField(key) || key == "_stream_id" {
+		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
 			continue
 		}
 		if _, ok := streamLabels[key]; ok {
@@ -488,11 +409,13 @@ func reconstructLogLineWithFlag(msg string, entry map[string]interface{}, stream
 			continue
 		}
 		b.WriteByte(',')
-		keyJSON, _ := json.Marshal(key)
-		b.Write(keyJSON)
+		appendJSONStringToBuilder(b, key)
 		b.WriteByte(':')
-		valJSON, _ := json.Marshal(sv)
-		b.Write(valJSON)
+		appendJSONStringToBuilder(b, sv)
+	}
+	if b.Len() == startLen {
+		jsonBuilderPool.Put(b)
+		return msg
 	}
 	b.WriteByte('}')
 	result := b.String()
