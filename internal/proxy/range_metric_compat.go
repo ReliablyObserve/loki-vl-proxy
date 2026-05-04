@@ -336,14 +336,13 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 		return true
 	}
 
-	// rate/bytes_rate implement LogQL sliding-window semantics: each evaluation point
-	// at T covers [T-range, T]. VL native stats_query_range buckets by the step interval
-	// (tumbling windows). When range != step the two produce different values, so the
-	// proxy must fall back to manual log-fetching regardless of parser stages.
-	//
-	// When range == step the windows are non-overlapping and VL native stats (with the
-	// first-bucket start shift applied in proxyBareParserMetricViaStats) is equivalent.
-	if manualFunc == "rate" || manualFunc == "bytes_rate" {
+	// For sliding windows (range != step) VL native stats_query_range buckets by the
+	// step interval (tumbling windows) while LogQL evaluates each point over [T-range, T].
+	// When the data distribution is non-uniform the two diverge. Route to the manual
+	// log-fetch path for correct sliding-window semantics regardless of parser stages.
+	// When range == step windows are non-overlapping and native VL stats is equivalent.
+	switch manualFunc {
+	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
 		return !rangeEqualsStep
 	}
 
@@ -351,19 +350,9 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 		return false
 	}
 
-	// The translated query contains parser stages (unpack_json/unpack_logfmt/extract*).
-	// VL's unpack pipes retain parse-failed entries without an __error__ label, matching
-	// Loki's behaviour for count-like metrics (both count the same lines).
-	//
-	// However, for sliding windows (range != step) VL native stats still uses tumbling
-	// per-step buckets — the counts differ from LogQL's sliding-window counts.
-	// Force manual log-fetch when the window slides.
-	//
-	// Unwrap-based aggregations require the field to be present; parse failures
-	// naturally produce no value and are self-filtering, so native VL is safe there.
+	// Parser stages present — native VL stats is safe for unwrap-based aggregations
+	// (parse failures self-filter via absent fields) and for non-sliding windows.
 	switch manualFunc {
-	case "count_over_time", "bytes_over_time":
-		return !rangeEqualsStep
 	case "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
 		return false
 	default:

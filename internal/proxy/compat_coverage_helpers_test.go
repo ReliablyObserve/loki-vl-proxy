@@ -80,11 +80,24 @@ func TestCompatHelpers_ParseQuantileAndUnwrapErrorName(t *testing.T) {
 		t.Fatal("expected non-parser bytes_rate to use VL native stats when range == step")
 	}
 
-	// count_over_time / bytes_over_time with parser stages: both backends include
-	// parse-failed lines, so line inclusion matches. However, for sliding windows
-	// (range != step) VL native stats still buckets by step — counts differ.
+	// count_over_time / bytes_over_time: for sliding windows (range != step) VL native
+	// stats buckets by step while LogQL evaluates each point over [T-range, T]. With
+	// non-uniform data distributions the two diverge — route to manual path regardless
+	// of whether parser stages are present.
+	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "count_over_time", false, "") {
+		t.Fatal("expected non-parser count_over_time to use manual fallback when range != step")
+	}
+	if shouldUseManualRangeMetricCompat(`{app="api"}`, "count_over_time", true, "") {
+		t.Fatal("expected non-parser count_over_time to use VL native stats when range == step")
+	}
+	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "bytes_over_time", false, "") {
+		t.Fatal("expected non-parser bytes_over_time to use manual fallback when range != step")
+	}
+	if shouldUseManualRangeMetricCompat(`{app="api"}`, "bytes_over_time", true, "") {
+		t.Fatal("expected non-parser bytes_over_time to use VL native stats when range == step")
+	}
 	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, "") {
-		t.Fatal("expected parser-stage count_over_time to use manual fallback when range != step (sliding window)")
+		t.Fatal("expected parser-stage count_over_time to use manual fallback when range != step")
 	}
 	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", true, "") {
 		t.Fatal("expected parser-stage count_over_time to use VL native stats when range == step")
