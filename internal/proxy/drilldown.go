@@ -380,31 +380,6 @@ func addDetectedField(fields map[string]*detectedFieldSummary, label, parser, ty
 	}
 }
 
-func canonicalLabelsKey(labels map[string]string) string {
-	if len(labels) == 0 {
-		return "{}"
-	}
-	keys := make([]string, 0, len(labels))
-	for key := range labels {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	var b strings.Builder
-	b.WriteByte('{')
-	for i, key := range keys {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(key)
-		b.WriteString(`="`)
-		b.WriteString(strings.ReplaceAll(labels[key], `"`, `\"`))
-		b.WriteByte('"')
-	}
-	b.WriteByte('}')
-	return b.String()
-}
-
 func asString(value interface{}) string {
 	if value == nil {
 		return ""

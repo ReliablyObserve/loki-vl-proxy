@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -536,4 +537,29 @@ var knownUnderscoreToDot = map[string]string{
 	"container_runtime":    "container.runtime",
 	"container_image_name": "container.image.name",
 	"container_image_tag":  "container.image.tag",
+}
+
+func canonicalLabelsKey(labels map[string]string) string {
+	if len(labels) == 0 {
+		return "{}"
+	}
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, key := range keys {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(key)
+		b.WriteString(`="`)
+		b.WriteString(strings.ReplaceAll(labels[key], `"`, `\"`))
+		b.WriteByte('"')
+	}
+	b.WriteByte('}')
+	return b.String()
 }
