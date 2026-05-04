@@ -388,10 +388,22 @@ func reconstructLogLineWithFlag(msg string, entry map[string]interface{}, stream
 	if skipReconstruction {
 		return msg
 	}
-	// Build flat JSON directly into a pooled builder, avoiding an intermediate
-	// map[string]interface{} allocation and the reflection-heavy json.Marshal
-	// map encoder. appendJSONStringToBuilder writes JSON-escaped strings with
-	// no []byte allocation, matching json.Marshal HTML-safe semantics.
+	// Key-only pre-scan: avoids pool allocation for the common case where all
+	// fields are stream labels or VL internals. Value work happens in the
+	// write loop below, with startLen as a safety net for empty/invalid values.
+	hasExtra := false
+	for key := range entry {
+		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
+			continue
+		}
+		if _, ok := streamLabels[key]; !ok {
+			hasExtra = true
+			break
+		}
+	}
+	if !hasExtra {
+		return msg
+	}
 	b := jsonBuilderPool.Get().(*strings.Builder)
 	b.Reset()
 	b.WriteString(`{"_msg":`)
