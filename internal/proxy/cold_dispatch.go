@@ -113,6 +113,24 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 		return
 	}
 
+	// Lakehouse stores parquet rows and scans manifest files in ascending timestamp
+	// order. For backward queries the proxy must reverse the NDJSON line order so
+	// vlReaderToLokiStreams assembles each stream newest-first, matching Loki semantics.
+	if r.FormValue("direction") != "forward" {
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			p.writeError(w, http.StatusBadGateway, "cold read error: "+readErr.Error())
+			return
+		}
+		syntheticResp := &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     resp.Header.Clone(),
+			Body:       io.NopCloser(reverseNDJSONLines(bytes.NewReader(body))),
+		}
+		p.processLogQueryResponse(w, r, syntheticResp)
+		return
+	}
+
 	p.processLogQueryResponse(w, r, resp)
 }
 
@@ -177,38 +195,56 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		return
 	}
 
-	// Hot failed — serve cold only (cold fully covers its own time split).
-	if hotErr != nil || (hotResp != nil && hotResp.StatusCode >= 400) {
-		if hotResp != nil {
-			hotResp.Body.Close()
-		}
-		defer coldResp.Body.Close()
-		if coldResp.StatusCode >= 400 {
-			body, _ := readBodyLimited(coldResp.Body, maxUpstreamErrorBodyBytes)
-			p.writeError(w, coldResp.StatusCode, string(body))
-			return
-		}
-		p.processLogQueryResponse(w, r, coldResp)
+	// Hot failed — propagate rather than returning a silent cold-only partial response.
+	// After time-splitting, cold covers [start, boundary] and hot covers [boundary, end].
+	// Serving cold alone silently truncates the requested range without the client knowing.
+	if hotErr != nil {
+		coldResp.Body.Close()
+		p.writeError(w, http.StatusBadGateway, "hot backend error: "+hotErr.Error())
+		return
+	}
+	if hotResp.StatusCode >= 400 {
+		body, _ := readBodyLimited(hotResp.Body, maxUpstreamErrorBodyBytes)
+		hotResp.Body.Close()
+		coldResp.Body.Close()
+		p.writeError(w, hotResp.StatusCode, string(body))
 		return
 	}
 
-	// Both succeeded — merge with direction-aware ordering so the stream assembler
-	// receives entries in the order expected by vlReaderToLokiStreams:
-	//   backward (default): hot first (newest), then cold (oldest)
-	//   forward:            cold first (oldest), then hot (newest)
+	// Both succeeded — merge with direction-aware ordering:
+	//   backward (default): hot first (newest [boundary,end]), then cold reversed (newest-first [boundary,start])
+	//   forward:            cold first (oldest [start,boundary]), then hot (newest [boundary,end])
+	//
+	// Lakehouse stores parquet rows ascending, so cold results are always ascending.
+	// For backward queries, reverse cold lines before concatenating with the already-descending hot results
+	// so the stream assembler receives a consistent newest-first stream for each Loki stream key.
 	defer hotResp.Body.Close()
-	defer coldResp.Body.Close()
+
+	coldBody, err := io.ReadAll(coldResp.Body)
+	coldResp.Body.Close()
+	if err != nil {
+		p.writeError(w, http.StatusBadGateway, "failed to read cold results")
+		return
+	}
 
 	var merged io.Reader
 	if r.FormValue("direction") == "forward" {
-		merged = MergeNDJSON(coldResp.Body, hotResp.Body)
+		merged = MergeNDJSON(bytes.NewReader(coldBody), hotResp.Body)
 	} else {
-		merged = MergeNDJSON(hotResp.Body, coldResp.Body)
+		merged = MergeNDJSON(hotResp.Body, reverseNDJSONLines(bytes.NewReader(coldBody)))
 	}
 	mergedBody, err := io.ReadAll(merged)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, "failed to merge hot+cold results")
 		return
+	}
+
+	// Enforce the original limit: each split sub-request was sent the full limit,
+	// so the merged result can contain up to 2× limit entries without truncation.
+	if limitStr := r.FormValue("limit"); limitStr != "" {
+		if n, convErr := strconv.Atoi(limitStr); convErr == nil && n > 0 {
+			mergedBody = limitNDJSONLines(mergedBody, n)
+		}
 	}
 
 	syntheticResp := &http.Response{
@@ -217,6 +253,51 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		Body:       io.NopCloser(bytes.NewReader(mergedBody)),
 	}
 	p.processLogQueryResponse(w, r, syntheticResp)
+}
+
+// reverseNDJSONLines reads all NDJSON lines from r, reverses their order, and
+// returns an io.Reader over the reversed content. Used to correct ascending
+// Lakehouse output to descending order for backward Loki queries.
+func reverseNDJSONLines(r io.Reader) io.Reader {
+	data, err := io.ReadAll(r)
+	if err != nil || len(data) == 0 {
+		return bytes.NewReader(data)
+	}
+	lines := bytes.Split(bytes.TrimRight(data, "\n"), []byte("\n"))
+	nonEmpty := lines[:0]
+	for _, l := range lines {
+		if len(bytes.TrimSpace(l)) > 0 {
+			nonEmpty = append(nonEmpty, l)
+		}
+	}
+	for i, j := 0, len(nonEmpty)-1; i < j; i, j = i+1, j-1 {
+		nonEmpty[i], nonEmpty[j] = nonEmpty[j], nonEmpty[i]
+	}
+	return bytes.NewReader(bytes.Join(nonEmpty, []byte("\n")))
+}
+
+// limitNDJSONLines returns data truncated to at most n non-empty NDJSON lines.
+func limitNDJSONLines(data []byte, n int) []byte {
+	count := 0
+	pos := 0
+	for pos < len(data) && count < n {
+		end := bytes.IndexByte(data[pos:], '\n')
+		var line []byte
+		if end < 0 {
+			line = data[pos:]
+			if len(bytes.TrimSpace(line)) > 0 {
+				count++
+			}
+			pos = len(data)
+		} else {
+			line = data[pos : pos+end]
+			if len(bytes.TrimSpace(line)) > 0 {
+				count++
+			}
+			pos += end + 1
+		}
+	}
+	return data[:pos]
 }
 
 // processLogQueryResponse converts a VL NDJSON response into a Loki-format JSON response.

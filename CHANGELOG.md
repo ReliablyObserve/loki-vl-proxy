@@ -11,10 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - fix(cold): remove LogsQL `| sort by (_time)` clause from Victoria Lakehouse cold queries — the Lakehouse filter parser treats bare tokens as `_msg` substring filters, so the clause was silently corrupting results instead of sorting them
 - fix(cold): propagate cold backend errors instead of falling back to hot — `RouteColdOnly` queries cover ranges where hot has no data; a silent hot fallback returned empty 200 responses masking cold failures; `RouteBoth` cold failures now propagate rather than silently truncating the time range
+- fix(cold): propagate `RouteBoth` hot backend errors instead of serving a silent cold-only partial response — after time-splitting, hot covers `[boundary, end]`; a 200 with only cold data would silently omit the recent range
+- fix(cold): reverse Lakehouse NDJSON line order for backward queries — Lakehouse stores and scans parquet rows in ascending timestamp order; `RouteColdOnly` and the cold half of `RouteBoth` now reverse the stream so `vlReaderToLokiStreams` assembles each Loki stream newest-first, matching Loki semantics
+- fix(cold): enforce original `limit` after merging hot+cold in `RouteBoth` — each split sub-request received the full limit, so the merged NDJSON could contain up to 2× entries; the merged body is now truncated to the requested limit before processing
 
 ### Changed
 
-- refactor(cold): `RouteBoth` now time-splits requests at the hot/cold boundary — cold receives `[start, boundary]` and hot receives `[boundary, end]`, eliminating boundary overlap and duplicate rows; merge order is direction-aware (hot-first for backward queries, cold-first for forward queries)
+- refactor(cold): `RouteBoth` now time-splits requests at the hot/cold boundary — cold receives `[start, boundary]` and hot receives `[boundary, end]`, eliminating boundary overlap and duplicate rows; merge order is direction-aware (reversed cold-first for backward queries, cold-first for forward queries)
 
 ## [1.28.5] - 2026-05-04
 
