@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(metric): route sliding-window `rate()` and `bytes_rate()` (range≠step) to manual log-fetch aggregation instead of native VictoriaLogs `stats_query_range`, correcting semantics where VL tumbling buckets diverge from LogQL sliding windows
+- fix(metric): route `count_over_time` and `bytes_over_time` with parser stages (e.g. `| json`) and sliding windows (range≠step) to manual log-fetch aggregation, matching Loki's per-step log-filter semantics
+
 ## [1.28.6] - 2026-05-04
 
 ### Fixed

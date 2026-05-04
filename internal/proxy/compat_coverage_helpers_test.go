@@ -51,24 +51,49 @@ func TestCompatHelpers_ParseQuantileAndUnwrapErrorName(t *testing.T) {
 	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "avg", false, "") {
 		t.Fatal("expected parser-stage avg to use VL stats_query_range, not manual NDJSON fallback")
 	}
-	// count_over_time: Loki keeps parse-failed lines (adds __error__ label, never drops).
-	// VL's unpack_json also keeps parse-failed log entries. Both count the same lines,
-	// so native VL stats is correct — no manual path needed.
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, "") {
-		t.Fatal("expected parser-stage count_over_time to use VL native stats (Loki keeps parse-failed lines)")
-	}
 	if shouldUseManualRangeMetricCompat(`{app="api"}`, "avg", false, "") {
 		t.Fatal("expected non-parser query not to use manual fallback for avg")
 	}
 	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "rate_counter", false, "") {
 		t.Fatal("expected rate_counter to always use manual fallback")
 	}
-	// rate with parser stages: manual when range != step, native VL when range == step
+
+	// rate / bytes_rate: sliding window (range != step) always requires manual path,
+	// regardless of whether parser stages are present. VL native stats uses tumbling
+	// per-step buckets and gives wrong results when range > step.
 	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", false, "") {
 		t.Fatal("expected parser-stage rate to use manual fallback when range != step")
 	}
 	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", true, "") {
 		t.Fatal("expected parser-stage rate to use VL native stats when range == step")
+	}
+	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "rate", false, "") {
+		t.Fatal("expected non-parser rate to use manual fallback when range != step (sliding window)")
+	}
+	if shouldUseManualRangeMetricCompat(`{app="api"}`, "rate", true, "") {
+		t.Fatal("expected non-parser rate to use VL native stats when range == step")
+	}
+	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "bytes_rate", false, "") {
+		t.Fatal("expected non-parser bytes_rate to use manual fallback when range != step")
+	}
+	if shouldUseManualRangeMetricCompat(`{app="api"}`, "bytes_rate", true, "") {
+		t.Fatal("expected non-parser bytes_rate to use VL native stats when range == step")
+	}
+
+	// count_over_time / bytes_over_time with parser stages: both backends include
+	// parse-failed lines, so line inclusion matches. However, for sliding windows
+	// (range != step) VL native stats still buckets by step — counts differ.
+	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, "") {
+		t.Fatal("expected parser-stage count_over_time to use manual fallback when range != step (sliding window)")
+	}
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", true, "") {
+		t.Fatal("expected parser-stage count_over_time to use VL native stats when range == step")
+	}
+	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "bytes_over_time", false, "") {
+		t.Fatal("expected parser-stage bytes_over_time to use manual fallback when range != step")
+	}
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "bytes_over_time", true, "") {
+		t.Fatal("expected parser-stage bytes_over_time to use VL native stats when range == step")
 	}
 }
 

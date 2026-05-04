@@ -335,38 +335,37 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	if manualFunc == "rate_counter" {
 		return true
 	}
+
+	// rate/bytes_rate implement LogQL sliding-window semantics: each evaluation point
+	// at T covers [T-range, T]. VL native stats_query_range buckets by the step interval
+	// (tumbling windows). When range != step the two produce different values, so the
+	// proxy must fall back to manual log-fetching regardless of parser stages.
+	//
+	// When range == step the windows are non-overlapping and VL native stats (with the
+	// first-bucket start shift applied in proxyBareParserMetricViaStats) is equivalent.
+	if manualFunc == "rate" || manualFunc == "bytes_rate" {
+		return !rangeEqualsStep
+	}
+
 	if !queryUsesParserStages(baseQuery) {
 		return false
 	}
+
 	// The translated query contains parser stages (unpack_json/unpack_logfmt/extract*).
-	// VL's unpack pipes do not model Loki's __error__ filtering: Loki excludes lines
-	// that fail to parse via the __error__ label; VL may include them.
+	// VL's unpack pipes retain parse-failed entries without an __error__ label, matching
+	// Loki's behaviour for count-like metrics (both count the same lines).
 	//
-	// For count-like operations this difference is directly observable — non-parseable
-	// lines inflate the count. Force manual log-fetch unless the original LogQL
-	// explicitly handles __error__ (the user has opted into counting all lines) or the
-	// range == step optimization applies (VL tumbling window is semantically identical).
+	// However, for sliding windows (range != step) VL native stats still uses tumbling
+	// per-step buckets — the counts differ from LogQL's sliding-window counts.
+	// Force manual log-fetch when the window slides.
 	//
-	// Unwrap-based aggregations (avg, sum, max, min, …) require the unwrapped field
-	// to be present in the parsed entry; lines that fail to parse naturally produce
-	// no value and are excluded, so the semantic risk is much lower.
+	// Unwrap-based aggregations require the field to be present; parse failures
+	// naturally produce no value and are self-filtering, so native VL is safe there.
 	switch manualFunc {
-	case "rate", "bytes_rate":
-		// When range == step, VL's native rate/bytes_rate with the first-bucket shift
-		// is semantically identical to LogQL. Use native stats path.
-		if rangeEqualsStep {
-			return false
-		}
-		return true
 	case "count_over_time", "bytes_over_time":
-		// Loki's | json / | logfmt parser stages add __error__ on parse failure but
-		// keep the log line in the stream — they never drop it. VL's unpack_json /
-		// unpack_logfmt behaves the same way (the log entry is retained, only field
-		// extraction is skipped). Both backends therefore count the same set of lines,
-		// so native VL stats is semantically correct here.
-		return false
+		return !rangeEqualsStep
 	case "avg", "sum", "min", "max", "quantile", "stddev", "stdvar", "first", "last":
-		return false // unwrap-based; field absence filters naturally
+		return false
 	default:
 		return true
 	}
