@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.5] - 2026-05-04
+
 ### Performance
 
 - perf: replace `json.Marshal` with `appendJSONStringToBuilder` in `reconstructLogLine` variants — eliminates per-field `[]byte` allocation; merges duplicate function bodies and adopts `startLen` trick to remove redundant map scan pass
