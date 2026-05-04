@@ -213,14 +213,17 @@ func extractLogPatternsWithStats(vlBody []byte, step string, limit int) ([]map[s
 		return patterns, stats
 	}
 	// Fallback: body may be a wrapped JSON object ({"results":[...]}) rather
-	// than NDJSON. Try unmarshaling and collecting observations recursively.
+	// than NDJSON. Try parsing with fastjson and collecting observations
+	// recursively to avoid the full interface{} tree allocation.
 	stepSeconds := parsePatternStepSeconds(step)
 	miner := newPatternMiner()
-	var decoded interface{}
-	if err := stdjson.Unmarshal(vlBody, &decoded); err != nil {
+	fjParser := vlFJParserPool.Get()
+	defer vlFJParserPool.Put(fjParser)
+	fjVal, err := fjParser.ParseBytes(vlBody)
+	if err != nil {
 		return nil, stats
 	}
-	collectPatternObservationsFromJSON(miner, decoded, stepSeconds, "", &stats.observedLines)
+	collectPatternObservationsFromFJ(miner, fjVal, stepSeconds, "", &stats.observedLines)
 	if stats.observedLines == 0 {
 		return nil, stats
 	}
@@ -520,6 +523,110 @@ func collectPatternObservationsFromJSON(miner *patternMiner, decoded interface{}
 	case []interface{}:
 		for _, item := range value {
 			collectPatternObservationsFromJSON(miner, item, stepSeconds, inheritedLevel, observed)
+		}
+	}
+}
+
+// collectPatternObservationsFromFJ mirrors collectPatternObservationsFromJSON
+// but operates on a *fj.Value to avoid the full interface{} tree allocation
+// in the wrapped-JSON fallback path. It is read-only over the parser's arena
+// memory; the caller owns parser lifecycle.
+func collectPatternObservationsFromFJ(miner *patternMiner, v *fj.Value, stepSeconds int64, inheritedLevel string, observed *int) {
+	if v == nil {
+		return
+	}
+	switch v.Type() {
+	case fj.TypeObject:
+		// Try leaf entry: msg + time on this object.
+		if msg := patternMessageFromFJ(v); msg != "" {
+			var timeStr string
+			for _, key := range []string{"_time", "time", "timestamp", "ts"} {
+				if b := v.GetStringBytes(key); len(b) > 0 {
+					timeStr = string(b)
+					break
+				}
+			}
+			if timeStr != "" {
+				if unixSeconds, ok := parsePatternUnixSecondsStr(timeStr); ok {
+					level := inheritedLevel
+					if level == "" {
+						level = patternLevelFromFJ(v)
+					}
+					bucket := unixSeconds
+					if stepSeconds > 0 {
+						bucket = (bucket / stepSeconds) * stepSeconds
+					}
+					miner.Observe(level, msg, bucket)
+					*observed = *observed + 1
+				}
+			}
+		}
+		// Recurse into "results" array.
+		if rows := v.GetArray("results"); rows != nil {
+			for _, row := range rows {
+				collectPatternObservationsFromFJ(miner, row, stepSeconds, inheritedLevel, observed)
+			}
+		}
+		// Recurse into "values" array.
+		if rows := v.GetArray("values"); rows != nil {
+			for _, row := range rows {
+				collectPatternObservationsFromFJ(miner, row, stepSeconds, inheritedLevel, observed)
+			}
+		}
+		// Handle Loki-style {"data": {"result": [{stream:{}, values:[[ts,msg],...]}]}}.
+		if dataObj := v.Get("data"); dataObj != nil && dataObj.Type() == fj.TypeObject {
+			if resultRows := dataObj.GetArray("result"); resultRows != nil {
+				for _, row := range resultRows {
+					if row.Type() != fj.TypeObject {
+						continue
+					}
+					level := inheritedLevel
+					if stream := row.Get("stream"); stream != nil && stream.Type() == fj.TypeObject {
+						if b := stream.GetStringBytes("detected_level"); len(b) > 0 {
+							if s := strings.TrimSpace(string(b)); s != "" {
+								level = s
+							}
+						} else if b := stream.GetStringBytes("level"); len(b) > 0 {
+							if s := strings.TrimSpace(string(b)); s != "" {
+								level = s
+							}
+						}
+					}
+					values := row.GetArray("values")
+					for _, pairRaw := range values {
+						if pairRaw.Type() != fj.TypeArray {
+							continue
+						}
+						pair, _ := pairRaw.Array()
+						if len(pair) < 2 {
+							continue
+						}
+						tsStr, ok := stringifyFJValue(pair[0])
+						if !ok || tsStr == "" {
+							continue
+						}
+						unixSeconds, ok := parsePatternUnixSecondsStr(tsStr)
+						if !ok {
+							continue
+						}
+						msg, ok := stringifyFJValue(pair[1])
+						if !ok || strings.TrimSpace(msg) == "" {
+							continue
+						}
+						bucket := unixSeconds
+						if stepSeconds > 0 {
+							bucket = (bucket / stepSeconds) * stepSeconds
+						}
+						miner.Observe(level, msg, bucket)
+						*observed = *observed + 1
+					}
+				}
+			}
+		}
+	case fj.TypeArray:
+		items, _ := v.Array()
+		for _, item := range items {
+			collectPatternObservationsFromFJ(miner, item, stepSeconds, inheritedLevel, observed)
 		}
 	}
 }
