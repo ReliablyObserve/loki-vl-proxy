@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.4] - 2026-05-04
+
 ### Fixed
 
 - fix: remove per-request `streamNoExtraFields` reconstruction cache that could silently suppress log field extraction for later entries in a stream when an earlier entry was a no-op (e.g. plain-text entry followed by a JSON entry with extracted fields)
