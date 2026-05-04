@@ -40,6 +40,8 @@ type rangeMetricSample struct {
 var (
 	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
 	outerAggregationRE  = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
+	// outerWithoutRE detects "sum|avg|... without (" at the start of a LogQL expression.
+	outerWithoutRE = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar)\s+without\s*\(`)
 )
 
 func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
@@ -273,8 +275,12 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		return false
 	}
 	step, _ := parsePositiveStepDuration(r.FormValue("step"))
-	rangeEqualsStep := step > 0 && origSpec.Window > 0 && origSpec.Window == step
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, rangeEqualsStep, originalLogql) {
+	// noSlidingOverlap is true when consecutive evaluation windows don't overlap:
+	// range == step (tumbling) or range < step (gap between windows). Both are
+	// semantically equivalent for VL native stats — only range > step produces
+	// overlapping sliding windows where VL tumbling-bucket stats diverges from LogQL.
+	noSlidingOverlap := step > 0 && origSpec.Window > 0 && origSpec.Window <= step
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, noSlidingOverlap, originalLogql) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -302,9 +308,10 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if manualFunc == "" {
 		return false
 	}
-	// Instant queries have no step — keep manual path for rate() to preserve
-	// sliding-window semantics (the window defines the lookback, not a bucket).
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, false, originalLogql) {
+	// Instant queries have no step: the range window is the entire lookback interval,
+	// not a sliding window. VL native stats correctly evaluates [time-range, time].
+	// Only rate_counter still requires the manual path (counter-reset semantics).
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, true, originalLogql) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -341,8 +348,18 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	// When the data distribution is non-uniform the two diverge. Route to the manual
 	// log-fetch path for correct sliding-window semantics regardless of parser stages.
 	// When range == step windows are non-overlapping and native VL stats is equivalent.
+	//
+	// Exception: outer without() aggregation. The manual path uses collectRangeMetricSamples
+	// with groupBy=["_stream","level"] (from addStatsByStreamClause). buildManualMetricLabels
+	// looks up "_stream" in the already-expanded streamLabels map — it is absent there —
+	// so only "level" survives. After applyWithoutGrouping removes "level" all series
+	// collapse to {} → wrong series count. Native VL stats correctly handles _stream
+	// expansion before applyWithoutGrouping, preserving detected_level differentiation.
 	switch manualFunc {
 	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
+		if !rangeEqualsStep && outerWithoutRE.MatchString(strings.TrimSpace(originalLogql)) {
+			return false
+		}
 		return !rangeEqualsStep
 	}
 
