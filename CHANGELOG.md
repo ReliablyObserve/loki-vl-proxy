@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- refactor: remove unused `fillDetectedLabels` function — dead code after `scanDetectedLabelSummariesStream` migrated to `fillDetectedLabelsFJ` in the fastjson migration (#311)
+
 ## [1.28.1] - 2026-05-03
 
 ### Performance
