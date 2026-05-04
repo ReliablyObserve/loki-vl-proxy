@@ -1055,7 +1055,7 @@ func lokiEmptyResultResponse(resultType string) []byte {
 // lokiErrorResponse builds {"status":"error","errorType":"bad_request","error":"<errMsg>"}
 // directly as bytes. errMsg is JSON-escaped.
 func lokiErrorResponse(errMsg string) []byte {
-	b := make([]byte, 0, 64+len(errMsg))
+	b := make([]byte, 0, 64+min(len(errMsg), 1<<30))
 	b = append(b, `{"status":"error","errorType":"bad_request","error":`...)
 	b = appendJSONString(b, errMsg)
 	b = append(b, '}')
@@ -1111,7 +1111,7 @@ func appendJSONString(dst []byte, s string) []byte {
 // {"status":"success","data":<dataBytes>} via direct byte append, avoiding a
 // second reflection-based stdjson.Marshal pass over a wrapper map.
 func appendLokiSuccessEnvelope(dataBytes []byte) []byte {
-	out := make([]byte, 0, len(dataBytes)+28)
+	out := make([]byte, 0, min(len(dataBytes), 1<<30)+28)
 	out = append(out, `{"status":"success","data":`...)
 	out = append(out, dataBytes...)
 	out = append(out, '}')
