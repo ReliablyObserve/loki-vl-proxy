@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.28.6] - 2026-05-04
+
 ### Fixed
 
 - fix(cold): remove LogsQL `| sort by (_time)` clause from Victoria Lakehouse cold queries — the Lakehouse filter parser treats bare tokens as `_msg` substring filters, so the clause was silently corrupting results instead of sorting them
