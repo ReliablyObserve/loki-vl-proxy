@@ -272,6 +272,7 @@ func TestCache_TopHotKeys_EnabledWhenReadAheadOn(t *testing.T) {
 
 	c.SetWithTTL("query_range:tenant-a:key-1", []byte("value"), 2*time.Minute)
 	_, _ = c.Get("query_range:tenant-a:key-1")
+	c.drainPromotions() // flush deferred hot-index update
 
 	hot := c.TopHotKeys(10, 0, 0)
 	if len(hot) == 0 {

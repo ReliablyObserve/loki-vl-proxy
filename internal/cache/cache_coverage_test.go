@@ -307,6 +307,7 @@ func TestEviction_PromotePreventsEviction(t *testing.T) {
 
 	// Access "a" to promote it
 	c.Get("a")
+	c.drainPromotions() // flush deferred LRU before triggering eviction
 
 	// Add "d" — should evict "b" (LRU, since "a" was promoted)
 	c.Set("d", []byte("4"))
