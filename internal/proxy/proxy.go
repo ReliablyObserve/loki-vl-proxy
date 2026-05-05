@@ -674,7 +674,7 @@ func New(cfg Config) (*Proxy, error) {
 	transport.ResponseHeaderTimeout = backendTimeout
 	transport.DisableCompression = true // proxy owns Accept-Encoding via applyBackendHeaders
 	if cfg.BackendTLSSkip {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- intentional, opt-in via BackendTLSSkip; lgtm[go/insecure-tls]
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- intentional, opt-in via BackendTLSSkip; nosemgrep: problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification,go.lang.security.audit.crypto.missing-ssl-minversion.missing-ssl-minversion
 	}
 	readBuf := cfg.BackendReadBufferSize
 	if readBuf <= 0 {

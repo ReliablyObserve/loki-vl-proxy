@@ -296,7 +296,7 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 		return nil, err
 	}
 	if encoded, err := json.Marshal(labels); err == nil {
-		p.cache.SetWithTTL(cacheKey, encoded, CacheTTLs["label_inventory"])
+		p.cache.SetLocalAndDiskWithTTL(cacheKey, encoded, CacheTTLs["label_inventory"])
 	}
 	return labels, nil
 }

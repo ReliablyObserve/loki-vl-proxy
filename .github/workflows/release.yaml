@@ -38,9 +38,11 @@ jobs:
 
       - name: Extract version
         id: version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          TAG="${{ inputs.tag }}"
+          TAG="${INPUT_TAG}"
           VERSION="${TAG#v}"
           PREV_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]' | grep -vx "$TAG" | head -1 || true)
           {

@@ -81,7 +81,7 @@ func NewOTLPPusher(cfg OTLPConfig, m *Metrics) *OTLPPusher {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	if cfg.TLSSkipVerify {
 		// #nosec G402 — operator-explicit override; log a warning so it is visible.
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // nosemgrep: problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification,go.lang.security.audit.crypto.missing-ssl-minversion.missing-ssl-minversion
 		slog.Warn("OTLP TLS verification disabled; MITM attacks on metrics traffic are possible",
 			"endpoint", redactEndpointURL(cfg.Endpoint))
 	}

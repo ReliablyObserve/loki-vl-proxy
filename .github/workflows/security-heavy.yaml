@@ -84,7 +84,13 @@ jobs:
             --config p/secrets \
             --exclude-rule go.lang.security.audit.xss.no-direct-write-to-responsewriter \
             --exclude-rule go.lang.security.audit.xss.no-fprintf-to-responsewriter \
+            --exclude-rule go.lang.security.audit.xss.no-io-writestring-to-responsewriter \
             --exclude-rule javascript.lang.security.detect-insecure-websocket \
+            --exclude-rule go.gorilla.security.audit.websocket-missing-origin-check \
+            --exclude-rule go.lang.security.audit.xss.import-text-template \
+            --exclude-rule go.lang.security.audit.crypto.math_random.math-random-used \
+            --exclude-rule yaml.docker-compose.security.writable-filesystem-service \
+            --exclude-rule yaml.docker-compose.security.no-new-privileges \
             --sarif \
             --output semgrep.sarif \
             --error

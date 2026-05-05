@@ -1461,7 +1461,7 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	rangeDur := time.Duration(endNS - startNS)
 	if rangeDur > maxDeleteTimeRange {
 		p.writeError(w, http.StatusBadRequest,
-			fmt.Sprintf("delete time range too wide: %s exceeds maximum %s",
+			fmt.Sprintf("delete time range too wide: %s exceeds maximum %s", // nosemgrep: go.lang.security.injection.tainted-sql-string
 				rangeDur.Round(time.Hour), maxDeleteTimeRange))
 		p.metrics.RecordRequest("delete", http.StatusBadRequest, time.Since(start))
 		return
