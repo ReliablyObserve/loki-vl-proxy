@@ -263,6 +263,12 @@ type Config struct {
 	MetricsExportSensitiveLabels bool
 	MetricsMaxConcurrency        int
 
+	// LogRequestSampleRate controls per-request access log sampling for successful (2xx)
+	// requests. 0 or 1 logs every request (default). N > 1 logs 1 in every N requests,
+	// skipping the expensive log-attribute assembly for the rest.
+	// 4xx/5xx requests are always logged regardless of this setting.
+	LogRequestSampleRate int
+
 	// Tenant limits runtime exposure.
 	// TenantLimitsAllowPublish controls which fields are exposed by
 	// /config/tenant/v1/limits and /loki/api/v1/drilldown-limits.
@@ -454,6 +460,8 @@ type Proxy struct {
 	labelValuesIndexPersistDigestReady    bool
 	readCacheKeyMemoMu                    sync.RWMutex
 	readCacheKeyMemo                      map[canonicalReadCacheMemoKey]string
+	logSampleN                            uint64       // 0 = log all; N>1 = log 1 in N successful requests
+	logSampleCount                        atomic.Uint64
 }
 
 const maxReadCacheKeyMemoEntries = 16384
@@ -987,6 +995,9 @@ func New(cfg Config) (*Proxy, error) {
 		readCacheKeyMemo:                      make(map[canonicalReadCacheMemoKey]string, 2048),
 		coldRouter:                            coldRouter,
 	}
+	if cfg.LogRequestSampleRate > 1 {
+		p.logSampleN = uint64(cfg.LogRequestSampleRate)
+	}
 	return p, nil
 }
 
@@ -1404,7 +1415,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cacheKey := ""
-	cacheable := !p.streamResponse
+	// Skip inner p.cache when compatCacheMiddleware is active — it handles the
+	// outer response capture and store, making a nested inner cache redundant.
+	cacheable := !p.streamResponse && !compatCacheIsActive(r.Context())
 	if cacheable {
 		cacheKey = p.queryRangeCacheKey(r, logqlQuery)
 		if cached, remaining, ok := p.cache.GetWithTTL(cacheKey); ok {

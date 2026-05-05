@@ -311,8 +311,10 @@ var metadataMapPool = sync.Pool{
 // Optimized: byte scanning, pooled maps, pre-allocated slices.
 func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 	type streamEntry struct {
-		Labels map[string]string
-		Values [][]string // [[timestamp_ns, line], ...]
+		Labels   map[string]string
+		Values   [][]string // [[timestamp_ns, line], ...]
+		lastTs   string
+		hasDupTs bool
 	}
 	// Estimate line count from body size (~200 bytes/line average)
 	estimatedLines := len(body)/200 + 1
@@ -394,6 +396,10 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		// Return pooled entry after extracting all needed data
 		vlEntryPool.Put(entry)
 
+		if tsNanos == se.lastTs {
+			se.hasDupTs = true
+		}
+		se.lastTs = tsNanos
 		se.Values = append(se.Values, []string{tsNanos, msg})
 	}
 
@@ -407,13 +413,15 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 		// Only tie-break entries with identical nanosecond timestamps by message
 		// content. Different-timestamp entries are left in VL's returned order
 		// (which already reflects the requested direction: ascending/descending).
-		sort.SliceStable(se.Values, func(i, j int) bool {
-			ti, tj := se.Values[i][0], se.Values[j][0]
-			if ti != tj {
-				return false
-			}
-			return se.Values[i][1] < se.Values[j][1]
-		})
+		if se.hasDupTs {
+			sort.SliceStable(se.Values, func(i, j int) bool {
+				ti, tj := se.Values[i][0], se.Values[j][0]
+				if ti != tj {
+					return false
+				}
+				return se.Values[i][1] < se.Values[j][1]
+			})
+		}
 		result = append(result, map[string]interface{}{
 			"stream": se.Labels,
 			"values": se.Values,
@@ -430,8 +438,10 @@ type cachedLogQueryStreamDescriptor struct {
 
 func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, categorizedLabels bool, emitStructuredMetadata bool, collectPatterns bool) ([]map[string]interface{}, []map[string]interface{}, error) {
 	type streamEntry struct {
-		Labels map[string]string
-		Values []interface{}
+		Labels   map[string]string
+		Values   []interface{}
+		lastTs   string
+		hasDupTs bool
 	}
 
 	scanner := bufio.NewScanner(r)
@@ -541,6 +551,10 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			streamMap[desc.key] = se
 			streamOrder = append(streamOrder, desc.key)
 		}
+		if tsNanos == se.lastTs {
+			se.hasDupTs = true
+		}
+		se.lastTs = tsNanos
 		se.Values = append(se.Values, buildStreamValue(tsNanos, msg, structuredMetadata, parsedFields, emitStructuredMetadata, categorizedLabels))
 
 		if miner != nil {
@@ -571,21 +585,23 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		// Only tie-break entries with identical nanosecond timestamps by message
 		// content. Different-timestamp entries are left in VL's returned order
 		// (which already reflects the requested direction: ascending/descending).
-		sort.SliceStable(se.Values, func(i, j int) bool {
-			vi, _ := se.Values[i].([]interface{})
-			vj, _ := se.Values[j].([]interface{})
-			if len(vi) < 2 || len(vj) < 2 {
-				return false
-			}
-			ti, _ := vi[0].(string)
-			tj, _ := vj[0].(string)
-			if ti != tj {
-				return false
-			}
-			msgi, _ := vi[1].(string)
-			msgj, _ := vj[1].(string)
-			return msgi < msgj
-		})
+		if se.hasDupTs {
+			sort.SliceStable(se.Values, func(i, j int) bool {
+				vi, _ := se.Values[i].([]interface{})
+				vj, _ := se.Values[j].([]interface{})
+				if len(vi) < 2 || len(vj) < 2 {
+					return false
+				}
+				ti, _ := vi[0].(string)
+				tj, _ := vj[0].(string)
+				if ti != tj {
+					return false
+				}
+				msgi, _ := vi[1].(string)
+				msgj, _ := vj[1].(string)
+				return msgi < msgj
+			})
+		}
 		result = append(result, map[string]interface{}{
 			"stream": se.Labels,
 			"values": se.Values,

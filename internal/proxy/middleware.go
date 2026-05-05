@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -13,6 +14,16 @@ import (
 	"github.com/gorilla/websocket"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
+
+type compatCacheActiveCtxKey struct{}
+
+// compatCacheIsActive reports whether the compat cache middleware is handling
+// caching for this request. Inner handlers can skip their own cache allocation
+// and lookup when this is true.
+func compatCacheIsActive(ctx context.Context) bool {
+	v, _ := ctx.Value(compatCacheActiveCtxKey{}).(bool)
+	return v
+}
 
 func setSecurityHeaders(header http.Header) {
 	if strings.TrimSpace(header.Get("X-Content-Type-Options")) == "" {
@@ -535,7 +546,8 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			})
 		}
 		capture = newCompatCacheCaptureWriter(w, p.compatCache.MaxEntrySizeBytes())
-		next(capture, r)
+		rWithFlag := r.WithContext(context.WithValue(r.Context(), compatCacheActiveCtxKey{}, true))
+		next(capture, rWithFlag)
 		if compatCacheCaptureAllowed(capture.code, capture.flushed, w.Header()) {
 			body := capture.CapturedBody()
 			captureBodyLen = len(body)

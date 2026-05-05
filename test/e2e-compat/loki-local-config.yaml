@@ -28,6 +28,14 @@ common:
 frontend:
   max_outstanding_per_tenant: 4096
   encoding: protobuf
+  # Compress frontend→querier traffic; reduces serialization stalls at high concurrency.
+  compress_responses: true
+
+query_scheduler:
+  # Dedicated in-process scheduler with a deep queue so the frontend can accept
+  # all c=100 requests without returning 429. Default is 800 per tenant; 4096
+  # matches the frontend queue so no level is the bottleneck.
+  max_outstanding_requests_per_tenant: 4096
 
 pattern_ingester:
   enabled: true
@@ -119,7 +127,7 @@ querier:
   # up to 2 sub-queries, the querier needs 100 slots to avoid queue stall.
   # Benchmark host is local/high-core; 64 concurrent TSDB reads saturates storage
   # without queue-induced 4xx at c=10–50.
-  max_concurrent: 64
+  max_concurrent: 128
 
   # Only query ingester for data within the last 30m. For benchmark data that
   # accumulates over hours, the ingester holds only the tail; routing 2h queries

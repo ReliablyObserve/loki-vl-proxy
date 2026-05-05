@@ -62,6 +62,16 @@ type Cache struct {
 	hotMax   int                      // cap hot index growth
 	hotOn    bool                     // only enabled when peer hot read-ahead is enabled
 
+	// promoteBuf is a lossy ring buffer for deferred LRU promotion.
+	// Reads use RLock and send the accessed key here; a background goroutine
+	// drains it under write lock. Capacity is intentionally fixed: if full,
+	// the promotion is silently dropped — eviction accuracy degrades slightly
+	// but read concurrency is fully preserved.
+	promoteBuf chan string
+	// promoteFlush serializes test drain requests through the promoter goroutine
+	// so drainPromotions can guarantee all dequeued items are committed.
+	promoteFlush chan chan struct{}
+
 	// Stats
 	Hits      atomic.Int64
 	Misses    atomic.Int64
@@ -154,9 +164,59 @@ func NewWithMaxBytes(ttl time.Duration, maxEntries, maxBytes int) *Cache {
 		lruIndex:   make(map[string]*list.Element),
 		hot:        make(map[string]hotStat),
 		hotMax:     defaultHotIndexMaxEntries,
+		promoteBuf:   make(chan string, 512),
+		promoteFlush: make(chan chan struct{}, 1),
 	}
 	go c.cleanup()
+	go c.runPromoter()
 	return c
+}
+
+// runPromoter drains promoteBuf and applies deferred LRU updates under write lock.
+// This lets the hot read path use RLock instead of Lock.
+func (c *Cache) runPromoter() {
+	applyKey := func(key string) {
+		c.mu.Lock()
+		if elem, found := c.lruIndex[key]; found {
+			c.lruList.MoveToFront(elem)
+		}
+		if c.hotOn {
+			c.recordHotLocked(key)
+		}
+		c.mu.Unlock()
+	}
+	for {
+		select {
+		case key := <-c.promoteBuf:
+			applyKey(key)
+		case doneCh := <-c.promoteFlush:
+			// Drain all remaining buffered promotions, then signal the caller.
+			func() {
+				for {
+					select {
+					case key := <-c.promoteBuf:
+						applyKey(key)
+					default:
+						close(doneCh)
+						return
+					}
+				}
+			}()
+		case <-c.done:
+			return
+		}
+	}
+}
+
+// drainPromotions applies all pending deferred LRU promotions synchronously.
+// Only used in tests that assert on LRU eviction order or hot-index state.
+// Sends a flush request through the promoter goroutine so that all items
+// dequeued before this call (including ones mid-flight in the goroutine)
+// are guaranteed to be committed before this function returns.
+func (c *Cache) drainPromotions() {
+	doneCh := make(chan struct{})
+	c.promoteFlush <- doneCh
+	<-doneCh
 }
 
 // Close stops the background cleanup goroutine.
@@ -173,27 +233,27 @@ func (c *Cache) Close() {
 
 // GetWithTTL returns the value and remaining TTL for a key.
 // Returns (nil, 0, false) on miss.
+// Uses RLock for the hot read path; LRU promotion is deferred to the promoter goroutine.
 func (c *Cache) GetWithTTL(key string) ([]byte, time.Duration, bool) {
 	if c == nil || c.disabled {
 		return nil, 0, false
 	}
-	c.mu.Lock()
+	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok {
 		remaining := time.Until(e.expiresAt)
 		if remaining > 0 {
-			if elem, found := c.lruIndex[key]; found {
-				c.lruList.MoveToFront(elem)
-			}
-			if c.hotOn {
-				c.recordHotLocked(key)
-			}
-			c.mu.Unlock()
+			v := e.value
+			c.mu.RUnlock()
 			c.Hits.Add(1)
-			return e.value, remaining, true
+			select {
+			case c.promoteBuf <- key:
+			default:
+			}
+			return v, remaining, true
 		}
 	}
-	c.mu.Unlock()
+	c.mu.RUnlock()
 	return nil, 0, false
 }
 
@@ -285,21 +345,19 @@ func (c *Cache) Get(key string) ([]byte, bool) {
 	if c == nil || c.disabled {
 		return nil, false
 	}
-	c.mu.Lock()
+	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok && !time.Now().After(e.expiresAt) {
-		// Promote to front of LRU list (most recently used)
-		if elem, found := c.lruIndex[key]; found {
-			c.lruList.MoveToFront(elem)
-		}
-		if c.hotOn {
-			c.recordHotLocked(key)
-		}
-		c.mu.Unlock()
+		v := e.value
+		c.mu.RUnlock()
 		c.Hits.Add(1)
-		return e.value, true
+		select {
+		case c.promoteBuf <- key:
+		default:
+		}
+		return v, true
 	}
-	c.mu.Unlock()
+	c.mu.RUnlock()
 
 	// L2 fallback (disk)
 	if c.l2 != nil {
@@ -687,22 +745,21 @@ func (c *Cache) TopHotKeys(limit int, minRemainingTTL time.Duration, maxObjectBy
 }
 
 func (c *Cache) getL1WithTTL(key string) ([]byte, time.Duration, bool) {
-	c.mu.Lock()
+	c.mu.RLock()
 	e, ok := c.entries[key]
 	if ok {
 		remaining := time.Until(e.expiresAt)
 		if remaining > 0 {
-			if elem, found := c.lruIndex[key]; found {
-				c.lruList.MoveToFront(elem)
+			v := e.value
+			c.mu.RUnlock()
+			select {
+			case c.promoteBuf <- key:
+			default:
 			}
-			if c.hotOn {
-				c.recordHotLocked(key)
-			}
-			c.mu.Unlock()
-			return e.value, remaining, true
+			return v, remaining, true
 		}
 	}
-	c.mu.Unlock()
+	c.mu.RUnlock()
 	return nil, 0, false
 }
 

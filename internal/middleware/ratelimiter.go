@@ -137,7 +137,12 @@ func ClientID(r *http.Request) string {
 }
 
 // Middleware wraps an http.Handler with rate limiting and concurrency control.
+// When both the per-client rate limit and global concurrency limit are disabled
+// (i.e., both are ≤ 0), this returns next directly with zero overhead.
 func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
+	if rl.maxConcurrent <= 0 && rl.ratePerSecond <= 0 {
+		return next
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clientID := ClientID(r)
 

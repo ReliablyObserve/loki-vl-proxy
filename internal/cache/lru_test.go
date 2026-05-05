@@ -15,6 +15,7 @@ func TestLRU_EvictsOldestAccessed(t *testing.T) {
 
 	// Access "a" to make it recently used
 	c.Get("a")
+	c.drainPromotions() // flush deferred LRU before triggering eviction
 
 	// Add "d" — should evict "b" (least recently used), not "a"
 	c.SetWithTTL("d", []byte("4"), 60*time.Second)
@@ -40,6 +41,7 @@ func TestLRU_GetPromotesToFront(t *testing.T) {
 
 	// Access all in order: a, b, c — "a" is now most recently used at last access
 	c.Get("a")
+	c.drainPromotions() // flush deferred LRU before triggering eviction
 
 	// Insert 2 new entries to force 2 evictions
 	c.SetWithTTL("d", []byte("4"), 60*time.Second)

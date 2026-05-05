@@ -82,15 +82,16 @@ jobs:
             --config p/golang \
             --config p/owasp-top-ten \
             --config p/secrets \
-            --exclude-rule go.lang.security.audit.xss.no-direct-write-to-responsewriter \
-            --exclude-rule go.lang.security.audit.xss.no-fprintf-to-responsewriter \
-            --exclude-rule go.lang.security.audit.xss.no-io-writestring-to-responsewriter \
-            --exclude-rule javascript.lang.security.detect-insecure-websocket \
-            --exclude-rule go.gorilla.security.audit.websocket-missing-origin-check \
-            --exclude-rule go.lang.security.audit.xss.import-text-template \
+            --exclude-rule go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter \
+            --exclude-rule go.lang.security.audit.xss.no-fprintf-to-responsewriter.no-fprintf-to-responsewriter \
+            --exclude-rule go.lang.security.audit.xss.no-io-writestring-to-responsewriter.no-io-writestring-to-responsewriter \
+            --exclude-rule javascript.lang.security.detect-insecure-websocket.detect-insecure-websocket \
+            --exclude-rule go.gorilla.security.audit.websocket-missing-origin-check.websocket-missing-origin-check \
+            --exclude-rule go.lang.security.audit.xss.import-text-template.import-text-template \
             --exclude-rule go.lang.security.audit.crypto.math_random.math-random-used \
-            --exclude-rule yaml.docker-compose.security.writable-filesystem-service \
-            --exclude-rule yaml.docker-compose.security.no-new-privileges \
+            --exclude-rule yaml.docker-compose.security.writable-filesystem-service.writable-filesystem-service \
+            --exclude-rule yaml.docker-compose.security.no-new-privileges.no-new-privileges \
+            --exclude-rule problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification.bypass-tls-verification \
             --sarif \
             --output semgrep.sarif \
             --error

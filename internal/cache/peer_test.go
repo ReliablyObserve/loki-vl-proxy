@@ -218,6 +218,7 @@ func TestPeerCache_ServeHTTP_HotIndex(t *testing.T) {
 	for range 3 {
 		_, _ = localCache.Get("query_range:tenant-b:b")
 	}
+	localCache.drainPromotions() // flush deferred hot-index updates before asserting
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/_cache/hot?limit=1", nil)

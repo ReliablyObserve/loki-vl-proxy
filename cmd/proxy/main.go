@@ -133,6 +133,7 @@ type proxyRuntimeConfig struct {
 	metricsTrustProxyHeaders            bool
 	metricsExportSensitiveLabels        bool
 	metricsMaxConcurrency               int
+	logRequestSampleRate                int
 	labelStyle                          string
 	metadataFieldMode                   string
 	fieldMappingJSON                    string
@@ -331,6 +332,7 @@ func run(
 	rulerBackendURL := fs.String("ruler-backend", "", "Optional alert/ruler backend URL for /rules passthrough (for example vmalert)")
 	alertsBackendURL := fs.String("alerts-backend", "", "Optional alert backend URL for /alerts passthrough (defaults to -ruler-backend when unset)")
 	logLevel := fs.String("log-level", "info", "Log level: debug, info, warn, error")
+	logRequestSampleRate := fs.Int("log-request-sample-rate", 0, "Sample rate for per-request access logs on successful (2xx) responses. 0 or 1 logs every request. N>1 logs 1 in every N requests. 4xx/5xx are always logged.")
 
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
@@ -663,6 +665,7 @@ func run(
 			metricsTrustProxyHeaders:            *metricsTrustProxyHeaders,
 			metricsExportSensitiveLabels:        *metricsExportSensitiveLabels,
 			metricsMaxConcurrency:               *metricsMaxConcurrency,
+			logRequestSampleRate:                *logRequestSampleRate,
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			fieldMappingJSON:                    envCfg.fieldMappingJSON,
@@ -1507,6 +1510,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetricsMaxTenants:                  cfg.metricsMaxTenants,
 		MetricsMaxClients:                  cfg.metricsMaxClients,
 		MetricsTrustProxyHeaders:           cfg.metricsTrustProxyHeaders,
+		LogRequestSampleRate:               cfg.logRequestSampleRate,
 		MetricsExportSensitiveLabels:       cfg.metricsExportSensitiveLabels,
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
 		LabelStyle:                         ls,
