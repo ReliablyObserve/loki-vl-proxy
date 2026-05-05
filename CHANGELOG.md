@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.3] - 2026-05-05
+
 ### Fixed
 
 - fix(drilldown): strip generic parser stages (`| json`, `| logfmt`, `| unpack`, `| drop __error__`) from the primary field-detection scan query — keeping them caused VL to parse all embedded fields from 500 diverse log lines, producing 35 000+ garbage field entries (log tokens treated as field names) in Grafana Drilldown
