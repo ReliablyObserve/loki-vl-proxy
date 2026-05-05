@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(cold): `RouteColdOnly` backward queries with an explicit `limit` now return the N *newest* rows instead of the N *oldest* — the Lakehouse scans ascending and applies its limit before returning, so the proxy fetches up to `maxLimitValue` rows, reverses, then trims to the original limit
+- fix(drilldown): `detected_fields` now returns fields for queries with a parser followed by field-comparison filters (e.g. `| logfmt | error_code!=""`) — the primary scan was stripping `| logfmt` but keeping the filter, so VL could not evaluate `error_code:!""` without `unpack_logfmt` and returned zero rows; the parser stage is now preserved when downstream filters depend on it
+- fix(metrics): bare parser metric tumbling-window queries (`step == range`) now use the native VL stats path and group by stream labels only, matching Loki's behaviour — the manual aggregation path was leaking parsed fields (e.g. `duration_ms`) into metric labels for these queries
+
 ## [1.29.3] - 2026-05-05
 
 ### Fixed

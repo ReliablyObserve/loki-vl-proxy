@@ -1225,11 +1225,10 @@ func stripParserStages(baseQuery string) string {
 }
 
 // proxyBareParserMetricViaStats routes bare parser metric queries (e.g.
-// rate({app} | json [5m])) to native VL stats_query_range.
-// Parser stages (| json, | logfmt) are kept in the query so that VL applies
-// the same filtering semantics as Loki: lines that fail parsing are excluded
-// from the count, matching Loki's __error__ behavior for metric queries.
-// Returns true when the fast path handled the request.
+// rate({app} | json [5m])) to native VL stats_query_range for the tumbling-window
+// case (range==step). Loki groups these by stream labels only (not parsed fields),
+// and VL native stats matches that behaviour. Returns true when the fast path handled
+// the request.
 func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Request, reqStart time.Time, originalQuery string, spec bareParserMetricCompatSpec) bool {
 	window := "[" + spec.rangeWindowExpr + "]"
 	switch spec.funcName {
@@ -1246,7 +1245,6 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 	// Shift start back by the range window so VL includes the extra initial bucket
 	// that covers the data Loki uses for the first rate() evaluation point at T0
 	// (Loki reads [T0-window, T0]; VL tumbling window without shift gives [T0, T0+step)).
-	// We capture the response, trim the pre-start points, then forward to the client.
 	origStartNs, hasStart := parseLokiTimeToUnixNano(r.FormValue("start"))
 	var effectiveR *http.Request
 	if hasStart && spec.rangeWindow > 0 {
@@ -1258,8 +1256,6 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 		effectiveR = r
 	}
 
-	// Call the direct path (no compat layer, no shift gate) since effectiveR
-	// already has the shifted start applied above.
 	buf := &bufferedResponseWriter{}
 	p.proxyStatsQueryRangeDirect(buf, effectiveR, logsqlQuery)
 
@@ -1285,12 +1281,12 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 }
 
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
-	// Fast path: for count-like functions with no post-parser pipeline stages,
-	// no unwrap, and a tumbling window (range == step), route to native VL
-	// stats_query_range. VL keeps the parser stage in the translated query, so
-	// parse-failure filtering matches Loki semantics (equivalent to __error__ exclusion).
-	// The slow manual path groups by all parsed fields — incorrect for bare metrics
-	// without an explicit by() clause — so native stats is the correct path here.
+	// Tumbling-window fast path: for count-like functions with no post-parser pipeline
+	// stages, no unwrap, and range==step, route to native VL stats_query_range. VL keeps
+	// the parser stage in the translated query so parse-failure filtering matches Loki
+	// semantics. Loki groups these by stream labels only (not parsed fields), and native
+	// stats matches that. The manual path (fetchBareParserMetricSeries) groups by ALL
+	// parsed fields — correct for sliding windows but wrong for tumbling bare metrics.
 	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
 	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) {

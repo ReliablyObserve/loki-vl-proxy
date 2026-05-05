@@ -370,11 +370,12 @@ func TestDefaultFieldDetectionQuery_StripsParserStages(t *testing.T) {
 }
 
 func TestFieldDetectionQueryCandidates_StripsParserKeepsComparisons(t *testing.T) {
-	// Primary candidate strips parser stages (logfmt, unwrap) but retains
-	// field-comparison filters. Relaxed candidate strips both.
+	// Primary candidate strips | unwrap (which breaks log scanning) but keeps the
+	// parser stage and field-comparison filters together — VL needs the parser to
+	// evaluate field comparisons. Relaxed candidate strips both for maximum coverage.
 	got := fieldDetectionQueryCandidates(`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms | unwrap duration(duration)`)
 	want := []string{
-		`{service_name="grafana"} | duration < 1s | duration > 100ms`,
+		`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms`,
 		`{service_name="grafana"}`,
 	}
 	if len(got) != len(want) {
@@ -388,12 +389,13 @@ func TestFieldDetectionQueryCandidates_StripsParserKeepsComparisons(t *testing.T
 }
 
 func TestFieldDetectionQueryCandidates_LogfmtFieldFilter(t *testing.T) {
-	// When a logfmt field filter is applied, the primary candidate strips the logfmt
-	// parser but keeps the field-comparison filter so the scan is still narrowed.
+	// When a logfmt field filter is applied, the primary candidate keeps the parser
+	// stage alongside the field-comparison filter: VL cannot evaluate | size_bytes="0"
+	// without first running | logfmt (unpack_logfmt in VL) to make the field available.
 	// The relaxed candidate strips both parser and comparison for maximum coverage.
 	got := fieldDetectionQueryCandidates(`{cluster="us-east-1"} | logfmt | size_bytes="0"`)
 	want := []string{
-		`{cluster="us-east-1"} | size_bytes="0"`,
+		`{cluster="us-east-1"} | logfmt | size_bytes="0"`,
 		`{cluster="us-east-1"}`,
 	}
 	if len(got) != len(want) {
@@ -1940,14 +1942,14 @@ func TestNormalizeManualMetricFunction(t *testing.T) {
 }
 
 // =============================================================================
-// Coverage gap: proxyBareParserMetricViaStats (the rate|json fast path)
+// Coverage gap: proxyBareParserMetricViaStats (the rate|json tumbling-window fast path)
 // =============================================================================
 
 func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
-	// rate({...} | json [5m]) with step==range must use native VL stats: VL keeps the
-	// parser stage in the translated query so parse-failure filtering matches Loki
-	// semantics. The slow manual path is incorrect here — it groups by ALL parsed fields
-	// which pollutes metric labels for bare metrics without an explicit by() clause.
+	// rate({...} | json [5m]) with step==range (tumbling window) must use native VL
+	// stats_query_range. Loki groups these by stream labels only (not parsed fields),
+	// and VL native stats matches that behaviour. The manual path is for sliding windows
+	// (step != range) where all parsed fields must appear as metric dimensions.
 	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/stats_query_range" {
@@ -1956,12 +1958,11 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1700000060,"1.5"]]}]}}`))
 			return
 		}
-		// Parser probe
+		// Parser probe / manual path (must NOT be reached for tumbling window)
 		if r.URL.Path == "/select/logsql/query" {
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			return
 		}
-		// Version check
 		if r.URL.Path == "/metrics" {
 			w.Write([]byte(`metrics_version{} 1`))
 			return
@@ -1973,7 +1974,7 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	base := time.Unix(1700000000, 0)
-	// step=300 == range=[5m] → rangeEqualsStep=true → fast path
+	// step=300 == range=[5m] → rangeEqualsStep=true → tumbling-window fast path
 	params := url.Values{}
 	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
@@ -1987,7 +1988,7 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	if !statsCalled {
-		t.Fatal("expected proxyBareParserMetricViaStats to call stats_query_range (fast path)")
+		t.Fatal("expected proxyBareParserMetricViaStats to call stats_query_range (tumbling-window fast path)")
 	}
 	var resp map[string]interface{}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
