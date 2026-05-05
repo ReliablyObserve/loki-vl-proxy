@@ -7,12 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(cold): `RouteColdOnly` backward queries with an explicit `limit` now return the N *newest* rows instead of the N *oldest* — the Lakehouse scans ascending and applies its limit before returning, so the proxy fetches up to `maxLimitValue` rows, reverses, then trims to the original limit
+- fix(drilldown): `detected_fields` now returns fields for queries with a parser followed by field-comparison filters (e.g. `| logfmt | error_code!=""`) — the primary scan was stripping `| logfmt` but keeping the filter, so VL could not evaluate `error_code:!""` without `unpack_logfmt` and returned zero rows; the parser stage is now preserved when downstream filters depend on it
+- fix(metrics): bare parser metric tumbling-window queries (`step == range`) now use the native VL stats path and group by stream labels only, matching Loki's behaviour — the manual aggregation path was leaking parsed fields (e.g. `duration_ms`) into metric labels for these queries
+
 ## [1.29.3] - 2026-05-05
 
 ### Fixed
 
-- fix(drilldown): `detected_fields` scan strips parser stages (`| json`, `| logfmt`, `| unpack`, `| drop __error__`) to avoid returning tens of thousands of garbage field entries, but preserves the parser when downstream field-comparison filters depend on it (e.g. `| logfmt | error_code!=""`) — without the parser VL cannot evaluate the filter and returns zero rows, yielding zero detected fields; falls back to a native VL `field_names` index lookup on the bare stream selector when the scan returns zero fields
-- fix(cold): `RouteColdOnly` backward queries now return newest-first and respect `limit` correctly — the Lakehouse always scans ascending, so the proxy fetches up to `maxLimitValue` rows, reverses the response, then trims to the original limit
+- fix(drilldown): strip generic parser stages (`| json`, `| logfmt`, `| unpack`, `| drop __error__`) from the primary field-detection scan query — keeping them caused VL to parse all embedded fields from 500 diverse log lines, producing 35 000+ garbage field entries (log tokens treated as field names) in Grafana Drilldown
+- fix(drilldown): `handleDetectedFields` now falls back to a native-only VL `field_names` index lookup on the bare stream selector when the strict query returns zero fields — keeps the Drilldown fields panel populated when a specific field-value filter narrows the log sample below the scan threshold, without performing a broad log-line scan that would return unrelated fields
+- fix(cold): cold-only (`RouteColdOnly`) queries with `direction=backward` now reverse the NDJSON body before processing — the Lakehouse always returns rows ascending and does not support a sort clause, so the proxy reverses the response to match Loki's default newest-first ordering
 - fix(metrics): `without()` aggregation on sliding-window range metrics now correctly routes through the manual aggregation path and expands `_stream` to all stream label keys — previously the `without()` exception bypassed the manual path, causing fallback to native VL stats that does not support sliding windows
 
 ## [1.29.2] - 2026-05-05
