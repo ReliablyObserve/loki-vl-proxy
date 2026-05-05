@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.2] - 2026-05-05
+
 ### Fixed
 
 - fix(cold): `RouteBoth` hot-backend failure now propagates a `502` error instead of silently returning cold-only partial data — cold covers `[start, boundary]` only, so serving it alone truncates the live `[boundary, end]` range without the client knowing
