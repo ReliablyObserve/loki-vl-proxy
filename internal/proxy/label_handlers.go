@@ -459,12 +459,14 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// When the strict query (full LogQL including parser stages and field filters)
-	// returns zero fields, retry with the relaxed bare-selector query so that the
-	// Drilldown fields panel stays populated even when a specific field value filter
-	// narrows the log window below the scan threshold.
+	// returns zero fields, fall back to a native-only index lookup on the bare stream
+	// selector. This keeps the Drilldown fields panel populated when a specific field
+	// value filter narrows the log sample below the scan threshold.
+	// We use native-only (no log-line scan) to avoid returning every field from a
+	// broad relaxed scan, which would produce an overwhelming list.
 	if len(fields) == 0 {
 		if relaxed := relaxedFieldDetectionQuery(query); relaxed != "" && relaxed != query {
-			if relaxedFields, _, relaxErr := p.detectFields(r.Context(), relaxed, r.FormValue("start"), r.FormValue("end"), lineLimit); relaxErr == nil && len(relaxedFields) > 0 {
+			if relaxedFields, _ := p.detectFieldsNativeOnly(r.Context(), relaxed, r.FormValue("start"), r.FormValue("end")); len(relaxedFields) > 0 {
 				fields = relaxedFields
 			}
 		}

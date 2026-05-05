@@ -1379,6 +1379,24 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	return nil, nil, lastErr
 }
 
+// detectFieldsNativeOnly returns the field list that VL's native field_names index
+// knows about for query, without doing a log-line scan. Used as a lightweight fallback
+// when the strict query returns zero scan results but VL still has index entries for
+// the stream. Avoids the "too many fields" problem that would arise from scanning the
+// entire bare-selector stream.
+func (p *Proxy) detectFieldsNativeOnly(ctx context.Context, query, start, end string) ([]map[string]interface{}, map[string][]string) {
+	nativeFields, err := p.detectNativeFields(ctx, query, start, end)
+	if err != nil || len(nativeFields) == 0 {
+		return nil, nil
+	}
+	if nativeFieldFilterNeedsStreamLabels(nativeFields, p.labelTranslator) {
+		if streamLabels, serr := p.fetchNativeStreamLabelSet(ctx, query, start, end); serr == nil {
+			nativeFields = filterNativeDetectedFields(nativeFields, streamLabels, p.labelTranslator)
+		}
+	}
+	return mergeNativeDetectedFields(nil, nil, nativeFields)
+}
+
 // isOTelDataFJ is the fastjson-aware equivalent of isOTelData.
 // It inspects the same fields as isOTelData but via fastjson getters,
 // avoiding the map[string]interface{} allocation.

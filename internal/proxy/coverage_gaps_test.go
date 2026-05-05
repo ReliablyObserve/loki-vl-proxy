@@ -550,6 +550,8 @@ func TestDetectedFields_EmptyStrictQueryRelaxesToBareSelector(t *testing.T) {
 	// When the strict query (full LogQL with parser and field filter stages) returns
 	// zero log lines from the scan, handleDetectedFields must fall back to the relaxed
 	// bare-selector query so the Drilldown fields panel stays populated.
+	// The fallback uses native-only field discovery (no scan) to avoid returning an
+	// overwhelming list of fields from a broad log-line scan.
 	const strictToken = "strict-only"
 
 	var fieldNameQueries []string
@@ -575,6 +577,10 @@ func TestDetectedFields_EmptyStrictQueryRelaxesToBareSelector(t *testing.T) {
 			if !strict {
 				_, _ = w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"status\":200}","_stream":"{service_name=\"api-gateway\"}","service_name":"api-gateway","status":200}` + "\n"))
 			}
+		case "/select/logsql/streams":
+			// Needed by detectFieldsNativeOnly → fetchNativeStreamLabelSet for label filtering.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[{"value":"{service_name=\"api-gateway\"}","hits":1}]}`))
 		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
@@ -603,14 +609,12 @@ func TestDetectedFields_EmptyStrictQueryRelaxesToBareSelector(t *testing.T) {
 	if strings.Contains(fieldNameQueries[len(fieldNameQueries)-1], strictToken) {
 		t.Fatalf("expected final native field-name lookup to use relaxed query, got %v", fieldNameQueries)
 	}
-	if len(scanQueries) < 2 {
-		t.Fatalf("expected strict+relaxed scan queries, got %v", scanQueries)
-	}
-	if !strings.Contains(scanQueries[0], strictToken) {
-		t.Fatalf("expected first scan to stay strict, got %v", scanQueries)
-	}
-	if strings.Contains(scanQueries[len(scanQueries)-1], strictToken) {
-		t.Fatalf("expected final scan to use relaxed query, got %v", scanQueries)
+	// The relaxed fallback uses native-only field discovery (no scan) to avoid
+	// returning an overwhelming list of fields from a broad log-line scan.
+	for _, got := range scanQueries {
+		if !strings.Contains(got, strictToken) {
+			t.Fatalf("expected no relaxed scan query (native-only fallback), got %q", got)
+		}
 	}
 
 	var resp map[string]interface{}
@@ -619,7 +623,7 @@ func TestDetectedFields_EmptyStrictQueryRelaxesToBareSelector(t *testing.T) {
 	}
 	fields, _ := resp["fields"].([]interface{})
 	if len(fields) == 0 {
-		t.Fatalf("expected non-empty detected_fields payload after relaxed fallback, got %v", resp)
+		t.Fatalf("expected non-empty detected_fields payload after relaxed native fallback, got %v", resp)
 	}
 }
 
