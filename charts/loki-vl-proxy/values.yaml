@@ -143,9 +143,11 @@ extraArgs:
   peer-write-through-min-ttl: "30s"
 
   log-level: "info"
+  # log-request-sample-rate: "0"    # 0=log all 2xx; N>1 logs 1-in-N (saves log build overhead at high throughput)
 
   # --- HTTP server hardening ---
   http-read-timeout: "30s"
+  # http-read-header-timeout: "10s"  # max time to read request headers (default: 10s)
   # 120s write timeout covers long-range log queries; Grafana's default query
   # timeout is 60s but custom dashboards can exceed that.
   http-write-timeout: "120s"
@@ -250,6 +252,8 @@ extraArgs:
   # metrics.max-tenants: "256"
   # metrics.max-clients: "256"
   # metrics.trust-proxy-headers: "false"
+  # metrics.export-sensitive-labels: "false"    # include tenant/client labels in all Prometheus metrics
+  # server.metrics-max-concurrency: "0"         # bound concurrent /metrics scrapes (0=unlimited)
   # server.register-instrumentation: "true"     # expose /metrics
   # server.enable-pprof: "false"
   # server.enable-query-analytics: "false"

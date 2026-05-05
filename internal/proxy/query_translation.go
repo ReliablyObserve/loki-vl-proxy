@@ -81,6 +81,13 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		if !p.log.Enabled(reqCtx, logLevel) {
 			return
 		}
+		// Sample successful requests: skip log assembly for N-1 out of every N 2xx
+		// responses to avoid slice allocation and slog formatting overhead.
+		if p.logSampleN > 1 && sc.code < 400 {
+			if p.logSampleCount.Add(1)%p.logSampleN != 0 {
+				return
+			}
+		}
 
 		authUser, authSource := metrics.ResolveAuthContext(r)
 		clientAddr := forwardedClientAddress(r, p.metricsTrustProxyHeaders)
