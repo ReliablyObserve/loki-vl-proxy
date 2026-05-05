@@ -447,7 +447,8 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 
 	r = withOrgID(r)
 	lineLimit := parseDetectedLineLimit(r)
-	fields, _, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
+	query := r.FormValue("query")
+	fields, _, err := p.detectFields(r.Context(), query, r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
 		if p.serveStaleReadCacheOnError(w, "detected_fields", cacheKey, start, err) {
 			return
@@ -456,6 +457,17 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		p.writeError(w, status, err.Error())
 		p.metrics.RecordRequest("detected_fields", status, time.Since(start))
 		return
+	}
+	// When the strict query (full LogQL including parser stages and field filters)
+	// returns zero fields, retry with the relaxed bare-selector query so that the
+	// Drilldown fields panel stays populated even when a specific field value filter
+	// narrows the log window below the scan threshold.
+	if len(fields) == 0 {
+		if relaxed := relaxedFieldDetectionQuery(query); relaxed != "" && relaxed != query {
+			if relaxedFields, _, relaxErr := p.detectFields(r.Context(), relaxed, r.FormValue("start"), r.FormValue("end"), lineLimit); relaxErr == nil && len(relaxedFields) > 0 {
+				fields = relaxedFields
+			}
+		}
 	}
 	payload := map[string]interface{}{
 		"status": "success",

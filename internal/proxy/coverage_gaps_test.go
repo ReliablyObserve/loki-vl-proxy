@@ -546,7 +546,10 @@ func TestDetectedFieldValues_FieldFilterFallbackKeepsValuesVisible(t *testing.T)
 	}
 }
 
-func TestDetectedFields_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
+func TestDetectedFields_EmptyStrictQueryRelaxesToBareSelector(t *testing.T) {
+	// When the strict query (full LogQL with parser and field filter stages) returns
+	// zero log lines from the scan, handleDetectedFields must fall back to the relaxed
+	// bare-selector query so the Drilldown fields panel stays populated.
 	const strictToken = "strict-only"
 
 	var fieldNameQueries []string
@@ -591,13 +594,23 @@ func TestDetectedFields_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if len(fieldNameQueries) != 1 {
-		t.Fatalf("expected only the strict native field-name lookup, got %v", fieldNameQueries)
+	if len(fieldNameQueries) < 2 {
+		t.Fatalf("expected strict+relaxed native field-name lookups, got %v", fieldNameQueries)
 	}
-	for _, got := range scanQueries {
-		if !strings.Contains(got, strictToken) {
-			t.Fatalf("expected scan lookup to preserve strict filter, got %q", got)
-		}
+	if !strings.Contains(fieldNameQueries[0], strictToken) {
+		t.Fatalf("expected first native field-name lookup to stay strict, got %v", fieldNameQueries)
+	}
+	if strings.Contains(fieldNameQueries[len(fieldNameQueries)-1], strictToken) {
+		t.Fatalf("expected final native field-name lookup to use relaxed query, got %v", fieldNameQueries)
+	}
+	if len(scanQueries) < 2 {
+		t.Fatalf("expected strict+relaxed scan queries, got %v", scanQueries)
+	}
+	if !strings.Contains(scanQueries[0], strictToken) {
+		t.Fatalf("expected first scan to stay strict, got %v", scanQueries)
+	}
+	if strings.Contains(scanQueries[len(scanQueries)-1], strictToken) {
+		t.Fatalf("expected final scan to use relaxed query, got %v", scanQueries)
 	}
 
 	var resp map[string]interface{}
@@ -605,8 +618,8 @@ func TestDetectedFields_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	fields, _ := resp["fields"].([]interface{})
-	if len(fields) != 0 {
-		t.Fatalf("expected empty detected_fields payload for strict empty query, got %v", resp)
+	if len(fields) == 0 {
+		t.Fatalf("expected non-empty detected_fields payload after relaxed fallback, got %v", resp)
 	}
 }
 
