@@ -723,20 +723,6 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	seriesByKey := make(map[string]*bareParserMetricSeries, 16)
 	streamLabelCache := make(map[string]map[string]string, 16)
 	streamDescriptorCache := make(map[string]cachedLogQueryStreamDescriptor, 16)
-	exposureCache := make(map[string][]metadataFieldExposure, 16)
-
-	smBuf := metadataMapPool.Get().(map[string]string)
-	pfBuf := metadataMapPool.Get().(map[string]string)
-	defer func() {
-		for k := range smBuf {
-			delete(smBuf, k)
-		}
-		for k := range pfBuf {
-			delete(pfBuf, k)
-		}
-		metadataMapPool.Put(smBuf)
-		metadataMapPool.Put(pfBuf)
-	}()
 
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
@@ -760,14 +746,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
 		desc := p.logQueryStreamDescriptor(asString(entry["_stream"]), asString(entry["level"]), streamLabelCache, streamDescriptorCache)
-		_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache, smBuf, pfBuf)
 		metric := cloneStringMap(desc.translatedLabels)
-		for key, value := range parsedFields {
-			if spec.unwrapField != "" && key == spec.unwrapField {
-				continue
-			}
-			metric[key] = value
-		}
 		seriesKey := canonicalLabelsKey(metric)
 		series, ok := seriesByKey[seriesKey]
 		if !ok {
