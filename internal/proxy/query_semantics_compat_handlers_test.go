@@ -12,10 +12,10 @@ import (
 	"time"
 )
 
-func TestContract_QueryRange_BareParserMetricCompatStreamLabelsOnly(t *testing.T) {
-	// Bare parser metrics (no outer by() clause) must use only stream labels as metric
-	// labels. Loki does not leak parsed/extracted fields into metric labels for these
-	// queries — only the stream selector labels appear in the result metric.
+func TestContract_QueryRange_BareParserMetricCompatPreservesSeriesLabels(t *testing.T) {
+	// Bare parser metrics include parsed fields in metric labels when no outer by()/without()
+	// clause is present. Each unique combination of stream labels + parsed fields becomes a
+	// separate series — matching Loki's behaviour for log-range metrics with parser stages.
 	startNanos := int64(1704067200 * 1e9)
 	endNanos := startNanos + int64(2*time.Minute)
 
@@ -53,10 +53,10 @@ func TestContract_QueryRange_BareParserMetricCompatStreamLabelsOnly(t *testing.T
 	series := result[0].(map[string]interface{})
 	metric := series["metric"].(map[string]interface{})
 	if metric["app"] != "api-gateway" {
-		t.Fatalf("expected stream label app in metric, got %v", metric)
+		t.Fatalf("expected app label, got %v", metric)
 	}
-	if _, has := metric["status"]; has {
-		t.Fatalf("parser-derived status label must not appear in bare metric labels, got %v", metric)
+	if metric["status"] != "500" {
+		t.Fatalf("expected parser-derived status label, got %v", metric)
 	}
 	values := series["values"].([]interface{})
 	if len(values) == 0 {
