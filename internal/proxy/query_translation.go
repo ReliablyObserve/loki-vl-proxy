@@ -1285,22 +1285,14 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 }
 
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
-	// Fast path: for count-like functions with no post-parser pipeline stages,
-	// no unwrap, and a tumbling window (range == step), route to native VL
-	// stats_query_range. VL keeps the parser stage in the translated query, so
-	// parse-failure filtering matches Loki semantics (equivalent to __error__ exclusion).
-	// The slow manual path groups by all parsed fields — incorrect for bare metrics
-	// without an explicit by() clause — so native stats is the correct path here.
-	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
-	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
-	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) {
-		switch spec.funcName {
-		case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
-			if p.proxyBareParserMetricViaStats(w, r, start, originalQuery, spec) {
-				return
-			}
-		}
-	}
+	// NOTE: the native-stats fast path for rate/count_over_time/bytes_over_time/bytes_rate
+	// was removed because it bypassed the shouldUseManualRangeMetricCompat gate, which
+	// explicitly requires the manual log-fetch path for count-like functions with parser
+	// stages (| json, | logfmt, etc.) to ensure correct parse-failure exclusion semantics.
+	// The manual path (fetchBareParserMetricSeries) is also the only path that groups by
+	// the full label set — stream labels plus all parsed fields — matching what Loki does
+	// for bare parser metrics without an explicit by() clause.
+	_ = spec // used below
 
 	startNanos, ok := parseFlexibleUnixNanos(r.FormValue("start"))
 	if !ok {

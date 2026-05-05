@@ -97,7 +97,17 @@ func (p *Proxy) buildColdQueryParamsForRange(r *http.Request, logsqlQuery string
 }
 
 func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	// The Lakehouse always scans ascending (oldest-first) and applies its limit before
+	// returning. For a backward query we need the N NEWEST rows in the range, but with
+	// the client limit set the Lakehouse returns the N OLDEST rows, and reversing them
+	// gives the wrong set. Fix: for backward queries fetch without a user limit (capped
+	// at maxLimitValue), reverse the full result, then trim to the original limit.
 	params := p.buildColdQueryParams(r, logsqlQuery)
+	originalLimit := r.FormValue("limit")
+	if r.FormValue("direction") != "forward" {
+		params.Set("limit", strconv.Itoa(maxLimitValue))
+	}
+
 	resp, err := p.coldRouter.ColdPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
 		// RouteColdOnly means the hot backend has no data for this range — a cold
@@ -115,18 +125,19 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 
 	// The Lakehouse always returns rows in ascending time order and does not support
 	// a LogsQL sort clause. For backward direction (the Loki default), reverse the
-	// body so processLogQueryResponse receives newest-first order — matching what the
-	// hot path achieves via "| sort by (_time desc)".
+	// full result then trim to the original limit so the client receives the N
+	// newest rows — matching what the hot path achieves via "| sort by (_time desc)".
 	if r.FormValue("direction") != "forward" {
 		body, readErr := io.ReadAll(resp.Body)
 		if readErr != nil {
 			p.writeError(w, http.StatusBadGateway, "failed to read cold response")
 			return
 		}
+		trimmed := trimNDJSONBodyToLimit(reverseNDJSONBody(body), originalLimit)
 		syntheticResp := &http.Response{
 			StatusCode: http.StatusOK,
 			Header:     resp.Header.Clone(),
-			Body:       io.NopCloser(bytes.NewReader(reverseNDJSONBody(body))),
+			Body:       io.NopCloser(bytes.NewReader(trimmed)),
 		}
 		p.processLogQueryResponse(w, r, syntheticResp)
 		return

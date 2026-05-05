@@ -489,3 +489,85 @@ func TestProxyLogQueryCold_ForwardDirection_KeepsOrder(t *testing.T) {
 	}
 }
 
+func TestProxyLogQueryCold_BackwardLimit_ReturnsNewest(t *testing.T) {
+	// Regression test: with limit=2 and 5 entries, backward direction must return
+	// the 2 NEWEST rows, not the 2 oldest rows in reverse. The cold backend always
+	// scans ascending; applying the client limit before reversal would return the
+	// wrong rows (oldest 2 reversed = still the oldest 2, not the newest 2).
+	var coldReceivedLimit string
+	coldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			coldReceivedLimit = r.FormValue("limit")
+			w.Header().Set("Content-Type", "application/stream+json")
+			// 5 entries ascending oldest→newest
+			fmt.Fprintln(w, `{"_msg":"e1","_time":"2026-04-01T00:00:01Z","_stream":"{}"}`)
+			fmt.Fprintln(w, `{"_msg":"e2","_time":"2026-04-01T00:00:02Z","_stream":"{}"}`)
+			fmt.Fprintln(w, `{"_msg":"e3","_time":"2026-04-01T00:00:03Z","_stream":"{}"}`)
+			fmt.Fprintln(w, `{"_msg":"e4","_time":"2026-04-01T00:00:04Z","_stream":"{}"}`)
+			fmt.Fprintln(w, `{"_msg":"e5","_time":"2026-04-01T00:00:05Z","_stream":"{}"}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer coldSrv.Close()
+
+	hotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/stream+json")
+	}))
+	defer hotSrv.Close()
+
+	p, err := New(Config{
+		BackendURL: hotSrv.URL,
+		ColdBackend: ColdBackendConfig{
+			Enabled:  true,
+			URL:      coldSrv.URL,
+			Boundary: 7 * 24 * time.Hour,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000&limit=2", nil)
+	p.proxyLogQueryCold(w, r, "*")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
+	}
+
+	// The proxy must have sent maxLimitValue (not "2") to cold so all rows are fetched.
+	if coldReceivedLimit == "2" {
+		t.Errorf("cold received limit=2 — would return oldest 2 rows, not newest; want maxLimitValue sent to cold")
+	}
+
+	var result struct {
+		Data struct {
+			Result []struct {
+				Values [][]string `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v\nbody: %s", err, w.Body.String())
+	}
+
+	var msgs []string
+	for _, stream := range result.Data.Result {
+		for _, v := range stream.Values {
+			if len(v) >= 2 {
+				msgs = append(msgs, v[1])
+			}
+		}
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 log entries (limit=2), got %d: %v", len(msgs), msgs)
+	}
+	// Backward + limit=2 must return the 2 NEWEST entries, newest first.
+	if msgs[0] != "e5" {
+		t.Errorf("msgs[0] = %q, want e5 (newest entry in backward order)", msgs[0])
+	}
+	if msgs[1] != "e4" {
+		t.Errorf("msgs[1] = %q, want e4 (second-newest in backward order)", msgs[1])
+	}
+}
