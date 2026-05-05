@@ -1940,23 +1940,24 @@ func TestNormalizeManualMetricFunction(t *testing.T) {
 }
 
 // =============================================================================
-// Coverage gap: proxyBareParserMetricQueryRange always uses manual log-fetch
+// Coverage gap: proxyBareParserMetricViaStats (the rate|json tumbling-window fast path)
 // =============================================================================
 
-func TestProxyBareParserMetric_AlwaysManualPath(t *testing.T) {
-	// rate({...} | json [5m]) must always use the manual log-fetch path, even
-	// when step==range. The native stats_query_range path was removed because it
-	// bypassed shouldUseManualRangeMetricCompat and grouped by stream labels only,
-	// while Loki groups by stream labels PLUS all parsed fields for bare parser metrics.
-	var manualCalled, statsQueryRangeCalled bool
+func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
+	// rate({...} | json [5m]) with step==range (tumbling window) must use native VL
+	// stats_query_range. Loki groups these by stream labels only (not parsed fields),
+	// and VL native stats matches that behaviour. The manual path is for sliding windows
+	// (step != range) where all parsed fields must appear as metric dimensions.
+	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/stats_query_range" {
-			statsQueryRangeCalled = true
-			w.WriteHeader(http.StatusInternalServerError)
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1700000060,"1.5"]]}]}}`))
 			return
 		}
+		// Parser probe / manual path (must NOT be reached for tumbling window)
 		if r.URL.Path == "/select/logsql/query" {
-			manualCalled = true
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			return
 		}
@@ -1971,7 +1972,7 @@ func TestProxyBareParserMetric_AlwaysManualPath(t *testing.T) {
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	base := time.Unix(1700000000, 0)
-	// step=300 == range=[5m] — previously triggered the now-removed stats fast path
+	// step=300 == range=[5m] → rangeEqualsStep=true → tumbling-window fast path
 	params := url.Values{}
 	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
@@ -1984,11 +1985,8 @@ func TestProxyBareParserMetric_AlwaysManualPath(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if statsQueryRangeCalled {
-		t.Fatal("stats_query_range must not be called for bare parser metrics — manual path required")
-	}
-	if !manualCalled {
-		t.Fatal("expected manual log-fetch path (/select/logsql/query) to be called")
+	if !statsCalled {
+		t.Fatal("expected proxyBareParserMetricViaStats to call stats_query_range (tumbling-window fast path)")
 	}
 	var resp map[string]interface{}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
