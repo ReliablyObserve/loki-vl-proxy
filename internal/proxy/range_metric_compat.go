@@ -360,6 +360,14 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 		if !rangeEqualsStep && outerWithoutRE.MatchString(strings.TrimSpace(originalLogql)) {
 			return false
 		}
+		// Extracting parser stages (| unpack_json, | extract, etc.) require the manual
+		// log-fetch path even when range==step: VL native stats may not replicate Loki's
+		// __error__ exclusion semantics for lines that fail parsing in metric queries.
+		// Exception: when the query explicitly handles __error__ (e.g., | drop __error__),
+		// parse failures are already accounted for and VL native stats is semantically correct.
+		if queryUsesParserStages(baseQuery) && !strings.Contains(originalLogql, "__error__") {
+			return true
+		}
 		return !rangeEqualsStep
 	}
 
