@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.1] - 2026-05-05
+
 ### Performance
 
 - perf: switch L1 cache read path from write lock to `sync.RWMutex.RLock()` with deferred LRU promotion via buffered channel — eliminates per-read mutex contention under concurrent queries (~+80–100 req/s, −5ms P50)
