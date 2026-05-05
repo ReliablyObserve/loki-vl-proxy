@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.0] - 2026-05-05
+
 ### Added
 
 - feat(metrics): expose `process_cpu_seconds_total` counter via `/metrics` — cumulative user+system CPU seconds using `syscall.Getrusage`; also emitted as `loki_vl_proxy_process_cpu_seconds_total` for namespaced scrape configs
