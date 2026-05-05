@@ -370,11 +370,12 @@ func TestDefaultFieldDetectionQuery_StripsParserStages(t *testing.T) {
 }
 
 func TestFieldDetectionQueryCandidates_StripsParserKeepsComparisons(t *testing.T) {
-	// Primary candidate strips parser stages (logfmt, unwrap) but retains
-	// field-comparison filters. Relaxed candidate strips both.
+	// Primary candidate strips | unwrap (which breaks log scanning) but keeps the
+	// parser stage and field-comparison filters together — VL needs the parser to
+	// evaluate field comparisons. Relaxed candidate strips both for maximum coverage.
 	got := fieldDetectionQueryCandidates(`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms | unwrap duration(duration)`)
 	want := []string{
-		`{service_name="grafana"} | duration < 1s | duration > 100ms`,
+		`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms`,
 		`{service_name="grafana"}`,
 	}
 	if len(got) != len(want) {
@@ -388,12 +389,13 @@ func TestFieldDetectionQueryCandidates_StripsParserKeepsComparisons(t *testing.T
 }
 
 func TestFieldDetectionQueryCandidates_LogfmtFieldFilter(t *testing.T) {
-	// When a logfmt field filter is applied, the primary candidate strips the logfmt
-	// parser but keeps the field-comparison filter so the scan is still narrowed.
+	// When a logfmt field filter is applied, the primary candidate keeps the parser
+	// stage alongside the field-comparison filter: VL cannot evaluate | size_bytes="0"
+	// without first running | logfmt (unpack_logfmt in VL) to make the field available.
 	// The relaxed candidate strips both parser and comparison for maximum coverage.
 	got := fieldDetectionQueryCandidates(`{cluster="us-east-1"} | logfmt | size_bytes="0"`)
 	want := []string{
-		`{cluster="us-east-1"} | size_bytes="0"`,
+		`{cluster="us-east-1"} | logfmt | size_bytes="0"`,
 		`{cluster="us-east-1"}`,
 	}
 	if len(got) != len(want) {

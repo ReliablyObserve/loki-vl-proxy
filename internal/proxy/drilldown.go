@@ -1081,16 +1081,19 @@ func defaultQuery(query string) string {
 }
 
 func defaultFieldDetectionQuery(query string) string {
-	// Strip generic parser stages (| json, | logfmt, | unpack) so VL does not parse
-	// and expand every embedded field from 500 diverse log lines. Without stripping,
-	// a query like `{env="production"} | json | logfmt` causes VL to produce tens of
-	// thousands of garbage field names (log tokens treated as keys). Keep specific
-	// field-comparison filters (| key="value") so the scan window is still narrowed
-	// to the relevant log subset. When the strict scan returns zero results the
-	// handleDetectedFields fallback retries with the relaxed bare-selector query via
-	// native VL field_names (detectFieldsNativeOnly), which avoids the empty-panel
-	// regression that motivated the original full-query approach.
-	return defaultQuery(stripFieldDetectionStages(query))
+	// Always strip | unwrap and | drop __error__ (they break log scanning for field detection).
+	// Only strip parser stages (| json, | logfmt) when there are no downstream field-comparison
+	// filters (| key="value") that depend on them: VL cannot evaluate a field filter without
+	// the preceding parser, so stripping it produces zero results (the filter references fields
+	// that only exist after parsing). When the query has parser+filter together, keep the parser
+	// so VL can evaluate the comparison. When it's a bare parser with no downstream filter,
+	// strip it to avoid expanding every embedded field into garbage names.
+	noUnwrap := stripUnwrapAndDropStages(query)
+	noParser := stripParserOnlyStages(noUnwrap)
+	if noParser != noUnwrap && hasFieldComparisonStages(noParser) {
+		return defaultQuery(noUnwrap)
+	}
+	return defaultQuery(noParser)
 }
 
 func relaxedFieldDetectionQuery(query string) string {
@@ -1124,23 +1127,43 @@ func normalizeBareSelectorQuery(query string) string {
 	return query
 }
 
-func stripFieldDetectionStages(query string) string {
+var (
+	reDropStage   = regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
+	reParserStage = regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
+	reUnwrapStage = regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
+)
+
+func collapseSpaces(s string) string {
+	for strings.Contains(s, "  ") {
+		s = strings.ReplaceAll(s, "  ", " ")
+	}
+	return strings.TrimSpace(s)
+}
+
+func stripUnwrapAndDropStages(query string) string {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return query
 	}
+	query = reDropStage.ReplaceAllString(query, " ")
+	query = reUnwrapStage.ReplaceAllString(query, " ")
+	return collapseSpaces(query)
+}
 
-	dropStage := regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
-	parserStage := regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
-	unwrapStage := regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
-
-	query = dropStage.ReplaceAllString(query, " ")
-	query = parserStage.ReplaceAllString(query, " ")
-	query = unwrapStage.ReplaceAllString(query, " ")
-	for strings.Contains(query, "  ") {
-		query = strings.ReplaceAll(query, "  ", " ")
+func stripParserOnlyStages(query string) string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return query
 	}
-	return strings.TrimSpace(query)
+	return collapseSpaces(reParserStage.ReplaceAllString(query, " "))
+}
+
+func stripFieldDetectionStages(query string) string {
+	return stripParserOnlyStages(stripUnwrapAndDropStages(query))
+}
+
+func hasFieldComparisonStages(query string) bool {
+	return regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`).MatchString(query)
 }
 
 func stripFieldComparisonStages(query string) string {

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - fix(cold): cold-only (`RouteColdOnly`) queries with `direction=backward` now reverse the NDJSON body before processing — the Lakehouse always returns rows ascending and does not support a sort clause, so the proxy reverses the response to match Loki's default newest-first ordering
 - fix(metrics): `without()` aggregation on sliding-window range metrics now correctly routes through the manual aggregation path and expands `_stream` to all stream label keys — previously the `without()` exception bypassed the manual path, causing fallback to native VL stats that does not support sliding windows
 - fix(cold): `RouteColdOnly` backward queries with an explicit `limit` now return the N *newest* rows instead of the N *oldest* — the Lakehouse scans ascending and applies its limit before returning, so the proxy now fetches up to `maxLimitValue` rows, reverses, then trims to the original limit
+- fix(drilldown): `detected_fields` now returns fields for queries with parser + field-comparison filter (e.g. `| logfmt | error_code!=""`) — previously the primary scan stripped `| logfmt` but kept the filter, so VL could not evaluate `error_code:!""` without `unpack_logfmt` and returned zero rows; the parser stage is now preserved when downstream field-comparison filters depend on it
 
 ## [1.29.2] - 2026-05-05
 
