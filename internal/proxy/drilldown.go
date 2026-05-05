@@ -1081,11 +1081,16 @@ func defaultQuery(query string) string {
 }
 
 func defaultFieldDetectionQuery(query string) string {
-	// Use the full query including parser stages so VL correctly executes logfmt/JSON
-	// parsing and field filters. Stripping parsers causes orphaned label filters that VL
-	// resolves against parsed fields while Loki treats them as stream label matchers —
-	// producing results when Loki would find nothing (or vice versa).
-	return defaultQuery(query)
+	// Strip generic parser stages (| json, | logfmt, | unpack) so VL does not parse
+	// and expand every embedded field from 500 diverse log lines. Without stripping,
+	// a query like `{env="production"} | json | logfmt` causes VL to produce tens of
+	// thousands of garbage field names (log tokens treated as keys). Keep specific
+	// field-comparison filters (| key="value") so the scan window is still narrowed
+	// to the relevant log subset. When the strict scan returns zero results the
+	// handleDetectedFields fallback retries with the relaxed bare-selector query via
+	// native VL field_names (detectFieldsNativeOnly), which avoids the empty-panel
+	// regression that motivated the original full-query approach.
+	return defaultQuery(stripFieldDetectionStages(query))
 }
 
 func relaxedFieldDetectionQuery(query string) string {
