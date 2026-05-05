@@ -13,6 +13,9 @@ import (
 )
 
 func TestContract_QueryRange_BareParserMetricCompatPreservesSeriesLabels(t *testing.T) {
+	// Bare parser metrics include parsed fields in metric labels when no outer by()/without()
+	// clause is present. Each unique combination of stream labels + parsed fields becomes a
+	// separate series — matching Loki's behaviour for log-range metrics with parser stages.
 	startNanos := int64(1704067200 * 1e9)
 	endNanos := startNanos + int64(2*time.Minute)
 

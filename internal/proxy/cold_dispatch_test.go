@@ -322,3 +322,170 @@ func TestColdRouteForRequest_NoTimeRange(t *testing.T) {
 	}
 }
 
+func TestReverseNDJSONBody(t *testing.T) {
+	input := []byte(`{"_time":"2026-04-01T00:00:01Z","_msg":"first"}` + "\n" +
+		`{"_time":"2026-04-01T00:00:02Z","_msg":"second"}` + "\n" +
+		`{"_time":"2026-04-01T00:00:03Z","_msg":"third"}`)
+
+	got := string(reverseNDJSONBody(input))
+	lines := strings.Split(got, "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines, got %d: %q", len(lines), got)
+	}
+	if !strings.Contains(lines[0], "third") {
+		t.Errorf("line 0 should be third (newest), got %q", lines[0])
+	}
+	if !strings.Contains(lines[2], "first") {
+		t.Errorf("line 2 should be first (oldest), got %q", lines[2])
+	}
+}
+
+func TestReverseNDJSONBody_EmptyLines(t *testing.T) {
+	input := []byte(`{"_msg":"a"}` + "\n\n" + `{"_msg":"b"}` + "\n")
+	got := string(reverseNDJSONBody(input))
+	lines := strings.Split(got, "\n")
+	if len(lines) != 2 {
+		t.Fatalf("empty lines should be stripped; got %d lines: %q", len(lines), got)
+	}
+	if !strings.Contains(lines[0], `"b"`) {
+		t.Errorf("first line after reverse should be b, got %q", lines[0])
+	}
+}
+
+func TestProxyLogQueryCold_BackwardDirection_ReversesOrder(t *testing.T) {
+	// Cold backend returns entries in ascending order (oldest first).
+	coldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			w.Header().Set("Content-Type", "application/stream+json")
+			fmt.Fprintln(w, `{"_msg":"oldest","_time":"2026-04-01T00:00:01Z","_stream":"{}"}`)
+			fmt.Fprintln(w, `{"_msg":"middle","_time":"2026-04-01T00:00:02Z","_stream":"{}"}`)
+			fmt.Fprintln(w, `{"_msg":"newest","_time":"2026-04-01T00:00:03Z","_stream":"{}"}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer coldSrv.Close()
+
+	// Hot backend: serve a dummy response (won't be called for RouteColdOnly).
+	hotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/stream+json")
+	}))
+	defer hotSrv.Close()
+
+	p, err := New(Config{
+		BackendURL: hotSrv.URL,
+		ColdBackend: ColdBackendConfig{
+			Enabled:  true,
+			URL:      coldSrv.URL,
+			Boundary: 7 * 24 * time.Hour,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	// No direction param → defaults to backward (Loki default).
+	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000", nil)
+	p.proxyLogQueryCold(w, r, "*")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
+	}
+
+	var result struct {
+		Data struct {
+			Result []struct {
+				Values [][]string `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v\nbody: %s", err, w.Body.String())
+	}
+
+	var msgs []string
+	for _, stream := range result.Data.Result {
+		for _, v := range stream.Values {
+			if len(v) >= 2 {
+				msgs = append(msgs, v[1])
+			}
+		}
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 log entries, got %d: %v", len(msgs), msgs)
+	}
+	// Backward direction: newest first.
+	if msgs[0] != "newest" {
+		t.Errorf("msgs[0] = %q, want newest (backward = newest-first)", msgs[0])
+	}
+	if msgs[2] != "oldest" {
+		t.Errorf("msgs[2] = %q, want oldest (backward = newest-first)", msgs[2])
+	}
+}
+
+func TestProxyLogQueryCold_ForwardDirection_KeepsOrder(t *testing.T) {
+	coldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			w.Header().Set("Content-Type", "application/stream+json")
+			fmt.Fprintln(w, `{"_msg":"oldest","_time":"2026-04-01T00:00:01Z","_stream":"{}"}`)
+			fmt.Fprintln(w, `{"_msg":"newest","_time":"2026-04-01T00:00:02Z","_stream":"{}"}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer coldSrv.Close()
+
+	hotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/stream+json")
+	}))
+	defer hotSrv.Close()
+
+	p, err := New(Config{
+		BackendURL: hotSrv.URL,
+		ColdBackend: ColdBackendConfig{
+			Enabled:  true,
+			URL:      coldSrv.URL,
+			Boundary: 7 * 24 * time.Hour,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000&direction=forward", nil)
+	p.proxyLogQueryCold(w, r, "*")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
+	}
+
+	var result struct {
+		Data struct {
+			Result []struct {
+				Values [][]string `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v\nbody: %s", err, w.Body.String())
+	}
+
+	var msgs []string
+	for _, stream := range result.Data.Result {
+		for _, v := range stream.Values {
+			if len(v) >= 2 {
+				msgs = append(msgs, v[1])
+			}
+		}
+	}
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 log entries, got %d: %v", len(msgs), msgs)
+	}
+	// Forward direction: oldest first (Lakehouse natural order, no reversal).
+	if msgs[0] != "oldest" {
+		t.Errorf("msgs[0] = %q, want oldest (forward = oldest-first)", msgs[0])
+	}
+}
+

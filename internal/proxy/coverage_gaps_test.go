@@ -355,19 +355,46 @@ func TestNormalizeBareSelectorQuery(t *testing.T) {
 	}
 }
 
-func TestDefaultFieldDetectionQuery_NormalizesAfterStrippingStages(t *testing.T) {
-	got := defaultFieldDetectionQuery(`service_name="otel-auth-service" | json | logfmt | drop __error__, __error_details__`)
+func TestDefaultFieldDetectionQuery_StripsParserStages(t *testing.T) {
+	// Primary candidate strips generic parser stages (| json, | logfmt, | unpack,
+	// | drop __error__) to avoid field explosion: a query like
+	// `{env="production"} | json | logfmt` would cause VL to parse ALL embedded
+	// fields from 500 diverse log lines, producing tens of thousands of garbage
+	// field entries. Specific field-comparison filters (| key="value") are kept so
+	// the scan window is still narrowed to the relevant log subset.
+	got := defaultFieldDetectionQuery(`{service_name="otel-auth-service"} | json | logfmt | drop __error__, __error_details__`)
 	want := `{service_name="otel-auth-service"}`
 	if got != want {
 		t.Fatalf("defaultFieldDetectionQuery() = %q, want %q", got, want)
 	}
 }
 
-func TestFieldDetectionQueryCandidates_RelaxFieldComparisons(t *testing.T) {
+func TestFieldDetectionQueryCandidates_StripsParserKeepsComparisons(t *testing.T) {
+	// Primary candidate strips parser stages (logfmt, unwrap) but retains
+	// field-comparison filters. Relaxed candidate strips both.
 	got := fieldDetectionQueryCandidates(`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms | unwrap duration(duration)`)
 	want := []string{
 		`{service_name="grafana"} | duration < 1s | duration > 100ms`,
 		`{service_name="grafana"}`,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("fieldDetectionQueryCandidates() len = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("fieldDetectionQueryCandidates()[%d] = %q, want %q (all=%v)", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestFieldDetectionQueryCandidates_LogfmtFieldFilter(t *testing.T) {
+	// When a logfmt field filter is applied, the primary candidate strips the logfmt
+	// parser but keeps the field-comparison filter so the scan is still narrowed.
+	// The relaxed candidate strips both parser and comparison for maximum coverage.
+	got := fieldDetectionQueryCandidates(`{cluster="us-east-1"} | logfmt | size_bytes="0"`)
+	want := []string{
+		`{cluster="us-east-1"} | size_bytes="0"`,
+		`{cluster="us-east-1"}`,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("fieldDetectionQueryCandidates() len = %d, want %d (%v)", len(got), len(want), got)
@@ -522,7 +549,12 @@ func TestDetectedFieldValues_FieldFilterFallbackKeepsValuesVisible(t *testing.T)
 	}
 }
 
-func TestDetectedFields_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
+func TestDetectedFields_EmptyStrictQueryRelaxesToBareSelector(t *testing.T) {
+	// When the strict query (full LogQL with parser and field filter stages) returns
+	// zero log lines from the scan, handleDetectedFields must fall back to the relaxed
+	// bare-selector query so the Drilldown fields panel stays populated.
+	// The fallback uses native-only field discovery (no scan) to avoid returning an
+	// overwhelming list of fields from a broad log-line scan.
 	const strictToken = "strict-only"
 
 	var fieldNameQueries []string
@@ -548,6 +580,10 @@ func TestDetectedFields_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
 			if !strict {
 				_, _ = w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"status\":200}","_stream":"{service_name=\"api-gateway\"}","service_name":"api-gateway","status":200}` + "\n"))
 			}
+		case "/select/logsql/streams":
+			// Needed by detectFieldsNativeOnly → fetchNativeStreamLabelSet for label filtering.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[{"value":"{service_name=\"api-gateway\"}","hits":1}]}`))
 		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
@@ -567,12 +603,20 @@ func TestDetectedFields_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	if len(fieldNameQueries) != 1 {
-		t.Fatalf("expected only the strict native field-name lookup, got %v", fieldNameQueries)
+	if len(fieldNameQueries) < 2 {
+		t.Fatalf("expected strict+relaxed native field-name lookups, got %v", fieldNameQueries)
 	}
+	if !strings.Contains(fieldNameQueries[0], strictToken) {
+		t.Fatalf("expected first native field-name lookup to stay strict, got %v", fieldNameQueries)
+	}
+	if strings.Contains(fieldNameQueries[len(fieldNameQueries)-1], strictToken) {
+		t.Fatalf("expected final native field-name lookup to use relaxed query, got %v", fieldNameQueries)
+	}
+	// The relaxed fallback uses native-only field discovery (no scan) to avoid
+	// returning an overwhelming list of fields from a broad log-line scan.
 	for _, got := range scanQueries {
 		if !strings.Contains(got, strictToken) {
-			t.Fatalf("expected scan lookup to preserve strict filter, got %q", got)
+			t.Fatalf("expected no relaxed scan query (native-only fallback), got %q", got)
 		}
 	}
 
@@ -581,8 +625,8 @@ func TestDetectedFields_EmptyStrictQueryDoesNotRelaxCandidates(t *testing.T) {
 		t.Fatalf("unmarshal response: %v", err)
 	}
 	fields, _ := resp["fields"].([]interface{})
-	if len(fields) != 0 {
-		t.Fatalf("expected empty detected_fields payload for strict empty query, got %v", resp)
+	if len(fields) == 0 {
+		t.Fatalf("expected non-empty detected_fields payload after relaxed native fallback, got %v", resp)
 	}
 }
 

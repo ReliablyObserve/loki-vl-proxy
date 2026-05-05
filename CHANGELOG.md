@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(drilldown): strip generic parser stages (`| json`, `| logfmt`, `| unpack`, `| drop __error__`) from the primary field-detection scan query — keeping them caused VL to parse all embedded fields from 500 diverse log lines, producing 35 000+ garbage field entries (log tokens treated as field names) in Grafana Drilldown
+- fix(drilldown): `handleDetectedFields` now falls back to a native-only VL `field_names` index lookup on the bare stream selector when the strict query returns zero fields — keeps the Drilldown fields panel populated when a specific field-value filter narrows the log sample below the scan threshold, without performing a broad log-line scan that would return unrelated fields
+- fix(cold): cold-only (`RouteColdOnly`) queries with `direction=backward` now reverse the NDJSON body before processing — the Lakehouse always returns rows ascending and does not support a sort clause, so the proxy reverses the response to match Loki's default newest-first ordering
+- fix(metrics): `without()` aggregation on sliding-window range metrics now correctly routes through the manual aggregation path and expands `_stream` to all stream label keys — previously the `without()` exception bypassed the manual path, causing fallback to native VL stats that does not support sliding windows
+
 ## [1.29.2] - 2026-05-05
 
 ### Fixed

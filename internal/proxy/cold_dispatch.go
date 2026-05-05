@@ -113,6 +113,25 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 		return
 	}
 
+	// The Lakehouse always returns rows in ascending time order and does not support
+	// a LogsQL sort clause. For backward direction (the Loki default), reverse the
+	// body so processLogQueryResponse receives newest-first order — matching what the
+	// hot path achieves via "| sort by (_time desc)".
+	if r.FormValue("direction") != "forward" {
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			p.writeError(w, http.StatusBadGateway, "failed to read cold response")
+			return
+		}
+		syntheticResp := &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     resp.Header.Clone(),
+			Body:       io.NopCloser(bytes.NewReader(reverseNDJSONBody(body))),
+		}
+		p.processLogQueryResponse(w, r, syntheticResp)
+		return
+	}
+
 	p.processLogQueryResponse(w, r, resp)
 }
 
@@ -293,6 +312,23 @@ func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, 
 			return data
 		}(),
 	})
+}
+
+// reverseNDJSONBody reverses the line order of a newline-delimited JSON body.
+// The Lakehouse always returns rows in ascending time order; reversing gives
+// backward (newest-first) ordering without a sort clause the Lakehouse cannot parse.
+func reverseNDJSONBody(body []byte) []byte {
+	var lines [][]byte
+	for _, line := range bytes.Split(body, []byte("\n")) {
+		line = bytes.TrimRight(line, "\r")
+		if len(line) > 0 {
+			lines = append(lines, line)
+		}
+	}
+	for i, j := 0, len(lines)-1; i < j; i, j = i+1, j-1 {
+		lines[i], lines[j] = lines[j], lines[i]
+	}
+	return bytes.Join(lines, []byte("\n"))
 }
 
 // trimNDJSONBodyToLimit trims a newline-delimited JSON body to at most limit lines.

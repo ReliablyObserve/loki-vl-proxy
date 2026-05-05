@@ -447,7 +447,8 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 
 	r = withOrgID(r)
 	lineLimit := parseDetectedLineLimit(r)
-	fields, _, err := p.detectFields(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
+	query := r.FormValue("query")
+	fields, _, err := p.detectFields(r.Context(), query, r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
 		if p.serveStaleReadCacheOnError(w, "detected_fields", cacheKey, start, err) {
 			return
@@ -456,6 +457,19 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		p.writeError(w, status, err.Error())
 		p.metrics.RecordRequest("detected_fields", status, time.Since(start))
 		return
+	}
+	// When the strict query (full LogQL including parser stages and field filters)
+	// returns zero fields, fall back to a native-only index lookup on the bare stream
+	// selector. This keeps the Drilldown fields panel populated when a specific field
+	// value filter narrows the log sample below the scan threshold.
+	// We use native-only (no log-line scan) to avoid returning every field from a
+	// broad relaxed scan, which would produce an overwhelming list.
+	if len(fields) == 0 {
+		if relaxed := relaxedFieldDetectionQuery(query); relaxed != "" && relaxed != query {
+			if relaxedFields, _ := p.detectFieldsNativeOnly(r.Context(), relaxed, r.FormValue("start"), r.FormValue("end")); len(relaxedFields) > 0 {
+				fields = relaxedFields
+			}
+		}
 	}
 	payload := map[string]interface{}{
 		"status": "success",

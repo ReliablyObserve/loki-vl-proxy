@@ -1081,6 +1081,15 @@ func defaultQuery(query string) string {
 }
 
 func defaultFieldDetectionQuery(query string) string {
+	// Strip generic parser stages (| json, | logfmt, | unpack) so VL does not parse
+	// and expand every embedded field from 500 diverse log lines. Without stripping,
+	// a query like `{env="production"} | json | logfmt` causes VL to produce tens of
+	// thousands of garbage field names (log tokens treated as keys). Keep specific
+	// field-comparison filters (| key="value") so the scan window is still narrowed
+	// to the relevant log subset. When the strict scan returns zero results the
+	// handleDetectedFields fallback retries with the relaxed bare-selector query via
+	// native VL field_names (detectFieldsNativeOnly), which avoids the empty-panel
+	// regression that motivated the original full-query approach.
 	return defaultQuery(stripFieldDetectionStages(query))
 }
 
@@ -1275,8 +1284,8 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	}
 
 	candidates := fieldDetectionQueryCandidates(query)
-	hadScanFailure := false
 	var lastErr error
+	var hadScanFailure bool
 	var (
 		scanFieldList      []map[string]interface{}
 		scanFieldValues    map[string][]string
@@ -1287,7 +1296,6 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		logsqlQuery, err := p.translateQuery(candidate)
 		if err != nil {
 			lastErr = err
-			hadScanFailure = true
 			continue
 		}
 
@@ -1304,7 +1312,6 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 		if err != nil {
 			lastErr = err
-			hadScanFailure = true
 			continue
 		}
 
@@ -1345,16 +1352,22 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		nativeFields = nil
 	}
 
-	if len(scanFieldList) > 0 {
-		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, filterNativeDetectedFields(nativeFields, scanStreamLabelSet, p.labelTranslator))
-		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
-		return fieldList, fieldValues, nil
-	}
-	if len(candidates) > 1 && !hadScanFailure {
+	// When the primary (strict) candidate returned 2xx with zero log lines — not a
+	// VL error, just no matching data — and a relaxed candidate exists, return empty
+	// immediately. Callers that own a relaxation loop (resolveDetectedFieldValues)
+	// will retry with the relaxed query. handleDetectedFields has its own fallback
+	// (see label_handlers.go) that also handles this case.
+	if len(scanFieldList) == 0 && len(candidates) > 1 && !hadScanFailure {
 		emptyFields := []map[string]interface{}{}
 		emptyValues := map[string][]string{}
 		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, emptyFields, emptyValues)
 		return emptyFields, emptyValues, nil
+	}
+
+	if len(scanFieldList) > 0 {
+		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, filterNativeDetectedFields(nativeFields, scanStreamLabelSet, p.labelTranslator))
+		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
+		return fieldList, fieldValues, nil
 	}
 
 	if len(nativeFields) > 0 {
@@ -1369,6 +1382,24 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		return nativeFieldList, nativeFieldValues, nil
 	}
 	return nil, nil, lastErr
+}
+
+// detectFieldsNativeOnly returns the field list that VL's native field_names index
+// knows about for query, without doing a log-line scan. Used as a lightweight fallback
+// when the strict query returns zero scan results but VL still has index entries for
+// the stream. Avoids the "too many fields" problem that would arise from scanning the
+// entire bare-selector stream.
+func (p *Proxy) detectFieldsNativeOnly(ctx context.Context, query, start, end string) ([]map[string]interface{}, map[string][]string) {
+	nativeFields, err := p.detectNativeFields(ctx, query, start, end)
+	if err != nil || len(nativeFields) == 0 {
+		return nil, nil
+	}
+	if nativeFieldFilterNeedsStreamLabels(nativeFields, p.labelTranslator) {
+		if streamLabels, serr := p.fetchNativeStreamLabelSet(ctx, query, start, end); serr == nil {
+			nativeFields = filterNativeDetectedFields(nativeFields, streamLabels, p.labelTranslator)
+		}
+	}
+	return mergeNativeDetectedFields(nil, nil, nativeFields)
 }
 
 // isOTelDataFJ is the fastjson-aware equivalent of isOTelData.
