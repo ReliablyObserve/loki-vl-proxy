@@ -355,19 +355,43 @@ func TestNormalizeBareSelectorQuery(t *testing.T) {
 	}
 }
 
-func TestDefaultFieldDetectionQuery_NormalizesAfterStrippingStages(t *testing.T) {
+func TestDefaultFieldDetectionQuery_RetainsFullQuery(t *testing.T) {
+	// Primary candidate keeps parsers and field filters so VL executes the same
+	// query Loki would, avoiding orphaned label filters that produce wrong results.
 	got := defaultFieldDetectionQuery(`service_name="otel-auth-service" | json | logfmt | drop __error__, __error_details__`)
-	want := `{service_name="otel-auth-service"}`
+	want := `service_name="otel-auth-service" | json | logfmt | drop __error__, __error_details__`
 	if got != want {
 		t.Fatalf("defaultFieldDetectionQuery() = %q, want %q", got, want)
 	}
 }
 
-func TestFieldDetectionQueryCandidates_RelaxFieldComparisons(t *testing.T) {
+func TestFieldDetectionQueryCandidates_PrimaryKeepsParsersAndFilters(t *testing.T) {
+	// Primary candidate is the full original query so VL can correctly parse logfmt
+	// fields and apply field filters — matching Loki's detected_fields behavior.
+	// Relaxed candidate strips both parsers and field comparisons as a fallback.
 	got := fieldDetectionQueryCandidates(`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms | unwrap duration(duration)`)
 	want := []string{
-		`{service_name="grafana"} | duration < 1s | duration > 100ms`,
+		`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms | unwrap duration(duration)`,
 		`{service_name="grafana"}`,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("fieldDetectionQueryCandidates() len = %d, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("fieldDetectionQueryCandidates()[%d] = %q, want %q (all=%v)", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestFieldDetectionQueryCandidates_LogfmtFieldFilter(t *testing.T) {
+	// Reproduces the Drilldown parity bug: when a logfmt field filter is applied,
+	// the primary candidate must keep the logfmt parser so VL resolves the filter
+	// against parsed logfmt fields (matching Loki's behavior).
+	got := fieldDetectionQueryCandidates(`{cluster="us-east-1"} | logfmt | size_bytes="0"`)
+	want := []string{
+		`{cluster="us-east-1"} | logfmt | size_bytes="0"`,
+		`{cluster="us-east-1"}`,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("fieldDetectionQueryCandidates() len = %d, want %d (%v)", len(got), len(want), got)

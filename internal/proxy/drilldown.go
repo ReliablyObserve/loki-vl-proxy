@@ -1081,7 +1081,11 @@ func defaultQuery(query string) string {
 }
 
 func defaultFieldDetectionQuery(query string) string {
-	return defaultQuery(stripFieldDetectionStages(query))
+	// Use the full query including parser stages so VL correctly executes logfmt/JSON
+	// parsing and field filters. Stripping parsers causes orphaned label filters that VL
+	// resolves against parsed fields while Loki treats them as stream label matchers —
+	// producing results when Loki would find nothing (or vice versa).
+	return defaultQuery(query)
 }
 
 func relaxedFieldDetectionQuery(query string) string {
