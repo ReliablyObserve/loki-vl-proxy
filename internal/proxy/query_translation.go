@@ -1286,13 +1286,14 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
 	// Fast path: for count-like functions with no post-parser pipeline stages,
-	// no unwrap, and a tumbling window (range == step), strip the parser and
-	// route to native VL stats_query_range. VL native stats is semantically
-	// equivalent to LogQL range metrics only when range == step (no overlap).
-	// For sliding windows (range > step) the slow manual path is required.
+	// no unwrap, a tumbling window (range == step), and no extracting parser stages,
+	// route to native VL stats_query_range. Parser-stage queries (| json, | logfmt)
+	// must use the slow path: VL native stats may not replicate Loki's __error__
+	// exclusion semantics for lines that fail parsing in metric queries.
 	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
-	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) {
+	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) &&
+		!hasParserStage(spec.baseQuery, "json") && !hasParserStage(spec.baseQuery, "logfmt") {
 		switch spec.funcName {
 		case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
 			if p.proxyBareParserMetricViaStats(w, r, start, originalQuery, spec) {

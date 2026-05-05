@@ -266,7 +266,7 @@ func TestProxyLogQueryBoth_ColdFails_PropagatesError(t *testing.T) {
 	}
 }
 
-func TestProxyLogQueryBoth_HotFails_ServesCold(t *testing.T) {
+func TestProxyLogQueryBoth_HotFails_PropagatesError(t *testing.T) {
 	hotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "hot is down", http.StatusServiceUnavailable)
 	}))
@@ -299,11 +299,13 @@ func TestProxyLogQueryBoth_HotFails_ServesCold(t *testing.T) {
 
 	p.proxyLogQueryBoth(w, r, "*")
 
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want 200", w.Code)
+	// Hot failure in RouteBoth must propagate as an error — returning cold-only would
+	// silently truncate the [boundary, end] range without the client knowing.
+	if w.Code == http.StatusOK {
+		t.Errorf("hot failure should not produce a 200 OK silent partial response")
 	}
-	if !strings.Contains(w.Body.String(), "cold-only") {
-		t.Error("should contain cold results when hot fails")
+	if w.Code != http.StatusServiceUnavailable && w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502 or 503 (hot error propagated)", w.Code)
 	}
 }
 

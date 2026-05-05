@@ -1899,8 +1899,12 @@ func TestNormalizeManualMetricFunction(t *testing.T) {
 // Coverage gap: proxyBareParserMetricViaStats (the rate|json fast path)
 // =============================================================================
 
-func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
+func TestProxyBareParserMetricViaStats_ParserStageUsesSlowPath(t *testing.T) {
+	// rate({...} | json [5m]) with step==range must NOT go through native VL stats:
+	// VL native stats may not replicate Loki's __error__ exclusion for lines that
+	// fail JSON parsing. The slow manual log-fetch path is required.
 	var statsCalled bool
+	var queryCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/stats_query_range" {
 			statsCalled = true
@@ -1908,12 +1912,11 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1700000060,"1.5"]]}]}}`))
 			return
 		}
-		// Parser probe
 		if r.URL.Path == "/select/logsql/query" {
+			queryCalled = true
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			return
 		}
-		// Version check
 		if r.URL.Path == "/metrics" {
 			w.Write([]byte(`metrics_version{} 1`))
 			return
@@ -1925,28 +1928,20 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	base := time.Unix(1700000000, 0)
-	// step=300 == range=[5m] → rangeEqualsStep=true → fast path
 	params := url.Values{}
 	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
-	params.Set("step", "300")
+	params.Set("step", "300") // step=300s == range=[5m] → rangeEqualsStep=true
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	if statsCalled {
+		t.Error("parser-stage query must not use native VL stats fast path (VL may not match Loki __error__ semantics)")
 	}
-	if !statsCalled {
-		t.Fatal("expected proxyBareParserMetricViaStats to call stats_query_range (fast path)")
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-	if resp["status"] != "success" {
-		t.Errorf("expected status=success, got %v", resp["status"])
+	if !queryCalled {
+		t.Error("parser-stage query should use the manual log-fetch slow path (logsql/query)")
 	}
 }
 
