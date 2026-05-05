@@ -58,14 +58,15 @@ func TestCompatHelpers_ParseQuantileAndUnwrapErrorName(t *testing.T) {
 		t.Fatal("expected rate_counter to always use manual fallback")
 	}
 
-	// rate / bytes_rate: sliding window (range != step) always requires manual path,
-	// regardless of whether parser stages are present. VL native stats uses tumbling
-	// per-step buckets and gives wrong results when range > step.
+	// rate / bytes_rate: sliding window (range != step) always requires manual path.
+	// Extracting parser stages without explicit __error__ handling also require manual
+	// path even when range==step: VL native stats may not replicate Loki's __error__
+	// exclusion for parse-failure lines. Queries with | drop __error__ are exempt.
 	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", false, "") {
 		t.Fatal("expected parser-stage rate to use manual fallback when range != step")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", true, "") {
-		t.Fatal("expected parser-stage rate to use VL native stats when range == step")
+	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "rate", true, "") {
+		t.Fatal("expected parser-stage rate to use manual path even when range == step (no __error__ handling)")
 	}
 	if !shouldUseManualRangeMetricCompat(`{app="api"}`, "rate", false, "") {
 		t.Fatal("expected non-parser rate to use manual fallback when range != step (sliding window)")
@@ -99,14 +100,19 @@ func TestCompatHelpers_ParseQuantileAndUnwrapErrorName(t *testing.T) {
 	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", false, "") {
 		t.Fatal("expected parser-stage count_over_time to use manual fallback when range != step")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", true, "") {
-		t.Fatal("expected parser-stage count_over_time to use VL native stats when range == step")
+	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", true, "") {
+		t.Fatal("expected parser-stage count_over_time to use manual path even when range == step (no __error__ handling)")
 	}
 	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "bytes_over_time", false, "") {
 		t.Fatal("expected parser-stage bytes_over_time to use manual fallback when range != step")
 	}
-	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "bytes_over_time", true, "") {
-		t.Fatal("expected parser-stage bytes_over_time to use VL native stats when range == step")
+	if !shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "bytes_over_time", true, "") {
+		t.Fatal("expected parser-stage bytes_over_time to use manual path even when range == step (no __error__ handling)")
+	}
+	// __error__ exception: when the query explicitly handles parse errors, VL native
+	// stats is semantically correct even with extracting parser stages.
+	if shouldUseManualRangeMetricCompat(`{app="api"} | unpack_json`, "count_over_time", true, `count_over_time({app="api"} | json | drop __error__ [5m])`) {
+		t.Fatal("expected parser-stage count_over_time with drop __error__ to use VL native stats when range == step")
 	}
 }
 

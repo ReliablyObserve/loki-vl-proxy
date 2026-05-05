@@ -177,18 +177,19 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		return
 	}
 
-	// Hot failed — serve cold only (cold fully covers its own time split).
-	if hotErr != nil || (hotResp != nil && hotResp.StatusCode >= 400) {
-		if hotResp != nil {
-			hotResp.Body.Close()
-		}
-		defer coldResp.Body.Close()
-		if coldResp.StatusCode >= 400 {
-			body, _ := readBodyLimited(coldResp.Body, maxUpstreamErrorBodyBytes)
-			p.writeError(w, coldResp.StatusCode, string(body))
-			return
-		}
-		p.processLogQueryResponse(w, r, coldResp)
+	// Hot failed — propagate error rather than serving a silent cold-only partial response.
+	// Cold covers [start, boundary] only; returning it alone silently truncates
+	// the [boundary, end] range without the client knowing live data is missing.
+	if hotErr != nil {
+		coldResp.Body.Close()
+		p.writeError(w, http.StatusBadGateway, "hot backend error: "+hotErr.Error())
+		return
+	}
+	if hotResp.StatusCode >= 400 {
+		body, _ := readBodyLimited(hotResp.Body, maxUpstreamErrorBodyBytes)
+		hotResp.Body.Close()
+		coldResp.Body.Close()
+		p.writeError(w, hotResp.StatusCode, string(body))
 		return
 	}
 
@@ -210,6 +211,9 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		p.writeError(w, http.StatusBadGateway, "failed to merge hot+cold results")
 		return
 	}
+	// Apply the original per-request limit to the merged body; without this the
+	// client can receive up to 2× the requested limit (one batch per backend).
+	mergedBody = trimNDJSONBodyToLimit(mergedBody, r.FormValue("limit"))
 
 	syntheticResp := &http.Response{
 		StatusCode: http.StatusOK,
@@ -289,4 +293,30 @@ func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, 
 			return data
 		}(),
 	})
+}
+
+// trimNDJSONBodyToLimit trims a newline-delimited JSON body to at most limit lines.
+// Non-positive or unparseable limitParam is treated as 1000 (the Loki default).
+func trimNDJSONBodyToLimit(body []byte, limitParam string) []byte {
+	limit, err := strconv.Atoi(limitParam)
+	if err != nil || limit <= 0 {
+		limit = 1000
+	}
+	var out []byte
+	count := 0
+	for _, line := range bytes.Split(body, []byte("\n")) {
+		line = bytes.TrimRight(line, "\r")
+		if len(line) == 0 {
+			continue
+		}
+		if count >= limit {
+			break
+		}
+		if count > 0 {
+			out = append(out, '\n')
+		}
+		out = append(out, line...)
+		count++
+	}
+	return out
 }

@@ -1900,6 +1900,10 @@ func TestNormalizeManualMetricFunction(t *testing.T) {
 // =============================================================================
 
 func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
+	// rate({...} | json [5m]) with step==range must use native VL stats: VL keeps the
+	// parser stage in the translated query so parse-failure filtering matches Loki
+	// semantics. The slow manual path is incorrect here — it groups by ALL parsed fields
+	// which pollutes metric labels for bare metrics without an explicit by() clause.
 	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/stats_query_range" {

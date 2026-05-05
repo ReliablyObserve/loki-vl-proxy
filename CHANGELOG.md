@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(cold): `RouteBoth` hot-backend failure now propagates a `502` error instead of silently returning cold-only partial data — cold covers `[start, boundary]` only, so serving it alone truncates the live `[boundary, end]` range without the client knowing
+- fix(cold): apply the original per-request `limit` to the merged hot+cold NDJSON body — without this up to 2× the requested limit could be returned (one batch per backend)
+- fix(metric): disable native VL stats fast path for `rate`/`count_over_time`/`bytes_over_time`/`bytes_rate` when extracting parser stages (`| unpack_json`, `| extract`, etc.) are present without explicit `__error__` handling — VL native stats may not replicate Loki's `__error__` exclusion semantics for parse-failure lines
+
 ## [1.29.1] - 2026-05-05
 
 ### Performance
