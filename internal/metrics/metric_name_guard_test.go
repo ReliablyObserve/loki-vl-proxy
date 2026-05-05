@@ -16,6 +16,7 @@ var legacyUnprefixedMetricAllowlist = map[string]struct{}{
 	"go_memstats_heap_idle_bytes":          {},
 	"go_memstats_heap_inuse_bytes":         {},
 	"go_memstats_sys_bytes":                {},
+	"process_cpu_seconds_total":            {},
 	"process_cpu_usage_ratio":              {},
 	"process_disk_read_bytes_total":        {},
 	"process_disk_written_bytes_total":     {},

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -226,7 +227,15 @@ func NewSystemMetrics() *SystemMetrics {
 // WritePrometheus writes system metrics in Prometheus text exposition format.
 func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 	if systemGOOS != "linux" {
-		// Non-Linux: only report Go runtime metrics
+		// Non-Linux: report process CPU counter and Go runtime memory metrics.
+		cpuSecs := readProcessCPUSeconds()
+		sb.WriteString("# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.\n")
+		sb.WriteString("# TYPE process_cpu_seconds_total counter\n")
+		sb.WriteString("# HELP loki_vl_proxy_process_cpu_seconds_total Total user and system CPU time spent in seconds.\n")
+		sb.WriteString("# TYPE loki_vl_proxy_process_cpu_seconds_total counter\n")
+		fmt.Fprintf(sb, "process_cpu_seconds_total %g\n", cpuSecs)
+		fmt.Fprintf(sb, "loki_vl_proxy_process_cpu_seconds_total %g\n", cpuSecs)
+
 		sb.WriteString("# HELP process_resident_memory_bytes Resident memory size.\n")
 		sb.WriteString("# TYPE process_resident_memory_bytes gauge\n")
 		sb.WriteString("# HELP loki_vl_proxy_process_resident_memory_bytes Resident memory size.\n")
@@ -277,6 +286,14 @@ func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 	fmt.Fprintf(sb, "loki_vl_proxy_process_cpu_usage_ratio{mode=\"user\"} %g\n", userPct)
 	fmt.Fprintf(sb, "loki_vl_proxy_process_cpu_usage_ratio{mode=\"system\"} %g\n", sysPct)
 	fmt.Fprintf(sb, "loki_vl_proxy_process_cpu_usage_ratio{mode=\"iowait\"} %g\n", iowaitPct)
+
+	cpuSecs := readProcessCPUSeconds()
+	sb.WriteString("# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.\n")
+	sb.WriteString("# TYPE process_cpu_seconds_total counter\n")
+	sb.WriteString("# HELP loki_vl_proxy_process_cpu_seconds_total Total user and system CPU time spent in seconds.\n")
+	sb.WriteString("# TYPE loki_vl_proxy_process_cpu_seconds_total counter\n")
+	fmt.Fprintf(sb, "process_cpu_seconds_total %g\n", cpuSecs)
+	fmt.Fprintf(sb, "loki_vl_proxy_process_cpu_seconds_total %g\n", cpuSecs)
 
 	// Memory from /proc/meminfo
 	memTotal, memAvail, memFree := readMemInfo()
@@ -659,4 +676,13 @@ func parseProcessCPUStatData(data string) (processCPUStat, error) {
 func parseFloat(s string) float64 {
 	f, _ := strconv.ParseFloat(s, 64)
 	return f
+}
+
+func readProcessCPUSeconds() float64 {
+	var ru syscall.Rusage
+	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err != nil {
+		return 0
+	}
+	return float64(ru.Utime.Sec) + float64(ru.Utime.Usec)/1e6 +
+		float64(ru.Stime.Sec) + float64(ru.Stime.Usec)/1e6
 }
