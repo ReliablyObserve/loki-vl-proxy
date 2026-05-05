@@ -7,17 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.29.0] - 2026-05-05
-
-### Added
-
-- feat(metrics): expose `process_cpu_seconds_total` counter via `/metrics` — cumulative user+system CPU seconds using `syscall.Getrusage`; also emitted as `loki_vl_proxy_process_cpu_seconds_total` for namespaced scrape configs
-
 ### Performance
 
 - perf: switch L1 cache read path from write lock to `sync.RWMutex.RLock()` with deferred LRU promotion via buffered channel — eliminates per-read mutex contention under concurrent queries (~+80–100 req/s, −5ms P50)
 - perf: short-circuit `RateLimiter.Middleware` when both `maxConcurrent` and `ratePerSecond` are disabled — returns the handler directly with zero allocations (~+10 req/s)
 - perf: skip `sort.SliceStable` tie-breaking pass on log streams that contain no duplicate nanosecond timestamps — avoids O(n log n) work per stream in the common case (~+10 req/s)
+- perf: skip inner `p.cache` lookup when `compatCacheMiddleware` is active — avoids a redundant LRU read and response-capture allocation on the compat cache hit path (~+20 req/s, −2ms P50)
+- perf: sample per-request access logs for successful 2xx responses via `-log-request-sample-rate N` — skips log-attribute assembly for N−1 of every N requests; errors always logged (~+25–30 req/s at high throughput)
+
+## [1.29.0] - 2026-05-05
+
+### Added
+
+- feat(metrics): expose `process_cpu_seconds_total` counter via `/metrics` — cumulative user+system CPU seconds using `syscall.Getrusage`; also emitted as `loki_vl_proxy_process_cpu_seconds_total` for namespaced scrape configs
 
 ## [1.28.7] - 2026-05-04
 
