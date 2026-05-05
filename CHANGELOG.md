@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.4] - 2026-05-05
+
 ### Fixed
 
 - fix(cold): `RouteColdOnly` backward queries with an explicit `limit` now return the N *newest* rows instead of the N *oldest* — the Lakehouse scans ascending and applies its limit before returning, so the proxy fetches up to `maxLimitValue` rows, reverses, then trims to the original limit
