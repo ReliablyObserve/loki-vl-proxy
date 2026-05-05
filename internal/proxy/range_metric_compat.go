@@ -39,9 +39,7 @@ type rangeMetricSample struct {
 
 var (
 	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
-	outerAggregationRE  = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
-	// outerWithoutRE detects "sum|avg|... without (" at the start of a LogQL expression.
-	outerWithoutRE = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar)\s+without\s*\(`)
+	outerAggregationRE = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
 )
 
 func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
@@ -348,18 +346,8 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	// When the data distribution is non-uniform the two diverge. Route to the manual
 	// log-fetch path for correct sliding-window semantics regardless of parser stages.
 	// When range == step windows are non-overlapping and native VL stats is equivalent.
-	//
-	// Exception: outer without() aggregation. The manual path uses collectRangeMetricSamples
-	// with groupBy=["_stream","level"] (from addStatsByStreamClause). buildManualMetricLabels
-	// looks up "_stream" in the already-expanded streamLabels map — it is absent there —
-	// so only "level" survives. After applyWithoutGrouping removes "level" all series
-	// collapse to {} → wrong series count. Native VL stats correctly handles _stream
-	// expansion before applyWithoutGrouping, preserving detected_level differentiation.
 	switch manualFunc {
 	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
-		if !rangeEqualsStep && outerWithoutRE.MatchString(strings.TrimSpace(originalLogql)) {
-			return false
-		}
 		// Extracting parser stages (| unpack_json, | extract, etc.) require the manual
 		// log-fetch path even when range==step: VL native stats may not replicate Loki's
 		// __error__ exclusion semantics for lines that fail parsing in metric queries.
@@ -665,8 +653,29 @@ func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, b
 		return labels
 	}
 
-	labels := make(map[string]string, len(groupBy))
+	// "_stream" is a sentinel added by addStatsByStreamClause meaning "group by the
+	// full stream identity". The streamLabels map already holds the expanded key/value
+	// pairs from _stream, so looking up "_stream" directly always misses. Expand it
+	// into all stream labels so that applyWithoutGrouping can remove specific keys
+	// rather than collapsing every series into one {} bucket.
+	streamExpand := false
 	for _, key := range groupBy {
+		if key == "_stream" {
+			streamExpand = true
+			break
+		}
+	}
+
+	labels := make(map[string]string, len(streamLabels))
+	if streamExpand {
+		for k, v := range streamLabels {
+			labels[k] = v
+		}
+	}
+	for _, key := range groupBy {
+		if key == "_stream" {
+			continue
+		}
 		if value, ok := streamLabels[key]; ok {
 			labels[key] = value
 		}

@@ -545,6 +545,100 @@ func TestStripParserStages(t *testing.T) {
 	}
 }
 
+func TestBuildManualMetricLabels_StreamExpansion(t *testing.T) {
+	// streamLabels is already expanded from the _stream field (e.g. {app="api",env="prod"})
+	// plus level enrichment. "_stream" itself is not a key in this map.
+	streamLabels := map[string]string{
+		"app":            "api",
+		"env":            "prod",
+		"level":          "info",
+		"detected_level": "info",
+	}
+
+	// groupBy=["_stream","level"] is produced by addStatsByStreamClause.
+	// "_stream" must expand to all stream labels so applyWithoutGrouping can
+	// remove individual keys rather than collapsing all series to {}.
+	got := buildManualMetricLabels(streamLabels, []string{"_stream", "level"}, false)
+
+	for _, want := range []string{"app", "env", "level", "detected_level"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("label %q missing from result %v", want, got)
+		}
+	}
+	if _, bad := got["_stream"]; bad {
+		t.Errorf("_stream sentinel must not appear in result labels, got %v", got)
+	}
+}
+
+func TestBuildManualMetricLabels_NoStreamExpansion(t *testing.T) {
+	streamLabels := map[string]string{"app": "api", "level": "info"}
+	// Explicit by(app) — _stream not in groupBy, only "app" should survive.
+	got := buildManualMetricLabels(streamLabels, []string{"app"}, false)
+	if len(got) != 1 || got["app"] != "api" {
+		t.Errorf("expected {app:api}, got %v", got)
+	}
+}
+
+func TestShouldUseManualRangeMetricCompat_WithoutSlidingWindowNowUsesManualPath(t *testing.T) {
+	// Sliding window (range > step) + without() must use the manual path now that
+	// buildManualMetricLabels correctly expands _stream into all stream labels.
+	// Previously this fell back to native VL tumbling stats, producing wrong results.
+	want := true
+	got := shouldUseManualRangeMetricCompat("app:=api", "rate", false /* sliding */, `sum without(level) (rate({app="api"}[10m]))`)
+	if got != want {
+		t.Errorf("sliding-window without() should use manual path, got %v", got)
+	}
+}
+
+func TestQueryRange_SlidingWindowWithout_UsesManualPath(t *testing.T) {
+	// Verify that sum without(level)(rate[10m]) with step=1m (sliding window) goes
+	// through the manual log-fetch path, not native VL tumbling stats.
+	manualPathHit := false
+
+	base := time.Unix(1700000000, 0).UTC()
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			// Manual path: log-fetch endpoint
+			manualPathHit = true
+			w.Header().Set("Content-Type", "application/stream+json")
+			// Two log entries with different app labels — rate over 10m window
+			fmt.Fprintf(w, "{\"_msg\":\"hit\",\"_time\":\"%s\",\"_stream\":\"{app=\\\"api\\\"}\"}\n",
+				base.Format(time.RFC3339Nano))
+			fmt.Fprintf(w, "{\"_msg\":\"hit\",\"_time\":\"%s\",\"_stream\":\"{app=\\\"web\\\"}\"}\n",
+				base.Add(time.Second).Format(time.RFC3339Nano))
+			return
+		}
+		if r.URL.Path == "/select/logsql/stats_query_range" {
+			t.Error("should NOT hit stats_query_range (native tumbling path) for sliding window without()")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[]}}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{BackendURL: vlBackend.URL, LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	startNs := strconv.FormatInt(base.UnixNano(), 10)
+	endNs := strconv.FormatInt(base.Add(2*time.Minute).UnixNano(), 10)
+	// step=60s, range=10m → sliding window (range > step)
+	r := httptest.NewRequest("GET", fmt.Sprintf(
+		`/loki/api/v1/query_range?query=sum+without(level)(rate({app%%3D"api"}[10m]))&start=%s&end=%s&step=60`,
+		startNs, endNs), nil)
+	w := httptest.NewRecorder()
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	mux.ServeHTTP(w, r)
+
+	if !manualPathHit {
+		t.Error("expected manual log-fetch path to be used for sliding window without()")
+	}
+}
+
 func FuzzParseOriginalRangeMetricSpec(f *testing.F) {
 	seeds := []string{
 		`rate({app="api"}[5m])`,
