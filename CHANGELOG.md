@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(cold): `RouteBoth` backward queries now correctly reverse the cold half before merging — previously cold rows from `[start, boundary]` were appended oldest-first after the newest-first hot half; cold also now sends `maxLimitValue` to the Lakehouse so the N newest cold rows are available after reversal and the final trim to the client limit returns the correct rows
+
 ## [1.29.4] - 2026-05-05
 
 ### Fixed

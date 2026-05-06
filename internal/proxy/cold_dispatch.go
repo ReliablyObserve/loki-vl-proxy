@@ -100,8 +100,11 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 	// The Lakehouse always scans ascending (oldest-first) and applies its limit before
 	// returning. For a backward query we need the N NEWEST rows in the range, but with
 	// the client limit set the Lakehouse returns the N OLDEST rows, and reversing them
-	// gives the wrong set. Fix: for backward queries fetch without a user limit (capped
-	// at maxLimitValue), reverse the full result, then trim to the original limit.
+	// gives the wrong set. Fix: for backward queries fetch maxLimitValue rows, reverse
+	// the full result, then trim to the original limit.
+	// Limitation: cold ranges with more than maxLimitValue matching rows still return
+	// the newest rows from only the oldest maxLimitValue — Lakehouse does not support
+	// pagination or server-side descending sort.
 	params := p.buildColdQueryParams(r, logsqlQuery)
 	originalLimit := r.FormValue("limit")
 	if r.FormValue("direction") != "forward" {
@@ -164,6 +167,16 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	}
 
 	coldParams := p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs)
+	// Backward direction: the Lakehouse returns cold rows oldest-first and applies its
+	// limit before streaming. Sending the client limit returns the N oldest rows from
+	// [start, boundary]; after reversing those are still the wrong rows. Fetch
+	// maxLimitValue instead so the reversed cold body contains the N newest rows from
+	// that half, matching what the hot backend already returns for [boundary, end].
+	// Limitation: cold ranges with more than maxLimitValue matching rows still return
+	// the newest rows from only the oldest maxLimitValue — a Lakehouse pagination gap.
+	if r.FormValue("direction") != "forward" {
+		coldParams.Set("limit", strconv.Itoa(maxLimitValue))
+	}
 	hotParams := p.buildHotQueryParamsForRange(r, logsqlQuery, hotStartNs, endNs)
 
 	var (
@@ -223,10 +236,11 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		return
 	}
 
-	// Both succeeded — merge with direction-aware ordering so the stream assembler
-	// receives entries in the order expected by vlReaderToLokiStreams:
-	//   backward (default): hot first (newest), then cold (oldest)
-	//   forward:            cold first (oldest), then hot (newest)
+	// Both succeeded — merge with direction-aware ordering.
+	// forward:  cold (ascending [start, boundary]) then hot (ascending [boundary, end])
+	// backward: hot already newest-first from [boundary, end]; cold is oldest-first from
+	//           [start, boundary] so reverse it first, then append so the client receives
+	//           a contiguous newest-first stream across the full range.
 	defer hotResp.Body.Close()
 	defer coldResp.Body.Close()
 
@@ -234,7 +248,12 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	if r.FormValue("direction") == "forward" {
 		merged = MergeNDJSON(coldResp.Body, hotResp.Body)
 	} else {
-		merged = MergeNDJSON(hotResp.Body, coldResp.Body)
+		coldBody, readErr := io.ReadAll(coldResp.Body)
+		if readErr != nil {
+			p.writeError(w, http.StatusBadGateway, "failed to read cold response")
+			return
+		}
+		merged = MergeNDJSON(hotResp.Body, bytes.NewReader(reverseNDJSONBody(coldBody)))
 	}
 	mergedBody, err := io.ReadAll(merged)
 	if err != nil {
