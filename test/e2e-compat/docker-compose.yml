@@ -5,9 +5,6 @@
 # - Grafana with all 3 datasources configured
 # - Playwright for UI testing
 #
-# All services share the internal "e2e-compat" bridge network.
-# Only Grafana is reachable from the host (port 3002).
-#
 # Usage:
 #   docker-compose up -d --build
 #   go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
@@ -15,16 +12,13 @@
 #   cd ../e2e-ui && npm install && npx playwright install chromium && npm test
 #   # Or open Grafana at http://localhost:3002 for manual comparison
 
-networks:
-  e2e-compat:
-    driver: bridge
-
 services:
   # Reference Loki instance (ground truth)
   loki:
     image: ${LOKI_IMAGE:-grafana/loki:3.7.1}
     container_name: e2e-loki
-    networks: [e2e-compat]
+    ports:
+      - "3101:3100"
     # Bench peak: 1,798 MB (heavy c=100). +30% headroom = 2,337 MB → 2.4g.
     # Loki RSS is stable across all workloads (1.4–1.8 GB range), so this
     # cap is not expected to trigger; it guards against runaway situations.
@@ -42,7 +36,8 @@ services:
   victorialogs:
     image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.50.0}
     container_name: e2e-victorialogs
-    networks: [e2e-compat]
+    ports:
+      - "9428:9428"
     # Hard memory cap: Docker OOM-kills and restarts the container rather than
     # letting unconstrained query memory exhaust the host. Without this, 50+
     # concurrent 48–72h queries each allocate ~100–200 MB of working buffers,
@@ -100,7 +95,6 @@ services:
   vmauth:
     image: ${VMAUTH_IMAGE:-victoriametrics/vmauth:v1.138.0}
     container_name: e2e-vmauth
-    networks: [e2e-compat]
     command:
       - "-auth.config=/etc/vmauth/auth.yml"
       - "-httpListenAddr=:8427"
@@ -120,7 +114,6 @@ services:
   victoriametrics:
     image: ${VICTORIAMETRICS_IMAGE:-victoriametrics/victoria-metrics:v1.119.0}
     container_name: e2e-victoriametrics
-    networks: [e2e-compat]
     command:
       - "-storageDataPath=/vm-data"
       - "-httpListenAddr=:8428"
@@ -137,8 +130,9 @@ services:
   vmalert:
     image: ${VMALERT_IMAGE:-victoriametrics/vmalert:v1.138.0}
     container_name: e2e-vmalert
-    networks: [e2e-compat]
     working_dir: /rules
+    ports:
+      - "8880:8880"
     command:
       - "-httpListenAddr=:8880"
       - "-datasource.url=http://victorialogs:9428"
@@ -167,7 +161,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy
-    networks: [e2e-compat]
+    ports:
+      - "3100:3100"
     tmpfs:
       - /cache
     environment:
@@ -216,7 +211,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-patterns-autodetect
-    networks: [e2e-compat]
+    ports:
+      - "3110:3100"
     tmpfs:
       - /cache
     command:
@@ -251,7 +247,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-vmauth
-    networks: [e2e-compat]
+    ports:
+      - "3109:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://vmauth:8427"
@@ -281,7 +278,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-underscore
-    networks: [e2e-compat]
+    ports:
+      - "3102:3100"
     environment:
       # Soft GC pressure limit: hybrid mode + no label-values index = many concurrent
       # VL NDJSON responses in memory. Without GOMEMLIMIT Go's GC only triggers at
@@ -324,7 +322,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-native-metadata
-    networks: [e2e-compat]
+    ports:
+      - "3106:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -354,7 +353,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-translated-metadata
-    networks: [e2e-compat]
+    ports:
+      - "3107:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -384,7 +384,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-no-metadata
-    networks: [e2e-compat]
+    ports:
+      - "3108:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -414,7 +415,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-tail
-    networks: [e2e-compat]
+    ports:
+      - "3103:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -443,7 +445,8 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-tail-native
-    networks: [e2e-compat]
+    ports:
+      - "3105:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -469,7 +472,8 @@ services:
   tail-ingress:
     image: nginx:1.27-alpine
     container_name: e2e-tail-ingress
-    networks: [e2e-compat]
+    ports:
+      - "3104:8080"
     volumes:
       - ./nginx-tail.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -487,7 +491,6 @@ services:
   log-generator:
     image: python:3.12-alpine
     container_name: e2e-log-generator
-    networks: [e2e-compat]
     profiles: ["ui"]
     command: python /scripts/log-generator.py
     volumes:
@@ -508,7 +511,6 @@ services:
   grafana:
     image: ${GRAFANA_IMAGE:-grafana/grafana:13.0.1}
     container_name: e2e-grafana
-    networks: [e2e-compat]
     ports:
       - "3002:3000"
     environment:
