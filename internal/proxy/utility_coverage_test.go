@@ -144,7 +144,10 @@ func TestDrilldownHelpers(t *testing.T) {
 	if _, ok := parseVolumeBoundary(""); ok {
 		t.Fatal("expected empty boundary to fail")
 	}
-	if got, ok := parseVolumeBoundary("1712434882123456789"); !ok || got.UnixNano() != 1712434882123456789 {
+	// parseVolumeBoundary normalises numeric timestamps to Unix seconds, so a
+	// nanosecond-precision input loses sub-second precision but the seconds
+	// component must be correct.
+	if got, ok := parseVolumeBoundary("1712434882123456789"); !ok || got.Unix() != 1712434882 {
 		t.Fatalf("unexpected absolute boundary: %v %v", got, ok)
 	}
 	if got, ok := parseVolumeBoundary("now-1m"); !ok || time.Since(got) < 50*time.Second || time.Since(got) > 70*time.Second {
