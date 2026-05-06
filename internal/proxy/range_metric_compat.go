@@ -582,6 +582,9 @@ func queryUsesParserStages(baseQuery string) bool {
 // only become metric dimensions when the caller explicitly names them in by(...).
 func addGroupByParsedLabels(metricLabels map[string]string, entry map[string]interface{}, groupBy []string) {
 	for _, key := range groupBy {
+		if isVLInternalField(key) || key == "_stream_id" {
+			continue
+		}
 		if _, exists := metricLabels[key]; exists {
 			continue
 		}

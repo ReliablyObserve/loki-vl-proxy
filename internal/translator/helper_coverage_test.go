@@ -34,6 +34,20 @@ func TestCoverage_SplitLogicalStageAndSanitizeHelpers(t *testing.T) {
 	if logsQLEqualityValueNeedsQuoting("api-1/ready") {
 		t.Fatal("expected simple path token not to require quoting")
 	}
+	// Standalone punctuation-only values are compound tokens in VL and must be quoted.
+	// e.g. path = "/" must become path:="/" not path:=/ which VL cannot parse.
+	if !logsQLEqualityValueNeedsQuoting("/") {
+		t.Fatal(`expected "/" to require quoting (VL compound-token error)`)
+	}
+	if !logsQLEqualityValueNeedsQuoting("-") {
+		t.Fatal(`expected "-" to require quoting`)
+	}
+	if !logsQLEqualityValueNeedsQuoting(".") {
+		t.Fatal(`expected "." to require quoting`)
+	}
+	if logsQLEqualityValueNeedsQuoting("/settings") {
+		t.Fatal("expected /settings path not to require quoting")
+	}
 }
 
 func TestCoverage_CanUseStreamSelectorAndTranslateLabelFormat(t *testing.T) {
