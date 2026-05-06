@@ -357,7 +357,7 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 	logsqlQuery, _ := p.translateQueryWithContext(ctx, query)
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	params.Set("query", logsqlQuery)
 	if s := start; s != "" {
 		params.Set("start", formatVLTimestamp(s))
 	}

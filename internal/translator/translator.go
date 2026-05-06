@@ -745,6 +745,13 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value), true
 			}
 			if value == "" {
+				// detected_level="" means "no level detected": match log entries where
+				// the level field is absent or has an empty value. VL's -field:* does
+				// exactly this (absent OR empty), while field:="" only matches explicit
+				// empty strings and misses absent fields entirely.
+				if label == "level" && !strings.HasPrefix(op.logsql, "-") {
+					return `-level:*`, true
+				}
 				if strings.HasPrefix(op.logsql, "-") {
 					return fmt.Sprintf(`%s:!""`, label), true
 				}
@@ -2096,6 +2103,12 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 			if origLabel == "service_name" {
 				return serviceNameMatcherFilter(op.logsql, value, op.neg, op.isRe)
 			}
+			// detected_level is a synthetic Loki label synthesized by the proxy.
+			// VL stores the field as "level"; translate unconditionally before
+			// applying any user-supplied labelFn.
+			if origLabel == "detected_level" {
+				label = "level"
+			}
 			if labelFn != nil {
 				label = sanitizeFieldIdentifier(labelFn(label))
 				if label == "" {
@@ -2118,6 +2131,12 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 
 			value = strings.Trim(value, "\"`")
 			if value == "" {
+				// detected_level="" in the stream selector means "no level detected":
+				// match entries where level is absent or empty. -level:* covers both
+				// cases; level:="" would only match explicit empty strings.
+				if label == "level" && !op.neg {
+					return `-level:*`
+				}
 				if op.neg {
 					return fmt.Sprintf(`%s:!""`, label)
 				}

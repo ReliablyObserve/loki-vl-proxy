@@ -499,6 +499,79 @@ func TestBracedLabelMatcherTranslatesToVLFieldFilter(t *testing.T) {
 			logql: `{level="warn"}`,
 			want:  `level:=warn`,
 		},
+		{
+			// detected_level="" in the stream selector means "no level detected".
+			// The translator maps detected_level→level, so empty value must produce
+			// -level:* (absent OR empty) rather than level:="" (explicit empty only).
+			name:  "detected_level empty braced",
+			logql: `{detected_level=""}`,
+			want:  `-level:*`,
+		},
+		{
+			name:  "detected_level empty negated braced",
+			logql: `{detected_level!=""}`,
+			want:  `level:!""`,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := TranslateLogQL(tc.logql)
+			if err != nil {
+				t.Fatalf("TranslateLogQL(%q) returned error: %v", tc.logql, err)
+			}
+			if got != tc.want {
+				t.Fatalf("TranslateLogQL(%q)\n  got:  %q\n  want: %q", tc.logql, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDetectedLevelEmptyFilter pins the translation for detected_level="" in
+// both stream-selector and pipeline-label-filter positions. VL's -level:*
+// matches absent-or-empty; level:="" would only match explicitly empty strings
+// and miss the common case where level is simply not present in the log entry.
+func TestDetectedLevelEmptyFilter(t *testing.T) {
+	cases := []struct {
+		name  string
+		logql string
+		want  string
+	}{
+		{
+			// Without a preceding parser stage, the translated filter is emitted
+			// as a top-level LogsQL condition (no | filter prefix required).
+			name:  "detected_level empty in pipeline filter (no preceding parser)",
+			logql: `{app="nginx"} | detected_level=""`,
+			want:  `app:=nginx -level:*`,
+		},
+		{
+			name:  "detected_level empty negated in pipeline filter (no preceding parser)",
+			logql: `{app="nginx"} | detected_level!=""`,
+			want:  `app:=nginx level:!""`,
+		},
+		{
+			// After a parser, the translated filter is wrapped in | filter.
+			// -level:* uses negated-any syntax which is NOT a standard field filter
+			// (no :=/:~/etc.), so it lands in the main query position for now.
+			name:  "detected_level empty after logfmt parser",
+			logql: `{app="nginx"} | logfmt | detected_level=""`,
+			want:  `app:=nginx | unpack_logfmt -level:*`,
+		},
+		{
+			name:  "detected_level empty in stream selector",
+			logql: `{detected_level=""}`,
+			want:  `-level:*`,
+		},
+		{
+			name:  "detected_level empty with other labels",
+			logql: `{app="nginx", detected_level=""}`,
+			want:  `app:=nginx -level:*`,
+		},
+		{
+			name:  "detected_level non-empty is unchanged",
+			logql: `{detected_level="warn"}`,
+			want:  `level:=warn`,
+		},
 	}
 	for _, tc := range cases {
 		tc := tc
