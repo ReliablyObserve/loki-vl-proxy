@@ -408,6 +408,151 @@ func TestFieldDetectionQueryCandidates_LogfmtFieldFilter(t *testing.T) {
 	}
 }
 
+func TestFieldDetectionQueryCandidates_JSONParserAlwaysStripped(t *testing.T) {
+	// | json is always stripped from the scan query even when downstream field comparisons
+	// are present. VL v1.50+ auto-indexes JSON from _msg, so VL can evaluate the filter
+	// without | json. Keeping | json causes VL to expand _msg JSON into top-level NDJSON
+	// fields in the response, which the scanner then picks up as thousands of garbage names.
+	cases := []struct {
+		query   string
+		primary string
+		relaxed string
+	}{
+		{
+			query:   `{cluster="us-east-1"} | json | model = "anomaly-v2"`,
+			primary: `{cluster="us-east-1"} | model = "anomaly-v2"`,
+			relaxed: `{cluster="us-east-1"}`,
+		},
+		{
+			query:   `{cluster="us-east-1"} | json | service.name = "ml-serving" | model = "anomaly-v2"`,
+			primary: `{cluster="us-east-1"} | service.name = "ml-serving" | model = "anomaly-v2"`,
+			relaxed: `{cluster="us-east-1"}`,
+		},
+		{
+			// | logfmt must be kept (VL doesn't auto-index logfmt), but | json is stripped.
+			query:   `{cluster="us-east-1"} | json | logfmt | size_bytes = "0"`,
+			primary: `{cluster="us-east-1"} | logfmt | size_bytes = "0"`,
+			relaxed: `{cluster="us-east-1"}`,
+		},
+	}
+	for _, tc := range cases {
+		got := fieldDetectionQueryCandidates(tc.query)
+		want := []string{tc.primary, tc.relaxed}
+		if len(got) != len(want) {
+			t.Errorf("fieldDetectionQueryCandidates(%q) len=%d want=%d (%v)", tc.query, len(got), len(want), got)
+			continue
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Errorf("fieldDetectionQueryCandidates(%q)[%d] = %q, want %q", tc.query, i, got[i], want[i])
+			}
+		}
+	}
+}
+
+// TestDetectedFields_NativeIndexFloodBlocked verifies two related aspects of the
+// "Fields 5,965" flood regression:
+//
+//  1. _msg JSON fields are NOT double-counted (once via the outer native obj.Visit and
+//     once via _msg JSON parsing). VL auto-indexes every JSON key as a native NDJSON
+//     field; the msgJSONKeys guard in detectFieldSummariesStream prevents the outer
+//     Visit from adding them a second time without parser tags.
+//
+//  2. The VL /select/logsql/field_names index — which may contain thousands of
+//     accumulated auto-indexed field names across the full time range — does NOT
+//     inflate the detected_fields response when the log-line scan has results.
+//     The proxy must use only scan results when the scan is non-empty, discarding
+//     native index fields that did not appear in the sampled log lines.
+func TestDetectedFields_NativeIndexFloodBlocked(t *testing.T) {
+	// Realistic VL NDJSON entries: _msg is JSON, same keys appear as native fields.
+	entry1 := `{"_time":"2026-05-06T10:00:00Z","_msg":"{\"path\":\"/settings\",\"method\":\"GET\",\"status\":200}","_stream":"{env=\"production\",container=\"api\"}","env":"production","container":"api","path":"/settings","method":"GET","status":"200"}`
+	entry2 := `{"_time":"2026-05-06T10:00:01Z","_msg":"{\"path\":\"/health\",\"method\":\"GET\",\"status\":200,\"duration\":12}","_stream":"{env=\"production\",container=\"api\"}","env":"production","container":"api","path":"/health","method":"GET","status":"200","duration":"12"}`
+
+	// The field_names index returns many extra fields that are NOT in the scan sample.
+	// These simulate VL's accumulated auto-indexed keys across 1 hour of logs from
+	// many different log-line shapes. They must NOT appear in the final response.
+	extraNativeFields := []string{
+		"user_agent", "x_request_id", "content_type", "response_time",
+		"accept", "accept_encoding", "host", "referer",
+		"forwarded_for", "request_id", "correlation_id", "session_id",
+	}
+	allNativeFields := append([]string{"env", "container", "path", "method", "status", "duration"}, extraNativeFields...)
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			var parts []string
+			for _, v := range allNativeFields {
+				parts = append(parts, `{"value":"`+v+`","hits":5}`)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[` + strings.Join(parts, ",") + `]}`))
+		case "/select/logsql/streams":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[{"value":"{env=\"production\",container=\"api\"}","hits":5}]}`))
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = w.Write([]byte(entry1 + "\n" + entry2 + "\n"))
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	q := url.Values{
+		"query": {`{env="production",container="api"} | json`},
+		"start": {"1"},
+		"end":   {"2"},
+	}
+	r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?"+q.Encode(), nil)
+	p.handleDetectedFields(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+
+	if limit, _ := resp["limit"].(float64); limit != 1000 {
+		t.Errorf("expected limit=1000 in response (Loki parity), got %v", resp["limit"])
+	}
+
+	fields, _ := resp["fields"].([]interface{})
+	if len(fields) == 0 {
+		t.Fatalf("expected fields from _msg JSON parsing, got none")
+	}
+
+	fieldNames := make(map[string]int)
+	for _, f := range fields {
+		fm, ok := f.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		name, _ := fm["label"].(string)
+		fieldNames[name]++
+	}
+
+	// _msg-parsed fields must appear exactly once (no double-count via native obj.Visit).
+	for _, key := range []string{"path", "method", "status", "duration"} {
+		if count := fieldNames[key]; count != 1 {
+			t.Errorf("field %q expected exactly once in detected_fields, got %d (double-count bug)", key, count)
+		}
+	}
+
+	// Extra native index fields NOT in _msg must NOT appear — scan result wins over
+	// the accumulated native field_names index (anti-flood guard).
+	for _, key := range extraNativeFields {
+		if fieldNames[key] > 0 {
+			t.Errorf("native-index-only field %q leaked into detected_fields (native flood bug)", key)
+		}
+	}
+}
+
 func TestDetectedFields_FieldFilterFallbackKeepsFieldsVisible(t *testing.T) {
 	var fieldQueries []string
 	var streamQueries []string

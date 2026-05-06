@@ -1282,11 +1282,17 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
 	// Tumbling-window fast path: for count-like functions with no post-parser pipeline
-	// stages, no unwrap, and range==step, route to native VL stats_query_range. VL keeps
-	// the parser stage in the translated query so parse-failure filtering matches Loki
-	// semantics. Loki groups these by stream labels only (not parsed fields), and native
-	// stats matches that. The manual path (fetchBareParserMetricSeries) groups by ALL
-	// parsed fields — correct for sliding windows but wrong for tumbling bare metrics.
+	// stages, no unwrap, and range==step, route to native VL stats_query_range.
+	//
+	// Why native stats is safe here despite range_metric_compat.go's __error__ rule:
+	// The general rule routes parser-stage queries to the manual path because VL native
+	// stats may not replicate Loki's __error__ exclusion when extracted label dimensions
+	// affect grouping. For bare parser metrics there are no post-parser pipeline stages,
+	// so no extracted label dimensions exist. rate/count_over_time/bytes_* count every
+	// log line matching the stream selector regardless of parse success in both Loki and
+	// VL — parse failures cannot reduce the count. The manual path groups by ALL parsed
+	// fields, producing wrong label sets for tumbling windows where Loki groups by stream
+	// labels only. Native stats reproduces Loki's stream-label-only grouping exactly.
 	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
 	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) {

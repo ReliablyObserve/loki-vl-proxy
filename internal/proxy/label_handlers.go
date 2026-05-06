@@ -475,7 +475,10 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		"status": "success",
 		"data":   fields,
 		"fields": fields,
-		"limit":  lineLimit,
+		// Loki always returns 1000 here regardless of the requested line_limit.
+		// Drilldown reads this value and displays it as "Fields N" in the UI.
+		// Echoing the requested line_limit causes "Fields 5,951" etc. to appear.
+		"limit": 1000,
 	}
 	p.setEndpointJSONCacheWithTTL("detected_fields", cacheKey, CacheTTLs["detected_fields"], payload)
 	p.writeJSON(w, payload)

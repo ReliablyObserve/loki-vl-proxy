@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(cold): `RouteBoth` backward queries now correctly reverse the cold half before merging — previously cold rows from `[start, boundary]` were appended oldest-first after the newest-first hot half; cold also now sends `maxLimitValue` to the Lakehouse so the N newest cold rows are available after reversal and the final trim to the client limit returns the correct rows
+- fix(drilldown): `detected_fields` no longer returns thousands of fields ("Fields 5,965") for queries with parser stages — VL auto-indexes all JSON keys from `_msg` into a time-range-wide native field index; the proxy now uses only the 500-line log scan result when it is non-empty, discarding the native index which accumulates thousands of field names from rare log variants across the full time range
+- fix(drilldown): `detected_fields` no longer double-counts fields from JSON `_msg` — VL also returns auto-indexed JSON keys as top-level NDJSON fields; a new pre-pass collects `_msg` JSON keys and skips them in the outer native field visit so they are only added once via `_msg` parsing with the correct `parser="json"` tag
+- fix(metrics): metric queries no longer include `_stream="{app=\"...\",...}"` as a raw label — `addGroupByParsedLabels` now skips VL internal fields (`_stream`, `_msg`, `_time`) that appear in `groupBy` to prevent the raw JSON stream string leaking into the metric label set
+
 ## [1.29.4] - 2026-05-05
 
 ### Fixed

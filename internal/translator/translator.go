@@ -795,19 +795,25 @@ func logsQLEqualityValueNeedsQuoting(value string) bool {
 	if value == "" {
 		return true
 	}
+	hasAlnum := false
 	for _, r := range value {
 		if unicode.IsSpace(r) {
 			return true
 		}
 		if (r >= 'a' && r <= 'z') ||
 			(r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') ||
-			r == '_' || r == '-' || r == '.' || r == '/' {
+			(r >= '0' && r <= '9') {
+			hasAlnum = true
+			continue
+		}
+		if r == '_' || r == '-' || r == '.' || r == '/' {
 			continue
 		}
 		return true
 	}
-	return false
+	// Values made entirely of punctuation (e.g. "/" or "-") are compound tokens
+	// in VL's parser and must be quoted. Require at least one alphanumeric character.
+	return !hasAlnum
 }
 
 func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (string, bool) {

@@ -309,6 +309,103 @@ func TestProxyLogQueryBoth_HotFails_PropagatesError(t *testing.T) {
 	}
 }
 
+func TestProxyLogQueryBoth_BackwardDirection_ReversesColdAndUsesMaxLimit(t *testing.T) {
+	// Backward RouteBoth: cold covers [start, boundary] and returns oldest-first.
+	// The proxy must (a) send maxLimitValue to cold (not the client limit), then
+	// (b) reverse cold before appending to hot so the merged body is newest-first
+	// across both halves, and (c) trim to the original client limit.
+	var coldReceivedLimit string
+	coldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			coldReceivedLimit = r.FormValue("limit")
+			w.Header().Set("Content-Type", "application/stream+json")
+			// Lakehouse returns ascending (oldest first) within cold range.
+			fmt.Fprintln(w, `{"_msg":"cold-old","_time":"2026-04-01T00:00:01Z","_stream":"{}"}`)
+			fmt.Fprintln(w, `{"_msg":"cold-new","_time":"2026-04-02T00:00:01Z","_stream":"{}"}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer coldSrv.Close()
+
+	hotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/query" {
+			w.Header().Set("Content-Type", "application/stream+json")
+			// Hot returns newest-first (proxy adds sort by _time desc).
+			fmt.Fprintln(w, `{"_msg":"hot-new","_time":"2026-05-01T00:00:02Z","_stream":"{}"}`)
+			fmt.Fprintln(w, `{"_msg":"hot-old","_time":"2026-05-01T00:00:01Z","_stream":"{}"}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer hotSrv.Close()
+
+	p, err := New(Config{
+		BackendURL: hotSrv.URL,
+		ColdBackend: ColdBackendConfig{
+			Enabled:  true,
+			URL:      coldSrv.URL,
+			Boundary: 7 * 24 * time.Hour,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	startNs := fmt.Sprintf("%d", now.Add(-10*24*time.Hour).UnixNano())
+	endNs := fmt.Sprintf("%d", now.Add(-1*time.Hour).UnixNano())
+
+	w := httptest.NewRecorder()
+	// limit=3: 4 total rows (2 hot + 2 cold); backward must return the 3 newest.
+	r := httptest.NewRequest("GET", "/?query=*&start="+startNs+"&end="+endNs+"&limit=3", nil)
+	p.proxyLogQueryBoth(w, r, "*")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
+	}
+
+	// Cold must have received maxLimitValue, not the client limit.
+	if coldReceivedLimit == "3" {
+		t.Errorf("cold received client limit=3; want maxLimitValue so all cold rows are fetched before reversing")
+	}
+
+	var result struct {
+		Data struct {
+			Result []struct {
+				Values [][]string `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal: %v\nbody: %s", err, w.Body.String())
+	}
+
+	var msgs []string
+	for _, stream := range result.Data.Result {
+		for _, v := range stream.Values {
+			if len(v) >= 2 {
+				msgs = append(msgs, v[1])
+			}
+		}
+	}
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 entries (limit=3), got %d: %v", len(msgs), msgs)
+	}
+	// Backward: hot-new, hot-old, cold-new; cold-old must be trimmed.
+	if msgs[0] != "hot-new" {
+		t.Errorf("msgs[0] = %q, want hot-new (newest overall)", msgs[0])
+	}
+	if msgs[2] != "cold-new" {
+		t.Errorf("msgs[2] = %q, want cold-new (newest cold row after reversal)", msgs[2])
+	}
+	for _, m := range msgs {
+		if m == "cold-old" {
+			t.Errorf("cold-old appeared in results but must be trimmed by limit=3")
+		}
+	}
+}
+
 func TestColdRouteForRequest_NoTimeRange(t *testing.T) {
 	cr := &ColdRouter{
 		boundary: 7 * 24 * time.Hour,

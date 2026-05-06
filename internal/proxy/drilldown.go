@@ -1082,16 +1082,22 @@ func defaultQuery(query string) string {
 
 func defaultFieldDetectionQuery(query string) string {
 	// Always strip | unwrap and | drop __error__ (they break log scanning for field detection).
-	// Only strip parser stages (| json, | logfmt) when there are no downstream field-comparison
-	// filters (| key="value") that depend on them: VL cannot evaluate a field filter without
-	// the preceding parser, so stripping it produces zero results (the filter references fields
-	// that only exist after parsing). When the query has parser+filter together, keep the parser
-	// so VL can evaluate the comparison. When it's a bare parser with no downstream filter,
-	// strip it to avoid expanding every embedded field into garbage names.
+	// For parser stages:
+	//   | json   → always strip. VL v1.50+ auto-indexes JSON from _msg, so VL can evaluate
+	//              downstream field filters without the explicit | json stage. Keeping | json
+	//              causes VL to expand every _msg JSON key into top-level NDJSON fields in the
+	//              query response, which the scanner then detects as thousands of garbage names.
+	//   | logfmt / | unpack → keep when there are downstream field comparisons. VL does NOT
+	//              auto-parse logfmt/unpack content, so stripping these stages leaves the field
+	//              filter referencing fields that VL cannot evaluate, returning zero results.
 	noUnwrap := stripUnwrapAndDropStages(query)
+	// Strip only | json stages; keep | logfmt / | unpack.
+	noJSONParser := collapseSpaces(reJSONParserStage.ReplaceAllString(noUnwrap, " "))
 	noParser := stripParserOnlyStages(noUnwrap)
-	if noParser != noUnwrap && hasFieldComparisonStages(noParser) {
-		return defaultQuery(noUnwrap)
+	// If stripping all parsers removes something that | json didn't (i.e. logfmt/unpack present)
+	// AND there are downstream field comparisons that depend on those parsers, keep them.
+	if noParser != noJSONParser && hasFieldComparisonStages(noParser) {
+		return defaultQuery(noJSONParser)
 	}
 	return defaultQuery(noParser)
 }
@@ -1128,9 +1134,10 @@ func normalizeBareSelectorQuery(query string) string {
 }
 
 var (
-	reDropStage   = regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
-	reParserStage = regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
-	reUnwrapStage = regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
+	reDropStage          = regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
+	reParserStage        = regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
+	reJSONParserStage    = regexp.MustCompile(`\|\s*json(\s+[^|]+)?`)
+	reUnwrapStage        = regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
 )
 
 func collapseSpaces(s string) string {
@@ -1310,9 +1317,8 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	var lastErr error
 	var hadScanFailure bool
 	var (
-		scanFieldList      []map[string]interface{}
-		scanFieldValues    map[string][]string
-		scanStreamLabelSet map[string]string
+		scanFieldList   []map[string]interface{}
+		scanFieldValues map[string][]string
 	)
 
 	for _, candidate := range candidates {
@@ -1363,7 +1369,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 			return nil, nil, fmt.Errorf("%s", msg)
 		}
 		// Stream the NDJSON response line-by-line without buffering the full body.
-		scanFieldList, scanFieldValues, scanStreamLabelSet = p.detectFieldSummariesStream(resp.Body)
+		scanFieldList, scanFieldValues, _ = p.detectFieldSummariesStream(resp.Body)
 		_ = resp.Body.Close()
 		break
 	}
@@ -1388,7 +1394,15 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	}
 
 	if len(scanFieldList) > 0 {
-		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, filterNativeDetectedFields(nativeFields, scanStreamLabelSet, p.labelTranslator))
+		// When the log-line scan produced results, use them as-is.
+		// The scan's outer obj.Visit already captures native VL metadata fields
+		// (OTel service.name, trace_id, etc.) for entries whose _msg is not JSON,
+		// and the _msg JSON parsing pass finds all JSON fields with parser="json".
+		// Merging the native field_names index here would flood the response:
+		// VL auto-indexes every JSON key across the entire time range, so the index
+		// may contain thousands of field names accumulated from rare log variants
+		// that the 500-line scan sample correctly excludes.
+		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, nil)
 		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
 		return fieldList, fieldValues, nil
 	}
@@ -1396,9 +1410,16 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	if len(nativeFields) > 0 {
 		if nativeFieldFilterNeedsStreamLabels(nativeFields, p.labelTranslator) {
 			streamLabels, err := p.fetchNativeStreamLabelSet(ctx, query, start, end)
-			if err == nil {
+			if err != nil {
+				// Cannot determine stream labels → skip native fields to avoid flooding
+				// the detected fields response with every VL-indexed field name.
+				nativeFields = nil
+			} else {
 				nativeFields = filterNativeDetectedFields(nativeFields, streamLabels, p.labelTranslator)
 			}
+		}
+		if len(nativeFields) == 0 {
+			return nil, nil, lastErr
 		}
 		nativeFieldList, nativeFieldValues := mergeNativeDetectedFields(nil, nil, nativeFields)
 		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, nativeFieldList, nativeFieldValues)
@@ -1418,9 +1439,11 @@ func (p *Proxy) detectFieldsNativeOnly(ctx context.Context, query, start, end st
 		return nil, nil
 	}
 	if nativeFieldFilterNeedsStreamLabels(nativeFields, p.labelTranslator) {
-		if streamLabels, serr := p.fetchNativeStreamLabelSet(ctx, query, start, end); serr == nil {
-			nativeFields = filterNativeDetectedFields(nativeFields, streamLabels, p.labelTranslator)
+		streamLabels, serr := p.fetchNativeStreamLabelSet(ctx, query, start, end)
+		if serr != nil {
+			return nil, nil
 		}
+		nativeFields = filterNativeDetectedFields(nativeFields, streamLabels, p.labelTranslator)
 	}
 	return mergeNativeDetectedFields(nil, nil, nativeFields)
 }
@@ -1637,11 +1660,54 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			}
 		}
 
+		// Get _msg early so we can pre-collect its JSON keys before the outer native
+		// field visit. VL auto-indexes all JSON keys from _msg as native NDJSON fields;
+		// without this guard those keys appear in detected_fields twice (once without a
+		// parser tag from obj.Visit, once with parser="json") and accumulate across
+		// thousands of log entries, causing the "Fields 5,965" flood.
+		msgBytes := fjVal.GetStringBytes("_msg")
+
+		// Parse _msg JSON once: populate msgJSONKeys for the skip-guard below AND add
+		// detected fields with parser="json" in the same pass.
+		var msgJSONKeys map[string]struct{}
+		if len(msgBytes) >= 2 && msgBytes[0] == '{' {
+			fjParser2 := vlFJParserPool.Get()
+			if fjVal2, err2 := fjParser2.ParseBytes(msgBytes); err2 == nil {
+				if obj2, objErr2 := fjVal2.Object(); objErr2 == nil {
+					msgJSONKeys = make(map[string]struct{})
+					obj2.Visit(func(keyBytes []byte, v *fj.Value) {
+						key := string(keyBytes)
+						if key == "" {
+							return
+						}
+						// Skip nested objects and arrays.
+						vt := v.Type()
+						if vt == fj.TypeObject || vt == fj.TypeArray {
+							return
+						}
+						msgJSONKeys[key] = struct{}{}
+						if shouldSuppressDetectedField(key) {
+							return
+						}
+						if _, conflict := labelNames[key]; conflict {
+							return
+						}
+						addDetectedField(fields, key, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
+					})
+				}
+			}
+			vlFJParserPool.Put(fjParser2)
+		}
+
 		obj, objErr := fjVal.Object()
 		if objErr == nil {
 			obj.Visit(func(keyBytes []byte, v *fj.Value) {
 				key := string(keyBytes)
 				if key == "app" || key == "cluster" || key == "namespace" {
+					return
+				}
+				// Skip keys already covered by _msg JSON parsing above.
+				if _, inMsg := msgJSONKeys[key]; inMsg {
 					return
 				}
 				if !shouldExposeStructuredField(key, rawStreamLabels, p.labelTranslator) {
@@ -1660,41 +1726,12 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			})
 		}
 
-		msgBytes := fjVal.GetStringBytes("_msg")
 		vlFJParserPool.Put(fjParser)
 
 		if len(msgBytes) == 0 {
 			continue
 		}
 		msg := string(msgBytes)
-
-		// Only attempt JSON parse if _msg starts with '{' — skip non-JSON early.
-		if len(msgBytes) >= 2 && msgBytes[0] == '{' {
-			fjParser2 := vlFJParserPool.Get()
-			if fjVal2, err2 := fjParser2.ParseBytes(msgBytes); err2 == nil {
-				if obj2, objErr2 := fjVal2.Object(); objErr2 == nil {
-					obj2.Visit(func(keyBytes []byte, v *fj.Value) {
-						key := string(keyBytes)
-						if key == "" {
-							return
-						}
-						// Skip nested objects and arrays (equivalent to map[string]interface{}/[]interface{} check).
-						vt := v.Type()
-						if vt == fj.TypeObject || vt == fj.TypeArray {
-							return
-						}
-						if shouldSuppressDetectedField(key) {
-							return
-						}
-						if _, conflict := labelNames[key]; conflict {
-							return
-						}
-						addDetectedField(fields, key, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
-					})
-				}
-			}
-			vlFJParserPool.Put(fjParser2)
-		}
 
 		for key, value := range parseLogfmtFields(msg) {
 			if key == "msg" {
@@ -2278,8 +2315,13 @@ func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string
 }
 
 func filterNativeDetectedFields(native map[string]*detectedFieldSummary, streamLabels map[string]string, lt *LabelTranslator) map[string]*detectedFieldSummary {
-	if len(native) == 0 || len(streamLabels) == 0 {
+	if len(native) == 0 {
 		return native
+	}
+	if len(streamLabels) == 0 {
+		// Without stream labels we cannot distinguish label keys from structured fields;
+		// returning native unfiltered would flood the UI with all VL-indexed field names.
+		return make(map[string]*detectedFieldSummary)
 	}
 	filtered := make(map[string]*detectedFieldSummary, len(native))
 	for label, summary := range native {
