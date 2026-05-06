@@ -17,11 +17,12 @@ import (
 )
 
 type statsCompatSpec struct {
-	BaseQuery  string
-	GroupBy    []string
-	ByExplicit bool // true when "by ()" was present — aggregate all into one series
-	Func       string
-	Field      string
+	BaseQuery   string
+	GroupBy     []string
+	OrigGroupBy []string // original Loki label names before VL translation (e.g. detected_level → level)
+	ByExplicit  bool     // true when "by ()" was present — aggregate all into one series
+	Func        string
+	Field       string
 }
 
 type originalRangeMetricSpec struct {
@@ -38,8 +39,10 @@ type rangeMetricSample struct {
 }
 
 var (
-	rangeMetricUnwrapRE = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
-	outerAggregationRE = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
+	rangeMetricUnwrapRE  = regexp.MustCompile(`(?s)\|\s*unwrap\s+([^|\[]+)`)
+	outerAggregationRE   = regexp.MustCompile(`^(?:sum|avg|max|min|count(?:_values)?|stddev|stdvar|sort(?:_desc)?|topk|bottomk)\s*(?:(?:by|without)\s*\([^)]*\)\s*)?`)
+	outerByAfterRE       = regexp.MustCompile(`\)\s+by\s*\(([^)]+)\)\s*$`)
+	outerByBeforeRE      = regexp.MustCompile(`^(?:sum|avg|min|max|count[^(]*|stddev|stdvar)\s+by\s*\(([^)]+)\)\s*\(`)
 )
 
 func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
@@ -258,6 +261,28 @@ func parseUnwrapExpression(expr string) (field, conv string) {
 	return field, conv
 }
 
+// parseOriginalByLabels extracts the outer by(...) label names from a LogQL
+// metric query. Handles both "sum(...) by (labels)" and "sum by (labels) (...)"
+// forms. Returns nil when no outer by-clause is present.
+func parseOriginalByLabels(logql string) []string {
+	var raw string
+	if m := outerByAfterRE.FindStringSubmatch(logql); m != nil {
+		raw = m[1]
+	} else if m := outerByBeforeRE.FindStringSubmatch(logql); m != nil {
+		raw = m[1]
+	}
+	if raw == "" {
+		return nil
+	}
+	var out []string
+	for _, l := range strings.Split(raw, ",") {
+		if l = strings.TrimSpace(l); l != "" {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, originalLogql, logsqlQuery string) bool {
 	spec, ok := parseStatsCompatSpec(logsqlQuery)
 	if !ok {
@@ -266,6 +291,9 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	if !isManualRangeStatsFunc(spec.Func) {
 		return false
 	}
+	// Capture original Loki by-labels so we can translate VL label names back
+	// in the metric response (e.g. VL "level" → Loki "detected_level").
+	spec.OrigGroupBy = parseOriginalByLabels(originalLogql)
 	origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
 
 	manualFunc := normalizeManualMetricFunction(spec, origSpec)
@@ -300,6 +328,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if !isManualRangeStatsFunc(spec.Func) {
 		return false
 	}
+	spec.OrigGroupBy = parseOriginalByLabels(originalLogql)
 	origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
 
 	manualFunc := normalizeManualMetricFunction(spec, origSpec)
@@ -398,7 +427,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
-	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), endTS)
+	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), endTS)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return true
@@ -425,7 +454,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), evalTS)
+	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), evalTS)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return true
@@ -467,7 +496,7 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 	return p.labelTranslator.ToVL(field), 0, nil
 }
 
-func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy []string, byExplicit bool, field, unwrapConv string, start, end time.Time) (map[string]manualSeriesSamples, error) {
+func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy, origGroupBy []string, byExplicit bool, field, unwrapConv string, start, end time.Time) (map[string]manualSeriesSamples, error) {
 	params := url.Values{}
 	params.Set("query", baseQuery)
 	params.Set("start", formatVLTimestamp(start.UTC().Format(time.RFC3339Nano)))
@@ -543,6 +572,20 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 			// Loki groups by stream labels only when no by(...) is present; parsed
 			// fields become metric dimensions only when explicitly named in by(...).
 			addGroupByParsedLabels(metricLabels, entry, groupBy)
+		}
+		// Rename VL-translated groupBy keys back to their original Loki names.
+		// Example: VL "level" was produced by translating Loki "detected_level";
+		// the response metric must carry "detected_level" to match what Drilldown
+		// requested in "sum(...) by (detected_level)".
+		if len(origGroupBy) == len(groupBy) {
+			for i, vlKey := range groupBy {
+				if lokiKey := origGroupBy[i]; lokiKey != vlKey {
+					if v, ok := metricLabels[vlKey]; ok {
+						delete(metricLabels, vlKey)
+						metricLabels[lokiKey] = v
+					}
+				}
+			}
 		}
 		translated := p.labelTranslator.TranslateLabelsMap(metricLabels)
 		key := seriesKeyFromMetric(translated)
