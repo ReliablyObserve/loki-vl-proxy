@@ -547,9 +547,10 @@ func TestDetectedLevelEmptyFilter(t *testing.T) {
 			want:  `app:=nginx -level:*`,
 		},
 		{
+			// detected_level!="" before a parser: use logfmt pipeline.
 			name:  "detected_level empty negated in pipeline filter (no preceding parser)",
 			logql: `{app="nginx"} | detected_level!=""`,
-			want:  `app:=nginx level:!""`,
+			want:  `app:=nginx | unpack_logfmt | filter level:!""`,
 		},
 		{
 			// After a parser, the translated filter is wrapped in | filter.

@@ -419,6 +419,15 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 			if afterParser && !strings.HasPrefix(translated, "|") && isFieldFilter(translated) {
 				translated = "| filter " + translated
 			}
+			// detected_level in the pipeline before any parser must use logfmt unpacking.
+			// Without a preceding parser, the translated filter checks _stream.level
+			// (the push-time label), not the content-derived level in _msg.
+			// Inject | unpack_logfmt so we filter on the logfmt-parsed level field.
+			// The empty-value case (-level:*) is not a field filter, so it's excluded.
+			if !afterParser && !strings.HasPrefix(translated, "|") && isFieldFilter(translated) && strings.Contains(stage, "detected_level") {
+				translated = "| unpack_logfmt | filter " + translated
+				afterParser = true
+			}
 			if _, baseKey, ok := canonicalLabelFilterStage(stage, labelFn); ok {
 				if idx, exists := labelFilterLatest[baseKey]; exists {
 					// Latest action wins for the same field/value filter identity.
