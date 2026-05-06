@@ -508,9 +508,11 @@ func TestBracedLabelMatcherTranslatesToVLFieldFilter(t *testing.T) {
 			want:  `-level:*`,
 		},
 		{
+			// detected_level!="" in the stream selector: use logfmt pipeline
+			// to check message-body level rather than _stream.level.
 			name:  "detected_level empty negated braced",
 			logql: `{detected_level!=""}`,
-			want:  `level:!""`,
+			want:  `* | unpack_logfmt | filter level:!""`,
 		},
 	}
 	for _, tc := range cases {
@@ -568,9 +570,15 @@ func TestDetectedLevelEmptyFilter(t *testing.T) {
 			want:  `app:=nginx -level:*`,
 		},
 		{
-			name:  "detected_level non-empty is unchanged",
+			// detected_level="warn" uses logfmt pipeline to check message-body level.
+			name:  "detected_level non-empty uses logfmt pipeline",
 			logql: `{detected_level="warn"}`,
-			want:  `level:=warn`,
+			want:  `* | unpack_logfmt | filter level:=warn`,
+		},
+		{
+			name:  "detected_level non-empty with other labels uses logfmt pipeline",
+			logql: `{app="nginx", detected_level="error"}`,
+			want:  `app:=nginx | unpack_logfmt | filter level:=error`,
 		},
 	}
 	for _, tc := range cases {

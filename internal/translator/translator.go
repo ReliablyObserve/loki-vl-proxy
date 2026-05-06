@@ -270,6 +270,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 		streamContent := remaining[1:end]
 		remaining = strings.TrimSpace(remaining[end+1:])
 
+		var logfmtPipelineFilters []string
 		matchers := splitStreamMatchers(streamContent)
 		for _, m := range matchers {
 			if sf != nil && canUseStreamSelector(m, sf, labelFn) {
@@ -277,8 +278,30 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 			} else {
 				ff := streamMatcherToFieldFilter(m, labelFn)
 				if ff != "" {
-					parts = append(parts, ff)
+					// detected_level with a concrete value must use a logfmt pipeline
+					// stage in VL. The push-time _stream.level may differ from the
+					// logfmt-parsed level in _msg; Loki's detected_level semantically
+					// means "level as detected from message body", so we must unpack
+					// and filter on the parsed field. The empty-value sentinel
+					// (-level:*) stays in the base query because it signals
+					// "no level field present at all" and works without parsing.
+					if strings.HasPrefix(m, "detected_level") && ff != "-level:*" {
+						logfmtPipelineFilters = append(logfmtPipelineFilters, ff)
+					} else {
+						parts = append(parts, ff)
+					}
 				}
+			}
+		}
+		// Inject a logfmt unpack stage for detected_level matchers that need it.
+		// If there are no other base filters yet, add * so the query is valid LogsQL.
+		if len(logfmtPipelineFilters) > 0 {
+			if len(parts) == 0 && len(streamParts) == 0 {
+				parts = append(parts, "*")
+			}
+			parts = append(parts, "| unpack_logfmt")
+			for _, ff := range logfmtPipelineFilters {
+				parts = append(parts, "| filter "+ff)
 			}
 		}
 	}
