@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.6] - 2026-05-07
+
 ### Fixed
 
 - fix(drilldown): `detected_level=""` log level filter now correctly matches log entries with no detected level — the translator was emitting `level:=""` (explicit empty string only) instead of `-level:*` (absent or empty), so entries where the `level` field was simply absent were never returned; applies to both stream-selector and pipeline-filter positions
