@@ -78,6 +78,11 @@ func TestTranslateLogQL(t *testing.T) {
 			want:  `app:=nginx NOT ~"test .* pattern"`,
 		},
 		{
+			name:  "detected_level filter before pattern negation — drilldown patterns page",
+			logql: `{env="production"} | detected_level="error" !> "level=error msg=<_>"`,
+			want:  `env:=production | unpack_logfmt | filter level:=error NOT ~"level=error msg=.*"`,
+		},
+		{
 			name:  "pattern line filter with alternation",
 			logql: `{app="nginx"} |> "test <_> pattern" or "other <_> value"`,
 			want:  `app:=nginx ~"(?:test .* pattern)|(?:other .* value)"`,

@@ -1967,6 +1967,11 @@ func extractPipelineStage(s string) (stage, rest string) {
 		if c == '|' {
 			return strings.TrimSpace(s[:i]), s[i:]
 		}
+		// !> (pattern negation) acts as a stage boundary without a preceding |.
+		// Stop here so the caller's loop can handle !> as its own operator.
+		if c == '!' && i+1 < len(s) && s[i+1] == '>' {
+			return strings.TrimSpace(s[:i]), s[i:]
+		}
 	}
 	return strings.TrimSpace(s), ""
 }
