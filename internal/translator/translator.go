@@ -270,6 +270,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 		streamContent := remaining[1:end]
 		remaining = strings.TrimSpace(remaining[end+1:])
 
+		var logfmtPipelineFilters []string
 		matchers := splitStreamMatchers(streamContent)
 		for _, m := range matchers {
 			if sf != nil && canUseStreamSelector(m, sf, labelFn) {
@@ -277,8 +278,30 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 			} else {
 				ff := streamMatcherToFieldFilter(m, labelFn)
 				if ff != "" {
-					parts = append(parts, ff)
+					// detected_level with a concrete value must use a logfmt pipeline
+					// stage in VL. The push-time _stream.level may differ from the
+					// logfmt-parsed level in _msg; Loki's detected_level semantically
+					// means "level as detected from message body", so we must unpack
+					// and filter on the parsed field. The empty-value sentinel
+					// (-level:*) stays in the base query because it signals
+					// "no level field present at all" and works without parsing.
+					if strings.HasPrefix(m, "detected_level") && ff != "-level:*" {
+						logfmtPipelineFilters = append(logfmtPipelineFilters, ff)
+					} else {
+						parts = append(parts, ff)
+					}
 				}
+			}
+		}
+		// Inject a logfmt unpack stage for detected_level matchers that need it.
+		// If there are no other base filters yet, add * so the query is valid LogsQL.
+		if len(logfmtPipelineFilters) > 0 {
+			if len(parts) == 0 && len(streamParts) == 0 {
+				parts = append(parts, "*")
+			}
+			parts = append(parts, "| unpack_logfmt")
+			for _, ff := range logfmtPipelineFilters {
+				parts = append(parts, "| filter "+ff)
 			}
 		}
 	}
@@ -395,6 +418,15 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 			// If this is a bare field filter after a parser, wrap it as | filter
 			if afterParser && !strings.HasPrefix(translated, "|") && isFieldFilter(translated) {
 				translated = "| filter " + translated
+			}
+			// detected_level in the pipeline before any parser must use logfmt unpacking.
+			// Without a preceding parser, the translated filter checks _stream.level
+			// (the push-time label), not the content-derived level in _msg.
+			// Inject | unpack_logfmt so we filter on the logfmt-parsed level field.
+			// The empty-value case (-level:*) is not a field filter, so it's excluded.
+			if !afterParser && !strings.HasPrefix(translated, "|") && isFieldFilter(translated) && strings.Contains(stage, "detected_level") {
+				translated = "| unpack_logfmt | filter " + translated
+				afterParser = true
 			}
 			if _, baseKey, ok := canonicalLabelFilterStage(stage, labelFn); ok {
 				if idx, exists := labelFilterLatest[baseKey]; exists {
@@ -745,6 +777,13 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value), true
 			}
 			if value == "" {
+				// detected_level="" means "no level detected": match log entries where
+				// the level field is absent or has an empty value. VL's -field:* does
+				// exactly this (absent OR empty), while field:="" only matches explicit
+				// empty strings and misses absent fields entirely.
+				if label == "level" && !strings.HasPrefix(op.logsql, "-") {
+					return `-level:*`, true
+				}
 				if strings.HasPrefix(op.logsql, "-") {
 					return fmt.Sprintf(`%s:!""`, label), true
 				}
@@ -1928,6 +1967,11 @@ func extractPipelineStage(s string) (stage, rest string) {
 		if c == '|' {
 			return strings.TrimSpace(s[:i]), s[i:]
 		}
+		// !> (pattern negation) acts as a stage boundary without a preceding |.
+		// Stop here so the caller's loop can handle !> as its own operator.
+		if c == '!' && i+1 < len(s) && s[i+1] == '>' {
+			return strings.TrimSpace(s[:i]), s[i:]
+		}
 	}
 	return strings.TrimSpace(s), ""
 }
@@ -2096,6 +2140,12 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 			if origLabel == "service_name" {
 				return serviceNameMatcherFilter(op.logsql, value, op.neg, op.isRe)
 			}
+			// detected_level is a synthetic Loki label synthesized by the proxy.
+			// VL stores the field as "level"; translate unconditionally before
+			// applying any user-supplied labelFn.
+			if origLabel == "detected_level" {
+				label = "level"
+			}
 			if labelFn != nil {
 				label = sanitizeFieldIdentifier(labelFn(label))
 				if label == "" {
@@ -2118,6 +2168,12 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 
 			value = strings.Trim(value, "\"`")
 			if value == "" {
+				// detected_level="" in the stream selector means "no level detected":
+				// match entries where level is absent or empty. -level:* covers both
+				// cases; level:="" would only match explicit empty strings.
+				if label == "level" && !op.neg {
+					return `-level:*`
+				}
 				if op.neg {
 					return fmt.Sprintf(`%s:!""`, label)
 				}

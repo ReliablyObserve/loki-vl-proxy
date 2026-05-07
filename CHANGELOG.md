@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(drilldown): `detected_level=""` log level filter now correctly matches log entries with no detected level — the translator was emitting `level:=""` (explicit empty string only) instead of `-level:*` (absent or empty), so entries where the `level` field was simply absent were never returned; applies to both stream-selector and pipeline-filter positions
+- fix(volume): `computeVolumeRangeResult` no longer appends `| sort by (_time desc)` to VL hits queries — the `/select/logsql/hits` endpoint counts log hits per time bucket and ignores sort stages, so the trailing sort was a no-op that added query overhead
+- fix(drilldown): `volumeByDerivedLabels` volume histogram now correctly renders for `detected_level` target — `parseVolumeBoundary` was treating all numeric timestamps as nanoseconds (`time.Unix(0, n)`), so Unix-second inputs produced a 1970 epoch boundary that filtered out all 2026 log entries; changed to use `parseFlexibleUnixSeconds` which correctly normalises both second and nanosecond inputs
+
 ## [1.29.5] - 2026-05-06
 
 ### Fixed

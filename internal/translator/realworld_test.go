@@ -135,9 +135,11 @@ func TestRealWorld_MultiStage(t *testing.T) {
 			want:  `job:=nginx | extract "<ip> - - <_> <method> <uri> <status>" | filter status:>=400 | delete ip`,
 		},
 		{
-			name:  "drilldown multi-level filter after parser chain",
+			// detected_level before any parser: inject | unpack_logfmt so the filter
+			// checks the logfmt-parsed level in _msg, not _stream.level.
+			name:  "drilldown multi-level filter before parser chain",
 			logql: `{cluster="us-east-1"} | detected_level="error" or detected_level="info" or detected_level="warn" | json | logfmt | drop __error__, __error_details__`,
-			want:  `cluster:=us-east-1 (level:=error or level:=info or level:=warn) | unpack_json | unpack_logfmt | delete __error__, __error_details__`,
+			want:  `cluster:=us-east-1 | unpack_logfmt | filter (level:=error or level:=info or level:=warn) | unpack_json | unpack_logfmt | delete __error__, __error_details__`,
 		},
 	}
 	for _, tt := range tests {

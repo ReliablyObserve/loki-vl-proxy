@@ -780,9 +780,8 @@ func parseVolumeBoundary(ts string) (time.Time, bool) {
 			return time.Now().UTC().Add(d), true
 		}
 	}
-	normalized := formatVLTimestamp(ts)
-	if n, err := strconv.ParseInt(normalized, 10, 64); err == nil {
-		return time.Unix(0, n).UTC(), true
+	if sec, ok := parseFlexibleUnixSeconds(ts); ok {
+		return time.Unix(sec, 0).UTC(), true
 	}
 	return time.Time{}, false
 }
