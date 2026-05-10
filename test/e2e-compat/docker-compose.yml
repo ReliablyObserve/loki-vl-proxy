@@ -480,7 +480,7 @@ services:
       loki-vl-proxy-tail:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/nginx-health"]
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8080/nginx-health"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -517,7 +517,8 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
-      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.26.3
+      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.26.3,grafana-lokiexplore-app
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-lokiexplore-app
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
     depends_on:
