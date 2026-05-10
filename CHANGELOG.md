@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.8] - 2026-05-10
+
 ### Fixed
 
 - fix(proxy): bare parser metrics (`rate`, `count_over_time`, `bytes_over_time`, `bytes_rate` with `| json` / `| logfmt`) no longer take the native `stats_query_range` fast path unless the query explicitly handles `__error__` (e.g. `| drop __error__, __error_details__`). Per Loki's error model, log lines that fail parsing are excluded from metric aggregation; VL native stats counts all lines, producing overcounts on mixed valid/invalid inputs. Queries without `__error__` handling now route to the correct slow log-fetch path.
