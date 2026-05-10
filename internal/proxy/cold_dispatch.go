@@ -140,7 +140,7 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		chunkParams := cloneURLValues(baseParams)
 		chunkParams.Set("start", strconv.FormatInt(chunkStart, 10))
 		chunkParams.Set("end", strconv.FormatInt(chunkEnd, 10))
-		chunkParams.Set("limit", strconv.Itoa(limit))
+		chunkParams.Set("limit", strconv.Itoa(maxLimitValue))
 
 		resp, err := p.coldRouter.ColdPost(ctx, "/select/logsql/query", chunkParams)
 		if err != nil {
