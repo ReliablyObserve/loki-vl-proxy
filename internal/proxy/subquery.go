@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -288,20 +289,23 @@ func seriesKeyFromMetric(metric map[string]string) string {
 	if len(metric) == 0 {
 		return "{}"
 	}
-	// Build a deterministic key
-	var parts []string
-	for k, v := range metric {
-		parts = append(parts, k+"="+v)
+	keys := make([]string, 0, len(metric))
+	for k := range metric {
+		keys = append(keys, k)
 	}
-	// Simple sort for determinism
-	for i := 0; i < len(parts); i++ {
-		for j := i + 1; j < len(parts); j++ {
-			if parts[i] > parts[j] {
-				parts[i], parts[j] = parts[j], parts[i]
-			}
+	sort.Strings(keys)
+	var b strings.Builder
+	b.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			b.WriteByte(',')
 		}
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(metric[k])
 	}
-	return "{" + strings.Join(parts, ",") + "}"
+	b.WriteByte('}')
+	return b.String()
 }
 
 func parseValueToFloat(v interface{}) float64 {
