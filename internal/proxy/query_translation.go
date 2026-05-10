@@ -1185,10 +1185,9 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	p.queryTracker.Record("query", originalQuery, elapsed, false)
 }
 
-// hasPostParserPipeStage reports true when the base query has any pipe stage
-// after the last extracting parser (e.g. "| json | status >= 400"). When false,
-// the parser doesn't filter log lines and can be stripped for native VL stats.
-func hasPostParserPipeStage(baseQuery string) bool {
+// lastParserStageEnd returns the index in baseQuery just after the last
+// extracting parser stage, or -1 if no parser stage is found.
+func lastParserStageEnd(baseQuery string) int {
 	lastEnd := -1
 	for _, re := range []*regexp.Regexp{
 		jsonParserStageRE,
@@ -1203,10 +1202,18 @@ func hasPostParserPipeStage(baseQuery string) bool {
 			}
 		}
 	}
-	if lastEnd < 0 {
+	return lastEnd
+}
+
+// hasPostParserPipeStage reports true when the base query has any pipe stage
+// after the last extracting parser (e.g. "| json | status >= 400"). When false,
+// the parser doesn't filter log lines and can be stripped for native VL stats.
+func hasPostParserPipeStage(baseQuery string) bool {
+	end := lastParserStageEnd(baseQuery)
+	if end < 0 {
 		return false
 	}
-	return strings.HasPrefix(strings.TrimSpace(baseQuery[lastEnd:]), "|")
+	return strings.HasPrefix(strings.TrimSpace(baseQuery[end:]), "|")
 }
 
 // dropErrorOnlyRE matches a pipe stage that drops only __error__ and/or
@@ -1221,24 +1228,11 @@ var dropErrorOnlyRE = regexp.MustCompile(`^\|\s*drop\s+(?:__error__(?:\s*,\s*__e
 // clause. That clause does not filter log lines — it only removes parse-error
 // metadata — so it is safe to skip for the native VL stats fast path.
 func hasFilteringPostParserPipeStage(baseQuery string) bool {
-	lastEnd := -1
-	for _, re := range []*regexp.Regexp{
-		jsonParserStageRE,
-		logfmtParserStageRE,
-		regexpExtractingParserStageRE,
-		patternExtractingParserStageRE,
-		otherExtractingParserStageRE,
-	} {
-		for _, loc := range re.FindAllStringIndex(baseQuery, -1) {
-			if loc[1] > lastEnd {
-				lastEnd = loc[1]
-			}
-		}
-	}
-	if lastEnd < 0 {
+	end := lastParserStageEnd(baseQuery)
+	if end < 0 {
 		return false
 	}
-	tail := strings.TrimSpace(baseQuery[lastEnd:])
+	tail := strings.TrimSpace(baseQuery[end:])
 	if !strings.HasPrefix(tail, "|") {
 		return false
 	}
