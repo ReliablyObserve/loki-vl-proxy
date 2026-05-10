@@ -665,3 +665,108 @@ func FuzzParseOriginalRangeMetricSpec(f *testing.F) {
 		}
 	})
 }
+
+// TestBareParserCountOverTime_MixedInput_SkipsFastPath ensures that a bare
+// parser count_over_time query WITHOUT explicit __error__ handling routes to
+// the slow log-fetch path, not native VL stats. VL stats would count ALL lines
+// regardless of parse success; Loki excludes lines that fail parsing.
+func TestBareParserCountOverTime_MixedInput_SkipsFastPath(t *testing.T) {
+	base := time.Unix(1700000000, 0).UTC()
+
+	var statsCalled bool
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			// The fast path must NOT be taken without __error__ handling.
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+		case "/select/logsql/query":
+			// Slow path: return 3 valid JSON lines + 2 invalid ones.
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			for i, msg := range []string{
+				`{"method":"GET","status":200}`,
+				`{"method":"POST","status":201}`,
+				`not-json-line-1`,
+				`{"method":"DELETE","status":204}`,
+				`not-json-line-2`,
+			} {
+				ts := base.Add(time.Duration(i) * time.Second)
+				_, _ = fmt.Fprintf(w,
+					`{"_time":%q,"_msg":%q,"_stream":"{app=\"api\"}"}`+"\n",
+					ts.Format(time.RFC3339Nano), msg,
+				)
+			}
+		default:
+			// Allow the parser-detection probe (limit=1) silently.
+			if r.FormValue("limit") == "1" {
+				w.Header().Set("Content-Type", "application/x-ndjson")
+				return
+			}
+			t.Errorf("unexpected backend path: %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	// No "__error__" in query — must not take fast path.
+	params.Set("query", `count_over_time({app="api"} | json [60s])`)
+	params.Set("start", strconv.FormatInt(base.Add(-time.Minute).Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(time.Minute).Unix(), 10))
+	params.Set("step", "60")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if statsCalled {
+		t.Fatalf("stats_query_range was called — fast path taken without __error__ handling; " +
+			"this violates Loki's error model (parse failures must be excluded from metric counts)")
+	}
+}
+
+// TestBareParserCountOverTime_WithErrorHandling_UsesFastPath ensures that when
+// __error__ is explicitly handled, the tumbling-window fast path IS taken.
+func TestBareParserCountOverTime_WithErrorHandling_UsesFastPath(t *testing.T) {
+	base := time.Unix(1700000000, 0).UTC()
+
+	var statsCalled bool
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[1700000000,"3"]]}]}}`))
+		case "/select/logsql/query":
+			// Should not be called on the fast path.
+			if r.FormValue("limit") != "1" {
+				t.Errorf("slow-path query endpoint called unexpectedly (limit=%s)", r.FormValue("limit"))
+			}
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		default:
+			t.Errorf("unexpected backend path: %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	// Explicit __error__ handling — fast path allowed.
+	params.Set("query", `count_over_time({app="api"} | json | drop __error__, __error_details__ [60s])`)
+	params.Set("start", strconv.FormatInt(base.Add(-time.Minute).Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(time.Minute).Unix(), 10))
+	params.Set("step", "60")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Fatalf("stats_query_range was NOT called — fast path should be taken when __error__ is handled")
+	}
+}

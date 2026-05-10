@@ -1209,6 +1209,46 @@ func hasPostParserPipeStage(baseQuery string) bool {
 	return strings.HasPrefix(strings.TrimSpace(baseQuery[lastEnd:]), "|")
 }
 
+// dropErrorOnlyRE matches a pipe stage that drops only __error__ and/or
+// __error_details__ labels — e.g. "| drop __error__, __error_details__" or
+// "| drop __error__". Such stages do not filter log lines; they merely strip
+// parser-error metadata and signal that the caller has opted in to VL's
+// count-all semantics for native stats.
+var dropErrorOnlyRE = regexp.MustCompile(`^\|\s*drop\s+(?:__error__(?:\s*,\s*__error_details__)?|__error_details__(?:\s*,\s*__error__)?)\s*$`)
+
+// hasFilteringPostParserPipeStage is like hasPostParserPipeStage but returns
+// false when the only post-parser stage is a "| drop __error__[, __error_details__]"
+// clause. That clause does not filter log lines — it only removes parse-error
+// metadata — so it is safe to skip for the native VL stats fast path.
+func hasFilteringPostParserPipeStage(baseQuery string) bool {
+	lastEnd := -1
+	for _, re := range []*regexp.Regexp{
+		jsonParserStageRE,
+		logfmtParserStageRE,
+		regexpExtractingParserStageRE,
+		patternExtractingParserStageRE,
+		otherExtractingParserStageRE,
+	} {
+		for _, loc := range re.FindAllStringIndex(baseQuery, -1) {
+			if loc[1] > lastEnd {
+				lastEnd = loc[1]
+			}
+		}
+	}
+	if lastEnd < 0 {
+		return false
+	}
+	tail := strings.TrimSpace(baseQuery[lastEnd:])
+	if !strings.HasPrefix(tail, "|") {
+		return false
+	}
+	// Allow a sole "| drop __error__[, __error_details__]" stage to pass through.
+	if dropErrorOnlyRE.MatchString(tail) {
+		return false
+	}
+	return true
+}
+
 // stripParserStages removes all extracting parser stages from a LogQL base query.
 func stripParserStages(baseQuery string) string {
 	result := baseQuery
@@ -1294,7 +1334,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	// only successfully parsed lines are counted.
 	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
-	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) &&
+	if spec.unwrapField == "" && rangeEqualsStep && !hasFilteringPostParserPipeStage(spec.baseQuery) &&
 		strings.Contains(originalQuery, "__error__") {
 		switch spec.funcName {
 		case "rate", "count_over_time", "bytes_over_time", "bytes_rate":

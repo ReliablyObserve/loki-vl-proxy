@@ -2091,10 +2091,11 @@ func TestNormalizeManualMetricFunction(t *testing.T) {
 // =============================================================================
 
 func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
-	// rate({...} | json [5m]) with step==range (tumbling window) must use native VL
-	// stats_query_range. Loki groups these by stream labels only (not parsed fields),
-	// and VL native stats matches that behaviour. The manual path is for sliding windows
-	// (step != range) where all parsed fields must appear as metric dimensions.
+	// rate({...} | json | drop __error__,__error_details__ [5m]) with step==range
+	// (tumbling window) must use native VL stats_query_range. Loki groups these by
+	// stream labels only (not parsed fields), and VL native stats matches that behaviour.
+	// Explicit __error__ handling is required for the fast path; without it the slow
+	// path is taken so that parse failures are excluded from counts.
 	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/stats_query_range" {
@@ -2120,8 +2121,9 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	base := time.Unix(1700000000, 0)
 	// step=300 == range=[5m] → rangeEqualsStep=true → tumbling-window fast path
+	// Query must include explicit __error__ handling to qualify for the fast path.
 	params := url.Values{}
-	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
+	params.Set("query", `rate({app="api-gateway"} | json | drop __error__, __error_details__ [5m])`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
 	params.Set("step", "300")
