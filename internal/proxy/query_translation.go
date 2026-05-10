@@ -1185,10 +1185,9 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	p.queryTracker.Record("query", originalQuery, elapsed, false)
 }
 
-// hasPostParserPipeStage reports true when the base query has any pipe stage
-// after the last extracting parser (e.g. "| json | status >= 400"). When false,
-// the parser doesn't filter log lines and can be stripped for native VL stats.
-func hasPostParserPipeStage(baseQuery string) bool {
+// lastParserStageEnd returns the index in baseQuery just after the last
+// extracting parser stage, or -1 if no parser stage is found.
+func lastParserStageEnd(baseQuery string) int {
 	lastEnd := -1
 	for _, re := range []*regexp.Regexp{
 		jsonParserStageRE,
@@ -1203,10 +1202,45 @@ func hasPostParserPipeStage(baseQuery string) bool {
 			}
 		}
 	}
-	if lastEnd < 0 {
+	return lastEnd
+}
+
+// hasPostParserPipeStage reports true when the base query has any pipe stage
+// after the last extracting parser (e.g. "| json | status >= 400"). When false,
+// the parser doesn't filter log lines and can be stripped for native VL stats.
+func hasPostParserPipeStage(baseQuery string) bool {
+	end := lastParserStageEnd(baseQuery)
+	if end < 0 {
 		return false
 	}
-	return strings.HasPrefix(strings.TrimSpace(baseQuery[lastEnd:]), "|")
+	return strings.HasPrefix(strings.TrimSpace(baseQuery[end:]), "|")
+}
+
+// dropErrorOnlyRE matches a pipe stage that drops only __error__ and/or
+// __error_details__ labels — e.g. "| drop __error__, __error_details__" or
+// "| drop __error__". Such stages do not filter log lines; they merely strip
+// parser-error metadata and signal that the caller has opted in to VL's
+// count-all semantics for native stats.
+var dropErrorOnlyRE = regexp.MustCompile(`^\|\s*drop\s+(?:__error__(?:\s*,\s*__error_details__)?|__error_details__(?:\s*,\s*__error__)?)\s*$`)
+
+// hasFilteringPostParserPipeStage is like hasPostParserPipeStage but returns
+// false when the only post-parser stage is a "| drop __error__[, __error_details__]"
+// clause. That clause does not filter log lines — it only removes parse-error
+// metadata — so it is safe to skip for the native VL stats fast path.
+func hasFilteringPostParserPipeStage(baseQuery string) bool {
+	end := lastParserStageEnd(baseQuery)
+	if end < 0 {
+		return false
+	}
+	tail := strings.TrimSpace(baseQuery[end:])
+	if !strings.HasPrefix(tail, "|") {
+		return false
+	}
+	// Allow a sole "| drop __error__[, __error_details__]" stage to pass through.
+	if dropErrorOnlyRE.MatchString(tail) {
+		return false
+	}
+	return true
 }
 
 // stripParserStages removes all extracting parser stages from a LogQL base query.
@@ -1282,20 +1316,20 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
 	// Tumbling-window fast path: for count-like functions with no post-parser pipeline
-	// stages, no unwrap, and range==step, route to native VL stats_query_range.
+	// stages, no unwrap, range==step, and explicit __error__ handling, route to native
+	// VL stats_query_range.
 	//
-	// Why native stats is safe here despite range_metric_compat.go's __error__ rule:
-	// The general rule routes parser-stage queries to the manual path because VL native
-	// stats may not replicate Loki's __error__ exclusion when extracted label dimensions
-	// affect grouping. For bare parser metrics there are no post-parser pipeline stages,
-	// so no extracted label dimensions exist. rate/count_over_time/bytes_* count every
-	// log line matching the stream selector regardless of parse success in both Loki and
-	// VL — parse failures cannot reduce the count. The manual path groups by ALL parsed
-	// fields, producing wrong label sets for tumbling windows where Loki groups by stream
-	// labels only. Native stats reproduces Loki's stream-label-only grouping exactly.
+	// The __error__ guard is required: per Loki's error model a log line that fails
+	// parsing (e.g. invalid JSON for | json) is excluded from metric aggregation — it
+	// contributes to __error__, not to rate/count_over_time/bytes_*. VL native stats
+	// counts all lines and does not replicate this exclusion. Queries that explicitly
+	// handle __error__ (e.g. | drop __error__, __error_details__) have opted in to
+	// VL's count-all semantics; all others must use the slow log-fetch path so that
+	// only successfully parsed lines are counted.
 	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
-	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) {
+	if spec.unwrapField == "" && rangeEqualsStep && !hasFilteringPostParserPipeStage(spec.baseQuery) &&
+		strings.Contains(originalQuery, "__error__") {
 		switch spec.funcName {
 		case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
 			if p.proxyBareParserMetricViaStats(w, r, start, originalQuery, spec) {

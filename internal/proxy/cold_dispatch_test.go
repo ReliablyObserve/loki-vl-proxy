@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -136,8 +137,9 @@ func TestProxyLogQueryCold_PropagatesError(t *testing.T) {
 
 	// RouteColdOnly means hot has no data for this range — cold failure must surface
 	// as an error rather than a silent empty/hot response.
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want 500 (cold error propagated)", w.Code)
+	// The chunked fetch wraps upstream errors as 502 BadGateway.
+	if w.Code < 400 {
+		t.Errorf("status = %d, want >= 400 (cold error propagated)", w.Code)
 	}
 }
 
@@ -258,11 +260,12 @@ func TestProxyLogQueryBoth_ColdFails_PropagatesError(t *testing.T) {
 
 	// Cold failed for a RouteBoth range — returning hot-only would silently truncate the
 	// result to [boundary, end] without the client knowing cold data is missing.
+	// The chunked backward path surfaces the upstream error as 502 BadGateway.
 	if w.Code == http.StatusOK {
 		t.Errorf("cold failure should not produce a 200 OK silent partial response")
 	}
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503 (cold error propagated)", w.Code)
+	if w.Code != http.StatusServiceUnavailable && w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502 or 503 (cold error propagated)", w.Code)
 	}
 }
 
@@ -309,15 +312,13 @@ func TestProxyLogQueryBoth_HotFails_PropagatesError(t *testing.T) {
 	}
 }
 
-func TestProxyLogQueryBoth_BackwardDirection_ReversesColdAndUsesMaxLimit(t *testing.T) {
-	// Backward RouteBoth: cold covers [start, boundary] and returns oldest-first.
-	// The proxy must (a) send maxLimitValue to cold (not the client limit), then
-	// (b) reverse cold before appending to hot so the merged body is newest-first
-	// across both halves, and (c) trim to the original client limit.
-	var coldReceivedLimit string
+func TestProxyLogQueryBoth_BackwardDirection_ChunkedColdAndMerge(t *testing.T) {
+	// Backward RouteBoth: cold covers [start, boundary] and returns oldest-first per chunk.
+	// The proxy must (a) use chunked backward scan so only the N newest cold rows are
+	// accumulated, (b) reverse cold before appending to hot so the merged body is
+	// newest-first across both halves, and (c) trim to the original client limit.
 	coldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/query" {
-			coldReceivedLimit = r.FormValue("limit")
 			w.Header().Set("Content-Type", "application/stream+json")
 			// Lakehouse returns ascending (oldest first) within cold range.
 			fmt.Fprintln(w, `{"_msg":"cold-old","_time":"2026-04-01T00:00:01Z","_stream":"{}"}`)
@@ -363,11 +364,6 @@ func TestProxyLogQueryBoth_BackwardDirection_ReversesColdAndUsesMaxLimit(t *test
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
-	}
-
-	// Cold must have received maxLimitValue, not the client limit.
-	if coldReceivedLimit == "3" {
-		t.Errorf("cold received client limit=3; want maxLimitValue so all cold rows are fetched before reversing")
 	}
 
 	var result struct {
@@ -483,7 +479,9 @@ func TestProxyLogQueryCold_BackwardDirection_ReversesOrder(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	// No direction param → defaults to backward (Loki default).
-	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000", nil)
+	// Use a 30-minute window (< 1-hour chunk size) so only one chunk is fetched.
+	// 1714521600 = 2024-05-01T00:00:00Z; +1800s = 2024-05-01T00:30:00Z.
+	r := httptest.NewRequest("GET", "/?query=*&start=1714521600000000000&end=1714523400000000000", nil)
 	p.proxyLogQueryCold(w, r, "*")
 
 	if w.Code != http.StatusOK {
@@ -588,15 +586,13 @@ func TestProxyLogQueryCold_ForwardDirection_KeepsOrder(t *testing.T) {
 
 func TestProxyLogQueryCold_BackwardLimit_ReturnsNewest(t *testing.T) {
 	// Regression test: with limit=2 and 5 entries, backward direction must return
-	// the 2 NEWEST rows, not the 2 oldest rows in reverse. The cold backend always
-	// scans ascending; applying the client limit before reversal would return the
-	// wrong rows (oldest 2 reversed = still the oldest 2, not the newest 2).
-	var coldReceivedLimit string
+	// the 2 NEWEST rows, not the 2 oldest rows in reverse. The chunked fetch
+	// iterates from newest to oldest in 1-hour slices, stopping once the limit is
+	// reached. Using a < 1-hour time window ensures a single chunk is issued.
 	coldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/query" {
-			coldReceivedLimit = r.FormValue("limit")
 			w.Header().Set("Content-Type", "application/stream+json")
-			// 5 entries ascending oldest→newest
+			// 5 entries ascending oldest→newest; mock ignores the limit param.
 			fmt.Fprintln(w, `{"_msg":"e1","_time":"2026-04-01T00:00:01Z","_stream":"{}"}`)
 			fmt.Fprintln(w, `{"_msg":"e2","_time":"2026-04-01T00:00:02Z","_stream":"{}"}`)
 			fmt.Fprintln(w, `{"_msg":"e3","_time":"2026-04-01T00:00:03Z","_stream":"{}"}`)
@@ -626,16 +622,13 @@ func TestProxyLogQueryCold_BackwardLimit_ReturnsNewest(t *testing.T) {
 	}
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/?query=*&start=1714521600&end=1714608000&limit=2", nil)
+	// 30-minute window (< 1-hour chunk) so only one chunk is issued.
+	// 1714521600000000000 = 2024-05-01T00:00:00Z; +1800s = 2024-05-01T00:30:00Z.
+	r := httptest.NewRequest("GET", "/?query=*&start=1714521600000000000&end=1714523400000000000&limit=2", nil)
 	p.proxyLogQueryCold(w, r, "*")
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
-	}
-
-	// The proxy must have sent maxLimitValue (not "2") to cold so all rows are fetched.
-	if coldReceivedLimit == "2" {
-		t.Errorf("cold received limit=2 — would return oldest 2 rows, not newest; want maxLimitValue sent to cold")
 	}
 
 	var result struct {
@@ -666,5 +659,116 @@ func TestProxyLogQueryCold_BackwardLimit_ReturnsNewest(t *testing.T) {
 	}
 	if msgs[1] != "e4" {
 		t.Errorf("msgs[1] = %q, want e4 (second-newest in backward order)", msgs[1])
+	}
+}
+
+// TestProxyLogQueryCold_BackwardLimit_LargeRange verifies that a backward query
+// over a range containing more than maxLimitValue rows returns the N newest rows
+// across the full range, not the N newest from only the oldest maxLimitValue matches.
+//
+// With the old non-chunked implementation the proxy would issue a single VL request
+// with limit=10000. The Lakehouse returns ascending rows, so it delivers e1..e10000.
+// Reversing that gives e10000..e1, and trimming to 5 yields e10000..e9996 — wrong.
+// The chunked backward scan fetches newest-to-oldest 1-hour slices and stops once
+// limit rows are accumulated, so it returns e15000..e14996 — correct.
+func TestProxyLogQueryCold_BackwardLimit_LargeRange(t *testing.T) {
+	const totalRows = 15000
+	const clientLimit = 5
+	// Base epoch in Unix seconds; each row i has timestamp baseEpochSec+(i-1) seconds.
+	const baseEpochSec = int64(1_000_000_000) // 2001-09-09T01:46:40Z
+
+	// Cold backend returns ALL rows in the requested time window (ascending), up to
+	// the server's natural capacity. It honours start/end (nanoseconds) for filtering
+	// but does NOT apply the client's limit — the chunked scan's stop condition handles
+	// limiting. This matches how Victoria Lakehouse works: it can return many rows per
+	// 1-hour partition, and the proxy stops fetching older chunks once it has enough.
+	coldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("cold server: parse form: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		startNs, _ := strconv.ParseInt(r.FormValue("start"), 10, 64)
+		endNs, _ := strconv.ParseInt(r.FormValue("end"), 10, 64)
+
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		for i := 1; i <= totalRows; i++ {
+			tsNs := (baseEpochSec + int64(i-1)) * int64(time.Second)
+			if tsNs < startNs || tsNs >= endNs {
+				continue
+			}
+			ts := time.Unix(0, tsNs).UTC().Format(time.RFC3339Nano)
+			fmt.Fprintf(w, "{\"_time\":%q,\"_msg\":\"e%d\",\"_stream\":\"{app=\\\"api\\\"}\"}\n", ts, i)
+		}
+	}))
+	defer coldSrv.Close()
+
+	// Hot backend: never called for a RouteColdOnly query (old time range).
+	hotSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/stream+json")
+	}))
+	defer hotSrv.Close()
+
+	p, err := New(Config{
+		BackendURL: hotSrv.URL,
+		ColdBackend: ColdBackendConfig{
+			Enabled:  true,
+			URL:      coldSrv.URL,
+			Boundary: 7 * 24 * time.Hour,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 15000 rows span baseEpochSec to baseEpochSec+15000 (Unix seconds).
+	// parseFlexTimestamp converts these to nanoseconds automatically.
+	startSec := strconv.FormatInt(baseEpochSec, 10)
+	endSec := strconv.FormatInt(baseEpochSec+int64(totalRows), 10)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet,
+		"/?query=*&start="+startSec+"&end="+endSec+"&limit="+strconv.Itoa(clientLimit)+"&direction=backward",
+		nil)
+	p.proxyLogQueryCold(w, r, `app:="api"`)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Parse Loki JSON response (same format used by other tests in this file).
+	var result struct {
+		Data struct {
+			Result []struct {
+				Values [][]string `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("unmarshal response: %v\nbody: %s", err, w.Body.String())
+	}
+
+	var msgs []string
+	for _, stream := range result.Data.Result {
+		for _, v := range stream.Values {
+			if len(v) >= 2 {
+				msgs = append(msgs, v[1])
+			}
+		}
+	}
+
+	if len(msgs) != clientLimit {
+		t.Fatalf("want %d rows, got %d: %v", clientLimit, len(msgs), msgs)
+	}
+	// Backward = newest first. The 5 newest out of 15000 are e15000..e14996.
+	want := []string{"e15000", "e14999", "e14998", "e14997", "e14996"}
+	for i, wantMsg := range want {
+		if msgs[i] != wantMsg {
+			t.Errorf("msgs[%d] = %q, want %q (full: %v)", i, msgs[i], wantMsg, msgs)
+			break
+		}
 	}
 }

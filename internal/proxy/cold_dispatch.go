@@ -2,12 +2,15 @@ package proxy
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 func (p *Proxy) coldRouteForRequest(r *http.Request) RouteDecision {
@@ -96,56 +99,124 @@ func (p *Proxy) buildColdQueryParamsForRange(r *http.Request, logsqlQuery string
 	return params
 }
 
+// coldBackwardChunkDuration controls the time-slice size for backward cold queries.
+// Sized to match Victoria Lakehouse's Hive partition granularity (hour=HH) so each
+// chunk likely maps to a single partition scan.
+const coldBackwardChunkDuration = time.Hour
+
+// countNDJSONLines counts the number of non-empty lines in an NDJSON body.
+func countNDJSONLines(body []byte) int {
+	count := 0
+	for _, line := range bytes.Split(body, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) > 0 {
+			count++
+		}
+	}
+	return count
+}
+
+// coldBackwardChunkedFetch fetches rows for a backward cold query by iterating
+// from newest to oldest in coldBackwardChunkDuration slices. It stops as soon
+// as the accumulated row count reaches limit, ensuring only the limit newest
+// rows are returned regardless of how many rows the full range contains.
+//
+// Each chunk is fetched in ascending order (as required by the Lakehouse) and
+// prepended to the accumulation buffer so the final buffer is in ascending order.
+// After the loop the caller must reverse-and-trim the returned buffer.
+//
+// Returns the accumulated NDJSON rows in ascending time order.
+func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Values, startNs, endNs int64, limit int) ([]byte, error) {
+	var accumulated []byte
+	accCount := 0
+	chunkEnd := endNs
+	chunkDurNs := coldBackwardChunkDuration.Nanoseconds()
+
+	for chunkEnd > startNs {
+		chunkStart := chunkEnd - chunkDurNs
+		if chunkStart < startNs {
+			chunkStart = startNs
+		}
+
+		chunkParams := cloneURLValues(baseParams)
+		chunkParams.Set("start", strconv.FormatInt(chunkStart, 10))
+		chunkParams.Set("end", strconv.FormatInt(chunkEnd, 10))
+		chunkParams.Set("limit", strconv.Itoa(maxLimitValue))
+
+		resp, err := p.coldRouter.ColdPost(ctx, "/select/logsql/query", chunkParams)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode >= 400 {
+			body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+			resp.Body.Close()
+			return nil, fmt.Errorf("cold backend %d: %s", resp.StatusCode, body)
+		}
+		chunkBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read cold chunk response: %w", readErr)
+		}
+
+		chunkCount := countNDJSONLines(chunkBody)
+		// Prepend this chunk so the accumulation buffer stays in ascending order
+		// (oldest chunk first, newest chunk last).
+		accumulated = append(chunkBody, accumulated...)
+		accCount += chunkCount
+
+		if accCount >= limit {
+			break // have enough rows — older chunks cannot contribute to newest N
+		}
+		chunkEnd = chunkStart
+	}
+	return accumulated, nil
+}
+
 func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
-	// The Lakehouse always scans ascending (oldest-first) and applies its limit before
-	// returning. For a backward query we need the N NEWEST rows in the range, but with
-	// the client limit set the Lakehouse returns the N OLDEST rows, and reversing them
-	// gives the wrong set. Fix: for backward queries fetch maxLimitValue rows, reverse
-	// the full result, then trim to the original limit.
-	// Limitation: cold ranges with more than maxLimitValue matching rows still return
-	// the newest rows from only the oldest maxLimitValue — Lakehouse does not support
-	// pagination or server-side descending sort.
-	params := p.buildColdQueryParams(r, logsqlQuery)
-	originalLimit := r.FormValue("limit")
-	if r.FormValue("direction") != "forward" {
-		params.Set("limit", strconv.Itoa(maxLimitValue))
+	originalLimit, err := strconv.Atoi(r.FormValue("limit"))
+	if err != nil || originalLimit <= 0 {
+		originalLimit = 1000 // match buildColdQueryParams default
 	}
 
+	if r.FormValue("direction") != "forward" {
+		// For backward queries the Lakehouse only scans ascending. Fetch chunks
+		// newest-to-oldest so we accumulate the correct newest rows regardless of
+		// how many rows the full range contains.
+		startNs, endNs := ParseTimeRangeFromRequest(r)
+		baseParams := p.buildColdQueryParams(r, logsqlQuery)
+		// Remove start/end/limit from baseParams — coldBackwardChunkedFetch sets them per chunk.
+		baseParams.Del("start")
+		baseParams.Del("end")
+		baseParams.Del("limit")
+
+		ascBody, fetchErr := p.coldBackwardChunkedFetch(r.Context(), baseParams, startNs, endNs, originalLimit)
+		if fetchErr != nil {
+			p.writeError(w, http.StatusBadGateway, "cold backend error: "+fetchErr.Error())
+			return
+		}
+		trimmed := trimNDJSONBodyToLimit(reverseNDJSONBody(ascBody), r.FormValue("limit"))
+		syntheticResp := &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(bytes.NewReader(trimmed)),
+		}
+		syntheticResp.Header.Set("Content-Type", "application/x-ndjson")
+		p.processLogQueryResponse(w, r, syntheticResp)
+		return
+	}
+
+	// Forward direction: single fetch with original limit (Lakehouse returns oldest-first naturally).
+	params := p.buildColdQueryParams(r, logsqlQuery)
 	resp, err := p.coldRouter.ColdPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
-		// RouteColdOnly means the hot backend has no data for this range — a cold
-		// failure must be surfaced rather than silently returning an empty hot response.
 		p.writeError(w, http.StatusBadGateway, "cold backend error: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 		p.writeError(w, resp.StatusCode, string(body))
 		return
 	}
-
-	// The Lakehouse always returns rows in ascending time order and does not support
-	// a LogsQL sort clause. For backward direction (the Loki default), reverse the
-	// full result then trim to the original limit so the client receives the N
-	// newest rows — matching what the hot path achieves via "| sort by (_time desc)".
-	if r.FormValue("direction") != "forward" {
-		body, readErr := io.ReadAll(resp.Body)
-		if readErr != nil {
-			p.writeError(w, http.StatusBadGateway, "failed to read cold response")
-			return
-		}
-		trimmed := trimNDJSONBodyToLimit(reverseNDJSONBody(body), originalLimit)
-		syntheticResp := &http.Response{
-			StatusCode: http.StatusOK,
-			Header:     resp.Header.Clone(),
-			Body:       io.NopCloser(bytes.NewReader(trimmed)),
-		}
-		p.processLogQueryResponse(w, r, syntheticResp)
-		return
-	}
-
 	p.processLogQueryResponse(w, r, resp)
 }
 
@@ -166,17 +237,6 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		hotStartNs = boundaryNs
 	}
 
-	coldParams := p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs)
-	// Backward direction: the Lakehouse returns cold rows oldest-first and applies its
-	// limit before streaming. Sending the client limit returns the N oldest rows from
-	// [start, boundary]; after reversing those are still the wrong rows. Fetch
-	// maxLimitValue instead so the reversed cold body contains the N newest rows from
-	// that half, matching what the hot backend already returns for [boundary, end].
-	// Limitation: cold ranges with more than maxLimitValue matching rows still return
-	// the newest rows from only the oldest maxLimitValue — a Lakehouse pagination gap.
-	if r.FormValue("direction") != "forward" {
-		coldParams.Set("limit", strconv.Itoa(maxLimitValue))
-	}
 	hotParams := p.buildHotQueryParamsForRange(r, logsqlQuery, hotStartNs, endNs)
 
 	var (
@@ -192,7 +252,34 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	}()
 	go func() {
 		defer wg.Done()
-		coldResp, coldErr = p.coldRouter.ColdPost(r.Context(), "/select/logsql/query", coldParams)
+		if r.FormValue("direction") != "forward" {
+			// Chunked backward scan: iterate newest-to-oldest 1-hour slices.
+			baseParams := p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs)
+			baseParams.Del("start")
+			baseParams.Del("end")
+			baseParams.Del("limit")
+			clientLimit, _ := strconv.Atoi(r.FormValue("limit"))
+			if clientLimit <= 0 {
+				clientLimit = 1000
+			}
+			ascBody, fetchErr := p.coldBackwardChunkedFetch(r.Context(), baseParams, startNs, coldEndNs, clientLimit)
+			if fetchErr != nil {
+				coldErr = fetchErr
+				return
+			}
+			// Return ascending body — the existing merge code below calls
+			// reverseNDJSONBody(coldBody) for backward direction, so this integrates
+			// with the existing merge path without additional changes.
+			coldResp = &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(ascBody)),
+			}
+			coldResp.Header.Set("Content-Type", "application/x-ndjson")
+			return
+		}
+		coldResp, coldErr = p.coldRouter.ColdPost(r.Context(), "/select/logsql/query",
+			p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs))
 	}()
 	wg.Wait()
 
