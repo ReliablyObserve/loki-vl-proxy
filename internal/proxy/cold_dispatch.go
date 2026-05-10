@@ -126,6 +126,10 @@ func countNDJSONLines(body []byte) int {
 //
 // Returns the accumulated NDJSON rows in ascending time order.
 func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Values, startNs, endNs int64, limit int) ([]byte, error) {
+	if limit <= 0 {
+		limit = 1000 // match Loki default
+	}
+
 	var accumulated []byte
 	accCount := 0
 	chunkEnd := endNs
@@ -158,10 +162,12 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		}
 
 		chunkCount := countNDJSONLines(chunkBody)
-		// Prepend this chunk so the accumulation buffer stays in ascending order
-		// (oldest chunk first, newest chunk last).
-		accumulated = append(chunkBody, accumulated...)
-		accCount += chunkCount
+		if chunkCount > 0 {
+			// Prepend this chunk so the accumulation buffer stays in ascending order
+			// (oldest chunk first, newest chunk last).
+			accumulated = append(chunkBody, accumulated...)
+			accCount += chunkCount
+		}
 
 		if accCount >= limit {
 			break // have enough rows — older chunks cannot contribute to newest N
