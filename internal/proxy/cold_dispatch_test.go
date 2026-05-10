@@ -259,11 +259,12 @@ func TestProxyLogQueryBoth_ColdFails_PropagatesError(t *testing.T) {
 
 	// Cold failed for a RouteBoth range — returning hot-only would silently truncate the
 	// result to [boundary, end] without the client knowing cold data is missing.
+	// The chunked backward path surfaces the upstream error as 502 BadGateway.
 	if w.Code == http.StatusOK {
 		t.Errorf("cold failure should not produce a 200 OK silent partial response")
 	}
-	if w.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want 503 (cold error propagated)", w.Code)
+	if w.Code != http.StatusServiceUnavailable && w.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502 or 503 (cold error propagated)", w.Code)
 	}
 }
 
@@ -310,15 +311,13 @@ func TestProxyLogQueryBoth_HotFails_PropagatesError(t *testing.T) {
 	}
 }
 
-func TestProxyLogQueryBoth_BackwardDirection_ReversesColdAndUsesMaxLimit(t *testing.T) {
-	// Backward RouteBoth: cold covers [start, boundary] and returns oldest-first.
-	// The proxy must (a) send maxLimitValue to cold (not the client limit), then
-	// (b) reverse cold before appending to hot so the merged body is newest-first
-	// across both halves, and (c) trim to the original client limit.
-	var coldReceivedLimit string
+func TestProxyLogQueryBoth_BackwardDirection_ChunkedColdAndMerge(t *testing.T) {
+	// Backward RouteBoth: cold covers [start, boundary] and returns oldest-first per chunk.
+	// The proxy must (a) use chunked backward scan so only the N newest cold rows are
+	// accumulated, (b) reverse cold before appending to hot so the merged body is
+	// newest-first across both halves, and (c) trim to the original client limit.
 	coldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/query" {
-			coldReceivedLimit = r.FormValue("limit")
 			w.Header().Set("Content-Type", "application/stream+json")
 			// Lakehouse returns ascending (oldest first) within cold range.
 			fmt.Fprintln(w, `{"_msg":"cold-old","_time":"2026-04-01T00:00:01Z","_stream":"{}"}`)
@@ -364,11 +363,6 @@ func TestProxyLogQueryBoth_BackwardDirection_ReversesColdAndUsesMaxLimit(t *test
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200\nbody: %s", w.Code, w.Body.String())
-	}
-
-	// Cold must have received maxLimitValue, not the client limit.
-	if coldReceivedLimit == "3" {
-		t.Errorf("cold received client limit=3; want maxLimitValue so all cold rows are fetched before reversing")
 	}
 
 	var result struct {

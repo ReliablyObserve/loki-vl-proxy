@@ -237,17 +237,6 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		hotStartNs = boundaryNs
 	}
 
-	coldParams := p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs)
-	// Backward direction: the Lakehouse returns cold rows oldest-first and applies its
-	// limit before streaming. Sending the client limit returns the N oldest rows from
-	// [start, boundary]; after reversing those are still the wrong rows. Fetch
-	// maxLimitValue instead so the reversed cold body contains the N newest rows from
-	// that half, matching what the hot backend already returns for [boundary, end].
-	// Limitation: cold ranges with more than maxLimitValue matching rows still return
-	// the newest rows from only the oldest maxLimitValue — a Lakehouse pagination gap.
-	if r.FormValue("direction") != "forward" {
-		coldParams.Set("limit", strconv.Itoa(maxLimitValue))
-	}
 	hotParams := p.buildHotQueryParamsForRange(r, logsqlQuery, hotStartNs, endNs)
 
 	var (
@@ -263,7 +252,34 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	}()
 	go func() {
 		defer wg.Done()
-		coldResp, coldErr = p.coldRouter.ColdPost(r.Context(), "/select/logsql/query", coldParams)
+		if r.FormValue("direction") != "forward" {
+			// Chunked backward scan: iterate newest-to-oldest 1-hour slices.
+			baseParams := p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs)
+			baseParams.Del("start")
+			baseParams.Del("end")
+			baseParams.Del("limit")
+			clientLimit, _ := strconv.Atoi(r.FormValue("limit"))
+			if clientLimit <= 0 {
+				clientLimit = 1000
+			}
+			ascBody, fetchErr := p.coldBackwardChunkedFetch(r.Context(), baseParams, startNs, coldEndNs, clientLimit)
+			if fetchErr != nil {
+				coldErr = fetchErr
+				return
+			}
+			// Return ascending body — the existing merge code below calls
+			// reverseNDJSONBody(coldBody) for backward direction, so this integrates
+			// with the existing merge path without additional changes.
+			coldResp = &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(bytes.NewReader(ascBody)),
+			}
+			coldResp.Header.Set("Content-Type", "application/x-ndjson")
+			return
+		}
+		coldResp, coldErr = p.coldRouter.ColdPost(r.Context(), "/select/logsql/query",
+			p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs))
 	}()
 	wg.Wait()
 
