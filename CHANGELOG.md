@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- feat(e2e): add `grafana-lokiexplore-app` (Logs Drilldown) plugin to e2e-compat Grafana stack, enabling end-to-end drilldown test coverage
+
+### Fixed
+
+- fix(e2e): change tail-ingress healthcheck from `localhost` to `127.0.0.1` — Alpine musl libc resolves `localhost` to `::1` (IPv6) while nginx listens only on IPv4, causing the container to always appear unhealthy
+- chore: bump Go toolchain from 1.26.2 to 1.26.3 to resolve govulncheck vulnerabilities GO-2026-4971 and GO-2026-4918 in the standard library
+
 ## [1.29.6] - 2026-05-07
 
 ### Fixed
