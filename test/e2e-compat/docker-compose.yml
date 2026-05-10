@@ -480,7 +480,7 @@ services:
       loki-vl-proxy-tail:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://localhost:8080/nginx-health"]
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8080/nginx-health"]
       interval: 3s
       timeout: 2s
       retries: 10
