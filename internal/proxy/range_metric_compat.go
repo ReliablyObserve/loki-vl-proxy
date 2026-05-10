@@ -1,7 +1,7 @@
 package proxy
 
 import (
-	"bytes"
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	fj "github.com/valyala/fastjson"
 )
 
 type statsCompatSpec struct {
@@ -496,6 +498,16 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 	return p.labelTranslator.ToVL(field), 0, nil
 }
 
+// metricSeriesCacheEntry holds the pre-computed labels and key for a metric series.
+// Cached per (_stream, level) composite within a single collectRangeMetricSamples
+// call: entries sharing the same stream identity produce identical series, so the
+// expensive label-copy + translation + key-build runs once per distinct stream.
+type metricSeriesCacheEntry struct {
+	metricLabels map[string]string // pre-translation, needed for parsed-label slow path
+	translated   map[string]string // after labelTranslator
+	key          string
+}
+
 func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy, origGroupBy []string, byExplicit bool, field, unwrapConv string, start, end time.Time) (map[string]manualSeriesSamples, error) {
 	params := url.Values{}
 	params.Set("query", baseQuery)
@@ -509,27 +521,40 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+
 	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("backend returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
+	// seriesCache caches per (_stream + "|" + level) within this request.
+	// Avoids repeated label-map allocation for the dominant case where thousands
+	// of log lines share the same stream identity (same series).
+	seriesCache := make(map[string]*metricSeriesCacheEntry, 32)
 	seriesMap := make(map[string]manualSeriesSamples)
 	includeParsedLabels := queryUsesParserStages(baseQuery)
-	lines := bytes.Split(body, []byte{'\n'})
-	for _, line := range lines {
-		line = bytes.TrimSpace(line)
+
+	fjp := vlFJParserPool.Get()
+	defer vlFJParserPool.Put(fjp)
+
+	// Stream the response line by line — avoids io.ReadAll + bytes.Split which
+	// would buffer the entire VL response (up to limit=1000000 lines) in memory.
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
+
+	for scanner.Scan() {
+		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
 
-		var entry map[string]interface{}
-		if err := json.Unmarshal(line, &entry); err != nil {
+		v, parseErr := fjp.ParseBytes(line)
+		if parseErr != nil {
 			continue
 		}
 
-		rawTS, ok := stringifyEntryValue(entry["_time"])
-		if !ok || rawTS == "" {
+		rawTS := string(v.GetStringBytes("_time"))
+		if rawTS == "" {
 			continue
 		}
 		normTS, ok := formatEntryTimestamp(rawTS)
@@ -544,58 +569,63 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 			ts *= int64(time.Second)
 		}
 
-		value, ok := p.extractManualSampleValue(entry, field, unwrapConv)
+		sampleValue, ok := p.extractManualSampleValueFJ(v, field, unwrapConv)
 		if !ok {
 			continue
 		}
 
-		// parseStreamLabels returns a shared cached map — copy before mutating
-		// to prevent concurrent map write panics under high concurrency.
-		rawStreamLabels := parseStreamLabels(asString(entry["_stream"]))
-		streamLabels := make(map[string]string, len(rawStreamLabels))
-		for k, v := range rawStreamLabels {
-			streamLabels[k] = v
-		}
-		if level := strings.TrimSpace(asString(entry["level"])); level != "" {
-			streamLabels["level"] = level
-			streamLabels["detected_level"] = level
-		}
-		if strings.TrimSpace(streamLabels["detected_level"]) == "" {
-			streamLabels["detected_level"] = "unknown"
-		}
-		ensureSyntheticServiceName(streamLabels)
-		metricLabels := buildManualMetricLabels(streamLabels, groupBy, byExplicit)
-		if includeParsedLabels && len(groupBy) > 0 && !byExplicit {
-			// Only inject parsed labels that appear in the explicit by(...) list.
-			// Adding ALL parsed fields (old behaviour) creates one series per unique
-			// JSON-object combination — O(N) series for N distinct log entries.
-			// Loki groups by stream labels only when no by(...) is present; parsed
-			// fields become metric dimensions only when explicitly named in by(...).
-			addGroupByParsedLabels(metricLabels, entry, groupBy)
-		}
-		// Rename VL-translated groupBy keys back to their original Loki names.
-		// Example: VL "level" was produced by translating Loki "detected_level";
-		// the response metric must carry "detected_level" to match what Drilldown
-		// requested in "sum(...) by (detected_level)".
-		if len(origGroupBy) == len(groupBy) {
-			for i, vlKey := range groupBy {
-				if lokiKey := origGroupBy[i]; lokiKey != vlKey {
-					if v, ok := metricLabels[vlKey]; ok {
-						delete(metricLabels, vlKey)
-						metricLabels[lokiKey] = v
-					}
+		streamStr := string(v.GetStringBytes("_stream"))
+		levelStr := strings.TrimSpace(string(v.GetStringBytes("level")))
+
+		var seriesEntry *metricSeriesCacheEntry
+
+		if !includeParsedLabels || len(groupBy) == 0 {
+			// Hot path: series identity depends only on _stream + level.
+			// Build once per unique (stream, level) pair and reuse across all matching lines.
+			cacheKey := streamStr + "|" + levelStr
+			seriesEntry = seriesCache[cacheKey]
+			if seriesEntry == nil {
+				seriesEntry = p.buildMetricSeriesEntry(streamStr, levelStr, groupBy, byExplicit, origGroupBy)
+				seriesCache[cacheKey] = seriesEntry
+			}
+		} else {
+			// Slow path: by(...) includes parsed fields extracted per entry.
+			// Extend the cache key with the extracted field values so entries with
+			// the same parsed-field values still hit the cache.
+			cacheKey := p.buildParsedGroupByCacheKey(streamStr, levelStr, v, groupBy)
+			seriesEntry = seriesCache[cacheKey]
+			if seriesEntry == nil {
+				base := p.buildMetricSeriesEntry(streamStr, levelStr, groupBy, byExplicit, origGroupBy)
+				// Copy base metric labels and inject per-entry parsed fields.
+				metricLabels := make(map[string]string, len(base.metricLabels))
+				for k, val := range base.metricLabels {
+					metricLabels[k] = val
 				}
+				// Only inject parsed labels that appear in the explicit by(...) list.
+				// Adding ALL parsed fields (old behaviour) creates one series per unique
+				// JSON-object combination — O(N) series for N distinct log entries.
+				// Loki groups by stream labels only when no by(...) is present; parsed
+				// fields become metric dimensions only when explicitly named in by(...).
+				addGroupByParsedLabelsFJ(metricLabels, v, groupBy)
+				translatedParsed := p.labelTranslator.TranslateLabelsMap(metricLabels)
+				seriesEntry = &metricSeriesCacheEntry{
+					metricLabels: metricLabels,
+					translated:   translatedParsed,
+					key:          canonicalLabelsKey(translatedParsed),
+				}
+				seriesCache[cacheKey] = seriesEntry
 			}
 		}
-		translated := p.labelTranslator.TranslateLabelsMap(metricLabels)
-		key := seriesKeyFromMetric(translated)
 
-		current := seriesMap[key]
+		current := seriesMap[seriesEntry.key]
 		if current.Metric == nil {
-			current.Metric = translated
+			current.Metric = seriesEntry.translated
 		}
-		current.Samples = append(current.Samples, rangeMetricSample{ts: ts, value: value})
-		seriesMap[key] = current
+		current.Samples = append(current.Samples, rangeMetricSample{ts: ts, value: sampleValue})
+		seriesMap[seriesEntry.key] = current
+	}
+	if scanErr := scanner.Err(); scanErr != nil {
+		return nil, fmt.Errorf("scanning VL response: %w", scanErr)
 	}
 
 	for key, series := range seriesMap {
@@ -604,6 +634,158 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	}
 
 	return seriesMap, nil
+}
+
+// buildMetricSeriesEntry constructs the label maps and series key for a given
+// (_stream, level) pair. Called once per distinct stream identity per request.
+func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []string, byExplicit bool, origGroupBy []string) *metricSeriesCacheEntry {
+	rawStreamLabels := parseStreamLabels(streamStr)
+	streamLabels := make(map[string]string, len(rawStreamLabels)+3)
+	for k, v := range rawStreamLabels {
+		streamLabels[k] = v
+	}
+	if levelStr != "" {
+		streamLabels["level"] = levelStr
+		streamLabels["detected_level"] = levelStr
+	}
+	if strings.TrimSpace(streamLabels["detected_level"]) == "" {
+		streamLabels["detected_level"] = "unknown"
+	}
+	ensureSyntheticServiceName(streamLabels)
+
+	metricLabels := buildManualMetricLabels(streamLabels, groupBy, byExplicit)
+
+	// Rename VL-translated groupBy keys back to their original Loki names.
+	// Example: VL "level" was produced by translating Loki "detected_level";
+	// the response metric must carry "detected_level" to match what Drilldown
+	// requested in "sum(...) by (detected_level)".
+	if len(origGroupBy) == len(groupBy) {
+		for i, vlKey := range groupBy {
+			if lokiKey := origGroupBy[i]; lokiKey != vlKey {
+				if val, ok := metricLabels[vlKey]; ok {
+					delete(metricLabels, vlKey)
+					metricLabels[lokiKey] = val
+				}
+			}
+		}
+	}
+
+	translated := p.labelTranslator.TranslateLabelsMap(metricLabels)
+	return &metricSeriesCacheEntry{
+		metricLabels: metricLabels,
+		translated:   translated,
+		key:          canonicalLabelsKey(translated),
+	}
+}
+
+// buildParsedGroupByCacheKey builds a cache key for the slow path (parsed labels).
+// It extends the (_stream, level) base with the values of each groupBy field found
+// in the log entry, so entries with identical parsed-field values still reuse the
+// pre-built label map.
+func (p *Proxy) buildParsedGroupByCacheKey(streamStr, levelStr string, v *fj.Value, groupBy []string) string {
+	var b strings.Builder
+	b.WriteString(streamStr)
+	b.WriteByte('|')
+	b.WriteString(levelStr)
+	for _, key := range groupBy {
+		if isVLInternalField(key) || key == "_stream_id" || key == "_stream" {
+			continue
+		}
+		fv := v.Get(key)
+		if fv == nil {
+			continue
+		}
+		val, ok := stringifyFJValue(fv)
+		if !ok {
+			continue
+		}
+		b.WriteByte('|')
+		b.WriteString(key)
+		b.WriteByte('=')
+		b.WriteString(val)
+	}
+	return b.String()
+}
+
+// extractManualSampleValueFJ is the fastjson variant of extractManualSampleValue.
+// Zero heap allocation for the __count__ and __bytes__ hot paths.
+func (p *Proxy) extractManualSampleValueFJ(v *fj.Value, field, unwrapConv string) (float64, bool) {
+	switch field {
+	case "__count__":
+		return 1, true
+	case "__bytes__":
+		return float64(len(v.GetStringBytes("_msg"))), true
+	}
+
+	raw := p.lookupFJField(v, p.manualValueCandidateFields(field))
+	if raw == nil {
+		return 0, false
+	}
+
+	switch unwrapConv {
+	case "duration":
+		s, ok := stringifyFJValue(raw)
+		if !ok {
+			return 0, false
+		}
+		return parseDuration(s)
+	case "bytes":
+		s, ok := stringifyFJValue(raw)
+		if !ok {
+			return 0, false
+		}
+		return parseBytes(s)
+	default:
+		return parseFloatValueFJ(raw)
+	}
+}
+
+// lookupFJField returns the first non-nil field from v matching any key in keys.
+func (p *Proxy) lookupFJField(v *fj.Value, keys []string) *fj.Value {
+	for _, key := range keys {
+		if fv := v.Get(key); fv != nil {
+			return fv
+		}
+	}
+	return nil
+}
+
+// parseFloatValueFJ extracts a float64 from a fastjson value without interface{} boxing.
+func parseFloatValueFJ(v *fj.Value) (float64, bool) {
+	switch v.Type() {
+	case fj.TypeNumber:
+		f, err := v.Float64()
+		return f, err == nil
+	case fj.TypeString:
+		f, err := strconv.ParseFloat(strings.TrimSpace(string(v.GetStringBytes())), 64)
+		return f, err == nil
+	default:
+		return 0, false
+	}
+}
+
+// addGroupByParsedLabelsFJ is the fastjson variant of addGroupByParsedLabels.
+func addGroupByParsedLabelsFJ(metricLabels map[string]string, v *fj.Value, groupBy []string) {
+	for _, key := range groupBy {
+		if isVLInternalField(key) || key == "_stream_id" {
+			continue
+		}
+		if _, exists := metricLabels[key]; exists {
+			continue
+		}
+		fv := v.Get(key)
+		if fv == nil {
+			continue
+		}
+		value, ok := stringifyFJValue(fv)
+		if !ok {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if value != "" {
+			metricLabels[key] = value
+		}
+	}
 }
 
 func queryUsesParserStages(baseQuery string) bool {
