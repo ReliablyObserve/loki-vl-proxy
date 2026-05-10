@@ -2,12 +2,15 @@ package proxy
 
 import (
 	"bytes"
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 func (p *Proxy) coldRouteForRequest(r *http.Request) RouteDecision {
@@ -94,6 +97,78 @@ func (p *Proxy) buildColdQueryParamsForRange(r *http.Request, logsqlQuery string
 	params.Set("start", strconv.FormatInt(startNs, 10))
 	params.Set("end", strconv.FormatInt(endNs, 10))
 	return params
+}
+
+// coldBackwardChunkDuration controls the time-slice size for backward cold queries.
+// Sized to match Victoria Lakehouse's Hive partition granularity (hour=HH) so each
+// chunk likely maps to a single partition scan.
+const coldBackwardChunkDuration = time.Hour
+
+// countNDJSONLines counts the number of non-empty lines in an NDJSON body.
+func countNDJSONLines(body []byte) int {
+	count := 0
+	for _, line := range bytes.Split(body, []byte("\n")) {
+		if len(bytes.TrimSpace(line)) > 0 {
+			count++
+		}
+	}
+	return count
+}
+
+// coldBackwardChunkedFetch fetches rows for a backward cold query by iterating
+// from newest to oldest in coldBackwardChunkDuration slices. It stops as soon
+// as the accumulated row count reaches limit, ensuring only the limit newest
+// rows are returned regardless of how many rows the full range contains.
+//
+// Each chunk is fetched in ascending order (as required by the Lakehouse) and
+// prepended to the accumulation buffer so the final buffer is in ascending order.
+// After the loop the caller must reverse-and-trim the returned buffer.
+//
+// Returns the accumulated NDJSON rows in ascending time order.
+func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Values, startNs, endNs int64, limit int) ([]byte, error) {
+	var accumulated []byte
+	accCount := 0
+	chunkEnd := endNs
+	chunkDurNs := coldBackwardChunkDuration.Nanoseconds()
+
+	for chunkEnd > startNs {
+		chunkStart := chunkEnd - chunkDurNs
+		if chunkStart < startNs {
+			chunkStart = startNs
+		}
+
+		chunkParams := cloneURLValues(baseParams)
+		chunkParams.Set("start", strconv.FormatInt(chunkStart, 10))
+		chunkParams.Set("end", strconv.FormatInt(chunkEnd, 10))
+		chunkParams.Set("limit", strconv.Itoa(limit))
+
+		resp, err := p.coldRouter.ColdPost(ctx, "/select/logsql/query", chunkParams)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode >= 400 {
+			body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+			resp.Body.Close()
+			return nil, fmt.Errorf("cold backend %d: %s", resp.StatusCode, body)
+		}
+		chunkBody, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("failed to read cold chunk response: %w", readErr)
+		}
+
+		chunkCount := countNDJSONLines(chunkBody)
+		// Prepend this chunk so the accumulation buffer stays in ascending order
+		// (oldest chunk first, newest chunk last).
+		accumulated = append(chunkBody, accumulated...)
+		accCount += chunkCount
+
+		if accCount >= limit {
+			break // have enough rows — older chunks cannot contribute to newest N
+		}
+		chunkEnd = chunkStart
+	}
+	return accumulated, nil
 }
 
 func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
