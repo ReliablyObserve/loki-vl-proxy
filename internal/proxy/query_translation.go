@@ -1282,20 +1282,20 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 
 func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {
 	// Tumbling-window fast path: for count-like functions with no post-parser pipeline
-	// stages, no unwrap, and range==step, route to native VL stats_query_range.
+	// stages, no unwrap, range==step, and explicit __error__ handling, route to native
+	// VL stats_query_range.
 	//
-	// Why native stats is safe here despite range_metric_compat.go's __error__ rule:
-	// The general rule routes parser-stage queries to the manual path because VL native
-	// stats may not replicate Loki's __error__ exclusion when extracted label dimensions
-	// affect grouping. For bare parser metrics there are no post-parser pipeline stages,
-	// so no extracted label dimensions exist. rate/count_over_time/bytes_* count every
-	// log line matching the stream selector regardless of parse success in both Loki and
-	// VL — parse failures cannot reduce the count. The manual path groups by ALL parsed
-	// fields, producing wrong label sets for tumbling windows where Loki groups by stream
-	// labels only. Native stats reproduces Loki's stream-label-only grouping exactly.
+	// The __error__ guard is required: per Loki's error model a log line that fails
+	// parsing (e.g. invalid JSON for | json) is excluded from metric aggregation — it
+	// contributes to __error__, not to rate/count_over_time/bytes_*. VL native stats
+	// counts all lines and does not replicate this exclusion. Queries that explicitly
+	// handle __error__ (e.g. | drop __error__, __error_details__) have opted in to
+	// VL's count-all semantics; all others must use the slow log-fetch path so that
+	// only successfully parsed lines are counted.
 	stepDurFast, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 	rangeEqualsStep := stepOk && spec.rangeWindow > 0 && spec.rangeWindow == stepDurFast
-	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) {
+	if spec.unwrapField == "" && rangeEqualsStep && !hasPostParserPipeStage(spec.baseQuery) &&
+		strings.Contains(originalQuery, "__error__") {
 		switch spec.funcName {
 		case "rate", "count_over_time", "bytes_over_time", "bytes_rate":
 			if p.proxyBareParserMetricViaStats(w, r, start, originalQuery, spec) {
