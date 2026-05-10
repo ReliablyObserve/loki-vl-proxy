@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.29.7] - 2026-05-10
+
 ### Added
 
 - feat(e2e): add `grafana-lokiexplore-app` (Logs Drilldown) plugin to e2e-compat Grafana stack, enabling end-to-end drilldown test coverage
