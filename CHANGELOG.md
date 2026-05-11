@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf(range_metric): replace `encoding/json` unmarshal with `fastjson` in `collectRangeMetricSamples`, eliminating per-entry heap allocations for map[string]interface{} decoding and reducing GC pressure on high-cardinality metric queries.
+
+### Fixed
+
+- fix(range_metric): remove `+3` pre-allocation hint from `make(map[string]string, ...)` in `buildMetricSeriesEntry` to eliminate integer overflow risk (CodeQL CWE-190). Map growth is amortised and the hint provided no measurable benefit.
+
 ## [1.29.8] - 2026-05-10
 
 ### Fixed

@@ -640,7 +640,7 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 // (_stream, level) pair. Called once per distinct stream identity per request.
 func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []string, byExplicit bool, origGroupBy []string) *metricSeriesCacheEntry {
 	rawStreamLabels := parseStreamLabels(streamStr)
-	streamLabels := make(map[string]string, len(rawStreamLabels)+3)
+	streamLabels := make(map[string]string, len(rawStreamLabels))
 	for k, v := range rawStreamLabels {
 		streamLabels[k] = v
 	}
@@ -911,32 +911,6 @@ func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, b
 	return labels
 }
 
-func (p *Proxy) extractManualSampleValue(entry map[string]interface{}, field, unwrapConv string) (float64, bool) {
-	switch field {
-	case "__count__":
-		return 1, true
-	case "__bytes__":
-		return float64(len(asString(entry["_msg"]))), true
-	}
-
-	raw, ok := lookupEntryField(entry, p.manualValueCandidateFields(field))
-	if !ok {
-		return 0, false
-	}
-
-	switch unwrapConv {
-	case "duration":
-		value, ok := parseDuration(asString(raw))
-		return value, ok
-	case "bytes":
-		value, ok := parseBytes(asString(raw))
-		return value, ok
-	default:
-		value, ok := parseFloatValue(raw)
-		return value, ok
-	}
-}
-
 func (p *Proxy) manualValueCandidateFields(field string) []string {
 	seen := map[string]struct{}{}
 	var out []string
@@ -956,15 +930,6 @@ func (p *Proxy) manualValueCandidateFields(field string) []string {
 	add(p.labelTranslator.ToVL(field))
 	add(strings.ReplaceAll(field, "_", "."))
 	return out
-}
-
-func lookupEntryField(entry map[string]interface{}, keys []string) (interface{}, bool) {
-	for _, key := range keys {
-		if raw, ok := entry[key]; ok {
-			return raw, true
-		}
-	}
-	return nil, false
 }
 
 func parseFloatValue(raw interface{}) (float64, bool) {
