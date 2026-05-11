@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf(range_metric): replace `encoding/json` unmarshal with `fastjson` in `collectRangeMetricSamples`, eliminating per-entry heap allocations for map[string]interface{} decoding and reducing GC pressure on high-cardinality metric queries.
+
+### Fixed
+
+- fix(range_metric): remove `+3` pre-allocation hint from `make(map[string]string, ...)` in `buildMetricSeriesEntry` to eliminate integer overflow risk (CodeQL CWE-190). Map growth is amortised and the hint provided no measurable benefit.
+- fix(range_metric): `fetchBareParserMetricSeries` no longer adds parsed JSON fields (e.g. `path`, `method`, `status`) to metric series labels. Bare `rate(| json)` and similar queries now group by stream labels only, matching Loki's behaviour where parsed fields only become metric dimensions when explicitly named in an outer `by (...)` aggregation.
+- ci: increase all fuzz smoke test timeouts from 10 s to 12 s to eliminate spurious "context deadline exceeded" failures caused by Go's fuzz framework firing its internal deadline marginally after the nominal budget.
+
 ## [1.30.0] - 2026-05-11
 
 ### Fixed

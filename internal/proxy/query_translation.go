@@ -738,6 +738,14 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		metadataMapPool.Put(pfBuf)
 	}()
 
+	// Include parsed fields in metric labels only when the base query has a
+	// post-parser pipe stage (e.g. "| json | status >= 500"). Without such a
+	// stage, grouping is by stream labels only — matching the native VL stats
+	// behaviour that bare rate(| json) used before the __error__ slow-path guard
+	// was added. With a post-parser filter, the extracted label values are part
+	// of the series identity (as in Loki).
+	includeParsedInMetric := hasPostParserPipeStage(spec.baseQuery)
+
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
@@ -760,13 +768,15 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		}
 		msg, _ := stringifyEntryValue(entry["_msg"])
 		desc := p.logQueryStreamDescriptor(asString(entry["_stream"]), asString(entry["level"]), streamLabelCache, streamDescriptorCache)
-		_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache, smBuf, pfBuf)
 		metric := cloneStringMap(desc.translatedLabels)
-		for key, value := range parsedFields {
-			if spec.unwrapField != "" && key == spec.unwrapField {
-				continue
+		if includeParsedInMetric {
+			_, parsedFields := p.classifyEntryMetadataFields(entry, desc.rawLabels, true, exposureCache, smBuf, pfBuf)
+			for key, value := range parsedFields {
+				if spec.unwrapField != "" && key == spec.unwrapField {
+					continue
+				}
+				metric[key] = value
 			}
-			metric[key] = value
 		}
 		seriesKey := canonicalLabelsKey(metric)
 		series, ok := seriesByKey[seriesKey]
