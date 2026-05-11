@@ -13,7 +13,7 @@
 [![VictoriaLogs Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/ReliablyObserve/Loki-VL-proxy)](https://go.dev/)
 [![Release](https://img.shields.io/github/v/release/ReliablyObserve/Loki-VL-proxy)](https://github.com/ReliablyObserve/Loki-VL-proxy/releases)
-[![Lines of Code](https://img.shields.io/badge/go%20loc-106.0k-blue)](https://github.com/ReliablyObserve/loki-vl-proxy)
+[![Lines of Code](https://img.shields.io/badge/go%20loc-106.3k-blue)](https://github.com/ReliablyObserve/loki-vl-proxy)
 [![Tests](https://img.shields.io/badge/tests-2437%20passed-brightgreen)](#tests)
 [![Coverage](https://img.shields.io/badge/coverage-87.1%25-green)](#tests)
 [![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
