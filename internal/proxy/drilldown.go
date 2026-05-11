@@ -1751,17 +1751,27 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	}
 
 	if anyOTelWithServiceName {
-		var source *detectedFieldSummary
-		if serviceDot, ok := fields["service.name"]; ok {
-			source = serviceDot
-		} else {
-			source = &detectedFieldSummary{label: "service_name", typ: "string"}
-		}
-		fields["service_name"] = &detectedFieldSummary{
-			label:       "service_name",
-			typ:         source.typ,
-			values:      source.values,
-			cardinality: source.cardinality,
+		// Only expose service_name as an alias when the raw VL stream does NOT already
+		// carry "service_name" (underscore) as a literal stream-label key.  OTel data
+		// stores it as "service.name" (dot) which the label translator maps to the Loki
+		// label "service_name" — that translation should remain visible.  But when a
+		// stream is indexed with a literal service_name key (e.g. plain Loki pushes
+		// labelled service_name=…), surfacing it again as a detected field would
+		// duplicate the stream selector in the Drilldown fields panel, contrary to how
+		// Loki treats stream labels.
+		if _, rawIsServiceName := streamLabelSet["service_name"]; !rawIsServiceName {
+			var source *detectedFieldSummary
+			if serviceDot, ok := fields["service.name"]; ok {
+				source = serviceDot
+			} else {
+				source = &detectedFieldSummary{label: "service_name", typ: "string"}
+			}
+			fields["service_name"] = &detectedFieldSummary{
+				label:       "service_name",
+				typ:         source.typ,
+				values:      source.values,
+				cardinality: source.cardinality,
+			}
 		}
 	}
 

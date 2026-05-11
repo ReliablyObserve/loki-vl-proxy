@@ -191,12 +191,17 @@ func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHi
 }
 
 func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string) (*http.Response, bool, string) {
-	ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
-	defer cancel()
-
+	// Use the full request context (parent) so that the response body reader — which
+	// the caller uses to forward the VL streaming tail — is not cancelled by a short
+	// probe deadline.  VL v1.50+ accepts the request immediately (200 OK headers
+	// arrive before any data) and then streams NDJSON lines as they are ingested.
+	// A cancelled probe context would kill the body reader within 1500 ms, causing
+	// the forwarded WebSocket to close with "unexpected EOF".
+	// For backends that do not support the tail endpoint, VL returns a 4xx response
+	// quickly, so no timeout guard is needed here.
 	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s",
 		p.backend.String(), url.QueryEscape(logsqlQuery))
-	req, err := http.NewRequestWithContext(ctx, "GET", vlURL, nil)
+	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)
 	if err != nil {
 		return nil, false, "failed to create native tail request"
 	}
