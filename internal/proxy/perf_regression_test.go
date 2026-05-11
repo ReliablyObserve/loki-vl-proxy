@@ -24,11 +24,6 @@ func vlLineTS(ts time.Time, msg, stream string) string {
 	return fmt.Sprintf(`{"_time":%q,"_msg":%q,"_stream":%q}`, ts.Format(time.RFC3339Nano), msg, stream)
 }
 
-func vlLineWithField(ts time.Time, stream, fieldName, fieldValue string) string {
-	return fmt.Sprintf(`{"_time":%q,"_stream":%q,%q:%q}`, ts.Format(time.RFC3339Nano), stream, fieldName, fieldValue)
-}
-
-
 // =============================================================================
 // 1. Basic count_over_time — single stream, multiple samples
 // =============================================================================
