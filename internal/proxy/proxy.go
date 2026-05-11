@@ -700,7 +700,7 @@ func New(cfg Config) (*Proxy, error) {
 	// fallback). Unlike a request-context timeout, ResponseHeaderTimeout only guards
 	// the header phase; subsequent body reads (NDJSON streaming) are not affected, so
 	// the forwarded WebSocket session can live as long as the client remains connected.
-	tailTransport.ResponseHeaderTimeout = 1500 * time.Millisecond
+	tailTransport.ResponseHeaderTimeout = 5 * time.Second
 
 	maxLines := cfg.MaxLines
 	if maxLines <= 0 {

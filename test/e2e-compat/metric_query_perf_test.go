@@ -80,8 +80,10 @@ func measureQueryLatency(baseURL string, params url.Values) (time.Duration, erro
 }
 
 // TestChaining_MetricQueryBareRateJSONTumbling verifies that rate(| json)
-// with range==step (tumbling window) returns a valid matrix with stream labels
-// only — no parsed JSON fields should leak into the metric labels.
+// with range==step (tumbling window) returns a valid matrix response.
+// Both Loki and the proxy materialize all parsed JSON fields into metric labels
+// for bare rate() without a grouping clause, so the test validates the response
+// shape rather than asserting stream-label-only labels.
 func TestChaining_MetricQueryBareRateJSONTumbling(t *testing.T) {
 	ensureDataIngested(t)
 
@@ -98,24 +100,7 @@ func TestChaining_MetricQueryBareRateJSONTumbling(t *testing.T) {
 	if len(result) == 0 {
 		t.Skip("no data available")
 	}
-
-	// Fast path (range==step) groups by stream labels only.
-	// Parsed JSON fields like "method", "path", "status", "duration_ms"
-	// must not appear in metric labels.
-	parsedJSONFields := map[string]bool{
-		"method": true, "path": true, "duration_ms": true, "trace_id": true,
-		"user_id": true, "session_id": true, "request_id": true,
-	}
-	for _, item := range result {
-		series, _ := item.(map[string]interface{})
-		metric, _ := series["metric"].(map[string]interface{})
-		for key := range metric {
-			if parsedJSONFields[key] {
-				t.Errorf("parsed JSON field %q leaked into fast-path metric labels; only stream labels expected", key)
-			}
-		}
-	}
-	t.Logf("rate | json tumbling: %d series, all stream-label-only", len(result))
+	t.Logf("rate | json tumbling: %d series", len(result))
 }
 
 // TestChaining_MetricQueryBareCountJSONTumbling verifies count_over_time with
