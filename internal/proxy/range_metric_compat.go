@@ -1142,26 +1142,6 @@ func sumFloat64(values []float64) float64 {
 	return out
 }
 
-func minFloat64(values []float64) float64 {
-	out := values[0]
-	for _, value := range values[1:] {
-		if value < out {
-			out = value
-		}
-	}
-	return out
-}
-
-func maxFloat64(values []float64) float64 {
-	out := values[0]
-	for _, value := range values[1:] {
-		if value > out {
-			out = value
-		}
-	}
-	return out
-}
-
 func stddevFloat64(values []float64) float64 {
 	mean := sumFloat64(values) / float64(len(values))
 	var variance float64
