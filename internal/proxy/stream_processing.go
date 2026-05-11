@@ -1310,6 +1310,17 @@ func formatVLTimestamp(ts string) string {
 	if parsed, err := time.Parse(time.RFC3339, ts); err == nil {
 		return strconv.FormatInt(parsed.UnixNano(), 10)
 	}
+	// RFC3339 timezone offsets (+HH:MM) decode as spaces when sent as raw
+	// query-string '+' signs: HTTP decodes '+' as space. Restore the '+'.
+	if strings.Contains(ts, " ") {
+		restored := strings.Replace(ts, " ", "+", 1)
+		if parsed, err := time.Parse(time.RFC3339Nano, restored); err == nil {
+			return strconv.FormatInt(parsed.UnixNano(), 10)
+		}
+		if parsed, err := time.Parse(time.RFC3339, restored); err == nil {
+			return strconv.FormatInt(parsed.UnixNano(), 10)
+		}
+	}
 	return ts
 }
 
