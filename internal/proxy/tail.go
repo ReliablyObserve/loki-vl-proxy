@@ -191,12 +191,25 @@ func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHi
 }
 
 func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string) (*http.Response, bool, string) {
-	ctx, cancel := context.WithTimeout(parent, 1500*time.Millisecond)
-	defer cancel()
-
-	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s",
+	// Use the full request context (parent) so that the response body reader — which
+	// the caller uses to forward the VL streaming tail — is not cancelled by a short
+	// probe deadline.  VL v1.50+ accepts the request immediately (200 OK headers
+	// arrive before any data) and then streams NDJSON lines as they are ingested.
+	// A cancelled probe context would kill the body reader within 1500 ms, causing
+	// the forwarded WebSocket to close with "unexpected EOF".
+	// For backends that do not support the tail endpoint, VL returns a 4xx response
+	// quickly, so no timeout guard is needed here.
+	//
+	// offset=0s overrides VL's default 5-second tail offset (tailOffsetNsecs = 5e9
+	// in VL source).  Without this override, VL's streaming window end is always
+	// now-5s, so data pushed at T+0 only becomes visible to the tail at T+5s —
+	// colliding with the 5s ResponseHeaderTimeout on the tailClient.  With offset=0s
+	// the window end is now, data is visible within one refresh_interval (~1s), and
+	// VL sends headers well within the 5s budget.  VL expects a duration string
+	// (e.g. "0s"), not a bare integer.
+	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s&offset=0s",
 		p.backend.String(), url.QueryEscape(logsqlQuery))
-	req, err := http.NewRequestWithContext(ctx, "GET", vlURL, nil)
+	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)
 	if err != nil {
 		return nil, false, "failed to create native tail request"
 	}

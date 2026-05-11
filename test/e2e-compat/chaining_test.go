@@ -229,7 +229,7 @@ func TestChaining_AllEndpointsWithLabels(t *testing.T) {
 		{"ready", "/ready", 200},
 		{"metrics", "/metrics", 200},
 		{"patterns", "/loki/api/v1/patterns?query={app=\"test\"}", 200},
-		{"index_stats", "/loki/api/v1/index/stats?query={app=\"chain-test\"}&start=" + time.Now().Add(-1*time.Hour).Format(time.RFC3339Nano) + "&end=" + time.Now().Add(time.Hour).Format(time.RFC3339Nano), 200},
+		{"index_stats", "/loki/api/v1/index/stats?query={app=\"chain-test\"}&start=" + time.Now().UTC().Add(-1*time.Hour).Format(time.RFC3339Nano) + "&end=" + time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano), 200},
 	}
 
 	for _, ep := range endpoints {
