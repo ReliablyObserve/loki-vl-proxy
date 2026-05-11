@@ -525,6 +525,34 @@ func TestHasPostParserPipeStage(t *testing.T) {
 	}
 }
 
+func TestHasDropErrorOnlyPostParserStage(t *testing.T) {
+	cases := []struct {
+		query string
+		want  bool
+	}{
+		{`{app="a"} | json | drop __error__`, true},
+		{`{app="a"} | logfmt | drop __error__, __error_details__`, true},
+		{`{app="a"} | json | drop __error_details__, __error__`, true},
+		// No post-parser stage — not a drop-error opt-in.
+		{`{app="a"} | json`, false},
+		// Filtering stage — not a drop-error opt-in.
+		{`{app="a"} | json | status >= 400`, false},
+		// __error__ filter (not drop) — not a drop-error opt-in.
+		{`{app="a"} | json | __error__ = ""`, false},
+		// No parser at all.
+		{`{app="a"}`, false},
+		// drop __error__ but also another filter after — not a drop-error-only stage.
+		{`{app="a"} | json | drop __error__ | status >= 400`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.query, func(t *testing.T) {
+			if got := hasDropErrorOnlyPostParserStage(tc.query); got != tc.want {
+				t.Fatalf("hasDropErrorOnlyPostParserStage(%q) = %v, want %v", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestStripParserStages(t *testing.T) {
 	cases := []struct {
 		query string
