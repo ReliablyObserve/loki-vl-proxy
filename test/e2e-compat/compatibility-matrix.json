@@ -199,6 +199,7 @@
     "logs_drilldown_contract": {
       "repo": "https://github.com/grafana/logs-drilldown",
       "pinned_version": "2.0.4",
+      "pinned_commit": "94eff00f3e4c2c83e817d96f8d78ab41e196fab7",
       "support_window": {
         "policy": "current_family_plus_previous_family",
         "description": "Support the current Logs Drilldown release family and one family behind. The contract matrix moves forward as upstream releases advance; we do not keep an open-ended history of older families.",
