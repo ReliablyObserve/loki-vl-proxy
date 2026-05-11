@@ -29,6 +29,10 @@ import (
 // avoid per-entry heap allocations when building the flat JSON log body.
 var jsonBuilderPool = sync.Pool{New: func() interface{} { return new(strings.Builder) }}
 
+// gzipReaderPool reuses gzip decompression readers across VL responses to avoid
+// per-response allocation. New is nil — Get returns nil until readers are returned.
+var gzipReaderPool sync.Pool
+
 // validateQuery checks query string length and returns a sanitized version.
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
 	if len(query) > maxQueryLength {
@@ -699,11 +703,21 @@ func decodeCompressedHTTPResponse(resp *http.Response) error {
 	case "", "identity":
 		return nil
 	case "gzip", "x-gzip":
-		zr, err := gzip.NewReader(resp.Body)
-		if err != nil {
-			return err
+		var zr *gzip.Reader
+		if v := gzipReaderPool.Get(); v != nil {
+			zr = v.(*gzip.Reader)
+			if err := zr.Reset(resp.Body); err != nil {
+				gzipReaderPool.Put(zr)
+				return err
+			}
+		} else {
+			var err error
+			zr, err = gzip.NewReader(resp.Body)
+			if err != nil {
+				return err
+			}
 		}
-		resp.Body = &readCloserChain{Reader: zr, closers: []io.Closer{zr, resp.Body}}
+		resp.Body = &pooledGzipReadCloser{r: zr, upstream: resp.Body}
 	case "zstd":
 		zr, err := zstd.NewReader(resp.Body)
 		if err != nil {
@@ -742,6 +756,21 @@ func (r *readCloserChain) Close() error {
 		}
 	}
 	return firstErr
+}
+
+// pooledGzipReadCloser wraps a pooled gzip.Reader and returns it to gzipReaderPool on Close.
+type pooledGzipReadCloser struct {
+	r        *gzip.Reader
+	upstream io.Closer
+}
+
+func (p *pooledGzipReadCloser) Read(b []byte) (int, error) { return p.r.Read(b) }
+func (p *pooledGzipReadCloser) Close() error {
+	err := p.upstream.Close()
+	// Reset to empty reader to clear the upstream reference before pooling.
+	_ = p.r.Reset(strings.NewReader(""))
+	gzipReaderPool.Put(p.r)
+	return err
 }
 
 type closerFunc func() error
