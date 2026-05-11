@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(detected_fields): `service_name` alias now correctly appears in detected_fields for hybrid datasets (OTel `service.name` entries mixed with pre-normalised `service_name` stream-label entries). The previous guard blocked the alias whenever any entry in the query window carried a literal `service_name` stream label; the guard now checks for the presence of a dotted `service.name` stream key instead, so OTel aliases remain visible in hybrid streams.
+- fix(tail): increase `ResponseHeaderTimeout` to 5 s for native tail WebSocket NDJSON reads, preventing spurious timeout errors under load.
+- fix(tail): remove 1500 ms context timeout that was incorrectly cancelling native tail streaming connections.
+
 ## [1.29.8] - 2026-05-10
 
 ### Fixed

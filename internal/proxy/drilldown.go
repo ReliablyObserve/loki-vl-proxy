@@ -1778,15 +1778,17 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 	}
 
 	if anyOTelWithServiceName {
-		// Only expose service_name as an alias when the raw VL stream does NOT already
-		// carry "service_name" (underscore) as a literal stream-label key.  OTel data
-		// stores it as "service.name" (dot) which the label translator maps to the Loki
-		// label "service_name" — that translation should remain visible.  But when a
-		// stream is indexed with a literal service_name key (e.g. plain Loki pushes
-		// labelled service_name=…), surfacing it again as a detected field would
-		// duplicate the stream selector in the Drilldown fields panel, contrary to how
-		// Loki treats stream labels.
-		if _, rawIsServiceName := streamLabelSet["service_name"]; !rawIsServiceName {
+		// Expose service_name as an alias for service.name when we observed OTel entries
+		// that carry service.name as a stream key (the dotted OTel form).  We gate on the
+		// presence of service.name in streamLabelSet rather than the absence of service_name,
+		// because in hybrid datasets both keys may appear: OTel streams use service.name
+		// while pre-normalised (Vector/FluentBit) streams use the underscore form.  Checking
+		// service.name directly ensures the alias is exposed for the OTel entries even when
+		// other streams in the same query carry a literal service_name stream label.
+		// The only case where we skip the alias is when there are NO dotted service.name
+		// entries at all — i.e. only non-OTel service_name stream labels, which already
+		// appear in the labels panel and must not be duplicated in detected_fields.
+		if _, hasServiceDot := streamLabelSet["service.name"]; hasServiceDot {
 			var source *detectedFieldSummary
 			if serviceDot, ok := fields["service.name"]; ok {
 				source = serviceDot
