@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.31.1] - 2026-05-11
+
 ### Fixed
 
 - fix(range_metric): replace broad `strings.Contains(query, "__error__")` guard with precise `hasDropErrorOnlyPostParserStage` check in the tumbling-window fast path. Only queries that structurally contain `| drop __error__[, __error_details__]` as the sole post-parser stage are routed to VL native stats (count-all semantics). This prevents false positives from queries where `__error__` appears in label values or other positions unrelated to parse-error opt-in.
