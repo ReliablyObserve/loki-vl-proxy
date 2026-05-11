@@ -2324,7 +2324,7 @@ func filterNativeDetectedFields(native map[string]*detectedFieldSummary, streamL
 	}
 	filtered := make(map[string]*detectedFieldSummary, len(native))
 	for label, summary := range native {
-		if shouldExposeStructuredField(label, streamLabels, lt) {
+		if shouldExposeStructuredField(label, streamLabels, lt) && !shouldSuppressDetectedField(label) {
 			filtered[label] = summary
 		}
 	}

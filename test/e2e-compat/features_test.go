@@ -807,9 +807,17 @@ func TestFeature_Tail_SyntheticProxyLongLivedSessionStreamsAcrossPolls(t *testin
 	}
 }
 
-func TestFeature_Tail_NativeModeClosesWhenBackendTailUnavailable(t *testing.T) {
+func TestFeature_Tail_NativeModeStreamsWhenBackendTailAvailable(t *testing.T) {
+	// VL v1.50+ provides /select/logsql/tail (HTTP NDJSON streaming).
+	// The native-tail proxy must forward that stream as WebSocket frames rather
+	// than closing with CloseInternalServerErr.  The unit tests in
+	// tail_hardening_test.go cover the failure path (backend returns 4xx/5xx).
+	now := time.Now()
+	app := fmt.Sprintf("tail-native-%d", now.UnixNano())
+
 	params := url.Values{}
-	params.Set("query", `{app="api-gateway"}`)
+	params.Set("query", fmt.Sprintf(`{app="%s"}`, app))
+	params.Set("start", fmt.Sprintf("%d", now.UnixNano()))
 
 	headers := http.Header{}
 	headers.Set("Origin", "http://127.0.0.1:3002")
@@ -820,13 +828,16 @@ func TestFeature_Tail_NativeModeClosesWhenBackendTailUnavailable(t *testing.T) {
 	}
 	defer conn.Close()
 
-	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
-	_, _, err = conn.ReadMessage()
-	if err == nil {
-		t.Fatal("expected native-only tail to close when backend native tail is unavailable")
-	}
-	if !websocket.IsCloseError(err, websocket.CloseInternalServerErr) {
-		t.Fatalf("expected internal server close for native-only tail fallback denial, got %v", err)
+	msg := "native tail test " + app
+	pushCustomToVL(t, time.Now().Add(500*time.Millisecond), map[string]string{
+		"app":   app,
+		"level": "info",
+	}, []logLine{{Msg: msg, Level: "info"}}, []string{"app", "level"})
+
+	frame := readTailFrame(t, conn, msg, 10*time.Second)
+	streams, ok := frame["streams"].([]interface{})
+	if !ok || len(streams) == 0 {
+		t.Fatalf("expected native tail proxy to stream frames, got %v", frame)
 	}
 }
 
