@@ -200,13 +200,14 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	// For backends that do not support the tail endpoint, VL returns a 4xx response
 	// quickly, so no timeout guard is needed here.
 	//
-	// offset=0 overrides VL's default 5-second tail offset (tailOffsetNsecs = 5e9 in
-	// VL source).  Without this override, VL's streaming window end is always
+	// offset=0s overrides VL's default 5-second tail offset (tailOffsetNsecs = 5e9
+	// in VL source).  Without this override, VL's streaming window end is always
 	// now-5s, so data pushed at T+0 only becomes visible to the tail at T+5s —
-	// colliding with the 5s ResponseHeaderTimeout on the tailClient.  With offset=0
+	// colliding with the 5s ResponseHeaderTimeout on the tailClient.  With offset=0s
 	// the window end is now, data is visible within one refresh_interval (~1s), and
-	// VL sends headers well within the 5s budget.
-	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s&offset=0",
+	// VL sends headers well within the 5s budget.  VL expects a duration string
+	// (e.g. "0s"), not a bare integer.
+	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s&offset=0s",
 		p.backend.String(), url.QueryEscape(logsqlQuery))
 	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)
 	if err != nil {
