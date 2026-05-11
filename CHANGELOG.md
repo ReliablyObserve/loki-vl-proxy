@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- fix(detected_fields): `service_name` alias now correctly appears in detected_fields for hybrid datasets (OTel `service.name` entries mixed with pre-normalised `service_name` stream-label entries). The previous guard blocked the alias whenever any entry in the query window carried a literal `service_name` stream label; the guard now checks for the presence of a dotted `service.name` stream key instead, so OTel aliases remain visible in hybrid streams.
+- fix(tail): pass `offset=0` to VL's `/select/logsql/tail` endpoint, overriding VL's default 5-second tail window offset that was causing a timing collision with the 5 s `ResponseHeaderTimeout` on the tail client. Without the override, data pushed at T+0 is only visible to VL's tail at T+5 s, causing spurious connection timeouts.
+
 ## [1.29.8] - 2026-05-10
 
 ### Fixed

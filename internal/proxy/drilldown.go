@@ -1750,18 +1750,57 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		}
 	}
 
-	if anyOTelWithServiceName {
-		var source *detectedFieldSummary
-		if serviceDot, ok := fields["service.name"]; ok {
-			source = serviceDot
+	// OTel stream labels (service.name, k8s.pod.name, deployment.environment, etc.)
+	// appear only in the _stream string — not as top-level VL NDJSON keys — so
+	// obj.Visit above never processes them. Expose them here from the accumulated
+	// streamLabelSet so Grafana's structured metadata panel can show OTel conventions.
+	for key, value := range streamLabelSet {
+		isOTelSemantic := false
+		if _, ok := otelSemanticFields[key]; ok {
+			isOTelSemantic = true
 		} else {
-			source = &detectedFieldSummary{label: "service_name", typ: "string"}
+			for _, prefix := range otelUnderscorePrefixes {
+				if strings.HasPrefix(key, prefix) {
+					isOTelSemantic = true
+					break
+				}
+			}
 		}
-		fields["service_name"] = &detectedFieldSummary{
-			label:       "service_name",
-			typ:         source.typ,
-			values:      source.values,
-			cardinality: source.cardinality,
+		if !isOTelSemantic {
+			continue
+		}
+		for _, exposure := range p.metadataFieldExposures(key) {
+			if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
+				continue
+			}
+			addDetectedField(fields, exposure.name, "", "string", nil, value)
+		}
+	}
+
+	if anyOTelWithServiceName {
+		// Expose service_name as an alias for service.name when we observed OTel entries
+		// that carry service.name as a stream key (the dotted OTel form).  We gate on the
+		// presence of service.name in streamLabelSet rather than the absence of service_name,
+		// because in hybrid datasets both keys may appear: OTel streams use service.name
+		// while pre-normalised (Vector/FluentBit) streams use the underscore form.  Checking
+		// service.name directly ensures the alias is exposed for the OTel entries even when
+		// other streams in the same query carry a literal service_name stream label.
+		// The only case where we skip the alias is when there are NO dotted service.name
+		// entries at all — i.e. only non-OTel service_name stream labels, which already
+		// appear in the labels panel and must not be duplicated in detected_fields.
+		if _, hasServiceDot := streamLabelSet["service.name"]; hasServiceDot {
+			var source *detectedFieldSummary
+			if serviceDot, ok := fields["service.name"]; ok {
+				source = serviceDot
+			} else {
+				source = &detectedFieldSummary{label: "service_name", typ: "string"}
+			}
+			fields["service_name"] = &detectedFieldSummary{
+				label:       "service_name",
+				typ:         source.typ,
+				values:      source.values,
+				cardinality: source.cardinality,
+			}
 		}
 	}
 
@@ -2324,7 +2363,7 @@ func filterNativeDetectedFields(native map[string]*detectedFieldSummary, streamL
 	}
 	filtered := make(map[string]*detectedFieldSummary, len(native))
 	for label, summary := range native {
-		if shouldExposeStructuredField(label, streamLabels, lt) {
+		if shouldExposeStructuredField(label, streamLabels, lt) && !shouldSuppressDetectedField(label) {
 			filtered[label] = summary
 		}
 	}

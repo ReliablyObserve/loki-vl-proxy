@@ -17,7 +17,7 @@ datasources:
     type: loki
     access: proxy
     url: http://loki-vl-proxy-underscore:3100
-    isDefault: true
+    isDefault: false
     jsonData:
       httpHeaderName1: X-Scope-OrgID
       maxLines: 1000
@@ -83,7 +83,7 @@ datasources:
     type: loki
     access: proxy
     url: http://loki-vl-proxy-patterns-autodetect:3100
-    isDefault: false
+    isDefault: true
     jsonData:
       httpHeaderName1: X-Scope-OrgID
       maxLines: 1000

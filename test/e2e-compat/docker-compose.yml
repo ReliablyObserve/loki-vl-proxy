@@ -211,10 +211,11 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-patterns-autodetect
+    user: root
     ports:
       - "3110:3100"
-    tmpfs:
-      - /cache
+    volumes:
+      - patterns-cache:/cache
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -222,6 +223,9 @@ services:
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
       - "-cache-ttl=5s"
+      - "-label-style=underscores"
+      - "-metadata-field-mode=hybrid"
+      - "-emit-structured-metadata=true"
       - "-patterns-enabled=true"
       - "-patterns-autodetect-from-queries=true"
       - "-patterns-persist-path=/cache/patterns-snapshot.json"
@@ -535,3 +539,4 @@ services:
 volumes:
   vl-data:
   vm-data:
+  patterns-cache:

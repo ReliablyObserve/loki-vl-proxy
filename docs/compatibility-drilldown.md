@@ -28,20 +28,21 @@ The Drilldown matrix is also a moving window. We support the current app family 
 
 | Grafana version | Coverage path | Version-specific focus |
 |---|---|---|
-| `13.x` | Scheduled/manual runtime matrix | Same contract as `12.x` — `2.x` Drilldown runtime-family assertions, explicit `RuntimeFamilyContracts` entry added in v1.15.0 |
-| `12.4.2` | PR/main pinned runtime + scheduled/manual runtime matrix | full Drilldown runtime score on the pinned current build |
-| `12.4.1` | PR/main current-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
-| `11.6.6` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `1.x` runtime-family assertions |
+| `13.0.1` | PR/main pinned runtime + scheduled/manual runtime matrix | Full Drilldown runtime score; current pinned build; React 19 |
+| `12.4.2` | PR/main previous-family smoke + scheduled/manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `2.x` runtime-family assertions |
+| `12.4.1` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts |
+| `11.6.6` | Scheduled and manual runtime matrix | datasource catalog, base Drilldown resource contracts, explicit `1.x` runtime-family assertions |
 
 ### Logs Drilldown app versions
 
 | Logs Drilldown version | Coverage path | Version-specific focus |
 |---|---|---|
-| `2.0.3` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract |
+| `2.0.4` | PR/main pinned runtime + scheduled/manual contract matrix | Current pinned contract; patterns tab requires patterns-autodetect as Grafana default |
+| `2.0.3` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels, patterns |
 | `2.0.2` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
 | `2.0.1` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
 | `2.0.0` | Scheduled and manual contract matrix | `detected_level` coloring, service-detail panels |
-| `1.0.41` | PR/main previous-family Grafana smoke + scheduled/manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
+| `1.0.41` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
 | `1.0.40` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
 | `1.0.39` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
 | `1.0.38` | Scheduled and manual contract matrix | Service buckets, detected-fields filtering, labels field parsing |
@@ -64,7 +65,7 @@ Important limit:
 Because of that, version-specific behavior should be gated by:
 
 1. explicit request source tag,
-2. Grafana runtime family (`11.x`, `12.x`),
+2. Grafana runtime family (`12.x`, `13.x`),
 3. compatibility matrix contract version bands (`1.0.x`, `2.0.x`), validated in CI.
 
 ## Drilldown Capability Profiles
@@ -76,11 +77,24 @@ Because of that, version-specific behavior should be gated by:
 
 These profiles are matrix-level compatibility profiles (contract and CI guidance). Runtime request handling must stay Loki-compatible and should not depend on guessed app build strings.
 
+## Known Issues
+
+### Drilldown 2.0.4: Patterns Tab Initialization
+
+Drilldown 2.0.4 contains a bug in `subscribeToLokiConfig()` where `void 0 === null` (always `false`) prevents re-enabling the Patterns tab after it was disabled. Concretely:
+
+- If the Grafana default datasource has `pattern_ingester_enabled=false` in `/loki/api/v1/drilldown-limits`, `$patternsData` is set to `null`.
+- Switching to a datasource where `pattern_ingester_enabled=true` does NOT re-show the tab because the `void 0 === null` guard treats `null` as "already initialized".
+
+**Workaround**: Configure the patterns-autodetect proxy variant as the Grafana default datasource. Since `pattern_ingester_enabled=true` is returned on first load, `$patternsData` is correctly initialized and the Patterns tab appears.
+
+In the e2e-compat compose stack, `loki-vl-proxy-patterns-autodetect` is set as `isDefault: true` in `grafana-datasources.yaml` for this reason.
+
 ## Release Watchlist
 
 Potential next family move:
 
-- current: `2.0.x`
+- current: `2.0.x` (pinned: `2.0.4`)
 - next expected family to evaluate: `2.1.x` (then `3.0.x` when released)
 
 Promotion criteria for a new family:

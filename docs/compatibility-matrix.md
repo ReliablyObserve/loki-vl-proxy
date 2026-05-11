@@ -88,8 +88,8 @@ When a new upstream family becomes current, the oldest family drops out of the m
 | Component family | Versions tracked | Coverage mode |
 |---|---|---|
 | Loki | `3.6.x` and `3.7.x` | Real runtime matrix in GitHub Actions |
-| Grafana Loki datasource runtime | `11.x` and `12.x` | Runtime contracts through Grafana datasource API in GitHub Actions |
-| Logs Drilldown | `1.0.x` and `2.0.x` | Pinned runtime e2e plus source-contract matrix |
+| Grafana Loki datasource runtime | `12.x` and `13.x` | Runtime contracts through Grafana datasource API in GitHub Actions |
+| Logs Drilldown | `1.0.x` and `2.0.x` (current pinned: `2.0.4`) | Pinned runtime e2e plus source-contract matrix |
 | VictoriaLogs | `v1.30.x` through `v1.50.x` | Real runtime matrix in GitHub Actions |
 
 ## Grafana Version Sensing Model
@@ -103,7 +103,7 @@ Proxy-side client sensing is intentionally conservative:
 Because datasource semver is not emitted in requests, proxy behavior should gate by:
 
 1. deterministic request signals (`X-Query-Tags`, endpoint family)
-2. Grafana runtime family (`11.x`, `12.x`, future `13.x`)
+2. Grafana runtime family (`12.x`, `13.x`)
 3. compatibility matrix and e2e contracts, not guessed plugin build strings
 
 ## Why The Tracks Are Separate

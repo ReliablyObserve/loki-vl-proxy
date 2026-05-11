@@ -271,7 +271,9 @@ func TestTailHardening_UpgradeDoesNotWaitForNativeTailHeaders(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/tail":
-			time.Sleep(3 * time.Second)
+			// Sleep longer than ResponseHeaderTimeout (5s) so the transport-level
+			// timeout fires first and triggers the synthetic fallback path.
+			time.Sleep(10 * time.Second)
 			w.Header().Set("Content-Type", "application/x-ndjson")
 			w.WriteHeader(http.StatusOK)
 		case "/select/logsql/query":
@@ -299,7 +301,9 @@ func TestTailHardening_UpgradeDoesNotWaitForNativeTailHeaders(t *testing.T) {
 		t.Fatalf("websocket dial failed: %v (resp=%v)", err, resp)
 	}
 	defer ws.Close()
-	_ = ws.SetReadDeadline(time.Now().Add(3 * time.Second))
+	// VL mock sleeps 10s; ResponseHeaderTimeout (5s) fires first and triggers synthetic
+	// fallback. Allow 8s total so the synthetic frame has margin to arrive.
+	_ = ws.SetReadDeadline(time.Now().Add(8 * time.Second))
 
 	_, msg, err := ws.ReadMessage()
 	if err != nil {
