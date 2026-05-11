@@ -30,6 +30,10 @@ var (
 	windowCacheDec *zstd.Decoder
 )
 
+// windowGobBufPool recycles bytes.Buffer instances used to gob-encode window
+// cache entries, eliminating one heap allocation per cached window fetch.
+var windowGobBufPool = sync.Pool{New: func() interface{} { return new(bytes.Buffer) }}
+
 func init() {
 	windowCacheEnc, _ = zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest))
 	windowCacheDec, _ = zstd.NewReader(nil)
@@ -417,14 +421,17 @@ func (p *Proxy) fetchQueryRangeWindow(
 			_ = resp.Body.Close()
 			cacheEntry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
-				var gobBuf bytes.Buffer
-				if err := gob.NewEncoder(&gobBuf).Encode(cacheEntry); err == nil {
+				gobBuf := windowGobBufPool.Get().(*bytes.Buffer)
+				gobBuf.Reset()
+				if err := gob.NewEncoder(gobBuf).Encode(cacheEntry); err == nil {
 					compressed := windowCacheEnc.EncodeAll(gobBuf.Bytes(), make([]byte, 0, gobBuf.Len()/8))
 					// Window fragments are short-lived and high churn. Keeping them
 					// local avoids concentrating peer-cache write-through on a single
 					// ring owner when Drilldown or Explore fans a read into many windows.
 					p.cache.SetLocalOnlyWithTTL(cacheKey, compressed, ttl)
 				}
+				gobBuf.Reset() // clear entries reference before returning to pool
+				windowGobBufPool.Put(gobBuf)
 			}
 			return cacheEntry, nil
 		}
