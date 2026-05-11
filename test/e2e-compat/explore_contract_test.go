@@ -139,7 +139,9 @@ func TestExplore_HTTPQueryRangeContracts(t *testing.T) {
 	}
 
 	t.Run("line_filters_match_loki_counts", func(t *testing.T) {
-		proxyResp, lokiResp := queryBoth(t, `{app="api-gateway"} |= "payments" != "timeout"`)
+		// Use the fixed pod label from ingestRichTestData to isolate test data
+		// from background log-generator traffic (which uses random pod names).
+		proxyResp, lokiResp := queryBoth(t, `{app="api-gateway", pod="api-gateway-7f8d9c6b4-x2k9m"} |= "payments" != "timeout"`)
 
 		if !checkStatus(proxyResp) || !checkStatus(lokiResp) {
 			t.Fatalf("expected successful responses, proxy=%v loki=%v", proxyResp, lokiResp)
@@ -155,7 +157,9 @@ func TestExplore_HTTPQueryRangeContracts(t *testing.T) {
 	})
 
 	t.Run("json_pipeline_matches_loki_counts", func(t *testing.T) {
-		proxyResp, lokiResp := queryBoth(t, `{app="api-gateway"} | json | method="GET"`)
+		// Use the fixed pod label from ingestRichTestData to isolate test data
+		// from background log-generator traffic (which uses random pod names).
+		proxyResp, lokiResp := queryBoth(t, `{app="api-gateway", pod="api-gateway-7f8d9c6b4-x2k9m"} | json | method="GET"`)
 
 		if !checkStatus(proxyResp) || !checkStatus(lokiResp) {
 			t.Fatalf("expected successful json pipeline responses, proxy=%v loki=%v", proxyResp, lokiResp)
@@ -171,7 +175,9 @@ func TestExplore_HTTPQueryRangeContracts(t *testing.T) {
 	})
 
 	t.Run("logfmt_pipeline_matches_loki_counts", func(t *testing.T) {
-		proxyResp, lokiResp := queryBoth(t, `{app="payment-service"} | logfmt | level="error"`)
+		// Use the fixed pod label from ingestRichTestData to isolate test data
+		// from background log-generator traffic (which uses random pod names).
+		proxyResp, lokiResp := queryBoth(t, `{app="payment-service", pod="payment-svc-5c8f7d9a2-q7w3e"} | logfmt | level="error"`)
 
 		if !checkStatus(proxyResp) || !checkStatus(lokiResp) {
 			t.Fatalf("expected successful logfmt pipeline responses, proxy=%v loki=%v", proxyResp, lokiResp)
@@ -233,7 +239,9 @@ func TestExplore_HTTPQueryRangeContracts(t *testing.T) {
 	})
 
 	t.Run("label_format_keeps_browser_visible_stream_labels", func(t *testing.T) {
-		proxyResp, lokiResp := queryBoth(t, `{app="api-gateway"} | json | label_format method_alias="{{.method}}", status_code="{{.status}}"`)
+		// Use the fixed pod label from ingestRichTestData to isolate test data
+		// from background log-generator traffic (which uses random pod names).
+		proxyResp, lokiResp := queryBoth(t, `{app="api-gateway", pod="api-gateway-7f8d9c6b4-x2k9m"} | json | label_format method_alias="{{.method}}", status_code="{{.status}}"`)
 
 		if !checkStatus(proxyResp) || !checkStatus(lokiResp) {
 			t.Fatalf("expected successful label_format responses, proxy=%v loki=%v", proxyResp, lokiResp)

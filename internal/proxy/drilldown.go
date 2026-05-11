@@ -1750,6 +1750,33 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		}
 	}
 
+	// OTel stream labels (service.name, k8s.pod.name, deployment.environment, etc.)
+	// appear only in the _stream string — not as top-level VL NDJSON keys — so
+	// obj.Visit above never processes them. Expose them here from the accumulated
+	// streamLabelSet so Grafana's structured metadata panel can show OTel conventions.
+	for key, value := range streamLabelSet {
+		isOTelSemantic := false
+		if _, ok := otelSemanticFields[key]; ok {
+			isOTelSemantic = true
+		} else {
+			for _, prefix := range otelUnderscorePrefixes {
+				if strings.HasPrefix(key, prefix) {
+					isOTelSemantic = true
+					break
+				}
+			}
+		}
+		if !isOTelSemantic {
+			continue
+		}
+		for _, exposure := range p.metadataFieldExposures(key) {
+			if _, conflict := labelNames[exposure.name]; conflict && !exposure.isAlias {
+				continue
+			}
+			addDetectedField(fields, exposure.name, "", "string", nil, value)
+		}
+	}
+
 	if anyOTelWithServiceName {
 		// Only expose service_name as an alias when the raw VL stream does NOT already
 		// carry "service_name" (underscore) as a literal stream-label key.  OTel data
