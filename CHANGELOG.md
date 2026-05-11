@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.30.0] - 2026-05-11
+
 ### Fixed
 
 - fix(detected_fields): `service_name` alias now correctly appears in detected_fields for hybrid datasets (OTel `service.name` entries mixed with pre-normalised `service_name` stream-label entries). The previous guard blocked the alias whenever any entry in the query window carried a literal `service_name` stream label; the guard now checks for the presence of a dotted `service.name` stream key instead, so OTel aliases remain visible in hybrid streams.
