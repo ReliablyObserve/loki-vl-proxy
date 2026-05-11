@@ -23,9 +23,10 @@ This track focuses on the built-in Grafana Loki datasource contract (`/api/datas
 
 | Grafana runtime version | Coverage path | Focus |
 |---|---|---|
-| `12.4.2` | pinned runtime CI | current-family datasource + Drilldown runtime contract |
-| `12.4.1` | PR smoke + scheduled/manual matrix | current-family datasource contract drift detection |
-| `11.6.6` | PR smoke + scheduled/manual matrix | previous-family datasource contract drift detection |
+| `13.0.1` | pinned runtime CI | current-family datasource + Drilldown runtime contract; React 19 |
+| `12.4.2` | PR smoke + scheduled/manual matrix | previous-family datasource contract drift detection |
+| `12.4.1` | Scheduled and manual matrix | previous-family datasource contract coverage |
+| `11.6.6` | Scheduled and manual matrix | lts-family datasource contract coverage |
 
 ## Client Detection Signals
 
@@ -44,11 +45,14 @@ On-wire limitation:
 
 Use runtime-family capability profiles (like backend capability profiles for VictoriaLogs):
 
-- `grafana-runtime-v12-plus`
+- `grafana-runtime-v13-plus`
   - treat as current-family behavior
   - enable current contract assumptions verified by runtime-family tests
-- `grafana-runtime-v11`
+- `grafana-runtime-v12-plus`
   - keep previous-family compatibility behavior
+  - preserve contract assumptions verified by runtime-family tests
+- `grafana-runtime-v11`
+  - lts compatibility behavior
   - preserve contract assumptions verified by runtime-family tests
 
 When a new Grafana family becomes current:
@@ -71,11 +75,12 @@ These are handled by strict contract tests and conservative runtime-family gatin
 
 ## Release Watchlist
 
-Potential next runtime family move:
+Current runtime family state:
 
-- current: `12.x`
-- previous supported: `11.x`
-- next expected family to evaluate: `13.x`
+- current: `13.x` (pinned: `13.0.1`)
+- previous supported: `12.x`
+- lts supported: `11.x`
+- next expected family to evaluate: `13.1.x` or `14.x` when released
 
 Promotion criteria for runtime family updates:
 

@@ -157,18 +157,26 @@
       "support_window": {
         "policy": "current_runtime_family_plus_previous_family",
         "description": "Track built-in Loki datasource contract behavior for current Grafana runtime family and one family behind.",
-        "current_family": "12.x",
-        "previous_family": "11.x"
+        "current_family": "13.x",
+        "previous_family": "12.x"
       },
       "matrix_versions": [
+        "13.0.1",
         "12.4.2",
-        "12.4.1",
-        "11.6.6"
+        "12.4.1"
       ],
       "capability_profiles": [
         {
+          "profile": "grafana-datasource-v13",
+          "version_range": ">= 13.0.0",
+          "capabilities": [
+            "runtime_v13_contract_assertions",
+            "structured_resource_flow"
+          ]
+        },
+        {
           "profile": "grafana-datasource-v12",
-          "version_range": ">= 12.0.0",
+          "version_range": ">= 12.0.0 < 13.0.0",
           "capabilities": [
             "runtime_v12_contract_assertions",
             "structured_resource_flow"
@@ -190,8 +198,7 @@
     },
     "logs_drilldown_contract": {
       "repo": "https://github.com/grafana/logs-drilldown",
-      "pinned_version": "2.0.3",
-      "pinned_commit": "c22fae24f533a36ec2173933d2c303804cb7e814",
+      "pinned_version": "2.0.4",
       "support_window": {
         "policy": "current_family_plus_previous_family",
         "description": "Support the current Logs Drilldown release family and one family behind. The contract matrix moves forward as upstream releases advance; we do not keep an open-ended history of older families.",
@@ -199,6 +206,7 @@
         "previous_family": "1.0.x"
       },
       "matrix_versions": [
+        "2.0.4",
         "2.0.3",
         "2.0.2",
         "2.0.1",
@@ -216,7 +224,8 @@
         "Service selection uses index/volume on the primary label",
         "Service detail logs use a mixed parser selector: json + logfmt + drop __error__ stages",
         "detected_fields is post-processed by the app datasource wrapper to drop detected_level, level, and level_extracted",
-        "Patterns are label-scoped; parsed fields, metadata, and line filters are not expected to constrain the pattern list"
+        "Patterns are label-scoped; parsed fields, metadata, and line filters are not expected to constrain the pattern list",
+        "2.0.4 known issue: patterns tab does not re-enable after switching from a datasource where pattern_ingester_enabled=false; workaround is to use the patterns-autodetect proxy variant as the Grafana default datasource"
       ],
       "capability_profiles": [
         {
@@ -311,12 +320,14 @@
             "2.0.0",
             "2.0.1",
             "2.0.2",
-            "2.0.3"
+            "2.0.3",
+            "2.0.4"
           ],
           "focus": [
             "detected_level coloring series names",
             "field values breakdowns",
-            "additional label values and service-detail panels"
+            "additional label values and service-detail panels",
+            "patterns tab initialization (2.0.4: must use patterns-autodetect as default datasource)"
           ]
         }
       ]
