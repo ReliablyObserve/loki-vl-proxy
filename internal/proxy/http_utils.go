@@ -448,6 +448,11 @@ func reconstructLogLineWithFlagFJ(msg string, obj *fj.Object, streamLabels map[s
 	}
 	b := jsonBuilderPool.Get().(*strings.Builder)
 	b.Reset()
+	// Pre-grow to msg length + overhead so growSlice is not called on typical entries.
+	// Pool reuse means this is free once the builder reaches steady-state capacity.
+	if need := len(msg) + 64; b.Cap() < need {
+		b.Grow(need)
+	}
 	b.WriteString(`{"_msg":`)
 	appendJSONStringToBuilder(b, msg)
 	startLen := b.Len()

@@ -821,10 +821,11 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 			continue
 		}
 		msg := string(fjVal.GetStringBytes("_msg"))
-		rawStream := string(fjVal.GetStringBytes("_stream"))
-		level := string(fjVal.GetStringBytes("level"))
-
-		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
+		desc := p.logQueryStreamDescriptorBytes(
+			fjVal.GetStringBytes("_stream"),
+			fjVal.GetStringBytes("level"),
+			streamLabelCache, streamDescriptorCache,
+		)
 
 		needsObject := needsClassification || !skipLogLineReconstruction
 		var fjObj *fj.Object
