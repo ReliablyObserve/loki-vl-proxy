@@ -67,18 +67,19 @@ When many panels hit the same query at once, the proxy collapses them into a sin
 
 No cache, no coalescer benefit. Pure translation overhead + HTTP proxying + VL response time.
 
-| Workload | Cold proxy | Loki | Ratio |
-|---|---:|---:|:---:|
-| Small queries (c=10) | 1,212 req/s | ~900 req/s | **1.3× faster** |
-| Small queries (c=50) | 1,583 req/s | ~1,369 req/s | **1.2× faster** |
-| Heavy queries (c=10) | 126 req/s | ~133 req/s | **~parity** |
-| Heavy queries (c=100) | 139 req/s | ~33 req/s | **4.2× faster** |
-| Long-range (c=10) | 2× faster | — | parallel sub-windows vs Loki sequential scan |
+| Workload | Concurrency | Cold proxy | Loki | Ratio |
+|---|:---:|---:|---:|:---:|
+| Small metadata queries | c=10 | 1,212 req/s | ~880 req/s | **1.4× faster** |
+| Small metadata queries | c=50 | 1,583 req/s | ~780 req/s | **2× faster** |
+| Heavy pipeline queries | c=10 | 126–188 req/s | ~161–472 req/s | **~parity** |
+| Heavy pipeline queries | c=100 | 139 req/s | ~33 req/s | **4.2× faster** |
+| Long-range (6 h–72 h) | c=10 | 2× faster than Loki | — | parallel sub-window vs sequential scan |
+| Compute (rate, topk) | c=10 | ~40 req/s | ~1,227 req/s | 0.03× — N VL calls per query |
 
-- **Small and metadata queries:** faster than Loki cold at all concurrency levels tested — no penalty
-- **Heavy queries under load:** ~parity at c=10, **4.2× at c=100** — VL raw scan is faster than Loki's chunk store under high concurrency; `stats_query_range` fast path eliminates 39% cold CPU for count/rate aggregations
-- **Long-range queries:** **2× faster cold** — parallel sub-window fetching completes before Loki can scan its chunk store sequentially
-- **Complex aggregations (`quantile_over_time`, multi-stage pipelines):** N VL calls per metric query; historical windows cache after first run (24 h TTL)
+- **Small and metadata queries:** 1.4–2× faster than Loki cold — VL scans are faster than Loki's chunk store for label/series queries
+- **Heavy pipeline queries:** parity to **4.2× faster** depending on concurrency — `stats_query_range` fast path eliminates 39% cold CPU for `count_over_time`/`rate` queries
+- **Long-range queries:** **2× faster cold** — parallel sub-window fetching completes before Loki's sequential chunk scan
+- **Compute aggregations (`quantile_over_time`, `topk`, multi-stage pipelines):** N VL calls per metric query; historical windows cache after first run (24 h TTL), bringing warm compute on par with or faster than Loki
 
 Full throughput tables, P90/P99 latency, CPU and RSS breakdowns: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 
