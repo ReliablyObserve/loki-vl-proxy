@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.31.2] - 2026-05-12
+
 ### Performance
 
 - perf(proxy): pool `gzip.Reader` instances in `decodeCompressedHTTPResponse` via `sync.Pool`, eliminating a per-response allocation on the VL fetch path.
