@@ -1035,58 +1035,100 @@ func marshalManualMetricResponse(resultType string, result []map[string]interfac
 }
 
 func aggregateManualWindow(functionName string, quantile float64, samples []rangeMetricSample, windowStart, windowEnd int64, windowSeconds float64) (float64, bool) {
-	values := make([]float64, 0, len(samples))
+	// Slice-dependent functions: build filtered slice, then aggregate.
+	switch functionName {
+	case "quantile", "stddev", "stdvar", "rate_counter":
+		values := make([]float64, 0, len(samples))
+		for _, sample := range samples {
+			if sample.ts < windowStart || sample.ts > windowEnd {
+				continue
+			}
+			values = append(values, sample.value)
+		}
+		if len(values) == 0 {
+			return 0, false
+		}
+		switch functionName {
+		case "quantile":
+			return quantileFloat64(values, quantile), true
+		case "stddev":
+			return stddevFloat64(values), true
+		case "stdvar":
+			v := stddevFloat64(values)
+			return v * v, true
+		case "rate_counter":
+			if windowSeconds <= 0 {
+				return 0, false
+			}
+			if len(values) == 1 {
+				return 0, true
+			}
+			return rateCounterWindow(values, windowSeconds), true
+		}
+	}
+
+	// Inline accumulator path — no heap allocation for common aggregations.
+	var (
+		count    int
+		sum      float64
+		minVal   float64
+		maxVal   float64
+		firstVal float64
+		lastVal  float64
+		hasFirst bool
+	)
 	for _, sample := range samples {
 		if sample.ts < windowStart || sample.ts > windowEnd {
 			continue
 		}
-		values = append(values, sample.value)
+		v := sample.value
+		count++
+		sum += v
+		if !hasFirst {
+			firstVal = v
+			minVal = v
+			maxVal = v
+			hasFirst = true
+		} else {
+			if v < minVal {
+				minVal = v
+			}
+			if v > maxVal {
+				maxVal = v
+			}
+		}
+		lastVal = v
 	}
 
-	if len(values) == 0 {
+	if count == 0 {
 		return 0, false
 	}
 
 	switch functionName {
 	case "count_over_time":
-		return float64(len(values)), true
+		return float64(count), true
 	case "rate":
 		if windowSeconds <= 0 {
 			return 0, false
 		}
-		return float64(len(values)) / windowSeconds, true
+		return float64(count) / windowSeconds, true
 	case "bytes_over_time", "sum":
-		return sumFloat64(values), true
+		return sum, true
 	case "bytes_rate":
 		if windowSeconds <= 0 {
 			return 0, false
 		}
-		return sumFloat64(values) / windowSeconds, true
+		return sum / windowSeconds, true
 	case "avg":
-		return sumFloat64(values) / float64(len(values)), true
+		return sum / float64(count), true
 	case "min":
-		return minFloat64(values), true
+		return minVal, true
 	case "max":
-		return maxFloat64(values), true
-	case "stddev":
-		return stddevFloat64(values), true
-	case "stdvar":
-		v := stddevFloat64(values)
-		return v * v, true
-	case "quantile":
-		return quantileFloat64(values, quantile), true
+		return maxVal, true
 	case "first":
-		return values[0], true
+		return firstVal, true
 	case "last":
-		return values[len(values)-1], true
-	case "rate_counter":
-		if windowSeconds <= 0 {
-			return 0, false
-		}
-		if len(values) == 1 {
-			return 0, true
-		}
-		return rateCounterWindow(values, windowSeconds), true
+		return lastVal, true
 	default:
 		return 0, false
 	}
@@ -1096,26 +1138,6 @@ func sumFloat64(values []float64) float64 {
 	var out float64
 	for _, value := range values {
 		out += value
-	}
-	return out
-}
-
-func minFloat64(values []float64) float64 {
-	out := values[0]
-	for _, value := range values[1:] {
-		if value < out {
-			out = value
-		}
-	}
-	return out
-}
-
-func maxFloat64(values []float64) float64 {
-	out := values[0]
-	for _, value := range values[1:] {
-		if value > out {
-			out = value
-		}
 	}
 	return out
 }

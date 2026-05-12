@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf(proxy): pool `gzip.Reader` instances in `decodeCompressedHTTPResponse` via `sync.Pool`, eliminating a per-response allocation on the VL fetch path.
+- perf(windowing): pool `bytes.Buffer` used for gob-encoding window cache entries in `fetchQueryRangeWindow`, removing one allocation per cached window write with 8+ parallel windows per Drilldown request.
+- perf(range_metric): rewrite `aggregateManualWindow` to use inline scalar accumulators for count, rate, sum, avg, min, max, bytes_over_time, bytes_rate, first, and last — eliminating the `[]float64` slice allocation (896 B/op → 0 B/op) for the common path; quantile, stddev, stdvar, and rate_counter retain the full slice.
+
 ## [1.31.1] - 2026-05-11
 
 ### Fixed
