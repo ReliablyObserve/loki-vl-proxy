@@ -49,9 +49,8 @@ func NewCoalescerDisabled() *Coalescer {
 }
 
 type coalescedResponse struct {
-	status  int
-	headers http.Header
-	body    []byte
+	status int
+	body   []byte
 }
 
 // Do executes the request, deduplicating identical concurrent requests.
@@ -76,9 +75,8 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 		}
 
 		return &coalescedResponse{
-			status:  resp.StatusCode,
-			headers: resp.Header.Clone(),
-			body:    body,
+			status: resp.StatusCode,
+			body:   body,
 		}, nil
 	})
 
@@ -93,10 +91,11 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 	}
 
 	cr := result.(*coalescedResponse)
-	return cr.status, cr.headers, cr.body, nil
+	return cr.status, nil, cr.body, nil
 }
 
 // callDirect calls fn without singleflight — used when coalescer is disabled.
+// Headers are not cloned since all current callers discard the header return value.
 func (c *Coalescer) callDirect(fn func() (*http.Response, error)) (int, http.Header, []byte, error) {
 	resp, err := fn()
 	if err != nil {
@@ -107,7 +106,7 @@ func (c *Coalescer) callDirect(fn func() (*http.Response, error)) (int, http.Hea
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	return resp.StatusCode, resp.Header.Clone(), body, nil
+	return resp.StatusCode, nil, body, nil
 }
 
 // DoWithGuard is like Do but couples the circuit breaker with request coalescing.
