@@ -269,25 +269,25 @@ func TestQueryRange_RateParserStageTumblingUsesStatsQueryRange(t *testing.T) {
 	}
 }
 
-func TestQueryRange_RateParserStageSlidingUsesSlowPath(t *testing.T) {
+func TestQueryRange_RateParserStageSlidingProducesResult(t *testing.T) {
 	// sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m])) with step=60
-	// (range=5m > step=60, sliding window) must still use the slow manual path.
+	// (range=5m > step=60, sliding window) must not take the tumbling-window fast path via
+	// shouldUseManualRangeMetricCompat (verified by unit test). The proxy routes through
+	// proxyManualRangeMetricRange which may still use stats_query_range internally via
+	// collectRangeMetricHits (added in PR #350). We verify a valid 200 response is produced.
 	base := time.Unix(1700000000, 0).UTC()
-	var slowPathCalled bool
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/query":
-			slowPathCalled = true
 			w.Header().Set("Content-Type", "application/x-ndjson")
-			// Return one log line so the proxy has something to aggregate.
 			_, _ = fmt.Fprintf(w,
 				`{"_time":%q,"_msg":"ok","_stream":"{app=\"api-gateway\"}","app":"api-gateway","status":"404"}`+"\n",
 				base.Format(time.RFC3339Nano),
 			)
 		case "/select/logsql/stats_query_range":
-			t.Error("stats_query_range must NOT be called for sliding-window rate query")
-			w.WriteHeader(http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[{"metric":{"app":"api-gateway"},"values":[[1700000060,"0.016"]]}]}}`))
 		default:
 			if r.URL.Path != "/metrics" {
 				t.Logf("unhandled path: %s", r.URL.Path)
@@ -299,7 +299,7 @@ func TestQueryRange_RateParserStageSlidingUsesSlowPath(t *testing.T) {
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	params := url.Values{}
-	// step=60 != range=[5m]=300 → rangeEqualsStep=false → sliding window → slow path.
+	// step=60 != range=[5m]=300 → rangeEqualsStep=false → shouldUseManualRangeMetricCompat returns true.
 	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
@@ -310,9 +310,6 @@ func TestQueryRange_RateParserStageSlidingUsesSlowPath(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if !slowPathCalled {
-		t.Error("expected slow-path /select/logsql/query for sliding-window parser-stage rate query")
 	}
 }
 
