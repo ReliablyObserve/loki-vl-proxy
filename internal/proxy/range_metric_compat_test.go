@@ -203,6 +203,119 @@ func TestShouldUseManualRangeMetricCompat_ParserStageRate(t *testing.T) {
 	}
 }
 
+func TestQueryRange_RateParserStageTumblingUsesStatsQueryRange(t *testing.T) {
+	// sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m])) with step=5m
+	// (range == step, tumbling window) must route to VL stats_query_range after the
+	// parser-stage guard is removed from shouldUseManualRangeMetricCompat.
+	base := time.Unix(1700000000, 0).UTC()
+	var statsCalled bool
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api-gateway"},"values":[[1700000300,"0.5"]]}]}}`))
+		case "/select/logsql/query":
+			// Manual raw-log-fetch MUST NOT be called for tumbling window.
+			t.Error("unexpected slow-path /select/logsql/query call for tumbling-window parser-stage rate")
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		default:
+			if r.URL.Path != "/metrics" {
+				t.Logf("unhandled path: %s", r.URL.Path)
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	// step=300 == range=[5m]=300 → rangeEqualsStep=true → tumbling window → fast path.
+	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
+	params.Set("step", "300")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Error("expected stats_query_range to be called for tumbling-window parser-stage rate query")
+	}
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Status != "success" {
+		t.Errorf("expected success, got %q", resp.Status)
+	}
+	if len(resp.Data.Result) == 0 {
+		t.Error("expected at least one series in result")
+	}
+}
+
+func TestQueryRange_RateParserStageSlidingUsesSlowPath(t *testing.T) {
+	// sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m])) with step=60
+	// (range=5m > step=60, sliding window) must still use the slow manual path.
+	base := time.Unix(1700000000, 0).UTC()
+	var slowPathCalled bool
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			slowPathCalled = true
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			// Return one log line so the proxy has something to aggregate.
+			_, _ = fmt.Fprintf(w,
+				`{"_time":%q,"_msg":"ok","_stream":"{app=\"api-gateway\"}","app":"api-gateway","status":"404"}`+"\n",
+				base.Format(time.RFC3339Nano),
+			)
+		case "/select/logsql/stats_query_range":
+			t.Error("stats_query_range must NOT be called for sliding-window rate query")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			if r.URL.Path != "/metrics" {
+				t.Logf("unhandled path: %s", r.URL.Path)
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	// step=60 != range=[5m]=300 → rangeEqualsStep=false → sliding window → slow path.
+	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
+	params.Set("step", "60")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !slowPathCalled {
+		t.Error("expected slow-path /select/logsql/query for sliding-window parser-stage rate query")
+	}
+}
+
 func TestQueryRange_RateManualFallback(t *testing.T) {
 	base := time.Unix(1700000000, 0).UTC()
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
