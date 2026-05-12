@@ -384,7 +384,7 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	// When the data distribution is non-uniform the two diverge. Route to the manual
 	// log-fetch path for correct sliding-window semantics.
 	// When range == step windows are non-overlapping and native VL stats is equivalent,
-	// including for queries that use parser stages (| json, | logfmt): VL stats_query_range
+	// including for queries that use parser stages (| unpack_json, | unpack_logfmt): VL stats_query_range
 	// natively supports inline filter pipelines and parser stages.
 	switch manualFunc {
 	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
