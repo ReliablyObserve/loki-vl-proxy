@@ -74,12 +74,12 @@ No cache, no coalescer benefit. Pure translation overhead + HTTP proxying + VL r
 | Heavy pipeline queries | c=10 | 126–188 req/s | ~161–472 req/s | **~parity** |
 | Heavy pipeline queries | c=100 | 139 req/s | ~33 req/s | **4.2× faster** |
 | Long-range (6 h–72 h) | c=10 | 2× faster than Loki | — | parallel sub-window vs sequential scan |
-| Compute (rate, topk) | c=10 | ~40 req/s | ~1,227 req/s | 0.03× — N VL calls per query |
+| Compute (rate, topk) | c=10 | 210 req/s | ~2,403 req/s | 0.09× — N VL calls per query; was 0.03× before alloc fixes |
 
 - **Small and metadata queries:** 1.4–2× faster than Loki cold — VL scans are faster than Loki's chunk store for label/series queries
 - **Heavy pipeline queries:** parity to **4.2× faster** depending on concurrency — `stats_query_range` fast path eliminates 39% cold CPU for `count_over_time`/`rate` queries
 - **Long-range queries:** **2× faster cold** — parallel sub-window fetching completes before Loki's sequential chunk scan
-- **Compute aggregations (`quantile_over_time`, `topk`, multi-stage pipelines):** N VL calls per metric query; historical windows cache after first run (24 h TTL), bringing warm compute on par with or faster than Loki
+- **Compute aggregations (`quantile_over_time`, `topk`, multi-stage pipelines):** N VL calls per metric query; pprof-guided alloc fixes lifted cold throughput 40→210 req/s (+5.25×); historical windows cache after first run (24 h TTL), bringing warm compute on par with or faster than Loki
 
 Full throughput tables, P90/P99 latency, CPU and RSS breakdowns: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 
