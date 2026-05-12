@@ -1920,3 +1920,41 @@ func TestQueryRange_DoesNotEmitDoubleQuotedSelectorToVL(t *testing.T) {
 		})
 	}
 }
+
+// TestMarshalWindowedStreamsResult_EncodingFlagsBeforeResult guards against the
+// regression where encodingFlags appeared after result in the JSON output.
+// Grafana's streaming parser needs to see encodingFlags before result to know
+// that value tuples are triplets [ts,msg,meta] rather than pairs [ts,msg].
+func TestMarshalWindowedStreamsResult_EncodingFlagsBeforeResult(t *testing.T) {
+	streams := []map[string]interface{}{
+		{
+			"stream": map[string]string{"app": "test"},
+			"values": []interface{}{
+				[]interface{}{"1234567890000000000", "log line", map[string]interface{}{"parsed": map[string]string{"key": "val"}}},
+			},
+		},
+	}
+
+	body := marshalWindowedStreamsResult(streams, true)
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		t.Fatalf("invalid JSON: %v\nbody=%s", err, body)
+	}
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal(raw["data"], &data); err != nil {
+		t.Fatalf("invalid data: %v", err)
+	}
+	s := string(body)
+	flagsIdx := strings.Index(s, `"encodingFlags"`)
+	resultIdx := strings.Index(s, `"result"`)
+	if flagsIdx == -1 {
+		t.Fatal("encodingFlags not found in response")
+	}
+	if resultIdx == -1 {
+		t.Fatal("result not found in response")
+	}
+	if flagsIdx > resultIdx {
+		t.Fatalf("encodingFlags must appear before result so streaming parsers see it first\nflagsIdx=%d resultIdx=%d body=%s", flagsIdx, resultIdx, s)
+	}
+}

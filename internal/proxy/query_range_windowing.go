@@ -1155,7 +1155,14 @@ func marshalWindowedStreamsResult(streams []map[string]interface{}, categorizedL
 	defer jsonBufPool.Put(buf)
 	buf.Grow(256 + len(streams)*256)
 
-	buf.WriteString(`{"status":"success","data":{"resultType":"streams","result":`)
+	// encodingFlags must appear BEFORE result so streaming parsers that read the
+	// JSON object key-by-key (e.g. Grafana's Loki datasource) know to decode
+	// values as triplets before they encounter the result array.
+	if categorizedLabels {
+		buf.WriteString(`{"status":"success","data":{"resultType":"streams","encodingFlags":["categorize-labels"],"result":`)
+	} else {
+		buf.WriteString(`{"status":"success","data":{"resultType":"streams","result":`)
+	}
 	buf.WriteByte('[')
 	for i, stream := range streams {
 		if i > 0 {
@@ -1176,11 +1183,7 @@ func marshalWindowedStreamsResult(streams []map[string]interface{}, categorizedL
 		buf.WriteByte('}')
 	}
 	buf.WriteByte(']')
-	buf.WriteString(`,"stats":{}`)
-	if categorizedLabels {
-		buf.WriteString(`,"encodingFlags":["categorize-labels"]`)
-	}
-	buf.WriteString(`}}`)
+	buf.WriteString(`,"stats":{}}}`)
 
 	out := make([]byte, buf.Len())
 	copy(out, buf.Bytes())

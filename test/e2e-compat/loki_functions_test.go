@@ -18,7 +18,7 @@ import (
 
 var patternDataOnce sync.Once
 
-const patternsAutodetectProxyURL = "http://localhost:3110"
+const patternsAutodetectProxyURL = "http://localhost:13110"
 
 // TestLokiFunctions_Decolorize verifies | decolorize strips ANSI codes.
 func TestLokiFunctions_Decolorize(t *testing.T) {

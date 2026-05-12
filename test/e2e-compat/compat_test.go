@@ -32,13 +32,13 @@ import (
 )
 
 var (
-	lokiURL        = envOr("LOKI_URL", "http://localhost:3101")
-	proxyURL       = envOr("PROXY_URL", "http://localhost:3100")
-	proxyVmauthURL = envOr("PROXY_VMAUTH_URL", "http://localhost:3109")
-	tailProxyURL   = envOr("TAIL_PROXY_URL", "http://localhost:3103")
-	tailIngressURL = envOr("TAIL_INGRESS_URL", "http://localhost:3104")
-	tailNativeURL  = envOr("TAIL_NATIVE_URL", "http://localhost:3105")
-	vlURL          = envOr("VL_URL", "http://localhost:9428")
+	lokiURL        = envOr("LOKI_URL", "http://localhost:13101")
+	proxyURL       = envOr("PROXY_URL", "http://localhost:13100")
+	proxyVmauthURL = envOr("PROXY_VMAUTH_URL", "http://localhost:13109")
+	tailProxyURL   = envOr("TAIL_PROXY_URL", "http://localhost:13103")
+	tailIngressURL = envOr("TAIL_INGRESS_URL", "http://localhost:13104")
+	tailNativeURL  = envOr("TAIL_NATIVE_URL", "http://localhost:13105")
+	vlURL          = envOr("VL_URL", "http://localhost:19428")
 )
 
 func envOr(key, def string) string {
