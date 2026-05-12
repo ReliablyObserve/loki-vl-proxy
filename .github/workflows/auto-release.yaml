@@ -58,7 +58,7 @@ jobs:
           DOCS_OR_CI_ONLY="yes"
           while IFS= read -r file; do
             [ -z "$file" ] && continue
-            if ! echo "$file" | grep -Eq '^(README\.md|CHANGELOG\.md|docs/|\.github/)$'; then
+            if ! echo "$file" | grep -Eq '^(README\.md|CHANGELOG\.md|docs/|\.github/)'; then
               DOCS_OR_CI_ONLY="no"
               break
             fi
@@ -67,6 +67,13 @@ jobs:
           if [ "$DOCS_OR_CI_ONLY" = "yes" ]; then
             echo "should_release=false" >> "$GITHUB_OUTPUT"
             echo "Only docs/ci/metadata files changed; skipping release"
+            exit 0
+          fi
+
+          UNRELEASED_LINES=$(awk '/^## \[Unreleased\]/{f=1; next} /^## \[/{if(f) exit} f && /^[[:space:]]*[^[:space:]]/' CHANGELOG.md | wc -l | tr -d ' ')
+          if [ "${UNRELEASED_LINES}" -eq 0 ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "CHANGELOG [Unreleased] section is empty; skipping release (add changelog entries to enable)"
             exit 0
           fi
 

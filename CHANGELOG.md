@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- fix(ci): `auto-release` now exits cleanly with `should_release=false` when `## [Unreleased]` is empty — deps-bump and CI-only PRs previously reached `validate-release` and failed noisily; fixed `DOCS_OR_CI_ONLY` regex (trailing `$` prevented `docs/subpath` and `.github/subpath` from matching).
+
 ### Performance
 
 - perf(range_metric): add `stats_query_range` fast path for `sum by (...) (count_over_time/rate({...}[W]))` — replaces raw NDJSON log scan (39% CPU cold proxy) with VL pre-aggregated Prometheus buckets via `| stats by (...) count() as c`. Throughput improvement: 44→126 req/s (c=10) and 33→139 req/s (c=100) on heavy workload.
