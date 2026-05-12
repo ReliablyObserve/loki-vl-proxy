@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf(range_metric): add `stats_query_range` fast path for `sum by (...) (count_over_time/rate({...}[W]))` — replaces raw NDJSON log scan (39% CPU cold proxy) with VL pre-aggregated Prometheus buckets via `| stats by (...) count() as c`. Throughput improvement: 44→188 req/s (c=10) and 33→139 req/s (c=50) on heavy workload.
+- perf(range_metric): extend fast path to `bytes_over_time`/`bytes_rate` using `| stats by (...) sum_len(_msg) as c` — eliminates 4664ms P50 bottleneck for byte-rate metric queries at cold concurrency.
+
 ## [1.31.2] - 2026-05-12
 
 ### Performance
