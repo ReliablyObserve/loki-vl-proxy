@@ -121,22 +121,8 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 
 	p.metrics.RecordQueryRangeWindowCount(len(windows))
 	if len(windows) == 0 {
-		result, _ := json.Marshal(map[string]interface{}{
-			"status": "success",
-			"data": func() map[string]interface{} {
-				data := map[string]interface{}{
-					"resultType": "streams",
-					"result":     []map[string]interface{}{},
-					"stats":      map[string]interface{}{},
-				}
-				if categorizedLabels {
-					data["encodingFlags"] = []string{"categorize-labels"}
-				}
-				return data
-			}(),
-		})
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+		_, _ = w.Write(marshalWindowedStreamsResult(nil, categorizedLabels)) // nosemgrep
 		return true
 	}
 
@@ -273,22 +259,8 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		applyLineFormatTemplate(streams, tmpl)
 	}
 
-	result, _ := json.Marshal(map[string]interface{}{
-		"status": "success",
-		"data": func() map[string]interface{} {
-			data := map[string]interface{}{
-				"resultType": "streams",
-				"result":     streams,
-				"stats":      map[string]interface{}{},
-			}
-			if categorizedLabels {
-				data["encodingFlags"] = []string{"categorize-labels"}
-			}
-			return data
-		}(),
-	})
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+	_, _ = w.Write(marshalWindowedStreamsResult(streams, categorizedLabels)) // nosemgrep
 	return true
 }
 
@@ -1169,4 +1141,108 @@ func (p *Proxy) DownstreamConnectionPressure() bool {
 	return p.queryRangeParallelCurrent <= p.queryRangeParallelMin &&
 		p.queryRangeLatencyEWMA > 0 &&
 		p.queryRangeLatencyEWMA >= p.queryRangeLatencyTarget
+}
+
+// marshalWindowedStreamsResult serialises a Loki query_range streams response
+// directly to []byte without reflection, using the pre-known structure produced
+// by groupQueryRangeWindowEntries.
+//
+// For the common non-categorized case each value is []interface{}{"ts","msg"}.
+// Categorized values have a third map element; those fall through to json.Marshal.
+func marshalWindowedStreamsResult(streams []map[string]interface{}, categorizedLabels bool) []byte {
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jsonBufPool.Put(buf)
+	buf.Grow(256 + len(streams)*256)
+
+	buf.WriteString(`{"status":"success","data":{"resultType":"streams","result":`)
+	buf.WriteByte('[')
+	for i, stream := range streams {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`{"stream":`)
+		if labels, ok := stream["stream"].(map[string]string); ok {
+			marshalStringMapJSONTo(buf, labels)
+		} else {
+			buf.WriteString(`{}`)
+		}
+		buf.WriteString(`,"values":`)
+		if vals, ok := stream["values"].([]interface{}); ok {
+			marshalWindowedValues(buf, vals)
+		} else {
+			buf.WriteString(`[]`)
+		}
+		buf.WriteByte('}')
+	}
+	buf.WriteByte(']')
+	buf.WriteString(`,"stats":{}`)
+	if categorizedLabels {
+		buf.WriteString(`,"encodingFlags":["categorize-labels"]`)
+	}
+	buf.WriteString(`}}`)
+
+	out := make([]byte, buf.Len())
+	copy(out, buf.Bytes())
+	return out
+}
+
+// marshalWindowedValues writes a JSON array of stream values.
+// Each value is either []interface{}{"ts","msg"} or []interface{}{"ts","msg",metadata}.
+// Falls back to json.Marshal only when element types don't match the simple pair form.
+func marshalWindowedValues(buf *bytes.Buffer, vals []interface{}) {
+	buf.WriteByte('[')
+	for i, v := range vals {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		pair, ok := v.([]interface{})
+		if !ok || len(pair) < 2 {
+			// Unexpected shape — use reflection fallback for this element.
+			b, _ := json.Marshal(v)
+			buf.Write(b)
+			continue
+		}
+		ts, tsOK := pair[0].(string)
+		msg, msgOK := pair[1].(string)
+		if !tsOK || !msgOK {
+			b, _ := json.Marshal(v)
+			buf.Write(b)
+			continue
+		}
+		if len(pair) == 2 {
+			// Common case: ["ts","msg"] — write directly without allocation.
+			buf.WriteByte('[')
+			appendJSONStringToBuffer(buf, ts)
+			buf.WriteByte(',')
+			appendJSONStringToBuffer(buf, msg)
+			buf.WriteByte(']')
+		} else {
+			// Categorized: ["ts","msg",{metadata}] — marshal with reflection
+			b, _ := json.Marshal(v)
+			buf.Write(b)
+		}
+	}
+	buf.WriteByte(']')
+}
+
+// marshalStringMapJSONTo writes m as a JSON object directly to buf,
+// avoiding the per-call []byte allocation of marshalStringMapJSON.
+func marshalStringMapJSONTo(buf *bytes.Buffer, m map[string]string) {
+	if len(m) == 0 {
+		buf.WriteString(`{}`)
+		return
+	}
+	buf.WriteByte('{')
+	first := true
+	for k, v := range m {
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		appendJSONStringToBuffer(buf, k)
+		buf.WriteByte(':')
+		appendJSONStringToBuffer(buf, v)
+	}
+	buf.WriteByte('}')
 }
