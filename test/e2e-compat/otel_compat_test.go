@@ -31,7 +31,7 @@ import (
 )
 
 var (
-	proxyUnderscoreURL = envOrOtel("PROXY_UNDERSCORE_URL", "http://localhost:3102")
+	proxyUnderscoreURL = envOrOtel("PROXY_UNDERSCORE_URL", "http://localhost:13102")
 )
 
 func envOrOtel(key, def string) string {

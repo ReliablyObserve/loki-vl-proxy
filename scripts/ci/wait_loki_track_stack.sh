@@ -27,11 +27,11 @@ print_debug() {
 
 trap 'print_debug' ERR
 
-wait_http "loki" "http://127.0.0.1:3101/ready"
-wait_http "victorialogs" "http://127.0.0.1:9428/health"
-wait_http "vmalert" "http://127.0.0.1:8880/api/v1/rules?datasource_type=vlogs"
-wait_http "proxy" "http://127.0.0.1:3100/ready"
-wait_http "proxy-underscore" "http://127.0.0.1:3102/ready"
+wait_http "loki" "http://127.0.0.1:13101/ready"
+wait_http "victorialogs" "http://127.0.0.1:19428/health"
+wait_http "vmalert" "http://127.0.0.1:18880/api/v1/rules?datasource_type=vlogs"
+wait_http "proxy" "http://127.0.0.1:13100/ready"
+wait_http "proxy-underscore" "http://127.0.0.1:13102/ready"
 wait_http "grafana" "http://127.0.0.1:3002/api/health"
 
 docker compose ps
