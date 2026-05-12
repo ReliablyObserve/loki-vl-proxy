@@ -1585,17 +1585,18 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	}
 
 	// Rebuild the response JSON, substituting changed metric objects.
-	// Status is intentionally omitted so wrapAsLokiResponse can splice the envelope.
+	// Always write "status":"success" first so wrapAsLokiResponse fast path A matches
+	// and returns the buffer zero-alloc instead of splicing a new []byte.
 	buf := jsonBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	defer jsonBufPool.Put(buf)
-	buf.Grow(len(body))
+	buf.Grow(len(body) + len(`{"status":"success",`))
 
 	scratch := fjMarshalPool.Get().(*[]byte)
 	defer fjMarshalPool.Put(scratch)
 
-	buf.WriteByte('{')
-	needsComma := false
+	buf.WriteString(`{"status":"success"`)
+	needsComma := true
 
 	if data := v.Get("data"); data != nil {
 		si := -1
@@ -1605,7 +1606,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 				break
 			}
 		}
-		buf.WriteString(`"data":{`)
+		buf.WriteString(`,"data":{`)
 		if rt := data.Get("resultType"); rt != nil {
 			buf.WriteString(`"resultType":`)
 			marshalFJ(buf, rt, scratch)

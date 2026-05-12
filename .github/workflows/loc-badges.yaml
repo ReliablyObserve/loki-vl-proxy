@@ -18,8 +18,8 @@ jobs:
       - name: Count LOC
         id: loc
         run: |
-          REAL=$(find . -name "*.go" -not -name "*_test.go" -not -path "./.git/*" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}')
-          TEST=$(find . -name "*_test.go" -not -path "./.git/*" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}')
+          REAL=$(find . -name "*.go" -not -name "*_test.go" -not -path "./.git/*" -print0 | xargs -0 wc -l 2>/dev/null | tail -1 | awk '{print $1}')
+          TEST=$(find . -name "*_test.go" -not -path "./.git/*" -print0 | xargs -0 wc -l 2>/dev/null | tail -1 | awk '{print $1}')
           echo "real=$REAL" >> "$GITHUB_OUTPUT"
           echo "test=$TEST" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$REAL" "$TEST"

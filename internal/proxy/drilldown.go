@@ -1443,18 +1443,6 @@ func (p *Proxy) detectFieldsNativeOnly(ctx context.Context, query, start, end st
 	return mergeNativeDetectedFields(nil, nil, nativeFields)
 }
 
-// isOTelDataFJ is the fastjson-aware equivalent of isOTelData.
-// It inspects the same fields as isOTelData but via fastjson getters,
-// avoiding the map[string]interface{} allocation.
-func isOTelDataFJ(fjVal *fj.Value) bool {
-	if fjVal == nil {
-		return false
-	}
-	streamStr := string(fjVal.GetStringBytes("_stream"))
-	streamLabels := parseStreamLabels(streamStr)
-	return isOTelLabels(streamLabels, fjVal.GetStringBytes("_msg"))
-}
-
 // isOTelLabels checks OTel heuristics given pre-parsed stream labels and raw
 // _msg bytes. Callers that already have both avoid redundant parseStreamLabels.
 func isOTelLabels(streamLabels map[string]string, msgBytes []byte) bool {
