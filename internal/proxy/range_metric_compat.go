@@ -286,6 +286,17 @@ func parseOriginalByLabels(logql string) []string {
 }
 
 func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, originalLogql, logsqlQuery string) bool {
+	// Queries containing | math are multi-stage VL rate pipelines built by the translator
+	// (e.g. sum(rate({...} | json [w]))). For non-sliding windows (range == step), VL can
+	// execute them natively — no manual decomposition needed. For sliding windows (range >
+	// step), fall through to the manual path which implements correct per-step accumulation.
+	if strings.Contains(logsqlQuery, "| math ") {
+		step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
+		origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
+		if stepOk && hasOrigSpec && origSpec.Window > 0 && origSpec.Window <= step {
+			return false
+		}
+	}
 	spec, ok := parseStatsCompatSpec(logsqlQuery)
 	if !ok {
 		return false
