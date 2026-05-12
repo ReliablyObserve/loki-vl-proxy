@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/textproto"
 	"regexp"
 	"strconv"
 	"strings"
@@ -32,6 +33,30 @@ var jsonBuilderPool = sync.Pool{New: func() interface{} { return new(strings.Bui
 // gzipReaderPool reuses gzip decompression readers across VL responses to avoid
 // per-response allocation. New is nil — Get returns nil until readers are returned.
 var gzipReaderPool sync.Pool
+
+// Pre-canonicalized VL request header names eliminate net/textproto.CanonicalMIMEHeaderKey
+// allocations in applyBackendHeaders. Custom headers with non-canonical capitalisation
+// (e.g. "VL" → "Vl") would allocate a new string on every Header.Set call otherwise.
+var (
+	hdrVLClientID          = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Client-ID")
+	hdrVLClientSource      = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Client-Source")
+	hdrVLGrafanaSurface    = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Grafana-Surface")
+	hdrVLGrafanaVersion    = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Grafana-Version")
+	hdrVLGrafanaRTFamily   = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Grafana-Runtime-Family")
+	hdrVLDrilldownProfile  = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Drilldown-Profile")
+	hdrVLAuthUser          = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Auth-User")
+	hdrVLAuthSource        = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Auth-Source")
+	hdrAcceptEncoding      = textproto.CanonicalMIMEHeaderKey("Accept-Encoding")
+)
+
+// Pre-allocated single-element header value slices for static Accept-Encoding values.
+// Reusing these avoids one []string{value} heap allocation per VL sub-request.
+var (
+	hdrValIdentity = []string{"identity"}
+	hdrValGzip     = []string{"gzip"}
+	hdrValZstd     = []string{"zstd"}
+	hdrValZstdGzip = []string{"zstd, gzip"}
+)
 
 // validateQuery checks query string length and returns a sanitized version.
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
@@ -448,6 +473,11 @@ func reconstructLogLineWithFlagFJ(msg string, obj *fj.Object, streamLabels map[s
 	}
 	b := jsonBuilderPool.Get().(*strings.Builder)
 	b.Reset()
+	// Pre-grow to msg length + overhead so growSlice is not called on typical entries.
+	// Pool reuse means this is free once the builder reaches steady-state capacity.
+	if need := len(msg) + 64; b.Cap() < need {
+		b.Grow(need)
+	}
 	b.WriteString(`{"_msg":`)
 	appendJSONStringToBuilder(b, msg)
 	startLen := b.Len()
@@ -563,6 +593,8 @@ func (p *Proxy) ShouldFilterTranslatedLabel(name string) bool {
 }
 
 // applyBackendHeaders adds static backend headers and forwarded client headers to a VL request.
+// Uses pre-canonicalized header keys and pre-allocated static value slices to avoid
+// net/textproto.CanonicalMIMEHeaderKey and []string{value} allocations per sub-request.
 func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 	for k, v := range p.backendHeaders {
 		vlReq.Header.Set(k, v)
@@ -570,41 +602,41 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 	if vlReq.Header.Get("Accept-Encoding") == "" {
 		switch p.backendCompression {
 		case "none":
-			vlReq.Header.Set("Accept-Encoding", "identity")
+			vlReq.Header[hdrAcceptEncoding] = hdrValIdentity
 		case "gzip":
-			vlReq.Header.Set("Accept-Encoding", "gzip")
+			vlReq.Header[hdrAcceptEncoding] = hdrValGzip
 		case "zstd":
-			vlReq.Header.Set("Accept-Encoding", "zstd")
+			vlReq.Header[hdrAcceptEncoding] = hdrValZstd
 		default: // "auto"
 			if p.isBackendLoopback() {
 				// Co-located VL (loopback): skip compression entirely.
 				// Saves 25–35% CPU on both proxy and VL with zero bandwidth cost.
-				vlReq.Header.Set("Accept-Encoding", "identity")
+				vlReq.Header[hdrAcceptEncoding] = hdrValIdentity
 			} else {
-				vlReq.Header.Set("Accept-Encoding", "zstd, gzip")
+				vlReq.Header[hdrAcceptEncoding] = hdrValZstdGzip
 			}
 		}
 	}
 	if origReq, ok := vlReq.Context().Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		clientID, clientSource := metrics.ResolveClientContext(origReq, p.metricsTrustProxyHeaders)
-		vlReq.Header.Set("X-Loki-VL-Client-ID", clientID)
-		vlReq.Header.Set("X-Loki-VL-Client-Source", clientSource)
+		vlReq.Header[hdrVLClientID] = []string{clientID}
+		vlReq.Header[hdrVLClientSource] = []string{clientSource}
 		gp := grafanaClientProfileFromContext(origReq.Context())
 		if gp.surface != "" {
-			vlReq.Header.Set("X-Loki-VL-Grafana-Surface", gp.surface)
+			vlReq.Header[hdrVLGrafanaSurface] = []string{gp.surface}
 		}
 		if gp.version != "" {
-			vlReq.Header.Set("X-Loki-VL-Grafana-Version", gp.version)
+			vlReq.Header[hdrVLGrafanaVersion] = []string{gp.version}
 		}
 		if gp.runtimeFamily != "" {
-			vlReq.Header.Set("X-Loki-VL-Grafana-Runtime-Family", gp.runtimeFamily)
+			vlReq.Header[hdrVLGrafanaRTFamily] = []string{gp.runtimeFamily}
 		}
 		if gp.drilldownProfile != "" {
-			vlReq.Header.Set("X-Loki-VL-Drilldown-Profile", gp.drilldownProfile)
+			vlReq.Header[hdrVLDrilldownProfile] = []string{gp.drilldownProfile}
 		}
 		if authUser, authSource := metrics.ResolveAuthContext(origReq); authUser != "" {
-			vlReq.Header.Set("X-Loki-VL-Auth-User", authUser)
-			vlReq.Header.Set("X-Loki-VL-Auth-Source", authSource)
+			vlReq.Header[hdrVLAuthUser] = []string{authUser}
+			vlReq.Header[hdrVLAuthSource] = []string{authSource}
 		}
 		if p.metricsTrustProxyHeaders {
 			for _, headerName := range trustedIdentityHeaders {

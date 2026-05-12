@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -11,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	fj "github.com/valyala/fastjson"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -147,21 +150,8 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 	return spec, startNs, true
 }
 
-type statsQueryRangeSeries struct {
-	Metric json.RawMessage `json:"metric"`
-	Values [][]interface{} `json:"values"`
-}
-
-type statsQueryRangeResponse struct {
-	// Status is preserved so that trimStatsQueryRangeResponseFromStart does not
-	// drop the Loki envelope "status":"success" field when re-marshalling.
-	Status string `json:"status,omitempty"`
-	Data   struct {
-		ResultType string                  `json:"resultType,omitempty"`
-		Result     []statsQueryRangeSeries `json:"result"`
-	} `json:"data"`
-	Results []statsQueryRangeSeries `json:"results,omitempty"`
-}
+// statsQRFJPool pools fastjson.Parser instances for trimStatsQueryRange* hot paths.
+var statsQRFJPool fj.ParserPool
 
 func buildStatsQueryRangeParams(logsqlQuery, startRaw, endRaw, stepRaw string) url.Values {
 	return buildStatsQueryRangeParamsShifted(logsqlQuery, startRaw, endRaw, stepRaw, 0)
@@ -209,45 +199,22 @@ func extendStatsQueryRangeEnd(endRaw, stepRaw string) (string, bool) {
 	return nanosToVLTimestamp(endNs + stepDur.Nanoseconds()), true
 }
 
+// fjMarshalPool pools scratch []byte slices for fastjson MarshalTo calls.
+// Reusing a pre-allocated slice avoids per-call allocation when marshaling
+// individual JSON values back to bytes (metrics, points, etc.).
+var fjMarshalPool = &sync.Pool{New: func() interface{} { b := make([]byte, 0, 4096); return &b }}
+
+// marshalFJ marshals v into scratch (resizing as needed) and writes to buf.
+// scratch must come from fjMarshalPool.
+func marshalFJ(buf *bytes.Buffer, v *fj.Value, scratch *[]byte) {
+	*scratch = v.MarshalTo((*scratch)[:0])
+	buf.Write(*scratch)
+}
+
 // trimStatsQueryRangeResponseFromStart removes points with timestamp < startNs.
 // Used when start was shifted back to include the pre-start bucket for rate().
 func trimStatsQueryRangeResponseFromStart(body []byte, startNs int64) []byte {
-	var resp statsQueryRangeResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return body
-	}
-	results := resp.Results
-	target := &resp.Results
-	if len(results) == 0 {
-		results = resp.Data.Result
-		target = &resp.Data.Result
-	}
-	if len(results) == 0 {
-		return body
-	}
-	changed := false
-	trimmed := make([]statsQueryRangeSeries, 0, len(results))
-	for _, series := range results {
-		filtered := make([][]interface{}, 0, len(series.Values))
-		for _, point := range series.Values {
-			if statsQueryRangePointUnixNano(point) >= startNs {
-				filtered = append(filtered, point)
-				continue
-			}
-			changed = true
-		}
-		series.Values = filtered
-		trimmed = append(trimmed, series)
-	}
-	if !changed {
-		return body
-	}
-	*target = trimmed
-	encoded, err := json.Marshal(resp)
-	if err != nil {
-		return body
-	}
-	return encoded
+	return trimStatsQRByTimeFJ(body, func(tsNs int64) bool { return tsNs >= startNs })
 }
 
 func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
@@ -255,45 +222,166 @@ func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
 	if !ok {
 		return body
 	}
+	return trimStatsQRByTimeFJ(body, func(tsNs int64) bool { return tsNs <= endNs })
+}
 
-	var resp statsQueryRangeResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return body
-	}
+// trimStatsQRByTimeFJ filters stats_query_range point arrays using fastjson,
+// eliminating json.Unmarshal struct allocations and json.Marshal reflection.
+func trimStatsQRByTimeFJ(body []byte, keep func(int64) bool) []byte {
+	p := statsQRFJPool.Get()
+	defer statsQRFJPool.Put(p)
 
-	results := resp.Results
-	target := &resp.Results
-	if len(results) == 0 {
-		results = resp.Data.Result
-		target = &resp.Data.Result
-	}
-	if len(results) == 0 {
-		return body
-	}
-
-	changed := false
-	trimmed := make([]statsQueryRangeSeries, 0, len(results))
-	for _, series := range results {
-		filtered := make([][]interface{}, 0, len(series.Values))
-		for _, point := range series.Values {
-			if statsQueryRangePointUnixNano(point) <= endNs {
-				filtered = append(filtered, point)
-				continue
-			}
-			changed = true
-		}
-		series.Values = filtered
-		trimmed = append(trimmed, series)
-	}
-	if !changed {
-		return body
-	}
-	*target = trimmed
-	encoded, err := json.Marshal(resp)
+	v, err := p.ParseBytes(body)
 	if err != nil {
 		return body
 	}
-	return encoded
+
+	// Locate result series: top-level "results" or nested "data"."result".
+	var seriesArr []*fj.Value
+	var dataVal *fj.Value
+
+	if r := v.Get("results"); r != nil && r.Type() == fj.TypeArray {
+		seriesArr, _ = r.Array()
+	}
+	if len(seriesArr) == 0 {
+		if d := v.Get("data"); d != nil {
+			if r := d.Get("result"); r != nil && r.Type() == fj.TypeArray {
+				seriesArr, _ = r.Array()
+				dataVal = d
+			}
+		}
+	}
+	if len(seriesArr) == 0 {
+		return body
+	}
+
+	// Quick scan: any point falls outside the keep range?
+	needsTrim := false
+scanLoop:
+	for _, series := range seriesArr {
+		valObj := series.Get("values")
+		if valObj == nil {
+			continue
+		}
+		points, _ := valObj.Array()
+		for _, point := range points {
+			pts, _ := point.Array()
+			if len(pts) == 0 {
+				continue
+			}
+			if !keep(statsQRFJPointNano(pts[0])) {
+				needsTrim = true
+				break scanLoop
+			}
+		}
+	}
+	if !needsTrim {
+		return body
+	}
+
+	// Rebuild the JSON response with filtered values arrays.
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jsonBufPool.Put(buf)
+	buf.Grow(len(body))
+
+	scratch := fjMarshalPool.Get().(*[]byte)
+	defer fjMarshalPool.Put(scratch)
+
+	buf.WriteByte('{')
+	needsComma := false
+
+	if status := v.Get("status"); status != nil {
+		buf.WriteString(`"status":`)
+		marshalFJ(buf, status, scratch)
+		needsComma = true
+	}
+
+	if dataVal != nil {
+		if needsComma {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`"data":{`)
+		if rt := dataVal.Get("resultType"); rt != nil {
+			buf.WriteString(`"resultType":`)
+			marshalFJ(buf, rt, scratch)
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`"result":`)
+		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, scratch)
+		if stats := dataVal.Get("stats"); stats != nil {
+			buf.WriteString(`,"stats":`)
+			marshalFJ(buf, stats, scratch)
+		}
+		buf.WriteByte('}')
+	} else {
+		if needsComma {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`"results":`)
+		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, scratch)
+	}
+
+	buf.WriteByte('}')
+
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	return result
+}
+
+func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep func(int64) bool, scratch *[]byte) {
+	buf.WriteByte('[')
+	for si, series := range seriesArr {
+		if si > 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteByte('{')
+		fieldWritten := false
+		if metric := series.Get("metric"); metric != nil {
+			buf.WriteString(`"metric":`)
+			marshalFJ(buf, metric, scratch)
+			fieldWritten = true
+		}
+		if values := series.Get("values"); values != nil {
+			if fieldWritten {
+				buf.WriteByte(',')
+			}
+			buf.WriteString(`"values":[`)
+			points, _ := values.Array()
+			firstPoint := true
+			for _, point := range points {
+				pts, _ := point.Array()
+				if len(pts) == 0 {
+					continue
+				}
+				if !keep(statsQRFJPointNano(pts[0])) {
+					continue
+				}
+				if !firstPoint {
+					buf.WriteByte(',')
+				}
+				firstPoint = false
+				marshalFJ(buf, point, scratch)
+			}
+			buf.WriteByte(']')
+		}
+		buf.WriteByte('}')
+	}
+	buf.WriteByte(']')
+}
+
+// statsQRFJPointNano extracts the unix-nano timestamp from the first element
+// of a stats_query_range point array [ts, "value"].
+func statsQRFJPointNano(v *fj.Value) int64 {
+	switch v.Type() {
+	case fj.TypeNumber:
+		return normalizeLokiNumericTimeToUnixNano(v.GetFloat64())
+	case fj.TypeString:
+		if ns, ok := parseLokiTimeToUnixNano(string(v.GetStringBytes())); ok {
+			return ns
+		}
+	}
+	return 0
 }
 
 func statsQueryRangePointUnixNano(point []interface{}) int64 {

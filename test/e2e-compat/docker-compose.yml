@@ -18,7 +18,7 @@ services:
     image: ${LOKI_IMAGE:-grafana/loki:3.7.1}
     container_name: e2e-loki
     ports:
-      - "3101:3100"
+      - "13101:3100"
     # Bench peak: 1,798 MB (heavy c=100). +30% headroom = 2,337 MB → 2.4g.
     # Loki RSS is stable across all workloads (1.4–1.8 GB range), so this
     # cap is not expected to trigger; it guards against runaway situations.
@@ -37,7 +37,7 @@ services:
     image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.50.0}
     container_name: e2e-victorialogs
     ports:
-      - "9428:9428"
+      - "19428:9428"
     # Hard memory cap: Docker OOM-kills and restarts the container rather than
     # letting unconstrained query memory exhaust the host. Without this, 50+
     # concurrent 48–72h queries each allocate ~100–200 MB of working buffers,
@@ -132,7 +132,7 @@ services:
     container_name: e2e-vmalert
     working_dir: /rules
     ports:
-      - "8880:8880"
+      - "18880:8880"
     command:
       - "-httpListenAddr=:8880"
       - "-datasource.url=http://victorialogs:9428"
@@ -162,7 +162,7 @@ services:
       dockerfile: Dockerfile
     container_name: e2e-proxy
     ports:
-      - "3100:3100"
+      - "13100:3100"
     tmpfs:
       - /cache
     environment:
@@ -213,7 +213,7 @@ services:
     container_name: e2e-proxy-patterns-autodetect
     user: root
     ports:
-      - "3110:3100"
+      - "13110:3100"
     volumes:
       - patterns-cache:/cache
     command:
@@ -252,7 +252,7 @@ services:
       dockerfile: Dockerfile
     container_name: e2e-proxy-vmauth
     ports:
-      - "3109:3100"
+      - "13109:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://vmauth:8427"
@@ -283,7 +283,7 @@ services:
       dockerfile: Dockerfile
     container_name: e2e-proxy-underscore
     ports:
-      - "3102:3100"
+      - "13102:3100"
     environment:
       # Soft GC pressure limit: hybrid mode + no label-values index = many concurrent
       # VL NDJSON responses in memory. Without GOMEMLIMIT Go's GC only triggers at
@@ -327,7 +327,7 @@ services:
       dockerfile: Dockerfile
     container_name: e2e-proxy-native-metadata
     ports:
-      - "3106:3100"
+      - "13106:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -358,7 +358,7 @@ services:
       dockerfile: Dockerfile
     container_name: e2e-proxy-translated-metadata
     ports:
-      - "3107:3100"
+      - "13107:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -389,7 +389,7 @@ services:
       dockerfile: Dockerfile
     container_name: e2e-proxy-no-metadata
     ports:
-      - "3108:3100"
+      - "13108:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -420,7 +420,7 @@ services:
       dockerfile: Dockerfile
     container_name: e2e-proxy-tail
     ports:
-      - "3103:3100"
+      - "13103:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -450,7 +450,7 @@ services:
       dockerfile: Dockerfile
     container_name: e2e-proxy-tail-native
     ports:
-      - "3105:3100"
+      - "13105:3100"
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
@@ -477,7 +477,7 @@ services:
     image: nginx:1.27-alpine
     container_name: e2e-tail-ingress
     ports:
-      - "3104:8080"
+      - "13104:8080"
     volumes:
       - ./nginx-tail.conf:/etc/nginx/nginx.conf:ro
     depends_on:

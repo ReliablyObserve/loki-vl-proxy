@@ -82,7 +82,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
       level: "info",
     });
     const pushResp = await page.request.post(
-      "http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,env,level",
+      "http://127.0.0.1:19428/insert/jsonline?_stream_fields=app,env,level",
       {
         headers: { "Content-Type": "application/stream+json" },
         data: `${payload}\n`,
@@ -121,7 +121,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await clickLiveStream(page);
 
     const pushResp = await page.request.post(
-      "http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,env,level",
+      "http://127.0.0.1:19428/insert/jsonline?_stream_fields=app,env,level",
       {
         headers: { "Content-Type": "application/stream+json" },
         data: `${JSON.stringify({

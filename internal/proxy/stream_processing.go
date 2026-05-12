@@ -431,7 +431,8 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 }
 
 type cachedLogQueryStreamDescriptor struct {
-	key              string
+	key              string // canonicalLabelsKey(rawLabels)
+	translatedKey    string // canonicalLabelsKey(translatedLabels); same as key when passthrough
 	rawLabels        map[string]string
 	translatedLabels map[string]string
 }
@@ -510,12 +511,15 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			continue
 		}
 		msg := string(fjVal.GetStringBytes("_msg"))
-		rawStream := string(fjVal.GetStringBytes("_stream"))
-		level := string(fjVal.GetStringBytes("level"))
 
-		// Compute stream descriptor first so reconstructLogLine can reuse the
-		// already-parsed stream labels instead of re-parsing _stream itself.
-		desc := p.logQueryStreamDescriptor(rawStream, level, streamLabelCache, streamDescriptorCache)
+		// Pass raw bytes to avoid string allocation on descriptor cache hits.
+		// logQueryStreamDescriptorBytes uses m[string([]byte)] (zero-alloc lookup)
+		// and only promotes to heap strings on cache miss (once per unique stream).
+		desc := p.logQueryStreamDescriptorBytes(
+			fjVal.GetStringBytes("_stream"),
+			fjVal.GetStringBytes("level"),
+			streamLabelCache, streamDescriptorCache,
+		)
 
 		// Object() is needed for reconstruction or classification.
 		needsObject := needsClassification || !skipLogLineReconstruction
@@ -615,12 +619,37 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	return result, patterns, nil
 }
 
-func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
-	cacheKey := rawStream + "\x00" + strings.TrimSpace(level)
-	if desc, ok := descriptorCache[cacheKey]; ok {
-		return desc
+// logQueryStreamDescriptorBytes is like logQueryStreamDescriptor but accepts
+// raw []byte slices from fastjson. It uses the Go compiler's m[string(b)] map
+// optimisation (no allocation for cache hits) and only promotes to heap strings
+// when a cache miss requires storage.
+func (p *Proxy) logQueryStreamDescriptorBytes(rawStreamBytes, levelBytes []byte, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
+	// Build descriptor cache key in a stack buffer: "<stream>\x00<level>".
+	// m[string(stackSlice)] is a zero-alloc lookup — the compiler hashes the
+	// bytes directly without materialising a heap string.
+	var keyBuf [512]byte
+	n := copy(keyBuf[:], rawStreamBytes)
+	if n < len(keyBuf) {
+		keyBuf[n] = '\x00'
+		n++
 	}
+	trimmedLevel := bytes.TrimSpace(levelBytes)
+	if room := len(keyBuf) - n; len(trimmedLevel) <= room {
+		n += copy(keyBuf[n:], trimmedLevel)
+	}
+	if desc, ok := descriptorCache[string(keyBuf[:n])]; ok {
+		return desc // zero alloc: compiler optimises m[string([]byte)]
+	}
+	// Cache miss — promote to heap strings for storage.
+	rawStream := string(rawStreamBytes)
+	level := strings.TrimSpace(string(levelBytes))
+	return p.logQueryStreamDescriptorMiss(rawStream, level, string(keyBuf[:n]), streamLabelCache, descriptorCache)
+}
 
+// logQueryStreamDescriptorMiss is the slow path: called only once per unique
+// (rawStream, level) pair, with already-allocated strings.
+func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
+	// streamLabelCache lookup: also zero-alloc when rawStream is already a string.
 	baseLabels, ok := streamLabelCache[rawStream]
 	if !ok {
 		baseLabels = parseStreamLabels(rawStream)
@@ -628,26 +657,41 @@ func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCac
 	}
 
 	rawLabels := cloneStringMap(baseLabels)
-	if trimmed := strings.TrimSpace(level); trimmed != "" {
-		rawLabels["level"] = trimmed
+	if level != "" {
+		rawLabels["level"] = level
 	}
 	ensureDetectedLevel(rawLabels)
 	ensureSyntheticServiceName(rawLabels)
 
+	passthrough := p == nil || p.labelTranslator == nil || p.labelTranslator.IsPassthrough()
 	translatedLabels := rawLabels
-	if p != nil && p.labelTranslator != nil && !p.labelTranslator.IsPassthrough() {
+	if !passthrough {
 		translatedLabels = p.labelTranslator.TranslateLabelsMap(rawLabels)
 		ensureDetectedLevel(translatedLabels)
 		ensureSyntheticServiceName(translatedLabels)
 	}
 
+	canonKey := canonicalLabelsKey(rawLabels)
+	translatedKey := canonKey
+	if !passthrough {
+		translatedKey = canonicalLabelsKey(translatedLabels)
+	}
 	desc := cachedLogQueryStreamDescriptor{
-		key:              canonicalLabelsKey(rawLabels),
+		key:              canonKey,
+		translatedKey:    translatedKey,
 		rawLabels:        rawLabels,
 		translatedLabels: translatedLabels,
 	}
 	descriptorCache[cacheKey] = desc
 	return desc
+}
+
+func (p *Proxy) logQueryStreamDescriptor(rawStream, level string, streamLabelCache map[string]map[string]string, descriptorCache map[string]cachedLogQueryStreamDescriptor) cachedLogQueryStreamDescriptor {
+	cacheKey := rawStream + "\x00" + strings.TrimSpace(level)
+	if desc, ok := descriptorCache[cacheKey]; ok {
+		return desc
+	}
+	return p.logQueryStreamDescriptorMiss(rawStream, strings.TrimSpace(level), cacheKey, streamLabelCache, descriptorCache)
 }
 
 // classifyEntryMetadataFields fills smBuf and pfBuf with structured metadata
@@ -1008,11 +1052,18 @@ func appendLabelPair(pair string, dst map[string]string) {
 }
 
 func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
-	// Fast path: VL stats_query_range already returns {"data":{"resultType":"matrix","result":[...]}}
+	// Fast path A: body is already a complete Loki success response
+	// {"status":"success","data":{"resultType":"...","result":[...]}}
+	// This is the common case after trimStatsQRByTimeFJ / translateStatsResponseLabels
+	// which reconstruct the outer envelope. Return as-is — zero allocations.
+	if hasPrefix(vlBody, `{"status":"success","data":{"resultType":`) {
+		return vlBody
+	}
+
+	// Fast path B: VL returns {"data":{"resultType":"...","result":[...]}} without status.
 	// normalizeLokiResultDataShape is a no-op when both "result" and "resultType" are present,
-	// so we can skip the full parse+marshal and just prepend the status field as a byte splice.
-	if isVLDataResultTypeResponse(vlBody) {
-		// Prepend status field without any size arithmetic — avoids overflow in capacity calc.
+	// so just prepend the status field via a byte splice.
+	if hasPrefix(vlBody, `{"data":{"resultType":`) {
 		return append([]byte(`{"status":"success",`), vlBody[1:]...)
 	}
 
@@ -1138,22 +1189,21 @@ func appendLokiSuccessEnvelope(dataBytes []byte) []byte {
 	return out
 }
 
-// isVLDataResultTypeResponse returns true when vlBody is the compact VL format
-// {"data":{"resultType":"...","result":[...]}} — the fast path for wrapAsLokiResponse.
-// normalizeLokiResultDataShape is a no-op for this format since both "result" and
-// "resultType" are already present, so we can skip parse+marshal entirely.
-func isVLDataResultTypeResponse(vlBody []byte) bool {
-	const needle = `{"data":{"resultType":`
-	if len(vlBody) < len(needle) {
+// hasPrefix reports whether vlBody starts with the literal prefix string.
+func hasPrefix(vlBody []byte, prefix string) bool {
+	if len(vlBody) < len(prefix) {
 		return false
 	}
-	for i := range needle {
-		if vlBody[i] != needle[i] {
+	for i := 0; i < len(prefix); i++ {
+		if vlBody[i] != prefix[i] {
 			return false
 		}
 	}
 	return true
 }
+
+// isVLDataResultTypeResponse returns true when vlBody is the compact VL format
+// {"data":{"resultType":"...","result":[...]}} — the fast path for wrapAsLokiResponse.
 
 func normalizeLokiResultDataShape(data map[string]interface{}, defaultResultType string) {
 	if data == nil {

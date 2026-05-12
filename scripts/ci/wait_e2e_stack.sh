@@ -27,18 +27,18 @@ print_debug() {
 
 trap 'print_debug' ERR
 
-wait_http "loki" "http://127.0.0.1:3101/ready"
-wait_http "victorialogs" "http://127.0.0.1:9428/health"
-wait_http "vmalert" "http://127.0.0.1:8880/api/v1/rules?datasource_type=vlogs"
-wait_http "proxy" "http://127.0.0.1:3100/ready"
-wait_http "proxy-patterns-autodetect" "http://127.0.0.1:3110/ready"
-wait_http "proxy-underscore" "http://127.0.0.1:3102/ready"
-wait_http "proxy-native-metadata" "http://127.0.0.1:3106/ready"
-wait_http "proxy-translated-metadata" "http://127.0.0.1:3107/ready"
-wait_http "proxy-no-metadata" "http://127.0.0.1:3108/ready"
-wait_http "proxy-tail" "http://127.0.0.1:3103/ready"
-wait_http "tail-ingress" "http://127.0.0.1:3104/ready"
-wait_http "proxy-tail-native" "http://127.0.0.1:3105/ready"
+wait_http "loki" "http://127.0.0.1:13101/ready"
+wait_http "victorialogs" "http://127.0.0.1:19428/health"
+wait_http "vmalert" "http://127.0.0.1:18880/api/v1/rules?datasource_type=vlogs"
+wait_http "proxy" "http://127.0.0.1:13100/ready"
+wait_http "proxy-patterns-autodetect" "http://127.0.0.1:13110/ready"
+wait_http "proxy-underscore" "http://127.0.0.1:13102/ready"
+wait_http "proxy-native-metadata" "http://127.0.0.1:13106/ready"
+wait_http "proxy-translated-metadata" "http://127.0.0.1:13107/ready"
+wait_http "proxy-no-metadata" "http://127.0.0.1:13108/ready"
+wait_http "proxy-tail" "http://127.0.0.1:13103/ready"
+wait_http "tail-ingress" "http://127.0.0.1:13104/ready"
+wait_http "proxy-tail-native" "http://127.0.0.1:13105/ready"
 wait_http "grafana" "http://127.0.0.1:3002/api/health"
 
 docker compose ps

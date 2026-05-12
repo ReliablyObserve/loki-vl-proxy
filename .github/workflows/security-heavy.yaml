@@ -124,7 +124,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PROXY_IMAGE: loki-vl-proxy:security-heavy
-      PROXY_BASE_URL: http://127.0.0.1:3100
+      PROXY_BASE_URL: http://127.0.0.1:13100
     steps:
       - uses: actions/checkout@v6
 

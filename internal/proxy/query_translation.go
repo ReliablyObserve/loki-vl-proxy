@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	fj "github.com/valyala/fastjson"
+
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -1429,81 +1431,88 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 	p.queryTracker.Record("query", originalQuery, elapsed, false)
 }
 
-// translateStatsItem holds one element from the VL stats result array.
-// value/values are kept as stdjson.RawMessage to avoid parsing time-series data
-// (timestamps + floats) that we never inspect — only the metric labels change.
-type translateStatsItem struct {
-	Metric map[string]string `json:"metric"`
-	Value  stdjson.RawMessage   `json:"value,omitempty"`
-	Values stdjson.RawMessage   `json:"values,omitempty"`
-}
-
-type translateStatsData struct {
-	ResultType string               `json:"resultType,omitempty"`
-	Result     []translateStatsItem `json:"result,omitempty"`
-	Stats      stdjson.RawMessage      `json:"stats,omitempty"`
-}
-
-type translateStatsResponseBody struct {
-	Status  string               `json:"status,omitempty"`
-	Data    *translateStatsData  `json:"data,omitempty"`
-	Result  []translateStatsItem `json:"result,omitempty"`
-	Results []translateStatsItem `json:"results,omitempty"`
-	Error   stdjson.RawMessage      `json:"error,omitempty"`
-}
+// statsTranslateFJPool pools fastjson.Parser for translateStatsResponseLabels.
+var statsTranslateFJPool fj.ParserPool
 
 func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
 	start := time.Now()
-	var resp translateStatsResponseBody
-	if err := stdjson.Unmarshal(body, &resp); err != nil {
+
+	parser := statsTranslateFJPool.Get()
+	defer statsTranslateFJPool.Put(parser)
+
+	v, err := parser.ParseBytes(body)
+	if err != nil {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "decode_error", time.Since(start))
 		return body
 	}
 
-	// Collect pointers to all result slices (handles data.result, result, results).
-	var allResults []*[]translateStatsItem
-	if resp.Data != nil && len(resp.Data.Result) > 0 {
-		allResults = append(allResults, &resp.Data.Result)
+	// Locate all result arrays: data.result, result, results.
+	type resultSlot struct {
+		items  []*fj.Value
+		key    string // "result" or "results"
+		inData bool
 	}
-	if len(resp.Result) > 0 {
-		allResults = append(allResults, &resp.Result)
+	var slots []resultSlot
+
+	if data := v.Get("data"); data != nil {
+		if r := data.Get("result"); r != nil && r.Type() == fj.TypeArray {
+			if arr, _ := r.Array(); len(arr) > 0 {
+				slots = append(slots, resultSlot{items: arr, key: "result", inData: true})
+			}
+		}
 	}
-	if len(resp.Results) > 0 {
-		allResults = append(allResults, &resp.Results)
+	if r := v.Get("result"); r != nil && r.Type() == fj.TypeArray {
+		if arr, _ := r.Array(); len(arr) > 0 {
+			slots = append(slots, resultSlot{items: arr, key: "result", inData: false})
+		}
+	}
+	if r := v.Get("results"); r != nil && r.Type() == fj.TypeArray {
+		if arr, _ := r.Array(); len(arr) > 0 {
+			slots = append(slots, resultSlot{items: arr, key: "results", inData: false})
+		}
 	}
 
-	if len(allResults) == 0 {
+	if len(slots) == 0 {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "no_results", time.Since(start))
 		return body
 	}
 
-	// Reuse maps across iterations to reduce allocations.
+	// Reuse maps across iterations (same pattern as original).
 	translated := make(map[string]string, 8)
 	syntheticLabels := make(map[string]string, 8)
 
-	translatedMetrics := 0
-	for _, resultsPtr := range allResults {
-		for i := range *resultsPtr {
-			item := &(*resultsPtr)[i]
-			metric := item.Metric
-			if len(metric) == 0 {
+	// changedMetrics[si][ii] holds the new translated label map for changed items; nil = unchanged.
+	// Storing map[string]string instead of pre-serialized []byte avoids the appendJSONString
+	// allocations in the first pass; the write pass serialises directly to the output buffer.
+	changedMetrics := make([][]map[string]string, len(slots))
+	for i, slot := range slots {
+		changedMetrics[i] = make([]map[string]string, len(slot.items))
+	}
+
+	translatedCount := 0
+
+	for si, slot := range slots {
+		for ii, item := range slot.items {
+			metricVal := item.Get("metric")
+			if metricVal == nil || metricVal.Type() != fj.TypeObject {
 				continue
 			}
 
-			// Clear reused maps instead of allocating new ones each iteration.
 			for k := range translated {
 				delete(translated, k)
 			}
 			changed := false
 			hadStream := false
-			for k, v := range metric {
-				if k == "__name__" {
+
+			metricVal.GetObject().Visit(func(k []byte, vv *fj.Value) {
+				key := string(k)
+				val := string(vv.GetStringBytes())
+				switch key {
+				case "__name__":
 					changed = true
-					continue
-				}
-				if k == "_stream" {
+				case "_stream":
 					hadStream = true
-					for streamKey, streamValue := range parseStreamLabels(v) {
+					for streamKey, streamValue := range parseStreamLabels(val) {
 						lokiKey := streamKey
 						if !p.labelTranslator.IsPassthrough() {
 							lokiKey = p.labelTranslator.ToLoki(streamKey)
@@ -1511,17 +1520,18 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 						translated[lokiKey] = streamValue
 					}
 					changed = true
-					continue
+				default:
+					lokiKey := key
+					if !p.labelTranslator.IsPassthrough() {
+						lokiKey = p.labelTranslator.ToLoki(key)
+					}
+					if lokiKey != key {
+						changed = true
+					}
+					translated[lokiKey] = val
 				}
-				lokiKey := k
-				if !p.labelTranslator.IsPassthrough() {
-					lokiKey = p.labelTranslator.ToLoki(k)
-				}
-				if lokiKey != k {
-					changed = true
-				}
-				translated[lokiKey] = v
-			}
+			})
+
 			for k := range syntheticLabels {
 				delete(syntheticLabels, k)
 			}
@@ -1561,32 +1571,119 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 				translated[key] = value
 				changed = true
 			}
+
 			if changed {
-				translatedMetrics++
-				// Copy translated map to item — the reused map is mutated next iteration.
-				newMetric := make(map[string]string, len(translated))
-				for k, v := range translated {
-					newMetric[k] = v
-				}
-				item.Metric = newMetric
+				translatedCount++
+				changedMetrics[si][ii] = cloneStringMap(syntheticLabels)
 			}
 		}
 	}
 
-	if translatedMetrics == 0 {
-		// Nothing changed — skip the re-marshal entirely.
+	if translatedCount == 0 {
 		p.observeInternalOperation(ctx, "translate_stats_response_labels", "noop", time.Since(start))
 		return body
 	}
-	// Clear Status so the output matches VL's format ({"data":{...}} without status).
-	// wrapAsLokiResponse adds the {"status":"success"} envelope — its fast-path byte-splice
-	// only triggers when the body starts with {"data":{"resultType":, not {"status":...}.
-	resp.Status = ""
-	result, err := stdjson.Marshal(resp)
-	if err != nil {
-		p.observeInternalOperation(ctx, "translate_stats_response_labels", "encode_error", time.Since(start))
-		return body
+
+	// Rebuild the response JSON, substituting changed metric objects.
+	// Always write "status":"success" first so wrapAsLokiResponse fast path A matches
+	// and returns the buffer zero-alloc instead of splicing a new []byte.
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jsonBufPool.Put(buf)
+	buf.Grow(len(body) + len(`{"status":"success",`))
+
+	scratch := fjMarshalPool.Get().(*[]byte)
+	defer fjMarshalPool.Put(scratch)
+
+	buf.WriteString(`{"status":"success"`)
+	needsComma := true
+
+	if data := v.Get("data"); data != nil {
+		si := -1
+		for i, s := range slots {
+			if s.inData {
+				si = i
+				break
+			}
+		}
+		buf.WriteString(`,"data":{`)
+		if rt := data.Get("resultType"); rt != nil {
+			buf.WriteString(`"resultType":`)
+			marshalFJ(buf, rt, scratch)
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`"result":`)
+		if si >= 0 {
+			writeTranslatedStatsItemsFJ(buf, slots[si].items, changedMetrics[si], scratch)
+		} else {
+			if r := data.Get("result"); r != nil {
+				marshalFJ(buf, r, scratch)
+			} else {
+				buf.WriteString(`[]`)
+			}
+		}
+		if statsF := data.Get("stats"); statsF != nil {
+			buf.WriteString(`,"stats":`)
+			marshalFJ(buf, statsF, scratch)
+		}
+		buf.WriteByte('}')
+		needsComma = true
 	}
+
+	for si, slot := range slots {
+		if slot.inData {
+			continue
+		}
+		if needsComma {
+			buf.WriteByte(',')
+		}
+		buf.WriteByte('"')
+		buf.WriteString(slot.key)
+		buf.WriteString(`":`)
+		writeTranslatedStatsItemsFJ(buf, slot.items, changedMetrics[si], scratch)
+		needsComma = true
+	}
+
+	if errVal := v.Get("error"); errVal != nil {
+		if needsComma {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`"error":`)
+		marshalFJ(buf, errVal, scratch)
+	}
+
+	buf.WriteByte('}')
+
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
 	p.observeInternalOperation(ctx, "translate_stats_response_labels", "translated", time.Since(start))
 	return result
 }
+
+// writeTranslatedStatsItemsFJ writes a JSON array of stats items, substituting
+// changedMetrics[i] (translated label map) where non-nil; copies original bytes otherwise.
+func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMetrics []map[string]string, scratch *[]byte) {
+	buf.WriteByte('[')
+	for i, item := range items {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		if changedMetrics[i] != nil {
+			buf.WriteString(`{"metric":`)
+			marshalStringMapJSONTo(buf, changedMetrics[i])
+			if val := item.Get("value"); val != nil {
+				buf.WriteString(`,"value":`)
+				marshalFJ(buf, val, scratch)
+			}
+			if vals := item.Get("values"); vals != nil {
+				buf.WriteString(`,"values":`)
+				marshalFJ(buf, vals, scratch)
+			}
+			buf.WriteByte('}')
+		} else {
+			marshalFJ(buf, item, scratch)
+		}
+	}
+	buf.WriteByte(']')
+}
+

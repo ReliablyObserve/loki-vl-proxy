@@ -839,6 +839,10 @@ type tokenizerBuf struct {
 	spacesAfter []int
 }
 
+var patternJoinBuilderPool = sync.Pool{
+	New: func() interface{} { return &strings.Builder{} },
+}
+
 var tokenizerBufPool = sync.Pool{
 	New: func() interface{} {
 		return &tokenizerBuf{
@@ -918,20 +922,23 @@ func (p *patternLineTokenizer) Join(tokens []string, spacesAfter []int) string {
 	if len(tokens) == 0 {
 		return ""
 	}
-	strBuilder := strings.Builder{}
+	sb := patternJoinBuilderPool.Get().(*strings.Builder)
+	sb.Reset()
 	spacesIdx := 0
 	for i, token := range tokens {
 		out := token
 		if isPatternPlaceholder(token) {
 			out = patternVarPlaceholder
 		}
-		strBuilder.WriteString(out)
+		sb.WriteString(out)
 		for spacesIdx < len(spacesAfter) && i == spacesAfter[spacesIdx] {
-			strBuilder.WriteByte(' ')
+			sb.WriteByte(' ')
 			spacesIdx++
 		}
 	}
-	return deduplicatePlaceholders(strBuilder.String(), patternVarPlaceholder)
+	result := deduplicatePlaceholders(sb.String(), patternVarPlaceholder)
+	patternJoinBuilderPool.Put(sb)
+	return result
 }
 
 func patternStructureSignature(tokens []string) string {

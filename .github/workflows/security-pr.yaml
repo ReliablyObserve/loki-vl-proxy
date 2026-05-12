@@ -146,7 +146,7 @@ jobs:
     needs: [security-static]
     env:
       PROXY_IMAGE: loki-vl-proxy:security-ci
-      PROXY_BASE_URL: http://127.0.0.1:3100
+      PROXY_BASE_URL: http://127.0.0.1:13100
     steps:
       - uses: actions/checkout@v6
 

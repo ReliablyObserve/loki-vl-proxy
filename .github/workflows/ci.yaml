@@ -178,8 +178,8 @@ jobs:
     needs: [test]
     env:
       PROXY_IMAGE: loki-vl-proxy:tuple-smoke
-      PROXY_URL: http://127.0.0.1:3100
-      PROXY_URL_CATEGORIZED: http://127.0.0.1:3102
+      PROXY_URL: http://127.0.0.1:13100
+      PROXY_URL_CATEGORIZED: http://127.0.0.1:13102
       SMOKE_QUERY: '{app="e2e-test"}'
     steps:
       - uses: actions/checkout@v6
@@ -743,7 +743,7 @@ jobs:
         working-directory: test/e2e-ui
         env:
           GRAFANA_URL: http://127.0.0.1:3002
-          PROXY_URL: http://127.0.0.1:3100
+          PROXY_URL: http://127.0.0.1:13100
         run: npx playwright test ${{ matrix.shard.command }}
 
       - name: Upload Playwright artifacts

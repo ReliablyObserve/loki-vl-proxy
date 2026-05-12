@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -244,37 +243,60 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 
 	// VL returns: {"values": [{"value": "{stream}", "hits": N}, ...]}
 	// Loki expects: {"status": "success", "data": [{"label": "value", ...}, ...]}
-	var vlResp struct {
-		Values []struct {
-			Value string `json:"value"`
-			Hits  int64  `json:"hits"`
-		} `json:"values"`
-	}
-	json.Unmarshal(body, &vlResp)
+	//
+	// Use fastjson to parse the VL response and write the Loki response directly
+	// to avoid encoding/json reflection overhead (mapEncoder + sorting per entry).
+	fjp := vlFJParserPool.Get()
+	fjRoot, err := fjp.ParseBytes(body)
+	vlFJParserPool.Put(fjp)
 
-	series := make([]map[string]string, 0, len(vlResp.Values))
-	for _, v := range vlResp.Values {
-		stream := parseStreamLabels(v.Value)
-		if len(stream) == 0 {
-			continue
-		}
-		// Copy before translation/mutation — parseStreamLabels returns a cached map.
-		labels := make(map[string]string, len(stream))
-		for k, val := range stream {
-			labels[k] = val
-		}
-		labels = p.labelTranslator.TranslateLabelsMap(labels)
-		ensureSyntheticServiceName(labels)
-		series = append(series, labels)
-	}
+	sb := jsonBuilderPool.Get().(*strings.Builder)
+	sb.Reset()
+	sb.WriteString(`{"status":"success","data":[`)
+	first := true
 
-	type seriesResponse struct {
-		Status string              `json:"status"`
-		Data   []map[string]string `json:"data"`
+	if err == nil {
+		arr := fjRoot.GetArray("values")
+		for _, item := range arr {
+			streamStr := string(item.GetStringBytes("value"))
+			stream := parseStreamLabels(streamStr)
+			if len(stream) == 0 {
+				continue
+			}
+			labels := make(map[string]string, len(stream))
+			for k, val := range stream {
+				labels[k] = val
+			}
+			labels = p.labelTranslator.TranslateLabelsMap(labels)
+			ensureSyntheticServiceName(labels)
+
+			keys := make([]string, 0, len(labels))
+			for k := range labels {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+
+			if !first {
+				sb.WriteByte(',')
+			}
+			first = false
+			sb.WriteByte('{')
+			for i, k := range keys {
+				if i > 0 {
+					sb.WriteByte(',')
+				}
+				appendJSONStringToBuilder(sb, k)
+				sb.WriteByte(':')
+				appendJSONStringToBuilder(sb, labels[k])
+			}
+			sb.WriteByte('}')
+		}
 	}
-	result, _ := json.Marshal(seriesResponse{Status: "success", Data: series})
+	sb.WriteString(`]}`)
+	result := sb.String()
+	jsonBuilderPool.Put(sb)
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(result)
+	w.Write([]byte(result))
 	p.metrics.RecordRequest("series", http.StatusOK, time.Since(start))
 }
 
@@ -352,12 +374,7 @@ func (p *Proxy) computeIndexStatsResult(ctx context.Context, query, start, end s
 	if streams == 0 && entries > 0 {
 		streams = 1
 	}
-	result, _ := json.Marshal(map[string]interface{}{
-		"streams": streams,
-		"chunks":  streams,
-		"bytes":   entries * 100,
-		"entries": entries,
-	})
+	result := []byte(fmt.Sprintf(`{"streams":%d,"chunks":%d,"bytes":%d,"entries":%d}`, streams, streams, entries*100, entries))
 	return result, nil
 }
 

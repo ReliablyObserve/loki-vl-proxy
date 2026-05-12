@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- perf(range_metric): add `stats_query_range` fast path for `sum by (...) (count_over_time/rate({...}[W]))` — replaces raw NDJSON log scan (39% CPU cold proxy) with VL pre-aggregated Prometheus buckets via `| stats by (...) count() as c`. Throughput improvement: 44→126 req/s (c=10) and 33→139 req/s (c=100) on heavy workload.
+- perf(range_metric): extend fast path to `bytes_over_time`/`bytes_rate` using `| stats by (...) sum_len(_msg) as c` — eliminates 4664ms P50 bottleneck for byte-rate metric queries at cold concurrency.
+- perf(patterns): pool `strings.Builder` in `patternLineTokenizer.Join` via `patternJoinBuilderPool` — eliminates per-log-entry heap allocation that was 6237 MB flat (15.56%) and driving `bytes.growSlice` cascade at cold concurrency.
+- perf(drilldown): rewrite `parseLogfmtFields` to single-pass byte scanning — eliminates intermediate `tokens` slice, `strings.Builder` per token, and `strings.SplitN` allocation (was `strings.genSplit` 302 MB flat, 4.79% at cold concurrency); uses `strings.IndexByte` on in-place slices instead.
+- perf(drilldown): eliminate duplicate `parseStreamLabels` calls in `detectFieldSummariesStream` — was called 3× per log entry (inside `fillDetectedLabelsFJ`, `isOTelDataFJ`, and directly); refactored to parse `_stream` once and pass pre-parsed map via `fillDetectedLabelsFJWithStream` and `isOTelLabels`; also deferred `key := string(keyBytes)` allocation in `obj.Visit` callbacks until after cheap early-return guards.
+- perf(series): replace `encoding/json` with fastjson + direct `strings.Builder` write in `handleSeries` — `encoding/json.Unmarshal` + `json.Marshal(map[string]string)` was 17.88% cum in cold-proxy alloc profile; now uses pooled fastjson parser for input and `jsonBuilderPool` + `appendJSONStringToBuilder` for output; removes `encoding/json` import from `label_handlers.go` entirely.
+- perf(streams): eliminate per-entry `string([]byte)` allocations in `vlReaderToLokiStreams` and `vlLogsToLokiWindowEntriesStream` — new `logQueryStreamDescriptorBytes` builds cache key in a 512-byte stack buffer and uses Go's `m[string([]byte)]` zero-alloc compiler optimisation for cache hits (was 21.93% cum); miss path still allocates once per unique stream+level pair. Pre-grow `strings.Builder` in `reconstructLogLineWithFlagFJ` to `len(msg)+64` bytes — prevents `bytes.growSlice` from firing on typical log entries (was 1.18 GB flat / 19.17% alloc_space).
+- perf(stats): pool scratch `[]byte` for fastjson `MarshalTo` calls via `fjMarshalPool` — eliminates per-call allocation in `trimStatsQRByTimeFJ` and `writeFilteredStatsQRSeriesFJ` (was ~5 GB flat in compute alloc profile). Replace `encoding/json` with fastjson + direct byte assembly in the stats response hot path (`translateStatsResponseLabelsWithContext`).
+- perf(stats): `translateStatsResponseLabelsWithContext` now writes `{"status":"success",...}` prefix — `wrapAsLokiResponse` fast path A returns the buffer zero-alloc instead of `append([]byte{...}, body[1:]...)` which allocated ~3.5 GB per compute run.
+- perf(stats): pre-compute `canonicalLabelsKey` once per unique stream in the descriptor miss path and store in `queryRangeWindowEntry.Key` — eliminates repeated `canonicalLabelsKey` calls in `groupQueryRangeWindowEntries` (~2.5 GB cum eliminated in heavy workload).
+- perf(stats): replace `json.Marshal(map[string]interface{}{...})` in `proxyLogQueryWindowed` with `marshalWindowedStreamsResult` — direct byte building eliminates reflection overhead (~3.5 GB cum).
+- perf(stats): store translated label maps as `[]map[string]string` instead of pre-serialized `[][][]byte` in `translateStatsResponseLabelsWithContext` — defers JSON serialization to write pass via zero-alloc `marshalStringMapJSONTo`, eliminating ~7.3 GB of `appendJSONString` allocations in compute workload. Combined alloc fix impact: compute cold 40 → 210 req/s (+5.25×), heavy cold 102 → 115 req/s (+13%).
+
 ## [1.31.2] - 2026-05-12
 
 ### Performance

@@ -13,7 +13,7 @@ description: "Six-workload read-path comparison: Loki vs VL+Proxy (warm/cold) vs
 
 **Loki flags:** `querier.max_concurrent=16`, `max_query_parallelism=64`, result + chunk caching enabled.
 
-## Reproducing
+## Running Benchmarks
 
 ```bash
 # Warm-cache run (standard — proxy cache pre-warmed at benchmark concurrency)
@@ -242,7 +242,7 @@ What determines proxy performance when cache and coalescer provide no help:
 
 **Long-range (6 h–72 h windows):** Proxy is **1.86–2.06× faster than Loki even cold**. VL's parallel window fetching within the proxy — splitting long ranges into parallel 1 h sub-windows — completes before Loki can scan its chunk store sequentially. This advantage is structural and does not require cache.
 
-**Compute (metric aggregations):** Proxy runs at 15–41% of Loki throughput cold, improving with higher concurrency. VL native runs compute at 1,431–1,462 req/s; the gap between VL native and proxy (366 vs 1,431 at c=100) is the cost of aggregation in the proxy: LogQL `rate()`, `sum by()`, and `quantile_over_time()` have no VL-native equivalent, so the proxy decomposes each metric query into N raw log fetches and aggregates locally. With warm cache (24 h TTL on historical windows), compute queries hit cache on repeat and the structural overhead disappears. For analytical workloads with unique queries every time, expect this gap to persist.
+**Compute (metric aggregations):** The `stats_query_range` fast path routes `sum by (...) (count_over_time/rate({...}[W]))` and `bytes_over_time/bytes_rate` queries directly to VL's pre-aggregated Prometheus buckets, eliminating the raw NDJSON log scan that was 39% CPU in cold pprof. This delivered the headline improvement in this PR: heavy cold throughput 44→126 req/s (c=10, +2.9×) and 33→139 req/s (c=100, +4.2×). A follow-up round of pprof-guided allocation fixes (pooled fastjson scratch buffers, zero-alloc label map serialization, pre-computed stream keys, direct byte-building replacing `json.Marshal` reflection) eliminated ~20 GB of per-request allocations and raised cold `rate`/`topk` throughput from ~40 req/s to **210 req/s** (+5.25× on the loki-bench compute workload). For complex aggregations without a VL-native equivalent (`quantile_over_time`, `topk`, `sum by` with pipeline stages), the proxy still decomposes the query into N parallel sub-window fetches and aggregates locally. With warm cache (24 h TTL on historical windows), all compute queries hit cache on repeat and the structural overhead disappears.
 
 ---
 
@@ -281,3 +281,20 @@ go test ./internal/proxy/ -bench . -benchmem -run "^$" -count=3
 go test ./internal/translator/ -bench . -benchmem -run "^$" -count=3
 go test ./internal/cache/ -bench . -benchmem -run "^$" -count=3
 ```
+
+### Measuring eviction pressure
+
+```promql
+# Eviction rate — non-zero means L1 is too small
+rate(loki_vl_proxy_cache_evictions_total[5m])
+
+# Hit rate — below 50% means cache too small or workload not cacheable
+rate(loki_vl_proxy_cache_hits_total[5m])
+/
+(rate(loki_vl_proxy_cache_hits_total[5m]) + rate(loki_vl_proxy_cache_misses_total[5m]))
+
+# Per-replica cache RSS — should stay below -cache-max
+process_resident_memory_bytes{job="loki-vl-proxy"}
+```
+
+Rule of thumb: `L1 size = (unique active queries per hour) × (average response size)`.

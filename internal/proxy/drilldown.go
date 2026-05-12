@@ -1223,41 +1223,37 @@ func unifyDetectedType(current, next string) string {
 
 func parseLogfmtFields(line string) map[string]string {
 	fields := make(map[string]string)
-	var token strings.Builder
-	tokens := make([]string, 0, 8)
+	start := 0
 	inQuote := false
-
-	for _, r := range line {
-		switch {
-		case r == '"':
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if c == '"' {
 			inQuote = !inQuote
-			token.WriteRune(r)
-		case r == ' ' && !inQuote:
-			if token.Len() > 0 {
-				tokens = append(tokens, token.String())
-				token.Reset()
-			}
-		default:
-			token.WriteRune(r)
-		}
-	}
-	if token.Len() > 0 {
-		tokens = append(tokens, token.String())
-	}
-
-	for _, token := range tokens {
-		parts := strings.SplitN(token, "=", 2)
-		if len(parts) != 2 {
 			continue
 		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.Trim(strings.TrimSpace(parts[1]), `"`)
-		if key == "" {
+		if c != ' ' || inQuote {
 			continue
 		}
-		fields[key] = value
+		if i > start {
+			parseLogfmtToken(line[start:i], fields)
+		}
+		start = i + 1
+	}
+	if start < len(line) {
+		parseLogfmtToken(line[start:], fields)
 	}
 	return fields
+}
+
+func parseLogfmtToken(tok string, fields map[string]string) {
+	eq := strings.IndexByte(tok, '=')
+	if eq > 0 {
+		key := strings.TrimSpace(tok[:eq])
+		val := strings.Trim(strings.TrimSpace(tok[eq+1:]), `"`)
+		if key != "" {
+			fields[key] = val
+		}
+	}
 }
 
 type vlFieldNamesResponse struct {
@@ -1447,16 +1443,9 @@ func (p *Proxy) detectFieldsNativeOnly(ctx context.Context, query, start, end st
 	return mergeNativeDetectedFields(nil, nil, nativeFields)
 }
 
-// isOTelDataFJ is the fastjson-aware equivalent of isOTelData.
-// It inspects the same fields as isOTelData but via fastjson getters,
-// avoiding the map[string]interface{} allocation.
-func isOTelDataFJ(fjVal *fj.Value) bool {
-	if fjVal == nil {
-		return false
-	}
-	streamStr := string(fjVal.GetStringBytes("_stream"))
-	streamLabels := parseStreamLabels(streamStr)
-
+// isOTelLabels checks OTel heuristics given pre-parsed stream labels and raw
+// _msg bytes. Callers that already have both avoid redundant parseStreamLabels.
+func isOTelLabels(streamLabels map[string]string, msgBytes []byte) bool {
 	for key := range streamLabels {
 		if _, isOTelField := otelSemanticFields[key]; isOTelField {
 			return true
@@ -1475,9 +1464,8 @@ func isOTelDataFJ(fjVal *fj.Value) bool {
 			}
 		}
 	}
-	msg := string(fjVal.GetStringBytes("_msg"))
-	if msg != "" {
-		if strings.Contains(msg, "trace_id") && strings.Contains(msg, "span_id") {
+	if len(msgBytes) > 0 {
+		if bytes.Contains(msgBytes, []byte("trace_id")) && bytes.Contains(msgBytes, []byte("span_id")) {
 			for key := range streamLabels {
 				if strings.HasPrefix(key, "k8s.") || strings.HasPrefix(key, "deployment.") {
 					return true
@@ -1497,6 +1485,15 @@ func fillDetectedLabelsFJ(fjVal *fj.Value, buf map[string]string) {
 	}
 	streamStr := string(fjVal.GetStringBytes("_stream"))
 	stream := parseStreamLabels(streamStr)
+	fillDetectedLabelsFJWithStream(fjVal, stream, buf)
+}
+
+// fillDetectedLabelsFJWithStream is like fillDetectedLabelsFJ but accepts
+// pre-parsed stream labels to avoid a redundant parseStreamLabels call.
+func fillDetectedLabelsFJWithStream(fjVal *fj.Value, stream map[string]string, buf map[string]string) {
+	for k := range buf {
+		delete(buf, k)
+	}
 	for k, v := range stream {
 		buf[k] = v
 	}
@@ -1634,18 +1631,20 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			continue
 		}
 
-		fillDetectedLabelsFJ(fjVal, streamLabelBuf)
+		rawStream := string(fjVal.GetStringBytes("_stream"))
+		rawStreamLabels := parseStreamLabels(rawStream)
+		msgBytes := fjVal.GetStringBytes("_msg")
+
+		fillDetectedLabelsFJWithStream(fjVal, rawStreamLabels, streamLabelBuf)
 		if detectedLevel := strings.TrimSpace(streamLabelBuf["detected_level"]); detectedLevel != "" {
 			addDetectedField(fields, "detected_level", "", "string", nil, detectedLevel)
 		}
 
-		if isOTelDataFJ(fjVal) {
-			if _, ok := streamLabelBuf["service.name"]; ok {
+		if isOTelLabels(rawStreamLabels, msgBytes) {
+			if _, ok := rawStreamLabels["service.name"]; ok {
 				anyOTelWithServiceName = true
 			}
 		}
-
-		rawStreamLabels := parseStreamLabels(string(fjVal.GetStringBytes("_stream")))
 		for key, value := range rawStreamLabels {
 			lokiLabel := key
 			if p.labelTranslator != nil {
@@ -1659,13 +1658,6 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 			}
 		}
 
-		// Get _msg early so we can pre-collect its JSON keys before the outer native
-		// field visit. VL auto-indexes all JSON keys from _msg as native NDJSON fields;
-		// without this guard those keys appear in detected_fields twice (once without a
-		// parser tag from obj.Visit, once with parser="json") and accumulate across
-		// thousands of log entries, causing the "Fields 5,965" flood.
-		msgBytes := fjVal.GetStringBytes("_msg")
-
 		// Parse _msg JSON once: populate msgJSONKeys for the skip-guard below AND add
 		// detected fields with parser="json" in the same pass.
 		var msgJSONKeys map[string]struct{}
@@ -1675,20 +1667,20 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 				if obj2, objErr2 := fjVal2.Object(); objErr2 == nil {
 					msgJSONKeys = make(map[string]struct{})
 					obj2.Visit(func(keyBytes []byte, v *fj.Value) {
-						key := string(keyBytes)
-						if key == "" {
+						if len(keyBytes) == 0 {
 							return
 						}
-						// Skip nested objects and arrays.
+						// Skip nested objects and arrays before allocating key string.
 						vt := v.Type()
 						if vt == fj.TypeObject || vt == fj.TypeArray {
 							return
 						}
+						key := string(keyBytes)
 						msgJSONKeys[key] = struct{}{}
 						if shouldSuppressDetectedField(key) {
 							return
 						}
-						if _, conflict := labelNames[key]; conflict {
+						if _, conflict := labelNames[string(keyBytes)]; conflict {
 							return
 						}
 						addDetectedField(fields, key, "json", inferDetectedTypeFJ(v), []string{key}, formatDetectedValueFJ(v))
@@ -1701,12 +1693,13 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		obj, objErr := fjVal.Object()
 		if objErr == nil {
 			obj.Visit(func(keyBytes []byte, v *fj.Value) {
-				key := string(keyBytes)
-				if key == "app" || key == "cluster" || key == "namespace" {
+				// Use string(keyBytes) directly in map lookups — compiler avoids
+				// allocation when the converted string is used only as a map key.
+				if _, inMsg := msgJSONKeys[string(keyBytes)]; inMsg {
 					return
 				}
-				// Skip keys already covered by _msg JSON parsing above.
-				if _, inMsg := msgJSONKeys[key]; inMsg {
+				key := string(keyBytes)
+				if key == "app" || key == "cluster" || key == "namespace" {
 					return
 				}
 				if !shouldExposeStructuredField(key, rawStreamLabels, p.labelTranslator) {
