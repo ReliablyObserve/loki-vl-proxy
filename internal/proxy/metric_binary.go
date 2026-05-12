@@ -199,6 +199,18 @@ func extendStatsQueryRangeEnd(endRaw, stepRaw string) (string, bool) {
 	return nanosToVLTimestamp(endNs + stepDur.Nanoseconds()), true
 }
 
+// fjMarshalPool pools scratch []byte slices for fastjson MarshalTo calls.
+// Reusing a pre-allocated slice avoids per-call allocation when marshaling
+// individual JSON values back to bytes (metrics, points, etc.).
+var fjMarshalPool = &sync.Pool{New: func() interface{} { b := make([]byte, 0, 4096); return &b }}
+
+// marshalFJ marshals v into scratch (resizing as needed) and writes to buf.
+// scratch must come from fjMarshalPool.
+func marshalFJ(buf *bytes.Buffer, v *fj.Value, scratch *[]byte) {
+	*scratch = v.MarshalTo((*scratch)[:0])
+	buf.Write(*scratch)
+}
+
 // trimStatsQueryRangeResponseFromStart removes points with timestamp < startNs.
 // Used when start was shifted back to include the pre-start bucket for rate().
 func trimStatsQueryRangeResponseFromStart(body []byte, startNs int64) []byte {
@@ -273,12 +285,15 @@ scanLoop:
 	defer jsonBufPool.Put(buf)
 	buf.Grow(len(body))
 
+	scratch := fjMarshalPool.Get().(*[]byte)
+	defer fjMarshalPool.Put(scratch)
+
 	buf.WriteByte('{')
 	needsComma := false
 
 	if status := v.Get("status"); status != nil {
 		buf.WriteString(`"status":`)
-		buf.Write(status.MarshalTo(nil))
+		marshalFJ(buf, status, scratch)
 		needsComma = true
 	}
 
@@ -289,14 +304,14 @@ scanLoop:
 		buf.WriteString(`"data":{`)
 		if rt := dataVal.Get("resultType"); rt != nil {
 			buf.WriteString(`"resultType":`)
-			buf.Write(rt.MarshalTo(nil))
+			marshalFJ(buf, rt, scratch)
 			buf.WriteByte(',')
 		}
 		buf.WriteString(`"result":`)
-		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep)
+		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, scratch)
 		if stats := dataVal.Get("stats"); stats != nil {
 			buf.WriteString(`,"stats":`)
-			buf.Write(stats.MarshalTo(nil))
+			marshalFJ(buf, stats, scratch)
 		}
 		buf.WriteByte('}')
 	} else {
@@ -304,7 +319,7 @@ scanLoop:
 			buf.WriteByte(',')
 		}
 		buf.WriteString(`"results":`)
-		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep)
+		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, scratch)
 	}
 
 	buf.WriteByte('}')
@@ -314,7 +329,7 @@ scanLoop:
 	return result
 }
 
-func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep func(int64) bool) {
+func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep func(int64) bool, scratch *[]byte) {
 	buf.WriteByte('[')
 	for si, series := range seriesArr {
 		if si > 0 {
@@ -324,7 +339,7 @@ func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep
 		fieldWritten := false
 		if metric := series.Get("metric"); metric != nil {
 			buf.WriteString(`"metric":`)
-			buf.Write(metric.MarshalTo(nil))
+			marshalFJ(buf, metric, scratch)
 			fieldWritten = true
 		}
 		if values := series.Get("values"); values != nil {
@@ -346,7 +361,7 @@ func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep
 					buf.WriteByte(',')
 				}
 				firstPoint = false
-				buf.Write(point.MarshalTo(nil))
+				marshalFJ(buf, point, scratch)
 			}
 			buf.WriteByte(']')
 		}

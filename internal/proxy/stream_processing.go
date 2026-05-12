@@ -431,7 +431,8 @@ func vlLogsToLokiStreams(body []byte) []map[string]interface{} {
 }
 
 type cachedLogQueryStreamDescriptor struct {
-	key              string
+	key              string // canonicalLabelsKey(rawLabels)
+	translatedKey    string // canonicalLabelsKey(translatedLabels); same as key when passthrough
 	rawLabels        map[string]string
 	translatedLabels map[string]string
 }
@@ -662,15 +663,22 @@ func (p *Proxy) logQueryStreamDescriptorMiss(rawStream, level, cacheKey string, 
 	ensureDetectedLevel(rawLabels)
 	ensureSyntheticServiceName(rawLabels)
 
+	passthrough := p == nil || p.labelTranslator == nil || p.labelTranslator.IsPassthrough()
 	translatedLabels := rawLabels
-	if p != nil && p.labelTranslator != nil && !p.labelTranslator.IsPassthrough() {
+	if !passthrough {
 		translatedLabels = p.labelTranslator.TranslateLabelsMap(rawLabels)
 		ensureDetectedLevel(translatedLabels)
 		ensureSyntheticServiceName(translatedLabels)
 	}
 
+	canonKey := canonicalLabelsKey(rawLabels)
+	translatedKey := canonKey
+	if !passthrough {
+		translatedKey = canonicalLabelsKey(translatedLabels)
+	}
 	desc := cachedLogQueryStreamDescriptor{
-		key:              canonicalLabelsKey(rawLabels),
+		key:              canonKey,
+		translatedKey:    translatedKey,
 		rawLabels:        rawLabels,
 		translatedLabels: translatedLabels,
 	}
@@ -1044,11 +1052,18 @@ func appendLabelPair(pair string, dst map[string]string) {
 }
 
 func wrapAsLokiResponse(vlBody []byte, resultType string) []byte {
-	// Fast path: VL stats_query_range already returns {"data":{"resultType":"matrix","result":[...]}}
+	// Fast path A: body is already a complete Loki success response
+	// {"status":"success","data":{"resultType":"...","result":[...]}}
+	// This is the common case after trimStatsQRByTimeFJ / translateStatsResponseLabels
+	// which reconstruct the outer envelope. Return as-is — zero allocations.
+	if hasPrefix(vlBody, `{"status":"success","data":{"resultType":`) {
+		return vlBody
+	}
+
+	// Fast path B: VL returns {"data":{"resultType":"...","result":[...]}} without status.
 	// normalizeLokiResultDataShape is a no-op when both "result" and "resultType" are present,
-	// so we can skip the full parse+marshal and just prepend the status field as a byte splice.
-	if isVLDataResultTypeResponse(vlBody) {
-		// Prepend status field without any size arithmetic — avoids overflow in capacity calc.
+	// so just prepend the status field via a byte splice.
+	if hasPrefix(vlBody, `{"data":{"resultType":`) {
 		return append([]byte(`{"status":"success",`), vlBody[1:]...)
 	}
 
@@ -1174,21 +1189,26 @@ func appendLokiSuccessEnvelope(dataBytes []byte) []byte {
 	return out
 }
 
+// hasPrefix reports whether vlBody starts with the literal prefix string.
+func hasPrefix(vlBody []byte, prefix string) bool {
+	if len(vlBody) < len(prefix) {
+		return false
+	}
+	for i := 0; i < len(prefix); i++ {
+		if vlBody[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // isVLDataResultTypeResponse returns true when vlBody is the compact VL format
 // {"data":{"resultType":"...","result":[...]}} — the fast path for wrapAsLokiResponse.
 // normalizeLokiResultDataShape is a no-op for this format since both "result" and
 // "resultType" are already present, so we can skip parse+marshal entirely.
 func isVLDataResultTypeResponse(vlBody []byte) bool {
-	const needle = `{"data":{"resultType":`
-	if len(vlBody) < len(needle) {
-		return false
-	}
-	for i := range needle {
-		if vlBody[i] != needle[i] {
-			return false
-		}
-	}
-	return true
+	return hasPrefix(vlBody, `{"data":{"resultType":`) ||
+		hasPrefix(vlBody, `{"status":"success","data":{"resultType":`)
 }
 
 func normalizeLokiResultDataShape(data map[string]interface{}, defaultResultType string) {

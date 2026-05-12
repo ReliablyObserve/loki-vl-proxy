@@ -1590,6 +1590,9 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	defer jsonBufPool.Put(buf)
 	buf.Grow(len(body))
 
+	scratch := fjMarshalPool.Get().(*[]byte)
+	defer fjMarshalPool.Put(scratch)
+
 	buf.WriteByte('{')
 	needsComma := false
 
@@ -1604,22 +1607,22 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 		buf.WriteString(`"data":{`)
 		if rt := data.Get("resultType"); rt != nil {
 			buf.WriteString(`"resultType":`)
-			buf.Write(rt.MarshalTo(nil))
+			marshalFJ(buf, rt, scratch)
 			buf.WriteByte(',')
 		}
 		buf.WriteString(`"result":`)
 		if si >= 0 {
-			writeTranslatedStatsItemsFJ(buf, slots[si].items, changedMetrics[si])
+			writeTranslatedStatsItemsFJ(buf, slots[si].items, changedMetrics[si], scratch)
 		} else {
 			if r := data.Get("result"); r != nil {
-				buf.Write(r.MarshalTo(nil))
+				marshalFJ(buf, r, scratch)
 			} else {
 				buf.WriteString(`[]`)
 			}
 		}
 		if statsF := data.Get("stats"); statsF != nil {
 			buf.WriteString(`,"stats":`)
-			buf.Write(statsF.MarshalTo(nil))
+			marshalFJ(buf, statsF, scratch)
 		}
 		buf.WriteByte('}')
 		needsComma = true
@@ -1635,7 +1638,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 		buf.WriteByte('"')
 		buf.WriteString(slot.key)
 		buf.WriteString(`":`)
-		writeTranslatedStatsItemsFJ(buf, slot.items, changedMetrics[si])
+		writeTranslatedStatsItemsFJ(buf, slot.items, changedMetrics[si], scratch)
 		needsComma = true
 	}
 
@@ -1644,7 +1647,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 			buf.WriteByte(',')
 		}
 		buf.WriteString(`"error":`)
-		buf.Write(errVal.MarshalTo(nil))
+		marshalFJ(buf, errVal, scratch)
 	}
 
 	buf.WriteByte('}')
@@ -1657,7 +1660,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 
 // writeTranslatedStatsItemsFJ writes a JSON array of stats items, substituting
 // changedMetrics[i] (new metric JSON) where non-nil; copies original bytes otherwise.
-func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMetrics [][]byte) {
+func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMetrics [][]byte, scratch *[]byte) {
 	buf.WriteByte('[')
 	for i, item := range items {
 		if i > 0 {
@@ -1668,15 +1671,15 @@ func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMe
 			buf.Write(changedMetrics[i])
 			if val := item.Get("value"); val != nil {
 				buf.WriteString(`,"value":`)
-				buf.Write(val.MarshalTo(nil))
+				marshalFJ(buf, val, scratch)
 			}
 			if vals := item.Get("values"); vals != nil {
 				buf.WriteString(`,"values":`)
-				buf.Write(vals.MarshalTo(nil))
+				marshalFJ(buf, vals, scratch)
 			}
 			buf.WriteByte('}')
 		} else {
-			buf.Write(item.MarshalTo(nil))
+			marshalFJ(buf, item, scratch)
 		}
 	}
 	buf.WriteByte(']')

@@ -60,6 +60,7 @@ type queryRangeWindow struct {
 
 type queryRangeWindowEntry struct {
 	Stream map[string]string
+	Key    string // canonicalLabelsKey(Stream), pre-computed to avoid per-entry recomputation
 	Ts     string
 	Msg    string
 	// SM and Parsed are non-nil only when both categorizedLabels and
@@ -851,6 +852,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 
 		entries = append(entries, queryRangeWindowEntry{
 			Stream: desc.translatedLabels,
+			Key:    desc.translatedKey,
 			Ts:     tsNanos,
 			Msg:    msg,
 			SM:     sm,
@@ -868,7 +870,10 @@ func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction str
 	}
 	streams := make(map[string]*streamEntry, len(entries)/2+1)
 	for _, entry := range entries {
-		key := canonicalLabelsKey(entry.Stream)
+		key := entry.Key
+		if key == "" {
+			key = canonicalLabelsKey(entry.Stream) // fallback for cache-loaded entries
+		}
 		stream, ok := streams[key]
 		if !ok {
 			stream = &streamEntry{
