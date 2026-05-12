@@ -39,16 +39,19 @@ Measured head-to-head against tuned Loki: Apple M5 Pro (18 cores, 64 GB RAM), ~8
 
 Grafana dashboards auto-refresh every 30 s. After the first fetch, every repeated query is served from in-memory cache without touching VictoriaLogs.
 
-| Workload | Loki P50 | Proxy P50 | Faster by |
-|---|---:|---:|:---:|
-| Small panels (label browser, 1–5 min) | 42 ms | 3 ms | **12×** |
-| Heavy queries (JSON pipelines, filters) | ~1,800 ms† | 12 ms | **44×** |
-| Long-range (6 h–72 h, Drilldown) | 4,902 ms | 1 ms | **14×** |
-| Compute (rate, sum by, quantile, topk) | 4 ms | 4 ms | **10×** throughput |
+| Workload | Concurrency | Loki req/s | Proxy req/s | Throughput | P50 Loki | P50 Proxy | Latency |
+|---|:---:|---:|---:|:---:|---:|---:|:---:|
+| Small panels | c=10 | 2,011 | 15,626 | **7.8× faster** | 4 ms | 587 µs | **6.8× faster** |
+| Small panels | c=100 | 2,290 | 27,513 | **12× faster** | 42 ms | 3 ms | **14× faster** |
+| Heavy queries | c=10 | 407 | 5,944 | **14.6× faster** | 4 ms | 1 ms | **4× faster** |
+| Heavy queries | c=100 | 162† | 7,134 | **44× faster** | ~1,800 ms† | 12 ms | **150× faster** |
+| Long-range | c=10 | 8 | 157 | **18.7× faster** | 481 ms | 1 ms | **481× faster** |
+| Compute | c=10 | 2,803 | 11,162 | **4× faster** | 1 ms | 675 µs | **1.5× faster** |
+| Compute | c=100 | 1,611 | 16,456 | **10.2× faster** | 4 ms | 4 ms | parity |
 
 CPU: **6–408× less** than Loki. RAM: **1.7–3.9× less** for most workloads.
 
-† Loki heavy c=100 was saturated — P90=1,818 ms, P99=6,950 ms.
+† Loki heavy c=100 was saturated — P90=1,818 ms, P99=6,950 ms, delivering only 162 req/s vs 7,134 for the proxy.
 
 ### Dashboard load spikes — request coalescer
 
@@ -64,10 +67,18 @@ When many panels hit the same query at once, the proxy collapses them into a sin
 
 No cache, no coalescer benefit. Pure translation overhead + HTTP proxying + VL response time.
 
-- **Small and metadata queries:** at parity with Loki or faster — no penalty
-- **Heavy queries under load:** 1.34× faster at c=10 (179 vs 133 req/s); at c=50 Loki saturates with 35.63% errors while the proxy delivers 1.47× more successful traffic — zero proxy errors at both concurrency levels
-- **Long-range queries:** 2× faster cold — parallel sub-window fetching vs Loki's sequential scan
-- **Metric aggregations (`rate()`, `sum by()`):** 0.4× Loki cold — N VL calls per metric query; historical windows cache after first run (24 h TTL)
+| Workload | Cold proxy | Loki | Ratio |
+|---|---:|---:|:---:|
+| Small queries (c=10) | 1,212 req/s | ~900 req/s | **1.3× faster** |
+| Small queries (c=50) | 1,583 req/s | ~1,369 req/s | **1.2× faster** |
+| Heavy queries (c=10) | 126 req/s | ~133 req/s | **~parity** |
+| Heavy queries (c=100) | 139 req/s | ~33 req/s | **4.2× faster** |
+| Long-range (c=10) | 2× faster | — | parallel sub-windows vs Loki sequential scan |
+
+- **Small and metadata queries:** faster than Loki cold at all concurrency levels tested — no penalty
+- **Heavy queries under load:** ~parity at c=10, **4.2× at c=100** — VL raw scan is faster than Loki's chunk store under high concurrency; `stats_query_range` fast path eliminates 39% cold CPU for count/rate aggregations
+- **Long-range queries:** **2× faster cold** — parallel sub-window fetching completes before Loki can scan its chunk store sequentially
+- **Complex aggregations (`quantile_over_time`, multi-stage pipelines):** N VL calls per metric query; historical windows cache after first run (24 h TTL)
 
 Full throughput tables, P90/P99 latency, CPU and RSS breakdowns: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 
