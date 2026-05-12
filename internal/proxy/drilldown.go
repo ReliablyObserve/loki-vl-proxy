@@ -1225,31 +1225,35 @@ func parseLogfmtFields(line string) map[string]string {
 	fields := make(map[string]string)
 	start := 0
 	inQuote := false
-	for i := 0; i <= len(line); i++ {
-		if i < len(line) {
-			c := line[i]
-			if c == '"' {
-				inQuote = !inQuote
-				continue
-			}
-			if c != ' ' || inQuote {
-				continue
-			}
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if c == '"' {
+			inQuote = !inQuote
+			continue
+		}
+		if c != ' ' || inQuote {
+			continue
 		}
 		if i > start {
-			tok := line[start:i]
-			eq := strings.IndexByte(tok, '=')
-			if eq > 0 {
-				key := strings.TrimSpace(tok[:eq])
-				val := strings.Trim(strings.TrimSpace(tok[eq+1:]), `"`)
-				if key != "" {
-					fields[key] = val
-				}
-			}
+			parseLogfmtToken(line[start:i], fields)
 		}
 		start = i + 1
 	}
+	if start < len(line) {
+		parseLogfmtToken(line[start:], fields)
+	}
 	return fields
+}
+
+func parseLogfmtToken(tok string, fields map[string]string) {
+	eq := strings.IndexByte(tok, '=')
+	if eq > 0 {
+		key := strings.TrimSpace(tok[:eq])
+		val := strings.Trim(strings.TrimSpace(tok[eq+1:]), `"`)
+		if key != "" {
+			fields[key] = val
+		}
+	}
 }
 
 type vlFieldNamesResponse struct {
