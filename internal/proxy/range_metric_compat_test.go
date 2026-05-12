@@ -884,3 +884,76 @@ func TestSumByCountOverTime_NoParser_UsesStatsQueryRange(t *testing.T) {
 		t.Fatalf("unexpected series labels: %v", apps)
 	}
 }
+
+// TestSumByBytesRate_NoParser_UsesSumLen verifies the bytes_rate fast path
+// uses sum_len(_msg) in the stats query instead of count(), and that the
+// proxy returns the expected rate values (bytes/sec).
+func TestSumByBytesRate_NoParser_UsesSumLen(t *testing.T) {
+	base := time.Unix(1700000000, 0).UTC()
+	step := 60
+
+	var statsCalled, queryCalled bool
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			statsCalled = true
+			q := r.Form.Get("query")
+			if !strings.Contains(q, "sum_len(_msg) as c") {
+				t.Errorf("expected sum_len(_msg) in stats query, got: %q", q)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			// 600 bytes in a 60s bucket → bytes_rate = 600/300 = 2 bytes/s (5m window)
+			_, _ = fmt.Fprintf(w,
+				`{"status":"success","data":{"resultType":"matrix","result":[`+
+					`{"metric":{"__name__":"c","app":"svc"},"values":[[%d,"600"]]}]}}`,
+				base.Unix(),
+			)
+		case "/select/logsql/query":
+			if r.Form.Get("limit") == "1000000" {
+				queryCalled = true
+			}
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		default:
+			t.Errorf("unexpected backend path: %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	params.Set("query", `sum by (app) (bytes_rate({namespace="prod"}[5m]))`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(2*time.Duration(step)*time.Second).Unix(), 10))
+	params.Set("step", strconv.Itoa(step))
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Fatalf("stats_query_range was NOT called — bytes_rate fast path inactive")
+	}
+	if queryCalled {
+		t.Fatalf("raw log scan triggered — fast path did not prevent slow path for bytes_rate")
+	}
+
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Data.Result) != 1 {
+		t.Fatalf("expected 1 series, got %d: %s", len(resp.Data.Result), rec.Body.String())
+	}
+}

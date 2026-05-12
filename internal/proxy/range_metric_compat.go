@@ -429,12 +429,21 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
-	// Fast path: count_over_time / rate with explicit groupBy — use VL's /hits
-	// endpoint which returns pre-bucketed counts, avoiding reading every raw log entry.
-	// Conditions: (1) field == "__count__", (2) groupBy has no _stream sentinel
-	// (hits can't expand _stream into full stream labels), (3) labels are explicit
+	// Fast path: count_over_time / rate / bytes_over_time / bytes_rate with
+	// explicit groupBy — use VL's stats_query_range endpoint which returns
+	// pre-aggregated Prometheus buckets, avoiding reading every raw log entry.
+	// Conditions: (1) field is __count__ or __bytes__, (2) groupBy has no _stream
+	// sentinel (stats endpoint can group by stream labels; sentinel means caller
+	// needs VL to enumerate all distinct streams — skip), (3) labels are explicit
 	// (non-empty groupBy or byExplicit aggregate-all).
-	if field == "__count__" {
+	var statsAggFunc string
+	switch field {
+	case "__count__":
+		statsAggFunc = "count() as c"
+	case "__bytes__":
+		statsAggFunc = "sum_len(_msg) as c"
+	}
+	if statsAggFunc != "" {
 		hasStreamSentinel := false
 		for _, g := range spec.GroupBy {
 			if g == "_stream" {
@@ -443,13 +452,13 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			}
 		}
 		if !hasStreamSentinel && (len(spec.GroupBy) > 0 || spec.ByExplicit) {
-			if series, hitsErr := p.collectRangeMetricHits(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil {
+			if series, hitsErr := p.collectRangeMetricHits(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil {
 				result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(result) // nosemgrep
 				return true
 			}
-			// Fall through to raw log path on hits error.
+			// Fall through to raw log path on error.
 		}
 	}
 
@@ -523,8 +532,11 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 }
 
 // collectRangeMetricHits calls VL's /select/logsql/stats_query_range endpoint and
-// returns pre-bucketed count samples (ts=bucket_start_ns, value=bucket_count). This
-// avoids reading all raw log entries for count_over_time / rate queries.
+// returns pre-bucketed samples (ts=bucket_start_ns, value=bucket_value). This
+// avoids reading all raw log entries for count_over_time / rate / bytes_rate queries.
+//
+// statsAggFunc is the VL stats aggregation clause appended after "| stats [by (...)]",
+// e.g. "count() as c" or "sum_len(_msg) as c".
 //
 // Only applicable when the output label set is fully determined by groupBy, i.e.
 // len(groupBy) > 0 or byExplicit == true (so we don't need _stream expansion).
@@ -533,6 +545,7 @@ func (p *Proxy) collectRangeMetricHits(
 	baseQuery string,
 	groupBy, origGroupBy []string,
 	byExplicit bool,
+	statsAggFunc string,
 	start, end time.Time,
 	hitStep time.Duration,
 ) (map[string]manualSeriesSamples, error) {
@@ -540,13 +553,13 @@ func (p *Proxy) collectRangeMetricHits(
 		hitStep = time.Minute
 	}
 
-	// Build LogsQL stats query so VL returns pre-aggregated bucket counts.
+	// Build LogsQL stats query so VL returns pre-aggregated bucket values.
 	// stats_query_range understands stream labels (stored in _stream), unlike /hits.
 	var statsQuery string
 	if len(groupBy) > 0 && !byExplicit {
-		statsQuery = baseQuery + " | stats by (" + strings.Join(groupBy, ", ") + ") count() as c"
+		statsQuery = baseQuery + " | stats by (" + strings.Join(groupBy, ", ") + ") " + statsAggFunc
 	} else {
-		statsQuery = baseQuery + " | stats count() as c"
+		statsQuery = baseQuery + " | stats " + statsAggFunc
 	}
 
 	params := url.Values{}
