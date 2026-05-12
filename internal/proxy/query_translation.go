@@ -1687,25 +1687,3 @@ func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMe
 	buf.WriteByte(']')
 }
 
-// marshalStringMapJSON serialises m as a JSON object using appendJSONString for
-// key/value escaping. Avoids encoding/json reflection and map copying overhead.
-func marshalStringMapJSON(m map[string]string) []byte {
-	est := 2
-	for k, v := range m {
-		est += len(k) + len(v) + 6
-	}
-	b := make([]byte, 0, est)
-	b = append(b, '{')
-	first := true
-	for k, v := range m {
-		if !first {
-			b = append(b, ',')
-		}
-		first = false
-		b = appendJSONString(b, k)
-		b = append(b, ':')
-		b = appendJSONString(b, v)
-	}
-	b = append(b, '}')
-	return b
-}

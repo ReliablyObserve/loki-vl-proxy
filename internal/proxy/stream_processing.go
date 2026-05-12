@@ -1204,12 +1204,6 @@ func hasPrefix(vlBody []byte, prefix string) bool {
 
 // isVLDataResultTypeResponse returns true when vlBody is the compact VL format
 // {"data":{"resultType":"...","result":[...]}} — the fast path for wrapAsLokiResponse.
-// normalizeLokiResultDataShape is a no-op for this format since both "result" and
-// "resultType" are already present, so we can skip parse+marshal entirely.
-func isVLDataResultTypeResponse(vlBody []byte) bool {
-	return hasPrefix(vlBody, `{"data":{"resultType":`) ||
-		hasPrefix(vlBody, `{"status":"success","data":{"resultType":`)
-}
 
 func normalizeLokiResultDataShape(data map[string]interface{}, defaultResultType string) {
 	if data == nil {
