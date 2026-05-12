@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - perf(range_metric): extend fast path to `bytes_over_time`/`bytes_rate` using `| stats by (...) sum_len(_msg) as c` — eliminates 4664ms P50 bottleneck for byte-rate metric queries at cold concurrency.
 - perf(patterns): pool `strings.Builder` in `patternLineTokenizer.Join` via `patternJoinBuilderPool` — eliminates per-log-entry heap allocation that was 6237 MB flat (15.56%) and driving `bytes.growSlice` cascade at cold concurrency.
 - perf(drilldown): rewrite `parseLogfmtFields` to single-pass byte scanning — eliminates intermediate `tokens` slice, `strings.Builder` per token, and `strings.SplitN` allocation (was `strings.genSplit` 302 MB flat, 4.79% at cold concurrency); uses `strings.IndexByte` on in-place slices instead.
+- perf(drilldown): eliminate duplicate `parseStreamLabels` calls in `detectFieldSummariesStream` — was called 3× per log entry (inside `fillDetectedLabelsFJ`, `isOTelDataFJ`, and directly); refactored to parse `_stream` once and pass pre-parsed map via `fillDetectedLabelsFJWithStream` and `isOTelLabels`; also deferred `key := string(keyBytes)` allocation in `obj.Visit` callbacks until after cheap early-return guards.
+- perf(series): replace `encoding/json` with fastjson + direct `strings.Builder` write in `handleSeries` — `encoding/json.Unmarshal` + `json.Marshal(map[string]string)` was 17.88% cum in cold-proxy alloc profile; now uses pooled fastjson parser for input and `jsonBuilderPool` + `appendJSONStringToBuilder` for output; removes `encoding/json` import from `label_handlers.go` entirely.
 
 ## [1.31.2] - 2026-05-12
 
