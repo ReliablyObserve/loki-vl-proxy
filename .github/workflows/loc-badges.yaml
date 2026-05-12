@@ -1,0 +1,53 @@
+name: LOC Badges
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.go"
+
+permissions:
+  contents: write
+
+jobs:
+  update-loc-badges:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Count LOC
+        id: loc
+        run: |
+          REAL=$(find . -name "*.go" -not -name "*_test.go" -not -path "./.git/*" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}')
+          TEST=$(find . -name "*_test.go" -not -path "./.git/*" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}')
+          echo "real=$REAL" >> "$GITHUB_OUTPUT"
+          echo "test=$TEST" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$REAL" "$TEST"
+
+      - name: Write badge JSON files
+        run: |
+          mkdir -p .github/badges
+          cat > .github/badges/loc-code.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "source code",
+            "message": "$(printf "%'.0f" ${{ steps.loc.outputs.real }}) LOC",
+            "color": "blue"
+          }
+          EOF
+          cat > .github/badges/loc-tests.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "test code",
+            "message": "$(printf "%'.0f" ${{ steps.loc.outputs.test }}) LOC",
+            "color": "green"
+          }
+          EOF
+
+      - name: Commit badges if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/badges/loc-code.json .github/badges/loc-tests.json
+          git diff --cached --quiet || git commit -m "chore: update LOC badge data [skip ci]"
+          git push
