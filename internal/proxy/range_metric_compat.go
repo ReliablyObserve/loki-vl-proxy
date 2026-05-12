@@ -319,7 +319,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// semantically equivalent for VL native stats — only range > step produces
 	// overlapping sliding windows where VL tumbling-bucket stats diverges from LogQL.
 	noSlidingOverlap := step > 0 && origSpec.Window > 0 && origSpec.Window <= step
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, noSlidingOverlap, originalLogql) {
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, noSlidingOverlap) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -351,7 +351,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	// Instant queries have no step: the range window is the entire lookback interval,
 	// not a sliding window. VL native stats correctly evaluates [time-range, time].
 	// Only rate_counter still requires the manual path (counter-reset semantics).
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, true, originalLogql) {
+	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, true) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -373,11 +373,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 // step. When true, VL's native rate() — which buckets by the step interval —
 // is semantically identical to LogQL rate()[range]. Pass false to keep the
 // sliding-window manual path for cases where range != step.
-//
-// originalLogql is the original LogQL query string. When it contains "__error__"
-// (e.g., via `| drop __error__`), the caller has explicitly handled parse errors,
-// making VL native stats semantically correct even for count-like operations.
-func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsStep bool, originalLogql string) bool {
+func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsStep bool) bool {
 	manualFunc = strings.TrimSpace(manualFunc)
 	if manualFunc == "rate_counter" {
 		return true
@@ -386,18 +382,12 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	// For sliding windows (range != step) VL native stats_query_range buckets by the
 	// step interval (tumbling windows) while LogQL evaluates each point over [T-range, T].
 	// When the data distribution is non-uniform the two diverge. Route to the manual
-	// log-fetch path for correct sliding-window semantics regardless of parser stages.
-	// When range == step windows are non-overlapping and native VL stats is equivalent.
+	// log-fetch path for correct sliding-window semantics.
+	// When range == step windows are non-overlapping and native VL stats is equivalent,
+	// including for queries that use parser stages (| json, | logfmt): VL stats_query_range
+	// natively supports inline filter pipelines and parser stages.
 	switch manualFunc {
 	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
-		// Extracting parser stages (| unpack_json, | extract, etc.) require the manual
-		// log-fetch path even when range==step: VL native stats may not replicate Loki's
-		// __error__ exclusion semantics for lines that fail parsing in metric queries.
-		// Exception: when the query explicitly handles __error__ (e.g., | drop __error__),
-		// parse failures are already accounted for and VL native stats is semantically correct.
-		if queryUsesParserStages(baseQuery) && !strings.Contains(originalLogql, "__error__") {
-			return true
-		}
 		return !rangeEqualsStep
 	}
 

@@ -710,7 +710,7 @@ func TestShouldUseManualRangeMetricCompat_WithoutSlidingWindowNowUsesManualPath(
 	// buildManualMetricLabels correctly expands _stream into all stream labels.
 	// Previously this fell back to native VL tumbling stats, producing wrong results.
 	want := true
-	got := shouldUseManualRangeMetricCompat("app:=api", "rate", false /* sliding */, `sum without(level) (rate({app="api"}[10m]))`)
+	got := shouldUseManualRangeMetricCompat("app:=api", "rate", false /* sliding */)
 	if got != want {
 		t.Errorf("sliding-window without() should use manual path, got %v", got)
 	}
