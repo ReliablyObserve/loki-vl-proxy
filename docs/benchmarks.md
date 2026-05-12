@@ -13,7 +13,7 @@ description: "Six-workload read-path comparison: Loki vs VL+Proxy (warm/cold) vs
 
 **Loki flags:** `querier.max_concurrent=16`, `max_query_parallelism=64`, result + chunk caching enabled.
 
-## Reproducing
+## Running Benchmarks
 
 ```bash
 # Warm-cache run (standard — proxy cache pre-warmed at benchmark concurrency)
@@ -281,3 +281,20 @@ go test ./internal/proxy/ -bench . -benchmem -run "^$" -count=3
 go test ./internal/translator/ -bench . -benchmem -run "^$" -count=3
 go test ./internal/cache/ -bench . -benchmem -run "^$" -count=3
 ```
+
+### Measuring eviction pressure
+
+```promql
+# Eviction rate — non-zero means L1 is too small
+rate(loki_vl_proxy_cache_evictions_total[5m])
+
+# Hit rate — below 50% means cache too small or workload not cacheable
+rate(loki_vl_proxy_cache_hits_total[5m])
+/
+(rate(loki_vl_proxy_cache_hits_total[5m]) + rate(loki_vl_proxy_cache_misses_total[5m]))
+
+# Per-replica cache RSS — should stay below -cache-max
+process_resident_memory_bytes{job="loki-vl-proxy"}
+```
+
+Rule of thumb: `L1 size = (unique active queries per hour) × (average response size)`.
