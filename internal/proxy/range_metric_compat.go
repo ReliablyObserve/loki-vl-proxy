@@ -429,6 +429,30 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
+	// Fast path: count_over_time / rate with explicit groupBy — use VL's /hits
+	// endpoint which returns pre-bucketed counts, avoiding reading every raw log entry.
+	// Conditions: (1) field == "__count__", (2) groupBy has no _stream sentinel
+	// (hits can't expand _stream into full stream labels), (3) labels are explicit
+	// (non-empty groupBy or byExplicit aggregate-all).
+	if field == "__count__" {
+		hasStreamSentinel := false
+		for _, g := range spec.GroupBy {
+			if g == "_stream" {
+				hasStreamSentinel = true
+				break
+			}
+		}
+		if !hasStreamSentinel && (len(spec.GroupBy) > 0 || spec.ByExplicit) {
+			if series, hitsErr := p.collectRangeMetricHits(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil {
+				result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write(result) // nosemgrep
+				return true
+			}
+			// Fall through to raw log path on hits error.
+		}
+	}
+
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), endTS)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
@@ -496,6 +520,123 @@ func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec original
 		return "", 0, nil
 	}
 	return p.labelTranslator.ToVL(field), 0, nil
+}
+
+// collectRangeMetricHits calls VL's /select/logsql/stats_query_range endpoint and
+// returns pre-bucketed count samples (ts=bucket_start_ns, value=bucket_count). This
+// avoids reading all raw log entries for count_over_time / rate queries.
+//
+// Only applicable when the output label set is fully determined by groupBy, i.e.
+// len(groupBy) > 0 or byExplicit == true (so we don't need _stream expansion).
+func (p *Proxy) collectRangeMetricHits(
+	ctx context.Context,
+	baseQuery string,
+	groupBy, origGroupBy []string,
+	byExplicit bool,
+	start, end time.Time,
+	hitStep time.Duration,
+) (map[string]manualSeriesSamples, error) {
+	if hitStep <= 0 {
+		hitStep = time.Minute
+	}
+
+	// Build LogsQL stats query so VL returns pre-aggregated bucket counts.
+	// stats_query_range understands stream labels (stored in _stream), unlike /hits.
+	var statsQuery string
+	if len(groupBy) > 0 && !byExplicit {
+		statsQuery = baseQuery + " | stats by (" + strings.Join(groupBy, ", ") + ") count() as c"
+	} else {
+		statsQuery = baseQuery + " | stats count() as c"
+	}
+
+	params := url.Values{}
+	params.Set("query", statsQuery)
+	params.Set("start", strconv.FormatInt(start.Unix(), 10))
+	params.Set("end", strconv.FormatInt(end.Unix(), 10))
+	params.Set("step", strconv.FormatFloat(hitStep.Seconds(), 'f', 0, 64)+"s")
+
+	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("stats_query_range backend %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build VL→Loki label name mapping from groupBy↔origGroupBy.
+	vlToLoki := make(map[string]string, len(groupBy))
+	for i, vlName := range groupBy {
+		if i < len(origGroupBy) {
+			vlToLoki[vlName] = origGroupBy[i]
+		} else {
+			vlToLoki[vlName] = vlName
+		}
+	}
+
+	// Parse Prometheus range vector response:
+	// {"status":"success","data":{"result":[{"metric":{...},"values":[[ts,"v"],...]}]}}
+	v, parseErr := fj.ParseBytes(body)
+	if parseErr != nil {
+		return nil, fmt.Errorf("parse stats_query_range response: %w", parseErr)
+	}
+	if status := string(v.GetStringBytes("status")); status != "success" {
+		return nil, fmt.Errorf("stats_query_range non-success status: %s", status)
+	}
+
+	results := v.GetArray("data", "result")
+	seriesMap := make(map[string]manualSeriesSamples, len(results))
+	for _, res := range results {
+		metricObj := res.GetObject("metric")
+		metric := make(map[string]string)
+		metricObj.Visit(func(k []byte, mv *fj.Value) {
+			key := string(k)
+			if key == "__name__" {
+				return
+			}
+			lokiKey, ok := vlToLoki[key]
+			if !ok {
+				lokiKey = p.labelTranslator.ToLoki(key)
+			}
+			metric[lokiKey] = string(mv.GetStringBytes())
+		})
+		seriesKey := canonicalLabelsKey(metric)
+
+		values := res.GetArray("values")
+		samples := make([]rangeMetricSample, 0, len(values))
+		for _, pair := range values {
+			arr := pair.GetArray()
+			if len(arr) < 2 {
+				continue
+			}
+			tsUnix, tsErr := arr[0].Int64()
+			if tsErr != nil {
+				continue
+			}
+			valStr := string(arr[1].GetStringBytes())
+			val, valErr := strconv.ParseFloat(valStr, 64)
+			if valErr != nil {
+				continue
+			}
+			samples = append(samples, rangeMetricSample{ts: tsUnix * int64(time.Second), value: val})
+		}
+
+		if existing, ok := seriesMap[seriesKey]; ok {
+			existing.Samples = append(existing.Samples, samples...)
+			sort.Slice(existing.Samples, func(i, j int) bool { return existing.Samples[i].ts < existing.Samples[j].ts })
+			seriesMap[seriesKey] = existing
+		} else {
+			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
+		}
+	}
+	return seriesMap, nil
 }
 
 // metricSeriesCacheEntry holds the pre-computed labels and key for a metric series.
@@ -989,6 +1130,70 @@ func buildManualRangeMetricMatrix(functionName string, quantile float64, series 
 	for _, key := range keys {
 		if seriesResult, ok := perSeries[key]; ok {
 			results = append(results, seriesResult)
+		}
+	}
+	return marshalManualMetricResponse("matrix", results)
+}
+
+// buildHitsRangeMetricMatrix builds a Prometheus matrix response from pre-bucketed
+// hit counts returned by collectRangeMetricHits. Each sample is a bucket count;
+// the window is applied by summing all buckets whose start falls in [T-window, T)
+// for each step point T. Supports count_over_time (sum) and rate (sum/window_s).
+func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) []byte {
+	if end.Before(start) {
+		return marshalManualMetricResponse("matrix", []map[string]interface{}{})
+	}
+	windowNS := window.Nanoseconds()
+	windowSec := window.Seconds()
+
+	keys := make([]string, 0, len(series))
+	for key := range series {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	perSeries := make(map[string]map[string]interface{}, len(series))
+
+	for t := start; !t.After(end); t = t.Add(step) {
+		tNS := t.UnixNano()
+		windowStartNS := tNS - windowNS
+
+		for _, key := range keys {
+			seriesEntry := series[key]
+			var sum float64
+			for _, s := range seriesEntry.Samples {
+				if s.ts >= windowStartNS && s.ts < tNS {
+					sum += s.value
+				}
+			}
+			if sum == 0 {
+				continue
+			}
+			var value float64
+			if manualFunc == "rate" {
+				value = sum / windowSec
+			} else {
+				value = sum
+			}
+
+			dst := perSeries[key]
+			if dst == nil {
+				dst = map[string]interface{}{
+					"metric": seriesEntry.Metric,
+					"values": make([][]interface{}, 0, 16),
+				}
+				perSeries[key] = dst
+			}
+			points := dst["values"].([][]interface{})
+			points = append(points, []interface{}{float64(t.Unix()), strconv.FormatFloat(value, 'f', -1, 64)})
+			dst["values"] = points
+		}
+	}
+
+	results := make([]map[string]interface{}, 0, len(perSeries))
+	for _, key := range keys {
+		if r, ok := perSeries[key]; ok {
+			results = append(results, r)
 		}
 	}
 	return marshalManualMetricResponse("matrix", results)

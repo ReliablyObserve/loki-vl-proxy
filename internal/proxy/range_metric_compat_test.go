@@ -798,3 +798,89 @@ func TestBareParserCountOverTime_WithErrorHandling_UsesFastPath(t *testing.T) {
 		t.Fatalf("stats_query_range was NOT called — fast path should be taken when __error__ is handled")
 	}
 }
+
+// TestSumByCountOverTime_NoParser_UsesStatsQueryRange checks that the outer
+// sum-by count_over_time fast path (collectRangeMetricHits) activates for pure
+// stream-selector queries (no parser) and correctly returns multi-series output.
+// This is the primary benchmark hot path: pprof showed raw-log scan was 39% CPU.
+func TestSumByCountOverTime_NoParser_UsesStatsQueryRange(t *testing.T) {
+	base := time.Unix(1700000000, 0).UTC()
+	step := 60
+
+	var statsCalled, queryCalled bool
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			statsCalled = true
+			// Verify the stats query appends the count() as c clause.
+			q := r.Form.Get("query")
+			if !strings.Contains(q, "| stats by (app) count() as c") {
+				t.Errorf("unexpected stats query: %q", q)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w,
+				`{"status":"success","data":{"resultType":"matrix","result":[`+
+					`{"metric":{"__name__":"c","app":"api-gateway"},"values":[[%d,"10"],[%d,"20"]]},`+
+					`{"metric":{"__name__":"c","app":"auth"},"values":[[%d,"5"],[%d,"8"]]}]}}`,
+				base.Unix(), base.Add(time.Duration(step)*time.Second).Unix(),
+				base.Unix(), base.Add(time.Duration(step)*time.Second).Unix(),
+			)
+		case "/select/logsql/query":
+			if r.Form.Get("limit") == "1000000" {
+				queryCalled = true
+			}
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		default:
+			t.Errorf("unexpected backend path: %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	params.Set("query", `sum by (app) (count_over_time({env="prod"}[5m]))`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(2*time.Duration(step)*time.Second).Unix(), 10))
+	params.Set("step", strconv.Itoa(step))
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Fatalf("stats_query_range was NOT called — fast path inactive for sum by (app) (count_over_time)")
+	}
+	if queryCalled {
+		t.Fatalf("raw log scan was triggered — fast path did not prevent slow path")
+	}
+
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Data.Result) != 2 {
+		t.Fatalf("expected 2 series (api-gateway, auth), got %d: %s", len(resp.Data.Result), rec.Body.String())
+	}
+	apps := map[string]bool{}
+	for _, s := range resp.Data.Result {
+		apps[s.Metric["app"]] = true
+		if len(s.Values) == 0 {
+			t.Errorf("series %v has no values", s.Metric)
+		}
+	}
+	if !apps["api-gateway"] || !apps["auth"] {
+		t.Fatalf("unexpected series labels: %v", apps)
+	}
+}
