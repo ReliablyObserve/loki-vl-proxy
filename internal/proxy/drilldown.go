@@ -1223,39 +1223,31 @@ func unifyDetectedType(current, next string) string {
 
 func parseLogfmtFields(line string) map[string]string {
 	fields := make(map[string]string)
-	var token strings.Builder
-	tokens := make([]string, 0, 8)
+	start := 0
 	inQuote := false
-
-	for _, r := range line {
-		switch {
-		case r == '"':
-			inQuote = !inQuote
-			token.WriteRune(r)
-		case r == ' ' && !inQuote:
-			if token.Len() > 0 {
-				tokens = append(tokens, token.String())
-				token.Reset()
+	for i := 0; i <= len(line); i++ {
+		if i < len(line) {
+			c := line[i]
+			if c == '"' {
+				inQuote = !inQuote
+				continue
 			}
-		default:
-			token.WriteRune(r)
+			if c != ' ' || inQuote {
+				continue
+			}
 		}
-	}
-	if token.Len() > 0 {
-		tokens = append(tokens, token.String())
-	}
-
-	for _, token := range tokens {
-		parts := strings.SplitN(token, "=", 2)
-		if len(parts) != 2 {
-			continue
+		if i > start {
+			tok := line[start:i]
+			eq := strings.IndexByte(tok, '=')
+			if eq > 0 {
+				key := strings.TrimSpace(tok[:eq])
+				val := strings.Trim(strings.TrimSpace(tok[eq+1:]), `"`)
+				if key != "" {
+					fields[key] = val
+				}
+			}
 		}
-		key := strings.TrimSpace(parts[0])
-		value := strings.Trim(strings.TrimSpace(parts[1]), `"`)
-		if key == "" {
-			continue
-		}
-		fields[key] = value
+		start = i + 1
 	}
 	return fields
 }
