@@ -1481,10 +1481,12 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 	translated := make(map[string]string, 8)
 	syntheticLabels := make(map[string]string, 8)
 
-	// changedMetrics[si][ii] holds the new metric JSON for changed items; nil = unchanged.
-	changedMetrics := make([][][]byte, len(slots))
+	// changedMetrics[si][ii] holds the new translated label map for changed items; nil = unchanged.
+	// Storing map[string]string instead of pre-serialized []byte avoids the appendJSONString
+	// allocations in the first pass; the write pass serialises directly to the output buffer.
+	changedMetrics := make([][]map[string]string, len(slots))
 	for i, slot := range slots {
-		changedMetrics[i] = make([][]byte, len(slot.items))
+		changedMetrics[i] = make([]map[string]string, len(slot.items))
 	}
 
 	translatedCount := 0
@@ -1572,8 +1574,7 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 
 			if changed {
 				translatedCount++
-				// Write the translated metric as JSON bytes; avoids map copy + Marshal.
-				changedMetrics[si][ii] = marshalStringMapJSON(syntheticLabels)
+				changedMetrics[si][ii] = cloneStringMap(syntheticLabels)
 			}
 		}
 	}
@@ -1659,8 +1660,8 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 }
 
 // writeTranslatedStatsItemsFJ writes a JSON array of stats items, substituting
-// changedMetrics[i] (new metric JSON) where non-nil; copies original bytes otherwise.
-func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMetrics [][]byte, scratch *[]byte) {
+// changedMetrics[i] (translated label map) where non-nil; copies original bytes otherwise.
+func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMetrics []map[string]string, scratch *[]byte) {
 	buf.WriteByte('[')
 	for i, item := range items {
 		if i > 0 {
@@ -1668,7 +1669,7 @@ func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMe
 		}
 		if changedMetrics[i] != nil {
 			buf.WriteString(`{"metric":`)
-			buf.Write(changedMetrics[i])
+			marshalStringMapJSONTo(buf, changedMetrics[i])
 			if val := item.Get("value"); val != nil {
 				buf.WriteString(`,"value":`)
 				marshalFJ(buf, val, scratch)
