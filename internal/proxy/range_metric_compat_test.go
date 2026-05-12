@@ -105,6 +105,104 @@ func TestParseOriginalRangeMetricSpecRate(t *testing.T) {
 	}
 }
 
+func TestShouldUseManualRangeMetricCompat_ParserStageRate(t *testing.T) {
+	// Written for the 3-param signature introduced by the parser-stage guard removal.
+	// This test will fail to compile until shouldUseManualRangeMetricCompat drops
+	// the originalLogql parameter (Task 2). That is intentional — red-phase TDD.
+	//
+	// After Task 2: parser-stage rate queries obey only !rangeEqualsStep.
+	// Base query uses VL-translated syntax (| unpack_json, not | json).
+	parserBaseQuery := `{app="api-gateway"} | unpack_json | status >= 400`
+	plainBaseQuery := `{app="api-gateway"}`
+
+	tests := []struct {
+		name            string
+		baseQuery       string
+		manualFunc      string
+		rangeEqualsStep bool
+		wantManual      bool // true = slow path, false = fast path
+	}{
+		// Parser stages + tumbling window (range==step): FAST PATH expected after change.
+		{
+			name:            "rate_parser_tumbling_fast",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "rate",
+			rangeEqualsStep: true,
+			wantManual:      false, // fast path
+		},
+		{
+			name:            "count_over_time_parser_tumbling_fast",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "count_over_time",
+			rangeEqualsStep: true,
+			wantManual:      false,
+		},
+		{
+			name:            "bytes_rate_parser_tumbling_fast",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "bytes_rate",
+			rangeEqualsStep: true,
+			wantManual:      false,
+		},
+		{
+			name:            "bytes_over_time_parser_tumbling_fast",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "bytes_over_time",
+			rangeEqualsStep: true,
+			wantManual:      false,
+		},
+		// Parser stages + sliding window: SLOW PATH preserved.
+		{
+			name:            "rate_parser_sliding_slow",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "rate",
+			rangeEqualsStep: false,
+			wantManual:      true, // slow path
+		},
+		{
+			name:            "count_over_time_parser_sliding_slow",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "count_over_time",
+			rangeEqualsStep: false,
+			wantManual:      true,
+		},
+		// No parser stages + tumbling: fast path (unchanged behaviour).
+		{
+			name:            "rate_no_parser_tumbling_fast",
+			baseQuery:       plainBaseQuery,
+			manualFunc:      "rate",
+			rangeEqualsStep: true,
+			wantManual:      false,
+		},
+		// No parser stages + sliding: slow path (unchanged behaviour).
+		{
+			name:            "rate_no_parser_sliding_slow",
+			baseQuery:       plainBaseQuery,
+			manualFunc:      "rate",
+			rangeEqualsStep: false,
+			wantManual:      true,
+		},
+		// rate_counter always slow regardless.
+		{
+			name:            "rate_counter_always_slow",
+			baseQuery:       plainBaseQuery,
+			manualFunc:      "rate_counter",
+			rangeEqualsStep: true,
+			wantManual:      true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldUseManualRangeMetricCompat(tc.baseQuery, tc.manualFunc, tc.rangeEqualsStep)
+			if got != tc.wantManual {
+				t.Errorf("shouldUseManualRangeMetricCompat(%q, %q, rangeEqualsStep=%v) = %v, want %v",
+					tc.baseQuery, tc.manualFunc, tc.rangeEqualsStep, got, tc.wantManual)
+			}
+		})
+	}
+}
+
 func TestQueryRange_RateManualFallback(t *testing.T) {
 	base := time.Unix(1700000000, 0).UTC()
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
