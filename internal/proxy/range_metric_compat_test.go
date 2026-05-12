@@ -218,7 +218,7 @@ func TestQueryRange_RateParserStageTumblingUsesStatsQueryRange(t *testing.T) {
 		case "/select/logsql/stats_query_range":
 			statsCalled = true
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api-gateway"},"values":[[1700000300,"0.5"]]}]}}`))
+			_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[{"metric":{"app":"api-gateway"},"values":[[1700000300,"0.5"]]}]}}`))
 		case "/select/logsql/query":
 			// Manual raw-log-fetch MUST NOT be called for tumbling window.
 			t.Error("unexpected slow-path /select/logsql/query call for tumbling-window parser-stage rate")
