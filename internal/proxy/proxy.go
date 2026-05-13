@@ -1448,12 +1448,10 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	r = p.injectAuthFingerprint(r)
 
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
-	// Extract and apply LogQL offset: shift start/end backward by the offset so all
-	// downstream dispatch paths (stats_query_range, manual log fetch, bare-parser)
-	// query the correct historical window. The offset clause is stripped from the
-	// query so the translator receives offset-free LogQL.
+	// Extract and apply LogQL offset: strip the offset clause and shift start/end
+	// backward so preferWorkingParser probes the historical window where the offset
+	// data actually lives. All downstream dispatch paths see the shifted times.
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
@@ -1463,6 +1461,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		logqlQuery = strippedQuery
 		if offsetDur != 0 {
+			// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
+			// it does not alias the map captured by withOrgID's origRequestKey reference.
 			_ = r.ParseForm()
 			if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
 				r.Form.Set("start", nanosToVLTimestamp(startNs-offsetDur.Nanoseconds()))
@@ -1472,6 +1472,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+
+	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
 	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
 		resolvedSpec, resolved := resolveBareParserMetricRangeWindow(spec, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
