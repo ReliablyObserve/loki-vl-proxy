@@ -105,6 +105,214 @@ func TestParseOriginalRangeMetricSpecRate(t *testing.T) {
 	}
 }
 
+func TestShouldUseManualRangeMetricCompat_ParserStageRate(t *testing.T) {
+	// Written for the 3-param signature introduced by the parser-stage guard removal.
+	// This test will fail to compile until shouldUseManualRangeMetricCompat drops
+	// the originalLogql parameter (Task 2). That is intentional — red-phase TDD.
+	//
+	// After Task 2: parser-stage rate queries obey only !rangeEqualsStep.
+	// Base query uses VL-translated syntax (| unpack_json, not | json).
+	parserBaseQuery := `{app="api-gateway"} | unpack_json | status >= 400`
+	plainBaseQuery := `{app="api-gateway"}`
+
+	tests := []struct {
+		name            string
+		baseQuery       string
+		manualFunc      string
+		rangeEqualsStep bool
+		wantManual      bool // true = slow path, false = fast path
+	}{
+		// Parser stages + tumbling window (range==step): FAST PATH expected after change.
+		{
+			name:            "rate_parser_tumbling_fast",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "rate",
+			rangeEqualsStep: true,
+			wantManual:      false, // fast path
+		},
+		{
+			name:            "count_over_time_parser_tumbling_fast",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "count_over_time",
+			rangeEqualsStep: true,
+			wantManual:      false,
+		},
+		{
+			name:            "bytes_rate_parser_tumbling_fast",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "bytes_rate",
+			rangeEqualsStep: true,
+			wantManual:      false,
+		},
+		{
+			name:            "bytes_over_time_parser_tumbling_fast",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "bytes_over_time",
+			rangeEqualsStep: true,
+			wantManual:      false,
+		},
+		// Parser stages + sliding window: SLOW PATH preserved.
+		{
+			name:            "rate_parser_sliding_slow",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "rate",
+			rangeEqualsStep: false,
+			wantManual:      true, // slow path
+		},
+		{
+			name:            "count_over_time_parser_sliding_slow",
+			baseQuery:       parserBaseQuery,
+			manualFunc:      "count_over_time",
+			rangeEqualsStep: false,
+			wantManual:      true,
+		},
+		// No parser stages + tumbling: fast path (unchanged behaviour).
+		{
+			name:            "rate_no_parser_tumbling_fast",
+			baseQuery:       plainBaseQuery,
+			manualFunc:      "rate",
+			rangeEqualsStep: true,
+			wantManual:      false,
+		},
+		// No parser stages + sliding: slow path (unchanged behaviour).
+		{
+			name:            "rate_no_parser_sliding_slow",
+			baseQuery:       plainBaseQuery,
+			manualFunc:      "rate",
+			rangeEqualsStep: false,
+			wantManual:      true,
+		},
+		// rate_counter always slow regardless.
+		{
+			name:            "rate_counter_always_slow",
+			baseQuery:       plainBaseQuery,
+			manualFunc:      "rate_counter",
+			rangeEqualsStep: true,
+			wantManual:      true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldUseManualRangeMetricCompat(tc.baseQuery, tc.manualFunc, tc.rangeEqualsStep)
+			if got != tc.wantManual {
+				t.Errorf("shouldUseManualRangeMetricCompat(%q, %q, rangeEqualsStep=%v) = %v, want %v",
+					tc.baseQuery, tc.manualFunc, tc.rangeEqualsStep, got, tc.wantManual)
+			}
+		})
+	}
+}
+
+func TestQueryRange_RateParserStageTumblingUsesStatsQueryRange(t *testing.T) {
+	// sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m])) with step=5m
+	// (range == step, tumbling window) must route to VL stats_query_range after the
+	// parser-stage guard is removed from shouldUseManualRangeMetricCompat.
+	base := time.Unix(1700000000, 0).UTC()
+	var statsCalled bool
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[{"metric":{"app":"api-gateway"},"values":[[1700000300,"0.5"]]}]}}`))
+		case "/select/logsql/query":
+			// Manual raw-log-fetch MUST NOT be called for tumbling window.
+			t.Error("unexpected slow-path /select/logsql/query call for tumbling-window parser-stage rate")
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		default:
+			if r.URL.Path != "/metrics" {
+				t.Logf("unhandled path: %s", r.URL.Path)
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	// step=300 == range=[5m]=300 → rangeEqualsStep=true → tumbling window → fast path.
+	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
+	params.Set("step", "300")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Error("expected stats_query_range to be called for tumbling-window parser-stage rate query")
+	}
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Status != "success" {
+		t.Errorf("expected success, got %q", resp.Status)
+	}
+	if len(resp.Data.Result) == 0 {
+		t.Error("expected at least one series in result")
+	}
+}
+
+func TestQueryRange_RateParserStageSlidingProducesResult(t *testing.T) {
+	// sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m])) with step=60
+	// (range=5m > step=60, sliding window) must not take the tumbling-window fast path via
+	// shouldUseManualRangeMetricCompat (verified by unit test). The proxy routes through
+	// proxyManualRangeMetricRange which may still use stats_query_range internally via
+	// collectRangeMetricHits (added in PR #350). We verify a valid 200 response is produced.
+	base := time.Unix(1700000000, 0).UTC()
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = fmt.Fprintf(w,
+				`{"_time":%q,"_msg":"ok","_stream":"{app=\"api-gateway\"}","app":"api-gateway","status":"404"}`+"\n",
+				base.Format(time.RFC3339Nano),
+			)
+		case "/select/logsql/stats_query_range":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[{"metric":{"app":"api-gateway"},"values":[[1700000060,"0.016"]]}]}}`))
+		default:
+			if r.URL.Path != "/metrics" {
+				t.Logf("unhandled path: %s", r.URL.Path)
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	// step=60 != range=[5m]=300 → rangeEqualsStep=false → shouldUseManualRangeMetricCompat returns true.
+	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
+	params.Set("step", "60")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestQueryRange_RateManualFallback(t *testing.T) {
 	base := time.Unix(1700000000, 0).UTC()
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -612,7 +820,7 @@ func TestShouldUseManualRangeMetricCompat_WithoutSlidingWindowNowUsesManualPath(
 	// buildManualMetricLabels correctly expands _stream into all stream labels.
 	// Previously this fell back to native VL tumbling stats, producing wrong results.
 	want := true
-	got := shouldUseManualRangeMetricCompat("app:=api", "rate", false /* sliding */, `sum without(level) (rate({app="api"}[10m]))`)
+	got := shouldUseManualRangeMetricCompat("app:=api", "rate", false /* sliding */)
 	if got != want {
 		t.Errorf("sliding-window without() should use manual path, got %v", got)
 	}
