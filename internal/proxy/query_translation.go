@@ -396,6 +396,11 @@ var (
 	logfmtParserStageRE  = regexp.MustCompile(`\|\s*logfmt(?:\s+[^|]+)?`)
 	regexpParserStageRE  = regexp.MustCompile(`\|\s*regexp\b`)
 	patternParserStageRE = regexp.MustCompile(`\|\s*pattern\b`)
+
+	// logqlOffsetRE matches the "offset <duration>" clause that appears after a
+	// range window bracket, e.g. "[5m] offset 1h". Capture group 1 is the
+	// duration string. Supports negative offsets: "[5m] offset -30m".
+	logqlOffsetRE = regexp.MustCompile(`\]\s+offset\s+(-?[\w.]+)`)
 )
 
 // hasTextExtractionParser returns true when the LogQL query contains any
@@ -431,6 +436,35 @@ func removeParserStage(logql, parser string) string {
 		logql = strings.ReplaceAll(logql, "  ", " ")
 	}
 	return strings.TrimSpace(logql)
+}
+
+// extractLogQLOffset finds a LogQL offset modifier (e.g. "[5m] offset 1h"),
+// strips all occurrences from the query, and returns the offset duration.
+// Returns an error when multiple *different* offset values are present — Loki
+// rejects such queries. Returns zero duration + unchanged query when no offset found.
+func extractLogQLOffset(logql string) (time.Duration, string, error) {
+	matches := logqlOffsetRE.FindAllStringSubmatch(logql, -1)
+	if len(matches) == 0 {
+		return 0, logql, nil
+	}
+
+	seen := map[string]time.Duration{}
+	for _, m := range matches {
+		durStr := m[1]
+		if _, already := seen[durStr]; !already {
+			seen[durStr] = parseLokiDuration(durStr)
+		}
+	}
+	if len(seen) > 1 {
+		return 0, logql, fmt.Errorf("found %d offsets while expecting at most 1", len(seen))
+	}
+
+	var offset time.Duration
+	for _, d := range seen {
+		offset = d
+	}
+	stripped := logqlOffsetRE.ReplaceAllString(logql, "]")
+	return offset, strings.TrimSpace(stripped), nil
 }
 
 func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end string) string {
