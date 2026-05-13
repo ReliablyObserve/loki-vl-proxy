@@ -1450,6 +1450,29 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
+	// Extract and apply LogQL offset: shift start/end backward by the offset so all
+	// downstream dispatch paths (stats_query_range, manual log fetch, bare-parser)
+	// query the correct historical window. The offset clause is stripped from the
+	// query so the translator receives offset-free LogQL.
+	{
+		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
+		if offsetErr != nil {
+			p.writeError(w, http.StatusBadRequest, offsetErr.Error())
+			p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		logqlQuery = strippedQuery
+		if offsetDur != 0 {
+			_ = r.ParseForm()
+			if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
+				r.Form.Set("start", nanosToVLTimestamp(startNs-offsetDur.Nanoseconds()))
+			}
+			if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
+				r.Form.Set("end", nanosToVLTimestamp(endNs-offsetDur.Nanoseconds()))
+			}
+		}
+	}
+
 	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
 		resolvedSpec, resolved := resolveBareParserMetricRangeWindow(spec, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 		if !resolved {
