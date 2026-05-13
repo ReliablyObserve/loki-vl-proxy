@@ -13,7 +13,7 @@ const config: Config = {
     v4: true,
   },
   url: 'https://reliablyobserve.github.io',
-  baseUrl: '/Loki-VL-proxy/',
+  baseUrl: '/loki-vl-proxy/',
   trailingSlash: true,
   organizationName: 'ReliablyObserve',
   projectName: 'Loki-VL-proxy',
