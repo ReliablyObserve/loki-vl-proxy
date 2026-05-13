@@ -126,7 +126,9 @@ func countNDJSONLines(body []byte) int {
 //
 // Returns the accumulated NDJSON rows in ascending time order.
 func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Values, startNs, endNs int64, limit int) ([]byte, error) {
-	var accumulated []byte
+	// Chunks are collected newest-to-oldest in a slice and joined at the end to avoid
+	// O(N²) copy amplification from prepend-into-growing-buffer on each iteration.
+	var chunks [][]byte
 	accCount := 0
 	chunkEnd := endNs
 	chunkDurNs := coldBackwardChunkDuration.Nanoseconds()
@@ -137,10 +139,19 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 			chunkStart = startNs
 		}
 
+		// Cap per-chunk limit to the remaining rows needed; never overfetch.
+		chunkLimit := limit - accCount
+		if chunkLimit <= 0 {
+			break
+		}
+		if chunkLimit > maxLimitValue {
+			chunkLimit = maxLimitValue
+		}
+
 		chunkParams := cloneURLValues(baseParams)
 		chunkParams.Set("start", strconv.FormatInt(chunkStart, 10))
 		chunkParams.Set("end", strconv.FormatInt(chunkEnd, 10))
-		chunkParams.Set("limit", strconv.Itoa(maxLimitValue))
+		chunkParams.Set("limit", strconv.Itoa(chunkLimit))
 
 		resp, err := p.coldRouter.ColdPost(ctx, "/select/logsql/query", chunkParams)
 		if err != nil {
@@ -158,9 +169,7 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		}
 
 		chunkCount := countNDJSONLines(chunkBody)
-		// Prepend this chunk so the accumulation buffer stays in ascending order
-		// (oldest chunk first, newest chunk last).
-		accumulated = append(chunkBody, accumulated...)
+		chunks = append(chunks, chunkBody)
 		accCount += chunkCount
 
 		if accCount >= limit {
@@ -168,7 +177,12 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		}
 		chunkEnd = chunkStart
 	}
-	return accumulated, nil
+
+	// chunks is newest-to-oldest; reverse so the joined result is ascending (oldest first).
+	for i, j := 0, len(chunks)-1; i < j; i, j = i+1, j-1 {
+		chunks[i], chunks[j] = chunks[j], chunks[i]
+	}
+	return bytes.Join(chunks, nil), nil
 }
 
 func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
