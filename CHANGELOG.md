@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
+- perf(range_metric): remove parser-stage guard from `shouldUseManualRangeMetricCompat` — `rate`, `bytes_rate`, `count_over_time`, and `bytes_over_time` queries containing `| json` or `| logfmt` parser stages now use VL native `stats_query_range` for tumbling windows (`range == step`), previously forced onto the raw log-fetch slow path regardless of window configuration.
 - perf(range_metric): add `stats_query_range` fast path for `sum by (...) (count_over_time/rate({...}[W]))` — replaces raw NDJSON log scan (39% CPU cold proxy) with VL pre-aggregated Prometheus buckets via `| stats by (...) count() as c`. Throughput improvement: 44→126 req/s (c=10) and 33→139 req/s (c=100) on heavy workload.
 - perf(range_metric): extend fast path to `bytes_over_time`/`bytes_rate` using `| stats by (...) sum_len(_msg) as c` — eliminates 4664ms P50 bottleneck for byte-rate metric queries at cold concurrency.
 - perf(patterns): pool `strings.Builder` in `patternLineTokenizer.Join` via `patternJoinBuilderPool` — eliminates per-log-entry heap allocation that was 6237 MB flat (15.56%) and driving `bytes.growSlice` cascade at cold concurrency.
