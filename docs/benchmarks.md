@@ -5,9 +5,9 @@ description: "Six-workload read-path comparison: Loki vs VL+Proxy (warm/cold) vs
 
 # Benchmarks
 
-**Hardware:** Apple M5 Pro, 18 cores, 64 GB RAM, macOS 26.4.1, Go 1.26.2 darwin/arm64, Docker Desktop 29.4.0 (17.3 GiB allocated to Docker).
+**Hardware:** Apple M5 Pro, 18 cores, 64 GB RAM, macOS 26.4.1, Go 1.26.3 darwin/arm64, Docker Desktop 29.4.0 (17.3 GiB allocated to Docker).
 
-**Stack:** Loki 3.4.x, VictoriaLogs v1.50.0, loki-vl-proxy latest. ~8 M log entries across 15 services, 7-day window.
+**Stack:** Loki 3.6.x, VictoriaLogs v1.50.0, loki-vl-proxy latest. ~8 M log entries across 15 services, 7-day window.
 
 **VictoriaLogs flags:** `-defaultParallelReaders=8 -fs.maxConcurrency=64 -memory.allowedPercent=80 -search.maxConcurrentRequests=100 -search.maxQueueDuration=60s`. See [VictoriaLogs tuning](#victorialogs-tuning) for rationale.
 

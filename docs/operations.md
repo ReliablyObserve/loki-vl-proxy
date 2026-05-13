@@ -17,11 +17,12 @@ description: "Day-2 operations: health checks, graceful shutdown, multi-tenancy,
 
 The proxy is stateless (except optional disk cache). Scale horizontally without coordination.
 
-Current implementation note:
+Key scaling controls (all tunable via CLI flags):
 
-- per-client rate limiting, global concurrent-query protection, and the backend circuit breaker are built in with fixed defaults today
-- the current CLI does not expose direct tuning flags for those controls
-- use Grafana refresh policy, ingress shaping, HPA, and cache tuning as the primary operator levers
+- `-max-concurrent 100` — global concurrent backend query cap
+- `-rate-limit-per-second 50` / `-rate-limit-burst 100` — per-client token bucket
+- `-cb-fail-threshold 5` / `-cb-open-duration 10s` — backend circuit breaker
+- use Grafana refresh policy, ingress shaping, HPA, and cache tuning as complementary levers
 
 ### Helm Deployment
 
@@ -136,7 +137,7 @@ Operational recommendation:
 
 | Component | Memory per Unit |
 |-----------|----------------|
-| L1 cache (default 10k entries) | ~50MB |
+| L1 cache | ~50MB per 10k entries |
 | L2 disk cache (bbolt) | ~10MB mmap overhead |
 | Per active query | ~1-5MB (depends on result size) |
 | Singleflight coalescing buffer | Up to 256MB per unique query |
@@ -144,7 +145,7 @@ Operational recommendation:
 
 **Formula**: `base(20MB) + cache(entries × 5KB) + concurrent_queries × 3MB`
 
-For 10k cache entries and 100 concurrent queries: ~370MB recommended limit.
+Default `-cache-max` is `10000` (binary default). The Helm chart ships `50000` to suit light-to-moderate production use. For 50k cache entries and 100 concurrent queries: ~570MB recommended limit.
 
 ### CPU
 
@@ -197,18 +198,22 @@ The proxy uses singleflight to coalesce identical concurrent queries. N identica
 
 ### Built-In Traffic Guards
 
-The current code uses these built-in defaults:
+All traffic guard controls are tunable via CLI flags (or `extraArgs` in the Helm chart):
 
-- per-client rate limit: `50 req/s`
-- per-client burst: `100`
-- global concurrent backend queries: `100`
-- circuit breaker: open after `5` failures, remain open for `10s`
+| Flag | Default | Description |
+|---|---|---|
+| `-rate-limit-per-second` | `50` | Per-client request rate (req/s) |
+| `-rate-limit-burst` | `100` | Per-client burst allowance |
+| `-max-concurrent` | `100` | Global concurrent backend query cap |
+| `-cb-fail-threshold` | `5` | Failures within window to open circuit breaker |
+| `-cb-open-duration` | `10s` | How long circuit breaker stays open |
+| `-cb-window-duration` | `30s` | Failure counting window |
 
-These values are not exposed as CLI or Helm flags today. If they are too strict or too loose for your workload, mitigate at the surrounding layers:
+If defaults are too strict or too loose for your workload, tune at the proxy first, then complement with:
 
-- reduce Grafana auto-refresh and retry pressure
-- add ingress or service-mesh shaping in front of the proxy
-- scale out replicas and raise cache effectiveness before pushing more uncached load through the same pods
+- reduced Grafana auto-refresh and retry pressure
+- ingress or service-mesh shaping in front of the proxy
+- scale out replicas and raise cache effectiveness before pushing more uncached load
 
 ---
 

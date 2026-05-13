@@ -75,6 +75,30 @@ When `detected_level` is synthesized from the `level` label in metric aggregatio
 
 Nested JSON objects (for example a field whose value is itself a JSON object such as `service.name = "api-gateway"` encoded as an object) are now skipped during the detected_fields body scan. Before this fix these appeared as filterable fields with a raw JSON string as their value, which broke the Grafana Drilldown field breakdown panel.
 
+### v1.20.0 — detected_level Inference and Bare Label Matchers
+
+`detected_level` is now synthesised from JSON/logfmt `level`, `severity`, and `lvl` field variants, matching Loki's level inference rules. Bare label matchers (e.g. `{app="api"}` without a filter pipeline) now preserve the stream label set exactly as Loki does.
+
+### v1.21.x — label_replace, label_join, group, count_values, Stream Ordering
+
+`label_replace()` and `label_join()` metric transformations, the `group()` aggregation, and `count_values()` now produce output that matches Loki's label semantics. Stream result ordering for log queries is aligned with Loki's timestamp-descending default.
+
+### v1.29.x — __error__ Opt-In and Cold Storage Routing
+
+The `__error__` / `| drop __error__` mechanism for opting parser-stage metric queries into the VL native stats fast path is now precisely gated: only queries where `| drop __error__` is the sole post-parser stage qualify, preventing false positives from queries that mention `__error__` in label values.
+
+### v1.30.0 — detected_fields Hybrid OTel/Non-OTel
+
+`service_name` alias now appears correctly in `detected_fields` for hybrid datasets that mix OTel `service.name` stream labels with pre-normalised `service_name` labels. The previous guard blocked the alias whenever any entry carried a literal `service_name` stream key.
+
+### v1.31.0 — Bare Parser-Stage Metric Label Scoping
+
+`rate(| json)` and similar bare parser-stage metrics no longer include parsed JSON field names (e.g. `path`, `method`, `status`) as metric series labels. Only stream labels appear in the output, matching Loki's behaviour where parsed fields become metric dimensions only when explicitly named in an outer `by (...)` aggregation.
+
+### v1.31.2 — Parser-Stage Guard Removed From stats Fast Path
+
+`rate`, `bytes_rate`, `count_over_time`, and `bytes_over_time` queries containing `| json` or `| logfmt` parser stages now use VL native `stats_query_range` for tumbling windows (`range == step`). These queries were previously forced onto the raw log-fetch slow path regardless of window type.
+
 ## Edge Cases Covered
 
 - JSON and logfmt parser chains followed by field filters
@@ -87,6 +111,10 @@ Nested JSON objects (for example a field whose value is itself a JSON object suc
 - bare `| unwrap` intermediate-state handling (v1.17.0)
 - metric label pollution when synthesizing `detected_level` (v1.17.1)
 - nested JSON object exclusion from detected_fields body scan (v1.17.1)
+- `label_replace`/`label_join`/`group`/`count_values` metric transformation parity (v1.21.x)
+- `service_name` alias in detected_fields for hybrid OTel/non-OTel datasets (v1.30.0)
+- bare parser-stage metric label scoping (v1.31.0)
+- parser-stage tumbling-window fast path via VL native stats (v1.31.2)
 
 ## Query Families In The Loki Semantics Matrix
 

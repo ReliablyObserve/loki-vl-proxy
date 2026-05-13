@@ -73,20 +73,28 @@ description: Planned features, known gaps, and the contribution priority list fo
 - [x] Tier0 compatibility-edge cache with bounded memory budget, safe GET-only guardrails, and reload invalidation
 - [x] Fleet shadow-copy validation for 3-peer cache reuse plus Tier0/fleet micro-benchmarks
 
-## Planned
+## Planned (recently completed)
 
-- [x] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching (v0.22.0)
-- [x] `@` timestamp modifier (v0.19.0)
-- [x] `unwrap duration()/bytes()` unit conversion (v0.21.0)
-- [x] Subquery syntax `rate(...)[1h:5m]` — proxy-side evaluation (v0.23.0)
-- [x] LRU cache eviction (v0.21.0)
-- [x] Peer cache Phase 1 implementation (DNS discovery + peer fetch) (v0.24.0)
-- [x] System metrics in /metrics (CPU, memory, IO, network via /proc) (v0.19.0)
-- [x] Native VL stream selector optimization for known `_stream_fields` (v0.23.0)
-- [x] PR quality report workflow with coverage, compatibility, and performance delta comments (v0.26.0)
+- [x] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching (0.22.0)
+- [x] `@` timestamp modifier (0.19.0)
+- [x] `unwrap duration()/bytes()` unit conversion (0.21.0)
+- [x] Subquery syntax `rate(...)[1h:5m]` — proxy-side evaluation (0.23.0)
+- [x] LRU cache eviction (0.21.0)
+- [x] Peer cache Phase 1 implementation (DNS discovery + peer fetch) (0.24.0)
+- [x] System metrics in /metrics (CPU, memory, IO, network via /proc) (0.19.0)
+- [x] Native VL stream selector optimization for known `_stream_fields` (0.23.0)
+- [x] PR quality report workflow with coverage, compatibility, and performance delta comments (0.26.0)
+- [x] Add bounded peer hot-read-ahead (top-N hot keys with per-interval key/byte/concurrency budgets, jitter, and tenant fairness) to improve non-owner local hit rates without causing peer traffic storms (1.0.25)
+- [x] Add regression/perf suite for collapse forwarding and hot-read-ahead interactions (owner/non-owner paths, coalescing efficiency, backend offload delta) (1.0.25)
+- [x] Promote compose-backed e2e fleet cache smoke coverage into required GitHub Actions for pull requests and post-merge `main` runs (0.27.7)
+- [x] fastjson + streaming rewrite of stats hot path — eliminate per-entry heap allocations in `collectRangeMetricSamples` and stats response assembly (1.30.0–1.31.2)
+- [x] `stats_query_range` fast path for grouped and ungrouped metric queries — `sum by (...)` count/rate/bytes queries bypass raw log scan; heavy workload throughput 4× vs cold proxy baseline (1.30.0)
+- [x] Cold storage backend routing — split queries across hot VL and cold Victoria Lakehouse by configurable time boundary (1.28.0)
+- [x] allocation pool pass — gzip reader pool, gob buffer pool, aggregator scalar eliminations, patternJoinBuilderPool, logfmt single-pass scanning, series/stats buffer pooling (1.31.2)
+- [x] Parser-stage guard removal from fast path — `rate`/`count_over_time`/`bytes_rate`/`bytes_over_time` with `| json`/`| logfmt` use VL native stats for tumbling windows (1.31.2)
+
+## Planned (open)
+
 - [ ] Tighten remaining merged-tenant Drilldown metadata accuracy for field and label cardinality surfaces
 - [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests
 - [ ] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
-- [x] Add bounded peer hot-read-ahead (top-N hot keys with per-interval key/byte/concurrency budgets, jitter, and tenant fairness) to improve non-owner local hit rates without causing peer traffic storms (v1.0.25)
-- [x] Add regression/perf suite for collapse forwarding and hot-read-ahead interactions (owner/non-owner paths, coalescing efficiency, backend offload delta) (v1.0.25)
-- [x] Promote compose-backed e2e fleet cache smoke coverage into required GitHub Actions for pull requests and post-merge `main` runs (v0.27.7)
