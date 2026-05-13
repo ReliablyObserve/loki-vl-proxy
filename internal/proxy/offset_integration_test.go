@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -117,13 +116,124 @@ func TestQueryRange_MultipleOffsetReturns400(t *testing.T) {
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	params := url.Values{}
-	params.Set("query", fmt.Sprintf(`rate({app="a"}[5m] offset 1h) + rate({app="b"}[5m] offset 2h)`))
+	params.Set("query", `rate({app="a"}[5m] offset 1h) + rate({app="b"}[5m] offset 2h)`)
 	params.Set("start", "1700000000")
 	params.Set("end", "1700001800")
 	params.Set("step", "60")
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for multiple offsets, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestQuery_OffsetShiftsTime(t *testing.T) {
+	// Instant query: sum(count_over_time({app="nginx"}[5m] offset 1h))
+	// eval time T → VL must receive time=T-1h.
+	base := time.Unix(1700000000, 0).UTC()
+	offset := time.Hour
+
+	var gotTime string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		switch r.URL.Path {
+		case "/select/logsql/stats_query":
+			gotTime = r.FormValue("time")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"resultType":"vector","result":[{"metric":{},"value":[1700000000,"42"]}]}}`))
+		default:
+			if r.URL.Path != "/metrics" {
+				t.Logf("unhandled: %s", r.URL.Path)
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	params.Set("query", `sum(count_over_time({app="nginx"}[5m] offset 1h))`)
+	params.Set("time", strconv.FormatInt(base.UnixNano(), 10))
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQuery(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if gotTime == "" {
+		t.Fatal("VL backend never received a stats_query request")
+	}
+
+	// nanosToVLTimestamp converts to Unix seconds; allow ±1s tolerance.
+	gotTimeSec, err := strconv.ParseInt(gotTime, 10, 64)
+	if err != nil {
+		t.Fatalf("could not parse captured time %q: %v", gotTime, err)
+	}
+	wantTimeSec := base.Add(-offset).Unix()
+	diff := gotTimeSec - wantTimeSec
+	if diff < -1 || diff > 1 {
+		t.Errorf("time: got %d want ~%d (diff %d); expected time shifted back by 1h", gotTimeSec, wantTimeSec, diff)
+	}
+}
+
+func TestQuery_NoOffsetUnchanged(t *testing.T) {
+	// Verify that instant queries without offset leave the time param unmodified.
+	base := time.Unix(1700000000, 0).UTC()
+
+	var gotTime string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/select/logsql/stats_query" {
+			_ = r.ParseForm()
+			gotTime = r.FormValue("time")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"resultType":"vector","result":[{"metric":{},"value":[1700000000,"42"]}]}}`))
+		} else {
+			http.NotFound(w, r)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	params.Set("query", `sum(count_over_time({app="nginx"}[5m]))`)
+	params.Set("time", strconv.FormatInt(base.UnixNano(), 10))
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQuery(rec, req)
+
+	if gotTime == "" {
+		t.Fatal("VL backend never received a stats_query request")
+	}
+
+	gotTimeSec, err := strconv.ParseInt(gotTime, 10, 64)
+	if err != nil {
+		t.Fatalf("could not parse captured time %q: %v", gotTime, err)
+	}
+	wantTimeSec := base.Unix()
+	diff := gotTimeSec - wantTimeSec
+	if diff < -1 || diff > 1 {
+		t.Errorf("time should be ~unmodified: got %d want %d (diff %d)", gotTimeSec, wantTimeSec, diff)
+	}
+}
+
+func TestQuery_MultipleOffsetReturns400(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	params.Set("query", `count_over_time({app="a"}[5m] offset 1h) + count_over_time({app="b"}[5m] offset 2h)`)
+	params.Set("time", "1700000000")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQuery(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for multiple offsets, got %d: %s", rec.Code, rec.Body.String())

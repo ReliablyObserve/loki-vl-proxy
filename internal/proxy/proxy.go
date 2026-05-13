@@ -1632,6 +1632,28 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	r = p.injectAuthFingerprint(r)
 
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+
+	// Extract and apply LogQL offset: strip the offset clause and shift the eval
+	// time backward so preferWorkingParser probes the historical window where the
+	// offset data actually lives. All downstream dispatch paths see the shifted time.
+	{
+		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
+		if offsetErr != nil {
+			p.writeError(w, http.StatusBadRequest, offsetErr.Error())
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		logqlQuery = strippedQuery
+		if offsetDur != 0 {
+			// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
+			// it does not alias the map captured by withOrgID's origRequestKey reference.
+			_ = r.ParseForm()
+			if timeNs, ok := parseLokiTimeToUnixNano(r.FormValue("time")); ok {
+				r.Form.Set("time", nanosToVLTimestamp(timeNs-offsetDur.Nanoseconds()))
+			}
+		}
+	}
+
 	logqlQuery = p.preferWorkingParser(r.Context(), logqlQuery, r.FormValue("start"), r.FormValue("end"))
 
 	if spec, ok := parseBareParserMetricCompatSpec(logqlQuery); ok {
