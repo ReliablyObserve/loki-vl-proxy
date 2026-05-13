@@ -21,6 +21,8 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 | `-tls-key-file` | — | — | TLS key file for HTTPS |
 | `-tls-client-ca-file` | — | — | CA file for verifying HTTPS client certificates |
 | `-tls-require-client-cert` | — | `false` | Require and verify HTTPS client certificates |
+| `-log-request-sample-rate` | — | `0` | Log one in every N requests for access logging (`0` = disabled) |
+| `-cache-disabled` | — | `false` | Disable the in-memory L1 cache entirely (useful for benchmarking raw translation overhead) |
 
 ## Label Translation
 
@@ -265,6 +267,27 @@ Tier0 is a separate in-memory cache instance that reuses the same cache implemen
 | `-disk-cache-min-ttl` | — | `30s` | Minimum TTL required before an entry is eligible for L2 disk-cache writes |
 | `-disk-cache-max-bytes` | — | `0` | Maximum on-disk L2 cache size in bytes (`0` = unlimited) |
 
+## Cold Storage Backend
+
+Route queries for old data to a separate cold backend (e.g. Victoria Lakehouse or a second VictoriaLogs instance). Queries spanning both hot and cold data are split and merged transparently.
+
+| Flag | Env | Default | Description |
+|---|---|---|---|
+| `-cold-enabled` | — | `false` | Enable cold storage backend routing |
+| `-cold-backend` | — | — | Cold storage backend URL (e.g. `http://lakehouse:9428`) |
+| `-cold-boundary` | — | `168h` | Data older than this age is routed to the cold backend (default 7 days) |
+| `-cold-overlap` | — | `1h` | Overlap window around the cold boundary — queries spanning the boundary include this overlap on both sides to avoid gaps |
+| `-cold-manifest-refresh` | — | `5m` | How often to refresh the cold backend capability manifest |
+| `-cold-timeout` | — | `30s` | Timeout for cold backend requests |
+
+```bash
+./loki-vl-proxy \
+  -backend=http://victorialogs:9428 \
+  -cold-enabled \
+  -cold-backend=http://lakehouse:9428 \
+  -cold-boundary=336h  # 14 days
+```
+
 ## Query Range Window Cache
 
 These flags control Loki-compatible `query_range` split/merge execution with per-window cache reuse.
@@ -492,6 +515,16 @@ Operational notes:
 | `-otel-service-instance-id` | `OTEL_SERVICE_INSTANCE_ID` | — | `service.instance.id` resource metadata for OTLP metrics/logs (not duplicated per JSON log line) |
 | `-deployment-environment` | `DEPLOYMENT_ENVIRONMENT` | — | `deployment.environment.name` resource metadata for OTLP metrics/logs (not duplicated per JSON log line) |
 
+## Go Runtime Tuning
+
+| Flag | Env | Default | Description |
+|---|---|---|---|
+| `-go-mem-limit` | — | `0` | Explicit `GOMEMLIMIT` in bytes. Overrides `-go-mem-limit-percent` when set (`0` = disabled) |
+| `-go-mem-limit-percent` | — | `85` | `GOMEMLIMIT` as a percentage of the detected container memory limit (from `/proc` cgroup). Ignored when `-go-mem-limit` is set |
+| `-go-gc-percent` | — | `200` | `GOGC` target percentage. The proxy default (`200`) halves GC frequency versus Go's built-in default of `100`, trading higher peak RSS for lower GC CPU. Set `-1` to disable GC target entirely |
+
+See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for guidance on sizing these for your deployment.
+
 ## HTTP Hardening
 
 | Flag | Env | Default | Description |
@@ -553,22 +586,19 @@ Backend version gate notes:
 
 ## Built-In Protection Defaults
 
-The rate limiter and global concurrency guard use built-in defaults. The circuit breaker and request coalescer are tunable via CLI flags:
+All protection controls are tunable via CLI flags:
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
+| `-max-concurrent` | — | `100` | Maximum concurrent backend queries allowed globally |
+| `-rate-limit-per-second` | — | `50` | Per-client request rate limit (requests/second) |
+| `-rate-limit-burst` | — | `100` | Per-client burst allowance above the rate limit |
 | `-cb-fail-threshold` | — | `5` | Number of backend failures within the sliding window required to open the circuit breaker |
-| `-cb-open-duration` | — | `2s` | How long the circuit breaker stays open before entering half-open state |
+| `-cb-open-duration` | — | `10s` | How long the circuit breaker stays open before entering half-open state |
 | `-cb-window-duration` | — | `30s` | Sliding window duration for failure counting; sporadic failures outside the window do not accumulate |
 | `-coalescer-disabled` | — | `false` | Disable request coalescing (singleflight); every concurrent request makes its own backend call — useful with `-cache-disabled` to measure raw translation overhead |
 
-Built-in defaults not exposed as flags:
-
-- per-client rate limit: `50 req/s`
-- per-client burst: `100`
-- global concurrent backend queries: `100`
-
-Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer if you need tighter control.
+Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer for additional control beyond these flags.
 
 ## Observability and Admin Surfaces
 

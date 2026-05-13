@@ -211,14 +211,25 @@ podDisruptionBudget:
   minAvailable: 2
 ```
 
-The current chart does not expose direct rate-limit, max-concurrency, or circuit-breaker tuning flags. The proxy currently uses built-in defaults in code:
+The proxy exposes all traffic-shaping controls as CLI flags, passable via `extraArgs` in the Helm chart:
 
-- per-client rate limit `50 req/s`
-- per-client burst `100`
-- global concurrent backend queries `100`
-- circuit breaker open after `5` failures for `10s`
+| Flag | Default | Description |
+|---|---|---|
+| `-rate-limit-per-second` | `50` | Per-client request rate (req/s) |
+| `-rate-limit-burst` | `100` | Per-client burst allowance |
+| `-max-concurrent` | `100` | Global concurrent backend query cap |
+| `-cb-fail-threshold` | `5` | Failures within window to open circuit breaker |
+| `-cb-open-duration` | `10s` | Duration circuit breaker stays open |
 
-Use HPA, cache sizing, Grafana refresh policy, and outer traffic shaping as the main scaling controls.
+```yaml
+extraArgs:
+  max-concurrent: "200"
+  rate-limit-per-second: "100"
+  rate-limit-burst: "200"
+  cb-open-duration: "30s"
+```
+
+Use HPA, cache sizing, Grafana refresh policy, and outer traffic shaping as complementary scaling controls.
 
 ## Monitoring Metrics
 

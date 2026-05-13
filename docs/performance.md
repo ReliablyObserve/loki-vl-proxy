@@ -315,8 +315,8 @@ The Helm chart now injects `GOMEMLIMIT` at runtime. Resolution order:
 In percentage mode, the chart computes bytes and exports that numeric value as `GOMEMLIMIT`.
 
 ```yaml
-# Default: 70% of memory limit
-goMemLimitPercent: 70   # 256Mi * 70% => GOMEMLIMIT=187904819 (bytes)
+# Default: 85% of memory limit
+goMemLimitPercent: 85   # 256Mi * 85% => GOMEMLIMIT=228589772 (bytes)
 
 # Override with explicit value
 goMemLimit: "500MiB"    # ignores goMemLimitPercent
@@ -326,7 +326,7 @@ Supported memory-limit units for percentage mode are integer quantities with `Ki
 
 ### GOGC
 
-`GOGC=100` (Go default) is set explicitly. Increase for less CPU overhead at the cost of more memory, or decrease for tighter memory control.
+`GOGC=200` is the proxy default (set via `-go-gc-percent=200`), halving GC frequency at the cost of higher peak RSS versus Go's default of 100. Set `-go-gc-percent=100` to restore Go's default, or lower it for tighter memory control.
 
 ### Go Runtime Metrics Exposed
 
