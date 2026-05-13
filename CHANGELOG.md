@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.31.4] - 2026-05-13
+
 ### Documentation
 
 - docs: comprehensive accuracy audit across 9 doc files — fix wrong flag defaults (`-cb-open-duration` 2s→10s, `goMemLimitPercent` 70→85, `GOGC` 100→200, Go requirement 1.26.2→1.26.3, Loki benchmark stack 3.4.x→3.6.x), correct "not exposed as flags" claim for `-rate-limit-per-second`/`-rate-limit-burst`/`-max-concurrent` in configuration.md + operations.md + scaling.md, add missing Cold Storage Backend section to configuration.md (`-cold-enabled`, `-cold-backend`, `-cold-boundary`, `-cold-overlap`, `-cold-manifest-refresh`, `-cold-timeout`; shipped in 1.28.0 with zero doc coverage), add Go Runtime Tuning flag section, extend compatibility-loki.md release notes from v1.17.1 through v1.31.2, refresh roadmap.md Completed section through v1.31.2, clarify buildinfo `2.9.0` is intentional.
