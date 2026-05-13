@@ -69,6 +69,9 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 
+	// TODO: fanout is serial — each tenant sub-request blocks the next. For high
+	// fan-out counts (>4 tenants) parallel dispatch would reduce latency. Tracked
+	// in docs/KNOWN_ISSUES.md under "Multi-tenant serial fanout".
 	recorders := make([]*httptest.ResponseRecorder, 0, len(filteredTenants))
 	for _, tenantID := range filteredTenants {
 		subReq := filteredReq.Clone(filteredReq.Context())

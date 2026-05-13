@@ -33,6 +33,7 @@ type originalRangeMetricSpec struct {
 	UnwrapField string
 	UnwrapConv  string
 	HasUnwrap   bool
+	BaseQuery   string // inner stream selector + pipeline, without range window [T]
 }
 
 type rangeMetricSample struct {
@@ -129,6 +130,7 @@ func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) 
 	if spec.Window < 0 {
 		return originalRangeMetricSpec{}, false
 	}
+	spec.BaseQuery = strings.TrimSpace(body[:bracketOpen])
 
 	unwrap := rangeMetricUnwrapRE.FindStringSubmatch(body)
 	if len(unwrap) == 2 {
@@ -290,11 +292,25 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// (e.g. sum(rate({...} | json [w]))). For non-sliding windows (range == step), VL can
 	// execute them natively — no manual decomposition needed. For sliding windows (range >
 	// step), fall through to the manual path which implements correct per-step accumulation.
+	//
+	// Exception: queries with parser stages (| json, | logfmt, etc.) without an explicit
+	// "| drop __error__" opt-in must NOT use VL native stats for tumbling windows. Loki
+	// excludes parse-failed lines from metric aggregation; VL counts all lines. The manual
+	// path (collectRangeMetricSamples) preserves Loki's error-exclusion semantics.
 	if strings.Contains(logsqlQuery, "| math ") {
 		step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
 		origSpec, hasOrigSpec := parseOriginalRangeMetricSpec(originalLogql)
 		if stepOk && hasOrigSpec && origSpec.Window > 0 && origSpec.Window <= step {
-			return false
+			spec, specOk := parseStatsCompatSpec(logsqlQuery)
+			// Parser stages without an explicit drop-error opt-in require the manual path
+			// to preserve Loki's error-exclusion semantics. Use origSpec.BaseQuery (the inner
+			// LogQL stream selector + pipeline without the range window) for the drop-error
+			// check — hasDropErrorOnlyPostParserStage requires the pipeline without outer
+			// aggregation or range window brackets.
+			if !specOk || !queryUsesParserStages(spec.BaseQuery) || hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
+				return false
+			}
+			// Parser stage without drop-error — fall through to the manual path below.
 		}
 	}
 	spec, ok := parseStatsCompatSpec(logsqlQuery)
@@ -319,6 +335,13 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// semantically equivalent for VL native stats — only range > step produces
 	// overlapping sliding windows where VL tumbling-bucket stats diverges from LogQL.
 	noSlidingOverlap := step > 0 && origSpec.Window > 0 && origSpec.Window <= step
+	// For tumbling windows, an explicit "| drop __error__" in the original LogQL opts in to
+	// VL's count-all semantics (parse failures counted). Use origSpec.BaseQuery — the inner
+	// pipeline without outer aggregation or range brackets — so hasDropErrorOnlyPostParserStage
+	// can correctly identify the drop-error clause.
+	if noSlidingOverlap && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
+		return false
+	}
 	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, noSlidingOverlap) {
 		return false
 	}
@@ -388,6 +411,16 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	// natively supports inline filter pipelines and parser stages.
 	switch manualFunc {
 	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
+		// Parser stages require the slow log-fetch path: Loki excludes parse-failed lines
+		// from metric aggregation while VL native stats counts all lines. The drop-error
+		// opt-in check (hasDropErrorOnlyPostParserStage) only works on LogQL syntax; the
+		// baseQuery here is VL-translated syntax (| unpack_json etc.), so we conservatively
+		// route all parser-stage queries to the manual path. Bare parser metric queries
+		// (proxyBareParserMetricQueryRange) handle the drop-error fast path for the
+		// ungrouped case where the original LogQL is available.
+		if queryUsesParserStages(baseQuery) {
+			return true
+		}
 		return !rangeEqualsStep
 	}
 
@@ -444,7 +477,10 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	case "__bytes__":
 		statsAggFunc = "sum_len(_msg) as c"
 	}
-	if statsAggFunc != "" {
+	// Mirror the parser-stage guard from shouldUseManualRangeMetricCompat: if the query
+	// uses parser stages, skip the stats_query_range fast path to preserve Loki's
+	// parse-error exclusion semantics (Loki excludes parse-failed lines; VL counts all).
+	if statsAggFunc != "" && !queryUsesParserStages(spec.BaseQuery) {
 		hasStreamSentinel := false
 		for _, g := range spec.GroupBy {
 			if g == "_stream" {
@@ -576,11 +612,12 @@ func (p *Proxy) collectRangeMetricHits(
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 		return nil, fmt.Errorf("stats_query_range backend %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	const maxStatsResponseBytes = 64 << 20 // 64 MB
+	body, err := readBodyLimited(resp.Body, maxStatsResponseBytes)
 	if err != nil {
 		return nil, err
 	}
