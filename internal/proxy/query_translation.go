@@ -400,7 +400,7 @@ var (
 	// logqlOffsetRE matches the "offset <duration>" clause that appears after a
 	// range window bracket, e.g. "[5m] offset 1h". Capture group 1 is the
 	// duration string. Supports negative offsets: "[5m] offset -30m".
-	logqlOffsetRE = regexp.MustCompile(`\]\s+offset\s+(-?[\w.]+)`)
+	logqlOffsetRE = regexp.MustCompile(`\]\s*offset\s+(-?[\w.]+)`)
 )
 
 // hasTextExtractionParser returns true when the LogQL query contains any

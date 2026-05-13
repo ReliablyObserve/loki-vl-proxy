@@ -60,6 +60,12 @@ func TestExtractLogQLOffset(t *testing.T) {
 			wantOffset: time.Hour,
 			wantQuery:  `rate({app="a"}[5m]) + rate({app="b"}[5m])`,
 		},
+		{
+			name:       "no space before offset keyword",
+			input:      `rate({app="nginx"}[5m]offset 1h)`,
+			wantOffset: time.Hour,
+			wantQuery:  `rate({app="nginx"}[5m])`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
