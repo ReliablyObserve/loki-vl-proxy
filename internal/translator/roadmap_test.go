@@ -57,6 +57,8 @@ func TestOffsetModifier_Recognized(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// The translator receives LogQL that may include an offset clause.
+			// VL LogsQL has no offset concept; verify the keyword does not appear in the output.
 			result, err := TranslateLogQL(tt.logql)
 			if tt.wantErr && err == nil {
 				t.Error("expected error, got nil")
@@ -64,8 +66,13 @@ func TestOffsetModifier_Recognized(t *testing.T) {
 			if !tt.wantErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
-			if err == nil && result == "" {
-				t.Error("expected non-empty result")
+			if err == nil {
+				if result == "" {
+					t.Error("expected non-empty result")
+				}
+				if strings.Contains(result, " offset ") {
+					t.Errorf("translated query still contains 'offset': %s", result)
+				}
 			}
 		})
 	}
