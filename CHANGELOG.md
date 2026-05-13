@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `offset` directive support: LogQL queries containing `rate({...}[5m] offset 1h)` now correctly shift the evaluation window backward by the offset duration. The proxy strips the `offset` clause and adjusts `start`/`end` (range queries) or `time` (instant queries) before dispatch. Multiple distinct offsets in the same query return HTTP 400.
+
 ## [1.31.4] - 2026-05-13
 
 ### Documentation
