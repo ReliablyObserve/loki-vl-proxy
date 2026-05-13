@@ -130,7 +130,7 @@ The following Loki semantics are implemented in the proxy to bridge gaps where V
 
 | LogQL feature | Proxy behavior |
 |---|---|
-| `offset 1h` on range vectors | NOT YET IMPLEMENTED -- time-window shifting gap; offset is silently stripped |
+| `offset 1h` on range vectors | Supported: proxy strips the offset clause and shifts `start`/`end` (or `time` for instant queries) backward by the offset duration before backend dispatch; multiple distinct offsets in the same query return HTTP 400 |
 | `@ <timestamp>` modifier | Normalized/stripped in translation for VictoriaLogs backend requests |
 | Subquery `rate(...)[1h:5m]` | Proxy runs inner query across sub-steps and applies outer aggregation |
 | Range-vector metric windows (`*_over_time`, `rate`, `count_over_time`, `bytes_*`, `rate_counter`) | Proxy applies Loki-compatible sliding-window evaluation over step-aligned timestamps and emits matrix/vector responses |
