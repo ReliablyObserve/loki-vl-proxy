@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -237,5 +238,62 @@ func TestQuery_MultipleOffsetReturns400(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("expected 400 for multiple offsets, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestQuery_OffsetWithMissingTimeDefaultsToNow(t *testing.T) {
+	// When the client omits the "time" parameter (Loki defaults to now),
+	// the proxy must still apply the offset shift — defaulting time to now internally.
+	var capturedTime string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		switch r.URL.Path {
+		case "/select/logsql/stats_query":
+			capturedTime = r.FormValue("time")
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":{"resultType":"vector","result":[{"metric":{},"value":[1700000000,"42"]}]}}`)
+		default:
+			if r.URL.Path != "/metrics" {
+				t.Logf("unhandled: %s", r.URL.Path)
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+
+	p := newGapTestProxy(t, backend.URL)
+
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query", nil)
+	q := req.URL.Query()
+	q.Set("query", `count_over_time({app="nginx"}[5m] offset 1h)`)
+	// Intentionally omit "time" — client relies on default (now).
+	req.URL.RawQuery = q.Encode()
+
+	rec := httptest.NewRecorder()
+	beforeNs := time.Now().UnixNano()
+	p.handleQuery(rec, req)
+	afterNs := time.Now().UnixNano()
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if capturedTime == "" {
+		t.Fatal("backend should have received a time parameter")
+	}
+
+	// nanosToVLTimestamp converts to Unix seconds.
+	capturedSec, err := strconv.ParseInt(capturedTime, 10, 64)
+	if err != nil {
+		t.Fatalf("could not parse captured time %q: %v", capturedTime, err)
+	}
+
+	// Expected: now - 1h (in seconds). Allow ±5s tolerance for test execution time.
+	nowSec := (beforeNs + afterNs) / 2 / int64(time.Second)
+	expectedSec := nowSec - int64(time.Hour/time.Second)
+	diff := capturedSec - expectedSec
+	if diff < -5 || diff > 5 {
+		t.Errorf("time: got %d want ~%d (diff %d); expected time shifted back by 1h from now", capturedSec, expectedSec, diff)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1648,7 +1649,13 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 			// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
 			// it does not alias the map captured by withOrgID's origRequestKey reference.
 			_ = r.ParseForm()
-			if timeNs, ok := parseLokiTimeToUnixNano(r.FormValue("time")); ok {
+			rawTime := r.FormValue("time")
+			if rawTime == "" {
+				// Loki allows omitting "time"; it defaults to now.
+				// We must materialise that default here so the offset shift is applied.
+				rawTime = strconv.FormatInt(time.Now().UnixNano(), 10)
+			}
+			if timeNs, ok := parseLokiTimeToUnixNano(rawTime); ok {
 				r.Form.Set("time", nanosToVLTimestamp(timeNs-offsetDur.Nanoseconds()))
 			}
 		}
