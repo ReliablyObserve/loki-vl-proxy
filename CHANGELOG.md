@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Underscore proxy: Drilldown log count blank for Loki-push services**: When using `-label-style=underscores`, `sum by (service_name) (count_over_time(...))` queries returned `service_name=""` for services whose labels were stored as Loki stream labels (not VL dotted fields). The proxy translated `by(service_name)` → `by(service.name)`, but VL returned an empty value when no dotted field existed — Grafana Drilldown then displayed the label name as text instead of a numeric count. Fixed by expanding the `by()` clause to include both forms; VL groups by whichever exists and the response is coalesced to prefer the non-empty value.
+
 ## [1.32.3] - 2026-05-14
 
 ### CI
