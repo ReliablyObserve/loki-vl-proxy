@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.32.2] - 2026-05-14
+
 ### Breaking Changes
 
 - **Mixed-offset expressions now return HTTP 400**: A LogQL expression where some range vectors carry an `offset` and others do not — e.g. `rate({app="a"}[5m] offset 1h) + rate({app="b"}[5m])` — now returns `HTTP 400` with a descriptive error instead of silently returning incorrect data. The proxy implements offset support via a global time shift applied to `start`/`end`; that shift cannot correctly serve a mix of offset-bearing and non-offset range vectors in the same expression.
