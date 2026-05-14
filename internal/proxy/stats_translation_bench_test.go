@@ -26,14 +26,12 @@ func buildStatsMatrixBody(n, m int) []byte {
 		if i > 0 {
 			sb.WriteByte(',')
 		}
-		sb.WriteString(`{"metric":{"service.name":"service-`)
-		sb.WriteString(fmt.Sprintf("%d", i))
-		sb.WriteString(`"},"values":[`)
+		fmt.Fprintf(&sb, `{"metric":{"service.name":"service-%d"},"values":[`, i)
 		for j := 0; j < m; j++ {
 			if j > 0 {
 				sb.WriteByte(',')
 			}
-			sb.WriteString(fmt.Sprintf("[%d,\"%d\"]", 1700000000+j*60, (i+1)*100+j))
+			fmt.Fprintf(&sb, "[%d,\"%d\"]", 1700000000+j*60, (i+1)*100+j)
 		}
 		sb.WriteString(`]}`)
 	}
@@ -52,14 +50,12 @@ func buildStatsMatrixBodyCoalesced(n, m int) []byte {
 			sb.WriteByte(',')
 		}
 		// Loki-push shape: service.name="" (not found), service_name=<value>
-		sb.WriteString(`{"metric":{"service.name":"","service_name":"service-`)
-		sb.WriteString(fmt.Sprintf("%d", i))
-		sb.WriteString(`"},"values":[`)
+		fmt.Fprintf(&sb, `{"metric":{"service.name":"","service_name":"service-%d"},"values":[`, i)
 		for j := 0; j < m; j++ {
 			if j > 0 {
 				sb.WriteByte(',')
 			}
-			sb.WriteString(fmt.Sprintf("[%d,\"%d\"]", 1700000000+j*60, (i+1)*100+j))
+			fmt.Fprintf(&sb, "[%d,\"%d\"]", 1700000000+j*60, (i+1)*100+j)
 		}
 		sb.WriteString(`]}`)
 	}
