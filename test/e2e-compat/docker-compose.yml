@@ -494,11 +494,18 @@ services:
 
   # Continuous log generator — dual-writes realistic multi-service logs to Loki + VictoriaLogs.
   # Provides live data for Grafana Explore UI tests and Logs Drilldown pattern detection.
+  #
+  # profile: ui — intentionally kept so this does NOT start during automated e2e-compat test
+  # runs (which use plain "docker compose up -d"). High-volume non-OTel data from the generator
+  # dilutes detected_fields results and breaks OTel tests. UI/Drilldown manual testing uses:
+  #   docker compose --profile ui up -d
+  #
   # LOG_INTERVAL=2 / LOG_BATCH=15: ~75 lines/s total — enough for stable pattern clustering
   # across time-step buckets so Drilldown shows a continuous timeline rather than sparse points.
   log-generator:
     image: python:3.12-alpine
     container_name: e2e-log-generator
+    profiles: ["ui"]
     command: python /scripts/log-generator.py
     volumes:
       - ./log-generator.py:/scripts/log-generator.py:ro
