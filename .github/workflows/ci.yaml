@@ -467,6 +467,57 @@ jobs:
             awk -F'\t' '{printf "| `%s` | %s | %s | %s |\n", $1, $2, $3, $4}' bench-cache.tsv
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Run stats translation benchmarks (regression guard)
+        run: |
+          go test ./internal/proxy/ -run "^$" -bench 'BenchmarkStatsTranslation_' -benchmem -count=1 -benchtime=200ms \
+            | tee bench-stats-translation.txt
+
+          awk '
+            /^BenchmarkStatsTranslation_.*ns\/op/ {
+              bench=$1
+              sub(/-[0-9]+$/, "", bench)
+              printf "%s\t%s\t%s\t%s\n", bench, $3, $5, $7
+            }
+          ' bench-stats-translation.txt > bench-stats-translation.tsv
+
+          expected=5
+          actual=$(wc -l < bench-stats-translation.tsv | tr -d " ")
+          if [ "$actual" -ne "$expected" ]; then
+            echo "FAIL: expected ${expected} stats-translation benchmark rows, got ${actual}"
+            cat bench-stats-translation.tsv
+            exit 1
+          fi
+
+          awk -F'\t' '
+            BEGIN { fail=0 }
+            {
+              name=$1; ns=$2+0
+              # translateStatsResponseLabels: fastjson parse + map rebuild per series.
+              # Small (10 series × 60 pts) must stay under 500 µs on shared runners.
+              # Large (100 series × 60 pts) must stay under 5 ms on shared runners.
+              # addUnderscorefallbackByLabels: pure string search + slice append, must stay < 5 µs.
+              limit=0
+              if (name ~ /Small/) { limit=500000 }
+              if (name ~ /Large/) { limit=5000000 }
+              if (name ~ /addUnderscorefallbackByLabels/) { limit=5000 }
+              if (limit > 0 && ns > limit) {
+                printf "FAIL: %s ns/op %.2f exceeds threshold %.0f — performance regression detected\n", name, ns, limit
+                fail=1
+              }
+            }
+            END { exit fail }
+          ' bench-stats-translation.tsv
+
+      - name: Publish stats translation benchmark summary
+        run: |
+          {
+            echo "### Stats Translation Benchmarks"
+            echo ""
+            echo "| Benchmark | ns/op | B/op | allocs/op |"
+            echo "|---|---:|---:|---:|"
+            awk -F'\t' '{printf "| `%s` | %s | %s | %s |\n", $1, $2, $3, $4}' bench-stats-translation.tsv
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Run load tests
         run: |
           go test ./internal/proxy/ -run "TestLoad" -v -timeout=120s -count=1 \
@@ -484,6 +535,8 @@ jobs:
             bench-patterns.tsv
             bench-cache.txt
             bench-cache.tsv
+            bench-stats-translation.txt
+            bench-stats-translation.tsv
             load-results.txt
 
       - name: Check for performance regressions
