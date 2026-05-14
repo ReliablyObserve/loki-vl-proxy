@@ -35,11 +35,29 @@ Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
 
 Measured head-to-head against tuned Loki: Apple M5 Pro (18 cores, 64 GB RAM), ~8 M log entries across 15 services, 7-day window.
 
-### Dashboards and Explore — production steady state
+### Cold proxy — honest baseline
 
-Grafana dashboards auto-refresh every 30 s. After the first fetch, every repeated query is served from in-memory cache without touching VictoriaLogs.
+No cache, no coalescer. Pure translation overhead + HTTP proxying + VictoriaLogs response time. This is the floor — what you get before any caching kicks in.
 
-| Workload | Concurrency | Loki req/s | Proxy req/s | Throughput | P50 Loki | P50 Proxy | Latency |
+| Workload | Concurrency | Cold proxy | Loki | Ratio |
+|---|:---:|---:|---:|:---:|
+| Small metadata queries | c=10 | 1,212 req/s | ~880 req/s | **1.4× faster** |
+| Small metadata queries | c=50 | 1,583 req/s | ~780 req/s | **2× faster** |
+| Heavy pipeline queries | c=10 | 126–188 req/s | ~161–472 req/s | **~parity** |
+| Heavy pipeline queries | c=100 | 139 req/s | ~33 req/s | **4.2× faster** |
+| Long-range (6 h–72 h) | c=10 | 2× faster than Loki | — | parallel sub-window fetching |
+| Compute (rate, topk) | c=10 | 210 req/s | ~2,403 req/s | 0.09× — N VL calls per metric query |
+
+- **Small and metadata queries:** 1.4–2× faster than Loki cold — VL scans are faster than Loki's chunk store for label/series queries.
+- **Heavy pipeline queries:** parity to 4.2× faster depending on concurrency — `stats_query_range` fast path eliminates 39% cold CPU for `count_over_time`/`rate` queries.
+- **Long-range queries:** 2× faster cold — parallel sub-window fetching completes before Loki's sequential chunk scan.
+- **Compute aggregations (`quantile_over_time`, `topk`, multi-stage pipelines):** each metric query fans out to N VL calls; pprof-guided alloc fixes lifted cold throughput from 40 to 210 req/s. Historical sub-windows are cached on first fetch (24 h TTL), so repeated compute queries approach warm performance.
+
+### Warm cache — what production steady-state looks like
+
+Grafana dashboards auto-refresh every 30 s. After the first fetch, repeated queries are served from in-memory cache without touching VictoriaLogs. The numbers below are **100% cache-hit results** — they represent the ceiling, not the typical case. Real production performance sits between the cold floor above and these warm numbers depending on your dashboard diversity and refresh interval.
+
+| Workload | Concurrency | Loki req/s | Proxy (warm) req/s | Throughput | P50 Loki | P50 Proxy | Latency |
 |---|:---:|---:|---:|:---:|---:|---:|:---:|
 | Small panels | c=10 | 2,011 | 15,626 | **7.8× faster** | 4 ms | 587 µs | **6.8× faster** |
 | Small panels | c=100 | 2,290 | 27,513 | **12× faster** | 42 ms | 3 ms | **14× faster** |
@@ -49,37 +67,19 @@ Grafana dashboards auto-refresh every 30 s. After the first fetch, every repeate
 | Compute | c=10 | 2,803 | 11,162 | **4× faster** | 1 ms | 675 µs | **1.5× faster** |
 | Compute | c=100 | 1,611 | 16,456 | **10.2× faster** | 4 ms | 4 ms | parity |
 
-CPU: **6–408× less** than Loki. RAM: **1.7–3.9× less** for most workloads.
+CPU: **6–408× less** than Loki under cache load. RAM: **1.7–3.9× less** for most workloads.
 
 † Loki heavy c=100 was saturated — P90=1,818 ms, P99=6,950 ms, delivering only 162 req/s vs 7,134 for the proxy.
 
 ### Dashboard load spikes — request coalescer
 
-When many panels hit the same query at once, the proxy collapses them into a single backend call. Everyone gets the result; the backend sees one request instead of N.
+When many panels hit the same query simultaneously, the proxy collapses them into a single backend call. The figures below assume the coalesced result is already cached; first-hit coalescing still avoids the N-fan-out but pays one backend round-trip.
 
-| Workload | Loki P50 | Proxy P50 |
+| Workload | Loki P50 | Proxy P50 (warm) |
 |---|---:|---:|
 | Metadata queries | 196 ms | **1 ms** |
 | Heavy aggregations | 2,399 ms | **1 ms** |
 | Content search | 13,415 ms | **1 ms** |
-
-### Cold cache, unique queries — honest floor
-
-No cache, no coalescer benefit. Pure translation overhead + HTTP proxying + VL response time.
-
-| Workload | Concurrency | Cold proxy | Loki | Ratio |
-|---|:---:|---:|---:|:---:|
-| Small metadata queries | c=10 | 1,212 req/s | ~880 req/s | **1.4× faster** |
-| Small metadata queries | c=50 | 1,583 req/s | ~780 req/s | **2× faster** |
-| Heavy pipeline queries | c=10 | 126–188 req/s | ~161–472 req/s | **~parity** |
-| Heavy pipeline queries | c=100 | 139 req/s | ~33 req/s | **4.2× faster** |
-| Long-range (6 h–72 h) | c=10 | 2× faster than Loki | — | parallel sub-window vs sequential scan |
-| Compute (rate, topk) | c=10 | 210 req/s | ~2,403 req/s | 0.09× — N VL calls per query; was 0.03× before alloc fixes |
-
-- **Small and metadata queries:** 1.4–2× faster than Loki cold — VL scans are faster than Loki's chunk store for label/series queries
-- **Heavy pipeline queries:** parity to **4.2× faster** depending on concurrency — `stats_query_range` fast path eliminates 39% cold CPU for `count_over_time`/`rate` queries
-- **Long-range queries:** **2× faster cold** — parallel sub-window fetching completes before Loki's sequential chunk scan
-- **Compute aggregations (`quantile_over_time`, `topk`, multi-stage pipelines):** N VL calls per metric query; pprof-guided alloc fixes lifted cold throughput 40→210 req/s (+5.25×); historical windows cache after first run (24 h TTL), bringing warm compute on par with or faster than Loki
 
 Full throughput tables, P90/P99 latency, CPU and RSS breakdowns: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 
