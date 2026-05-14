@@ -26,8 +26,8 @@ jobs:
 
       - name: Write badge JSON files
         run: |
-          mkdir -p .github/badges
-          cat > .github/badges/loc-code.json <<EOF
+          mkdir -p /tmp/badges
+          cat > /tmp/badges/loc-code.json <<EOF
           {
             "schemaVersion": 1,
             "label": "source code",
@@ -35,7 +35,7 @@ jobs:
             "color": "blue"
           }
           EOF
-          cat > .github/badges/loc-tests.json <<EOF
+          cat > /tmp/badges/loc-tests.json <<EOF
           {
             "schemaVersion": 1,
             "label": "test code",
@@ -44,10 +44,25 @@ jobs:
           }
           EOF
 
-      - name: Commit badges if changed
+      - name: Push badge data to badges branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Switch to the unprotected badges branch (create orphan if it doesn't exist yet)
+          git fetch origin badges 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/badges; then
+            git checkout badges
+            git pull origin badges
+          else
+            git checkout --orphan badges
+            git rm -rf . --quiet 2>/dev/null || true
+          fi
+
+          mkdir -p .github/badges
+          cp /tmp/badges/loc-code.json .github/badges/loc-code.json
+          cp /tmp/badges/loc-tests.json .github/badges/loc-tests.json
+
           git add .github/badges/loc-code.json .github/badges/loc-tests.json
           git diff --cached --quiet || git commit -m "chore: update LOC badge data [skip ci]"
-          git push
+          git push origin badges
