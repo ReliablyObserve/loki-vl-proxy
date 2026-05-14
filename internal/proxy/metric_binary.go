@@ -56,6 +56,14 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 // bypassing the compat layer and the rate-shift gate. Call this when the caller
 // has already applied any necessary start shift (e.g. proxyBareParserMetricViaStats).
 func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	// For the underscore proxy, expand dotted by() labels (e.g. "service.name") to
+	// also include their underscore equivalents (e.g. "service_name"). Loki-push data
+	// stores these as stream labels under the underscore name; OTel data uses the dotted
+	// field. VL groups by whichever exists; the response translation coalesces the two
+	// fields into a single Loki label, preferring the non-empty value.
+	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
+	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
+
 	// Keep metric query_range as a single backend request. Window splitting and
 	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -82,6 +90,40 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(wrapAsLokiResponse(body, "matrix"))
+}
+
+// addUnderscorefallbackByLabels augments a translated LogsQL stats query's by()
+// clause with underscore fallbacks for any label that was translated to a dotted
+// OTel form (e.g. service_name → service.name). VL returns whichever field exists
+// in the log data; translateStatsResponseLabelsWithContext then coalesces the two
+// fields into a single Loki label by preferring the non-empty value. This ensures
+// correct grouping for Loki-push data (stream labels use underscore names) and OTel
+// data (fields use dotted names) without requiring two separate backend calls.
+func (p *Proxy) addUnderscorefallbackByLabels(logsqlQuery string, origGroupBy []string) string {
+	if p.labelTranslator == nil || p.labelTranslator.IsPassthrough() ||
+		p.labelTranslator.style != LabelStyleUnderscores || len(origGroupBy) == 0 {
+		return logsqlQuery
+	}
+	var extras []string
+	for _, orig := range origGroupBy {
+		vlLabel := p.labelTranslator.ToVL(orig)
+		if vlLabel != orig && strings.Contains(vlLabel, ".") {
+			extras = append(extras, orig)
+		}
+	}
+	if len(extras) == 0 {
+		return logsqlQuery
+	}
+	byIdx := strings.Index(logsqlQuery, "| stats by (")
+	if byIdx < 0 {
+		return logsqlQuery
+	}
+	closeIdx := strings.Index(logsqlQuery[byIdx:], ")")
+	if closeIdx < 0 {
+		return logsqlQuery
+	}
+	insertAt := byIdx + closeIdx
+	return logsqlQuery[:insertAt] + ", " + strings.Join(extras, ", ") + logsqlQuery[insertAt:]
 }
 
 // allRangeWindowsEqual returns (window, true) when every range vector in logql

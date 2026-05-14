@@ -1576,7 +1576,11 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 						if !p.labelTranslator.IsPassthrough() {
 							lokiKey = p.labelTranslator.ToLoki(streamKey)
 						}
-						translated[lokiKey] = streamValue
+						// Coalesce: prefer non-empty when multiple source fields map
+						// to the same Loki key (e.g. "service.name" and "service_name").
+						if streamValue != "" || translated[lokiKey] == "" {
+							translated[lokiKey] = streamValue
+						}
 					}
 					changed = true
 				default:
@@ -1587,7 +1591,11 @@ func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, bod
 					if lokiKey != key {
 						changed = true
 					}
-					translated[lokiKey] = val
+					// Coalesce: prefer non-empty when multiple source fields map
+					// to the same Loki key (e.g. "service.name" and "service_name").
+					if val != "" || translated[lokiKey] == "" {
+						translated[lokiKey] = val
+					}
 				}
 			})
 

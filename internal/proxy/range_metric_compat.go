@@ -857,6 +857,10 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []str
 				if val, ok := metricLabels[vlKey]; ok {
 					delete(metricLabels, vlKey)
 					metricLabels[lokiKey] = val
+				} else if val, ok := streamLabels[lokiKey]; ok {
+					// VL form not found in metric (e.g. "service.name" absent for
+					// Loki-push data); fall back to the underscore stream label name.
+					metricLabels[lokiKey] = val
 				}
 			}
 		}

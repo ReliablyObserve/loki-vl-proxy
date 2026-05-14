@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -2350,4 +2351,171 @@ func streamsDebug(streams []map[string]interface{}) []string {
 		out[i] = fmt.Sprintf("%v", labels)
 	}
 	return out
+}
+
+// =============================================================================
+// Regression: Drilldown log count display bug (underscore proxy + Loki-push data)
+//
+// When data is ingested via Loki push, "service_name" is a stream label stored
+// under the underscore name. The underscore proxy translated "service_name" to
+// "service.name" in the VL stats by() clause. VL couldn't find "service.name" for
+// Loki-push data and returned an empty value, causing the log count to display as
+// a label string rather than a numeric count in Grafana Logs Drilldown.
+//
+// Fix: the proxy now emits both "service.name" and "service_name" in the by() clause,
+// and coalesces them in the response (non-empty wins), so either data format works.
+// =============================================================================
+
+func TestDrilldownLogCountUnderscokeProxyLokiPushData(t *testing.T) {
+	t.Parallel()
+
+	var receivedStatsQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		receivedStatsQuery = r.Form.Get("query")
+
+		// Simulate Loki-push data: VL returns service.name="" (not found) but
+		// service_name="payment-service" (found as stream label in by clause).
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "success",
+			"data": map[string]interface{}{
+				"resultType": "matrix",
+				"result": []map[string]interface{}{
+					{
+						"metric": map[string]string{
+							"service.name": "",             // OTel field not found
+							"service_name": "payment-service", // stream label found
+						},
+						"values": [][]interface{}{{float64(1712538000), "13920"}},
+					},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      cache.New(60*time.Second, 1000),
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("create proxy: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	q := url.Values{}
+	q.Set("query", `sum by (service_name) (count_over_time({app="payment-service"}[60s]))`)
+	q.Set("start", "2026-04-08T10:00:00Z")
+	q.Set("end", "2026-04-08T11:00:00Z")
+	q.Set("step", "60")
+	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
+	p.handleQueryRange(w, r)
+
+	// The by() clause must include both "service.name" and "service_name" so that
+	// VL can group correctly for both OTel and Loki-push data.
+	if !strings.Contains(receivedStatsQuery, "service_name") {
+		t.Fatalf("expected stats query to include underscore fallback 'service_name', got: %q", receivedStatsQuery)
+	}
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsObject(t, resp)
+	result := assertResultIsArray(t, data)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 matrix series, got %d", len(result))
+	}
+
+	series := result[0].(map[string]interface{})
+	metric := series["metric"].(map[string]interface{})
+
+	// service_name must be "payment-service" (not "" — that was the bug)
+	if got := fmt.Sprintf("%v", metric["service_name"]); got != "payment-service" {
+		t.Fatalf("log count display bug: service_name=%q, want \"payment-service\" (not empty string)", got)
+	}
+
+	// The count value must be a numeric string, not a label name
+	values, ok := series["values"].([]interface{})
+	if !ok || len(values) == 0 {
+		t.Fatalf("expected values array, got %T %v", series["values"], series["values"])
+	}
+	pair := values[0].([]interface{})
+	if len(pair) < 2 {
+		t.Fatalf("expected [ts, value] pair, got %v", pair)
+	}
+	countStr := fmt.Sprintf("%v", pair[1])
+	// Must be numeric — if it's a label string the count display is broken
+	if _, err := strconv.ParseFloat(countStr, 64); err != nil {
+		t.Fatalf("count value %q is not numeric (Drilldown log count display bug): %v", countStr, err)
+	}
+}
+
+func TestDrilldownLogCountUnderscokeProxyOTelData(t *testing.T) {
+	t.Parallel()
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+
+		// Simulate OTel data: service.name has value, service_name is empty.
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "success",
+			"data": map[string]interface{}{
+				"resultType": "matrix",
+				"result": []map[string]interface{}{
+					{
+						"metric": map[string]string{
+							"service.name": "otel-service", // OTel field found
+							"service_name": "",             // stream label not found
+						},
+						"values": [][]interface{}{{float64(1712538000), "4200"}},
+					},
+				},
+			},
+		})
+	}))
+	defer vlBackend.Close()
+
+	p, err := New(Config{
+		BackendURL: vlBackend.URL,
+		Cache:      cache.New(60*time.Second, 1000),
+		LogLevel:   "error",
+		LabelStyle: LabelStyleUnderscores,
+	})
+	if err != nil {
+		t.Fatalf("create proxy: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	q := url.Values{}
+	q.Set("query", `sum by (service_name) (count_over_time({app="otel-service"}[60s]))`)
+	q.Set("start", "2026-04-08T10:00:00Z")
+	q.Set("end", "2026-04-08T11:00:00Z")
+	q.Set("step", "60")
+	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
+	p.handleQueryRange(w, r)
+
+	var resp map[string]interface{}
+	mustUnmarshal(t, w.Body.Bytes(), &resp)
+	data := assertDataIsObject(t, resp)
+	result := assertResultIsArray(t, data)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 matrix series, got %d", len(result))
+	}
+
+	metric := result[0].(map[string]interface{})["metric"].(map[string]interface{})
+	// OTel data: service.name="otel-service" must coalesce to service_name="otel-service"
+	if got := fmt.Sprintf("%v", metric["service_name"]); got != "otel-service" {
+		t.Fatalf("OTel coalescing: service_name=%q, want \"otel-service\"", got)
+	}
 }
