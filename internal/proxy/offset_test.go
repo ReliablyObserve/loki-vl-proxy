@@ -61,6 +61,21 @@ func TestExtractLogQLOffset(t *testing.T) {
 			wantQuery:  `rate({app="a"}[5m]) + rate({app="b"}[5m])`,
 		},
 		{
+			name:    "mixed: one vector with offset, one without — must error",
+			input:   `rate({app="a"}[5m] offset 1h) + rate({app="b"}[5m])`,
+			wantErr: true,
+		},
+		{
+			name:    "mixed: offset on inner, bare outer — must error",
+			input:   `sum(count_over_time({app="a"}[5m] offset 1h)) / sum(count_over_time({app="b"}[1h]))`,
+			wantErr: true,
+		},
+		{
+			name:    "mixed: three vectors, only two with offset — must error",
+			input:   `rate({app="a"}[5m] offset 1h) + rate({app="b"}[5m] offset 1h) + rate({app="c"}[5m])`,
+			wantErr: true,
+		},
+		{
 			name:       "no space before offset keyword",
 			input:      `rate({app="nginx"}[5m]offset 1h)`,
 			wantOffset: time.Hour,

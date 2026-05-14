@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Mixed-offset expressions now return HTTP 400**: A LogQL expression where some range vectors carry an `offset` and others do not — e.g. `rate({app="a"}[5m] offset 1h) + rate({app="b"}[5m])` — now returns `HTTP 400` with a descriptive error instead of silently returning incorrect data. The proxy implements offset support via a global time shift applied to `start`/`end`; that shift cannot correctly serve a mix of offset-bearing and non-offset range vectors in the same expression.
+
+  **Who is affected**: Queries combining `offset`-bearing and non-`offset` range vectors in a single expression. Queries where all range vectors share the same offset (e.g. both use `offset 1h`) continue to work.
+
+  **How to fix**: Split the expression into two separate queries — one with the offset applied, one without — and combine the results in Grafana. Alternatively, add the same offset to all range vectors if the intent allows it.
+
+### Fixed
+
+- **Mixed-offset correctness**: The proxy previously applied only the first offset value it encountered in a query, silently ignoring offsets on other range vectors. A query like `rate({app="a"}[5m] offset 1h) + rate({app="b"}[5m])` would return data for `b` from the wrong time window. These queries now return HTTP 400. See breaking change note above.
+
 ## [1.32.1] - 2026-05-14
 
 ### Fixed
