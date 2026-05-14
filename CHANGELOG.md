@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.32.3] - 2026-05-14
+
 ### CI
 
 - fix(ci): `LOC Badges` workflow now pushes badge JSON to the unprotected `badges` branch instead of directly to `main`. Branch protection on `main` (requires PR + signed commits + status checks) was blocking the bot push and causing the workflow to fail on every merge. README badge URLs updated from `main` to `badges` branch.
