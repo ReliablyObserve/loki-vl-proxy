@@ -371,6 +371,13 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	if manualFunc == "" {
 		return false
 	}
+	// Instant queries with parser stages and explicit drop-error: use native VL stats.
+	// VL correctly evaluates [time-range, time] for instant queries; the drop-error opt-in
+	// means parse-failed lines are intentionally excluded — count-all semantics are acceptable.
+	// This matches the same fast-path gate in handleStatsCompatRange for tumbling windows.
+	if queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
+		return false
+	}
 	// Instant queries have no step: the range window is the entire lookback interval,
 	// not a sliding window. VL native stats correctly evaluates [time-range, time].
 	// Only rate_counter still requires the manual path (counter-reset semantics).
