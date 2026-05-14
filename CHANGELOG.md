@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.32.1] - 2026-05-14
+
 ### Fixed
 
 - fix(e2e): log-generator now starts by default (`profiles: ["ui"]` removed) — cold stacks no longer have zero ingestion, enabling pattern clustering in Drilldown. `LOG_INTERVAL` 10→2, `LOG_BATCH` 8→15 raises throughput from ~8.6 to ~75 lines/s so the pattern miner sees enough volume per time-step bucket for stable clustering and a continuous Drilldown timeline. Added `GOMEMLIMIT=2GiB` to `loki-vl-proxy-patterns-autodetect` consistent with other proxy variants.
