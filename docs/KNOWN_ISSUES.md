@@ -53,6 +53,17 @@ This especially matters for:
 Treat those paths as supported compatibility work, not as zero-cost backend
 equivalents.
 
+### Hot+Cold response merging materializes full response
+
+When both hot (VictoriaLogs) and cold (Victoria Lakehouse) backends return results,
+the proxy materializes the full merged response in memory before writing it to the
+client. For backward-direction queries the cold result set must be read fully to
+reverse ordering before merging — this is a structural constraint of the merge
+algorithm, not an incidental implementation detail. Very large time ranges hitting
+both backends will see higher proxy memory usage than hot-only queries. Workaround:
+keep cold queries to bounded time ranges, or route cold-only queries directly to the
+cold backend.
+
 ## Operational Caveats
 
 | Area | Current state |
@@ -62,7 +73,7 @@ equivalents.
 | Startup warm readiness | When patterns or label-values startup warm is configured, readiness can remain `503` until disk restore or peer warm completes. |
 | Older VictoriaLogs metadata paths | Newer VictoriaLogs versions let the proxy prefer stream-only metadata APIs. Older versions may fall back to broader field APIs, which can change how strictly stream-shaped some browse endpoints feel. |
 | Large body fields | Very large body fields can still be dropped on the VictoriaLogs side. Track the upstream issue: [VictoriaLogs issue #91](https://github.com/VictoriaMetrics/victorialogs-datasource/issues/91). |
-| Optional tenant header | The proxy accepts requests without an `X-Scope-OrgID` header and routes them to the default tenant. In deployments where tenant isolation is required, callers must supply the header; the proxy does not enforce a hard rejection. Add `X-Scope-OrgID` enforcement at the ingress/gateway layer if you need a strict tenant boundary. |
+| Optional tenant header | By default the proxy accepts requests without `X-Scope-OrgID` and routes them to the default tenant. Use `-require-tenant-header` (or `-auth.enabled`) to reject requests that omit the header with HTTP 401. |
 | Multi-tenant serial fanout | When `X-Scope-OrgID` contains multiple tenants (e.g. `tenant1\|tenant2\|tenant3`), the proxy issues sub-requests to each tenant sequentially. Latency scales linearly with the number of tenants. For high fan-out counts (>4 tenants), consider running per-tenant Grafana datasources instead of relying on the multi-tenant merge path. |
 
 ## What Is No Longer an Open Gap

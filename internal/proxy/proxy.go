@@ -116,11 +116,17 @@ type Config struct {
 	CBWindowDuration  time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
 	CoalescerDisabled bool                     // disable singleflight coalescing; every request makes its own backend call
 	TenantMap         map[string]TenantMapping // string org ID → VL account/project
-	AuthEnabled       bool
-	AllowGlobalTenant bool
+	AuthEnabled          bool
+	RequireTenantHeader  bool
+	AllowGlobalTenant    bool
 
 	// Grafana datasource compatibility
 	MaxLines           int               // default max lines per query (0=1000)
+	// RangeMetricRowLimit caps the number of log rows fetched per collectRangeMetricSamples
+	// call used by manual range-metric compatibility (rate, count_over_time, etc.).
+	// 0 means use the built-in default of 1,000,000. Lower values bound memory at the cost
+	// of potential result truncation for very high-cardinality queries.
+	RangeMetricRowLimit int
 	ForwardHeaders     []string          // HTTP headers to forward from client to VL backend
 	ForwardCookies     []string          // Cookie names to forward from client to VL backend
 	BackendHeaders     map[string]string // static headers to add to all VL requests
@@ -350,6 +356,7 @@ type Proxy struct {
 	configMu                              sync.RWMutex // protects tenantMap and labelTranslator
 	tenantMap                             map[string]TenantMapping
 	authEnabled                           bool
+	requireTenantHeader                   bool
 	allowGlobalTenant                     bool
 	maxLines                              int
 	forwardHeaders                        []string          // headers to copy from client request to VL
@@ -380,6 +387,7 @@ type Proxy struct {
 	enableQueryAnalytics                  bool
 	adminAuthToken                        string
 	metricsConcurrencyLimiter             chan struct{}
+	rangeMetricRowLimit                   int // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool
@@ -917,8 +925,10 @@ func New(cfg Config) (*Proxy, error) {
 		breaker:                               mw.NewCircuitBreaker(cbFail, 3, cbOpen, cbWindow),
 		tenantMap:                             cfg.TenantMap,
 		authEnabled:                           cfg.AuthEnabled,
+		requireTenantHeader:                   cfg.RequireTenantHeader,
 		allowGlobalTenant:                     cfg.AllowGlobalTenant,
 		maxLines:                              maxLines,
+		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
 		forwardHeaders:                        cfg.ForwardHeaders,
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,

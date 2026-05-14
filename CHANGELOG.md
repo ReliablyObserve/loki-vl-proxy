@@ -7,11 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`-require-tenant-header` flag**: Enforce the `X-Scope-OrgID` header on every request without enabling full Loki auth mode. When set, requests that omit the header receive `HTTP 401 missing X-Scope-OrgID header`. By default the proxy accepts header-less requests and routes them to the default tenant.
+
+  This flag is independent of `-auth.enabled`. The distinction: `-auth.enabled` validates the *value* of the header (full Loki token auth); `-require-tenant-header` only checks that the header is *present*. Use `-require-tenant-header` when your gateway always injects `X-Scope-OrgID` and you want the proxy to reject anything that slips through without it — without standing up a full Loki auth pipeline.
+
+  No action required for existing deployments. The default is `false`, preserving the current behavior.
+
+- **`-manual-range-metric-row-limit` flag** (default: `1000000`): Configurable cap on the number of log rows the proxy fetches when computing `rate`, `count_over_time`, `bytes_over_time`, or `bytes_rate` by scanning raw log lines (the "manual range-metric compatibility" path used when native VictoriaLogs statistics cannot be applied). The cap was previously hard-coded to 1,000,000.
+
+  Lower values reduce peak proxy memory for very high-cardinality queries at the cost of potentially truncated series. Raise above the default only if you see result truncation and can tolerate higher memory usage. The default preserves existing behavior — no tuning needed unless you hit the limit.
+
 ### Fixed
 
 - **Underscore proxy: Drilldown log count blank for Loki-push services**: When using `-label-style=underscores`, `sum by (service_name) (count_over_time(...))` queries returned `service_name=""` for services whose labels were stored as Loki stream labels (not VL dotted fields). The proxy translated `by(service_name)` → `by(service.name)`, but VL returned an empty value when no dotted field existed — Grafana Drilldown then displayed the label name as text instead of a numeric count. Fixed by expanding the `by()` clause to include both forms; VL groups by whichever exists and the response is coalesced to prefer the non-empty value.
 
-## [1.32.3] - 2026-05-14
+### Documentation
+
+- **Hot+cold merge memory behavior** (`docs/KNOWN_ISSUES.md`): Documented that queries spanning both the hot (VictoriaLogs) and cold (Victoria Lakehouse) backends materialize the full merged result set in proxy memory before writing to the client. For backward-direction queries the cold result must be buffered entirely before it can be reversed — this is a structural constraint of the merge algorithm, not a fixable bug. Very large time ranges covering both backends will see higher proxy memory usage than hot-only queries. Mitigation: bound cold query time ranges, or route cold-only queries directly to the cold backend.
 
 ### CI
 
@@ -35,13 +49,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- fix(e2e): log-generator now starts by default (`profiles: ["ui"]` removed) — cold stacks no longer have zero ingestion, enabling pattern clustering in Drilldown. `LOG_INTERVAL` 10→2, `LOG_BATCH` 8→15 raises throughput from ~8.6 to ~75 lines/s so the pattern miner sees enough volume per time-step bucket for stable clustering and a continuous Drilldown timeline. Added `GOMEMLIMIT=2GiB` to `loki-vl-proxy-patterns-autodetect` consistent with other proxy variants.
+- **Local compose stack: `/loki/api/v1/patterns` always empty** (`test/e2e-compat`): The `log-generator` service was gated behind a Docker Compose `ui` profile, so running `docker compose up` without `--profile ui` started the full proxy stack with zero log ingestion. The proxy's pattern miner had nothing to cluster, leaving the patterns endpoint empty. The profile gate has been removed — `log-generator` now starts alongside the proxy by default.
+
+  Log throughput was also raised from ~8.6 to ~75 lines/s (`LOG_INTERVAL` 10→2, `LOG_BATCH` 8→15) so the miner receives enough log lines per time bucket to produce stable clusters and a continuous timeline in Grafana Logs Drilldown. Memory limit `GOMEMLIMIT=2GiB` added to `loki-vl-proxy-patterns-autodetect` consistent with other proxy containers.
+
+  Affects the local `test/e2e-compat` compose stack only. Automated CI tests run without the compose stack and are not affected.
 
 ## [1.32.0] - 2026-05-13
 
+### Breaking Changes
+
+> **Review this section before upgrading from any version that predates 1.32.0.**
+
+- **`offset` is no longer silently dropped**: Before this release, LogQL queries containing an `offset` modifier (e.g. `rate({app="nginx"}[5m] offset 1h)`) were accepted without error, but the offset was silently ignored — the proxy returned data for the *current* evaluation window as if no offset were specified. Starting with 1.32.0, the offset is applied correctly: the evaluation window is shifted backward by the specified duration before the query is dispatched to VictoriaLogs.
+
+  **Who is affected**: Any dashboard, alert, or recording rule that uses an `offset` modifier and was relying (intentionally or not) on the proxy returning current-time data. After upgrading, those queries will return data from the offset-shifted window, which is the correct Loki-compatible behavior.
+
+  **How to check**: Search your dashboards and alert rules for queries containing `offset`. If they were authored knowing offset was broken and worked around the limitation by other means, review them before upgrading.
+
+- **Multiple distinct offsets in the same query now return HTTP 400**: A query that applies different offset values to different range vectors — for example `rate({app="a"}[5m] offset 1h) + rate({app="b"}[5m] offset 2h)` — now returns `HTTP 400` with a descriptive error message. Previously, the proxy silently used only the first offset it found, producing incorrect results for the vector with the other offset.
+
+  **Who is affected**: Queries combining range vectors with *different* offsets. Queries where all range vectors share the *same* offset (e.g. `rate(...)[5m] offset 1h) + rate(...)[5m] offset 1h)`) continue to work correctly.
+
+  **How to fix**: Split the query into two separate queries, one per offset value, and combine the results in Grafana. Alternatively, rewrite to use the same offset across all range vectors if the intent allows it.
+
 ### Added
 
-- `offset` directive support: LogQL queries containing `rate({...}[5m] offset 1h)` now correctly shift the evaluation window backward by the offset duration. The proxy strips the `offset` clause and adjusts `start`/`end` (range queries) or `time` (instant queries) before dispatch. Multiple distinct offsets in the same query return HTTP 400.
+- **`offset` directive support**: The proxy now correctly handles the LogQL `offset` modifier on range vectors. The proxy strips the `offset` clause from the query sent to VictoriaLogs and instead shifts the request's `start`/`end` parameters (range queries) or `time` parameter (instant queries) backward by the offset duration, producing semantically correct results without requiring native VictoriaLogs offset support.
 
 ## [1.31.4] - 2026-05-13
 
