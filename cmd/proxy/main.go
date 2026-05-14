@@ -72,6 +72,7 @@ type proxyRuntimeConfig struct {
 	tenantDefaultLimitsJSON             string
 	tenantLimitsJSON                    string
 	maxLines                            int
+	rangeMetricRowLimit                 int
 	backendTimeout                      time.Duration
 	cbFailThreshold                     int
 	cbOpenDuration                      time.Duration
@@ -121,6 +122,7 @@ type proxyRuntimeConfig struct {
 	recentTailRefreshWindow             time.Duration
 	recentTailRefreshMaxStaleness       time.Duration
 	authEnabled                         bool
+	requireTenantHeader                 bool
 	allowGlobalTenant                   bool
 	registerInstrumentation             *bool
 	enablePprof                         bool
@@ -397,6 +399,7 @@ func run(
 
 	// Grafana datasource compatibility
 	maxLines := fs.Int("max-lines", 1000, "Default max lines per query")
+	rangeMetricRowLimit := fs.Int("manual-range-metric-row-limit", 1_000_000, "Maximum log rows fetched per manual range-metric compatibility call (rate, count_over_time, etc.). Lower values bound memory at the cost of result truncation for high-cardinality queries.")
 	backendTimeout := fs.Duration("backend-timeout", 120*time.Second, "Timeout for non-streaming requests to the VictoriaLogs backend")
 	cbFailThreshold := fs.Int("cb-fail-threshold", 5, "Circuit breaker: failures within -cb-window-duration before opening")
 	cbOpenDuration := fs.Duration("cb-open-duration", 10*time.Second, "Circuit breaker: how long to stay open before allowing probe requests")
@@ -451,6 +454,7 @@ func run(
 
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
+	requireTenantHeader := fs.Bool("require-tenant-header", false, "Reject requests missing X-Scope-OrgID with HTTP 401. Independent of -auth.enabled; use when you want tenant enforcement without full auth.")
 	registerInstrumentation := fs.Bool("server.register-instrumentation", true, "Register instrumentation handlers such as /metrics")
 	enablePprof := fs.Bool("server.enable-pprof", false, "Expose /debug/pprof/* handlers")
 	enableQueryAnalytics := fs.Bool("server.enable-query-analytics", false, "Expose /debug/queries query analytics")
@@ -604,6 +608,7 @@ func run(
 			tenantDefaultLimitsJSON:             envCfg.tenantDefaultJSON,
 			tenantLimitsJSON:                    envCfg.tenantLimitsJSON,
 			maxLines:                            *maxLines,
+			rangeMetricRowLimit:                 *rangeMetricRowLimit,
 			backendTimeout:                      *backendTimeout,
 			cbFailThreshold:                     *cbFailThreshold,
 			cbOpenDuration:                      *cbOpenDuration,
@@ -653,6 +658,7 @@ func run(
 			recentTailRefreshWindow:             *recentTailRefreshWindow,
 			recentTailRefreshMaxStaleness:       *recentTailRefreshMaxStaleness,
 			authEnabled:                         *authEnabled,
+			requireTenantHeader:                 *requireTenantHeader,
 			allowGlobalTenant:                   *allowGlobalTenant,
 			registerInstrumentation:             registerInstrumentation,
 			enablePprof:                         *enablePprof,
@@ -1452,6 +1458,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		TenantDefaultLimits:                tenantDefaultLimits,
 		TenantLimits:                       tenantLimits,
 		MaxLines:                           cfg.maxLines,
+		RangeMetricRowLimit:                cfg.rangeMetricRowLimit,
 		BackendTimeout:                     cfg.backendTimeout,
 		CBFailThreshold:                    cfg.cbFailThreshold,
 		CBOpenDuration:                     cfg.cbOpenDuration,
@@ -1500,6 +1507,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		RecentTailRefreshWindow:            cfg.recentTailRefreshWindow,
 		RecentTailRefreshMaxStaleness:      cfg.recentTailRefreshMaxStaleness,
 		AuthEnabled:                        cfg.authEnabled,
+		RequireTenantHeader:                cfg.requireTenantHeader,
 		AllowGlobalTenant:                  cfg.allowGlobalTenant,
 		RegisterInstrumentation:            cfg.registerInstrumentation,
 		EnablePprof:                        cfg.enablePprof,

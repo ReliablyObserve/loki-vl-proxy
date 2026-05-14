@@ -706,7 +706,12 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	params.Set("start", formatVLTimestamp(start.UTC().Format(time.RFC3339Nano)))
 	params.Set("end", formatVLTimestamp(end.UTC().Format(time.RFC3339Nano)))
 	// Keep this high to avoid truncating series for compatibility stats functions.
-	params.Set("limit", "1000000")
+	// Configurable via -manual-range-metric-row-limit; default 1,000,000.
+	rowLimit := p.rangeMetricRowLimit
+	if rowLimit <= 0 {
+		rowLimit = 1_000_000
+	}
+	params.Set("limit", strconv.Itoa(rowLimit))
 
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {

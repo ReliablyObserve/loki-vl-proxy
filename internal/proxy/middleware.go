@@ -66,7 +66,7 @@ func (e *requestPolicyError) Error() string { return e.msg }
 func (p *Proxy) validateTenantHeader(r *http.Request) error {
 	orgID := strings.TrimSpace(r.Header.Get("X-Scope-OrgID"))
 	if orgID == "" {
-		if p.authEnabled {
+		if p.authEnabled || p.requireTenantHeader {
 			return &requestPolicyError{
 				status: http.StatusUnauthorized,
 				msg:    "missing X-Scope-OrgID header",
