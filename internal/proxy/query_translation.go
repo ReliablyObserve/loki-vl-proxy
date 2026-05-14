@@ -401,6 +401,11 @@ var (
 	// range window bracket, e.g. "[5m] offset 1h". Capture group 1 is the
 	// duration string. Supports negative offsets: "[5m] offset -30m".
 	logqlOffsetRE = regexp.MustCompile(`\]\s*offset\s+(-?[\w.]+)`)
+
+	// rangeVectorRE matches LogQL range-vector duration brackets such as [5m], [1h],
+	// [500ms], [1.5m]. Leading \d anchors the match to numeric durations, avoiding
+	// false positives from regex character classes in filter expressions (e.g. [a-z]).
+	rangeVectorRE = regexp.MustCompile(`\[\d[\d.]*[smhdwy]\w*\]`)
 )
 
 // hasTextExtractionParser returns true when the LogQL query contains any
@@ -440,12 +445,32 @@ func removeParserStage(logql, parser string) string {
 
 // extractLogQLOffset finds a LogQL offset modifier (e.g. "[5m] offset 1h"),
 // strips all occurrences from the query, and returns the offset duration.
-// Returns an error when multiple *different* offset values are present — Loki
-// rejects such queries. Returns zero duration + unchanged query when no offset found.
+//
+// Errors when:
+//   - multiple *different* offset values are present (Loki rejects such queries), or
+//   - some range vectors carry an offset and others do not ("mixed" expression).
+//     Mixed expressions cannot be handled by a global time shift: only the
+//     offset vectors should look at historical data, while the unshifted ones
+//     must evaluate at the original window — impossible with a single start/end
+//     adjustment. Example: rate(a[5m] offset 1h) + rate(b[5m]) is rejected.
+//
+// Returns zero duration + unchanged query when no offset is found.
 func extractLogQLOffset(logql string) (time.Duration, string, error) {
 	matches := logqlOffsetRE.FindAllStringSubmatch(logql, -1)
 	if len(matches) == 0 {
 		return 0, logql, nil
+	}
+
+	// Detect mixed expressions: some range vectors have an offset, others do not.
+	// rangeVectorRE counts all duration brackets ([5m], [1h], …); logqlOffsetRE
+	// counts only those followed by an offset clause. If the counts differ, the
+	// expression mixes offset and non-offset vectors.
+	allVectors := rangeVectorRE.FindAllString(logql, -1)
+	if len(allVectors) > len(matches) {
+		return 0, logql, fmt.Errorf(
+			"offset applied to %d of %d range vectors; loki-vl-proxy requires a uniform offset across all range vectors since it applies a global time shift — use a consistent offset or split into separate queries",
+			len(matches), len(allVectors),
+		)
 	}
 
 	seen := map[string]time.Duration{}
@@ -456,7 +481,7 @@ func extractLogQLOffset(logql string) (time.Duration, string, error) {
 		}
 	}
 	if len(seen) > 1 {
-		return 0, logql, fmt.Errorf("found %d offsets while expecting at most 1", len(seen))
+		return 0, logql, fmt.Errorf("found %d distinct offsets while expecting at most 1", len(seen))
 	}
 
 	var offset time.Duration
