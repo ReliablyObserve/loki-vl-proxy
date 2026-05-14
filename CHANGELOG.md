@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.33.0] - 2026-05-14
+
 ### Added
 
 - **`-require-tenant-header` flag**: Enforce the `X-Scope-OrgID` header on every request without enabling full Loki auth mode. When set, requests that omit the header receive `HTTP 401 missing X-Scope-OrgID header`. By default the proxy accepts header-less requests and routes them to the default tenant.
