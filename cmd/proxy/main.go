@@ -44,6 +44,7 @@ type envConfig struct {
 	alertsBackendURL  string
 	procRoot          string
 	tenantMapJSON     string
+	tenantMapFile     string
 	tenantLimitsAllow string
 	tenantDefaultJSON string
 	tenantLimitsJSON  string
@@ -71,6 +72,8 @@ type proxyRuntimeConfig struct {
 	ratePerSecond                       float64
 	rateBurst                           int
 	tenantMapJSON                       string
+	tenantMapFile                       string
+	tenantMapReloadInterval             time.Duration
 	tenantLimitsAllowPublish            string
 	tenantDefaultLimitsJSON             string
 	tenantLimitsJSON                    string
@@ -357,6 +360,8 @@ func run(
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum on-disk L2 cache size in bytes (0 = unlimited)")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
+	tenantMapFile := fs.String("tenant-map-file", "", "Path to YAML or JSON file containing the tenant map. Hot-reloaded on SIGHUP and automatically when the file changes (see -tenant-map-reload-interval). Supports Kubernetes ConfigMap volumes.")
+	tenantMapReloadInterval := fs.Duration("tenant-map-reload-interval", 30*time.Second, "How often to poll -tenant-map-file for mtime changes. Set to 0 to disable polling.")
 	tenantLimitsAllowPublish := fs.String("tenant-limits-allow-publish", "", "Comma-separated limit fields published on /config/tenant/v1/limits and /loki/api/v1/drilldown-limits")
 	tenantDefaultLimitsJSON := fs.String("tenant-default-limits", "", `JSON map of default published limits overrides (for example {"query_timeout":"2m","max_query_series":1000})`)
 	tenantLimitsJSON := fs.String("tenant-limits", "", `JSON map of per-tenant published limits overrides keyed by X-Scope-OrgID`)
@@ -546,6 +551,7 @@ func run(
 		alertsBackendURL:  *alertsBackendURL,
 		procRoot:          *procRoot,
 		tenantMapJSON:     *tenantMapJSON,
+		tenantMapFile:     *tenantMapFile,
 		tenantLimitsAllow: *tenantLimitsAllowPublish,
 		tenantDefaultJSON: *tenantDefaultLimitsJSON,
 		tenantLimitsJSON:  *tenantLimitsJSON,
@@ -607,6 +613,8 @@ func run(
 			ratePerSecond:                       *rateLimitPerSecond,
 			rateBurst:                           *rateLimitBurst,
 			tenantMapJSON:                       envCfg.tenantMapJSON,
+			tenantMapFile:                       envCfg.tenantMapFile,
+			tenantMapReloadInterval:             *tenantMapReloadInterval,
 			tenantLimitsAllowPublish:            envCfg.tenantLimitsAllow,
 			tenantDefaultLimitsJSON:             envCfg.tenantDefaultJSON,
 			tenantLimitsJSON:                    envCfg.tenantLimitsJSON,
@@ -1128,6 +1136,9 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	if v := getenv("TENANT_MAP"); v != "" && cfg.tenantMapJSON == "" {
 		cfg.tenantMapJSON = v
 	}
+	if v := getenv("TENANT_MAP_FILE"); v != "" && cfg.tenantMapFile == "" {
+		cfg.tenantMapFile = v
+	}
 	if v := getenv("TENANT_LIMITS_ALLOW_PUBLISH"); v != "" && cfg.tenantLimitsAllow == "" {
 		cfg.tenantLimitsAllow = v
 	}
@@ -1404,7 +1415,20 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	}
 	tenantMap, err := parseTenantMapJSON(cfg.tenantMapJSON)
 	if err != nil {
-		return proxy.Config{}, fmt.Errorf("parse tenant map: %w", err)
+		return proxy.Config{}, fmt.Errorf("parse -tenant-map: %w", err)
+	}
+	if cfg.tenantMapFile != "" {
+		fileMap, err := loadTenantMapFile(cfg.tenantMapFile)
+		if err != nil {
+			return proxy.Config{}, fmt.Errorf("load -tenant-map-file: %w", err)
+		}
+		if tenantMap == nil {
+			tenantMap = fileMap
+		} else {
+			for k, v := range fileMap {
+				tenantMap[k] = v
+			}
+		}
 	}
 	tenantDefaultLimits, err := parseTenantDefaultLimitsJSON(cfg.tenantDefaultLimitsJSON)
 	if err != nil {
