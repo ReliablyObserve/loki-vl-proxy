@@ -27,16 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Underscore proxy: `volume_range` returns empty log counts for Loki-push services**: `resolveTargetLabelFields` was translating `service_name` → `service.name` for the VL `/select/logsql/hits` endpoint, but Loki-push data stores the label as `service_name` (a stream label). The endpoint queried `service.name` which existed only for OTel-instrumented services, returning empty results for Loki-push services. Now appends the underscore form as a fallback field for known OTel semantic conventions so the `/hits` query covers both storage patterns. `TranslateLabelsMap` also coalesces when multiple VL fields map to the same Loki key, preferring the non-empty value (`service.name=""` + `service_name="api"` → `service_name="api"`).
 
-### CI
-
-- fix(style): apply `gofmt` to all 56 non-conforming Go source files across `bench/`, `cmd/`, `internal/`, and `test/` — formatting only, no logic changes
-- feat(ci): enable `gofmt` and `misspell` linters in `.golangci.yml` so formatting regressions are blocked in the `lint` job going forward
-- feat(ci): add `TestLogQL_Exhaustive_.*` and `TestPipeline_.*` to the `semantics` e2e-compat CI group — these test functions existed but were not wired into any matrix pattern
-
-### Documentation
-
-- docs(readme): add Go Report Card badge
-
 ## [1.33.0] - 2026-05-14
 
 ### Added

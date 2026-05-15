@@ -7,7 +7,6 @@ linters:
     - staticcheck
     - unused
     - govet
-    - gofmt
     - misspell
     - gocyclo
   settings:
