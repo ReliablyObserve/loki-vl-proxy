@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(ci): enforce `gofmt -s`, `misspell`, and `gocyclo` (threshold 30) in `.golangci.yml` so formatting and complexity regressions are blocked in the `lint` job going forward
 - feat(ci): add standalone `gofmt -s` check to lint job for Go Report Card parity
 - feat(ci): add `TestLogQL_Exhaustive_.*` and `TestPipeline_.*` to the `semantics` e2e-compat CI group — these test functions existed but were not wired into any matrix pattern
+- fix(ci): changelog gate now passes for backport release metadata PRs that add a new version section (e.g. `[1.32.4]`) without changing `[Unreleased]` — previously failed when the released items had already been absorbed into a newer minor release on main
 
 ### Documentation
 
@@ -40,13 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Lower values reduce peak proxy memory for very high-cardinality queries at the cost of potentially truncated series. Raise above the default only if you see result truncation and can tolerate higher memory usage. The default preserves existing behavior — no tuning needed unless you hit the limit.
 
+### Documentation
+
+- **Hot+cold merge memory behavior** (`docs/KNOWN_ISSUES.md`): Documented that queries spanning both the hot (VictoriaLogs) and cold (Victoria Lakehouse) backends materialize the full merged result set in proxy memory before writing to the client. For backward-direction queries the cold result must be buffered entirely before it can be reversed — this is a structural constraint of the merge algorithm, not a fixable bug. Very large time ranges covering both backends will see higher proxy memory usage than hot-only queries. Mitigation: bound cold query time ranges, or route cold-only queries directly to the cold backend.
+
+## [1.32.4] - 2026-05-14
+
 ### Fixed
 
 - **Underscore proxy: Drilldown log count blank for Loki-push services**: When using `-label-style=underscores`, `sum by (service_name) (count_over_time(...))` queries returned `service_name=""` for services whose labels were stored as Loki stream labels (not VL dotted fields). The proxy translated `by(service_name)` → `by(service.name)`, but VL returned an empty value when no dotted field existed — Grafana Drilldown then displayed the label name as text instead of a numeric count. Fixed by expanding the `by()` clause to include both forms; VL groups by whichever exists and the response is coalesced to prefer the non-empty value.
 
-### Documentation
-
-- **Hot+cold merge memory behavior** (`docs/KNOWN_ISSUES.md`): Documented that queries spanning both the hot (VictoriaLogs) and cold (Victoria Lakehouse) backends materialize the full merged result set in proxy memory before writing to the client. For backward-direction queries the cold result must be buffered entirely before it can be reversed — this is a structural constraint of the merge algorithm, not a fixable bug. Very large time ranges covering both backends will see higher proxy memory usage than hot-only queries. Mitigation: bound cold query time ranges, or route cold-only queries directly to the cold backend.
+## [1.32.3] - 2026-05-14
 
 ### CI
 
