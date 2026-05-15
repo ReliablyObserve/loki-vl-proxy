@@ -525,3 +525,59 @@ func TestEdge_DropErrorInstantQueryReturnsAggregatedResult(t *testing.T) {
 		t.Fatalf("expected [timestamp, value] in result, got %v", decoded.Data.Result[0].Value)
 	}
 }
+
+// TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields verifies that
+// detected_fields returns parsed JSON field names even when the query selector
+// includes a multi-stage pipeline (| json | drop __error__, __error_details__).
+// Drilldown sends detected_fields requests with the current pipeline expression;
+// the proxy must strip the pipeline for the metadata call but still use the
+// stream selector to scope results.
+func TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields(t *testing.T) {
+	ensureDataIngested(t)
+	now := time.Now()
+
+	// Query with full pipeline — proxy must strip pipeline for detected_fields
+	params := url.Values{}
+	params.Set("query", `{app="edge-drop-error"} | json | drop __error__, __error_details__`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-15*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+
+	resp, err := http.Get(proxyURL + "/loki/api/v1/detected_fields?" + params.Encode())
+	if err != nil {
+		t.Fatalf("detected_fields request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var decoded struct {
+		Fields []struct {
+			Label       string  `json:"label"`
+			Type        string  `json:"type"`
+			Cardinality float64 `json:"cardinality"`
+		} `json:"fields"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("failed to decode detected_fields response: %v", err)
+	}
+
+	seenFields := map[string]bool{}
+	for _, f := range decoded.Fields {
+		seenFields[f.Label] = true
+	}
+
+	// The edge-drop-error stream pushed JSON with "msg", "method", "status" fields.
+	// All three must appear in detected_fields despite the | json | drop pipeline.
+	for _, want := range []string{"msg", "method", "status"} {
+		if !seenFields[want] {
+			t.Fatalf("expected detected_fields to include %q after | json | drop pipeline, got fields: %v", want, seenFields)
+		}
+	}
+	// __error__ and __error_details__ must NOT appear (they are internal VL fields)
+	for _, forbidden := range []string{"__error__", "__error_details__"} {
+		if seenFields[forbidden] {
+			t.Fatalf("detected_fields must not expose %q (internal VL field), got fields: %v", forbidden, seenFields)
+		}
+	}
+}
