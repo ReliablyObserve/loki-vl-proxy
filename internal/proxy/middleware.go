@@ -107,8 +107,15 @@ func (p *Proxy) validateTenantHeader(r *http.Request) error {
 func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
 	p.configMu.RLock()
 	_, ok := p.tenantMap[orgID]
+	tenantLabel := p.tenantLabel
 	p.configMu.RUnlock()
 	if ok {
+		return nil
+	}
+
+	// In label-based routing mode any org ID is accepted: isolation is enforced
+	// by injecting a LogsQL label filter into the query, not via AccountID headers.
+	if tenantLabel != "" {
 		return nil
 	}
 
