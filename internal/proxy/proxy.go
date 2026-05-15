@@ -600,6 +600,7 @@ func newCoalescer(disabled bool) *mw.Coalescer {
 	return mw.NewCoalescer()
 }
 
+//nolint:gocyclo // constructor wires many optional config knobs (URLs, levels, multi-tenant, caches, ruler/alerts, telemetry); complexity is inherent to top-level assembly.
 func New(cfg Config) (*Proxy, error) {
 	u, err := url.Parse(cfg.BackendURL)
 	if err != nil {
@@ -1418,6 +1419,8 @@ func (p *Proxy) peerCacheMetrics() string {
 // Loki: GET /loki/api/v1/query_range?query={...}&start=...&end=...&limit=...&step=...
 // VL stats: POST /select/logsql/stats_query_range with query, start, end, step
 // VL logs:  POST /select/logsql/query with query, start, end, limit
+//
+//nolint:gocyclo // dispatches across cache, multi-tenant fanout, windowing, stats vs logs, streaming and tuple modes; branching is inherent to Loki query_range parity.
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")

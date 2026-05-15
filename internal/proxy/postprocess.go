@@ -531,6 +531,8 @@ func collectPatternObservationsFromJSON(miner *patternMiner, decoded interface{}
 // but operates on a *fj.Value to avoid the full interface{} tree allocation
 // in the wrapped-JSON fallback path. It is read-only over the parser's arena
 // memory; the caller owns parser lifecycle.
+//
+//nolint:gocyclo // recursive fastjson walker with per-type switch (object/array/leaf) and timestamp/level extraction; branching is inherent to the JSON shape.
 func collectPatternObservationsFromFJ(miner *patternMiner, v *fj.Value, stepSeconds int64, inheritedLevel string, observed *int) {
 	if v == nil {
 		return

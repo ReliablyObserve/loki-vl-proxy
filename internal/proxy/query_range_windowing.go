@@ -73,6 +73,7 @@ type queryRangeWindowCacheEntry struct {
 	Entries []queryRangeWindowEntry
 }
 
+//nolint:gocyclo // splits range into windows then drives per-window fetch, merge, dedup and limit short-circuiting; branching is inherent to windowed log queries.
 func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, logsqlQuery string) bool {
 	if !p.queryRangeWindowing || p.streamResponse {
 		return false

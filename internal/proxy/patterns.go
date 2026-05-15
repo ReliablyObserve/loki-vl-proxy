@@ -98,6 +98,8 @@ func (p *Proxy) recordPatternFetchDiagnostics(diag patternFetchDiagnostics) {
 }
 
 // handlePatterns returns log patterns for Grafana Logs Drilldown.
+//
+//nolint:gocyclo // handler dispatches across enable flag, multi-tenant fanout, windowing, mining, and response shaping for the patterns endpoint; complexity is inherent.
 func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if !p.patternsEnabled {
@@ -329,6 +331,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 }
 
+//nolint:gocyclo // iterates windows with first/second-pass logic, per-window limits, error fan-in and diagnostic accumulation; branching is inherent to windowed mining.
 func (p *Proxy) fetchPatternsFromWindows(
 	r *http.Request,
 	logsqlQuery string,
