@@ -111,10 +111,14 @@ jobs:
         env:
           GITHUB_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Evaluate the PR/push commit, not the default branch HEAD.
+          # For pull_request events GITHUB_SHA is the synthetic merge commit;
+          # for push events it is the pushed commit — both reflect what will land.
           docker run --rm \
             -e GITHUB_AUTH_TOKEN="${GITHUB_AUTH_TOKEN}" \
             gcr.io/openssf/scorecard:stable \
             --repo="github.com/${GITHUB_REPOSITORY}" \
+            --commit="${GITHUB_SHA}" \
             --format json \
             --show-details > scorecard.json
 
