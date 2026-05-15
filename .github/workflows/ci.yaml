@@ -565,6 +565,15 @@ jobs:
           go-version: "1.26.3"
           cache: true
 
+      - name: gofmt -s (Go Report Card parity)
+        run: |
+          unformatted=$(gofmt -s -l $(find . -name "*.go" -not -path "*/vendor/*" -not -path "*/node_modules/*"))
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not formatted with gofmt -s:"
+            echo "$unformatted"
+            exit 1
+          fi
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
