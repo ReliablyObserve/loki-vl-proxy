@@ -567,7 +567,7 @@ jobs:
 
       - name: gofmt -s (Go Report Card parity)
         run: |
-          unformatted=$(gofmt -s -l $(find . -name "*.go" -not -path "*/vendor/*" -not -path "*/node_modules/*"))
+          unformatted=$(find . -name "*.go" -not -path "*/vendor/*" -not -path "*/node_modules/*" -print0 | xargs -0 gofmt -s -l)
           if [ -n "$unformatted" ]; then
             echo "The following files are not formatted with gofmt -s:"
             echo "$unformatted"
