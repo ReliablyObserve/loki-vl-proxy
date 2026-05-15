@@ -32,6 +32,10 @@ metadata:
 spec:
   template:
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
       containers:
         - name: loki-vl-proxy
           args:
@@ -39,6 +43,12 @@ spec:
             - -tenant-map-file=/etc/loki-vl-proxy/tenant-map.yaml
             # Poll every 30s for ConfigMap changes (default). Set to 0 for SIGHUP-only.
             - -tenant-map-reload-interval=30s
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
           volumeMounts:
             - name: tenant-map
               mountPath: /etc/loki-vl-proxy
