@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.33.1] - 2026-05-14
+
 ### Fixed
 
 - **Underscore proxy: Drilldown log count column shows per-stream results instead of aggregated total**: `sum(count_over_time({...} | json | logfmt | drop __error__, __error_details__ [interval]))` instant queries were incorrectly routed to the manual log-fetch path, which groups by `(_stream, level)` identity and produces per-stream series rather than a single aggregated count. `handleStatsCompatInstant` was missing the same drop-error fast-path gate that `handleStatsCompatRange` had — when the original LogQL explicitly opts in via `| drop __error__`, VL native `stats_query` returns a single `{metric:{}}` result matching Loki behavior. Introduced in the commit that restored the `__error__` guard to `shouldUseManualRangeMetricCompat` without extending it to the instant path.
