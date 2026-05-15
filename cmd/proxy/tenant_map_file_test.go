@@ -61,6 +61,87 @@ func TestLoadTenantMapFile_InvalidYAML(t *testing.T) {
 	}
 }
 
+func TestValidateTenantMap_RejectsNonNumericAccountID(t *testing.T) {
+	f := writeTenantMapTempFile(t, "bad-account.yaml", `
+org-a:
+  account_id: "not-a-number"
+  project_id: "0"
+`)
+	_, err := loadTenantMapFile(f)
+	if err == nil {
+		t.Fatal("expected validation error for non-numeric account_id, got nil")
+	}
+}
+
+func TestValidateTenantMap_RejectsNonNumericProjectID(t *testing.T) {
+	f := writeTenantMapTempFile(t, "bad-project.yaml", `
+org-a:
+  account_id: "1"
+  project_id: "admin"
+`)
+	_, err := loadTenantMapFile(f)
+	if err == nil {
+		t.Fatal("expected validation error for non-numeric project_id, got nil")
+	}
+}
+
+func TestValidateTenantMap_RejectsEmptyAccountID(t *testing.T) {
+	f := writeTenantMapTempFile(t, "empty-account.yaml", `
+org-a:
+  account_id: ""
+  project_id: "0"
+`)
+	_, err := loadTenantMapFile(f)
+	if err == nil {
+		t.Fatal("expected validation error for empty account_id, got nil")
+	}
+}
+
+func TestValidateTenantMap_RejectsNegativeID(t *testing.T) {
+	f := writeTenantMapTempFile(t, "negative.yaml", `
+org-a:
+  account_id: "-1"
+  project_id: "0"
+`)
+	_, err := loadTenantMapFile(f)
+	if err == nil {
+		t.Fatal("expected validation error for negative account_id, got nil")
+	}
+}
+
+func TestValidateTenantMap_RejectsOverflowID(t *testing.T) {
+	f := writeTenantMapTempFile(t, "overflow.yaml", `
+org-a:
+  account_id: "99999999999"
+  project_id: "0"
+`)
+	_, err := loadTenantMapFile(f)
+	if err == nil {
+		t.Fatal("expected validation error for out-of-range account_id, got nil")
+	}
+}
+
+func TestParseTenantMapJSON_RejectsNonNumericID(t *testing.T) {
+	raw := `{"prod": {"account_id": "evil-value", "project_id": "0"}}`
+	_, err := parseTenantMapJSON(raw)
+	if err == nil {
+		t.Fatal("expected validation error from parseTenantMapJSON, got nil")
+	}
+}
+
+func TestValidateTenantMap_AcceptsZero(t *testing.T) {
+	f := writeTenantMapTempFile(t, "zero.yaml", `
+default:
+  account_id: "0"
+  project_id: "0"
+`)
+	m, err := loadTenantMapFile(f)
+	if err != nil {
+		t.Fatalf("zero IDs should be valid: %v", err)
+	}
+	assertTenantMapping(t, m, "default", "0", "0")
+}
+
 func TestWatchTenantMapFile_DetectsMtimeChange(t *testing.T) {
 	f := writeTenantMapTempFile(t, "tenant-map.yaml", `
 org-a:

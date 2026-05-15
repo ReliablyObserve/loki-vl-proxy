@@ -1207,12 +1207,31 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	return cfg
 }
 
+// validateTenantMap ensures every mapping has non-empty AccountID and ProjectID
+// that are parseable as non-negative integers fitting in a uint32 (VictoriaLogs
+// HTTP header values). Rejects at load time rather than forwarding arbitrary
+// strings as upstream headers.
+func validateTenantMap(m map[string]proxy.TenantMapping) error {
+	for orgID, mapping := range m {
+		if _, err := strconv.ParseUint(mapping.AccountID, 10, 32); err != nil {
+			return fmt.Errorf("tenant %q: account_id %q is not a valid uint32 integer: %w", orgID, mapping.AccountID, err)
+		}
+		if _, err := strconv.ParseUint(mapping.ProjectID, 10, 32); err != nil {
+			return fmt.Errorf("tenant %q: project_id %q is not a valid uint32 integer: %w", orgID, mapping.ProjectID, err)
+		}
+	}
+	return nil
+}
+
 func parseTenantMapJSON(raw string) (map[string]proxy.TenantMapping, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
 	}
 	var tenantMap map[string]proxy.TenantMapping
 	if err := json.Unmarshal([]byte(raw), &tenantMap); err != nil {
+		return nil, err
+	}
+	if err := validateTenantMap(tenantMap); err != nil {
 		return nil, err
 	}
 	return tenantMap, nil
@@ -1232,6 +1251,9 @@ func loadTenantMapFile(path string) (map[string]proxy.TenantMapping, error) {
 		if err := yaml.Unmarshal(data, &m); err != nil {
 			return nil, fmt.Errorf("parse tenant-map-file %q (YAML): %w", path, err)
 		}
+	}
+	if err := validateTenantMap(m); err != nil {
+		return nil, fmt.Errorf("validate tenant-map-file %q: %w", path, err)
 	}
 	return m, nil
 }
