@@ -139,6 +139,18 @@ func TestSetup_IngestEdgeCaseData(t *testing.T) {
 		t.Logf("Loki structured metadata push: %d", resp.StatusCode)
 	}
 
+	// Drop-error instant-query path (regression for #370)
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "edge-drop-error", "namespace": "edge-tests", "level": "info",
+		},
+		Lines: []string{
+			`{"msg":"request processed","method":"GET","status":200}`,
+			`{"msg":"request processed","method":"POST","status":201}`,
+			`{"msg":"request failed","method":"POST","status":500,"error":"timeout"}`,
+		},
+	})
+
 	time.Sleep(3 * time.Second)
 	t.Log("Edge case test data ingested")
 }
@@ -457,4 +469,59 @@ func TestEdge_StructuredMetadata(t *testing.T) {
 	}
 
 	score.report(t)
+}
+
+// TestEdge_DropErrorInstantQueryReturnsAggregatedResult is a regression test for
+// the fix in #370 where sum(count_over_time({...} | json | logfmt | drop __error__, __error_details__ [interval])) as an
+// instant query was routed to the manual log-fetch path (per-stream) instead of VL native
+// stats_query (single aggregated result). The proxy must return exactly one result
+// series with an empty metric label set, not one per log stream.
+func TestEdge_DropErrorInstantQueryReturnsAggregatedResult(t *testing.T) {
+	ensureDataIngested(t)
+	now := time.Now()
+
+	expr := `sum(count_over_time({app="edge-drop-error"} | json | logfmt | drop __error__, __error_details__ [5m]))`
+	params := url.Values{}
+	params.Set("query", expr)
+	params.Set("time", fmt.Sprintf("%d", now.UnixNano()))
+
+	resp, err := http.Get(proxyURL + "/loki/api/v1/query?" + params.Encode())
+	if err != nil {
+		t.Fatalf("instant query request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var decoded struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []interface{}     `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if decoded.Status != "success" {
+		t.Fatalf("expected status=success, got %q", decoded.Status)
+	}
+	if decoded.Data.ResultType != "vector" {
+		t.Fatalf("expected resultType=vector for instant query, got %q", decoded.Data.ResultType)
+	}
+	// sum() must aggregate to exactly one result with an empty metric
+	if len(decoded.Data.Result) != 1 {
+		t.Fatalf("expected exactly 1 aggregated result from sum(count_over_time(...)), got %d results — proxy is returning per-stream series instead of aggregating", len(decoded.Data.Result))
+	}
+	if len(decoded.Data.Result[0].Metric) != 0 {
+		t.Fatalf("expected empty metric label set for sum() result, got %v", decoded.Data.Result[0].Metric)
+	}
+	// Value must be numeric and > 0
+	if len(decoded.Data.Result[0].Value) < 2 {
+		t.Fatalf("expected [timestamp, value] in result, got %v", decoded.Data.Result[0].Value)
+	}
 }
