@@ -291,8 +291,8 @@ func VLCompute(now time.Time) Workload {
 		},
 		// Multi-stage parse: JSON + multi-field filter (latency > threshold + error status)
 		{
-			Name:   "json_multi_stage_filter",
-			Path:   "/select/logsql/query",
+			Name: "json_multi_stage_filter",
+			Path: "/select/logsql/query",
 			Params: url.Values{
 				"query": {`namespace:"prod" | json | status:>=400 | level:"error" | latency_ms:>100`},
 				"start": {start15m}, "end": {end}, "limit": {"500"},
@@ -300,8 +300,8 @@ func VLCompute(now time.Time) Workload {
 		},
 		// Logfmt parse + numeric filter + field extraction
 		{
-			Name:   "logfmt_latency_filter",
-			Path:   "/select/logsql/query",
+			Name: "logfmt_latency_filter",
+			Path: "/select/logsql/query",
 			Params: url.Values{
 				"query": {`namespace:"prod" | logfmt | duration_ms:>1000 | level:"error"`},
 				"start": {start30m}, "end": {end}, "limit": {"200"},
@@ -309,8 +309,8 @@ func VLCompute(now time.Time) Workload {
 		},
 		// Regex + JSON multi-stage (most expensive parse chain)
 		{
-			Name:   "regex_then_json_filter",
-			Path:   "/select/logsql/query",
+			Name: "regex_then_json_filter",
+			Path: "/select/logsql/query",
 			Params: url.Values{
 				"query": {`namespace:"prod" ~"status=(4|5)[0-9][0-9]" | json | latency_ms:>500`},
 				"start": {start15m}, "end": {end}, "limit": {"200"},
@@ -324,8 +324,8 @@ func VLCompute(now time.Time) Workload {
 		},
 		// stats_query with logfmt parse (logfmt + field filter + count)
 		{
-			Name:   "stats_logfmt_errors",
-			Path:   "/select/logsql/stats_query",
+			Name: "stats_logfmt_errors",
+			Path: "/select/logsql/stats_query",
 			Params: url.Values{
 				"query": {`app:"payment-service" | logfmt | level:"error" | count()`},
 				"start": {start1h}, "end": {end}, "step": {"1m"},
@@ -333,8 +333,8 @@ func VLCompute(now time.Time) Workload {
 		},
 		// Full JSON parse pipeline with multiple field filters
 		{
-			Name:   "json_full_pipeline",
-			Path:   "/select/logsql/query",
+			Name: "json_full_pipeline",
+			Path: "/select/logsql/query",
 			Params: url.Values{
 				"query": {`app:"api-gateway" | json | status:>=200 | status:<500 | method:"POST" | latency_ms:>100`},
 				"start": {start5m}, "end": {end}, "limit": {"500"},
@@ -342,8 +342,8 @@ func VLCompute(now time.Time) Workload {
 		},
 		// hits: error logs at high frequency step (measures VL bucket computation)
 		{
-			Name:   "hits_errors_30s_step",
-			Path:   "/select/logsql/hits",
+			Name: "hits_errors_30s_step",
+			Path: "/select/logsql/hits",
 			Params: url.Values{
 				"query": {`namespace:"prod" | json | status:>=400`},
 				"start": {start30m}, "end": {end}, "step": {"30s"},
@@ -351,8 +351,8 @@ func VLCompute(now time.Time) Workload {
 		},
 		// Field names on filtered/parsed stream (complex metadata query)
 		{
-			Name:   "field_names_json_filtered",
-			Path:   "/select/logsql/field_names",
+			Name: "field_names_json_filtered",
+			Path: "/select/logsql/field_names",
 			Params: url.Values{
 				"query": {`app:"api-gateway" | json | status:>=400`},
 				"start": {start1h}, "end": {end},
@@ -528,4 +528,3 @@ func VLByName(names []string, now time.Time) []Workload {
 	}
 	return result
 }
-

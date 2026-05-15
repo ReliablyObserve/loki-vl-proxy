@@ -45,21 +45,21 @@ var suppressedDetectedFieldNames = map[string]struct{}{
 
 // OTel semantic convention patterns (dotted form) - priority 1 signals
 var otelSemanticFields = map[string]struct{}{
-	"service.name":            {},
-	"service.namespace":       {},
-	"k8s.pod.name":            {},
-	"k8s.namespace.name":      {},
-	"k8s.node.name":           {},
-	"k8s.container.name":      {},
-	"deployment.environment":  {},
-	"deployment.name":         {},
-	"deployment.version":      {},
-	"host.name":               {},
-	"host.id":                 {},
-	"host.arch":               {},
-	"telemetry.sdk.name":      {},
-	"telemetry.sdk.language":  {},
-	"telemetry.sdk.version":   {},
+	"service.name":           {},
+	"service.namespace":      {},
+	"k8s.pod.name":           {},
+	"k8s.namespace.name":     {},
+	"k8s.node.name":          {},
+	"k8s.container.name":     {},
+	"deployment.environment": {},
+	"deployment.name":        {},
+	"deployment.version":     {},
+	"host.name":              {},
+	"host.id":                {},
+	"host.arch":              {},
+	"telemetry.sdk.name":     {},
+	"telemetry.sdk.language": {},
+	"telemetry.sdk.version":  {},
 }
 
 // OTel underscore-form prefixes (priority 2 signals)
@@ -843,6 +843,7 @@ func volumeMetricKey(targetLabels []string, metric map[string]string) string {
 	return b.String()
 }
 
+//nolint:gocyclo // builds VL stats query across multiple derived-label targets (level/detected_level/service/etc.) with per-target unpack chains and result fan-in; complexity is inherent to the volume-by-label contract.
 func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, targetLabels, step string) (map[string]interface{}, error) {
 	logsqlQuery, err := p.translateQuery(defaultQuery(query))
 	if err != nil {
@@ -1133,10 +1134,10 @@ func normalizeBareSelectorQuery(query string) string {
 }
 
 var (
-	reDropStage          = regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
-	reParserStage        = regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
-	reJSONParserStage    = regexp.MustCompile(`\|\s*json(\s+[^|]+)?`)
-	reUnwrapStage        = regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
+	reDropStage       = regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
+	reParserStage     = regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
+	reJSONParserStage = regexp.MustCompile(`\|\s*json(\s+[^|]+)?`)
+	reUnwrapStage     = regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
 )
 
 func collapseSpaces(s string) string {
@@ -1597,6 +1598,8 @@ func formatDetectedValueFJ(v *fj.Value) string {
 //
 // The third return value is the accumulated stream label set (key→value),
 // passed to filterNativeDetectedFields.
+//
+//nolint:gocyclo // streaming JSON scanner with per-line OTel/non-OTel detection, exposure caching, and label/field accumulation; branching is inherent to detected_fields parity.
 func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{}, map[string][]string, map[string]string) {
 	scanner := bufio.NewScanner(r)
 	bufPtr := detectedFieldsScanBufPool.Get().(*[]byte)
@@ -2105,6 +2108,7 @@ func (p *Proxy) fetchNativeStreamLabelSet(ctx context.Context, query, start, end
 	return labels, nil
 }
 
+//nolint:gocyclo // tries multiple candidate queries with relaxation fallbacks, dedup, and limit handling; branching is inherent to native field-values discovery.
 func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, field string, limit int) ([]string, error) {
 	var lastErr error
 	candidates := fieldDetectionQueryCandidates(query)

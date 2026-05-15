@@ -1105,6 +1105,7 @@ func parseForwardHeaders(csv string, includeAuthorization bool) []string {
 	return out
 }
 
+//nolint:gocyclo // applies ~40 distinct environment-variable overrides onto the config struct; the long if-chain is the simplest correct shape.
 func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	if v := getenv("LISTEN_ADDR"); v != "" {
 		cfg.listenAddr = v

@@ -3,8 +3,8 @@ package middleware
 import (
 	"bufio"
 	"bytes"
-	gzip "github.com/klauspost/compress/gzip"
 	"fmt"
+	gzip "github.com/klauspost/compress/gzip"
 	"io"
 	"net"
 	"net/http"

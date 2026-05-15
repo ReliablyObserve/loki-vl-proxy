@@ -1,0 +1,97 @@
+goroutine profile: total 160
+50 @ 0x9624c 0x59a20 0x95420 0x10ba08 0x10cb84 0x10cb75 0x12d188 0x1381c4 0x29d39c 0x22df00 0x22e048 0x2a26a8 0x9d854
+#	0x9541f		internal/poll.runtime_pollWait+0x9f		/usr/local/go/src/runtime/netpoll.go:351
+#	0x10ba07	internal/poll.(*pollDesc).wait+0x27		/usr/local/go/src/internal/poll/fd_poll_runtime.go:84
+#	0x10cb83	internal/poll.(*pollDesc).waitRead+0x233	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+#	0x10cb74	internal/poll.(*FD).Read+0x224			/usr/local/go/src/internal/poll/fd_unix.go:165
+#	0x12d187	net.(*netFD).Read+0x27				/usr/local/go/src/net/fd_posix.go:68
+#	0x1381c3	net.(*conn).Read+0x33				/usr/local/go/src/net/net.go:196
+#	0x29d39b	net/http.(*connReader).Read+0x22b		/usr/local/go/src/net/http/server.go:812
+#	0x22deff	bufio.(*Reader).fill+0xdf			/usr/local/go/src/bufio/bufio.go:113
+#	0x22e047	bufio.(*Reader).Peek+0x57			/usr/local/go/src/bufio/bufio.go:152
+#	0x2a26a7	net/http.(*conn).serve+0x647			/usr/local/go/src/net/http/server.go:2109
+
+49 @ 0x9624c 0x59a20 0x95420 0x10ba08 0x10cb84 0x10cb75 0x12d188 0x1381c4 0x2b99c8 0x22df00 0x22e048 0x2ba5f0 0x9d854
+#	0x9541f		internal/poll.runtime_pollWait+0x9f		/usr/local/go/src/runtime/netpoll.go:351
+#	0x10ba07	internal/poll.(*pollDesc).wait+0x27		/usr/local/go/src/internal/poll/fd_poll_runtime.go:84
+#	0x10cb83	internal/poll.(*pollDesc).waitRead+0x233	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+#	0x10cb74	internal/poll.(*FD).Read+0x224			/usr/local/go/src/internal/poll/fd_unix.go:165
+#	0x12d187	net.(*netFD).Read+0x27				/usr/local/go/src/net/fd_posix.go:68
+#	0x1381c3	net.(*conn).Read+0x33				/usr/local/go/src/net/net.go:196
+#	0x2b99c7	net/http.(*persistConn).Read+0x47		/usr/local/go/src/net/http/transport.go:2174
+#	0x22deff	bufio.(*Reader).fill+0xdf			/usr/local/go/src/bufio/bufio.go:113
+#	0x22e047	bufio.(*Reader).Peek+0x57			/usr/local/go/src/bufio/bufio.go:152
+#	0x2ba5ef	net/http.(*persistConn).readLoop+0x10f		/usr/local/go/src/net/http/transport.go:2330
+
+49 @ 0x9624c 0x745ec 0x2bbd28 0x9d854
+#	0x2bbd27	net/http.(*persistConn).writeLoop+0x97	/usr/local/go/src/net/http/transport.go:2652
+
+4 @ 0x9624c 0x745ec 0x342d48 0x9d854
+#	0x342d47	github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).cleanup+0xa7	/app/internal/cache/cache.go:570
+
+1 @ 0x2e924 0x98534 0x3de1ac 0x9d854
+#	0x98533		os/signal.signal_recv+0x113	/usr/local/go/src/runtime/sigqueue.go:152
+#	0x3de1ab	os/signal.loop+0x1b		/usr/local/go/src/os/signal/signal_unix.go:23
+
+1 @ 0x5640c 0x95014 0x3c7cf4 0x3c7b20 0x3c5324 0x3da1e4 0x3daa54 0x2a4118 0x2a5b00 0x4a0918 0x2a4118 0x2a5b00 0x50ba9c 0x2a4118 0x3e2aec 0x2a4118 0x50b9d8 0x2a4118 0x50b838 0x2a4118 0x50b780 0x2a4118 0x2c0030 0x2a257c 0x9d854
+#	0x3c7cf3	runtime/pprof.writeRuntimeProfile+0xb3											/usr/local/go/src/runtime/pprof/pprof.go:851
+#	0x3c7b1f	runtime/pprof.writeGoroutine+0x4f											/usr/local/go/src/runtime/pprof/pprof.go:784
+#	0x3c5323	runtime/pprof.(*Profile).WriteTo+0x143											/usr/local/go/src/runtime/pprof/pprof.go:408
+#	0x3da1e3	net/http/pprof.handler.ServeHTTP+0x413											/usr/local/go/src/net/http/pprof/pprof.go:273
+#	0x3daa53	net/http/pprof.Index+0xa3												/usr/local/go/src/net/http/pprof/pprof.go:397
+#	0x2a4117	net/http.HandlerFunc.ServeHTTP+0x37											/usr/local/go/src/net/http/server.go:2286
+#	0x2a5aff	net/http.(*ServeMux).ServeHTTP+0x18f											/usr/local/go/src/net/http/server.go:2828
+#	0x4a0917	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).RegisterRoutes.(*Proxy).adminMiddleware.func7+0x117	/app/internal/proxy/middleware.go:211
+#	0x2a4117	net/http.HandlerFunc.ServeHTTP+0x37											/usr/local/go/src/net/http/server.go:2286
+#	0x2a5aff	net/http.(*ServeMux).ServeHTTP+0x18f											/usr/local/go/src/net/http/server.go:2828
+#	0x50ba9b	main.wrapHandler.maxBodyHandler.func1+0x9b										/app/cmd/proxy/main.go:932
+#	0x2a4117	net/http.HandlerFunc.ServeHTTP+0x37											/usr/local/go/src/net/http/server.go:2286
+#	0x3e2aeb	github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.CompressionHandlerWithOptions.func1+0xeb			/app/internal/middleware/compress.go:333
+#	0x2a4117	net/http.HandlerFunc.ServeHTTP+0x37											/usr/local/go/src/net/http/server.go:2286
+#	0x50b9d7	main.wrapHandler.(*httpConnRotator).Wrap.func2+0x117									/app/cmd/proxy/http_conn_rotation.go:75
+#	0x2a4117	net/http.HandlerFunc.ServeHTTP+0x37											/usr/local/go/src/net/http/server.go:2286
+#	0x50b837	main.wrapHandler.(*Metrics).WrapHandler.func3+0x87									/app/internal/metrics/metrics.go:932
+#	0x2a4117	net/http.HandlerFunc.ServeHTTP+0x37											/usr/local/go/src/net/http/server.go:2286
+#	0x50b77f	main.wrapHandler.withSecurityHeaders.SecurityHeadersMiddleware.func4+0x1bf						/app/internal/proxy/middleware_security.go:32
+#	0x2a4117	net/http.HandlerFunc.ServeHTTP+0x37											/usr/local/go/src/net/http/server.go:2286
+#	0x2c002f	net/http.serverHandler.ServeHTTP+0xaf											/usr/local/go/src/net/http/server.go:3311
+#	0x2a257b	net/http.(*conn).serve+0x51b												/usr/local/go/src/net/http/server.go:2073
+
+1 @ 0x9624c 0x28a90 0x285e4 0x50b120 0x50960c 0x506b18 0x506aa4 0x609a4 0x9d854
+#	0x50b11f	main.handleShutdown+0x3f	/app/cmd/proxy/main.go:907
+#	0x50960b	main.run+0x2a5b			/app/cmd/proxy/main.go:740
+#	0x506b17	main.runMain+0x47		/app/cmd/proxy/main.go:304
+#	0x506aa3	main.main+0xa3			/app/cmd/proxy/main.go:276
+#	0x609a3		runtime.main+0x2b3		/usr/local/go/src/runtime/proc.go:290
+
+1 @ 0x9624c 0x28a90 0x28604 0x50b350 0x9d854
+#	0x50b34f	main.watchReloadSignals+0x8f	/app/cmd/proxy/main.go:920
+
+1 @ 0x9624c 0x59a20 0x95420 0x10ba08 0x10fbb4 0x10fba5 0x12e888 0x1409d4 0x13fd8c 0x2a73f4 0x2a70b0 0x50f4ac 0x9d854
+#	0x9541f		internal/poll.runtime_pollWait+0x9f		/usr/local/go/src/runtime/netpoll.go:351
+#	0x10ba07	internal/poll.(*pollDesc).wait+0x27		/usr/local/go/src/internal/poll/fd_poll_runtime.go:84
+#	0x10fbb3	internal/poll.(*pollDesc).waitRead+0x213	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+#	0x10fba4	internal/poll.(*FD).Accept+0x204		/usr/local/go/src/internal/poll/fd_unix.go:613
+#	0x12e887	net.(*netFD).accept+0x27			/usr/local/go/src/net/fd_unix.go:150
+#	0x1409d3	net.(*TCPListener).accept+0x23			/usr/local/go/src/net/tcpsock_posix.go:159
+#	0x13fd8b	net.(*TCPListener).Accept+0x2b			/usr/local/go/src/net/tcpsock.go:387
+#	0x2a73f3	net/http.(*Server).Serve+0x243			/usr/local/go/src/net/http/server.go:3434
+#	0x2a70af	net/http.(*Server).ListenAndServe+0x7f		/usr/local/go/src/net/http/server.go:3360
+#	0x50f4ab	main.runServerLoop+0x46b			/app/cmd/proxy/main.go:1597
+
+1 @ 0x9624c 0x745ec 0x3e4af8 0x9d854
+#	0x3e4af7	github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.(*RateLimiter).cleanupStaleClients+0x97	/app/internal/middleware/ratelimiter.go:171
+
+1 @ 0x9624c 0x745ec 0x4686e8 0x9d854
+#	0x4686e7	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).startLabelValuesIndexPersistenceLoop.func1+0xb7	/app/internal/proxy/label_index.go:404
+
+1 @ 0xb50a0 0xb35f0 0x10caf0 0x10cadd 0x10ca45 0x12d188 0x1381c4 0x29cdf8 0x9d854
+#	0xb509f		syscall.Syscall+0x1f				/usr/local/go/src/syscall/syscall_linux.go:74
+#	0xb35ef		syscall.read+0x3f				/usr/local/go/src/syscall/zsyscall_linux_arm64.go:736
+#	0x10caef	syscall.Read+0x19f				/usr/local/go/src/syscall/syscall_unix.go:183
+#	0x10cadc	internal/poll.ignoringEINTRIO+0x18c		/usr/local/go/src/internal/poll/fd_unix.go:738
+#	0x10ca44	internal/poll.(*FD).Read+0xf4			/usr/local/go/src/internal/poll/fd_unix.go:161
+#	0x12d187	net.(*netFD).Read+0x27				/usr/local/go/src/net/fd_posix.go:68
+#	0x1381c3	net.(*conn).Read+0x33				/usr/local/go/src/net/net.go:196
+#	0x29cdf7	net/http.(*connReader).backgroundRead+0x37	/usr/local/go/src/net/http/server.go:702
+

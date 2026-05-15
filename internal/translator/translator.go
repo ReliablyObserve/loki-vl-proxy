@@ -243,6 +243,8 @@ func extractWithoutLabels(logql string) (cleaned string, labels []string) {
 }
 
 // translateLogQuery handles log queries (non-metric).
+//
+//nolint:gocyclo // staged LogQL→LogsQL pipeline parser: stream selector, line filters, parser stages, label filters, formatters; branching is inherent to LogQL grammar coverage.
 func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ...map[string]bool) (string, error) {
 	var sf map[string]bool
 	if len(streamFields) > 0 {
@@ -2322,6 +2324,8 @@ func translateBareFilter(s string) string {
 // reach this code path only after the metric/binary/subquery extractors
 // declined them, but the leading char would be `s` followed by `u`, not an
 // identifier directly followed by `=`).
+//
+//nolint:gocyclo // character-by-character LogQL bare-label matcher heuristic with quoting, escapes, and operator detection; branching is inherent to the grammar probe.
 func looksLikeBareLabelMatcher(s string) bool {
 	s = strings.TrimSpace(s)
 	if s == "" {

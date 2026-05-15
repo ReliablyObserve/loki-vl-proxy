@@ -7,6 +7,8 @@ linters:
     - staticcheck
     - unused
     - govet
+    - misspell
+    - gocyclo
   settings:
     errcheck:
       exclude-functions:
@@ -21,8 +23,18 @@ linters:
         - io.Copy
         - (io.Closer).Close
         - (*os.File).Close
+    gocyclo:
+      min-complexity: 30
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - errcheck
+          - gocyclo
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      simplify: true

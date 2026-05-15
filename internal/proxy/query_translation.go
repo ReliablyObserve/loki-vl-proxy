@@ -22,6 +22,7 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
+//nolint:gocyclo // middleware wraps every request with telemetry, client/tenant attribution, panic guards and structured logging; complexity is inherent to instrumentation.
 func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -1493,6 +1494,7 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 // statsTranslateFJPool pools fastjson.Parser for translateStatsResponseLabels.
 var statsTranslateFJPool fj.ParserPool
 
+//nolint:gocyclo // walks VL stats JSON shape variants and remaps field/label names to Loki conventions across many edge cases; branching is inherent to schema translation.
 func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
 	start := time.Now()
 
@@ -1753,4 +1755,3 @@ func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMe
 	}
 	buf.WriteByte(']')
 }
-

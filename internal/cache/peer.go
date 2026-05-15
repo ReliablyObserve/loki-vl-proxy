@@ -2,13 +2,13 @@ package cache
 
 import (
 	"bytes"
-	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	gzip "github.com/klauspost/compress/gzip"
 	"io"
 	"log/slog"
 	"math/rand"

@@ -876,4 +876,3 @@ func (p *Proxy) stopPatternsPersistenceLoop(ctx context.Context) {
 		p.log.Warn("timeout waiting for patterns persistence loop stop", "error", ctx.Err())
 	}
 }
-

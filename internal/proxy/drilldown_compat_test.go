@@ -2474,7 +2474,7 @@ func TestDrilldownLogCountUnderscokeProxyLokiPushData(t *testing.T) {
 				"result": []map[string]interface{}{
 					{
 						"metric": map[string]string{
-							"service.name": "",             // OTel field not found
+							"service.name": "",                // OTel field not found
 							"service_name": "payment-service", // stream label found
 						},
 						"values": [][]interface{}{{float64(1712538000), "13920"}},

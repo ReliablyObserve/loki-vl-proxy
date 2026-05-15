@@ -2,9 +2,9 @@ package cache
 
 import (
 	"bytes"
-	gzip "github.com/klauspost/compress/gzip"
 	"encoding/binary"
 	"fmt"
+	gzip "github.com/klauspost/compress/gzip"
 	"io"
 	"log/slog"
 	"math"
