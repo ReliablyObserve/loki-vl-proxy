@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(ci): add standalone `gofmt -s` check to lint job for Go Report Card parity
 - feat(ci): add `TestLogQL_Exhaustive_.*` and `TestPipeline_.*` to the `semantics` e2e-compat CI group — these test functions existed but were not wired into any matrix pattern
 - fix(ci): changelog gate now passes for backport release metadata PRs that add a new version section (e.g. `[1.32.4]`) without changing `[Unreleased]` — previously failed when the released items had already been absorbed into a newer minor release on main
+- fix(ci): OpenSSF Scorecard now evaluates the PR/push commit instead of the default branch HEAD, so Binary-Artifacts and other checks correctly reflect what will land
+- fix(ci): remove accidentally committed `bench/loki-bench` and `proxy.test` binaries; add both to `.gitignore` to prevent recurrence
 
 ### Documentation
 
