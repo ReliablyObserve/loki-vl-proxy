@@ -383,6 +383,7 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
+| `-tenant-label` | `TENANT_LABEL` | `""` | VL field name for label-based tenant routing. When set, `X-Scope-OrgID` values are injected as `{<tenant-label>="<orgID>"}` into VL queries instead of `AccountID`/`ProjectID` headers. Use when all data is under VL default tenant (0:0). Explicit `tenant-map` entries take priority. |
 | `-tenant-map` | `TENANT_MAP` | — | JSON string→int tenant mapping |
 | `-tenant-map-file` | `TENANT_MAP_FILE` | `""` | Path to a YAML or JSON file mapping Loki `X-Scope-OrgID` strings to VictoriaLogs `AccountID`/`ProjectID`. Reloaded on SIGHUP and automatically when the file changes (see `-tenant-map-reload-interval`). Suitable for Kubernetes ConfigMap volumes. File entries override `-tenant-map` inline entries for the same key. |
 | `-tenant-map-reload-interval` | *(flag only)* | `30s` | How often to poll `-tenant-map-file` for mtime changes. Set to `0` to disable polling (SIGHUP-only reload). |
