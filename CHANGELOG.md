@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - docs(readme): add Go Report Card badge
 
+### Tests
+
+- **e2e: multi-tenant `volume_range` regression tests**: verify `index/volume_range` returns time-series data with `__tenant_id__` labels in multi-tenant Drilldown context; cover both tenant-filtered and unfiltered cases.
+- **e2e: multi-tenant field/label cardinality accuracy**: verify `detected_fields` cardinality ≥ known distinct values (GET/POST/DELETE for `method`); verify `detected_labels` includes `cardinality` field with value ≥ 1.
+- **e2e: `| drop __error__` instant-query regression (#370)**: `sum(count_over_time(... | drop __error__))` as instant query must return exactly one aggregated result, not one per stream.
+- **e2e: `detected_fields` after multi-stage pipeline**: `| json | drop __error__` pipeline must not suppress parsed JSON field names in `detected_fields` response.
+
 ## [1.33.1] - 2026-05-14
 
 ### Fixed
