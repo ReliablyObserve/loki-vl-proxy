@@ -15,10 +15,13 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit"
@@ -1179,6 +1182,24 @@ func parseTenantMapJSON(raw string) (map[string]proxy.TenantMapping, error) {
 		return nil, err
 	}
 	return tenantMap, nil
+}
+
+func loadTenantMapFile(path string) (map[string]proxy.TenantMapping, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read tenant-map-file %q: %w", path, err)
+	}
+	var m map[string]proxy.TenantMapping
+	if strings.ToLower(filepath.Ext(path)) == ".json" {
+		if err := json.Unmarshal(data, &m); err != nil {
+			return nil, fmt.Errorf("parse tenant-map-file %q (JSON): %w", path, err)
+		}
+	} else {
+		if err := yaml.Unmarshal(data, &m); err != nil {
+			return nil, fmt.Errorf("parse tenant-map-file %q (YAML): %w", path, err)
+		}
+	}
+	return m, nil
 }
 
 func parseTenantDefaultLimitsJSON(raw string) (map[string]any, error) {
