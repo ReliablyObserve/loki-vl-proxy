@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`-tenant-map-file` flag**: Load the OrgID→AccountID/ProjectID tenant mapping from a YAML or JSON file. Supports hot-reload via SIGHUP and automatic mtime-polling (default 30s) for Kubernetes ConfigMap volume updates without proxy restart. `TENANT_MAP_FILE` environment variable also accepted. File entries take priority over `-tenant-map` inline JSON for the same key.
 - **`-tenant-map-reload-interval` flag** (default `30s`): Poll interval for detecting `-tenant-map-file` changes. Set to `0` to disable polling and rely on SIGHUP-only reload.
 
+### Breaking Changes
+
+- **`X-Scope-OrgID` is now forwarded upstream by default**: The new `-forward-tenant-header` flag defaults to `true`, which means the proxy sends the client's `X-Scope-OrgID` header to the upstream backend on every sub-request — including deployments that use `-tenant-map` with numeric `AccountID`/`ProjectID` routing. VictoriaLogs silently ignores this header, so VL-backed deployments are unaffected. Deployments that proxy to a **Loki** or other backend that interprets `X-Scope-OrgID` may observe changed routing behavior. To restore the previous behavior (no `X-Scope-OrgID` forwarding), set `-forward-tenant-header=false` or `FORWARD_TENANT_HEADER=false`.
+
+- **Tenant map now rejects non-numeric `account_id`/`project_id` at load time**: Both `-tenant-map` JSON and `-tenant-map-file` YAML/JSON now validate that every `account_id` and `project_id` value is a non-negative integer in the uint32 range (0–4294967295). Mappings with empty, negative, non-numeric, or out-of-range values are rejected on startup or reload with a descriptive error. Previously these values were silently forwarded as-is to VictoriaLogs (which would have rejected the request at the HTTP layer). Action required only if you had non-numeric IDs in your tenant map — correct them to valid integer strings.
+
 ### CI
 
 - fix(style): apply `gofmt` to all 56 non-conforming Go source files across `bench/`, `cmd/`, `internal/`, and `test/` — formatting only, no logic changes
