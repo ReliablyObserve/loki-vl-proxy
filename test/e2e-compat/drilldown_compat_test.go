@@ -833,7 +833,10 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 		methodCardinality := -1
 		for _, item := range fields {
-			field := item.(map[string]interface{})
+			field, ok := item.(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected field item to be map, got %T in: %v", item, fieldsResp)
+			}
 			if field["label"] != "method" {
 				continue
 			}
@@ -1011,6 +1014,70 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 		if len(seenTenants) == 0 {
 			t.Fatalf("expected __tenant_id__ label in multi-tenant volume_range metric labels, got series: %v", result)
+		}
+	})
+
+	t.Run("multi_tenant_detected_fields_cardinality_matches_distinct_values", func(t *testing.T) {
+		// api-gateway logs contain GET, POST, DELETE methods (3 distinct values).
+		// The cardinality value in detected_fields must be >= 3.
+		params := url.Values{}
+		params.Set("query", `{app="api-gateway",__tenant_id__="fake"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/detected_fields?"+params.Encode())
+		fields, _ := resp["fields"].([]interface{})
+		if len(fields) == 0 {
+			t.Fatalf("expected fields in multi-tenant detected_fields cardinality test, got %v", resp)
+		}
+
+		var methodCard int
+		for _, item := range fields {
+			field, ok := item.(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected field item to be map, got %T in: %v", item, resp)
+			}
+			if field["label"] != "method" {
+				continue
+			}
+			if card, ok := field["cardinality"].(float64); ok {
+				methodCard = int(card)
+			}
+		}
+		// GET, POST, DELETE = at least 3 distinct HTTP methods in api-gateway test data
+		if methodCard < 3 {
+			t.Fatalf("expected method cardinality >= 3 (GET/POST/DELETE), got %d in response: %v", methodCard, resp)
+		}
+	})
+
+	t.Run("multi_tenant_detected_labels_cardinality_field_is_present_and_accurate", func(t *testing.T) {
+		// detected_labels response includes cardinality per label. Verify
+		// the "app" label has cardinality >= 1 (at least api-gateway).
+		params := url.Values{}
+		params.Set("query", `{__tenant_id__="fake"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/detected_labels?"+params.Encode())
+		detectedLabels, _ := resp["detectedLabels"].([]interface{})
+		if len(detectedLabels) == 0 {
+			t.Fatalf("expected detectedLabels array, got %v", resp)
+		}
+		var appCard int
+		for _, item := range detectedLabels {
+			obj, ok := item.(map[string]interface{})
+			if !ok {
+				t.Fatalf("expected label item to be map, got %T in: %v", item, resp)
+			}
+			if obj["label"] != "app" {
+				continue
+			}
+			if card, ok := obj["cardinality"].(float64); ok {
+				appCard = int(card)
+			}
+		}
+		if appCard < 1 {
+			t.Fatalf("expected app label cardinality >= 1 in multi-tenant detected_labels, got %d in: %v", appCard, resp)
 		}
 	})
 
