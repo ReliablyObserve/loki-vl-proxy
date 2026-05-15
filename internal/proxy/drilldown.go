@@ -45,21 +45,21 @@ var suppressedDetectedFieldNames = map[string]struct{}{
 
 // OTel semantic convention patterns (dotted form) - priority 1 signals
 var otelSemanticFields = map[string]struct{}{
-	"service.name":            {},
-	"service.namespace":       {},
-	"k8s.pod.name":            {},
-	"k8s.namespace.name":      {},
-	"k8s.node.name":           {},
-	"k8s.container.name":      {},
-	"deployment.environment":  {},
-	"deployment.name":         {},
-	"deployment.version":      {},
-	"host.name":               {},
-	"host.id":                 {},
-	"host.arch":               {},
-	"telemetry.sdk.name":      {},
-	"telemetry.sdk.language":  {},
-	"telemetry.sdk.version":   {},
+	"service.name":           {},
+	"service.namespace":      {},
+	"k8s.pod.name":           {},
+	"k8s.namespace.name":     {},
+	"k8s.node.name":          {},
+	"k8s.container.name":     {},
+	"deployment.environment": {},
+	"deployment.name":        {},
+	"deployment.version":     {},
+	"host.name":              {},
+	"host.id":                {},
+	"host.arch":              {},
+	"telemetry.sdk.name":     {},
+	"telemetry.sdk.language": {},
+	"telemetry.sdk.version":  {},
 }
 
 // OTel underscore-form prefixes (priority 2 signals)
@@ -1133,10 +1133,10 @@ func normalizeBareSelectorQuery(query string) string {
 }
 
 var (
-	reDropStage          = regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
-	reParserStage        = regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
-	reJSONParserStage    = regexp.MustCompile(`\|\s*json(\s+[^|]+)?`)
-	reUnwrapStage        = regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
+	reDropStage       = regexp.MustCompile(`\|\s*drop\s+__error__(\s*,\s*__error_details__)?\s*`)
+	reParserStage     = regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
+	reJSONParserStage = regexp.MustCompile(`\|\s*json(\s+[^|]+)?`)
+	reUnwrapStage     = regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
 )
 
 func collapseSpaces(s string) string {

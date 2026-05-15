@@ -70,9 +70,9 @@ func FuzzTranslateSubquery(f *testing.F) {
 		`avg_over_time(rate({app="api"}[1m])[6h:30m])`,
 		`sum_over_time(rate({app="api"}[1m])[30m:5m])`,
 		`stddev_over_time(rate({app="api"}[5m])[1h:5m])`,
-		`rate({app="nginx"}[5m])[1h:5m]`,         // no outer func
-		`max_over_time(rate({app="nginx"}[5m]))`,  // no subquery range
-		`max_over_time(rate({app="nginx"}[5m])[])`, // empty brackets
+		`rate({app="nginx"}[5m])[1h:5m]`,              // no outer func
+		`max_over_time(rate({app="nginx"}[5m]))`,      // no subquery range
+		`max_over_time(rate({app="nginx"}[5m])[])`,    // empty brackets
 		`max_over_time(rate({app="nginx"}[5m])[1h:])`, // missing step
 		`max_over_time(rate({app="nginx"}[5m])[:5m])`, // missing range
 		`max_over_time(`,

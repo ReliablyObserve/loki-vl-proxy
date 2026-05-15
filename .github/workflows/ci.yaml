@@ -602,7 +602,7 @@ jobs:
           - name: tail-multitenancy
             pattern: '^(TestSetup_IngestLogs|TestFeature_Multitenancy_.*|TestFeature_AdminDebugEndpoints_DefaultClosed|TestFeature_Tail_.*|TestFeature_QueryAnalytics_Endpoint|TestFeature_SecurityHeaders|TestFeature_MetricsEndpoint|TestFeature_GzipCompression|TestFeature_NoGzipWithoutAccept|TestFeature_DerivedFields_TraceIDInJSON|TestFeature_ResponseStructureConsistency|TestFeature_QueryRange_vs_Query_Consistency|TestFeature_InstantVectorExpression_Compatibility|TestEdge_ConcurrentIdenticalQueries|TestEdge_LongQueryString|TestEdge_CombinedFilterTypes|TestEdge_EmptyResults|TestEdge_RapidSequentialQueries|TestEdge_InstantQuery)$'
           - name: semantics
-            pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrixManifest|TestQuerySemanticsOperationsInventory|TestQuerySemanticsMatrix|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*)$'
+            pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrixManifest|TestQuerySemanticsOperationsInventory|TestQuerySemanticsMatrix|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*)$'
     name: e2e-compat (${{ matrix.group.name }})
     steps:
       - uses: actions/checkout@v6

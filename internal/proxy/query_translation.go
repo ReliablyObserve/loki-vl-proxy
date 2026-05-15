@@ -1753,4 +1753,3 @@ func writeTranslatedStatsItemsFJ(buf *bytes.Buffer, items []*fj.Value, changedMe
 	}
 	buf.WriteByte(']')
 }
-

@@ -12,4 +12,3 @@ func lockProcEnvTest(t *testing.T) {
 	procEnvTestMu.Lock()
 	t.Cleanup(procEnvTestMu.Unlock)
 }
-

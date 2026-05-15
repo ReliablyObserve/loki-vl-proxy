@@ -1203,4 +1203,3 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 		req.Header.Set("ProjectID", "0")
 	}
 }
-

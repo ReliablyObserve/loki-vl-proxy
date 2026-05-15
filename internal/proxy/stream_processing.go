@@ -1608,4 +1608,3 @@ func appendJSONStringToBuffer(buf *bytes.Buffer, s string) {
 	}
 	buf.WriteByte('"')
 }
-

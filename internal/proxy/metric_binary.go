@@ -1025,4 +1025,3 @@ func metricKey(metric map[string]interface{}) string {
 	sort.Strings(parts)
 	return strings.Join(parts, ",")
 }
-

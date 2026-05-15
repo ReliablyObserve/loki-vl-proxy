@@ -57,11 +57,11 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 		addDetectedField(fields, "timestamp_end", "json", "string", nil, "2026-04-21T10:00:00Z")
 		addDetectedField(fields, "observed_timestamp_end", "json", "string", nil, "2026-04-21T10:00:00Z")
 
-			summary := fields["duration"]
-			if summary == nil {
-				t.Fatal("expected detected field summary")
-				return
-			}
+		summary := fields["duration"]
+		if summary == nil {
+			t.Fatal("expected detected field summary")
+			return
+		}
 		if summary.typ != "string" {
 			t.Fatalf("expected detected type to widen to string, got %q", summary.typ)
 		}

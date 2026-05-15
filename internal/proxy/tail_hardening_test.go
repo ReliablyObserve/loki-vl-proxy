@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/gorilla/websocket"
 )
 
 type fakeTailConn struct {

@@ -2,9 +2,9 @@ package cache
 
 import (
 	"bytes"
-	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"errors"
+	gzip "github.com/klauspost/compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"

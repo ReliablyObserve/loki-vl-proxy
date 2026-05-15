@@ -14,42 +14,42 @@ import (
 
 // ResourceSnapshot holds resource metrics scraped from a /metrics endpoint.
 type ResourceSnapshot struct {
-	Time              time.Time
-	CPUSecondsTotal   float64 // process_cpu_seconds_total or loki_vl_proxy_process_cpu_usage_ratio
-	MemRSSBytes       float64 // process_resident_memory_bytes or loki_vl_proxy_process_resident_memory_bytes
-	HeapInUseBytes    float64 // go_memstats_heap_inuse_bytes or loki_vl_proxy_go_memstats_heap_inuse_bytes
-	Goroutines        float64 // go_goroutines or loki_vl_proxy_go_goroutines
-	GCCycles          float64 // go_gc_duration_seconds_count or loki_vl_proxy_go_gc_cycles_total
-	NetRxBytesTotal   float64
-	NetTxBytesTotal   float64
+	Time                time.Time
+	CPUSecondsTotal     float64 // process_cpu_seconds_total or loki_vl_proxy_process_cpu_usage_ratio
+	MemRSSBytes         float64 // process_resident_memory_bytes or loki_vl_proxy_process_resident_memory_bytes
+	HeapInUseBytes      float64 // go_memstats_heap_inuse_bytes or loki_vl_proxy_go_memstats_heap_inuse_bytes
+	Goroutines          float64 // go_goroutines or loki_vl_proxy_go_goroutines
+	GCCycles            float64 // go_gc_duration_seconds_count or loki_vl_proxy_go_gc_cycles_total
+	NetRxBytesTotal     float64
+	NetTxBytesTotal     float64
 	DiskReadBytesTotal  float64
 	DiskWriteBytesTotal float64
 }
 
 // Delta computes resource usage between two snapshots.
 type Delta struct {
-	CPUSeconds      float64
-	MemRSSBytes     float64 // absolute (not delta)
-	HeapInUseBytes  float64 // absolute
-	Goroutines      float64 // absolute
-	GCCycles        float64
-	NetRxBytes      float64
-	NetTxBytes      float64
-	DiskReadBytes   float64
-	DiskWriteBytes  float64
+	CPUSeconds     float64
+	MemRSSBytes    float64 // absolute (not delta)
+	HeapInUseBytes float64 // absolute
+	Goroutines     float64 // absolute
+	GCCycles       float64
+	NetRxBytes     float64
+	NetTxBytes     float64
+	DiskReadBytes  float64
+	DiskWriteBytes float64
 }
 
 func (b ResourceSnapshot) Delta(a ResourceSnapshot) Delta {
 	return Delta{
-		CPUSeconds:      a.CPUSecondsTotal - b.CPUSecondsTotal,
-		MemRSSBytes:     a.MemRSSBytes,
-		HeapInUseBytes:  a.HeapInUseBytes,
-		Goroutines:      a.Goroutines,
-		GCCycles:        a.GCCycles - b.GCCycles,
-		NetRxBytes:      a.NetRxBytesTotal - b.NetRxBytesTotal,
-		NetTxBytes:      a.NetTxBytesTotal - b.NetTxBytesTotal,
-		DiskReadBytes:   a.DiskReadBytesTotal - b.DiskReadBytesTotal,
-		DiskWriteBytes:  a.DiskWriteBytesTotal - b.DiskWriteBytesTotal,
+		CPUSeconds:     a.CPUSecondsTotal - b.CPUSecondsTotal,
+		MemRSSBytes:    a.MemRSSBytes,
+		HeapInUseBytes: a.HeapInUseBytes,
+		Goroutines:     a.Goroutines,
+		GCCycles:       a.GCCycles - b.GCCycles,
+		NetRxBytes:     a.NetRxBytesTotal - b.NetRxBytesTotal,
+		NetTxBytes:     a.NetTxBytesTotal - b.NetTxBytesTotal,
+		DiskReadBytes:  a.DiskReadBytesTotal - b.DiskReadBytesTotal,
+		DiskWriteBytes: a.DiskWriteBytesTotal - b.DiskWriteBytesTotal,
 	}
 }
 

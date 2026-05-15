@@ -482,4 +482,3 @@ func applyConstantBinaryOp(left, right float64, op string) (float64, bool) {
 		return 0, false
 	}
 }
-

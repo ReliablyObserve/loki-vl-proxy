@@ -22,7 +22,6 @@ var (
 	_ = strings.Contains
 )
 
-
 // =============================================================================
 // CRITICAL: Data race — concurrent reads + SIGHUP reload of tenantMap
 // =============================================================================
@@ -120,23 +119,23 @@ func TestCritical_ApplyOp_AllOperators(t *testing.T) {
 		{10, 3, "-", 7},
 
 		// Missing operators that must be added
-		{10, 3, "%", 1},         // modulo
-		{2, 10, "^", 1024},      // power
-		{42, 42, "==", 1},       // comparison: equal → 1
-		{42, 43, "==", 0},       // comparison: not equal → 0
-		{42, 43, "!=", 1},       // not equal
-		{42, 42, "!=", 0},       // equal → 0
-		{10, 5, ">", 1},         // greater
-		{5, 10, ">", 0},         // not greater
-		{5, 5, ">", 0},          // equal not greater
-		{5, 10, "<", 1},         // less
-		{10, 5, "<", 0},         // not less
-		{10, 5, ">=", 1},        // greater or equal
-		{5, 5, ">=", 1},         // equal
-		{4, 5, ">=", 0},         // less
-		{5, 10, "<=", 1},        // less or equal
-		{5, 5, "<=", 1},         // equal
-		{10, 5, "<=", 0},        // greater
+		{10, 3, "%", 1},    // modulo
+		{2, 10, "^", 1024}, // power
+		{42, 42, "==", 1},  // comparison: equal → 1
+		{42, 43, "==", 0},  // comparison: not equal → 0
+		{42, 43, "!=", 1},  // not equal
+		{42, 42, "!=", 0},  // equal → 0
+		{10, 5, ">", 1},    // greater
+		{5, 10, ">", 0},    // not greater
+		{5, 5, ">", 0},     // equal not greater
+		{5, 10, "<", 1},    // less
+		{10, 5, "<", 0},    // not less
+		{10, 5, ">=", 1},   // greater or equal
+		{5, 5, ">=", 1},    // equal
+		{4, 5, ">=", 0},    // less
+		{5, 10, "<=", 1},   // less or equal
+		{5, 5, "<=", 1},    // equal
+		{10, 5, "<=", 0},   // greater
 	}
 
 	for _, tt := range tests {
@@ -528,4 +527,3 @@ func TestRegression_PushStillBlocked(t *testing.T) {
 		t.Errorf("expected 405 for push, got %d", w.Code)
 	}
 }
-

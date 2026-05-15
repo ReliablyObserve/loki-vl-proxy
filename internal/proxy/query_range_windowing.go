@@ -40,12 +40,12 @@ func init() {
 }
 
 const (
-	maxQueryRangeWindows              = 4096
-	queryRangeCollectedInitialCap     = 1024
-	queryRangeWindowFetchAttempts     = 5
+	maxQueryRangeWindows          = 4096
+	queryRangeCollectedInitialCap = 1024
+	queryRangeWindowFetchAttempts = 5
 	// windowEntryScannerLineBytes caps NDJSON line size in window streaming.
 	// Typical VL log entry is ≤ 64 KB; 1 MB covers pathological cases.
-	windowEntryScannerLineBytes = 1024 * 1024
+	windowEntryScannerLineBytes    = 1024 * 1024
 	queryRangeRetryMinBackoff      = 100 * time.Millisecond
 	queryRangeRetryMaxBackoff      = 5 * time.Second
 	queryRangeBatchRetryAttempts   = 3

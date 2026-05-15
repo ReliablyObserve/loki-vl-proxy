@@ -414,4 +414,3 @@ func TestSecurityHeaders_BareVsWrapped(t *testing.T) {
 		t.Error("wrapped mux must set X-Content-Type-Options: nosniff")
 	}
 }
-

@@ -376,4 +376,3 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	}
 	return values, nil
 }
-

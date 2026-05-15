@@ -1894,9 +1894,9 @@ func TestSnapshotForwardedAuth_UsableAsOrigRequestKey(t *testing.T) {
 
 func TestAllRangeWindowsEqual(t *testing.T) {
 	cases := []struct {
-		name     string
-		logql    string
-		wantDur  string // "" means wantOK=false
+		name    string
+		logql   string
+		wantDur string // "" means wantOK=false
 	}{
 		{"uniform_1m", `rate({a}[1m]) / rate({b}[1m])`, "1m0s"},
 		{"uniform_5m", `sum(rate({a}[5m])) + sum(rate({b}[5m]))`, "5m0s"},
@@ -1934,12 +1934,12 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 		return r
 	}
 	const start1m = "1700000060000000000" // arbitrary fixed start
-	const step1m = "60"                  // 60s == 1m
+	const step1m = "60"                   // 60s == 1m
 
 	cases := []struct {
-		name    string
-		logql   string
-		wantOK  bool
+		name   string
+		logql  string
+		wantOK bool
 	}{
 		{"bare_rate", `rate({app="x"}[1m])`, true},
 		{"bytes_rate", `bytes_rate({app="x"}[1m])`, true},
@@ -2221,23 +2221,23 @@ func TestParseInstantMetricPostAggQuery(t *testing.T) {
 		wantAgg instantMetricPostAgg
 	}{
 		{
-			input:  `sort_desc(rate({app="api"}[5m]))`,
-			wantOk: true,
+			input:   `sort_desc(rate({app="api"}[5m]))`,
+			wantOk:  true,
 			wantAgg: instantMetricPostAgg{name: "sort_desc", inner: `rate({app="api"}[5m])`},
 		},
 		{
-			input:  `sort(rate({app="api"}[5m]))`,
-			wantOk: true,
+			input:   `sort(rate({app="api"}[5m]))`,
+			wantOk:  true,
 			wantAgg: instantMetricPostAgg{name: "sort", inner: `rate({app="api"}[5m])`},
 		},
 		{
-			input:  `topk(5, rate({app="api"}[5m]))`,
-			wantOk: true,
+			input:   `topk(5, rate({app="api"}[5m]))`,
+			wantOk:  true,
 			wantAgg: instantMetricPostAgg{name: "topk", inner: `rate({app="api"}[5m])`, k: 5},
 		},
 		{
-			input:  `bottomk(3, count_over_time({app="x"}[1m]))`,
-			wantOk: true,
+			input:   `bottomk(3, count_over_time({app="x"}[1m]))`,
+			wantOk:  true,
 			wantAgg: instantMetricPostAgg{name: "bottomk", inner: `count_over_time({app="x"}[1m])`, k: 3},
 		},
 		{input: `rate({a}[1m])`, wantOk: false},
@@ -2549,9 +2549,9 @@ func TestBuildManualMetricLabels(t *testing.T) {
 
 func TestParseFloatValue(t *testing.T) {
 	cases := []struct {
-		input   interface{}
-		want    float64
-		wantOk  bool
+		input  interface{}
+		want   float64
+		wantOk bool
 	}{
 		{float64(3.14), 3.14, true},
 		{json.Number("2.71828"), 2.71828, true},

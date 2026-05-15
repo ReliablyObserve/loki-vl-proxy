@@ -290,9 +290,9 @@ func TestChaining_MetricQueryComplexMultiStepChains(t *testing.T) {
 	end := fmt.Sprintf("%d", now.UnixNano())
 
 	type testCase struct {
-		name    string
-		logql   string
-		wantOK  bool
+		name   string
+		logql  string
+		wantOK bool
 	}
 	cases := []testCase{
 		// line filter → parser → metric (line filter before parser, no post-parser filter)

@@ -517,4 +517,3 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 		}
 	}()
 }
-

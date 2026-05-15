@@ -15,10 +15,10 @@ type Histogram struct {
 	mu      sync.Mutex
 	samples []time.Duration
 
-	count    atomic.Int64
-	sum      atomic.Int64 // nanoseconds
-	errors   atomic.Int64
-	bytes    atomic.Int64 // response bytes
+	count     atomic.Int64
+	sum       atomic.Int64 // nanoseconds
+	errors    atomic.Int64
+	bytes     atomic.Int64 // response bytes
 	status4xx atomic.Int64
 	status5xx atomic.Int64
 }

@@ -2,9 +2,9 @@ package proxy
 
 import (
 	"bytes"
-	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"encoding/json"
+	gzip "github.com/klauspost/compress/gzip"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

@@ -24,12 +24,12 @@ type QueryTracker struct {
 // QueryStats tracks per-query statistics.
 type QueryStats struct {
 	Fingerprint string  `json:"fingerprint"`
-	Query       string  `json:"query"`       // original LogQL
+	Query       string  `json:"query"` // original LogQL
 	Endpoint    string  `json:"endpoint"`
 	Count       int64   `json:"count"`
 	TotalMs     float64 `json:"total_ms"`
 	MaxMs       float64 `json:"max_ms"`
-	LastSeen    int64   `json:"last_seen"`   // unix millis
+	LastSeen    int64   `json:"last_seen"` // unix millis
 	Errors      int64   `json:"errors"`
 }
 
@@ -139,8 +139,8 @@ func (qt *QueryTracker) evictOldest() {
 func (qt *QueryTracker) Handler(w http.ResponseWriter, r *http.Request) {
 	n := 20
 	result := map[string]interface{}{
-		"total_queries":  qt.TotalQueries.Load(),
-		"unique_queries": qt.size(),
+		"total_queries":    qt.TotalQueries.Load(),
+		"unique_queries":   qt.size(),
 		"top_by_frequency": qt.TopByFrequency(n),
 		"top_by_latency":   qt.TopByLatency(n),
 		"top_by_errors":    qt.TopByErrors(n),

@@ -703,13 +703,13 @@ func HighCardinality(now time.Time) Workload {
 		},
 		// Label values for a high-cardinality label (pod).
 		{
-			Name: "label_values_pod_1h",
-			Path: "/loki/api/v1/label/pod/values",
+			Name:   "label_values_pod_1h",
+			Path:   "/loki/api/v1/label/pod/values",
 			Params: url.Values{"start": {start1h}, "end": {end}},
 		},
 		{
-			Name: "label_values_pod_24h",
-			Path: "/loki/api/v1/label/pod/values",
+			Name:   "label_values_pod_24h",
+			Path:   "/loki/api/v1/label/pod/values",
 			Params: url.Values{"start": {start24h}, "end": {end}},
 		},
 		// Per-pod selection — fan-out across many streams at query time.

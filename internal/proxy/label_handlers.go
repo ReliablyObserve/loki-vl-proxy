@@ -629,4 +629,3 @@ func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, quer
 	sort.Strings(values)
 	return values
 }
-
