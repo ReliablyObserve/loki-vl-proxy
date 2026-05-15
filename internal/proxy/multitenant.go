@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1183,6 +1184,13 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 		}
 	}
 
+	// If tenantLabel routing is active, tenant isolation is done via query-level
+	// label filter injection — not via AccountID/ProjectID headers.
+	// Skip header-based routing for non-explicitly-mapped tenants.
+	if p.tenantLabel != "" {
+		return
+	}
+
 	// Default-tenant aliases keep Loki single-tenant compatibility while still
 	// targeting VictoriaLogs' built-in 0:0 tenant.
 	if isDefaultTenantAlias(orgID) {
@@ -1209,4 +1217,23 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 	if p.forwardTenantHeader && orgID != "" {
 		req.Header.Set("X-Scope-OrgID", orgID)
 	}
+}
+
+// injectTenantLabelFilter appends a LogsQL stream-selector filter to the "query"
+// or "q" param, scoping VL queries to logs with label=orgID.
+// Returns a shallow clone of params with the injection applied (original unchanged).
+func injectTenantLabelFilter(params url.Values, label, orgID string) url.Values {
+	result := make(url.Values, len(params))
+	for k, vs := range params {
+		result[k] = append([]string(nil), vs...)
+	}
+	escaped := strings.ReplaceAll(orgID, `"`, `\"`)
+	filter := ` {` + label + `="` + escaped + `"}`
+	for _, key := range []string{"query", "q"} {
+		if q := result.Get(key); q != "" {
+			result.Set(key, q+filter)
+			return result
+		}
+	}
+	return result
 }
