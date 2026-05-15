@@ -91,6 +91,21 @@ def extract_bullet_points(text: str) -> set[str]:
     return {line.strip() for line in text.splitlines() if line.strip().startswith("- ")}
 
 
+def extract_version_sections(text: str) -> set[str]:
+    """Return the set of versioned section headers present in the changelog."""
+    return set(re.findall(r"^## \[\d+\.\d+\.\d+\].*$", text, re.MULTILINE))
+
+
+def has_new_version_sections(head_text: str, base_text: str) -> bool:
+    """True if head CHANGELOG contains version sections absent from base.
+
+    Handles backport release metadata syncs where a patch version (e.g. [1.32.4])
+    is added to the changelog while main has already moved to a newer minor (1.33.x).
+    In that case [Unreleased] doesn't change, but a new version section is added.
+    """
+    return bool(extract_version_sections(head_text) - extract_version_sections(base_text))
+
+
 def has_genuinely_new_unreleased_entries(head_unreleased: str, base_full_changelog: str) -> bool:
     """True only if [Unreleased] on HEAD has bullets absent from every section of BASE.
 
@@ -216,8 +231,13 @@ def main() -> int:
 
     if is_release_metadata_sync(files):
         if head_unreleased.strip() == base_unreleased.strip():
+            # Backport release: new version section added but [Unreleased] unchanged
+            # (e.g. adding [1.32.4] while main is already at [1.33.x])
+            if has_new_version_sections(head_text, base_text):
+                print("changelog gate: ok (release metadata sync — backport version section added)")
+                return 0
             print(
-                "changelog gate: release metadata sync must materialize Unreleased into a version section",
+                "changelog gate: release metadata sync must materialize Unreleased into a version section or add a new version section",
                 file=sys.stderr,
             )
             return 1

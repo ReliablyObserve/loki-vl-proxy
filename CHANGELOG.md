@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - feat(ci): enforce `gofmt -s`, `misspell`, and `gocyclo` (threshold 30) in `.golangci.yml` so formatting and complexity regressions are blocked in the `lint` job going forward
 - feat(ci): add standalone `gofmt -s` check to lint job for Go Report Card parity
 - feat(ci): add `TestLogQL_Exhaustive_.*` and `TestPipeline_.*` to the `semantics` e2e-compat CI group — these test functions existed but were not wired into any matrix pattern
+- fix(ci): changelog gate now passes for backport release metadata PRs that add a new version section (e.g. `[1.32.4]`) without changing `[Unreleased]` — previously failed when the released items had already been absorbed into a newer minor release on main
 
 ### Documentation
 

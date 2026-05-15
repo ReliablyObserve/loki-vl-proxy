@@ -4,6 +4,7 @@ from scripts.ci.check_changelog_pr import (
     extract_unreleased_section,
     has_genuinely_new_unreleased_entries,
     has_meaningful_changelog_content,
+    has_new_version_sections,
     is_dependency_only_pr,
     is_release_metadata_sync,
     should_require_changelog,
@@ -148,6 +149,20 @@ class CheckChangelogPRTests(unittest.TestCase):
         )
         self.assertFalse(is_release_metadata_sync(["README.md", "docs/observability.md"]))
         self.assertFalse(is_release_metadata_sync(["CHANGELOG.md", "internal/proxy/proxy.go"]))
+
+    def test_has_new_version_sections_detects_added_section(self):
+        base = "## [Unreleased]\n\n## [1.33.0] - 2026-05-14\n\n- something\n"
+        head = "## [Unreleased]\n\n## [1.33.0] - 2026-05-14\n\n## [1.32.4] - 2026-05-14\n\n- fix\n"
+        self.assertTrue(has_new_version_sections(head, base))
+
+    def test_has_new_version_sections_no_change(self):
+        text = "## [Unreleased]\n\n## [1.33.0] - 2026-05-14\n\n- something\n"
+        self.assertFalse(has_new_version_sections(text, text))
+
+    def test_has_new_version_sections_ignores_unreleased(self):
+        base = "## [Unreleased]\n\n- new thing\n\n## [1.33.0] - 2026-05-14\n"
+        head = "## [Unreleased]\n\n- different thing\n\n## [1.33.0] - 2026-05-14\n"
+        self.assertFalse(has_new_version_sections(head, base))
 
 
 if __name__ == "__main__":
