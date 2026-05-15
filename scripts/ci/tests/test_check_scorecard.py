@@ -36,6 +36,25 @@ class CheckScorecardTests(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
 
+    def test_main_skips_check_when_score_is_minus_one(self):
+        # Score -1 means "could not determine" (e.g. CI-Tests on a fresh merge commit).
+        # Must be treated as unavailable, not a failure.
+        report = self.write_report(
+            {
+                "score": 6.0,
+                "checks": [
+                    {"name": "Dangerous-Workflow", "score": 10},
+                    {"name": "CI-Tests", "score": -1},
+                ],
+            }
+        )
+        rc = check_scorecard.main_for_test(
+            report,
+            min_overall=5.0,
+            require_checks={"Dangerous-Workflow": 10.0, "CI-Tests": 8.0},
+        )
+        self.assertEqual(rc, 0)
+
     def test_main_fails_when_check_is_below_threshold(self):
         report = self.write_report(
             {

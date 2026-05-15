@@ -41,6 +41,12 @@ def evaluate_report(
         if score is None:
             failures.append(f"scorecard check {check_name!r} has no score")
             continue
+        # Score of -1 means "could not determine" (e.g. CI-Tests when evaluating a
+        # fresh PR merge commit that has no CI runs yet). Treat as unavailable rather
+        # than a failure so transient evaluation gaps don't block PRs.
+        if float(score) == -1:
+            print(f"  note: {check_name} score is -1 (unavailable) — skipping requirement")
+            continue
         if float(score) < min_score:
             failures.append(
                 f"{check_name} score {float(score):.1f} is below minimum {min_score:.1f}"
