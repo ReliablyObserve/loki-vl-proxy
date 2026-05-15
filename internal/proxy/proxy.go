@@ -116,6 +116,7 @@ type Config struct {
 	CBWindowDuration    time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
 	CoalescerDisabled   bool                     // disable singleflight coalescing; every request makes its own backend call
 	TenantMap           map[string]TenantMapping // string org ID → VL account/project
+	TenantLabel         string                   // VL field name for label-based tenant routing (alternative to AccountID/ProjectID headers)
 	AuthEnabled         bool
 	RequireTenantHeader bool
 	AllowGlobalTenant   bool
@@ -356,6 +357,7 @@ type Proxy struct {
 	breaker                               *mw.CircuitBreaker
 	configMu                              sync.RWMutex // protects tenantMap and labelTranslator
 	tenantMap                             map[string]TenantMapping
+	tenantLabel                           string
 	authEnabled                           bool
 	requireTenantHeader                   bool
 	allowGlobalTenant                     bool
@@ -927,6 +929,7 @@ func New(cfg Config) (*Proxy, error) {
 		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
 		breaker:                               mw.NewCircuitBreaker(cbFail, 3, cbOpen, cbWindow),
 		tenantMap:                             cfg.TenantMap,
+		tenantLabel:                           cfg.TenantLabel,
 		authEnabled:                           cfg.AuthEnabled,
 		requireTenantHeader:                   cfg.RequireTenantHeader,
 		allowGlobalTenant:                     cfg.AllowGlobalTenant,
