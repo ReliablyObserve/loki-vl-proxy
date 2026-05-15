@@ -765,7 +765,13 @@ func run(
 	defer runtime.cacheCleanup()
 	defer runtime.stopOTLP()
 
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
 	go watchReloadSignals(runtime.reloadCh, runtime.proxy, getenv, envCfg.tenantMapFile, logger)
+	if *tenantMapFile != "" && *tenantMapReloadInterval > 0 {
+		go watchTenantMapFile(ctx, *tenantMapFile, *tenantMapReloadInterval, runtime.proxy, logger)
+	}
 	go runServerLoopFn(runtime.server, serverLoopOptions{
 		listenAddr:  envCfg.listenAddr,
 		backendURL:  envCfg.backendURL,
@@ -1211,6 +1217,44 @@ func loadTenantMapFile(path string) (map[string]proxy.TenantMapping, error) {
 		}
 	}
 	return m, nil
+}
+
+// watchTenantMapFile polls path every interval for mtime changes and calls
+// p.ReloadTenantMap when the file is updated. Exits when ctx is cancelled.
+// Works with Kubernetes ConfigMap volumes: K8s atomically replaces the ..data
+// symlink on ConfigMap update; os.Stat follows the symlink and returns the new mtime.
+func watchTenantMapFile(ctx context.Context, path string, interval time.Duration, p reloadableProxy, logger *slog.Logger) {
+	var lastMod time.Time
+	if fi, err := os.Stat(path); err == nil {
+		lastMod = fi.ModTime()
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fi, err := os.Stat(path)
+			if err != nil {
+				logger.Warn("tenant-map-file: stat failed", "path", path, "error", err)
+				continue
+			}
+			if fi.ModTime().Equal(lastMod) {
+				continue
+			}
+			lastMod = fi.ModTime()
+			m, err := loadTenantMapFile(path)
+			if err != nil {
+				logger.Error("tenant-map-file: reload failed after mtime change", "path", path, "error", err)
+				continue
+			}
+			p.ReloadTenantMap(m)
+			logger.Info("tenant-map-file: reloaded after change detected", "path", path, "count", len(m))
+		}
+	}
 }
 
 func parseTenantDefaultLimitsJSON(raw string) (map[string]any, error) {
