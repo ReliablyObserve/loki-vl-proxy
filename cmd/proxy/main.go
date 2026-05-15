@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -74,6 +75,7 @@ type proxyRuntimeConfig struct {
 	tenantMapJSON                       string
 	tenantMapFile                       string
 	tenantMapReloadInterval             time.Duration
+	forwardTenantHeader                 bool
 	tenantLimitsAllowPublish            string
 	tenantDefaultLimitsJSON             string
 	tenantLimitsJSON                    string
@@ -362,6 +364,7 @@ func run(
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
 	tenantMapFile := fs.String("tenant-map-file", "", "Path to YAML or JSON file containing the tenant map. Hot-reloaded on SIGHUP and automatically when the file changes (see -tenant-map-reload-interval). Supports Kubernetes ConfigMap volumes.")
 	tenantMapReloadInterval := fs.Duration("tenant-map-reload-interval", 30*time.Second, "How often to poll -tenant-map-file for mtime changes. Set to 0 to disable polling.")
+	forwardTenantHeader := fs.Bool("forward-tenant-header", true, "Forward the per-tenant X-Scope-OrgID header to the upstream backend. Safe for VictoriaLogs (ignores it). Required for Victoria Lakehouse native tenant routing.")
 	tenantLimitsAllowPublish := fs.String("tenant-limits-allow-publish", "", "Comma-separated limit fields published on /config/tenant/v1/limits and /loki/api/v1/drilldown-limits")
 	tenantDefaultLimitsJSON := fs.String("tenant-default-limits", "", `JSON map of default published limits overrides (for example {"query_timeout":"2m","max_query_series":1000})`)
 	tenantLimitsJSON := fs.String("tenant-limits", "", `JSON map of per-tenant published limits overrides keyed by X-Scope-OrgID`)
@@ -568,6 +571,13 @@ func run(
 		deploymentEnv:     *deploymentEnvironment,
 	}, getenv)
 
+	if v := getenv("FORWARD_TENANT_HEADER"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err == nil {
+			*forwardTenantHeader = b
+		}
+	}
+
 	if err := validateAdminExposure(envCfg.listenAddr, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
 		return err
 	}
@@ -615,6 +625,7 @@ func run(
 			tenantMapJSON:                       envCfg.tenantMapJSON,
 			tenantMapFile:                       envCfg.tenantMapFile,
 			tenantMapReloadInterval:             *tenantMapReloadInterval,
+			forwardTenantHeader:                 *forwardTenantHeader,
 			tenantLimitsAllowPublish:            envCfg.tenantLimitsAllow,
 			tenantDefaultLimitsJSON:             envCfg.tenantDefaultJSON,
 			tenantLimitsJSON:                    envCfg.tenantLimitsJSON,
@@ -1599,6 +1610,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		AuthEnabled:                        cfg.authEnabled,
 		RequireTenantHeader:                cfg.requireTenantHeader,
 		AllowGlobalTenant:                  cfg.allowGlobalTenant,
+		ForwardTenantHeader:                cfg.forwardTenantHeader,
 		RegisterInstrumentation:            cfg.registerInstrumentation,
 		EnablePprof:                        cfg.enablePprof,
 		EnableQueryAnalytics:               cfg.enableQueryAnalytics,

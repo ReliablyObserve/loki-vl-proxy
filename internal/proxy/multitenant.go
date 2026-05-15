@@ -1202,4 +1202,11 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 		req.Header.Set("AccountID", orgID)
 		req.Header.Set("ProjectID", "0")
 	}
+
+	// Forward the per-tenant X-Scope-OrgID to upstream.
+	// VictoriaLogs ignores it; Victoria Lakehouse uses it for native tenant routing.
+	// Uses orgID from context (per-tenant value set for this fanout sub-request).
+	if p.forwardTenantHeader && orgID != "" {
+		req.Header.Set("X-Scope-OrgID", orgID)
+	}
 }

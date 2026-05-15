@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`-forward-tenant-header` flag** (default `true`): Forward the per-tenant `X-Scope-OrgID` header to the upstream backend on each sub-request. Safe for VictoriaLogs (silently ignored). Required for Victoria Lakehouse native tenant routing. Set `-forward-tenant-header=false` or `FORWARD_TENANT_HEADER=false` to disable.
 - **`-tenant-map-file` flag**: Load the OrgID→AccountID/ProjectID tenant mapping from a YAML or JSON file. Supports hot-reload via SIGHUP and automatic mtime-polling (default 30s) for Kubernetes ConfigMap volume updates without proxy restart. `TENANT_MAP_FILE` environment variable also accepted. File entries take priority over `-tenant-map` inline JSON for the same key.
 - **`-tenant-map-reload-interval` flag** (default `30s`): Poll interval for detecting `-tenant-map-file` changes. Set to `0` to disable polling and rely on SIGHUP-only reload.
 

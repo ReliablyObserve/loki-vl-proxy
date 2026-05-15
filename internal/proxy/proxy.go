@@ -119,6 +119,7 @@ type Config struct {
 	AuthEnabled         bool
 	RequireTenantHeader bool
 	AllowGlobalTenant   bool
+	ForwardTenantHeader bool // forward per-tenant X-Scope-OrgID to upstream (safe for VL, needed for Victoria Lakehouse)
 
 	// Grafana datasource compatibility
 	MaxLines int // default max lines per query (0=1000)
@@ -358,6 +359,7 @@ type Proxy struct {
 	authEnabled                           bool
 	requireTenantHeader                   bool
 	allowGlobalTenant                     bool
+	forwardTenantHeader                   bool
 	maxLines                              int
 	forwardHeaders                        []string          // headers to copy from client request to VL
 	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
@@ -928,6 +930,7 @@ func New(cfg Config) (*Proxy, error) {
 		authEnabled:                           cfg.AuthEnabled,
 		requireTenantHeader:                   cfg.RequireTenantHeader,
 		allowGlobalTenant:                     cfg.AllowGlobalTenant,
+		forwardTenantHeader:                   cfg.ForwardTenantHeader,
 		maxLines:                              maxLines,
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
 		forwardHeaders:                        cfg.ForwardHeaders,
