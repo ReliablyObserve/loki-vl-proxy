@@ -808,7 +808,7 @@ func TestReloadDynamicConfig(t *testing.T) {
 		"FIELD_MAPPING": `[{"vl_field":"service.name","loki_label":"service_name"}]`,
 	}
 
-	reloadDynamicConfig(fake, func(key string) string { return env[key] }, logger)
+	reloadDynamicConfig(fake, func(key string) string { return env[key] }, "", logger)
 
 	if fake.tenantMap["team-a"] != (proxy.TenantMapping{AccountID: "1", ProjectID: "2"}) {
 		t.Fatalf("unexpected tenant map reload: %+v", fake.tenantMap)
@@ -831,7 +831,7 @@ func TestReloadDynamicConfig_InvalidJSON(t *testing.T) {
 		"FIELD_MAPPING": "{",
 	}
 
-	reloadDynamicConfig(fake, func(key string) string { return env[key] }, logger)
+	reloadDynamicConfig(fake, func(key string) string { return env[key] }, "", logger)
 
 	if fake.tenantMap != nil || fake.fieldMappings != nil {
 		t.Fatalf("expected no reloads on invalid JSON, got %+v %+v", fake.tenantMap, fake.fieldMappings)
@@ -1744,7 +1744,7 @@ func TestWatchReloadSignals(t *testing.T) {
 			default:
 				return ""
 			}
-		}, logger)
+		}, "", logger)
 		close(done)
 	}()
 
