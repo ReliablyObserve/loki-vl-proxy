@@ -81,6 +81,33 @@ func TestInjectTenantLabelFilter_EscapesDoubleQuotesInOrgID(t *testing.T) {
 	}
 }
 
+func TestInjectTenantLabelFilter_EscapesBackslashInOrgID(t *testing.T) {
+	params := url.Values{}
+	params.Set("query", `{app="x"}`)
+
+	result := injectTenantLabelFilter(params, "org", `tenant\path`)
+
+	got := result.Get("query")
+	want := `{app="x"} {org="tenant\\path"}`
+	if got != want {
+		t.Fatalf("backslash escaping:\n  got:  %q\n  want: %q", got, want)
+	}
+}
+
+func TestInjectTenantLabelFilter_EscapesBackslashThenDoubleQuote(t *testing.T) {
+	params := url.Values{}
+	params.Set("query", `{app="x"}`)
+
+	// backslash-then-doublequote: the backslash must be doubled first
+	result := injectTenantLabelFilter(params, "org", `tenant\"`)
+
+	got := result.Get("query")
+	want := `{app="x"} {org="tenant\\\""}`
+	if got != want {
+		t.Fatalf("combined backslash+quote escaping:\n  got:  %q\n  want: %q", got, want)
+	}
+}
+
 func TestInjectTenantLabelFilter_QueryParamTakesPriorityOverQParam(t *testing.T) {
 	params := url.Values{}
 	params.Set("query", `{app="a"}`)

@@ -116,6 +116,13 @@ func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
 	// In label-based routing mode any org ID is accepted: isolation is enforced
 	// by injecting a LogsQL label filter into the query, not via AccountID headers.
 	if tenantLabel != "" {
+		// orgID is injected into LogsQL queries as a label value.
+		// Reject characters that cannot be safely embedded: newlines, carriage returns, null bytes.
+		for _, ch := range orgID {
+			if ch == '\n' || ch == '\r' || ch == 0 {
+				return &requestPolicyError{msg: "invalid character in X-Scope-OrgID for tenant-label mode", status: http.StatusBadRequest}
+			}
+		}
 		return nil
 	}
 

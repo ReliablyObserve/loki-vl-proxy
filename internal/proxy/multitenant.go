@@ -1227,7 +1227,9 @@ func injectTenantLabelFilter(params url.Values, label, orgID string) url.Values 
 	for k, vs := range params {
 		result[k] = append([]string(nil), vs...)
 	}
-	escaped := strings.ReplaceAll(orgID, `"`, `\"`)
+	// Escape backslash first, then double-quote, to produce valid LogsQL string literals.
+	escaped := strings.ReplaceAll(orgID, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
 	filter := ` {` + label + `="` + escaped + `"}`
 	for _, key := range []string{"query", "q"} {
 		if q := result.Get(key); q != "" {
