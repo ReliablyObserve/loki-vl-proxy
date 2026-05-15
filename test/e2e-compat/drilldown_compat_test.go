@@ -946,6 +946,74 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("multi_tenant_volume_range_returns_level_series_with_tenant_labels", func(t *testing.T) {
+		params := url.Values{}
+		params.Set("query", `{app="api-gateway",__tenant_id__="fake"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("step", "60")
+		params.Set("targetLabels", "detected_level")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/index/volume_range?"+params.Encode())
+		data := extractMap(resp, "data")
+		if data == nil {
+			t.Fatalf("expected data envelope in multi-tenant volume_range, got %v", resp)
+		}
+		result := extractArray(data, "result")
+		if len(result) == 0 {
+			t.Fatalf("expected non-empty result array for multi-tenant volume_range, got %v", resp)
+		}
+		// Every series must have a non-empty values array (matrix type)
+		for i, item := range result {
+			obj, ok := item.(map[string]interface{})
+			if !ok {
+				t.Fatalf("result[%d] is not an object: %v", i, item)
+			}
+			values, _ := obj["values"].([]interface{})
+			if len(values) == 0 {
+				t.Fatalf("result[%d] has no values (expected matrix data points): %v", i, obj)
+			}
+		}
+	})
+
+	t.Run("multi_tenant_volume_range_without_tenant_filter_injects_tenant_id_label", func(t *testing.T) {
+		// Without __tenant_id__ filter, merged multi-tenant volume_range must
+		// include __tenant_id__ in each series metric so Drilldown can split by tenant.
+		params := url.Values{}
+		params.Set("query", `{app="api-gateway"}`)
+		params.Set("start", start)
+		params.Set("end", end)
+		params.Set("step", "60")
+		params.Set("targetLabels", "__tenant_id__")
+
+		resp := getJSON(t, grafanaURL+"/api/datasources/uid/"+multiUID+"/resources/index/volume_range?"+params.Encode())
+		data := extractMap(resp, "data")
+		if data == nil {
+			t.Fatalf("expected data envelope in multi-tenant volume_range without tenant filter, got %v", resp)
+		}
+		result := extractArray(data, "result")
+		if len(result) == 0 {
+			t.Fatalf("expected non-empty result for multi-tenant volume_range without filter, got %v", resp)
+		}
+		seenTenants := map[string]bool{}
+		for i, item := range result {
+			obj, ok := item.(map[string]interface{})
+			if !ok {
+				t.Fatalf("result[%d] is not an object: %v", i, item)
+			}
+			metric, ok := obj["metric"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("result[%d] missing or invalid 'metric' field: %v", i, obj)
+			}
+			if tid, ok := metric["__tenant_id__"].(string); ok && tid != "" {
+				seenTenants[tid] = true
+			}
+		}
+		if len(seenTenants) == 0 {
+			t.Fatalf("expected __tenant_id__ label in multi-tenant volume_range metric labels, got series: %v", result)
+		}
+	})
+
 	t.Run("parsed_only_fields_refresh_after_new_logs_arrive", func(t *testing.T) {
 		serviceName := fmt.Sprintf("drilldown-fresh-%d", time.Now().UnixNano())
 		streamFields := []string{"app", "service_name", "cluster", "namespace"}
