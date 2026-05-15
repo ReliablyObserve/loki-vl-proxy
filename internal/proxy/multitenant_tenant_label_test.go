@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -187,6 +188,33 @@ func TestTenantLabelRouting_InjectsLabelFilterIntoVLQuery(t *testing.T) {
 	}
 	if !strings.Contains(receivedQuery, `{org_id="production"}`) {
 		t.Fatalf("expected VL query to contain {org_id=\"production\"}, got: %q", receivedQuery)
+	}
+}
+
+func TestTenantLabelRouting_TailInjectsLabelFilter(t *testing.T) {
+	var receivedQuery string
+	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedQuery = r.URL.Query().Get("query")
+		// Respond with a streaming body that closes immediately so openNativeTailStream
+		// gets a non-200 from a minimal handler — we only care about the URL it called.
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer vl.Close()
+
+	p := newTestProxyWithOptions(t, withBackendURL(vl.URL), withTenantLabel("org_id"))
+
+	// Build a context that carries the orgID, mirroring what withOrgID does for normal requests.
+	ctx := context.WithValue(context.Background(), orgIDKey, "production")
+
+	// Call openNativeTailStream directly — this is the function that builds the VL URL by
+	// hand and therefore bypasses vlGetInner's automatic tenant-label injection.
+	resp, _, _ := p.openNativeTailStream(ctx, `{app="api-gateway"}`)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+
+	if !strings.Contains(receivedQuery, `org_id="production"`) {
+		t.Fatalf("expected tail VL query to contain tenant label filter, got: %q", receivedQuery)
 	}
 }
 
