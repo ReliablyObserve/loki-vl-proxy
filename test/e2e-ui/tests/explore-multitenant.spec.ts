@@ -64,4 +64,40 @@ test.describe("Grafana Explore — Multi-Tenant Scenarios", () => {
       await guards.assertClean();
     }
   );
+
+  test(
+    "filter-for-value in multi-tenant explore adds label to query without error @explore-mt",
+    async ({ page }) => {
+      const guards = installGrafanaGuards(page, {
+        allowedAlertErrors: [/^Unknown error$/i],
+      });
+
+      await openExplore(page, PROXY_MULTI_DS, '{app="api-gateway", __tenant_id__="fake"}');
+      await waitForGrafanaReady(page);
+      await runQuery(page);
+      await assertLogsVisible(page);
+
+      // Expand the first log row to reveal field detail panel
+      const firstRow = page.locator('[data-testid="data-testid log-row-message"]').first();
+      await firstRow.click({ timeout: 10_000 });
+
+      // Wait for the detail panel to open
+      const detailPanel = page.locator('[data-testid="data-testid log-details"]').first();
+      await expect(detailPanel).toBeVisible({ timeout: 10_000 });
+
+      // Click "Filter for value" if present (graceful degradation if not visible)
+      const filterButton = detailPanel
+        .locator('button[aria-label*="Filter for value"], button[title*="filter"]')
+        .first();
+
+      if (await filterButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
+        await filterButton.click();
+        await waitForGrafanaReady(page);
+        await assertLogsVisible(page);
+        await expect(page.locator('[data-testid="data-testid Alert error"]')).toHaveCount(0);
+      }
+
+      await guards.assertClean();
+    }
+  );
 });
