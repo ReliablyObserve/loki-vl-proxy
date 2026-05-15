@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **e2e: multi-tenant field/label cardinality accuracy**: verify `detected_fields` cardinality ≥ known distinct values (GET/POST/DELETE for `method`); verify `detected_labels` includes `cardinality` field with value ≥ 1.
 - **e2e: `| drop __error__` instant-query regression (#370)**: `sum(count_over_time(... | drop __error__))` as instant query must return exactly one aggregated result, not one per stream.
 - **e2e: `detected_fields` after multi-stage pipeline**: `| json | drop __error__` pipeline must not suppress parsed JSON field names in `detected_fields` response.
+- **e2e-ui: multi-tenant Explore scenarios**: cross-datasource switching (multi-tenant → single-tenant), missing tenant shows empty result not error banner, filter-for-value click interaction in multi-tenant context.
+- **e2e-ui: multi-tenant Drilldown cardinality and error boundary**: field cards show non-zero cardinality badges, label filter scopes results to selected tenant, missing tenant shows empty result not browser crash.
 
 ## [1.33.1] - 2026-05-14
 

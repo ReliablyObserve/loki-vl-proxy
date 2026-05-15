@@ -744,6 +744,8 @@ jobs:
             command: --grep @drilldown-mt
           - name: explore-ops
             command: --grep @explore-ops
+          - name: explore-mt
+            command: --grep @explore-mt
     name: e2e-ui (${{ matrix.shard.name }})
     steps:
       - uses: actions/checkout@v6
