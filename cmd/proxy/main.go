@@ -765,7 +765,7 @@ func run(
 	defer runtime.cacheCleanup()
 	defer runtime.stopOTLP()
 
-	go watchReloadSignals(runtime.reloadCh, runtime.proxy, getenv, logger)
+	go watchReloadSignals(runtime.reloadCh, runtime.proxy, getenv, envCfg.tenantMapFile, logger)
 	go runServerLoopFn(runtime.server, serverLoopOptions{
 		listenAddr:  envCfg.listenAddr,
 		backendURL:  envCfg.backendURL,
@@ -951,10 +951,10 @@ func handleShutdown(shutdownCh <-chan os.Signal, srv httpServer, timeout time.Du
 	logger.Info("shutdown complete")
 }
 
-func watchReloadSignals(reloadCh <-chan os.Signal, p reloadableProxy, getenv func(string) string, logger *slog.Logger) {
+func watchReloadSignals(reloadCh <-chan os.Signal, p reloadableProxy, getenv func(string) string, tenantMapFile string, logger *slog.Logger) {
 	for range reloadCh {
 		logger.Info("received sighup, reloading configuration")
-		reloadDynamicConfig(p, getenv, logger)
+		reloadDynamicConfig(p, getenv, tenantMapFile, logger)
 	}
 }
 
@@ -1680,8 +1680,16 @@ func runServerLoop(srv httpServer, opts serverLoopOptions, logger *slog.Logger, 
 	}
 }
 
-func reloadDynamicConfig(p reloadableProxy, getenv func(string) string, logger *slog.Logger) {
-	if v := getenv("TENANT_MAP"); v != "" {
+func reloadDynamicConfig(p reloadableProxy, getenv func(string) string, tenantMapFile string, logger *slog.Logger) {
+	if tenantMapFile != "" {
+		m, err := loadTenantMapFile(tenantMapFile)
+		if err != nil {
+			logger.Error("SIGHUP: failed to reload tenant-map-file", "path", tenantMapFile, "error", err)
+		} else {
+			p.ReloadTenantMap(m)
+			logger.Info("SIGHUP: reloaded tenant mappings from file", "path", tenantMapFile, "count", len(m))
+		}
+	} else if v := getenv("TENANT_MAP"); v != "" {
 		var newTenantMap map[string]proxy.TenantMapping
 		if err := json.Unmarshal([]byte(v), &newTenantMap); err != nil {
 			logger.Error("failed to reload tenant map", "error", err)
