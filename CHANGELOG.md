@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- fix(ci): remove accidentally committed `bench/loki-bench` and `proxy.test` binaries; add both to `.gitignore` — fixes OpenSSF Scorecard Binary-Artifacts regression
+- fix(ci): OpenSSF Scorecard now evaluates the PR/push commit instead of the default branch HEAD so Binary-Artifacts and other checks reflect what will land
+- fix(ci): treat scorecard check score `-1` (undetermined) and entirely absent checks as unavailable rather than hard failures — prevents transient evaluation gaps from blocking PRs
+
 ## [1.34.0] - 2026-05-15
 
 ### CI
