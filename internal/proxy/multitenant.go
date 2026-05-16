@@ -904,7 +904,8 @@ func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []s
 
 		fields, fieldValues, err := p.detectFields(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
 		if err != nil {
-			return nil, "", err
+			p.log.Warn("detected_fields unavailable for tenant, skipping", "tenant", tenantID, "err", err)
+			continue
 		}
 		for _, item := range fields {
 			label, _ := item["label"].(string)
@@ -1003,7 +1004,8 @@ func (p *Proxy) multiTenantDetectedLabelsResponse(r *http.Request, tenantIDs []s
 
 		_, summaries, err := p.detectLabels(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
 		if err != nil {
-			return nil, "", err
+			p.log.Warn("detected_labels unavailable for tenant, skipping", "tenant", tenantID, "err", err)
+			continue
 		}
 		for label, summary := range summaries {
 			existing := merged[label]
