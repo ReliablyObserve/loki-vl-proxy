@@ -36,6 +36,25 @@ class CheckScorecardTests(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
 
+    def test_main_skips_check_when_entirely_absent(self):
+        # A check absent from scorecard output entirely (e.g. SAST on a fresh merge
+        # commit) must be treated as unavailable, not a hard failure.
+        report = self.write_report(
+            {
+                "score": 6.0,
+                "checks": [
+                    {"name": "Dangerous-Workflow", "score": 10},
+                    # SAST deliberately absent
+                ],
+            }
+        )
+        rc = check_scorecard.main_for_test(
+            report,
+            min_overall=5.0,
+            require_checks={"Dangerous-Workflow": 10.0, "SAST": 7.0},
+        )
+        self.assertEqual(rc, 0)
+
     def test_main_skips_check_when_score_is_minus_one(self):
         # Score -1 means "could not determine" (e.g. CI-Tests on a fresh merge commit).
         # Must be treated as unavailable, not a failure.
