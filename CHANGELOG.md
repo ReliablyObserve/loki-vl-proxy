@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`-tenant-label` flag**: Label-based VL tenant routing. When set to a VL field name (e.g., `-tenant-label=org_id`), injects `{org_id="<X-Scope-OrgID>"}` into every VL query instead of setting `AccountID`/`ProjectID` headers. Use when all log data lives under VL's default tenant (0:0) and is segregated by a label field. Explicit `-tenant-map` entries continue to use VL native tenancy and take priority. Default-tenant aliases (`0`, `fake`, `default`, `*`) bypass the filter. `TENANT_LABEL` environment variable also accepted.
+- **`-forward-tenant-header` flag** (default `true`): Forward the per-tenant `X-Scope-OrgID` header to the upstream backend on each sub-request. Safe for VictoriaLogs (silently ignored). Required for Victoria Lakehouse native tenant routing. Set `-forward-tenant-header=false` or `FORWARD_TENANT_HEADER=false` to disable.
+- **`-tenant-map-file` flag**: Load the OrgID→AccountID/ProjectID tenant mapping from a YAML or JSON file. Supports hot-reload via SIGHUP and automatic mtime-polling (default 30s) for Kubernetes ConfigMap volume updates without proxy restart. `TENANT_MAP_FILE` environment variable also accepted. File entries take priority over `-tenant-map` inline JSON for the same key.
+- **`-tenant-map-reload-interval` flag** (default `30s`): Poll interval for detecting `-tenant-map-file` changes. Set to `0` to disable polling and rely on SIGHUP-only reload.
+
+### Breaking Changes
+
+- **`X-Scope-OrgID` is now forwarded upstream by default**: The new `-forward-tenant-header` flag defaults to `true`, which means the proxy sends the client's `X-Scope-OrgID` header to the upstream backend on every sub-request — including deployments that use `-tenant-map` with numeric `AccountID`/`ProjectID` routing. VictoriaLogs silently ignores this header, so VL-backed deployments are unaffected. Deployments that proxy to a **Loki** or other backend that interprets `X-Scope-OrgID` may observe changed routing behavior. To restore the previous behavior (no `X-Scope-OrgID` forwarding), set `-forward-tenant-header=false` or `FORWARD_TENANT_HEADER=false`.
+
+- **Tenant map now rejects non-numeric `account_id`/`project_id` at load time**: Both `-tenant-map` JSON and `-tenant-map-file` YAML/JSON now validate that every `account_id` and `project_id` value is a non-negative integer in the uint32 range (0–4294967295). Mappings with empty, negative, non-numeric, or out-of-range values are rejected on startup or reload with a descriptive error. Previously these values were silently forwarded as-is to VictoriaLogs (which would have rejected the request at the HTTP layer). Action required only if you had non-numeric IDs in your tenant map — correct them to valid integer strings.
+
 ### CI
 
 - fix(ci): remove accidentally committed `bench/loki-bench` and `proxy.test` binaries; add both to `.gitignore` — fixes OpenSSF Scorecard Binary-Artifacts regression
@@ -28,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - docs(readme): add Go Report Card badge
+
+### Tests
+
+- **e2e: multi-tenant `volume_range` regression tests**: verify `index/volume_range` returns time-series data with `__tenant_id__` labels in multi-tenant Drilldown context; cover both tenant-filtered and unfiltered cases.
+- **e2e: multi-tenant field/label cardinality accuracy**: verify `detected_fields` cardinality ≥ known distinct values (GET/POST/DELETE for `method`); verify `detected_labels` includes `cardinality` field with value ≥ 1.
+- **e2e: `| drop __error__` instant-query regression (#370)**: `sum(count_over_time(... | drop __error__))` as instant query must return exactly one aggregated result, not one per stream.
+- **e2e: `detected_fields` after multi-stage pipeline**: `| json | drop __error__` pipeline must not suppress parsed JSON field names in `detected_fields` response.
+- **e2e-ui: multi-tenant Explore scenarios**: cross-datasource switching (multi-tenant → single-tenant), missing tenant shows empty result not error banner, filter-for-value click interaction in multi-tenant context.
+- **e2e-ui: multi-tenant Drilldown cardinality and error boundary**: field cards show non-zero cardinality badges, label filter scopes results to selected tenant, missing tenant shows empty result not browser crash.
 
 ## [1.33.1] - 2026-05-14
 

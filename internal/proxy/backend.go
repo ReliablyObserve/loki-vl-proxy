@@ -528,6 +528,17 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 // Callers must either hold a breaker.Allow() token or use DoWithGuard (which
 // enforces the guard before fn is called).
 func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
+	// Inject tenant label filter when configured and orgID is a non-default single tenant.
+	if p.tenantLabel != "" {
+		if orgID := getOrgID(ctx); orgID != "" && !isDefaultTenantAlias(orgID) && orgID != "*" {
+			p.configMu.RLock()
+			_, hasMapped := p.tenantMap[orgID]
+			p.configMu.RUnlock()
+			if !hasMapped {
+				params = injectTenantLabelFilter(params, p.tenantLabel, orgID)
+			}
+		}
+	}
 	u := *p.backend
 	u.Path = path
 	u.RawQuery = params.Encode()
@@ -573,6 +584,17 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 // vlPostInner executes a POST against VL without checking the circuit breaker.
 // Callers must either hold a breaker.Allow() token or use DoWithGuard.
 func (p *Proxy) vlPostInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
+	// Inject tenant label filter when configured and orgID is a non-default single tenant.
+	if p.tenantLabel != "" {
+		if orgID := getOrgID(ctx); orgID != "" && !isDefaultTenantAlias(orgID) && orgID != "*" {
+			p.configMu.RLock()
+			_, hasMapped := p.tenantMap[orgID]
+			p.configMu.RUnlock()
+			if !hasMapped {
+				params = injectTenantLabelFilter(params, p.tenantLabel, orgID)
+			}
+		}
+	}
 	u := *p.backend
 	u.Path = path
 

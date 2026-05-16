@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -904,7 +905,8 @@ func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []s
 
 		fields, fieldValues, err := p.detectFields(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
 		if err != nil {
-			return nil, "", err
+			p.log.Warn("detected_fields unavailable for tenant, skipping", "tenant", tenantID, "err", err)
+			continue
 		}
 		for _, item := range fields {
 			label, _ := item["label"].(string)
@@ -1003,7 +1005,8 @@ func (p *Proxy) multiTenantDetectedLabelsResponse(r *http.Request, tenantIDs []s
 
 		_, summaries, err := p.detectLabels(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
 		if err != nil {
-			return nil, "", err
+			p.log.Warn("detected_labels unavailable for tenant, skipping", "tenant", tenantID, "err", err)
+			continue
 		}
 		for label, summary := range summaries {
 			existing := merged[label]
@@ -1183,6 +1186,13 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 		}
 	}
 
+	// If tenantLabel routing is active, tenant isolation is done via query-level
+	// label filter injection — not via AccountID/ProjectID headers.
+	// Skip header-based routing for non-explicitly-mapped tenants.
+	if p.tenantLabel != "" {
+		return
+	}
+
 	// Default-tenant aliases keep Loki single-tenant compatibility while still
 	// targeting VictoriaLogs' built-in 0:0 tenant.
 	if isDefaultTenantAlias(orgID) {
@@ -1202,4 +1212,32 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 		req.Header.Set("AccountID", orgID)
 		req.Header.Set("ProjectID", "0")
 	}
+
+	// Forward the per-tenant X-Scope-OrgID to upstream.
+	// VictoriaLogs ignores it; Victoria Lakehouse uses it for native tenant routing.
+	// Uses orgID from context (per-tenant value set for this fanout sub-request).
+	if p.forwardTenantHeader && orgID != "" {
+		req.Header.Set("X-Scope-OrgID", orgID)
+	}
+}
+
+// injectTenantLabelFilter appends a LogsQL stream-selector filter to the "query"
+// or "q" param, scoping VL queries to logs with label=orgID.
+// Returns a shallow clone of params with the injection applied (original unchanged).
+func injectTenantLabelFilter(params url.Values, label, orgID string) url.Values {
+	result := make(url.Values, len(params))
+	for k, vs := range params {
+		result[k] = append([]string(nil), vs...)
+	}
+	// Escape backslash first, then double-quote, to produce valid LogsQL string literals.
+	escaped := strings.ReplaceAll(orgID, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	filter := ` {` + label + `="` + escaped + `"}`
+	for _, key := range []string{"query", "q"} {
+		if q := result.Get(key); q != "" {
+			result.Set(key, q+filter)
+			return result
+		}
+	}
+	return result
 }

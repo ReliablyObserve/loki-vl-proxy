@@ -15,10 +15,14 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/memlimit"
@@ -41,6 +45,7 @@ type envConfig struct {
 	alertsBackendURL  string
 	procRoot          string
 	tenantMapJSON     string
+	tenantMapFile     string
 	tenantLimitsAllow string
 	tenantDefaultJSON string
 	tenantLimitsJSON  string
@@ -68,6 +73,10 @@ type proxyRuntimeConfig struct {
 	ratePerSecond                       float64
 	rateBurst                           int
 	tenantMapJSON                       string
+	tenantMapFile                       string
+	tenantMapReloadInterval             time.Duration
+	tenantLabel                         string
+	forwardTenantHeader                 bool
 	tenantLimitsAllowPublish            string
 	tenantDefaultLimitsJSON             string
 	tenantLimitsJSON                    string
@@ -354,6 +363,10 @@ func run(
 	diskCacheMaxBytes := fs.Int64("disk-cache-max-bytes", 0, "Maximum on-disk L2 cache size in bytes (0 = unlimited)")
 	// Tenant mapping
 	tenantMapJSON := fs.String("tenant-map", "", `JSON tenant mapping: {"org-name":{"account_id":"1","project_id":"0"}}`)
+	tenantMapFile := fs.String("tenant-map-file", "", "Path to YAML or JSON file containing the tenant map. Hot-reloaded on SIGHUP and automatically when the file changes (see -tenant-map-reload-interval). Supports Kubernetes ConfigMap volumes.")
+	tenantMapReloadInterval := fs.Duration("tenant-map-reload-interval", 30*time.Second, "How often to poll -tenant-map-file for mtime changes. Set to 0 to disable polling.")
+	tenantLabel := fs.String("tenant-label", "", "VL field name for label-based tenant routing. When set, X-Scope-OrgID values are injected as {<tenant-label>=\"<orgID>\"} into VL queries instead of AccountID/ProjectID headers. Use when all data is under VL default tenant (0:0). Explicit -tenant-map entries take priority. Env: TENANT_LABEL")
+	forwardTenantHeader := fs.Bool("forward-tenant-header", true, "Forward the per-tenant X-Scope-OrgID header to the upstream backend. Safe for VictoriaLogs (ignores it). Required for Victoria Lakehouse native tenant routing.")
 	tenantLimitsAllowPublish := fs.String("tenant-limits-allow-publish", "", "Comma-separated limit fields published on /config/tenant/v1/limits and /loki/api/v1/drilldown-limits")
 	tenantDefaultLimitsJSON := fs.String("tenant-default-limits", "", `JSON map of default published limits overrides (for example {"query_timeout":"2m","max_query_series":1000})`)
 	tenantLimitsJSON := fs.String("tenant-limits", "", `JSON map of per-tenant published limits overrides keyed by X-Scope-OrgID`)
@@ -543,6 +556,7 @@ func run(
 		alertsBackendURL:  *alertsBackendURL,
 		procRoot:          *procRoot,
 		tenantMapJSON:     *tenantMapJSON,
+		tenantMapFile:     *tenantMapFile,
 		tenantLimitsAllow: *tenantLimitsAllowPublish,
 		tenantDefaultJSON: *tenantDefaultLimitsJSON,
 		tenantLimitsJSON:  *tenantLimitsJSON,
@@ -558,6 +572,16 @@ func run(
 		serviceInstanceID: *otelServiceInstanceID,
 		deploymentEnv:     *deploymentEnvironment,
 	}, getenv)
+
+	if v := getenv("FORWARD_TENANT_HEADER"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err == nil {
+			*forwardTenantHeader = b
+		}
+	}
+	if v := getenv("TENANT_LABEL"); v != "" && *tenantLabel == "" {
+		*tenantLabel = v
+	}
 
 	if err := validateAdminExposure(envCfg.listenAddr, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
 		return err
@@ -604,6 +628,10 @@ func run(
 			ratePerSecond:                       *rateLimitPerSecond,
 			rateBurst:                           *rateLimitBurst,
 			tenantMapJSON:                       envCfg.tenantMapJSON,
+			tenantMapFile:                       envCfg.tenantMapFile,
+			tenantMapReloadInterval:             *tenantMapReloadInterval,
+			tenantLabel:                         *tenantLabel,
+			forwardTenantHeader:                 *forwardTenantHeader,
 			tenantLimitsAllowPublish:            envCfg.tenantLimitsAllow,
 			tenantDefaultLimitsJSON:             envCfg.tenantDefaultJSON,
 			tenantLimitsJSON:                    envCfg.tenantLimitsJSON,
@@ -754,7 +782,13 @@ func run(
 	defer runtime.cacheCleanup()
 	defer runtime.stopOTLP()
 
-	go watchReloadSignals(runtime.reloadCh, runtime.proxy, getenv, logger)
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	go watchReloadSignals(runtime.reloadCh, runtime.proxy, getenv, envCfg.tenantMapFile, logger)
+	if *tenantMapFile != "" && *tenantMapReloadInterval > 0 {
+		go watchTenantMapFile(ctx, *tenantMapFile, *tenantMapReloadInterval, runtime.proxy, logger)
+	}
 	go runServerLoopFn(runtime.server, serverLoopOptions{
 		listenAddr:  envCfg.listenAddr,
 		backendURL:  envCfg.backendURL,
@@ -940,10 +974,10 @@ func handleShutdown(shutdownCh <-chan os.Signal, srv httpServer, timeout time.Du
 	logger.Info("shutdown complete")
 }
 
-func watchReloadSignals(reloadCh <-chan os.Signal, p reloadableProxy, getenv func(string) string, logger *slog.Logger) {
+func watchReloadSignals(reloadCh <-chan os.Signal, p reloadableProxy, getenv func(string) string, tenantMapFile string, logger *slog.Logger) {
 	for range reloadCh {
 		logger.Info("received sighup, reloading configuration")
-		reloadDynamicConfig(p, getenv, logger)
+		reloadDynamicConfig(p, getenv, tenantMapFile, logger)
 	}
 }
 
@@ -1125,6 +1159,9 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	if v := getenv("TENANT_MAP"); v != "" && cfg.tenantMapJSON == "" {
 		cfg.tenantMapJSON = v
 	}
+	if v := getenv("TENANT_MAP_FILE"); v != "" && cfg.tenantMapFile == "" {
+		cfg.tenantMapFile = v
+	}
 	if v := getenv("TENANT_LIMITS_ALLOW_PUBLISH"); v != "" && cfg.tenantLimitsAllow == "" {
 		cfg.tenantLimitsAllow = v
 	}
@@ -1170,6 +1207,22 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	return cfg
 }
 
+// validateTenantMap ensures every mapping has non-empty AccountID and ProjectID
+// that are parseable as non-negative integers fitting in a uint32 (VictoriaLogs
+// HTTP header values). Rejects at load time rather than forwarding arbitrary
+// strings as upstream headers.
+func validateTenantMap(m map[string]proxy.TenantMapping) error {
+	for orgID, mapping := range m {
+		if _, err := strconv.ParseUint(mapping.AccountID, 10, 32); err != nil {
+			return fmt.Errorf("tenant %q: account_id %q is not a valid uint32 integer: %w", orgID, mapping.AccountID, err)
+		}
+		if _, err := strconv.ParseUint(mapping.ProjectID, 10, 32); err != nil {
+			return fmt.Errorf("tenant %q: project_id %q is not a valid uint32 integer: %w", orgID, mapping.ProjectID, err)
+		}
+	}
+	return nil
+}
+
 func parseTenantMapJSON(raw string) (map[string]proxy.TenantMapping, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
@@ -1178,7 +1231,69 @@ func parseTenantMapJSON(raw string) (map[string]proxy.TenantMapping, error) {
 	if err := json.Unmarshal([]byte(raw), &tenantMap); err != nil {
 		return nil, err
 	}
+	if err := validateTenantMap(tenantMap); err != nil {
+		return nil, err
+	}
 	return tenantMap, nil
+}
+
+func loadTenantMapFile(path string) (map[string]proxy.TenantMapping, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read tenant-map-file %q: %w", path, err)
+	}
+	var m map[string]proxy.TenantMapping
+	if strings.ToLower(filepath.Ext(path)) == ".json" {
+		if err := json.Unmarshal(data, &m); err != nil {
+			return nil, fmt.Errorf("parse tenant-map-file %q (JSON): %w", path, err)
+		}
+	} else {
+		if err := yaml.Unmarshal(data, &m); err != nil {
+			return nil, fmt.Errorf("parse tenant-map-file %q (YAML): %w", path, err)
+		}
+	}
+	if err := validateTenantMap(m); err != nil {
+		return nil, fmt.Errorf("validate tenant-map-file %q: %w", path, err)
+	}
+	return m, nil
+}
+
+// watchTenantMapFile polls path every interval for mtime changes and calls
+// p.ReloadTenantMap when the file is updated. Exits when ctx is cancelled.
+// Works with Kubernetes ConfigMap volumes: K8s atomically replaces the ..data
+// symlink on ConfigMap update; os.Stat follows the symlink and returns the new mtime.
+func watchTenantMapFile(ctx context.Context, path string, interval time.Duration, p reloadableProxy, logger *slog.Logger) {
+	var lastMod time.Time
+	if fi, err := os.Stat(path); err == nil {
+		lastMod = fi.ModTime()
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fi, err := os.Stat(path)
+			if err != nil {
+				logger.Warn("tenant-map-file: stat failed", "path", path, "error", err)
+				continue
+			}
+			if fi.ModTime().Equal(lastMod) {
+				continue
+			}
+			lastMod = fi.ModTime()
+			m, err := loadTenantMapFile(path)
+			if err != nil {
+				logger.Error("tenant-map-file: reload failed after mtime change", "path", path, "error", err)
+				continue
+			}
+			p.ReloadTenantMap(m)
+			logger.Info("tenant-map-file: reloaded after change detected", "path", path, "count", len(m))
+		}
+	}
 }
 
 func parseTenantDefaultLimitsJSON(raw string) (map[string]any, error) {
@@ -1383,7 +1498,20 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	}
 	tenantMap, err := parseTenantMapJSON(cfg.tenantMapJSON)
 	if err != nil {
-		return proxy.Config{}, fmt.Errorf("parse tenant map: %w", err)
+		return proxy.Config{}, fmt.Errorf("parse -tenant-map: %w", err)
+	}
+	if cfg.tenantMapFile != "" {
+		fileMap, err := loadTenantMapFile(cfg.tenantMapFile)
+		if err != nil {
+			return proxy.Config{}, fmt.Errorf("load -tenant-map-file: %w", err)
+		}
+		if tenantMap == nil {
+			tenantMap = fileMap
+		} else {
+			for k, v := range fileMap {
+				tenantMap[k] = v
+			}
+		}
 	}
 	tenantDefaultLimits, err := parseTenantDefaultLimitsJSON(cfg.tenantDefaultLimitsJSON)
 	if err != nil {
@@ -1455,6 +1583,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		RatePerSecond:                      cfg.ratePerSecond,
 		RateBurst:                          cfg.rateBurst,
 		TenantMap:                          tenantMap,
+		TenantLabel:                        cfg.tenantLabel,
 		TenantLimitsAllowPublish:           parseCSV(cfg.tenantLimitsAllowPublish),
 		TenantDefaultLimits:                tenantDefaultLimits,
 		TenantLimits:                       tenantLimits,
@@ -1510,6 +1639,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		AuthEnabled:                        cfg.authEnabled,
 		RequireTenantHeader:                cfg.requireTenantHeader,
 		AllowGlobalTenant:                  cfg.allowGlobalTenant,
+		ForwardTenantHeader:                cfg.forwardTenantHeader,
 		RegisterInstrumentation:            cfg.registerInstrumentation,
 		EnablePprof:                        cfg.enablePprof,
 		EnableQueryAnalytics:               cfg.enableQueryAnalytics,
@@ -1635,8 +1765,16 @@ func runServerLoop(srv httpServer, opts serverLoopOptions, logger *slog.Logger, 
 	}
 }
 
-func reloadDynamicConfig(p reloadableProxy, getenv func(string) string, logger *slog.Logger) {
-	if v := getenv("TENANT_MAP"); v != "" {
+func reloadDynamicConfig(p reloadableProxy, getenv func(string) string, tenantMapFile string, logger *slog.Logger) {
+	if tenantMapFile != "" {
+		m, err := loadTenantMapFile(tenantMapFile)
+		if err != nil {
+			logger.Error("SIGHUP: failed to reload tenant-map-file", "path", tenantMapFile, "error", err)
+		} else {
+			p.ReloadTenantMap(m)
+			logger.Info("SIGHUP: reloaded tenant mappings from file", "path", tenantMapFile, "count", len(m))
+		}
+	} else if v := getenv("TENANT_MAP"); v != "" {
 		var newTenantMap map[string]proxy.TenantMapping
 		if err := json.Unmarshal([]byte(v), &newTenantMap); err != nil {
 			logger.Error("failed to reload tenant map", "error", err)

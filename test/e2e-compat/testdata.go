@@ -245,6 +245,20 @@ func ingestRichTestData(t *testing.T) {
 		},
 	})
 
+	// ── Drop-error edge stream (used by TestEdge_* tests in semantics group) ──
+	// Must be here so ensureDataIngested covers it without requiring
+	// TestSetup_IngestEdgeCaseData to run first.
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "edge-drop-error", "namespace": "edge-tests", "level": "info",
+		},
+		Lines: []string{
+			`{"msg":"request processed","method":"GET","status":200}`,
+			`{"msg":"request processed","method":"POST","status":201}`,
+			`{"msg":"request failed","method":"POST","status":500,"error":"timeout"}`,
+		},
+	})
+
 	time.Sleep(5 * time.Second) // VL needs time to index, especially in CI
 	t.Log("Rich test data ingested successfully")
 }

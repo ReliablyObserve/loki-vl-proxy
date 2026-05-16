@@ -383,7 +383,10 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
+| `-tenant-label` | `TENANT_LABEL` | `""` | VL field name for label-based tenant routing. When set, `X-Scope-OrgID` values are injected as `{<tenant-label>="<orgID>"}` into VL queries instead of `AccountID`/`ProjectID` headers. Use when all data is under VL default tenant (0:0). Explicit `tenant-map` entries take priority. |
 | `-tenant-map` | `TENANT_MAP` | — | JSON string→int tenant mapping |
+| `-tenant-map-file` | `TENANT_MAP_FILE` | `""` | Path to a YAML or JSON file mapping Loki `X-Scope-OrgID` strings to VictoriaLogs `AccountID`/`ProjectID`. Reloaded on SIGHUP and automatically when the file changes (see `-tenant-map-reload-interval`). Suitable for Kubernetes ConfigMap volumes. File entries override `-tenant-map` inline entries for the same key. |
+| `-tenant-map-reload-interval` | *(flag only)* | `30s` | How often to poll `-tenant-map-file` for mtime changes. Set to `0` to disable polling (SIGHUP-only reload). |
 | `-tenant-limits-allow-publish` | `TENANT_LIMITS_ALLOW_PUBLISH` | built-in allowlist | Comma-separated limit fields exposed on `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` |
 | `-tenant-default-limits` | `TENANT_DEFAULT_LIMITS` | — | JSON map of default published-limit overrides |
 | `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant published-limit overrides keyed by `X-Scope-OrgID` |
@@ -422,7 +425,12 @@ The proxy accepts Loki-style multi-tenant query headers on read/query endpoints 
 # Via environment variable
 export TENANT_MAP='{"ops-prod":{"account_id":"300","project_id":"0"}}'
 ./loki-vl-proxy
+
+# Via file (YAML or JSON) — ideal for Kubernetes ConfigMap volumes
+./loki-vl-proxy -tenant-map-file=/etc/loki-vl-proxy/tenant-map.yaml -tenant-map-reload-interval=30s
 ```
+
+**Kubernetes ConfigMap:** For deployments using Kubernetes ConfigMap volumes, use `-tenant-map-file` to load tenant mappings from a file. The proxy automatically polls for changes at the interval specified by `-tenant-map-reload-interval` (default 30s), allowing tenant updates without restarting the proxy. See [Kubernetes ConfigMap example](k8s-tenant-map-configmap.yaml) for a complete StatefulSet/Deployment configuration snippet.
 
 ### Grafana Datasource per Tenant
 
