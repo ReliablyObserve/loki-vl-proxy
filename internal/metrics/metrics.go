@@ -1472,6 +1472,8 @@ func (m *Metrics) RecordQueryRangeAdaptiveState(currentParallel int, latencyEWMA
 }
 
 // Handler serves Prometheus metrics at /metrics.
+//
+//nolint:gocyclo // serializes ~30 separate Prometheus metric families with per-family help/type/sort/iterate blocks; complexity is inherent to the exposition format.
 func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	var sb strings.Builder
 

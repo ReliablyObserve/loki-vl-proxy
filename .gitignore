@@ -15,6 +15,9 @@ test/e2e-ui/test-results/
 __pycache__/
 bench/results/
 bench/seed
+bench/loki-bench
+/proxy.test
+/*.test
 docker-compose.override.yml
 .claude/
 internal/translator/transdebug_test.go

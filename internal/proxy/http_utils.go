@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"bufio"
-	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -10,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	gzip "github.com/klauspost/compress/gzip"
 	"io"
 	"log/slog"
 	"net"
@@ -20,8 +20,8 @@ import (
 	"strings"
 	"sync"
 
-	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
+	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/klauspost/compress/zstd"
 	fj "github.com/valyala/fastjson"
 )
@@ -38,15 +38,15 @@ var gzipReaderPool sync.Pool
 // allocations in applyBackendHeaders. Custom headers with non-canonical capitalisation
 // (e.g. "VL" → "Vl") would allocate a new string on every Header.Set call otherwise.
 var (
-	hdrVLClientID          = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Client-ID")
-	hdrVLClientSource      = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Client-Source")
-	hdrVLGrafanaSurface    = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Grafana-Surface")
-	hdrVLGrafanaVersion    = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Grafana-Version")
-	hdrVLGrafanaRTFamily   = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Grafana-Runtime-Family")
-	hdrVLDrilldownProfile  = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Drilldown-Profile")
-	hdrVLAuthUser          = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Auth-User")
-	hdrVLAuthSource        = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Auth-Source")
-	hdrAcceptEncoding      = textproto.CanonicalMIMEHeaderKey("Accept-Encoding")
+	hdrVLClientID         = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Client-ID")
+	hdrVLClientSource     = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Client-Source")
+	hdrVLGrafanaSurface   = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Grafana-Surface")
+	hdrVLGrafanaVersion   = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Grafana-Version")
+	hdrVLGrafanaRTFamily  = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Grafana-Runtime-Family")
+	hdrVLDrilldownProfile = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Drilldown-Profile")
+	hdrVLAuthUser         = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Auth-User")
+	hdrVLAuthSource       = textproto.CanonicalMIMEHeaderKey("X-Loki-VL-Auth-Source")
+	hdrAcceptEncoding     = textproto.CanonicalMIMEHeaderKey("Accept-Encoding")
 )
 
 // Pre-allocated single-element header value slices for static Accept-Encoding values.
@@ -858,4 +858,3 @@ func buildConcurrencyLimiter(limit int) chan struct{} {
 	}
 	return make(chan struct{}, limit)
 }
-

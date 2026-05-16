@@ -437,6 +437,7 @@ type cachedLogQueryStreamDescriptor struct {
 	translatedLabels map[string]string
 }
 
+//nolint:gocyclo // line-by-line VL→Loki stream conversion with categorized labels, structured metadata, dup-timestamp handling and optional pattern collection; branching is inherent to the conversion contract.
 func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, categorizedLabels bool, emitStructuredMetadata bool, collectPatterns bool) ([]map[string]interface{}, []map[string]interface{}, error) {
 	type streamEntry struct {
 		Labels   map[string]string
@@ -1608,4 +1609,3 @@ func appendJSONStringToBuffer(buf *bytes.Buffer, s string) {
 	}
 	buf.WriteByte('"')
 }
-

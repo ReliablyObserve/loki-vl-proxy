@@ -16,9 +16,9 @@ import (
 
 type perfResult struct {
 	Endpoint    string
-	LokiP50    time.Duration
-	ProxyP50   time.Duration
-	Overhead   time.Duration
+	LokiP50     time.Duration
+	ProxyP50    time.Duration
+	Overhead    time.Duration
 	OverheadPct float64
 }
 

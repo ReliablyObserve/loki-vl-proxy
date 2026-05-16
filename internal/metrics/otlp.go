@@ -2,11 +2,11 @@ package metrics
 
 import (
 	"bytes"
-	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	gzip "github.com/klauspost/compress/gzip"
 	"log/slog"
 	"net/http"
 	"net/url"

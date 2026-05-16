@@ -35,7 +35,7 @@ type CircuitBreaker struct {
 type cbState int
 
 const (
-	cbClosed   cbState = iota
+	cbClosed cbState = iota
 	cbOpen
 	cbHalfOpen
 )

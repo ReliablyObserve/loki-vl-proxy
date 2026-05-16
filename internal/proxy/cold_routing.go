@@ -148,7 +148,7 @@ func (cr *ColdRouter) refreshManifest(ctx context.Context) {
 type RouteDecision int
 
 const (
-	RouteHotOnly  RouteDecision = iota
+	RouteHotOnly RouteDecision = iota
 	RouteColdOnly
 	RouteBoth
 )

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	gzip "github.com/klauspost/compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
@@ -11,6 +10,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"errors"
+	gzip "github.com/klauspost/compress/gzip"
 	"io"
 	"log/slog"
 	"math/big"

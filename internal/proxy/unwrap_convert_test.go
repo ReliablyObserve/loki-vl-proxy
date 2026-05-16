@@ -18,10 +18,10 @@ func TestParseDuration(t *testing.T) {
 		{"1d", 86400, true},
 		{"100ns", 0.0000001, true},
 		{"500us", 0.0005, true},
-		{"1h30m", 5400, true},        // compound
-		{"2m30s", 150, true},          // compound
-		{"42", 42, true},              // plain number = seconds
-		{"3.14", 3.14, true},          // float = seconds
+		{"1h30m", 5400, true}, // compound
+		{"2m30s", 150, true},  // compound
+		{"42", 42, true},      // plain number = seconds
+		{"3.14", 3.14, true},  // float = seconds
 		{"", 0, false},
 		{"abc", 0, false},
 	}
@@ -44,7 +44,7 @@ func TestParseBytes(t *testing.T) {
 		want  float64
 		ok    bool
 	}{
-		{"1024", 1024, true},      // plain number = bytes
+		{"1024", 1024, true}, // plain number = bytes
 		{"1B", 1, true},
 		{"1KB", 1000, true},
 		{"1KiB", 1024, true},

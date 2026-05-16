@@ -18,14 +18,14 @@ import (
 
 // RunRecord holds a full benchmark run for one target × workload × concurrency.
 type RunRecord struct {
-	Timestamp    time.Time
-	Version      string // optional version tag
-	Target       string // "loki" | "proxy"
-	TargetURL    string
-	WorkloadName string
-	Concurrency  int
-	Duration     time.Duration
-	Result       runner.Result
+	Timestamp      time.Time
+	Version        string // optional version tag
+	Target         string // "loki" | "proxy"
+	TargetURL      string
+	WorkloadName   string
+	Concurrency    int
+	Duration       time.Duration
+	Result         runner.Result
 	ResourceBefore metricscrape.ResourceSnapshot
 	ResourceAfter  metricscrape.ResourceSnapshot
 	ResourceDelta  metricscrape.Delta
@@ -204,7 +204,7 @@ func WriteText(w io.Writer, records []RunRecord) {
 
 		// Latencies
 		for _, row := range []struct {
-			label                    string
+			label                     string
 			lv, pv, ncv, csv, ptv, vv time.Duration
 		}{
 			{"P50 Latency", lStats.P50, pStats.P50, ncStats.P50, csStats.P50, ptStats.P50, vStats.P50},

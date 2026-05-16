@@ -438,6 +438,18 @@ func (p *Proxy) resolveTargetLabelFields(ctx context.Context, targetLabels strin
 			}
 		}
 		resolved = appendUniqueStrings(resolved, mapped)
+		// For underscore proxy: when a label is a known OTel semantic convention
+		// (e.g. service_name → service.name via knownUnderscoreToDot), also query
+		// the underscore form as a fallback. Loki-push data stores stream labels
+		// under underscore names; OTel data uses dotted names. VL returns hits for
+		// whichever field exists; TranslateLabelsMap coalesces by preferring the
+		// non-empty value. Applies only to knownUnderscoreToDot entries — not to
+		// custom fields resolved via inventory (those are stored as dotted OTel).
+		if p.labelTranslator != nil && p.labelTranslator.style == LabelStyleUnderscores {
+			if _, isKnownOTel := knownUnderscoreToDot[name]; isKnownOTel {
+				resolved = appendUniqueStrings(resolved, name)
+			}
+		}
 	}
 	return resolved
 }
@@ -617,4 +629,3 @@ func (p *Proxy) detectedLabelValuesForField(ctx context.Context, fieldName, quer
 	sort.Strings(values)
 	return values
 }
-

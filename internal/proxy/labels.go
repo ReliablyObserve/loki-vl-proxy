@@ -330,7 +330,12 @@ func (lt *LabelTranslator) TranslateLabelsMap(labels map[string]string) map[stri
 	}
 	result := make(map[string]string, len(labels))
 	for k, v := range labels {
-		result[lt.ToLoki(k)] = v
+		lokiKey := lt.ToLoki(k)
+		// Coalesce: prefer non-empty when multiple source fields map to the same
+		// Loki key (e.g. "service.name" and "service_name" both become "service_name").
+		if v != "" || result[lokiKey] == "" {
+			result[lokiKey] = v
+		}
 	}
 	return result
 }

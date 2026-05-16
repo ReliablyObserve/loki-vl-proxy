@@ -317,17 +317,17 @@ func pushVL(vlURL string, streams []map[string]interface{}) error {
 }
 
 func main() {
-	lokiURL        := flag.String("loki", "http://localhost:3101", "Loki push URL")
-	vlURL          := flag.String("vl", "http://localhost:9428", "VictoriaLogs push URL")
-	days           := flag.Int("days", 7, "Days of historical data to seed")
-	serviceCount   := flag.Int("services", 12, "Number of service streams (cycles through built-in pool; add more regions for >12)")
-	ratePerSvc     := flag.Float64("rate", 0, "Target log lines/sec per service (overrides --lines-per-batch when set)")
-	linesPerBatch  := flag.Int("lines-per-batch", 21, "Lines per service per time step (ignored when --rate is set)")
-	batchInterval  := flag.Duration("batch-interval", 30*time.Second, "Simulated time step between push batches")
-	skipLoki       := flag.Bool("skip-loki", false, "Skip Loki ingestion")
-	skipVL         := flag.Bool("skip-vl", false, "Skip VictoriaLogs ingestion")
+	lokiURL := flag.String("loki", "http://localhost:3101", "Loki push URL")
+	vlURL := flag.String("vl", "http://localhost:9428", "VictoriaLogs push URL")
+	days := flag.Int("days", 7, "Days of historical data to seed")
+	serviceCount := flag.Int("services", 12, "Number of service streams (cycles through built-in pool; add more regions for >12)")
+	ratePerSvc := flag.Float64("rate", 0, "Target log lines/sec per service (overrides --lines-per-batch when set)")
+	linesPerBatch := flag.Int("lines-per-batch", 21, "Lines per service per time step (ignored when --rate is set)")
+	batchInterval := flag.Duration("batch-interval", 30*time.Second, "Simulated time step between push batches")
+	skipLoki := flag.Bool("skip-loki", false, "Skip Loki ingestion")
+	skipVL := flag.Bool("skip-vl", false, "Skip VictoriaLogs ingestion")
 	highCardinality := flag.Bool("high-cardinality", false, "Add pod as a stream label with --pods-per-service unique pod IDs per service. Creates N×services unique Loki streams, exposing Loki O(streams×retention) memory pressure vs VL columnar model.")
-	podsPerService  := flag.Int("pods-per-service", 50, "Number of unique pod IDs per service when --high-cardinality is set")
+	podsPerService := flag.Int("pods-per-service", 50, "Number of unique pod IDs per service when --high-cardinality is set")
 	flag.Parse()
 
 	// When --rate is given, derive lines-per-batch from the target rate.

@@ -1797,6 +1797,92 @@ func TestDrilldown_InstantMetricQueriesPreferSingleWorkingParser(t *testing.T) {
 	}
 }
 
+// TestDrilldown_SumCountOverTimeWithParserAndDropError_UsesNativeStats is a regression
+// test for the "logs not counted" bug. Grafana Drilldown sends
+// sum(count_over_time({...} | json | logfmt | drop __error__, __error_details__ [interval]))
+// as an instant query to get the total log count. Before the fix, handleStatsCompatInstant
+// routed all parser-stage queries to the manual log-fetch path, which returned per-stream
+// results (one series per stream, each with count=1) instead of a single aggregated count.
+func TestDrilldown_SumCountOverTimeWithParserAndDropError_UsesNativeStats(t *testing.T) {
+	var statsQueryCalled bool
+	var manualQueryCalled bool
+	var statsQueryBody string
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			// Only flag as manual metric fetch when limit=1000000 (collectRangeMetricSamples).
+			// The preferWorkingParser probe also hits this path with a small limit.
+			if r.Form.Get("limit") == "1000000" {
+				manualQueryCalled = true
+			}
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		case "/select/logsql/stats_query":
+			statsQueryCalled = true
+			statsQueryBody = r.Form.Get("query")
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "success",
+				"data": map[string]interface{}{
+					"resultType": "vector",
+					"result": []map[string]interface{}{
+						{"metric": map[string]string{"__name__": "count(*)"}, "value": []interface{}{float64(1700000000), "92880"}},
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	w := httptest.NewRecorder()
+	q := url.Values{}
+	q.Set("query", `sum(count_over_time({env="production"} | json | logfmt | drop __error__, __error_details__ [10800s]))`)
+	q.Set("time", "1700000000")
+	r := httptest.NewRequest("GET", "/loki/api/v1/query?"+q.Encode(), nil)
+	p.handleQuery(w, r)
+
+	if manualQueryCalled {
+		t.Error("sum() without by() should NOT use the manual log-fetch path (regression: per-stream results instead of single sum)")
+	}
+	if !statsQueryCalled {
+		t.Fatal("sum() without by() must use native VL stats_query (not manual path)")
+	}
+	if !strings.Contains(statsQueryBody, "stats count()") {
+		t.Errorf("stats query should contain 'stats count()' without a by() clause, got: %q", statsQueryBody)
+	}
+
+	resp := w.Result()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	var result struct {
+		Data struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if result.Data.ResultType != "vector" {
+		t.Errorf("expected resultType=vector, got %q", result.Data.ResultType)
+	}
+	if len(result.Data.Result) != 1 {
+		t.Errorf("expected single result (total sum), got %d results (per-stream regression)", len(result.Data.Result))
+	}
+	if len(result.Data.Result) > 0 && len(result.Data.Result[0].Metric) > 0 {
+		t.Errorf("expected empty metric {} for sum() without by(), got %v", result.Data.Result[0].Metric)
+	}
+}
+
 func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAnyMatch(t *testing.T) {
 	var statsQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2388,7 +2474,7 @@ func TestDrilldownLogCountUnderscokeProxyLokiPushData(t *testing.T) {
 				"result": []map[string]interface{}{
 					{
 						"metric": map[string]string{
-							"service.name": "",             // OTel field not found
+							"service.name": "",                // OTel field not found
 							"service_name": "payment-service", // stream label found
 						},
 						"values": [][]interface{}{{float64(1712538000), "13920"}},

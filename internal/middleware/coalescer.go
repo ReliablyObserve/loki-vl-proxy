@@ -28,9 +28,9 @@ type Coalescer struct {
 	group          singleflight.Group
 	inflightMu     sync.Mutex
 	inflight       map[string]int // reference count of goroutines inside DoWithGuard for each key
-	disabled       bool          // when true, bypass singleflight (raw passthrough)
-	ActiveShared   atomic.Int64  // requests currently sharing a coalesced result
-	CoalescedTotal atomic.Int64  // total coalesced (deduplicated) requests
+	disabled       bool           // when true, bypass singleflight (raw passthrough)
+	ActiveShared   atomic.Int64   // requests currently sharing a coalesced result
+	CoalescedTotal atomic.Int64   // total coalesced (deduplicated) requests
 }
 
 func NewCoalescer() *Coalescer {

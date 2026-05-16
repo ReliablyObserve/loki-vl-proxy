@@ -1,0 +1,103 @@
+goroutine profile: total 371
+122 @ 0x104abe56c 0x104a82900 0x104abd780 0x104b367a8 0x104b37924 0x104b37915 0x104b56a48 0x104b614e4 0x104cc86cc 0x104c590e0 0x104c59228 0x104ccd9d8 0x104ac5e34
+#	0x104abd77f	internal/poll.runtime_pollWait+0x9f		/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/netpoll.go:351
+#	0x104b367a7	internal/poll.(*pollDesc).wait+0x27		/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_poll_runtime.go:84
+#	0x104b37923	internal/poll.(*pollDesc).waitRead+0x233	/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_poll_runtime.go:89
+#	0x104b37914	internal/poll.(*FD).Read+0x224			/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_unix.go:165
+#	0x104b56a47	net.(*netFD).Read+0x27				/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/fd_posix.go:68
+#	0x104b614e3	net.(*conn).Read+0x33				/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/net.go:196
+#	0x104cc86cb	net/http.(*connReader).Read+0x22b		/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:812
+#	0x104c590df	bufio.(*Reader).fill+0xdf			/opt/homebrew/Cellar/go/1.26.2/libexec/src/bufio/bufio.go:113
+#	0x104c59227	bufio.(*Reader).Peek+0x57			/opt/homebrew/Cellar/go/1.26.2/libexec/src/bufio/bufio.go:152
+#	0x104ccd9d7	net/http.(*conn).serve+0x647			/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2109
+
+100 @ 0x104abe56c 0x104a82900 0x104abd780 0x104b367a8 0x104b37924 0x104b37915 0x104b56a48 0x104b614e4 0x104ce4cf8 0x104c590e0 0x104c59228 0x104ce5920 0x104ac5e34
+#	0x104abd77f	internal/poll.runtime_pollWait+0x9f		/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/netpoll.go:351
+#	0x104b367a7	internal/poll.(*pollDesc).wait+0x27		/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_poll_runtime.go:84
+#	0x104b37923	internal/poll.(*pollDesc).waitRead+0x233	/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_poll_runtime.go:89
+#	0x104b37914	internal/poll.(*FD).Read+0x224			/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_unix.go:165
+#	0x104b56a47	net.(*netFD).Read+0x27				/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/fd_posix.go:68
+#	0x104b614e3	net.(*conn).Read+0x33				/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/net.go:196
+#	0x104ce4cf7	net/http.(*persistConn).Read+0x47		/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/transport.go:2174
+#	0x104c590df	bufio.(*Reader).fill+0xdf			/opt/homebrew/Cellar/go/1.26.2/libexec/src/bufio/bufio.go:113
+#	0x104c59227	bufio.(*Reader).Peek+0x57			/opt/homebrew/Cellar/go/1.26.2/libexec/src/bufio/bufio.go:152
+#	0x104ce591f	net/http.(*persistConn).readLoop+0x10f		/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/transport.go:2330
+
+100 @ 0x104abe56c 0x104a9cd8c 0x104ce7058 0x104ac5e34
+#	0x104ce7057	net/http.(*persistConn).writeLoop+0x97	/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/transport.go:2652
+
+38 @ 0x104abe56c 0x104a82900 0x104abd780 0x104b367a8 0x104b37924 0x104b37915 0x104b56a48 0x104b614e4 0x104cc86cc 0x104c590e0 0x104c59b90 0x104c59d84 0x104c5cebc 0x104ceab9c 0x104ceabb5 0x104cc946c 0x104ccd6a8 0x104ac5e34
+#	0x104abd77f	internal/poll.runtime_pollWait+0x9f		/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/netpoll.go:351
+#	0x104b367a7	internal/poll.(*pollDesc).wait+0x27		/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_poll_runtime.go:84
+#	0x104b37923	internal/poll.(*pollDesc).waitRead+0x233	/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_poll_runtime.go:89
+#	0x104b37914	internal/poll.(*FD).Read+0x224			/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_unix.go:165
+#	0x104b56a47	net.(*netFD).Read+0x27				/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/fd_posix.go:68
+#	0x104b614e3	net.(*conn).Read+0x33				/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/net.go:196
+#	0x104cc86cb	net/http.(*connReader).Read+0x22b		/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:812
+#	0x104c590df	bufio.(*Reader).fill+0xdf			/opt/homebrew/Cellar/go/1.26.2/libexec/src/bufio/bufio.go:113
+#	0x104c59b8f	bufio.(*Reader).ReadSlice+0x2f			/opt/homebrew/Cellar/go/1.26.2/libexec/src/bufio/bufio.go:377
+#	0x104c59d83	bufio.(*Reader).ReadLine+0x23			/opt/homebrew/Cellar/go/1.26.2/libexec/src/bufio/bufio.go:406
+#	0x104c5cebb	net/textproto.(*Reader).readLineSlice+0x8b	/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/textproto/reader.go:64
+#	0x104ceab9b	net/textproto.(*Reader).ReadLine+0x6b		/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/textproto/reader.go:44
+#	0x104ceabb4	net/http.readRequest+0x84			/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/request.go:1087
+#	0x104cc946b	net/http.(*conn).readRequest+0x1db		/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:1005
+#	0x104ccd6a7	net/http.(*conn).serve+0x317			/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:1995
+
+4 @ 0x104abe56c 0x104a9cd8c 0x104d6dfc8 0x104ac5e34
+#	0x104d6dfc7	github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).cleanup+0xa7	/Users/slawomirskowron/claude_projects/loki-vl-proxy/internal/cache/cache.go:570
+
+1 @ 0x104a7f2ec 0x104abd374 0x104decbf4 0x104deca20 0x104dea224 0x104dfef74 0x104dff7e4 0x104ccf448 0x104cd0e30 0x104ec56a8 0x104ccf448 0x104cd0e30 0x104f3082c 0x104ccf448 0x104e0787c 0x104ccf448 0x104f30768 0x104ccf448 0x104f305c8 0x104ccf448 0x104f30510 0x104ccf448 0x104ceb360 0x104ccd8ac 0x104ac5e34
+#	0x104decbf3	runtime/pprof.writeRuntimeProfile+0xb3											/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/pprof/pprof.go:851
+#	0x104deca1f	runtime/pprof.writeGoroutine+0x4f											/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/pprof/pprof.go:784
+#	0x104dea223	runtime/pprof.(*Profile).WriteTo+0x143											/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/pprof/pprof.go:408
+#	0x104dfef73	net/http/pprof.handler.ServeHTTP+0x413											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/pprof/pprof.go:273
+#	0x104dff7e3	net/http/pprof.Index+0xa3												/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/pprof/pprof.go:397
+#	0x104ccf447	net/http.HandlerFunc.ServeHTTP+0x37											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2286
+#	0x104cd0e2f	net/http.(*ServeMux).ServeHTTP+0x18f											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2828
+#	0x104ec56a7	github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).RegisterRoutes.(*Proxy).adminMiddleware.func7+0x117	/Users/slawomirskowron/claude_projects/loki-vl-proxy/internal/proxy/middleware.go:211
+#	0x104ccf447	net/http.HandlerFunc.ServeHTTP+0x37											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2286
+#	0x104cd0e2f	net/http.(*ServeMux).ServeHTTP+0x18f											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2828
+#	0x104f3082b	main.wrapHandler.maxBodyHandler.func1+0x9b										/Users/slawomirskowron/claude_projects/loki-vl-proxy/cmd/proxy/main.go:932
+#	0x104ccf447	net/http.HandlerFunc.ServeHTTP+0x37											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2286
+#	0x104e0787b	github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.CompressionHandlerWithOptions.func1+0xeb			/Users/slawomirskowron/claude_projects/loki-vl-proxy/internal/middleware/compress.go:333
+#	0x104ccf447	net/http.HandlerFunc.ServeHTTP+0x37											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2286
+#	0x104f30767	main.wrapHandler.(*httpConnRotator).Wrap.func2+0x117									/Users/slawomirskowron/claude_projects/loki-vl-proxy/cmd/proxy/http_conn_rotation.go:75
+#	0x104ccf447	net/http.HandlerFunc.ServeHTTP+0x37											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2286
+#	0x104f305c7	main.wrapHandler.(*Metrics).WrapHandler.func3+0x87									/Users/slawomirskowron/claude_projects/loki-vl-proxy/internal/metrics/metrics.go:932
+#	0x104ccf447	net/http.HandlerFunc.ServeHTTP+0x37											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2286
+#	0x104f3050f	main.wrapHandler.withSecurityHeaders.SecurityHeadersMiddleware.func4+0x1bf						/Users/slawomirskowron/claude_projects/loki-vl-proxy/internal/proxy/middleware_security.go:32
+#	0x104ccf447	net/http.HandlerFunc.ServeHTTP+0x37											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2286
+#	0x104ceb35f	net/http.serverHandler.ServeHTTP+0xaf											/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:3311
+#	0x104ccd8ab	net/http.(*conn).serve+0x51b												/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:2073
+
+1 @ 0x104a83940 0x104ac0838 0x104e02f3c 0x104ac5e34
+#	0x104ac0837	os/signal.signal_recv+0x107	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/sigqueue.go:149
+#	0x104e02f3b	os/signal.loop+0x1b		/opt/homebrew/Cellar/go/1.26.2/libexec/src/os/signal/signal_unix.go:23
+
+1 @ 0x104abe56c 0x104a52230 0x104a51d84 0x104f2feb0 0x104f2e39c 0x104f2b8a8 0x104f2b834 0x104a890e4 0x104ac5e34
+#	0x104f2feaf	main.handleShutdown+0x3f	/Users/slawomirskowron/claude_projects/loki-vl-proxy/cmd/proxy/main.go:907
+#	0x104f2e39b	main.run+0x2a5b			/Users/slawomirskowron/claude_projects/loki-vl-proxy/cmd/proxy/main.go:740
+#	0x104f2b8a7	main.runMain+0x47		/Users/slawomirskowron/claude_projects/loki-vl-proxy/cmd/proxy/main.go:304
+#	0x104f2b833	main.main+0xa3			/Users/slawomirskowron/claude_projects/loki-vl-proxy/cmd/proxy/main.go:276
+#	0x104a890e3	runtime.main+0x2b3		/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:290
+
+1 @ 0x104abe56c 0x104a52230 0x104a51da4 0x104f300e0 0x104ac5e34
+#	0x104f300df	main.watchReloadSignals+0x8f	/Users/slawomirskowron/claude_projects/loki-vl-proxy/cmd/proxy/main.go:920
+
+1 @ 0x104abe56c 0x104a82900 0x104abd780 0x104b367a8 0x104b3a954 0x104b3a945 0x104b58148 0x104b69a94 0x104b68e9c 0x104cd2724 0x104cd23e0 0x104f3423c 0x104ac5e34
+#	0x104abd77f	internal/poll.runtime_pollWait+0x9f		/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/netpoll.go:351
+#	0x104b367a7	internal/poll.(*pollDesc).wait+0x27		/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_poll_runtime.go:84
+#	0x104b3a953	internal/poll.(*pollDesc).waitRead+0x213	/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_poll_runtime.go:89
+#	0x104b3a944	internal/poll.(*FD).Accept+0x204		/opt/homebrew/Cellar/go/1.26.2/libexec/src/internal/poll/fd_unix.go:613
+#	0x104b58147	net.(*netFD).accept+0x27			/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/fd_unix.go:150
+#	0x104b69a93	net.(*TCPListener).accept+0x23			/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/tcpsock_posix.go:159
+#	0x104b68e9b	net.(*TCPListener).Accept+0x2b			/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/tcpsock.go:387
+#	0x104cd2723	net/http.(*Server).Serve+0x243			/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:3434
+#	0x104cd23df	net/http.(*Server).ListenAndServe+0x7f		/opt/homebrew/Cellar/go/1.26.2/libexec/src/net/http/server.go:3360
+#	0x104f3423b	main.runServerLoop+0x46b			/Users/slawomirskowron/claude_projects/loki-vl-proxy/cmd/proxy/main.go:1597
+
+1 @ 0x104abe56c 0x104a9cd8c 0x104e09888 0x104ac5e34
+#	0x104e09887	github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.(*RateLimiter).cleanupStaleClients+0x97	/Users/slawomirskowron/claude_projects/loki-vl-proxy/internal/middleware/ratelimiter.go:171
+
+1 @ 0x104ac5e34
+

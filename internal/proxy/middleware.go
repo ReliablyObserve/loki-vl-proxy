@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gorilla/websocket"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
+	"github.com/gorilla/websocket"
 )
 
 type compatCacheActiveCtxKey struct{}
@@ -566,4 +566,3 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 		capture.Release()
 	}
 }
-

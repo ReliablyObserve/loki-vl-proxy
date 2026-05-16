@@ -407,4 +407,3 @@ func (p *Proxy) vlLineToTailFrame(vlLine map[string]interface{}) map[string]inte
 		},
 	}
 }
-

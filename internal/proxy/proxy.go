@@ -102,36 +102,36 @@ const (
 )
 
 type Config struct {
-	BackendURL        string
-	RulerBackendURL   string
-	AlertsBackendURL  string
-	Cache             *cache.Cache
-	CompatCache       *cache.Cache
-	LogLevel          string
-	MaxConcurrent     int                      // max concurrent backend queries (0=unlimited)
-	RatePerSecond     float64                  // per-client rate limit (0=unlimited)
-	RateBurst         int                      // per-client burst size
-	CBFailThreshold   int                      // circuit breaker: failures within window before opening
-	CBOpenDuration    time.Duration            // circuit breaker: how long to stay open before probing
-	CBWindowDuration  time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
-	CoalescerDisabled bool                     // disable singleflight coalescing; every request makes its own backend call
-	TenantMap         map[string]TenantMapping // string org ID → VL account/project
-	AuthEnabled          bool
-	RequireTenantHeader  bool
-	AllowGlobalTenant    bool
+	BackendURL          string
+	RulerBackendURL     string
+	AlertsBackendURL    string
+	Cache               *cache.Cache
+	CompatCache         *cache.Cache
+	LogLevel            string
+	MaxConcurrent       int                      // max concurrent backend queries (0=unlimited)
+	RatePerSecond       float64                  // per-client rate limit (0=unlimited)
+	RateBurst           int                      // per-client burst size
+	CBFailThreshold     int                      // circuit breaker: failures within window before opening
+	CBOpenDuration      time.Duration            // circuit breaker: how long to stay open before probing
+	CBWindowDuration    time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
+	CoalescerDisabled   bool                     // disable singleflight coalescing; every request makes its own backend call
+	TenantMap           map[string]TenantMapping // string org ID → VL account/project
+	AuthEnabled         bool
+	RequireTenantHeader bool
+	AllowGlobalTenant   bool
 
 	// Grafana datasource compatibility
-	MaxLines           int               // default max lines per query (0=1000)
+	MaxLines int // default max lines per query (0=1000)
 	// RangeMetricRowLimit caps the number of log rows fetched per collectRangeMetricSamples
 	// call used by manual range-metric compatibility (rate, count_over_time, etc.).
 	// 0 means use the built-in default of 1,000,000. Lower values bound memory at the cost
 	// of potential result truncation for very high-cardinality queries.
 	RangeMetricRowLimit int
-	ForwardHeaders     []string          // HTTP headers to forward from client to VL backend
-	ForwardCookies     []string          // Cookie names to forward from client to VL backend
-	BackendHeaders     map[string]string // static headers to add to all VL requests
-	BackendBasicAuth   string            // "user:password" for VL backend basic auth
-	BackendCompression string            // upstream HTTP compression preference: auto, gzip, zstd, none
+	ForwardHeaders      []string          // HTTP headers to forward from client to VL backend
+	ForwardCookies      []string          // Cookie names to forward from client to VL backend
+	BackendHeaders      map[string]string // static headers to add to all VL requests
+	BackendBasicAuth    string            // "user:password" for VL backend basic auth
+	BackendCompression  string            // upstream HTTP compression preference: auto, gzip, zstd, none
 	// ClientResponseCompression controls downstream client-facing response
 	// compression policy used by the compatibility cache hit path.
 	ClientResponseCompression string
@@ -469,7 +469,7 @@ type Proxy struct {
 	labelValuesIndexPersistDigestReady    bool
 	readCacheKeyMemoMu                    sync.RWMutex
 	readCacheKeyMemo                      map[canonicalReadCacheMemoKey]string
-	logSampleN                            uint64       // 0 = log all; N>1 = log 1 in N successful requests
+	logSampleN                            uint64 // 0 = log all; N>1 = log 1 in N successful requests
 	logSampleCount                        atomic.Uint64
 }
 
@@ -600,6 +600,7 @@ func newCoalescer(disabled bool) *mw.Coalescer {
 	return mw.NewCoalescer()
 }
 
+//nolint:gocyclo // constructor wires many optional config knobs (URLs, levels, multi-tenant, caches, ruler/alerts, telemetry); complexity is inherent to top-level assembly.
 func New(cfg Config) (*Proxy, error) {
 	u, err := url.Parse(cfg.BackendURL)
 	if err != nil {
@@ -1418,6 +1419,8 @@ func (p *Proxy) peerCacheMetrics() string {
 // Loki: GET /loki/api/v1/query_range?query={...}&start=...&end=...&limit=...&step=...
 // VL stats: POST /select/logsql/stats_query_range with query, start, end, step
 // VL logs:  POST /select/logsql/query with query, start, end, limit
+//
+//nolint:gocyclo // dispatches across cache, multi-tenant fanout, windowing, stats vs logs, streaming and tuple modes; branching is inherent to Loki query_range parity.
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
@@ -1754,4 +1757,3 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordRequest("query", sc.code, elapsed)
 	p.queryTracker.Record("query", logqlQuery, elapsed, sc.code >= 400)
 }
-

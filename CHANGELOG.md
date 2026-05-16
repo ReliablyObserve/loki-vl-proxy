@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- fix(ci): remove accidentally committed `bench/loki-bench` and `proxy.test` binaries; add both to `.gitignore` — fixes OpenSSF Scorecard Binary-Artifacts regression
+- fix(ci): OpenSSF Scorecard now evaluates the PR/push commit instead of the default branch HEAD so Binary-Artifacts and other checks reflect what will land
+- fix(ci): treat scorecard check score `-1` (undetermined) and entirely absent checks as unavailable rather than hard failures — prevents transient evaluation gaps from blocking PRs
+
+## [1.34.0] - 2026-05-15
+
+### CI
+
+- fix(style): apply `gofmt` to all 56 non-conforming Go source files across `bench/`, `cmd/`, `internal/`, and `test/` — formatting only, no logic changes
+- feat(ci): enforce `gofmt -s`, `misspell`, and `gocyclo` (threshold 30) in `.golangci.yml` so formatting and complexity regressions are blocked in the `lint` job going forward
+- feat(ci): add standalone `gofmt -s` check to lint job for Go Report Card parity
+- feat(ci): add `TestLogQL_Exhaustive_.*` and `TestPipeline_.*` to the `semantics` e2e-compat CI group — these test functions existed but were not wired into any matrix pattern
+- fix(ci): changelog gate now passes for backport release metadata PRs that add a new version section (e.g. `[1.32.4]`) without changing `[Unreleased]` — previously failed when the released items had already been absorbed into a newer minor release on main
+- fix(ci): OpenSSF Scorecard now evaluates the PR/push commit instead of the default branch HEAD, so Binary-Artifacts and other checks correctly reflect what will land
+- fix(ci): remove accidentally committed `bench/loki-bench` and `proxy.test` binaries; add both to `.gitignore` to prevent recurrence
+
+### Documentation
+
+- docs(readme): add Go Report Card badge
+
+## [1.33.1] - 2026-05-14
+
+### Fixed
+
+- **Underscore proxy: Drilldown log count column shows per-stream results instead of aggregated total**: `sum(count_over_time({...} | json | logfmt | drop __error__, __error_details__ [interval]))` instant queries were incorrectly routed to the manual log-fetch path, which groups by `(_stream, level)` identity and produces per-stream series rather than a single aggregated count. `handleStatsCompatInstant` was missing the same drop-error fast-path gate that `handleStatsCompatRange` had — when the original LogQL explicitly opts in via `| drop __error__`, VL native `stats_query` returns a single `{metric:{}}` result matching Loki behavior. Introduced in the commit that restored the `__error__` guard to `shouldUseManualRangeMetricCompat` without extending it to the instant path.
+
+- **Underscore proxy: `volume_range` returns empty log counts for Loki-push services**: `resolveTargetLabelFields` was translating `service_name` → `service.name` for the VL `/select/logsql/hits` endpoint, but Loki-push data stores the label as `service_name` (a stream label). The endpoint queried `service.name` which existed only for OTel-instrumented services, returning empty results for Loki-push services. Now appends the underscore form as a fallback field for known OTel semantic conventions so the `/hits` query covers both storage patterns. `TranslateLabelsMap` also coalesces when multiple VL fields map to the same Loki key, preferring the non-empty value (`service.name=""` + `service_name="api"` → `service_name="api"`).
+
 ## [1.33.0] - 2026-05-14
 
 ### Added
@@ -21,13 +51,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Lower values reduce peak proxy memory for very high-cardinality queries at the cost of potentially truncated series. Raise above the default only if you see result truncation and can tolerate higher memory usage. The default preserves existing behavior — no tuning needed unless you hit the limit.
 
+### Documentation
+
+- **Hot+cold merge memory behavior** (`docs/KNOWN_ISSUES.md`): Documented that queries spanning both the hot (VictoriaLogs) and cold (Victoria Lakehouse) backends materialize the full merged result set in proxy memory before writing to the client. For backward-direction queries the cold result must be buffered entirely before it can be reversed — this is a structural constraint of the merge algorithm, not a fixable bug. Very large time ranges covering both backends will see higher proxy memory usage than hot-only queries. Mitigation: bound cold query time ranges, or route cold-only queries directly to the cold backend.
+
+## [1.32.4] - 2026-05-14
+
 ### Fixed
 
 - **Underscore proxy: Drilldown log count blank for Loki-push services**: When using `-label-style=underscores`, `sum by (service_name) (count_over_time(...))` queries returned `service_name=""` for services whose labels were stored as Loki stream labels (not VL dotted fields). The proxy translated `by(service_name)` → `by(service.name)`, but VL returned an empty value when no dotted field existed — Grafana Drilldown then displayed the label name as text instead of a numeric count. Fixed by expanding the `by()` clause to include both forms; VL groups by whichever exists and the response is coalesced to prefer the non-empty value.
 
-### Documentation
-
-- **Hot+cold merge memory behavior** (`docs/KNOWN_ISSUES.md`): Documented that queries spanning both the hot (VictoriaLogs) and cold (Victoria Lakehouse) backends materialize the full merged result set in proxy memory before writing to the client. For backward-direction queries the cold result must be buffered entirely before it can be reversed — this is a structural constraint of the merge algorithm, not a fixable bug. Very large time ranges covering both backends will see higher proxy memory usage than hot-only queries. Mitigation: bound cold query time ranges, or route cold-only queries directly to the cold backend.
+## [1.32.3] - 2026-05-14
 
 ### CI
 

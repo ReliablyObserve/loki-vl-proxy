@@ -135,9 +135,9 @@ func TestSubquery_WithOuterAggregation(t *testing.T) {
 func TestSubquery_NoPanic(t *testing.T) {
 	// Edge cases that shouldn't panic
 	edgeCases := []string{
-		`rate({app="nginx"}[5m])[1h:5m]`,       // subquery syntax without outer function
+		`rate({app="nginx"}[5m])[1h:5m]`,              // subquery syntax without outer function
 		`max_over_time(rate({app="nginx"}[5m])[1h:])`, // missing step
-		`max_over_time(rate({app="nginx"}[5m])[:5m])`,  // missing range
+		`max_over_time(rate({app="nginx"}[5m])[:5m])`, // missing range
 	}
 	for _, logql := range edgeCases {
 		t.Run(logql, func(t *testing.T) {

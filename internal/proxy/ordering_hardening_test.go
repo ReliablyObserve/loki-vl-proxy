@@ -332,7 +332,7 @@ func TestStringifyEntryValue_NestedMapObject(t *testing.T) {
 	input := map[string]interface{}{
 		"level": "error",
 		"error": map[string]interface{}{
-			"code": "E_TIMEOUT",
+			"code":  "E_TIMEOUT",
 			"retry": true,
 		},
 	}
@@ -478,10 +478,10 @@ func TestJSONPrettyPrint_GoFormatNeverEmitted(t *testing.T) {
 			mustNot:  []string{"map[]"},
 		},
 		{
-			name:    "empty_slice",
-			input:   []interface{}{},
+			name:     "empty_slice",
+			input:    []interface{}{},
 			wantJSON: true,
-			mustNot: []string{}, // [] is identical in both JSON and Go fmt — just verify valid JSON
+			mustNot:  []string{}, // [] is identical in both JSON and Go fmt — just verify valid JSON
 		},
 		{
 			name:     "map_with_null",

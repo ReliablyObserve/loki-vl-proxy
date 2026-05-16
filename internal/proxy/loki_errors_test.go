@@ -3,8 +3,8 @@ package proxy
 import (
 	"encoding/json"
 	"net/http"
-	"strings"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,14 +22,14 @@ func TestLokiErrorType_Mapping(t *testing.T) {
 	}{
 		{400, "bad_data"},
 		{422, "execution"},
-		{429, "bad_data"},   // 429 is not a standard Loki errorType; falls through to client error default
+		{429, "bad_data"}, // 429 is not a standard Loki errorType; falls through to client error default
 		{499, "canceled"},
 		{500, "internal"},
 		{502, "unavailable"},
 		{503, "timeout"},
 		{504, "timeout"},
 		{404, "not_found"},
-		{501, "internal"},   // server errors default to internal
+		{501, "internal"}, // server errors default to internal
 	}
 	for _, tt := range tests {
 		t.Run(http.StatusText(tt.code), func(t *testing.T) {

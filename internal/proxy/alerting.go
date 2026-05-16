@@ -376,4 +376,3 @@ func legacyRuleGroupFromBackend(g alertingRuleGroup) legacyRuleGroup {
 	}
 	return out
 }
-

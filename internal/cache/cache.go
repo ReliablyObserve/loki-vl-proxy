@@ -30,14 +30,14 @@ type TierStatsSnapshot struct {
 }
 
 type StatsSnapshot struct {
-	L1                TierStatsSnapshot
-	L2                TierStatsSnapshot
-	L3                TierStatsSnapshot
+	L1                 TierStatsSnapshot
+	L2                 TierStatsSnapshot
+	L3                 TierStatsSnapshot
 	BackendFallthrough int64
-	Entries           int
-	Bytes             int
-	DiskEntries       int
-	DiskBytes         int64
+	Entries            int
+	Bytes              int
+	DiskEntries        int
+	DiskBytes          int64
 }
 
 // Cache is an in-memory TTL cache with per-key TTL override, max entries, and max bytes.
@@ -155,15 +155,15 @@ func New(ttl time.Duration, maxEntries int) *Cache {
 
 func NewWithMaxBytes(ttl time.Duration, maxEntries, maxBytes int) *Cache {
 	c := &Cache{
-		entries:    make(map[string]entry),
-		defaultTTL: ttl,
-		maxEntries: maxEntries,
-		maxBytes:   maxBytes,
-		done:       make(chan struct{}),
-		lruList:    list.New(),
-		lruIndex:   make(map[string]*list.Element),
-		hot:        make(map[string]hotStat),
-		hotMax:     defaultHotIndexMaxEntries,
+		entries:      make(map[string]entry),
+		defaultTTL:   ttl,
+		maxEntries:   maxEntries,
+		maxBytes:     maxBytes,
+		done:         make(chan struct{}),
+		lruList:      list.New(),
+		lruIndex:     make(map[string]*list.Element),
+		hot:          make(map[string]hotStat),
+		hotMax:       defaultHotIndexMaxEntries,
 		promoteBuf:   make(chan string, 512),
 		promoteFlush: make(chan chan struct{}, 1),
 	}
