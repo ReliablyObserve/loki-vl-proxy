@@ -73,6 +73,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	// TODO: fanout is serial — each tenant sub-request blocks the next. For high
 	// fan-out counts (>4 tenants) parallel dispatch would reduce latency. Tracked
 	// in docs/KNOWN_ISSUES.md under "Multi-tenant serial fanout".
+	successTenants := make([]string, 0, len(filteredTenants))
 	recorders := make([]*httptest.ResponseRecorder, 0, len(filteredTenants))
 	for _, tenantID := range filteredTenants {
 		subReq := filteredReq.Clone(filteredReq.Context())
@@ -82,18 +83,20 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		rec := httptest.NewRecorder()
 		single(rec, subReq)
 		if rec.Code >= 400 {
-			copyHeaders(w.Header(), rec.Header())
-			if w.Header().Get("Content-Type") == "" {
-				w.Header().Set("Content-Type", "application/json")
-			}
-			w.WriteHeader(rec.Code)
-			_, _ = w.Write(rec.Body.Bytes())
-			return true
+			p.log.Warn("multi-tenant sub-request failed, skipping tenant",
+				"endpoint", endpoint, "tenant", tenantID, "status", rec.Code)
+			continue
 		}
+		successTenants = append(successTenants, tenantID)
 		recorders = append(recorders, rec)
 	}
 
-	body, contentType, err := mergeMultiTenantResponses(endpoint, filteredTenants, recorders)
+	if len(recorders) == 0 {
+		p.writeJSON(w, emptyMultiTenantResponse(endpoint))
+		return true
+	}
+
+	body, contentType, err := mergeMultiTenantResponses(endpoint, successTenants, recorders)
 	if err != nil {
 		p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
 		return true
