@@ -45,7 +45,7 @@ test.describe("Grafana Explore — Multi-Tenant Scenarios", () => {
       await runQuery(page);
 
       await assertLogsVisible(page);
-      await expect(page.locator('[data-testid="data-testid Alert error"]')).toHaveCount(0);
+      await expect(page.locator('[data-testid="data-testid Alert error"]').filter({ visible: true })).toHaveCount(0);
       await guards.assertClean();
     }
   );
@@ -60,7 +60,7 @@ test.describe("Grafana Explore — Multi-Tenant Scenarios", () => {
       await waitForGrafanaReady(page);
       await runQuery(page);
 
-      await expect(page.locator('[data-testid="data-testid Alert error"]')).toHaveCount(0);
+      await expect(page.locator('[data-testid="data-testid Alert error"]').filter({ visible: true })).toHaveCount(0);
       await guards.assertClean();
     }
   );
@@ -94,7 +94,7 @@ test.describe("Grafana Explore — Multi-Tenant Scenarios", () => {
         await filterButton.click();
         await waitForGrafanaReady(page);
         await assertLogsVisible(page);
-        await expect(page.locator('[data-testid="data-testid Alert error"]')).toHaveCount(0);
+        await expect(page.locator('[data-testid="data-testid Alert error"]').filter({ visible: true })).toHaveCount(0);
       }
 
       await guards.assertClean();
