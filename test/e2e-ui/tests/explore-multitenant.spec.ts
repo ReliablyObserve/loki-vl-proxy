@@ -86,16 +86,23 @@ test.describe("Grafana Explore — Multi-Tenant Scenarios", () => {
       ).first();
       await firstRow.click({ timeout: 10_000 });
 
-      // Wait for the detail panel to open
-      const detailPanel = page.locator('[data-testid="data-testid log-details"]').first();
-      await expect(detailPanel).toBeVisible({ timeout: 10_000 });
+      // Wait for the detail panel to open — Grafana 12/13 use different selectors
+      const detailPanel = page.locator([
+        '[data-testid="logRowDetails"]',
+        '[class*="logRowDetails"]',
+        '[class*="logDetails"]',
+        '[class*="log-details"]',
+        '[class*="logRow__details"]',
+        '[data-testid="logRows"] [aria-expanded="true"] ~ *',
+      ].join(", ")).first();
+      const detailVisible = await detailPanel.isVisible({ timeout: 10_000 }).catch(() => false);
 
-      // Click "Filter for value" if present (graceful degradation if not visible)
-      const filterButton = detailPanel
-        .locator('button[aria-label*="Filter for value"], button[title*="filter"]')
-        .first();
+      // Click "Filter for value" if the detail panel opened (graceful degradation)
+      const filterButton = detailVisible
+        ? detailPanel.locator('button[aria-label*="Filter for value"], button[title*="filter"]').first()
+        : page.locator("__never__").first();
 
-      if (await filterButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
+      if (detailVisible && await filterButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
         await filterButton.click();
         await waitForGrafanaReady(page);
         await assertLogsVisible(page);

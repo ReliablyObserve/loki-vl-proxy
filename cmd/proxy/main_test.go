@@ -857,9 +857,9 @@ func TestParseTenantMapJSON(t *testing.T) {
 
 func TestValidateTenantMap(t *testing.T) {
 	valid := map[string]proxy.TenantMapping{
-		"team-a":  {AccountID: "1", ProjectID: "2"},
-		"team-b":  {AccountID: "0", ProjectID: "0"},
-		"ops":     {AccountID: "4294967295", ProjectID: "0"},
+		"team-a": {AccountID: "1", ProjectID: "2"},
+		"team-b": {AccountID: "0", ProjectID: "0"},
+		"ops":    {AccountID: "4294967295", ProjectID: "0"},
 	}
 	if err := validateTenantMap(valid); err != nil {
 		t.Fatalf("unexpected error for valid map: %v", err)
