@@ -78,7 +78,12 @@ test.describe("Grafana Explore — Multi-Tenant Scenarios", () => {
       await assertLogsVisible(page);
 
       // Expand the first log row to reveal field detail panel
-      const firstRow = page.locator('[data-testid="data-testid log-row-message"]').first();
+      const firstRow = page.locator(
+        '[data-testid="logRows"] [data-testid="logRow"], ' +
+        '[data-testid="logRows"] > div > div, ' +
+        '[class*="logs-row"]:not([class*="logs-row__"]), ' +
+        '[class*="logsRow"]:not([class*="logsRow__"])'
+      ).first();
       await firstRow.click({ timeout: 10_000 });
 
       // Wait for the detail panel to open
