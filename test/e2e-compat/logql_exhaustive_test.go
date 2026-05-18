@@ -528,7 +528,7 @@ func exhaustiveQuery(t *testing.T, baseURL, query string) (int, string) {
 	now := time.Now()
 	params := url.Values{}
 	params.Set("query", query)
-	params.Set("start", fmt.Sprintf("%d", now.Add(-2*time.Hour).UnixNano()))
+	params.Set("start", fmt.Sprintf("%d", now.Add(-30*time.Minute).UnixNano()))
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("limit", "10")
 	params.Set("step", "60")

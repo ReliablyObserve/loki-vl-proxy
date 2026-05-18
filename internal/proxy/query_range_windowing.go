@@ -667,6 +667,12 @@ func shouldRetryQueryRangeWindow(err error) bool {
 		}
 	}
 	lower := strings.ToLower(err.Error())
+	// Circuit breaker is already open: retrying immediately burns the open
+	// window and accumulates more RecordFailure calls. Return false so the
+	// caller surfaces the 503 right away instead of spinning.
+	if strings.Contains(lower, "circuit breaker") {
+		return false
+	}
 	return strings.Contains(lower, "backend unavailable") ||
 		strings.Contains(lower, "all the 1 backends") ||
 		strings.Contains(lower, "connection refused") ||
