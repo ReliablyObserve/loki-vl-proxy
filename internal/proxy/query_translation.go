@@ -1113,8 +1113,9 @@ func buildBareParserMetricVector(series []bareParserMetricSeries, evalNanos int6
 }
 
 type absentOverTimeCompatSpec struct {
-	baseQuery   string
-	rangeWindow time.Duration
+	baseQuery      string
+	rangeWindow    time.Duration
+	rangeWindowStr string
 }
 
 func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool) {
@@ -1130,7 +1131,7 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 	if baseQuery == "" {
 		return absentOverTimeCompatSpec{}, false
 	}
-	return absentOverTimeCompatSpec{baseQuery: baseQuery, rangeWindow: window}, true
+	return absentOverTimeCompatSpec{baseQuery: baseQuery, rangeWindow: window, rangeWindowStr: matches[2]}, true
 }
 
 func extractAbsentMetricLabels(query string) map[string]string {
@@ -1212,7 +1213,14 @@ func buildAbsentInstantVector(evalRaw string, metric map[string]string) map[stri
 }
 
 func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
-	logsqlQuery, err := p.translateQueryWithContext(r.Context(), originalQuery)
+	// Translate the inner count_over_time query — absent_over_time itself has no VL equivalent.
+	if spec.rangeWindowStr == "" {
+		p.writeError(w, http.StatusBadRequest, "absent_over_time: missing range window")
+		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	innerCountQuery := fmt.Sprintf("count_over_time(%s[%s])", spec.baseQuery, spec.rangeWindowStr)
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), innerCountQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
@@ -1263,8 +1271,14 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 // When the stream does not exist at all VL returns an empty matrix, so all
 // steps in [start, end] get value "1" (matching Loki semantics).
 func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
-	// translateQueryWithContext maps absent_over_time → count() stats query.
-	translatedInner, err := p.translateQueryWithContext(r.Context(), originalQuery)
+	// Translate the inner count_over_time query — absent_over_time itself has no VL equivalent.
+	if spec.rangeWindowStr == "" {
+		p.writeError(w, http.StatusBadRequest, "absent_over_time: missing range window")
+		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	innerCountQuery := fmt.Sprintf("count_over_time(%s[%s])", spec.baseQuery, spec.rangeWindowStr)
+	translatedInner, err := p.translateQueryWithContext(r.Context(), innerCountQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))

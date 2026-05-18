@@ -436,9 +436,11 @@ func TestContract_Query_AbsentOverTimeCompatTranslateErrorReturnsBadRequest(t *t
 	req := httptest.NewRequest("GET", "/loki/api/v1/query?query=ignored&time=1704067200000000000", nil)
 	resp := httptest.NewRecorder()
 
-	p.proxyAbsentOverTimeQuery(resp, req, time.Now(), `{app="demo"`, absentOverTimeCompatSpec{
-		baseQuery:   `{app="demo"`,
-		rangeWindow: 5 * time.Minute,
+	// rangeWindowStr empty simulates a malformed spec — handler must guard.
+	p.proxyAbsentOverTimeQuery(resp, req, time.Now(), `absent_over_time({app="demo"}[5m])`, absentOverTimeCompatSpec{
+		baseQuery:      `{app="demo"}`,
+		rangeWindow:    5 * time.Minute,
+		rangeWindowStr: "",
 	})
 
 	if resp.Code != http.StatusBadRequest {
