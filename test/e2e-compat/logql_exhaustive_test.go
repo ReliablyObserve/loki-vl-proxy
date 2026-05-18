@@ -67,6 +67,27 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── Invalid pipeline stages ──
 		{"double_parser", `{app="api-gateway"} | json | json`, "pipeline"},
 		{"line_format_no_template", `{app="api-gateway"} | line_format`, "pipeline"},
+
+		// ── Over-time functions without unwrap (must error) ──
+		{"avg_over_time_no_unwrap", `avg_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"sum_over_time_no_unwrap", `sum_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"max_over_time_no_unwrap", `max_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"min_over_time_no_unwrap", `min_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"first_over_time_no_unwrap", `first_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"last_over_time_no_unwrap", `last_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"stddev_over_time_no_unwrap", `stddev_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"stdvar_over_time_no_unwrap", `stdvar_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"quantile_over_time_no_unwrap", `quantile_over_time(0.99, {app="api-gateway"}[5m])`, "unwrap_required"},
+
+		// ── count_values (not translatable to VL) ──
+		{"count_values_metric", `count_values("app", count_over_time({app="api-gateway"}[5m]))`, "count_values"},
+
+		// ── label_replace / label_join applied to a log stream (must error) ──
+		{"label_replace_on_log", `label_replace({app="api-gateway"}, "app2", "$1", "app", "(.*)")`, "metric_on_log"},
+		{"label_join_on_log", `label_join({app="api-gateway"}, "app2", "_", "app", "env")`, "metric_on_log"},
+
+		// ── absent_over_time without range ──
+		{"absent_over_time_no_range", `absent_over_time({app="api-gateway"})`, "malformed"},
 	}
 
 	score := &exhaustiveScore{}
@@ -224,6 +245,112 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"simple_selector_only", `{app="api-gateway",env="production",level="error"}`, "basic"},
 		{"wildcard_regex", `{app=~".+",env="production"}`, "basic"},
 		{"multiple_not_equal", `{app!="nginx-ingress",env="production",level!="debug"}`, "basic"},
+
+		// ── label_replace / label_join / group() ──────────────────────────────
+		{"label_replace_basic", `label_replace(sum by (level)(count_over_time({app="api-gateway"}[5m])), "level_alias", "$1", "level", "(.*)")`, "label_transform"},
+		{"label_replace_rewrite", `label_replace(sum by (app)(rate({env="production"}[5m])), "service", "$1", "app", "(.*)")`, "label_transform"},
+		{"label_replace_no_match", `label_replace(sum by (level)(count_over_time({app="api-gateway"}[5m])), "new_label", "default", "level", "^nonexistent$")`, "label_transform"},
+		{"label_replace_multi_result", `label_replace(sum by (app, level)(count_over_time({env="production"}[5m])), "app_env", "$1-prod", "app", "(.*)")`, "label_transform"},
+		{"label_join_two_labels", `label_join(sum by (app, level)(count_over_time({env="production"}[5m])), "app_level", "_", "app", "level")`, "label_transform"},
+		{"label_join_single", `label_join(sum by (app)(count_over_time({env="production"}[5m])), "app_copy", "", "app")`, "label_transform"},
+		{"group_outer_agg", `group(sum by (app)(count_over_time({env="production"}[5m])))`, "label_transform"},
+		{"group_without", `group(sum without (level)(count_over_time({env="production"}[5m])))`, "label_transform"},
+
+		// ── Subqueries ────────────────────────────────────────────────────────
+		{"subquery_rate_count", `rate(count_over_time({app="api-gateway",env="production"}[5m])[30m:5m])`, "subquery"},
+		{"subquery_max_rate", `max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`, "subquery"},
+		{"subquery_avg_rate", `avg_over_time(rate({env="production"}[5m])[30m:5m])`, "subquery"},
+		{"subquery_sum_by", `sum by (app)(max_over_time(rate({env="production"}[5m])[30m:5m]))`, "subquery"},
+
+		// ── Offset modifier ───────────────────────────────────────────────────
+		{"rate_offset_5m", `rate({app="api-gateway",env="production"}[5m] offset 5m)`, "offset"},
+		{"count_offset_10m", `count_over_time({app="api-gateway",env="production"}[5m] offset 10m)`, "offset"},
+		{"sum_rate_offset", `sum by (app)(rate({env="production"}[5m] offset 5m))`, "offset"},
+		{"bytes_rate_offset", `bytes_rate({app="api-gateway",env="production"}[5m] offset 5m)`, "offset"},
+
+		// ── Unwrap with unit conversion ───────────────────────────────────────
+		// duration-bytes-test has JSON fields: response_time ("15ms"), body_size ("1024B")
+		{"unwrap_duration_conv", `sum_over_time({app="duration-bytes-test",env="production"} | json | unwrap duration(response_time) [5m])`, "unwrap_unit"},
+		{"unwrap_bytes_conv", `sum_over_time({app="duration-bytes-test",env="production"} | json | unwrap bytes(body_size) [5m])`, "unwrap_unit"},
+		{"unwrap_duration_avg", `avg_over_time({app="duration-bytes-test",env="production"} | json | unwrap duration(response_time) [5m])`, "unwrap_unit"},
+		{"unwrap_duration_max", `max_over_time({app="duration-bytes-test",env="production"} | json | unwrap duration(response_time) [5m])`, "unwrap_unit"},
+		{"unwrap_by_label", `sum by (app)(sum_over_time({env="production"} | json | unwrap duration_ms [5m]))`, "unwrap_unit"},
+		{"unwrap_max_by_level", `max by (level)(max_over_time({app="api-gateway",env="production"} | json | unwrap duration_ms [5m]))`, "unwrap_unit"},
+		{"unwrap_quantile_by", `quantile_over_time(0.95, {app="api-gateway",env="production"} | json | unwrap duration_ms [5m]) by (level)`, "unwrap_unit"},
+
+		// ── Field-specific parser extraction ─────────────────────────────────
+		{"json_two_fields_only", `{app="api-gateway",env="production"} | json method, status`, "field_parser"},
+		{"json_three_fields", `{app="api-gateway",env="production"} | json method, path, status`, "field_parser"},
+		{"json_field_then_filter", `{app="api-gateway",env="production"} | json status | status="200"`, "field_parser"},
+		{"logfmt_fields_specific", `{app="payment-service",env="production"} | logfmt level, msg`, "field_parser"},
+
+		// ── Regexp with named capture groups ──────────────────────────────────
+		{"regexp_named_single", `{app="api-gateway",env="production"} | regexp "(?P<http_method>[A-Z]+)"`, "regexp_named"},
+		{"regexp_named_multi", `{app="api-gateway",env="production"} | regexp "(?P<method>[A-Z]+) (?P<url_path>/[^ ]*)"`, "regexp_named"},
+		{"regexp_named_filter", `{app="api-gateway",env="production"} | regexp "(?P<http_method>[A-Z]+)" | http_method="GET"`, "regexp_named"},
+
+		// ── Advanced selector patterns ────────────────────────────────────────
+		{"multi_app_regex_alt", `{app=~"api-gateway|payment-service",env="production"}`, "selector_advanced"},
+		{"nested_wildcard", `{env="production",app=~"api-.*"}`, "selector_advanced"},
+		{"not_match_multi", `{app!~"nginx.*|payment.*",env="production"}`, "selector_advanced"},
+		{"env_regex_alternation", `{env=~"production|staging",app="api-gateway"}`, "selector_advanced"},
+		{"combined_match_types", `{app=~"api-.*",env="production",level!="debug"}`, "selector_advanced"},
+
+		// ── absent_over_time expanded ─────────────────────────────────────────
+		{"absent_existing_stream", `absent_over_time({app="api-gateway",env="production"}[5m])`, "absent"},
+		{"absent_nonexistent_stream", `absent_over_time({app="nonexistent-xyz-123-abc"}[1m])`, "absent"},
+		{"absent_with_impossible_filter", `absent_over_time({app="api-gateway"} |= "IMPOSSIBLE_STRING_xyz_123" [5m])`, "absent"},
+
+		// ── Complex multi-stage pipelines ─────────────────────────────────────
+		{"error_filter_json_chain", `{app="api-gateway",env="production"} |= "error" | json | method!="GET" | status>=500`, "complex_pipeline"},
+		{"json_path_status_drop", `{app="api-gateway",env="production"} | json | path=~"/api/.*" | status>200 | drop trace_id`, "complex_pipeline"},
+		{"logfmt_filter_format", `{app="payment-service",env="production"} | logfmt | level="error" | line_format "[{{.level}}] {{.msg}}"`, "complex_pipeline"},
+		{"chained_line_filter_complex", `{app="api-gateway",env="production"} |= "GET" |= "/api" != "health" | json`, "complex_pipeline"},
+		{"json_regex_numeric_range", `{app="api-gateway",env="production"} | json | path=~"/api/.*" | status>=400 | status<500`, "complex_pipeline"},
+		{"keep_then_format", `{app="api-gateway",env="production"} | json | keep method, status | line_format "{{.method}} {{.status}}"`, "complex_pipeline"},
+		{"drop_then_keep", `{app="api-gateway",env="production"} | json | drop trace_id | keep method, path, status`, "complex_pipeline"},
+		{"decolorize_json_filter", `{app="api-gateway",env="production"} | decolorize | json | status>=200`, "complex_pipeline"},
+
+		// ── Nested / chained binary metric expressions ────────────────────────
+		{"binary_sum_plus_sum", `sum by(app)(rate({env="production"}[5m])) + sum by(app)(rate({env="production"}[5m]))`, "binary_nested"},
+		{"binary_rate_ratio_pct", `sum by(app)(rate({env="production"}[5m])) / sum by(app)(rate({env="production"}[5m])) * 100`, "binary_nested"},
+		{"binary_three_services", `sum(rate({app="api-gateway"}[5m])) + sum(rate({app="payment-service"}[5m])) + sum(rate({app="nginx-ingress"}[5m]))`, "binary_nested"},
+		{"binary_bytes_vs_rate", `sum(bytes_rate({env="production"}[5m])) / sum(rate({env="production"}[5m]))`, "binary_nested"},
+		{"binary_bool_chain", `sum by (level)(count_over_time({app="api-gateway"}[5m])) > bool 0 + 0`, "binary_nested"},
+
+		// ── Without-clause expansion ──────────────────────────────────────────
+		{"sum_without_level", `sum without (level) (rate({env="production"}[5m]))`, "without"},
+		{"max_without_env", `max without (env) (count_over_time({env="production"}[5m]))`, "without"},
+		{"avg_without_multi", `avg without (level, env) (count_over_time({env="production"}[5m]))`, "without"},
+		{"count_without_cluster", `count without (cluster) (count_over_time({env="production"}[5m]))`, "without"},
+
+		// ── Vector matching expansion ─────────────────────────────────────────
+		{"on_match_app", `sum by(app)(count_over_time({env="production"}[5m])) / on(app) sum by(app)(count_over_time({env="production"}[5m]))`, "vector_match"},
+		{"ignoring_level", `sum by(app, level)(count_over_time({env="production"}[5m])) / ignoring(level) sum by(app)(count_over_time({env="production"}[5m]))`, "vector_match"},
+		{"group_left_fanout", `sum by(app, level)(rate({env="production"}[5m])) / on(app) group_left sum by(app)(rate({env="production"}[5m]))`, "vector_match"},
+		{"group_right_fanout", `sum by(app)(rate({env="production"}[5m])) / on(app) group_right sum by(app, level)(rate({env="production"}[5m]))`, "vector_match"},
+
+		// ── Multi-service spanning queries ────────────────────────────────────
+		{"multi_service_filter", `{env="production"} |= "error" | json | status>=500`, "multi_app"},
+		{"multi_service_rate_sum", `sum(rate({env="production"}[5m]))`, "multi_app"},
+		{"multi_service_topk", `topk(5, sum by (app)(rate({env="production"}[5m])))`, "multi_app"},
+		{"multi_service_count_by_app", `count by (app) (count_over_time({env="production"}[5m]))`, "multi_app"},
+		{"multi_service_bytes", `sum by (app)(bytes_rate({env="production"}[5m]))`, "multi_app"},
+
+		// ── Unpack parser extended ────────────────────────────────────────────
+		{"unpack_field_filter", `{app="api-gateway",env="production"} | unpack | level="error"`, "unpack_ext"},
+		{"unpack_keep_format", `{app="api-gateway",env="production"} | unpack | keep level | line_format "{{.level}}"`, "unpack_ext"},
+
+		// ── Pattern parser extended ───────────────────────────────────────────
+		{"pattern_extract_two", `{app="api-gateway",env="production"} | json | line_format "{{.method}} {{.path}}" | pattern "<method> <path>"`, "pattern_ext"},
+		{"pattern_filter_after", `{app="api-gateway",env="production"} | json | line_format "{{.method}} {{.path}}" | pattern "<method> <path>" | method="GET"`, "pattern_ext"},
+
+		// ── Metric queries with complex filter chains ─────────────────────────
+		{"rate_json_status_filter", `rate({app="api-gateway",env="production"} | json | status>=400 [5m])`, "metric_complex"},
+		{"count_logfmt_level", `count_over_time({app="payment-service",env="production"} | logfmt | level="error"[5m])`, "metric_complex"},
+		{"sum_rate_json_method", `sum by (level)(rate({app="api-gateway",env="production"} | json | method="GET" [5m]))`, "metric_complex"},
+		{"bytes_rate_filtered", `sum by (app)(bytes_rate({env="production"} |= "error" [5m]))`, "metric_complex"},
+		{"avg_unwrap_filtered", `avg_over_time({app="api-gateway",env="production"} | json | method="GET" | unwrap duration_ms [5m])`, "metric_complex"},
 	}
 
 	score := &exhaustiveScore{}
