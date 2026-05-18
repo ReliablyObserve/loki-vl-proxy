@@ -581,10 +581,10 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 	return p.vlGetInner(ctx, path, params)
 }
 
-// vlPostInner executes a POST against VL without checking the circuit breaker.
-// Callers must either hold a breaker.Allow() token or use DoWithGuard.
-func (p *Proxy) vlPostInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
-	// Inject tenant label filter when configured and orgID is a non-default single tenant.
+// vlPostHTTP executes the raw POST to VL: injects headers, runs the HTTP request, and
+// decodes compression. It does NOT interact with the circuit breaker — callers are
+// responsible for Allow() checks and RecordFailure/RecordSuccess calls.
+func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	if p.tenantLabel != "" {
 		if orgID := getOrgID(ctx); orgID != "" && !isDefaultTenantAlias(orgID) && orgID != "*" {
 			p.configMu.RLock()
@@ -597,7 +597,6 @@ func (p *Proxy) vlPostInner(ctx context.Context, path string, params url.Values)
 	}
 	u := *p.backend
 	u.Path = path
-
 	p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", params.Encode())
 	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), strings.NewReader(params.Encode()))
 	if err != nil {
@@ -613,9 +612,6 @@ func (p *Proxy) vlPostInner(ctx context.Context, path string, params url.Values)
 	if err != nil {
 		mappedStatus := statusFromUpstreamErr(err)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, mappedStatus, duration, err)
-		if shouldRecordBreakerFailure(err) {
-			p.breaker.RecordFailure()
-		}
 		return nil, err
 	}
 	p.observeBackendVersionFromHeaders(resp.Header)
@@ -625,6 +621,19 @@ func (p *Proxy) vlPostInner(ctx context.Context, path string, params url.Values)
 		return nil, fmt.Errorf("decode backend response: %w", err)
 	}
 	p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, resp.StatusCode, duration, nil)
+	return resp, nil
+}
+
+// vlPostInner executes a POST against VL without checking the circuit breaker.
+// Callers must either hold a breaker.Allow() token or use DoWithGuard.
+func (p *Proxy) vlPostInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
+	resp, err := p.vlPostHTTP(ctx, path, params)
+	if err != nil {
+		if shouldRecordBreakerFailure(err) {
+			p.breaker.RecordFailure()
+		}
+		return nil, err
+	}
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
 	return resp, nil
