@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.34.1] - 2026-05-18
+
 ### CI
 
 - fix(ci): remove accidentally committed `bench/loki-bench` and `proxy.test` binaries; add both to `.gitignore` — fixes OpenSSF Scorecard Binary-Artifacts regression
