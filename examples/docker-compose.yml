@@ -1,0 +1,78 @@
+# loki-vl-proxy — minimal working stack
+#
+# Runs VictoriaLogs + loki-vl-proxy + Grafana side-by-side.
+# Grafana is pre-wired to the proxy via datasource provisioning.
+#
+# Usage:
+#   docker compose up -d
+#   open http://localhost:3000   (Grafana, anonymous access)
+#   open http://localhost:9428   (VictoriaLogs UI)
+#
+# Send a test log line:
+#   curl -s -XPOST http://localhost:3100/loki/api/v1/push \
+#     -H "Content-Type: application/json" \
+#     -d '{"streams":[{"stream":{"app":"demo"},"values":[["'"$(date +%s)000000000"'","hello from loki-vl-proxy"]]}]}'
+#
+# Then open Grafana → Explore → select "Loki (via VL proxy)" → run {app="demo"}.
+
+services:
+
+  # ── VictoriaLogs ───────────────────────────────────────────────────────────
+  victorialogs:
+    image: victoriametrics/victoria-logs:latest
+    ports:
+      - "9428:9428"
+    command:
+      - -retentionPeriod=7d
+      - -storageDataPath=/vlogs
+    volumes:
+      - vlogs-data:/vlogs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9428/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── loki-vl-proxy ──────────────────────────────────────────────────────────
+  loki-vl-proxy:
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    ports:
+      - "3100:3100"
+    command:
+      - -backend=http://victorialogs:9428
+
+      # Maximum Loki compatibility — matches what Grafana 10+ expects
+      - -label-style=underscores
+      - -metadata-field-mode=translated
+      - -emit-structured-metadata=true
+      - -patterns-enabled=true
+
+      - -log-level=info
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Grafana ────────────────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      loki-vl-proxy:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  vlogs-data:

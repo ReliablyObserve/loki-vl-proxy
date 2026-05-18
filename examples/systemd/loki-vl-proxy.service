@@ -1,0 +1,42 @@
+# loki-vl-proxy systemd unit
+#
+# Install:
+#   sudo cp examples/systemd/loki-vl-proxy.service /etc/systemd/system/
+#   sudo cp examples/loki-vl-proxy.env /etc/loki-vl-proxy/loki-vl-proxy.env
+#   sudo useradd --system --no-create-home loki-vl-proxy
+#   sudo install -m 755 loki-vl-proxy /usr/local/bin/loki-vl-proxy
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now loki-vl-proxy
+#   sudo journalctl -u loki-vl-proxy -f
+
+[Unit]
+Description=loki-vl-proxy — Loki-compatible proxy for VictoriaLogs
+Documentation=https://github.com/ReliablyObserve/loki-vl-proxy
+After=network.target
+
+[Service]
+User=loki-vl-proxy
+Group=loki-vl-proxy
+
+# Load environment variables from the companion .env file.
+# Edit /etc/loki-vl-proxy/loki-vl-proxy.env to change VL_BACKEND_URL,
+# LISTEN_ADDR, LABEL_STYLE, METADATA_FIELD_MODE, and TENANT_MAP.
+EnvironmentFile=/etc/loki-vl-proxy/loki-vl-proxy.env
+
+ExecStart=/usr/local/bin/loki-vl-proxy \
+  -emit-structured-metadata=true \
+  -patterns-enabled=true
+
+# Restart policy
+Restart=on-failure
+RestartSec=5s
+
+# Hardening — proxy needs no special privileges
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+CapabilityBoundingSet=
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,44 @@
+# loki-vl-proxy tenant map
+#
+# Maps Loki X-Scope-OrgID strings → VictoriaLogs AccountID + ProjectID.
+#
+# Usage:
+#   ./loki-vl-proxy -tenant-map-file=examples/tenant-map.yaml -tenant-map-reload-interval=30s
+#
+# Rules:
+#   - account_id and project_id are required; both must be non-negative integers.
+#   - The proxy rejects the file at startup if any value fails validation.
+#   - The file is reloaded on SIGHUP or automatically every -tenant-map-reload-interval.
+#   - "0", "fake", and "default" resolve to VL 0:0 automatically — no entry needed.
+#   - Unmapped non-numeric org IDs are rejected with 403.
+#
+# ── Single VL account, separate projects per team ──────────────────────────────
+team-alpha:
+  account_id: "1"
+  project_id: "1"
+
+team-beta:
+  account_id: "1"
+  project_id: "2"
+
+team-gamma:
+  account_id: "1"
+  project_id: "3"
+
+# ── Separate VL accounts (e.g. different VL instances behind a load balancer) ─
+ops-prod:
+  account_id: "42"
+  project_id: "0"
+
+ops-staging:
+  account_id: "43"
+  project_id: "0"
+
+# ── Explicit override for the default-tenant alias ────────────────────────────
+# Without this entry, X-Scope-OrgID "0" / "fake" / "default" all resolve to
+# VL AccountID=0, ProjectID=0 automatically.  Only add an explicit entry when
+# you need to redirect "0" to a different VL project.
+#
+# "0":
+#   account_id: "0"
+#   project_id: "99"

@@ -1,0 +1,33 @@
+# Grafana datasource provisioning — loki-vl-proxy (single-tenant)
+#
+# Drop this file in your Grafana provisioning directory:
+#   /etc/grafana/provisioning/datasources/
+#
+# The proxy listens on :3100 by default.
+# X-Scope-OrgID "0" / "fake" / "default" all resolve to VictoriaLogs 0:0
+# automatically — no tenant map entry required for single-tenant setups.
+#
+# For named tenants, change httpHeaderValue1 to the org-ID string that
+# matches a key in your tenant map (see ../tenant-map.yaml).
+
+apiVersion: 1
+
+datasources:
+  - name: Loki (via VL proxy)
+    type: loki
+    access: proxy
+    url: http://loki-vl-proxy:3100
+    isDefault: true
+
+    jsonData:
+      # Send the X-Scope-OrgID header with every request.
+      httpHeaderName1: X-Scope-OrgID
+
+      # Structured metadata support (Grafana 10+ log details panel).
+      # Requires -emit-structured-metadata=true on the proxy.
+      derivedFields: []
+
+    secureJsonData:
+      # Single-tenant: "0", "fake", and "default" all resolve to VL 0:0.
+      # Named tenant: use the exact org-ID key from your tenant map.
+      httpHeaderValue1: "0"
