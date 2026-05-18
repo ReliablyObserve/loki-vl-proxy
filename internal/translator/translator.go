@@ -1201,6 +1201,10 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 
 		// Build the LogsQL stats query
 		var result string
+		// unwrapByLabelsEmbedded tracks whether buildStatsQuery already embedded the
+		// by-labels grouping via unwrapInnerGrouping — if so, skip the addByClause
+		// call below to avoid emitting a duplicate "by (app) by (app)" clause.
+		unwrapByLabelsEmbedded := false
 		if isUnwrapFunc(funcName) {
 			// For unwrap functions, extract the unwrap field
 			unwrapField := extractUnwrapField(inner)
@@ -1232,13 +1236,16 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 				}
 			} else {
 				result = buildStatsQuery(logsqlQuery, statsExpr, innerBy, "")
+				// buildStatsQuery already embedded byLabels via innerBy
+				unwrapByLabelsEmbedded = byLabels != ""
 			}
 		} else {
 			result = fmt.Sprintf("%s | stats %s", logsqlQuery, logsqlFunc)
 		}
 
-		// Add by labels
-		if byLabels != "" || outerAgg != "" {
+		// Add by labels — skip for unwrap functions where the grouping was already
+		// embedded in the stats clause by buildStatsQuery/unwrapInnerGrouping.
+		if !unwrapByLabelsEmbedded && (byLabels != "" || outerAgg != "") {
 			if byLabels != "" {
 				result = addByClause(result, byLabels, labelFn)
 			}

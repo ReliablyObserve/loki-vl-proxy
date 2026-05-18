@@ -277,9 +277,9 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"group_without", `group(sum without (level)(count_over_time({env="production"}[5m])))`, "label_transform"},
 
 		// ── Subqueries ────────────────────────────────────────────────────────
+		// subquery_max_rate, subquery_avg_rate: Loki 3.7.1 rejects applying max/avg_over_time
+		// to a subquery over rate() — these are proxy extensions tracked in TestLogQL_Exhaustive_KnownGaps.
 		{"subquery_rate_count", `rate(count_over_time({app="api-gateway",env="production"}[5m])[30m:5m])`, "subquery"},
-		{"subquery_max_rate", `max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`, "subquery"},
-		{"subquery_avg_rate", `avg_over_time(rate({env="production"}[5m])[30m:5m])`, "subquery"},
 		{"subquery_sum_by", `sum by (app)(max_over_time(rate({env="production"}[5m])[30m:5m]))`, "subquery"},
 
 		// ── Offset modifier ───────────────────────────────────────────────────
@@ -411,9 +411,8 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"quantile_by_label_50", `quantile_over_time(0.50, {app="api-gateway",env="production"} | json | unwrap duration_ms [5m]) by (app)`, "unwrap_quantile"},
 
 		// ── subquery min / avg ────────────────────────────────────────────────
-		{"subquery_min_outer", `min_over_time(rate({env="production"}[5m])[5m:1m])`, "subquery_ext"},
+		// subquery_min_outer and subquery_count_avg: Loki 3.7.1 rejects these — tracked in KnownGaps.
 		{"subquery_sum_by_outer", `sum by(app)(max_over_time(rate({env="production"}[5m])[5m:1m]))`, "subquery_ext"},
-		{"subquery_count_avg", `avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`, "subquery_ext"},
 
 		// ── logfmt filter + line_format ───────────────────────────────────────
 		{"logfmt_filter_line_format", `{app="payment-service",env="production"} | logfmt | level="error" | line_format "[{{.level}}] {{.msg}}"`, "logfmt_format"},
@@ -649,12 +648,7 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			"proxy_extension", 400, 200,
 			"label_join() is a proxy post-processing extension; not in Loki 3.7.1 LogQL",
 		},
-		{
-			"count_outer_aggregation",
-			`count(sum by(app)(count_over_time({env="production"}[5m])))`,
-			"proxy_bug", 200, 400,
-			"Loki supports count() as outer aggregation of a metric vector; proxy translation fails",
-		},
+		// count_outer_aggregation was a proxy_bug but is now fixed — removed from gaps.
 		{
 			"stddev_outer_aggregation",
 			`stddev(sum by(app)(count_over_time({env="production"}[5m])))`,
@@ -672,6 +666,33 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			`quantile_over_time(-0.1, {app="api-gateway"} | json | unwrap duration_ms [5m])`,
 			"code_mismatch", 400, 422,
 			"both reject negative quantile but Loki=400 Bad Request, Proxy=422 Unprocessable Entity",
+		},
+		// Subquery-over-range-function extensions: Loki 3.7.1 rejects applying
+		// max/avg/min_over_time to a subquery over rate() or count_over_time().
+		// The proxy evaluates these via proxy-side subquery evaluation (extension).
+		{
+			"subquery_max_rate",
+			`max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`,
+			"proxy_extension", 400, 200,
+			"Loki 3.7.1 rejects max_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+		},
+		{
+			"subquery_avg_rate",
+			`avg_over_time(rate({env="production"}[5m])[30m:5m])`,
+			"proxy_extension", 400, 200,
+			"Loki 3.7.1 rejects avg_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+		},
+		{
+			"subquery_min_outer",
+			`min_over_time(rate({env="production"}[5m])[5m:1m])`,
+			"proxy_extension", 400, 200,
+			"Loki 3.7.1 rejects min_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+		},
+		{
+			"subquery_count_avg",
+			`avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`,
+			"proxy_extension", 400, 200,
+			"Loki 3.7.1 rejects avg_over_time applied to count_over_time() subquery; proxy evaluates via proxy-side subquery",
 		},
 	}
 

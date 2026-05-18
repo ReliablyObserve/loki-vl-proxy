@@ -1506,6 +1506,11 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if spec, ok := parseAbsentOverTimeCompatSpec(logqlQuery); ok {
+		p.proxyAbsentOverTimeQueryRange(w, r, start, logqlQuery, spec)
+		return
+	}
+
 	if postAgg, ok := parseInstantMetricPostAggQuery(logqlQuery); ok {
 		p.handleRangeMetricPostAggregation(w, r, start, logqlQuery, postAgg)
 		return
