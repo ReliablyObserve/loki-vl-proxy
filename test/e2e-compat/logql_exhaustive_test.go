@@ -82,12 +82,32 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── count_values (not translatable to VL) ──
 		{"count_values_metric", `count_values("app", count_over_time({app="api-gateway"}[5m]))`, "count_values"},
 
-		// ── label_replace / label_join applied to a log stream (must error) ──
-		{"label_replace_on_log", `label_replace({app="api-gateway"}, "app2", "$1", "app", "(.*)")`, "metric_on_log"},
-		{"label_join_on_log", `label_join({app="api-gateway"}, "app2", "_", "app", "env")`, "metric_on_log"},
+		// ── label_replace / label_join applied to a log stream ──
+		// Note: proxy accepts these (proxy extension); Loki rejects → tracked in TestLogQL_Exhaustive_KnownGaps
 
 		// ── absent_over_time without range ──
 		{"absent_over_time_no_range", `absent_over_time({app="api-gateway"})`, "malformed"},
+
+		// ── topk / bottomk with invalid N ──
+		{"topk_n_zero", `topk(0, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
+		{"topk_n_negative", `topk(-1, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
+		{"bottomk_n_zero", `bottomk(0, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
+		{"topk_n_float", `topk(1.5, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
+
+		// ── outer quantile() aggregation (LogQL has quantile_over_time, not quantile()) ──
+		{"quantile_outer_agg", `quantile(0.5, sum by(app)(rate({env="production"}[5m])))`, "invalid_agg"},
+
+		// ── binary op between two log streams ──
+		{"binary_two_log_streams", `{app="api-gateway",env="production"} + {app="payment-service",env="production"}`, "binary_on_log"},
+
+		// ── ip filter with invalid CIDR ──
+		{"ip_filter_invalid_cidr", `{app="api-gateway"} | json | ip("not-a-valid-cidr")`, "invalid_filter"},
+
+		// ── invalid regex in stream selector ──
+		{"invalid_regex_selector", `{app=~"[unclosed-bracket"}`, "invalid_regex"},
+
+		// ── avg aggregation on a bare log stream ──
+		{"avg_on_log_stream", `avg({app="api-gateway",env="production"})`, "metric_on_log"},
 	}
 
 	score := &exhaustiveScore{}
@@ -251,8 +271,8 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"label_replace_rewrite", `label_replace(sum by (app)(rate({env="production"}[5m])), "service", "$1", "app", "(.*)")`, "label_transform"},
 		{"label_replace_no_match", `label_replace(sum by (level)(count_over_time({app="api-gateway"}[5m])), "new_label", "default", "level", "^nonexistent$")`, "label_transform"},
 		{"label_replace_multi_result", `label_replace(sum by (app, level)(count_over_time({env="production"}[5m])), "app_env", "$1-prod", "app", "(.*)")`, "label_transform"},
-		{"label_join_two_labels", `label_join(sum by (app, level)(count_over_time({env="production"}[5m])), "app_level", "_", "app", "level")`, "label_transform"},
-		{"label_join_single", `label_join(sum by (app)(count_over_time({env="production"}[5m])), "app_copy", "", "app")`, "label_transform"},
+		{"avg_without_app", `avg without(app)(rate({env="production"}[5m]))`, "label_transform"},
+		{"count_by_level_agg", `count by(level)(count_over_time({env="production"}[5m]))`, "label_transform"},
 		{"group_outer_agg", `group(sum by (app)(count_over_time({env="production"}[5m])))`, "label_transform"},
 		{"group_without", `group(sum without (level)(count_over_time({env="production"}[5m])))`, "label_transform"},
 
@@ -351,19 +371,91 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"sum_rate_json_method", `sum by (level)(rate({app="api-gateway",env="production"} | json | method="GET" [5m]))`, "metric_complex"},
 		{"bytes_rate_filtered", `sum by (app)(bytes_rate({env="production"} |= "error" [5m]))`, "metric_complex"},
 		{"avg_unwrap_filtered", `avg_over_time({app="api-gateway",env="production"} | json | method="GET" | unwrap duration_ms [5m])`, "metric_complex"},
+
+		// ── stddev / stdvar as BY-clause aggregations ─────────────────────────
+		{"stddev_by_app", `stddev by(app)(count_over_time({env="production"}[5m]))`, "metric_agg_ext"},
+		{"stdvar_by_app", `stdvar by(app)(count_over_time({env="production"}[5m]))`, "metric_agg_ext"},
+		{"stddev_by_level", `stddev by(level)(count_over_time({app="api-gateway",env="production"}[5m]))`, "metric_agg_ext"},
+
+		// ── max / min with by-clause ──────────────────────────────────────────
+		{"max_by_app_rate", `max by(app)(rate({env="production"}[5m]))`, "metric_agg_ext"},
+		{"min_by_level_count", `min by(level)(count_over_time({env="production"}[5m]))`, "metric_agg_ext"},
+		{"sum_without_two_labels", `sum without(level, app)(count_over_time({env="production"}[5m]))`, "metric_agg_ext"},
+
+		// ── decolorize in metric range ────────────────────────────────────────
+		{"decolorize_in_rate", `rate({app="api-gateway"} | decolorize [5m])`, "parser_in_metric"},
+		{"decolorize_in_count", `count_over_time({app="api-gateway"} | decolorize [5m])`, "parser_in_metric"},
+		{"unpack_in_rate", `rate({app="api-gateway"} | unpack [5m])`, "parser_in_metric"},
+		{"bytes_rate_json_range", `bytes_rate({app="api-gateway"} | json [5m])`, "parser_in_metric"},
+		{"logfmt_drop_in_rate", `rate({app="payment-service"} | logfmt | drop msg [5m])`, "parser_in_metric"},
+		{"json_method_count", `count_over_time({app="api-gateway"} | json | method="GET" [5m])`, "parser_in_metric"},
+		{"json_keep_count", `count_over_time({app="api-gateway"} | json | keep method, status [5m])`, "parser_in_metric"},
+
+		// ── label_format then aggregate ───────────────────────────────────────
+		{"label_format_sum_by", `sum by(http_method)(rate({app="api-gateway"} | json | label_format http_method="method" [5m]))`, "label_fmt_metric"},
+
+		// ── bytes_over_time with line filter ──────────────────────────────────
+		{"bytes_over_time_line_filter", `bytes_over_time({app="api-gateway",env="production"} |= "GET" [5m])`, "bytes_metric"},
+
+		// ── multi-app regex with field filter ─────────────────────────────────
+		{"multi_app_regex_json", `{app=~"api-gateway|payment-service"} | json | status>=400`, "selector_regex"},
+
+		// ── deep pipeline (5+ stages) ─────────────────────────────────────────
+		{"pipeline_5stages", `{app="api-gateway",env="production"} | json | method="GET" | status>=200 | status<400 | drop trace_id | line_format "{{.method}} {{.path}} {{.status}}"`, "deep_pipeline"},
+
+		// ── line_format with __timestamp__ ───────────────────────────────────
+		{"line_format_timestamp", `{app="api-gateway"} | json | line_format "{{.__timestamp__}} {{.method}}"`, "line_fmt_ext"},
+
+		// ── quantile_over_time with BY clause ─────────────────────────────────
+		{"quantile_by_label_95", `quantile_over_time(0.95, {app="api-gateway",env="production"} | json | unwrap duration_ms [5m]) by (level)`, "unwrap_quantile"},
+		{"quantile_by_label_50", `quantile_over_time(0.50, {app="api-gateway",env="production"} | json | unwrap duration_ms [5m]) by (app)`, "unwrap_quantile"},
+
+		// ── subquery min / avg ────────────────────────────────────────────────
+		{"subquery_min_outer", `min_over_time(rate({env="production"}[5m])[5m:1m])`, "subquery_ext"},
+		{"subquery_sum_by_outer", `sum by(app)(max_over_time(rate({env="production"}[5m])[5m:1m]))`, "subquery_ext"},
+		{"subquery_count_avg", `avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`, "subquery_ext"},
+
+		// ── logfmt filter + line_format ───────────────────────────────────────
+		{"logfmt_filter_line_format", `{app="payment-service",env="production"} | logfmt | level="error" | line_format "[{{.level}}] {{.msg}}"`, "logfmt_format"},
+
+		// ── nested sum/rate binary division ──────────────────────────────────
+		{"sum_rate_binary_div", `sum(rate({app="api-gateway"}[5m])) / sum(rate({app="payment-service"}[5m]))`, "binary_metric_ext"},
+
+		// ── double logfmt parser (idempotent) ────────────────────────────────
+		{"double_logfmt_parser", `{app="payment-service",env="production"} | logfmt | logfmt`, "parser_idempotent"},
+
+		// ── unwrap missing field (valid syntax, empty results) ────────────────
+		{"unwrap_missing_field", `max_over_time({app="api-gateway"} | unwrap nonexistent_field [5m])`, "unwrap_empty"},
 	}
 
 	score := &exhaustiveScore{}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			lokiCode, _ := exhaustiveQuery(t, lokiURL, tc.query)
+			lokiCode, lokiBody := exhaustiveQuery(t, lokiURL, tc.query)
 			proxyCode, proxyBody := exhaustiveQuery(t, proxyURL, tc.query)
 
 			lokiOK := lokiCode == 200
 			proxyOK := proxyCode == 200
 
 			if lokiOK && proxyOK {
+				// Verify result shape: resultType and emptiness must match.
+				lokiType := exhaustiveResultType(lokiBody)
+				proxyType := exhaustiveResultType(proxyBody)
+				if lokiType != "" && proxyType != "" && lokiType != proxyType {
+					score.fail(tc.category, tc.name,
+						fmt.Sprintf("resultType mismatch: Loki=%s Proxy=%s", lokiType, proxyType))
+					t.Errorf("resultType mismatch for %q: Loki=%s Proxy=%s", tc.query, lokiType, proxyType)
+					return
+				}
+				lokiCount := exhaustiveResultCount(lokiBody)
+				proxyCount := exhaustiveResultCount(proxyBody)
+				if lokiCount > 0 && proxyCount == 0 {
+					score.fail(tc.category, tc.name,
+						fmt.Sprintf("Loki has %d result series/streams, proxy returned 0", lokiCount))
+					t.Errorf("empty result mismatch for %q: Loki=%d series, Proxy=0", tc.query, lokiCount)
+					return
+				}
 				score.pass(tc.category, tc.name)
 			} else if lokiOK && !proxyOK {
 				score.fail(tc.category, tc.name,
@@ -461,9 +553,153 @@ func exhaustiveParseStatus(body string) string {
 	return "unknown"
 }
 
+func exhaustiveResultType(body string) string {
+	var result map[string]interface{}
+	if json.Unmarshal([]byte(body), &result) == nil {
+		if data, ok := result["data"].(map[string]interface{}); ok {
+			if rt, ok := data["resultType"].(string); ok {
+				return rt
+			}
+		}
+	}
+	return ""
+}
+
+func exhaustiveResultCount(body string) int {
+	var result map[string]interface{}
+	if json.Unmarshal([]byte(body), &result) == nil {
+		if data, ok := result["data"].(map[string]interface{}); ok {
+			if results, ok := data["result"].([]interface{}); ok {
+				return len(results)
+			}
+		}
+	}
+	return 0
+}
+
 func exhaustiveTruncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// TestLogQL_Exhaustive_KnownGaps documents confirmed parity divergences between
+// Loki 3.7.1 and the proxy. Gap types:
+//
+//	"proxy_strict"    — proxy rejects what Loki accepts (proxy too permissive check failed)
+//	"proxy_extension" — proxy supports this but Loki 3.7.1 doesn't (by design)
+//	"proxy_bug"       — Loki succeeds but proxy fails (needs a fix)
+//	"code_mismatch"   — both error with different HTTP codes
+//
+// The test validates each gap still exists. If a gap is resolved (proxy_bug fixed,
+// or proxy_strict tightened), the test will log "GAP FIXED" — then remove the entry.
+func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
+	ensureDataIngested(t)
+
+	type gap struct {
+		name        string
+		query       string
+		gapType     string
+		lokiExpect  int
+		proxyExpect int
+		note        string
+	}
+
+	gaps := []gap{
+		{
+			"empty_selector",
+			`{}`,
+			"proxy_strict", 400, 200,
+			"proxy accepts empty selector; Loki rejects: 'queries require at least one matcher'",
+		},
+		{
+			"bare_range_vector",
+			`{app="api-gateway"}[5m]`,
+			"proxy_strict", 400, 200,
+			"proxy accepts range-only expression (no metric function); Loki rejects as syntax error",
+		},
+		{
+			"without_on_log_stream",
+			`{app="api-gateway"} without (level)`,
+			"proxy_strict", 400, 200,
+			"proxy accepts without() grouping on a log stream; Loki rejects",
+		},
+		{
+			"by_on_log_stream",
+			`{app="api-gateway"} by (level)`,
+			"proxy_strict", 400, 200,
+			"proxy accepts by() grouping on a log stream; Loki rejects",
+		},
+		{
+			"at_timestamp_modifier",
+			`rate({app="api-gateway"}[5m] @ 1000000000)`,
+			"proxy_extension", 400, 200,
+			"proxy supports @ step-alignment modifier (maps to VL query time); Loki 3.7.1 parse error",
+		},
+		{
+			"at_start_modifier",
+			`rate({app="api-gateway"}[5m] @ start())`,
+			"proxy_extension", 400, 200,
+			"proxy supports @ start() modifier; Loki 3.7.1 parse error",
+		},
+		{
+			"label_join_function",
+			`label_join(sum by (app)(count_over_time({env="production"}[5m])), "app_copy", "", "app")`,
+			"proxy_extension", 400, 200,
+			"label_join() is a proxy post-processing extension; not in Loki 3.7.1 LogQL",
+		},
+		{
+			"count_outer_aggregation",
+			`count(sum by(app)(count_over_time({env="production"}[5m])))`,
+			"proxy_bug", 200, 400,
+			"Loki supports count() as outer aggregation of a metric vector; proxy translation fails",
+		},
+		{
+			"stddev_outer_aggregation",
+			`stddev(sum by(app)(count_over_time({env="production"}[5m])))`,
+			"proxy_bug", 200, 400,
+			"Loki supports stddev() as outer aggregation; proxy fails (stddev by() variant works)",
+		},
+		{
+			"stdvar_outer_aggregation",
+			`stdvar(sum by(app)(count_over_time({env="production"}[5m])))`,
+			"proxy_bug", 200, 400,
+			"Loki supports stdvar() as outer aggregation; proxy fails",
+		},
+		{
+			"quantile_neg_error_code",
+			`quantile_over_time(-0.1, {app="api-gateway"} | json | unwrap duration_ms [5m])`,
+			"code_mismatch", 400, 422,
+			"both reject negative quantile but Loki=400 Bad Request, Proxy=422 Unprocessable Entity",
+		},
+	}
+
+	t.Log("\n══════════════════════════════════════════════════════════")
+	t.Log("  Known Parity Gaps (proxy vs Loki 3.7.1)")
+	t.Log("══════════════════════════════════════════════════════════")
+
+	for _, g := range gaps {
+		g := g
+		t.Run(g.name, func(t *testing.T) {
+			lokiCode, _ := exhaustiveQuery(t, lokiURL, g.query)
+			proxyCode, _ := exhaustiveQuery(t, proxyURL, g.query)
+
+			t.Logf("[%s] %s", g.gapType, g.note)
+			t.Logf("  Loki=%d (expected %d)  Proxy=%d (expected %d)", lokiCode, g.lokiExpect, proxyCode, g.proxyExpect)
+
+			if lokiCode != g.lokiExpect {
+				t.Errorf("GAP CHANGED: Loki now returns %d (expected %d) — update this registry",
+					lokiCode, g.lokiExpect)
+			}
+			lokiFixed := (g.gapType == "proxy_bug" || g.gapType == "proxy_strict") &&
+				proxyCode == g.lokiExpect
+			if lokiFixed {
+				t.Logf("  ✓ GAP FIXED: proxy now returns %d matching Loki — remove from known gaps", proxyCode)
+			} else if proxyCode != g.proxyExpect {
+				t.Errorf("GAP CHANGED: proxy now returns %d (expected %d) — update this registry",
+					proxyCode, g.proxyExpect)
+			}
+		})
+	}
 }

@@ -1250,6 +1250,22 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		return result, true
 	}
 
+	// No funcPattern matched innerExpr. If there is an outer aggregation and innerExpr
+	// looks like a metric expression (contains a range selector "["), try recursive
+	// translation. This handles cases like count(sum by(app)(count_over_time(...))).
+	if outerAgg != "" && innerExpr != "" && innerExpr != logql && strings.Contains(innerExpr, "[") {
+		if translatedInner, ok := tryTranslateMetricQuery(innerExpr, labelFn); ok && translatedInner != "" {
+			// Alias the last stats result so the outer aggregation can reference it.
+			innerAliased := translatedInner + " as __lvp_inner"
+			if outerResult, ok := applyOuterAggregation(innerAliased, outerAgg, "__lvp_inner"); ok {
+				if isGroup {
+					return outerResult + groupMarker, true
+				}
+				return outerResult, true
+			}
+		}
+	}
+
 	return "", false
 }
 
@@ -1330,7 +1346,13 @@ func applyOuterAggregation(baseQuery, outerAgg, field string) (string, bool) {
 	if statsFn == "" {
 		return "", false
 	}
-	result := fmt.Sprintf("%s | stats %s(%s)", baseQuery, statsFn, field)
+	var result string
+	if statsFn == "count" {
+		// VL count() takes no field argument; count(*) is the correct form.
+		result = fmt.Sprintf("%s | stats count()", baseQuery)
+	} else {
+		result = fmt.Sprintf("%s | stats %s(%s)", baseQuery, statsFn, field)
+	}
 	if pow2 {
 		result = fmt.Sprintf("%s^:%s|||2", BinaryMetricPrefix, result)
 	}
