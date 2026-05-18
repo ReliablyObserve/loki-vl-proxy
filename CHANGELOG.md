@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Tenant map now rejects non-numeric `account_id`/`project_id` at load time**: Both `-tenant-map` JSON and `-tenant-map-file` YAML/JSON now validate that every `account_id` and `project_id` value is a non-negative integer in the uint32 range (0–4294967295). Mappings with empty, negative, non-numeric, or out-of-range values are rejected on startup or reload with a descriptive error. Previously these values were silently forwarded as-is to VictoriaLogs (which would have rejected the request at the HTTP layer). Action required only if you had non-numeric IDs in your tenant map — correct them to valid integer strings.
 
+## [1.34.1] - 2026-05-18
+
 ### CI
 
 - fix(ci): remove accidentally committed `bench/loki-bench` and `proxy.test` binaries; add both to `.gitignore` — fixes OpenSSF Scorecard Binary-Artifacts regression
