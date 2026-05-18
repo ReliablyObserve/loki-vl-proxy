@@ -139,6 +139,18 @@ func TestSetup_IngestEdgeCaseData(t *testing.T) {
 		t.Logf("Loki structured metadata push: %d", resp.StatusCode)
 	}
 
+	// Drop-error instant-query path (regression for #370)
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "edge-drop-error", "namespace": "edge-tests", "level": "info",
+		},
+		Lines: []string{
+			`{"msg":"request processed","method":"GET","status":200}`,
+			`{"msg":"request processed","method":"POST","status":201}`,
+			`{"msg":"request failed","method":"POST","status":500,"error":"timeout"}`,
+		},
+	})
+
 	time.Sleep(3 * time.Second)
 	t.Log("Edge case test data ingested")
 }
@@ -457,4 +469,115 @@ func TestEdge_StructuredMetadata(t *testing.T) {
 	}
 
 	score.report(t)
+}
+
+// TestEdge_DropErrorInstantQueryReturnsAggregatedResult is a regression test for
+// the fix in #370 where sum(count_over_time({...} | json | logfmt | drop __error__, __error_details__ [interval])) as an
+// instant query was routed to the manual log-fetch path (per-stream) instead of VL native
+// stats_query (single aggregated result). The proxy must return exactly one result
+// series with an empty metric label set, not one per log stream.
+func TestEdge_DropErrorInstantQueryReturnsAggregatedResult(t *testing.T) {
+	ensureDataIngested(t)
+	now := time.Now()
+
+	expr := `sum(count_over_time({app="edge-drop-error"} | json | logfmt | drop __error__, __error_details__ [5m]))`
+	params := url.Values{}
+	params.Set("query", expr)
+	params.Set("time", fmt.Sprintf("%d", now.UnixNano()))
+
+	resp, err := http.Get(proxyURL + "/loki/api/v1/query?" + params.Encode())
+	if err != nil {
+		t.Fatalf("instant query request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var decoded struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []interface{}     `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if decoded.Status != "success" {
+		t.Fatalf("expected status=success, got %q", decoded.Status)
+	}
+	if decoded.Data.ResultType != "vector" {
+		t.Fatalf("expected resultType=vector for instant query, got %q", decoded.Data.ResultType)
+	}
+	// sum() must aggregate to exactly one result with an empty metric
+	if len(decoded.Data.Result) != 1 {
+		t.Fatalf("expected exactly 1 aggregated result from sum(count_over_time(...)), got %d results — proxy is returning per-stream series instead of aggregating", len(decoded.Data.Result))
+	}
+	if len(decoded.Data.Result[0].Metric) != 0 {
+		t.Fatalf("expected empty metric label set for sum() result, got %v", decoded.Data.Result[0].Metric)
+	}
+	// Value must be numeric and > 0
+	if len(decoded.Data.Result[0].Value) < 2 {
+		t.Fatalf("expected [timestamp, value] in result, got %v", decoded.Data.Result[0].Value)
+	}
+}
+
+// TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields verifies that
+// detected_fields returns parsed JSON field names even when the query selector
+// includes a multi-stage pipeline (| json | drop __error__, __error_details__).
+// Drilldown sends detected_fields requests with the current pipeline expression;
+// the proxy must strip the pipeline for the metadata call but still use the
+// stream selector to scope results.
+func TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields(t *testing.T) {
+	ensureDataIngested(t)
+	now := time.Now()
+
+	// Query with full pipeline — proxy must strip pipeline for detected_fields
+	params := url.Values{}
+	params.Set("query", `{app="edge-drop-error"} | json | drop __error__, __error_details__`)
+	params.Set("start", fmt.Sprintf("%d", now.Add(-15*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+
+	resp, err := http.Get(proxyURL + "/loki/api/v1/detected_fields?" + params.Encode())
+	if err != nil {
+		t.Fatalf("detected_fields request failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var decoded struct {
+		Fields []struct {
+			Label       string  `json:"label"`
+			Type        string  `json:"type"`
+			Cardinality float64 `json:"cardinality"`
+		} `json:"fields"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		t.Fatalf("failed to decode detected_fields response: %v", err)
+	}
+
+	seenFields := map[string]bool{}
+	for _, f := range decoded.Fields {
+		seenFields[f.Label] = true
+	}
+
+	// The edge-drop-error stream pushed JSON with "msg", "method", "status" fields.
+	// All three must appear in detected_fields despite the | json | drop pipeline.
+	for _, want := range []string{"msg", "method", "status"} {
+		if !seenFields[want] {
+			t.Fatalf("expected detected_fields to include %q after | json | drop pipeline, got fields: %v", want, seenFields)
+		}
+	}
+	// __error__ and __error_details__ must NOT appear (they are internal VL fields)
+	for _, forbidden := range []string{"__error__", "__error_details__"} {
+		if seenFields[forbidden] {
+			t.Fatalf("detected_fields must not expose %q (internal VL field), got fields: %v", forbidden, seenFields)
+		}
+	}
 }

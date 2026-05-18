@@ -1,0 +1,79 @@
+# Example: Kubernetes ConfigMap for loki-vl-proxy tenant mapping.
+#
+# Update this ConfigMap to add/change/remove tenants — the proxy reloads
+# automatically within -tenant-map-reload-interval (default 30s).
+#
+# Apply with: kubectl apply -f docs/k8s-tenant-map-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-vl-proxy-tenant-map
+  namespace: monitoring
+data:
+  tenant-map.yaml: |
+    # Maps Loki X-Scope-OrgID strings → VictoriaLogs AccountID + ProjectID.
+    # AccountID and ProjectID must be numeric strings (VL integer tenant IDs).
+    prod-team-eu_staging:
+      account_id: "42"
+      project_id: "3"
+    prod-team-eu_prod:
+      account_id: "42"
+      project_id: "7"
+    dev_default:
+      account_id: "1"
+      project_id: "1"
+---
+# Deployment snippet — relevant sections only
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki-vl-proxy
+  namespace: monitoring
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: loki-vl-proxy
+          args:
+            - -backend=http://victorialogs:9428
+
+            # ── Maximum Loki compatibility ──────────────────────────────────────
+            # Translate OTel dotted labels (service.name) to Loki-style underscores
+            # (service_name) in every response; rewrite queries in the other direction.
+            - -label-style=underscores
+            # Expose only underscore-style labels in detected_fields / detected_labels.
+            # Switch to "hybrid" if you also need OTel trace/metric correlation via
+            # dotted field names (both forms are then exposed side-by-side).
+            - -metadata-field-mode=translated
+            # Required for Grafana 10+ Loki datasource "categorize-labels" mode.
+            # Enables per-line label context in the log details panel.
+            - -emit-structured-metadata=true
+            # Enable the Patterns tab in Grafana Logs Drilldown.
+            - -patterns-enabled=true
+
+            # ── Tenant mapping (hot-reload from ConfigMap) ──────────────────────
+            - -tenant-map-file=/etc/loki-vl-proxy/tenant-map.yaml
+            # Poll every 30s for ConfigMap changes (default). Set to 0 for SIGHUP-only.
+            - -tenant-map-reload-interval=30s
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tenant-map
+              mountPath: /etc/loki-vl-proxy
+              readOnly: true
+      volumes:
+        - name: tenant-map
+          configMap:
+            name: loki-vl-proxy-tenant-map

@@ -164,7 +164,7 @@ services:
     ports:
       - "13100:3100"
     tmpfs:
-      - /cache
+      - /cache:mode=1777
     environment:
       # Soft GC pressure limit: without this, Go's GC only triggers at 2× live
       # heap, allowing RSS to balloon to 4+ GB under sustained long_range load

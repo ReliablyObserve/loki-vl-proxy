@@ -272,9 +272,19 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 
 	r = withOrgID(r)
 
+	// proxyStatsQueryRange reads r.FormValue("query") as originalLogql for the stats
+	// compat layer. If the outer sort/topk wrapper is still in r.Form, parseOriginalRangeMetricSpec
+	// extracts "sort" as the function name and normalizeManualMetricFunction returns "",
+	// causing handleStatsCompatRange to fall through to the direct path with an empty result.
+	// Clone the request and replace "query" with the unwrapped inner expression so the
+	// stats compat layer can correctly identify the inner metric function.
+	innerR := r.Clone(r.Context())
+	_ = innerR.ParseForm()
+	innerR.Form.Set("query", postAgg.inner)
+
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
-	p.proxyStatsQueryRange(sc, r, translatedInner)
+	p.proxyStatsQueryRange(sc, innerR, translatedInner)
 
 	if len(withoutLabels) > 0 {
 		bw.body = applyWithoutGrouping(bw.body, withoutLabels)
@@ -342,12 +352,12 @@ func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byt
 	sort.SliceStable(ranks, func(i, j int) bool {
 		li, lj := ranks[i].last, ranks[j].last
 		switch postAgg.name {
-		case "bottomk":
+		case "sort", "bottomk": // ascending
 			if li == lj {
 				return ranks[i].idx < ranks[j].idx
 			}
 			return li < lj
-		default: // topk, sort_desc, sort
+		default: // topk, sort_desc — descending
 			if li == lj {
 				return ranks[i].idx < ranks[j].idx
 			}
@@ -355,19 +365,18 @@ func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byt
 		}
 	})
 
-	// Ensure topk size is safe: bounded by min(requested, max constant, available)
-	const maxTopK = 10000
-	safeSize := postAgg.k
-	if safeSize < 0 {
-		safeSize = 0
-	}
-	// Use min to create an allocation size that's clearly bounded
-	allocSize := safeSize
-	if allocSize > maxTopK {
-		allocSize = maxTopK
-	}
-	if allocSize > len(ranks) {
-		allocSize = len(ranks)
+	// sort/sort_desc return all series reordered; only topk/bottomk trim to k.
+	resultCount := len(ranks)
+	if (postAgg.name == "topk" || postAgg.name == "bottomk") && postAgg.k > 0 {
+		// Ensure topk size is safe: bounded by min(requested, max constant, available)
+		const maxTopK = 10000
+		safeSize := postAgg.k
+		if safeSize > maxTopK {
+			safeSize = maxTopK
+		}
+		if safeSize < resultCount {
+			resultCount = safeSize
+		}
 	}
 
 	// Pre-allocate with safe maximum size to avoid CodeQL taint analysis issues
@@ -379,8 +388,6 @@ func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byt
 		Values [][]interface{}        `json:"values"`
 	}, preallocSize)
 
-	// Only populate the needed number of results
-	resultCount := allocSize
 	if resultCount > len(selected) {
 		resultCount = len(selected)
 	}

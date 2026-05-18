@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -72,6 +73,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	// TODO: fanout is serial — each tenant sub-request blocks the next. For high
 	// fan-out counts (>4 tenants) parallel dispatch would reduce latency. Tracked
 	// in docs/KNOWN_ISSUES.md under "Multi-tenant serial fanout".
+	successTenants := make([]string, 0, len(filteredTenants))
 	recorders := make([]*httptest.ResponseRecorder, 0, len(filteredTenants))
 	for _, tenantID := range filteredTenants {
 		subReq := filteredReq.Clone(filteredReq.Context())
@@ -81,18 +83,20 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		rec := httptest.NewRecorder()
 		single(rec, subReq)
 		if rec.Code >= 400 {
-			copyHeaders(w.Header(), rec.Header())
-			if w.Header().Get("Content-Type") == "" {
-				w.Header().Set("Content-Type", "application/json")
-			}
-			w.WriteHeader(rec.Code)
-			_, _ = w.Write(rec.Body.Bytes())
-			return true
+			p.log.Warn("multi-tenant sub-request failed, skipping tenant",
+				"endpoint", endpoint, "tenant", tenantID, "status", rec.Code)
+			continue
 		}
+		successTenants = append(successTenants, tenantID)
 		recorders = append(recorders, rec)
 	}
 
-	body, contentType, err := mergeMultiTenantResponses(endpoint, filteredTenants, recorders)
+	if len(recorders) == 0 {
+		p.writeJSON(w, emptyMultiTenantResponse(endpoint))
+		return true
+	}
+
+	body, contentType, err := mergeMultiTenantResponses(endpoint, successTenants, recorders)
 	if err != nil {
 		p.writeError(w, http.StatusInternalServerError, "failed to merge multi-tenant response: "+err.Error())
 		return true
@@ -904,7 +908,8 @@ func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []s
 
 		fields, fieldValues, err := p.detectFields(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
 		if err != nil {
-			return nil, "", err
+			p.log.Warn("detected_fields unavailable for tenant, skipping", "tenant", tenantID, "err", err)
+			continue
 		}
 		for _, item := range fields {
 			label, _ := item["label"].(string)
@@ -1003,7 +1008,8 @@ func (p *Proxy) multiTenantDetectedLabelsResponse(r *http.Request, tenantIDs []s
 
 		_, summaries, err := p.detectLabels(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
 		if err != nil {
-			return nil, "", err
+			p.log.Warn("detected_labels unavailable for tenant, skipping", "tenant", tenantID, "err", err)
+			continue
 		}
 		for label, summary := range summaries {
 			existing := merged[label]
@@ -1183,6 +1189,13 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 		}
 	}
 
+	// If tenantLabel routing is active, tenant isolation is done via query-level
+	// label filter injection — not via AccountID/ProjectID headers.
+	// Skip header-based routing for non-explicitly-mapped tenants.
+	if p.tenantLabel != "" {
+		return
+	}
+
 	// Default-tenant aliases keep Loki single-tenant compatibility while still
 	// targeting VictoriaLogs' built-in 0:0 tenant.
 	if isDefaultTenantAlias(orgID) {
@@ -1202,4 +1215,32 @@ func (p *Proxy) forwardTenantHeaders(req *http.Request) {
 		req.Header.Set("AccountID", orgID)
 		req.Header.Set("ProjectID", "0")
 	}
+
+	// Forward the per-tenant X-Scope-OrgID to upstream.
+	// VictoriaLogs ignores it; Victoria Lakehouse uses it for native tenant routing.
+	// Uses orgID from context (per-tenant value set for this fanout sub-request).
+	if p.forwardTenantHeader && orgID != "" {
+		req.Header.Set("X-Scope-OrgID", orgID)
+	}
+}
+
+// injectTenantLabelFilter appends a LogsQL stream-selector filter to the "query"
+// or "q" param, scoping VL queries to logs with label=orgID.
+// Returns a shallow clone of params with the injection applied (original unchanged).
+func injectTenantLabelFilter(params url.Values, label, orgID string) url.Values {
+	result := make(url.Values, len(params))
+	for k, vs := range params {
+		result[k] = append([]string(nil), vs...)
+	}
+	// Escape backslash first, then double-quote, to produce valid LogsQL string literals.
+	escaped := strings.ReplaceAll(orgID, `\`, `\\`)
+	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
+	filter := ` {` + label + `="` + escaped + `"}`
+	for _, key := range []string{"query", "q"} {
+		if q := result.Get(key); q != "" {
+			result.Set(key, q+filter)
+			return result
+		}
+	}
+	return result
 }

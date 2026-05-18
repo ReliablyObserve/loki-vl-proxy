@@ -1,0 +1,190 @@
+# loki-vl-proxy — Kubernetes configuration via ConfigMap
+#
+# This ConfigMap supplies all env-var-configurable proxy options.
+# Secret values (backend-basic-auth, peer-auth-token, admin-auth-token,
+# otlp-headers with credentials) should be stored in a Secret instead and
+# injected via env[].valueFrom.secretKeyRef — not in this ConfigMap.
+#
+# Apply:
+#   kubectl apply -f examples/k8s/proxy-config-configmap.yaml
+#
+# The companion Deployment at the bottom mounts this ConfigMap via envFrom
+# and adds flag-only options (those with no env-var form) as container args.
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: loki-vl-proxy-config
+  namespace: monitoring
+data:
+
+  # ── Backend ─────────────────────────────────────────────────────────────────
+  # VictoriaLogs HTTP API address.
+  VL_BACKEND_URL: "http://victorialogs:9428"
+
+  # Optional alert/ruler backend for /rules passthrough (e.g., vmalert).
+  # RULER_BACKEND_URL: "http://vmalert:8880"
+
+  # Optional alerts backend for /alerts passthrough.
+  # Defaults to RULER_BACKEND_URL when unset.
+  # ALERTS_BACKEND_URL: ""
+
+  # ── Proxy listen address ────────────────────────────────────────────────────
+  # Grafana points its Loki datasource here.
+  LISTEN_ADDR: ":3100"
+
+  # ── Loki compatibility ──────────────────────────────────────────────────────
+  # passthrough — pass VL field names as-is (VL already stores underscores)
+  # underscores — translate OTel dots: service.name → service_name
+  LABEL_STYLE: "underscores"
+
+  # native | translated | hybrid
+  # translated — expose only underscore labels (matches real Loki behaviour)
+  # hybrid     — expose both forms (needed for OTel trace/metric correlation)
+  METADATA_FIELD_MODE: "translated"
+
+  # Custom field mapping overrides.  JSON array of {vl_field, loki_label} objects.
+  # FIELD_MAPPING: '[{"vl_field":"service.name","loki_label":"service_name"}]'
+
+  # Additional VL field names exposed on /labels.  Comma-separated.
+  # EXTRA_LABEL_FIELDS: "host.id,custom.pipeline.processing"
+
+  # ── Tenant routing ──────────────────────────────────────────────────────────
+  # Option A — inline JSON (small, static maps):
+  # TENANT_MAP: '{"team-alpha":{"account_id":"1","project_id":"1"},"team-beta":{"account_id":"1","project_id":"2"}}'
+
+  # Option B — file-based (hot-reload from ConfigMap volume):
+  # Reference the tenant-map ConfigMap in docs/k8s-tenant-map-configmap.yaml.
+  # TENANT_MAP_FILE: "/etc/loki-vl-proxy/tenant-map.yaml"
+
+  # Label-based tenant routing (alternative to AccountID/ProjectID headers).
+  # Set to a VL field name to inject {<field>="<orgID>"} into every query.
+  # TENANT_LABEL: "tenant"
+
+  # Limit fields exposed on /config/tenant/v1/limits (comma-separated).
+  # TENANT_LIMITS_ALLOW_PUBLISH: "query_timeout,max_query_series,max_entries_limit_per_query"
+
+  # Default published limit overrides (JSON map).
+  # TENANT_DEFAULT_LIMITS: '{"query_timeout":"2m","max_query_series":5000}'
+
+  # Per-tenant published limit overrides keyed by X-Scope-OrgID (JSON map).
+  # TENANT_LIMITS: '{"team-alpha":{"max_query_series":10000}}'
+
+  # ── OTLP metrics push ───────────────────────────────────────────────────────
+  # Leave empty to disable; use /metrics scrape instead.
+  # OTLP_ENDPOINT: "http://otel-collector.monitoring.svc.cluster.local:4318/v1/metrics"
+  # OTLP_COMPRESSION: "gzip"
+  # OTLP_HEADERS: "X-Custom=value"     # credentials → use Secret
+
+  # ── OpenTelemetry identity ──────────────────────────────────────────────────
+  OTEL_SERVICE_NAME: "loki-vl-proxy"
+  # OTEL_SERVICE_NAMESPACE: "monitoring"
+  # OTEL_SERVICE_INSTANCE_ID: ""    # defaults to pod name via Downward API
+  # DEPLOYMENT_ENVIRONMENT: "production"
+
+---
+# Deployment — relevant sections only.
+# Mounts the ConfigMap above via envFrom; flag-only options are in args.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loki-vl-proxy
+  namespace: monitoring
+spec:
+  template:
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: loki-vl-proxy
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65534
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+                - ALL
+          # Pull all env vars from the ConfigMap above.
+          envFrom:
+            - configMapRef:
+                name: loki-vl-proxy-config
+
+          # Secret values injected individually (never put credentials in ConfigMap).
+          # env:
+          #   - name: OTLP_HEADERS
+          #     valueFrom:
+          #       secretKeyRef:
+          #         name: loki-vl-proxy-secrets
+          #         key: otlp-headers
+          #   - name: OTEL_SERVICE_INSTANCE_ID
+          #     valueFrom:
+          #       fieldRef:
+          #         fieldPath: metadata.name   # pod name as instance ID
+
+          # ── Flag-only options (no env-var form) ──────────────────────────────
+          # These must be passed as container args; they cannot be set via env vars.
+          args:
+            # Grafana 10+ 3-tuple log responses [timestamp, line, metadata].
+            # Required for per-line label context in the Grafana log details panel.
+            - -emit-structured-metadata=true
+
+            # Grafana Logs Drilldown patterns tab.
+            - -patterns-enabled=true
+
+            # Warm patterns cache by mining successful query/query_range responses.
+            # Opt-in — disable if you don't use the Drilldown patterns tab.
+            # - -patterns-autodetect-from-queries=true
+
+            # ── Tenant map hot-reload ────────────────────────────────────────
+            # Only needed when TENANT_MAP_FILE is set.
+            # - -tenant-map-reload-interval=30s
+
+            # ── In-memory cache ──────────────────────────────────────────────
+            # - -cache-ttl=60s
+            # - -cache-max-bytes=104857600    # 100 MiB
+            # - -cache-disabled=false
+
+            # ── L2 disk cache ────────────────────────────────────────────────
+            # Mount a PVC at /cache and enable disk cache.
+            # - -disk-cache-path=/cache/loki-vl-proxy.db
+            # - -disk-cache-max-bytes=21474836480    # 20 GiB
+            # - -disk-cache-compress=true
+
+            # ── query_range splitting ────────────────────────────────────────
+            # - -query-range-split-interval=1h
+            # - -query-range-adaptive-parallel=true
+            # - -query-range-adaptive-min-parallel=2
+            # - -query-range-adaptive-max-parallel=8
+
+            # ── Distributed fleet cache (multi-replica) ──────────────────────
+            # - -peer-self=$(POD_IP):3100
+            # - -peer-discovery=dns
+            # - -peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local
+            # - -peer-auth-token=$(PEER_AUTH_TOKEN)   # from Secret
+
+            # ── Cold storage (Victoria Lakehouse) ────────────────────────────
+            # - -cold-enabled=true
+            # - -cold-backend=http://victoria-lakehouse:9428
+            # - -cold-boundary=168h    # 7 days
+
+            # ── HTTP server hardening ────────────────────────────────────────
+            # - -max-concurrent=200
+            # - -rate-limit-per-second=100
+            # - -rate-limit-burst=200
+
+            # ── TLS server ───────────────────────────────────────────────────
+            # Mount certs from a Secret and enable HTTPS.
+            # - -tls-cert-file=/tls/tls.crt
+            # - -tls-key-file=/tls/tls.key
+
+            # ── Admin / debug ────────────────────────────────────────────────
+            # - -server.enable-pprof=false
+            # - -server.admin-auth-token=$(ADMIN_AUTH_TOKEN)   # from Secret
+
+            # ── Logging ──────────────────────────────────────────────────────
+            - -log-level=info    # debug | info | warn | error

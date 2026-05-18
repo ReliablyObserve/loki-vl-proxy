@@ -1113,8 +1113,9 @@ func buildBareParserMetricVector(series []bareParserMetricSeries, evalNanos int6
 }
 
 type absentOverTimeCompatSpec struct {
-	baseQuery   string
-	rangeWindow time.Duration
+	baseQuery      string
+	rangeWindow    time.Duration
+	rangeWindowStr string
 }
 
 func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool) {
@@ -1130,7 +1131,7 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 	if baseQuery == "" {
 		return absentOverTimeCompatSpec{}, false
 	}
-	return absentOverTimeCompatSpec{baseQuery: baseQuery, rangeWindow: window}, true
+	return absentOverTimeCompatSpec{baseQuery: baseQuery, rangeWindow: window, rangeWindowStr: matches[2]}, true
 }
 
 func extractAbsentMetricLabels(query string) map[string]string {
@@ -1212,7 +1213,14 @@ func buildAbsentInstantVector(evalRaw string, metric map[string]string) map[stri
 }
 
 func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
-	logsqlQuery, err := p.translateQueryWithContext(r.Context(), originalQuery)
+	// Translate the inner count_over_time query — absent_over_time itself has no VL equivalent.
+	if spec.rangeWindowStr == "" {
+		p.writeError(w, http.StatusBadRequest, "absent_over_time: missing range window")
+		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	innerCountQuery := fmt.Sprintf("count_over_time(%s[%s])", spec.baseQuery, spec.rangeWindowStr)
+	logsqlQuery, err := p.translateQueryWithContext(r.Context(), innerCountQuery)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
 		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
@@ -1255,6 +1263,131 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 	elapsed := time.Since(start)
 	p.metrics.RecordRequest("query", http.StatusOK, elapsed)
 	p.queryTracker.Record("query", originalQuery, elapsed, false)
+}
+
+// proxyAbsentOverTimeQueryRange handles absent_over_time at /query_range by
+// running the underlying count query and inverting: steps with count > 0 are
+// omitted (stream present); steps with count == 0 or absent emit value "1".
+// When the stream does not exist at all VL returns an empty matrix, so all
+// steps in [start, end] get value "1" (matching Loki semantics).
+func (p *Proxy) proxyAbsentOverTimeQueryRange(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec absentOverTimeCompatSpec) {
+	// Translate the inner count_over_time query — absent_over_time itself has no VL equivalent.
+	if spec.rangeWindowStr == "" {
+		p.writeError(w, http.StatusBadRequest, "absent_over_time: missing range window")
+		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		return
+	}
+	innerCountQuery := fmt.Sprintf("count_over_time(%s[%s])", spec.baseQuery, spec.rangeWindowStr)
+	translatedInner, err := p.translateQueryWithContext(r.Context(), innerCountQuery)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+		return
+	}
+
+	bw := &bufferedResponseWriter{header: make(http.Header)}
+	sc := &statusCapture{ResponseWriter: bw, code: 200}
+	innerR := r.Clone(r.Context())
+	p.proxyStatsQueryRange(sc, innerR, translatedInner)
+
+	if sc.code >= http.StatusBadRequest {
+		copyHeaders(w.Header(), bw.Header())
+		w.WriteHeader(sc.code)
+		_, _ = w.Write(bw.body)
+		elapsed := time.Since(start)
+		p.metrics.RecordRequest("query_range", sc.code, elapsed)
+		p.queryTracker.Record("query_range", originalQuery, elapsed, true)
+		return
+	}
+
+	metric := extractAbsentMetricLabels(spec.baseQuery)
+	out := buildAbsentOverTimeMatrix(bw.body, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"), metric)
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(out)
+	elapsed := time.Since(start)
+	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+}
+
+// buildAbsentOverTimeMatrix inverts a count matrix into an absent matrix.
+// Steps where count > 0 are omitted; steps where count == 0 or missing emit "1".
+// If the count matrix is empty (stream does not exist), all steps emit "1".
+func buildAbsentOverTimeMatrix(countBody []byte, startRaw, endRaw, stepRaw string, metric map[string]string) []byte {
+	type matrixResult struct {
+		Metric map[string]string `json:"metric"`
+		Values [][]interface{}   `json:"values"`
+	}
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string         `json:"resultType"`
+			Result     []matrixResult `json:"result"`
+		} `json:"data"`
+	}
+	_ = stdjson.Unmarshal(countBody, &resp)
+
+	// Build the full step list from [start, end] at the requested step interval.
+	startNs, okS := parseLokiTimeToUnixNano(startRaw)
+	endNs, okE := parseLokiTimeToUnixNano(endRaw)
+	stepDur, okStep := parsePositiveStepDuration(stepRaw)
+	if !okS || !okE || !okStep || stepDur == 0 {
+		// Cannot compute steps; return empty.
+		return wrapAsLokiResponse([]byte(`{"result":[]}`), "matrix")
+	}
+
+	stepNs := stepDur.Nanoseconds()
+	// Collect the timestamps of steps where the stream HAS data (count > 0).
+	presentSteps := make(map[int64]bool)
+	for _, series := range resp.Data.Result {
+		for _, v := range series.Values {
+			if len(v) < 2 {
+				continue
+			}
+			var tsSeconds float64
+			switch t := v[0].(type) {
+			case float64:
+				tsSeconds = t
+			case string:
+				f, _ := strconv.ParseFloat(t, 64)
+				tsSeconds = f
+			}
+			val := fmt.Sprint(v[1])
+			val = strings.Trim(val, "\"")
+			count, _ := strconv.ParseFloat(val, 64)
+			if count > 0 {
+				presentSteps[int64(tsSeconds*1e9)] = true
+			}
+		}
+	}
+
+	// Emit "1" for every step that is NOT in presentSteps.
+	// Align to epoch-multiple steps (same anchor VL and Loki use):
+	//   alignedStart = ceil(startNs / stepNs) * stepNs
+	alignedStart := ((startNs + stepNs - 1) / stepNs) * stepNs
+	var absentValues [][]interface{}
+	for ts := alignedStart; ts <= endNs; ts += stepNs {
+		if !presentSteps[ts] {
+			absentValues = append(absentValues, []interface{}{float64(ts) / 1e9, "1"})
+		}
+	}
+
+	if len(absentValues) == 0 {
+		return wrapAsLokiResponse([]byte(`{"result":[]}`), "matrix")
+	}
+
+	result := []matrixResult{{Metric: metric, Values: absentValues}}
+	out, err := stdjson.Marshal(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "matrix",
+			"result":     result,
+		},
+	})
+	if err != nil {
+		return wrapAsLokiResponse([]byte(`{"result":[]}`), "matrix")
+	}
+	return out
 }
 
 // lastParserStageEnd returns the index in baseQuery just after the last

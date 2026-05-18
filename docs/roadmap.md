@@ -72,6 +72,9 @@ description: Planned features, known gaps, and the contribution priority list fo
 - [x] Coverage and quality-gate reinforcement for runtime, middleware, cache, and proxy-path tests
 - [x] Tier0 compatibility-edge cache with bounded memory budget, safe GET-only guardrails, and reload invalidation
 - [x] Fleet shadow-copy validation for 3-peer cache reuse plus Tier0/fleet micro-benchmarks
+- [x] Named tenant routing enhancements — YAML/JSON tenant map file with mtime-polling hot-reload and SIGHUP; label-based tenant isolation (`-tenant-label` injects `{field="orgID"}` into VL queries); `-forward-tenant-header` passthrough for Lakehouse; uint32 validation at load time; LogsQL injection prevention via backslash-before-quote escaping (v1.31.x)
+- [x] Exhaustive LogQL parity machine — 202 parse/translation cases covering stream selectors, line filters, parsers, metric queries, binary ops, subqueries, offset modifier, unwrap unit conversion, field-specific parsers, named regexp groups, vector matching, complex pipelines, and edge cases; LogQL syntax validator for Loki error parity; comprehensive pipeline parity tests (v1.31.x)
+- [x] Config examples folder (`examples/`) — runnable env files, tenant map YAML, Docker Compose stack, Grafana datasource provisioning, systemd unit, Kubernetes ConfigMap with full annotated flag/env reference
 
 ## Planned (recently completed)
 
@@ -96,5 +99,5 @@ description: Planned features, known gaps, and the contribution priority list fo
 ## Planned (open)
 
 - [ ] Tighten remaining merged-tenant Drilldown metadata accuracy for field and label cardinality surfaces
-- [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests
-- [ ] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
+- [x] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
+- [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests (ongoing — LogQL parity machine at 202 cases)

@@ -1883,7 +1883,7 @@ func TestContract_Volume_ReturnsGatewayErrorWithoutCacheOnBackendFailure(t *test
 	}
 }
 
-func TestContract_Patterns_DisabledReturnsNotFound(t *testing.T) {
+func TestContract_Patterns_DisabledReturnsEmpty(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -1902,13 +1902,17 @@ func TestContract_Patterns_DisabledReturnsNotFound(t *testing.T) {
 	r := httptest.NewRequest("GET", "/loki/api/v1/patterns?query=%7B%7D&start=1&end=2", nil)
 	p.handlePatterns(w, r)
 
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 when patterns endpoint is disabled, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 when patterns endpoint is disabled, got %d", w.Code)
 	}
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
-	if resp["errorType"] != "not_found" {
-		t.Fatalf("expected not_found errorType, got %v", resp["errorType"])
+	if resp["status"] != "success" {
+		t.Fatalf("expected status=success, got %v", resp["status"])
+	}
+	data, ok := resp["data"].([]interface{})
+	if !ok || len(data) != 0 {
+		t.Fatalf("expected empty data array, got %v", resp["data"])
 	}
 }
 

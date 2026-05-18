@@ -226,6 +226,75 @@ For support scope by product/version track, see [Compatibility Matrix](compatibi
 
 If you must interoperate with legacy clients that reject metadata objects in `categorize-labels` mode, explicitly set `-emit-structured-metadata=false`.
 
+### Maximum Loki Compatibility — Annotated Configuration
+
+This is the recommended starting point when your priority is full compatibility with Grafana's Loki datasource and Logs Drilldown. Copy, adjust the backend URL, and run.
+
+```bash
+./loki-vl-proxy \
+  # ── Backend ──────────────────────────────────────────────────────────────
+  -backend=http://victorialogs:9428 \   # VictoriaLogs HTTP API address
+  \
+  # ── Label translation: maximum Loki compatibility ─────────────────────────
+  # OTel dotted labels (service.name, k8s.pod.name) are translated to Loki-style
+  # underscores (service_name, k8s_pod_name) in every response.
+  # Queries written with underscores are rewritten to dotted before hitting VL.
+  -label-style=underscores \
+  \
+  # ── Metadata field exposure ────────────────────────────────────────────────
+  # "translated" exposes only underscore-style labels in detected_fields and
+  # detected_labels.  This gives Grafana a clean, Loki-identical field list
+  # with no dotted duplicates in the fields panel.
+  -metadata-field-mode=translated \
+  \
+  # ── Structured metadata (3-tuple responses) ────────────────────────────────
+  # Required for Grafana 10+ Loki datasource "categorize-labels" mode.
+  # Enables per-line label context in log details panel without extra queries.
+  # Default is true; listed here explicitly so the intent is visible.
+  -emit-structured-metadata=true \
+  \
+  # ── Patterns (Logs Drilldown) ──────────────────────────────────────────────
+  # Enables GET /loki/api/v1/patterns used by the Patterns tab in Logs Drilldown.
+  # Default is true.  Set false only if you do not use the Drilldown plugin.
+  -patterns-enabled=true
+```
+
+**Equivalent as environment variables** (for Docker Compose or Kubernetes):
+
+```bash
+VL_BACKEND_URL=http://victorialogs:9428
+LABEL_STYLE=underscores
+METADATA_FIELD_MODE=translated
+```
+
+`-emit-structured-metadata` and `-patterns-enabled` have no env-variable override; pass them as flags or Helm `extraArgs`.
+
+**Grafana datasource** — global single-tenant (no tenant mapping needed):
+
+```yaml
+datasources:
+  - name: Logs
+    type: loki
+    url: http://loki-vl-proxy:3100
+    jsonData:
+      httpHeaderName1: X-Scope-OrgID
+    secureJsonData:
+      # "0", "fake", and "default" all resolve to VL's built-in default tenant (0:0).
+      # Pick whichever your Loki configuration already uses; the proxy treats them identically.
+      httpHeaderValue1: "0"
+```
+
+**What each flag does and why it matters for Loki compatibility:**
+
+| Flag | Value | Effect |
+|---|---|---|
+| `-label-style` | `underscores` | Translates `service.name` → `service_name` so Grafana label filters work |
+| `-metadata-field-mode` | `translated` | No dotted duplicates in the fields panel; matches real Loki output |
+| `-emit-structured-metadata` | `true` | Enables 3-tuple `[ts, line, metadata]` required by Grafana 10+ log details |
+| `-patterns-enabled` | `true` | Unlocks the Patterns tab in Logs Drilldown |
+
+Switch `-metadata-field-mode` to `hybrid` if you also need OTel correlation (traces/metrics linked by `service.name`); the proxy then exposes both `service.name` and `service_name` in field APIs.
+
 ## Cache (L1 In-Memory)
 
 | Flag | Env | Default | Description |
@@ -383,7 +452,10 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 
 | Flag | Env | Default | Description |
 |---|---|---|---|
+| `-tenant-label` | `TENANT_LABEL` | `""` | VL field name for label-based tenant routing. When set, `X-Scope-OrgID` values are injected as `{<tenant-label>="<orgID>"}` into VL queries instead of `AccountID`/`ProjectID` headers. Use when all data is under VL default tenant (0:0). Explicit `tenant-map` entries take priority. |
 | `-tenant-map` | `TENANT_MAP` | — | JSON string→int tenant mapping |
+| `-tenant-map-file` | `TENANT_MAP_FILE` | `""` | Path to a YAML or JSON file mapping Loki `X-Scope-OrgID` strings to VictoriaLogs `AccountID`/`ProjectID`. Reloaded on SIGHUP and automatically when the file changes (see `-tenant-map-reload-interval`). Suitable for Kubernetes ConfigMap volumes. File entries override `-tenant-map` inline entries for the same key. |
+| `-tenant-map-reload-interval` | *(flag only)* | `30s` | How often to poll `-tenant-map-file` for mtime changes. Set to `0` to disable polling (SIGHUP-only reload). |
 | `-tenant-limits-allow-publish` | `TENANT_LIMITS_ALLOW_PUBLISH` | built-in allowlist | Comma-separated limit fields exposed on `/config/tenant/v1/limits` and `/loki/api/v1/drilldown-limits` |
 | `-tenant-default-limits` | `TENANT_DEFAULT_LIMITS` | — | JSON map of default published-limit overrides |
 | `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant published-limit overrides keyed by `X-Scope-OrgID` |
@@ -413,16 +485,84 @@ The proxy accepts Loki-style multi-tenant query headers on read/query endpoints 
 - fanout is safety-capped to prevent one request from exploding into an unbounded number of backend queries
 - merged multi-tenant response bodies are also size-capped before they are returned to the client
 
+### Tenant Map File Format
+
+The tenant map file (YAML or JSON) maps each Loki `X-Scope-OrgID` string to a VictoriaLogs `AccountID`/`ProjectID` pair. Both fields are required and must be non-negative integers represented as strings.
+
+**YAML** (recommended — easier to comment and diff):
+
+```yaml
+# /etc/loki-vl-proxy/tenant-map.yaml
+#
+# Each key is the exact string sent in X-Scope-OrgID by Grafana (or Loki clients).
+# account_id maps to VictoriaLogs AccountID header (tenant namespace).
+# project_id maps to VictoriaLogs ProjectID header (sub-account partition).
+# Both fields must be non-negative integers.  Use "0" for the VL default.
+
+# Single VictoriaLogs account, separate projects per team:
+team-alpha:
+  account_id: "1"
+  project_id: "1"
+
+team-beta:
+  account_id: "1"
+  project_id: "2"
+
+# Different VL accounts (e.g. separate VL clusters behind a load balancer):
+ops-prod:
+  account_id: "42"
+  project_id: "0"
+
+ops-staging:
+  account_id: "43"
+  project_id: "0"
+
+# Explicit override for the default-tenant alias "0".
+# Without this, X-Scope-OrgID: "0" resolves to VL 0:0 automatically.
+# Add it only when you need to redirect "0" to a different VL project:
+# "0":
+#   account_id: "0"
+#   project_id: "99"
+```
+
+**JSON** (use when injecting from CI/CD tooling):
+
+```json
+{
+  "team-alpha": { "account_id": "1", "project_id": "1" },
+  "team-beta":  { "account_id": "1", "project_id": "2" },
+  "ops-prod":   { "account_id": "42", "project_id": "0" }
+}
+```
+
+**Validation rules enforced at load time:**
+
+- `account_id` and `project_id` must both be present and non-empty.
+- Both must parse as non-negative integers that fit in a `uint32` (0–4294967295).
+- Strings that are not valid integers (for example `"prod"`) are rejected immediately — the proxy does not start if the tenant map is invalid.
+- The file extension determines the parser: `.json` → JSON, anything else → YAML.
+
 ### Configuration Examples
 
 ```bash
-# Via flag (JSON)
-./loki-vl-proxy -tenant-map='{"team-alpha":{"account_id":"100","project_id":"1"},"team-beta":{"account_id":"200","project_id":"2"}}'
+# Via flag (inline JSON — convenient for single-container deployments)
+./loki-vl-proxy \
+  -tenant-map='{"team-alpha":{"account_id":"1","project_id":"1"},"team-beta":{"account_id":"1","project_id":"2"}}'
 
-# Via environment variable
-export TENANT_MAP='{"ops-prod":{"account_id":"300","project_id":"0"}}'
-./loki-vl-proxy
+# Via environment variable (same JSON format)
+export TENANT_MAP='{"ops-prod":{"account_id":"42","project_id":"0"}}'
+./loki-vl-proxy -backend=http://victorialogs:9428
+
+# Via file with hot-reload — ideal for Kubernetes ConfigMap volumes
+./loki-vl-proxy \
+  -backend=http://victorialogs:9428 \
+  -tenant-map-file=/etc/loki-vl-proxy/tenant-map.yaml \
+  -tenant-map-reload-interval=30s
 ```
+
+**Kubernetes ConfigMap:** use `-tenant-map-file` so the proxy can pick up tenant changes without a restart. The proxy polls the file's modification time every `-tenant-map-reload-interval` (default 30 s); Kubernetes atomically replaces the ConfigMap symlink, so the new mtime is visible immediately. See [k8s-tenant-map-configmap.yaml](k8s-tenant-map-configmap.yaml) for a complete Deployment snippet.
+
+**Global single-tenant (no map needed):** if every Grafana datasource sends the same `X-Scope-OrgID` value (`"0"`, `"fake"`, or `"default"`) and all data lives in VictoriaLogs' default tenant, you do not need `-tenant-map` at all. The proxy resolves those three aliases to VL's built-in `AccountID=0, ProjectID=0` automatically.
 
 ### Grafana Datasource per Tenant
 

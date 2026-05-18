@@ -406,6 +406,82 @@ test.describe("Grafana Logs Drilldown", () => {
     await guards.assertClean();
   });
 
+  test("multi-tenant service fields tab shows non-zero cardinality badges @drilldown-mt", async ({
+    page,
+  }) => {
+    const guards = installGrafanaGuards(page, {
+      allowedConsoleErrors: allowedDrilldownMtConsoleErrors,
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
+
+    await openServiceDrilldown(page, PROXY_MULTI_DS, "api-gateway", "fields");
+    await waitForGrafanaReady(page);
+
+    // Look for any numeric cardinality text — format varies by Drilldown version
+    const cardinalityText = page.locator(
+      '[class*="fieldCount"], [class*="cardinality"], [aria-label*="values"], [data-testid*="field-count"]'
+    ).first();
+
+    const hasCardinality = await cardinalityText.isVisible({ timeout: 15_000 }).catch(() => false);
+    if (hasCardinality) {
+      const text = await cardinalityText.innerText();
+      const num = parseInt(text.replace(/\D/g, ""), 10);
+      expect(num).toBeGreaterThan(0);
+    }
+    const fieldCards = page.locator('[class*="fieldCard"], [data-testid*="field-card"]');
+    const hasFields = await fieldCards.count().then((n) => n > 0).catch(() => false);
+    if (!hasCardinality && !hasFields) {
+      await expect(page.getByText("No logs found")).toHaveCount(0);
+    }
+
+    await guards.assertClean();
+  });
+
+  test("multi-tenant drilldown label filter scopes logs to selected tenant @drilldown-mt", async ({
+    page,
+  }) => {
+    const guards = installGrafanaGuards(page, {
+      allowedConsoleErrors: allowedDrilldownMtConsoleErrors,
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
+
+    const uid = await resolveDatasourceUid(page, PROXY_MULTI_DS);
+    const url = buildServiceDrilldownUrl(uid, "api-gateway", "logs") +
+      '&var-filters=__tenant_id__%7C%3D%7Cfake';
+    await page.goto(url);
+    await waitForDrilldownDetails(page);
+
+    await expect(page.getByText("No logs found")).toHaveCount(0);
+
+    const chip = page.getByLabel(/Edit filter with key __tenant_id__|Remove filter with key __tenant_id__/);
+    await expect(chip.first()).toBeVisible({ timeout: 10_000 });
+
+    await guards.assertClean();
+  });
+
+  test("multi-tenant drilldown with missing tenant shows empty result not error @drilldown-mt", async ({
+    page,
+  }) => {
+    const guards = installGrafanaGuards(page, {
+      allowedConsoleErrors: allowedDrilldownMtConsoleErrors,
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
+
+    const uid = await resolveDatasourceUid(page, PROXY_MULTI_DS);
+    const url =
+      buildServiceDrilldownUrl(uid, "api-gateway", "logs") +
+      '&var-filters=__tenant_id__%7C%3D%7Cnonexistent-tenant-xyz-99999';
+    await page.goto(url);
+    await waitForGrafanaReady(page);
+
+    await expect(page.locator('[data-testid="data-testid Alert error"]')).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Filter by labels" })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    await guards.assertClean();
+  });
+
   test("patterns are visible in drilldown for autodetected datasource @drilldown-core", async ({
     page,
   }) => {

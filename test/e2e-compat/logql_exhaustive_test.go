@@ -67,6 +67,47 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── Invalid pipeline stages ──
 		{"double_parser", `{app="api-gateway"} | json | json`, "pipeline"},
 		{"line_format_no_template", `{app="api-gateway"} | line_format`, "pipeline"},
+
+		// ── Over-time functions without unwrap (must error) ──
+		{"avg_over_time_no_unwrap", `avg_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"sum_over_time_no_unwrap", `sum_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"max_over_time_no_unwrap", `max_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"min_over_time_no_unwrap", `min_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"first_over_time_no_unwrap", `first_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"last_over_time_no_unwrap", `last_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"stddev_over_time_no_unwrap", `stddev_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"stdvar_over_time_no_unwrap", `stdvar_over_time({app="api-gateway"}[5m])`, "unwrap_required"},
+		{"quantile_over_time_no_unwrap", `quantile_over_time(0.99, {app="api-gateway"}[5m])`, "unwrap_required"},
+
+		// ── count_values (not translatable to VL) ──
+		{"count_values_metric", `count_values("app", count_over_time({app="api-gateway"}[5m]))`, "count_values"},
+
+		// ── label_replace / label_join applied to a log stream ──
+		// Note: proxy accepts these (proxy extension); Loki rejects → tracked in TestLogQL_Exhaustive_KnownGaps
+
+		// ── absent_over_time without range ──
+		{"absent_over_time_no_range", `absent_over_time({app="api-gateway"})`, "malformed"},
+
+		// ── topk / bottomk with invalid N ──
+		{"topk_n_zero", `topk(0, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
+		{"topk_n_negative", `topk(-1, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
+		{"bottomk_n_zero", `bottomk(0, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
+		{"topk_n_float", `topk(1.5, sum by(level)(count_over_time({env="production"}[5m])))`, "invalid_k"},
+
+		// ── outer quantile() aggregation (LogQL has quantile_over_time, not quantile()) ──
+		{"quantile_outer_agg", `quantile(0.5, sum by(app)(rate({env="production"}[5m])))`, "invalid_agg"},
+
+		// ── binary op between two log streams ──
+		{"binary_two_log_streams", `{app="api-gateway",env="production"} + {app="payment-service",env="production"}`, "binary_on_log"},
+
+		// ── ip filter with invalid CIDR ──
+		{"ip_filter_invalid_cidr", `{app="api-gateway"} | json | ip("not-a-valid-cidr")`, "invalid_filter"},
+
+		// ── invalid regex in stream selector ──
+		{"invalid_regex_selector", `{app=~"[unclosed-bracket"}`, "invalid_regex"},
+
+		// ── avg aggregation on a bare log stream ──
+		{"avg_on_log_stream", `avg({app="api-gateway",env="production"})`, "metric_on_log"},
 	}
 
 	score := &exhaustiveScore{}
@@ -224,19 +265,196 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"simple_selector_only", `{app="api-gateway",env="production",level="error"}`, "basic"},
 		{"wildcard_regex", `{app=~".+",env="production"}`, "basic"},
 		{"multiple_not_equal", `{app!="nginx-ingress",env="production",level!="debug"}`, "basic"},
+
+		// ── label_replace / label_join / group() ──────────────────────────────
+		{"label_replace_basic", `label_replace(sum by (level)(count_over_time({app="api-gateway"}[5m])), "level_alias", "$1", "level", "(.*)")`, "label_transform"},
+		{"label_replace_rewrite", `label_replace(sum by (app)(rate({env="production"}[5m])), "service", "$1", "app", "(.*)")`, "label_transform"},
+		{"label_replace_no_match", `label_replace(sum by (level)(count_over_time({app="api-gateway"}[5m])), "new_label", "default", "level", "^nonexistent$")`, "label_transform"},
+		{"label_replace_multi_result", `label_replace(sum by (app, level)(count_over_time({env="production"}[5m])), "app_env", "$1-prod", "app", "(.*)")`, "label_transform"},
+		{"avg_without_app", `avg without(app)(rate({env="production"}[5m]))`, "label_transform"},
+		{"count_by_level_agg", `count by(level)(count_over_time({env="production"}[5m]))`, "label_transform"},
+		{"group_outer_agg", `group(sum by (app)(count_over_time({env="production"}[5m])))`, "label_transform"},
+		{"group_without", `group(sum without (level)(count_over_time({env="production"}[5m])))`, "label_transform"},
+
+		// ── Subqueries ────────────────────────────────────────────────────────
+		// subquery_max_rate, subquery_avg_rate: Loki 3.7.1 rejects applying max/avg_over_time
+		// to a subquery over rate() — these are proxy extensions tracked in TestLogQL_Exhaustive_KnownGaps.
+		{"subquery_rate_count", `rate(count_over_time({app="api-gateway",env="production"}[5m])[30m:5m])`, "subquery"},
+		{"subquery_sum_by", `sum by (app)(max_over_time(rate({env="production"}[5m])[30m:5m]))`, "subquery"},
+
+		// ── Offset modifier ───────────────────────────────────────────────────
+		{"rate_offset_5m", `rate({app="api-gateway",env="production"}[5m] offset 5m)`, "offset"},
+		{"count_offset_10m", `count_over_time({app="api-gateway",env="production"}[5m] offset 10m)`, "offset"},
+		{"sum_rate_offset", `sum by (app)(rate({env="production"}[5m] offset 5m))`, "offset"},
+		{"bytes_rate_offset", `bytes_rate({app="api-gateway",env="production"}[5m] offset 5m)`, "offset"},
+
+		// ── Unwrap with unit conversion ───────────────────────────────────────
+		// duration-bytes-test has JSON fields: response_time ("15ms"), body_size ("1024B")
+		{"unwrap_duration_conv", `sum_over_time({app="duration-bytes-test",env="production"} | json | unwrap duration(response_time) [5m])`, "unwrap_unit"},
+		{"unwrap_bytes_conv", `sum_over_time({app="duration-bytes-test",env="production"} | json | unwrap bytes(body_size) [5m])`, "unwrap_unit"},
+		{"unwrap_duration_avg", `avg_over_time({app="duration-bytes-test",env="production"} | json | unwrap duration(response_time) [5m])`, "unwrap_unit"},
+		{"unwrap_duration_max", `max_over_time({app="duration-bytes-test",env="production"} | json | unwrap duration(response_time) [5m])`, "unwrap_unit"},
+		{"unwrap_by_label", `sum by (app)(sum_over_time({env="production"} | json | unwrap duration_ms [5m]))`, "unwrap_unit"},
+		{"unwrap_max_by_level", `max by (level)(max_over_time({app="api-gateway",env="production"} | json | unwrap duration_ms [5m]))`, "unwrap_unit"},
+		{"unwrap_quantile_by", `quantile_over_time(0.95, {app="api-gateway",env="production"} | json | unwrap duration_ms [5m]) by (level)`, "unwrap_unit"},
+
+		// ── Field-specific parser extraction ─────────────────────────────────
+		{"json_two_fields_only", `{app="api-gateway",env="production"} | json method, status`, "field_parser"},
+		{"json_three_fields", `{app="api-gateway",env="production"} | json method, path, status`, "field_parser"},
+		{"json_field_then_filter", `{app="api-gateway",env="production"} | json status | status="200"`, "field_parser"},
+		{"logfmt_fields_specific", `{app="payment-service",env="production"} | logfmt level, msg`, "field_parser"},
+
+		// ── Regexp with named capture groups ──────────────────────────────────
+		{"regexp_named_single", `{app="api-gateway",env="production"} | regexp "(?P<http_method>[A-Z]+)"`, "regexp_named"},
+		{"regexp_named_multi", `{app="api-gateway",env="production"} | regexp "(?P<method>[A-Z]+) (?P<url_path>/[^ ]*)"`, "regexp_named"},
+		{"regexp_named_filter", `{app="api-gateway",env="production"} | regexp "(?P<http_method>[A-Z]+)" | http_method="GET"`, "regexp_named"},
+
+		// ── Advanced selector patterns ────────────────────────────────────────
+		{"multi_app_regex_alt", `{app=~"api-gateway|payment-service",env="production"}`, "selector_advanced"},
+		{"nested_wildcard", `{env="production",app=~"api-.*"}`, "selector_advanced"},
+		{"not_match_multi", `{app!~"nginx.*|payment.*",env="production"}`, "selector_advanced"},
+		{"env_regex_alternation", `{env=~"production|staging",app="api-gateway"}`, "selector_advanced"},
+		{"combined_match_types", `{app=~"api-.*",env="production",level!="debug"}`, "selector_advanced"},
+
+		// ── absent_over_time expanded ─────────────────────────────────────────
+		{"absent_existing_stream", `absent_over_time({app="api-gateway",env="production"}[5m])`, "absent"},
+		{"absent_nonexistent_stream", `absent_over_time({app="nonexistent-xyz-123-abc"}[1m])`, "absent"},
+		{"absent_with_impossible_filter", `absent_over_time({app="api-gateway"} |= "IMPOSSIBLE_STRING_xyz_123" [5m])`, "absent"},
+
+		// ── Complex multi-stage pipelines ─────────────────────────────────────
+		{"error_filter_json_chain", `{app="api-gateway",env="production"} |= "error" | json | method!="GET" | status>=500`, "complex_pipeline"},
+		{"json_path_status_drop", `{app="api-gateway",env="production"} | json | path=~"/api/.*" | status>200 | drop trace_id`, "complex_pipeline"},
+		{"logfmt_filter_format", `{app="payment-service",env="production"} | logfmt | level="error" | line_format "[{{.level}}] {{.msg}}"`, "complex_pipeline"},
+		{"chained_line_filter_complex", `{app="api-gateway",env="production"} |= "GET" |= "/api" != "health" | json`, "complex_pipeline"},
+		{"json_regex_numeric_range", `{app="api-gateway",env="production"} | json | path=~"/api/.*" | status>=400 | status<500`, "complex_pipeline"},
+		{"keep_then_format", `{app="api-gateway",env="production"} | json | keep method, status | line_format "{{.method}} {{.status}}"`, "complex_pipeline"},
+		{"drop_then_keep", `{app="api-gateway",env="production"} | json | drop trace_id | keep method, path, status`, "complex_pipeline"},
+		{"decolorize_json_filter", `{app="api-gateway",env="production"} | decolorize | json | status>=200`, "complex_pipeline"},
+
+		// ── Nested / chained binary metric expressions ────────────────────────
+		{"binary_sum_plus_sum", `sum by(app)(rate({env="production"}[5m])) + sum by(app)(rate({env="production"}[5m]))`, "binary_nested"},
+		{"binary_rate_ratio_pct", `sum by(app)(rate({env="production"}[5m])) / sum by(app)(rate({env="production"}[5m])) * 100`, "binary_nested"},
+		{"binary_three_services", `sum(rate({app="api-gateway"}[5m])) + sum(rate({app="payment-service"}[5m])) + sum(rate({app="nginx-ingress"}[5m]))`, "binary_nested"},
+		{"binary_bytes_vs_rate", `sum(bytes_rate({env="production"}[5m])) / sum(rate({env="production"}[5m]))`, "binary_nested"},
+		{"binary_bool_chain", `sum by (level)(count_over_time({app="api-gateway"}[5m])) > bool 0 + 0`, "binary_nested"},
+
+		// ── Without-clause expansion ──────────────────────────────────────────
+		{"sum_without_level", `sum without (level) (rate({env="production"}[5m]))`, "without"},
+		{"max_without_env", `max without (env) (count_over_time({env="production"}[5m]))`, "without"},
+		{"avg_without_multi", `avg without (level, env) (count_over_time({env="production"}[5m]))`, "without"},
+		{"count_without_cluster", `count without (cluster) (count_over_time({env="production"}[5m]))`, "without"},
+
+		// ── Vector matching expansion ─────────────────────────────────────────
+		{"on_match_app", `sum by(app)(count_over_time({env="production"}[5m])) / on(app) sum by(app)(count_over_time({env="production"}[5m]))`, "vector_match"},
+		{"ignoring_level", `sum by(app, level)(count_over_time({env="production"}[5m])) / ignoring(level) sum by(app)(count_over_time({env="production"}[5m]))`, "vector_match"},
+		{"group_left_fanout", `sum by(app, level)(rate({env="production"}[5m])) / on(app) group_left sum by(app)(rate({env="production"}[5m]))`, "vector_match"},
+		{"group_right_fanout", `sum by(app)(rate({env="production"}[5m])) / on(app) group_right sum by(app, level)(rate({env="production"}[5m]))`, "vector_match"},
+
+		// ── Multi-service spanning queries ────────────────────────────────────
+		{"multi_service_filter", `{env="production"} |= "error" | json | status>=500`, "multi_app"},
+		{"multi_service_rate_sum", `sum(rate({env="production"}[5m]))`, "multi_app"},
+		{"multi_service_topk", `topk(5, sum by (app)(rate({env="production"}[5m])))`, "multi_app"},
+		{"multi_service_count_by_app", `count by (app) (count_over_time({env="production"}[5m]))`, "multi_app"},
+		{"multi_service_bytes", `sum by (app)(bytes_rate({env="production"}[5m]))`, "multi_app"},
+
+		// ── Unpack parser extended ────────────────────────────────────────────
+		{"unpack_field_filter", `{app="api-gateway",env="production"} | unpack | level="error"`, "unpack_ext"},
+		{"unpack_keep_format", `{app="api-gateway",env="production"} | unpack | keep level | line_format "{{.level}}"`, "unpack_ext"},
+
+		// ── Pattern parser extended ───────────────────────────────────────────
+		{"pattern_extract_two", `{app="api-gateway",env="production"} | json | line_format "{{.method}} {{.path}}" | pattern "<method> <path>"`, "pattern_ext"},
+		{"pattern_filter_after", `{app="api-gateway",env="production"} | json | line_format "{{.method}} {{.path}}" | pattern "<method> <path>" | method="GET"`, "pattern_ext"},
+
+		// ── Metric queries with complex filter chains ─────────────────────────
+		{"rate_json_status_filter", `rate({app="api-gateway",env="production"} | json | status>=400 [5m])`, "metric_complex"},
+		{"count_logfmt_level", `count_over_time({app="payment-service",env="production"} | logfmt | level="error"[5m])`, "metric_complex"},
+		{"sum_rate_json_method", `sum by (level)(rate({app="api-gateway",env="production"} | json | method="GET" [5m]))`, "metric_complex"},
+		{"bytes_rate_filtered", `sum by (app)(bytes_rate({env="production"} |= "error" [5m]))`, "metric_complex"},
+		{"avg_unwrap_filtered", `avg_over_time({app="api-gateway",env="production"} | json | method="GET" | unwrap duration_ms [5m])`, "metric_complex"},
+
+		// ── stddev / stdvar as BY-clause aggregations ─────────────────────────
+		{"stddev_by_app", `stddev by(app)(count_over_time({env="production"}[5m]))`, "metric_agg_ext"},
+		{"stdvar_by_app", `stdvar by(app)(count_over_time({env="production"}[5m]))`, "metric_agg_ext"},
+		{"stddev_by_level", `stddev by(level)(count_over_time({app="api-gateway",env="production"}[5m]))`, "metric_agg_ext"},
+
+		// ── max / min with by-clause ──────────────────────────────────────────
+		{"max_by_app_rate", `max by(app)(rate({env="production"}[5m]))`, "metric_agg_ext"},
+		{"min_by_level_count", `min by(level)(count_over_time({env="production"}[5m]))`, "metric_agg_ext"},
+		{"sum_without_two_labels", `sum without(level, app)(count_over_time({env="production"}[5m]))`, "metric_agg_ext"},
+
+		// ── decolorize in metric range ────────────────────────────────────────
+		{"decolorize_in_rate", `rate({app="api-gateway"} | decolorize [5m])`, "parser_in_metric"},
+		{"decolorize_in_count", `count_over_time({app="api-gateway"} | decolorize [5m])`, "parser_in_metric"},
+		{"unpack_in_rate", `rate({app="api-gateway"} | unpack [5m])`, "parser_in_metric"},
+		{"bytes_rate_json_range", `bytes_rate({app="api-gateway"} | json [5m])`, "parser_in_metric"},
+		{"logfmt_drop_in_rate", `rate({app="payment-service"} | logfmt | drop msg [5m])`, "parser_in_metric"},
+		{"json_method_count", `count_over_time({app="api-gateway"} | json | method="GET" [5m])`, "parser_in_metric"},
+		{"json_keep_count", `count_over_time({app="api-gateway"} | json | keep method, status [5m])`, "parser_in_metric"},
+
+		// ── label_format then aggregate ───────────────────────────────────────
+		{"label_format_sum_by", `sum by(http_method)(rate({app="api-gateway"} | json | label_format http_method="method" [5m]))`, "label_fmt_metric"},
+
+		// ── bytes_over_time with line filter ──────────────────────────────────
+		{"bytes_over_time_line_filter", `bytes_over_time({app="api-gateway",env="production"} |= "GET" [5m])`, "bytes_metric"},
+
+		// ── multi-app regex with field filter ─────────────────────────────────
+		{"multi_app_regex_json", `{app=~"api-gateway|payment-service"} | json | status>=400`, "selector_regex"},
+
+		// ── deep pipeline (5+ stages) ─────────────────────────────────────────
+		{"pipeline_5stages", `{app="api-gateway",env="production"} | json | method="GET" | status>=200 | status<400 | drop trace_id | line_format "{{.method}} {{.path}} {{.status}}"`, "deep_pipeline"},
+
+		// ── line_format with __timestamp__ ───────────────────────────────────
+		{"line_format_timestamp", `{app="api-gateway"} | json | line_format "{{.__timestamp__}} {{.method}}"`, "line_fmt_ext"},
+
+		// ── quantile_over_time with BY clause ─────────────────────────────────
+		{"quantile_by_label_95", `quantile_over_time(0.95, {app="api-gateway",env="production"} | json | unwrap duration_ms [5m]) by (level)`, "unwrap_quantile"},
+		{"quantile_by_label_50", `quantile_over_time(0.50, {app="api-gateway",env="production"} | json | unwrap duration_ms [5m]) by (app)`, "unwrap_quantile"},
+
+		// ── subquery min / avg ────────────────────────────────────────────────
+		// subquery_min_outer and subquery_count_avg: Loki 3.7.1 rejects these — tracked in KnownGaps.
+		{"subquery_sum_by_outer", `sum by(app)(max_over_time(rate({env="production"}[5m])[5m:1m]))`, "subquery_ext"},
+
+		// ── logfmt filter + line_format ───────────────────────────────────────
+		{"logfmt_filter_line_format", `{app="payment-service",env="production"} | logfmt | level="error" | line_format "[{{.level}}] {{.msg}}"`, "logfmt_format"},
+
+		// ── nested sum/rate binary division ──────────────────────────────────
+		{"sum_rate_binary_div", `sum(rate({app="api-gateway"}[5m])) / sum(rate({app="payment-service"}[5m]))`, "binary_metric_ext"},
+
+		// ── double logfmt parser (idempotent) ────────────────────────────────
+		{"double_logfmt_parser", `{app="payment-service",env="production"} | logfmt | logfmt`, "parser_idempotent"},
+
+		// ── unwrap missing field (valid syntax, empty results) ────────────────
+		{"unwrap_missing_field", `max_over_time({app="api-gateway"} | unwrap nonexistent_field [5m])`, "unwrap_empty"},
 	}
 
 	score := &exhaustiveScore{}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			lokiCode, _ := exhaustiveQuery(t, lokiURL, tc.query)
+			lokiCode, lokiBody := exhaustiveQuery(t, lokiURL, tc.query)
 			proxyCode, proxyBody := exhaustiveQuery(t, proxyURL, tc.query)
 
 			lokiOK := lokiCode == 200
 			proxyOK := proxyCode == 200
 
 			if lokiOK && proxyOK {
+				// Verify result shape: resultType and emptiness must match.
+				lokiType := exhaustiveResultType(lokiBody)
+				proxyType := exhaustiveResultType(proxyBody)
+				if lokiType != "" && proxyType != "" && lokiType != proxyType {
+					score.fail(tc.category, tc.name,
+						fmt.Sprintf("resultType mismatch: Loki=%s Proxy=%s", lokiType, proxyType))
+					t.Errorf("resultType mismatch for %q: Loki=%s Proxy=%s", tc.query, lokiType, proxyType)
+					return
+				}
+				lokiCount := exhaustiveResultCount(lokiBody)
+				proxyCount := exhaustiveResultCount(proxyBody)
+				if lokiCount > 0 && proxyCount == 0 {
+					score.fail(tc.category, tc.name,
+						fmt.Sprintf("Loki has %d result series/streams, proxy returned 0", lokiCount))
+					t.Errorf("empty result mismatch for %q: Loki=%d series, Proxy=0", tc.query, lokiCount)
+					return
+				}
 				score.pass(tc.category, tc.name)
 			} else if lokiOK && !proxyOK {
 				score.fail(tc.category, tc.name,
@@ -310,7 +528,7 @@ func exhaustiveQuery(t *testing.T, baseURL, query string) (int, string) {
 	now := time.Now()
 	params := url.Values{}
 	params.Set("query", query)
-	params.Set("start", fmt.Sprintf("%d", now.Add(-2*time.Hour).UnixNano()))
+	params.Set("start", fmt.Sprintf("%d", now.Add(-30*time.Minute).UnixNano()))
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("limit", "10")
 	params.Set("step", "60")
@@ -334,9 +552,175 @@ func exhaustiveParseStatus(body string) string {
 	return "unknown"
 }
 
+func exhaustiveResultType(body string) string {
+	var result map[string]interface{}
+	if json.Unmarshal([]byte(body), &result) == nil {
+		if data, ok := result["data"].(map[string]interface{}); ok {
+			if rt, ok := data["resultType"].(string); ok {
+				return rt
+			}
+		}
+	}
+	return ""
+}
+
+func exhaustiveResultCount(body string) int {
+	var result map[string]interface{}
+	if json.Unmarshal([]byte(body), &result) == nil {
+		if data, ok := result["data"].(map[string]interface{}); ok {
+			if results, ok := data["result"].([]interface{}); ok {
+				return len(results)
+			}
+		}
+	}
+	return 0
+}
+
 func exhaustiveTruncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// TestLogQL_Exhaustive_KnownGaps documents confirmed parity divergences between
+// Loki 3.7.1 and the proxy. Gap types:
+//
+//	"proxy_strict"    — proxy rejects what Loki accepts (proxy too permissive check failed)
+//	"proxy_extension" — proxy supports this but Loki 3.7.1 doesn't (by design)
+//	"proxy_bug"       — Loki succeeds but proxy fails (needs a fix)
+//	"code_mismatch"   — both error with different HTTP codes
+//
+// The test validates each gap still exists. If a gap is resolved (proxy_bug fixed,
+// or proxy_strict tightened), the test will log "GAP FIXED" — then remove the entry.
+func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
+	ensureDataIngested(t)
+
+	type gap struct {
+		name        string
+		query       string
+		gapType     string
+		lokiExpect  int
+		proxyExpect int
+		note        string
+	}
+
+	gaps := []gap{
+		{
+			"empty_selector",
+			`{}`,
+			"proxy_strict", 400, 200,
+			"proxy accepts empty selector; Loki rejects: 'queries require at least one matcher'",
+		},
+		{
+			"bare_range_vector",
+			`{app="api-gateway"}[5m]`,
+			"proxy_strict", 400, 200,
+			"proxy accepts range-only expression (no metric function); Loki rejects as syntax error",
+		},
+		{
+			"without_on_log_stream",
+			`{app="api-gateway"} without (level)`,
+			"proxy_strict", 400, 200,
+			"proxy accepts without() grouping on a log stream; Loki rejects",
+		},
+		{
+			"by_on_log_stream",
+			`{app="api-gateway"} by (level)`,
+			"proxy_strict", 400, 200,
+			"proxy accepts by() grouping on a log stream; Loki rejects",
+		},
+		{
+			"at_timestamp_modifier",
+			`rate({app="api-gateway"}[5m] @ 1000000000)`,
+			"proxy_extension", 400, 200,
+			"proxy supports @ step-alignment modifier (maps to VL query time); Loki 3.7.1 parse error",
+		},
+		{
+			"at_start_modifier",
+			`rate({app="api-gateway"}[5m] @ start())`,
+			"proxy_extension", 400, 200,
+			"proxy supports @ start() modifier; Loki 3.7.1 parse error",
+		},
+		{
+			"label_join_function",
+			`label_join(sum by (app)(count_over_time({env="production"}[5m])), "app_copy", "", "app")`,
+			"proxy_extension", 400, 200,
+			"label_join() is a proxy post-processing extension; not in Loki 3.7.1 LogQL",
+		},
+		// count_outer_aggregation was a proxy_bug but is now fixed — removed from gaps.
+		{
+			"stddev_outer_aggregation",
+			`stddev(sum by(app)(count_over_time({env="production"}[5m])))`,
+			"proxy_bug", 200, 400,
+			"Loki supports stddev() as outer aggregation; proxy fails (stddev by() variant works)",
+		},
+		{
+			"stdvar_outer_aggregation",
+			`stdvar(sum by(app)(count_over_time({env="production"}[5m])))`,
+			"proxy_bug", 200, 400,
+			"Loki supports stdvar() as outer aggregation; proxy fails",
+		},
+		{
+			"quantile_neg_error_code",
+			`quantile_over_time(-0.1, {app="api-gateway"} | json | unwrap duration_ms [5m])`,
+			"code_mismatch", 400, 422,
+			"both reject negative quantile but Loki=400 Bad Request, Proxy=422 Unprocessable Entity",
+		},
+		// Subquery-over-range-function extensions: Loki 3.7.1 rejects applying
+		// max/avg/min_over_time to a subquery over rate() or count_over_time().
+		// The proxy evaluates these via proxy-side subquery evaluation (extension).
+		{
+			"subquery_max_rate",
+			`max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`,
+			"proxy_extension", 400, 200,
+			"Loki 3.7.1 rejects max_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+		},
+		{
+			"subquery_avg_rate",
+			`avg_over_time(rate({env="production"}[5m])[30m:5m])`,
+			"proxy_extension", 400, 200,
+			"Loki 3.7.1 rejects avg_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+		},
+		{
+			"subquery_min_outer",
+			`min_over_time(rate({env="production"}[5m])[5m:1m])`,
+			"proxy_extension", 400, 200,
+			"Loki 3.7.1 rejects min_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+		},
+		{
+			"subquery_count_avg",
+			`avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`,
+			"proxy_extension", 400, 200,
+			"Loki 3.7.1 rejects avg_over_time applied to count_over_time() subquery; proxy evaluates via proxy-side subquery",
+		},
+	}
+
+	t.Log("\n══════════════════════════════════════════════════════════")
+	t.Log("  Known Parity Gaps (proxy vs Loki 3.7.1)")
+	t.Log("══════════════════════════════════════════════════════════")
+
+	for _, g := range gaps {
+		g := g
+		t.Run(g.name, func(t *testing.T) {
+			lokiCode, _ := exhaustiveQuery(t, lokiURL, g.query)
+			proxyCode, _ := exhaustiveQuery(t, proxyURL, g.query)
+
+			t.Logf("[%s] %s", g.gapType, g.note)
+			t.Logf("  Loki=%d (expected %d)  Proxy=%d (expected %d)", lokiCode, g.lokiExpect, proxyCode, g.proxyExpect)
+
+			if lokiCode != g.lokiExpect {
+				t.Errorf("GAP CHANGED: Loki now returns %d (expected %d) — update this registry",
+					lokiCode, g.lokiExpect)
+			}
+			lokiFixed := (g.gapType == "proxy_bug" || g.gapType == "proxy_strict") &&
+				proxyCode == g.lokiExpect
+			if lokiFixed {
+				t.Logf("  ✓ GAP FIXED: proxy now returns %d matching Loki — remove from known gaps", proxyCode)
+			} else if proxyCode != g.proxyExpect {
+				t.Errorf("GAP CHANGED: proxy now returns %d (expected %d) — update this registry",
+					proxyCode, g.proxyExpect)
+			}
+		})
+	}
 }

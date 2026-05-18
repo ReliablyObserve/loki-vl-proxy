@@ -808,7 +808,7 @@ func TestReloadDynamicConfig(t *testing.T) {
 		"FIELD_MAPPING": `[{"vl_field":"service.name","loki_label":"service_name"}]`,
 	}
 
-	reloadDynamicConfig(fake, func(key string) string { return env[key] }, logger)
+	reloadDynamicConfig(fake, func(key string) string { return env[key] }, "", logger)
 
 	if fake.tenantMap["team-a"] != (proxy.TenantMapping{AccountID: "1", ProjectID: "2"}) {
 		t.Fatalf("unexpected tenant map reload: %+v", fake.tenantMap)
@@ -831,7 +831,7 @@ func TestReloadDynamicConfig_InvalidJSON(t *testing.T) {
 		"FIELD_MAPPING": "{",
 	}
 
-	reloadDynamicConfig(fake, func(key string) string { return env[key] }, logger)
+	reloadDynamicConfig(fake, func(key string) string { return env[key] }, "", logger)
 
 	if fake.tenantMap != nil || fake.fieldMappings != nil {
 		t.Fatalf("expected no reloads on invalid JSON, got %+v %+v", fake.tenantMap, fake.fieldMappings)
@@ -853,6 +853,125 @@ func TestParseTenantMapJSON(t *testing.T) {
 	if _, err := parseTenantMapJSON("{"); err == nil {
 		t.Fatal("expected invalid tenant map JSON error")
 	}
+}
+
+func TestValidateTenantMap(t *testing.T) {
+	valid := map[string]proxy.TenantMapping{
+		"team-a": {AccountID: "1", ProjectID: "2"},
+		"team-b": {AccountID: "0", ProjectID: "0"},
+		"ops":    {AccountID: "4294967295", ProjectID: "0"},
+	}
+	if err := validateTenantMap(valid); err != nil {
+		t.Fatalf("unexpected error for valid map: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		m       map[string]proxy.TenantMapping
+		wantErr string
+	}{
+		{
+			name:    "non-numeric account_id",
+			m:       map[string]proxy.TenantMapping{"x": {AccountID: "prod", ProjectID: "0"}},
+			wantErr: "account_id",
+		},
+		{
+			name:    "non-numeric project_id",
+			m:       map[string]proxy.TenantMapping{"x": {AccountID: "1", ProjectID: "staging"}},
+			wantErr: "project_id",
+		},
+		{
+			name:    "negative account_id",
+			m:       map[string]proxy.TenantMapping{"x": {AccountID: "-1", ProjectID: "0"}},
+			wantErr: "account_id",
+		},
+		{
+			name:    "uint32 overflow account_id",
+			m:       map[string]proxy.TenantMapping{"x": {AccountID: "4294967296", ProjectID: "0"}},
+			wantErr: "account_id",
+		},
+		{
+			name:    "empty account_id",
+			m:       map[string]proxy.TenantMapping{"x": {AccountID: "", ProjectID: "0"}},
+			wantErr: "account_id",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateTenantMap(tc.m)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got: %v", tc.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestLoadTenantMapFile(t *testing.T) {
+	t.Run("yaml", func(t *testing.T) {
+		f := t.TempDir() + "/tenant-map.yaml"
+		content := "team-a:\n  account_id: \"1\"\n  project_id: \"2\"\nteam-b:\n  account_id: \"10\"\n  project_id: \"0\"\n"
+		if err := os.WriteFile(f, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		m, err := loadTenantMapFile(f)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m["team-a"] != (proxy.TenantMapping{AccountID: "1", ProjectID: "2"}) {
+			t.Fatalf("unexpected team-a mapping: %+v", m["team-a"])
+		}
+		if m["team-b"] != (proxy.TenantMapping{AccountID: "10", ProjectID: "0"}) {
+			t.Fatalf("unexpected team-b mapping: %+v", m["team-b"])
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		f := t.TempDir() + "/tenant-map.json"
+		content := `{"ops-prod":{"account_id":"42","project_id":"0"}}`
+		if err := os.WriteFile(f, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		m, err := loadTenantMapFile(f)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if m["ops-prod"] != (proxy.TenantMapping{AccountID: "42", ProjectID: "0"}) {
+			t.Fatalf("unexpected ops-prod mapping: %+v", m["ops-prod"])
+		}
+	})
+
+	t.Run("missing file", func(t *testing.T) {
+		_, err := loadTenantMapFile("/nonexistent/tenant-map.yaml")
+		if err == nil {
+			t.Fatal("expected error for missing file, got nil")
+		}
+	})
+
+	t.Run("invalid yaml", func(t *testing.T) {
+		f := t.TempDir() + "/tenant-map.yaml"
+		if err := os.WriteFile(f, []byte(":\t:bad yaml"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := loadTenantMapFile(f)
+		if err == nil {
+			t.Fatal("expected error for invalid YAML, got nil")
+		}
+	})
+
+	t.Run("invalid account_id in yaml", func(t *testing.T) {
+		f := t.TempDir() + "/tenant-map.yaml"
+		content := "team-x:\n  account_id: \"not-a-number\"\n  project_id: \"0\"\n"
+		if err := os.WriteFile(f, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := loadTenantMapFile(f)
+		if err == nil {
+			t.Fatal("expected validation error, got nil")
+		}
+	})
 }
 
 func TestParseTenantDefaultLimitsJSON(t *testing.T) {
@@ -1744,7 +1863,7 @@ func TestWatchReloadSignals(t *testing.T) {
 			default:
 				return ""
 			}
-		}, logger)
+		}, "", logger)
 		close(done)
 	}()
 

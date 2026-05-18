@@ -207,6 +207,21 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	// the window end is now, data is visible within one refresh_interval (~1s), and
 	// VL sends headers well within the 5s budget.  VL expects a duration string
 	// (e.g. "0s"), not a bare integer.
+
+	// Inject tenant label filter: this function builds its VL URL by hand and does
+	// not go through vlGetInner/vlPostInner, so the filter must be applied here.
+	if p.tenantLabel != "" {
+		if orgID := getOrgID(parent); orgID != "" && !isDefaultTenantAlias(orgID) && orgID != "*" {
+			p.configMu.RLock()
+			_, hasMapped := p.tenantMap[orgID]
+			p.configMu.RUnlock()
+			if !hasMapped {
+				injected := injectTenantLabelFilter(url.Values{"query": {logsqlQuery}}, p.tenantLabel, orgID)
+				logsqlQuery = injected.Get("query")
+			}
+		}
+	}
+
 	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s&offset=0s",
 		p.backend.String(), url.QueryEscape(logsqlQuery))
 	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)
