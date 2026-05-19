@@ -191,6 +191,14 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"keep_single", `{app="api-gateway",env="production"} | json | keep method`, "drop_keep"},
 		{"keep_multiple", `{app="api-gateway",env="production"} | json | keep method, status`, "drop_keep"},
 		{"drop_error", `{app="api-gateway",env="production"} | json | drop __error__, __error_details__`, "drop_keep"},
+		// ── drop with label matchers (fixed: proxy post-processes per-entry) ──
+		// The proxy translator no longer emits `| delete` for matcher-form drops.
+		// Instead, ParseDropConditions extracts the condition and applyDropConditions
+		// removes the field only from entries where the value matches — matching Loki's semantics.
+		{"drop_with_eq_matcher", `{app="api-gateway",env="production"} | json | drop level="debug"`, "drop_keep"},
+		{"drop_with_regex_matcher", `{app="api-gateway",env="production"} | json | drop level=~"debug|trace"`, "drop_keep"},
+		{"drop_with_ne_matcher", `{app="api-gateway",env="production"} | json | drop level!="info"`, "drop_keep"},
+		{"drop_multi_mixed", `{app="api-gateway",env="production"} | json | drop trace_id, level="debug"`, "drop_keep"},
 
 		// ── Multi-stage pipelines ──
 		{"json_filter_format", `{app="api-gateway",env="production"} | json | method="GET" | line_format "{{.status}}"`, "multi_stage"},
