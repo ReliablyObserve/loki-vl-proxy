@@ -484,7 +484,7 @@ func run(
 	labelStyle := fs.String("label-style", "underscores", `Label name translation mode:
   passthrough  - no translation, pass VL field names as-is (use when VL stores underscores)
   underscores  - convert dots to underscores (use when VL stores OTel-style dotted names like service.name)`)
-	metadataFieldMode := fs.String("metadata-field-mode", "native", `Field exposure mode for detected_fields and structured metadata:
+	metadataFieldMode := fs.String("metadata-field-mode", "translated", `Field exposure mode for detected_fields and structured metadata:
   native      - expose VictoriaLogs field names as-is
   translated  - expose only Loki-compatible translated aliases
   hybrid      - expose both native VL field names and translated aliases when they differ`)

@@ -192,9 +192,9 @@ services:
       # pprof for benchmark profiling (CPU/heap/alloc capture during bench runs).
       - "-server.enable-pprof"
       - "-server.admin-auth-token=bench-pprof-token"
-      # Explicit defaults (underscores+native since v0.x — full Loki OTel compatibility)
+      # Explicit defaults — underscores+translated+emit=true for full Loki OTel compatibility
       - "-label-style=underscores"
-      - "-metadata-field-mode=native"
+      - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
     depends_on:
       victorialogs:
