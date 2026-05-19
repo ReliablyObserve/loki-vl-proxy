@@ -296,11 +296,11 @@ Loki-VL-proxy is validated continuously in CI against three separate tracks: Lok
 
 | Profile | Stream labels (`/labels`) | Detected fields / metadata | Best for |
 |---|---|---|---|
-| Loki-conservative | underscore-only | translated underscore aliases | strict Loki UX |
-| Mixed (default) | underscore-only | dotted + translated aliases | Grafana + OTel correlation |
+| Loki-compatible (default) | underscore-only | translated underscore aliases | strict Loki UX, Grafana Explore/Drilldown |
+| Mixed | underscore-only | dotted + translated aliases | Grafana + OTel correlation |
 | Native-field | underscore-only (`label-style=underscores`) | dotted-native only | VL/OTel-native field workflows |
 
-Grafana query builder works best with underscore aliases. Code mode (`label-style=underscores`, `metadata-field-mode=translated`) handles dotted keys without UI tokenization issues.
+Default flags: `-label-style=underscores`, `-metadata-field-mode=translated`. Grafana query builder works best with underscore aliases; code mode accepts dotted expressions and translates them to VL-native field matching.
 
 **Tuple safety:** Default responses return strict `[timestamp, line]` 2-tuples. 3-tuple metadata mode activates only when the client sends `X-Loki-Response-Encoding-Flags: categorize-labels`. Cache keys are segregated by tuple mode.
 

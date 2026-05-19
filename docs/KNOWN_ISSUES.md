@@ -93,6 +93,9 @@ These are not current open issues in this codebase:
 - circuit breaker sliding window — failure counting uses a 30-second sliding window; sporadic slow-query resets no longer open the breaker (v1.18.0)
 - deterministic log stream ordering for multi-window queries — streams and per-stream values now sorted stably before response emission (v1.21.1)
 - `offset` directive — fully implemented: proxy strips the offset clause and shifts `start`/`end` (or `time` for instant queries) backward by the offset duration before backend dispatch
+- `| drop field=value` matcher semantics — proxy now conditionally removes a field only when its value matches, via proxy-side post-processing (`ParseDropConditions` + `applyDropConditions`); previously the value predicate was silently ignored and the field was always dropped (v3.7.1)
+- structuredMetadata vs parsedFields classification — proxy correctly classifies structured metadata fields by comparing against `_msg` JSON content; previously some structured metadata fields were misclassified as parsed fields (v3.7.1)
+- exhaustive parity test coverage — 316 LogQL parity cases with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved (v3.7.1)
 
 ## Related Docs
 

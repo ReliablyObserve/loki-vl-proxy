@@ -236,8 +236,10 @@ func splitDropSpec(spec string) (bareFields []string, conditions []DropCondition
 			continue
 		}
 		field, op, val, ok := parseDropMatcher(item)
-		if !ok {
-			bareFields = append(bareFields, item)
+		if !ok || field == "" {
+			if !ok {
+				bareFields = append(bareFields, item)
+			}
 			continue
 		}
 		dc := DropCondition{Field: field, Op: op, Value: val}

@@ -99,6 +99,14 @@ The `__error__` / `| drop __error__` mechanism for opting parser-stage metric qu
 
 `rate`, `bytes_rate`, `count_over_time`, and `bytes_over_time` queries containing `| json` or `| logfmt` parser stages now use VL native `stats_query_range` for tumbling windows (`range == step`). These queries were previously forced onto the raw log-fetch slow path regardless of window type.
 
+### v3.7.1 — drop Matcher Semantics, Structured Metadata Classification, Parity Expansion
+
+`| drop field=value` (matcher form) now correctly implements conditional semantics: VL `| delete` is issued for the field, and the proxy post-processes each log entry to restore the field value when it does not match the predicate. Previously the value predicate was ignored and the field was always removed.
+
+`structuredMetadata` vs `parsedFields` classification in push/detected_fields paths is now correct: the proxy compares candidate field names against `_msg` JSON content to determine whether a field originates from structured metadata or was parsed from the log body.
+
+The LogQL exhaustive parity machine expanded from 202 to 316 cases, with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved. Default `label-style` is now `underscores` and `metadata-field-mode` is now `translated`.
+
 ## Edge Cases Covered
 
 - JSON and logfmt parser chains followed by field filters
@@ -115,6 +123,8 @@ The `__error__` / `| drop __error__` mechanism for opting parser-stage metric qu
 - `service_name` alias in detected_fields for hybrid OTel/non-OTel datasets (v1.30.0)
 - bare parser-stage metric label scoping (v1.31.0)
 - parser-stage tumbling-window fast path via VL native stats (v1.31.2)
+- `| drop field=value` matcher-form conditional semantics via proxy post-processing (v3.7.1)
+- structuredMetadata vs parsedFields classification fix using `_msg` JSON content comparison (v3.7.1)
 
 ## Query Families In The Loki Semantics Matrix
 

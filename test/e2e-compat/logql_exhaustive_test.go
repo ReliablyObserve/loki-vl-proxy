@@ -659,6 +659,42 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 
 		// ── json alias then filter (fixed: proxy rewrites filter to use original field name) ──
 		{"json_field_alias_then_filter", `{app="api-gateway",env="production"} | json http_code="status" | http_code="200"`, "json_alias_filter"},
+
+		// ── deep multi-stage pipelines (5+ stages) ──
+		{"deep_pipeline_drop_keep", `{app="api-gateway",env="production"} | json | method="GET" | status>=200 | status<400 | drop trace_id | keep method, status`, "multi_stage"},
+		{"deep_pipeline_logfmt_format", `{app="payment-service",env="production"} | logfmt | level="error" | drop msg | line_format "{{.level}}: {{.duration}}"`, "multi_stage"},
+
+		// ── regexp parser with named groups in metric context ──
+		{"regexp_named_group_metric", `sum by(status)(rate({app="api-gateway",env="production"} | regexp "status=(?P<status>\\d+)" [5m]))`, "regex_metric"},
+		{"regexp_named_group_filter", `{app="api-gateway",env="production"} | regexp "status=(?P<status>\\d+)" | status="200"`, "regex_metric"},
+
+		// ── label_format in metric context ──
+		{"label_format_in_sum", `sum by(http_method)(rate({app="api-gateway",env="production"} | json | label_format http_method="method" [5m]))`, "label_format_metric"},
+
+		// ── binary operations with different window sizes ──
+		{"binary_asymmetric_windows", `sum(rate({app="api-gateway",env="production"}[5m])) / sum(rate({app="api-gateway",env="production"}[10m]))`, "binary_metric"},
+
+		// ── unwrap with logfmt parser ──
+		{"unwrap_logfmt_sum", `sum_over_time({app="payment-service",env="production"} | logfmt | unwrap duration [5m])`, "unwrap_metric"},
+
+		// ── pattern parser in metric query ──
+		{"pattern_metric", `count_over_time({app="api-gateway",env="production"} | pattern "<_> <method> <_>" [5m])`, "pattern_stage"},
+
+		// ── multi-label keep in pipeline ──
+		{"keep_then_format", `{app="api-gateway",env="production"} | json | keep method, status, path | line_format "{{.method}} {{.status}} {{.path}}"`, "drop_keep"},
+
+		// ── chained drop stages ──
+		{"chained_drop_stages", `{app="api-gateway",env="production"} | json | drop trace_id | drop user_id`, "drop_keep"},
+
+		// ── drop with logfmt parser ──
+		{"logfmt_drop_matcher", `{app="payment-service",env="production"} | logfmt | drop level="debug"`, "drop_keep"},
+
+		// ── nested line filters before json ──
+		{"nested_filters_then_json", `{app="api-gateway",env="production"} |= "GET" |= "200" | json | method="GET"`, "multi_stage"},
+
+		// ── vector arithmetic with scalar ──
+		{"rate_times_scalar", `rate({app="api-gateway",env="production"}[5m]) * 1000`, "binary_metric"},
+		{"rate_minus_scalar", `rate({app="api-gateway",env="production"}[5m]) - 0`, "binary_metric"},
 	}
 
 	score := &exhaustiveScore{}
