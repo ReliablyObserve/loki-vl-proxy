@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`| drop field=value` matcher semantics**: The proxy previously translated `| drop field="value"` to VL's unconditional `| delete field`, which incorrectly removed the field from all log entries regardless of value. The fix: the translator no longer emits `| delete` for matcher-form drops; instead the proxy post-processes each classified entry and removes the field only when the value matches the condition. Bare-field drops (`| drop field`) continue to use `| delete` in VL unchanged. Supports `=`, `!=`, `=~`, and `!~` operators. Applies to both the batch query path (categorized-labels / Grafana Drilldown) and the streaming path.
+
 ## [1.36.0] - 2026-05-19
 
 ### Added
@@ -22,7 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`structuredMetadata` vs `parsedFields` classification**: Proxy now correctly classifies which fields belong in the `structuredMetadata` section vs `parsedFields` using `_msg` JSON content comparison. Fields present in the raw log line JSON are classified as parsedFields; fields absent from the log line are classified as structuredMetadata. Previously, all extra fields were misclassified.
-- **`| drop field=value` matcher semantics**: The proxy previously translated `| drop field="value"` to VL's unconditional `| delete field`, which incorrectly removed the field from all log entries regardless of value. The fix: the translator no longer emits `| delete` for matcher-form drops; instead the proxy post-processes each classified entry and removes the field only when the value matches the condition. Bare-field drops (`| drop field`) continue to use `| delete` in VL unchanged. Supports `=`, `!=`, `=~`, and `!~` operators. Applies to both the batch query path (categorized-labels / Grafana Drilldown) and the streaming path.
 
 ## [1.35.0] - 2026-05-18
 
