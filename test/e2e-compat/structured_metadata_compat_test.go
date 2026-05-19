@@ -164,12 +164,14 @@ func TestStructuredMetadata_DefaultProxyCategorizedIncludesEventMetadata(t *test
 	labels := firstStreamLabels(t, resp)
 	metadata := firstStreamStructuredMetadata(t, resp)
 
-	for _, want := range []string{"service.name", "k8s.pod.name"} {
+	// Default proxy uses label-style=underscores, so dotted VL stream labels are translated.
+	for _, want := range []string{"service_name", "k8s_pod_name"} {
 		if _, ok := labels[want]; !ok {
-			t.Fatalf("default passthrough labels missing %q: %+v", want, labels)
+			t.Fatalf("default proxy (underscores) labels missing %q: %+v", want, labels)
 		}
 	}
-	for _, want := range []string{"http.target", "cloud.region"} {
+	// Default proxy uses metadata-field-mode=translated, so dotted metadata fields are translated.
+	for _, want := range []string{"http_target", "cloud_region"} {
 		if _, ok := metadata[want]; !ok {
 			t.Fatalf("default proxy categorize-labels response missing structuredMetadata %q: %+v", want, metadata)
 		}
