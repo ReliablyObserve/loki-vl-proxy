@@ -110,8 +110,11 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── avg aggregation on a bare log stream ──
 		{"avg_on_log_stream", `avg({app="api-gateway",env="production"})`, "metric_on_log"},
 
-		// line_format_unclosed_brace and invalid_operator_diamond are tracked in
-		// KnownGaps as proxy_strict gaps (proxy forwards instead of rejecting).
+		// ── line_format with unclosed Go template action ─────────────────────
+		{"line_format_unclosed_brace", `{app="api-gateway"} | line_format "{{.method"`, "proxy_strict_fixed"},
+
+		// ── Invalid <> operator in label filter ───────────────────────────────
+		{"invalid_operator_diamond", `{app="api-gateway"} | json | status <> 200`, "proxy_strict_fixed"},
 
 		// ── rate_counter without unwrap ───────────────────────────────────────
 		// rate_counter is an unwrap-only range aggregation (like avg_over_time).
