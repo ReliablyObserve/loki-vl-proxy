@@ -704,6 +704,11 @@ func (s *exhaustiveScore) report(t *testing.T) {
 	}
 }
 
+// exhaustiveQueryClient is a shared HTTP client with a per-request timeout.
+// Without a timeout, queries against the proxy can hang indefinitely when
+// VictoriaLogs restarts mid-request (subquery evaluation under load).
+var exhaustiveQueryClient = &http.Client{Timeout: 20 * time.Second}
+
 func exhaustiveQuery(t *testing.T, baseURL, query string) (int, string) {
 	t.Helper()
 	now := time.Now()
@@ -714,9 +719,10 @@ func exhaustiveQuery(t *testing.T, baseURL, query string) (int, string) {
 	params.Set("limit", "10")
 	params.Set("step", "60")
 
-	resp, err := http.Get(baseURL + "/loki/api/v1/query_range?" + params.Encode())
+	resp, err := exhaustiveQueryClient.Get(baseURL + "/loki/api/v1/query_range?" + params.Encode())
 	if err != nil {
-		t.Fatalf("query failed: %v", err)
+		t.Logf("query timed out or failed (treating as 503): %v", err)
+		return http.StatusServiceUnavailable, ""
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
