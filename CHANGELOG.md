@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.35.0] - 2026-05-18
+
 ### Added
 
 - **`-tenant-label` flag**: Label-based VL tenant routing. When set to a VL field name (e.g., `-tenant-label=org_id`), injects `{org_id="<X-Scope-OrgID>"}` into every VL query instead of setting `AccountID`/`ProjectID` headers. Use when all log data lives under VL's default tenant (0:0) and is segregated by a label field. Explicit `-tenant-map` entries continue to use VL native tenancy and take priority. Default-tenant aliases (`0`, `fake`, `default`, `*`) bypass the filter. `TENANT_LABEL` environment variable also accepted.
