@@ -622,7 +622,7 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 
 	// Drop / keep labels
 	if strings.HasPrefix(stage, "drop ") {
-		return "| delete " + stage[5:]
+		return translateDropStage(stage[5:], labelFn)
 	}
 	if strings.HasPrefix(stage, "keep ") {
 		// Always include _time and _msg so the proxy can build the response
@@ -893,6 +893,100 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 	}
 
 	return "", false
+}
+
+// translateDropStage translates a `drop <spec>` pipeline stage.
+// Loki supports two forms:
+//   - bare field names: `drop level, status` → `| delete level, status`
+//   - label matchers: `drop level="debug"` → `| if (level:="debug") delete level`
+//
+// Multiple items are comma-separated; bare fields are batched into a single
+// `| delete`; matcher items emit individual `| if (...) delete` stages.
+func translateDropStage(spec string, labelFn LabelTranslateFunc) string {
+	items := splitCSV(spec)
+	var bareFields []string
+	var conditionals []string
+
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		// Detect a matcher operator (= != =~ !~ < > <= >=).
+		hasOp := false
+		for _, c := range item {
+			if c == '=' || c == '!' || c == '<' || c == '>' {
+				hasOp = true
+				break
+			}
+		}
+		if hasOp {
+			if filter, ok := translateSingleLabelFilter(item, labelFn); ok {
+				// Extract the field name (everything before the first operator char).
+				fieldName := item
+				for i, c := range item {
+					if c == '=' || c == '!' || c == '<' || c == '>' || c == '~' {
+						fieldName = strings.TrimSpace(item[:i])
+						break
+					}
+				}
+				if labelFn != nil {
+					fieldName = sanitizeFieldIdentifier(labelFn(fieldName))
+				} else {
+					fieldName = sanitizeFieldIdentifier(fieldName)
+				}
+				if fieldName != "" {
+					conditionals = append(conditionals, fmt.Sprintf("| if (%s) delete %s", filter, quoteLogsQLFieldNameIfNeeded(fieldName)))
+					continue
+				}
+			}
+		}
+		// Bare field name — accumulate for batch delete.
+		bareFields = append(bareFields, item)
+	}
+
+	var parts []string
+	if len(bareFields) > 0 {
+		parts = append(parts, "| delete "+strings.Join(bareFields, ", "))
+	}
+	parts = append(parts, conditionals...)
+	return strings.Join(parts, " ")
+}
+
+// splitCSV splits s on commas that are not inside parentheses or quotes.
+func splitCSV(s string) []string {
+	var result []string
+	depth := 0
+	inQuote := false
+	quoteChar := byte(0)
+	start := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inQuote {
+			if c == quoteChar {
+				inQuote = false
+			}
+			continue
+		}
+		switch c {
+		case '"', '`', '\'':
+			inQuote = true
+			quoteChar = c
+		case '(':
+			depth++
+		case ')':
+			if depth > 0 {
+				depth--
+			}
+		case ',':
+			if depth == 0 {
+				result = append(result, s[start:i])
+				start = i + 1
+			}
+		}
+	}
+	result = append(result, s[start:])
+	return result
 }
 
 func quoteLogsQLFieldNameIfNeeded(label string) string {

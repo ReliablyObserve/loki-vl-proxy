@@ -626,6 +626,12 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		// but the query succeeds rather than failing with 422.
 		{"quantile_over_time_gt_one", `quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "quantile_phi_gt1"},
 
+		// ── drop with label matchers (fixed: proxy uses VL | if (...) delete) ─────
+		{"drop_with_eq_matcher", `{app="api-gateway",env="production"} | json | drop level="debug"`, "drop_matcher"},
+		{"drop_with_regex_matcher", `{app="api-gateway",env="production"} | json | drop level=~"debug|trace"`, "drop_matcher"},
+		{"drop_with_ne_matcher", `{app="api-gateway",env="production"} | json | drop level!="info"`, "drop_matcher"},
+		{"drop_multi_mixed", `{app="api-gateway",env="production"} | json | drop trace_id, level="debug"`, "drop_matcher"},
+
 		// ── ip() line filter (fixed: proxy now translates to regex approximation) ─
 		{"ip_line_filter_ipv4", `{app="api-gateway",env="production"} |= ip("192.168.1.1")`, "ip_line_filter"},
 		{"ip_line_filter_cidr", `{app="nginx-ingress",env="production"} |= ip("10.0.0.0/8")`, "ip_line_filter"},
