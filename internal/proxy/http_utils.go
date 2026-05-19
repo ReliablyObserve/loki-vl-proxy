@@ -291,8 +291,18 @@ func isCanceledErr(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "context canceled")
 }
 
+// httpStatusCoder is implemented by errors that carry an upstream HTTP status
+// (e.g. queryRangeWindowHTTPError). An HTTP-level error from VL proves the
+// backend is reachable and therefore must not trip the circuit breaker.
+type httpStatusCoder interface{ StatusCode() int }
+
 func shouldRecordBreakerFailure(err error) bool {
 	if err == nil {
+		return false
+	}
+	// HTTP responses from VL (even 4xx/5xx) prove the backend is up.
+	var hsc httpStatusCoder
+	if errors.As(err, &hsc) {
 		return false
 	}
 	if isCanceledErr(err) || errors.Is(err, context.DeadlineExceeded) {
