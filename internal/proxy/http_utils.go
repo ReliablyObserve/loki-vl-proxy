@@ -102,6 +102,14 @@ var lineFormatTemplateRE = regexp.MustCompile(`\|\s*line_format\s+"((?:[^"\\]|\\
 // stream selector (i.e., without a wrapping metric function). Loki rejects these.
 var groupingOnLogStreamRE = regexp.MustCompile(`^(?:without|by)\s*\(`)
 
+// errorLabelInRateVectorRE detects __error__ (or __error_details__) used as a
+// label filter inside a rate() or bytes_rate() range vector. Loki 3.x rejects
+// this: rate() computes a metric from log throughput and does not support
+// parser-generated labels like __error__ inside the range brackets.
+// count_over_time() and other functions DO allow __error__ filters — only
+// the rate/bytes_rate family is restricted.
+var errorLabelInRateVectorRE = regexp.MustCompile(`\b(?:bytes_)?rate\s*\([^[]*__error(?:_details)?__\s*(?:!=|!~|=~|=)\s*"[^"]*"\s*\[`)
+
 func validateLogQLSyntax(query string) string {
 	query = strings.TrimSpace(query)
 
@@ -197,6 +205,14 @@ func validateLogQLSyntax(query string) string {
 			}
 			return "parse error : unexpected type for left leg of binary operation (" + op + "): " + exprType
 		}
+	}
+
+	// Reject __error__ / __error_details__ inside rate() range vectors.
+	// Loki 3.x treats rate() as a log-throughput metric; __error__ is a
+	// parser-generated label that is not accessible inside rate/bytes_rate
+	// range brackets. count_over_time() and other functions allow __error__.
+	if errorLabelInRateVectorRE.MatchString(query) {
+		return `parse error : __error__ and __error_details__ are not allowed inside rate() range vectors`
 	}
 
 	return ""

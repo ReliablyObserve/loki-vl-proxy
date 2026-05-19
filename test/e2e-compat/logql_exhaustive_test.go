@@ -126,6 +126,10 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── ip() with an invalid IP address (invalid octet > 255) ────────────
 		{"ip_line_filter_invalid_ipv4", `{app="api-gateway"} |= ip("999.999.999.999")`, "invalid_filter"},
 
+		// ── rate() with __error__ label filter inside range vector ──────────────
+		// Loki 3.7.1 rejects __error__ filters inside rate() range vectors (proxy now validates).
+		{"error_label_rate_metric", `rate({env="production"} | json | __error__!="" [5m])`, "error_label"},
+
 		// ── quantile_over_time with negative phi ──────────────────────────────
 		// Loki rejects phi < 0 with 400; phi > 1 is accepted by Loki (returns 200).
 		{"quantile_over_time_neg", `quantile_over_time(-0.1, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "invalid_filter"},
@@ -507,8 +511,8 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"error_label_empty_matches_valid", `{app="api-gateway",env="production"} | json | __error__=""`, "error_label"},
 		{"error_label_in_keep_stage", `{app="api-gateway",env="production"} | json | keep level, __error__`, "error_label"},
 		{"error_label_count_metric", `count_over_time({app="api-gateway",env="production"} | json | __error__!="" [5m])`, "error_label"},
-		// error_label_rate_metric moved to KnownGaps: Loki 3.7.1 rejects rate() with __error__ label filter.
-		// ip_line_filter_* moved to KnownGaps: proxy does not translate ip() filter function.
+		// error_label_rate_metric fixed: proxy now validates rate() with __error__ and returns 400 — moved to ErrorParity.
+		// ip_line_filter_* fixed: proxy now translates ip() filter function to regex approximation — moved to QueryParity.
 
 		// ── Drilldown / observability error-rate patterns ─────────────────────
 		// These mirror the queries Grafana Logs Drilldown generates for volume,
@@ -614,6 +618,18 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		// Proxy clamps phi to 1.0 and returns p100 — results differ from Loki
 		// but the query succeeds rather than failing with 422.
 		{"quantile_over_time_gt_one", `quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "quantile_phi_gt1"},
+
+		// ── ip() line filter (fixed: proxy now translates to regex approximation) ─
+		{"ip_line_filter_ipv4", `{app="api-gateway",env="production"} |= ip("192.168.1.1")`, "ip_line_filter"},
+		{"ip_line_filter_cidr", `{app="nginx-ingress",env="production"} |= ip("10.0.0.0/8")`, "ip_line_filter"},
+		{"ip_line_filter_negative", `{app="api-gateway",env="production"} != ip("127.0.0.1")`, "ip_line_filter"},
+		{"ip_line_filter_range", `{app="api-gateway",env="production"} |= ip("192.168.0.1-192.168.0.255")`, "ip_line_filter"},
+
+		// ── chained label_replace (fixed: ParseAllLabelReplaceMarkers handles nested markers) ──
+		{"label_replace_chained", `label_replace(label_replace(sum by(app)(count_over_time({env="production"}[5m])), "service", "$1", "app", "(.*)"), "short", "$1", "service", "^([^-]+)")`, "label_replace_chain"},
+
+		// ── json alias then filter (fixed: proxy rewrites filter to use original field name) ──
+		{"json_field_alias_then_filter", `{app="api-gateway",env="production"} | json http_code="status" | http_code="200"`, "json_alias_filter"},
 	}
 
 	score := &exhaustiveScore{}
@@ -881,61 +897,13 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			shortWindow:           true,
 			skipUnlessE2ESubquery: true,
 		},
-		// proxy_strict: proxy accepts queries that Loki rejects.
-		// line_format_unclosed_brace and invalid_operator_diamond fixed:
-		// proxy now validates and returns 400 matching Loki — moved to ErrorParity.
-		{
-			"error_label_rate_metric",
-			`rate({env="production"} | json | __error__!="" [5m])`,
-			"proxy_strict", 400, 200,
-			"Loki 3.7.1 rejects rate() with __error__ label filter inside range vector; proxy forwards successfully",
-			false, false,
-		},
-		// proxy_bug: Loki succeeds but proxy fails.
-		{
-			"ip_line_filter_ipv4",
-			`{app="api-gateway",env="production"} |= ip("192.168.1.1")`,
-			"proxy_bug", 200, 400,
-			"ip() line filter not translated; proxy returns 400, Loki returns 200 (empty)",
-			false, false,
-		},
-		{
-			"ip_line_filter_cidr",
-			`{app="nginx-ingress",env="production"} |= ip("10.0.0.0/8")`,
-			"proxy_bug", 200, 400,
-			"ip() CIDR line filter not translated; proxy returns 400",
-			false, false,
-		},
-		{
-			"ip_line_filter_negative",
-			`{app="api-gateway",env="production"} != ip("127.0.0.1")`,
-			"proxy_bug", 200, 400,
-			"ip() negative line filter not translated; proxy returns 400",
-			false, false,
-		},
-		{
-			"ip_line_filter_range",
-			`{app="api-gateway",env="production"} |= ip("192.168.0.1-192.168.0.255")`,
-			"proxy_bug", 200, 400,
-			"ip() range line filter not translated; proxy returns 400",
-			false, false,
-		},
-		{
-			"label_replace_chained",
-			`label_replace(label_replace(sum by(app)(count_over_time({env="production"}[5m])), "service", "$1", "app", "(.*)"), "short", "$1", "service", "^([^-]+)")`,
-			"proxy_bug", 200, 422,
-			"chained label_replace() fails in proxy translation; VL returns 422",
-			false, false,
-		},
-		{
-			"json_field_alias_then_filter",
-			`{app="api-gateway",env="production"} | json http_code="status" | http_code="200"`,
-			"proxy_bug", 200, 200,
-			"json alias then filter on alias name: proxy returns 200 but with empty results vs Loki non-empty",
-			false, false,
-		},
-		// quantile_over_time_gt_one fixed: proxy now clamps phi>1 to 1.0 —
-		// moved to QueryParity (proxy returns 200 matching Loki).
+		// All proxy_strict and proxy_bug gaps above have been fixed and moved to
+		// ErrorParity / QueryParity. Only proxy_extension gaps remain below.
+		// quantile_over_time_gt_one fixed: proxy now clamps phi>1 to 1.0 — moved to QueryParity.
+		// error_label_rate_metric fixed: proxy now validates rate() with __error__ — moved to ErrorParity.
+		// ip_line_filter_* fixed: proxy translates ip() to regex approximation — moved to QueryParity.
+		// label_replace_chained fixed: ParseAllLabelReplaceMarkers handles nested markers — moved to QueryParity.
+		// json_field_alias_then_filter fixed: proxy rewrites aliased json field filters — moved to QueryParity.
 	}
 
 	t.Log("\n══════════════════════════════════════════════════════════")

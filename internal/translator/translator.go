@@ -78,6 +78,46 @@ func ParseLabelReplaceMarker(query string) (string, *LabelReplaceSpec) {
 	}
 }
 
+// ParseAllLabelReplaceMarkers extracts every label_replace marker embedded in a
+// translated query, returning the clean query (all markers stripped) and the specs
+// in left-to-right order (inner application first, outer last). This supports
+// chained label_replace(label_replace(...)) calls: the translator embeds one marker
+// per nesting level, and each must be applied in sequence.
+func ParseAllLabelReplaceMarkers(query string) (string, []LabelReplaceSpec) {
+	var specs []LabelReplaceSpec
+	for {
+		idx := strings.Index(query, labelReplacePrefix)
+		if idx < 0 {
+			break
+		}
+		tail := query[idx+len(labelReplacePrefix):]
+		// The marker ends at the next "__" that closes it. Base64 chars are
+		// [A-Za-z0-9+/=], so "__" cannot appear inside the payload.
+		endIdx := strings.Index(tail, "__")
+		if endIdx < 0 {
+			break
+		}
+		payload := tail[:endIdx]
+		b, err := base64.StdEncoding.DecodeString(payload)
+		if err != nil {
+			break
+		}
+		parts := strings.SplitN(string(b), "\x00", 4)
+		if len(parts) != 4 {
+			break
+		}
+		specs = append(specs, LabelReplaceSpec{
+			DstLabel:    parts[0],
+			Replacement: parts[1],
+			SrcLabel:    parts[2],
+			Regex:       parts[3],
+		})
+		// Strip this marker from the query and continue looking for more.
+		query = query[:idx] + query[idx+len(labelReplacePrefix)+endIdx+len("__"):]
+	}
+	return query, specs
+}
+
 // ParseLabelJoinMarker extracts a label_join spec embedded in a translated query.
 // Returns the clean query (marker stripped) and the spec, or nil if absent.
 func ParseLabelJoinMarker(query string) (string, *LabelJoinSpec) {
@@ -314,6 +354,10 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 	// Track canonical label-filter stages so repeated drilldown include/exclude
 	// clicks don't accumulate duplicate or contradictory filters.
 	labelFilterLatest := make(map[string]int)
+	// jsonAliases tracks | json alias="field" mappings so subsequent filter stages
+	// referencing the alias name can be rewritten to use the original JSON field name.
+	// VL's unpack_json always uses original field names; aliases are not preserved.
+	jsonAliases := make(map[string]string)
 
 	// 2. Process pipeline stages: | operator ...
 	// LogQL line filters: |= "text", != "text", |~ "regexp", !~ "regexp"
@@ -330,6 +374,36 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 		// We must use ~"text" to match Loki's substring semantics.
 		// The proxy's reconstructLogLine puts the full JSON into _msg, so
 		// searching _msg via ~"text" finds text in any original JSON field.
+
+		// ip() line filter: Loki searches raw log text for IPs matching the pattern.
+		// VL has no native ip() support; translate to a regex approximation.
+		// Invalid IP patterns (e.g. octets > 255) are rejected with a parse error
+		// matching Loki's behavior.
+		if strings.HasPrefix(remaining, "|= ip(") || strings.HasPrefix(remaining, "|=ip(") {
+			remaining = strings.TrimSpace(remaining[2:])
+			arg, rest, ok := extractIPFilterArg(remaining)
+			remaining = rest
+			if ok {
+				if !isValidIPFilterArg(arg) {
+					return "", fmt.Errorf("parse error : stage '|= ip(%q)' : ip: invalid pattern: %q", arg, arg)
+				}
+				parts = append(parts, "~"+strconv.Quote(ipLineFilterToRegex(arg)))
+			}
+			continue
+		}
+		if strings.HasPrefix(remaining, "!= ip(") || strings.HasPrefix(remaining, "!=ip(") {
+			remaining = strings.TrimSpace(remaining[2:])
+			arg, rest, ok := extractIPFilterArg(remaining)
+			remaining = rest
+			if ok {
+				if !isValidIPFilterArg(arg) {
+					return "", fmt.Errorf("parse error : stage '!= ip(%q)' : ip: invalid pattern: %q", arg, arg)
+				}
+				parts = append(parts, "NOT ~"+strconv.Quote(ipLineFilterToRegex(arg)))
+			}
+			continue
+		}
+
 		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") {
 			// Substring match: |= "text" → ~"text"
 			remaining = strings.TrimSpace(remaining[2:])
@@ -406,6 +480,18 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 		// Determine the pipeline stage type
 		stage, rest := extractPipelineStage(remaining)
 		remaining = rest
+
+		// Populate json alias map when the stage uses alias="field" syntax.
+		if strings.HasPrefix(stage, "json ") {
+			for alias, orig := range parseJSONFieldAliases(stage) {
+				jsonAliases[alias] = orig
+			}
+		}
+		// Rewrite filter stages that reference json-aliased field names so they
+		// use the original JSON field name that VL's unpack_json actually extracts.
+		if afterParser && len(jsonAliases) > 0 {
+			stage = rewriteJSONAliasedFilter(stage, jsonAliases)
+		}
 
 		translated := translatePipelineStage(stage, labelFn)
 		if strings.HasPrefix(translated, errUnknownParser) {
@@ -2523,4 +2609,172 @@ func ParseSubqueryExpr(s string) (outerFunc, innerQuery, rng, step string, ok bo
 	innerQuery = rest[firstColon+1:]
 
 	return outerFunc, innerQuery, rng, step, true
+}
+
+// extractIPFilterArg parses the argument from an ip("...") expression.
+// Returns the unquoted argument, the rest of the query string after the closing ")",
+// and ok=true. Returns ok=false if the expression cannot be parsed.
+func extractIPFilterArg(s string) (arg, rest string, ok bool) {
+	s = strings.TrimSpace(s)
+	if !strings.HasPrefix(s, "ip(") {
+		return "", s, false
+	}
+	s = s[3:] // skip "ip("
+	s = strings.TrimSpace(s)
+	if len(s) == 0 || s[0] != '"' {
+		return "", s, false
+	}
+	end := strings.IndexByte(s[1:], '"')
+	if end < 0 {
+		return "", s, false
+	}
+	arg = s[1 : end+1]
+	rest = strings.TrimSpace(s[end+2:])
+	if strings.HasPrefix(rest, ")") {
+		rest = strings.TrimSpace(rest[1:])
+	}
+	return arg, rest, true
+}
+
+// isValidIPv4 reports whether s is a valid IPv4 address (all octets 0-255).
+func isValidIPv4(s string) bool {
+	octets := strings.Split(s, ".")
+	if len(octets) != 4 {
+		return false
+	}
+	for _, oct := range octets {
+		n, err := strconv.Atoi(oct)
+		if err != nil || n < 0 || n > 255 {
+			return false
+		}
+	}
+	return true
+}
+
+// isValidIPFilterArg validates an ip() filter argument.
+// Valid forms: exact IPv4 "A.B.C.D", CIDR "A.B.C.D/N", range "A.B.C.D-E.F.G.H".
+func isValidIPFilterArg(arg string) bool {
+	if slashIdx := strings.IndexByte(arg, '/'); slashIdx >= 0 {
+		ip := arg[:slashIdx]
+		bits, err := strconv.Atoi(arg[slashIdx+1:])
+		return err == nil && bits >= 0 && bits <= 32 && isValidIPv4(ip)
+	}
+	if dashIdx := strings.IndexByte(arg, '-'); dashIdx >= 0 && strings.Count(arg[:dashIdx], ".") == 3 {
+		return isValidIPv4(arg[:dashIdx]) && isValidIPv4(arg[dashIdx+1:])
+	}
+	return isValidIPv4(arg)
+}
+
+// ipLineFilterToRegex converts an ip() filter argument to a VL-compatible regex.
+// This is a best-effort approximation: VL has no native IP semantics, so we
+// generate a regex that matches the IP pattern in log lines.
+// - Exact IP "A.B.C.D": dots are escaped (regex metacharacters).
+// - CIDR "A.B.C.D/N": the prefix octets are literal; remaining octets match \d{1,3}.
+// - Range "A.B.C.D-E.F.G.H": common prefix octets are literal; remainder matches \d{1,3}.
+func ipLineFilterToRegex(arg string) string {
+	if slashIdx := strings.IndexByte(arg, '/'); slashIdx >= 0 {
+		bits, err := strconv.Atoi(arg[slashIdx+1:])
+		if err != nil {
+			return regexp.QuoteMeta(arg[:slashIdx])
+		}
+		return buildCIDRRegex(arg[:slashIdx], bits)
+	}
+	if dashIdx := strings.IndexByte(arg, '-'); dashIdx >= 0 && strings.Count(arg[:dashIdx], ".") == 3 {
+		return buildIPRangeRegex(arg[:dashIdx], arg[dashIdx+1:])
+	}
+	return regexp.QuoteMeta(arg)
+}
+
+func buildCIDRRegex(ip string, bits int) string {
+	octets := strings.Split(ip, ".")
+	if len(octets) != 4 {
+		return regexp.QuoteMeta(ip)
+	}
+	fullOctets := bits / 8
+	var sb strings.Builder
+	for i := 0; i < 4; i++ {
+		if i > 0 {
+			sb.WriteString(`\.`)
+		}
+		if i < fullOctets {
+			sb.WriteString(regexp.QuoteMeta(octets[i]))
+		} else {
+			sb.WriteString(`\d{1,3}`)
+		}
+	}
+	return sb.String()
+}
+
+func buildIPRangeRegex(startIP, endIP string) string {
+	startOctets := strings.Split(startIP, ".")
+	endOctets := strings.Split(endIP, ".")
+	if len(startOctets) != 4 || len(endOctets) != 4 {
+		return regexp.QuoteMeta(startIP)
+	}
+	commonOctets := 0
+	for i := 0; i < 4; i++ {
+		if startOctets[i] == endOctets[i] {
+			commonOctets = i + 1
+		} else {
+			break
+		}
+	}
+	var sb strings.Builder
+	for i := 0; i < 4; i++ {
+		if i > 0 {
+			sb.WriteString(`\.`)
+		}
+		if i < commonOctets {
+			sb.WriteString(regexp.QuoteMeta(startOctets[i]))
+		} else {
+			sb.WriteString(`\d{1,3}`)
+		}
+	}
+	return sb.String()
+}
+
+// parseJSONFieldAliases extracts alias→originalField mappings from a json pipeline
+// stage that uses Loki's alias="field" syntax.
+// E.g., "json http_code=\"status\", method=\"method\"" →
+//
+//	map["http_code"]="status", map["method"]="method"
+func parseJSONFieldAliases(stage string) map[string]string {
+	rest := strings.TrimSpace(strings.TrimPrefix(stage, "json "))
+	aliases := make(map[string]string)
+	for _, part := range strings.Split(rest, ",") {
+		part = strings.TrimSpace(part)
+		eqIdx := strings.IndexByte(part, '=')
+		if eqIdx < 0 {
+			continue
+		}
+		alias := strings.TrimSpace(part[:eqIdx])
+		fieldPart := strings.TrimSpace(part[eqIdx+1:])
+		if len(fieldPart) >= 2 && fieldPart[0] == '"' && fieldPart[len(fieldPart)-1] == '"' {
+			orig := fieldPart[1 : len(fieldPart)-1]
+			if alias != "" && orig != "" {
+				aliases[alias] = orig
+			}
+		}
+	}
+	return aliases
+}
+
+// rewriteJSONAliasedFilter rewrites a label filter stage that references a
+// json-aliased field name to use the original JSON field name, so that VL's
+// unpack_json (which preserves original names) can match it.
+// E.g., "http_code=\"200\"" with alias {"http_code":"status"} → "status=\"200\""
+func rewriteJSONAliasedFilter(stage string, aliases map[string]string) string {
+	for alias, orig := range aliases {
+		if strings.HasPrefix(stage, alias) {
+			after := stage[len(alias):]
+			if len(after) > 0 && isLabelFilterOpByte(after[0]) {
+				return orig + after
+			}
+		}
+	}
+	return stage
+}
+
+func isLabelFilterOpByte(c byte) bool {
+	return c == '=' || c == '!' || c == '<' || c == '>' || c == '~'
 }
