@@ -110,8 +110,11 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── avg aggregation on a bare log stream ──
 		{"avg_on_log_stream", `avg({app="api-gateway",env="production"})`, "metric_on_log"},
 
-		// line_format_unclosed_brace and invalid_operator_diamond are tracked in
-		// KnownGaps as proxy_strict gaps (proxy forwards instead of rejecting).
+		// ── line_format with unclosed Go template action ─────────────────────
+		{"line_format_unclosed_brace", `{app="api-gateway"} | line_format "{{.method"`, "proxy_strict_fixed"},
+
+		// ── Invalid <> operator in label filter ───────────────────────────────
+		{"invalid_operator_diamond", `{app="api-gateway"} | json | status <> 200`, "proxy_strict_fixed"},
 
 		// ── rate_counter without unwrap ───────────────────────────────────────
 		// rate_counter is an unwrap-only range aggregation (like avg_over_time).
@@ -606,7 +609,11 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"stddev_outer_aggregation", `stddev(sum by(app)(count_over_time({env="production"}[5m])))`, "outer_agg_stddev"},
 		{"stdvar_outer_aggregation", `stdvar(sum by(app)(count_over_time({env="production"}[5m])))`, "outer_agg_stddev"},
 
-		// quantile_over_time_gt_one moved to KnownGaps: VL rejects phi>1 with 422, Loki allows it.
+		// ── quantile_over_time with phi > 1 ──────────────────────────────────
+		// Loki allows phi > 1 (extrapolates beyond p100); VL rejects with 422.
+		// Proxy clamps phi to 1.0 and returns p100 — results differ from Loki
+		// but the query succeeds rather than failing with 422.
+		{"quantile_over_time_gt_one", `quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "quantile_phi_gt1"},
 	}
 
 	score := &exhaustiveScore{}
@@ -875,20 +882,8 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			skipUnlessE2ESubquery: true,
 		},
 		// proxy_strict: proxy accepts queries that Loki rejects.
-		{
-			"line_format_unclosed_brace",
-			`{app="api-gateway"} | line_format "{{.method"`,
-			"proxy_strict", 400, 200,
-			"Loki rejects unclosed Go template brace in line_format; proxy forwards without template validation",
-			false, false,
-		},
-		{
-			"invalid_operator_diamond",
-			`{app="api-gateway"} | json | status <> 200`,
-			"proxy_strict", 400, 200,
-			"<> is not a valid LogQL operator; Loki returns 400, proxy forwards and VL may accept or silently drop",
-			false, false,
-		},
+		// line_format_unclosed_brace and invalid_operator_diamond fixed:
+		// proxy now validates and returns 400 matching Loki — moved to ErrorParity.
 		{
 			"error_label_rate_metric",
 			`rate({env="production"} | json | __error__!="" [5m])`,
@@ -939,14 +934,8 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			"json alias then filter on alias name: proxy returns 200 but with empty results vs Loki non-empty",
 			false, false,
 		},
-		// VictoriaLogs is stricter than Loki on quantile phi range.
-		{
-			"quantile_over_time_gt_one",
-			`quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`,
-			"proxy_bug", 200, 422,
-			"Loki accepts phi>1 (extrapolates beyond p100); VL rejects with 422 — VL limitation",
-			false, false,
-		},
+		// quantile_over_time_gt_one fixed: proxy now clamps phi>1 to 1.0 —
+		// moved to QueryParity (proxy returns 200 matching Loki).
 	}
 
 	t.Log("\n══════════════════════════════════════════════════════════")

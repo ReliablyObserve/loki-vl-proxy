@@ -59,6 +59,7 @@ var (
 )
 
 // validateQuery checks query string length and returns a sanitized version.
+// It also rewrites queries that Loki accepts but VL would reject (e.g. phi>1).
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
 	if len(query) > maxQueryLength {
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("query exceeds max length (%d > %d)", len(query), maxQueryLength))
@@ -72,6 +73,10 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
+	// Clamp quantile_over_time phi > 1 to 1.0.
+	// Loki allows phi > 1 (extrapolation beyond p100); VL rejects it with 422.
+	// Clamping preserves the p100 value and keeps queries working.
+	query = rewriteQuantilePhiGT1(query)
 	return query, true
 }
 
@@ -84,8 +89,14 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 // - Queries without a stream selector (e.g., "| json")
 // - Malformed stream selectors (e.g., "{app=}")
 // - Binary operations on log/pipeline expressions (e.g., "{app=...} == 2")
+// - line_format with unclosed Go template actions (e.g., `| line_format "{{.x"`)
+// - Invalid operators in label filters (e.g., `<>`)
+
 // quantileOverTimePhiRE extracts the phi literal from quantile_over_time(phi, ...).
 var quantileOverTimePhiRE = regexp.MustCompile(`\bquantile_over_time\(\s*(-?[\d]+(?:\.[\d]+)?(?:e[+\-]?\d+)?)\s*,`)
+
+// lineFormatTemplateRE extracts the template string from a line_format stage.
+var lineFormatTemplateRE = regexp.MustCompile(`\|\s*line_format\s+"((?:[^"\\]|\\.)*)"`)
 
 // groupingOnLogStreamRE matches a without/by modifier that immediately follows a
 // stream selector (i.e., without a wrapping metric function). Loki rejects these.
@@ -105,12 +116,30 @@ func validateLogQLSyntax(query string) string {
 	}
 
 	// Reject quantile_over_time with phi < 0 before reaching VL
-	// (VL returns 422 for negative phi; Loki returns 400). Loki allows phi > 1.
+	// (VL returns 422 for negative phi; Loki returns 400). Loki allows phi > 1
+	// but VL rejects it — phi > 1 is clamped to 1.0 in validateQuery instead.
 	if m := quantileOverTimePhiRE.FindStringSubmatch(query); len(m) > 1 {
 		phi, err := strconv.ParseFloat(m[1], 64)
 		if err == nil && phi < 0 {
 			return "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got " + m[1]
 		}
+	}
+
+	// Reject line_format with unclosed Go template actions (e.g., "{{.method").
+	// Loki's template engine returns a parse error; the proxy forwards such
+	// queries unmodified, so VL would accept them and produce wrong output.
+	if m := lineFormatTemplateRE.FindStringSubmatch(query); len(m) > 1 {
+		tmpl := m[1]
+		if strings.Count(tmpl, "{{") > strings.Count(tmpl, "}}") {
+			stage := `| line_format "` + tmpl + `"`
+			return `parse error : stage '` + stage + `' : invalid line template: template: line:1: unclosed action`
+		}
+	}
+
+	// Reject the <> operator — it is not valid LogQL syntax. Loki returns a
+	// parse error; VL may silently accept or misinterpret it.
+	if idx := strings.Index(query, "<>"); idx >= 0 {
+		return fmt.Sprintf("parse error at line 1, col %d: syntax error: unexpected >", idx+2)
 	}
 
 	// Malformed selector: unclosed or empty values
@@ -171,6 +200,24 @@ func validateLogQLSyntax(query string) string {
 	}
 
 	return ""
+}
+
+// rewriteQuantilePhiGT1 replaces phi > 1 in quantile_over_time() with 1.0.
+// Loki allows phi > 1 (extrapolates beyond p100 using linear interpolation);
+// VictoriaLogs rejects it with 422. Clamping to 1.0 returns the p100 value,
+// which is the closest semantically valid result VL can produce.
+func rewriteQuantilePhiGT1(query string) string {
+	return quantileOverTimePhiRE.ReplaceAllStringFunc(query, func(match string) string {
+		m := quantileOverTimePhiRE.FindStringSubmatch(match)
+		if len(m) < 2 {
+			return match
+		}
+		phi, err := strconv.ParseFloat(m[1], 64)
+		if err != nil || phi <= 1 {
+			return match
+		}
+		return strings.Replace(match, m[1], "1", 1)
+	})
 }
 
 var emptyValueRe = regexp.MustCompile(`[=!~]=?\s*[,}]`)

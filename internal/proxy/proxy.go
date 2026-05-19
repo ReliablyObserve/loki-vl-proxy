@@ -1430,7 +1430,8 @@ func (p *Proxy) peerCacheMetrics() string {
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
-	if _, ok := p.validateQuery(w, logqlQuery, "query_range"); !ok {
+	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query_range")
+	if !ok {
 		return
 	}
 	categorizedLabels := requestWantsCategorizedLabels(r)
@@ -1634,7 +1635,8 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
-	if _, ok := p.validateQuery(w, logqlQuery, "query"); !ok {
+	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query")
+	if !ok {
 		return
 	}
 	p.log.Debug("query request", "logql", logqlQuery)
