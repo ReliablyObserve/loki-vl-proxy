@@ -675,7 +675,7 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"binary_asymmetric_windows", `sum(rate({app="api-gateway",env="production"}[5m])) / sum(rate({app="api-gateway",env="production"}[10m]))`, "binary_metric"},
 
 		// ── unwrap with logfmt parser ──
-		{"unwrap_logfmt_sum", `sum_over_time({app="payment-service",env="production"} | logfmt | unwrap duration [5m])`, "unwrap_metric"},
+		{"unwrap_logfmt_sum", `sum_over_time({app="payment-service",env="production"} | logfmt | unwrap latency_ms [5m])`, "unwrap_metric"},
 
 		// ── pattern parser in metric query ──
 		{"pattern_metric", `count_over_time({app="api-gateway",env="production"} | pattern "<_> <method> <_>" [5m])`, "pattern_stage"},
