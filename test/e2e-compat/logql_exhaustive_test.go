@@ -139,10 +139,54 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 	score.report(t)
 }
 
+// waitForProxyQueryReady polls the proxy's query endpoint until it returns HTTP 200
+// three times consecutively. This ensures the circuit breaker (successThreshold=3) has
+// fully closed after a potential VL restart triggered by earlier heavy tests. Without
+// this, TestLogQL_Exhaustive_QueryParity inherits an open circuit breaker and every
+// sub-test fails with "circuit breaker open — backend unavailable".
+func waitForProxyQueryReady(t *testing.T) {
+	t.Helper()
+	params := url.Values{}
+	params.Set("query", `{app="api-gateway",env="production"}`)
+	params.Set("start", fmt.Sprintf("%d", time.Now().Add(-1*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", time.Now().UnixNano()))
+	params.Set("limit", "1")
+	params.Set("step", "60")
+	target := proxyURL + "/loki/api/v1/query_range?" + params.Encode()
+
+	const (
+		timeout          = 45 * time.Second
+		pollInterval     = 500 * time.Millisecond
+		requiredConsecutive = 3 // must match circuit breaker successThreshold
+	)
+	deadline := time.Now().Add(timeout)
+	consecutive := 0
+	for time.Now().Before(deadline) {
+		resp, err := http.Get(target)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == 200 {
+				consecutive++
+				if consecutive >= requiredConsecutive {
+					return
+				}
+				continue
+			}
+		}
+		consecutive = 0
+		time.Sleep(pollInterval)
+	}
+	t.Logf("waitForProxyQueryReady: proxy not ready after %s — proceeding anyway", timeout)
+}
+
 // TestLogQL_Exhaustive_QueryParity walks through ALL valid LogQL pipeline
 // operations and verifies both Loki and proxy return success.
 func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 	ensureDataIngested(t)
+	// Wait for the proxy circuit breaker to fully close before running
+	// the 150+ query parity sub-tests. Earlier tests (TestQuerySemanticsMatrix,
+	// TestGrafanaClickout_*) can OOM-kill VL, opening the circuit breaker.
+	waitForProxyQueryReady(t)
 
 	cases := []struct {
 		name     string
