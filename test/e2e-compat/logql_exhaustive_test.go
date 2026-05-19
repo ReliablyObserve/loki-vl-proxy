@@ -140,6 +140,10 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── | distinct pipeline stage (not in LogQL 3.7.1) ───────────────────
 		{"distinct_stage", `{app="api-gateway",env="production"} | json | distinct method`, "invalid_stage"},
 
+		// ── rate() with __error__ label filter inside range vector ──────────────
+		// Loki 3.7.1 rejects __error__ filters inside rate() range vectors (proxy now validates).
+		{"error_label_rate_metric", `rate({env="production"} | json | __error__!="" [5m])`, "error_label"},
+
 		// ── quantile_over_time with negative phi ──────────────────────────────
 		// Loki rejects phi < 0 with 400; phi > 1 is accepted by Loki (returns 200).
 		{"quantile_over_time_neg", `quantile_over_time(-0.1, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "invalid_filter"},
