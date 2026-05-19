@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.36.0] - 2026-05-19
+
 ### Added
 
 - **OTel structured metadata 3-tuple push**: E2E log generator now pushes OTel-originated log entries as Loki 3-tuple `[timestamp, line, metadata]` format, storing dotted OTel field names (`http.target`, `cloud.region`, `k8s.pod.name`) as structured metadata — matching real OTel Collector → Loki push behavior.
