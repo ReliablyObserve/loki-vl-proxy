@@ -128,8 +128,18 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		{"ip_line_filter_invalid_ipv4", `{app="api-gateway"} |= ip("999.999.999.999")`, "invalid_filter"},
 
 		// ── quantile_over_time outside [0,1] range ────────────────────────────
-		// Loki rejects quantile > 1.0 with a 4xx error.
+		// Loki rejects quantile > 1.0 and < 0.0 with a 4xx error.
 		{"quantile_over_time_gt_one", `quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "invalid_filter"},
+		{"quantile_over_time_neg", `quantile_over_time(-0.1, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "invalid_filter"},
+
+		// ── Selector / syntax errors now caught by proxy (were proxy_strict gaps) ──
+		// Empty selector: Loki requires at least one non-wildcard matcher.
+		{"empty_selector", `{}`, "empty_selector"},
+		// Bare range vector: a stream selector followed immediately by [5m] is invalid.
+		{"bare_range_vector", `{app="api-gateway"}[5m]`, "bare_range"},
+		// without/by grouping modifier applied directly to a log stream (not an aggregation).
+		{"without_on_log_stream", `{app="api-gateway"} without(app)`, "grouping_on_stream"},
+		{"by_on_log_stream", `{app="api-gateway"} by(app)`, "grouping_on_stream"},
 	}
 
 	score := &exhaustiveScore{}
@@ -602,6 +612,11 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		// ── Multi-app selector with field filter ──────────────────────────────
 		{"multi_app_field_filter_regex", `{app=~"api-gateway|payment-service",env="production"} | json | status>=400`, "multi_app_ext"},
 		{"multi_app_bytes_rate", `sum by(app)(bytes_rate({app=~"api-gateway|payment-service",env="production"}[5m]))`, "multi_app_ext"},
+
+		// ── stddev / stdvar outer aggregation ─────────────────────────────────
+		// These were proxy_bug gaps; now fixed via proxy-side post-aggregation.
+		{"stddev_outer_aggregation", `stddev(sum by(app)(count_over_time({env="production"}[5m])))`, "outer_agg_stddev"},
+		{"stdvar_outer_aggregation", `stdvar(sum by(app)(count_over_time({env="production"}[5m])))`, "outer_agg_stddev"},
 	}
 
 	score := &exhaustiveScore{}
@@ -784,30 +799,6 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 
 	gaps := []gap{
 		{
-			"empty_selector",
-			`{}`,
-			"proxy_strict", 400, 200,
-			"proxy accepts empty selector; Loki rejects: 'queries require at least one matcher'",
-		},
-		{
-			"bare_range_vector",
-			`{app="api-gateway"}[5m]`,
-			"proxy_strict", 400, 200,
-			"proxy accepts range-only expression (no metric function); Loki rejects as syntax error",
-		},
-		{
-			"without_on_log_stream",
-			`{app="api-gateway"} without (level)`,
-			"proxy_strict", 400, 200,
-			"proxy accepts without() grouping on a log stream; Loki rejects",
-		},
-		{
-			"by_on_log_stream",
-			`{app="api-gateway"} by (level)`,
-			"proxy_strict", 400, 200,
-			"proxy accepts by() grouping on a log stream; Loki rejects",
-		},
-		{
 			"at_timestamp_modifier",
 			`rate({app="api-gateway"}[5m] @ 1000000000)`,
 			"proxy_extension", 400, 200,
@@ -825,25 +816,8 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			"proxy_extension", 400, 200,
 			"label_join() is a proxy post-processing extension; not in Loki 3.7.1 LogQL",
 		},
-		// count_outer_aggregation was a proxy_bug but is now fixed — removed from gaps.
-		{
-			"stddev_outer_aggregation",
-			`stddev(sum by(app)(count_over_time({env="production"}[5m])))`,
-			"proxy_bug", 200, 400,
-			"Loki supports stddev() as outer aggregation; proxy fails (stddev by() variant works)",
-		},
-		{
-			"stdvar_outer_aggregation",
-			`stdvar(sum by(app)(count_over_time({env="production"}[5m])))`,
-			"proxy_bug", 200, 400,
-			"Loki supports stdvar() as outer aggregation; proxy fails",
-		},
-		{
-			"quantile_neg_error_code",
-			`quantile_over_time(-0.1, {app="api-gateway"} | json | unwrap duration_ms [5m])`,
-			"code_mismatch", 400, 422,
-			"both reject negative quantile but Loki=400 Bad Request, Proxy=422 Unprocessable Entity",
-		},
+		// stddev_outer_aggregation, stdvar_outer_aggregation, quantile_neg_error_code were
+		// proxy_bug/code_mismatch gaps but are now fixed — moved to QueryParity/ErrorParity.
 		// Subquery-over-range-function extensions: Loki 3.7.1 rejects applying
 		// max/avg/min_over_time to a subquery over rate() or count_over_time().
 		// The proxy evaluates these via proxy-side subquery evaluation (extension).

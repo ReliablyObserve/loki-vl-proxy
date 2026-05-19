@@ -84,6 +84,13 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 // - Queries without a stream selector (e.g., "| json")
 // - Malformed stream selectors (e.g., "{app=}")
 // - Binary operations on log/pipeline expressions (e.g., "{app=...} == 2")
+// quantileOverTimePhiRE extracts the phi literal from quantile_over_time(phi, ...).
+var quantileOverTimePhiRE = regexp.MustCompile(`\bquantile_over_time\(\s*(-?[\d]+(?:\.[\d]+)?(?:e[+\-]?\d+)?)\s*,`)
+
+// groupingOnLogStreamRE matches a without/by modifier that immediately follows a
+// stream selector (i.e., without a wrapping metric function). Loki rejects these.
+var groupingOnLogStreamRE = regexp.MustCompile(`^(?:without|by)\s*\(`)
+
 func validateLogQLSyntax(query string) string {
 	query = strings.TrimSpace(query)
 
@@ -95,6 +102,15 @@ func validateLogQLSyntax(query string) string {
 	// No stream selector — starts with pipeline
 	if strings.HasPrefix(query, "|") {
 		return "parse error at line 1, col 1: syntax error: unexpected |"
+	}
+
+	// Reject quantile_over_time with phi outside [0, 1] before reaching VL
+	// (VL returns 422 for invalid phi; Loki returns 400).
+	if m := quantileOverTimePhiRE.FindStringSubmatch(query); len(m) > 1 {
+		phi, err := strconv.ParseFloat(m[1], 64)
+		if err == nil && (phi < 0 || phi > 1) {
+			return "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got " + m[1]
+		}
 	}
 
 	// Malformed selector: unclosed or empty values
@@ -116,15 +132,34 @@ func validateLogQLSyntax(query string) string {
 			return "parse error at line 1, col 1: syntax error: unexpected end of input"
 		}
 		selector := query[:selectorEnd+1]
+
+		// Loki requires at least one non-wildcard matcher.
+		if selector == "{}" {
+			return "parse error at line 1, col 2: parse error : queries require at least one matcher that is not a wildcard"
+		}
+
 		// Check for empty values like {app=} or {app= }
 		if emptyValueRe.MatchString(selector) {
 			return "parse error at line 1, col " + strconv.Itoa(strings.Index(selector, "=}")+2) + ": syntax error: unexpected }, expecting STRING"
 		}
 
+		rest := strings.TrimSpace(query[selectorEnd+1:])
+
+		// Bare range vector: {selector}[duration] with no wrapping metric function.
+		// Loki rejects these as a syntax error.
+		if strings.HasPrefix(rest, "[") {
+			return "parse error at line 1, col " + strconv.Itoa(selectorEnd+2) + ": syntax error: unexpected RANGE, expecting )"
+		}
+
+		// Grouping modifiers (without/by) directly after a log stream are invalid —
+		// they are only meaningful on metric aggregation expressions.
+		if groupingOnLogStreamRE.MatchString(rest) {
+			return "parse error at line 1, col " + strconv.Itoa(selectorEnd+2) + `: parse error : only aggregation expressions support without/by grouping`
+		}
+
 		// Check for binary operations on log queries
 		// Pattern: {selector} [| pipeline...] <binary_op> <number>
 		// This is invalid unless wrapped in a metric function
-		rest := strings.TrimSpace(query[selectorEnd+1:])
 		if isBinaryOpOnLogQuery(rest) {
 			op := extractBinaryOp(rest)
 			exprType := "*syntax.MatchersExpr"
