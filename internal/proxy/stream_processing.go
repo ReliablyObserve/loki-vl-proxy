@@ -743,6 +743,14 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 
 // classifyEntryMetadataFieldsFJ is the fastjson variant of classifyEntryMetadataFields.
 // It uses fj.Object.Visit to iterate fields without allocating a map[string]interface{}.
+//
+// Classification strategy:
+//   - Fields present in the _msg JSON content → parsedFields (extracted by a log parser stage)
+//   - Fields not in _msg but not stream labels → structuredMetadata (pushed as OTel structured metadata)
+//   - Falls back to classifyAsParsed when _msg is not JSON (logfmt, nginx, etc.)
+//
+// This matches Loki's behavior: Loki stores structured metadata separately and only
+// JSON/logfmt parser stages produce parsed fields, regardless of the query parser stage.
 func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
 	for k := range smBuf {
 		delete(smBuf, k)
@@ -750,8 +758,17 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 	for k := range pfBuf {
 		delete(pfBuf, k)
 	}
+
+	// Pass 1: collect non-stream fields and extract _msg raw bytes.
+	type pending struct{ key, value string }
+	var pendingFields []pending
+	var msgRaw []byte
 	obj.Visit(func(k []byte, val *fj.Value) {
 		key := string(k)
+		if key == "_msg" {
+			msgRaw = val.GetStringBytes()
+			return
+		}
 		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
 			return
 		}
@@ -762,17 +779,44 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 		if !ok || strings.TrimSpace(sv) == "" {
 			return
 		}
-		for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
+		pendingFields = append(pendingFields, pending{key, sv})
+	})
+
+	// Parse _msg JSON to get the set of log-line field keys.
+	// Fields whose key appears in _msg are treated as "parsed" (from the log content);
+	// all other fields are "structured metadata" (pushed via OTel 3-tuple metadata).
+	var msgKeys map[string]struct{}
+	if len(msgRaw) > 0 && msgRaw[0] == '{' {
+		var msgParser fj.Parser
+		if msgVal, err := msgParser.ParseBytes(msgRaw); err == nil {
+			if msgObj, err2 := msgVal.Object(); err2 == nil {
+				msgKeys = make(map[string]struct{}, msgObj.Len())
+				msgObj.Visit(func(mk []byte, _ *fj.Value) {
+					msgKeys[string(mk)] = struct{}{}
+				})
+			}
+		}
+	}
+
+	// Pass 2: classify each field.
+	for _, f := range pendingFields {
+		isParsed := classifyAsParsed
+		if msgKeys != nil {
+			_, inMsg := msgKeys[f.key]
+			isParsed = inMsg
+		}
+		for _, exposure := range p.metadataFieldExposuresCached(f.key, exposureCache) {
 			if _, exists := streamLabels[exposure.name]; exists && !exposure.isAlias {
 				continue
 			}
-			if classifyAsParsed {
-				pfBuf[exposure.name] = sv
-				continue
+			if isParsed {
+				pfBuf[exposure.name] = f.value
+			} else {
+				smBuf[exposure.name] = f.value
 			}
-			smBuf[exposure.name] = sv
 		}
-	})
+	}
+
 	var sm, pf map[string]string
 	if len(smBuf) > 0 {
 		sm = smBuf
