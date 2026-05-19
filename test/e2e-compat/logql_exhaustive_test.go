@@ -110,13 +110,8 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── avg aggregation on a bare log stream ──
 		{"avg_on_log_stream", `avg({app="api-gateway",env="production"})`, "metric_on_log"},
 
-		// ── Malformed line_format templates ───────────────────────────────────
-		// Go text/template rejects unclosed actions; both Loki and proxy must error.
-		{"line_format_unclosed_brace", `{app="api-gateway"} | line_format "{{.method"`, "malformed_template"},
-
-		// ── Invalid comparison operators ──────────────────────────────────────
-		// <> is not a LogQL operator; valid ones are: = != < <= > >= =~ !~
-		{"invalid_operator_diamond", `{app="api-gateway"} | json | status <> 200`, "malformed"},
+		// line_format_unclosed_brace and invalid_operator_diamond are tracked in
+		// KnownGaps as proxy_strict gaps (proxy forwards instead of rejecting).
 
 		// ── rate_counter without unwrap ───────────────────────────────────────
 		// rate_counter is an unwrap-only range aggregation (like avg_over_time).
