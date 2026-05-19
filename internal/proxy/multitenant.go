@@ -74,6 +74,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	// fan-out counts (>4 tenants) parallel dispatch would reduce latency. Tracked
 	// in docs/KNOWN_ISSUES.md under "Multi-tenant serial fanout".
 	successTenants := make([]string, 0, len(filteredTenants))
+	failedTenants := make([]string, 0)
 	recorders := make([]*httptest.ResponseRecorder, 0, len(filteredTenants))
 	for _, tenantID := range filteredTenants {
 		subReq := filteredReq.Clone(filteredReq.Context())
@@ -85,6 +86,7 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		if rec.Code >= 400 {
 			p.log.Warn("multi-tenant sub-request failed, skipping tenant",
 				"endpoint", endpoint, "tenant", tenantID, "status", rec.Code)
+			failedTenants = append(failedTenants, tenantID)
 			continue
 		}
 		successTenants = append(successTenants, tenantID)
@@ -92,8 +94,16 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if len(recorders) == 0 {
-		p.writeJSON(w, emptyMultiTenantResponse(endpoint))
+		// All tenants failed — return an explicit error rather than a silent empty
+		// success, which would mask backend outages and authorization failures.
+		p.writeError(w, http.StatusBadGateway,
+			fmt.Sprintf("all %d multi-tenant sub-requests failed", len(filteredTenants)))
 		return true
+	}
+	// Partial success: advertise which tenants were skipped so callers can detect
+	// incomplete results rather than treating them as authoritative.
+	if len(failedTenants) > 0 {
+		w.Header().Set("X-Multi-Tenant-Partial-Failures", strings.Join(failedTenants, ","))
 	}
 
 	body, contentType, err := mergeMultiTenantResponses(endpoint, successTenants, recorders)

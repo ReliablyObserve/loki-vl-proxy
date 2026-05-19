@@ -104,11 +104,11 @@ func validateLogQLSyntax(query string) string {
 		return "parse error at line 1, col 1: syntax error: unexpected |"
 	}
 
-	// Reject quantile_over_time with phi outside [0, 1] before reaching VL
-	// (VL returns 422 for invalid phi; Loki returns 400).
+	// Reject quantile_over_time with phi < 0 before reaching VL
+	// (VL returns 422 for negative phi; Loki returns 400). Loki allows phi > 1.
 	if m := quantileOverTimePhiRE.FindStringSubmatch(query); len(m) > 1 {
 		phi, err := strconv.ParseFloat(m[1], 64)
-		if err == nil && (phi < 0 || phi > 1) {
+		if err == nil && phi < 0 {
 			return "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got " + m[1]
 		}
 	}

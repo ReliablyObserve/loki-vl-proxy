@@ -583,7 +583,7 @@ func run(
 		*tenantLabel = v
 	}
 
-	if err := validateAdminExposure(envCfg.listenAddr, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
+	if err := validateAdminExposure(envCfg.listenAddr, *registerInstrumentation, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
 		return err
 	}
 
@@ -1044,11 +1044,13 @@ func normalizeFrontendCompressionSetting(mode string) (string, error) {
 	}
 }
 
-func validateAdminExposure(listenAddr string, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
+func validateAdminExposure(listenAddr string, registerInstrumentation, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
 	if strings.TrimSpace(adminAuthToken) != "" {
 		return nil
 	}
-	if !enablePprof && !enableQueryAnalytics {
+	// /admin/cache/flush is registered whenever instrumentation is on; treat it like
+	// any other state-changing admin endpoint and require a token on non-loopback addresses.
+	if !registerInstrumentation && !enablePprof && !enableQueryAnalytics {
 		return nil
 	}
 	if isLoopbackListenAddr(listenAddr) {

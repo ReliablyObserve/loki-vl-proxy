@@ -1393,20 +1393,32 @@ func TestLogProxyStartup_EmitsBuildInfoAndPeerCacheAuthHint(t *testing.T) {
 }
 
 func TestValidateAdminExposure(t *testing.T) {
-	if err := validateAdminExposure("127.0.0.1:3100", true, false, ""); err != nil {
+	// loopback — no token needed regardless of which endpoints are on
+	if err := validateAdminExposure("127.0.0.1:3100", true, true, false, ""); err != nil {
 		t.Fatalf("expected loopback admin exposure to be allowed without token, got %v", err)
 	}
-	if err := validateAdminExposure("[::1]:3100", false, true, ""); err != nil {
+	if err := validateAdminExposure("[::1]:3100", true, false, true, ""); err != nil {
 		t.Fatalf("expected IPv6 loopback admin exposure to be allowed without token, got %v", err)
 	}
-	if err := validateAdminExposure(":3100", false, false, ""); err != nil {
+	// no admin endpoints at all — OK without token
+	if err := validateAdminExposure(":3100", false, false, false, ""); err != nil {
 		t.Fatalf("expected no admin endpoints enabled to bypass validation, got %v", err)
 	}
-	if err := validateAdminExposure(":3100", true, false, "secret"); err != nil {
+	// token present — OK on non-loopback
+	if err := validateAdminExposure(":3100", true, true, false, "secret"); err != nil {
 		t.Fatalf("expected token-protected admin exposure to be allowed, got %v", err)
 	}
-	if err := validateAdminExposure(":3100", true, false, ""); err == nil {
-		t.Fatal("expected non-loopback admin exposure without token to be rejected")
+	// instrumentation on non-loopback without token — must be rejected
+	if err := validateAdminExposure(":3100", true, false, false, ""); err == nil {
+		t.Fatal("expected non-loopback instrumentation exposure without token to be rejected")
+	}
+	// pprof on non-loopback without token — must be rejected
+	if err := validateAdminExposure(":3100", false, true, false, ""); err == nil {
+		t.Fatal("expected non-loopback pprof exposure without token to be rejected")
+	}
+	// query analytics on non-loopback without token — must be rejected
+	if err := validateAdminExposure(":3100", false, false, true, ""); err == nil {
+		t.Fatal("expected non-loopback query analytics exposure without token to be rejected")
 	}
 }
 
