@@ -119,12 +119,14 @@ func (p *Proxy) handleConfigStub(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("# loki-vl-proxy\n"))
 }
 
-// handleBuildInfo returns fake build info for Grafana datasource detection.
+// handleBuildInfo returns build info for Grafana datasource detection.
+// Version >= 3.0.0 is required for Grafana to send X-Loki-Response-Encoding-Flags:categorize-labels,
+// which enables structured_metadata in query_range responses.
 func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
-			"version":   "2.9.0",
+			"version":   "3.7.1",
 			"revision":  "loki-vl-proxy",
 			"branch":    "main",
 			"goVersion": "go1.26.1",

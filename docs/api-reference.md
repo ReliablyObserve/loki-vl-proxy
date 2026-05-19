@@ -125,7 +125,7 @@ Tenant limits notes:
 | Endpoint | Purpose |
 |---|---|
 | `GET /ready` | Readiness probe (checks VL `/health` + circuit breaker) |
-| `GET /loki/api/v1/status/buildinfo` | Returns fake Loki `2.9.0` build info — intentionally fixed at this version to satisfy Grafana datasource detection without triggering version-gated behaviour in newer Grafana releases |
+| `GET /loki/api/v1/status/buildinfo` | Returns Loki `3.7.1` build info — version ≥ 3.0.0 is required for Grafana to send `X-Loki-Response-Encoding-Flags: categorize-labels`, which enables `structuredMetadata` in `query_range` responses |
 | `GET /metrics` | Prometheus text exposition (`-server.register-instrumentation`); low-cardinality by default unless `-metrics.export-sensitive-labels=true` |
 | `GET /debug/queries` | Query analytics, disabled by default (`-server.enable-query-analytics`) |
 | `GET /debug/pprof/` | Go profiling, disabled by default (`-server.enable-pprof`) |
