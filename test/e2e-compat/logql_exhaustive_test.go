@@ -130,6 +130,13 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// Loki 3.7.1 rejects __error__ filters inside rate() range vectors (proxy now validates).
 		{"error_label_rate_metric", `rate({env="production"} | json | __error__!="" [5m])`, "error_label"},
 
+		// ── Multiple | unwrap stages in a range vector ────────────────────────
+		// Loki 3.7.1 rejects two unwrap stages as a parse error.
+		{"unwrap_multiple_stages", `sum_over_time({app="api-gateway",env="production"} | json | unwrap duration_ms | unwrap status [5m])`, "unwrap_multi"},
+
+		// ── | distinct pipeline stage (not in LogQL 3.7.1) ───────────────────
+		{"distinct_stage", `{app="api-gateway",env="production"} | json | distinct method`, "invalid_stage"},
+
 		// ── quantile_over_time with negative phi ──────────────────────────────
 		// Loki rejects phi < 0 with 400; phi > 1 is accepted by Loki (returns 200).
 		{"quantile_over_time_neg", `quantile_over_time(-0.1, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "invalid_filter"},
@@ -624,6 +631,10 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"ip_line_filter_cidr", `{app="nginx-ingress",env="production"} |= ip("10.0.0.0/8")`, "ip_line_filter"},
 		{"ip_line_filter_negative", `{app="api-gateway",env="production"} != ip("127.0.0.1")`, "ip_line_filter"},
 		{"ip_line_filter_range", `{app="api-gateway",env="production"} |= ip("192.168.0.1-192.168.0.255")`, "ip_line_filter"},
+		// IPv6 variants (fixed: proxy now accepts via net.ParseIP/ParseCIDR validation)
+		{"ip_line_filter_ipv6_loopback", `{app="api-gateway",env="production"} |= ip("::1")`, "ip_line_filter"},
+		{"ip_line_filter_ipv6_cidr", `{app="api-gateway",env="production"} |= ip("2001:db8::/32")`, "ip_line_filter"},
+		{"ip_line_filter_ipv6_mapped", `{app="api-gateway",env="production"} |= ip("::ffff:192.168.1.1")`, "ip_line_filter"},
 
 		// ── chained label_replace (fixed: ParseAllLabelReplaceMarkers handles nested markers) ──
 		{"label_replace_chained", `label_replace(label_replace(sum by(app)(count_over_time({env="production"}[5m])), "service", "$1", "app", "(.*)"), "short", "$1", "service", "^([^-]+)")`, "label_replace_chain"},

@@ -6,6 +6,7 @@ package translator
 import (
 	"encoding/base64"
 	"fmt"
+	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -2652,37 +2653,79 @@ func isValidIPv4(s string) bool {
 }
 
 // isValidIPFilterArg validates an ip() filter argument.
-// Valid forms: exact IPv4 "A.B.C.D", CIDR "A.B.C.D/N", range "A.B.C.D-E.F.G.H".
+// Valid forms: exact IP (IPv4 or IPv6), CIDR, or IPv4 range "A.B.C.D-E.F.G.H".
 func isValidIPFilterArg(arg string) bool {
-	if slashIdx := strings.IndexByte(arg, '/'); slashIdx >= 0 {
-		ip := arg[:slashIdx]
-		bits, err := strconv.Atoi(arg[slashIdx+1:])
-		return err == nil && bits >= 0 && bits <= 32 && isValidIPv4(ip)
+	// CIDR notation — use net.ParseCIDR for both IPv4 and IPv6
+	if strings.ContainsRune(arg, '/') {
+		_, _, err := net.ParseCIDR(arg)
+		return err == nil
 	}
+	// IPv4 range: A.B.C.D-E.F.G.H (IPv6 ranges not supported by Loki)
 	if dashIdx := strings.IndexByte(arg, '-'); dashIdx >= 0 && strings.Count(arg[:dashIdx], ".") == 3 {
 		return isValidIPv4(arg[:dashIdx]) && isValidIPv4(arg[dashIdx+1:])
 	}
-	return isValidIPv4(arg)
+	// Plain IP address (IPv4 or IPv6)
+	return net.ParseIP(arg) != nil
 }
 
 // ipLineFilterToRegex converts an ip() filter argument to a VL-compatible regex.
-// This is a best-effort approximation: VL has no native IP semantics, so we
-// generate a regex that matches the IP pattern in log lines.
-// - Exact IP "A.B.C.D": dots are escaped (regex metacharacters).
-// - CIDR "A.B.C.D/N": the prefix octets are literal; remaining octets match \d{1,3}.
-// - Range "A.B.C.D-E.F.G.H": common prefix octets are literal; remainder matches \d{1,3}.
+// This is a best-effort approximation: VL has no native IP semantics.
+// IPv4: precise prefix-based regex. IPv6: normalized address literal match.
 func ipLineFilterToRegex(arg string) string {
 	if slashIdx := strings.IndexByte(arg, '/'); slashIdx >= 0 {
+		ipStr := arg[:slashIdx]
+		parsedIP := net.ParseIP(ipStr)
+		// IPv6 CIDR: match the network prefix as a hex string approximation
+		if parsedIP != nil && parsedIP.To4() == nil {
+			return buildIPv6CIDRRegex(parsedIP, arg[slashIdx+1:])
+		}
+		// IPv4 CIDR
 		bits, err := strconv.Atoi(arg[slashIdx+1:])
 		if err != nil {
-			return regexp.QuoteMeta(arg[:slashIdx])
+			return regexp.QuoteMeta(ipStr)
 		}
-		return buildCIDRRegex(arg[:slashIdx], bits)
+		return buildCIDRRegex(ipStr, bits)
 	}
 	if dashIdx := strings.IndexByte(arg, '-'); dashIdx >= 0 && strings.Count(arg[:dashIdx], ".") == 3 {
 		return buildIPRangeRegex(arg[:dashIdx], arg[dashIdx+1:])
 	}
+	// Plain IP — normalize and escape
+	if parsedIP := net.ParseIP(arg); parsedIP != nil {
+		return regexp.QuoteMeta(parsedIP.String())
+	}
 	return regexp.QuoteMeta(arg)
+}
+
+// buildIPv6CIDRRegex generates a regex approximation for an IPv6 CIDR.
+// Uses the normalized IPv6 prefix up to the full groups, then wildcards the rest.
+func buildIPv6CIDRRegex(ip net.IP, prefixBitsStr string) string {
+	prefixBits, err := strconv.Atoi(prefixBitsStr)
+	if err != nil {
+		return regexp.QuoteMeta(ip.String())
+	}
+	ip16 := ip.To16()
+	if ip16 == nil {
+		return regexp.QuoteMeta(ip.String())
+	}
+	// Number of full bytes fixed by the prefix
+	fullBytes := prefixBits / 8
+	if fullBytes > 16 {
+		fullBytes = 16
+	}
+	// Use the normalized string prefix of full groups (2 bytes each)
+	fullGroups := fullBytes / 2
+	normalized := ip.String()
+	// For simplicity, match any hex:colon pattern that starts with the fixed prefix text
+	if fullGroups == 0 {
+		return `[0-9a-fA-F:]+`
+	}
+	// Split the normalized IPv6 into groups and use the first fullGroups as literal prefix
+	groups := strings.Split(normalized, ":")
+	if len(groups) < fullGroups {
+		return regexp.QuoteMeta(normalized)
+	}
+	prefix := strings.Join(groups[:fullGroups], ":")
+	return regexp.QuoteMeta(prefix) + `[0-9a-fA-F:]*`
 }
 
 func buildCIDRRegex(ip string, bits int) string {

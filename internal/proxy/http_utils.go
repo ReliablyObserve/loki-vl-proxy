@@ -110,6 +110,15 @@ var groupingOnLogStreamRE = regexp.MustCompile(`^(?:without|by)\s*\(`)
 // the rate/bytes_rate family is restricted.
 var errorLabelInRateVectorRE = regexp.MustCompile(`\b(?:bytes_)?rate\s*\([^[]*__error(?:_details)?__\s*(?:!=|!~|=~|=)\s*"[^"]*"\s*\[`)
 
+// multipleUnwrapRE detects two or more | unwrap stages inside a single range
+// vector expression. Loki 3.x rejects this at parse time: only one unwrap per
+// range vector is allowed.
+var multipleUnwrapRE = regexp.MustCompile(`\|\s*unwrap\s+\S[^|\[]*\|\s*unwrap\s+\S[^|\[]*\[`)
+
+// distinctStageRE detects the | distinct pipeline stage. Loki 3.7.1 does not
+// support this stage and rejects it with a parse error.
+var distinctStageRE = regexp.MustCompile(`\|\s*distinct\b`)
+
 func validateLogQLSyntax(query string) string {
 	query = strings.TrimSpace(query)
 
@@ -213,6 +222,16 @@ func validateLogQLSyntax(query string) string {
 	// range brackets. count_over_time() and other functions allow __error__.
 	if errorLabelInRateVectorRE.MatchString(query) {
 		return `parse error : __error__ and __error_details__ are not allowed inside rate() range vectors`
+	}
+
+	// Multiple | unwrap stages in a single range vector are rejected by Loki 3.x.
+	if multipleUnwrapRE.MatchString(query) {
+		return `parse error : syntax error: unexpected unwrap`
+	}
+
+	// | distinct is not a valid LogQL 3.7.1 pipeline stage.
+	if distinctStageRE.MatchString(query) {
+		return `parse error : syntax error: unexpected IDENT`
 	}
 
 	return ""
