@@ -100,8 +100,50 @@ func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
 	return spec, true
 }
 
+// stripOuterLabelReplace removes label_replace(v, ...) wrappers from a logql
+// expression, returning the innermost wrapped expression. This allows
+// parseOriginalRangeMetricSpec to reach the actual metric function even when
+// the query is wrapped in one or more label_replace() calls.
+func stripOuterLabelReplace(logql string) string {
+	for {
+		logql = strings.TrimSpace(logql)
+		if !strings.HasPrefix(logql, "label_replace(") {
+			break
+		}
+		idx := strings.Index(logql, "(")
+		if idx < 0 {
+			break
+		}
+		depth := 0
+		commaAt := -1
+		for i := idx + 1; i < len(logql); i++ {
+			c := logql[i]
+			switch {
+			case c == '(':
+				depth++
+			case c == ')':
+				if depth == 0 {
+					goto done
+				}
+				depth--
+			case c == ',' && depth == 0:
+				commaAt = i
+				goto done
+			}
+		}
+	done:
+		if commaAt < 0 {
+			break
+		}
+		logql = strings.TrimSpace(logql[idx+1 : commaAt])
+	}
+	return logql
+}
+
 func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) {
 	logql = strings.TrimSpace(logql)
+	// Strip label_replace wrappers so the inner metric function is visible.
+	logql = stripOuterLabelReplace(logql)
 	// Strip outer aggregation like "sum by (method) (rate(...))" → "rate(...)"
 	// so we parse the inner range function, not the aggregation operator.
 	if loc := outerAggregationRE.FindStringIndex(logql); loc != nil && loc[0] == 0 && loc[1] < len(logql) {

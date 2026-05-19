@@ -154,7 +154,7 @@ jobs:
         run: go test ./internal/translator -run '^$' -fuzz=FuzzIsScalar -fuzztime=12s
 
       - name: Fuzz smoke (translate with stream fields)
-        run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateWithStreamFields -fuzztime=12s
+        run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateWithStreamFields -fuzztime=20s -timeout=60s
 
       - name: Fuzz smoke (binary expressions)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzBinaryExpressions -fuzztime=12s

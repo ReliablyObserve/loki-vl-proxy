@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **OTel structured metadata 3-tuple push**: E2E log generator now pushes OTel-originated log entries as Loki 3-tuple `[timestamp, line, metadata]` format, storing dotted OTel field names (`http.target`, `cloud.region`, `k8s.pod.name`) as structured metadata — matching real OTel Collector → Loki push behavior.
+
+### Changed
+
+- **Default `label-style` changed to `underscores`**: The proxy now translates OTel dotted stream label names (e.g., `service.name`, `k8s.pod.name`) to underscore form (`service_name`, `k8s_pod_name`) in all label and query responses by default. This matches Loki's OTel label translation behavior and eliminates dotted label names from Grafana UI. Previous default was `native` (pass-through). Set `-label-style=native` to restore previous behavior.
+- **Default `metadata-field-mode` changed to `translated`**: Dotted metadata field names (e.g., `http.target`, `cloud.region`) are now translated to underscore form (`http_target`, `cloud_region`) in structuredMetadata responses by default. This matches Loki's OTel metadata translation behavior. Previous default was `native`. Set `-metadata-field-mode=native` or `-metadata-field-mode=hybrid` to expose native dotted names.
+- **buildinfo version bumped to 3.7.1**: Grafana Loki datasource uses buildinfo to determine whether structuredMetadata is supported (requires Loki ≥ 3.0). Bumping the reported version to 3.7.1 enables structured metadata display in Grafana for VictoriaLogs-backed datasources.
+
 ### Fixed
 
+- **`structuredMetadata` vs `parsedFields` classification**: Proxy now correctly classifies which fields belong in the `structuredMetadata` section vs `parsedFields` using `_msg` JSON content comparison. Fields present in the raw log line JSON are classified as parsedFields; fields absent from the log line are classified as structuredMetadata. Previously, all extra fields were misclassified.
 - **`| drop field=value` matcher semantics**: The proxy previously translated `| drop field="value"` to VL's unconditional `| delete field`, which incorrectly removed the field from all log entries regardless of value. The fix: the translator no longer emits `| delete` for matcher-form drops; instead the proxy post-processes each classified entry and removes the field only when the value matches the condition. Bare-field drops (`| drop field`) continue to use `| delete` in VL unchanged. Supports `=`, `!=`, `=~`, and `!~` operators. Applies to both the batch query path (categorized-labels / Grafana Drilldown) and the streaming path.
 
 ## [1.35.0] - 2026-05-18

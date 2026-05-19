@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"sort"
@@ -100,6 +101,21 @@ type instantMetricPostAgg struct {
 func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 	logql = strings.TrimSpace(logql)
 	for _, name := range []string{"sort_desc", "sort"} {
+		prefix := name + "("
+		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
+			continue
+		}
+		inner := strings.TrimSpace(logql[len(prefix) : len(logql)-1])
+		if inner == "" {
+			return instantMetricPostAgg{}, false
+		}
+		return instantMetricPostAgg{name: name, inner: inner}, true
+	}
+	// stddev/stdvar as outer aggregations over an already-aggregated metric
+	// (e.g., stddev(sum by(app)(count_over_time({...}[5m])))).
+	// VL has no direct equivalent; the proxy executes the inner query then
+	// applies the aggregation across the returned series.
+	for _, name := range []string{"stddev", "stdvar"} {
 		prefix := name + "("
 		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
 			continue
@@ -314,9 +330,86 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 }
 
-// applyMatrixPostAggregation applies topk/bottomk/sort to a matrix (query_range) result.
-// It ranks series by their last value and trims to the requested K.
+// applyMatrixPostAggregation applies topk/bottomk/sort/stddev/stdvar to a matrix result.
 func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byte {
+	if postAgg.name == "stddev" || postAgg.name == "stdvar" {
+		return applyMatrixStddevAgg(body, postAgg.name)
+	}
+	return applyMatrixSortTopkAgg(body, postAgg)
+}
+
+// applyMatrixStddevAgg computes population stddev/stdvar across all series
+// at each timestamp and returns a single unlabelled series.
+func applyMatrixStddevAgg(body []byte, funcName string) []byte {
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]interface{} `json:"metric"`
+				Values [][]interface{}        `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "matrix" {
+		return body
+	}
+
+	// Collect values per timestamp across all series.
+	tsValues := make(map[float64][]float64)
+	var tsOrder []float64
+	seen := make(map[float64]struct{})
+	for _, s := range resp.Data.Result {
+		for _, v := range s.Values {
+			if len(v) < 2 {
+				continue
+			}
+			ts, err := parseFloat(v[0])
+			if err != nil {
+				continue
+			}
+			val, err := parseFloat(v[1])
+			if err != nil {
+				continue
+			}
+			tsValues[ts] = append(tsValues[ts], val)
+			if _, ok := seen[ts]; !ok {
+				seen[ts] = struct{}{}
+				tsOrder = append(tsOrder, ts)
+			}
+		}
+	}
+	sort.Slice(tsOrder, func(i, j int) bool { return tsOrder[i] < tsOrder[j] })
+
+	values := make([][]interface{}, 0, len(tsOrder))
+	for _, ts := range tsOrder {
+		var agg float64
+		if funcName == "stdvar" {
+			agg = populationVariance(tsValues[ts])
+		} else {
+			agg = populationStddev(tsValues[ts])
+		}
+		values = append(values, []interface{}{ts, strconv.FormatFloat(agg, 'f', -1, 64)})
+	}
+
+	out, err := json.Marshal(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "matrix",
+			"result": []map[string]interface{}{
+				{"metric": map[string]string{}, "values": values},
+			},
+		},
+	})
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// applyMatrixSortTopkAgg applies topk/bottomk/sort to a matrix (query_range) result.
+// It ranks series by their last value and trims to the requested K.
+func applyMatrixSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -415,6 +508,67 @@ func parseFloat(v interface{}) (float64, error) {
 }
 
 func applyInstantVectorPostAggregation(body []byte, postAgg instantMetricPostAgg) []byte {
+	if postAgg.name == "stddev" || postAgg.name == "stdvar" {
+		return applyInstantStddevAgg(body, postAgg.name)
+	}
+	return applyInstantSortTopkAgg(body, postAgg)
+}
+
+// applyInstantStddevAgg computes population stddev/stdvar across all series
+// in an instant vector and returns a single unlabelled scalar.
+func applyInstantStddevAgg(body []byte, funcName string) []byte {
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]interface{} `json:"metric"`
+				Value  []interface{}          `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "vector" {
+		return body
+	}
+
+	// Collect all series values and the timestamp from the first series.
+	var vals []float64
+	var ts float64
+	for i, s := range resp.Data.Result {
+		if len(s.Value) < 2 {
+			continue
+		}
+		if i == 0 {
+			ts, _ = parseFloat(s.Value[0])
+		}
+		if v, err := parseFloat(s.Value[1]); err == nil {
+			vals = append(vals, v)
+		}
+	}
+
+	var agg float64
+	if funcName == "stdvar" {
+		agg = populationVariance(vals)
+	} else {
+		agg = populationStddev(vals)
+	}
+
+	out, err := json.Marshal(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "vector",
+			"result": []map[string]interface{}{
+				{"metric": map[string]string{}, "value": []interface{}{ts, strconv.FormatFloat(agg, 'f', -1, 64)}},
+			},
+		},
+	})
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+func applyInstantSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -470,6 +624,31 @@ func vectorPointValue(value []interface{}) float64 {
 	default:
 		return 0
 	}
+}
+
+// populationStddev computes the population standard deviation of vals.
+func populationStddev(vals []float64) float64 {
+	n := float64(len(vals))
+	if n == 0 {
+		return 0
+	}
+	mean := 0.0
+	for _, v := range vals {
+		mean += v
+	}
+	mean /= n
+	variance := 0.0
+	for _, v := range vals {
+		d := v - mean
+		variance += d * d
+	}
+	return math.Sqrt(variance / n)
+}
+
+// populationVariance computes the population variance of vals.
+func populationVariance(vals []float64) float64 {
+	d := populationStddev(vals)
+	return d * d
 }
 
 func applyConstantBinaryOp(left, right float64, op string) (float64, bool) {
