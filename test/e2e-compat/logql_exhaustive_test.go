@@ -711,13 +711,25 @@ var exhaustiveQueryClient = &http.Client{Timeout: 20 * time.Second}
 
 func exhaustiveQuery(t *testing.T, baseURL, query string) (int, string) {
 	t.Helper()
+	return exhaustiveQueryWithRange(t, baseURL, query, 30*time.Minute, 60)
+}
+
+// exhaustiveShortWindowQuery uses a 2-minute window to avoid overloading VL
+// during proxy-side subquery evaluation (which fans out many inner queries).
+func exhaustiveShortWindowQuery(t *testing.T, baseURL, query string) (int, string) {
+	t.Helper()
+	return exhaustiveQueryWithRange(t, baseURL, query, 2*time.Minute, 120)
+}
+
+func exhaustiveQueryWithRange(t *testing.T, baseURL, query string, window time.Duration, stepSec int) (int, string) {
+	t.Helper()
 	now := time.Now()
 	params := url.Values{}
 	params.Set("query", query)
-	params.Set("start", fmt.Sprintf("%d", now.Add(-30*time.Minute).UnixNano()))
+	params.Set("start", fmt.Sprintf("%d", now.Add(-window).UnixNano()))
 	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
 	params.Set("limit", "10")
-	params.Set("step", "60")
+	params.Set("step", fmt.Sprintf("%d", stepSec))
 
 	resp, err := exhaustiveQueryClient.Get(baseURL + "/loki/api/v1/query_range?" + params.Encode())
 	if err != nil {
@@ -790,6 +802,11 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 		lokiExpect  int
 		proxyExpect int
 		note        string
+		// shortWindow uses a 2-minute query range instead of 30 minutes.
+		// Required for proxy-side subquery evaluation: a 30m window with 60s step
+		// generates ~150 inner VL calls per case, crashing VictoriaLogs under load.
+		// A 2-minute window reduces inner calls to 5-6 while still verifying the gap.
+		shortWindow bool
 	}
 
 	gaps := []gap{
@@ -798,18 +815,21 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			`rate({app="api-gateway"}[5m] @ 1000000000)`,
 			"proxy_extension", 400, 200,
 			"proxy supports @ step-alignment modifier (maps to VL query time); Loki 3.7.1 parse error",
+			false,
 		},
 		{
 			"at_start_modifier",
 			`rate({app="api-gateway"}[5m] @ start())`,
 			"proxy_extension", 400, 200,
 			"proxy supports @ start() modifier; Loki 3.7.1 parse error",
+			false,
 		},
 		{
 			"label_join_function",
 			`label_join(sum by (app)(count_over_time({env="production"}[5m])), "app_copy", "", "app")`,
 			"proxy_extension", 400, 200,
 			"label_join() is a proxy post-processing extension; not in Loki 3.7.1 LogQL",
+			false,
 		},
 		// stddev_outer_aggregation, stdvar_outer_aggregation, quantile_neg_error_code were
 		// proxy_bug/code_mismatch gaps but are now fixed — moved to QueryParity/ErrorParity.
@@ -817,28 +837,32 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 		// max/avg/min_over_time to a subquery over rate() or count_over_time().
 		// The proxy evaluates these via proxy-side subquery evaluation (extension).
 		{
-			"subquery_max_rate",
-			`max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`,
-			"proxy_extension", 400, 200,
-			"Loki 3.7.1 rejects max_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+			name: "subquery_max_rate",
+			query: `max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`,
+			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
+			note:        "Loki 3.7.1 rejects max_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+			shortWindow: true,
 		},
 		{
-			"subquery_avg_rate",
-			`avg_over_time(rate({env="production"}[5m])[30m:5m])`,
-			"proxy_extension", 400, 200,
-			"Loki 3.7.1 rejects avg_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+			name: "subquery_avg_rate",
+			query: `avg_over_time(rate({env="production"}[5m])[30m:5m])`,
+			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
+			note:        "Loki 3.7.1 rejects avg_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+			shortWindow: true,
 		},
 		{
-			"subquery_min_outer",
-			`min_over_time(rate({env="production"}[5m])[5m:1m])`,
-			"proxy_extension", 400, 200,
-			"Loki 3.7.1 rejects min_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+			name: "subquery_min_outer",
+			query: `min_over_time(rate({env="production"}[5m])[5m:1m])`,
+			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
+			note:        "Loki 3.7.1 rejects min_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
+			shortWindow: true,
 		},
 		{
-			"subquery_count_avg",
-			`avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`,
-			"proxy_extension", 400, 200,
-			"Loki 3.7.1 rejects avg_over_time applied to count_over_time() subquery; proxy evaluates via proxy-side subquery",
+			name: "subquery_count_avg",
+			query: `avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`,
+			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
+			note:        "Loki 3.7.1 rejects avg_over_time applied to count_over_time() subquery; proxy evaluates via proxy-side subquery",
+			shortWindow: true,
 		},
 		// proxy_strict: proxy accepts queries that Loki rejects.
 		{
@@ -846,18 +870,21 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			`{app="api-gateway"} | line_format "{{.method"`,
 			"proxy_strict", 400, 200,
 			"Loki rejects unclosed Go template brace in line_format; proxy forwards without template validation",
+			false,
 		},
 		{
 			"invalid_operator_diamond",
 			`{app="api-gateway"} | json | status <> 200`,
 			"proxy_strict", 400, 200,
 			"<> is not a valid LogQL operator; Loki returns 400, proxy forwards and VL may accept or silently drop",
+			false,
 		},
 		{
 			"error_label_rate_metric",
 			`rate({env="production"} | json | __error__!="" [5m])`,
 			"proxy_strict", 400, 200,
 			"Loki 3.7.1 rejects rate() with __error__ label filter inside range vector; proxy forwards successfully",
+			false,
 		},
 		// proxy_bug: Loki succeeds but proxy fails.
 		{
@@ -865,36 +892,42 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			`{app="api-gateway",env="production"} |= ip("192.168.1.1")`,
 			"proxy_bug", 200, 400,
 			"ip() line filter not translated; proxy returns 400, Loki returns 200 (empty)",
+			false,
 		},
 		{
 			"ip_line_filter_cidr",
 			`{app="nginx-ingress",env="production"} |= ip("10.0.0.0/8")`,
 			"proxy_bug", 200, 400,
 			"ip() CIDR line filter not translated; proxy returns 400",
+			false,
 		},
 		{
 			"ip_line_filter_negative",
 			`{app="api-gateway",env="production"} != ip("127.0.0.1")`,
 			"proxy_bug", 200, 400,
 			"ip() negative line filter not translated; proxy returns 400",
+			false,
 		},
 		{
 			"ip_line_filter_range",
 			`{app="api-gateway",env="production"} |= ip("192.168.0.1-192.168.0.255")`,
 			"proxy_bug", 200, 400,
 			"ip() range line filter not translated; proxy returns 400",
+			false,
 		},
 		{
 			"label_replace_chained",
 			`label_replace(label_replace(sum by(app)(count_over_time({env="production"}[5m])), "service", "$1", "app", "(.*)"), "short", "$1", "service", "^([^-]+)")`,
 			"proxy_bug", 200, 422,
 			"chained label_replace() fails in proxy translation; VL returns 422",
+			false,
 		},
 		{
 			"json_field_alias_then_filter",
 			`{app="api-gateway",env="production"} | json http_code="status" | http_code="200"`,
 			"proxy_bug", 200, 200,
 			"json alias then filter on alias name: proxy returns 200 but with empty results vs Loki non-empty",
+			false,
 		},
 		// VictoriaLogs is stricter than Loki on quantile phi range.
 		{
@@ -902,6 +935,7 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 			`quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`,
 			"proxy_bug", 200, 422,
 			"Loki accepts phi>1 (extrapolates beyond p100); VL rejects with 422 — VL limitation",
+			false,
 		},
 	}
 
@@ -912,8 +946,12 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 	for _, g := range gaps {
 		g := g
 		t.Run(g.name, func(t *testing.T) {
-			lokiCode, _ := exhaustiveQuery(t, lokiURL, g.query)
-			proxyCode, _ := exhaustiveQuery(t, proxyURL, g.query)
+			queryFn := exhaustiveQuery
+			if g.shortWindow {
+				queryFn = exhaustiveShortWindowQuery
+			}
+			lokiCode, _ := queryFn(t, lokiURL, g.query)
+			proxyCode, _ := queryFn(t, proxyURL, g.query)
 
 			t.Logf("[%s] %s", g.gapType, g.note)
 			t.Logf("  Loki=%d (expected %d)  Proxy=%d (expected %d)", lokiCode, g.lokiExpect, proxyCode, g.proxyExpect)
