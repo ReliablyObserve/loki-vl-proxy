@@ -172,6 +172,7 @@ func TestRun_Success(t *testing.T) {
 		"-backend", "http://backend.test",
 		"-response-gzip=false",
 		"-tail.mode=synthetic",
+		"-server.admin-auth-token=test-token",
 	}, func(key string) string {
 		if key == "OTEL_SERVICE_NAME" {
 			return "custom-proxy"
@@ -238,7 +239,7 @@ func TestRun_ParseError(t *testing.T) {
 
 func TestRun_RuntimeInitError(t *testing.T) {
 	wantErr := errors.New("boom")
-	err := run([]string{}, func(string) string { return "" }, io.Discard, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+	err := run([]string{"-server.admin-auth-token=test-token"}, func(string) string { return "" }, io.Discard, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
 		return &fakeOTLPPusher{}
 	}, func(runtimeOptions, *slog.Logger, signalNotifier, otlpPusherFactory) (*runtimeState, error) {
 		return nil, wantErr
@@ -292,7 +293,7 @@ func TestRunMain_SuccessDoesNotExit(t *testing.T) {
 	exits := &exitRecorder{}
 
 	runMain(
-		nil,
+		[]string{"-server.admin-auth-token=test-token"},
 		func(string) string { return "" },
 		io.Discard,
 		&bytes.Buffer{},
@@ -328,7 +329,7 @@ func TestRun_DefaultEnablesStructuredMetadata(t *testing.T) {
 
 	var captured runtimeOptions
 	err := run(
-		nil,
+		[]string{"-server.admin-auth-token=test-token"},
 		func(string) string { return "" },
 		io.Discard,
 		func(chan<- os.Signal, ...os.Signal) {},
