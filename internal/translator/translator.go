@@ -2874,6 +2874,8 @@ func buildIPRangeRegex(startIP, endIP string) string {
 // E.g., "json http_code=\"status\", method=\"method\"" →
 //
 //	map["http_code"]="status", map["method"]="method"
+//
+// Bracket-notation paths like ["api"] are resolved to plain field names ("api").
 func parseJSONFieldAliases(stage string) map[string]string {
 	rest := strings.TrimSpace(strings.TrimPrefix(stage, "json "))
 	aliases := make(map[string]string)
@@ -2887,12 +2889,37 @@ func parseJSONFieldAliases(stage string) map[string]string {
 		fieldPart := strings.TrimSpace(part[eqIdx+1:])
 		if len(fieldPart) >= 2 && fieldPart[0] == '"' && fieldPart[len(fieldPart)-1] == '"' {
 			orig := fieldPart[1 : len(fieldPart)-1]
+			// Resolve bracket-notation JSON paths: ["fieldname"] → fieldname.
+			// Without this, the raw path (including backslash-escaped quotes)
+			// ends up in the VL filter as "[\fieldname\]" which VL cannot parse.
+			orig = resolveJSONBracketPath(orig)
 			if alias != "" && orig != "" {
 				aliases[alias] = orig
 			}
 		}
 	}
 	return aliases
+}
+
+// resolveJSONBracketPath converts a Loki JSON bracket-notation path to a plain field name.
+// Only resolves simple single-segment paths: ["api"] or [\"api\"] → api.
+// Complex or multi-segment paths are returned as-is so the alias is skipped safely.
+func resolveJSONBracketPath(orig string) string {
+	orig = strings.TrimSpace(orig)
+	if !strings.HasPrefix(orig, "[") || !strings.HasSuffix(orig, "]") {
+		return orig // not bracket notation — already a plain field name or dot path
+	}
+	inner := orig[1 : len(orig)-1] // strip outer [ and ]
+	// Strip backslash-escaped quotes \" at start/end (Loki URL-encodes them)
+	inner = strings.TrimPrefix(inner, `\"`)
+	inner = strings.TrimSuffix(inner, `\"`)
+	// Strip plain quotes
+	inner = strings.Trim(inner, `"'`)
+	// Only accept simple single-segment names (no nested brackets, quotes, backslashes)
+	if strings.ContainsAny(inner, `[]"'\ `) {
+		return "" // complex path — don't alias; skip this entry
+	}
+	return inner
 }
 
 // rewriteJSONAliasedFilter rewrites a label filter stage that references a
