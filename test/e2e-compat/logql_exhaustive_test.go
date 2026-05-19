@@ -196,8 +196,8 @@ func waitForProxyQueryReady(t *testing.T) {
 	target := proxyURL + "/loki/api/v1/query_range?" + params.Encode()
 
 	const (
-		timeout          = 45 * time.Second
-		pollInterval     = 500 * time.Millisecond
+		timeout             = 45 * time.Second
+		pollInterval        = 500 * time.Millisecond
 		requiredConsecutive = 3 // must match circuit breaker successThreshold
 	)
 	deadline := time.Now().Add(timeout)
@@ -626,7 +626,11 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		// but the query succeeds rather than failing with 422.
 		{"quantile_over_time_gt_one", `quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "quantile_phi_gt1"},
 
-		// ── drop with label matchers (fixed: proxy uses VL | if (...) delete) ─────
+		// ── drop with label matchers (proxy translates to unconditional | delete) ──
+		// Semantic gap: Loki conditionally drops the field only when matcher matches;
+		// proxy always deletes the field (VL v1.50.0 | if (filter) pipe without else
+		// filters entries rather than passing them through). HTTP parity is preserved:
+		// both return 200 with non-empty results.
 		{"drop_with_eq_matcher", `{app="api-gateway",env="production"} | json | drop level="debug"`, "drop_matcher"},
 		{"drop_with_regex_matcher", `{app="api-gateway",env="production"} | json | drop level=~"debug|trace"`, "drop_matcher"},
 		{"drop_with_ne_matcher", `{app="api-gateway",env="production"} | json | drop level!="info"`, "drop_matcher"},
@@ -883,32 +887,32 @@ func TestLogQL_Exhaustive_KnownGaps(t *testing.T) {
 		// max/avg/min_over_time to a subquery over rate() or count_over_time().
 		// The proxy evaluates these via proxy-side subquery evaluation (extension).
 		{
-			name: "subquery_max_rate",
-			query: `max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`,
+			name:    "subquery_max_rate",
+			query:   `max_over_time(rate({app="api-gateway",env="production"}[5m])[1h:15m])`,
 			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
 			note:                  "Loki 3.7.1 rejects max_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
 			shortWindow:           true,
 			skipUnlessE2ESubquery: true,
 		},
 		{
-			name: "subquery_avg_rate",
-			query: `avg_over_time(rate({env="production"}[5m])[30m:5m])`,
+			name:    "subquery_avg_rate",
+			query:   `avg_over_time(rate({env="production"}[5m])[30m:5m])`,
 			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
 			note:                  "Loki 3.7.1 rejects avg_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
 			shortWindow:           true,
 			skipUnlessE2ESubquery: true,
 		},
 		{
-			name: "subquery_min_outer",
-			query: `min_over_time(rate({env="production"}[5m])[5m:1m])`,
+			name:    "subquery_min_outer",
+			query:   `min_over_time(rate({env="production"}[5m])[5m:1m])`,
 			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
 			note:                  "Loki 3.7.1 rejects min_over_time applied to rate() subquery; proxy evaluates via proxy-side subquery",
 			shortWindow:           true,
 			skipUnlessE2ESubquery: true,
 		},
 		{
-			name: "subquery_count_avg",
-			query: `avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`,
+			name:    "subquery_count_avg",
+			query:   `avg_over_time(count_over_time({env="production"}[1m])[5m:1m])`,
 			gapType: "proxy_extension", lokiExpect: 400, proxyExpect: 200,
 			note:                  "Loki 3.7.1 rejects avg_over_time applied to count_over_time() subquery; proxy evaluates via proxy-side subquery",
 			shortWindow:           true,

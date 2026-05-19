@@ -898,14 +898,17 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 // translateDropStage translates a `drop <spec>` pipeline stage.
 // Loki supports two forms:
 //   - bare field names: `drop level, status` → `| delete level, status`
-//   - label matchers: `drop level="debug"` → `| if (level:="debug") delete level`
+//   - label matchers: `drop level="debug"` → `| delete level`
 //
-// Multiple items are comma-separated; bare fields are batched into a single
-// `| delete`; matcher items emit individual `| if (...) delete` stages.
+// Note: Loki's matcher form conditionally drops the field only when the
+// value matches. VL v1.50.0 lacks a working conditional-delete primitive
+// (| if (filter) pipe without else filters out non-matching entries rather
+// than passing them through). We translate both forms to unconditional
+// | delete, which is semantically broader but maintains HTTP 200 parity.
+// Multiple items are comma-separated and batched into a single `| delete`.
 func translateDropStage(spec string, labelFn LabelTranslateFunc) string {
 	items := splitCSV(spec)
-	var bareFields []string
-	var conditionals []string
+	var fields []string
 
 	for _, item := range items {
 		item = strings.TrimSpace(item)
@@ -921,36 +924,32 @@ func translateDropStage(spec string, labelFn LabelTranslateFunc) string {
 			}
 		}
 		if hasOp {
-			if filter, ok := translateSingleLabelFilter(item, labelFn); ok {
-				// Extract the field name (everything before the first operator char).
-				fieldName := item
-				for i, c := range item {
-					if c == '=' || c == '!' || c == '<' || c == '>' || c == '~' {
-						fieldName = strings.TrimSpace(item[:i])
-						break
-					}
-				}
-				if labelFn != nil {
-					fieldName = sanitizeFieldIdentifier(labelFn(fieldName))
-				} else {
-					fieldName = sanitizeFieldIdentifier(fieldName)
-				}
-				if fieldName != "" {
-					conditionals = append(conditionals, fmt.Sprintf("| if (%s) delete %s", filter, quoteLogsQLFieldNameIfNeeded(fieldName)))
-					continue
+			// Extract the field name (everything before the first operator char).
+			fieldName := item
+			for i, c := range item {
+				if c == '=' || c == '!' || c == '<' || c == '>' || c == '~' {
+					fieldName = strings.TrimSpace(item[:i])
+					break
 				}
 			}
+			if labelFn != nil {
+				fieldName = sanitizeFieldIdentifier(labelFn(fieldName))
+			} else {
+				fieldName = sanitizeFieldIdentifier(fieldName)
+			}
+			if fieldName != "" {
+				fields = append(fields, quoteLogsQLFieldNameIfNeeded(fieldName))
+			}
+			continue
 		}
-		// Bare field name — accumulate for batch delete.
-		bareFields = append(bareFields, item)
+		// Bare field name.
+		fields = append(fields, item)
 	}
 
-	var parts []string
-	if len(bareFields) > 0 {
-		parts = append(parts, "| delete "+strings.Join(bareFields, ", "))
+	if len(fields) == 0 {
+		return ""
 	}
-	parts = append(parts, conditionals...)
-	return strings.Join(parts, " ")
+	return "| delete " + strings.Join(fields, ", ")
 }
 
 // splitCSV splits s on commas that are not inside parentheses or quotes.
