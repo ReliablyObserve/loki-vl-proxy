@@ -481,10 +481,10 @@ func run(
 	metricsMaxConcurrency := fs.Int("server.metrics-max-concurrency", 1, "Maximum concurrent /metrics scrapes served at once (0 disables the cap)")
 
 	// Label translation
-	labelStyle := fs.String("label-style", "passthrough", `Label name translation mode:
+	labelStyle := fs.String("label-style", "underscores", `Label name translation mode:
   passthrough  - no translation, pass VL field names as-is (use when VL stores underscores)
   underscores  - convert dots to underscores (use when VL stores OTel-style dotted names like service.name)`)
-	metadataFieldMode := fs.String("metadata-field-mode", "hybrid", `Field exposure mode for detected_fields and structured metadata:
+	metadataFieldMode := fs.String("metadata-field-mode", "translated", `Field exposure mode for detected_fields and structured metadata:
   native      - expose VictoriaLogs field names as-is
   translated  - expose only Loki-compatible translated aliases
   hybrid      - expose both native VL field names and translated aliases when they differ`)
@@ -583,7 +583,7 @@ func run(
 		*tenantLabel = v
 	}
 
-	if err := validateAdminExposure(envCfg.listenAddr, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
+	if err := validateAdminExposure(envCfg.listenAddr, *registerInstrumentation, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
 		return err
 	}
 
@@ -1044,11 +1044,13 @@ func normalizeFrontendCompressionSetting(mode string) (string, error) {
 	}
 }
 
-func validateAdminExposure(listenAddr string, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
+func validateAdminExposure(listenAddr string, registerInstrumentation, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
 	if strings.TrimSpace(adminAuthToken) != "" {
 		return nil
 	}
-	if !enablePprof && !enableQueryAnalytics {
+	// /admin/cache/flush is registered whenever instrumentation is on; treat it like
+	// any other state-changing admin endpoint and require a token on non-loopback addresses.
+	if !registerInstrumentation && !enablePprof && !enableQueryAnalytics {
 		return nil
 	}
 	if isLoopbackListenAddr(listenAddr) {

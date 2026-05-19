@@ -1430,7 +1430,8 @@ func (p *Proxy) peerCacheMetrics() string {
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
-	if _, ok := p.validateQuery(w, logqlQuery, "query_range"); !ok {
+	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query_range")
+	if !ok {
 		return
 	}
 	categorizedLabels := requestWantsCategorizedLabels(r)
@@ -1525,8 +1526,15 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Extract without() labels and label-transform markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
 	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
-	logsqlQuery, labelReplaceSpec := translator.ParseLabelReplaceMarker(logsqlQuery)
+	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
 	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
+	for _, spec := range labelReplaceSpecs {
+		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
+			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
+			p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+			return
+		}
+	}
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
@@ -1535,7 +1543,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	p.log.Debug("translated query", "logsql", logsqlQuery, "without", withoutLabels)
 
-	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
+	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
 	var (
 		sc       = &statusCapture{ResponseWriter: w, code: 200}
 		capture  *bufferedResponseWriter
@@ -1575,8 +1583,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if isGroupQuery {
 			cacheOut = applyGroupNormalization(cacheOut)
 		}
-		if labelReplaceSpec != nil {
-			cacheOut = applyLabelReplace(cacheOut, *labelReplaceSpec)
+		for _, spec := range labelReplaceSpecs {
+			cacheOut = applyLabelReplace(cacheOut, spec)
 		}
 		if labelJoinSpec != nil {
 			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
@@ -1634,7 +1642,8 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
-	if _, ok := p.validateQuery(w, logqlQuery, "query"); !ok {
+	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query")
+	if !ok {
 		return
 	}
 	p.log.Debug("query request", "logql", logqlQuery)
@@ -1717,8 +1726,15 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Extract without() labels and label-transform markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
 	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
-	logsqlQuery, labelReplaceSpec := translator.ParseLabelReplaceMarker(logsqlQuery)
+	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
 	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
+	for _, spec := range labelReplaceSpecs {
+		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
+			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
+	}
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
@@ -1729,7 +1745,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
-	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
+	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
 	var bw *bufferedResponseWriter
 	if needsCapture {
 		bw = &bufferedResponseWriter{header: w.Header()}
@@ -1754,8 +1770,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		if isGroupQuery {
 			result = applyGroupNormalization(result)
 		}
-		if labelReplaceSpec != nil {
-			result = applyLabelReplace(result, *labelReplaceSpec)
+		for _, spec := range labelReplaceSpecs {
+			result = applyLabelReplace(result, spec)
 		}
 		if labelJoinSpec != nil {
 			result = applyLabelJoin(result, *labelJoinSpec)

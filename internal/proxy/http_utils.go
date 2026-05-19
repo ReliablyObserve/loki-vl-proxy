@@ -59,6 +59,7 @@ var (
 )
 
 // validateQuery checks query string length and returns a sanitized version.
+// It also rewrites queries that Loki accepts but VL would reject (e.g. phi>1).
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
 	if len(query) > maxQueryLength {
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("query exceeds max length (%d > %d)", len(query), maxQueryLength))
@@ -72,6 +73,10 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
+	// Clamp quantile_over_time phi > 1 to 1.0.
+	// Loki allows phi > 1 (extrapolation beyond p100); VL rejects it with 422.
+	// Clamping preserves the p100 value and keeps queries working.
+	query = rewriteQuantilePhiGT1(query)
 	return query, true
 }
 
@@ -84,6 +89,36 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 // - Queries without a stream selector (e.g., "| json")
 // - Malformed stream selectors (e.g., "{app=}")
 // - Binary operations on log/pipeline expressions (e.g., "{app=...} == 2")
+// - line_format with unclosed Go template actions (e.g., `| line_format "{{.x"`)
+// - Invalid operators in label filters (e.g., `<>`)
+
+// quantileOverTimePhiRE extracts the phi literal from quantile_over_time(phi, ...).
+var quantileOverTimePhiRE = regexp.MustCompile(`\bquantile_over_time\(\s*(-?[\d]+(?:\.[\d]+)?(?:e[+\-]?\d+)?)\s*,`)
+
+// lineFormatTemplateRE extracts the template string from a line_format stage.
+var lineFormatTemplateRE = regexp.MustCompile(`\|\s*line_format\s+"((?:[^"\\]|\\.)*)"`)
+
+// groupingOnLogStreamRE matches a without/by modifier that immediately follows a
+// stream selector (i.e., without a wrapping metric function). Loki rejects these.
+var groupingOnLogStreamRE = regexp.MustCompile(`^(?:without|by)\s*\(`)
+
+// errorLabelInRateVectorRE detects __error__ (or __error_details__) used as a
+// label filter inside a rate() or bytes_rate() range vector. Loki 3.x rejects
+// this: rate() computes a metric from log throughput and does not support
+// parser-generated labels like __error__ inside the range brackets.
+// count_over_time() and other functions DO allow __error__ filters — only
+// the rate/bytes_rate family is restricted.
+var errorLabelInRateVectorRE = regexp.MustCompile(`\b(?:bytes_)?rate\s*\([^[]*__error(?:_details)?__\s*(?:!=|!~|=~|=)\s*"[^"]*"\s*\[`)
+
+// multipleUnwrapRE detects two or more | unwrap stages inside a single range
+// vector expression. Loki 3.x rejects this at parse time: only one unwrap per
+// range vector is allowed.
+var multipleUnwrapRE = regexp.MustCompile(`\|\s*unwrap\s+\S[^|\[]*\|\s*unwrap\s+\S[^|\[]*\[`)
+
+// distinctStageRE detects the | distinct pipeline stage. Loki 3.7.1 does not
+// support this stage and rejects it with a parse error.
+var distinctStageRE = regexp.MustCompile(`\|\s*distinct\b`)
+
 func validateLogQLSyntax(query string) string {
 	query = strings.TrimSpace(query)
 
@@ -95,6 +130,33 @@ func validateLogQLSyntax(query string) string {
 	// No stream selector — starts with pipeline
 	if strings.HasPrefix(query, "|") {
 		return "parse error at line 1, col 1: syntax error: unexpected |"
+	}
+
+	// Reject quantile_over_time with phi < 0 before reaching VL
+	// (VL returns 422 for negative phi; Loki returns 400). Loki allows phi > 1
+	// but VL rejects it — phi > 1 is clamped to 1.0 in validateQuery instead.
+	if m := quantileOverTimePhiRE.FindStringSubmatch(query); len(m) > 1 {
+		phi, err := strconv.ParseFloat(m[1], 64)
+		if err == nil && phi < 0 {
+			return "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got " + m[1]
+		}
+	}
+
+	// Reject line_format with unclosed Go template actions (e.g., "{{.method").
+	// Loki's template engine returns a parse error; the proxy forwards such
+	// queries unmodified, so VL would accept them and produce wrong output.
+	if m := lineFormatTemplateRE.FindStringSubmatch(query); len(m) > 1 {
+		tmpl := m[1]
+		if strings.Count(tmpl, "{{") > strings.Count(tmpl, "}}") {
+			stage := `| line_format "` + tmpl + `"`
+			return `parse error : stage '` + stage + `' : invalid line template: template: line:1: unclosed action`
+		}
+	}
+
+	// Reject the <> operator — it is not valid LogQL syntax. Loki returns a
+	// parse error; VL may silently accept or misinterpret it.
+	if idx := strings.Index(query, "<>"); idx >= 0 {
+		return fmt.Sprintf("parse error at line 1, col %d: syntax error: unexpected >", idx+2)
 	}
 
 	// Malformed selector: unclosed or empty values
@@ -116,15 +178,34 @@ func validateLogQLSyntax(query string) string {
 			return "parse error at line 1, col 1: syntax error: unexpected end of input"
 		}
 		selector := query[:selectorEnd+1]
+
+		// Loki requires at least one non-wildcard matcher.
+		if selector == "{}" {
+			return "parse error at line 1, col 2: parse error : queries require at least one matcher that is not a wildcard"
+		}
+
 		// Check for empty values like {app=} or {app= }
 		if emptyValueRe.MatchString(selector) {
 			return "parse error at line 1, col " + strconv.Itoa(strings.Index(selector, "=}")+2) + ": syntax error: unexpected }, expecting STRING"
 		}
 
+		rest := strings.TrimSpace(query[selectorEnd+1:])
+
+		// Bare range vector: {selector}[duration] with no wrapping metric function.
+		// Loki rejects these as a syntax error.
+		if strings.HasPrefix(rest, "[") {
+			return "parse error at line 1, col " + strconv.Itoa(selectorEnd+2) + ": syntax error: unexpected RANGE, expecting )"
+		}
+
+		// Grouping modifiers (without/by) directly after a log stream are invalid —
+		// they are only meaningful on metric aggregation expressions.
+		if groupingOnLogStreamRE.MatchString(rest) {
+			return "parse error at line 1, col " + strconv.Itoa(selectorEnd+2) + `: parse error : only aggregation expressions support without/by grouping`
+		}
+
 		// Check for binary operations on log queries
 		// Pattern: {selector} [| pipeline...] <binary_op> <number>
 		// This is invalid unless wrapped in a metric function
-		rest := strings.TrimSpace(query[selectorEnd+1:])
 		if isBinaryOpOnLogQuery(rest) {
 			op := extractBinaryOp(rest)
 			exprType := "*syntax.MatchersExpr"
@@ -135,7 +216,43 @@ func validateLogQLSyntax(query string) string {
 		}
 	}
 
+	// Reject __error__ / __error_details__ inside rate() range vectors.
+	// Loki 3.x treats rate() as a log-throughput metric; __error__ is a
+	// parser-generated label that is not accessible inside rate/bytes_rate
+	// range brackets. count_over_time() and other functions allow __error__.
+	if errorLabelInRateVectorRE.MatchString(query) {
+		return `parse error : __error__ and __error_details__ are not allowed inside rate() range vectors`
+	}
+
+	// Multiple | unwrap stages in a single range vector are rejected by Loki 3.x.
+	if multipleUnwrapRE.MatchString(query) {
+		return `parse error : syntax error: unexpected unwrap`
+	}
+
+	// | distinct is not a valid LogQL 3.7.1 pipeline stage.
+	if distinctStageRE.MatchString(query) {
+		return `parse error : syntax error: unexpected IDENT`
+	}
+
 	return ""
+}
+
+// rewriteQuantilePhiGT1 replaces phi > 1 in quantile_over_time() with 1.0.
+// Loki allows phi > 1 (extrapolates beyond p100 using linear interpolation);
+// VictoriaLogs rejects it with 422. Clamping to 1.0 returns the p100 value,
+// which is the closest semantically valid result VL can produce.
+func rewriteQuantilePhiGT1(query string) string {
+	return quantileOverTimePhiRE.ReplaceAllStringFunc(query, func(match string) string {
+		m := quantileOverTimePhiRE.FindStringSubmatch(match)
+		if len(m) < 2 {
+			return match
+		}
+		phi, err := strconv.ParseFloat(m[1], 64)
+		if err != nil || phi <= 1 {
+			return match
+		}
+		return strings.Replace(match, m[1], "1", 1)
+	})
 }
 
 var emptyValueRe = regexp.MustCompile(`[=!~]=?\s*[,}]`)
@@ -256,8 +373,18 @@ func isCanceledErr(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "context canceled")
 }
 
+// httpStatusCoder is implemented by errors that carry an upstream HTTP status
+// (e.g. queryRangeWindowHTTPError). An HTTP-level error from VL proves the
+// backend is reachable and therefore must not trip the circuit breaker.
+type httpStatusCoder interface{ StatusCode() int }
+
 func shouldRecordBreakerFailure(err error) bool {
 	if err == nil {
+		return false
+	}
+	// HTTP responses from VL (even 4xx/5xx) prove the backend is up.
+	var hsc httpStatusCoder
+	if errors.As(err, &hsc) {
 		return false
 	}
 	if isCanceledErr(err) || errors.Is(err, context.DeadlineExceeded) {
