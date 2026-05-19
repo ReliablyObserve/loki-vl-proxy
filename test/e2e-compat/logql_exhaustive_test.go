@@ -648,15 +648,14 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		// but the query succeeds rather than failing with 422.
 		{"quantile_over_time_gt_one", `quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "quantile_phi_gt1"},
 
-		// ── drop with label matchers (proxy translates to unconditional | delete) ──
-		// Semantic gap: Loki conditionally drops the field only when matcher matches;
-		// proxy always deletes the field (VL v1.50.0 | if (filter) pipe without else
-		// filters entries rather than passing them through). HTTP parity is preserved:
-		// both return 200 with non-empty results.
-		{"drop_with_eq_matcher", `{app="api-gateway",env="production"} | json | drop level="debug"`, "drop_matcher"},
-		{"drop_with_regex_matcher", `{app="api-gateway",env="production"} | json | drop level=~"debug|trace"`, "drop_matcher"},
-		{"drop_with_ne_matcher", `{app="api-gateway",env="production"} | json | drop level!="info"`, "drop_matcher"},
-		{"drop_multi_mixed", `{app="api-gateway",env="production"} | json | drop trace_id, level="debug"`, "drop_matcher"},
+		// ── drop with label matchers (fixed: proxy post-processes per-entry) ──
+		// The proxy translator no longer emits `| delete` for matcher-form drops.
+		// ParseDropConditions extracts the condition; applyDropConditions removes the
+		// field only from entries where the value matches — matching Loki's semantics.
+		{"drop_with_eq_matcher", `{app="api-gateway",env="production"} | json | drop level="debug"`, "drop_keep"},
+		{"drop_with_regex_matcher", `{app="api-gateway",env="production"} | json | drop level=~"debug|trace"`, "drop_keep"},
+		{"drop_with_ne_matcher", `{app="api-gateway",env="production"} | json | drop level!="info"`, "drop_keep"},
+		{"drop_multi_mixed", `{app="api-gateway",env="production"} | json | drop trace_id, level="debug"`, "drop_keep"},
 
 		// ── ip() line filter (fixed: proxy now translates to regex approximation) ─
 		{"ip_line_filter_ipv4", `{app="api-gateway",env="production"} |= ip("192.168.1.1")`, "ip_line_filter"},
