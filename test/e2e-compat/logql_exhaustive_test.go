@@ -108,6 +108,28 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 
 		// ── avg aggregation on a bare log stream ──
 		{"avg_on_log_stream", `avg({app="api-gateway",env="production"})`, "metric_on_log"},
+
+		// ── Malformed line_format templates ───────────────────────────────────
+		// Go text/template rejects unclosed actions; both Loki and proxy must error.
+		{"line_format_unclosed_brace", `{app="api-gateway"} | line_format "{{.method"`, "malformed_template"},
+
+		// ── Invalid comparison operators ──────────────────────────────────────
+		// <> is not a LogQL operator; valid ones are: = != < <= > >= =~ !~
+		{"invalid_operator_diamond", `{app="api-gateway"} | json | status <> 200`, "malformed"},
+
+		// ── rate_counter without unwrap ───────────────────────────────────────
+		// rate_counter is an unwrap-only range aggregation (like avg_over_time).
+		{"rate_counter_no_unwrap", `rate_counter({app="api-gateway"}[5m])`, "unwrap_required"},
+
+		// ── label_replace with invalid regex ─────────────────────────────────
+		{"label_replace_invalid_regex", `label_replace(sum by(app)(rate({env="production"}[5m])), "new", "$1", "app", "[invalid")`, "invalid_regex"},
+
+		// ── ip() with an invalid IP address (invalid octet > 255) ────────────
+		{"ip_line_filter_invalid_ipv4", `{app="api-gateway"} |= ip("999.999.999.999")`, "invalid_filter"},
+
+		// ── quantile_over_time outside [0,1] range ────────────────────────────
+		// Loki rejects quantile > 1.0 with a 4xx error.
+		{"quantile_over_time_gt_one", `quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "invalid_filter"},
 	}
 
 	score := &exhaustiveScore{}
@@ -469,6 +491,117 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 
 		// ── unwrap missing field (valid syntax, empty results) ────────────────
 		{"unwrap_missing_field", `max_over_time({app="api-gateway"} | unwrap nonexistent_field [5m])`, "unwrap_empty"},
+
+		// ── __error__ label handling ──────────────────────────────────────────
+		// After a parser stage, __error__ is set on lines that fail to parse.
+		// __error__="" (empty) matches lines that parsed successfully.
+		{"error_label_nonempty", `{app="api-gateway",env="production"} | json | __error__!=""`, "error_label"},
+		{"error_label_empty_matches_valid", `{app="api-gateway",env="production"} | json | __error__=""`, "error_label"},
+		{"error_label_in_keep_stage", `{app="api-gateway",env="production"} | json | keep level, __error__`, "error_label"},
+		{"error_label_count_metric", `count_over_time({app="api-gateway",env="production"} | json | __error__!="" [5m])`, "error_label"},
+		{"error_label_rate_metric", `rate({env="production"} | json | __error__!="" [5m])`, "error_label"},
+
+		// ── IP address filtering ──────────────────────────────────────────────
+		// ip() operator in line filters and label filters.
+		// Test data does not contain these IPs — both sides return empty 200.
+		{"ip_line_filter_ipv4", `{app="api-gateway",env="production"} |= ip("192.168.1.1")`, "ip_filter"},
+		{"ip_line_filter_cidr", `{app="nginx-ingress",env="production"} |= ip("10.0.0.0/8")`, "ip_filter"},
+		{"ip_line_filter_negative", `{app="api-gateway",env="production"} != ip("127.0.0.1")`, "ip_filter"},
+		{"ip_line_filter_range", `{app="api-gateway",env="production"} |= ip("192.168.0.1-192.168.0.255")`, "ip_filter"},
+
+		// ── Drilldown / observability error-rate patterns ─────────────────────
+		// These mirror the queries Grafana Logs Drilldown generates for volume,
+		// error rate, and latency breakdowns.
+		{"drilldown_error_rate_ratio", `sum(rate({env="production"} |= "error" [5m])) / sum(rate({env="production"}[5m]))`, "drilldown"},
+		{"drilldown_error_count_by_app", `sum by(app)(count_over_time({env="production"} | json | status>=500 [5m]))`, "drilldown"},
+		{"drilldown_volume_bytes_by_app", `sum by(app)(bytes_over_time({env="production"}[5m]))`, "drilldown"},
+		{"drilldown_top_error_services", `topk(5, sum by(app)(rate({env="production"} |= "error" [5m])))`, "drilldown"},
+		{"drilldown_p99_latency_by_svc", `max by(app)(quantile_over_time(0.99, {env="production"} | json | unwrap duration_ms [5m]))`, "drilldown"},
+		{"drilldown_error_pct_by_app", `sum by(app)(rate({env="production"} | json | status>=500 [5m])) / sum by(app)(rate({env="production"}[5m])) * 100`, "drilldown"},
+
+		// ── line_format with built-in special variables ────────────────────────
+		// {{.__line__}} refers to the full original log line; stream labels are
+		// accessed the same way as extracted labels inside line_format.
+		{"line_format_line_builtin", `{app="api-gateway",env="production"} | json | line_format "raw: {{.__line__}}"`, "line_fmt_builtins"},
+		{"line_format_stream_label_access", `{app="api-gateway",env="production"} | json | line_format "app={{.app}} method={{.method}} status={{.status}}"`, "line_fmt_builtins"},
+		{"line_format_multi_extracted_fields", `{app="api-gateway",env="production"} | json | line_format "{{.method}} {{.path}} took {{.duration_ms}}ms -> {{.status}}"`, "line_fmt_builtins"},
+
+		// ── Nested / chained label_replace ────────────────────────────────────
+		{"label_replace_chained", `label_replace(label_replace(sum by(app)(count_over_time({env="production"}[5m])), "service", "$1", "app", "(.*)"), "short", "$1", "service", "^([^-]+)")`, "nested_label_replace"},
+
+		// ── JSON field extraction with alias (rename on extract) ─────────────
+		// Loki JSON parser supports: | json alias="json.path.expression"
+		{"json_field_alias_multi", `{app="api-gateway",env="production"} | json http_code="status", http_method="method"`, "json_alias"},
+		{"json_field_alias_then_filter", `{app="api-gateway",env="production"} | json http_code="status" | http_code="200"`, "json_alias"},
+
+		// ── Pattern parser extended (3 captures + filter) ─────────────────────
+		{"pattern_three_captures_filter", `{app="api-gateway",env="production"} | json | line_format "{{.method}} {{.path}} {{.status}}" | pattern "<method> <path> <status>" | method="GET"`, "pattern_ext3"},
+		{"pattern_wildcard_then_filter", `{app="api-gateway",env="production"} | json | line_format "{{.method}} {{.path}} {{.status}}" | pattern "<_> <path> <status>" | status="200"`, "pattern_ext3"},
+
+		// ── Logfmt extended: keep and regex on extracted fields ────────────────
+		{"logfmt_keep_fields", `{app="payment-service",env="production"} | logfmt | keep level, msg`, "logfmt_ext"},
+		{"logfmt_filter_then_keep", `{app="payment-service",env="production"} | logfmt | level="error" | keep level, msg`, "logfmt_ext"},
+		{"logfmt_regex_on_extracted_field", `{app="payment-service",env="production"} | logfmt | msg=~".*error.*"`, "logfmt_ext"},
+
+		// ── bytes_over_time as aggregation base ───────────────────────────────
+		{"bytes_over_time_sum_by_app", `sum by(app)(bytes_over_time({env="production"}[5m]))`, "bytes_agg"},
+		{"bytes_over_time_max_total", `max(bytes_over_time({env="production"}[5m]))`, "bytes_agg"},
+		{"bytes_rate_sum_total", `sum(bytes_rate({env="production"}[5m]))`, "bytes_agg"},
+
+		// ── absent_over_time with regex stream selector ────────────────────────
+		{"absent_over_time_regex_selector", `absent_over_time({app=~"nonexistent-.*-xyz"}[5m])`, "absent_regex"},
+
+		// ── Regexp without named groups (pure filter, no extraction) ──────────
+		{"regexp_filter_only", `{app="api-gateway",env="production"} | regexp "\"status\":(4|5)\\d\\d"`, "regexp_filter"},
+
+		// ── Multi-label by / without clauses ──────────────────────────────────
+		{"avg_by_multi_labels", `avg by(app, level)(rate({env="production"}[5m]))`, "multi_label_agg"},
+		{"sum_without_multi_labels", `sum without(level, env)(count_over_time({env="production"}[5m]))`, "multi_label_agg"},
+		{"bottomk_bytes_rate", `bottomk(3, sum by(app)(bytes_rate({env="production"}[5m])))`, "multi_label_agg"},
+		{"topk_avg_rate", `topk(3, avg by(app)(rate({env="production"}[5m])))`, "multi_label_agg"},
+
+		// ── Numeric comparison pipelines ──────────────────────────────────────
+		{"dual_bound_2xx", `{app="api-gateway",env="production"} | json | status >= 200 | status < 300`, "numeric_pipeline"},
+		{"filter_slow_requests_format", `{app="api-gateway",env="production"} | json | duration_ms > 1000 | line_format "SLOW: {{.method}} {{.path}} {{.duration_ms}}ms"`, "numeric_pipeline"},
+		{"chained_ne_filters", `{app="api-gateway",env="production"} | json | status != 200 | status != 404`, "numeric_pipeline"},
+		{"metric_from_5xx_filter", `sum by(level)(rate({app="api-gateway",env="production"} | json | status>=500 [5m]))`, "numeric_pipeline"},
+
+		// ── Extended selector patterns ─────────────────────────────────────────
+		{"three_exact_label_selector", `{app="api-gateway",env="production",level="info"}`, "selector_ext"},
+		{"regex_and_ne_label_combo", `{app=~"api-.*",env="production",level!="debug"}`, "selector_ext"},
+
+		// ── Rate with chained line and field filters ───────────────────────────
+		{"rate_chained_line_filters", `rate({app="api-gateway",env="production"} |= "GET" |= "/api" [5m])`, "rate_chain_filter"},
+		{"rate_json_4xx_range", `rate({app="api-gateway",env="production"} | json | status>=400 | status<500 [5m])`, "rate_chain_filter"},
+
+		// ── Binary operations across different time windows ────────────────────
+		{"binary_window_diff_5m_1m", `sum(rate({env="production"}[5m])) - sum(rate({env="production"}[1m]))`, "binary_window"},
+		{"binary_window_ratio_15m_5m", `sum(rate({env="production"}[15m])) / sum(rate({env="production"}[5m]))`, "binary_window"},
+
+		// ── Unwrap metrics with by-clause aggregation ─────────────────────────
+		{"sum_over_time_unwrap_by_level", `sum by(level)(sum_over_time({app="api-gateway",env="production"} | json | unwrap duration_ms [5m]))`, "unwrap_agg_by"},
+		{"avg_over_time_unwrap_by_app", `avg by(app)(avg_over_time({env="production"} | json | unwrap duration_ms [5m]))`, "unwrap_agg_by"},
+
+		// ── bytes_rate with JSON field filter ─────────────────────────────────
+		{"bytes_rate_json_status_filtered", `sum by(app)(bytes_rate({env="production"} | json | status>=200 [5m]))`, "bytes_filtered"},
+
+		// ── Mixed text and regex field filters ────────────────────────────────
+		{"mixed_text_regex_field", `{app="api-gateway",env="production"} | json | method="GET" | path=~"/api/.*" | status!=500`, "mixed_field_filter"},
+		{"mixed_numeric_and_regex", `{app="api-gateway",env="production"} | json | status>=200 | status<300 | method=~"GET|POST"`, "mixed_field_filter"},
+
+		// ── label_format with multiple renames ────────────────────────────────
+		{"label_format_multi_rename", `{app="api-gateway",env="production"} | json | label_format req_method="method", req_path="path", http_status="status"`, "label_format_rename"},
+
+		// ── count_over_time with complex filter chain ─────────────────────────
+		{"count_complex_chain", `count_over_time({app="api-gateway",env="production"} |= "GET" | json | status>=200 | status<400 [5m])`, "count_complex"},
+		{"count_logfmt_drop_format", `count_over_time({app="payment-service",env="production"} | logfmt | level!="debug" [5m])`, "count_complex"},
+
+		// ── Regexp named group then metric aggregation ─────────────────────────
+		{"regexp_named_then_rate", `sum by(http_method)(rate({app="api-gateway",env="production"} | regexp "(?P<http_method>[A-Z]+)" [5m]))`, "regexp_metric"},
+
+		// ── Multi-app selector with field filter ──────────────────────────────
+		{"multi_app_field_filter_regex", `{app=~"api-gateway|payment-service",env="production"} | json | status>=400`, "multi_app_ext"},
+		{"multi_app_bytes_rate", `sum by(app)(bytes_rate({app=~"api-gateway|payment-service",env="production"}[5m]))`, "multi_app_ext"},
 	}
 
 	score := &exhaustiveScore{}
