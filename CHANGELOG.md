@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`| drop field=value` matcher semantics**: The proxy previously translated `| drop field="value"` to VL's unconditional `| delete field`, which incorrectly removed the field from all log entries regardless of value. The fix: the translator no longer emits `| delete` for matcher-form drops; instead the proxy post-processes each classified entry and removes the field only when the value matches the condition. Bare-field drops (`| drop field`) continue to use `| delete` in VL unchanged. Supports `=`, `!=`, `=~`, and `!~` operators. Applies to both the batch query path (categorized-labels / Grafana Drilldown) and the streaming path.
+- **`detected_fields` regression: `service.name` ghost field in Drilldown Fields tab**: When the proxy runs with `-emit-structured-metadata=true`, VictoriaLogs stores both `service_name` (stream label, shown in Labels tab) and `service.name` (OTel alias injected by the proxy). The `service.name` alias was incorrectly appearing in the Drilldown Fields tab as a string field with a single value (the service name). Fix: dotted/dashed fields whose sanitized (underscore) form IS already a stream label are now suppressed from `detected_fields` — they are emit-structured-metadata aliases, not independent fields. Genuine OTel data (where `service.name` is itself a stream label key) is unaffected.
 
 ## [1.36.0] - 2026-05-19
 
