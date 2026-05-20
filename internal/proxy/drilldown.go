@@ -1416,6 +1416,35 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		// VL auto-indexes every JSON key across the entire time range, so the index
 		// may contain thousands of field names accumulated from rare log variants
 		// that the 500-line scan sample correctly excludes.
+		//
+		// Exception: selectively promote service.name / service_name when the native
+		// label index shows service.name exists but the scan window missed it. OTel
+		// streams may be older than the 500-line window; the native index covers the
+		// full time range and is the authoritative source for stream label existence.
+		if nativeFields != nil {
+			if _, nativeHasServiceDot := nativeFields["service.name"]; nativeHasServiceDot {
+				scanHas := func(label string) bool {
+					for _, f := range scanFieldList {
+						if l, _ := f["label"].(string); l == label {
+							return true
+						}
+					}
+					return false
+				}
+				if !scanHas("service.name") {
+					scanFieldList = append(scanFieldList, map[string]interface{}{
+						"label": "service.name", "type": "string",
+						"cardinality": 1, "parsers": []string{},
+					})
+				}
+				if !scanHas("service_name") {
+					scanFieldList = append(scanFieldList, map[string]interface{}{
+						"label": "service_name", "type": "string",
+						"cardinality": 1, "parsers": []string{},
+					})
+				}
+			}
+		}
 		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, nil)
 		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
 		return fieldList, fieldValues, nil
