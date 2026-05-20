@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -356,14 +357,13 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 		}
 		merged = MergeNDJSON(hotResp.Body, bytes.NewReader(reverseNDJSONBody(coldBody)))
 	}
-	mergedBody, err := io.ReadAll(merged)
+	// Read merged NDJSON up to the per-request limit to avoid buffering 2× the
+	// data when both hot and cold backends return full-limit responses.
+	mergedBody, err := readNDJSONToLimit(merged, r.FormValue("limit"))
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, "failed to merge hot+cold results")
 		return
 	}
-	// Apply the original per-request limit to the merged body; without this the
-	// client can receive up to 2× the requested limit (one batch per backend).
-	mergedBody = trimNDJSONBodyToLimit(mergedBody, r.FormValue("limit"))
 
 	syntheticResp := &http.Response{
 		StatusCode: http.StatusOK,
@@ -460,6 +460,37 @@ func reverseNDJSONBody(body []byte) []byte {
 		lines[i], lines[j] = lines[j], lines[i]
 	}
 	return bytes.Join(lines, []byte("\n"))
+}
+
+// readNDJSONToLimit reads at most limit non-empty NDJSON lines from r, returning
+// the result as a newline-joined byte slice. This is cheaper than io.ReadAll +
+// trimNDJSONBodyToLimit because it stops reading as soon as the limit is reached,
+// avoiding full buffering of 2× limit lines when both hot and cold backends return
+// full-limit responses.
+func readNDJSONToLimit(r io.Reader, limitParam string) ([]byte, error) {
+	limit, err := strconv.Atoi(limitParam)
+	if err != nil || limit <= 0 {
+		limit = 1000
+	}
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	var out []byte
+	count := 0
+	for sc.Scan() {
+		line := bytes.TrimRight(sc.Bytes(), "\r")
+		if len(line) == 0 {
+			continue
+		}
+		if count >= limit {
+			break
+		}
+		if count > 0 {
+			out = append(out, '\n')
+		}
+		out = append(out, line...)
+		count++
+	}
+	return out, sc.Err()
 }
 
 // trimNDJSONBodyToLimit trims a newline-delimited JSON body to at most limit lines.

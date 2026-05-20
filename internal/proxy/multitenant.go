@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -114,6 +115,12 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 	if len(body) > maxMultiTenantMergedResponseBytes {
 		p.writeError(w, http.StatusRequestEntityTooLarge, "multi-tenant merged response exceeds configured safety limit")
 		return true
+	}
+	// Inject Loki-compatible warnings for partial failures so Grafana and other
+	// clients that read the warnings field (instead of the custom header) can detect
+	// incomplete data without trusting HTTP 200 as authoritative.
+	if len(failedTenants) > 0 {
+		body = injectMultiTenantWarnings(body, failedTenants)
 	}
 	if contentType == "" {
 		contentType = "application/json"
@@ -1253,4 +1260,38 @@ func injectTenantLabelFilter(params url.Values, label, orgID string) url.Values 
 		}
 	}
 	return result
+}
+
+// injectMultiTenantWarnings adds a Loki-compatible "warnings" array to a JSON response
+// body when some tenant sub-requests failed. Grafana's Loki datasource reads warnings
+// from the response body, so the X-Multi-Tenant-Partial-Failures header alone is not
+// sufficient for Grafana to surface the incomplete-data indicator.
+//
+// Only modifies the body when it is a valid JSON object without an existing "warnings"
+// field — streaming/NDJSON responses are left unchanged.
+func injectMultiTenantWarnings(body []byte, failedTenants []string) []byte {
+	// Quick check: must look like a single JSON object (not NDJSON).
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) < 2 || trimmed[0] != '{' || trimmed[len(trimmed)-1] != '}' {
+		return body
+	}
+	if bytes.ContainsRune(trimmed, '\n') {
+		return body
+	}
+	// Don't double-inject.
+	if bytes.Contains(trimmed, []byte(`"warnings"`)) {
+		return body
+	}
+	msg := fmt.Sprintf("partial multi-tenant response: tenants [%s] unavailable", strings.Join(failedTenants, ","))
+	warningsJSON, err := json.Marshal([]string{msg})
+	if err != nil {
+		return body
+	}
+	// Insert before the closing '}'.
+	out := make([]byte, 0, len(trimmed)+len(warningsJSON)+14)
+	out = append(out, trimmed[:len(trimmed)-1]...)
+	out = append(out, ',', '"', 'w', 'a', 'r', 'n', 'i', 'n', 'g', 's', '"', ':')
+	out = append(out, warningsJSON...)
+	out = append(out, '}')
+	return out
 }
