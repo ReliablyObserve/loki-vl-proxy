@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.36.1] - 2026-05-20
+
 ### Fixed
 
 - **`| drop field=value` matcher semantics**: The proxy previously translated `| drop field="value"` to VL's unconditional `| delete field`, which incorrectly removed the field from all log entries regardless of value. The fix: the translator no longer emits `| delete` for matcher-form drops; instead the proxy post-processes each classified entry and removes the field only when the value matches the condition. Bare-field drops (`| drop field`) continue to use `| delete` in VL unchanged. Supports `=`, `!=`, `=~`, and `!~` operators. Applies to both the batch query path (categorized-labels / Grafana Drilldown) and the streaming path.
