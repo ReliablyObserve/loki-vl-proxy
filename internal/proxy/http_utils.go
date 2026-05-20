@@ -280,17 +280,38 @@ func isBinaryOpOnLogQuery(rest string) bool {
 	}
 	// If the last pipe-separated segment is a label filter (field op number) where
 	// the field is not a parser keyword, it's a valid stage — e.g. "| json | status >= 400".
+	// Also handle compound label filters joined with "and"/"or":
+	// "| json | status >= 200 and status < 500" — each atom must be a valid label filter.
 	lastPipe := strings.LastIndex(rest, "|")
 	lastSeg := strings.TrimSpace(rest)
 	if lastPipe >= 0 {
 		lastSeg = strings.TrimSpace(rest[lastPipe+1:])
 	}
-	if m := labelFilterRe.FindStringSubmatch(lastSeg); m != nil {
-		if !logParserKeywords[m[1]] {
-			return false
+	atoms := splitLabelFilterAtoms(lastSeg)
+	for _, atom := range atoms {
+		if m := labelFilterRe.FindStringSubmatch(atom); m != nil {
+			if !logParserKeywords[m[1]] {
+				continue
+			}
+		}
+		return true
+	}
+	return false
+}
+
+// splitLabelFilterAtoms splits a compound label filter stage at " and " / " or "
+// conjunctions, returning individual atoms. Used to validate each part separately.
+func splitLabelFilterAtoms(s string) []string {
+	var atoms []string
+	for _, part := range regexp.MustCompile(`\s+(?:and|or)\s+`).Split(s, -1) {
+		if t := strings.TrimSpace(part); t != "" {
+			atoms = append(atoms, t)
 		}
 	}
-	return true
+	if len(atoms) == 0 {
+		return []string{s}
+	}
+	return atoms
 }
 
 func extractBinaryOp(rest string) string {

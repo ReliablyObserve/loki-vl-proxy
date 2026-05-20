@@ -339,6 +339,8 @@ func TestFeature_Multitenancy_FilteredLabelsSeriesAndDetectedFields(t *testing.T
 
 	seriesParams := url.Values{}
 	seriesParams.Add("match[]", `{app="api-gateway",__tenant_id__="fake"}`)
+	seriesParams.Add("start", start)
+	seriesParams.Add("end", end)
 	seriesResp := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/series?"+seriesParams.Encode(), headers)
 	series := extractArray(seriesResp, "data")
 	if len(series) == 0 {
@@ -353,6 +355,8 @@ func TestFeature_Multitenancy_FilteredLabelsSeriesAndDetectedFields(t *testing.T
 
 	regexSeriesParams := url.Values{}
 	regexSeriesParams.Add("match[]", `{app="api-gateway",__tenant_id__=~"f.*"}`)
+	regexSeriesParams.Add("start", start)
+	regexSeriesParams.Add("end", end)
 	regexSeriesResp := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/series?"+regexSeriesParams.Encode(), headers)
 	regexSeries := extractArray(regexSeriesResp, "data")
 	if len(regexSeries) == 0 {
