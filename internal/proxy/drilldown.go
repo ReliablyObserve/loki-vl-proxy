@@ -1229,6 +1229,11 @@ func unifyDetectedType(current, next string) string {
 	if current == "" || current == next {
 		return next
 	}
+	// string is the widest type: once any value is non-numeric the field is string.
+	if current == "string" || next == "string" {
+		return "string"
+	}
+	// float is wider than int: int+float → float.
 	if current == "float" || next == "float" {
 		return "float"
 	}
