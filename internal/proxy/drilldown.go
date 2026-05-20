@@ -334,8 +334,21 @@ func shouldExposeStructuredField(key string, streamLabels map[string]string, lt 
 		return false
 	}
 	if _, ok := streamLabels[key]; !ok {
+		// Field not a stream label. For dotted/dashed names check whether the
+		// sanitized (underscore) form IS a stream label — if so, this field was
+		// injected by emit-structured-metadata and is a pure alias for a stream
+		// label that is already exposed in the Labels tab; skip it to avoid
+		// duplicate entries in the Fields tab.
+		if strings.ContainsAny(key, ".-") {
+			sanitized := SanitizeLabelName(key)
+			if _, sanitizedOk := streamLabels[sanitized]; sanitizedOk {
+				return false
+			}
+		}
 		return true
 	}
+	// Key IS a stream label. Dotted/dashed stream labels (OTel-style) are always
+	// exposed so they appear in the Fields tab alongside their underscore alias.
 	if strings.ContainsAny(key, ".-") {
 		return true
 	}
