@@ -61,6 +61,7 @@ After a parser stage, label filters are wrapped as `| filter <expr>`. For exampl
 | `\| label_format x="{{.y}}"` | `\| format "<y>" as x` |
 | `\| label_format a="{{.x}}", b="{{.y}}"` | `\| format "<x>" as a \| format "<y>" as b` |
 | `\| drop a, b` | `\| delete a, b` |
+| `\| drop a="val", b` | `\| delete a, b` + proxy post-filter removes `a` only when its value matches `"val"` |
 | `\| keep a, b` | `\| fields _time, _msg, _stream, a, b` |
 
 ## Proxy-Side Stages
@@ -72,6 +73,7 @@ These stages are executed at the proxy level (VL has no native equivalents):
 | `\| decolorize` | ANSI escape sequence stripping via regex |
 | `\| ip("10.0.0.0/8")` | IP CIDR range filtering |
 | `\| line_format` (templates) | Full Go `text/template` (ToUpper, ToLower, default, etc.) |
+| `\| drop field="value"` (matcher form) | VL `\| delete field` is issued unconditionally; the proxy then evaluates each entry and restores the field when the value does not match (via `ParseDropConditions` / `applyDropConditions`) |
 
 ## Metric Queries
 

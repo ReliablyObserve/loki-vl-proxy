@@ -151,6 +151,164 @@ func ParseLabelJoinMarker(query string) (string, *LabelJoinSpec) {
 	return query[:idx], &LabelJoinSpec{DstLabel: dst, Separator: sep, SrcLabels: srcs}
 }
 
+// DropCondition represents a matcher-form conditional drop from `| drop field=value`.
+// Only entries where the field value satisfies the condition have the field removed.
+type DropCondition struct {
+	Field string
+	Op    string // "=", "!=", "=~", "!~"
+	Value string
+	re    *regexp.Regexp // non-nil for =~ and !~
+}
+
+// Matches reports whether val satisfies the drop condition.
+func (dc DropCondition) Matches(val string) bool {
+	switch dc.Op {
+	case "=":
+		return val == dc.Value
+	case "!=":
+		return val != dc.Value
+	case "=~":
+		if dc.re == nil {
+			return false
+		}
+		return dc.re.MatchString(val)
+	case "!~":
+		if dc.re == nil {
+			return false
+		}
+		return !dc.re.MatchString(val)
+	}
+	return false
+}
+
+// ParseDropConditions extracts matcher-form drop filters from a LogQL query.
+// Bare-field drops (`| drop field`) are handled by VL `| delete`; only
+// matcher forms (`| drop field=value`) are returned here for proxy post-processing.
+func ParseDropConditions(logqlQuery string) []DropCondition {
+	remaining := strings.TrimSpace(logqlQuery)
+	if strings.HasPrefix(remaining, "{") {
+		end := findMatchingBrace(remaining)
+		if end < 0 {
+			return nil
+		}
+		remaining = strings.TrimSpace(remaining[end+1:])
+	}
+	var conds []DropCondition
+	for remaining != "" {
+		remaining = strings.TrimSpace(remaining)
+		if remaining == "" {
+			break
+		}
+		// Line filter operators: |= |~ |> (consume the value and continue)
+		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
+			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
+			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
+			strings.HasPrefix(remaining, "|>`") {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		// Negative line filter operators: != !~ !>
+		if len(remaining) >= 2 && remaining[0] == '!' && (remaining[1] == '=' || remaining[1] == '~' || remaining[1] == '>') {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		if !strings.HasPrefix(remaining, "|") {
+			break
+		}
+		remaining = strings.TrimSpace(remaining[1:])
+		stage, rest := extractPipelineStage(remaining)
+		remaining = rest
+		stage = strings.TrimSpace(stage)
+		if strings.HasPrefix(stage, "drop ") {
+			_, stageConds := splitDropSpec(stage[5:])
+			conds = append(conds, stageConds...)
+		}
+	}
+	return conds
+}
+
+// splitDropSpec parses a drop spec into bare field names and matcher conditions.
+// Example: `level="debug", trace_id` → bareFields: ["trace_id"], conditions: [{level = debug}]
+func splitDropSpec(spec string) (bareFields []string, conditions []DropCondition) {
+	for _, item := range splitDropItems(spec) {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		field, op, val, ok := parseDropMatcher(item)
+		if !ok || field == "" {
+			if !ok {
+				bareFields = append(bareFields, item)
+			}
+			continue
+		}
+		dc := DropCondition{Field: field, Op: op, Value: val}
+		if op == "=~" || op == "!~" {
+			if re, err := regexp.Compile(val); err == nil {
+				dc.re = re
+			}
+		}
+		conditions = append(conditions, dc)
+	}
+	return
+}
+
+// splitDropItems splits a drop spec by commas, respecting quoted strings.
+func splitDropItems(s string) []string {
+	var items []string
+	var cur strings.Builder
+	inQuote := rune(0)
+	for i := 0; i < len(s); i++ {
+		c := rune(s[i])
+		if c == '\\' && inQuote == '"' && i+1 < len(s) {
+			cur.WriteByte(s[i])
+			i++
+			cur.WriteByte(s[i])
+			continue
+		}
+		if (c == '"' || c == '`') && (inQuote == 0 || inQuote == c) {
+			if inQuote == 0 {
+				inQuote = c
+			} else {
+				inQuote = 0
+			}
+		}
+		if c == ',' && inQuote == 0 {
+			items = append(items, cur.String())
+			cur.Reset()
+			continue
+		}
+		cur.WriteRune(c)
+	}
+	if cur.Len() > 0 {
+		items = append(items, cur.String())
+	}
+	return items
+}
+
+// parseDropMatcher parses "field=value" into components. Returns ok=false for bare field names.
+func parseDropMatcher(s string) (field, op, value string, ok bool) {
+	for _, o := range []string{"=~", "!~", "!=", "="} {
+		idx := strings.Index(s, o)
+		if idx < 0 {
+			continue
+		}
+		f := strings.TrimSpace(s[:idx])
+		val := strings.TrimSpace(s[idx+len(o):])
+		if strings.HasPrefix(val, `"`) && strings.HasSuffix(val, `"`) && len(val) >= 2 {
+			if unquoted, err := strconv.Unquote(val); err == nil {
+				val = unquoted
+			} else {
+				val = val[1 : len(val)-1]
+			}
+		} else if strings.HasPrefix(val, "`") && strings.HasSuffix(val, "`") && len(val) >= 2 {
+			val = val[1 : len(val)-1]
+		}
+		return f, o, val, true
+	}
+	return "", "", "", false
+}
+
 // TranslateLogQL converts a LogQL query string to a LogsQL query string.
 // It handles stream selectors, line filters, label filters, parsers, and metric queries.
 func TranslateLogQL(logql string) (string, error) {
@@ -924,22 +1082,10 @@ func translateDropStage(spec string, labelFn LabelTranslateFunc) string {
 			}
 		}
 		if hasOp {
-			// Extract the field name (everything before the first operator char).
-			fieldName := item
-			for i, c := range item {
-				if c == '=' || c == '!' || c == '<' || c == '>' || c == '~' {
-					fieldName = strings.TrimSpace(item[:i])
-					break
-				}
-			}
-			if labelFn != nil {
-				fieldName = sanitizeFieldIdentifier(labelFn(fieldName))
-			} else {
-				fieldName = sanitizeFieldIdentifier(fieldName)
-			}
-			if fieldName != "" {
-				fields = append(fields, quoteLogsQLFieldNameIfNeeded(fieldName))
-			}
+			// Matcher form (e.g. level="debug"): the field is only dropped when the
+			// value matches. VL's `| delete` is unconditional, so we skip emitting it
+			// here. The proxy post-processes each entry via ParseDropConditions /
+			// applyDropConditions to implement the correct conditional semantics.
 			continue
 		}
 		// Bare field name.

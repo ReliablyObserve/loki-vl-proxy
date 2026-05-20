@@ -16,6 +16,8 @@ import (
 	"time"
 
 	fj "github.com/valyala/fastjson"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 // proxyLogQuery fetches log lines from VictoriaLogs.
@@ -136,6 +138,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
+	dropConditions := translator.ParseDropConditions(originalQuery)
 	smBuf2 := metadataMapPool.Get().(map[string]string)
 	pfBuf2 := metadataMapPool.Get().(map[string]string)
 	defer func() {
@@ -175,6 +178,9 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		}
 
 		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf2, pfBuf2)
+		if len(dropConditions) > 0 {
+			applyDropConditions(dropConditions, structuredMetadata, parsedFields)
+		}
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
@@ -457,6 +463,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	needsClassification := emitStructuredMetadata || categorizedLabels
+	dropConditions := translator.ParseDropConditions(originalQuery)
 
 	var (
 		miner        *patternMiner
@@ -546,6 +553,9 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
 			structuredMetadata, parsedFields = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+			if len(dropConditions) > 0 {
+				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
+			}
 		}
 		se, ok := streamMap[desc.key]
 		if !ok {
@@ -825,6 +835,23 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 		pf = pfBuf
 	}
 	return sm, pf
+}
+
+// applyDropConditions removes fields from sm/pf when the entry value matches a
+// `| drop field=value` condition. Bare-field drops are handled by VL `| delete`.
+func applyDropConditions(conds []translator.DropCondition, sm, pf map[string]string) {
+	for _, dc := range conds {
+		if sm != nil {
+			if val, ok := sm[dc.Field]; ok && dc.Matches(val) {
+				delete(sm, dc.Field)
+			}
+		}
+		if pf != nil {
+			if val, ok := pf[dc.Field]; ok && dc.Matches(val) {
+				delete(pf, dc.Field)
+			}
+		}
+	}
 }
 
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {
