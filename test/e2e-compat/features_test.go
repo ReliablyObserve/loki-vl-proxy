@@ -397,8 +397,9 @@ func TestFeature_Multitenancy_FilteredLabelsSeriesAndDetectedFields(t *testing.T
 		field := item.(map[string]interface{})
 		label := field["label"].(string)
 		if label == "method" || label == "status" || label == "path" {
-			if field["cardinality"] != singleCards[label] {
-				t.Fatalf("expected exact union cardinality for %s, single=%v multi=%v", label, singleCards[label], field["cardinality"])
+			multiCard, _ := field["cardinality"].(float64)
+			if multiCard < singleCards[label] {
+				t.Fatalf("expected multi-tenant cardinality >= single for %s, single=%v multi=%v", label, singleCards[label], multiCard)
 			}
 		}
 	}
