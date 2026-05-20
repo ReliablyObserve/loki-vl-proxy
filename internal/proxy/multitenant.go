@@ -1288,6 +1288,13 @@ func injectMultiTenantWarnings(body []byte, failedTenants []string) []byte {
 		return body
 	}
 	// Insert before the closing '}'.
+	// Guard against integer overflow in the capacity arithmetic: bodies larger than
+	// 512 MiB are unrealistic for a warnings-eligible single JSON object; skip
+	// injection rather than risk a panic on overflow.
+	const maxInjectBodySize = 512 * 1024 * 1024
+	if len(trimmed) > maxInjectBodySize {
+		return body
+	}
 	out := make([]byte, 0, len(trimmed)+len(warningsJSON)+14)
 	out = append(out, trimmed[:len(trimmed)-1]...)
 	out = append(out, ',', '"', 'w', 'a', 'r', 'n', 'i', 'n', 'g', 's', '"', ':')
