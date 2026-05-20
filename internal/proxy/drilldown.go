@@ -1421,7 +1421,14 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		// label index shows service.name exists but the scan window missed it. OTel
 		// streams may be older than the 500-line window; the native index covers the
 		// full time range and is the authoritative source for stream label existence.
-		if nativeFields != nil {
+		// Selectively promote service.name / service_name when the native label index
+		// shows service.name exists but the 500-line scan window missed it.
+		//
+		// Guard: skip when the query already selects on service_name or service.name —
+		// those are stream label selectors and must be suppressed from detected_fields
+		// (e.g. {service_name="api-gateway"} must not expose service_name as a field).
+		querySelectsServiceName := strings.Contains(query, "service_name") || strings.Contains(query, "service.name")
+		if nativeFields != nil && !querySelectsServiceName {
 			if _, nativeHasServiceDot := nativeFields["service.name"]; nativeHasServiceDot {
 				scanHas := func(label string) bool {
 					for _, f := range scanFieldList {
