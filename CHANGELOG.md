@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`detected_fields` underscore-proxy: `service.name` and `service_name` missing when OTel streams fall outside the 500-line scan window**: When running with `-label-style=underscores`, a wildcard `detected_fields` request samples the 500 most-recent log lines to infer field names. If all recent lines come from non-OTel streams (e.g. a continuous log generator), `service.name` and `service_name` never appear in the response even though OTel data exists in the time range. The fix checks the parallel-fetched native `field_names` index (which covers the full time range) and promotes both labels when `service.name` is present in the index but absent from the scan results. The promotion is skipped when the query already selects on `service_name` or `service.name` (stream-label selectors must stay suppressed from `detected_fields`, e.g. `{service_name="api-gateway"}`).
+
 ## [1.36.1] - 2026-05-20
 
 ### Fixed
