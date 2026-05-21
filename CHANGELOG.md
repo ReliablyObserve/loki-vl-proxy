@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.36.3] - 2026-05-21
+
 ### Fixed
 
 - **`| drop` stream label fix under `label-style=underscores`**: `applyDropConditionsToStreamLabels` now translates the drop condition's Loki underscore field name (e.g. `service_name`) back to its VL dot-style raw key (e.g. `service.name`) via the label translator, so `| drop service_name="api"` correctly removes the stream label when the proxy runs with `-label-style=underscores`.
