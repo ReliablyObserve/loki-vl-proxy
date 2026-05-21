@@ -187,6 +187,13 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		}
 		ensureDetectedLevel(translatedLabels)
 		ensureSyntheticServiceName(translatedLabels)
+		// Apply drop conditions to stream labels: Loki | drop field=value removes the
+		// field from the label set when the value matches, even for stream labels.
+		if len(dropConditions) > 0 {
+			if _, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, streamLabels, translatedLabels); changed {
+				translatedLabels = newLabels
+			}
+		}
 
 		stream := map[string]interface{}{
 			"stream": translatedLabels,
@@ -557,14 +564,24 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 			}
 		}
-		se, ok := streamMap[desc.key]
+		// Apply drop conditions to stream labels too. Loki's | drop field=value removes
+		// the field from the label set when the value matches — including stream labels.
+		streamKey := desc.key
+		streamLabels := desc.translatedLabels
+		if len(dropConditions) > 0 {
+			if newKey, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, desc.translatedLabels); changed {
+				streamKey = newKey
+				streamLabels = newLabels
+			}
+		}
+		se, ok := streamMap[streamKey]
 		if !ok {
 			se = &streamEntry{
-				Labels: desc.translatedLabels,
+				Labels: streamLabels,
 				Values: make([]interface{}, 0, 8),
 			}
-			streamMap[desc.key] = se
-			streamOrder = append(streamOrder, desc.key)
+			streamMap[streamKey] = se
+			streamOrder = append(streamOrder, streamKey)
 		}
 		if tsNanos == se.lastTs {
 			se.hasDupTs = true
@@ -852,6 +869,31 @@ func applyDropConditions(conds []translator.DropCondition, sm, pf map[string]str
 			}
 		}
 	}
+}
+
+// applyDropConditionsToStreamLabels checks whether any drop condition matches a stream label
+// (from rawLabels). If any match, it returns a cloned translatedLabels map with those fields
+// removed and a new canonical key. rawLabels and translatedLabels share the same field names
+// for all stream labels that originate from VL's _stream field.
+func applyDropConditionsToStreamLabels(conds []translator.DropCondition, rawLabels, translatedLabels map[string]string) (newKey string, newTranslated map[string]string, changed bool) {
+	for _, dc := range conds {
+		if val, ok := rawLabels[dc.Field]; ok && dc.Matches(val) {
+			changed = true
+			break
+		}
+	}
+	if !changed {
+		return "", nil, false
+	}
+	newTranslated = cloneStringMap(translatedLabels)
+	newRaw := cloneStringMap(rawLabels)
+	for _, dc := range conds {
+		if val, ok := rawLabels[dc.Field]; ok && dc.Matches(val) {
+			delete(newRaw, dc.Field)
+			delete(newTranslated, dc.Field)
+		}
+	}
+	return canonicalLabelsKey(newRaw), newTranslated, true
 }
 
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {

@@ -159,13 +159,19 @@ org-a:
 	// Give watcher one tick to record initial mtime
 	time.Sleep(100 * time.Millisecond)
 
-	// Write an updated file (mtime changes)
-	if err := os.WriteFile(f, []byte(`
+	// Write to a temp file then rename atomically to avoid the truncate→write
+	// window that can be observed by the watcher between os.WriteFile's O_TRUNC
+	// and the subsequent data write, which produces an empty map.
+	tmp := f + ".tmp"
+	if err := os.WriteFile(tmp, []byte(`
 org-a:
   account_id: "99"
   project_id: "5"
 `), 0600); err != nil {
-		t.Fatalf("failed to update file: %v", err)
+		t.Fatalf("failed to write temp file: %v", err)
+	}
+	if err := os.Rename(tmp, f); err != nil {
+		t.Fatalf("failed to rename temp file: %v", err)
 	}
 
 	select {

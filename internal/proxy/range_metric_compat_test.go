@@ -1217,3 +1217,69 @@ func TestSumByBytesRate_NoParser_UsesSumLen(t *testing.T) {
 		t.Fatalf("expected 1 series, got %d: %s", len(resp.Data.Result), rec.Body.String())
 	}
 }
+
+// TestQueryInstant_SumCountOverTimeParserStageCollapsesToOneSeries is a regression guard
+// for the Drilldown "Logs" tab counter displaying a label value ("api-gateway") instead
+// of the log count. sum(count_over_time({...} | json | filter [range])) without a by()
+// clause must return exactly one series with empty metric labels regardless of how many
+// distinct streams are returned by the backend.
+func TestQueryInstant_SumCountOverTimeParserStageCollapsesToOneSeries(t *testing.T) {
+	base := time.Unix(1700000000, 0).UTC()
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse form: %v", err)
+		}
+		if r.URL.Path != "/select/logsql/query" {
+			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		}
+		// Return entries from multiple distinct streams to verify collapse to single series.
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		for _, entry := range []struct{ stream, level string }{
+			{`{service_name="api-gateway",version="v1"}`, "error"},
+			{`{service_name="api-gateway",version="v2"}`, "error"},
+			{`{service_name="api-gateway",version="v1"}`, "warn"},
+			{`{service_name="auth-service",version="v1"}`, "error"},
+		} {
+			_, _ = fmt.Fprintf(w,
+				`{"_time":%q,"_msg":"log","_stream":%q,"level":%q,"status":"503"}`+"\n",
+				base.Add(-5*time.Minute).Format(time.RFC3339Nano), entry.stream, entry.level,
+			)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	q := url.Values{}
+	q.Set("query", `sum(count_over_time({namespace="prod"} | json | status >= 500 [3h]))`)
+	q.Set("time", strconv.FormatInt(base.Unix(), 10))
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+q.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQuery(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []json.RawMessage `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Data.ResultType != "vector" {
+		t.Fatalf("expected resultType=vector, got %q", resp.Data.ResultType)
+	}
+	// Regression: before the fix, 4 per-stream series were returned (one per unique
+	// stream+level combination). Drilldown rendered the service_name label instead of the count.
+	if len(resp.Data.Result) != 1 {
+		t.Errorf("expected exactly 1 series for sum() without by(), got %d (regression: per-stream explosion)", len(resp.Data.Result))
+	}
+	if len(resp.Data.Result) > 0 && len(resp.Data.Result[0].Metric) != 0 {
+		t.Errorf("expected empty metric labels {} for bare sum(), got %v", resp.Data.Result[0].Metric)
+	}
+}

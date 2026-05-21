@@ -288,7 +288,7 @@ func splitDropItems(s string) []string {
 
 // parseDropMatcher parses "field=value" into components. Returns ok=false for bare field names.
 func parseDropMatcher(s string) (field, op, value string, ok bool) {
-	for _, o := range []string{"=~", "!~", "!=", "="} {
+	for _, o := range []string{"!=~", "=~", "!~", "!=", "="} {
 		idx := strings.Index(s, o)
 		if idx < 0 {
 			continue
@@ -783,9 +783,7 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 		return translateDropStage(stage[5:], labelFn)
 	}
 	if strings.HasPrefix(stage, "keep ") {
-		// Always include _time and _msg so the proxy can build the response
-		fields := stage[5:]
-		return "| fields _time, _msg, _stream, " + fields
+		return translateKeepStage(stage[5:], labelFn)
 	}
 
 	// decolorize — strips ANSI color codes.
@@ -1096,6 +1094,37 @@ func translateDropStage(spec string, labelFn LabelTranslateFunc) string {
 		return ""
 	}
 	return "| delete " + strings.Join(fields, ", ")
+}
+
+// translateKeepStage translates a `keep <spec>` pipeline stage.
+// Loki supports two forms:
+//   - bare field names: `keep level, env` → `| fields _time, _msg, _stream, level, env`
+//   - label matchers: `keep method="GET"` → `| fields _time, _msg, _stream, method`
+//     (matcher-form keeps are projected by field name only; VL has no conditional field projection)
+//
+// Always includes _time, _msg, _stream so the proxy can reconstruct the Loki response.
+func translateKeepStage(spec string, _ LabelTranslateFunc) string {
+	items := splitCSV(spec)
+	var fields []string
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		// Matcher form (e.g. method="GET"): extract field name only.
+		// VL has no conditional field-projection, so we project the field name
+		// regardless of value. This at least avoids invalid VL syntax.
+		if field, _, _, ok := parseDropMatcher(item); ok && field != "" {
+			fields = append(fields, field)
+			continue
+		}
+		// Bare field name.
+		fields = append(fields, item)
+	}
+	if len(fields) == 0 {
+		return "| fields _time, _msg, _stream"
+	}
+	return "| fields _time, _msg, _stream, " + strings.Join(fields, ", ")
 }
 
 // splitCSV splits s on commas that are not inside parentheses or quotes.

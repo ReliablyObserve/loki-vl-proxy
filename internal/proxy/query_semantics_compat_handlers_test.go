@@ -447,3 +447,34 @@ func TestContract_Query_AbsentOverTimeCompatTranslateErrorReturnsBadRequest(t *t
 		t.Fatalf("expected translate error to return 400, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
+
+// TestHasOuterAggregationWithoutBy guards the helper that drives the single-series
+// collapse for bare outer aggregations (no by/without clause). This is a regression
+// guard for the Drilldown "Logs" tab counter showing a label value instead of the count.
+func TestHasOuterAggregationWithoutBy(t *testing.T) {
+	cases := []struct {
+		logql string
+		want  bool
+	}{
+		// bare outer aggregations — must collapse to one empty-label series
+		{`sum(count_over_time({app="api"}[5m]))`, true},
+		{`avg(count_over_time({app="api"}[5m]))`, true},
+		{`max(bytes_rate({app="api"}[5m]))`, true},
+		{`min(rate({app="api"}[5m]))`, true},
+		// with prefix by() — must NOT collapse
+		{`sum by (app) (count_over_time({app="api"}[5m]))`, false},
+		{`sum by (app, level) (count_over_time({app="api"}[5m]))`, false},
+		// with without() — must NOT collapse
+		{`sum without (pod) (count_over_time({app="api"}[5m]))`, false},
+		// no outer aggregation — must NOT collapse
+		{`count_over_time({app="api"}[5m])`, false},
+		{`rate({app="api"}[5m])`, false},
+		{`{app="api"} |= "error"`, false},
+	}
+	for _, tc := range cases {
+		got := hasOuterAggregationWithoutBy(tc.logql)
+		if got != tc.want {
+			t.Errorf("hasOuterAggregationWithoutBy(%q) = %v, want %v", tc.logql, got, tc.want)
+		}
+	}
+}

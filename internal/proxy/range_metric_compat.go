@@ -395,6 +395,12 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
+	// A bare outer aggregation without by() collapses all streams into one empty-label
+	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
+	// collectRangeMetricSamples produces a single series — not one per stream.
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
+		spec.ByExplicit = true
+	}
 	return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 }
 
@@ -434,7 +440,33 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
+	// A bare outer aggregation without by() collapses all streams into one empty-label
+	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
+	// collectRangeMetricSamples produces a single series — not one per stream.
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
+		spec.ByExplicit = true
+	}
 	return p.proxyManualRangeMetricInstant(w, r, spec, origSpec, manualFunc)
+}
+
+// hasOuterAggregationWithoutBy reports whether logql starts with a bare outer aggregation
+// (sum, avg, max, min, count, …) that carries no by() or without() grouping modifier.
+// Loki evaluates such expressions as a single series with no label dimensions.
+func hasOuterAggregationWithoutBy(logql string) bool {
+	logql = strings.TrimSpace(logql)
+	logql = stripOuterLabelReplace(logql)
+	loc := outerAggregationRE.FindStringIndex(logql)
+	if loc == nil || loc[0] != 0 || loc[1] >= len(logql) {
+		return false
+	}
+	// Guard against prefix collisions: outerAggregationRE matches "count" as a prefix of
+	// "count_over_time". The text after the aggregation keyword (+ optional by/without
+	// clause) must start with "(" to be a genuine outer aggregation operator.
+	if !strings.HasPrefix(strings.TrimSpace(logql[loc[1]:]), "(") {
+		return false
+	}
+	matched := strings.ToLower(logql[:loc[1]])
+	return !strings.Contains(matched, " by") && !strings.Contains(matched, " without")
 }
 
 // shouldUseManualRangeMetricCompat reports whether the given metric function

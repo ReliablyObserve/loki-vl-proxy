@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 func newStreamMetadataProxy(t *testing.T, backendURL string, emitStructuredMetadata, streamResponse bool) *Proxy {
@@ -387,5 +388,61 @@ func TestQueryRange_DefaultParserChainStillStaysTwoTuple(t *testing.T) {
 	tuple := decodeFirstTuple(t, rec.Body.Bytes())
 	if len(tuple) != 2 {
 		t.Fatalf("expected 2-tuple default parser-chain response, got %#v", tuple)
+	}
+}
+
+func TestApplyDropConditionsToStreamLabels(t *testing.T) {
+	tests := []struct {
+		name       string
+		rawLabels  map[string]string
+		translated map[string]string
+		logql      string
+		wantLabels map[string]string
+		wantChange bool
+	}{
+		{
+			name:       "matching stream label is removed",
+			rawLabels:  map[string]string{"level": "debug", "app": "api"},
+			translated: map[string]string{"level": "debug", "app": "api"},
+			logql:      `{app="api"} | drop level="debug"`,
+			wantLabels: map[string]string{"app": "api"},
+			wantChange: true,
+		},
+		{
+			name:       "non-matching value leaves labels unchanged",
+			rawLabels:  map[string]string{"level": "info", "app": "api"},
+			translated: map[string]string{"level": "info", "app": "api"},
+			logql:      `{app="api"} | drop level="debug"`,
+			wantLabels: map[string]string{"level": "info", "app": "api"},
+			wantChange: false,
+		},
+		{
+			name:       "field not present in stream labels is ignored",
+			rawLabels:  map[string]string{"app": "api"},
+			translated: map[string]string{"app": "api"},
+			logql:      `{app="api"} | drop status="500"`,
+			wantLabels: map[string]string{"app": "api"},
+			wantChange: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			conds := translator.ParseDropConditions(tt.logql)
+			_, got, changed := applyDropConditionsToStreamLabels(conds, tt.rawLabels, tt.translated)
+			if changed != tt.wantChange {
+				t.Fatalf("changed=%v want=%v", changed, tt.wantChange)
+			}
+			if !changed {
+				got = tt.translated
+			}
+			if len(got) != len(tt.wantLabels) {
+				t.Fatalf("got labels %v, want %v", got, tt.wantLabels)
+			}
+			for k, v := range tt.wantLabels {
+				if got[k] != v {
+					t.Fatalf("label %q: got %q, want %q", k, got[k], v)
+				}
+			}
+		})
 	}
 }
