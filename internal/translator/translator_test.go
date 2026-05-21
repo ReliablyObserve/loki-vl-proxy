@@ -211,9 +211,9 @@ func TestTranslateLogQL(t *testing.T) {
 			want:  `app:=api | unpack_json | fields _time, _msg, _stream, level, method`,
 		},
 		{
-			name:  "keep with only matcher forms",
+			name:  "keep with only matcher forms — invalid !=~ operator is skipped",
 			logql: `{app="api"} | json | keep method="GET", status!=~"5.."`,
-			want:  `app:=api | unpack_json | fields _time, _msg, _stream, method, status`,
+			want:  `app:=api | unpack_json | fields _time, _msg, _stream, method`,
 		},
 		{
 			name:  "drilldown pattern stats query shape",

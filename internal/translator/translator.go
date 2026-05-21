@@ -227,6 +227,52 @@ func ParseDropConditions(logqlQuery string) []DropCondition {
 	return conds
 }
 
+// ParseKeepConditions extracts matcher-form conditions from `| keep field=value` stages.
+// These are used by the proxy to post-process entries: fields that are present but do not
+// satisfy their keep condition are removed from structured metadata and parsed fields.
+// Bare-field keeps (`| keep field`) are handled by VL `| fields` projection; only
+// matcher forms (`| keep field=value`) are returned here.
+func ParseKeepConditions(logqlQuery string) []DropCondition {
+	remaining := strings.TrimSpace(logqlQuery)
+	if strings.HasPrefix(remaining, "{") {
+		end := findMatchingBrace(remaining)
+		if end < 0 {
+			return nil
+		}
+		remaining = strings.TrimSpace(remaining[end+1:])
+	}
+	var conds []DropCondition
+	for remaining != "" {
+		remaining = strings.TrimSpace(remaining)
+		if remaining == "" {
+			break
+		}
+		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
+			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
+			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
+			strings.HasPrefix(remaining, "|>`") {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		if len(remaining) >= 2 && remaining[0] == '!' && (remaining[1] == '=' || remaining[1] == '~' || remaining[1] == '>') {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		if !strings.HasPrefix(remaining, "|") {
+			break
+		}
+		remaining = strings.TrimSpace(remaining[1:])
+		stage, rest := extractPipelineStage(remaining)
+		remaining = rest
+		stage = strings.TrimSpace(stage)
+		if strings.HasPrefix(stage, "keep ") {
+			_, stageConds := splitDropSpec(stage[5:])
+			conds = append(conds, stageConds...)
+		}
+	}
+	return conds
+}
+
 // splitDropSpec parses a drop spec into bare field names and matcher conditions.
 // Example: `level="debug", trace_id` → bareFields: ["trace_id"], conditions: [{level = debug}]
 func splitDropSpec(spec string) (bareFields []string, conditions []DropCondition) {
@@ -237,7 +283,9 @@ func splitDropSpec(spec string) (bareFields []string, conditions []DropCondition
 		}
 		field, op, val, ok := parseDropMatcher(item)
 		if !ok || field == "" {
-			if !ok {
+			if !ok && !strings.Contains(item, "=") {
+				// Plain identifier (no operator chars) — treat as a bare field name.
+				// Items that contain "=" but failed to parse are malformed matchers; skip them.
 				bareFields = append(bareFields, item)
 			}
 			continue
@@ -286,12 +334,18 @@ func splitDropItems(s string) []string {
 	return items
 }
 
-// parseDropMatcher parses "field=value" into components. Returns ok=false for bare field names.
+// parseDropMatcher parses "field=value" into components. Returns ok=false for bare field names
+// and for expressions using the invalid !=~ operator (not a valid Loki matcher operator).
 func parseDropMatcher(s string) (field, op, value string, ok bool) {
+	// !=~ is not a valid Loki drop/keep operator. Scan for it first to prevent
+	// the =~ or != sub-strings from matching within a !=~ expression.
 	for _, o := range []string{"!=~", "=~", "!~", "!=", "="} {
 		idx := strings.Index(s, o)
 		if idx < 0 {
 			continue
+		}
+		if o == "!=~" {
+			return "", "", "", false
 		}
 		f := strings.TrimSpace(s[:idx])
 		val := strings.TrimSpace(s[idx+len(o):])
@@ -1100,7 +1154,8 @@ func translateDropStage(spec string, labelFn LabelTranslateFunc) string {
 // Loki supports two forms:
 //   - bare field names: `keep level, env` → `| fields _time, _msg, _stream, level, env`
 //   - label matchers: `keep method="GET"` → `| fields _time, _msg, _stream, method`
-//     (matcher-form keeps are projected by field name only; VL has no conditional field projection)
+//     VL field projection is unconditional; the proxy post-processes each entry via
+//     ParseKeepConditions / applyKeepConditions to strip non-matching fields.
 //
 // Always includes _time, _msg, _stream so the proxy can reconstruct the Loki response.
 func translateKeepStage(spec string, _ LabelTranslateFunc) string {
@@ -1111,15 +1166,16 @@ func translateKeepStage(spec string, _ LabelTranslateFunc) string {
 		if item == "" {
 			continue
 		}
-		// Matcher form (e.g. method="GET"): extract field name only.
-		// VL has no conditional field-projection, so we project the field name
-		// regardless of value. This at least avoids invalid VL syntax.
+		// Matcher form (e.g. method="GET"): project the field name unconditionally.
+		// The proxy's applyKeepConditions handles per-entry conditional removal.
 		if field, _, _, ok := parseDropMatcher(item); ok && field != "" {
 			fields = append(fields, field)
 			continue
 		}
-		// Bare field name.
-		fields = append(fields, item)
+		// Bare field name — skip items that look like matchers with unsupported operators.
+		if !strings.Contains(item, "=") {
+			fields = append(fields, item)
+		}
 	}
 	if len(fields) == 0 {
 		return "| fields _time, _msg, _stream"

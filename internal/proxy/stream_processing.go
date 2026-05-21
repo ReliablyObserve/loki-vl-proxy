@@ -139,6 +139,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	dropConditions := translator.ParseDropConditions(originalQuery)
+	keepConditions := translator.ParseKeepConditions(originalQuery)
 	smBuf2 := metadataMapPool.Get().(map[string]string)
 	pfBuf2 := metadataMapPool.Get().(map[string]string)
 	defer func() {
@@ -181,6 +182,9 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		if len(dropConditions) > 0 {
 			applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 		}
+		if len(keepConditions) > 0 {
+			applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
+		}
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
@@ -190,7 +194,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		// Apply drop conditions to stream labels: Loki | drop field=value removes the
 		// field from the label set when the value matches, even for stream labels.
 		if len(dropConditions) > 0 {
-			if _, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, streamLabels, translatedLabels); changed {
+			if _, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, streamLabels, translatedLabels, p.labelTranslator); changed {
 				translatedLabels = newLabels
 			}
 		}
@@ -471,6 +475,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	needsClassification := emitStructuredMetadata || categorizedLabels
 	dropConditions := translator.ParseDropConditions(originalQuery)
+	keepConditions := translator.ParseKeepConditions(originalQuery)
 
 	var (
 		miner        *patternMiner
@@ -563,13 +568,16 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 			if len(dropConditions) > 0 {
 				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
 			}
+			if len(keepConditions) > 0 {
+				applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
+			}
 		}
 		// Apply drop conditions to stream labels too. Loki's | drop field=value removes
 		// the field from the label set when the value matches — including stream labels.
 		streamKey := desc.key
 		streamLabels := desc.translatedLabels
 		if len(dropConditions) > 0 {
-			if newKey, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, desc.translatedLabels); changed {
+			if newKey, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, desc.translatedLabels, p.labelTranslator); changed {
 				streamKey = newKey
 				streamLabels = newLabels
 			}
@@ -871,15 +879,27 @@ func applyDropConditions(conds []translator.DropCondition, sm, pf map[string]str
 	}
 }
 
-// applyDropConditionsToStreamLabels checks whether any drop condition matches a stream label
-// (from rawLabels). If any match, it returns a cloned translatedLabels map with those fields
-// removed and a new canonical key. rawLabels and translatedLabels share the same field names
-// for all stream labels that originate from VL's _stream field.
-func applyDropConditionsToStreamLabels(conds []translator.DropCondition, rawLabels, translatedLabels map[string]string) (newKey string, newTranslated map[string]string, changed bool) {
+// applyDropConditionsToStreamLabels checks whether any drop condition matches a stream label.
+// If any match, it returns a cloned translatedLabels map with those fields removed and a new
+// canonical key.
+//
+// Under label-style=underscores, VL stores stream labels with dots (e.g. "service.name") but
+// drop conditions use Loki underscore names (e.g. "service_name"). The lt translator is used
+// to map condition field names back to their VL raw field names so both forms are matched and
+// deleted correctly. lt may be nil for passthrough style.
+func applyDropConditionsToStreamLabels(conds []translator.DropCondition, rawLabels, translatedLabels map[string]string, lt *LabelTranslator) (newKey string, newTranslated map[string]string, changed bool) {
 	for _, dc := range conds {
 		if val, ok := rawLabels[dc.Field]; ok && dc.Matches(val) {
 			changed = true
 			break
+		}
+		if lt != nil {
+			if vlField := lt.ToVL(dc.Field); vlField != dc.Field {
+				if val, ok := rawLabels[vlField]; ok && dc.Matches(val) {
+					changed = true
+					break
+				}
+			}
 		}
 	}
 	if !changed {
@@ -892,8 +912,41 @@ func applyDropConditionsToStreamLabels(conds []translator.DropCondition, rawLabe
 			delete(newRaw, dc.Field)
 			delete(newTranslated, dc.Field)
 		}
+		if lt != nil {
+			if vlField := lt.ToVL(dc.Field); vlField != dc.Field {
+				if val, ok := rawLabels[vlField]; ok && dc.Matches(val) {
+					delete(newRaw, vlField)
+					delete(newTranslated, dc.Field)
+				}
+			}
+		}
 	}
 	return canonicalLabelsKey(newRaw), newTranslated, true
+}
+
+// applyKeepConditions removes fields from sm/pf where a keep condition exists for that field
+// but the entry value does NOT satisfy the condition.
+// Loki's `| keep field=value` keeps the label only for entries where field matches value;
+// non-matching entries have the field stripped. Fields not covered by any condition are
+// unchanged — VL's field projection already handles bare-name keeps.
+func applyKeepConditions(conds []translator.DropCondition, sm, pf map[string]string) {
+	if len(conds) == 0 {
+		return
+	}
+	condByField := make(map[string]translator.DropCondition, len(conds))
+	for _, dc := range conds {
+		condByField[dc.Field] = dc
+	}
+	for field, val := range sm {
+		if dc, ok := condByField[field]; ok && !dc.Matches(val) {
+			delete(sm, field)
+		}
+	}
+	for field, val := range pf {
+		if dc, ok := condByField[field]; ok && !dc.Matches(val) {
+			delete(pf, field)
+		}
+	}
 }
 
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {
