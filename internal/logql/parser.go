@@ -44,16 +44,16 @@ func ParseLogQuery(input string) (*LogQuery, error) {
 
 // vectorOps maps function names to VectorOp constants.
 var vectorOps = map[string]VectorOp{
-	"sum":      VectorSum,
-	"avg":      VectorAvg,
-	"min":      VectorMin,
-	"max":      VectorMax,
-	"count":    VectorCount,
-	"stddev":   VectorStddev,
-	"stdvar":   VectorStdvar,
-	"bottomk":  VectorBottomK,
-	"topk":     VectorTopK,
-	"sort":     VectorSort,
+	"sum":       VectorSum,
+	"avg":       VectorAvg,
+	"min":       VectorMin,
+	"max":       VectorMax,
+	"count":     VectorCount,
+	"stddev":    VectorStddev,
+	"stdvar":    VectorStdvar,
+	"bottomk":   VectorBottomK,
+	"topk":      VectorTopK,
+	"sort":      VectorSort,
 	"sort_desc": VectorSortDesc,
 }
 
@@ -74,16 +74,6 @@ var rangeOps = map[string]RangeOp{
 	"last_over_time":     RangeLastOverTime,
 	"absent_over_time":   RangeAbsentOverTime,
 }
-
-// pipelineKeywords are identifiers that start pipeline stages after `|`.
-var pipelineKeywords = map[string]bool{
-	"json": true, "logfmt": true, "regexp": true, "pattern": true, "unpack": true,
-	"drop": true, "keep": true, "decolorize": true, "unwrap": true,
-	"line_format": true, "label_format": true,
-}
-
-// labelFilterKeywords start label filter expressions (anything not a pipe-stage keyword).
-// We detect them by exclusion.
 
 type parser struct {
 	sc    *scanner
@@ -390,16 +380,13 @@ func (p *parser) parseUnwrap() (Stage, error) {
 // parseIdentList parses a comma-separated list of identifiers (for drop/keep).
 func (p *parser) parseIdentList() ([]string, error) {
 	var labels []string
-	for {
-		if p.cur.Typ != TokIdent {
-			break
-		}
+	for p.cur.Typ == TokIdent {
 		labels = append(labels, p.advance().Val)
 		if p.cur.Typ == TokComma {
 			p.advance()
-			continue
+		} else {
+			break
 		}
-		break
 	}
 	if len(labels) == 0 {
 		return nil, fmt.Errorf("logql: expected at least one label name")

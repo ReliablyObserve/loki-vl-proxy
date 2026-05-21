@@ -21,10 +21,10 @@ type Stage interface {
 type MatchOp int
 
 const (
-	MatchEq      MatchOp = iota // =
-	MatchNeq                    // !=
-	MatchRe                     // =~
-	MatchNotRe                  // !~
+	MatchEq    MatchOp = iota // =
+	MatchNeq                  // !=
+	MatchRe                   // =~
+	MatchNotRe                // !~
 )
 
 // LabelMatcher is a single {name op "value"} matcher.
@@ -108,11 +108,11 @@ func (s *LineFilterStage) stage() {}
 type ParserType int
 
 const (
-	ParserJSON   ParserType = iota // json
-	ParserLogfmt                   // logfmt
-	ParserRegexp                   // regexp `...`
-	ParserPattern                  // pattern `...`
-	ParserUnpack                   // unpack
+	ParserJSON    ParserType = iota // json
+	ParserLogfmt                    // logfmt
+	ParserRegexp                    // regexp `...`
+	ParserPattern                   // pattern `...`
+	ParserUnpack                    // unpack
 )
 
 // ParserStage is a `| json` / `| logfmt` / `| regexp ...` stage.
@@ -254,20 +254,20 @@ func (g *Grouping) String() string {
 type RangeOp string
 
 const (
-	RangeRate          RangeOp = "rate"
-	RangeCountOverTime RangeOp = "count_over_time"
-	RangeBytesRate     RangeOp = "bytes_rate"
-	RangeBytesOverTime RangeOp = "bytes_over_time"
-	RangeAvgOverTime   RangeOp = "avg_over_time"
-	RangeSumOverTime   RangeOp = "sum_over_time"
-	RangeMinOverTime   RangeOp = "min_over_time"
-	RangeMaxOverTime   RangeOp = "max_over_time"
-	RangeStdvarOverTime RangeOp = "stdvar_over_time"
-	RangeStddevOverTime RangeOp = "stddev_over_time"
+	RangeRate             RangeOp = "rate"
+	RangeCountOverTime    RangeOp = "count_over_time"
+	RangeBytesRate        RangeOp = "bytes_rate"
+	RangeBytesOverTime    RangeOp = "bytes_over_time"
+	RangeAvgOverTime      RangeOp = "avg_over_time"
+	RangeSumOverTime      RangeOp = "sum_over_time"
+	RangeMinOverTime      RangeOp = "min_over_time"
+	RangeMaxOverTime      RangeOp = "max_over_time"
+	RangeStdvarOverTime   RangeOp = "stdvar_over_time"
+	RangeStddevOverTime   RangeOp = "stddev_over_time"
 	RangeQuantileOverTime RangeOp = "quantile_over_time"
-	RangeFirstOverTime  RangeOp = "first_over_time"
-	RangeLastOverTime   RangeOp = "last_over_time"
-	RangeAbsentOverTime RangeOp = "absent_over_time"
+	RangeFirstOverTime    RangeOp = "first_over_time"
+	RangeLastOverTime     RangeOp = "last_over_time"
+	RangeAbsentOverTime   RangeOp = "absent_over_time"
 )
 
 // RangeAggregation is e.g. `rate({app="api"}[5m])`.
@@ -329,7 +329,7 @@ func (v *VectorAggregation) String() string {
 	}
 	b.WriteString(" (")
 	if v.HasParam {
-		b.WriteString(fmt.Sprintf("%g,", v.Param))
+		fmt.Fprintf(&b, "%g,", v.Param)
 	}
 	b.WriteString(v.Inner.String())
 	b.WriteByte(')')
