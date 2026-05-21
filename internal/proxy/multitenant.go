@@ -14,7 +14,7 @@ import (
 	"sync"
 )
 
-func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string, single func(http.ResponseWriter, *http.Request)) bool {
+func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string) bool {
 	orgID := strings.TrimSpace(r.Header.Get("X-Scope-OrgID"))
 	if !hasMultiTenantOrgID(orgID) {
 		return false
@@ -88,7 +88,30 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 			subReq.Header = filteredReq.Header.Clone()
 			subReq.Header.Set("X-Scope-OrgID", tenantID)
 			rec := httptest.NewRecorder()
-			single(rec, subReq)
+			switch endpoint {
+			case "labels":
+				p.handleLabels(rec, subReq)
+			case "label_values":
+				p.handleLabelValues(rec, subReq)
+			case "series":
+				p.handleSeries(rec, subReq)
+			case "index_stats":
+				p.handleIndexStats(rec, subReq)
+			case "query":
+				p.handleQuery(rec, subReq)
+			case "query_range":
+				p.handleQueryRange(rec, subReq)
+			case "volume":
+				p.handleVolume(rec, subReq)
+			case "volume_range":
+				p.handleVolumeRange(rec, subReq)
+			case "detected_field_values":
+				p.handleDetectedFieldValues(rec, subReq)
+			case "patterns":
+				p.handlePatterns(rec, subReq)
+			case "detected_labels":
+				p.handleDetectedLabels(rec, subReq)
+			}
 			results[i] = tenantResult{tenantID: tenantID, rec: rec, failed: rec.Code >= 400}
 		}(i, tenantID)
 	}

@@ -1437,7 +1437,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	tupleMode := tupleModeForRequest(categorizedLabels, emitStructuredMetadata)
-	if p.handleMultiTenantFanout(w, r, "query_range", p.handleQueryRange) {
+	if p.handleMultiTenantFanout(w, r, "query_range") {
 		return
 	}
 	cacheKey := ""
@@ -1656,7 +1656,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		p.queryTracker.Record("query", logqlQuery, elapsed, false)
 		return
 	}
-	if p.handleMultiTenantFanout(w, r, "query", p.handleQuery) {
+	if p.handleMultiTenantFanout(w, r, "query") {
 		return
 	}
 

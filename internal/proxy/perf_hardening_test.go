@@ -579,7 +579,7 @@ func TestHandleMultiTenantFanoutRejectsExcessiveTenantCount(t *testing.T) {
 	r.Header.Set("X-Scope-OrgID", strings.Join(tenants, "|"))
 	w := httptest.NewRecorder()
 
-	if !p.handleMultiTenantFanout(w, r, "labels", p.handleLabels) {
+	if !p.handleMultiTenantFanout(w, r, "labels") {
 		t.Fatal("expected multi-tenant fanout path to handle oversized tenant set")
 	}
 	if w.Code != http.StatusBadRequest {
