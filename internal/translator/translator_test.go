@@ -876,3 +876,139 @@ func TestLabelJoinTranslation(t *testing.T) {
 		}
 	}
 }
+
+func TestParseBareDropFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		logql string
+		want  []string
+	}{
+		{
+			name:  "bare drop extracts fields",
+			logql: `{app="api"} | json | drop level, env`,
+			want:  []string{"level", "env"},
+		},
+		{
+			name:  "bare drop ignores matcher form",
+			logql: `{app="api"} | drop level="debug"`,
+			want:  nil,
+		},
+		{
+			name:  "bare drop mixed - returns only bare fields",
+			logql: `{app="api"} | drop level, status=~"5.."`,
+			want:  []string{"level"},
+		},
+		{
+			name:  "no drop stage returns nil",
+			logql: `{app="api"} | json`,
+			want:  nil,
+		},
+		{
+			name:  "multiple drop stages accumulate bare fields",
+			logql: `{app="api"} | drop level | drop env`,
+			want:  []string{"level", "env"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseBareDropFields(tt.logql)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i, v := range tt.want {
+				if got[i] != v {
+					t.Fatalf("index %d: got %q, want %q", i, got[i], v)
+				}
+			}
+		})
+	}
+}
+
+func TestParseBareKeepFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		logql string
+		want  []string
+	}{
+		{
+			name:  "bare keep extracts fields",
+			logql: `{app="api"} | keep app, level`,
+			want:  []string{"app", "level"},
+		},
+		{
+			name:  "bare keep ignores matcher form",
+			logql: `{app="api"} | keep method="GET"`,
+			want:  nil,
+		},
+		{
+			name:  "no keep stage returns nil",
+			logql: `{app="api"} | json`,
+			want:  nil,
+		},
+		{
+			name:  "keep with mixed bare and matcher returns only bare",
+			logql: `{app="api"} | keep app, status="200"`,
+			want:  []string{"app"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseBareKeepFields(tt.logql)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i, v := range tt.want {
+				if got[i] != v {
+					t.Fatalf("index %d: got %q, want %q", i, got[i], v)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateDropKeepSyntax(t *testing.T) {
+	tests := []struct {
+		name    string
+		logql   string
+		wantErr bool
+	}{
+		{
+			name:    "valid drop matcher passes",
+			logql:   `{app="api"} | drop level="debug"`,
+			wantErr: false,
+		},
+		{
+			name:    "invalid !=~ operator rejected",
+			logql:   `{app="api"} | keep method="GET", status!=~"5.."`,
+			wantErr: true,
+		},
+		{
+			name:    "bare fields pass",
+			logql:   `{app="api"} | drop level, env`,
+			wantErr: false,
+		},
+		{
+			name:    "valid regex matcher passes",
+			logql:   `{app="api"} | drop status=~"5.."`,
+			wantErr: false,
+		},
+		{
+			name:    "valid negation matcher passes",
+			logql:   `{app="api"} | drop level!="debug"`,
+			wantErr: false,
+		},
+		{
+			name:    "no drop/keep stage passes",
+			logql:   `{app="api"} | json`,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateDropKeepSyntax(tt.logql)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidateDropKeepSyntax(%q) error=%v, wantErr=%v", tt.logql, err, tt.wantErr)
+			}
+		})
+	}
+}

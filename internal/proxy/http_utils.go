@@ -22,6 +22,7 @@ import (
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/klauspost/compress/zstd"
 	fj "github.com/valyala/fastjson"
 )
@@ -234,6 +235,23 @@ func validateLogQLSyntax(query string) string {
 		return `parse error : syntax error: unexpected IDENT`
 	}
 
+	// Reject | drop / | keep stages with malformed matcher items (e.g. !=~).
+	if err := validateDropKeepSyntax(query); err != "" {
+		return err
+	}
+
+	return ""
+}
+
+// validateDropKeepSyntax returns an error message if the query contains | drop
+// or | keep stages with malformed matcher items using unsupported operators.
+func validateDropKeepSyntax(query string) string {
+	if !strings.Contains(query, "drop ") && !strings.Contains(query, "keep ") {
+		return "" // fast path: no drop/keep stage present
+	}
+	if err := translator.ValidateDropKeepSyntax(query); err != nil {
+		return err.Error()
+	}
 	return ""
 }
 

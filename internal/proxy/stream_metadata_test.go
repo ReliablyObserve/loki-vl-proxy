@@ -455,3 +455,74 @@ func TestApplyDropConditionsToStreamLabels(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyBareFieldMutationToStreamLabels(t *testing.T) {
+	tests := []struct {
+		name        string
+		dropFields  []string
+		keepFields  []string
+		rawLabels   map[string]string
+		translated  map[string]string
+		wantLabels  map[string]string
+		wantChange  bool
+	}{
+		{
+			name:       "bare drop removes stream label",
+			dropFields: []string{"app"},
+			rawLabels:  map[string]string{"app": "api", "env": "prod"},
+			translated: map[string]string{"app": "api", "env": "prod"},
+			wantLabels: map[string]string{"env": "prod"},
+			wantChange: true,
+		},
+		{
+			name:       "bare keep removes non-kept stream labels",
+			keepFields: []string{"env"},
+			rawLabels:  map[string]string{"app": "api", "env": "prod"},
+			translated: map[string]string{"app": "api", "env": "prod"},
+			wantLabels: map[string]string{"env": "prod"},
+			wantChange: true,
+		},
+		{
+			name:       "bare drop of absent field is no-op",
+			dropFields: []string{"missing"},
+			rawLabels:  map[string]string{"app": "api", "env": "prod"},
+			translated: map[string]string{"app": "api", "env": "prod"},
+			wantLabels: map[string]string{"app": "api", "env": "prod"},
+			wantChange: false,
+		},
+		{
+			name:       "bare keep with all fields retained is no-op",
+			keepFields: []string{"app", "env"},
+			rawLabels:  map[string]string{"app": "api", "env": "prod"},
+			translated: map[string]string{"app": "api", "env": "prod"},
+			wantLabels: map[string]string{"app": "api", "env": "prod"},
+			wantChange: false,
+		},
+		{
+			name:       "no drop or keep fields is no-op",
+			rawLabels:  map[string]string{"app": "api"},
+			translated: map[string]string{"app": "api"},
+			wantLabels: map[string]string{"app": "api"},
+			wantChange: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, got, changed := applyBareFieldMutationToStreamLabels(tt.dropFields, tt.keepFields, tt.rawLabels, tt.translated, nil)
+			if changed != tt.wantChange {
+				t.Fatalf("changed=%v want=%v", changed, tt.wantChange)
+			}
+			if !changed {
+				got = tt.translated
+			}
+			if len(got) != len(tt.wantLabels) {
+				t.Fatalf("got labels %v, want %v", got, tt.wantLabels)
+			}
+			for k, v := range tt.wantLabels {
+				if got[k] != v {
+					t.Fatalf("label %q: got %q, want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
