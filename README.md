@@ -195,6 +195,7 @@ For StatefulSet persistence, peer-cache fleet setup, OTLP push wiring, and image
 - **Runbook-backed alerts** — 13 alert rules, each with a linked runbook
 - **100+ Prometheus metrics** — all under `loki_vl_proxy_*` prefix
 - **Read-only by default** — `/push` blocked, delete gated, debug/admin disabled unless explicitly enabled
+- **Cold storage routing** — time-boundary split to Victoria Lakehouse for long-range queries
 
 ---
 
@@ -246,7 +247,8 @@ flowchart TD
     end
 
     subgraph L5["Upstream Systems"]
-        VL["VictoriaLogs<br/>log data"]
+        VL["VictoriaLogs<br/>hot backend"]
+        Lakehouse[("Victoria Lakehouse<br/>cold backend, optional")]
         VMA["vmalert<br/>rules / alerts state"]
         VM["VictoriaMetrics (optional)<br/>recording rule outputs"]
     end
@@ -267,7 +269,9 @@ flowchart TD
     L1C -->|miss| L2C
     L2C -->|miss| L3C
     L3C -->|miss| VL
+    L3C -. cold queries ≥ boundary .-> Lakehouse
     VL --> Q
+    Lakehouse -. cold results .-> Q
     Q --> RESP
 
     T --> VL
@@ -279,12 +283,14 @@ flowchart TD
     classDef exec fill:#172554,stroke:#818cf8,color:#eef2ff,stroke-width:2px;
     classDef cache fill:#3f1d2e,stroke:#f472b6,color:#fdf2f8,stroke-width:2px;
     classDef upstream fill:#052e16,stroke:#34d399,color:#ecfdf5,stroke-width:2px;
+    classDef cold fill:#1c1917,stroke:#a8a29e,color:#f5f5f4,stroke-width:1px,stroke-dasharray:4 4;
 
     class G,M,C client;
     class API,GUARD,EDGE api;
     class Q,T,R,RESP exec;
     class L1C,L2C,L3C cache;
     class VL,VMA,VM upstream;
+    class Lakehouse cold;
 ```
 
 ---
@@ -307,7 +313,7 @@ Default flags: `-label-style=underscores`, `-metadata-field-mode=translated`. Gr
 
 ### LogQL Compatibility
 
-Stream selectors, filters, parser pipelines, metric queries, range functions, scalar bool comparisons, vector set operators, and invalid LogQL error forms are all covered and machine-validated in CI against a real Loki oracle.
+Stream selectors, filters, parser pipelines, metric queries, range functions, scalar bool comparisons, vector set operators, and invalid LogQL error forms are all covered and machine-validated in CI against a real Loki oracle. The suite spans 316 exhaustive LogQL parity test cases with machine-validated compatibility scores.
 
 For full detail: [Loki Compatibility](docs/compatibility-loki.md), [Translation Reference](docs/translation-reference.md), [Known Issues](docs/KNOWN_ISSUES.md)
 

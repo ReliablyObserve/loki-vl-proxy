@@ -79,7 +79,7 @@ description: Planned features, known gaps, and the contribution priority list fo
 - [x] Non-OTel structured metadata e2e tests — push tests for plain structured metadata (non-OTel) added to log-generator; default `label-style` changed to `underscores` and `metadata-field-mode` to `translated` (v3.7.1)
 - [x] Config examples folder (`examples/`) — runnable env files, tenant map YAML, Docker Compose stack, Grafana datasource provisioning, systemd unit, Kubernetes ConfigMap with full annotated flag/env reference
 
-## Planned (recently completed)
+## Recently Shipped
 
 - [x] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching (0.22.0)
 - [x] `@` timestamp modifier (0.19.0)
@@ -104,3 +104,7 @@ description: Planned features, known gaps, and the contribution priority list fo
 - [ ] Tighten remaining merged-tenant Drilldown metadata accuracy for field and label cardinality surfaces
 - [x] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
 - [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests (ongoing — LogQL parity machine at 202 cases)
+- [ ] Bare `| drop`/`| keep` stream label mutation — matcher form currently applies only to structured metadata; stream labels not yet mutated
+- [ ] Malformed drop/keep matcher → HTTP 400 error — currently silently skipped, should return parse error
+- [ ] Parallel multi-tenant fanout — currently serial; high tenant counts scale latency linearly
+- [ ] Streaming backward hot+cold merge — currently buffers cold body; large backward ranges materialize in proxy RAM

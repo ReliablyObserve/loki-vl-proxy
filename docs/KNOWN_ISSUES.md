@@ -106,6 +106,9 @@ These are not current open issues in this codebase:
 - `| drop field=value` matcher semantics — proxy now conditionally removes a field only when its value matches, via proxy-side post-processing (`ParseDropConditions` + `applyDropConditions`); previously the value predicate was silently ignored and the field was always dropped (v3.7.1)
 - structuredMetadata vs parsedFields classification — proxy correctly classifies structured metadata fields by comparing against `_msg` JSON content; previously some structured metadata fields were misclassified as parsed fields (v3.7.1)
 - exhaustive parity test coverage — 316 LogQL parity cases with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved (v3.7.1)
+- `absent_over_time()` — fully implemented (v1.35.0); translates to `stats count()` with empty-series emission
+- `sort` / `sort_desc` outer aggregations — fixed in v1.35.0; sort by metric value across series now works correctly
+- Cold storage backend routing (Victoria Lakehouse) — implemented v1.28.0; time-boundary split between hot VL and cold Lakehouse
 
 ## Related Docs
 
