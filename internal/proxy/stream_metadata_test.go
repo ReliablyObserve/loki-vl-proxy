@@ -424,11 +424,20 @@ func TestApplyDropConditionsToStreamLabels(t *testing.T) {
 			wantLabels: map[string]string{"app": "api"},
 			wantChange: false,
 		},
+		{
+			name:       "underscore condition matches dot-style raw label via translator",
+			rawLabels:  map[string]string{"service.name": "api", "app": "test"},
+			translated: map[string]string{"service_name": "api", "app": "test"},
+			logql:      `{app="test"} | drop service_name="api"`,
+			wantLabels: map[string]string{"app": "test"},
+			wantChange: true,
+		},
 	}
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			conds := translator.ParseDropConditions(tt.logql)
-			_, got, changed := applyDropConditionsToStreamLabels(conds, tt.rawLabels, tt.translated)
+			_, got, changed := applyDropConditionsToStreamLabels(conds, tt.rawLabels, tt.translated, lt)
 			if changed != tt.wantChange {
 				t.Fatalf("changed=%v want=%v", changed, tt.wantChange)
 			}

@@ -58,15 +58,15 @@ No cache, no coalescer. Pure translation overhead + HTTP proxying + VictoriaLogs
 
 Grafana dashboards auto-refresh every 30 s. After the first fetch, repeated queries are served from in-memory cache without touching VictoriaLogs. The numbers below are **100% cache-hit results** — they represent the ceiling, not the typical case. Real production performance sits between the cold floor above and these warm numbers depending on your dashboard diversity and refresh interval.
 
-| Workload | Concurrency | Loki req/s | Proxy (warm) req/s | Throughput | P50 Loki | P50 Proxy | Latency |
-|---|:---:|---:|---:|:---:|---:|---:|:---:|
-| Small panels | c=10 | 2,011 | 15,626 | **7.8× faster** | 4 ms | 587 µs | **6.8× faster** |
-| Small panels | c=100 | 2,290 | 27,513 | **12× faster** | 42 ms | 3 ms | **14× faster** |
-| Heavy queries | c=10 | 407 | 5,944 | **14.6× faster** | 4 ms | 1 ms | **4× faster** |
-| Heavy queries | c=100 | 162† | 7,134 | **44× faster** | ~1,800 ms† | 12 ms | **150× faster** |
-| Long-range | c=10 | 8 | 157 | **18.7× faster** | 481 ms | 1 ms | **481× faster** |
-| Compute | c=10 | 2,803 | 11,162 | **4× faster** | 1 ms | 675 µs | **1.5× faster** |
-| Compute | c=100 | 1,611 | 16,456 | **10.2× faster** | 4 ms | 4 ms | parity |
+| Workload | Concurrency | Loki req/s | Proxy cold req/s | Proxy warm req/s | Warm gain | P50 Loki | P50 cold | P50 warm | Latency gain |
+|---|:---:|---:|---:|---:|:---:|---:|---:|---:|:---:|
+| Small panels | c=10 | 2,011 | 1,201 | 15,626 | **7.8×** | 4 ms | 4 ms | 587 µs | **6.8×** |
+| Small panels | c=100 | 2,290 | — | 27,513 | **12×** | 42 ms | — | 3 ms | **14×** |
+| Heavy queries | c=10 | 407 | 179 | 5,944 | **14.6×** | 4 ms | 21 ms | 1 ms | **4×** |
+| Heavy queries | c=100 | 162† | — | 7,134 | **44×** | ~1,800 ms† | — | 12 ms | **150×** |
+| Long-range | c=10 | 8 | 19 | 157 | **18.7×** | 481 ms | 39 ms | 1 ms | **481×** |
+| Compute | c=10 | 2,803 | 352 | 11,162 | **4×** | 1 ms | 10 ms | 675 µs | **1.5×** |
+| Compute | c=100 | 1,611 | 366 | 16,456 | **10.2×** | 4 ms | 261 ms | 4 ms | parity |
 
 CPU: **6–408× less** than Loki under cache load. RAM: **1.7–3.9× less** for most workloads.
 
@@ -74,13 +74,13 @@ CPU: **6–408× less** than Loki under cache load. RAM: **1.7–3.9× less** fo
 
 ### Dashboard load spikes — request coalescer
 
-When many panels hit the same query simultaneously, the proxy collapses them into a single backend call. The figures below assume the coalesced result is already cached; first-hit coalescing still avoids the N-fan-out but pays one backend round-trip.
+When many panels hit the same query simultaneously, the proxy collapses them into a single backend call. First-hit coalescing avoids the N-fan-out but pays one backend round-trip (cold proxy P50 for a single request); subsequent hits are served from cache.
 
-| Workload | Loki P50 | Proxy P50 (warm) |
-|---|---:|---:|
-| Metadata queries | 196 ms | **1 ms** |
-| Heavy aggregations | 2,399 ms | **1 ms** |
-| Content search | 13,415 ms | **1 ms** |
+| Workload | Loki P50 | Proxy P50 (first hit) | Proxy P50 (warm) |
+|---|---:|---:|---:|
+| Metadata queries | 196 ms | **~4 ms** | **1 ms** |
+| Heavy aggregations | 2,399 ms | **~21 ms** | **1 ms** |
+| Content search | 13,415 ms | **~39 ms** | **1 ms** |
 
 Full throughput tables, P90/P99 latency, CPU and RSS breakdowns: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 
@@ -97,6 +97,7 @@ This is a production deployment, not a synthetic benchmark. The numbers below co
 | `vlstorage` | 1.0 | 5.0 GiB |
 | `vlinsert` | 0.1 | 0.6 GiB |
 | `vlselect` | 0.1 | 0.25 GiB |
+| `loki-vl-proxy` | ~0.1–0.2 | ~0.15–0.26 GiB |
 | **VL + loki-vl-proxy, combined** | **~1.4** | **~6.1 GiB** |
 
 For comparison, [Loki's own documentation](https://grafana.com/docs/loki/latest/setup/size/) puts the **minimum** hardware requirement at **38 cores and 59 GiB** for the same ingest class (`<3 TB/day`). That's the floor — a minimal, single-tenant, non-HA deployment.

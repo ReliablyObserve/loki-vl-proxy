@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`| drop` stream label fix under `label-style=underscores`**: `applyDropConditionsToStreamLabels` now translates the drop condition's Loki underscore field name (e.g. `service_name`) back to its VL dot-style raw key (e.g. `service.name`) via the label translator, so `| drop service_name="api"` correctly removes the stream label when the proxy runs with `-label-style=underscores`.
+- **`| keep field=value` per-entry conditional semantics**: Added `ParseKeepConditions` and `applyKeepConditions`; the proxy now strips a kept field from entries whose value does not match the keep condition, implementing Loki-equivalent per-entry behaviour instead of unconditional field projection.
+- **`!=~` invalid drop/keep matcher operator rejected**: `parseDropMatcher` now returns false immediately for `!=~` (scanned first to prevent `=~`/`!=` from matching within it); `splitDropSpec` and `translateKeepStage` skip items that look like matchers with unsupported operators rather than passing them through as malformed bare field names.
+
+### Security
+
+- **`ws` dependency in website upgraded to >=8.20.1**: `webpack-bundle-analyzer` pinned ws to `^7`, resolving to 7.5.10 which is affected by an uninitialized memory disclosure (dependabot alert #14). An npm `overrides` entry in `website/package.json` forces ws to `>=8.20.1`.
+
 ## [1.36.2] - 2026-05-21
 
 ### Fixed
