@@ -481,7 +481,7 @@ func reverseNDJSONBody(body []byte) []byte {
 // naturally selects the newest (last) limit rows from an ascending body.
 func readAndReverseNDJSON(r io.Reader, limit int) ([]byte, error) {
 	const maxRingSize = 5000
-	if limit > maxRingSize {
+	if limit <= 0 || limit > maxRingSize {
 		limit = maxRingSize
 	}
 	sc := bufio.NewScanner(r)
