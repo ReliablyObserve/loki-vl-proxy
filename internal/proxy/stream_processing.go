@@ -140,6 +140,8 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	dropConditions := translator.ParseDropConditions(originalQuery)
 	keepConditions := translator.ParseKeepConditions(originalQuery)
+	bareDropFields := translator.ParseBareDropFields(originalQuery)
+	bareKeepFields := translator.ParseBareKeepFields(originalQuery)
 	smBuf2 := metadataMapPool.Get().(map[string]string)
 	pfBuf2 := metadataMapPool.Get().(map[string]string)
 	defer func() {
@@ -195,6 +197,14 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		// field from the label set when the value matches, even for stream labels.
 		if len(dropConditions) > 0 {
 			if _, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, streamLabels, translatedLabels, p.labelTranslator); changed {
+				translatedLabels = newLabels
+			}
+		}
+		// Apply bare-field drop/keep to stream labels.
+		// | drop f removes f from the stream label set unconditionally.
+		// | keep f1, f2 removes any stream label NOT in the keep list.
+		if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
+			if _, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, streamLabels, translatedLabels, p.labelTranslator); changed {
 				translatedLabels = newLabels
 			}
 		}
@@ -476,6 +486,8 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	needsClassification := emitStructuredMetadata || categorizedLabels
 	dropConditions := translator.ParseDropConditions(originalQuery)
 	keepConditions := translator.ParseKeepConditions(originalQuery)
+	bareDropFields2 := translator.ParseBareDropFields(originalQuery)
+	bareKeepFields2 := translator.ParseBareKeepFields(originalQuery)
 
 	var (
 		miner        *patternMiner
@@ -578,6 +590,15 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		streamLabels := desc.translatedLabels
 		if len(dropConditions) > 0 {
 			if newKey, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, desc.translatedLabels, p.labelTranslator); changed {
+				streamKey = newKey
+				streamLabels = newLabels
+			}
+		}
+		// Apply bare-field drop/keep to stream labels.
+		// | drop f removes f from the stream label set unconditionally.
+		// | keep f1, f2 removes any stream label NOT in the keep list.
+		if len(bareDropFields2) > 0 || len(bareKeepFields2) > 0 {
+			if newKey, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields2, bareKeepFields2, desc.rawLabels, streamLabels, p.labelTranslator); changed {
 				streamKey = newKey
 				streamLabels = newLabels
 			}
@@ -922,6 +943,87 @@ func applyDropConditionsToStreamLabels(conds []translator.DropCondition, rawLabe
 		}
 	}
 	return canonicalLabelsKey(newRaw), newTranslated, true
+}
+
+// applyBareFieldMutationToStreamLabels handles bare | drop and | keep stream-label mutations.
+// | drop fields: removes each bare-dropped field from the stream label set.
+// | keep fields: removes any stream label not in the keep list.
+// Returns the new stream key, translated labels map, and whether any change occurred.
+func applyBareFieldMutationToStreamLabels(
+	dropFields, keepFields []string,
+	rawLabels, translatedLabels map[string]string,
+	lt *LabelTranslator,
+) (newKey string, newTranslated map[string]string, changed bool) {
+	if len(dropFields) == 0 && len(keepFields) == 0 {
+		return "", nil, false
+	}
+
+	// Build set structures for O(1) lookup.
+	dropSet := make(map[string]struct{}, len(dropFields))
+	for _, f := range dropFields {
+		dropSet[f] = struct{}{}
+		if lt != nil {
+			dropSet[lt.ToVL(f)] = struct{}{}
+		}
+	}
+
+	keepSet := make(map[string]struct{}, len(keepFields))
+	for _, f := range keepFields {
+		keepSet[f] = struct{}{}
+		if lt != nil {
+			keepSet[lt.ToVL(f)] = struct{}{}
+		}
+	}
+
+	// Determine which raw (VL dotted) labels to remove.
+	toRemove := make(map[string]struct{})
+	for rawKey := range rawLabels {
+		// Drop: remove if in drop set.
+		if _, ok := dropSet[rawKey]; ok {
+			toRemove[rawKey] = struct{}{}
+			continue
+		}
+		// Keep: remove if NOT in keep set (and keep set is non-empty).
+		if len(keepFields) > 0 {
+			// Translate rawKey to loki label for keep-set lookup.
+			lokiKey := rawKey
+			if lt != nil {
+				lokiKey = lt.ToLoki(rawKey)
+			}
+			if _, ok := keepSet[rawKey]; !ok {
+				if _, ok2 := keepSet[lokiKey]; !ok2 {
+					toRemove[rawKey] = struct{}{}
+				}
+			}
+		}
+	}
+
+	if len(toRemove) == 0 {
+		return "", nil, false
+	}
+
+	// Build new raw/translated maps without the removed keys.
+	newRaw := make(map[string]string, len(rawLabels)-len(toRemove))
+	for k, v := range rawLabels {
+		if _, skip := toRemove[k]; !skip {
+			newRaw[k] = v
+		}
+	}
+	newTrans := make(map[string]string, len(translatedLabels))
+	for k, v := range translatedLabels {
+		// Find the VL key for this translated key.
+		vlKey := k
+		if lt != nil {
+			vlKey = lt.ToVL(k)
+		}
+		if _, skip := toRemove[vlKey]; !skip {
+			newTrans[k] = v
+		}
+	}
+
+	// Rebuild the stream key from newRaw.
+	key := canonicalLabelsKey(newRaw)
+	return key, newTrans, true
 }
 
 // applyKeepConditions removes fields from sm/pf where a keep condition exists for that field

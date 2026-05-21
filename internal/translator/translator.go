@@ -273,6 +273,157 @@ func ParseKeepConditions(logqlQuery string) []DropCondition {
 	return conds
 }
 
+// ParseBareDropFields returns the bare field names from `| drop field` stages.
+// These are fields that are unconditionally deleted at the VL level via | delete,
+// but the proxy must also strip them from stream labels since _stream is not touched by VL's | delete.
+func ParseBareDropFields(logqlQuery string) []string {
+	remaining := strings.TrimSpace(logqlQuery)
+	if strings.HasPrefix(remaining, "{") {
+		end := findMatchingBrace(remaining)
+		if end < 0 {
+			return nil
+		}
+		remaining = strings.TrimSpace(remaining[end+1:])
+	}
+	var result []string
+	for remaining != "" {
+		remaining = strings.TrimSpace(remaining)
+		if remaining == "" {
+			break
+		}
+		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
+			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
+			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
+			strings.HasPrefix(remaining, "|>`") {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		if len(remaining) >= 2 && remaining[0] == '!' && (remaining[1] == '=' || remaining[1] == '~' || remaining[1] == '>') {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		if !strings.HasPrefix(remaining, "|") {
+			break
+		}
+		remaining = strings.TrimSpace(remaining[1:])
+		stage, rest := extractPipelineStage(remaining)
+		remaining = rest
+		stage = strings.TrimSpace(stage)
+		if strings.HasPrefix(stage, "drop ") {
+			bareFields, _ := splitDropSpec(stage[5:])
+			result = append(result, bareFields...)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// ParseBareKeepFields returns the bare field names from `| keep field` stages.
+// VL projects these via | fields _time, _msg, _stream, ..., but _stream carries all
+// original stream labels; the proxy must filter the stream label set to only the kept fields.
+func ParseBareKeepFields(logqlQuery string) []string {
+	remaining := strings.TrimSpace(logqlQuery)
+	if strings.HasPrefix(remaining, "{") {
+		end := findMatchingBrace(remaining)
+		if end < 0 {
+			return nil
+		}
+		remaining = strings.TrimSpace(remaining[end+1:])
+	}
+	var result []string
+	for remaining != "" {
+		remaining = strings.TrimSpace(remaining)
+		if remaining == "" {
+			break
+		}
+		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
+			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
+			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
+			strings.HasPrefix(remaining, "|>`") {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		if len(remaining) >= 2 && remaining[0] == '!' && (remaining[1] == '=' || remaining[1] == '~' || remaining[1] == '>') {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		if !strings.HasPrefix(remaining, "|") {
+			break
+		}
+		remaining = strings.TrimSpace(remaining[1:])
+		stage, rest := extractPipelineStage(remaining)
+		remaining = rest
+		stage = strings.TrimSpace(stage)
+		if strings.HasPrefix(stage, "keep ") {
+			bareFields, _ := splitDropSpec(stage[5:])
+			result = append(result, bareFields...)
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// ValidateDropKeepSyntax returns a parse error if the query contains | drop or | keep
+// stages with malformed matcher items — items that look like matchers (contain "=")
+// but use unsupported operators. Callers should return HTTP 400.
+func ValidateDropKeepSyntax(logqlQuery string) error {
+	remaining := strings.TrimSpace(logqlQuery)
+	if strings.HasPrefix(remaining, "{") {
+		end := findMatchingBrace(remaining)
+		if end < 0 {
+			return nil
+		}
+		remaining = strings.TrimSpace(remaining[end+1:])
+	}
+	for remaining != "" {
+		remaining = strings.TrimSpace(remaining)
+		if remaining == "" {
+			break
+		}
+		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
+			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
+			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
+			strings.HasPrefix(remaining, "|>`") {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		if len(remaining) >= 2 && remaining[0] == '!' && (remaining[1] == '=' || remaining[1] == '~' || remaining[1] == '>') {
+			_, remaining = extractPipelineStage(remaining[2:])
+			continue
+		}
+		if !strings.HasPrefix(remaining, "|") {
+			break
+		}
+		remaining = strings.TrimSpace(remaining[1:])
+		stage, rest := extractPipelineStage(remaining)
+		remaining = rest
+		stage = strings.TrimSpace(stage)
+		var spec string
+		if strings.HasPrefix(stage, "drop ") {
+			spec = stage[5:]
+		} else if strings.HasPrefix(stage, "keep ") {
+			spec = stage[5:]
+		} else {
+			continue
+		}
+		for _, item := range splitDropItems(spec) {
+			item = strings.TrimSpace(item)
+			if item == "" || !strings.Contains(item, "=") {
+				continue
+			}
+			// Item looks like a matcher but has "=" — validate it.
+			if _, _, _, ok := parseDropMatcher(item); !ok {
+				return fmt.Errorf("parse error at line 1, col 1: invalid drop/keep matcher %q: unsupported operator (!=~ is not a valid Loki operator)", item)
+			}
+		}
+	}
+	return nil
+}
+
 // splitDropSpec parses a drop spec into bare field names and matcher conditions.
 // Example: `level="debug", trace_id` → bareFields: ["trace_id"], conditions: [{level = debug}]
 func splitDropSpec(spec string) (bareFields []string, conditions []DropCondition) {
