@@ -458,13 +458,13 @@ func TestApplyDropConditionsToStreamLabels(t *testing.T) {
 
 func TestApplyBareFieldMutationToStreamLabels(t *testing.T) {
 	tests := []struct {
-		name        string
-		dropFields  []string
-		keepFields  []string
-		rawLabels   map[string]string
-		translated  map[string]string
-		wantLabels  map[string]string
-		wantChange  bool
+		name       string
+		dropFields []string
+		keepFields []string
+		rawLabels  map[string]string
+		translated map[string]string
+		wantLabels map[string]string
+		wantChange bool
 	}{
 		{
 			name:       "bare drop removes stream label",

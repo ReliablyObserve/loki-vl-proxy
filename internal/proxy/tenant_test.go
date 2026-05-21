@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -634,9 +635,9 @@ func TestTenant_MultiTenantQueryRangeSortsStreamsAcrossTenants(t *testing.T) {
 }
 
 func TestTenant_MultiTenantLabelsUsesMergedCache(t *testing.T) {
-	var calls int
+	var calls atomic.Int64
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
+		calls.Add(1)
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"values": []map[string]interface{}{
 				{"value": "app", "hits": 10},
@@ -669,8 +670,8 @@ func TestTenant_MultiTenantLabelsUsesMergedCache(t *testing.T) {
 		}
 	}
 
-	if calls != 2 {
-		t.Fatalf("expected first request to fan out twice and second request to hit merged cache, got %d backend calls", calls)
+	if calls.Load() != 2 {
+		t.Fatalf("expected first request to fan out twice and second request to hit merged cache, got %d backend calls", calls.Load())
 	}
 }
 
