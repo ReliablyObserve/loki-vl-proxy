@@ -487,7 +487,10 @@ func readAndReverseNDJSON(r io.Reader, limit int) ([]byte, error) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	// ring is a circular buffer that always retains the last `limit` lines seen.
-	ring := make([][]byte, limit)
+	// Allocated to the compile-time constant maxRingSize so the allocation size is
+	// independent of the user-supplied limit; limit (bounded above) controls only the
+	// circular-buffer modulus, not the backing array length.
+	ring := make([][]byte, maxRingSize)
 	head := 0 // next write position (mod limit)
 	total := 0
 	for sc.Scan() {
