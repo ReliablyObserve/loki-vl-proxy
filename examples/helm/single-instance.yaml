@@ -1,0 +1,9 @@
+# Minimal single-instance deployment (stateless, in-memory cache only)
+replicaCount: 1
+
+extraArgs:
+  backend: "http://victorialogs:9428"
+  log-level: "info"
+  cache-ttl: "60s"
+  label-style: "passthrough"
+  metadata-field-mode: "hybrid"

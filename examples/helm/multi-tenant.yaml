@@ -1,0 +1,15 @@
+# Multi-tenant setup with file-based tenant map and cold storage
+extraArgs:
+  backend: "http://victorialogs:9428"
+  require-tenant-header: "true"
+  forward-tenant-header: "true"
+  cold-enabled: "true"
+  cold-backend: "http://victoria-lakehouse:9428"
+  cold-boundary: "168h"
+  cold-overlap: "1h"
+  log-level: "info"
+
+# Mount tenant map from ConfigMap
+envFrom:
+  - configMapRef:
+      name: proxy-tenant-map

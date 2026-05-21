@@ -1,0 +1,52 @@
+# Production HA setup: StatefulSet + disk cache + peer cache + HPA + PDB
+replicaCount: 3
+
+workload:
+  kind: StatefulSet
+
+extraArgs:
+  backend: "http://victorialogs:9428"
+  log-level: "info"
+  label-style: "passthrough"
+  metadata-field-mode: "hybrid"
+  patterns-enabled: "true"
+  query-range-windowing: "true"
+
+persistence:
+  enabled: true
+  size: 20Gi
+
+peerCache:
+  enabled: true
+  discovery: dns
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+horizontalPodAutoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 2000m
+    memory: 1Gi
+
+serviceMonitor:
+  enabled: true
+
+observability:
+  otel:
+    serviceName: loki-vl-proxy
