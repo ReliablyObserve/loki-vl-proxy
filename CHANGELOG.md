@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.37.1] - 2026-05-21
+
 ### Fixed
 
 - **Bare `| drop field` / `| keep field` now mutates stream labels**: Added `ParseBareDropFields`, `ParseBareKeepFields`, and `applyBareFieldMutationToStreamLabels`. Both streaming and buffered response paths now remove bare-dropped fields from the stream label set and filter stream labels to only kept fields, matching Loki behaviour. Label translation (underscore↔dot) is applied when running with `-label-style=underscores`.
