@@ -20,6 +20,14 @@ func Parse(input string) (Expr, error) {
 	return expr, nil
 }
 
+// ParseAndValidate parses a LogQL expression and returns any syntax error.
+// It is a lightweight gate for request validation — callers that only need
+// to know whether a query is well-formed should use this instead of Parse.
+func ParseAndValidate(input string) error {
+	_, err := Parse(input)
+	return err
+}
+
 // ParseLogQuery parses a log query (stream selector + optional pipeline).
 // Returns an error if the expression is a metric expression.
 func ParseLogQuery(input string) (*LogQuery, error) {
