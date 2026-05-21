@@ -461,6 +461,7 @@ The proxy keeps faster-changing paths conservative and slower-changing metadata 
 | `-tenant-limits` | `TENANT_LIMITS` | — | JSON map of per-tenant published-limit overrides keyed by `X-Scope-OrgID` |
 | `-auth.enabled` | — | `false` | Require `X-Scope-OrgID` on query requests |
 | `-tenant.allow-global` | — | `false` | Allow `X-Scope-OrgID: *` to bypass tenant scoping and use the backend default tenant |
+| `-forward-tenant-header` | `FORWARD_TENANT_HEADER` | `true` | When `false`, suppresses X-Scope-OrgID header forwarding to the backend |
 
 ### Tenant Resolution Order
 
@@ -685,6 +686,7 @@ See [Performance — Go Runtime Tuning](performance.md#go-runtime-tuning) for gu
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-max-lines` | — | `1000` | Default max lines per query |
+| `-manual-range-metric-row-limit` | — | `1000000` | Maximum raw log rows fetched per proxy-side range-metric evaluation (`rate`, `count_over_time`, etc.); cap prevents memory spikes on high-cardinality queries |
 | `-backend-timeout` | — | `120s` | Timeout for non-streaming VL backend requests |
 | `-backend-min-version` | — | `v1.30.0` | Minimum VictoriaLogs version considered fully supported at startup compatibility gate |
 | `-backend-allow-unsupported-version` | — | `false` | Allow startup when detected backend version is lower than `-backend-min-version` (unsafe override) |
