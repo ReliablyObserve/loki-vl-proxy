@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, endpoint string, single func(http.ResponseWriter, *http.Request)) bool {
@@ -71,27 +72,41 @@ func (p *Proxy) handleMultiTenantFanout(w http.ResponseWriter, r *http.Request, 
 		return true
 	}
 
-	// TODO: fanout is serial — each tenant sub-request blocks the next. For high
-	// fan-out counts (>4 tenants) parallel dispatch would reduce latency. Tracked
-	// in docs/KNOWN_ISSUES.md under "Multi-tenant serial fanout".
+	type tenantResult struct {
+		tenantID string
+		rec      *httptest.ResponseRecorder
+		failed   bool
+	}
+
+	results := make([]tenantResult, len(filteredTenants))
+	var wg sync.WaitGroup
+	for i, tenantID := range filteredTenants {
+		wg.Add(1)
+		go func(i int, tenantID string) {
+			defer wg.Done()
+			subReq := filteredReq.Clone(filteredReq.Context())
+			subReq.Header = filteredReq.Header.Clone()
+			subReq.Header.Set("X-Scope-OrgID", tenantID)
+			rec := httptest.NewRecorder()
+			single(rec, subReq)
+			results[i] = tenantResult{tenantID: tenantID, rec: rec, failed: rec.Code >= 400}
+		}(i, tenantID)
+	}
+	wg.Wait()
+
+	// Collect results in original order (deterministic merge).
 	successTenants := make([]string, 0, len(filteredTenants))
 	failedTenants := make([]string, 0)
 	recorders := make([]*httptest.ResponseRecorder, 0, len(filteredTenants))
-	for _, tenantID := range filteredTenants {
-		subReq := filteredReq.Clone(filteredReq.Context())
-		subReq.Header = filteredReq.Header.Clone()
-		subReq.Header.Set("X-Scope-OrgID", tenantID)
-
-		rec := httptest.NewRecorder()
-		single(rec, subReq)
-		if rec.Code >= 400 {
+	for _, r := range results {
+		if r.failed {
 			p.log.Warn("multi-tenant sub-request failed, skipping tenant",
-				"endpoint", endpoint, "tenant", tenantID, "status", rec.Code)
-			failedTenants = append(failedTenants, tenantID)
+				"endpoint", endpoint, "tenant", r.tenantID, "status", r.rec.Code)
+			failedTenants = append(failedTenants, r.tenantID)
 			continue
 		}
-		successTenants = append(successTenants, tenantID)
-		recorders = append(recorders, rec)
+		successTenants = append(successTenants, r.tenantID)
+		recorders = append(recorders, r.rec)
 	}
 
 	if len(recorders) == 0 {
