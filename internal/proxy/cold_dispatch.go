@@ -480,6 +480,10 @@ func reverseNDJSONBody(body []byte) []byte {
 // ring is still correct for callers that pass an unbounded upstream reader: it
 // naturally selects the newest (last) limit rows from an ascending body.
 func readAndReverseNDJSON(r io.Reader, limit int) ([]byte, error) {
+	const maxRingSize = 5000
+	if limit > maxRingSize {
+		limit = maxRingSize
+	}
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	// ring is a circular buffer that always retains the last `limit` lines seen.

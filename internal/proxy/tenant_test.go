@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -442,9 +443,12 @@ func TestTenant_ExplicitMappingOverridesDefaultTenantAlias(t *testing.T) {
 }
 
 func TestTenant_MultiTenantQueryAllowedOnLabels(t *testing.T) {
+	var mu sync.Mutex
 	var seenAccountIDs []string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		seenAccountIDs = append(seenAccountIDs, r.Header.Get("AccountID"))
+		mu.Unlock()
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"values": []map[string]interface{}{
 				{"value": "app", "hits": 10},
@@ -544,9 +548,12 @@ func TestTenant_MultiTenantQueryRangeInjectsTenantLabel(t *testing.T) {
 }
 
 func TestTenant_MultiTenantQueryRangeFiltersByTenantSelector(t *testing.T) {
+	var mu sync.Mutex
 	var seenAccountIDs []string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		seenAccountIDs = append(seenAccountIDs, r.Header.Get("AccountID"))
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/x-ndjson")
 		_, _ = w.Write([]byte(`{"_time":"2026-04-04T10:00:00Z","_msg":"line","_stream":"{app=\"api\"}","app":"api"}` + "\n"))
 	}))

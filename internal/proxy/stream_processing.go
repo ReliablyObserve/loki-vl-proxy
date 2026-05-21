@@ -140,6 +140,8 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	dropConditions := translator.ParseDropConditions(originalQuery)
 	keepConditions := translator.ParseKeepConditions(originalQuery)
+	bareDropFields := translator.ParseBareDropFields(originalQuery)
+	bareKeepFields := translator.ParseBareKeepFields(originalQuery)
 	smBuf2 := metadataMapPool.Get().(map[string]string)
 	pfBuf2 := metadataMapPool.Get().(map[string]string)
 	defer func() {
@@ -201,8 +203,6 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		// Apply bare-field drop/keep to stream labels.
 		// | drop f removes f from the stream label set unconditionally.
 		// | keep f1, f2 removes any stream label NOT in the keep list.
-		bareDropFields := translator.ParseBareDropFields(originalQuery)
-		bareKeepFields := translator.ParseBareKeepFields(originalQuery)
 		if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
 			if _, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, streamLabels, translatedLabels, p.labelTranslator); changed {
 				translatedLabels = newLabels
@@ -486,6 +486,8 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	needsClassification := emitStructuredMetadata || categorizedLabels
 	dropConditions := translator.ParseDropConditions(originalQuery)
 	keepConditions := translator.ParseKeepConditions(originalQuery)
+	bareDropFields2 := translator.ParseBareDropFields(originalQuery)
+	bareKeepFields2 := translator.ParseBareKeepFields(originalQuery)
 
 	var (
 		miner        *patternMiner
@@ -595,14 +597,10 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		// Apply bare-field drop/keep to stream labels.
 		// | drop f removes f from the stream label set unconditionally.
 		// | keep f1, f2 removes any stream label NOT in the keep list.
-		{
-			bareDropFields := translator.ParseBareDropFields(originalQuery)
-			bareKeepFields := translator.ParseBareKeepFields(originalQuery)
-			if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
-				if newKey, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, desc.rawLabels, streamLabels, p.labelTranslator); changed {
-					streamKey = newKey
-					streamLabels = newLabels
-				}
+		if len(bareDropFields2) > 0 || len(bareKeepFields2) > 0 {
+			if newKey, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields2, bareKeepFields2, desc.rawLabels, streamLabels, p.labelTranslator); changed {
+				streamKey = newKey
+				streamLabels = newLabels
 			}
 		}
 		se, ok := streamMap[streamKey]
