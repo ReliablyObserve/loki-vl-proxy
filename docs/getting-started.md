@@ -13,7 +13,7 @@ description: Install and run loki-vl-proxy in minutes — binary, Docker, or Hel
 - Go `1.26.3+` if running from source, or Docker for containerized runs
 
 :::tip Latest release
-Replace `<release>` throughout this page with the current version tag (no `v` prefix). The latest release is **`1.31.2`**. Check [GitHub Releases](https://github.com/ReliablyObserve/loki-vl-proxy/releases) for newer versions.
+Replace `<release>` throughout this page with the current version tag (no `v` prefix). The latest release is **`1.36.3`**. Check [GitHub Releases](https://github.com/ReliablyObserve/loki-vl-proxy/releases) for newer versions.
 :::
 
 ## Quick Local Run
@@ -138,7 +138,7 @@ See [Configuration Reference](configuration.md) for the full flag list and [Tran
 ## Run With Docker
 
 ```bash
-docker run --rm -p 3100:3100 ghcr.io/reliablyobserve/loki-vl-proxy:1.31.2 \
+docker run --rm -p 3100:3100 ghcr.io/reliablyobserve/loki-vl-proxy:1.36.3 \
   -backend=http://host.docker.internal:9428
 ```
 

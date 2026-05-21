@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Full docs refresh against v1.36.3**: All documentation updated to reflect current proxy features — translation reference (bare vs matcher drop/keep forms, stream label scope caveat), configuration (env vars, flags), getting-started (version), operations (tenant routing strategies, SIGHUP hot-reload, health endpoints), security (mTLS flags, require-tenant-header), performance (klauspost/compress, zstd window cache, loopback auto-detect), scaling (adaptive parallelism, peer discovery), architecture (cold storage routing and boundary table), compatibility pages (count_values error, emit-structured-metadata, backend-compression loopback, 3-tuple metadata format, categorize-labels), API reference (/alive, /healthz), roadmap, and README.
+- **Helm chart documentation**: Added `charts/loki-vl-proxy/README.md` with full values reference, and three example Helm values files (`single-instance.yaml`, `production-ha.yaml`, `multi-tenant.yaml`) under `examples/helm/`.
+- **`metadata-field-mode` default corrected**: Docs previously stated the default as `hybrid`; corrected to `translated` to match `cmd/proxy/main.go`.
+- **KNOWN_ISSUES updated**: Added three current limitations (matcher scope for drop/keep, serial multi-tenant fanout, backward cold merge buffer) and documented three recently resolved issues (absent_over_time, sort/sort_desc, cold storage).
+
 ## [1.36.3] - 2026-05-21
 
 ### Fixed

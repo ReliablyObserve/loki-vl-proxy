@@ -231,6 +231,43 @@ extraArgs:
 
 Use HPA, cache sizing, Grafana refresh policy, and outer traffic shaping as complementary scaling controls.
 
+### Adaptive Parallelism
+
+The proxy automatically adjusts per-request window parallelism based on observed backend latency:
+
+| Flag | Default | Description |
+|---|---|---|
+| `-query-range-adaptive-parallel` | `true` | Enable adaptive parallelism |
+| `-query-range-adaptive-min-parallel` | `2` | Minimum concurrent windows |
+| `-query-range-adaptive-max-parallel` | `8` | Maximum concurrent windows |
+| `-query-range-latency-target` | `1500ms` | Target p50 latency per window |
+| `-query-range-adaptive-cooldown` | `30s` | How long to wait after scaling down before scaling up again |
+
+When window latency exceeds `-query-range-latency-target`, the proxy scales down parallelism (down to `min-parallel`). When latency is healthy, it scales back up. This prevents overloading VL during heavy fan-out periods.
+
+**Tuning guidance:**
+- Increase `max-parallel` (e.g. 16) only when VL has spare capacity and queries are bottlenecked by window count, not backend throughput.
+- Decrease `latency-target` (e.g. 800ms) for latency-sensitive dashboards.
+- Leave `min-parallel=2` unless VL is severely resource-constrained.
+
+### Peer Cache Discovery
+
+Two discovery modes control how peers find each other:
+
+**DNS discovery (recommended for HPA):**
+```bash
+-peer-discovery=dns
+-peer-dns=loki-vl-proxy-headless.default.svc.cluster.local
+```
+The proxy resolves the headless service DNS to get peer IPs. New replicas auto-join as they come up. Works correctly with HPA scale-out.
+
+**Static discovery (for fixed fleets):**
+```bash
+-peer-discovery=static
+-peer-static=10.0.0.1:3100,10.0.0.2:3100,10.0.0.3:3100
+```
+Peers are hardcoded. Simpler but requires restart on topology changes.
+
 ## Monitoring Metrics
 
 ### Per-Tenant (Rate, Throughput, Latency)

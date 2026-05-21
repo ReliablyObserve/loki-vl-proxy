@@ -124,6 +124,8 @@ Tenant limits notes:
 
 | Endpoint | Purpose |
 |---|---|
+| `GET /alive` | Liveness probe — returns 200 when proxy process is healthy |
+| `GET /healthz` | Liveness probe alias for `/alive` |
 | `GET /ready` | Readiness probe (checks VL `/health` + circuit breaker) |
 | `GET /loki/api/v1/status/buildinfo` | Returns Loki `3.7.1` build info — version ≥ 3.0.0 is required for Grafana to send `X-Loki-Response-Encoding-Flags: categorize-labels`, which enables `structuredMetadata` in `query_range` responses |
 | `GET /metrics` | Prometheus text exposition (`-server.register-instrumentation`); low-cardinality by default unless `-metrics.export-sensitive-labels=true` |

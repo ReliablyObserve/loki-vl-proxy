@@ -83,6 +83,8 @@ Nested JSON objects (for example a field whose value is itself a JSON object suc
 
 `label_replace()` and `label_join()` metric transformations, the `group()` aggregation, and `count_values()` now produce output that matches Loki's label semantics. Stream result ordering for log queries is aligned with Loki's timestamp-descending default.
 
+`count_values()` returns HTTP 400 with message: *"count_values is not supported: it groups by metric values which VictoriaLogs cannot compute; use count() grouped by an existing label instead"*
+
 ### v1.29.x — __error__ Opt-In and Cold Storage Routing
 
 The `__error__` / `| drop __error__` mechanism for opting parser-stage metric queries into the VL native stats fast path is now precisely gated: only queries where `| drop __error__` is the sole post-parser stage qualify, preventing false positives from queries that mention `__error__` in label values.
@@ -104,6 +106,8 @@ The `__error__` / `| drop __error__` mechanism for opting parser-stage metric qu
 `| drop field=value` (matcher form) now correctly implements conditional semantics: VL `| delete` is issued for the field, and the proxy post-processes each log entry to restore the field value when it does not match the predicate. Previously the value predicate was ignored and the field was always removed.
 
 `structuredMetadata` vs `parsedFields` classification in push/detected_fields paths is now correct: the proxy compares candidate field names against `_msg` JSON content to determine whether a field originates from structured metadata or was parsed from the log body.
+
+The `-emit-structured-metadata` flag (default: `true`) controls whether log entries are returned as Loki 3-tuples `[timestamp, line, {metadata}]` or 2-tuples `[timestamp, line]`. Grafana Loki datasource requires 3-tuple format; only disable if your client cannot handle structured metadata.
 
 The LogQL exhaustive parity machine expanded from 202 to 316 cases, with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved. Default `label-style` is now `underscores` and `metadata-field-mode` is now `translated`.
 
