@@ -350,12 +350,16 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	if r.FormValue("direction") == "forward" {
 		merged = MergeNDJSON(coldResp.Body, hotResp.Body)
 	} else {
-		coldBody, readErr := io.ReadAll(coldResp.Body)
+		limit, _ := strconv.Atoi(r.FormValue("limit"))
+		if limit <= 0 {
+			limit = 1000
+		}
+		coldReversed, readErr := readAndReverseNDJSON(coldResp.Body, limit)
 		if readErr != nil {
 			p.writeError(w, http.StatusBadGateway, "failed to read cold response")
 			return
 		}
-		merged = MergeNDJSON(hotResp.Body, bytes.NewReader(reverseNDJSONBody(coldBody)))
+		merged = MergeNDJSON(hotResp.Body, bytes.NewReader(coldReversed))
 	}
 	// Read merged NDJSON up to the per-request limit to avoid buffering 2× the
 	// data when both hot and cold backends return full-limit responses.
@@ -460,6 +464,57 @@ func reverseNDJSONBody(body []byte) []byte {
 		lines[i], lines[j] = lines[j], lines[i]
 	}
 	return bytes.Join(lines, []byte("\n"))
+}
+
+// readAndReverseNDJSON reads non-empty NDJSON lines from r using a ring buffer of
+// size limit, keeping only the last (newest) limit lines. It then reverses them
+// in-place and returns a newline-joined byte slice.
+//
+// This replaces io.ReadAll + reverseNDJSONBody for backward cold queries: the ring
+// buffer caps peak memory to limit lines regardless of how many the upstream sends,
+// and combining read + reverse into one pass avoids the extra allocation that
+// reverseNDJSONBody needs for its output slice.
+//
+// In the proxyLogQueryBoth backward path coldBackwardChunkedFetch already bounds the
+// cold body to ≤ limit rows, so the ring buffer discards nothing in practice. The
+// ring is still correct for callers that pass an unbounded upstream reader: it
+// naturally selects the newest (last) limit rows from an ascending body.
+func readAndReverseNDJSON(r io.Reader, limit int) ([]byte, error) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	// ring is a circular buffer that always retains the last `limit` lines seen.
+	ring := make([][]byte, limit)
+	head := 0 // next write position (mod limit)
+	total := 0
+	for sc.Scan() {
+		line := bytes.TrimRight(sc.Bytes(), "\r")
+		if len(line) == 0 {
+			continue
+		}
+		cp := make([]byte, len(line))
+		copy(cp, line)
+		ring[head%limit] = cp
+		head++
+		total++
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	n := total
+	if n > limit {
+		n = limit
+	}
+	// Reconstruct the last n lines in ascending order from the ring buffer.
+	lines := make([][]byte, n)
+	start := head - n
+	for i := 0; i < n; i++ {
+		lines[i] = ring[(start+i)%limit]
+	}
+	// Reverse so the newest (last ascending) line becomes first.
+	for i, j := 0, n-1; i < j; i, j = i+1, j-1 {
+		lines[i], lines[j] = lines[j], lines[i]
+	}
+	return bytes.Join(lines, []byte("\n")), nil
 }
 
 // readNDJSONToLimit reads at most limit non-empty NDJSON lines from r, returning
