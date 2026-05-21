@@ -47,7 +47,7 @@ Assume VL stores OTel dotted fields like `service.name`.
 | `hybrid` | both `service.name` and `service_name` | both `service.name` and `service_name` |
 
 Notes:
-- `hybrid` is the default and best when users need both Loki-style and OTel-style workflows.
+- The default is `translated` (Loki-compatible names only). Use `hybrid` when users need both Loki-style and OTel-style workflows — it is not the default but is recommended for OTel data.
 - Label surfaces remain Loki-compatible (underscore) when `label-style=underscores` regardless of metadata mode.
 
 ## Grafana Datasource Behavior
