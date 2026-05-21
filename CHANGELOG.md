@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bare `| drop field` / `| keep field` now mutates stream labels**: Added `ParseBareDropFields`, `ParseBareKeepFields`, and `applyBareFieldMutationToStreamLabels`. Both streaming and buffered response paths now remove bare-dropped fields from the stream label set and filter stream labels to only kept fields, matching Loki behaviour. Label translation (underscore↔dot) is applied when running with `-label-style=underscores`.
+- **Malformed drop/keep matchers return HTTP 400**: `ValidateDropKeepSyntax` now walks the pipeline and returns a parse error for any `| drop` / `| keep` item that contains `=` but uses an unsupported operator (e.g. `!=~`). Previously these were silently skipped.
+
+### Performance
+
+- **Multi-tenant fanout is now parallel**: Replaced the serial tenant loop in `multitenant.go` with concurrent goroutines (`sync.WaitGroup`); tenant sub-requests run in parallel, results merged in original index order for deterministic output.
+- **Backward cold merge read bounded to `limit` lines**: Replaced unbounded `io.ReadAll(coldResp.Body)` with `readAndReverseNDJSON(r, limit)` which reads at most `limit` NDJSON lines via a ring buffer before reversing, preventing unbounded memory growth for large cold responses.
+
 ## [1.37.0] - 2026-05-21
 
 ### Documentation
