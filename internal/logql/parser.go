@@ -714,6 +714,38 @@ func tokenRaw(tok Token) string {
 	return tok.Val
 }
 
+// parseQuantileParam parses the optional phi parameter for quantile_over_time,
+// which may be positive (0.95) or negative (-0.5), followed by a comma.
+func (p *parser) parseQuantileParam(ra *RangeAggregation) error {
+	switch p.cur.Typ {
+	case TokNumber:
+		phi, err := strconv.ParseFloat(p.cur.Val, 64)
+		if err != nil {
+			return fmt.Errorf("logql: invalid phi: %w", err)
+		}
+		p.advance()
+		ra.Param = phi
+		ra.HasParam = true
+		_, err = p.expect(TokComma)
+		return err
+	case TokMinus:
+		p.advance()
+		if p.cur.Typ != TokNumber {
+			return fmt.Errorf("logql: expected number after '-' in quantile_over_time")
+		}
+		phi, err := strconv.ParseFloat(p.cur.Val, 64)
+		if err != nil {
+			return fmt.Errorf("logql: invalid phi: %w", err)
+		}
+		p.advance()
+		ra.Param = -phi
+		ra.HasParam = true
+		_, err = p.expect(TokComma)
+		return err
+	}
+	return nil
+}
+
 // parseRangeAggregation parses `rate({...}[5m])` or a subquery
 // like `max_over_time(rate({...}[5m])[1h:5m])`.
 //
@@ -728,33 +760,8 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 
 	ra := &RangeAggregation{Op: op}
 
-	// quantile_over_time accepts an optional phi before the inner expression.
-	if op == RangeQuantileOverTime && p.cur.Typ == TokNumber {
-		phi, err := strconv.ParseFloat(p.cur.Val, 64)
-		if err != nil {
-			return nil, fmt.Errorf("logql: invalid phi: %w", err)
-		}
-		p.advance()
-		ra.Param = phi
-		ra.HasParam = true
-		if _, err := p.expect(TokComma); err != nil {
-			return nil, err
-		}
-	}
-	if op == RangeQuantileOverTime && p.cur.Typ == TokMinus {
-		// Negative phi
-		p.advance()
-		if p.cur.Typ != TokNumber {
-			return nil, fmt.Errorf("logql: expected number after '-' in quantile_over_time")
-		}
-		phi, err := strconv.ParseFloat(p.cur.Val, 64)
-		if err != nil {
-			return nil, fmt.Errorf("logql: invalid phi: %w", err)
-		}
-		p.advance()
-		ra.Param = -phi
-		ra.HasParam = true
-		if _, err := p.expect(TokComma); err != nil {
+	if op == RangeQuantileOverTime {
+		if err := p.parseQuantileParam(ra); err != nil {
 			return nil, err
 		}
 	}
