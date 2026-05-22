@@ -808,6 +808,26 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 		ra.Offset = off.Val
 	}
 
+	// Optional @ modifier: [duration] @ <unix_timestamp | start() | end()>
+	// Loki accepts this; we parse and discard it (VictoriaLogs handles its own timestamp logic).
+	if p.cur.Typ == TokAt {
+		p.advance() // consume "@"
+		switch {
+		case p.cur.Typ == TokNumber:
+			p.advance() // consume unix timestamp
+		case p.cur.Typ == TokIdent && (p.cur.Val == "start" || p.cur.Val == "end"):
+			p.advance() // consume "start" or "end"
+			if _, err := p.expect(TokLParen); err != nil {
+				return nil, fmt.Errorf("logql: expected '(' after start/end in @ modifier")
+			}
+			if _, err := p.expect(TokRParen); err != nil {
+				return nil, fmt.Errorf("logql: expected ')' after start/end in @ modifier")
+			}
+		default:
+			return nil, fmt.Errorf("logql: expected unix timestamp or start()/end() after @, got %v", p.cur.Val)
+		}
+	}
+
 	if _, err := p.expect(TokRParen); err != nil {
 		return nil, err
 	}

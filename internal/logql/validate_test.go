@@ -41,6 +41,23 @@ func TestParseAndValidate_Invalid(t *testing.T) {
 	}
 }
 
+func TestParseAndValidate_AtModifier(t *testing.T) {
+	valid := []string{
+		`rate({app="api-gateway"}[5m] @ 1000000000)`,
+		`rate({app="api-gateway"}[5m] @ start())`,
+		`rate({app="api-gateway"}[5m] @ end())`,
+		`bytes_rate({app="api"}[1h] @ 1609459200)`,
+		`sum by (app) (rate({app="api"}[5m] @ start()))`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) {
+			if err := logql.ParseAndValidate(q); err != nil {
+				t.Errorf("expected valid @ modifier query to pass, got: %v", err)
+			}
+		})
+	}
+}
+
 func TestParseAndValidate_ParityWithTranslator(t *testing.T) {
 	// Queries that the existing translator accepts should also pass ParseAndValidate.
 	// This ensures the parser is not more restrictive than the current behavior.

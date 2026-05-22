@@ -22,6 +22,7 @@ const (
 	TokRBracket // ]
 	TokComma    // ,
 	TokPipe     // |
+	TokAt       // @
 
 	// Label match operators (inside {})
 	TokEq         // =
@@ -92,6 +93,8 @@ func (t TokType) String() string {
 		return ","
 	case TokPipe:
 		return "|"
+	case TokAt:
+		return "@"
 	case TokEq:
 		return "="
 	case TokNeq:
@@ -241,6 +244,9 @@ func (s *scanner) next() Token {
 	case ',':
 		s.read()
 		return Token{Typ: TokComma, Val: ","}
+	case '@':
+		s.read()
+		return Token{Typ: TokAt, Val: "@"}
 
 	case '|':
 		s.read()
