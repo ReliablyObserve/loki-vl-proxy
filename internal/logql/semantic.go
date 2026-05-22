@@ -18,6 +18,13 @@ func validateSemantics(expr Expr, raw string) string {
 	case *VectorAggregation:
 		return validateSemantics(x.Inner, raw)
 	case *BinOpExpr:
+		// Log stream queries cannot participate in binary metric operations.
+		if _, ok := x.Left.(*LogQuery); ok {
+			return "parse error at line 1, col 1: unexpected expression for binary operation"
+		}
+		if _, ok := x.Right.(*LogQuery); ok {
+			return "parse error at line 1, col 1: unexpected expression for binary operation"
+		}
 		if s := validateSemantics(x.Left, raw); s != "" {
 			return s
 		}

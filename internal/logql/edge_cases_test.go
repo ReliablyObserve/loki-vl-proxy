@@ -753,3 +753,45 @@ func TestEdge_ParseOnly_Misc(t *testing.T) {
 		t.Run("bad:"+q, func(t *testing.T) { mustFail(t, q) })
 	}
 }
+
+func TestEdge_RegexpPatternDoubleQuoted(t *testing.T) {
+	// Loki accepts double-quoted strings for | regexp and | pattern.
+	valid := []string{
+		`{app="a"} | regexp "(?P<status>[0-9]+)"`,
+		`{app="a"} | regexp "\"status\":(?P<status>[0-9]+)"`,
+		`{app="a"} | pattern "<ip> - <user> <_>"`,
+		`{app="a"} | regexp ` + "`" + `(?P<lvl>\w+)` + "`",
+		`{app="a"} | pattern ` + "`" + `<ip> - <user>` + "`",
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+func TestEdge_BoolModifier(t *testing.T) {
+	// Loki supports the bool modifier on comparison binary operators.
+	valid := []string{
+		`rate({app="a"}[5m]) > bool 0`,
+		`rate({app="a"}[5m]) >= bool 1`,
+		`rate({app="a"}[5m]) < bool 100`,
+		`rate({app="a"}[5m]) <= bool 50`,
+		`rate({app="a"}[5m]) == bool 0`,
+		`rate({app="a"}[5m]) != bool 0`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+func TestEdge_BinaryOpOnLogQuery_Rejected(t *testing.T) {
+	// Binary arithmetic/comparison on log stream queries must be rejected.
+	invalid := []string{
+		`{app="a"} > 2`,
+		`{app="a"} + {app="b"}`,
+		`{app="a"} * 5`,
+		`{app="a"} - {app="b"}`,
+	}
+	for _, q := range invalid {
+		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
+	}
+}

@@ -207,6 +207,11 @@ func (p *parser) maybeInfix(lhs Expr) (Expr, error) {
 		op = "!="
 	}
 
+	// Optional bool modifier (e.g. `> bool 0`): consume and ignore for routing purposes.
+	if p.cur.Typ == TokIdent && p.cur.Val == "bool" {
+		p.advance()
+	}
+
 	// Optional vector matching: on(labels) / ignoring(labels)
 	var vm *VectorMatching
 	if p.cur.Typ == TokOn || p.cur.Typ == TokIgnoring {
@@ -421,19 +426,19 @@ func (p *parser) parsePipeBody() (Stage, error) {
 
 	case "regexp":
 		p.advance()
-		param, err := p.expect(TokRawString)
+		param, err := p.expectStringOrRaw()
 		if err != nil {
 			return nil, err
 		}
-		return &ParserStage{Type: ParserRegexp, Param: param.Val}, nil
+		return &ParserStage{Type: ParserRegexp, Param: param}, nil
 
 	case "pattern":
 		p.advance()
-		param, err := p.expect(TokRawString)
+		param, err := p.expectStringOrRaw()
 		if err != nil {
 			return nil, err
 		}
-		return &ParserStage{Type: ParserPattern, Param: param.Val}, nil
+		return &ParserStage{Type: ParserPattern, Param: param}, nil
 
 	case "unpack":
 		p.advance()
