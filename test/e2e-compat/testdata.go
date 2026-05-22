@@ -189,6 +189,127 @@ func ingestRichTestData(t *testing.T) {
 		},
 	})
 
+	// ── OTel vs Non-OTel comparison pair: frontend service ──
+	//
+	// OTel path: data arrives via OTel collector into VL directly.
+	// Stream labels use dotted OTel conventions. Extra OTel span attributes
+	// (trace_id, span_id, http.method etc.) are pushed as extra VL fields
+	// and surface as structuredMetadata through the proxy.
+	pushStream(t, now, streamDef{
+		VLOnly: true,
+		Labels: map[string]string{
+			"service.name":           "otel-frontend",
+			"service.namespace":      "web",
+			"k8s.cluster.name":       "us-east-1",
+			"k8s.namespace.name":     "prod",
+			"k8s.pod.name":           "otel-frontend-abc123",
+			"k8s.container.name":     "frontend",
+			"deployment.environment": "production",
+			"deployment.version":     "v3.2.1",
+			"telemetry.sdk.name":     "opentelemetry",
+			"telemetry.sdk.language": "javascript",
+			"level":                  "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":        "otel-trace-fe-001",
+			"span_id":         "otel-span-fe-001",
+			"http.method":     "GET",
+			"http.target":     "/dashboard",
+			"http.status_code": "200",
+			"net.peer.ip":     "10.0.1.50",
+		},
+		Lines: []string{
+			`{"event":"page_load","route":"/dashboard","user_id":"usr-01","duration_ms":320,"cache_hit":false,"assets_loaded":12}`,
+			`{"event":"api_call","endpoint":"/api/v1/metrics","user_id":"usr-01","duration_ms":45,"status":200,"retries":0}`,
+			`{"event":"page_load","route":"/settings","user_id":"usr-02","duration_ms":180,"cache_hit":true,"assets_loaded":8}`,
+			`{"event":"error","route":"/reports","user_id":"usr-03","error":"timeout","duration_ms":5000,"retries":3}`,
+			`{"event":"api_call","endpoint":"/api/v1/users","user_id":"usr-02","duration_ms":22,"status":200,"retries":0}`,
+		},
+	})
+
+	// Non-OTel path: equivalent frontend service using Loki push (underscore labels).
+	// Trace context is structured metadata, not embedded in stream labels.
+	// Both Loki and VL receive identical data for side-by-side comparison.
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "frontend", "service_name": "frontend",
+			"namespace": "prod", "cluster": "us-east-1",
+			"version": "v3.2.1", "env": "production", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":   "nonotel-trace-fe-001",
+			"span_id":    "nonotel-span-fe-001",
+			"request_id": "req-nonotel-001",
+			"user_agent": "Mozilla/5.0 (compatible; test)",
+		},
+		Lines: []string{
+			`{"event":"page_load","route":"/dashboard","user_id":"usr-01","duration_ms":310,"cache_hit":false,"assets_loaded":11}`,
+			`{"event":"api_call","endpoint":"/api/v1/metrics","user_id":"usr-01","duration_ms":48,"status":200,"retries":0}`,
+			`{"event":"page_load","route":"/settings","user_id":"usr-02","duration_ms":175,"cache_hit":true,"assets_loaded":8}`,
+			`{"event":"error","route":"/reports","user_id":"usr-03","error":"timeout","duration_ms":5001,"retries":3}`,
+			`{"event":"api_call","endpoint":"/api/v1/users","user_id":"usr-02","duration_ms":25,"status":200,"retries":0}`,
+		},
+	})
+
+	// ── OTel vs Non-OTel: backend worker service ──
+	//
+	// OTel path: background job worker instrumented with OTel SDK.
+	// Rich resource attributes + span attributes as structured metadata.
+	pushStream(t, now, streamDef{
+		VLOnly: true,
+		Labels: map[string]string{
+			"service.name":           "otel-worker",
+			"service.namespace":      "jobs",
+			"k8s.cluster.name":       "us-east-1",
+			"k8s.namespace.name":     "prod",
+			"k8s.pod.name":           "otel-worker-def456",
+			"k8s.container.name":     "worker",
+			"deployment.environment": "production",
+			"deployment.version":     "v1.8.0",
+			"telemetry.sdk.name":     "opentelemetry",
+			"telemetry.sdk.language": "python",
+			"level":                  "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":      "otel-trace-worker-001",
+			"span_id":       "otel-span-worker-001",
+			"job.type":      "email",
+			"job.queue":     "notifications",
+			"messaging.system": "rabbitmq",
+		},
+		Lines: []string{
+			`{"event":"job_started","job_id":"job-001","type":"email","recipient":"alice@example.com","priority":"high"}`,
+			`{"event":"job_completed","job_id":"job-001","duration_ms":234,"emails_sent":1,"status":"success"}`,
+			`{"event":"job_started","job_id":"job-002","type":"report","report_id":"rpt-042","priority":"low"}`,
+			`{"event":"job_failed","job_id":"job-002","error":"disk_full","retryable":true,"attempt":2}`,
+			`{"event":"job_started","job_id":"job-003","type":"cleanup","target":"temp_files","files_count":1024}`,
+			`{"event":"job_completed","job_id":"job-003","duration_ms":8901,"files_deleted":987,"status":"success"}`,
+		},
+	})
+
+	// Non-OTel equivalent worker (both Loki + VL).
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "worker", "service_name": "worker",
+			"namespace": "prod", "cluster": "us-east-1",
+			"version": "v1.8.0", "env": "production", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":   "nonotel-trace-worker-001",
+			"span_id":    "nonotel-span-worker-001",
+			"queue_name": "notifications",
+			"worker_id":  "worker-node-7",
+		},
+		Lines: []string{
+			`{"event":"job_started","job_id":"job-101","type":"email","recipient":"bob@example.com","priority":"high"}`,
+			`{"event":"job_completed","job_id":"job-101","duration_ms":198,"emails_sent":1,"status":"success"}`,
+			`{"event":"job_started","job_id":"job-102","type":"report","report_id":"rpt-043","priority":"low"}`,
+			`{"event":"job_failed","job_id":"job-102","error":"db_timeout","retryable":true,"attempt":1}`,
+			`{"event":"job_started","job_id":"job-103","type":"cleanup","target":"logs","files_count":512}`,
+			`{"event":"job_completed","job_id":"job-103","duration_ms":4521,"files_deleted":498,"status":"success"}`,
+		},
+	})
+
 	// ── Multiline / special chars ──
 	pushStream(t, now, streamDef{
 		Labels: map[string]string{
