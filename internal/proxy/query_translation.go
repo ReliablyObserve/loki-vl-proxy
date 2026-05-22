@@ -1142,28 +1142,19 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 }
 
 func extractAbsentMetricLabels(query string) map[string]string {
-	selector, _, ok := splitLeadingSelector(strings.TrimSpace(query))
-	if !ok || len(selector) < 2 {
+	expr, err := logqlpkg.Parse(strings.TrimSpace(query))
+	if err != nil {
 		return map[string]string{}
 	}
-	matchers := splitSelectorMatchers(selector[1 : len(selector)-1])
-	labels := make(map[string]string, len(matchers))
-	for _, matcher := range matchers {
-		matcher = strings.TrimSpace(matcher)
-		if strings.Contains(matcher, "!=") || strings.Contains(matcher, "=~") || strings.Contains(matcher, "!~") {
-			continue
+	lq, ok := expr.(*logqlpkg.LogQuery)
+	if !ok {
+		return map[string]string{}
+	}
+	labels := make(map[string]string, len(lq.Selector.Matchers))
+	for _, m := range lq.Selector.Matchers {
+		if m.Op == logqlpkg.MatchEq {
+			labels[m.Name] = m.Value
 		}
-		idx := strings.Index(matcher, "=")
-		if idx <= 0 {
-			continue
-		}
-		label := strings.TrimSpace(matcher[:idx])
-		value := strings.TrimSpace(matcher[idx+1:])
-		value = strings.Trim(value, "\"`")
-		if label == "" || value == "" {
-			continue
-		}
-		labels[label] = value
 	}
 	return labels
 }
