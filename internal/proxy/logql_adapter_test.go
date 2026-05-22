@@ -173,27 +173,27 @@ func TestBinOpExprToVMInfo_UnknownGroupSide(t *testing.T) {
 // the actual LogQL parser — the most important integration path.
 func TestBinOpExprToVMInfo_RoundTripFromParser(t *testing.T) {
 	tests := []struct {
-		query     string
-		wantOn    []string
-		wantIgn   []string
-		wantGL    []string
-		wantGR    []string
+		query   string
+		wantOn  []string
+		wantIgn []string
+		wantGL  []string
+		wantGR  []string
 	}{
 		{
 			query:  `rate({app="api"}[5m]) / on (app, env) rate({app="api"}[5m])`,
 			wantOn: []string{"app", "env"},
 		},
 		{
-			query:  `rate({app="api"}[5m]) / ignoring (host) rate({app="api"}[5m])`,
+			query:   `rate({app="api"}[5m]) / ignoring (host) rate({app="api"}[5m])`,
 			wantIgn: []string{"host"},
 		},
 		{
-			query: `rate({app="api"}[5m]) * on (app) group_left (team) rate({app="api"}[5m])`,
+			query:  `rate({app="api"}[5m]) * on (app) group_left (team) rate({app="api"}[5m])`,
 			wantOn: []string{"app"},
 			wantGL: []string{"team"},
 		},
 		{
-			query: `rate({app="api"}[5m]) + on (app) group_right (region) rate({app="api"}[5m])`,
+			query:  `rate({app="api"}[5m]) + on (app) group_right (region) rate({app="api"}[5m])`,
 			wantOn: []string{"app"},
 			wantGR: []string{"region"},
 		},

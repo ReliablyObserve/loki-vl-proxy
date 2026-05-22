@@ -244,19 +244,19 @@ func TestEdge_DropConditional_AST(t *testing.T) {
 			},
 		},
 		{
-			query:      `{app="nginx"} | drop level!="debug"`,
+			query: `{app="nginx"} | drop level!="debug"`,
 			wantMatchers: []struct{ name, op, val string }{
 				{"level", "!=", "debug"},
 			},
 		},
 		{
-			query:      `{app="nginx"} | drop level=~"debug|info"`,
+			query: `{app="nginx"} | drop level=~"debug|info"`,
 			wantMatchers: []struct{ name, op, val string }{
 				{"level", "=~", "debug|info"},
 			},
 		},
 		{
-			query:      `{app="nginx"} | drop level!~"debug.*"`,
+			query: `{app="nginx"} | drop level!~"debug.*"`,
 			wantMatchers: []struct{ name, op, val string }{
 				{"level", "!~", "debug.*"},
 			},
@@ -267,9 +267,9 @@ func TestEdge_DropConditional_AST(t *testing.T) {
 			wantMatchers: []struct{ name, op, val string }{{"level", "=", "debug"}},
 		},
 		{
-			query:      `{app="nginx"} | keep status=~"5.."`,
+			query:        `{app="nginx"} | keep status=~"5.."`,
 			wantMatchers: []struct{ name, op, val string }{{"status", "=~", "5.."}},
-			keep:        true,
+			keep:         true,
 		},
 	}
 	for _, tt := range tests {
@@ -638,16 +638,16 @@ func TestEdge_Semantic_Valid(t *testing.T) {
 
 func TestEdge_Semantic_Invalid(t *testing.T) {
 	invalid := []string{
-		`{}`,                                                          // no non-wildcard matchers
-		`rate_counter({app="api"}[5m])`,                              // rate_counter without unwrap
-		`quantile_over_time(-0.1, {app="api"} | unwrap lat [5m])`,   // negative phi
-		`quantile_over_time(-1, {app="api"} | unwrap lat [5m])`,     // negative phi
+		`{}`,                            // no non-wildcard matchers
+		`rate_counter({app="api"}[5m])`, // rate_counter without unwrap
+		`quantile_over_time(-0.1, {app="api"} | unwrap lat [5m])`,    // negative phi
+		`quantile_over_time(-1, {app="api"} | unwrap lat [5m])`,      // negative phi
 		`rate({__error__=""}[5m])`,                                   // __error__ in rate
 		`rate({__error_details__=""}[5m])`,                           // __error_details__ in rate
 		`bytes_rate({__error__=""}[5m])`,                             // __error__ in bytes_rate
-		`{app="nginx"} | line_format "{{.msg"`,                      // unclosed template
-		`{app="nginx"} | line_format "{{.level"`,                    // unclosed template 2
-		`{app="nginx"} | unwrap a | unwrap b`,                       // double unwrap
+		`{app="nginx"} | line_format "{{.msg"`,                       // unclosed template
+		`{app="nginx"} | line_format "{{.level"`,                     // unclosed template 2
+		`{app="nginx"} | unwrap a | unwrap b`,                        // double unwrap
 		`avg_over_time({app="api"} | unwrap a [5m] | unwrap b [5m])`, // double unwrap in range
 	}
 	for _, q := range invalid {
@@ -744,10 +744,10 @@ func TestEdge_ParseOnly_Misc(t *testing.T) {
 	}
 
 	bad := []string{
-		`{app="nginx"} | json | {`,   // brace mid-pipeline
-		`sum rate({app="api"}[5m])`,   // missing paren
-		`rate({app="api"}[5m]`,        // unclosed paren
-		`{app="nginx"} |`,             // trailing pipe
+		`{app="nginx"} | json | {`,  // brace mid-pipeline
+		`sum rate({app="api"}[5m])`, // missing paren
+		`rate({app="api"}[5m]`,      // unclosed paren
+		`{app="nginx"} |`,           // trailing pipe
 	}
 	for _, q := range bad {
 		t.Run("bad:"+q, func(t *testing.T) { mustFail(t, q) })

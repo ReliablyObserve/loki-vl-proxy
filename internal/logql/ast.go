@@ -163,7 +163,7 @@ func (m DropMatcher) String() string {
 
 // DropStage is a `| drop label1, label2` or `| drop level="debug"` stage.
 type DropStage struct {
-	Labels   []string     // bare: | drop a, b
+	Labels   []string      // bare: | drop a, b
 	Matchers []DropMatcher // conditional: | drop level="debug"
 }
 
