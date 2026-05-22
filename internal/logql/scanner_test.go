@@ -136,7 +136,7 @@ func TestScanner_Keywords(t *testing.T) {
 	}{
 		{"by", TokBy},
 		{"without", TokWithout},
-		{"sum", TokIdent},    // not keyword-locked, parsed as ident
+		{"sum", TokIdent}, // not keyword-locked, parsed as ident
 		{"rate", TokIdent},
 		{"json", TokIdent},
 	}
