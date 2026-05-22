@@ -211,12 +211,12 @@ func ingestRichTestData(t *testing.T) {
 			"level":                  "info",
 		},
 		StructuredMetadata: map[string]string{
-			"trace_id":        "otel-trace-fe-001",
-			"span_id":         "otel-span-fe-001",
-			"http.method":     "GET",
-			"http.target":     "/dashboard",
+			"trace_id":         "otel-trace-fe-001",
+			"span_id":          "otel-span-fe-001",
+			"http.method":      "GET",
+			"http.target":      "/dashboard",
 			"http.status_code": "200",
-			"net.peer.ip":     "10.0.1.50",
+			"net.peer.ip":      "10.0.1.50",
 		},
 		Lines: []string{
 			`{"event":"page_load","route":"/dashboard","user_id":"usr-01","duration_ms":320,"cache_hit":false,"assets_loaded":12}`,
@@ -271,10 +271,10 @@ func ingestRichTestData(t *testing.T) {
 			"level":                  "info",
 		},
 		StructuredMetadata: map[string]string{
-			"trace_id":      "otel-trace-worker-001",
-			"span_id":       "otel-span-worker-001",
-			"job.type":      "email",
-			"job.queue":     "notifications",
+			"trace_id":         "otel-trace-worker-001",
+			"span_id":          "otel-span-worker-001",
+			"job.type":         "email",
+			"job.queue":        "notifications",
 			"messaging.system": "rabbitmq",
 		},
 		Lines: []string{
