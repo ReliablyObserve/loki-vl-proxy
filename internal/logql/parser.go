@@ -173,6 +173,19 @@ func (p *parser) parsePrimary() (Expr, error) {
 			}
 			return ra, nil
 		}
+		// Unknown metric-level function (e.g. label_replace, label_join, sort,
+		// sort_desc): consume the argument list opaquely and pass through as a
+		// VectorAggregation with op="passthrough" so routing still works.
+		if p.cur.Typ == TokIdent {
+			name := p.cur.Val
+			p.advance()
+			if p.cur.Typ == TokLParen {
+				p.advance() // consume '('
+				p.consumeBalancedParens()
+				return &VectorAggregation{Op: VectorOp(name)}, nil
+			}
+			return nil, fmt.Errorf("logql: unexpected identifier %q", name)
+		}
 		return nil, fmt.Errorf("logql: unexpected identifier %q", p.cur.Val)
 	}
 
@@ -418,10 +431,12 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	switch kw {
 	case "json":
 		p.advance()
+		p.consumeExplicitFieldList()
 		return &ParserStage{Type: ParserJSON}, nil
 
 	case "logfmt":
 		p.advance()
+		p.consumeExplicitFieldList()
 		return &ParserStage{Type: ParserLogfmt}, nil
 
 	case "regexp":
@@ -517,14 +532,29 @@ func (p *parser) parseUnwrap() (Stage, error) {
 	return &UnwrapStage{Label: name.Val}, nil
 }
 
-// expectStringOrRaw accepts either a quoted string or a raw (backtick) string,
-// returning the unescaped value. Used for line filter operands.
+// expectStringOrRaw accepts either a quoted string, a raw (backtick) string,
+// or an ip("...") function call (line filter extension). Returns the value.
 func (p *parser) expectStringOrRaw() (string, error) {
 	switch p.cur.Typ {
 	case TokString:
 		return p.advance().Val, nil
 	case TokRawString:
 		return p.advance().Val, nil
+	case TokIdent:
+		// ip("cidr") line filter extension: treat as raw pass-through.
+		name := p.advance().Val
+		if p.cur.Typ == TokLParen {
+			p.advance() // consume '('
+			val, err := p.expectStringOrRaw()
+			if err != nil {
+				return "", err
+			}
+			if _, err := p.expect(TokRParen); err != nil {
+				return "", err
+			}
+			return name + "(" + val + ")", nil
+		}
+		return "", fmt.Errorf("logql: expected STRING or RAWSTRING, got IDENT (%q)", name)
 	}
 	return "", fmt.Errorf("logql: expected STRING or RAWSTRING, got %v (%q)", p.cur.Typ, p.cur.Val)
 }
@@ -582,6 +612,42 @@ func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, e
 		err = fmt.Errorf("logql: expected at least one label name or matcher after drop/keep")
 	}
 	return
+}
+
+// consumeExplicitFieldList consumes an optional comma-separated field list
+// after | json or | logfmt. Each item is a bare name or name="alias" form.
+// e.g. `| json method, http_code="status"` — consumed and ignored; VL handles them.
+func (p *parser) consumeExplicitFieldList() {
+	for p.cur.Typ == TokIdent {
+		p.advance() // field name
+		// Optional ="alias" assignment
+		if p.cur.Typ == TokEq {
+			p.advance()
+			if p.cur.Typ == TokString || p.cur.Typ == TokIdent {
+				p.advance()
+			}
+		}
+		if p.cur.Typ == TokComma {
+			p.advance()
+		} else {
+			break
+		}
+	}
+}
+
+// consumeBalancedParens consumes tokens including nested parentheses until the
+// matching close paren (which is also consumed). Used for opaque function calls.
+func (p *parser) consumeBalancedParens() {
+	depth := 1
+	for depth > 0 && p.cur.Typ != TokEOF {
+		switch p.cur.Typ {
+		case TokLParen:
+			depth++
+		case TokRParen:
+			depth--
+		}
+		p.advance()
+	}
 }
 
 // consumeRestOfStage reads tokens until the next pipeline operator, range

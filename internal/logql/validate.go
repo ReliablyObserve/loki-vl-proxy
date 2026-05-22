@@ -1,6 +1,7 @@
 package logql
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -29,6 +30,11 @@ func ValidateLogQL(query string) string {
 	// Bare wildcard: some clients send query=* as "all streams" — pass through.
 	if query == "*" {
 		return ""
+	}
+
+	// Reject the <> operator — not valid LogQL syntax.
+	if idx := strings.Index(query, "<>"); idx >= 0 {
+		return fmt.Sprintf("parse error at line 1, col %d: syntax error: unexpected >", idx+2)
 	}
 
 	// Structural parse.

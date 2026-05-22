@@ -222,7 +222,15 @@ type LineFormatStage struct {
 }
 
 func (s *LineFormatStage) String() string {
-	return fmt.Sprintf(`| line_format "%s"`, s.Template)
+	// Re-escape control characters so the output is a valid quoted string
+	// (the scanner decoded \n → newline etc.; we must reverse that here).
+	escaped := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\t", `\t`,
+	).Replace(s.Template)
+	return `| line_format "` + escaped + `"`
 }
 
 func (s *LineFormatStage) stage() {}
@@ -432,3 +440,13 @@ func (l *LiteralExpr) String() string {
 }
 
 func (l *LiteralExpr) expr() {}
+
+// OpaqueMetricExpr holds the raw text of a metric-level function call that the
+// parser does not understand (e.g. label_replace, label_join). It passes
+// through to VictoriaLogs without modification.
+type OpaqueMetricExpr struct {
+	Raw string
+}
+
+func (o *OpaqueMetricExpr) String() string { return o.Raw }
+func (o *OpaqueMetricExpr) expr()          {}
