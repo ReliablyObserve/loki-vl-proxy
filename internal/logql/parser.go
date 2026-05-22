@@ -2,6 +2,7 @@ package logql
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -174,15 +175,17 @@ func (p *parser) parsePrimary() (Expr, error) {
 			return ra, nil
 		}
 		// Unknown metric-level function (e.g. label_replace, label_join, sort,
-		// sort_desc): consume the argument list opaquely and pass through as a
-		// VectorAggregation with op="passthrough" so routing still works.
+		// sort_desc): consume the argument list opaquely and return the raw text
+		// so it passes through to VictoriaLogs unchanged.
 		if p.cur.Typ == TokIdent {
+			startPos := p.sc.pos - len(p.cur.Val)
 			name := p.cur.Val
 			p.advance()
 			if p.cur.Typ == TokLParen {
 				p.advance() // consume '('
-				p.consumeBalancedParens()
-				return &VectorAggregation{Op: VectorOp(name)}, nil
+				endPos := p.consumeBalancedParens()
+				raw := strings.TrimSpace(p.input[startPos:endPos])
+				return &OpaqueMetricExpr{Raw: raw}, nil
 			}
 			return nil, fmt.Errorf("logql: unexpected identifier %q", name)
 		}
@@ -541,7 +544,7 @@ func (p *parser) expectStringOrRaw() (string, error) {
 	case TokRawString:
 		return p.advance().Val, nil
 	case TokIdent:
-		// ip("cidr") line filter extension: treat as raw pass-through.
+		// ip("cidr") line filter extension: validate and treat as raw pass-through.
 		name := p.advance().Val
 		if p.cur.Typ == TokLParen {
 			p.advance() // consume '('
@@ -551,6 +554,9 @@ func (p *parser) expectStringOrRaw() (string, error) {
 			}
 			if _, err := p.expect(TokRParen); err != nil {
 				return "", err
+			}
+			if name == "ip" && !isValidIPOrCIDR(val) {
+				return "", fmt.Errorf("logql: invalid ip filter value %q: not a valid IP address or CIDR", val)
 			}
 			return name + "(" + val + ")", nil
 		}
@@ -636,18 +642,23 @@ func (p *parser) consumeExplicitFieldList() {
 }
 
 // consumeBalancedParens consumes tokens including nested parentheses until the
-// matching close paren (which is also consumed). Used for opaque function calls.
-func (p *parser) consumeBalancedParens() {
+// matching close paren (which is also consumed). Returns the byte position in
+// p.input immediately after the closing ')'. Used for opaque function calls.
+func (p *parser) consumeBalancedParens() int {
 	depth := 1
+	endPos := 0
 	for depth > 0 && p.cur.Typ != TokEOF {
-		switch p.cur.Typ {
-		case TokLParen:
+		if p.cur.Typ == TokLParen {
 			depth++
-		case TokRParen:
+		} else if p.cur.Typ == TokRParen {
 			depth--
+			if depth == 0 {
+				endPos = p.sc.pos // right after the closing ')'
+			}
 		}
 		p.advance()
 	}
+	return endPos
 }
 
 // consumeRestOfStage reads tokens until the next pipeline operator, range
@@ -883,4 +894,20 @@ func (p *parser) parseGrouping() (*Grouping, error) {
 	}
 
 	return &Grouping{Without: without, Labels: labels}, nil
+}
+
+// isValidIPOrCIDR reports whether s is a valid IP address, CIDR block, or
+// IP range (a-b) as accepted by Loki's ip() line filter.
+func isValidIPOrCIDR(s string) bool {
+	if net.ParseIP(s) != nil {
+		return true
+	}
+	if _, _, err := net.ParseCIDR(s); err == nil {
+		return true
+	}
+	// IP range: "1.2.3.4-5.6.7.8"
+	if idx := strings.IndexByte(s, '-'); idx > 0 {
+		return net.ParseIP(s[:idx]) != nil && net.ParseIP(s[idx+1:]) != nil
+	}
+	return false
 }

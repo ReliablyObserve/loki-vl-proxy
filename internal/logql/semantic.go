@@ -81,7 +81,7 @@ func validateRangeAggSemantics(ra *RangeAggregation, raw string) string {
 			}
 		}
 		if !hasUnwrap {
-			return "parse error : rate_counter requires an unwrap expression"
+			return "parse error : rate_counter requires | unwrap expression"
 		}
 	}
 
