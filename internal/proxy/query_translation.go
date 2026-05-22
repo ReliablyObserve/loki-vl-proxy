@@ -363,12 +363,6 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 		p.observeInternalOperation(ctx, "translate_query", "passthrough", time.Since(start))
 		return "*", nil
 	}
-	// Canonicalize via typed AST: normalises whitespace and operator ordering so the
-	// old regex-based translator always receives well-formed LogQL.
-	if expr, parseErr := logqlpkg.Parse(normalized); parseErr == nil {
-		normalized = expr.String()
-	}
-
 	if p.translationCache != nil {
 		if cached, ok := p.translationCache.Get(normalized); ok {
 			p.observeInternalOperation(ctx, "translate_query", "cache_hit", time.Since(start))
