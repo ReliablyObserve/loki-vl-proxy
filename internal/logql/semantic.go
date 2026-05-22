@@ -7,6 +7,9 @@ import (
 	"strings"
 )
 
+// numericComparisonRe matches label filters like `status>=500` or `code>200`.
+var numericComparisonRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.]*\s*(>=|<=|>|<)\s*-?\d`)
+
 // validateSemantics walks the AST and enforces constraints that cannot be
 // caught by the parser alone. Returns a Loki-compatible error string, or ""
 // if the expression is valid.
@@ -75,10 +78,28 @@ func validateRangeAggSemantics(ra *RangeAggregation, raw string) string {
 		return "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got " + phi
 	}
 
+	// rate()/bytes_rate() cannot be used as the outer function of a subquery.
+	// Loki rejects e.g. rate(count_over_time({...}[5m])[30m:5m]) at parse time.
+	if (ra.Op == RangeRate || ra.Op == RangeBytesRate) && ra.Step != "" {
+		return "parse error at line 1, col 1: parse error : syntax error: unexpected RANGE"
+	}
+
 	// For subqueries, the inner is a metric expression — skip log-query-specific checks.
 	lq, isLogQuery := ra.Inner.(*LogQuery)
 	if !isLogQuery {
 		return validateSemantics(ra.Inner, raw)
+	}
+
+	// Loki rejects numeric comparison label filters (>=, <=, >, <) inside range
+	// aggregation pipelines. These require | unwrap + metric extraction, not
+	// direct label filter expressions.
+	for _, s := range lq.Pipeline {
+		if lf, ok := s.(*LabelFilterStage); ok {
+			trimmed := strings.TrimSpace(lf.Raw)
+			if numericComparisonRe.MatchString(trimmed) {
+				return "parse error at line 1, col 1: parse error : syntax error: unexpected RANGE"
+			}
+		}
 	}
 
 	// rate_counter requires | unwrap inside the range vector.
