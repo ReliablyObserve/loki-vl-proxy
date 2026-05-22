@@ -240,7 +240,7 @@ func TestQueryRange_RateParserStageTumblingUsesSlowPath(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	params := url.Values{}
 	// step=300 == range=[5m]=300 → tumbling window, but parser stage without drop-error → slow path.
-	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
+	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status="error" [5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
 	params.Set("step", "300")
@@ -352,7 +352,7 @@ func TestQueryRange_RateParserStageSlidingProducesResult(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	params := url.Values{}
 	// step=60 != range=[5m]=300 → rangeEqualsStep=false → shouldUseManualRangeMetricCompat returns true.
-	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
+	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status="error" [5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
 	params.Set("step", "60")
@@ -1250,7 +1250,7 @@ func TestQueryInstant_SumCountOverTimeParserStageCollapsesToOneSeries(t *testing
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	q := url.Values{}
-	q.Set("query", `sum(count_over_time({namespace="prod"} | json | status >= 500 [3h]))`)
+	q.Set("query", `sum(count_over_time({namespace="prod"} | json | status="500" [3h]))`)
 	q.Set("time", strconv.FormatInt(base.Unix(), 10))
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query?"+q.Encode(), nil)
 	rec := httptest.NewRecorder()
