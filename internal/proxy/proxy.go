@@ -1570,8 +1570,9 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
 		// Binary metric expression: sum(rate(...)) / sum(rate(...))
-		leftLogsql, leftErr := p.translateQueryWithContext(r.Context(), binOp.Left.String())
-		rightLogsql, rightErr := p.translateQueryWithContext(r.Context(), binOp.Right.String())
+		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
+		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
+		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
 		if leftErr != nil {
 			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
 		} else if rightErr != nil {
@@ -1780,8 +1781,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 			p.proxySubquery(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
 		}
 	} else if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
-		leftLogsql, leftErr := p.translateQueryWithContext(r.Context(), binOp.Left.String())
-		rightLogsql, rightErr := p.translateQueryWithContext(r.Context(), binOp.Right.String())
+		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
+		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
 		if leftErr != nil {
 			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
 		} else if rightErr != nil {

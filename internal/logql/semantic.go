@@ -2,6 +2,7 @@ package logql
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -37,6 +38,15 @@ func validateLogQuerySemantics(lq *LogQuery, raw string) string {
 	// Loki requires at least one non-wildcard matcher.
 	if len(lq.Selector.Matchers) == 0 {
 		return "parse error at line 1, col 2: parse error : queries require at least one matcher that is not a wildcard"
+	}
+
+	// Validate regex matchers.
+	for _, m := range lq.Selector.Matchers {
+		if m.Op == MatchRe || m.Op == MatchNotRe {
+			if _, err := regexp.Compile(m.Value); err != nil {
+				return fmt.Sprintf("parse error at line 1, col 1: parse error : invalid regex: %v", err)
+			}
+		}
 	}
 
 	unwrapCount := 0

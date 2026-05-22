@@ -344,6 +344,17 @@ func (p *Proxy) translateQuery(logql string) (string, error) {
 	return p.translateQueryWithContext(context.Background(), logql)
 }
 
+// translateBinOpSide translates one side of a binary expression.
+// Scalar literal expressions (e.g. "100") are returned as-is without translation,
+// since the translator cannot handle bare numeric literals and proxyBinaryMetric
+// already detects them via translator.IsScalar.
+func (p *Proxy) translateBinOpSide(ctx context.Context, expr logqlpkg.Expr) (string, error) {
+	if lit, ok := expr.(*logqlpkg.LiteralExpr); ok {
+		return lit.String(), nil
+	}
+	return p.translateQueryWithContext(ctx, expr.String())
+}
+
 func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (string, error) {
 	start := time.Now()
 	normalized := strings.TrimSpace(logql)
