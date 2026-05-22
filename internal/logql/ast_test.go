@@ -121,7 +121,7 @@ func TestRangeAggregation_String(t *testing.T) {
 	sel := &logql.StreamSelector{Matchers: []logql.LabelMatcher{{Name: "app", Op: logql.MatchEq, Value: "api"}}}
 	ra := &logql.RangeAggregation{
 		Op:    logql.RangeRate,
-		Query: &logql.LogQuery{Selector: sel},
+		Inner: &logql.LogQuery{Selector: sel},
 		Range: "5m",
 	}
 	want := `rate({app="api"}[5m])`
@@ -136,7 +136,7 @@ func TestVectorAggregation_String(t *testing.T) {
 		Op:       logql.VectorSum,
 		Grouping: &logql.Grouping{Labels: []string{"app", "env"}},
 		Inner: &logql.RangeAggregation{
-			Op: logql.RangeRate, Query: &logql.LogQuery{Selector: sel}, Range: "5m",
+			Op: logql.RangeRate, Inner: &logql.LogQuery{Selector: sel}, Range: "5m",
 		},
 	}
 	want := `sum by (app, env) (rate({app="api"}[5m]))`

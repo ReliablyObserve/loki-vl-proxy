@@ -44,9 +44,29 @@ const (
 	TokDuration  // 5m, 30s, …
 	TokNumber    // numeric literal
 
+	// Arithmetic / comparison binary operators
+	TokPlus    // +
+	TokMinus   // -
+	TokStar    // *
+	TokSlash   // /
+	TokPercent // %
+	TokCaret   // ^
+	TokLt      // <
+	TokGt      // >
+	TokLtEq    // <=
+	TokGtEq    // >=
+	TokEqEq    // ==
+
 	// Structural keywords
-	TokBy      // by
-	TokWithout // without
+	TokBy         // by
+	TokWithout    // without
+	TokOn         // on
+	TokIgnoring   // ignoring
+	TokGroupLeft  // group_left
+	TokGroupRight // group_right
+	TokAnd        // and
+	TokOr         // or
+	TokUnless     // unless
 )
 
 func (t TokType) String() string {
@@ -101,10 +121,46 @@ func (t TokType) String() string {
 		return "DURATION"
 	case TokNumber:
 		return "NUMBER"
+	case TokPlus:
+		return "+"
+	case TokMinus:
+		return "-"
+	case TokStar:
+		return "*"
+	case TokSlash:
+		return "/"
+	case TokPercent:
+		return "%"
+	case TokCaret:
+		return "^"
+	case TokLt:
+		return "<"
+	case TokGt:
+		return ">"
+	case TokLtEq:
+		return "<="
+	case TokGtEq:
+		return ">="
+	case TokEqEq:
+		return "=="
 	case TokBy:
 		return "by"
 	case TokWithout:
 		return "without"
+	case TokOn:
+		return "on"
+	case TokIgnoring:
+		return "ignoring"
+	case TokGroupLeft:
+		return "group_left"
+	case TokGroupRight:
+		return "group_right"
+	case TokAnd:
+		return "and"
+	case TokOr:
+		return "or"
+	case TokUnless:
+		return "unless"
 	}
 	return "?"
 }
@@ -222,12 +278,51 @@ func (s *scanner) next() Token {
 		}
 		return Token{Typ: TokError, Val: "!"}
 
+	case '+':
+		s.read()
+		return Token{Typ: TokPlus, Val: "+"}
+	case '-':
+		s.read()
+		return Token{Typ: TokMinus, Val: "-"}
+	case '*':
+		s.read()
+		return Token{Typ: TokStar, Val: "*"}
+	case '/':
+		s.read()
+		return Token{Typ: TokSlash, Val: "/"}
+	case '%':
+		s.read()
+		return Token{Typ: TokPercent, Val: "%"}
+	case '^':
+		s.read()
+		return Token{Typ: TokCaret, Val: "^"}
+	case '<':
+		s.read()
+		r2, _ := s.peek()
+		if r2 == '=' {
+			s.read()
+			return Token{Typ: TokLtEq, Val: "<="}
+		}
+		return Token{Typ: TokLt, Val: "<"}
+	case '>':
+		s.read()
+		r2, _ := s.peek()
+		if r2 == '=' {
+			s.read()
+			return Token{Typ: TokGtEq, Val: ">="}
+		}
+		return Token{Typ: TokGt, Val: ">"}
+
 	case '=':
 		s.read()
 		r2, _ := s.peek()
 		if r2 == '~' {
 			s.read()
 			return Token{Typ: TokReMatch, Val: "=~"}
+		}
+		if r2 == '=' {
+			s.read()
+			return Token{Typ: TokEqEq, Val: "=="}
 		}
 		return Token{Typ: TokEq, Val: "="}
 
@@ -313,6 +408,20 @@ func (s *scanner) scanIdent() Token {
 		return Token{Typ: TokBy, Val: val}
 	case "without":
 		return Token{Typ: TokWithout, Val: val}
+	case "on":
+		return Token{Typ: TokOn, Val: val}
+	case "ignoring":
+		return Token{Typ: TokIgnoring, Val: val}
+	case "group_left":
+		return Token{Typ: TokGroupLeft, Val: val}
+	case "group_right":
+		return Token{Typ: TokGroupRight, Val: val}
+	case "and":
+		return Token{Typ: TokAnd, Val: val}
+	case "or":
+		return Token{Typ: TokOr, Val: val}
+	case "unless":
+		return Token{Typ: TokUnless, Val: val}
 	}
 	return Token{Typ: TokIdent, Val: val}
 }

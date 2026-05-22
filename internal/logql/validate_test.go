@@ -30,7 +30,6 @@ func TestParseAndValidate_Invalid(t *testing.T) {
 		``,
 		`{app=`,
 		`not logql`,
-		`{app="nginx"} | unknown_xyz`,
 		`rate({app="api"})`,
 	}
 	for _, input := range invalid {

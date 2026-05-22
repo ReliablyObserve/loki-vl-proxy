@@ -268,20 +268,31 @@ const (
 	RangeFirstOverTime    RangeOp = "first_over_time"
 	RangeLastOverTime     RangeOp = "last_over_time"
 	RangeAbsentOverTime   RangeOp = "absent_over_time"
+	RangeRateCounter      RangeOp = "rate_counter"
 )
 
-// RangeAggregation is e.g. `rate({app="api"}[5m])`.
+// RangeAggregation is e.g. `rate({app="api"}[5m])` or a subquery
+// `max_over_time(rate({app="api"}[5m])[1h:5m])`.
 type RangeAggregation struct {
 	Op       RangeOp
-	Query    *LogQuery
-	Range    string  // e.g. "5m"
+	Inner    Expr    // *LogQuery for plain range; any Expr for subquery
+	Range    string  // outer range, e.g. "5m" or "1h"
+	Step     string  // subquery step (e.g. "5m" from [1h:5m]); empty for plain range
+	Offset   string  // optional offset modifier, e.g. "1h" from [5m] offset 1h
 	Param    float64 // for quantile_over_time
 	HasParam bool
 	Grouping *Grouping
 }
 
 func (r *RangeAggregation) String() string {
-	inner := r.Query.String() + "[" + r.Range + "]"
+	rangeStr := "[" + r.Range + "]"
+	if r.Step != "" {
+		rangeStr = "[" + r.Range + ":" + r.Step + "]"
+	}
+	if r.Offset != "" {
+		rangeStr += " offset " + r.Offset
+	}
+	inner := r.Inner.String() + rangeStr
 	if r.HasParam {
 		inner = fmt.Sprintf("%g,%s", r.Param, inner)
 	}
@@ -338,18 +349,51 @@ func (v *VectorAggregation) String() string {
 
 func (v *VectorAggregation) expr() {}
 
+// VectorMatching describes the on/ignoring + group_left/group_right modifiers
+// on a binary operation.
+type VectorMatching struct {
+	Card        string   // "on" or "ignoring"
+	MatchLabels []string // labels for on/ignoring
+	GroupSide   string   // "group_left" or "group_right" (empty = one-to-one)
+	Include     []string // labels to include from the "one" side
+}
+
+func (vm *VectorMatching) String() string {
+	if vm == nil {
+		return ""
+	}
+	var b strings.Builder
+	if vm.Card != "" {
+		b.WriteString(vm.Card)
+		b.WriteString("(")
+		b.WriteString(strings.Join(vm.MatchLabels, ", "))
+		b.WriteString(")")
+	}
+	if vm.GroupSide != "" {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(vm.GroupSide)
+		b.WriteString("(")
+		b.WriteString(strings.Join(vm.Include, ", "))
+		b.WriteString(")")
+	}
+	return b.String()
+}
+
 // BinOpExpr is a binary operation between two metric expressions.
 type BinOpExpr struct {
-	Left, Right Expr
-	Op          string
-	Grouping    *Grouping
+	Left, Right    Expr
+	Op             string
+	VectorMatching *VectorMatching
 }
 
 func (b *BinOpExpr) String() string {
-	s := b.Left.String() + " " + b.Op + " " + b.Right.String()
-	if b.Grouping != nil && b.Grouping.String() != "" {
-		s += " " + b.Grouping.String()
+	s := b.Left.String() + " " + b.Op
+	if vm := b.VectorMatching.String(); vm != "" {
+		s += " " + vm
 	}
+	s += " " + b.Right.String()
 	return s
 }
 

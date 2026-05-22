@@ -2,6 +2,7 @@ package logql
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -20,12 +21,17 @@ func Parse(input string) (Expr, error) {
 	return expr, nil
 }
 
-// ParseAndValidate parses a LogQL expression and returns any syntax error.
-// It is a lightweight gate for request validation — callers that only need
-// to know whether a query is well-formed should use this instead of Parse.
+// ParseAndValidate parses a LogQL expression and runs semantic validation.
+// Returns the first error found, or nil if the query is well-formed.
 func ParseAndValidate(input string) error {
-	_, err := Parse(input)
-	return err
+	expr, err := Parse(input)
+	if err != nil {
+		return err
+	}
+	if msg := validateSemantics(expr, input); msg != "" {
+		return fmt.Errorf("%s", msg)
+	}
+	return nil
 }
 
 // ParseLogQuery parses a log query (stream selector + optional pipeline).
@@ -73,6 +79,7 @@ var rangeOps = map[string]RangeOp{
 	"first_over_time":    RangeFirstOverTime,
 	"last_over_time":     RangeLastOverTime,
 	"absent_over_time":   RangeAbsentOverTime,
+	"rate_counter":       RangeRateCounter,
 }
 
 type parser struct {
@@ -94,10 +101,55 @@ func (p *parser) expect(typ TokType) (Token, error) {
 	return p.advance(), nil
 }
 
-// parseExpr is the top-level entry point.
+// isBinOpTok returns true if the current token can start a binary operator
+// between two metric expressions.
+func isBinOpTok(t TokType) bool {
+	switch t {
+	case TokPlus, TokMinus, TokStar, TokSlash, TokPercent, TokCaret,
+		TokLt, TokGt, TokLtEq, TokGtEq, TokEqEq, TokBangEq,
+		TokAnd, TokOr, TokUnless:
+		return true
+	}
+	return false
+}
+
+// parseExpr is the top-level entry point, including infix binary operations.
 func (p *parser) parseExpr() (Expr, error) {
+	lhs, err := p.parsePrimary()
+	if err != nil {
+		return nil, err
+	}
+	return p.maybeInfix(lhs)
+}
+
+// parsePrimary parses a single expression without any infix operators.
+func (p *parser) parsePrimary() (Expr, error) {
 	if p.cur.Typ == TokEOF {
 		return nil, fmt.Errorf("logql: empty expression")
+	}
+
+	// Number literal (e.g. scalar in binary ops)
+	if p.cur.Typ == TokNumber {
+		val, err := strconv.ParseFloat(p.cur.Val, 64)
+		if err != nil {
+			return nil, fmt.Errorf("logql: invalid number %q", p.cur.Val)
+		}
+		p.advance()
+		return &LiteralExpr{Value: val}, nil
+	}
+
+	// Negative number literal
+	if p.cur.Typ == TokMinus {
+		p.advance()
+		if p.cur.Typ != TokNumber {
+			return nil, fmt.Errorf("logql: expected number after '-'")
+		}
+		val, err := strconv.ParseFloat(p.cur.Val, 64)
+		if err != nil {
+			return nil, fmt.Errorf("logql: invalid number %q", p.cur.Val)
+		}
+		p.advance()
+		return &LiteralExpr{Value: -val}, nil
 	}
 
 	// Vector aggregation: starts with a known aggregation name followed by
@@ -107,9 +159,34 @@ func (p *parser) parseExpr() (Expr, error) {
 			return p.parseVectorAggregation(op)
 		}
 		if op, ok := rangeOps[p.cur.Val]; ok {
-			return p.parseRangeAggregation(op)
+			ra, err := p.parseRangeAggregation(op)
+			if err != nil {
+				return nil, err
+			}
+			// Optional trailing by/without grouping: `rate(...)[5m]) by (label)`
+			if p.cur.Typ == TokBy || p.cur.Typ == TokWithout {
+				g, gErr := p.parseGrouping()
+				if gErr != nil {
+					return nil, gErr
+				}
+				ra.Grouping = g
+			}
+			return ra, nil
 		}
 		return nil, fmt.Errorf("logql: unexpected identifier %q", p.cur.Val)
+	}
+
+	// Parenthesised expression
+	if p.cur.Typ == TokLParen {
+		p.advance()
+		inner, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(TokRParen); err != nil {
+			return nil, err
+		}
+		return inner, nil
 	}
 
 	if p.cur.Typ == TokLBrace {
@@ -117,6 +194,66 @@ func (p *parser) parseExpr() (Expr, error) {
 	}
 
 	return nil, fmt.Errorf("logql: unexpected token %v (%q)", p.cur.Typ, p.cur.Val)
+}
+
+// maybeInfix checks for a binary operator after a primary and builds a BinOpExpr
+// if found. Handles optional vector matching modifiers (on/ignoring, group_left/right).
+func (p *parser) maybeInfix(lhs Expr) (Expr, error) {
+	if !isBinOpTok(p.cur.Typ) {
+		return lhs, nil
+	}
+	op := p.advance().Val
+	if op == "!=" {
+		op = "!="
+	}
+
+	// Optional vector matching: on(labels) / ignoring(labels)
+	var vm *VectorMatching
+	if p.cur.Typ == TokOn || p.cur.Typ == TokIgnoring {
+		card := p.advance().Val
+		labels, err := p.parseLabelList()
+		if err != nil {
+			return nil, err
+		}
+		vm = &VectorMatching{Card: card, MatchLabels: labels}
+		// Optional group_left / group_right
+		if p.cur.Typ == TokGroupLeft || p.cur.Typ == TokGroupRight {
+			side := p.advance().Val
+			include, err := p.parseLabelList()
+			if err != nil {
+				return nil, err
+			}
+			vm.GroupSide = side
+			vm.Include = include
+		}
+	}
+
+	rhs, err := p.parsePrimary()
+	if err != nil {
+		return nil, err
+	}
+	lhs = &BinOpExpr{Left: lhs, Right: rhs, Op: op, VectorMatching: vm}
+	return p.maybeInfix(lhs)
+}
+
+// parseLabelList parses a parenthesised comma-separated label name list: (label1, label2).
+// Returns an empty slice if the next token is not '('.
+func (p *parser) parseLabelList() ([]string, error) {
+	if p.cur.Typ != TokLParen {
+		return nil, nil
+	}
+	p.advance() // consume '('
+	var labels []string
+	for p.cur.Typ == TokIdent {
+		labels = append(labels, p.advance().Val)
+		if p.cur.Typ == TokComma {
+			p.advance()
+		}
+	}
+	if _, err := p.expect(TokRParen); err != nil {
+		return nil, err
+	}
+	return labels, nil
 }
 
 // parseLogQuery parses {selector} [pipeline stages].
@@ -211,51 +348,51 @@ func (p *parser) parsePipelineStage() (Stage, error) {
 	switch p.cur.Typ {
 	case TokPipeEq:
 		p.advance()
-		val, err := p.expect(TokString)
+		val, err := p.expectStringOrRaw()
 		if err != nil {
 			return nil, err
 		}
-		return &LineFilterStage{Op: LineFilterContains, Value: val.Val}, nil
+		return &LineFilterStage{Op: LineFilterContains, Value: val}, nil
 
 	case TokBangEq:
 		p.advance()
-		val, err := p.expect(TokString)
+		val, err := p.expectStringOrRaw()
 		if err != nil {
 			return nil, err
 		}
-		return &LineFilterStage{Op: LineFilterExcludes, Value: val.Val}, nil
+		return &LineFilterStage{Op: LineFilterExcludes, Value: val}, nil
 
 	case TokPipeTilde:
 		p.advance()
-		val, err := p.expect(TokString)
+		val, err := p.expectStringOrRaw()
 		if err != nil {
 			return nil, err
 		}
-		return &LineFilterStage{Op: LineFilterMatchRe, Value: val.Val}, nil
+		return &LineFilterStage{Op: LineFilterMatchRe, Value: val}, nil
 
 	case TokBangTilde:
 		p.advance()
-		val, err := p.expect(TokString)
+		val, err := p.expectStringOrRaw()
 		if err != nil {
 			return nil, err
 		}
-		return &LineFilterStage{Op: LineFilterExcludeRe, Value: val.Val}, nil
+		return &LineFilterStage{Op: LineFilterExcludeRe, Value: val}, nil
 
 	case TokPipeGt:
 		p.advance()
-		val, err := p.expect(TokString)
+		val, err := p.expectStringOrRaw()
 		if err != nil {
 			return nil, err
 		}
-		return &LineFilterStage{Op: LineFilterContainsPat, Value: val.Val}, nil
+		return &LineFilterStage{Op: LineFilterContainsPat, Value: val}, nil
 
 	case TokBangGt:
 		p.advance()
-		val, err := p.expect(TokString)
+		val, err := p.expectStringOrRaw()
 		if err != nil {
 			return nil, err
 		}
-		return &LineFilterStage{Op: LineFilterExcludePat, Value: val.Val}, nil
+		return &LineFilterStage{Op: LineFilterExcludePat, Value: val}, nil
 
 	case TokPipe:
 		p.advance()
@@ -340,16 +477,14 @@ func (p *parser) parsePipeBody() (Stage, error) {
 		return &LabelFormatStage{Raw: raw}, nil
 	}
 
-	// Unknown keyword after `|`: consume the identifier, then check for a
-	// comparison operator. If present, treat as a label filter expression
-	// (e.g. `level="error"`). Otherwise it is an unknown stage — return error.
+	// Unknown keyword after `|`: consume the identifier and the rest of the
+	// stage. If followed by a comparison/assignment operator or dotted-label
+	// continuation, this is a label filter. Otherwise treat as an opaque stage
+	// (unknown parser keywords, custom extensions) so the query passes through
+	// to the backend rather than being rejected by the proxy.
 	p.advance() // consume the ident
-	switch p.cur.Typ {
-	case TokEq, TokNeq, TokBangEq, TokReMatch, TokReNotMatch:
-		raw := kw + p.consumeRestOfStage()
-		return &LabelFilterStage{Raw: raw}, nil
-	}
-	return nil, fmt.Errorf("logql: unknown pipeline stage %q", kw)
+	raw := kw + p.consumeRestOfStage()
+	return &LabelFilterStage{Raw: raw}, nil
 }
 
 // parseUnwrap parses `unwrap label` or `unwrap bytes(label)`.
@@ -377,6 +512,18 @@ func (p *parser) parseUnwrap() (Stage, error) {
 	return &UnwrapStage{Label: name.Val}, nil
 }
 
+// expectStringOrRaw accepts either a quoted string or a raw (backtick) string,
+// returning the unescaped value. Used for line filter operands.
+func (p *parser) expectStringOrRaw() (string, error) {
+	switch p.cur.Typ {
+	case TokString:
+		return p.advance().Val, nil
+	case TokRawString:
+		return p.advance().Val, nil
+	}
+	return "", fmt.Errorf("logql: expected STRING or RAWSTRING, got %v (%q)", p.cur.Typ, p.cur.Val)
+}
+
 // parseIdentList parses a comma-separated list of identifiers (for drop/keep).
 func (p *parser) parseIdentList() ([]string, error) {
 	var labels []string
@@ -394,15 +541,26 @@ func (p *parser) parseIdentList() ([]string, error) {
 	return labels, nil
 }
 
-// consumeRestOfStage reads tokens until the next pipeline operator or EOF,
-// returning them as a raw string. Used for label filter and label_format stages
-// whose expression grammar is complex and opaque to this parser.
+// consumeRestOfStage reads tokens until the next pipeline operator, range
+// bracket, or EOF, returning them as a raw string. Used for label filter and
+// label_format stages whose expression grammar is complex and opaque to this
+// parser. Stops at [ and ) so that the outer range aggregation parser can
+// consume the [duration] and closing ) tokens.
 func (p *parser) consumeRestOfStage() string {
 	var parts []string
 	for {
 		switch p.cur.Typ {
-		case TokEOF, TokPipe, TokPipeEq, TokBangEq, TokPipeTilde, TokBangTilde, TokPipeGt, TokBangGt:
+		case TokEOF, TokPipe, TokPipeEq, TokPipeTilde, TokPipeGt, TokBangGt,
+			TokLBracket, TokRParen:
 			return strings.Join(parts, "")
+		case TokBangEq, TokBangTilde:
+			// When parts is non-empty we've already consumed `label=value` —
+			// the `!=`/`!~` here starts a NEW line filter stage; stop.
+			// When parts is empty the `!=`/`!~` IS the label filter operator
+			// (e.g. `status!=200`); continue consuming.
+			if len(parts) > 0 {
+				return strings.Join(parts, "")
+			}
 		}
 		parts = append(parts, tokenRaw(p.cur))
 		p.advance()
@@ -438,7 +596,11 @@ func tokenRaw(tok Token) string {
 	return tok.Val
 }
 
-// parseRangeAggregation parses `rate({...}[5m])`.
+// parseRangeAggregation parses `rate({...}[5m])` or a subquery
+// like `max_over_time(rate({...}[5m])[1h:5m])`.
+//
+// For quantile_over_time the optional phi parameter comes before the
+// inner expression: quantile_over_time(0.95, {app="nginx"}[5m]).
 func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 	p.advance() // consume function name
 
@@ -446,12 +608,55 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 		return nil, err
 	}
 
-	lq, err := p.parseLogQuery()
-	if err != nil {
-		return nil, err
+	ra := &RangeAggregation{Op: op}
+
+	// quantile_over_time accepts an optional phi before the inner expression.
+	if op == RangeQuantileOverTime && p.cur.Typ == TokNumber {
+		phi, err := strconv.ParseFloat(p.cur.Val, 64)
+		if err != nil {
+			return nil, fmt.Errorf("logql: invalid phi: %w", err)
+		}
+		p.advance()
+		ra.Param = phi
+		ra.HasParam = true
+		if _, err := p.expect(TokComma); err != nil {
+			return nil, err
+		}
+	}
+	if op == RangeQuantileOverTime && p.cur.Typ == TokMinus {
+		// Negative phi
+		p.advance()
+		if p.cur.Typ != TokNumber {
+			return nil, fmt.Errorf("logql: expected number after '-' in quantile_over_time")
+		}
+		phi, err := strconv.ParseFloat(p.cur.Val, 64)
+		if err != nil {
+			return nil, fmt.Errorf("logql: invalid phi: %w", err)
+		}
+		p.advance()
+		ra.Param = -phi
+		ra.HasParam = true
+		if _, err := p.expect(TokComma); err != nil {
+			return nil, err
+		}
 	}
 
-	// Expect [duration]
+	// Inner expression: log query ({...}) or metric expr (subquery).
+	var err error
+	if p.cur.Typ == TokLBrace {
+		lq, lqErr := p.parseLogQuery()
+		if lqErr != nil {
+			return nil, lqErr
+		}
+		ra.Inner = lq
+	} else {
+		ra.Inner, err = p.parsePrimary()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Expect [duration] or [duration:step]
 	if _, err := p.expect(TokLBracket); err != nil {
 		return nil, fmt.Errorf("logql: expected '[' for range, got %v (%q)", p.cur.Typ, p.cur.Val)
 	}
@@ -459,15 +664,37 @@ func (p *parser) parseRangeAggregation(op RangeOp) (*RangeAggregation, error) {
 	if err != nil {
 		return nil, fmt.Errorf("logql: expected duration: %w", err)
 	}
+	ra.Range = dur.Val
+
+	// Optional :step for subqueries — the colon is not a scanner keyword so it
+	// arrives as TokError with Val ":".
+	if p.cur.Typ == TokError && p.cur.Val == ":" {
+		p.advance() // consume ':'
+		step, stepErr := p.expect(TokDuration)
+		if stepErr == nil {
+			ra.Step = step.Val
+		}
+	}
+
 	if _, err := p.expect(TokRBracket); err != nil {
 		return nil, err
+	}
+
+	// Optional offset modifier: [duration] offset 1h
+	if p.cur.Typ == TokIdent && p.cur.Val == "offset" {
+		p.advance() // consume "offset"
+		off, offErr := p.expect(TokDuration)
+		if offErr != nil {
+			return nil, fmt.Errorf("logql: expected duration after offset: %w", offErr)
+		}
+		ra.Offset = off.Val
 	}
 
 	if _, err := p.expect(TokRParen); err != nil {
 		return nil, err
 	}
 
-	return &RangeAggregation{Op: op, Query: lq, Range: dur.Val}, nil
+	return ra, nil
 }
 
 // parseVectorAggregation parses `sum by (...) (inner)`.
@@ -489,6 +716,20 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 		return nil, err
 	}
 
+	// topk/bottomk carry a numeric parameter before the inner expression.
+	if op == VectorTopK || op == VectorBottomK {
+		kTok, err := p.expect(TokNumber)
+		if err != nil {
+			return nil, fmt.Errorf("logql: %s requires a numeric k parameter", op)
+		}
+		k, _ := strconv.ParseFloat(kTok.Val, 64)
+		va.Param = k
+		va.HasParam = true
+		if _, err := p.expect(TokComma); err != nil {
+			return nil, fmt.Errorf("logql: expected ',' after k in %s", op)
+		}
+	}
+
 	inner, err := p.parseExpr()
 	if err != nil {
 		return nil, err
@@ -497,6 +738,15 @@ func (p *parser) parseVectorAggregation(op VectorOp) (*VectorAggregation, error)
 
 	if _, err := p.expect(TokRParen); err != nil {
 		return nil, err
+	}
+
+	// Optional trailing grouping: sum(...) by (label) — equivalent to sum by (label) (...)
+	if va.Grouping == nil && (p.cur.Typ == TokBy || p.cur.Typ == TokWithout) {
+		g, err := p.parseGrouping()
+		if err != nil {
+			return nil, err
+		}
+		va.Grouping = g
 	}
 
 	return va, nil

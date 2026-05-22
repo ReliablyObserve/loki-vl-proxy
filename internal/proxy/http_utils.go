@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -81,165 +82,20 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 	return query, true
 }
 
-// validateLogQLSyntax performs lightweight LogQL syntax validation to catch
-// queries that Loki would reject with a parse error. Returns the error message
-// (matching Loki's format) or empty string if valid.
-//
-// This catches:
-// - Empty queries
-// - Queries without a stream selector (e.g., "| json")
-// - Malformed stream selectors (e.g., "{app=}")
-// - Binary operations on log/pipeline expressions (e.g., "{app=...} == 2")
-// - line_format with unclosed Go template actions (e.g., `| line_format "{{.x"`)
-// - Invalid operators in label filters (e.g., `<>`)
-
 // quantileOverTimePhiRE extracts the phi literal from quantile_over_time(phi, ...).
 var quantileOverTimePhiRE = regexp.MustCompile(`\bquantile_over_time\(\s*(-?[\d]+(?:\.[\d]+)?(?:e[+\-]?\d+)?)\s*,`)
 
-// lineFormatTemplateRE extracts the template string from a line_format stage.
-var lineFormatTemplateRE = regexp.MustCompile(`\|\s*line_format\s+"((?:[^"\\]|\\.)*)"`)
-
-// groupingOnLogStreamRE matches a without/by modifier that immediately follows a
-// stream selector (i.e., without a wrapping metric function). Loki rejects these.
-var groupingOnLogStreamRE = regexp.MustCompile(`^(?:without|by)\s*\(`)
-
-// errorLabelInRateVectorRE detects __error__ (or __error_details__) used as a
-// label filter inside a rate() or bytes_rate() range vector. Loki 3.x rejects
-// this: rate() computes a metric from log throughput and does not support
-// parser-generated labels like __error__ inside the range brackets.
-// count_over_time() and other functions DO allow __error__ filters — only
-// the rate/bytes_rate family is restricted.
-var errorLabelInRateVectorRE = regexp.MustCompile(`\b(?:bytes_)?rate\s*\([^[]*__error(?:_details)?__\s*(?:!=|!~|=~|=)\s*"[^"]*"\s*\[`)
-
-// multipleUnwrapRE detects two or more | unwrap stages inside a single range
-// vector expression. Loki 3.x rejects this at parse time: only one unwrap per
-// range vector is allowed.
-var multipleUnwrapRE = regexp.MustCompile(`\|\s*unwrap\s+\S[^|\[]*\|\s*unwrap\s+\S[^|\[]*\[`)
-
-// distinctStageRE detects the | distinct pipeline stage. Loki 3.7.1 does not
-// support this stage and rejects it with a parse error.
-var distinctStageRE = regexp.MustCompile(`\|\s*distinct\b`)
-
+// validateLogQLSyntax validates LogQL syntax and semantics using the typed AST
+// parser, returning a Loki-compatible error string or "" if valid. The
+// drop/keep stage syntax is validated separately as a fallback for matchers
+// that the parser's LabelFilterStage currently represents as raw strings.
 func validateLogQLSyntax(query string) string {
-	query = strings.TrimSpace(query)
-
-	// Empty query
-	if query == "" {
-		return "parse error : syntax error: unexpected $end"
+	if msg := logql.ValidateLogQL(query); msg != "" {
+		return msg
 	}
-
-	// No stream selector — starts with pipeline
-	if strings.HasPrefix(query, "|") {
-		return "parse error at line 1, col 1: syntax error: unexpected |"
+	if msg := validateDropKeepSyntax(query); msg != "" {
+		return msg
 	}
-
-	// Reject quantile_over_time with phi < 0 before reaching VL
-	// (VL returns 422 for negative phi; Loki returns 400). Loki allows phi > 1
-	// but VL rejects it — phi > 1 is clamped to 1.0 in validateQuery instead.
-	if m := quantileOverTimePhiRE.FindStringSubmatch(query); len(m) > 1 {
-		phi, err := strconv.ParseFloat(m[1], 64)
-		if err == nil && phi < 0 {
-			return "parse error at line 1, col 1: invalid parameter for quantile_over_time: expected range [0, 1] but got " + m[1]
-		}
-	}
-
-	// Reject line_format with unclosed Go template actions (e.g., "{{.method").
-	// Loki's template engine returns a parse error; the proxy forwards such
-	// queries unmodified, so VL would accept them and produce wrong output.
-	if m := lineFormatTemplateRE.FindStringSubmatch(query); len(m) > 1 {
-		tmpl := m[1]
-		if strings.Count(tmpl, "{{") > strings.Count(tmpl, "}}") {
-			stage := `| line_format "` + tmpl + `"`
-			return `parse error : stage '` + stage + `' : invalid line template: template: line:1: unclosed action`
-		}
-	}
-
-	// Reject the <> operator — it is not valid LogQL syntax. Loki returns a
-	// parse error; VL may silently accept or misinterpret it.
-	if idx := strings.Index(query, "<>"); idx >= 0 {
-		return fmt.Sprintf("parse error at line 1, col %d: syntax error: unexpected >", idx+2)
-	}
-
-	// Malformed selector: unclosed or empty values
-	if strings.HasPrefix(query, "{") {
-		braceDepth := 0
-		selectorEnd := -1
-		for i, ch := range query {
-			if ch == '{' {
-				braceDepth++
-			} else if ch == '}' {
-				braceDepth--
-				if braceDepth == 0 {
-					selectorEnd = i
-					break
-				}
-			}
-		}
-		if selectorEnd < 0 {
-			return "parse error at line 1, col 1: syntax error: unexpected end of input"
-		}
-		selector := query[:selectorEnd+1]
-
-		// Loki requires at least one non-wildcard matcher.
-		if selector == "{}" {
-			return "parse error at line 1, col 2: parse error : queries require at least one matcher that is not a wildcard"
-		}
-
-		// Check for empty values like {app=} or {app= }
-		if emptyValueRe.MatchString(selector) {
-			return "parse error at line 1, col " + strconv.Itoa(strings.Index(selector, "=}")+2) + ": syntax error: unexpected }, expecting STRING"
-		}
-
-		rest := strings.TrimSpace(query[selectorEnd+1:])
-
-		// Bare range vector: {selector}[duration] with no wrapping metric function.
-		// Loki rejects these as a syntax error.
-		if strings.HasPrefix(rest, "[") {
-			return "parse error at line 1, col " + strconv.Itoa(selectorEnd+2) + ": syntax error: unexpected RANGE, expecting )"
-		}
-
-		// Grouping modifiers (without/by) directly after a log stream are invalid —
-		// they are only meaningful on metric aggregation expressions.
-		if groupingOnLogStreamRE.MatchString(rest) {
-			return "parse error at line 1, col " + strconv.Itoa(selectorEnd+2) + `: parse error : only aggregation expressions support without/by grouping`
-		}
-
-		// Check for binary operations on log queries
-		// Pattern: {selector} [| pipeline...] <binary_op> <number>
-		// This is invalid unless wrapped in a metric function
-		if isBinaryOpOnLogQuery(rest) {
-			op := extractBinaryOp(rest)
-			exprType := "*syntax.MatchersExpr"
-			if strings.Contains(rest, "|") {
-				exprType = "*syntax.PipelineExpr"
-			}
-			return "parse error : unexpected type for left leg of binary operation (" + op + "): " + exprType
-		}
-	}
-
-	// Reject __error__ / __error_details__ inside rate() range vectors.
-	// Loki 3.x treats rate() as a log-throughput metric; __error__ is a
-	// parser-generated label that is not accessible inside rate/bytes_rate
-	// range brackets. count_over_time() and other functions allow __error__.
-	if errorLabelInRateVectorRE.MatchString(query) {
-		return `parse error : __error__ and __error_details__ are not allowed inside rate() range vectors`
-	}
-
-	// Multiple | unwrap stages in a single range vector are rejected by Loki 3.x.
-	if multipleUnwrapRE.MatchString(query) {
-		return `parse error : syntax error: unexpected unwrap`
-	}
-
-	// | distinct is not a valid LogQL 3.7.1 pipeline stage.
-	if distinctStageRE.MatchString(query) {
-		return `parse error : syntax error: unexpected IDENT`
-	}
-
-	// Reject | drop / | keep stages with malformed matcher items (e.g. !=~).
-	if err := validateDropKeepSyntax(query); err != "" {
-		return err
-	}
-
 	return ""
 }
 
@@ -271,73 +127,6 @@ func rewriteQuantilePhiGT1(query string) string {
 		}
 		return strings.Replace(match, m[1], "1", 1)
 	})
-}
-
-var emptyValueRe = regexp.MustCompile(`[=!~]=?\s*[,}]`)
-
-// binaryOpOnLogRe matches a binary operator followed by a number at the end
-// of a pipeline expression (not inside a metric function).
-var binaryOpOnLogRe = regexp.MustCompile(`(?:^|\s)\s*(==|!=|<=|>=|<|>|\+|-|\*|/|%|\^)\s*\d+\s*$`)
-
-// labelFilterRe matches a standalone label filter stage: identifier <op> number.
-var labelFilterRe = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:==|!=|<=|>=|<|>)\s*\d+(\.\d+)?\s*$`)
-
-// logParserKeywords is the set of LogQL parser stage keywords that cannot be field names
-// in a label filter comparison (e.g. "| json == 2" is invalid; "| status >= 400" is valid).
-var logParserKeywords = map[string]bool{
-	"json": true, "logfmt": true, "unpack": true, "regexp": true,
-	"pattern": true, "decolorize": true,
-}
-
-func isBinaryOpOnLogQuery(rest string) bool {
-	if rest == "" {
-		return false
-	}
-	if !binaryOpOnLogRe.MatchString(rest) {
-		return false
-	}
-	// If the last pipe-separated segment is a label filter (field op number) where
-	// the field is not a parser keyword, it's a valid stage — e.g. "| json | status >= 400".
-	// Also handle compound label filters joined with "and"/"or":
-	// "| json | status >= 200 and status < 500" — each atom must be a valid label filter.
-	lastPipe := strings.LastIndex(rest, "|")
-	lastSeg := strings.TrimSpace(rest)
-	if lastPipe >= 0 {
-		lastSeg = strings.TrimSpace(rest[lastPipe+1:])
-	}
-	atoms := splitLabelFilterAtoms(lastSeg)
-	for _, atom := range atoms {
-		if m := labelFilterRe.FindStringSubmatch(atom); m != nil {
-			if !logParserKeywords[m[1]] {
-				continue
-			}
-		}
-		return true
-	}
-	return false
-}
-
-// splitLabelFilterAtoms splits a compound label filter stage at " and " / " or "
-// conjunctions, returning individual atoms. Used to validate each part separately.
-func splitLabelFilterAtoms(s string) []string {
-	var atoms []string
-	for _, part := range regexp.MustCompile(`\s+(?:and|or)\s+`).Split(s, -1) {
-		if t := strings.TrimSpace(part); t != "" {
-			atoms = append(atoms, t)
-		}
-	}
-	if len(atoms) == 0 {
-		return []string{s}
-	}
-	return atoms
-}
-
-func extractBinaryOp(rest string) string {
-	m := binaryOpOnLogRe.FindStringSubmatch(rest)
-	if len(m) >= 2 {
-		return m[1]
-	}
-	return "?"
 }
 
 // sanitizeLimit caps and validates the limit parameter.

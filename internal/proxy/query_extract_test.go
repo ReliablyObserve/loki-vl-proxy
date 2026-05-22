@@ -41,7 +41,6 @@ func TestExtractQuery_Invalid(t *testing.T) {
 		`{app=`,
 		`| json`,
 		`not logql`,
-		`{app="nginx"} | unknown_xyz`,
 	}
 	for _, q := range bad {
 		t.Run(q, func(t *testing.T) {

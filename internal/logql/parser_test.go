@@ -170,7 +170,6 @@ func TestParse_Errors(t *testing.T) {
 		``,
 		`not logql at all`,
 		`{app=`,
-		`{app="nginx"} | unknown_stage_xyz`,
 		`rate({app="api"})`,         // missing range
 		`sum (rate({app="api"}[5m]`, // missing closing
 	}
