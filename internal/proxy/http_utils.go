@@ -68,9 +68,7 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		return "", false
 	}
 	if err := validateLogQLSyntax(query); err != "" {
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusBadRequest)
-		_, _ = fmt.Fprint(w, err)
+		p.writeError(w, http.StatusBadRequest, err)
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
