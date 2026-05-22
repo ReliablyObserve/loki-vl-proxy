@@ -6,11 +6,6 @@ import (
 	"strings"
 )
 
-// semanticError is a Loki-format validation error string (non-empty = invalid).
-type semanticError string
-
-func (e semanticError) Error() string { return string(e) }
-
 // validateSemantics walks the AST and enforces constraints that cannot be
 // caught by the parser alone. Returns a Loki-compatible error string, or ""
 // if the expression is valid.

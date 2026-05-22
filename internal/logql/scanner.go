@@ -69,6 +69,7 @@ const (
 	TokUnless     // unless
 )
 
+//nolint:gocyclo // one case per token type; the switch is a direct mapping with no branching logic.
 func (t TokType) String() string {
 	switch t {
 	case TokEOF:
@@ -205,6 +206,7 @@ func (s *scanner) skipWS() {
 	}
 }
 
+//nolint:gocyclo // lexer dispatches on every character class; branching is inherent to a hand-written lexer.
 func (s *scanner) next() Token {
 	s.skipWS()
 	if s.pos >= len(s.src) {

@@ -579,23 +579,6 @@ func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, e
 	return
 }
 
-// parseIdentList parses a comma-separated list of identifiers (for drop/keep).
-func (p *parser) parseIdentList() ([]string, error) {
-	var labels []string
-	for p.cur.Typ == TokIdent {
-		labels = append(labels, p.advance().Val)
-		if p.cur.Typ == TokComma {
-			p.advance()
-		} else {
-			break
-		}
-	}
-	if len(labels) == 0 {
-		return nil, fmt.Errorf("logql: expected at least one label name")
-	}
-	return labels, nil
-}
-
 // consumeRestOfStage reads tokens until the next pipeline operator, range
 // bracket, or EOF, returning them as a raw string. Used for label filter and
 // label_format stages whose expression grammar is complex and opaque to this

@@ -1655,6 +1655,8 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 }
 
 // handleQuery translates Loki instant queries.
+//
+//nolint:gocyclo // dispatches across cache, multi-tenant fanout, stats vs logs, subquery, binary metric, and streaming modes; branching is inherent to Loki instant query parity.
 func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
