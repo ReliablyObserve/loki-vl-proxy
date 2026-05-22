@@ -259,30 +259,126 @@ func ingestRichTestData(t *testing.T) {
 		},
 	})
 
+	// ── Structured metadata: api-gateway with trace/span context ──
+	// These logs carry trace_id/span_id as structured metadata (not stream labels)
+	// so Grafana can correlate traces without polluting the label cardinality.
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "api-gateway", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":   "abc123def456789",
+			"span_id":    "span001xyz",
+			"request_id": "req-001-structured",
+			"user_agent": "Mozilla/5.0 (compatible; e2e-test)",
+		},
+		Lines: []string{
+			`{"method":"GET","path":"/api/v1/dashboard","status":200,"duration_ms":22}`,
+			`{"method":"POST","path":"/api/v1/checkout","status":200,"duration_ms":315}`,
+			`{"method":"GET","path":"/api/v1/cart","status":200,"duration_ms":11}`,
+		},
+	})
+
+	// ── Structured metadata: payment-service with cloud context ──
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "payment-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"cloud.region":    "us-east-1",
+			"cloud.provider":  "aws",
+			"k8s.node.name":   "node-worker-42",
+			"deployment.name": "payment-service-v3",
+		},
+		Lines: []string{
+			`level=info msg="payment processed" amount=99.99 currency=USD tx_id=tx_12345`,
+			`level=info msg="payment processed" amount=49.50 currency=EUR tx_id=tx_12346`,
+			`level=info msg="refund initiated" amount=15.00 currency=USD tx_id=tx_12347`,
+		},
+	})
+
+	// ── Structured metadata: auth-service with OTel-style resource attributes ──
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "auth-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"telemetry.sdk.name":     "opentelemetry",
+			"telemetry.sdk.language": "go",
+			"telemetry.sdk.version":  "1.21.0",
+			"deployment.version":     "v1.5.2",
+			"host.name":              "auth-host-1",
+		},
+		Lines: []string{
+			`{"event":"login","user":"alice@example.com","ip":"10.0.1.1","mfa":true,"duration_ms":45}`,
+			`{"event":"token_refresh","user":"bob@example.com","ip":"10.0.1.2","mfa":false,"duration_ms":12}`,
+			`{"event":"logout","user":"charlie@example.com","ip":"10.0.1.3","mfa":true,"duration_ms":8}`,
+		},
+	})
+
+	// ── Parsed fields: rich JSON logs for | json pipeline testing ──
+	// These JSON logs contain many nested fields that can be extracted via | json.
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "order-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		Lines: []string{
+			`{"event":"order_created","order_id":"ord-001","user_id":"usr-42","items":3,"total":149.99,"currency":"USD","payment_method":"card","shipping":"express","region":"us-east"}`,
+			`{"event":"order_shipped","order_id":"ord-001","tracking_id":"TRK123456","carrier":"fedex","estimated_delivery":"2026-05-25","weight_kg":2.5}`,
+			`{"event":"order_delivered","order_id":"ord-001","delivery_time_ms":345678,"signature_required":true,"delivered_to":"alice"}`,
+			`{"event":"order_created","order_id":"ord-002","user_id":"usr-99","items":1,"total":29.99,"currency":"EUR","payment_method":"paypal","shipping":"standard","region":"eu-west"}`,
+			`{"event":"order_failed","order_id":"ord-003","user_id":"usr-01","error":"payment_declined","code":4001,"retryable":false}`,
+		},
+	})
+
+	// ── Parsed fields: logfmt logs for | logfmt pipeline testing ──
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "inventory-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		Lines: []string{
+			`level=info msg="stock check" sku=SKU-001 quantity=150 warehouse=east-1 reserved=12`,
+			`level=info msg="stock updated" sku=SKU-002 delta=-5 new_quantity=95 reason=sale`,
+			`level=warn msg="low stock alert" sku=SKU-003 quantity=3 threshold=10 auto_reorder=true`,
+			`level=info msg="restock received" sku=SKU-001 added=500 supplier=acme delivery_id=DEL-789`,
+			`level=error msg="stock sync failed" warehouse=west-2 error="connection timeout" retry_in=30s`,
+		},
+	})
+
 	time.Sleep(5 * time.Second) // VL needs time to index, especially in CI
 	t.Log("Rich test data ingested successfully")
 }
 
 type streamDef struct {
-	Labels map[string]string
-	Lines  []string
-	VLOnly bool // If true, push only to VL (not Loki) — for OTel data with dotted labels
+	Labels             map[string]string
+	Lines              []string
+	StructuredMetadata map[string]string // applied to all lines; exposed via categorize-labels
+	VLOnly             bool              // push only to VL (not Loki) — for OTel data with dotted labels
 }
 
 func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 	t.Helper()
 
-	// Push to Loki
-	values := make([][]string, len(sd.Lines))
-	for i, line := range sd.Lines {
-		ts := baseTime.Add(time.Duration(i) * time.Second)
-		values[i] = []string{fmt.Sprintf("%d", ts.UnixNano()), line}
-	}
-
 	if !sd.VLOnly {
+		// Loki: use 3-element values when structured metadata is set.
+		var lokiValues []interface{}
+		for i, line := range sd.Lines {
+			ts := baseTime.Add(time.Duration(i) * time.Second)
+			tsStr := fmt.Sprintf("%d", ts.UnixNano())
+			if len(sd.StructuredMetadata) > 0 {
+				lokiValues = append(lokiValues, []interface{}{tsStr, line, sd.StructuredMetadata})
+			} else {
+				lokiValues = append(lokiValues, []string{tsStr, line})
+			}
+		}
 		lokiPayload := map[string]interface{}{
 			"streams": []map[string]interface{}{
-				{"stream": sd.Labels, "values": values},
+				{"stream": sd.Labels, "values": lokiValues},
 			},
 		}
 		body, _ := json.Marshal(lokiPayload)
@@ -294,7 +390,7 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 		}
 	}
 
-	// Push to VictoriaLogs
+	// VictoriaLogs: structured metadata fields are pushed as extra non-stream fields.
 	var vlLines []string
 	for i, line := range sd.Lines {
 		ts := baseTime.Add(time.Duration(i) * time.Second)
@@ -302,13 +398,16 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 		for k, v := range sd.Labels {
 			entry[k] = v
 		}
+		for k, v := range sd.StructuredMetadata {
+			entry[k] = v
+		}
 		j, _ := json.Marshal(entry)
 		vlLines = append(vlLines, string(j))
 	}
 
-	// Build stream fields from labels — include ALL labels to match Loki's
-	// stream label behavior (Loki indexes every push label as a stream label)
-	streamFields := []string{}
+	// Stream fields: only label keys (not structured metadata keys) — this
+	// ensures metadata fields appear as structuredMetadata in categorize-labels.
+	streamFields := make([]string, 0, len(sd.Labels))
 	for k := range sd.Labels {
 		streamFields = append(streamFields, k)
 	}
