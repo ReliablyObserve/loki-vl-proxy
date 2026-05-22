@@ -23,7 +23,6 @@ import (
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"github.com/klauspost/compress/zstd"
 	fj "github.com/valyala/fastjson"
 )
@@ -86,29 +85,9 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 var quantileOverTimePhiRE = regexp.MustCompile(`\bquantile_over_time\(\s*(-?[\d]+(?:\.[\d]+)?(?:e[+\-]?\d+)?)\s*,`)
 
 // validateLogQLSyntax validates LogQL syntax and semantics using the typed AST
-// parser, returning a Loki-compatible error string or "" if valid. The
-// drop/keep stage syntax is validated separately as a fallback for matchers
-// that the parser's LabelFilterStage currently represents as raw strings.
+// parser, returning a Loki-compatible error string or "" if valid.
 func validateLogQLSyntax(query string) string {
-	if msg := logql.ValidateLogQL(query); msg != "" {
-		return msg
-	}
-	if msg := validateDropKeepSyntax(query); msg != "" {
-		return msg
-	}
-	return ""
-}
-
-// validateDropKeepSyntax returns an error message if the query contains | drop
-// or | keep stages with malformed matcher items using unsupported operators.
-func validateDropKeepSyntax(query string) string {
-	if !strings.Contains(query, "drop ") && !strings.Contains(query, "keep ") {
-		return "" // fast path: no drop/keep stage present
-	}
-	if err := translator.ValidateDropKeepSyntax(query); err != nil {
-		return err.Error()
-	}
-	return ""
+	return logql.ValidateLogQL(query)
 }
 
 // rewriteQuantilePhiGT1 replaces phi > 1 in quantile_over_time() with 1.0.

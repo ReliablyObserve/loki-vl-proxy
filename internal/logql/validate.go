@@ -27,7 +27,9 @@ func ValidateLogQL(query string) string {
 		return "parse error at line 1, col 1: syntax error: unexpected |"
 	}
 
-	// Bare wildcard: some clients send query=* as "all streams" — pass through.
+	// Bare wildcard: some clients send query=* as "all streams". The parser
+	// would reject it, but translateQueryWithContext handles * specially so
+	// it must be allowed through validation unchanged.
 	if query == "*" {
 		return ""
 	}

@@ -174,22 +174,19 @@ func (p *parser) parsePrimary() (Expr, error) {
 			}
 			return ra, nil
 		}
-		// Unknown metric-level function (e.g. label_replace, label_join, sort,
-		// sort_desc): consume the argument list opaquely and return the raw text
-		// so it passes through to VictoriaLogs unchanged.
-		if p.cur.Typ == TokIdent {
-			startPos := p.sc.pos - len(p.cur.Val)
-			name := p.cur.Val
-			p.advance()
-			if p.cur.Typ == TokLParen {
-				p.advance() // consume '('
-				endPos := p.consumeBalancedParens()
-				raw := strings.TrimSpace(p.input[startPos:endPos])
-				return &OpaqueMetricExpr{Raw: raw}, nil
-			}
-			return nil, fmt.Errorf("logql: unexpected identifier %q", name)
+		// Unknown metric-level function (e.g. label_replace, label_join):
+		// capture the full raw text and return it as-is so VictoriaLogs
+		// receives the original expression unchanged.
+		startPos := p.sc.pos - len(p.cur.Val)
+		name := p.cur.Val
+		p.advance()
+		if p.cur.Typ == TokLParen {
+			p.advance() // consume '('
+			endPos := p.consumeBalancedParens()
+			raw := strings.TrimSpace(p.input[startPos:endPos])
+			return &OpaqueMetricExpr{Raw: raw}, nil
 		}
-		return nil, fmt.Errorf("logql: unexpected identifier %q", p.cur.Val)
+		return nil, fmt.Errorf("logql: unexpected identifier %q", name)
 	}
 
 	// Parenthesised expression
