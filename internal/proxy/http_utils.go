@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
@@ -82,10 +83,32 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 // quantileOverTimePhiRE extracts the phi literal from quantile_over_time(phi, ...).
 var quantileOverTimePhiRE = regexp.MustCompile(`\bquantile_over_time\(\s*(-?[\d]+(?:\.[\d]+)?(?:e[+\-]?\d+)?)\s*,`)
 
+// validationCache stores the result of ValidateLogQL for recently-seen query
+// strings. Validation is deterministic (same input → same output), so caching
+// is safe. The cache is bounded at validationCacheMaxSize entries to prevent
+// unbounded growth from uniquely-parameterized queries.
+const validationCacheMaxSize = 1024
+
+var (
+	validationCache     sync.Map
+	validationCacheSize atomic.Int32
+)
+
 // validateLogQLSyntax validates LogQL syntax and semantics using the typed AST
 // parser, returning a Loki-compatible error string or "" if valid.
+// Results are cached by query string to avoid repeated AST allocations for
+// identical queries (the common case in real workloads and benchmarks).
 func validateLogQLSyntax(query string) string {
-	return logql.ValidateLogQL(query)
+	if v, ok := validationCache.Load(query); ok {
+		return v.(string)
+	}
+	result := logql.ValidateLogQL(query)
+	if validationCacheSize.Load() < validationCacheMaxSize {
+		if _, loaded := validationCache.LoadOrStore(query, result); !loaded {
+			validationCacheSize.Add(1)
+		}
+	}
+	return result
 }
 
 // rewriteQuantilePhiGT1 replaces phi > 1 in quantile_over_time() with 1.0.
