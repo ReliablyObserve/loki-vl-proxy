@@ -380,12 +380,13 @@ func ingestRichTestData(t *testing.T) {
 		},
 	})
 
-	// ── Structured metadata: api-gateway with trace/span context ──
-	// These logs carry trace_id/span_id as structured metadata (not stream labels)
-	// so Grafana can correlate traces without polluting the label cardinality.
+	// ── Structured metadata: checkout-service with trace/span context ──
+	// Uses a unique app name to avoid cardinality collision with the existing
+	// api-gateway streams (which carry a pod label that would cause many-to-one
+	// matching errors in binary metric queries).
 	pushStream(t, now, streamDef{
 		Labels: map[string]string{
-			"app": "api-gateway", "namespace": "prod", "env": "production",
+			"app": "checkout-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
 		},
 		StructuredMetadata: map[string]string{
@@ -401,22 +402,22 @@ func ingestRichTestData(t *testing.T) {
 		},
 	})
 
-	// ── Structured metadata: payment-service with cloud context ──
+	// ── Structured metadata: billing-service with cloud context ──
 	pushStream(t, now, streamDef{
 		Labels: map[string]string{
-			"app": "payment-service", "namespace": "prod", "env": "production",
+			"app": "billing-service", "namespace": "prod", "env": "production",
 			"cluster": "us-east-1", "level": "info",
 		},
 		StructuredMetadata: map[string]string{
 			"cloud.region":    "us-east-1",
 			"cloud.provider":  "aws",
 			"k8s.node.name":   "node-worker-42",
-			"deployment.name": "payment-service-v3",
+			"deployment.name": "billing-service-v3",
 		},
 		Lines: []string{
-			`level=info msg="payment processed" amount=99.99 currency=USD tx_id=tx_12345`,
-			`level=info msg="payment processed" amount=49.50 currency=EUR tx_id=tx_12346`,
-			`level=info msg="refund initiated" amount=15.00 currency=USD tx_id=tx_12347`,
+			`level=info msg="invoice generated" amount=99.99 currency=USD invoice_id=inv_12345`,
+			`level=info msg="invoice generated" amount=49.50 currency=EUR invoice_id=inv_12346`,
+			`level=info msg="credit issued" amount=15.00 currency=USD invoice_id=inv_12347`,
 		},
 	})
 
