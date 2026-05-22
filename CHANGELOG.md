@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Helm chart: remove invalid `backend-read-buffer-size` / `backend-write-buffer-size` flags** ([#391](https://github.com/ReliablyObserve/loki-vl-proxy/issues/391)): The chart shipped two `extraArgs` flags that do not exist in the binary, causing startup failure with `flag provided but not defined`. Also removed invalid commented `disk-cache-encryption-key`. Added 19 previously undocumented Go flags to `values.yaml` for full 1:1 parity.
+
+### Added
+
+- **Helm ↔ binary flag parity CI gate**: Go tests (`TestHelmExtraArgsFlagParity`, `TestHelmExtraArgsCoverage`) and a rendered-template validation script (`validate_helm_flags.sh`) now run in CI. Any new flag added to Go without a `values.yaml` entry (or vice versa) will fail CI.
+
 ## [1.37.1] - 2026-05-21
 
 ### Fixed
