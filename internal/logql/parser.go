@@ -352,12 +352,12 @@ func (p *parser) parseLabelMatcher() (LabelMatcher, error) {
 	}
 	p.advance()
 
-	val, err := p.expect(TokString)
+	valStr, err := p.expectStringOrRaw()
 	if err != nil {
-		return LabelMatcher{}, fmt.Errorf("logql: expected label value: %w", err)
+		return LabelMatcher{}, fmt.Errorf("logql: expected label value after %q: %w", name.Val, err)
 	}
 
-	return LabelMatcher{Name: name.Val, Op: op, Value: val.Val}, nil
+	return LabelMatcher{Name: name.Val, Op: op, Value: valStr}, nil
 }
 
 // parsePipelineStage parses one pipeline stage. Returns nil, nil when no more
@@ -485,11 +485,11 @@ func (p *parser) parsePipeBody() (Stage, error) {
 
 	case "line_format":
 		p.advance()
-		val, err := p.expect(TokString)
+		val, err := p.expectStringOrRaw()
 		if err != nil {
 			return nil, err
 		}
-		return &LineFormatStage{Template: val.Val}, nil
+		return &LineFormatStage{Template: val}, nil
 
 	case "label_format":
 		p.advance()
