@@ -32,7 +32,7 @@ func TestContract_QueryRange_BareParserMetricCompatPreservesSeriesLabels(t *test
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
-	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?query="+url.QueryEscape(`count_over_time({app="api-gateway"} | json | status="500" [5m])`)+"&start="+strconv.FormatInt(startNanos, 10)+"&end="+strconv.FormatInt(endNanos, 10)+"&step=60", nil)
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?query="+url.QueryEscape(`count_over_time({app="api-gateway"} | json | status >= 500 [5m])`)+"&start="+strconv.FormatInt(startNanos, 10)+"&end="+strconv.FormatInt(endNanos, 10)+"&step=60", nil)
 	resp := httptest.NewRecorder()
 
 	p.handleQueryRange(resp, req)

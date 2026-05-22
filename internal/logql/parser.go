@@ -502,7 +502,13 @@ func (p *parser) parsePipeBody() (Stage, error) {
 	// continuation, this is a label filter. Otherwise treat as an opaque stage
 	// (unknown parser keywords, custom extensions) so the query passes through
 	// to the backend rather than being rejected by the proxy.
-	p.advance() // consume the ident
+	p.advance() // consume the ident (this is the label name in a label filter)
+	// A label filter must have an operator (=, !=, =~, !~, >=, <=, >, <) next.
+	// Two consecutive identifiers (e.g. `| distinct method`) is invalid syntax —
+	// Loki rejects this with "syntax error: unexpected IDENTIFIER".
+	if p.cur.Typ == TokIdent {
+		return nil, fmt.Errorf("logql: parse error: unexpected identifier %q after %q in pipeline stage", p.cur.Val, kw)
+	}
 	raw := kw + p.consumeRestOfStage()
 	return &LabelFilterStage{Raw: raw}, nil
 }

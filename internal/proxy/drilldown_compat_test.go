@@ -2647,7 +2647,7 @@ func TestDrilldown_LogsTabCounter_SumCountOverTimeParserReturnsSingleSeries(t *t
 	w := httptest.NewRecorder()
 	q := url.Values{}
 	// Exact query shape sent by Grafana Drilldown for the "Logs" tab counter.
-	q.Set("query", `sum(count_over_time({service_name="api-gateway",version="v2"} | json | status="500" [10800s]))`)
+	q.Set("query", `sum(count_over_time({service_name="api-gateway",version="v2"} | json | status >= 500 [10800s]))`)
 	q.Set("time", "1700000000")
 	r := httptest.NewRequest("GET", "/loki/api/v1/query?"+q.Encode(), nil)
 	p.handleQuery(w, r)
