@@ -205,6 +205,141 @@ func TestEdge_DropKeepDecolorize(t *testing.T) {
 	}
 }
 
+// ─── conditional drop / keep matchers ────────────────────────────────────────
+
+func TestEdge_DropConditional_Parse(t *testing.T) {
+	valid := []string{
+		`{app="nginx"} | drop level="debug"`,
+		`{app="nginx"} | drop level!="debug"`,
+		`{app="nginx"} | drop level=~"debug|info"`,
+		`{app="nginx"} | drop level!~"debug.*"`,
+		`{app="nginx"} | drop level="debug", trace_id`,
+		`{app="nginx"} | drop trace_id, level="debug"`,
+		`{app="nginx"} | drop level="debug", env!="prod"`,
+		`{app="nginx"} | json | drop level="debug"`,
+		`{app="nginx"} | keep status=~"5.."`,
+		`{app="nginx"} | keep status!~"2.."`,
+		`{app="nginx"} | keep status="200"`,
+		`{app="nginx"} | keep status!="404"`,
+		`{app="nginx"} | keep level=~"error|warn", app`,
+		`{app="nginx"} | drop level="debug" | keep app`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+func TestEdge_DropConditional_AST(t *testing.T) {
+	tests := []struct {
+		query        string
+		wantLabels   []string
+		wantMatchers []struct{ name, op, val string }
+		keep         bool
+	}{
+		{
+			query:      `{app="nginx"} | drop level="debug"`,
+			wantLabels: nil,
+			wantMatchers: []struct{ name, op, val string }{
+				{"level", "=", "debug"},
+			},
+		},
+		{
+			query:      `{app="nginx"} | drop level!="debug"`,
+			wantMatchers: []struct{ name, op, val string }{
+				{"level", "!=", "debug"},
+			},
+		},
+		{
+			query:      `{app="nginx"} | drop level=~"debug|info"`,
+			wantMatchers: []struct{ name, op, val string }{
+				{"level", "=~", "debug|info"},
+			},
+		},
+		{
+			query:      `{app="nginx"} | drop level!~"debug.*"`,
+			wantMatchers: []struct{ name, op, val string }{
+				{"level", "!~", "debug.*"},
+			},
+		},
+		{
+			query:        `{app="nginx"} | drop trace_id, level="debug"`,
+			wantLabels:   []string{"trace_id"},
+			wantMatchers: []struct{ name, op, val string }{{"level", "=", "debug"}},
+		},
+		{
+			query:      `{app="nginx"} | keep status=~"5.."`,
+			wantMatchers: []struct{ name, op, val string }{{"status", "=~", "5.."}},
+			keep:        true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			lq, err := logql.ParseLogQuery(tt.query)
+			if err != nil {
+				t.Fatalf("ParseLogQuery(%q) error: %v", tt.query, err)
+			}
+			var foundLabels []string
+			var foundMatchers []struct{ name, op, val string }
+			for _, stage := range lq.Pipeline {
+				if ds, ok := stage.(*logql.DropStage); ok && !tt.keep {
+					foundLabels = append(foundLabels, ds.Labels...)
+					for _, m := range ds.Matchers {
+						foundMatchers = append(foundMatchers, struct{ name, op, val string }{m.Name, m.Op, m.Value})
+					}
+				}
+				if ks, ok := stage.(*logql.KeepStage); ok && tt.keep {
+					foundLabels = append(foundLabels, ks.Labels...)
+					for _, m := range ks.Matchers {
+						foundMatchers = append(foundMatchers, struct{ name, op, val string }{m.Name, m.Op, m.Value})
+					}
+				}
+			}
+			if len(foundLabels) != len(tt.wantLabels) {
+				t.Errorf("labels: got %v, want %v", foundLabels, tt.wantLabels)
+			}
+			for i, wm := range tt.wantMatchers {
+				if i >= len(foundMatchers) {
+					t.Fatalf("matcher[%d] missing; got %d matchers", i, len(foundMatchers))
+				}
+				m := foundMatchers[i]
+				if m.name != wm.name || m.op != wm.op || m.val != wm.val {
+					t.Errorf("matcher[%d]: got {%s %s %s}, want {%s %s %s}",
+						i, m.name, m.op, m.val, wm.name, wm.op, wm.val)
+				}
+			}
+		})
+	}
+}
+
+func TestEdge_DropConditional_RoundTrip(t *testing.T) {
+	// String() output must re-parse identically (round-trip property).
+	queries := []string{
+		`{app="nginx"} | drop level="debug"`,
+		`{app="nginx"} | drop level!="debug"`,
+		`{app="nginx"} | drop level=~"debug|info"`,
+		`{app="nginx"} | drop level!~"debug.*"`,
+		`{app="nginx"} | drop trace_id, level="debug"`,
+		`{app="nginx"} | keep status=~"5.."`,
+		`{app="nginx"} | keep status!~"2.."`,
+	}
+	for _, q := range queries {
+		t.Run(q, func(t *testing.T) {
+			expr, err := logql.Parse(q)
+			if err != nil {
+				t.Fatalf("Parse(%q) error: %v", q, err)
+			}
+			s := expr.String()
+			expr2, err2 := logql.Parse(s)
+			if err2 != nil {
+				t.Fatalf("Parse(String(%q)) = %q error: %v", q, s, err2)
+			}
+			if expr.String() != expr2.String() {
+				t.Errorf("round-trip mismatch:\n  original: %q\n  reparsed: %q", expr.String(), expr2.String())
+			}
+		})
+	}
+}
+
 // ─── unwrap ───────────────────────────────────────────────────────────────────
 
 func TestEdge_Unwrap(t *testing.T) {
