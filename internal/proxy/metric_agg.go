@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -221,6 +222,9 @@ func addStatsByStreamClause(logsqlQuery string) string {
 }
 
 func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
+	// Parse the inner LogQL expression to drive routing via typed AST.
+	parsedInner, _ := logqlpkg.Parse(postAgg.inner)
+
 	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
@@ -234,16 +238,42 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
-	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(translatedInner); ok {
-		p.proxySubquery(sc, r, outerFunc, innerQL, rng, step)
-	} else if op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(translatedInner); ok {
-		p.proxyBinaryMetricQueryVM(sc, r, op, left, right, vm)
-	} else if isStatsQuery(translatedInner) {
-		p.proxyStatsQuery(sc, r, translatedInner)
-	} else {
-		p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
-		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
-		return
+
+	var dispatched bool
+	if ra, ok := parsedInner.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
+		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
+		if innerErr != nil {
+			p.writeError(w, http.StatusBadRequest, innerErr.Error())
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		p.proxySubquery(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
+		dispatched = true
+	} else if binOp, ok := parsedInner.(*logqlpkg.BinOpExpr); ok {
+		leftLogsql, leftErr := p.translateQueryWithContext(r.Context(), binOp.Left.String())
+		rightLogsql, rightErr := p.translateQueryWithContext(r.Context(), binOp.Right.String())
+		if leftErr != nil {
+			p.writeError(w, http.StatusBadRequest, leftErr.Error())
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		if rightErr != nil {
+			p.writeError(w, http.StatusBadRequest, rightErr.Error())
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
+		dispatched = true
+	}
+
+	if !dispatched {
+		if isStatsQuery(translatedInner) {
+			p.proxyStatsQuery(sc, r, translatedInner)
+		} else {
+			p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
 	}
 
 	if len(withoutLabels) > 0 {

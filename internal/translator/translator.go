@@ -181,6 +181,19 @@ func (dc DropCondition) Matches(val string) bool {
 	return false
 }
 
+// NewDropCondition creates a DropCondition with the regex compiled for =~ and !~ operators.
+func NewDropCondition(field, op, value string) (DropCondition, error) {
+	dc := DropCondition{Field: field, Op: op, Value: value}
+	if op == "=~" || op == "!~" {
+		re, err := regexp.Compile("^(?:" + value + ")$")
+		if err != nil {
+			return dc, fmt.Errorf("invalid regex %q in drop/keep condition: %w", value, err)
+		}
+		dc.re = re
+	}
+	return dc, nil
+}
+
 // ParseDropConditions extracts matcher-form drop filters from a LogQL query.
 // Bare-field drops (`| drop field`) are handled by VL `| delete`; only
 // matcher forms (`| drop field=value`) are returned here for proxy post-processing.

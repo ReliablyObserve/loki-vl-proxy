@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -1557,12 +1558,27 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		sc = &statusCapture{ResponseWriter: cacheTap, code: 200}
 	}
 
-	// Check for subquery expression (e.g., max_over_time(rate(...)[1h:5m]))
-	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(logsqlQuery); ok {
-		p.proxySubqueryRange(sc, r, outerFunc, innerQL, rng, step)
-	} else if op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(logsqlQuery); ok {
-		// Binary metric expression (e.g., sum(rate(...)) / sum(rate(...)))
-		p.proxyBinaryMetricQueryRangeVM(sc, r, op, left, right, vm)
+	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
+	parsedForRouting, _ := logqlpkg.Parse(logqlQuery)
+	if ra, ok := parsedForRouting.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
+		// Subquery: max_over_time(rate(...)[1h:5m])
+		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
+		if innerErr != nil {
+			p.writeError(sc, http.StatusBadRequest, innerErr.Error())
+		} else {
+			p.proxySubqueryRange(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
+		}
+	} else if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
+		// Binary metric expression: sum(rate(...)) / sum(rate(...))
+		leftLogsql, leftErr := p.translateQueryWithContext(r.Context(), binOp.Left.String())
+		rightLogsql, rightErr := p.translateQueryWithContext(r.Context(), binOp.Right.String())
+		if leftErr != nil {
+			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
+		} else if rightErr != nil {
+			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
+		} else {
+			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
+		}
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQueryRange(sc, r, logsqlQuery)
 	} else {
@@ -1752,10 +1768,25 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		sc = &statusCapture{ResponseWriter: bw, code: 200}
 	}
 
-	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(logsqlQuery); ok {
-		p.proxySubquery(sc, r, outerFunc, innerQL, rng, step)
-	} else if op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(logsqlQuery); ok {
-		p.proxyBinaryMetricQueryVM(sc, r, op, left, right, vm)
+	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
+	parsedForRoutingQ, _ := logqlpkg.Parse(logqlQuery)
+	if ra, ok := parsedForRoutingQ.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
+		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
+		if innerErr != nil {
+			p.writeError(sc, http.StatusBadRequest, innerErr.Error())
+		} else {
+			p.proxySubquery(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
+		}
+	} else if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
+		leftLogsql, leftErr := p.translateQueryWithContext(r.Context(), binOp.Left.String())
+		rightLogsql, rightErr := p.translateQueryWithContext(r.Context(), binOp.Right.String())
+		if leftErr != nil {
+			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
+		} else if rightErr != nil {
+			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
+		} else {
+			p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
+		}
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQuery(sc, r, logsqlQuery)
 	} else {

@@ -150,24 +150,47 @@ func (s *LabelFilterStage) String() string {
 
 func (s *LabelFilterStage) stage() {}
 
-// DropStage is a `| drop label1, label2` stage.
+// DropMatcher is a conditional matcher in `| drop field=value` or `| keep field=value`.
+type DropMatcher struct {
+	Name  string
+	Op    string // "=", "!=", "=~", "!~"
+	Value string
+}
+
+func (m DropMatcher) String() string {
+	return fmt.Sprintf(`%s%s"%s"`, m.Name, m.Op, m.Value)
+}
+
+// DropStage is a `| drop label1, label2` or `| drop level="debug"` stage.
 type DropStage struct {
-	Labels []string
+	Labels   []string     // bare: | drop a, b
+	Matchers []DropMatcher // conditional: | drop level="debug"
 }
 
 func (s *DropStage) String() string {
-	return "| drop " + strings.Join(s.Labels, ", ")
+	parts := make([]string, 0, len(s.Labels)+len(s.Matchers))
+	parts = append(parts, s.Labels...)
+	for _, m := range s.Matchers {
+		parts = append(parts, m.String())
+	}
+	return "| drop " + strings.Join(parts, ", ")
 }
 
 func (s *DropStage) stage() {}
 
-// KeepStage is a `| keep label1, label2` stage.
+// KeepStage is a `| keep label1, label2` or `| keep level="debug"` stage.
 type KeepStage struct {
-	Labels []string
+	Labels   []string
+	Matchers []DropMatcher
 }
 
 func (s *KeepStage) String() string {
-	return "| keep " + strings.Join(s.Labels, ", ")
+	parts := make([]string, 0, len(s.Labels)+len(s.Matchers))
+	parts = append(parts, s.Labels...)
+	for _, m := range s.Matchers {
+		parts = append(parts, m.String())
+	}
+	return "| keep " + strings.Join(parts, ", ")
 }
 
 func (s *KeepStage) stage() {}

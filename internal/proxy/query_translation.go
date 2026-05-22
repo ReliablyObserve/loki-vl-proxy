@@ -18,6 +18,7 @@ import (
 
 	fj "github.com/valyala/fastjson"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -351,6 +352,12 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 		p.observeInternalOperation(ctx, "translate_query", "passthrough", time.Since(start))
 		return "*", nil
 	}
+	// Canonicalize via typed AST: normalises whitespace and operator ordering so the
+	// old regex-based translator always receives well-formed LogQL.
+	if expr, parseErr := logqlpkg.Parse(normalized); parseErr == nil {
+		normalized = expr.String()
+	}
+
 	if p.translationCache != nil {
 		if cached, ok := p.translationCache.Get(normalized); ok {
 			p.observeInternalOperation(ctx, "translate_query", "cache_hit", time.Since(start))
@@ -367,9 +374,9 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 		err        error
 	)
 	if streamFieldsMap != nil {
-		translated, err = translator.TranslateLogQLWithStreamFields(logql, labelFn, streamFieldsMap)
+		translated, err = translator.TranslateLogQLWithStreamFields(normalized, labelFn, streamFieldsMap)
 	} else {
-		translated, err = translator.TranslateLogQLWithLabels(logql, labelFn)
+		translated, err = translator.TranslateLogQLWithLabels(normalized, labelFn)
 	}
 	if err != nil {
 		if p.metrics != nil {

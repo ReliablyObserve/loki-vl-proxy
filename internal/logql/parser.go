@@ -441,19 +441,19 @@ func (p *parser) parsePipeBody() (Stage, error) {
 
 	case "drop":
 		p.advance()
-		labels, err := p.parseIdentList()
+		labels, matchers, err := p.parseDropKeepList()
 		if err != nil {
 			return nil, err
 		}
-		return &DropStage{Labels: labels}, nil
+		return &DropStage{Labels: labels, Matchers: matchers}, nil
 
 	case "keep":
 		p.advance()
-		labels, err := p.parseIdentList()
+		labels, matchers, err := p.parseDropKeepList()
 		if err != nil {
 			return nil, err
 		}
-		return &KeepStage{Labels: labels}, nil
+		return &KeepStage{Labels: labels, Matchers: matchers}, nil
 
 	case "decolorize":
 		p.advance()
@@ -522,6 +522,61 @@ func (p *parser) expectStringOrRaw() (string, error) {
 		return p.advance().Val, nil
 	}
 	return "", fmt.Errorf("logql: expected STRING or RAWSTRING, got %v (%q)", p.cur.Typ, p.cur.Val)
+}
+
+// parseDropKeepList parses the item list for drop/keep stages.
+// Each item is either a bare label name or a conditional matcher: field="value", field!="val", field=~"re", field!~"re".
+func (p *parser) parseDropKeepList() (labels []string, matchers []DropMatcher, err error) {
+	first := true
+	for p.cur.Typ == TokIdent {
+		first = false
+		name := p.advance().Val
+		switch p.cur.Typ {
+		case TokEq: // field="value"
+			p.advance()
+			val, e := p.expectStringOrRaw()
+			if e != nil {
+				err = e
+				return
+			}
+			matchers = append(matchers, DropMatcher{Name: name, Op: "=", Value: val})
+		case TokBangEq: // field!="value" (outside braces produces TokBangEq)
+			p.advance()
+			val, e := p.expectStringOrRaw()
+			if e != nil {
+				err = e
+				return
+			}
+			matchers = append(matchers, DropMatcher{Name: name, Op: "!=", Value: val})
+		case TokReMatch: // field=~"regex"
+			p.advance()
+			val, e := p.expectStringOrRaw()
+			if e != nil {
+				err = e
+				return
+			}
+			matchers = append(matchers, DropMatcher{Name: name, Op: "=~", Value: val})
+		case TokBangTilde: // field!~"regex" (outside braces produces TokBangTilde)
+			p.advance()
+			val, e := p.expectStringOrRaw()
+			if e != nil {
+				err = e
+				return
+			}
+			matchers = append(matchers, DropMatcher{Name: name, Op: "!~", Value: val})
+		default:
+			labels = append(labels, name)
+		}
+		if p.cur.Typ == TokComma {
+			p.advance()
+		} else {
+			break
+		}
+	}
+	if first {
+		err = fmt.Errorf("logql: expected at least one label name or matcher after drop/keep")
+	}
+	return
 }
 
 // parseIdentList parses a comma-separated list of identifiers (for drop/keep).
