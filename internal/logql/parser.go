@@ -648,9 +648,10 @@ func (p *parser) consumeBalancedParens() int {
 	depth := 1
 	endPos := 0
 	for depth > 0 && p.cur.Typ != TokEOF {
-		if p.cur.Typ == TokLParen {
+		switch p.cur.Typ {
+		case TokLParen:
 			depth++
-		} else if p.cur.Typ == TokRParen {
+		case TokRParen:
 			depth--
 			if depth == 0 {
 				endPos = p.sc.pos // right after the closing ')'
