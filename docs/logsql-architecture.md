@@ -238,4 +238,4 @@ The translator (`internal/logql/translate.go`) continues to produce strings duri
 2. **Parser** (`scanner.go` + `parser.go`) — recursive-descent parser that round-trips what the translator emits
 3. **Capability-aware builder** (`capabilities.go` + `builder.go`) — selects the best LogsQL construct for the detected VL version
 
-The package does not wire into the translator directly — callers import it and construct queries using the builder API. Migration from the translator's string-concatenation approach is incremental, one function at a time. VictoriaLogs versions before v1.40 are not supported.
+Callers import the package and construct queries using the builder API. The minimum supported VictoriaLogs version is v1.40.
