@@ -114,6 +114,82 @@ Critical defaults to reduce incident frequency:
 
 ---
 
+## Multi-Tenancy
+
+### Tenant Mapping Strategies
+
+The proxy maps `X-Scope-OrgID` headers to VictoriaLogs tenant IDs. Three strategies are available depending on deployment size and dynamism.
+
+#### 1. Inline JSON (`-tenant-map`)
+
+Best for small, static tenant maps. The entire map is provided directly as a CLI flag or env var value:
+
+```bash
+-tenant-map='{"team-a":"vl-tenant-1","team-b":"vl-tenant-2"}'
+```
+
+This requires a proxy restart to update.
+
+#### 2. File-based (`-tenant-map-file`)
+
+Best for Kubernetes environments where tenant maps are mounted as ConfigMaps. The proxy hot-reloads the file on SIGHUP and also polls for mtime changes on the configured interval:
+
+```bash
+-tenant-map-file=/etc/proxy/tenants.yaml
+-tenant-map-reload-interval=30s
+```
+
+The default reload interval is `30s`. To trigger an immediate reload without restarting the proxy:
+
+```bash
+kill -HUP <pid>
+```
+
+In Helm, configure a lifecycle hook to send SIGHUP on ConfigMap updates:
+
+```yaml
+lifecycle:
+  postStart:
+    exec:
+      command: ["/bin/sh", "-c", "kill -HUP 1"]
+```
+
+Polling every `30s` means changes are picked up automatically even without an explicit signal, which suits ConfigMap-mounted files that are updated by an external controller.
+
+#### 3. Label-based (`-tenant-label`)
+
+Routes per-query based on a label field value in the incoming stream. Useful when a single VictoriaLogs tenant holds multi-tenant data distinguished by a label such as `service.name`:
+
+```bash
+-tenant-label=service.name
+```
+
+When set, the proxy extracts the label value from the query or push request and uses it as the VictoriaLogs tenant ID, without requiring the client to set `X-Scope-OrgID`.
+
+---
+
+### `-require-tenant-header` Flag
+
+`-require-tenant-header=true` enforces that every request carries an `X-Scope-OrgID` header (returns HTTP 401 if missing) without enabling full auth. This is useful for catching misconfigured clients in multi-tenant setups without a full auth proxy.
+
+This is distinct from `-auth.enabled`: the latter enables credential validation, while `-require-tenant-header` only checks for header presence.
+
+---
+
+## Health Check Endpoints
+
+The proxy exposes three operational endpoints:
+
+| Endpoint | Purpose | Kubernetes probe |
+|----------|---------|-----------------|
+| `/alive` | Liveness — confirms the process is running | `livenessProbe` |
+| `/ready` | Readiness — confirms the proxy is ready to serve traffic (backend reachable, warm-up complete) | `readinessProbe` |
+| `/metrics` | Prometheus metrics scrape | ServiceMonitor / scrape config |
+
+If `/ready` stays non-`ok` immediately after a restart, check whether patterns or indexed label-values startup warm is configured — those persistence restores can intentionally hold readiness at `503` until warm-up completes.
+
+---
+
 ## Translation Modes
 
 Translation guidance moved to dedicated docs:
@@ -273,8 +349,6 @@ For exact proxy-only overhead on translated paths, use structured request logs w
 3. Check proxy logs for translation errors
 4. Verify label-style matches your VL ingestion format
 5. Check `/loki/api/v1/labels` for available labels
-
-If `/ready` stays non-`ok` immediately after a restart, also check whether patterns or indexed label-values startup warm is configured. Those persistence restores can intentionally hold readiness at `503` until warm-up completes.
 
 ### Label Names Don't Match
 

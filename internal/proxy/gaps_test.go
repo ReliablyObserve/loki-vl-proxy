@@ -556,8 +556,8 @@ func TestCoverage_AllRoutesRegistered(t *testing.T) {
 		w := httptest.NewRecorder()
 		r := httptest.NewRequest("GET", ep, nil)
 		mux.ServeHTTP(w, r)
-		// Should not return 404 (mux default), except for intentionally unsupported endpoints.
-		if w.Code == http.StatusNotFound && ep != "/loki/api/v1/patterns" {
+		// Should not return 404 (mux default).
+		if w.Code == http.StatusNotFound {
 			t.Errorf("endpoint %s returned 404 — not registered", ep)
 		}
 	}

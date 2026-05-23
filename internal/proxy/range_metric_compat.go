@@ -16,6 +16,8 @@ import (
 	"time"
 
 	fj "github.com/valyala/fastjson"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 type statsCompatSpec struct {
@@ -100,8 +102,50 @@ func parseStatsCompatSpec(logsqlQuery string) (statsCompatSpec, bool) {
 	return spec, true
 }
 
+// stripOuterLabelReplace removes label_replace(v, ...) wrappers from a logql
+// expression, returning the innermost wrapped expression. This allows
+// parseOriginalRangeMetricSpec to reach the actual metric function even when
+// the query is wrapped in one or more label_replace() calls.
+func stripOuterLabelReplace(logql string) string {
+	for {
+		logql = strings.TrimSpace(logql)
+		if !strings.HasPrefix(logql, "label_replace(") {
+			break
+		}
+		idx := strings.Index(logql, "(")
+		if idx < 0 {
+			break
+		}
+		depth := 0
+		commaAt := -1
+		for i := idx + 1; i < len(logql); i++ {
+			c := logql[i]
+			switch {
+			case c == '(':
+				depth++
+			case c == ')':
+				if depth == 0 {
+					goto done
+				}
+				depth--
+			case c == ',' && depth == 0:
+				commaAt = i
+				goto done
+			}
+		}
+	done:
+		if commaAt < 0 {
+			break
+		}
+		logql = strings.TrimSpace(logql[idx+1 : commaAt])
+	}
+	return logql
+}
+
 func parseOriginalRangeMetricSpec(logql string) (originalRangeMetricSpec, bool) {
 	logql = strings.TrimSpace(logql)
+	// Strip label_replace wrappers so the inner metric function is visible.
+	logql = stripOuterLabelReplace(logql)
 	// Strip outer aggregation like "sum by (method) (rate(...))" → "rate(...)"
 	// so we parse the inner range function, not the aggregation operator.
 	if loc := outerAggregationRE.FindStringIndex(logql); loc != nil && loc[0] == 0 && loc[1] < len(logql) {
@@ -353,6 +397,12 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
+	// A bare outer aggregation without by() collapses all streams into one empty-label
+	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
+	// collectRangeMetricSamples produces a single series — not one per stream.
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
+		spec.ByExplicit = true
+	}
 	return p.proxyManualRangeMetricRange(w, r, spec, origSpec, manualFunc)
 }
 
@@ -374,14 +424,19 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	// Instant queries with parser stages and explicit drop-error: use native VL stats.
 	// VL correctly evaluates [time-range, time] for instant queries; the drop-error opt-in
 	// means parse-failed lines are intentionally excluded — count-all semantics are acceptable.
-	// This matches the same fast-path gate in handleStatsCompatRange for tumbling windows.
 	if queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
 		return false
 	}
 	// Instant queries have no step: the range window is the entire lookback interval,
 	// not a sliding window. VL native stats correctly evaluates [time-range, time].
 	// Only rate_counter still requires the manual path (counter-reset semantics).
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, true) {
+	// Exception: parser-stage queries without explicit drop-error still use the manual path
+	// so that bare outer aggregations (sum without by()) correctly collapse all streams into
+	// one series via ByExplicit=true. Native VL stats returns per-stream series for such
+	// queries; the manual path aggregates them into the expected single series.
+	if queryUsesParserStages(spec.BaseQuery) {
+		// Parser+no-drop-error → always manual for correct stream-collapse semantics.
+	} else if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, true) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -392,7 +447,63 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid aggregation %s without unwrap", unwrapErrorFuncName(origSpec.Func)))
 		return true
 	}
+	// A bare outer aggregation without by() collapses all streams into one empty-label
+	// series in Loki. Set ByExplicit=true so buildManualMetricLabels returns {} and
+	// collectRangeMetricSamples produces a single series — not one per stream.
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit && hasOuterAggregationWithoutBy(originalLogql) {
+		spec.ByExplicit = true
+	}
 	return p.proxyManualRangeMetricInstant(w, r, spec, origSpec, manualFunc)
+}
+
+// hasOuterAggregationWithoutBy reports whether logql starts with a bare outer aggregation
+// (sum, avg, max, min, count, …) that carries no by() or without() grouping modifier.
+// Loki evaluates such expressions as a single series with no label dimensions.
+func hasOuterAggregationWithoutBy(logql string) bool {
+	logql = strings.TrimSpace(logql)
+	logql = stripOuterLabelReplace(logql)
+	loc := outerAggregationRE.FindStringIndex(logql)
+	if loc == nil || loc[0] != 0 || loc[1] >= len(logql) {
+		return false
+	}
+	// Guard against prefix collisions: outerAggregationRE matches "count" as a prefix of
+	// "count_over_time". The text after the aggregation keyword (+ optional by/without
+	// clause) must start with "(" to be a genuine outer aggregation operator.
+	if !strings.HasPrefix(strings.TrimSpace(logql[loc[1]:]), "(") {
+		return false
+	}
+	matched := strings.ToLower(logql[:loc[1]])
+	return !strings.Contains(matched, " by") && !strings.Contains(matched, " without")
+}
+
+// parseTopKWrapper detects a top-level topk(K, expr) or bottomk(K, expr) wrapper.
+// Returns k, whether descending (true=topk, false=bottomk), ok=true only when
+// topk/bottomk is outermost with a valid positive integer K.
+func parseTopKWrapper(logql string) (k int, descending bool, ok bool) {
+	if strings.TrimSpace(logql) == "" {
+		return 0, false, false
+	}
+	parsed, err := logqlpkg.Parse(strings.TrimSpace(logql))
+	if err != nil {
+		return 0, false, false
+	}
+	va, isVA := parsed.(*logqlpkg.VectorAggregation)
+	if !isVA || !va.HasParam {
+		return 0, false, false
+	}
+	switch va.Op {
+	case logqlpkg.VectorTopK:
+		if int(va.Param) <= 0 {
+			return 0, false, false
+		}
+		return int(va.Param), true, true
+	case logqlpkg.VectorBottomK:
+		if int(va.Param) <= 0 {
+			return 0, false, false
+		}
+		return int(va.Param), false, true
+	}
+	return 0, false, false
 }
 
 // shouldUseManualRangeMetricCompat reports whether the given metric function
@@ -418,16 +529,6 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	// natively supports inline filter pipelines and parser stages.
 	switch manualFunc {
 	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
-		// Parser stages require the slow log-fetch path: Loki excludes parse-failed lines
-		// from metric aggregation while VL native stats counts all lines. The drop-error
-		// opt-in check (hasDropErrorOnlyPostParserStage) only works on LogQL syntax; the
-		// baseQuery here is VL-translated syntax (| unpack_json etc.), so we conservatively
-		// route all parser-stage queries to the manual path. Bare parser metric queries
-		// (proxyBareParserMetricQueryRange) handle the drop-error fast path for the
-		// ungrouped case where the original LogQL is available.
-		if queryUsesParserStages(baseQuery) {
-			return true
-		}
 		return !rangeEqualsStep
 	}
 
@@ -484,9 +585,10 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	case "__bytes__":
 		statsAggFunc = "sum_len(_msg) as c"
 	}
-	// Mirror the parser-stage guard from shouldUseManualRangeMetricCompat: if the query
-	// uses parser stages, skip the stats_query_range fast path to preserve Loki's
-	// parse-error exclusion semantics (Loki excludes parse-failed lines; VL counts all).
+	// Sliding-window parser-stage queries (range > step) reach this path via
+	// shouldUseManualRangeMetricCompat returning true. Skip the stats_query_range
+	// fast path for them: VL's tumbling-bucket stats would diverge from LogQL's
+	// sliding-window semantics when combined with | json / | logfmt exclusion.
 	if statsAggFunc != "" && !queryUsesParserStages(spec.BaseQuery) {
 		hasStreamSentinel := false
 		for _, g := range spec.GroupBy {

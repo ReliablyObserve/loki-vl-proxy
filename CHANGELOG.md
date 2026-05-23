@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`internal/logsql` package**: typed LogsQL AST, recursive-descent parser, capability-aware `Builder`, and scanner for VictoriaLogs queries. Covers all 48 pipe stages, 29 stats functions, and 30+ filter types tracked by the upstream VL source tree — achieving 0 coverage gaps. Includes a VL-HTTP compatibility test suite (`vl_compat` build tag) and a weekly CI coverage-check workflow.
+
 ### Fixed
 
 - **GHCR badge workflow hardened against empty API outputs**: `checkout@v6` → `checkout@v4` (v6 does not exist); shell defaults prevent empty `GITHUB_OUTPUT` values; Python `fmt()` handles empty string instead of causing `SyntaxError`.

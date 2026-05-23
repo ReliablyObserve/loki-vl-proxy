@@ -17,7 +17,7 @@ import (
 //	fallback /select/logsql/field_names for older backends
 func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	if p.handleMultiTenantFanout(w, r, "labels", p.handleLabels) {
+	if p.handleMultiTenantFanout(w, r, "labels") {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
@@ -96,7 +96,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
 		return
 	}
-	if p.handleMultiTenantFanout(w, r, "label_values", p.handleLabelValues) {
+	if p.handleMultiTenantFanout(w, r, "label_values") {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
@@ -203,7 +203,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 // VL:   GET /select/logsql/streams?query={...}&start=...&end=...
 func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	if p.handleMultiTenantFanout(w, r, "series", p.handleSeries) {
+	if p.handleMultiTenantFanout(w, r, "series") {
 		return
 	}
 	r = withOrgID(r)
@@ -305,7 +305,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 // Response: {"streams":N, "chunks":N, "entries":N, "bytes":N}
 func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	if p.handleMultiTenantFanout(w, r, "index_stats", p.handleIndexStats) {
+	if p.handleMultiTenantFanout(w, r, "index_stats") {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
@@ -457,7 +457,7 @@ func (p *Proxy) resolveTargetLabelFields(ctx context.Context, targetLabels strin
 // handleDetectedFields returns detected field names.
 func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	if p.handleMultiTenantFanout(w, r, "detected_fields", p.handleDetectedFields) {
+	if p.handleMultiTenantFanout(w, r, "detected_fields") {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
@@ -519,7 +519,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 // Response: {"values":["debug","info","warn","error"],"limit":1000}
 func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	if p.handleMultiTenantFanout(w, r, "detected_field_values", p.handleDetectedFieldValues) {
+	if p.handleMultiTenantFanout(w, r, "detected_field_values") {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")

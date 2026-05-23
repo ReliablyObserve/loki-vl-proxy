@@ -164,7 +164,7 @@ services:
     ports:
       - "13100:3100"
     tmpfs:
-      - /cache
+      - /cache:mode=1777
     environment:
       # Soft GC pressure limit: without this, Go's GC only triggers at 2× live
       # heap, allowing RSS to balloon to 4+ GB under sustained long_range load
@@ -192,6 +192,10 @@ services:
       # pprof for benchmark profiling (CPU/heap/alloc capture during bench runs).
       - "-server.enable-pprof"
       - "-server.admin-auth-token=bench-pprof-token"
+      # Explicit defaults — underscores+translated+emit=true for full Loki OTel compatibility
+      - "-label-style=underscores"
+      - "-metadata-field-mode=translated"
+      - "-emit-structured-metadata=true"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -234,6 +238,7 @@ services:
       - "-patterns-persist-interval=5s"
       - "-patterns-startup-stale-threshold=30s"
       - "-patterns-startup-peer-warm-timeout=2s"
+      - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -265,6 +270,7 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
+      - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       vmauth:
         condition: service_healthy
@@ -309,6 +315,7 @@ services:
       # are not throttled — matches the main proxy benchmark configuration.
       - "-rate-limit-per-second=0"
       - "-max-concurrent=0"
+      - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -340,6 +347,7 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=native"
       - "-emit-structured-metadata=true"
+      - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -371,6 +379,7 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
+      - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -402,6 +411,7 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=false"
+      - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -433,6 +443,7 @@ services:
       - "-label-style=underscores"
       - "-tail.mode=synthetic"
       - "-tail.allowed-origins=http://grafana:3000,http://127.0.0.1:3002,http://localhost:3002"
+      - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
         condition: service_healthy
@@ -463,6 +474,7 @@ services:
       - "-label-style=underscores"
       - "-tail.mode=native"
       - "-tail.allowed-origins=http://grafana:3000,http://127.0.0.1:3002,http://localhost:3002"
+      - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
         condition: service_healthy

@@ -2635,49 +2635,6 @@ func TestStatsQueryRangePointUnixNano(t *testing.T) {
 }
 
 // =============================================================================
-// http_utils.go: isBinaryOpOnLogQuery, extractBinaryOp
-// =============================================================================
-
-func TestIsBinaryOpOnLogQuery(t *testing.T) {
-	cases := []struct {
-		input string
-		want  bool
-	}{
-		{"| json > 5", true},
-		{"| logfmt == 0", true},
-		{"| json | status >= 400", false}, // label filter on non-parser field
-		{"| json | json >= 400", true},    // parser keyword as filter field
-		{"", false},
-		{"| json", false},
-		{"just text", false},
-	}
-	for _, tc := range cases {
-		got := isBinaryOpOnLogQuery(tc.input)
-		if got != tc.want {
-			t.Errorf("isBinaryOpOnLogQuery(%q) = %v, want %v", tc.input, got, tc.want)
-		}
-	}
-}
-
-func TestExtractBinaryOp(t *testing.T) {
-	cases := []struct {
-		input string
-		want  string
-	}{
-		{"| json > 5", ">"},
-		{"| logfmt == 0", "=="},
-		{"| json <= 10", "<="},
-		{"nothing", "?"},
-	}
-	for _, tc := range cases {
-		got := extractBinaryOp(tc.input)
-		if got != tc.want {
-			t.Errorf("extractBinaryOp(%q) = %q, want %q", tc.input, got, tc.want)
-		}
-	}
-}
-
-// =============================================================================
 // range_metric_compat.go: resolveManualMetricField
 // =============================================================================
 

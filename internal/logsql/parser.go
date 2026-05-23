@@ -175,7 +175,7 @@ func (p *parser) parseAndExpr() (FilterExpr, error) {
 
 func (p *parser) parseNotExpr() (FilterExpr, error) {
 	if p.peek().Typ == TokNot {
-		p.advance() // consume NOT
+		p.advance()                   // consume NOT
 		expr, err := p.parseNotExpr() // recurse to support NOT NOT expr
 		if err != nil {
 			return nil, err

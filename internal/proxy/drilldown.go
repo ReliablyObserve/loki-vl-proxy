@@ -334,8 +334,21 @@ func shouldExposeStructuredField(key string, streamLabels map[string]string, lt 
 		return false
 	}
 	if _, ok := streamLabels[key]; !ok {
+		// Field not a stream label. For dotted/dashed names check whether the
+		// sanitized (underscore) form IS a stream label — if so, this field was
+		// injected by emit-structured-metadata and is a pure alias for a stream
+		// label that is already exposed in the Labels tab; skip it to avoid
+		// duplicate entries in the Fields tab.
+		if strings.ContainsAny(key, ".-") {
+			sanitized := SanitizeLabelName(key)
+			if _, sanitizedOk := streamLabels[sanitized]; sanitizedOk {
+				return false
+			}
+		}
 		return true
 	}
+	// Key IS a stream label. Dotted/dashed stream labels (OTel-style) are always
+	// exposed so they appear in the Fields tab alongside their underscore alias.
 	if strings.ContainsAny(key, ".-") {
 		return true
 	}
@@ -1216,6 +1229,11 @@ func unifyDetectedType(current, next string) string {
 	if current == "" || current == next {
 		return next
 	}
+	// string is the widest type: once any value is non-numeric the field is string.
+	if current == "string" || next == "string" {
+		return "string"
+	}
+	// float is wider than int: int+float → float.
 	if current == "float" || next == "float" {
 		return "float"
 	}
@@ -1398,6 +1416,42 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		// VL auto-indexes every JSON key across the entire time range, so the index
 		// may contain thousands of field names accumulated from rare log variants
 		// that the 500-line scan sample correctly excludes.
+		//
+		// Exception: selectively promote service.name / service_name when the native
+		// label index shows service.name exists but the scan window missed it. OTel
+		// streams may be older than the 500-line window; the native index covers the
+		// full time range and is the authoritative source for stream label existence.
+		// Selectively promote service.name / service_name when the native label index
+		// shows service.name exists but the 500-line scan window missed it.
+		//
+		// Guard: skip when the query already selects on service_name or service.name —
+		// those are stream label selectors and must be suppressed from detected_fields
+		// (e.g. {service_name="api-gateway"} must not expose service_name as a field).
+		querySelectsServiceName := strings.Contains(query, "service_name") || strings.Contains(query, "service.name")
+		if nativeFields != nil && !querySelectsServiceName {
+			if _, nativeHasServiceDot := nativeFields["service.name"]; nativeHasServiceDot {
+				scanHas := func(label string) bool {
+					for _, f := range scanFieldList {
+						if l, _ := f["label"].(string); l == label {
+							return true
+						}
+					}
+					return false
+				}
+				if !scanHas("service.name") {
+					scanFieldList = append(scanFieldList, map[string]interface{}{
+						"label": "service.name", "type": "string",
+						"cardinality": 1, "parsers": []string{},
+					})
+				}
+				if !scanHas("service_name") {
+					scanFieldList = append(scanFieldList, map[string]interface{}{
+						"label": "service_name", "type": "string",
+						"cardinality": 1, "parsers": []string{},
+					})
+				}
+			}
+		}
 		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, nil)
 		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
 		return fieldList, fieldValues, nil

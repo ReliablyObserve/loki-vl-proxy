@@ -60,8 +60,18 @@ After a parser stage, label filters are wrapped as `| filter <expr>`. For exampl
 | `\| line_format "{{.x}}"` | `\| format "<x>"` |
 | `\| label_format x="{{.y}}"` | `\| format "<y>" as x` |
 | `\| label_format a="{{.x}}", b="{{.y}}"` | `\| format "<x>" as a \| format "<y>" as b` |
-| `\| drop a, b` | `\| delete a, b` |
-| `\| keep a, b` | `\| fields _time, _msg, _stream, a, b` |
+| `\| drop a, b` | `\| delete a, b` — bare field names, unconditional |
+| `\| drop level="debug"` | proxy post-processes each entry: removes `level` from structured metadata and parsed fields when value matches; stream labels are not affected |
+| `\| drop status=~"5.."` | proxy regex match: removes `status` when value matches regex |
+| `\| keep a, b` | `\| fields _time, _msg, _stream, a, b` — bare field names |
+| `\| keep method="GET"` | proxy post-processes: strips `method` from entries where value ≠ `"GET"` |
+| `\| keep status!~"2.."` | proxy negative-regex: removes `status` from entries where value does not match |
+
+:::note Drop/keep matcher scope
+The matcher form of `| drop`/`| keep` applies to structured metadata and parsed fields. Stream labels (the label set from the log stream selector) are not mutated by matcher conditions — only bare field drops affect how VictoriaLogs filters the raw field.
+:::
+
+**Stream label exposure**: `| keep app, level` instructs VL to project only `_time, _msg, _stream, app, level`. Because `_stream` contains all original stream labels as JSON, stream labels beyond `app` and `level` remain visible in the Loki response label set. Only structured metadata / parsed fields are affected by keep projection.
 
 ## Proxy-Side Stages
 

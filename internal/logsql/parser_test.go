@@ -77,9 +77,9 @@ func TestParseFilter(t *testing.T) {
 func TestParseError(t *testing.T) {
 	bad := []string{
 		``,
-		`| filter`,   // pipe with no filter
-		`{unclosed`,  // unclosed brace
-		`(error`,     // unclosed paren
+		`| filter`,       // pipe with no filter
+		`{unclosed`,      // unclosed brace
+		`(error`,         // unclosed paren
 		`* | frobnicate`, // unknown pipe
 	}
 	for _, input := range bad {

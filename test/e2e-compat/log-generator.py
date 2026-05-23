@@ -18,6 +18,11 @@ Services (all prod/data/ml/batch/ingress-nginx namespaces, no staging to avoid t
   frontend-ssr     JSON page events       (prod, us-east-1 + us-west-2)
   batch-etl        JSON batch jobs        (batch, us-east-1)
   ml-serving       JSON inference         (ml, us-east-1)
+  checkout-svc     OTel structured_metadata (prod, us-east-1) [3-tuple values]
+  inventory-svc    OTel structured_metadata (prod, us-east-1) [3-tuple values]
+  notification-svc OTel structured_metadata (prod, us-east-1) [3-tuple values]
+  pricing-svc      OTel structured_metadata (prod, us-east-1) [3-tuple values]
+  otel-collector   OTel collector pipeline  (monitoring, us-east-1) [3-tuple values]
 """
 
 import json
@@ -43,6 +48,12 @@ def ns() -> str:
 
 def rand_id(length=8) -> str:
     return ''.join(random.choices(string.hexdigits[:16], k=length))
+
+def rand_trace_id() -> str:
+    return ''.join(random.choices(string.hexdigits[:16], k=32))
+
+def rand_span_id() -> str:
+    return ''.join(random.choices(string.hexdigits[:16], k=16))
 
 def rand_user() -> str:
     return random.choice([
@@ -81,21 +92,26 @@ def _inject_vl_msg(payload: dict) -> dict:
     - VL also indexes all other JSON fields (session_id, event, etc.) as VL fields
     - Loki stores the outer JSON line as-is (which also contains _msg)
     Non-JSON lines (logfmt, nginx) carry msg= or work as plain text already.
+    Handles both 2-tuple [ts, line] and 3-tuple [ts, line, metadata] values.
     """
     result = {"streams": []}
     for s in payload["streams"]:
         new_values = []
-        for ts, line in s["values"]:
+        for entry in s["values"]:
+            ts, line = entry[0], entry[1]
+            metadata = entry[2] if len(entry) > 2 else None
             if line.startswith("{"):
                 try:
                     d = json.loads(line)
                     if "_msg" not in d:
-                        # Keep all original fields (VL indexes them) + add _msg
                         d["_msg"] = line
                         line = json.dumps(d)
                 except Exception:
                     pass
-            new_values.append([ts, line])
+            if metadata is not None:
+                new_values.append([ts, line, metadata])
+            else:
+                new_values.append([ts, line])
         result["streams"].append({"stream": s["stream"], "values": new_values})
     return result
 
@@ -123,11 +139,23 @@ def dual_push(streams: list):
     push_vl(payload)
 
 def stream(labels: dict, lines: list[str]) -> dict:
-    """Build a Loki stream object from labels + log lines."""
+    """Build a Loki stream object from labels + log lines (2-tuple values)."""
     ts = ns()
     return {
         "stream": labels,
         "values": [[ts, line] for line in lines],
+    }
+
+def stream_with_metadata(labels: dict, entries: list[tuple[str, dict]]) -> dict:
+    """Build a Loki stream object with OTel structured metadata (3-tuple values).
+
+    entries: list of (log_line, metadata_dict) tuples.
+    The structured metadata dict is appended as the third element per Loki push spec.
+    """
+    ts = ns()
+    return {
+        "stream": labels,
+        "values": [[ts, line, meta] for line, meta in entries],
     }
 
 # ── Log line generators ────────────────────────────────────────────────────────
@@ -152,7 +180,6 @@ def gen_api_gateway(n: int) -> list[str]:
         level  = "error" if status >= 500 else ("warn" if status >= 400 else "info")
         entry  = {
             "service": {"name": "api-gateway"},
-            "_msg": f"{method} {path} {status} {dur}ms",
             "method": method, "path": path, "status": status,
             "duration_ms": dur, "trace_id": rand_id(12),
             "user_id": rand_user(), "level": level,
@@ -220,7 +247,6 @@ def gen_auth_service(n: int) -> list[str]:
         ok     = random.random() > 0.05
         entry  = {
             "service": {"name": "auth-service"},
-            "_msg": f"auth {evt} {'ok' if ok else 'failed'}",
             "event": evt, "user_id": uid, "ip": ip, "success": ok,
             "auth_method": method, "mfa": random.choice([True, False]),
             "session_id": rand_id(16), "trace_id": rand_id(12),
@@ -413,7 +439,6 @@ def gen_frontend_ssr(n: int) -> list[str]:
         load_ms = random.randint(50, 5000)
         entry   = {
             "service": {"name": "frontend-ssr"},
-            "_msg": f"{evt} {path} {load_ms}ms",
             "event": evt, "path": path, "user_id": uid,
             "session_id": sess, "load_ms": load_ms,
             "region": random.choice(["us-east-1", "us-west-2"]),
@@ -450,7 +475,6 @@ def gen_batch_etl(n: int) -> list[str]:
         dur      = round(random.uniform(0.5, 300.0), 2)
         entry    = {
             "service": {"name": "batch-etl"},
-            "_msg": f"{job} {phase} {done}/{total} records",
             "job": job, "batch_id": batch_id, "phase": phase,
             "total": total, "processed": done, "failed": failed,
             "duration_s": dur, "throughput_rps": round(done / max(dur, 0.1), 1),
@@ -481,7 +505,6 @@ def gen_ml_serving(n: int) -> list[str]:
         ok        = random.random() > 0.02
         entry     = {
             "service": {"name": "ml-serving"},
-            "_msg": f"{model} inference {'ok' if ok else 'failed'} {lat_ms}ms",
             "model": model, "request_id": req_id,
             "latency_ms": lat_ms, "confidence": conf,
             "batch_size": batch, "success": ok,
@@ -500,6 +523,98 @@ def gen_ml_serving(n: int) -> list[str]:
             entry["level"] = "info"
         lines.append(json.dumps(entry))
     return lines
+
+OTEL_SERVICES = ["checkout-svc", "inventory-svc", "notification-svc", "pricing-svc"]
+OTEL_ENVS     = ["production", "staging"]
+OTEL_CLUSTERS = ["k8s-prod-us-east-1", "k8s-prod-us-west-2"]
+
+def gen_otel_service(n: int, svc: str) -> list[tuple[str, dict]]:
+    """Generate OTel-instrumented log entries with structured metadata 3-tuples.
+
+    Returns list of (log_line, metadata_dict) pairs.
+    Structured metadata carries OTel semantic convention fields:
+    trace_id, span_id, service.name, service.version,
+    deployment.environment, k8s.pod.name, k8s.namespace.name, k8s.cluster.name.
+    """
+    ops = ["handle_request", "db_query", "cache_lookup", "rpc_call",
+           "publish_event", "consume_event", "validate_input", "send_response"]
+    results: list[tuple[str, dict]] = []
+    pod_name = rand_pod(svc)
+    cluster  = random.choice(OTEL_CLUSTERS)
+    env      = "production"
+    version  = f"1.{random.randint(0, 9)}.{random.randint(0, 9)}"
+    namespace = "prod"
+
+    for _ in range(n):
+        op       = random.choice(ops)
+        trace_id = rand_trace_id()
+        span_id  = rand_span_id()
+        lat_ms   = random.randint(1, 600)
+        ok       = random.random() > 0.05
+
+        entry = {
+            "message": f"{op} {'completed' if ok else 'failed'}",
+            "level":   "error" if not ok else ("warn" if lat_ms > 400 else "info"),
+            "duration_ms": lat_ms,
+            "operation": op,
+        }
+        if not ok:
+            entry["error"] = random.choice([
+                "timeout", "connection_refused", "invalid_response",
+                "rate_limited", "circuit_open",
+            ])
+
+        metadata = {
+            "trace_id":                trace_id,
+            "span_id":                 span_id,
+            "service.name":            svc,
+            "service.version":         version,
+            "deployment.environment":  env,
+            "k8s.pod.name":            pod_name,
+            "k8s.namespace.name":      namespace,
+            "k8s.cluster.name":        cluster,
+        }
+        results.append((json.dumps(entry), metadata))
+    return results
+
+
+def gen_otel_collector(n: int) -> list[tuple[str, dict]]:
+    """Simulate OTel collector pipeline logs with rich span context in metadata."""
+    pipelines = ["traces/otlp", "metrics/prometheus", "logs/loki"]
+    results: list[tuple[str, dict]] = []
+    pod_name  = rand_pod("otel-collector")
+    cluster   = random.choice(OTEL_CLUSTERS)
+
+    for _ in range(n):
+        pipeline = random.choice(pipelines)
+        received = random.randint(100, 10000)
+        dropped  = random.randint(0, max(1, received // 50))
+        trace_id = rand_trace_id()
+        span_id  = rand_span_id()
+        lat_ms   = random.randint(1, 200)
+
+        entry = {
+            "message":   f"pipeline {pipeline} flushed",
+            "level":     "warn" if dropped > 0 else "info",
+            "pipeline":  pipeline,
+            "received":  received,
+            "dropped":   dropped,
+            "export_ms": lat_ms,
+        }
+
+        metadata = {
+            "trace_id":               trace_id,
+            "span_id":                span_id,
+            "service.name":           "otel-collector",
+            "service.version":        "0.96.0",
+            "deployment.environment": "production",
+            "k8s.pod.name":           pod_name,
+            "k8s.namespace.name":     "monitoring",
+            "k8s.cluster.name":       cluster,
+        }
+        results.append((json.dumps(entry), metadata))
+    return results
+
 
 # ── Service definitions ────────────────────────────────────────────────────────
 
@@ -635,6 +750,40 @@ def services_batch(n: int) -> list[dict]:
             "ml-serving", "ml", "us-east-1", level,
             extra={"gpu": "nvidia-a100"},
         ), lines))
+
+    # ── OTel-instrumented services (structured metadata 3-tuples) ─────────
+    # Each entry is [ts, log_line, metadata_dict] — exercises the proxy's
+    # OTel structured_metadata detection and pass-through for both Loki and VL.
+    for svc in OTEL_SERVICES:
+        entries = gen_otel_service(max(1, n // 2), svc)
+        # Group by level from the log line itself
+        level_buckets: dict[str, list[tuple[str, dict]]] = {}
+        for log_line, meta in entries:
+            try:
+                lvl = json.loads(log_line).get("level", "info") or "info"
+            except Exception:
+                lvl = "info"
+            level_buckets.setdefault(lvl, []).append((log_line, meta))
+        for level, lvl_entries in level_buckets.items():
+            streams.append(stream_with_metadata(make_labels(
+                svc, "prod", "us-east-1", level,
+                extra={"instrumentation": "otel"},
+            ), lvl_entries))
+
+    # ── OTel collector (structured metadata 3-tuples, monitoring namespace) ─
+    otel_col_entries = gen_otel_collector(max(1, n // 2))
+    col_buckets: dict[str, list[tuple[str, dict]]] = {}
+    for log_line, meta in otel_col_entries:
+        try:
+            lvl = json.loads(log_line).get("level", "info") or "info"
+        except Exception:
+            lvl = "info"
+        col_buckets.setdefault(lvl, []).append((log_line, meta))
+    for level, lvl_entries in col_buckets.items():
+        streams.append(stream_with_metadata(make_labels(
+            "otel-collector", "monitoring", "us-east-1", level,
+            extra={"component": "collector"},
+        ), lvl_entries))
 
     return streams
 

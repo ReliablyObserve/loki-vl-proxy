@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"sort"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -100,6 +102,21 @@ type instantMetricPostAgg struct {
 func parseInstantMetricPostAggQuery(logql string) (instantMetricPostAgg, bool) {
 	logql = strings.TrimSpace(logql)
 	for _, name := range []string{"sort_desc", "sort"} {
+		prefix := name + "("
+		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
+			continue
+		}
+		inner := strings.TrimSpace(logql[len(prefix) : len(logql)-1])
+		if inner == "" {
+			return instantMetricPostAgg{}, false
+		}
+		return instantMetricPostAgg{name: name, inner: inner}, true
+	}
+	// stddev/stdvar as outer aggregations over an already-aggregated metric
+	// (e.g., stddev(sum by(app)(count_over_time({...}[5m])))).
+	// VL has no direct equivalent; the proxy executes the inner query then
+	// applies the aggregation across the returned series.
+	for _, name := range []string{"stddev", "stdvar"} {
 		prefix := name + "("
 		if !strings.HasPrefix(logql, prefix) || !strings.HasSuffix(logql, ")") {
 			continue
@@ -205,6 +222,9 @@ func addStatsByStreamClause(logsqlQuery string) string {
 }
 
 func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
+	// Parse the inner LogQL expression to drive routing via typed AST.
+	parsedInner, _ := logqlpkg.Parse(postAgg.inner)
+
 	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, err.Error())
@@ -218,16 +238,42 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
-	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(translatedInner); ok {
-		p.proxySubquery(sc, r, outerFunc, innerQL, rng, step)
-	} else if op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(translatedInner); ok {
-		p.proxyBinaryMetricQueryVM(sc, r, op, left, right, vm)
-	} else if isStatsQuery(translatedInner) {
-		p.proxyStatsQuery(sc, r, translatedInner)
-	} else {
-		p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
-		p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
-		return
+
+	var dispatched bool
+	if ra, ok := parsedInner.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
+		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
+		if innerErr != nil {
+			p.writeError(w, http.StatusBadRequest, innerErr.Error())
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		p.proxySubquery(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
+		dispatched = true
+	} else if binOp, ok := parsedInner.(*logqlpkg.BinOpExpr); ok {
+		leftLogsql, leftErr := p.translateQueryWithContext(r.Context(), binOp.Left.String())
+		rightLogsql, rightErr := p.translateQueryWithContext(r.Context(), binOp.Right.String())
+		if leftErr != nil {
+			p.writeError(w, http.StatusBadRequest, leftErr.Error())
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		if rightErr != nil {
+			p.writeError(w, http.StatusBadRequest, rightErr.Error())
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
+		dispatched = true
+	}
+
+	if !dispatched {
+		if isStatsQuery(translatedInner) {
+			p.proxyStatsQuery(sc, r, translatedInner)
+		} else {
+			p.writeError(w, http.StatusBadRequest, "unsupported instant aggregation target")
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
 	}
 
 	if len(withoutLabels) > 0 {
@@ -272,9 +318,19 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 
 	r = withOrgID(r)
 
+	// proxyStatsQueryRange reads r.FormValue("query") as originalLogql for the stats
+	// compat layer. If the outer sort/topk wrapper is still in r.Form, parseOriginalRangeMetricSpec
+	// extracts "sort" as the function name and normalizeManualMetricFunction returns "",
+	// causing handleStatsCompatRange to fall through to the direct path with an empty result.
+	// Clone the request and replace "query" with the unwrapped inner expression so the
+	// stats compat layer can correctly identify the inner metric function.
+	innerR := r.Clone(r.Context())
+	_ = innerR.ParseForm()
+	innerR.Form.Set("query", postAgg.inner)
+
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
-	p.proxyStatsQueryRange(sc, r, translatedInner)
+	p.proxyStatsQueryRange(sc, innerR, translatedInner)
 
 	if len(withoutLabels) > 0 {
 		bw.body = applyWithoutGrouping(bw.body, withoutLabels)
@@ -304,9 +360,86 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
 }
 
-// applyMatrixPostAggregation applies topk/bottomk/sort to a matrix (query_range) result.
-// It ranks series by their last value and trims to the requested K.
+// applyMatrixPostAggregation applies topk/bottomk/sort/stddev/stdvar to a matrix result.
 func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byte {
+	if postAgg.name == "stddev" || postAgg.name == "stdvar" {
+		return applyMatrixStddevAgg(body, postAgg.name)
+	}
+	return applyMatrixSortTopkAgg(body, postAgg)
+}
+
+// applyMatrixStddevAgg computes population stddev/stdvar across all series
+// at each timestamp and returns a single unlabelled series.
+func applyMatrixStddevAgg(body []byte, funcName string) []byte {
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]interface{} `json:"metric"`
+				Values [][]interface{}        `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "matrix" {
+		return body
+	}
+
+	// Collect values per timestamp across all series.
+	tsValues := make(map[float64][]float64)
+	var tsOrder []float64
+	seen := make(map[float64]struct{})
+	for _, s := range resp.Data.Result {
+		for _, v := range s.Values {
+			if len(v) < 2 {
+				continue
+			}
+			ts, err := parseFloat(v[0])
+			if err != nil {
+				continue
+			}
+			val, err := parseFloat(v[1])
+			if err != nil {
+				continue
+			}
+			tsValues[ts] = append(tsValues[ts], val)
+			if _, ok := seen[ts]; !ok {
+				seen[ts] = struct{}{}
+				tsOrder = append(tsOrder, ts)
+			}
+		}
+	}
+	sort.Slice(tsOrder, func(i, j int) bool { return tsOrder[i] < tsOrder[j] })
+
+	values := make([][]interface{}, 0, len(tsOrder))
+	for _, ts := range tsOrder {
+		var agg float64
+		if funcName == "stdvar" {
+			agg = populationVariance(tsValues[ts])
+		} else {
+			agg = populationStddev(tsValues[ts])
+		}
+		values = append(values, []interface{}{ts, strconv.FormatFloat(agg, 'f', -1, 64)})
+	}
+
+	out, err := json.Marshal(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "matrix",
+			"result": []map[string]interface{}{
+				{"metric": map[string]string{}, "values": values},
+			},
+		},
+	})
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// applyMatrixSortTopkAgg applies topk/bottomk/sort to a matrix (query_range) result.
+// It ranks series by their last value and trims to the requested K.
+func applyMatrixSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -342,12 +475,12 @@ func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byt
 	sort.SliceStable(ranks, func(i, j int) bool {
 		li, lj := ranks[i].last, ranks[j].last
 		switch postAgg.name {
-		case "bottomk":
+		case "sort", "bottomk": // ascending
 			if li == lj {
 				return ranks[i].idx < ranks[j].idx
 			}
 			return li < lj
-		default: // topk, sort_desc, sort
+		default: // topk, sort_desc — descending
 			if li == lj {
 				return ranks[i].idx < ranks[j].idx
 			}
@@ -355,19 +488,18 @@ func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byt
 		}
 	})
 
-	// Ensure topk size is safe: bounded by min(requested, max constant, available)
-	const maxTopK = 10000
-	safeSize := postAgg.k
-	if safeSize < 0 {
-		safeSize = 0
-	}
-	// Use min to create an allocation size that's clearly bounded
-	allocSize := safeSize
-	if allocSize > maxTopK {
-		allocSize = maxTopK
-	}
-	if allocSize > len(ranks) {
-		allocSize = len(ranks)
+	// sort/sort_desc return all series reordered; only topk/bottomk trim to k.
+	resultCount := len(ranks)
+	if (postAgg.name == "topk" || postAgg.name == "bottomk") && postAgg.k > 0 {
+		// Ensure topk size is safe: bounded by min(requested, max constant, available)
+		const maxTopK = 10000
+		safeSize := postAgg.k
+		if safeSize > maxTopK {
+			safeSize = maxTopK
+		}
+		if safeSize < resultCount {
+			resultCount = safeSize
+		}
 	}
 
 	// Pre-allocate with safe maximum size to avoid CodeQL taint analysis issues
@@ -379,8 +511,6 @@ func applyMatrixPostAggregation(body []byte, postAgg instantMetricPostAgg) []byt
 		Values [][]interface{}        `json:"values"`
 	}, preallocSize)
 
-	// Only populate the needed number of results
-	resultCount := allocSize
 	if resultCount > len(selected) {
 		resultCount = len(selected)
 	}
@@ -408,6 +538,67 @@ func parseFloat(v interface{}) (float64, error) {
 }
 
 func applyInstantVectorPostAggregation(body []byte, postAgg instantMetricPostAgg) []byte {
+	if postAgg.name == "stddev" || postAgg.name == "stdvar" {
+		return applyInstantStddevAgg(body, postAgg.name)
+	}
+	return applyInstantSortTopkAgg(body, postAgg)
+}
+
+// applyInstantStddevAgg computes population stddev/stdvar across all series
+// in an instant vector and returns a single unlabelled scalar.
+func applyInstantStddevAgg(body []byte, funcName string) []byte {
+	var resp struct {
+		Status string `json:"status"`
+		Data   struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]interface{} `json:"metric"`
+				Value  []interface{}          `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Status != "success" || resp.Data.ResultType != "vector" {
+		return body
+	}
+
+	// Collect all series values and the timestamp from the first series.
+	var vals []float64
+	var ts float64
+	for i, s := range resp.Data.Result {
+		if len(s.Value) < 2 {
+			continue
+		}
+		if i == 0 {
+			ts, _ = parseFloat(s.Value[0])
+		}
+		if v, err := parseFloat(s.Value[1]); err == nil {
+			vals = append(vals, v)
+		}
+	}
+
+	var agg float64
+	if funcName == "stdvar" {
+		agg = populationVariance(vals)
+	} else {
+		agg = populationStddev(vals)
+	}
+
+	out, err := json.Marshal(map[string]interface{}{
+		"status": "success",
+		"data": map[string]interface{}{
+			"resultType": "vector",
+			"result": []map[string]interface{}{
+				{"metric": map[string]string{}, "value": []interface{}{ts, strconv.FormatFloat(agg, 'f', -1, 64)}},
+			},
+		},
+	})
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+func applyInstantSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -463,6 +654,31 @@ func vectorPointValue(value []interface{}) float64 {
 	default:
 		return 0
 	}
+}
+
+// populationStddev computes the population standard deviation of vals.
+func populationStddev(vals []float64) float64 {
+	n := float64(len(vals))
+	if n == 0 {
+		return 0
+	}
+	mean := 0.0
+	for _, v := range vals {
+		mean += v
+	}
+	mean /= n
+	variance := 0.0
+	for _, v := range vals {
+		d := v - mean
+		variance += d * d
+	}
+	return math.Sqrt(variance / n)
+}
+
+// populationVariance computes the population variance of vals.
+func populationVariance(vals []float64) float64 {
+	d := populationStddev(vals)
+	return d * d
 }
 
 func applyConstantBinaryOp(left, right float64, op string) (float64, bool) {

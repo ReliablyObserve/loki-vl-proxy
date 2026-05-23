@@ -72,8 +72,14 @@ description: Planned features, known gaps, and the contribution priority list fo
 - [x] Coverage and quality-gate reinforcement for runtime, middleware, cache, and proxy-path tests
 - [x] Tier0 compatibility-edge cache with bounded memory budget, safe GET-only guardrails, and reload invalidation
 - [x] Fleet shadow-copy validation for 3-peer cache reuse plus Tier0/fleet micro-benchmarks
+- [x] Named tenant routing enhancements — YAML/JSON tenant map file with mtime-polling hot-reload and SIGHUP; label-based tenant isolation (`-tenant-label` injects `{field="orgID"}` into VL queries); `-forward-tenant-header` passthrough for Lakehouse; uint32 validation at load time; LogsQL injection prevention via backslash-before-quote escaping (v1.31.x)
+- [x] Exhaustive LogQL parity machine — 316 parse/translation cases covering stream selectors, line filters, parsers, metric queries, binary ops, subqueries, offset modifier, unwrap unit conversion, field-specific parsers, named regexp groups, vector matching, complex pipelines, and edge cases; LogQL syntax validator for Loki error parity; comprehensive pipeline parity tests; all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved (v3.7.1)
+- [x] `| drop field=value` matcher semantics — proxy applies conditional field removal via `ParseDropConditions` + `applyDropConditions` post-processing; the value predicate is now respected (previously the field was always dropped regardless of value) (v3.7.1)
+- [x] structuredMetadata vs parsedFields classification — proxy correctly classifies fields by comparing against `_msg` JSON content, preventing structured metadata from being misclassified as parsedFields (v3.7.1)
+- [x] Non-OTel structured metadata e2e tests — push tests for plain structured metadata (non-OTel) added to log-generator; default `label-style` changed to `underscores` and `metadata-field-mode` to `translated` (v3.7.1)
+- [x] Config examples folder (`examples/`) — runnable env files, tenant map YAML, Docker Compose stack, Grafana datasource provisioning, systemd unit, Kubernetes ConfigMap with full annotated flag/env reference
 
-## Planned (recently completed)
+## Recently Shipped
 
 - [x] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching (0.22.0)
 - [x] `@` timestamp modifier (0.19.0)
@@ -96,5 +102,9 @@ description: Planned features, known gaps, and the contribution priority list fo
 ## Planned (open)
 
 - [ ] Tighten remaining merged-tenant Drilldown metadata accuracy for field and label cardinality surfaces
-- [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests
-- [ ] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
+- [x] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
+- [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests (ongoing — LogQL parity machine at 202 cases)
+- [ ] Bare `| drop`/`| keep` stream label mutation — matcher form currently applies only to structured metadata; stream labels not yet mutated
+- [ ] Malformed drop/keep matcher → HTTP 400 error — currently silently skipped, should return parse error
+- [ ] Parallel multi-tenant fanout — currently serial; high tenant counts scale latency linearly
+- [ ] Streaming backward hot+cold merge — currently buffers cold body; large backward ranges materialize in proxy RAM

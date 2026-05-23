@@ -140,6 +140,20 @@ flowchart TD
 - Its memory budget is derived from `-cache-max-bytes` through `-compat-cache-max-percent`, defaulting to 10% and capped at 50%.
 - Tenant-map and field-mapping reloads invalidate Tier0 immediately so label translation and metadata exposure changes cannot go stale.
 
+### Cold Storage Routing
+
+When `-cold-enabled=true` and `-cold-backend` is set, the proxy time-splits queries based on their time range:
+
+| Query range | Route |
+|---|---|
+| Entirely within hot boundary | Hot backend (VictoriaLogs) only |
+| Entirely beyond cold boundary | Cold backend (Victoria Lakehouse) only |
+| Spans the boundary (overlap zone) | Both backends; results merged at proxy |
+
+The boundary is configured via `-cold-boundary` (default `168h` = 7 days). The overlap window (`-cold-overlap`, default `1h`) ensures no gaps around the boundary by querying both backends in that zone.
+
+For backward-direction queries spanning both backends, the proxy reads the cold response into memory to reverse it before merging — avoid very large backward time ranges when cold storage is enabled.
+
 ## Tail Flow
 
 ```mermaid
@@ -227,8 +241,19 @@ flowchart LR
 
 ## Component Design
 
+### LogQL Parser (`internal/logql/`)
+Typed recursive-descent parser for LogQL. Produces a fully-typed AST (`Expr` interface with concrete node types: `*LogQuery`, `*RangeAggregation`, `*VectorAggregation`, `*BinOpExpr`, `*OpaqueMetricExpr`, …) that drives three subsystems:
+
+- **Validation** — `ValidateLogQL(query)` returns Loki-compatible error strings for invalid queries before any work is done.
+- **Routing** — `proxy.go` type-switches on the parsed AST to dispatch subqueries, binary metric expressions, and stream queries to separate execution paths (more reliable than regex-based marker injection).
+- **Drop/Keep extraction** — `stream_processing.go` extracts `| drop`/`| keep` matchers from the AST for VL response post-processing.
+
+The parser includes a semantic pass for structural constraints (missing `| unwrap` inside `rate_counter`, `__error__` inside `rate()`, malformed `ip()` filters, quantile phi bounds, line-format template validity). All error messages are formatted to match Loki 3.x exactly so Grafana clients receive the expected error shape.
+
+See [LogQL Parser deep dive](logql-parser.md) for grammar, data flow diagrams, and extension points.
+
 ### Translator (`internal/translator/`)
-Pure string manipulation parser — no external LogQL parser library. Converts LogQL to LogsQL left-to-right using prefix matching and regex for templates.
+String-level LogQL→LogsQL converter. Receives canonical LogQL (produced by `Expr.String()` after AST normalisation) and converts it left-to-right using prefix matching and regex for templates. The typed parser upstream ensures the translator always receives well-formed input.
 
 ### Proxy (`internal/proxy/`)
 HTTP handlers for Loki-compatible read endpoints, split into domain-focused modules:

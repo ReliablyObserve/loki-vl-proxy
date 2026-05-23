@@ -16,7 +16,50 @@ import (
 	"time"
 
 	fj "github.com/valyala/fastjson"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
+
+// extractDropKeepFromAST extracts drop/keep conditions from the original LogQL query via the typed AST.
+// Falls back to the regex-based translator functions for metric expressions or parse failures.
+func extractDropKeepFromAST(query string) (
+	dropConds []translator.DropCondition,
+	keepConds []translator.DropCondition,
+	bareDropFields []string,
+	bareKeepFields []string,
+) {
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		// Metric expressions or unparseable queries: fall back to regex-based extraction.
+		dropConds = translator.ParseDropConditions(query)
+		keepConds = translator.ParseKeepConditions(query)
+		bareDropFields = translator.ParseBareDropFields(query)
+		bareKeepFields = translator.ParseBareKeepFields(query)
+		return
+	}
+	for _, stage := range lq.Pipeline {
+		switch s := stage.(type) {
+		case *logqlpkg.DropStage:
+			bareDropFields = append(bareDropFields, s.Labels...)
+			for _, m := range s.Matchers {
+				dc, e := translator.NewDropCondition(m.Name, m.Op, m.Value)
+				if e == nil {
+					dropConds = append(dropConds, dc)
+				}
+			}
+		case *logqlpkg.KeepStage:
+			bareKeepFields = append(bareKeepFields, s.Labels...)
+			for _, m := range s.Matchers {
+				dc, e := translator.NewDropCondition(m.Name, m.Op, m.Value)
+				if e == nil {
+					keepConds = append(keepConds, dc)
+				}
+			}
+		}
+	}
+	return
+}
 
 // proxyLogQuery fetches log lines from VictoriaLogs.
 func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
@@ -136,6 +179,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
+	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
 	smBuf2 := metadataMapPool.Get().(map[string]string)
 	pfBuf2 := metadataMapPool.Get().(map[string]string)
 	defer func() {
@@ -175,12 +219,33 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 		}
 
 		labels, structuredMetadata, parsedFields := p.classifyEntryFields(entry, originalQuery, exposureCache, smBuf2, pfBuf2)
+		if len(dropConditions) > 0 {
+			applyDropConditions(dropConditions, structuredMetadata, parsedFields)
+		}
+		if len(keepConditions) > 0 {
+			applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
+		}
 		translatedLabels := labels
 		if !p.labelTranslator.IsPassthrough() {
 			translatedLabels = p.labelTranslator.TranslateLabelsMap(labels)
 		}
 		ensureDetectedLevel(translatedLabels)
 		ensureSyntheticServiceName(translatedLabels)
+		// Apply drop conditions to stream labels: Loki | drop field=value removes the
+		// field from the label set when the value matches, even for stream labels.
+		if len(dropConditions) > 0 {
+			if _, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, streamLabels, translatedLabels, p.labelTranslator); changed {
+				translatedLabels = newLabels
+			}
+		}
+		// Apply bare-field drop/keep to stream labels.
+		// | drop f removes f from the stream label set unconditionally.
+		// | keep f1, f2 removes any stream label NOT in the keep list.
+		if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
+			if _, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, streamLabels, translatedLabels, p.labelTranslator); changed {
+				translatedLabels = newLabels
+			}
+		}
 
 		stream := map[string]interface{}{
 			"stream": translatedLabels,
@@ -457,6 +522,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	needsClassification := emitStructuredMetadata || categorizedLabels
+	dropConditions, keepConditions, bareDropFields2, bareKeepFields2 := extractDropKeepFromAST(originalQuery)
 
 	var (
 		miner        *patternMiner
@@ -546,15 +612,40 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		var structuredMetadata, parsedFields map[string]string
 		if needsClassification {
 			structuredMetadata, parsedFields = p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+			if len(dropConditions) > 0 {
+				applyDropConditions(dropConditions, structuredMetadata, parsedFields)
+			}
+			if len(keepConditions) > 0 {
+				applyKeepConditions(keepConditions, structuredMetadata, parsedFields)
+			}
 		}
-		se, ok := streamMap[desc.key]
+		// Apply drop conditions to stream labels too. Loki's | drop field=value removes
+		// the field from the label set when the value matches — including stream labels.
+		streamKey := desc.key
+		streamLabels := desc.translatedLabels
+		if len(dropConditions) > 0 {
+			if newKey, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, desc.translatedLabels, p.labelTranslator); changed {
+				streamKey = newKey
+				streamLabels = newLabels
+			}
+		}
+		// Apply bare-field drop/keep to stream labels.
+		// | drop f removes f from the stream label set unconditionally.
+		// | keep f1, f2 removes any stream label NOT in the keep list.
+		if len(bareDropFields2) > 0 || len(bareKeepFields2) > 0 {
+			if newKey, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields2, bareKeepFields2, desc.rawLabels, streamLabels, p.labelTranslator); changed {
+				streamKey = newKey
+				streamLabels = newLabels
+			}
+		}
+		se, ok := streamMap[streamKey]
 		if !ok {
 			se = &streamEntry{
-				Labels: desc.translatedLabels,
+				Labels: streamLabels,
 				Values: make([]interface{}, 0, 8),
 			}
-			streamMap[desc.key] = se
-			streamOrder = append(streamOrder, desc.key)
+			streamMap[streamKey] = se
+			streamOrder = append(streamOrder, streamKey)
 		}
 		if tsNanos == se.lastTs {
 			se.hasDupTs = true
@@ -743,6 +834,14 @@ func (p *Proxy) classifyEntryMetadataFields(entry map[string]interface{}, stream
 
 // classifyEntryMetadataFieldsFJ is the fastjson variant of classifyEntryMetadataFields.
 // It uses fj.Object.Visit to iterate fields without allocating a map[string]interface{}.
+//
+// Classification strategy:
+//   - Fields present in the _msg JSON content → parsedFields (extracted by a log parser stage)
+//   - Fields not in _msg but not stream labels → structuredMetadata (pushed as OTel structured metadata)
+//   - Falls back to classifyAsParsed when _msg is not JSON (logfmt, nginx, etc.)
+//
+// This matches Loki's behavior: Loki stores structured metadata separately and only
+// JSON/logfmt parser stages produce parsed fields, regardless of the query parser stage.
 func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[string]string, classifyAsParsed bool, exposureCache map[string][]metadataFieldExposure, smBuf, pfBuf map[string]string) (map[string]string, map[string]string) {
 	for k := range smBuf {
 		delete(smBuf, k)
@@ -750,8 +849,17 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 	for k := range pfBuf {
 		delete(pfBuf, k)
 	}
+
+	// Pass 1: collect non-stream fields and extract _msg raw bytes.
+	type pending struct{ key, value string }
+	var pendingFields []pending
+	var msgRaw []byte
 	obj.Visit(func(k []byte, val *fj.Value) {
 		key := string(k)
+		if key == "_msg" {
+			msgRaw = val.GetStringBytes()
+			return
+		}
 		if isVLInternalField(key) || key == "_stream_id" || key == "level" {
 			return
 		}
@@ -762,17 +870,44 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 		if !ok || strings.TrimSpace(sv) == "" {
 			return
 		}
-		for _, exposure := range p.metadataFieldExposuresCached(key, exposureCache) {
+		pendingFields = append(pendingFields, pending{key, sv})
+	})
+
+	// Parse _msg JSON to get the set of log-line field keys.
+	// Fields whose key appears in _msg are treated as "parsed" (from the log content);
+	// all other fields are "structured metadata" (pushed via OTel 3-tuple metadata).
+	var msgKeys map[string]struct{}
+	if len(msgRaw) > 0 && msgRaw[0] == '{' {
+		var msgParser fj.Parser
+		if msgVal, err := msgParser.ParseBytes(msgRaw); err == nil {
+			if msgObj, err2 := msgVal.Object(); err2 == nil {
+				msgKeys = make(map[string]struct{}, msgObj.Len())
+				msgObj.Visit(func(mk []byte, _ *fj.Value) {
+					msgKeys[string(mk)] = struct{}{}
+				})
+			}
+		}
+	}
+
+	// Pass 2: classify each field.
+	for _, f := range pendingFields {
+		isParsed := classifyAsParsed
+		if msgKeys != nil {
+			_, inMsg := msgKeys[f.key]
+			isParsed = inMsg
+		}
+		for _, exposure := range p.metadataFieldExposuresCached(f.key, exposureCache) {
 			if _, exists := streamLabels[exposure.name]; exists && !exposure.isAlias {
 				continue
 			}
-			if classifyAsParsed {
-				pfBuf[exposure.name] = sv
-				continue
+			if isParsed {
+				pfBuf[exposure.name] = f.value
+			} else {
+				smBuf[exposure.name] = f.value
 			}
-			smBuf[exposure.name] = sv
 		}
-	})
+	}
+
 	var sm, pf map[string]string
 	if len(smBuf) > 0 {
 		sm = smBuf
@@ -781,6 +916,174 @@ func (p *Proxy) classifyEntryMetadataFieldsFJ(obj *fj.Object, streamLabels map[s
 		pf = pfBuf
 	}
 	return sm, pf
+}
+
+// applyDropConditions removes fields from sm/pf when the entry value matches a
+// `| drop field=value` condition. Bare-field drops are handled by VL `| delete`.
+func applyDropConditions(conds []translator.DropCondition, sm, pf map[string]string) {
+	for _, dc := range conds {
+		if sm != nil {
+			if val, ok := sm[dc.Field]; ok && dc.Matches(val) {
+				delete(sm, dc.Field)
+			}
+		}
+		if pf != nil {
+			if val, ok := pf[dc.Field]; ok && dc.Matches(val) {
+				delete(pf, dc.Field)
+			}
+		}
+	}
+}
+
+// applyDropConditionsToStreamLabels checks whether any drop condition matches a stream label.
+// If any match, it returns a cloned translatedLabels map with those fields removed and a new
+// canonical key.
+//
+// Under label-style=underscores, VL stores stream labels with dots (e.g. "service.name") but
+// drop conditions use Loki underscore names (e.g. "service_name"). The lt translator is used
+// to map condition field names back to their VL raw field names so both forms are matched and
+// deleted correctly. lt may be nil for passthrough style.
+func applyDropConditionsToStreamLabels(conds []translator.DropCondition, rawLabels, translatedLabels map[string]string, lt *LabelTranslator) (newKey string, newTranslated map[string]string, changed bool) {
+	for _, dc := range conds {
+		if val, ok := rawLabels[dc.Field]; ok && dc.Matches(val) {
+			changed = true
+			break
+		}
+		if lt != nil {
+			if vlField := lt.ToVL(dc.Field); vlField != dc.Field {
+				if val, ok := rawLabels[vlField]; ok && dc.Matches(val) {
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	if !changed {
+		return "", nil, false
+	}
+	newTranslated = cloneStringMap(translatedLabels)
+	newRaw := cloneStringMap(rawLabels)
+	for _, dc := range conds {
+		if val, ok := rawLabels[dc.Field]; ok && dc.Matches(val) {
+			delete(newRaw, dc.Field)
+			delete(newTranslated, dc.Field)
+		}
+		if lt != nil {
+			if vlField := lt.ToVL(dc.Field); vlField != dc.Field {
+				if val, ok := rawLabels[vlField]; ok && dc.Matches(val) {
+					delete(newRaw, vlField)
+					delete(newTranslated, dc.Field)
+				}
+			}
+		}
+	}
+	return canonicalLabelsKey(newRaw), newTranslated, true
+}
+
+// applyBareFieldMutationToStreamLabels handles bare | drop and | keep stream-label mutations.
+// | drop fields: removes each bare-dropped field from the stream label set.
+// | keep fields: removes any stream label not in the keep list.
+// Returns the new stream key, translated labels map, and whether any change occurred.
+func applyBareFieldMutationToStreamLabels(
+	dropFields, keepFields []string,
+	rawLabels, translatedLabels map[string]string,
+	lt *LabelTranslator,
+) (newKey string, newTranslated map[string]string, changed bool) {
+	if len(dropFields) == 0 && len(keepFields) == 0 {
+		return "", nil, false
+	}
+
+	// Build set structures for O(1) lookup.
+	dropSet := make(map[string]struct{}, len(dropFields))
+	for _, f := range dropFields {
+		dropSet[f] = struct{}{}
+		if lt != nil {
+			dropSet[lt.ToVL(f)] = struct{}{}
+		}
+	}
+
+	keepSet := make(map[string]struct{}, len(keepFields))
+	for _, f := range keepFields {
+		keepSet[f] = struct{}{}
+		if lt != nil {
+			keepSet[lt.ToVL(f)] = struct{}{}
+		}
+	}
+
+	// Determine which raw (VL dotted) labels to remove.
+	toRemove := make(map[string]struct{})
+	for rawKey := range rawLabels {
+		// Drop: remove if in drop set.
+		if _, ok := dropSet[rawKey]; ok {
+			toRemove[rawKey] = struct{}{}
+			continue
+		}
+		// Keep: remove if NOT in keep set (and keep set is non-empty).
+		if len(keepFields) > 0 {
+			// Translate rawKey to loki label for keep-set lookup.
+			lokiKey := rawKey
+			if lt != nil {
+				lokiKey = lt.ToLoki(rawKey)
+			}
+			if _, ok := keepSet[rawKey]; !ok {
+				if _, ok2 := keepSet[lokiKey]; !ok2 {
+					toRemove[rawKey] = struct{}{}
+				}
+			}
+		}
+	}
+
+	if len(toRemove) == 0 {
+		return "", nil, false
+	}
+
+	// Build new raw/translated maps without the removed keys.
+	newRaw := make(map[string]string, len(rawLabels)-len(toRemove))
+	for k, v := range rawLabels {
+		if _, skip := toRemove[k]; !skip {
+			newRaw[k] = v
+		}
+	}
+	newTrans := make(map[string]string, len(translatedLabels))
+	for k, v := range translatedLabels {
+		// Find the VL key for this translated key.
+		vlKey := k
+		if lt != nil {
+			vlKey = lt.ToVL(k)
+		}
+		if _, skip := toRemove[vlKey]; !skip {
+			newTrans[k] = v
+		}
+	}
+
+	// Rebuild the stream key from newRaw.
+	key := canonicalLabelsKey(newRaw)
+	return key, newTrans, true
+}
+
+// applyKeepConditions removes fields from sm/pf where a keep condition exists for that field
+// but the entry value does NOT satisfy the condition.
+// Loki's `| keep field=value` keeps the label only for entries where field matches value;
+// non-matching entries have the field stripped. Fields not covered by any condition are
+// unchanged — VL's field projection already handles bare-name keeps.
+func applyKeepConditions(conds []translator.DropCondition, sm, pf map[string]string) {
+	if len(conds) == 0 {
+		return
+	}
+	condByField := make(map[string]translator.DropCondition, len(conds))
+	for _, dc := range conds {
+		condByField[dc.Field] = dc
+	}
+	for field, val := range sm {
+		if dc, ok := condByField[field]; ok && !dc.Matches(val) {
+			delete(sm, field)
+		}
+	}
+	for field, val := range pf {
+		if dc, ok := condByField[field]; ok && !dc.Matches(val) {
+			delete(pf, field)
+		}
+	}
 }
 
 func (p *Proxy) metadataFieldExposuresCached(vlField string, exposureCache map[string][]metadataFieldExposure) []metadataFieldExposure {

@@ -103,11 +103,11 @@ func (p *Proxy) recordPatternFetchDiagnostics(diag patternFetchDiagnostics) {
 func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	if !p.patternsEnabled {
-		p.writeError(w, http.StatusNotFound, "patterns endpoint is disabled")
-		p.metrics.RecordRequest("patterns", http.StatusNotFound, time.Since(start))
+		p.writeJSON(w, emptyMultiTenantResponse("patterns"))
+		p.metrics.RecordRequest("patterns", http.StatusOK, time.Since(start))
 		return
 	}
-	if p.handleMultiTenantFanout(w, r, "patterns", p.handlePatterns) {
+	if p.handleMultiTenantFanout(w, r, "patterns") {
 		return
 	}
 	r = withOrgID(r)
@@ -1340,7 +1340,7 @@ func (p *Proxy) handleTenantLimitsConfig(w http.ResponseWriter, r *http.Request)
 // handleDetectedLabels returns stream-level labels (similar to detected_fields but for stream labels).
 func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	if p.handleMultiTenantFanout(w, r, "detected_labels", p.handleDetectedLabels) {
+	if p.handleMultiTenantFanout(w, r, "detected_labels") {
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")

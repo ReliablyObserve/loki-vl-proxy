@@ -74,7 +74,6 @@ class CheckScorecardTests(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
 
-
     def test_main_fails_when_check_is_below_threshold(self):
         report = self.write_report(
             {

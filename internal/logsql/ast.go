@@ -125,28 +125,28 @@ func (w Wildcard) filterExpr()    {}
 type FieldOp int
 
 const (
-	FieldOpExact     FieldOp = iota // :="val"
-	FieldOpRegexp                   // :~"pat"
-	FieldOpPrefix                   // :prefix*
-	FieldOpSubstring                // :*text*
-	FieldOpEmpty                    // :""
-	FieldOpAny                      // :*
-	FieldOpGT                       // :>val
-	FieldOpGTE                      // :>=val
-	FieldOpLT                       // :<val
-	FieldOpLTE                      // :<=val
-	FieldOpRange                    // :range(min,max)
-	FieldOpIn                       // :in(a,b,c)
-	FieldOpIPv4Range                // :ipv4_range(first, last)  requires v1.45+
-	FieldOpIPv6Range                // :ipv6_range(first, last)
-	FieldOpExactPrefix              // :="prefix"*
-	FieldOpEqField                  // :eq_field(field2)
-	FieldOpLeField                  // :le_field(field2)
-	FieldOpStringRange              // :string_range(lo,hi)
-	FieldOpValueType                // :value_type(type)
-	FieldOpJSONArrayContainsAny     // :json_array_contains_any("v1","v2")
-	FieldOpContainsCommonCase       // :contains_common_case("p1","p2")
-	FieldOpEqualsCommonCase         // :equals_common_case("p1","p2")
+	FieldOpExact                FieldOp = iota // :="val"
+	FieldOpRegexp                              // :~"pat"
+	FieldOpPrefix                              // :prefix*
+	FieldOpSubstring                           // :*text*
+	FieldOpEmpty                               // :""
+	FieldOpAny                                 // :*
+	FieldOpGT                                  // :>val
+	FieldOpGTE                                 // :>=val
+	FieldOpLT                                  // :<val
+	FieldOpLTE                                 // :<=val
+	FieldOpRange                               // :range(min,max)
+	FieldOpIn                                  // :in(a,b,c)
+	FieldOpIPv4Range                           // :ipv4_range(first, last)  requires v1.45+
+	FieldOpIPv6Range                           // :ipv6_range(first, last)
+	FieldOpExactPrefix                         // :="prefix"*
+	FieldOpEqField                             // :eq_field(field2)
+	FieldOpLeField                             // :le_field(field2)
+	FieldOpStringRange                         // :string_range(lo,hi)
+	FieldOpValueType                           // :value_type(type)
+	FieldOpJSONArrayContainsAny                // :json_array_contains_any("v1","v2")
+	FieldOpContainsCommonCase                  // :contains_common_case("p1","p2")
+	FieldOpEqualsCommonCase                    // :equals_common_case("p1","p2")
 )
 
 // FieldFilter matches a named field using the given operator and value.

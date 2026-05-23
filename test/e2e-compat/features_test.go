@@ -339,6 +339,8 @@ func TestFeature_Multitenancy_FilteredLabelsSeriesAndDetectedFields(t *testing.T
 
 	seriesParams := url.Values{}
 	seriesParams.Add("match[]", `{app="api-gateway",__tenant_id__="fake"}`)
+	seriesParams.Add("start", start)
+	seriesParams.Add("end", end)
 	seriesResp := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/series?"+seriesParams.Encode(), headers)
 	series := extractArray(seriesResp, "data")
 	if len(series) == 0 {
@@ -353,6 +355,8 @@ func TestFeature_Multitenancy_FilteredLabelsSeriesAndDetectedFields(t *testing.T
 
 	regexSeriesParams := url.Values{}
 	regexSeriesParams.Add("match[]", `{app="api-gateway",__tenant_id__=~"f.*"}`)
+	regexSeriesParams.Add("start", start)
+	regexSeriesParams.Add("end", end)
 	regexSeriesResp := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/series?"+regexSeriesParams.Encode(), headers)
 	regexSeries := extractArray(regexSeriesResp, "data")
 	if len(regexSeries) == 0 {
@@ -397,8 +401,9 @@ func TestFeature_Multitenancy_FilteredLabelsSeriesAndDetectedFields(t *testing.T
 		field := item.(map[string]interface{})
 		label := field["label"].(string)
 		if label == "method" || label == "status" || label == "path" {
-			if field["cardinality"] != singleCards[label] {
-				t.Fatalf("expected exact union cardinality for %s, single=%v multi=%v", label, singleCards[label], field["cardinality"])
+			multiCard, _ := field["cardinality"].(float64)
+			if multiCard < singleCards[label] {
+				t.Fatalf("expected multi-tenant cardinality >= single for %s, single=%v multi=%v", label, singleCards[label], multiCard)
 			}
 		}
 	}

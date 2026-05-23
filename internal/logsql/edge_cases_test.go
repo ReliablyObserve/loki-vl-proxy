@@ -88,7 +88,7 @@ func TestNestedLogicalExpressions(t *testing.T) {
 		{
 			"triple_and",
 			logsql.AndExpr{
-				Left: logsql.AndExpr{Left: logsql.Word{Value: "a"}, Right: logsql.Word{Value: "b"}},
+				Left:  logsql.AndExpr{Left: logsql.Word{Value: "a"}, Right: logsql.Word{Value: "b"}},
 				Right: logsql.Word{Value: "c"},
 			},
 			"a AND b AND c",
