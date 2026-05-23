@@ -279,11 +279,11 @@ func ingestRichTestData(t *testing.T) {
 		},
 		Lines: []string{
 			`{"event":"job_started","job_id":"job-001","type":"email","recipient":"alice@example.com","priority":"high"}`,
-			`{"event":"job_completed","job_id":"job-001","duration_ms":234,"emails_sent":1,"status":"success"}`,
+			`{"event":"job_completed","job_id":"job-001","duration_ms":234,"emails_sent":1,"job_result":"success"}`,
 			`{"event":"job_started","job_id":"job-002","type":"report","report_id":"rpt-042","priority":"low"}`,
 			`{"event":"job_failed","job_id":"job-002","error":"disk_full","retryable":true,"attempt":2}`,
 			`{"event":"job_started","job_id":"job-003","type":"cleanup","target":"temp_files","files_count":1024}`,
-			`{"event":"job_completed","job_id":"job-003","duration_ms":8901,"files_deleted":987,"status":"success"}`,
+			`{"event":"job_completed","job_id":"job-003","duration_ms":8901,"files_deleted":987,"job_result":"success"}`,
 		},
 	})
 
@@ -302,11 +302,11 @@ func ingestRichTestData(t *testing.T) {
 		},
 		Lines: []string{
 			`{"event":"job_started","job_id":"job-101","type":"email","recipient":"bob@example.com","priority":"high"}`,
-			`{"event":"job_completed","job_id":"job-101","duration_ms":198,"emails_sent":1,"status":"success"}`,
+			`{"event":"job_completed","job_id":"job-101","duration_ms":198,"emails_sent":1,"job_result":"success"}`,
 			`{"event":"job_started","job_id":"job-102","type":"report","report_id":"rpt-043","priority":"low"}`,
 			`{"event":"job_failed","job_id":"job-102","error":"db_timeout","retryable":true,"attempt":1}`,
 			`{"event":"job_started","job_id":"job-103","type":"cleanup","target":"logs","files_count":512}`,
-			`{"event":"job_completed","job_id":"job-103","duration_ms":4521,"files_deleted":498,"status":"success"}`,
+			`{"event":"job_completed","job_id":"job-103","duration_ms":4521,"files_deleted":498,"job_result":"success"}`,
 		},
 	})
 
