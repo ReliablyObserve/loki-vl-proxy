@@ -642,7 +642,7 @@ func (p *parser) parseBareCsFilterValue(field string) (FilterExpr, error) {
 		return FieldFilter{Field: field, Op: FieldOpExact, Value: ident}, nil
 	}
 
-	return nil, fmt.Errorf("logsql: unexpected token %q after %s:", tok.Val, field)
+	return nil, fmt.Errorf("logsql: unexpected token %q after field %q", tok.Val, field)
 }
 
 // parseTimeFilter parses _time:... after `_time` has been consumed.
