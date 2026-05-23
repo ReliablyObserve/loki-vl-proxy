@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.39.0] - 2026-05-23
+
 ### Performance
 
 - **Remove parser-stage guard from metric fast-path**: `rate`, `count_over_time`, `bytes_rate`, and `bytes_over_time` queries with `| json` or `| logfmt` pipeline stages now use VL native `stats_query_range` on tumbling windows (range == step) instead of the slow raw-log-fetch path.
