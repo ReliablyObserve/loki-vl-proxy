@@ -660,7 +660,7 @@ func (p PipeFirst) String() string {
 	var b strings.Builder
 	b.WriteString("| first")
 	if p.N > 0 {
-		b.WriteString(fmt.Sprintf(" %d", p.N))
+		fmt.Fprintf(&b, " %d", p.N)
 	}
 	if len(p.By) > 0 {
 		b.WriteString(" by (" + strings.Join(p.By, ", ") + ")")
@@ -680,7 +680,7 @@ func (p PipeLast) String() string {
 	var b strings.Builder
 	b.WriteString("| last")
 	if p.N > 0 {
-		b.WriteString(fmt.Sprintf(" %d", p.N))
+		fmt.Fprintf(&b, " %d", p.N)
 	}
 	if len(p.By) > 0 {
 		b.WriteString(" by (" + strings.Join(p.By, ", ") + ")")

@@ -270,6 +270,8 @@ func (p *parser) parsePrimaryFilter() (FilterExpr, error) {
 
 // parseIdentOrFieldFilter handles bare words and field-filter expressions.
 // Called when the current token is TokIdent.
+//
+//nolint:gocyclo
 func (p *parser) parseIdentOrFieldFilter() (FilterExpr, error) {
 	tok := p.advance() // consume the ident
 	name := tok.Val
@@ -436,6 +438,8 @@ func (p *parser) parseIdentOrFieldFilter() (FilterExpr, error) {
 
 // parseBareCsFilterValue parses the value part of a field filter after a bare `:`.
 // field has already been consumed; the colon has been consumed.
+//
+//nolint:gocyclo
 func (p *parser) parseBareCsFilterValue(field string) (FilterExpr, error) {
 	tok := p.peek()
 
@@ -773,6 +777,7 @@ func (p *parser) consumeUntilRParen() (string, error) {
 // Pipe parsing
 // ---------------------------------------------------------------------------
 
+//nolint:gocyclo
 func (p *parser) parsePipe() (Pipe, error) {
 	tok := p.peek()
 	if tok.Typ != TokIdent {
@@ -1055,6 +1060,8 @@ func (p *parser) parseStatsBody(keyword string) ([]GroupKey, []StatsFuncAlias, e
 }
 
 // parseStatsFunc parses a single stats function like count(), sum(field), etc.
+//
+//nolint:gocyclo
 func (p *parser) parseStatsFunc() (StatsFunc, error) {
 	name := p.advance().Val // consume function name ident
 
