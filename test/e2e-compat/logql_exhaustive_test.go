@@ -695,6 +695,16 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		// ── vector arithmetic with scalar ──
 		{"rate_times_scalar", `rate({app="api-gateway",env="production"}[5m]) * 1000`, "binary_metric"},
 		{"rate_minus_scalar", `rate({app="api-gateway",env="production"}[5m]) - 0`, "binary_metric"},
+
+		// ── Backtick-quoted label matchers (fix: parseLabelMatcher now accepts TokRawString) ──
+		// Grafana Logs Drilldown sends queries with backtick-quoted label values.
+		// These are valid LogQL raw strings and must be accepted identically to double-quoted values.
+		{"backtick_exact_matcher", "{app=`api-gateway`,env=`production`}", "backtick_selector"},
+		{"backtick_regex_matcher", "{app=~`api-.*`,env=`production`}", "backtick_selector"},
+		{"backtick_ne_matcher", "{app=`api-gateway`,level!=`debug`}", "backtick_selector"},
+		{"backtick_log_pipeline", "{app=`api-gateway`,env=`production`} | json | method=`GET`", "backtick_selector"},
+		{"backtick_line_format", "{app=`api-gateway`,env=`production`} | json | line_format `method={{.method}} status={{.status}}`", "backtick_selector"},
+		{"backtick_metric", "count_over_time({app=`api-gateway`,env=`production`}[5m])", "backtick_selector"},
 	}
 
 	score := &exhaustiveScore{}

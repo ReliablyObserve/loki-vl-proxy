@@ -111,7 +111,7 @@ jobs:
         run: go test ./internal/proxy -run '^$' -fuzz=FuzzSubqueryAggregate -fuzztime=12s
 
       - name: Fuzz smoke (series key from metric)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzSeriesKeyFromMetric -fuzztime=12s
+        run: go test ./internal/proxy -run '^$' -fuzz=FuzzSeriesKeyFromMetric -fuzztime=20s -timeout=60s
 
       - name: Fuzz smoke (parse value to float)
         run: go test ./internal/proxy -run '^$' -fuzz=FuzzParseValueToFloat -fuzztime=12s
