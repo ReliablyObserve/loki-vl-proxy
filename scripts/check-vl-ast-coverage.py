@@ -22,7 +22,7 @@ import urllib.error
 from pathlib import Path
 
 VL_API_URL = (
-    "https://api.github.com/repos/VictoriaMetrics/VictoriaMetrics"
+    "https://api.github.com/repos/VictoriaMetrics/VictoriaLogs"
     "/contents/lib/logstorage"
 )
 REGISTRY_PATH = Path(__file__).parent.parent / "docs" / "vl-ast-coverage.json"
@@ -35,8 +35,16 @@ CATEGORY_PATTERNS = {
 
 # Upstream file stems we intentionally ignore (internals, not user-facing constructs).
 IGNORED = {
-    "pipes":   {"local", "topk"},          # pipe_*_local, pipe_sort_topk are internal variants
-    "stats":   set(),
+    "pipes": {
+        "local",             # pipe_local.go (generic internal base)
+        "sort_topk",         # pipe_sort_topk.go (internal sort variant)
+        "block_stats",       # pipe_block_stats.go (internal block-level stats)
+        "blocks_count",      # pipe_blocks_count.go (internal block counting)
+        "field_values_local",  # pipe_field_values_local.go (local shard variant)
+        "query_stats_local",   # pipe_query_stats_local.go (local shard variant)
+        "uniq_local",          # pipe_uniq_local.go (local shard variant)
+    },
+    "stats":   {"stdvar"},   # stats_stdvar.go: stddev²; not in VL upstream as separate func
     "filters": {"generic", "noop", "stream_id"},  # internal/structural nodes
 }
 

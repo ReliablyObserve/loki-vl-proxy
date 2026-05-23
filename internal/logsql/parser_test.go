@@ -115,3 +115,94 @@ func TestParseStatsFuncs(t *testing.T) {
 		})
 	}
 }
+
+func TestParseNewPipes(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		// top
+		{`* | top 10 by (host)`, `* | top 10 by (host)`},
+		{`* | top 5 by (app, env)`, `* | top 5 by (app, env)`},
+		// first / last
+		{`* | first 3`, `* | first 3`},
+		{`* | first 1 by (host)`, `* | first 1 by (host)`},
+		{`* | last 5`, `* | last 5`},
+		{`* | last 2 by (app, level)`, `* | last 2 by (app, level)`},
+		// sample / offset
+		{`* | sample 100`, `* | sample 100`},
+		{`* | offset 50`, `* | offset 50`},
+		// uniq
+		{`* | uniq`, `* | uniq`},
+		{`* | uniq by (app, level)`, `* | uniq by (app, level)`},
+		// field_names / drop_empty_fields
+		{`* | field_names`, `* | field_names`},
+		{`* | drop_empty_fields`, `* | drop_empty_fields`},
+		// copy
+		{`* | copy host as node`, `* | copy host as node`},
+		{`* | copy host as node, level as sev`, `* | copy host as node, level as sev`},
+		// chained with existing pipes
+		{`error | top 5 by (host) | limit 10`, `error | top 5 by (host) | limit 10`},
+		{`* | sample 200 | offset 10`, `* | sample 200 | offset 10`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			q, err := logsql.Parse(tc.input)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tc.input, err)
+			}
+			if got := q.String(); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseNewStatsFuncs(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{`* | stats row_min(latency, _msg, host) as row`, `* | stats row_min(latency, _msg, host) as row`},
+		{`* | stats json_values_sorted(level) as jv`, `* | stats json_values_sorted(level) as jv`},
+		{`* | stats json_values_topk(status, 5) as jt`, `* | stats json_values_topk(status, 5) as jt`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			q, err := logsql.Parse(tc.input)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tc.input, err)
+			}
+			if got := q.String(); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseIPv6Range(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{
+			`ip:ipv6_range(2001:db8::1,2001:db8::ff)`,
+			`ip:ipv6_range(2001:db8::1,2001:db8::ff)`,
+		},
+		{
+			`client:ipv4_range(192.168.0.1,192.168.0.255)`,
+			`client:ipv4_range(192.168.0.1,192.168.0.255)`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			f, err := logsql.ParseFilter(tc.input)
+			if err != nil {
+				t.Fatalf("ParseFilter(%q): %v", tc.input, err)
+			}
+			if got := f.String(); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

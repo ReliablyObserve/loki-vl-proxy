@@ -77,6 +77,9 @@ func TestVLCompatFilterNodes(t *testing.T) {
 		// Stream and time
 		`{app="nginx", env="prod"}`,
 		`_time:5m`,
+		// Field filter — range operators
+		`ip:ipv4_range(192.168.0.1,192.168.0.255)`,
+		`ip:ipv6_range(::1,::ffff)`,
 		// Logical
 		`error AND app:="nginx"`,
 		`error OR warn`,
@@ -127,6 +130,17 @@ func TestVLCompatPipeStages(t *testing.T) {
 				{Func: logsql.Max{Field: "latency"}, Alias: "p_max"},
 			},
 		},
+		// New pipe stages added for VL upstream parity
+		logsql.PipeTop{N: 10, By: []string{"host"}},
+		logsql.PipeFirst{N: 5},
+		logsql.PipeLast{N: 5, By: []string{"app"}},
+		logsql.PipeSample{N: 100},
+		logsql.PipeOffset{N: 50},
+		logsql.PipeUniq{By: []string{"app", "level"}},
+		logsql.PipeUniq{},
+		logsql.PipeFieldNames{},
+		logsql.PipeDropEmptyFields{},
+		logsql.PipeCopy{Pairs: [][2]string{{"host", "node"}}},
 	}
 
 	checked := false
@@ -180,6 +194,10 @@ func TestVLCompatStatsFunctions(t *testing.T) {
 		logsql.First{Field: "_msg"},
 		logsql.RowAny{Fields: []string{"_msg", "level"}},
 		logsql.RowMax{By: "latency", Fields: []string{"_msg", "status"}},
+		// New stats functions for VL upstream parity
+		logsql.RowMin{By: "latency", Fields: []string{"_msg", "status"}},
+		logsql.JSONValuesSorted{Field: "level"},
+		logsql.JSONValuesTopK{Field: "status", Limit: 5},
 	}
 
 	checked := false

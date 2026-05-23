@@ -399,6 +399,28 @@ func (p *parser) parseBareCsFilterValue(field string) (FilterExpr, error) {
 				return nil, err
 			}
 			return FieldFilter{Field: field, Op: FieldOpIn, Value: val}, nil
+
+		case "ipv4_range":
+			// field:ipv4_range(first,last)
+			if _, err := p.expect(TokLParen); err != nil {
+				return nil, err
+			}
+			val, err := p.consumeUntilRParen()
+			if err != nil {
+				return nil, err
+			}
+			return FieldFilter{Field: field, Op: FieldOpIPv4Range, Value: val}, nil
+
+		case "ipv6_range":
+			// field:ipv6_range(first,last)
+			if _, err := p.expect(TokLParen); err != nil {
+				return nil, err
+			}
+			val, err := p.consumeUntilRParen()
+			if err != nil {
+				return nil, err
+			}
+			return FieldFilter{Field: field, Op: FieldOpIPv6Range, Value: val}, nil
 		}
 
 		// Check if followed by * → Prefix field filter
@@ -557,6 +579,32 @@ func (p *parser) parsePipe() (Pipe, error) {
 		return p.parsePipeStats()
 	case "math":
 		return p.parsePipeMath()
+	case "top":
+		return p.parsePipeTopN()
+	case "first":
+		return p.parsePipeFirstLast(false)
+	case "last":
+		return p.parsePipeFirstLast(true)
+	case "sample":
+		n, err := p.parseInt()
+		if err != nil {
+			return nil, fmt.Errorf("logsql: pipe sample: %w", err)
+		}
+		return PipeSample{N: n}, nil
+	case "offset":
+		n, err := p.parseInt()
+		if err != nil {
+			return nil, fmt.Errorf("logsql: pipe offset: %w", err)
+		}
+		return PipeOffset{N: n}, nil
+	case "uniq":
+		return p.parsePipeUniq()
+	case "field_names":
+		return PipeFieldNames{}, nil
+	case "drop_empty_fields":
+		return PipeDropEmptyFields{}, nil
+	case "copy":
+		return p.parsePipeCopy()
 	default:
 		return nil, fmt.Errorf("logsql: unknown pipe %q", name)
 	}
@@ -729,9 +777,9 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 		}
 		return RowAny{Fields: fields}, nil
 	}
-	if name == "row_max" {
+	if name == "row_max" || name == "row_min" {
 		if p.peek().Typ != TokLParen {
-			return nil, fmt.Errorf("logsql: expected ( after row_max")
+			return nil, fmt.Errorf("logsql: expected ( after %s", name)
 		}
 		p.advance() // consume (
 		by := p.advance().Val
@@ -747,6 +795,9 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 		}
 		if p.peek().Typ == TokRParen {
 			p.advance()
+		}
+		if name == "row_min" {
+			return RowMin{By: by, Fields: fields}, nil
 		}
 		return RowMax{By: by, Fields: fields}, nil
 	}
@@ -767,6 +818,24 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
 		}
 		return Quantile{Phi: phi, Field: field}, nil
+	}
+
+	// json_values_topk takes (field, limit).
+	if name == "json_values_topk" {
+		if _, err := p.expect(TokLParen); err != nil {
+			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
+		}
+		fieldTok := p.advance()
+		field := fieldTok.Val
+		if p.peek().Typ == TokComma {
+			p.advance()
+		}
+		limitTok := p.advance()
+		limit, _ := strconv.Atoi(limitTok.Val)
+		if _, err := p.expect(TokRParen); err != nil {
+			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
+		}
+		return JSONValuesTopK{Field: field, Limit: limit}, nil
 	}
 
 	// uniq_values and values take (field, limit).
@@ -835,6 +904,8 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 		return FieldMin{Field: field}, nil
 	case "json_values":
 		return JSONValues{Field: field}, nil
+	case "json_values_sorted":
+		return JSONValuesSorted{Field: field}, nil
 	case "any":
 		return Any{Field: field}, nil
 	case "count_empty":
@@ -854,6 +925,104 @@ func (p *parser) parseStatsFunc() (StatsFunc, error) {
 	default:
 		return nil, fmt.Errorf("logsql: unknown stats function %q", name)
 	}
+}
+
+// parsePipeTopN parses: top N [by (f1, f2)]
+func (p *parser) parsePipeTopN() (Pipe, error) {
+	n, err := p.parseInt()
+	if err != nil {
+		return nil, fmt.Errorf("logsql: pipe top: %w", err)
+	}
+	by, err := p.parseOptionalByClause()
+	if err != nil {
+		return nil, fmt.Errorf("logsql: pipe top: %w", err)
+	}
+	return PipeTop{N: n, By: by}, nil
+}
+
+// parsePipeFirstLast parses: first|last [N] [by (f1, f2)]
+// isLast=true produces PipeLast; false produces PipeFirst.
+func (p *parser) parsePipeFirstLast(isLast bool) (Pipe, error) {
+	n := 0
+	if p.peek().Typ == TokIdent {
+		if v, err := strconv.Atoi(p.peek().Val); err == nil {
+			p.advance()
+			n = v
+		}
+	}
+	by, err := p.parseOptionalByClause()
+	if err != nil {
+		return nil, fmt.Errorf("logsql: pipe first/last: %w", err)
+	}
+	if isLast {
+		return PipeLast{N: n, By: by}, nil
+	}
+	return PipeFirst{N: n, By: by}, nil
+}
+
+// parsePipeUniq parses: uniq [by (f1, f2)]
+func (p *parser) parsePipeUniq() (Pipe, error) {
+	by, err := p.parseOptionalByClause()
+	if err != nil {
+		return nil, fmt.Errorf("logsql: pipe uniq: %w", err)
+	}
+	return PipeUniq{By: by}, nil
+}
+
+// parsePipeCopy parses: copy src1 as dst1 [, src2 as dst2 ...]
+func (p *parser) parsePipeCopy() (Pipe, error) {
+	var pairs [][2]string
+	for {
+		tok := p.peek()
+		if tok.Typ == TokEOF || tok.Typ == TokPipe {
+			break
+		}
+		src, err := p.expectIdent()
+		if err != nil {
+			return nil, fmt.Errorf("logsql: pipe copy: %w", err)
+		}
+		asTok := p.advance()
+		if asTok.Typ != TokIdent || asTok.Val != "as" {
+			return nil, fmt.Errorf("logsql: pipe copy: expected 'as' after %q, got %q", src, asTok.Val)
+		}
+		dst, err := p.expectIdent()
+		if err != nil {
+			return nil, fmt.Errorf("logsql: pipe copy: %w", err)
+		}
+		pairs = append(pairs, [2]string{src, dst})
+		if p.peek().Typ == TokComma {
+			p.advance()
+		} else {
+			break
+		}
+	}
+	return PipeCopy{Pairs: pairs}, nil
+}
+
+// parseOptionalByClause parses an optional "by (f1, f2)" clause and returns the field list.
+func (p *parser) parseOptionalByClause() ([]string, error) {
+	if p.peek().Typ != TokIdent || p.peek().Val != "by" {
+		return nil, nil
+	}
+	p.advance() // consume "by"
+	if _, err := p.expect(TokLParen); err != nil {
+		return nil, err
+	}
+	var fields []string
+	for p.peek().Typ != TokRParen && p.peek().Typ != TokEOF {
+		ident, err := p.expectIdent()
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, ident)
+		if p.peek().Typ == TokComma {
+			p.advance()
+		}
+	}
+	if _, err := p.expect(TokRParen); err != nil {
+		return nil, err
+	}
+	return fields, nil
 }
 
 // parsePipeMath parses: math alias:=expr

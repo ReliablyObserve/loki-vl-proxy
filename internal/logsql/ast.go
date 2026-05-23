@@ -138,6 +138,7 @@ const (
 	FieldOpRange                    // :range(min,max)
 	FieldOpIn                       // :in(a,b,c)
 	FieldOpIPv4Range                // :ipv4_range(first, last)  requires v1.45+
+	FieldOpIPv6Range                // :ipv6_range(first, last)
 )
 
 // FieldFilter matches a named field using the given operator and value.
@@ -177,6 +178,8 @@ func (f FieldFilter) String() string {
 		core = f.Field + ":in(" + f.Value + ")"
 	case FieldOpIPv4Range:
 		core = fmt.Sprintf(`%s:ipv4_range(%s)`, f.Field, f.Value)
+	case FieldOpIPv6Range:
+		core = fmt.Sprintf(`%s:ipv6_range(%s)`, f.Field, f.Value)
 	default:
 		panic(fmt.Sprintf("logsql: unknown FieldOp %d", f.Op))
 	}
@@ -516,6 +519,115 @@ func (p PipeSort) String() string {
 }
 func (p PipeSort) pipe() {}
 
+// PipeTop aggregates top N entries grouped by the given fields.
+// Syntax: | top N by (f1, f2)
+type PipeTop struct {
+	N  int
+	By []string
+}
+
+func (p PipeTop) String() string {
+	s := fmt.Sprintf("| top %d", p.N)
+	if len(p.By) > 0 {
+		s += " by (" + strings.Join(p.By, ", ") + ")"
+	}
+	return s
+}
+func (p PipeTop) pipe() {}
+
+// PipeFirst returns the first N log entries, optionally grouped by fields.
+// Syntax: | first [N] [by (f1, f2)]
+type PipeFirst struct {
+	N  int      // 0 = default (1)
+	By []string // empty = no grouping
+}
+
+func (p PipeFirst) String() string {
+	var b strings.Builder
+	b.WriteString("| first")
+	if p.N > 0 {
+		b.WriteString(fmt.Sprintf(" %d", p.N))
+	}
+	if len(p.By) > 0 {
+		b.WriteString(" by (" + strings.Join(p.By, ", ") + ")")
+	}
+	return b.String()
+}
+func (p PipeFirst) pipe() {}
+
+// PipeLast returns the last N log entries, optionally grouped by fields.
+// Syntax: | last [N] [by (f1, f2)]
+type PipeLast struct {
+	N  int      // 0 = default (1)
+	By []string // empty = no grouping
+}
+
+func (p PipeLast) String() string {
+	var b strings.Builder
+	b.WriteString("| last")
+	if p.N > 0 {
+		b.WriteString(fmt.Sprintf(" %d", p.N))
+	}
+	if len(p.By) > 0 {
+		b.WriteString(" by (" + strings.Join(p.By, ", ") + ")")
+	}
+	return b.String()
+}
+func (p PipeLast) pipe() {}
+
+// PipeSample returns a random sample of N log entries.
+// Syntax: | sample N
+type PipeSample struct{ N int }
+
+func (p PipeSample) String() string { return fmt.Sprintf("| sample %d", p.N) }
+func (p PipeSample) pipe()          {}
+
+// PipeOffset skips the first N log entries.
+// Syntax: | offset N
+type PipeOffset struct{ N int }
+
+func (p PipeOffset) String() string { return fmt.Sprintf("| offset %d", p.N) }
+func (p PipeOffset) pipe()          {}
+
+// PipeUniq returns unique rows, optionally considering only given fields.
+// Syntax: | uniq [by (f1, f2)]
+type PipeUniq struct{ By []string }
+
+func (p PipeUniq) String() string {
+	if len(p.By) == 0 {
+		return "| uniq"
+	}
+	return "| uniq by (" + strings.Join(p.By, ", ") + ")"
+}
+func (p PipeUniq) pipe() {}
+
+// PipeFieldNames returns the names of all fields present in the matching log entries.
+// Syntax: | field_names
+type PipeFieldNames struct{}
+
+func (p PipeFieldNames) String() string { return "| field_names" }
+func (p PipeFieldNames) pipe()          {}
+
+// PipeDropEmptyFields removes fields with empty values from each log entry.
+// Syntax: | drop_empty_fields
+type PipeDropEmptyFields struct{}
+
+func (p PipeDropEmptyFields) String() string { return "| drop_empty_fields" }
+func (p PipeDropEmptyFields) pipe()          {}
+
+// PipeCopy duplicates fields under new names.
+// Syntax: | copy src1 as dst1, src2 as dst2
+type PipeCopy struct{ Pairs [][2]string }
+
+func (p PipeCopy) String() string {
+	parts := make([]string, len(p.Pairs))
+	for i, pair := range p.Pairs {
+		parts[i] = pair[0] + " as " + pair[1]
+	}
+	return "| copy " + strings.Join(parts, ", ")
+}
+func (p PipeCopy) pipe() {}
+
 // --- Stats functions (26 total) ---
 
 // Count counts the number of log entries.
@@ -688,3 +800,32 @@ func (r RowMax) String() string {
 	return "row_max(" + strings.Join(all, ", ") + ")"
 }
 func (r RowMax) statsFunc() {}
+
+// RowMin returns the log entry with the minimum value of By, including the listed fields.
+type RowMin struct {
+	By     string
+	Fields []string
+}
+
+func (r RowMin) String() string {
+	all := append([]string{r.By}, r.Fields...)
+	return "row_min(" + strings.Join(all, ", ") + ")"
+}
+func (r RowMin) statsFunc() {}
+
+// JSONValuesSorted collects field values as a sorted JSON array.
+type JSONValuesSorted struct{ Field string }
+
+func (j JSONValuesSorted) String() string { return "json_values_sorted(" + j.Field + ")" }
+func (j JSONValuesSorted) statsFunc()     {}
+
+// JSONValuesTopK collects the top K most frequent field values as a JSON array.
+type JSONValuesTopK struct {
+	Field string
+	Limit int
+}
+
+func (j JSONValuesTopK) String() string {
+	return fmt.Sprintf("json_values_topk(%s, %d)", j.Field, j.Limit)
+}
+func (j JSONValuesTopK) statsFunc() {}
