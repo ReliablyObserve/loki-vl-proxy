@@ -106,3 +106,114 @@ func TestQueryNilFilter(t *testing.T) {
 		t.Errorf("got %q, want %q", got, want)
 	}
 }
+
+func TestPipeString(t *testing.T) {
+	tests := []struct {
+		name string
+		pipe logsql.Pipe
+		want string
+	}{
+		{"unpack_json", logsql.PipeUnpackJSON{}, "| unpack_json"},
+		{"unpack_logfmt", logsql.PipeUnpackLogfmt{}, "| unpack_logfmt"},
+		{"extract", logsql.PipeExtract{Pattern: "<_> <level>", From: "_msg"}, `| extract "<_> <level>" from _msg`},
+		{"extract_if", logsql.PipeExtract{Pattern: "<level>", From: "_msg", If: `level:*`}, `| extract "<level>" from _msg if (level:*)`},
+		{"extract_regexp", logsql.PipeExtractRegexp{Pattern: `(?P<level>\w+)`, From: "_msg"}, "| extract_regexp `(?P<level>\\w+)` from _msg"},
+		{"filter", logsql.PipeFilter{Expr: logsql.FieldFilter{Field: "status", Op: logsql.FieldOpGTE, Value: "500"}}, "| filter status:>=500"},
+		{"fields", logsql.PipeFields{Labels: []string{"level", "status"}}, "| fields level, status"},
+		{"delete", logsql.PipeDelete{Labels: []string{"debug", "trace"}}, "| delete debug, trace"},
+		{"format", logsql.PipeFormat{Template: "<level> <status>", ResultField: "_msg"}, `| format "<level> <status>" as _msg`},
+		{"rename", logsql.PipeRename{Pairs: [][2]string{{"old", "new"}}}, "| rename old as new"},
+		{"rename_multi", logsql.PipeRename{Pairs: [][2]string{{"a", "b"}, {"c", "d"}}}, "| rename a as b, c as d"},
+		{"replace", logsql.PipeReplace{Field: "level", Old: "warn", New: "warning"}, `| replace (level, "warn", "warning")`},
+		{"replace_regexp", logsql.PipeReplaceRegexp{Field: "url", Regex: `https?://`, Replacement: ""}, "| replace_regexp (url, `https?://`, \"\")"},
+		{"pack_json", logsql.PipePackJSON{Fields: []string{"a", "b"}, ResultField: "packed"}, "| pack_json fields (a, b) as packed"},
+		{"pack_logfmt", logsql.PipePackLogfmt{Fields: []string{"a", "b"}, ResultField: "packed"}, "| pack_logfmt fields (a, b) as packed"},
+		{"limit", logsql.PipeLimit{N: 100}, "| limit 100"},
+		{
+			"sort_desc_limit",
+			logsql.PipeSort{By: []logsql.SortField{{Field: "count", Desc: true}}, Limit: 10},
+			"| sort by (count desc) limit 10",
+		},
+		{
+			"sort_asc_nolimit",
+			logsql.PipeSort{By: []logsql.SortField{{Field: "ts", Desc: false}}},
+			"| sort by (ts)",
+		},
+		{"math", logsql.PipeMath{Expr: "rate/total*100", Alias: "pct"}, "| math pct:=rate/total*100"},
+		{
+			"stats_count",
+			logsql.PipeStats{
+				By:    []logsql.GroupKey{{Field: "host"}},
+				Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: "cnt"}},
+			},
+			"| stats by (host) count() as cnt",
+		},
+		{
+			"stats_multi",
+			logsql.PipeStats{
+				By: []logsql.GroupKey{{Field: "app"}, {Field: "env"}},
+				Funcs: []logsql.StatsFuncAlias{
+					{Func: logsql.Sum{Field: "bytes"}, Alias: "total"},
+					{Func: logsql.Max{Field: "latency"}, Alias: "max_lat"},
+				},
+			},
+			"| stats by (app, env) sum(bytes) as total, max(latency) as max_lat",
+		},
+		{
+			"stats_no_by",
+			logsql.PipeStats{
+				Funcs: []logsql.StatsFuncAlias{{Func: logsql.Count{}, Alias: "total"}},
+			},
+			"| stats count() as total",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.pipe.String(); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStatsFuncString(t *testing.T) {
+	tests := []struct {
+		name string
+		fn   logsql.StatsFunc
+		want string
+	}{
+		{"count", logsql.Count{}, "count()"},
+		{"sum", logsql.Sum{Field: "bytes"}, "sum(bytes)"},
+		{"min", logsql.Min{Field: "latency"}, "min(latency)"},
+		{"max", logsql.Max{Field: "latency"}, "max(latency)"},
+		{"avg", logsql.Avg{Field: "latency"}, "avg(latency)"},
+		{"median", logsql.Median{Field: "latency"}, "median(latency)"},
+		{"quantile", logsql.Quantile{Phi: 0.99, Field: "latency"}, "quantile(0.99, latency)"},
+		{"stddev", logsql.Stddev{Field: "latency"}, "stddev(latency)"},
+		{"stdvar", logsql.Stdvar{Field: "latency"}, "stdvar(latency)"},
+		{"rate", logsql.Rate{}, "rate()"},
+		{"rate_sum", logsql.RateSum{Field: "bytes"}, "rate_sum(bytes)"},
+		{"count_uniq", logsql.CountUniq{Field: "user_id"}, "count_uniq(user_id)"},
+		{"count_uniq_hash", logsql.CountUniqHash{Field: "user_id"}, "count_uniq_hash(user_id)"},
+		{"uniq_values", logsql.UniqValues{Field: "user_id", Limit: 100}, "uniq_values(user_id, 100)"},
+		{"field_max", logsql.FieldMax{Field: "latency"}, "field_max(latency)"},
+		{"field_min", logsql.FieldMin{Field: "latency"}, "field_min(latency)"},
+		{"json_values", logsql.JSONValues{Field: "data"}, "json_values(data)"},
+		{"any", logsql.Any{Field: "user_id"}, "any(user_id)"},
+		{"count_empty", logsql.CountEmpty{Field: "level"}, "count_empty(level)"},
+		{"sum_len", logsql.SumLen{Field: "_msg"}, "sum_len(_msg)"},
+		{"values", logsql.Values{Field: "status", Limit: 10}, "values(status, 10)"},
+		{"histogram", logsql.Histogram{Field: "latency"}, "histogram(latency)"},
+		{"last", logsql.Last{Field: "_msg"}, "last(_msg)"},
+		{"first", logsql.First{Field: "_msg"}, "first(_msg)"},
+		{"row_any", logsql.RowAny{Fields: []string{"_msg", "level"}}, "row_any(_msg, level)"},
+		{"row_max", logsql.RowMax{By: "latency", Fields: []string{"_msg", "status"}}, "row_max(latency, _msg, status)"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.fn.String(); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
