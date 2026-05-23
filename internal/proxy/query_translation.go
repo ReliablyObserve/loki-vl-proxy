@@ -1076,7 +1076,7 @@ func (p *Proxy) fetchBareParserUnwrapViaStats(
 			}
 			valStr := string(arr[1].GetStringBytes())
 			val, valErr := strconv.ParseFloat(valStr, 64)
-			if valErr != nil {
+			if valErr != nil || math.IsNaN(val) || math.IsInf(val, 0) {
 				continue
 			}
 			samples = append(samples, rangeMetricSample{ts: tsUnix * int64(time.Second), value: val})
