@@ -1,0 +1,28 @@
+name: VL AST Coverage Check
+
+on:
+  schedule:
+    # Every Monday at 08:00 UTC
+    - cron: "0 8 * * 1"
+  pull_request:
+    paths:
+      - "internal/logsql/**"
+      - "docs/vl-ast-coverage.json"
+      - "scripts/check-vl-ast-coverage.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-coverage:
+    name: Check VL upstream AST coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run VL AST coverage check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/check-vl-ast-coverage.py --token "$GITHUB_TOKEN"
