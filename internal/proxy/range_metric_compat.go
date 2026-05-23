@@ -422,14 +422,19 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	// Instant queries with parser stages and explicit drop-error: use native VL stats.
 	// VL correctly evaluates [time-range, time] for instant queries; the drop-error opt-in
 	// means parse-failed lines are intentionally excluded — count-all semantics are acceptable.
-	// This matches the same fast-path gate in handleStatsCompatRange for tumbling windows.
 	if queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
 		return false
 	}
 	// Instant queries have no step: the range window is the entire lookback interval,
 	// not a sliding window. VL native stats correctly evaluates [time-range, time].
 	// Only rate_counter still requires the manual path (counter-reset semantics).
-	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, true) {
+	// Exception: parser-stage queries without explicit drop-error still use the manual path
+	// so that bare outer aggregations (sum without by()) correctly collapse all streams into
+	// one series via ByExplicit=true. Native VL stats returns per-stream series for such
+	// queries; the manual path aggregates them into the expected single series.
+	if queryUsesParserStages(spec.BaseQuery) {
+		// Parser+no-drop-error → always manual for correct stream-collapse semantics.
+	} else if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, true) {
 		return false
 	}
 	if !hasOrigSpec || origSpec.Window <= 0 {
@@ -492,16 +497,6 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 	// natively supports inline filter pipelines and parser stages.
 	switch manualFunc {
 	case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
-		// Parser stages require the slow log-fetch path: Loki excludes parse-failed lines
-		// from metric aggregation while VL native stats counts all lines. The drop-error
-		// opt-in check (hasDropErrorOnlyPostParserStage) only works on LogQL syntax; the
-		// baseQuery here is VL-translated syntax (| unpack_json etc.), so we conservatively
-		// route all parser-stage queries to the manual path. Bare parser metric queries
-		// (proxyBareParserMetricQueryRange) handle the drop-error fast path for the
-		// ungrouped case where the original LogQL is available.
-		if queryUsesParserStages(baseQuery) {
-			return true
-		}
 		return !rangeEqualsStep
 	}
 
@@ -558,9 +553,10 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	case "__bytes__":
 		statsAggFunc = "sum_len(_msg) as c"
 	}
-	// Mirror the parser-stage guard from shouldUseManualRangeMetricCompat: if the query
-	// uses parser stages, skip the stats_query_range fast path to preserve Loki's
-	// parse-error exclusion semantics (Loki excludes parse-failed lines; VL counts all).
+	// Sliding-window parser-stage queries (range > step) reach this path via
+	// shouldUseManualRangeMetricCompat returning true. Skip the stats_query_range
+	// fast path for them: VL's tumbling-bucket stats would diverge from LogQL's
+	// sliding-window semantics when combined with | json / | logfmt exclusion.
 	if statsAggFunc != "" && !queryUsesParserStages(spec.BaseQuery) {
 		hasStreamSentinel := false
 		for _, g := range spec.GroupBy {

@@ -107,10 +107,10 @@ func TestParseOriginalRangeMetricSpecRate(t *testing.T) {
 
 func TestShouldUseManualRangeMetricCompat_ParserStageRate(t *testing.T) {
 	// shouldUseManualRangeMetricCompat receives the VL-translated base query (| unpack_json
-	// etc.), not the original LogQL. hasDropErrorOnlyPostParserStage requires LogQL syntax,
-	// so the drop-error fast-path cannot be checked here. All parser-stage queries go to
-	// the slow path at this level; the drop-error fast path for bare (ungrouped) parser
-	// metrics is handled separately in proxyBareParserMetricQueryRange.
+	// etc.), not the original LogQL. After removing the parser-stage guard, tumbling-window
+	// parser-stage queries (range==step) use the VL native stats_query_range fast path.
+	// Sliding-window parser-stage queries (range>step) remain on the manual path.
+	// Error-exclusion semantics are checked upstream at the call site before this function.
 	// Base query uses VL-translated syntax (| unpack_json, not | json).
 	parserBaseQuery := `{app="api-gateway"} | unpack_json | status >= 400`
 	plainBaseQuery := `{app="api-gateway"}`
@@ -122,34 +122,34 @@ func TestShouldUseManualRangeMetricCompat_ParserStageRate(t *testing.T) {
 		rangeEqualsStep bool
 		wantManual      bool // true = slow path, false = fast path
 	}{
-		// Parser stages + tumbling window: SLOW PATH (preserve __error__ semantics).
+		// Parser stages + tumbling window: FAST PATH (guard removed).
 		{
 			name:            "rate_parser_tumbling_slow",
 			baseQuery:       parserBaseQuery,
 			manualFunc:      "rate",
 			rangeEqualsStep: true,
-			wantManual:      true,
+			wantManual:      false,
 		},
 		{
 			name:            "count_over_time_parser_tumbling_slow",
 			baseQuery:       parserBaseQuery,
 			manualFunc:      "count_over_time",
 			rangeEqualsStep: true,
-			wantManual:      true,
+			wantManual:      false,
 		},
 		{
 			name:            "bytes_rate_parser_tumbling_slow",
 			baseQuery:       parserBaseQuery,
 			manualFunc:      "bytes_rate",
 			rangeEqualsStep: true,
-			wantManual:      true,
+			wantManual:      false,
 		},
 		{
 			name:            "bytes_over_time_parser_tumbling_slow",
 			baseQuery:       parserBaseQuery,
 			manualFunc:      "bytes_over_time",
 			rangeEqualsStep: true,
-			wantManual:      true,
+			wantManual:      false,
 		},
 		// Parser stages + sliding window: SLOW PATH preserved.
 		{
@@ -205,11 +205,11 @@ func TestShouldUseManualRangeMetricCompat_ParserStageRate(t *testing.T) {
 
 func TestQueryRange_RateParserStageTumblingUsesSlowPath(t *testing.T) {
 	// sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m])) with step=5m
-	// (range == step, tumbling window) WITHOUT "| drop __error__" must NOT route to VL
-	// stats_query_range: Loki excludes parse-failed lines; VL stats counts all lines.
-	// The slow log-fetch path preserves Loki's error-exclusion semantics.
+	// (range == step, tumbling window) — after removing the parser-stage guard this now
+	// routes to VL stats_query_range (fast path). The test name is kept for history but
+	// the expectation is updated: fast path is now correct for tumbling-window parser queries.
 	base := time.Unix(1700000000, 0).UTC()
-	var slowPathCalled bool
+	var statsCalled bool
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -217,17 +217,15 @@ func TestQueryRange_RateParserStageTumblingUsesSlowPath(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/select/logsql/query":
-			slowPathCalled = true
+			// slow path must NOT be called for tumbling-window parser-stage rate after guard removal.
+			if r.Form.Get("limit") == "1000000" {
+				t.Error("unexpected slow-path /select/logsql/query call for parser-stage tumbling rate (guard removed)")
+			}
 			w.Header().Set("Content-Type", "application/x-ndjson")
-			_, _ = fmt.Fprintf(w,
-				`{"_time":%q,"_msg":"ok","_stream":"{app=\"api-gateway\"}","app":"api-gateway","status":"404"}`+"\n",
-				base.Format(time.RFC3339Nano),
-			)
 		case "/select/logsql/stats_query_range":
-			// stats_query_range MUST NOT be called for parser-stage query without drop-error.
-			t.Error("unexpected fast-path /select/logsql/stats_query_range call for parser-stage rate without | drop __error__")
+			statsCalled = true
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"resultType":"matrix","result":[]}}`))
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api-gateway"},"values":[[1700000300,"0.5"]]}]}}`))
 		default:
 			if r.URL.Path != "/metrics" {
 				t.Logf("unhandled path: %s", r.URL.Path)
@@ -239,7 +237,7 @@ func TestQueryRange_RateParserStageTumblingUsesSlowPath(t *testing.T) {
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	params := url.Values{}
-	// step=300 == range=[5m]=300 → tumbling window, but parser stage without drop-error → slow path.
+	// step=300 == range=[5m]=300 → tumbling window, parser-stage guard removed → fast path.
 	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
@@ -251,8 +249,8 @@ func TestQueryRange_RateParserStageTumblingUsesSlowPath(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !slowPathCalled {
-		t.Error("expected slow-path /select/logsql/query to be called for parser-stage tumbling rate without | drop __error__")
+	if !statsCalled {
+		t.Error("expected fast-path /select/logsql/stats_query_range to be called for parser-stage tumbling rate (guard removed)")
 	}
 }
 
