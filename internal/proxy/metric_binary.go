@@ -22,7 +22,20 @@ import (
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
 	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	if p.handleStatsCompatRange(w, r, originalLogql, logsqlQuery) {
+
+	topK, topKDesc, hasTopK := parseTopKWrapper(originalLogql)
+
+	out := http.ResponseWriter(w)
+	var topKBuf *bufferedResponseWriter
+	if hasTopK {
+		topKBuf = &bufferedResponseWriter{}
+		out = topKBuf
+	}
+
+	if p.handleStatsCompatRange(out, r, originalLogql, logsqlQuery) {
+		if hasTopK {
+			writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
+		}
 		return
 	}
 
@@ -37,6 +50,9 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-origSpec.Window.Nanoseconds()))
 		p.proxyStatsQueryRangeDirect(buf, shiftedR, logsqlQuery)
 		body := trimStatsQueryRangeResponseFromStart(buf.body, origStartNs)
+		if hasTopK {
+			body = applyTopKToMatrix(body, topK, topKDesc)
+		}
 		code := buf.code
 		if code == 0 {
 			code = http.StatusOK
@@ -49,7 +65,10 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	p.proxyStatsQueryRangeDirect(w, r, logsqlQuery)
+	p.proxyStatsQueryRangeDirect(out, r, logsqlQuery)
+	if hasTopK {
+		writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
+	}
 }
 
 // proxyStatsQueryRangeDirect issues the VL stats_query_range request directly,
@@ -496,8 +515,12 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	}
 
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
+	body = wrapAsLokiResponse(body, "vector")
+	if topK, topKDesc, hasTopK := parseTopKWrapper(r.FormValue("query")); hasTopK {
+		body = applyTopKToVector(body, topK, topKDesc)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(wrapAsLokiResponse(body, "vector"))
+	_, _ = w.Write(body)
 }
 
 // proxyBinaryMetricQueryRangeVM evaluates with vector matching (on/ignoring/group_left/group_right).
