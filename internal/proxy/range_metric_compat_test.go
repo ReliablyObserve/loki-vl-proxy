@@ -927,6 +927,44 @@ func TestQueryRange_SlidingWindowWithout_UsesManualPath(t *testing.T) {
 	}
 }
 
+func TestShouldUseManualRangeMetricCompat_ParserStageGuardRemoved(t *testing.T) {
+	parserBase := `{app="api-gateway"} | unpack_json | status >= 400`
+	plainBase  := `{app="api-gateway"}`
+
+	tests := []struct {
+		name            string
+		baseQuery       string
+		manualFunc      string
+		rangeEqualsStep bool
+		wantManual      bool
+	}{
+		// Parser stages + tumbling (range==step): FAST PATH expected after Change 1.
+		{"rate_parser_tumbling", parserBase, "rate", true, false},
+		{"count_over_time_parser_tumbling", parserBase, "count_over_time", true, false},
+		{"bytes_rate_parser_tumbling", parserBase, "bytes_rate", true, false},
+		{"bytes_over_time_parser_tumbling", parserBase, "bytes_over_time", true, false},
+		// Parser stages + sliding (range>step): SLOW PATH preserved.
+		{"rate_parser_sliding", parserBase, "rate", false, true},
+		{"count_over_time_parser_sliding", parserBase, "count_over_time", false, true},
+		// No parser stages + tumbling: fast path (unchanged).
+		{"rate_no_parser_tumbling", plainBase, "rate", true, false},
+		// No parser stages + sliding: slow path (unchanged).
+		{"rate_no_parser_sliding", plainBase, "rate", false, true},
+		// rate_counter always slow regardless.
+		{"rate_counter_always_slow", plainBase, "rate_counter", true, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shouldUseManualRangeMetricCompat(tc.baseQuery, tc.manualFunc, tc.rangeEqualsStep)
+			if got != tc.wantManual {
+				t.Errorf("shouldUseManualRangeMetricCompat(%q, %q, rangeEqualsStep=%v) = %v, want %v",
+					tc.baseQuery, tc.manualFunc, tc.rangeEqualsStep, got, tc.wantManual)
+			}
+		})
+	}
+}
+
 func FuzzParseOriginalRangeMetricSpec(f *testing.F) {
 	seeds := []string{
 		`rate({app="api"}[5m])`,
