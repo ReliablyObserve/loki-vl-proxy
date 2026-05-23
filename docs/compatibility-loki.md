@@ -83,8 +83,6 @@ Nested JSON objects (for example a field whose value is itself a JSON object suc
 
 `label_replace()` and `label_join()` metric transformations, the `group()` aggregation, and `count_values()` now produce output that matches Loki's label semantics. Stream result ordering for log queries is aligned with Loki's timestamp-descending default.
 
-`count_values()` returns HTTP 400 with message: *"count_values is not supported: it groups by metric values which VictoriaLogs cannot compute; use count() grouped by an existing label instead"*
-
 ### v1.29.x — __error__ Opt-In and Cold Storage Routing
 
 The `__error__` / `| drop __error__` mechanism for opting parser-stage metric queries into the VL native stats fast path is now precisely gated: only queries where `| drop __error__` is the sole post-parser stage qualify, preventing false positives from queries that mention `__error__` in label values.
@@ -100,16 +98,6 @@ The `__error__` / `| drop __error__` mechanism for opting parser-stage metric qu
 ### v1.31.2 — Parser-Stage Guard Removed From stats Fast Path
 
 `rate`, `bytes_rate`, `count_over_time`, and `bytes_over_time` queries containing `| json` or `| logfmt` parser stages now use VL native `stats_query_range` for tumbling windows (`range == step`). These queries were previously forced onto the raw log-fetch slow path regardless of window type.
-
-### v3.7.1 — drop Matcher Semantics, Structured Metadata Classification, Parity Expansion
-
-`| drop field=value` (matcher form) now correctly implements conditional semantics: VL `| delete` is issued for the field, and the proxy post-processes each log entry to restore the field value when it does not match the predicate. Previously the value predicate was ignored and the field was always removed.
-
-`structuredMetadata` vs `parsedFields` classification in push/detected_fields paths is now correct: the proxy compares candidate field names against `_msg` JSON content to determine whether a field originates from structured metadata or was parsed from the log body.
-
-The `-emit-structured-metadata` flag (default: `true`) controls whether log entries are returned as Loki 3-tuples `[timestamp, line, {metadata}]` or 2-tuples `[timestamp, line]`. Grafana Loki datasource requires 3-tuple format; only disable if your client cannot handle structured metadata.
-
-The LogQL exhaustive parity machine expanded from 202 to 316 cases, with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved. Default `label-style` is now `underscores` and `metadata-field-mode` is now `translated`.
 
 ## Edge Cases Covered
 
@@ -127,8 +115,6 @@ The LogQL exhaustive parity machine expanded from 202 to 316 cases, with all 14 
 - `service_name` alias in detected_fields for hybrid OTel/non-OTel datasets (v1.30.0)
 - bare parser-stage metric label scoping (v1.31.0)
 - parser-stage tumbling-window fast path via VL native stats (v1.31.2)
-- `| drop field=value` matcher-form conditional semantics via proxy post-processing (v3.7.1)
-- structuredMetadata vs parsedFields classification fix using `_msg` JSON content comparison (v3.7.1)
 
 ## Query Families In The Loki Semantics Matrix
 

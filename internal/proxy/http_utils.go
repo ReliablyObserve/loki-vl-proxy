@@ -19,9 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 
-	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/klauspost/compress/zstd"
@@ -61,7 +59,6 @@ var (
 )
 
 // validateQuery checks query string length and returns a sanitized version.
-// It also rewrites queries that Loki accepts but VL would reject (e.g. phi>1).
 func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint string) (string, bool) {
 	if len(query) > maxQueryLength {
 		p.writeError(w, http.StatusBadRequest, fmt.Sprintf("query exceeds max length (%d > %d)", len(query), maxQueryLength))
@@ -69,64 +66,122 @@ func (p *Proxy) validateQuery(w http.ResponseWriter, query string, endpoint stri
 		return "", false
 	}
 	if err := validateLogQLSyntax(query); err != "" {
-		p.writeError(w, http.StatusBadRequest, err)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, err)
 		p.metrics.RecordRequest(endpoint, http.StatusBadRequest, 0)
 		return "", false
 	}
-	// Clamp quantile_over_time phi > 1 to 1.0.
-	// Loki allows phi > 1 (extrapolation beyond p100); VL rejects it with 422.
-	// Clamping preserves the p100 value and keeps queries working.
-	query = rewriteQuantilePhiGT1(query)
 	return query, true
 }
 
-// quantileOverTimePhiRE extracts the phi literal from quantile_over_time(phi, ...).
-var quantileOverTimePhiRE = regexp.MustCompile(`\bquantile_over_time\(\s*(-?[\d]+(?:\.[\d]+)?(?:e[+\-]?\d+)?)\s*,`)
-
-// validationCache stores the result of ValidateLogQL for recently-seen query
-// strings. Validation is deterministic (same input → same output), so caching
-// is safe. The cache is bounded at validationCacheMaxSize entries to prevent
-// unbounded growth from uniquely-parameterized queries.
-const validationCacheMaxSize = 1024
-
-var (
-	validationCache     sync.Map
-	validationCacheSize atomic.Int32
-)
-
-// validateLogQLSyntax validates LogQL syntax and semantics using the typed AST
-// parser, returning a Loki-compatible error string or "" if valid.
-// Results are cached by query string to avoid repeated AST allocations for
-// identical queries (the common case in real workloads and benchmarks).
+// validateLogQLSyntax performs lightweight LogQL syntax validation to catch
+// queries that Loki would reject with a parse error. Returns the error message
+// (matching Loki's format) or empty string if valid.
+//
+// This catches:
+// - Empty queries
+// - Queries without a stream selector (e.g., "| json")
+// - Malformed stream selectors (e.g., "{app=}")
+// - Binary operations on log/pipeline expressions (e.g., "{app=...} == 2")
 func validateLogQLSyntax(query string) string {
-	if v, ok := validationCache.Load(query); ok {
-		return v.(string)
+	query = strings.TrimSpace(query)
+
+	// Empty query
+	if query == "" {
+		return "parse error : syntax error: unexpected $end"
 	}
-	result := logql.ValidateLogQL(query)
-	if validationCacheSize.Load() < validationCacheMaxSize {
-		if _, loaded := validationCache.LoadOrStore(query, result); !loaded {
-			validationCacheSize.Add(1)
+
+	// No stream selector — starts with pipeline
+	if strings.HasPrefix(query, "|") {
+		return "parse error at line 1, col 1: syntax error: unexpected |"
+	}
+
+	// Malformed selector: unclosed or empty values
+	if strings.HasPrefix(query, "{") {
+		braceDepth := 0
+		selectorEnd := -1
+		for i, ch := range query {
+			if ch == '{' {
+				braceDepth++
+			} else if ch == '}' {
+				braceDepth--
+				if braceDepth == 0 {
+					selectorEnd = i
+					break
+				}
+			}
+		}
+		if selectorEnd < 0 {
+			return "parse error at line 1, col 1: syntax error: unexpected end of input"
+		}
+		selector := query[:selectorEnd+1]
+		// Check for empty values like {app=} or {app= }
+		if emptyValueRe.MatchString(selector) {
+			return "parse error at line 1, col " + strconv.Itoa(strings.Index(selector, "=}")+2) + ": syntax error: unexpected }, expecting STRING"
+		}
+
+		// Check for binary operations on log queries
+		// Pattern: {selector} [| pipeline...] <binary_op> <number>
+		// This is invalid unless wrapped in a metric function
+		rest := strings.TrimSpace(query[selectorEnd+1:])
+		if isBinaryOpOnLogQuery(rest) {
+			op := extractBinaryOp(rest)
+			exprType := "*syntax.MatchersExpr"
+			if strings.Contains(rest, "|") {
+				exprType = "*syntax.PipelineExpr"
+			}
+			return "parse error : unexpected type for left leg of binary operation (" + op + "): " + exprType
 		}
 	}
-	return result
+
+	return ""
 }
 
-// rewriteQuantilePhiGT1 replaces phi > 1 in quantile_over_time() with 1.0.
-// Loki allows phi > 1 (extrapolates beyond p100 using linear interpolation);
-// VictoriaLogs rejects it with 422. Clamping to 1.0 returns the p100 value,
-// which is the closest semantically valid result VL can produce.
-func rewriteQuantilePhiGT1(query string) string {
-	return quantileOverTimePhiRE.ReplaceAllStringFunc(query, func(match string) string {
-		m := quantileOverTimePhiRE.FindStringSubmatch(match)
-		if len(m) < 2 {
-			return match
+var emptyValueRe = regexp.MustCompile(`[=!~]=?\s*[,}]`)
+
+// binaryOpOnLogRe matches a binary operator followed by a number at the end
+// of a pipeline expression (not inside a metric function).
+var binaryOpOnLogRe = regexp.MustCompile(`(?:^|\s)\s*(==|!=|<=|>=|<|>|\+|-|\*|/|%|\^)\s*\d+\s*$`)
+
+// labelFilterRe matches a standalone label filter stage: identifier <op> number.
+var labelFilterRe = regexp.MustCompile(`^([a-zA-Z_][a-zA-Z0-9_.]*)\s*(?:==|!=|<=|>=|<|>)\s*\d+(\.\d+)?\s*$`)
+
+// logParserKeywords is the set of LogQL parser stage keywords that cannot be field names
+// in a label filter comparison (e.g. "| json == 2" is invalid; "| status >= 400" is valid).
+var logParserKeywords = map[string]bool{
+	"json": true, "logfmt": true, "unpack": true, "regexp": true,
+	"pattern": true, "decolorize": true,
+}
+
+func isBinaryOpOnLogQuery(rest string) bool {
+	if rest == "" {
+		return false
+	}
+	if !binaryOpOnLogRe.MatchString(rest) {
+		return false
+	}
+	// If the last pipe-separated segment is a label filter (field op number) where
+	// the field is not a parser keyword, it's a valid stage — e.g. "| json | status >= 400".
+	lastPipe := strings.LastIndex(rest, "|")
+	lastSeg := strings.TrimSpace(rest)
+	if lastPipe >= 0 {
+		lastSeg = strings.TrimSpace(rest[lastPipe+1:])
+	}
+	if m := labelFilterRe.FindStringSubmatch(lastSeg); m != nil {
+		if !logParserKeywords[m[1]] {
+			return false
 		}
-		phi, err := strconv.ParseFloat(m[1], 64)
-		if err != nil || phi <= 1 {
-			return match
-		}
-		return strings.Replace(match, m[1], "1", 1)
-	})
+	}
+	return true
+}
+
+func extractBinaryOp(rest string) string {
+	m := binaryOpOnLogRe.FindStringSubmatch(rest)
+	if len(m) >= 2 {
+		return m[1]
+	}
+	return "?"
 }
 
 // sanitizeLimit caps and validates the limit parameter.
@@ -201,18 +256,8 @@ func isCanceledErr(err error) bool {
 	return strings.Contains(strings.ToLower(err.Error()), "context canceled")
 }
 
-// httpStatusCoder is implemented by errors that carry an upstream HTTP status
-// (e.g. queryRangeWindowHTTPError). An HTTP-level error from VL proves the
-// backend is reachable and therefore must not trip the circuit breaker.
-type httpStatusCoder interface{ StatusCode() int }
-
 func shouldRecordBreakerFailure(err error) bool {
 	if err == nil {
-		return false
-	}
-	// HTTP responses from VL (even 4xx/5xx) prove the backend is up.
-	var hsc httpStatusCoder
-	if errors.As(err, &hsc) {
 		return false
 	}
 	if isCanceledErr(err) || errors.Is(err, context.DeadlineExceeded) {

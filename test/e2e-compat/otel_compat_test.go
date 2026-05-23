@@ -778,35 +778,31 @@ func TestOTelDots_ProxyPassthrough(t *testing.T) {
 	ensureOTelData(t)
 
 	t.Run("labels_show_dots", func(t *testing.T) {
-		// Default proxy uses label-style=underscores: OTel dotted stream label names
-		// are translated to their underscore equivalents in the labels response.
-		// Verify that the underscore translations of known OTel semantic convention
-		// fields are present in the labels API.
 		labels := getLabels(t, proxyURL)
 		labelSet := toSet(labels)
 
-		underscoreExpected := []string{
-			"service_name", "service_namespace",
-			"k8s_namespace_name", "k8s_pod_name", "k8s_container_name", "k8s_node_name",
-			"deployment_environment",
-			"host_name",
-			"cloud_provider", "cloud_region",
-			"container_id", "container_name",
-			"os_type",
-			"net_host_name", "net_peer_name",
-			"log_file_path", "log_iostream",
-			"telemetry_sdk_name", "telemetry_sdk_language",
+		dottedExpected := []string{
+			"service.name", "service.namespace",
+			"k8s.namespace.name", "k8s.pod.name", "k8s.container.name", "k8s.node.name",
+			"deployment.environment",
+			"host.name",
+			"cloud.provider", "cloud.region",
+			"container.id", "container.name",
+			"os.type",
+			"net.host.name", "net.peer.name",
+			"log.file.path", "log.iostream",
+			"telemetry.sdk.name", "telemetry.sdk.language",
 		}
 		found := 0
-		for _, label := range underscoreExpected {
-			if labelSet[label] {
+		for _, dotted := range dottedExpected {
+			if labelSet[dotted] {
 				found++
 			}
 		}
 		if found == 0 {
-			t.Errorf("no OTel underscore labels found in default proxy (underscores mode), labels: %v", labels)
+			t.Errorf("no dotted labels found in passthrough mode, labels: %v", labels)
 		} else {
-			t.Logf("found %d/%d OTel underscore labels in default proxy", found, len(underscoreExpected))
+			t.Logf("found %d/%d dotted labels in passthrough mode", found, len(dottedExpected))
 		}
 	})
 
@@ -1462,12 +1458,10 @@ func TestOTelCompatibilityScore(t *testing.T) {
 		}
 	}
 
-	// Detected fields. Note: service_name is intentionally suppressed from
-	// detected_fields (it's a stream label surfaced through the labels API).
-	// Hybrid mode exposes both service.name (native) and k8s_pod_name (translated alias).
+	// Detected fields
 	fields := getDetectedFields(t, proxyUnderscoreURL)
 	fieldSet := toSet(fields)
-	for _, want := range []string{"service.name", "k8s.pod.name", "k8s_pod_name"} {
+	for _, want := range []string{"service.name", "service_name", "k8s.pod.name", "k8s_pod_name"} {
 		if fieldSet[want] {
 			score.pass("detected_fields/"+want, "present")
 		} else {

@@ -47,12 +47,6 @@ adds compressed variants on hot hits. That removes repeated gzip/zstd work from
 the hot cached read path without forcing every cached response to occupy
 multiple encodings up front.
 
-**klauspost/compress (v1.27.0)**: The proxy uses the `klauspost/compress` library instead of the standard `compress/gzip`, providing 2.5–3× faster gzip decode throughput. This matters for responses from remote VL backends where gzip decompression is on the critical path.
-
-**Window cache zstd (v1.27.0)**: Split-window query results are compressed with zstd before storing in the in-memory cache, achieving 5–15× size reduction compared to raw NDJSON. This allows the window cache to hold significantly more windows within the same memory budget.
-
-**Loopback backend optimization**: When VL runs on the same host (localhost/127.0.0.1/::1), the proxy detects this and requests uncompressed responses (`identity` encoding). This eliminates 25–35% of decompress CPU overhead for co-located deployments.
-
 ### NDJSON Parsing Optimization
 
 VL returns log results as newline-delimited JSON. The proxy converts this to Loki's streams format. Key optimizations:

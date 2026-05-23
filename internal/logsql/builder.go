@@ -79,12 +79,17 @@ func (b *Builder) BestIPv4Range(field, cidr string) FilterExpr {
 }
 
 // cidrToRange parses a CIDR and returns the first and last IP as strings.
+// Returns ok=false for IPv6 CIDRs, as ipv4_range() is IPv4-only.
 func cidrToRange(cidr string) (first, last string, ok bool) {
 	_, network, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return "", "", false
 	}
-	firstIP := network.IP.Mask(network.Mask)
+	// ipv4_range() is IPv4-only; guard against IPv6 CIDRs
+	if network.IP.To4() == nil {
+		return "", "", false
+	}
+	firstIP := network.IP
 	lastIP := make(net.IP, len(firstIP))
 	for i := range firstIP {
 		lastIP[i] = firstIP[i] | ^network.Mask[i]

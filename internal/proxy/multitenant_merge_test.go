@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -623,61 +622,5 @@ func TestIsMultiTenantQueryPathCoverage(t *testing.T) {
 	}
 	if isMultiTenantQueryPath("/loki/api/v1/tail") {
 		t.Fatal("expected tail path to reject multi-tenant fanout")
-	}
-}
-
-func TestInjectMultiTenantWarnings(t *testing.T) {
-	tests := []struct {
-		name          string
-		body          []byte
-		failedTenants []string
-		wantWarnings  bool
-		wantSubstr    string
-	}{
-		{
-			name:          "injects warnings into JSON object",
-			body:          []byte(`{"status":"success","data":{"resultType":"streams","result":[]}}`),
-			failedTenants: []string{"tenant-a"},
-			wantWarnings:  true,
-			wantSubstr:    `"warnings":["partial multi-tenant response: tenants [tenant-a] unavailable"]`,
-		},
-		{
-			name:          "multiple failed tenants joined",
-			body:          []byte(`{"status":"success","data":[]}`),
-			failedTenants: []string{"t1", "t2"},
-			wantWarnings:  true,
-			wantSubstr:    `tenants [t1,t2] unavailable`,
-		},
-		{
-			name:          "does not double-inject warnings",
-			body:          []byte(`{"status":"success","warnings":["existing"],"data":[]}`),
-			failedTenants: []string{"t1"},
-			wantWarnings:  true,
-			wantSubstr:    `"warnings":["existing"]`,
-		},
-		{
-			name:          "non-JSON body left unchanged",
-			body:          []byte(`not json`),
-			failedTenants: []string{"t1"},
-			wantWarnings:  false,
-		},
-		{
-			name:          "NDJSON body left unchanged",
-			body:          []byte(`{"ts":"1","line":"x"}` + "\n" + `{"ts":"2","line":"y"}`),
-			failedTenants: []string{"t1"},
-			wantWarnings:  false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := injectMultiTenantWarnings(tt.body, tt.failedTenants)
-			hasWarnings := bytes.Contains(got, []byte(`"warnings"`))
-			if hasWarnings != tt.wantWarnings {
-				t.Fatalf("wantWarnings=%v but got body: %s", tt.wantWarnings, got)
-			}
-			if tt.wantSubstr != "" && !bytes.Contains(got, []byte(tt.wantSubstr)) {
-				t.Fatalf("expected %q in body, got: %s", tt.wantSubstr, got)
-			}
-		})
 	}
 }

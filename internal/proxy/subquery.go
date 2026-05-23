@@ -50,19 +50,11 @@ func (p *Proxy) proxySubqueryRange(w http.ResponseWriter, r *http.Request, outer
 	}
 
 	var resultSeries []subquerySeriesResult
-	ctx := r.Context()
 
 	// Walk through the outer time range
 	for t := startTS; !t.After(endTS); t = t.Add(outerStep) {
-		// Stop if the client disconnected or the request context was cancelled.
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
 		// For this time point, evaluate inner query over [t-subRange, t] at subStep intervals
-		values, seriesKey, err := p.evaluateSubqueryWindow(ctx, innerQuery, t.Add(-subRange), t, subStep, reqStep)
+		values, seriesKey, err := p.evaluateSubqueryWindow(r.Context(), innerQuery, t.Add(-subRange), t, subStep, reqStep)
 		if err != nil {
 			p.log.Debug("subquery inner query error", "error", err)
 			continue
@@ -147,13 +139,6 @@ func (p *Proxy) evaluateSubqueryWindow(ctx context.Context, innerQuery string, s
 	var wg sync.WaitGroup
 
 	for i, tp := range timePoints {
-		// Bail early if context is already done before spawning more goroutines.
-		select {
-		case <-ctx.Done():
-			wg.Wait()
-			return nil, nil, ctx.Err()
-		default:
-		}
 		wg.Add(1)
 		go func(idx int, t time.Time) {
 			defer wg.Done()

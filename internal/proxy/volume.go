@@ -179,7 +179,7 @@ func requestedVolumeTargetLabels(r *http.Request) string {
 // Response: {"status":"success","data":{"resultType":"vector","result":[{"metric":{...},"value":[ts,"count"]}]}}
 func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	if p.handleMultiTenantFanout(w, r, "volume") {
+	if p.handleMultiTenantFanout(w, r, "volume", p.handleVolume) {
 		return
 	}
 	r = withOrgID(r)
@@ -301,7 +301,7 @@ func (p *Proxy) refreshVolumeCacheAsync(orgID, cacheKey, rawQuery, start, end, t
 // Response: {"status":"success","data":{"resultType":"matrix","result":[{"metric":{...},"values":[[ts,"count"],...]}]}}
 func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
-	if p.handleMultiTenantFanout(w, r, "volume_range") {
+	if p.handleMultiTenantFanout(w, r, "volume_range", p.handleVolumeRange) {
 		return
 	}
 	r = withOrgID(r)

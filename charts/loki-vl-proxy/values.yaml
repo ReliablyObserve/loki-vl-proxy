@@ -67,8 +67,6 @@ extraArgs:
   # 50 000 entries × ~1-2 KB average = 50-100 MB — fits well within the 512 Mi
   # memory limit below after GOMEMLIMIT headroom. Lower if pods are memory-constrained.
   cache-max: "50000"
-  # cache-disabled: "false"                  # disable in-memory cache entirely (testing/benchmarking)
-  # coalescer-disabled: "false"              # disable singleflight request coalescing
 
   # --- query_range window cache ---
   # Loki-aligned split/fanout defaults:
@@ -127,10 +125,11 @@ extraArgs:
   # Remote backends continue to use zstd/gzip. Override with "none", "gzip",
   # or "zstd" if your deployment topology requires a fixed policy.
   backend-compression: "auto"
-  # cb-fail-threshold: "5"                  # circuit breaker failure threshold within window
-  # cb-open-duration: "10s"                 # circuit breaker open duration before probe
-  # cb-window-duration: "30s"               # circuit breaker sliding window for failure counting
-  # manual-range-metric-row-limit: "1000000"  # max log rows per manual range-metric call
+  # Transport read/write buffer sizes (bytes). Go default is 4 KB.
+  # 64 KB reduces read syscall count ~7× for typical 27 KB VL responses.
+  # Lower only in very memory-constrained environments (many pods, tiny limits).
+  backend-read-buffer-size: "65536"
+  backend-write-buffer-size: "65536"
 
   # --- Frontend/client-facing compression ---
   # gzip for broad Loki/Grafana compatibility; route-aware policy raises the
@@ -172,6 +171,7 @@ extraArgs:
   # disk-cache-flush-size: "100"
   # disk-cache-flush-interval: "5s"
   # disk-cache-max-bytes: "21474836480" # 20Gi safety cap (0 = unlimited)
+  # disk-cache-encryption-key: ""
   # otlp-endpoint: "http://otel-collector:4318/v1/metrics"
   # otlp-interval: "30s"
   # otlp-compression: "gzip"
@@ -202,8 +202,6 @@ extraArgs:
   # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/configuration.md#compatibility-profiles
   # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/api-reference.md
   # - https://github.com/ReliablyObserve/Loki-VL-proxy/blob/main/docs/compatibility-matrix.md
-  # metadata-field-mode: "translated"        # field exposure: native | translated | hybrid
-  # emit-structured-metadata: "true"         # include 3-tuple stream values [timestamp, line, metadata]
   # Label translation (OTel compatibility)
   # label-style: "underscores"  # convert VL dotted fields (service.name) to Loki underscores (service_name)
   # field-mapping: '[{"vl_field":"custom.field","loki_label":"custom_label"}]'
@@ -231,15 +229,6 @@ extraArgs:
   # System metrics scope override (chart auto-injects when systemMetrics.hostProc.enabled=true):
   # proc-root: "/host/proc"
   #
-  # Go runtime tuning (see also goMemLimitPercent/goMemLimit Helm values):
-  # go-mem-limit: "0"                          # explicit GOMEMLIMIT in bytes (overrides go-mem-limit-percent)
-  # go-mem-limit-percent: "85"                 # percentage of container memory limit for GOMEMLIMIT
-  # go-gc-percent: "200"                       # GOGC target percentage (-1 for Go default 100)
-  #
-  # Patterns file-based config (see also patternsCustom Helm values):
-  # patterns-custom: ""                        # JSON array or newline patterns prepended to /loki/api/v1/patterns
-  # patterns-custom-file: ""                   # path to custom patterns file
-  #
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
@@ -259,14 +248,6 @@ extraArgs:
   # response-gzip: "true"
   # max-lines: "1000"
   # auth.enabled: "false"                       # require tenant header
-  # require-tenant-header: "false"             # reject requests missing X-Scope-OrgID with 401
-  # forward-tenant-header: "true"              # forward X-Scope-OrgID to upstream backend
-  # tenant-label: ""                           # VL field name for label-based tenant routing
-  # tenant-map-file: ""                        # path to YAML/JSON tenant map file (hot-reloaded)
-  # tenant-map-reload-interval: "30s"          # poll interval for tenant map file changes
-  # tenant-limits-allow-publish: ""            # comma-separated limit fields published on /config/tenant/v1/limits
-  # tenant-default-limits: ""                  # JSON map of default published limits overrides
-  # tenant-limits: ""                          # JSON map of per-tenant published limits overrides
   # tenant.allow-global: "false"                # allow global tenant map wildcard entry
   # metrics.max-tenants: "256"
   # metrics.max-clients: "256"

@@ -241,30 +241,6 @@ func TestQuery_MultipleOffsetReturns400(t *testing.T) {
 	}
 }
 
-func TestQueryRange_MixedOffsetBinaryReturns200(t *testing.T) {
-	// sum(rate(a[5m] offset 1h)) / sum(rate(b[5m])) — one side has offset, other does not.
-	// Loki accepts this (evaluates sides independently); proxy must also return 200.
-	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
-	}))
-	defer vlBackend.Close()
-
-	p := newGapTestProxy(t, vlBackend.URL)
-	params := url.Values{}
-	params.Set("query", `sum(rate({env="production"}[5m] offset 1h)) / sum(rate({env="production"}[5m]))`)
-	params.Set("start", "1700000000")
-	params.Set("end", "1700001800")
-	params.Set("step", "60")
-	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
-	rec := httptest.NewRecorder()
-	p.handleQueryRange(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200 for mixed-offset binary, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestQuery_OffsetWithMissingTimeDefaultsToNow(t *testing.T) {
 	// When the client omits the "time" parameter (Loki defaults to now),
 	// the proxy must still apply the offset shift — defaulting time to now internally.

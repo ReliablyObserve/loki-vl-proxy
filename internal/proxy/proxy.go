@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
-	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -117,11 +116,9 @@ type Config struct {
 	CBWindowDuration    time.Duration            // circuit breaker: sliding window for failure counting (default 30s)
 	CoalescerDisabled   bool                     // disable singleflight coalescing; every request makes its own backend call
 	TenantMap           map[string]TenantMapping // string org ID → VL account/project
-	TenantLabel         string                   // VL field name for label-based tenant routing (alternative to AccountID/ProjectID headers)
 	AuthEnabled         bool
 	RequireTenantHeader bool
 	AllowGlobalTenant   bool
-	ForwardTenantHeader bool // forward per-tenant X-Scope-OrgID to upstream (safe for VL, needed for Victoria Lakehouse)
 
 	// Grafana datasource compatibility
 	MaxLines int // default max lines per query (0=1000)
@@ -358,11 +355,9 @@ type Proxy struct {
 	breaker                               *mw.CircuitBreaker
 	configMu                              sync.RWMutex // protects tenantMap and labelTranslator
 	tenantMap                             map[string]TenantMapping
-	tenantLabel                           string
 	authEnabled                           bool
 	requireTenantHeader                   bool
 	allowGlobalTenant                     bool
-	forwardTenantHeader                   bool
 	maxLines                              int
 	forwardHeaders                        []string          // headers to copy from client request to VL
 	forwardCookies                        map[string]bool   // cookie names to copy from client request to VL
@@ -930,11 +925,9 @@ func New(cfg Config) (*Proxy, error) {
 		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
 		breaker:                               mw.NewCircuitBreaker(cbFail, 3, cbOpen, cbWindow),
 		tenantMap:                             cfg.TenantMap,
-		tenantLabel:                           cfg.TenantLabel,
 		authEnabled:                           cfg.AuthEnabled,
 		requireTenantHeader:                   cfg.RequireTenantHeader,
 		allowGlobalTenant:                     cfg.AllowGlobalTenant,
-		forwardTenantHeader:                   cfg.ForwardTenantHeader,
 		maxLines:                              maxLines,
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
 		forwardHeaders:                        cfg.ForwardHeaders,
@@ -1431,14 +1424,13 @@ func (p *Proxy) peerCacheMetrics() string {
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
-	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query_range")
-	if !ok {
+	if _, ok := p.validateQuery(w, logqlQuery, "query_range"); !ok {
 		return
 	}
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	tupleMode := tupleModeForRequest(categorizedLabels, emitStructuredMetadata)
-	if p.handleMultiTenantFanout(w, r, "query_range") {
+	if p.handleMultiTenantFanout(w, r, "query_range", p.handleQueryRange) {
 		return
 	}
 	cacheKey := ""
@@ -1474,41 +1466,23 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Extract and apply LogQL offset: strip the offset clause and shift start/end
 	// backward so preferWorkingParser probes the historical window where the offset
 	// data actually lives. All downstream dispatch paths see the shifted times.
-	//
-	// Exception: binary metric expressions where only SOME sides carry an offset
-	// ("mixed" case). Loki evaluates each side independently so it accepts these;
-	// the proxy lets them through to the binary routing path which dispatches
-	// separate VL queries per side. The translator silently drops offset clauses,
-	// so time-shifting is not applied — results may differ from Loki for offset
-	// values but the proxy returns 200 rather than incorrectly rejecting the query.
-	// Expressions with multiple *different* offsets still return 400 (same as Loki).
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
-			// Allow mixed-offset binary expressions: bypass only when the failure is
-			// "some range vectors have offset, others do not" AND the query is a
-			// top-level binary op (Loki handles these by evaluating sides independently).
-			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
-			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
-			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
-			if !isMixedOffset || !isBinaryForOffset {
-				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
-				p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
-				return
+			p.writeError(w, http.StatusBadRequest, offsetErr.Error())
+			p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		logqlQuery = strippedQuery
+		if offsetDur != 0 {
+			// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
+			// it does not alias the map captured by withOrgID's origRequestKey reference.
+			_ = r.ParseForm()
+			if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
+				r.Form.Set("start", nanosToVLTimestamp(startNs-offsetDur.Nanoseconds()))
 			}
-			// Mixed-offset binary: proceed without time-shifting; binary routing handles it.
-		} else {
-			logqlQuery = strippedQuery
-			if offsetDur != 0 {
-				// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
-				// it does not alias the map captured by withOrgID's origRequestKey reference.
-				_ = r.ParseForm()
-				if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
-					r.Form.Set("start", nanosToVLTimestamp(startNs-offsetDur.Nanoseconds()))
-				}
-				if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
-					r.Form.Set("end", nanosToVLTimestamp(endNs-offsetDur.Nanoseconds()))
-				}
+			if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
+				r.Form.Set("end", nanosToVLTimestamp(endNs-offsetDur.Nanoseconds()))
 			}
 		}
 	}
@@ -1526,11 +1500,6 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if spec, ok := parseAbsentOverTimeCompatSpec(logqlQuery); ok {
-		p.proxyAbsentOverTimeQueryRange(w, r, start, logqlQuery, spec)
-		return
-	}
-
 	if postAgg, ok := parseInstantMetricPostAggQuery(logqlQuery); ok {
 		p.handleRangeMetricPostAggregation(w, r, start, logqlQuery, postAgg)
 		return
@@ -1545,15 +1514,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Extract without() labels and label-transform markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
 	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
-	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
+	logsqlQuery, labelReplaceSpec := translator.ParseLabelReplaceMarker(logsqlQuery)
 	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
-	for _, spec := range labelReplaceSpecs {
-		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
-			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
-			p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
-			return
-		}
-	}
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
@@ -1562,7 +1524,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	}
 	p.log.Debug("translated query", "logsql", logsqlQuery, "without", withoutLabels)
 
-	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
+	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
 	var (
 		sc       = &statusCapture{ResponseWriter: w, code: 200}
 		capture  *bufferedResponseWriter
@@ -1576,28 +1538,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		sc = &statusCapture{ResponseWriter: cacheTap, code: 200}
 	}
 
-	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
-	parsedForRouting, _ := logqlpkg.Parse(logqlQuery)
-	if ra, ok := parsedForRouting.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
-		// Subquery: max_over_time(rate(...)[1h:5m])
-		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
-		if innerErr != nil {
-			p.writeError(sc, http.StatusBadRequest, innerErr.Error())
-		} else {
-			p.proxySubqueryRange(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
-		}
-	} else if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
-		// Binary metric expression: sum(rate(...)) / sum(rate(...))
-		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
-		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
-		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
-		if leftErr != nil {
-			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
-		} else if rightErr != nil {
-			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
-		} else {
-			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
-		}
+	// Check for subquery expression (e.g., max_over_time(rate(...)[1h:5m]))
+	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(logsqlQuery); ok {
+		p.proxySubqueryRange(sc, r, outerFunc, innerQL, rng, step)
+	} else if op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(logsqlQuery); ok {
+		// Binary metric expression (e.g., sum(rate(...)) / sum(rate(...)))
+		p.proxyBinaryMetricQueryRangeVM(sc, r, op, left, right, vm)
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQueryRange(sc, r, logsqlQuery)
 	} else {
@@ -1618,8 +1564,8 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if isGroupQuery {
 			cacheOut = applyGroupNormalization(cacheOut)
 		}
-		for _, spec := range labelReplaceSpecs {
-			cacheOut = applyLabelReplace(cacheOut, spec)
+		if labelReplaceSpec != nil {
+			cacheOut = applyLabelReplace(cacheOut, *labelReplaceSpec)
 		}
 		if labelJoinSpec != nil {
 			cacheOut = applyLabelJoin(cacheOut, *labelJoinSpec)
@@ -1674,13 +1620,10 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 }
 
 // handleQuery translates Loki instant queries.
-//
-//nolint:gocyclo // dispatches across cache, multi-tenant fanout, stats vs logs, subquery, binary metric, and streaming modes; branching is inherent to Loki instant query parity.
 func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
-	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query")
-	if !ok {
+	if _, ok := p.validateQuery(w, logqlQuery, "query"); !ok {
 		return
 	}
 	p.log.Debug("query request", "logql", logqlQuery)
@@ -1693,7 +1636,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		p.queryTracker.Record("query", logqlQuery, elapsed, false)
 		return
 	}
-	if p.handleMultiTenantFanout(w, r, "query") {
+	if p.handleMultiTenantFanout(w, r, "query", p.handleQuery) {
 		return
 	}
 
@@ -1707,34 +1650,26 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Extract and apply LogQL offset: strip the offset clause and shift the eval
 	// time backward so preferWorkingParser probes the historical window where the
 	// offset data actually lives. All downstream dispatch paths see the shifted time.
-	//
-	// Mixed-offset binary expressions are treated the same as in query_range above.
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
-			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
-			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
-			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
-			if !isMixedOffset || !isBinaryForOffset {
-				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
-				p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
-				return
+			p.writeError(w, http.StatusBadRequest, offsetErr.Error())
+			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+			return
+		}
+		logqlQuery = strippedQuery
+		if offsetDur != 0 {
+			// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
+			// it does not alias the map captured by withOrgID's origRequestKey reference.
+			_ = r.ParseForm()
+			rawTime := r.FormValue("time")
+			if rawTime == "" {
+				// Loki allows omitting "time"; it defaults to now.
+				// We must materialise that default here so the offset shift is applied.
+				rawTime = strconv.FormatInt(time.Now().UnixNano(), 10)
 			}
-		} else {
-			logqlQuery = strippedQuery
-			if offsetDur != 0 {
-				// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
-				// it does not alias the map captured by withOrgID's origRequestKey reference.
-				_ = r.ParseForm()
-				rawTime := r.FormValue("time")
-				if rawTime == "" {
-					// Loki allows omitting "time"; it defaults to now.
-					// We must materialise that default here so the offset shift is applied.
-					rawTime = strconv.FormatInt(time.Now().UnixNano(), 10)
-				}
-				if timeNs, ok := parseLokiTimeToUnixNano(rawTime); ok {
-					r.Form.Set("time", nanosToVLTimestamp(timeNs-offsetDur.Nanoseconds()))
-				}
+			if timeNs, ok := parseLokiTimeToUnixNano(rawTime); ok {
+				r.Form.Set("time", nanosToVLTimestamp(timeNs-offsetDur.Nanoseconds()))
 			}
 		}
 	}
@@ -1771,15 +1706,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Extract without() labels and label-transform markers for post-processing.
 	logsqlQuery, withoutLabels := translator.ParseWithoutMarker(logsqlQuery)
 	logsqlQuery, isGroupQuery := translator.ParseGroupMarker(logsqlQuery)
-	logsqlQuery, labelReplaceSpecs := translator.ParseAllLabelReplaceMarkers(logsqlQuery)
+	logsqlQuery, labelReplaceSpec := translator.ParseLabelReplaceMarker(logsqlQuery)
 	logsqlQuery, labelJoinSpec := translator.ParseLabelJoinMarker(logsqlQuery)
-	for _, spec := range labelReplaceSpecs {
-		if _, err := regexp.Compile("^(?:" + spec.Regex + ")$"); err != nil {
-			p.writeError(w, http.StatusBadRequest, fmt.Sprintf("parse error : invalid regex in label_replace: %v", err))
-			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
-			return
-		}
-	}
 	logsqlQuery = preserveMetricStreamIdentity(logqlQuery, logsqlQuery, withoutLabels)
 	if isBareMetricFunctionQuery(strings.TrimSpace(logqlQuery)) && !isStatsQuery(logsqlQuery) {
 		p.writeError(w, http.StatusBadRequest, "unsupported metric query: range aggregations require compatible unwrap or translator support")
@@ -1790,32 +1718,17 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Wrap writer to capture actual status code for metrics
 	sc := &statusCapture{ResponseWriter: w, code: 200}
 
-	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
+	needsCapture := len(withoutLabels) > 0 || isGroupQuery || labelReplaceSpec != nil || labelJoinSpec != nil
 	var bw *bufferedResponseWriter
 	if needsCapture {
 		bw = &bufferedResponseWriter{header: w.Header()}
 		sc = &statusCapture{ResponseWriter: bw, code: 200}
 	}
 
-	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
-	parsedForRoutingQ, _ := logqlpkg.Parse(logqlQuery)
-	if ra, ok := parsedForRoutingQ.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
-		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
-		if innerErr != nil {
-			p.writeError(sc, http.StatusBadRequest, innerErr.Error())
-		} else {
-			p.proxySubquery(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
-		}
-	} else if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
-		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
-		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
-		if leftErr != nil {
-			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
-		} else if rightErr != nil {
-			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
-		} else {
-			p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
-		}
+	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(logsqlQuery); ok {
+		p.proxySubquery(sc, r, outerFunc, innerQL, rng, step)
+	} else if op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(logsqlQuery); ok {
+		p.proxyBinaryMetricQueryVM(sc, r, op, left, right, vm)
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQuery(sc, r, logsqlQuery)
 	} else {
@@ -1830,8 +1743,8 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		if isGroupQuery {
 			result = applyGroupNormalization(result)
 		}
-		for _, spec := range labelReplaceSpecs {
-			result = applyLabelReplace(result, spec)
+		if labelReplaceSpec != nil {
+			result = applyLabelReplace(result, *labelReplaceSpec)
 		}
 		if labelJoinSpec != nil {
 			result = applyLabelJoin(result, *labelJoinSpec)

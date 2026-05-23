@@ -14,13 +14,10 @@
 [![VictoriaLogs Compatibility](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/compat-vl.yaml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/ReliablyObserve/Loki-VL-proxy)](https://go.dev/)
 [![Release](https://img.shields.io/github/v/release/ReliablyObserve/Loki-VL-proxy)](https://github.com/ReliablyObserve/Loki-VL-proxy/releases)
-[![Docker Hub](https://img.shields.io/docker/pulls/reliablyobserve/loki-vl-proxy?label=Docker%20Hub%20pulls)](https://hub.docker.com/r/reliablyobserve/loki-vl-proxy)
-[![GHCR Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/loki-vl-proxy)
-[![Helm Chart Pulls](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/ghcr-chart-pulls.json)](https://github.com/ReliablyObserve/Loki-VL-proxy/pkgs/container/charts%2Floki-vl-proxy)
 [![Source Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-code.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
-[![Tests](https://img.shields.io/badge/tests-3454%20passed-brightgreen)](#tests)
-[![Coverage](https://img.shields.io/badge/coverage-85.2%25-green)](#tests)
+[![Tests](https://img.shields.io/badge/tests-2530%20passed-brightgreen)](#tests)
+[![Coverage](https://img.shields.io/badge/coverage-87.2%25-green)](#tests)
 [![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
@@ -61,15 +58,15 @@ No cache, no coalescer. Pure translation overhead + HTTP proxying + VictoriaLogs
 
 Grafana dashboards auto-refresh every 30 s. After the first fetch, repeated queries are served from in-memory cache without touching VictoriaLogs. The numbers below are **100% cache-hit results** — they represent the ceiling, not the typical case. Real production performance sits between the cold floor above and these warm numbers depending on your dashboard diversity and refresh interval.
 
-| Workload | Concurrency | Loki req/s | Proxy cold req/s | Proxy warm req/s | Warm gain | P50 Loki | P50 cold | P50 warm | Latency gain |
-|---|:---:|---:|---:|---:|:---:|---:|---:|---:|:---:|
-| Small panels | c=10 | 2,011 | 1,201 | 15,626 | **7.8×** | 4 ms | 4 ms | 587 µs | **6.8×** |
-| Small panels | c=100 | 2,290 | — | 27,513 | **12×** | 42 ms | — | 3 ms | **14×** |
-| Heavy queries | c=10 | 407 | 179 | 5,944 | **14.6×** | 4 ms | 21 ms | 1 ms | **4×** |
-| Heavy queries | c=100 | 162† | — | 7,134 | **44×** | ~1,800 ms† | — | 12 ms | **150×** |
-| Long-range | c=10 | 8 | 19 | 157 | **18.7×** | 481 ms | 39 ms | 1 ms | **481×** |
-| Compute | c=10 | 2,803 | 352 | 11,162 | **4×** | 1 ms | 10 ms | 675 µs | **1.5×** |
-| Compute | c=100 | 1,611 | 366 | 16,456 | **10.2×** | 4 ms | 261 ms | 4 ms | parity |
+| Workload | Concurrency | Loki req/s | Proxy (warm) req/s | Throughput | P50 Loki | P50 Proxy | Latency |
+|---|:---:|---:|---:|:---:|---:|---:|:---:|
+| Small panels | c=10 | 2,011 | 15,626 | **7.8× faster** | 4 ms | 587 µs | **6.8× faster** |
+| Small panels | c=100 | 2,290 | 27,513 | **12× faster** | 42 ms | 3 ms | **14× faster** |
+| Heavy queries | c=10 | 407 | 5,944 | **14.6× faster** | 4 ms | 1 ms | **4× faster** |
+| Heavy queries | c=100 | 162† | 7,134 | **44× faster** | ~1,800 ms† | 12 ms | **150× faster** |
+| Long-range | c=10 | 8 | 157 | **18.7× faster** | 481 ms | 1 ms | **481× faster** |
+| Compute | c=10 | 2,803 | 11,162 | **4× faster** | 1 ms | 675 µs | **1.5× faster** |
+| Compute | c=100 | 1,611 | 16,456 | **10.2× faster** | 4 ms | 4 ms | parity |
 
 CPU: **6–408× less** than Loki under cache load. RAM: **1.7–3.9× less** for most workloads.
 
@@ -77,13 +74,13 @@ CPU: **6–408× less** than Loki under cache load. RAM: **1.7–3.9× less** fo
 
 ### Dashboard load spikes — request coalescer
 
-When many panels hit the same query simultaneously, the proxy collapses them into a single backend call. First-hit coalescing avoids the N-fan-out but pays one backend round-trip (cold proxy P50 for a single request); subsequent hits are served from cache.
+When many panels hit the same query simultaneously, the proxy collapses them into a single backend call. The figures below assume the coalesced result is already cached; first-hit coalescing still avoids the N-fan-out but pays one backend round-trip.
 
-| Workload | Loki P50 | Proxy P50 (first hit) | Proxy P50 (warm) |
-|---|---:|---:|---:|
-| Metadata queries | 196 ms | **~4 ms** | **1 ms** |
-| Heavy aggregations | 2,399 ms | **~21 ms** | **1 ms** |
-| Content search | 13,415 ms | **~39 ms** | **1 ms** |
+| Workload | Loki P50 | Proxy P50 (warm) |
+|---|---:|---:|
+| Metadata queries | 196 ms | **1 ms** |
+| Heavy aggregations | 2,399 ms | **1 ms** |
+| Content search | 13,415 ms | **1 ms** |
 
 Full throughput tables, P90/P99 latency, CPU and RSS breakdowns: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 
@@ -100,7 +97,6 @@ This is a production deployment, not a synthetic benchmark. The numbers below co
 | `vlstorage` | 1.0 | 5.0 GiB |
 | `vlinsert` | 0.1 | 0.6 GiB |
 | `vlselect` | 0.1 | 0.25 GiB |
-| `loki-vl-proxy` | ~0.1–0.2 | ~0.15–0.26 GiB |
 | **VL + loki-vl-proxy, combined** | **~1.4** | **~6.1 GiB** |
 
 For comparison, [Loki's own documentation](https://grafana.com/docs/loki/latest/setup/size/) puts the **minimum** hardware requirement at **38 cores and 59 GiB** for the same ingest class (`<3 TB/day`). That's the floor — a minimal, single-tenant, non-HA deployment.
@@ -198,7 +194,6 @@ For StatefulSet persistence, peer-cache fleet setup, OTLP push wiring, and image
 - **Runbook-backed alerts** — 13 alert rules, each with a linked runbook
 - **100+ Prometheus metrics** — all under `loki_vl_proxy_*` prefix
 - **Read-only by default** — `/push` blocked, delete gated, debug/admin disabled unless explicitly enabled
-- **Cold storage routing** — time-boundary split to Victoria Lakehouse for long-range queries
 
 ---
 
@@ -250,8 +245,7 @@ flowchart TD
     end
 
     subgraph L5["Upstream Systems"]
-        VL["VictoriaLogs<br/>hot backend"]
-        Lakehouse[("Victoria Lakehouse<br/>cold backend, optional")]
+        VL["VictoriaLogs<br/>log data"]
         VMA["vmalert<br/>rules / alerts state"]
         VM["VictoriaMetrics (optional)<br/>recording rule outputs"]
     end
@@ -272,9 +266,7 @@ flowchart TD
     L1C -->|miss| L2C
     L2C -->|miss| L3C
     L3C -->|miss| VL
-    L3C -. cold queries ≥ boundary .-> Lakehouse
     VL --> Q
-    Lakehouse -. cold results .-> Q
     Q --> RESP
 
     T --> VL
@@ -286,14 +278,12 @@ flowchart TD
     classDef exec fill:#172554,stroke:#818cf8,color:#eef2ff,stroke-width:2px;
     classDef cache fill:#3f1d2e,stroke:#f472b6,color:#fdf2f8,stroke-width:2px;
     classDef upstream fill:#052e16,stroke:#34d399,color:#ecfdf5,stroke-width:2px;
-    classDef cold fill:#1c1917,stroke:#a8a29e,color:#f5f5f4,stroke-width:1px,stroke-dasharray:4 4;
 
     class G,M,C client;
     class API,GUARD,EDGE api;
     class Q,T,R,RESP exec;
     class L1C,L2C,L3C cache;
     class VL,VMA,VM upstream;
-    class Lakehouse cold;
 ```
 
 ---
@@ -306,21 +296,19 @@ Loki-VL-proxy is validated continuously in CI against three separate tracks: Lok
 
 | Profile | Stream labels (`/labels`) | Detected fields / metadata | Best for |
 |---|---|---|---|
-| Loki-compatible (default) | underscore-only | translated underscore aliases | strict Loki UX, Grafana Explore/Drilldown |
-| Mixed | underscore-only | dotted + translated aliases | Grafana + OTel correlation |
+| Loki-conservative | underscore-only | translated underscore aliases | strict Loki UX |
+| Mixed (default) | underscore-only | dotted + translated aliases | Grafana + OTel correlation |
 | Native-field | underscore-only (`label-style=underscores`) | dotted-native only | VL/OTel-native field workflows |
 
-Default flags: `-label-style=underscores`, `-metadata-field-mode=translated`. Grafana query builder works best with underscore aliases; code mode accepts dotted expressions and translates them to VL-native field matching.
+Grafana query builder works best with underscore aliases. Code mode (`label-style=underscores`, `metadata-field-mode=translated`) handles dotted keys without UI tokenization issues.
 
 **Tuple safety:** Default responses return strict `[timestamp, line]` 2-tuples. 3-tuple metadata mode activates only when the client sends `X-Loki-Response-Encoding-Flags: categorize-labels`. Cache keys are segregated by tuple mode.
 
 ### LogQL Compatibility
 
-Stream selectors, filters, parser pipelines, metric queries, range functions, scalar bool comparisons, vector set operators, and invalid LogQL error forms are all covered and machine-validated in CI against a real Loki oracle. The suite spans 316 exhaustive LogQL parity test cases with machine-validated compatibility scores.
+Stream selectors, filters, parser pipelines, metric queries, range functions, scalar bool comparisons, vector set operators, and invalid LogQL error forms are all covered and machine-validated in CI against a real Loki oracle.
 
-**Typed LogQL parser:** The proxy includes a fully typed recursive-descent LogQL parser (`internal/logql`) that produces a structured AST for query validation, structural routing, and drop/keep extraction — replacing the previous regex-based approach. The parser enforces Loki-compatible semantic constraints (missing `| unwrap` in `rate_counter`, invalid `ip()` filter addresses, unclosed template delimiters, etc.) and generates the exact error messages Loki 3.x returns, so Grafana datasource clients receive the expected error shape.
-
-For full detail: [Loki Compatibility](docs/compatibility-loki.md), [Translation Reference](docs/translation-reference.md), [LogQL Parser](docs/logql-parser.md), [Known Issues](docs/KNOWN_ISSUES.md)
+For full detail: [Loki Compatibility](docs/compatibility-loki.md), [Translation Reference](docs/translation-reference.md), [Known Issues](docs/KNOWN_ISSUES.md)
 
 ---
 

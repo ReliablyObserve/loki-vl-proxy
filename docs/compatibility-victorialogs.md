@@ -98,7 +98,3 @@ When adding a new profile or changing a gate, update three places in the same PR
 - runtime derivation in `internal/proxy/backend.go`
 - capability metadata in `test/e2e-compat/compatibility-matrix.json`
 - this document section
-
-## Backend Compression
-
-**`backend-compression=auto` loopback detection**: When the VL backend URL resolves to a loopback address (`localhost`, `127.0.0.1`, `::1`), `auto` mode selects `identity` (no compression) to avoid the overhead of compressing and decompressing data on the same host. For remote backends, `auto` selects gzip. You can override with an explicit value (`gzip`, `zstd`, `none`).

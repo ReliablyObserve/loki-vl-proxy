@@ -81,17 +81,20 @@ func TestBestTopN_v150(t *testing.T) {
 	if len(pipes) != 2 {
 		t.Fatalf("expected 2 pipes, got %d", len(pipes))
 	}
+	if got := pipes[0].String(); got != "| sort by (count desc)" {
+		t.Errorf("pipe[0] = %q, want sort", got)
+	}
+	if got := pipes[1].String(); got != "| limit 5" {
+		t.Errorf("pipe[1] = %q, want limit", got)
+	}
 }
 
 func TestBestIPv4Range_pre145(t *testing.T) {
 	b := logsql.NewBuilder(logsql.CapabilitiesFor("v1.44.0"))
 	f := b.BestIPv4Range("client_ip", "192.168.1.0/24")
-	got := f.String()
-	if got == "client_ip:ipv4_range(192.168.1.0, 192.168.1.255)" {
-		t.Errorf("v1.44 should not emit native ipv4_range, got %q", got)
-	}
-	if got == "" {
-		t.Error("BestIPv4Range returned empty filter")
+	want := `client_ip:~"^192\.168\.1\."`
+	if got := f.String(); got != want {
+		t.Errorf("v1.44 fallback = %q, want %q", got, want)
 	}
 }
 
@@ -101,5 +104,18 @@ func TestBestIPv4Range_v145(t *testing.T) {
 	want := "client_ip:ipv4_range(192.168.1.0, 192.168.1.255)"
 	if got := f.String(); got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestBestIPv4Range_IPv6fallback(t *testing.T) {
+	// IPv6 CIDRs must not emit ipv4_range() even on v1.45+
+	b := logsql.NewBuilder(logsql.CapabilitiesFor("v1.45.0"))
+	f := b.BestIPv4Range("client_ip", "2001:db8::/32")
+	got := f.String()
+	if got == "" {
+		t.Error("BestIPv4Range with IPv6 CIDR returned empty filter")
+	}
+	if got == `client_ip:ipv4_range(2001:db8::, 2001:db8:ffff:ffff:ffff:ffff:ffff:ffff)` {
+		t.Errorf("v1.45 must not emit native ipv4_range for IPv6 CIDR, got %q", got)
 	}
 }

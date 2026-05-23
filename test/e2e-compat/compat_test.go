@@ -105,7 +105,7 @@ func TestSetup_IngestLogs(t *testing.T) {
 	waitForReady(t, lokiURL+"/ready", 30*time.Second)
 	waitForReady(t, proxyURL+"/ready", 30*time.Second)
 
-	// Push minimal baseline data for compat tests.
+	// Push to Loki
 	pushToLoki(t, now, []logLine{
 		{Msg: "GET /api/v1/users 200 15ms", Level: "info"},
 		{Msg: "POST /api/v1/orders 201 42ms", Level: "info"},
@@ -114,6 +114,8 @@ func TestSetup_IngestLogs(t *testing.T) {
 		{Msg: "GET /health 200 1ms", Level: "info"},
 		{Msg: `{"method":"GET","path":"/api","status":200,"duration":15}`, Level: "info"},
 	})
+
+	// Push to VictoriaLogs
 	pushToVL(t, now, []logLine{
 		{Msg: "GET /api/v1/users 200 15ms", Level: "info"},
 		{Msg: "POST /api/v1/orders 201 42ms", Level: "info"},
@@ -123,9 +125,8 @@ func TestSetup_IngestLogs(t *testing.T) {
 		{Msg: `{"method":"GET","path":"/api","status":200,"duration":15}`, Level: "info"},
 	})
 
-	// Push rich data: JSON parseable logs, logfmt, structured metadata with
-	// trace/span context and OTel resource attributes — visible in Grafana Explore.
-	ingestRichTestData(t)
+	// Wait for indexing
+	time.Sleep(3 * time.Second)
 }
 
 // --- Side-by-side comparison tests ---

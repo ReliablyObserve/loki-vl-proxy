@@ -27,13 +27,7 @@ func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Probe VL backend health via the circuit breaker.
-	// vlGet calls breaker.Allow() internally; if the breaker is open or the
-	// probe fails, we return 503. A successful vlGet also calls RecordSuccess(),
-	// counting toward the half-open successThreshold and closing the breaker
-	// once enough consecutive probes pass. A second explicit Allow() call here
-	// would consume an extra probe slot without recording a success, permanently
-	// deadlocking the breaker in half-open state when halfOpenProbes ≥ successThreshold.
+	// Probe VL backend health
 	readyReq := withOrgID(r)
 	resp, err := p.vlGet(readyReq.Context(), "/health", nil)
 	if err != nil {
@@ -45,6 +39,13 @@ func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode != http.StatusOK {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Write([]byte("backend not ready"))
+		return
+	}
+
+	// Circuit breaker check
+	if !p.breaker.Allow() {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		w.Write([]byte("circuit breaker open"))
 		return
 	}
 
@@ -119,14 +120,12 @@ func (p *Proxy) handleConfigStub(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("# loki-vl-proxy\n"))
 }
 
-// handleBuildInfo returns build info for Grafana datasource detection.
-// Version >= 3.0.0 is required for Grafana to send X-Loki-Response-Encoding-Flags:categorize-labels,
-// which enables structured_metadata in query_range responses.
+// handleBuildInfo returns fake build info for Grafana datasource detection.
 func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 	p.writeJSON(w, map[string]interface{}{
 		"status": "success",
 		"data": map[string]interface{}{
-			"version":   "3.7.1",
+			"version":   "2.9.0",
 			"revision":  "loki-vl-proxy",
 			"branch":    "main",
 			"goVersion": "go1.26.1",

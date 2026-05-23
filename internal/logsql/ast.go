@@ -1,3 +1,5 @@
+// Package logsql provides a typed AST and builder for VictoriaLogs LogsQL queries.
+// It targets VictoriaLogs v1.40 and later (v1.4x and v1.5x families).
 package logsql
 
 import (

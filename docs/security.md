@@ -23,10 +23,6 @@ The only write-path exception is `/loki/api/v1/delete`, gated by strict safeguar
 - optional multi-tenant fanout is explicit (`tenant-a|tenant-b`)
 - wildcard tenant mode (`*`) is proxy-specific and requires explicit allow config
 
-**Lightweight tenant enforcement**: `-require-tenant-header=true` rejects any request missing an `X-Scope-OrgID` header with HTTP 401. This is a lighter alternative to full auth — it catches misconfigured clients without requiring a token/credential system.
-
-**Backend tenant header forwarding**: Set `FORWARD_TENANT_HEADER=false` to prevent the proxy from forwarding `X-Scope-OrgID` to the backend (useful if the VL backend does not support multi-tenancy).
-
 ### 2) `/tail` Browser-Origin Controls
 
 - `/loki/api/v1/tail` can enforce allowed browser origins
@@ -55,13 +51,6 @@ The only write-path exception is `/loki/api/v1/delete`, gated by strict safeguar
 - backend TLS controls for VictoriaLogs/OTLP exporters
 - controlled forwarding of auth headers/cookies to backend
 - optional peer-cache shared-token protection via `-peer-auth-token`
-
-**mTLS / client certificate flags:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `-tls-require-client-cert` | `false` | Require client TLS certificate (mTLS) |
-| `-tls-client-ca-file` | — | CA certificate for validating client certs |
 
 ## CI Security Lanes
 

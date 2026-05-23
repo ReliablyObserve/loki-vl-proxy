@@ -53,10 +53,6 @@ This especially matters for:
 Treat those paths as supported compatibility work, not as zero-cost backend
 equivalents.
 
-### Pipeline Stages
-
-**`| drop` / `| keep` matcher form does not mutate stream labels**: When using `| drop field=value` or `| keep field=value` matcher syntax, the proxy removes/keeps the field from structured metadata and parsed fields only. Stream labels (from the log stream's `_stream` field) are not mutated by matcher conditions. Use bare `| drop field` to unconditionally remove a field from VL's storage layer.
-
 ### Hot+Cold response merging materializes full response
 
 When both hot (VictoriaLogs) and cold (Victoria Lakehouse) backends return results,
@@ -67,8 +63,6 @@ algorithm, not an incidental implementation detail. Very large time ranges hitti
 both backends will see higher proxy memory usage than hot-only queries. Workaround:
 keep cold queries to bounded time ranges, or route cold-only queries directly to the
 cold backend.
-
-**Backward-direction hot+cold merge buffers cold response**: When a query spans both the hot (VictoriaLogs) and cold (Victoria Lakehouse) backends with `direction=backward`, the proxy reads the entire cold response into memory to reverse it before merging. Avoid very large time ranges with backward direction when cold storage is enabled.
 
 ## Operational Caveats
 
@@ -81,10 +75,6 @@ cold backend.
 | Large body fields | Very large body fields can still be dropped on the VictoriaLogs side. Track the upstream issue: [VictoriaLogs issue #91](https://github.com/VictoriaMetrics/victorialogs-datasource/issues/91). |
 | Optional tenant header | By default the proxy accepts requests without `X-Scope-OrgID` and routes them to the default tenant. Use `-require-tenant-header` (or `-auth.enabled`) to reject requests that omit the header with HTTP 401. |
 | Multi-tenant serial fanout | When `X-Scope-OrgID` contains multiple tenants (e.g. `tenant1\|tenant2\|tenant3`), the proxy issues sub-requests to each tenant sequentially. Latency scales linearly with the number of tenants. For high fan-out counts (>4 tenants), consider running per-tenant Grafana datasources instead of relying on the multi-tenant merge path. |
-
-### Multi-tenant serial fanout
-
-**Multi-tenant fanout is serial**: When routing a single query across multiple tenants, the proxy dispatches sub-requests sequentially (one tenant at a time). Latency scales linearly with tenant count. For high fan-out (4+ tenants), total response time equals the sum of per-tenant latency rather than the maximum.
 
 ## What Is No Longer an Open Gap
 
@@ -103,12 +93,6 @@ These are not current open issues in this codebase:
 - circuit breaker sliding window — failure counting uses a 30-second sliding window; sporadic slow-query resets no longer open the breaker (v1.18.0)
 - deterministic log stream ordering for multi-window queries — streams and per-stream values now sorted stably before response emission (v1.21.1)
 - `offset` directive — fully implemented: proxy strips the offset clause and shifts `start`/`end` (or `time` for instant queries) backward by the offset duration before backend dispatch
-- `| drop field=value` matcher semantics — proxy now conditionally removes a field only when its value matches, via proxy-side post-processing (`ParseDropConditions` + `applyDropConditions`); previously the value predicate was silently ignored and the field was always dropped (v3.7.1)
-- structuredMetadata vs parsedFields classification — proxy correctly classifies structured metadata fields by comparing against `_msg` JSON content; previously some structured metadata fields were misclassified as parsed fields (v3.7.1)
-- exhaustive parity test coverage — 316 LogQL parity cases with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved (v3.7.1)
-- `absent_over_time()` — fully implemented (v1.35.0); translates to `stats count()` with empty-series emission
-- `sort` / `sort_desc` outer aggregations — fixed in v1.35.0; sort by metric value across series now works correctly
-- Cold storage backend routing (Victoria Lakehouse) — implemented v1.28.0; time-boundary split between hot VL and cold Lakehouse
 
 ## Related Docs
 

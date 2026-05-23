@@ -380,26 +380,16 @@ func (p *Proxy) fetchQueryRangeWindow(
 	params.Set("end", strconv.FormatInt(window.endNs, 10))
 	params.Set("limit", strconv.Itoa(windowLimit))
 
-	// Guard: if the circuit breaker is open, bail before spending any retry budget.
-	// All retries below use vlPostHTTP (no per-attempt CB recording) so that N retries
-	// of one failing window count as one failure, not N. RecordSuccess/RecordFailure is
-	// called exactly once per window fetch at the bottom.
-	if !p.breaker.Allow() {
-		return queryRangeWindowCacheEntry{}, fmt.Errorf("circuit breaker open — backend unavailable")
-	}
-
-	var lastFetchErr error
 	for attempt := 1; attempt <= queryRangeWindowFetchAttempts; attempt++ {
 		fetchStart := time.Now()
-		// vlPostHTTP: raw HTTP without circuit-breaker recording.
-		// We skip the coalescer to avoid the 256 MB io.ReadAll allocation
-		// in the hot path (8+ parallel windows).
-		resp, err := p.vlPostHTTP(fetchCtx, "/select/logsql/query", params)
+		// Stream the VL response directly without buffering the full body.
+		// vlPost checks the circuit breaker; we skip the coalescer to avoid
+		// the 256 MB io.ReadAll allocation in the hot path (8+ parallel windows).
+		resp, err := p.vlPost(fetchCtx, "/select/logsql/query", params)
 		fetchDuration := time.Since(fetchStart)
 		p.metrics.RecordQueryRangeWindowFetchDuration(fetchDuration)
 
 		if err == nil && resp.StatusCode < 400 {
-			p.breaker.RecordSuccess()
 			p.observeQueryRangeWindowFetch(fetchDuration, false)
 			entries := p.vlLogsToLokiWindowEntriesStream(resp.Body, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 			_ = resp.Body.Close()
@@ -432,11 +422,10 @@ func (p *Proxy) fetchQueryRangeWindow(
 			}
 			fetchErr = &queryRangeWindowHTTPError{status: resp.StatusCode, msg: msg}
 		}
-		lastFetchErr = fetchErr
 
 		p.observeQueryRangeWindowFetch(fetchDuration, true)
 		if attempt >= queryRangeWindowFetchAttempts || !shouldRetryQueryRangeWindow(fetchErr) {
-			break
+			return queryRangeWindowCacheEntry{}, fetchErr
 		}
 
 		p.metrics.RecordQueryRangeWindowRetry()
@@ -455,12 +444,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 		}
 	}
 
-	// Record exactly one circuit-breaker outcome for the entire window fetch attempt.
-	// Transport failures (connection refused, EOF) count; HTTP errors do not.
-	if shouldRecordBreakerFailure(lastFetchErr) {
-		p.breaker.RecordFailure()
-	}
-	return queryRangeWindowCacheEntry{}, lastFetchErr
+	return queryRangeWindowCacheEntry{}, errors.New("query_range window fetch failed")
 }
 
 func (p *Proxy) prefilterQueryRangeWindowsByHits(
@@ -683,12 +667,6 @@ func shouldRetryQueryRangeWindow(err error) bool {
 		}
 	}
 	lower := strings.ToLower(err.Error())
-	// Circuit breaker is already open: retrying immediately burns the open
-	// window and accumulates more RecordFailure calls. Return false so the
-	// caller surfaces the 503 right away instead of spinning.
-	if strings.Contains(lower, "circuit breaker") {
-		return false
-	}
 	return strings.Contains(lower, "backend unavailable") ||
 		strings.Contains(lower, "all the 1 backends") ||
 		strings.Contains(lower, "connection refused") ||

@@ -159,18 +159,6 @@ func FuzzTranslateWithStreamFields(f *testing.F) {
 		`{app!="nginx"}`,
 		`{}`,
 		`{app="nginx"} |= "error"`,
-		// Additional edge cases for drop matcher paths
-		`{app="nginx"} | json | drop level="debug"`,
-		`{app="nginx"} | logfmt | drop level!="info", trace_id`,
-		`{app="nginx"} | json | drop level=~"debug|trace"`,
-		`{app="nginx"} | json | drop __error__, level="debug"`,
-		// Selector variants
-		`{app="nginx", level=~"(error|warn)", env!=""}`,
-		`{cluster=~".*-prod", namespace=~"^sys"}`,
-		`{team="backend", tier!="cache"}`,
-		// Deeply nested pipelines
-		`{app="nginx"} | json | method="GET" | status>=200 | status<400 | drop trace_id | keep method, status`,
-		`{app="nginx"} | logfmt | level="error" | duration>1000 | drop msg | line_format "{{.level}}: {{.duration}}"`,
 	}
 	for _, s := range seeds {
 		f.Add(s)
@@ -179,61 +167,6 @@ func FuzzTranslateWithStreamFields(f *testing.F) {
 	streamFields := map[string]bool{"app": true, "env": true}
 	f.Fuzz(func(t *testing.T, query string) {
 		_, _ = TranslateLogQLWithStreamFields(query, nil, streamFields)
-	})
-}
-
-// FuzzParseDropConditions tests drop condition parsing with arbitrary inputs.
-// Run: go test -fuzz=FuzzParseDropConditions -fuzztime=30s ./internal/translator/
-func FuzzParseDropConditions(f *testing.F) {
-	seeds := []string{
-		// Valid bare-field drops
-		`{app="nginx"} | drop trace_id`,
-		`{app="nginx"} | drop trace_id, span_id`,
-		// Valid matcher-form drops
-		`{app="nginx"} | drop level="debug"`,
-		`{app="nginx"} | drop level!="info"`,
-		`{app="nginx"} | drop level=~"debug|trace"`,
-		`{app="nginx"} | drop level!~"info|warn"`,
-		// Mixed
-		`{app="nginx"} | drop trace_id, level="debug"`,
-		`{app="nginx"} | json | drop __error__, level="debug"`,
-		// Multiple drop stages
-		`{app="nginx"} | drop level="debug" | drop env="prod"`,
-		// With parser
-		`{app="nginx"} | logfmt | drop level="debug" | drop msg`,
-		// Quoted values with special chars
-		`{app="nginx"} | drop path="/api/v1/health"`,
-		`{app="nginx"} | drop msg=~"timeout.*exceeded"`,
-		// Empty / malformed
-		``,
-		`{app="nginx"}`,
-		`{app="nginx"} | json`,
-		// Metric queries (should return nil conditions)
-		`rate({app="nginx"}[5m])`,
-		`sum(count_over_time({app="nginx"}[5m])) by (app)`,
-	}
-	for _, s := range seeds {
-		f.Add(s)
-	}
-
-	f.Fuzz(func(t *testing.T, query string) {
-		// Must never panic; result may be empty or non-empty
-		conds := ParseDropConditions(query)
-		// Validate each condition is internally consistent
-		for _, dc := range conds {
-			if dc.Field == "" {
-				t.Error("ParseDropConditions returned condition with empty field")
-			}
-			switch dc.Op {
-			case "=", "!=", "=~", "!~":
-			default:
-				t.Errorf("ParseDropConditions returned unknown op %q", dc.Op)
-			}
-			// Matches must not panic on arbitrary strings
-			_ = dc.Matches("")
-			_ = dc.Matches(dc.Value)
-			_ = dc.Matches("arbitrary_value_xyz")
-		}
 	})
 }
 

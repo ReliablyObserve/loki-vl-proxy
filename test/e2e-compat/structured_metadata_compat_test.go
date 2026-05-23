@@ -18,7 +18,6 @@ var (
 	proxyTranslatedMetadataURL   = envOrOtel("PROXY_TRANSLATED_METADATA_URL", "http://localhost:13107")
 	proxyNoStructuredMetadataURL = envOrOtel("PROXY_NO_STRUCTURED_METADATA_URL", "http://localhost:13108")
 	structuredMetadataOnce       sync.Once
-	nonOTelMetadataOnce          sync.Once
 )
 
 func TestStructuredMetadata_HybridModeExposesNativeAndTranslatedAliases(t *testing.T) {
@@ -165,122 +164,16 @@ func TestStructuredMetadata_DefaultProxyCategorizedIncludesEventMetadata(t *test
 	labels := firstStreamLabels(t, resp)
 	metadata := firstStreamStructuredMetadata(t, resp)
 
-	// Default proxy uses label-style=underscores, so dotted VL stream labels are translated.
-	for _, want := range []string{"service_name", "k8s_pod_name"} {
+	for _, want := range []string{"service.name", "k8s.pod.name"} {
 		if _, ok := labels[want]; !ok {
-			t.Fatalf("default proxy (underscores) labels missing %q: %+v", want, labels)
+			t.Fatalf("default passthrough labels missing %q: %+v", want, labels)
 		}
 	}
-	// Default proxy uses metadata-field-mode=translated, so dotted metadata fields are translated.
-	for _, want := range []string{"http_target", "cloud_region"} {
+	for _, want := range []string{"http.target", "cloud.region"} {
 		if _, ok := metadata[want]; !ok {
 			t.Fatalf("default proxy categorize-labels response missing structuredMetadata %q: %+v", want, metadata)
 		}
 	}
-}
-
-// TestStructuredMetadata_NonOTelPlainTextGoesToStructuredMetadata verifies that
-// non-OTel extra fields (plain underscore keys, no dots) stored alongside a
-// plain-text log line in VictoriaLogs are classified as structuredMetadata in
-// the categorize-labels response, not as parsedFields. This is the non-OTel
-// equivalent of the OTel dotted-metadata classification: VL stores the extra
-// fields flat; the proxy infers category from _msg content (not JSON → all
-// extras are structuredMetadata).
-func TestStructuredMetadata_NonOTelPlainTextGoesToStructuredMetadata(t *testing.T) {
-	ensureNonOTelMetadataData(t)
-
-	resp := queryRangeCategorized(t, proxyURL, `{service_name="non-otel-metadata-e2e"}`)
-	labels := firstStreamLabels(t, resp)
-	metadata := firstStreamStructuredMetadata(t, resp)
-
-	for _, want := range []string{"service_name", "level"} {
-		if _, ok := labels[want]; !ok {
-			t.Fatalf("non-OTel plain-text stream labels missing %q: %+v", want, labels)
-		}
-	}
-	// trace_id and span_id were pushed as extra VL fields alongside a plain-text
-	// _msg, so the proxy _msg-key heuristic places them in structuredMetadata.
-	for _, want := range []string{"trace_id", "span_id"} {
-		if _, ok := metadata[want]; !ok {
-			t.Fatalf("non-OTel plain-text structuredMetadata missing %q: %+v", want, metadata)
-		}
-	}
-	// Extra fields must NOT bleed into stream labels.
-	for _, forbidden := range []string{"trace_id", "span_id"} {
-		if _, ok := labels[forbidden]; ok {
-			t.Fatalf("non-OTel metadata field %q unexpectedly appeared in stream labels: %+v", forbidden, labels)
-		}
-	}
-}
-
-// TestStructuredMetadata_NonOTelJSONLogMetadataGoesToStructuredMetadata verifies
-// that when the log line (_msg) is JSON and an extra VL field is NOT among the
-// JSON keys, the extra field is still classified as structuredMetadata. This is
-// the _msg-key heuristic: only keys present inside the JSON log content are
-// treated as parsedFields; everything else is structuredMetadata.
-func TestStructuredMetadata_NonOTelJSONLogMetadataGoesToStructuredMetadata(t *testing.T) {
-	ensureNonOTelMetadataData(t)
-
-	resp := queryRangeCategorized(t, proxyURL, `{service_name="non-otel-json-metadata-e2e"}`)
-	labels := firstStreamLabels(t, resp)
-	metadata := firstStreamStructuredMetadata(t, resp)
-
-	for _, want := range []string{"service_name", "level"} {
-		if _, ok := labels[want]; !ok {
-			t.Fatalf("non-OTel JSON-log stream labels missing %q: %+v", want, labels)
-		}
-	}
-	// request_id was pushed as an extra VL field NOT embedded in the JSON _msg,
-	// so the _msg-key heuristic routes it to structuredMetadata.
-	if _, ok := metadata["request_id"]; !ok {
-		t.Fatalf("non-OTel JSON-log structuredMetadata missing request_id: %+v", metadata)
-	}
-	// request_id must not leak into stream labels.
-	if _, ok := labels["request_id"]; ok {
-		t.Fatalf("non-OTel metadata field request_id unexpectedly in stream labels: %+v", labels)
-	}
-}
-
-func ensureNonOTelMetadataData(t *testing.T) {
-	t.Helper()
-	nonOTelMetadataOnce.Do(func() {
-		now := time.Now().UTC()
-		tsRFC3339 := now.Format(time.RFC3339Nano)
-
-		// Plain-text log line with trace_id and span_id as extra VL fields.
-		// These should surface as structuredMetadata since _msg is not JSON.
-		plainLine := fmt.Sprintf(
-			`{"_time":"%s","_msg":"user login event","service_name":"non-otel-metadata-e2e","level":"info","trace_id":"abc123","span_id":"def456"}`,
-			tsRFC3339,
-		)
-		vlURLPlain := vlURL + "/insert/jsonline?_stream_fields=service_name,level"
-		resp, err := http.Post(vlURLPlain, "application/stream+json", strings.NewReader(plainLine))
-		if err != nil {
-			t.Fatalf("push non-OTel plain-text metadata stream to VL: %v", err)
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode/100 != 2 {
-			t.Fatalf("push non-OTel plain-text metadata stream to VL failed: %d", resp.StatusCode)
-		}
-
-		// JSON log line where request_id is an extra VL field NOT embedded in _msg.
-		// The _msg-key heuristic should route request_id to structuredMetadata.
-		jsonLine := fmt.Sprintf(
-			`{"_time":"%s","_msg":"{\"action\":\"checkout\",\"status\":200}","service_name":"non-otel-json-metadata-e2e","level":"info","request_id":"req-789"}`,
-			tsRFC3339,
-		)
-		vlURLJSON := vlURL + "/insert/jsonline?_stream_fields=service_name,level"
-		resp, err = http.Post(vlURLJSON, "application/stream+json", strings.NewReader(jsonLine))
-		if err != nil {
-			t.Fatalf("push non-OTel JSON-log metadata stream to VL: %v", err)
-		}
-		_ = resp.Body.Close()
-		if resp.StatusCode/100 != 2 {
-			t.Fatalf("push non-OTel JSON-log metadata stream to VL failed: %d", resp.StatusCode)
-		}
-
-		time.Sleep(3 * time.Second)
-	})
 }
 
 func ensureStructuredMetadataData(t *testing.T) {

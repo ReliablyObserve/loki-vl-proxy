@@ -172,7 +172,6 @@ func TestRun_Success(t *testing.T) {
 		"-backend", "http://backend.test",
 		"-response-gzip=false",
 		"-tail.mode=synthetic",
-		"-server.admin-auth-token=test-token",
 	}, func(key string) string {
 		if key == "OTEL_SERVICE_NAME" {
 			return "custom-proxy"
@@ -239,7 +238,7 @@ func TestRun_ParseError(t *testing.T) {
 
 func TestRun_RuntimeInitError(t *testing.T) {
 	wantErr := errors.New("boom")
-	err := run([]string{"-server.admin-auth-token=test-token"}, func(string) string { return "" }, io.Discard, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+	err := run([]string{}, func(string) string { return "" }, io.Discard, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
 		return &fakeOTLPPusher{}
 	}, func(runtimeOptions, *slog.Logger, signalNotifier, otlpPusherFactory) (*runtimeState, error) {
 		return nil, wantErr
@@ -293,7 +292,7 @@ func TestRunMain_SuccessDoesNotExit(t *testing.T) {
 	exits := &exitRecorder{}
 
 	runMain(
-		[]string{"-server.admin-auth-token=test-token"},
+		nil,
 		func(string) string { return "" },
 		io.Discard,
 		&bytes.Buffer{},
@@ -329,7 +328,7 @@ func TestRun_DefaultEnablesStructuredMetadata(t *testing.T) {
 
 	var captured runtimeOptions
 	err := run(
-		[]string{"-server.admin-auth-token=test-token"},
+		nil,
 		func(string) string { return "" },
 		io.Discard,
 		func(chan<- os.Signal, ...os.Signal) {},
@@ -809,7 +808,7 @@ func TestReloadDynamicConfig(t *testing.T) {
 		"FIELD_MAPPING": `[{"vl_field":"service.name","loki_label":"service_name"}]`,
 	}
 
-	reloadDynamicConfig(fake, func(key string) string { return env[key] }, "", logger)
+	reloadDynamicConfig(fake, func(key string) string { return env[key] }, logger)
 
 	if fake.tenantMap["team-a"] != (proxy.TenantMapping{AccountID: "1", ProjectID: "2"}) {
 		t.Fatalf("unexpected tenant map reload: %+v", fake.tenantMap)
@@ -832,7 +831,7 @@ func TestReloadDynamicConfig_InvalidJSON(t *testing.T) {
 		"FIELD_MAPPING": "{",
 	}
 
-	reloadDynamicConfig(fake, func(key string) string { return env[key] }, "", logger)
+	reloadDynamicConfig(fake, func(key string) string { return env[key] }, logger)
 
 	if fake.tenantMap != nil || fake.fieldMappings != nil {
 		t.Fatalf("expected no reloads on invalid JSON, got %+v %+v", fake.tenantMap, fake.fieldMappings)
@@ -854,125 +853,6 @@ func TestParseTenantMapJSON(t *testing.T) {
 	if _, err := parseTenantMapJSON("{"); err == nil {
 		t.Fatal("expected invalid tenant map JSON error")
 	}
-}
-
-func TestValidateTenantMap(t *testing.T) {
-	valid := map[string]proxy.TenantMapping{
-		"team-a": {AccountID: "1", ProjectID: "2"},
-		"team-b": {AccountID: "0", ProjectID: "0"},
-		"ops":    {AccountID: "4294967295", ProjectID: "0"},
-	}
-	if err := validateTenantMap(valid); err != nil {
-		t.Fatalf("unexpected error for valid map: %v", err)
-	}
-
-	cases := []struct {
-		name    string
-		m       map[string]proxy.TenantMapping
-		wantErr string
-	}{
-		{
-			name:    "non-numeric account_id",
-			m:       map[string]proxy.TenantMapping{"x": {AccountID: "prod", ProjectID: "0"}},
-			wantErr: "account_id",
-		},
-		{
-			name:    "non-numeric project_id",
-			m:       map[string]proxy.TenantMapping{"x": {AccountID: "1", ProjectID: "staging"}},
-			wantErr: "project_id",
-		},
-		{
-			name:    "negative account_id",
-			m:       map[string]proxy.TenantMapping{"x": {AccountID: "-1", ProjectID: "0"}},
-			wantErr: "account_id",
-		},
-		{
-			name:    "uint32 overflow account_id",
-			m:       map[string]proxy.TenantMapping{"x": {AccountID: "4294967296", ProjectID: "0"}},
-			wantErr: "account_id",
-		},
-		{
-			name:    "empty account_id",
-			m:       map[string]proxy.TenantMapping{"x": {AccountID: "", ProjectID: "0"}},
-			wantErr: "account_id",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			err := validateTenantMap(tc.m)
-			if err == nil {
-				t.Fatal("expected error, got nil")
-			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Fatalf("expected error containing %q, got: %v", tc.wantErr, err)
-			}
-		})
-	}
-}
-
-func TestLoadTenantMapFile(t *testing.T) {
-	t.Run("yaml", func(t *testing.T) {
-		f := t.TempDir() + "/tenant-map.yaml"
-		content := "team-a:\n  account_id: \"1\"\n  project_id: \"2\"\nteam-b:\n  account_id: \"10\"\n  project_id: \"0\"\n"
-		if err := os.WriteFile(f, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		m, err := loadTenantMapFile(f)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if m["team-a"] != (proxy.TenantMapping{AccountID: "1", ProjectID: "2"}) {
-			t.Fatalf("unexpected team-a mapping: %+v", m["team-a"])
-		}
-		if m["team-b"] != (proxy.TenantMapping{AccountID: "10", ProjectID: "0"}) {
-			t.Fatalf("unexpected team-b mapping: %+v", m["team-b"])
-		}
-	})
-
-	t.Run("json", func(t *testing.T) {
-		f := t.TempDir() + "/tenant-map.json"
-		content := `{"ops-prod":{"account_id":"42","project_id":"0"}}`
-		if err := os.WriteFile(f, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		m, err := loadTenantMapFile(f)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if m["ops-prod"] != (proxy.TenantMapping{AccountID: "42", ProjectID: "0"}) {
-			t.Fatalf("unexpected ops-prod mapping: %+v", m["ops-prod"])
-		}
-	})
-
-	t.Run("missing file", func(t *testing.T) {
-		_, err := loadTenantMapFile("/nonexistent/tenant-map.yaml")
-		if err == nil {
-			t.Fatal("expected error for missing file, got nil")
-		}
-	})
-
-	t.Run("invalid yaml", func(t *testing.T) {
-		f := t.TempDir() + "/tenant-map.yaml"
-		if err := os.WriteFile(f, []byte(":\t:bad yaml"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		_, err := loadTenantMapFile(f)
-		if err == nil {
-			t.Fatal("expected error for invalid YAML, got nil")
-		}
-	})
-
-	t.Run("invalid account_id in yaml", func(t *testing.T) {
-		f := t.TempDir() + "/tenant-map.yaml"
-		content := "team-x:\n  account_id: \"not-a-number\"\n  project_id: \"0\"\n"
-		if err := os.WriteFile(f, []byte(content), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		_, err := loadTenantMapFile(f)
-		if err == nil {
-			t.Fatal("expected validation error, got nil")
-		}
-	})
 }
 
 func TestParseTenantDefaultLimitsJSON(t *testing.T) {
@@ -1394,32 +1274,20 @@ func TestLogProxyStartup_EmitsBuildInfoAndPeerCacheAuthHint(t *testing.T) {
 }
 
 func TestValidateAdminExposure(t *testing.T) {
-	// loopback — no token needed regardless of which endpoints are on
-	if err := validateAdminExposure("127.0.0.1:3100", true, true, false, ""); err != nil {
+	if err := validateAdminExposure("127.0.0.1:3100", true, false, ""); err != nil {
 		t.Fatalf("expected loopback admin exposure to be allowed without token, got %v", err)
 	}
-	if err := validateAdminExposure("[::1]:3100", true, false, true, ""); err != nil {
+	if err := validateAdminExposure("[::1]:3100", false, true, ""); err != nil {
 		t.Fatalf("expected IPv6 loopback admin exposure to be allowed without token, got %v", err)
 	}
-	// no admin endpoints at all — OK without token
-	if err := validateAdminExposure(":3100", false, false, false, ""); err != nil {
+	if err := validateAdminExposure(":3100", false, false, ""); err != nil {
 		t.Fatalf("expected no admin endpoints enabled to bypass validation, got %v", err)
 	}
-	// token present — OK on non-loopback
-	if err := validateAdminExposure(":3100", true, true, false, "secret"); err != nil {
+	if err := validateAdminExposure(":3100", true, false, "secret"); err != nil {
 		t.Fatalf("expected token-protected admin exposure to be allowed, got %v", err)
 	}
-	// instrumentation on non-loopback without token — must be rejected
-	if err := validateAdminExposure(":3100", true, false, false, ""); err == nil {
-		t.Fatal("expected non-loopback instrumentation exposure without token to be rejected")
-	}
-	// pprof on non-loopback without token — must be rejected
-	if err := validateAdminExposure(":3100", false, true, false, ""); err == nil {
-		t.Fatal("expected non-loopback pprof exposure without token to be rejected")
-	}
-	// query analytics on non-loopback without token — must be rejected
-	if err := validateAdminExposure(":3100", false, false, true, ""); err == nil {
-		t.Fatal("expected non-loopback query analytics exposure without token to be rejected")
+	if err := validateAdminExposure(":3100", true, false, ""); err == nil {
+		t.Fatal("expected non-loopback admin exposure without token to be rejected")
 	}
 }
 
@@ -1876,7 +1744,7 @@ func TestWatchReloadSignals(t *testing.T) {
 			default:
 				return ""
 			}
-		}, "", logger)
+		}, logger)
 		close(done)
 	}()
 

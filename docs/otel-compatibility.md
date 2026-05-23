@@ -135,7 +135,7 @@ The proxy supports three metadata field exposure modes:
 
 | Mode | Detected Fields Output | Use Case |
 |------|----------------------|----------|
-| **Hybrid** (recommended for OTel) | Both `service.name` AND `service_name` | Maximum compatibility — Explore and Drilldown see both forms |
+| **Hybrid** (default) | Both `service.name` AND `service_name` | Maximum compatibility — Explore and Drilldown see both forms |
 | **Translated** | Only `service_name` | Strict Loki compatibility — no dots in field names |
 | **Native** | Only `service.name` | VL-native mode — expose original field names |
 
@@ -223,7 +223,7 @@ OTel label handling is controlled by the proxy's label style and metadata field 
 label-style: underscores  # dots → underscores (recommended for OTel; default is passthrough)
 
 # Metadata field mode: what detected_fields exposes
-metadata-field-mode: hybrid  # both forms (recommended for OTel; default is "translated")
+metadata-field-mode: hybrid  # both forms (default, recommended for OTel)
 ```
 
 For environments without OTel data, these defaults work correctly — synthetic `service_name` is suppressed, and only parsed message fields appear in `detected_fields`.

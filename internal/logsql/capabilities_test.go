@@ -30,6 +30,10 @@ func TestCapabilitiesFor(t *testing.T) {
 		{"v1.99.0", logsql.Capabilities{StatsRateSum: true, FieldIPv4Range: true, MetadataSubstring: true, DensePatternWindowing: true}},
 		// Empty string — safe baseline.
 		{"", logsql.Capabilities{}},
+		// no "v" prefix
+		{"1.44.0", logsql.Capabilities{StatsRateSum: true}},
+		// two-component version (no patch)
+		{"v1.40", logsql.Capabilities{}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.semver, func(t *testing.T) {

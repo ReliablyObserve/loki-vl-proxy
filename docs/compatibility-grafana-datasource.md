@@ -13,12 +13,6 @@ This track focuses on the built-in Grafana Loki datasource contract (`/api/datas
 - datasource resource endpoints (`labels`, `label/<name>/values`, `detected_*`, `index/volume*`, `patterns`, `drilldown-limits`)
 - datasource proxy API path shape (`/api/datasources/proxy/uid/<uid>/loki/api/v1/...`)
 
-## Response Format
-
-**Response Format**: The proxy returns log stream values as Loki 3-tuples `[timestamp, line, {metadata}]` when the datasource sends `categorize-labels=true` or `X-Grafana-Meta: categorize-labels`. This is controlled by `-emit-structured-metadata` (default: `true`). The third element carries structured metadata (parser-extracted fields, OTel attributes) as a key-value map that Grafana displays in the Event Details panel.
-
-`-emit-structured-metadata=false` disables this and returns 2-tuples `[timestamp, line]`. Only needed for very old Grafana versions that cannot handle the 3-tuple format.
-
 ## CI Coverage
 
 - workflow: `compat-drilldown.yaml` (runtime smoke path)
