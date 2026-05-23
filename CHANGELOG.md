@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **GHCR badge workflow hardened against empty API outputs**: `checkout@v6` → `checkout@v4` (v6 does not exist); shell defaults prevent empty `GITHUB_OUTPUT` values; Python `fmt()` handles empty string instead of causing `SyntaxError`.
+
 ## [1.39.0] - 2026-05-23
 
 ### Performance

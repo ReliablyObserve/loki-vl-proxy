@@ -14,7 +14,7 @@ jobs:
   update-ghcr-badges:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Fetch GHCR pull counts
         id: pulls
@@ -23,14 +23,14 @@ jobs:
         run: |
           MAIN=$(gh api /orgs/ReliablyObserve/packages/container/loki-vl-proxy --jq '.download_count' 2>/dev/null || echo 0)
           CHART=$(gh api '/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy' --jq '.download_count' 2>/dev/null || echo 0)
-          echo "main=$MAIN" >> "$GITHUB_OUTPUT"
-          echo "chart=$CHART" >> "$GITHUB_OUTPUT"
+          echo "main=${MAIN:-0}" >> "$GITHUB_OUTPUT"
+          echo "chart=${CHART:-0}" >> "$GITHUB_OUTPUT"
 
       - name: Write badge JSON files
         run: |
           fmt() {
             python3 -c "
-          n = $1
+          n = int('$1') if '$1' else 0
           if n >= 1_000_000:
               print(f'{n/1_000_000:.1f}M')
           elif n >= 1_000:
@@ -40,8 +40,10 @@ jobs:
           "
           }
 
-          MAIN_FMT=$(fmt ${{ steps.pulls.outputs.main }})
-          CHART_FMT=$(fmt ${{ steps.pulls.outputs.chart }})
+          MAIN_VAL="${{ steps.pulls.outputs.main }}"
+          CHART_VAL="${{ steps.pulls.outputs.chart }}"
+          MAIN_FMT=$(fmt "${MAIN_VAL:-0}")
+          CHART_FMT=$(fmt "${CHART_VAL:-0}")
 
           mkdir -p /tmp/badges
           cat > /tmp/badges/ghcr-pulls.json <<EOF
