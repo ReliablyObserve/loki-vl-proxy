@@ -658,7 +658,7 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 		if err != nil || phi < 0 || phi > 1 {
 			return bareParserMetricCompatSpec{}, false
 		}
-		unwrapField := extractBareParserUnwrapField(baseQuery)
+		unwrapField, unwrapConv := extractBareParserUnwrapExpr(baseQuery)
 		if unwrapField == "" {
 			return bareParserMetricCompatSpec{}, false
 		}
@@ -668,6 +668,7 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 			rangeWindow:     window,
 			rangeWindowExpr: windowRaw,
 			unwrapField:     unwrapField,
+			unwrapConv:      unwrapConv,
 			quantile:        phi,
 		}, true
 	}
@@ -685,10 +686,10 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 	if !ok && !isGrafanaRangeTemplateSelector(windowRaw) {
 		return bareParserMetricCompatSpec{}, false
 	}
-	unwrapField := ""
+	unwrapField, unwrapConv := "", ""
 	switch matches[1] {
 	case "rate_counter", "sum_over_time", "avg_over_time", "max_over_time", "min_over_time", "first_over_time", "last_over_time", "stddev_over_time", "stdvar_over_time":
-		unwrapField = extractBareParserUnwrapField(baseQuery)
+		unwrapField, unwrapConv = extractBareParserUnwrapExpr(baseQuery)
 		if unwrapField == "" {
 			return bareParserMetricCompatSpec{}, false
 		}
@@ -699,6 +700,7 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 		rangeWindow:     window,
 		rangeWindowExpr: windowRaw,
 		unwrapField:     unwrapField,
+		unwrapConv:      unwrapConv,
 	}, true
 }
 
@@ -723,14 +725,33 @@ func resolveBareParserMetricRangeWindow(spec bareParserMetricCompatSpec, start, 
 }
 
 func extractBareParserUnwrapField(query string) string {
+	field, _ := extractBareParserUnwrapExpr(query)
+	return field
+}
+
+// extractBareParserUnwrapExpr returns (field, conv) from a | unwrap expression.
+// conv is "duration" or "bytes" when a unit-conversion wrapper is present;
+// empty when the unwrap references a raw numeric field.
+func extractBareParserUnwrapExpr(query string) (field, conv string) {
 	matches := bareParserUnwrapFieldRE.FindStringSubmatch(query)
 	if len(matches) != 3 {
-		return ""
+		return "", ""
 	}
-	if field := strings.TrimSpace(matches[1]); field != "" {
-		return field
+	if f := strings.TrimSpace(matches[1]); f != "" {
+		// matches[1] is non-empty only when the duration()/bytes() wrapper is present.
+		return f, inferUnwrapConv(query)
 	}
-	return strings.TrimSpace(matches[2])
+	return strings.TrimSpace(matches[2]), ""
+}
+
+func inferUnwrapConv(query string) string {
+	if strings.Contains(query, "duration(") {
+		return "duration"
+	}
+	if strings.Contains(query, "bytes(") {
+		return "bytes"
+	}
+	return ""
 }
 
 func formatMetricSampleValue(v float64) string {
@@ -1712,7 +1733,10 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	// buckets: sum, max, min, first, last. Uses stats_query_range (pre-aggregated,
 	// O(buckets) not O(log-entries)) instead of raw log fetch. Falls back to the
 	// slow path on any error so correctness is preserved.
-	if spec.unwrapField != "" {
+	// Skip when unwrapConv is set (duration()/bytes()): VL's native max/min/etc.
+	// operates on raw string values ("15ms") rather than converted floats, so the
+	// aggregated result cannot be parsed as a number and all samples are dropped.
+	if spec.unwrapField != "" && spec.unwrapConv == "" {
 		vlField := p.labelTranslator.ToVL(spec.unwrapField)
 		var statsAggFunc, aggFunc string
 		switch spec.funcName {
