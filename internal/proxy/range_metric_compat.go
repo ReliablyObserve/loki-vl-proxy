@@ -16,6 +16,8 @@ import (
 	"time"
 
 	fj "github.com/valyala/fastjson"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 )
 
 type statsCompatSpec struct {
@@ -472,6 +474,36 @@ func hasOuterAggregationWithoutBy(logql string) bool {
 	}
 	matched := strings.ToLower(logql[:loc[1]])
 	return !strings.Contains(matched, " by") && !strings.Contains(matched, " without")
+}
+
+// parseTopKWrapper detects a top-level topk(K, expr) or bottomk(K, expr) wrapper.
+// Returns k, whether descending (true=topk, false=bottomk), ok=true only when
+// topk/bottomk is outermost with a valid positive integer K.
+func parseTopKWrapper(logql string) (k int, descending bool, ok bool) {
+	if strings.TrimSpace(logql) == "" {
+		return 0, false, false
+	}
+	parsed, err := logqlpkg.Parse(strings.TrimSpace(logql))
+	if err != nil {
+		return 0, false, false
+	}
+	va, isVA := parsed.(*logqlpkg.VectorAggregation)
+	if !isVA || !va.HasParam {
+		return 0, false, false
+	}
+	switch va.Op {
+	case logqlpkg.VectorTopK:
+		if int(va.Param) <= 0 {
+			return 0, false, false
+		}
+		return int(va.Param), true, true
+	case logqlpkg.VectorBottomK:
+		if int(va.Param) <= 0 {
+			return 0, false, false
+		}
+		return int(va.Param), false, true
+	}
+	return 0, false, false
 }
 
 // shouldUseManualRangeMetricCompat reports whether the given metric function
