@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.38.0] - 2026-05-23
+
 ### Added
 
 - **Typed LogQL parser and AST model layer** (`internal/logql`): stream selectors, all pipeline stage variants, range/vector aggregations with full `String()` round-trip serialisation. `ParseAndValidate()` provides a lightweight syntax gate for request handlers. `Translate()` converts the AST to LogsQL via the existing translator. A fuzz target ensures `Parse+String+Translate` never panic on arbitrary input.
