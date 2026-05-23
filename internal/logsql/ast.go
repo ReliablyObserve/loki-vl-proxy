@@ -17,13 +17,17 @@ type FilterExpr interface {
 	filterExpr()
 }
 
-// Pipe is a pipeline stage appended after the filter with `|`.
+// Pipe is a single pipe stage. String() returns the full pipe token including
+// the leading "| " separator (e.g. "| unpack_json", "| filter status:>=500").
+// Query.String() inserts a space before calling p.String(), so the result is
+// "filter | unpack_json" not "filter| unpack_json".
 type Pipe interface {
 	String() string
 	pipe()
 }
 
-// StatsFunc is a stats aggregation function.
+// StatsFunc is a function used inside PipeStats (e.g. count(), sum(field)).
+// Concrete implementations are defined alongside PipeStats in the pipe types section.
 type StatsFunc interface {
 	String() string
 	statsFunc()
@@ -168,6 +172,8 @@ func (f FieldFilter) String() string {
 		core = f.Field + ":range(" + f.Value + ")"
 	case FieldOpIn:
 		core = f.Field + ":in(" + f.Value + ")"
+	default:
+		panic(fmt.Sprintf("logsql: unknown FieldOp %d", f.Op))
 	}
 	if f.Negate {
 		return "NOT " + core
