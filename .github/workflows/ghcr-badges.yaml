@@ -21,16 +21,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          MAIN=$(gh api /orgs/ReliablyObserve/packages/container/loki-vl-proxy --jq '.download_count' 2>/dev/null || echo 0)
-          CHART=$(gh api '/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy' --jq '.download_count' 2>/dev/null || echo 0)
-          echo "main=$MAIN" >> "$GITHUB_OUTPUT"
-          echo "chart=$CHART" >> "$GITHUB_OUTPUT"
+          MAIN=$(gh api /orgs/ReliablyObserve/packages/container/loki-vl-proxy --jq '.download_count // 0' 2>/dev/null || echo 0)
+          CHART=$(gh api '/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy' --jq '.download_count // 0' 2>/dev/null || echo 0)
+          echo "main=${MAIN:-0}" >> "$GITHUB_OUTPUT"
+          echo "chart=${CHART:-0}" >> "$GITHUB_OUTPUT"
 
       - name: Write badge JSON files
         run: |
           fmt() {
+            local val="${1:-0}"
             python3 -c "
-          n = $1
+          n = int('${val}') if '${val}'.isdigit() else 0
           if n >= 1_000_000:
               print(f'{n/1_000_000:.1f}M')
           elif n >= 1_000:
