@@ -1491,7 +1491,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
 			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
-			if !(isMixedOffset && isBinaryForOffset) {
+			if !isMixedOffset || !isBinaryForOffset {
 				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
 				p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 				return
@@ -1715,7 +1715,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
 			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
 			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
-			if !(isMixedOffset && isBinaryForOffset) {
+			if !isMixedOffset || !isBinaryForOffset {
 				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
 				p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
 				return
