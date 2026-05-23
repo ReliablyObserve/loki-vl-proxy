@@ -279,7 +279,9 @@ func (d DeferredExpr) String() string { return d.Raw }
 func (d DeferredExpr) expr()          {}
 func (d DeferredExpr) filterExpr()    {}
 
-// --- Stub pipe types (full definitions in Task 2) ---
+// ---------------------------------------------------------------------------
+// Core pipe types
+// ---------------------------------------------------------------------------
 
 // PipeUnpackJSON unpacks JSON fields from log lines.
 type PipeUnpackJSON struct{}
@@ -459,6 +461,9 @@ func (p PipeStats) String() string {
 		b.WriteString(" by (")
 		b.WriteString(strings.Join(keys, ", "))
 		b.WriteString(")")
+	}
+	if len(p.Funcs) == 0 {
+		panic("logsql: PipeStats requires at least one stats function")
 	}
 	for i, fa := range p.Funcs {
 		if i == 0 {
