@@ -9,6 +9,20 @@ Replace the 3000-line string-concatenation translator (`internal/translator`) wi
 
 Proxy-evaluated constructs (binary metric ops, subqueries, `label_replace`, `label_join`, `without`-grouping) stay as marker nodes in this iteration. Native LogsQL constructs become proper typed nodes.
 
+## Supported VictoriaLogs Versions
+
+This package targets the **v1.4x** (v1.40–v1.49) and **v1.5x** (v1.50+) VictoriaLogs families. Versions earlier than v1.40 are explicitly out of scope.
+
+| Version | Baseline capabilities |
+|---------|-----------------------|
+| v1.40–v1.43 | `PipeHits`, `PipeRunning`, `PipeBlock`, `PipeUniq`, `PipeTop`, `StatsHistogram` |
+| v1.44 | + `rate_sum()` |
+| v1.45–v1.48 | + `ipv4_range()` field filter |
+| v1.49 | + metadata substring filter |
+| v1.50+ | + dense pattern windowing |
+
+See `docs/logsql-architecture.md` for the full architecture reference and Mermaid diagrams.
+
 ---
 
 ## Approach: New `internal/logsql` package (Option 1)
