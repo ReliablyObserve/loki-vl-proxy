@@ -22,7 +22,20 @@ import (
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
 	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	if p.handleStatsCompatRange(w, r, originalLogql, logsqlQuery) {
+
+	topK, topKDesc, hasTopK := parseTopKWrapper(originalLogql)
+
+	out := http.ResponseWriter(w)
+	var topKBuf *bufferedResponseWriter
+	if hasTopK {
+		topKBuf = &bufferedResponseWriter{}
+		out = topKBuf
+	}
+
+	if p.handleStatsCompatRange(out, r, originalLogql, logsqlQuery) {
+		if hasTopK {
+			writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
+		}
 		return
 	}
 
@@ -37,6 +50,9 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-origSpec.Window.Nanoseconds()))
 		p.proxyStatsQueryRangeDirect(buf, shiftedR, logsqlQuery)
 		body := trimStatsQueryRangeResponseFromStart(buf.body, origStartNs)
+		if hasTopK {
+			body = applyTopKToMatrix(body, topK, topKDesc)
+		}
 		code := buf.code
 		if code == 0 {
 			code = http.StatusOK
@@ -49,7 +65,10 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	p.proxyStatsQueryRangeDirect(w, r, logsqlQuery)
+	p.proxyStatsQueryRangeDirect(out, r, logsqlQuery)
+	if hasTopK {
+		writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
+	}
 }
 
 // proxyStatsQueryRangeDirect issues the VL stats_query_range request directly,
@@ -496,8 +515,12 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	}
 
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
+	body = wrapAsLokiResponse(body, "vector")
+	if topK, topKDesc, hasTopK := parseTopKWrapper(r.FormValue("query")); hasTopK {
+		body = applyTopKToVector(body, topK, topKDesc)
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(wrapAsLokiResponse(body, "vector"))
+	_, _ = w.Write(body)
 }
 
 // proxyBinaryMetricQueryRangeVM evaluates with vector matching (on/ignoring/group_left/group_right).
@@ -1078,4 +1101,149 @@ func metricKey(metric map[string]interface{}) string {
 	}
 	sort.Strings(parts)
 	return strings.Join(parts, ",")
+}
+
+// applyTopKToMatrix filters a Loki matrix response to the top or bottom k series
+// by maximum absolute value across all time steps. descending=true keeps the highest
+// values (topk), descending=false keeps the lowest (bottomk). On parse error, returns
+// the original body unchanged.
+func applyTopKToMatrix(body []byte, k int, descending bool) []byte {
+	v, err := fj.ParseBytes(body)
+	if err != nil {
+		return body
+	}
+	result := v.GetArray("data", "result")
+	if len(result) <= k {
+		return body
+	}
+
+	type ranked struct {
+		idx      int
+		maxValue float64
+	}
+	ranks := make([]ranked, len(result))
+	for i, s := range result {
+		var maxV float64
+		for _, val := range s.GetArray("values") {
+			arr := val.GetArray()
+			if len(arr) < 2 {
+				continue
+			}
+			vf := arr[1].GetStringBytes()
+			f := parseFloat64Bytes(vf)
+			if abs64(f) > abs64(maxV) {
+				maxV = f
+			}
+		}
+		ranks[i] = ranked{i, maxV}
+	}
+
+	sort.Slice(ranks, func(a, b int) bool {
+		if descending {
+			return ranks[a].maxValue > ranks[b].maxValue
+		}
+		return ranks[a].maxValue < ranks[b].maxValue
+	})
+
+	kept := make([]int, k)
+	for i := range kept {
+		kept[i] = ranks[i].idx
+	}
+	sort.Ints(kept)
+
+	return rebuildMatrixOrVector(body, "matrix", result, kept)
+}
+
+// applyTopKToVector filters a Loki vector response to the top or bottom k samples.
+func applyTopKToVector(body []byte, k int, descending bool) []byte {
+	v, err := fj.ParseBytes(body)
+	if err != nil {
+		return body
+	}
+	result := v.GetArray("data", "result")
+	if len(result) <= k {
+		return body
+	}
+
+	type ranked struct {
+		idx int
+		val float64
+	}
+	ranks := make([]ranked, len(result))
+	for i, s := range result {
+		arr := s.GetArray("value")
+		var f float64
+		if len(arr) >= 2 {
+			f = parseFloat64Bytes(arr[1].GetStringBytes())
+		}
+		ranks[i] = ranked{i, f}
+	}
+	sort.Slice(ranks, func(a, b int) bool {
+		if descending {
+			return ranks[a].val > ranks[b].val
+		}
+		return ranks[a].val < ranks[b].val
+	})
+
+	kept := make([]int, k)
+	for i := range kept {
+		kept[i] = ranks[i].idx
+	}
+	sort.Ints(kept)
+
+	return rebuildMatrixOrVector(body, "vector", result, kept)
+}
+
+// rebuildMatrixOrVector rebuilds the Loki response JSON keeping only the series at
+// indices `keep` from `result`.
+func rebuildMatrixOrVector(body []byte, resultType string, result []*fj.Value, keep []int) []byte {
+	var buf bytes.Buffer
+	buf.WriteString(`{"status":"success","data":{"resultType":"`)
+	buf.WriteString(resultType)
+	buf.WriteString(`","result":[`)
+	for i, idx := range keep {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		buf.Write(result[idx].MarshalTo(nil))
+	}
+	buf.WriteString(`]}}`)
+	return buf.Bytes()
+}
+
+// writeTopKFiltered applies topk/bottomk post-processing to a buffered response
+// and writes the filtered result to dst.
+func writeTopKFiltered(dst http.ResponseWriter, buf *bufferedResponseWriter, k int, descending bool, resultType string) {
+	body := buf.body
+	if len(body) > 0 {
+		if resultType == "matrix" {
+			body = applyTopKToMatrix(body, k, descending)
+		} else {
+			body = applyTopKToVector(body, k, descending)
+		}
+	}
+	code := buf.code
+	if code == 0 {
+		code = http.StatusOK
+	}
+	dst.Header().Set("Content-Type", "application/json")
+	if code != http.StatusOK {
+		dst.WriteHeader(code)
+	}
+	_, _ = dst.Write(body)
+}
+
+func parseFloat64Bytes(b []byte) float64 {
+	if len(b) == 0 {
+		return 0
+	}
+	f, _ := strconv.ParseFloat(string(b), 64)
+	return f
+}
+
+func abs64(f float64) float64 {
+	if f < 0 {
+		return -f
+	}
+	return f
 }

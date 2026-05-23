@@ -1,0 +1,87 @@
+name: GHCR Pull Badges
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * *'  # daily at 06:00 UTC
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  update-ghcr-badges:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch GHCR pull counts
+        id: pulls
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          MAIN=$(gh api /orgs/ReliablyObserve/packages/container/loki-vl-proxy --jq '.download_count' 2>/dev/null || echo 0)
+          CHART=$(gh api '/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy' --jq '.download_count' 2>/dev/null || echo 0)
+          echo "main=$MAIN" >> "$GITHUB_OUTPUT"
+          echo "chart=$CHART" >> "$GITHUB_OUTPUT"
+
+      - name: Write badge JSON files
+        run: |
+          fmt() {
+            python3 -c "
+          n = $1
+          if n >= 1_000_000:
+              print(f'{n/1_000_000:.1f}M')
+          elif n >= 1_000:
+              print(f'{n/1_000:.1f}k')
+          else:
+              print(str(n))
+          "
+          }
+
+          MAIN_FMT=$(fmt ${{ steps.pulls.outputs.main }})
+          CHART_FMT=$(fmt ${{ steps.pulls.outputs.chart }})
+
+          mkdir -p /tmp/badges
+          cat > /tmp/badges/ghcr-pulls.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "GHCR pulls",
+            "message": "${MAIN_FMT}",
+            "color": "blue",
+            "namedLogo": "github"
+          }
+          EOF
+
+          cat > /tmp/badges/ghcr-chart-pulls.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "Helm Chart pulls",
+            "message": "${CHART_FMT}",
+            "color": "blue",
+            "namedLogo": "github"
+          }
+          EOF
+
+      - name: Push badge data to badges branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin badges 2>/dev/null || true
+          if git show-ref --verify --quiet refs/remotes/origin/badges; then
+            git checkout badges
+            git pull origin badges
+          else
+            git checkout --orphan badges
+            git rm -rf . --quiet 2>/dev/null || true
+          fi
+
+          mkdir -p .github/badges
+          cp /tmp/badges/ghcr-pulls.json .github/badges/ghcr-pulls.json
+          cp /tmp/badges/ghcr-chart-pulls.json .github/badges/ghcr-chart-pulls.json
+
+          git add .github/badges/ghcr-pulls.json .github/badges/ghcr-chart-pulls.json
+          git diff --cached --quiet || git commit -m "chore: update GHCR pull count badge data [skip ci]"
+          git push origin badges
