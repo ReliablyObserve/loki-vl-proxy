@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Typed LogQL parser and AST model layer** (`internal/logql`): stream selectors, all pipeline stage variants, range/vector aggregations with full `String()` round-trip serialisation. `ParseAndValidate()` provides a lightweight syntax gate for request handlers. `Translate()` converts the AST to LogsQL via the existing translator. A fuzz target ensures `Parse+String+Translate` never panic on arbitrary input.
 - **`extractQuery` proxy helper**: pure function in `internal/proxy/query_extract.go` that validates the `query` form parameter using the typed parser; available for incremental adoption across request handlers.
 
+## [1.37.2] - 2026-05-22
+
 ### Fixed
 
 - **Helm chart: remove invalid `backend-read-buffer-size` / `backend-write-buffer-size` flags** ([#391](https://github.com/ReliablyObserve/loki-vl-proxy/issues/391)): The chart shipped two `extraArgs` flags that do not exist in the binary, causing startup failure with `flag provided but not defined`. Also removed invalid commented `disk-cache-encryption-key`. Added 19 previously undocumented Go flags to `values.yaml` for full 1:1 parity.
