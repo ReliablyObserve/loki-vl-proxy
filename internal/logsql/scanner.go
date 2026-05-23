@@ -39,6 +39,8 @@ const (
 	TokReMatch    // =~
 	TokReNotMatch // !~
 
+	TokTilde // ~  (message regexp prefix)
+
 	// Logical keywords (case-sensitive)
 	TokAnd // AND
 	TokOr  // OR
@@ -128,6 +130,9 @@ func (s *Scanner) Next() Token {
 			}
 		}
 		return Token{Typ: TokError, Val: "unexpected !"}
+	case '~':
+		s.pos += size
+		return Token{Typ: TokTilde, Val: "~"}
 	}
 
 	return s.scanIdent()
