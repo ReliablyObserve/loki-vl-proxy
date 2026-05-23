@@ -135,6 +135,7 @@ const (
 	FieldOpLTE                      // :<=val
 	FieldOpRange                    // :range(min,max)
 	FieldOpIn                       // :in(a,b,c)
+	FieldOpIPv4Range                // :ipv4_range(first, last)  requires v1.45+
 )
 
 // FieldFilter matches a named field using the given operator and value.
@@ -172,6 +173,8 @@ func (f FieldFilter) String() string {
 		core = f.Field + ":range(" + f.Value + ")"
 	case FieldOpIn:
 		core = f.Field + ":in(" + f.Value + ")"
+	case FieldOpIPv4Range:
+		core = fmt.Sprintf(`%s:ipv4_range(%s)`, f.Field, f.Value)
 	default:
 		panic(fmt.Sprintf("logsql: unknown FieldOp %d", f.Op))
 	}
