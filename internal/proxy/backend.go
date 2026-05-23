@@ -13,6 +13,7 @@ import (
 	"time"
 
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 func deriveRequestType(endpoint, route string) string {
@@ -332,6 +333,15 @@ func (p *Proxy) backendVersionState() (raw, semver, profile string) {
 	p.backendVersionMu.RLock()
 	defer p.backendVersionMu.RUnlock()
 	return p.backendVersionRaw, p.backendVersionSemver, p.backendCapabilityProfile
+}
+
+// logsqlCaps returns the LogsQL capability set for the currently detected backend version.
+// Returns a zero Capabilities struct (all false) when the version has not yet been observed.
+func (p *Proxy) logsqlCaps() logsql.Capabilities {
+	p.backendVersionMu.RLock()
+	semver := p.backendVersionSemver
+	p.backendVersionMu.RUnlock()
+	return logsql.CapabilitiesFor(semver)
 }
 
 func (p *Proxy) storeBackendCapabilityProbe(source string, supportsStreamMetadata, supportsMetadataSubstring bool) {

@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 // LabelTranslateFunc translates a Loki label name to a VL field name (query direction).
@@ -1311,7 +1313,7 @@ func translateDropStage(spec string, labelFn LabelTranslateFunc) string {
 	if len(fields) == 0 {
 		return ""
 	}
-	return "| delete " + strings.Join(fields, ", ")
+	return logsql.PipeDelete{Labels: fields}.String()
 }
 
 // translateKeepStage translates a `keep <spec>` pipeline stage.
@@ -1341,10 +1343,11 @@ func translateKeepStage(spec string, _ LabelTranslateFunc) string {
 			fields = append(fields, item)
 		}
 	}
+	base := []string{"_time", "_msg", "_stream"}
 	if len(fields) == 0 {
-		return "| fields _time, _msg, _stream"
+		return logsql.PipeFields{Labels: base}.String()
 	}
-	return "| fields _time, _msg, _stream, " + strings.Join(fields, ", ")
+	return logsql.PipeFields{Labels: append(base, fields...)}.String()
 }
 
 // splitCSV splits s on commas that are not inside parentheses or quotes.
