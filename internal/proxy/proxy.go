@@ -1474,23 +1474,41 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Extract and apply LogQL offset: strip the offset clause and shift start/end
 	// backward so preferWorkingParser probes the historical window where the offset
 	// data actually lives. All downstream dispatch paths see the shifted times.
+	//
+	// Exception: binary metric expressions where only SOME sides carry an offset
+	// ("mixed" case). Loki evaluates each side independently so it accepts these;
+	// the proxy lets them through to the binary routing path which dispatches
+	// separate VL queries per side. The translator silently drops offset clauses,
+	// so time-shifting is not applied — results may differ from Loki for offset
+	// values but the proxy returns 200 rather than incorrectly rejecting the query.
+	// Expressions with multiple *different* offsets still return 400 (same as Loki).
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
-			p.writeError(w, http.StatusBadRequest, offsetErr.Error())
-			p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
-			return
-		}
-		logqlQuery = strippedQuery
-		if offsetDur != 0 {
-			// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
-			// it does not alias the map captured by withOrgID's origRequestKey reference.
-			_ = r.ParseForm()
-			if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
-				r.Form.Set("start", nanosToVLTimestamp(startNs-offsetDur.Nanoseconds()))
+			// Allow mixed-offset binary expressions: bypass only when the failure is
+			// "some range vectors have offset, others do not" AND the query is a
+			// top-level binary op (Loki handles these by evaluating sides independently).
+			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
+			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
+			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
+			if !(isMixedOffset && isBinaryForOffset) {
+				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
+				p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+				return
 			}
-			if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
-				r.Form.Set("end", nanosToVLTimestamp(endNs-offsetDur.Nanoseconds()))
+			// Mixed-offset binary: proceed without time-shifting; binary routing handles it.
+		} else {
+			logqlQuery = strippedQuery
+			if offsetDur != 0 {
+				// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
+				// it does not alias the map captured by withOrgID's origRequestKey reference.
+				_ = r.ParseForm()
+				if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
+					r.Form.Set("start", nanosToVLTimestamp(startNs-offsetDur.Nanoseconds()))
+				}
+				if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
+					r.Form.Set("end", nanosToVLTimestamp(endNs-offsetDur.Nanoseconds()))
+				}
 			}
 		}
 	}
@@ -1689,26 +1707,34 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Extract and apply LogQL offset: strip the offset clause and shift the eval
 	// time backward so preferWorkingParser probes the historical window where the
 	// offset data actually lives. All downstream dispatch paths see the shifted time.
+	//
+	// Mixed-offset binary expressions are treated the same as in query_range above.
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
-			p.writeError(w, http.StatusBadRequest, offsetErr.Error())
-			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
-			return
-		}
-		logqlQuery = strippedQuery
-		if offsetDur != 0 {
-			// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
-			// it does not alias the map captured by withOrgID's origRequestKey reference.
-			_ = r.ParseForm()
-			rawTime := r.FormValue("time")
-			if rawTime == "" {
-				// Loki allows omitting "time"; it defaults to now.
-				// We must materialise that default here so the offset shift is applied.
-				rawTime = strconv.FormatInt(time.Now().UnixNano(), 10)
+			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
+			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
+			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
+			if !(isMixedOffset && isBinaryForOffset) {
+				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
+				p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+				return
 			}
-			if timeNs, ok := parseLokiTimeToUnixNano(rawTime); ok {
-				r.Form.Set("time", nanosToVLTimestamp(timeNs-offsetDur.Nanoseconds()))
+		} else {
+			logqlQuery = strippedQuery
+			if offsetDur != 0 {
+				// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
+				// it does not alias the map captured by withOrgID's origRequestKey reference.
+				_ = r.ParseForm()
+				rawTime := r.FormValue("time")
+				if rawTime == "" {
+					// Loki allows omitting "time"; it defaults to now.
+					// We must materialise that default here so the offset shift is applied.
+					rawTime = strconv.FormatInt(time.Now().UnixNano(), 10)
+				}
+				if timeNs, ok := parseLokiTimeToUnixNano(rawTime); ok {
+					r.Form.Set("time", nanosToVLTimestamp(timeNs-offsetDur.Nanoseconds()))
+				}
 			}
 		}
 	}
