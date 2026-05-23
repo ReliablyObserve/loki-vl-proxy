@@ -36,6 +36,8 @@ func TestParseRoundTrip(t *testing.T) {
 		`NOT level:="debug"`,
 		`level:*`,
 		`level:""`,
+		`* | math pct:=rate/total*100`,
+		`* | sort by (count desc) limit 10`,
 	}
 	for _, input := range cases {
 		t.Run(input, func(t *testing.T) {
@@ -75,14 +77,40 @@ func TestParseFilter(t *testing.T) {
 func TestParseError(t *testing.T) {
 	bad := []string{
 		``,
-		`| filter`,    // pipe with no filter
-		`{unclosed`,   // unclosed brace
+		`| filter`,   // pipe with no filter
+		`{unclosed`,  // unclosed brace
+		`(error`,     // unclosed paren
+		`* | frobnicate`, // unknown pipe
 	}
 	for _, input := range bad {
 		t.Run(input, func(t *testing.T) {
 			_, err := logsql.Parse(input)
 			if err == nil {
 				t.Errorf("Parse(%q) expected error, got nil", input)
+			}
+		})
+	}
+}
+
+func TestParseStatsFuncs(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{`* | stats quantile(0.99, latency) as p99`, `* | stats quantile(0.99, latency) as p99`},
+		{`* | stats uniq_values(user_id, 100) as uv`, `* | stats uniq_values(user_id, 100) as uv`},
+		{`* | stats values(status, 10) as vals`, `* | stats values(status, 10) as vals`},
+		{`* | stats row_any(_msg, level) as row`, `* | stats row_any(_msg, level) as row`},
+		{`* | stats row_max(latency, _msg, status) as row`, `* | stats row_max(latency, _msg, status) as row`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			q, err := logsql.Parse(tc.input)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tc.input, err)
+			}
+			if got := q.String(); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
 			}
 		})
 	}

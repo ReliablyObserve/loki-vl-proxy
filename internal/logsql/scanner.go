@@ -2,6 +2,7 @@
 package logsql
 
 import (
+	"fmt"
 	"strings"
 	"unicode/utf8"
 )
@@ -258,4 +259,43 @@ func isIdentRune(r rune) bool {
 	return r == '_' || r == '.' || r == '-' || r == '/' ||
 		(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
 		(r >= '0' && r <= '9')
+}
+
+// String returns a human-readable name for the token type.
+func (t TokType) String() string {
+	names := []string{
+		"EOF", "Error",
+		"LBrace", "RBrace", "LBracket", "RBracket", "LParen", "RParen",
+		"Comma", "Pipe", "Star", "Colon",
+		"ColonEq", "ColonTilde", "ColonGT", "ColonGTE", "ColonLT", "ColonLTE",
+		"Eq", "Neq", "ReMatch", "ReNotMatch",
+		"Tilde",
+		"And", "Or", "Not",
+		"Ident", "String", "RawString",
+	}
+	if int(t) < len(names) {
+		return names[t]
+	}
+	return fmt.Sprintf("TokType(%d)", int(t))
+}
+
+// Remaining returns the unconsumed portion of the input (from current scanner position).
+// Call this when you need raw text rather than tokenized input — e.g. math expressions.
+func (s *Scanner) Remaining() string {
+	if s.pos >= len(s.src) {
+		return ""
+	}
+	return s.src[s.pos:]
+}
+
+// AdvanceTo advances the scanner position until it reaches a byte equal to ch or EOF.
+// If ch is 0, it advances to EOF.
+func (s *Scanner) AdvanceTo(ch byte) {
+	if ch == 0 {
+		s.pos = len(s.src)
+		return
+	}
+	for s.pos < len(s.src) && s.src[s.pos] != ch {
+		s.pos++
+	}
 }

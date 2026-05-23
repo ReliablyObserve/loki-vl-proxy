@@ -61,7 +61,7 @@ func (p *parser) advance() Token {
 func (p *parser) expect(typ TokType) (Token, error) {
 	tok := p.advance()
 	if tok.Typ != typ {
-		return tok, fmt.Errorf("logsql: expected token type %d, got %q (type %d)", typ, tok.Val, tok.Typ)
+		return tok, fmt.Errorf("logsql: expected %s, got %q (%s)", typ, tok.Val, tok.Typ)
 	}
 	return tok, nil
 }
@@ -176,7 +176,7 @@ func (p *parser) parseAndExpr() (FilterExpr, error) {
 func (p *parser) parseNotExpr() (FilterExpr, error) {
 	if p.peek().Typ == TokNot {
 		p.advance() // consume NOT
-		expr, err := p.parsePrimaryFilter()
+		expr, err := p.parseNotExpr() // recurse to support NOT NOT expr
 		if err != nil {
 			return nil, err
 		}
@@ -711,6 +711,87 @@ func (p *parser) parsePipeStats() (Pipe, error) {
 func (p *parser) parseStatsFunc() (StatsFunc, error) {
 	name := p.advance().Val // consume function name ident
 
+	// row_any and row_max take variadic ident arguments — handle before generic path.
+	if name == "row_any" {
+		if p.peek().Typ != TokLParen {
+			return nil, fmt.Errorf("logsql: expected ( after row_any")
+		}
+		p.advance() // consume (
+		var fields []string
+		for p.peek().Typ == TokIdent {
+			fields = append(fields, p.advance().Val)
+			if p.peek().Typ == TokComma {
+				p.advance()
+			}
+		}
+		if p.peek().Typ == TokRParen {
+			p.advance()
+		}
+		return RowAny{Fields: fields}, nil
+	}
+	if name == "row_max" {
+		if p.peek().Typ != TokLParen {
+			return nil, fmt.Errorf("logsql: expected ( after row_max")
+		}
+		p.advance() // consume (
+		by := p.advance().Val
+		if p.peek().Typ == TokComma {
+			p.advance()
+		}
+		var fields []string
+		for p.peek().Typ == TokIdent {
+			fields = append(fields, p.advance().Val)
+			if p.peek().Typ == TokComma {
+				p.advance()
+			}
+		}
+		if p.peek().Typ == TokRParen {
+			p.advance()
+		}
+		return RowMax{By: by, Fields: fields}, nil
+	}
+
+	// quantile takes (phi, field) — phi is a float, field is an ident.
+	if name == "quantile" {
+		if _, err := p.expect(TokLParen); err != nil {
+			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
+		}
+		phiTok := p.advance() // phi as ident/number token
+		phi, _ := strconv.ParseFloat(phiTok.Val, 64)
+		if p.peek().Typ == TokComma {
+			p.advance()
+		}
+		fieldTok := p.advance()
+		field := fieldTok.Val
+		if _, err := p.expect(TokRParen); err != nil {
+			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
+		}
+		return Quantile{Phi: phi, Field: field}, nil
+	}
+
+	// uniq_values and values take (field, limit).
+	if name == "uniq_values" || name == "values" {
+		if _, err := p.expect(TokLParen); err != nil {
+			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
+		}
+		fieldTok := p.advance()
+		field := fieldTok.Val
+		if p.peek().Typ == TokComma {
+			p.advance()
+		}
+		limitTok := p.advance()
+		limit, _ := strconv.Atoi(limitTok.Val)
+		if _, err := p.expect(TokRParen); err != nil {
+			return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
+		}
+		if name == "uniq_values" {
+			return UniqValues{Field: field, Limit: limit}, nil
+		}
+		return Values{Field: field, Limit: limit}, nil
+	}
+
+	// Generic single-field argument parsing.
+
 	// Consume opening paren
 	if _, err := p.expect(TokLParen); err != nil {
 		return nil, fmt.Errorf("logsql: stats func %q: %w", name, err)
@@ -783,21 +864,20 @@ func (p *parser) parsePipeMath() (Pipe, error) {
 		return nil, fmt.Errorf("logsql: pipe math: expected alias: %w", err)
 	}
 	// expect :=
-	opTok, err := p.expect(TokColonEq)
-	if err != nil {
+	if _, err := p.expect(TokColonEq); err != nil {
 		return nil, fmt.Errorf("logsql: pipe math: expected ':=': %w", err)
 	}
-	_ = opTok
-	// The expression is everything until EOF or next pipe.
-	// Collect remaining ident/operator tokens as raw string.
-	var exprParts []string
-	for {
-		tok := p.peek()
-		if tok.Typ == TokEOF || tok.Typ == TokPipe {
-			break
-		}
-		exprParts = append(exprParts, p.advance().Val)
+	// Capture raw math expression (may contain +, -, *, /, (, ), etc.)
+	// p.buf may hold a lookahead token from the expect() call above;
+	// clear it so Remaining() reflects the true scanner position.
+	p.buf = nil
+	raw := p.sc.Remaining()
+	if idx := strings.IndexByte(raw, '|'); idx >= 0 {
+		raw = raw[:idx]
+		p.sc.AdvanceTo('|')
+	} else {
+		p.sc.AdvanceTo(0) // advance to EOF
 	}
-	expr := strings.Join(exprParts, "")
-	return PipeMath{Alias: alias, Expr: expr}, nil
+	p.advance() // reload cur token (will be TokPipe or TokEOF)
+	return PipeMath{Alias: alias, Expr: strings.TrimSpace(raw)}, nil
 }
