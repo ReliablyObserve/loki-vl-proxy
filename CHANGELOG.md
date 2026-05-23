@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **Remove parser-stage guard from metric fast-path**: `rate`, `count_over_time`, `bytes_rate`, and `bytes_over_time` queries with `| json` or `| logfmt` pipeline stages now use VL native `stats_query_range` on tumbling windows (range == step) instead of the slow raw-log-fetch path.
+
+### Fixed
+
+- **`topk`/`bottomk` post-filtering**: `topk(K, expr)` and `bottomk(K, expr)` queries now return at most K series. Previously the translator stripped the wrapper and all series were returned unfiltered.
+
+### Added
+
+- **Dynamic GHCR pull count badges**: README now shows live download counts for the proxy image and Helm chart image, updated daily via GitHub Actions.
+
 ## [1.38.0] - 2026-05-23
 
 ### Added

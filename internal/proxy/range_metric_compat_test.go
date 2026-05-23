@@ -927,7 +927,7 @@ func TestQueryRange_SlidingWindowWithout_UsesManualPath(t *testing.T) {
 
 func TestShouldUseManualRangeMetricCompat_ParserStageGuardRemoved(t *testing.T) {
 	parserBase := `{app="api-gateway"} | unpack_json | status >= 400`
-	plainBase  := `{app="api-gateway"}`
+	plainBase := `{app="api-gateway"}`
 
 	tests := []struct {
 		name            string
