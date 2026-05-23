@@ -299,3 +299,12 @@ func (s *Scanner) AdvanceTo(ch byte) {
 		s.pos++
 	}
 }
+
+// Skip advances the scanner position by n bytes (clamped to the end of input).
+// Used when the caller has already computed the byte offset to skip over.
+func (s *Scanner) Skip(n int) {
+	s.pos += n
+	if s.pos > len(s.src) {
+		s.pos = len(s.src)
+	}
+}

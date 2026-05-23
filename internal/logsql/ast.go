@@ -139,6 +139,14 @@ const (
 	FieldOpIn                       // :in(a,b,c)
 	FieldOpIPv4Range                // :ipv4_range(first, last)  requires v1.45+
 	FieldOpIPv6Range                // :ipv6_range(first, last)
+	FieldOpExactPrefix              // :="prefix"*
+	FieldOpEqField                  // :eq_field(field2)
+	FieldOpLeField                  // :le_field(field2)
+	FieldOpStringRange              // :string_range(lo,hi)
+	FieldOpValueType                // :value_type(type)
+	FieldOpJSONArrayContainsAny     // :json_array_contains_any("v1","v2")
+	FieldOpContainsCommonCase       // :contains_common_case("p1","p2")
+	FieldOpEqualsCommonCase         // :equals_common_case("p1","p2")
 )
 
 // FieldFilter matches a named field using the given operator and value.
@@ -180,6 +188,22 @@ func (f FieldFilter) String() string {
 		core = fmt.Sprintf(`%s:ipv4_range(%s)`, f.Field, f.Value)
 	case FieldOpIPv6Range:
 		core = fmt.Sprintf(`%s:ipv6_range(%s)`, f.Field, f.Value)
+	case FieldOpExactPrefix:
+		core = fmt.Sprintf(`%s:="%s"*`, f.Field, f.Value)
+	case FieldOpEqField:
+		core = f.Field + ":eq_field(" + f.Value + ")"
+	case FieldOpLeField:
+		core = f.Field + ":le_field(" + f.Value + ")"
+	case FieldOpStringRange:
+		core = f.Field + ":string_range(" + f.Value + ")"
+	case FieldOpValueType:
+		core = f.Field + ":value_type(" + f.Value + ")"
+	case FieldOpJSONArrayContainsAny:
+		core = f.Field + ":json_array_contains_any(" + f.Value + ")"
+	case FieldOpContainsCommonCase:
+		core = f.Field + ":contains_common_case(" + f.Value + ")"
+	case FieldOpEqualsCommonCase:
+		core = f.Field + ":equals_common_case(" + f.Value + ")"
 	default:
 		panic(fmt.Sprintf("logsql: unknown FieldOp %d", f.Op))
 	}
@@ -274,6 +298,122 @@ func (n NotExpr) String() string {
 }
 
 func (n NotExpr) filterExpr() {}
+
+// --- Additional filter types ---
+
+// AnyCasePhrase matches a phrase case-insensitively using i("phrase") syntax.
+// Corresponds to filter_any_case_phrase.go in VL upstream.
+type AnyCasePhrase struct{ Value string }
+
+func (a AnyCasePhrase) String() string { return `i("` + a.Value + `")` }
+func (a AnyCasePhrase) filterExpr()    {}
+
+// AnyCasePrefix matches a prefix case-insensitively using i(prefix*) syntax.
+// Corresponds to filter_any_case_prefix.go in VL upstream.
+type AnyCasePrefix struct{ Value string }
+
+func (a AnyCasePrefix) String() string { return "i(" + a.Value + "*)" }
+func (a AnyCasePrefix) filterExpr()    {}
+
+// ExactPrefix matches log lines where the message starts with the exact prefix.
+// Syntax: ="prefix"*
+type ExactPrefix struct{ Value string }
+
+func (e ExactPrefix) String() string { return `="` + e.Value + `"*` }
+func (e ExactPrefix) filterExpr()    {}
+
+// ContainsAll matches log lines containing all of the given words or phrases.
+// Syntax: contains_all("w1","w2",...)
+type ContainsAll struct{ Parts []string }
+
+func (c ContainsAll) String() string {
+	quoted := make([]string, len(c.Parts))
+	for i, p := range c.Parts {
+		quoted[i] = `"` + p + `"`
+	}
+	return "contains_all(" + strings.Join(quoted, ",") + ")"
+}
+func (c ContainsAll) filterExpr() {}
+
+// ContainsAny matches log lines containing any of the given words or phrases.
+// Syntax: contains_any("w1","w2",...)
+type ContainsAny struct{ Parts []string }
+
+func (c ContainsAny) String() string {
+	quoted := make([]string, len(c.Parts))
+	for i, p := range c.Parts {
+		quoted[i] = `"` + p + `"`
+	}
+	return "contains_any(" + strings.Join(quoted, ",") + ")"
+}
+func (c ContainsAny) filterExpr() {}
+
+// DayRange restricts matches to a time-of-day range within each day.
+// Syntax: _time:day_range[08:00, 18:00] [offset 2h]
+type DayRange struct {
+	Bracket string // e.g. "[08:00, 18:00]"
+	Offset  string // optional, e.g. "2h"
+}
+
+func (d DayRange) String() string {
+	s := "_time:day_range" + d.Bracket
+	if d.Offset != "" {
+		s += " offset " + d.Offset
+	}
+	return s
+}
+func (d DayRange) filterExpr() {}
+
+// WeekRange restricts matches to a day-of-week range within each week.
+// Syntax: _time:week_range[Mon, Fri] [offset 2h]
+type WeekRange struct {
+	Bracket string // e.g. "[Mon, Fri]"
+	Offset  string // optional
+}
+
+func (w WeekRange) String() string {
+	s := "_time:week_range" + w.Bracket
+	if w.Offset != "" {
+		s += " offset " + w.Offset
+	}
+	return s
+}
+func (w WeekRange) filterExpr() {}
+
+// LenRange matches log lines where the field byte length is within [Min, Max].
+// An empty Field targets the _msg field. Min/Max can be integers or "inf".
+// Syntax (message): len_range(0,100) — (field): field:len_range(0,100)
+type LenRange struct {
+	Field string // empty = _msg
+	Min   string
+	Max   string
+}
+
+func (l LenRange) String() string {
+	inner := l.Min + ", " + l.Max
+	if l.Field == "" {
+		return "len_range(" + inner + ")"
+	}
+	return l.Field + ":len_range(" + inner + ")"
+}
+func (l LenRange) filterExpr() {}
+
+// PatternMatch matches log lines using a pattern with <*> wildcards.
+// An empty Field targets the _msg field.
+// Syntax (message): pattern("a <*> b") — (field): field:pattern("a <*> b")
+type PatternMatch struct {
+	Field   string
+	Pattern string
+}
+
+func (p PatternMatch) String() string {
+	inner := `pattern("` + p.Pattern + `")`
+	if p.Field == "" {
+		return inner
+	}
+	return p.Field + ":" + inner
+}
+func (p PatternMatch) filterExpr() {}
 
 // --- DeferredExpr ---
 
@@ -458,34 +598,8 @@ type PipeStats struct {
 	Funcs []StatsFuncAlias
 }
 
-func (p PipeStats) String() string {
-	var b strings.Builder
-	b.WriteString("| stats")
-	if len(p.By) > 0 {
-		keys := make([]string, len(p.By))
-		for i, k := range p.By {
-			keys[i] = k.Field
-		}
-		b.WriteString(" by (")
-		b.WriteString(strings.Join(keys, ", "))
-		b.WriteString(")")
-	}
-	if len(p.Funcs) == 0 {
-		panic("logsql: PipeStats requires at least one stats function")
-	}
-	for i, fa := range p.Funcs {
-		if i == 0 {
-			b.WriteByte(' ')
-		} else {
-			b.WriteString(", ")
-		}
-		b.WriteString(fa.Func.String())
-		b.WriteString(" as ")
-		b.WriteString(fa.Alias)
-	}
-	return b.String()
-}
-func (p PipeStats) pipe() {}
+func (p PipeStats) String() string { return pipeStatsString("stats", p.By, p.Funcs) }
+func (p PipeStats) pipe()          {}
 
 // PipeMath evaluates a math expression and stores the result in Alias.
 type PipeMath struct {
@@ -627,6 +741,299 @@ func (p PipeCopy) String() string {
 	return "| copy " + strings.Join(parts, ", ")
 }
 func (p PipeCopy) pipe() {}
+
+// PipeCoalesce returns the first non-empty value across the listed fields.
+// Syntax: | coalesce(f1, f2, ...) [default "val"] as result
+type PipeCoalesce struct {
+	Fields  []string
+	Default string // optional
+	Result  string
+}
+
+func (p PipeCoalesce) String() string {
+	s := "| coalesce(" + strings.Join(p.Fields, ", ") + ")"
+	if p.Default != "" {
+		s += ` default "` + p.Default + `"`
+	}
+	return s + " as " + p.Result
+}
+func (p PipeCoalesce) pipe() {}
+
+// PipeCollapseNums collapses consecutive numeric runs in a field.
+// Syntax: | collapse_nums [at field]
+type PipeCollapseNums struct{ Field string }
+
+func (p PipeCollapseNums) String() string {
+	if p.Field == "" {
+		return "| collapse_nums"
+	}
+	return "| collapse_nums at " + p.Field
+}
+func (p PipeCollapseNums) pipe() {}
+
+// PipeDecolorize removes ANSI color escape codes from a field.
+// Syntax: | decolorize [field]
+type PipeDecolorize struct{ Field string }
+
+func (p PipeDecolorize) String() string {
+	if p.Field == "" {
+		return "| decolorize"
+	}
+	return "| decolorize " + p.Field
+}
+func (p PipeDecolorize) pipe() {}
+
+// PipeFacets extracts unique field name + value combinations.
+// Syntax: | facets [limit N]
+type PipeFacets struct{ Limit int }
+
+func (p PipeFacets) String() string {
+	if p.Limit == 0 {
+		return "| facets"
+	}
+	return fmt.Sprintf("| facets limit %d", p.Limit)
+}
+func (p PipeFacets) pipe() {}
+
+// PipeFieldValues returns distinct values of a field.
+// Syntax: | field_values field [limit N]
+type PipeFieldValues struct {
+	Field string
+	Limit int
+}
+
+func (p PipeFieldValues) String() string {
+	s := "| field_values " + p.Field
+	if p.Limit > 0 {
+		s += fmt.Sprintf(" limit %d", p.Limit)
+	}
+	return s
+}
+func (p PipeFieldValues) pipe() {}
+
+// PipeGenerateSequence generates a sequence of integers.
+// Syntax: | generate_sequence limit N
+type PipeGenerateSequence struct{ Limit int }
+
+func (p PipeGenerateSequence) String() string {
+	return fmt.Sprintf("| generate_sequence limit %d", p.Limit)
+}
+func (p PipeGenerateSequence) pipe() {}
+
+// PipeHash computes a hash of the given fields and stores it in Result.
+// Syntax: | hash(f1, f2) as result
+type PipeHash struct {
+	Fields []string
+	Result string
+}
+
+func (p PipeHash) String() string {
+	return "| hash(" + strings.Join(p.Fields, ", ") + ") as " + p.Result
+}
+func (p PipeHash) pipe() {}
+
+// PipeJoin joins log entries with the results of an inner query.
+// Syntax: | join by (f1, f2) (inner_query) [prefix pfx]
+type PipeJoin struct {
+	By     []string
+	Inner  string // raw inner query string
+	Prefix string // optional field-name prefix for joined fields
+}
+
+func (p PipeJoin) String() string {
+	s := "| join by (" + strings.Join(p.By, ", ") + ") (" + p.Inner + ")"
+	if p.Prefix != "" {
+		s += " prefix " + p.Prefix
+	}
+	return s
+}
+func (p PipeJoin) pipe() {}
+
+// PipeJSONArrayLen returns the length of a JSON array stored in a field.
+// Syntax: | json_array_len(field) as result
+type PipeJSONArrayLen struct {
+	Field  string
+	Result string
+}
+
+func (p PipeJSONArrayLen) String() string {
+	return "| json_array_len(" + p.Field + ") as " + p.Result
+}
+func (p PipeJSONArrayLen) pipe() {}
+
+// PipeLen returns the byte length of a field as a new field.
+// Syntax: | len(field) as result
+type PipeLen struct {
+	Field  string
+	Result string
+}
+
+func (p PipeLen) String() string { return "| len(" + p.Field + ") as " + p.Result }
+func (p PipeLen) pipe()          {}
+
+// PipeQueryStats returns statistics about the current query execution.
+// Syntax: | query_stats
+type PipeQueryStats struct{}
+
+func (p PipeQueryStats) String() string { return "| query_stats" }
+func (p PipeQueryStats) pipe()          {}
+
+// PipeRunningStats computes cumulative running statistics over a time window.
+// Syntax: | running_stats [by (f1, f2)] func() as alias [, ...]
+type PipeRunningStats struct {
+	By    []GroupKey
+	Funcs []StatsFuncAlias
+}
+
+func (p PipeRunningStats) String() string { return pipeStatsString("running_stats", p.By, p.Funcs) }
+func (p PipeRunningStats) pipe()          {}
+
+// PipeSetStreamFields marks the listed fields as stream-identifying metadata.
+// Syntax: | set_stream_fields f1, f2, ...
+type PipeSetStreamFields struct{ Fields []string }
+
+func (p PipeSetStreamFields) String() string {
+	return "| set_stream_fields " + strings.Join(p.Fields, ", ")
+}
+func (p PipeSetStreamFields) pipe() {}
+
+// PipeSplit splits the Separator-delimited value of From into individual tokens.
+// Syntax: | split "sep" [from field] [as result]
+type PipeSplit struct {
+	Separator string
+	From      string // optional; defaults to _msg
+	As        string // optional result field
+}
+
+func (p PipeSplit) String() string {
+	s := `| split "` + p.Separator + `"`
+	if p.From != "" {
+		s += " from " + p.From
+	}
+	if p.As != "" {
+		s += " as " + p.As
+	}
+	return s
+}
+func (p PipeSplit) pipe() {}
+
+// PipeStreamContext adds surrounding context lines from the same log stream.
+// Syntax: | stream_context [before N] [after N]
+type PipeStreamContext struct {
+	Before int
+	After  int
+}
+
+func (p PipeStreamContext) String() string {
+	s := "| stream_context"
+	if p.Before > 0 {
+		s += fmt.Sprintf(" before %d", p.Before)
+	}
+	if p.After > 0 {
+		s += fmt.Sprintf(" after %d", p.After)
+	}
+	return s
+}
+func (p PipeStreamContext) pipe() {}
+
+// PipeTimeAdd adds a duration to all timestamps in the results.
+// Syntax: | time_add duration
+type PipeTimeAdd struct{ Duration string }
+
+func (p PipeTimeAdd) String() string { return "| time_add " + p.Duration }
+func (p PipeTimeAdd) pipe()          {}
+
+// PipeTotalStats computes aggregate statistics across all matching log entries.
+// Syntax: | total_stats [by (f1, f2)] func() as alias [, ...]
+type PipeTotalStats struct {
+	By    []GroupKey
+	Funcs []StatsFuncAlias
+}
+
+func (p PipeTotalStats) String() string { return pipeStatsString("total_stats", p.By, p.Funcs) }
+func (p PipeTotalStats) pipe()          {}
+
+// PipeUnion combines results from two queries.
+// Syntax: | union (inner_query)
+type PipeUnion struct{ Inner string }
+
+func (p PipeUnion) String() string { return "| union (" + p.Inner + ")" }
+func (p PipeUnion) pipe()          {}
+
+// PipeUnpackSyslog parses RFC-3164/RFC-5424 syslog entries into structured fields.
+// Syntax: | unpack_syslog
+type PipeUnpackSyslog struct{}
+
+func (p PipeUnpackSyslog) String() string { return "| unpack_syslog" }
+func (p PipeUnpackSyslog) pipe()          {}
+
+// PipeUnpackWords splits a field into individual words.
+// Syntax: | unpack_words [from field] [as result]
+type PipeUnpackWords struct {
+	From string // optional; defaults to _msg
+	As   string // optional result field
+}
+
+func (p PipeUnpackWords) String() string {
+	s := "| unpack_words"
+	if p.From != "" {
+		s += " from " + p.From
+	}
+	if p.As != "" {
+		s += " as " + p.As
+	}
+	return s
+}
+func (p PipeUnpackWords) pipe() {}
+
+// PipeUnroll expands JSON array values in the listed fields into separate log entries.
+// Syntax: | unroll (f1, f2, ...)
+type PipeUnroll struct{ Fields []string }
+
+func (p PipeUnroll) String() string {
+	return "| unroll (" + strings.Join(p.Fields, ", ") + ")"
+}
+func (p PipeUnroll) pipe() {}
+
+// PipeUpdate assigns a new value to a field using an expression.
+// Syntax: | update field = expr
+type PipeUpdate struct {
+	Field string
+	Expr  string
+}
+
+func (p PipeUpdate) String() string { return "| update " + p.Field + " = " + p.Expr }
+func (p PipeUpdate) pipe()          {}
+
+// pipeStatsString is a shared formatter for stats-like pipe stages (stats/running_stats/total_stats).
+func pipeStatsString(keyword string, by []GroupKey, funcs []StatsFuncAlias) string {
+	var b strings.Builder
+	b.WriteString("| ")
+	b.WriteString(keyword)
+	if len(by) > 0 {
+		keys := make([]string, len(by))
+		for i, k := range by {
+			keys[i] = k.Field
+		}
+		b.WriteString(" by (")
+		b.WriteString(strings.Join(keys, ", "))
+		b.WriteString(")")
+	}
+	if len(funcs) == 0 {
+		panic("logsql: " + keyword + " requires at least one stats function")
+	}
+	for i, fa := range funcs {
+		if i == 0 {
+			b.WriteByte(' ')
+		} else {
+			b.WriteString(", ")
+		}
+		b.WriteString(fa.Func.String())
+		b.WriteString(" as ")
+		b.WriteString(fa.Alias)
+	}
+	return b.String()
+}
 
 // --- Stats functions (26 total) ---
 

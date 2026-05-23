@@ -180,6 +180,135 @@ func TestParseNewStatsFuncs(t *testing.T) {
 	}
 }
 
+func TestParseNewPipesV2(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		// coalesce
+		{`* | coalesce(level, severity) as lvl`, `* | coalesce(level, severity) as lvl`},
+		{`* | coalesce(f1, f2) as out`, `* | coalesce(f1, f2) as out`},
+		// collapse_nums
+		{`* | collapse_nums`, `* | collapse_nums`},
+		{`* | collapse_nums at level`, `* | collapse_nums at level`},
+		// decolorize
+		{`* | decolorize`, `* | decolorize`},
+		{`* | decolorize msg`, `* | decolorize msg`},
+		// facets
+		{`* | facets`, `* | facets`},
+		{`* | facets limit 10`, `* | facets limit 10`},
+		// field_values
+		{`* | field_values status`, `* | field_values status`},
+		{`* | field_values status limit 50`, `* | field_values status limit 50`},
+		// generate_sequence
+		{`* | generate_sequence limit 100`, `* | generate_sequence limit 100`},
+		// hash
+		{`* | hash(host, app) as h`, `* | hash(host, app) as h`},
+		// join
+		{`* | join by (id) (*)`, `* | join by (id) (*)`},
+		{`* | join by (host, app) (error)`, `* | join by (host, app) (error)`},
+		// json_array_len
+		{`* | json_array_len(items) as cnt`, `* | json_array_len(items) as cnt`},
+		// len
+		{`* | len(_msg) as msglen`, `* | len(_msg) as msglen`},
+		// query_stats
+		{`* | query_stats`, `* | query_stats`},
+		// running_stats
+		{`* | running_stats count() as cnt`, `* | running_stats count() as cnt`},
+		{`* | running_stats by (host) count() as cnt`, `* | running_stats by (host) count() as cnt`},
+		// set_stream_fields
+		{`* | set_stream_fields app, env`, `* | set_stream_fields app, env`},
+		// split
+		{`* | split ","`, `* | split ","`},
+		{`* | split "," from msg as parts`, `* | split "," from msg as parts`},
+		// stream_context
+		{`* | stream_context before 2 after 3`, `* | stream_context before 2 after 3`},
+		{`* | stream_context before 5`, `* | stream_context before 5`},
+		// time_add
+		{`* | time_add 1h`, `* | time_add 1h`},
+		// total_stats
+		{`* | total_stats count() as total`, `* | total_stats count() as total`},
+		{`* | total_stats by (app) sum(bytes) as total`, `* | total_stats by (app) sum(bytes) as total`},
+		// union
+		{`* | union (error)`, `* | union (error)`},
+		// unpack_syslog
+		{`* | unpack_syslog`, `* | unpack_syslog`},
+		// unpack_words
+		{`* | unpack_words`, `* | unpack_words`},
+		{`* | unpack_words from msg as words`, `* | unpack_words from msg as words`},
+		// unroll
+		{`* | unroll (items)`, `* | unroll (items)`},
+		{`* | unroll (items, tags)`, `* | unroll (items, tags)`},
+		// update
+		{`* | update level = upper(level)`, `* | update level = upper(level)`},
+		// chained
+		{`error | coalesce(level, sev) as lvl | limit 10`, `error | coalesce(level, sev) as lvl | limit 10`},
+		{`* | unpack_syslog | running_stats count() as cnt`, `* | unpack_syslog | running_stats count() as cnt`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			q, err := logsql.Parse(tc.input)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tc.input, err)
+			}
+			if got := q.String(); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestParseNewFilters(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		// AnyCasePrefix: i(prefix*)
+		{`i(err*)`, `i(err*)`},
+		{`i(warn*)`, `i(warn*)`},
+		// ExactPrefix: ="prefix"*
+		{`="ERR"*`, `="ERR"*`},
+		{`="404"*`, `="404"*`},
+		// ContainsAll / ContainsAny
+		{`contains_all("error","critical")`, `contains_all("error","critical")`},
+		{`contains_any("error","warn")`, `contains_any("error","warn")`},
+		// DayRange / WeekRange
+		{`_time:day_range[08:00, 18:00]`, `_time:day_range[08:00, 18:00]`},
+		{`_time:week_range[Mon, Fri]`, `_time:week_range[Mon, Fri]`},
+		// LenRange (message-level)
+		{`len_range(0, 100)`, `len_range(0, 100)`},
+		// PatternMatch (message-level)
+		{`pattern("a <*> b")`, `pattern("a <*> b")`},
+		// Field-level: eq_field, le_field
+		{`status:eq_field(code)`, `status:eq_field(code)`},
+		{`count:le_field(total)`, `count:le_field(total)`},
+		// Field-level: string_range
+		{`name:string_range(a,z)`, `name:string_range(a,z)`},
+		// Field-level: value_type
+		{`val:value_type(uint64)`, `val:value_type(uint64)`},
+		// Field-level: json_array_contains_any (bare-ident values)
+		{`tags:json_array_contains_any(red,blue)`, `tags:json_array_contains_any(red,blue)`},
+		// Field-level: contains_common_case / equals_common_case
+		{`msg:contains_common_case(hello,world)`, `msg:contains_common_case(hello,world)`},
+		{`msg:equals_common_case(hello,world)`, `msg:equals_common_case(hello,world)`},
+		// Field-level: len_range
+		{`body:len_range(10, 500)`, `body:len_range(10, 500)`},
+		// Field-level: pattern
+		{`body:pattern("a <*> b")`, `body:pattern("a <*> b")`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			f, err := logsql.ParseFilter(tc.input)
+			if err != nil {
+				t.Fatalf("ParseFilter(%q): %v", tc.input, err)
+			}
+			if got := f.String(); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestParseIPv6Range(t *testing.T) {
 	cases := []struct {
 		input string

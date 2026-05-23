@@ -43,6 +43,8 @@ IGNORED = {
         "field_values_local",  # pipe_field_values_local.go (local shard variant)
         "query_stats_local",   # pipe_query_stats_local.go (local shard variant)
         "uniq_local",          # pipe_uniq_local.go (local shard variant)
+        "pack",                # pipe_pack.go (internal base for pack_json/pack_logfmt)
+        "unpack",              # pipe_unpack.go (internal base for unpack_json/unpack_logfmt/unpack_syslog)
     },
     "stats":   {"stdvar"},   # stats_stdvar.go: stddev²; not in VL upstream as separate func
     "filters": {"generic", "noop", "stream_id"},  # internal/structural nodes
