@@ -25,7 +25,7 @@ jobs:
       grafana_runtime_profiles: ${{ steps.matrix.outputs.grafana_runtime_profiles }}
       grafana_pr_runtime_profiles: ${{ steps.matrix.outputs.grafana_pr_runtime_profiles }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - id: matrix
         run: |
           {
@@ -44,8 +44,8 @@ jobs:
       GRAFANA_IMAGE: grafana/grafana:13.0.1
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -84,8 +84,8 @@ jobs:
       GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -119,7 +119,7 @@ jobs:
       matrix:
         drilldown_version: ${{ fromJson(needs.drilldown-matrix-source.outputs.drilldown_versions) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Check Drilldown app contracts
         run: bash scripts/compat/check-drilldown-contracts.sh "${{ matrix.drilldown_version }}"
 
@@ -137,8 +137,8 @@ jobs:
       GRAFANA_IMAGE: grafana/grafana:${{ matrix.version }}
       PROXY_IMAGE: loki-vl-proxy:compat-drilldown
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
