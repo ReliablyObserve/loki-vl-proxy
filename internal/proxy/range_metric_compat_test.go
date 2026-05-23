@@ -1319,3 +1319,95 @@ func TestQueryInstant_SumCountOverTimeParserStageCollapsesToOneSeries(t *testing
 		t.Errorf("expected empty metric labels {} for bare sum(), got %v", resp.Data.Result[0].Metric)
 	}
 }
+
+func TestQueryRange_RateParserStageTumblingUsesVLNative(t *testing.T) {
+	// sum by (app) (rate({app} | json | status >= 400 [5m])) step=5m → tumbling window.
+	// After removing the parser-stage guard, this must route to VL stats_query_range
+	// (fast path), NOT to the slow /select/logsql/query raw-log-fetch path.
+	base := time.Unix(1700000000, 0).UTC()
+	var statsCalled, slowCalled bool
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api-gateway"},"values":[[1700000300,"0.5"]]}]}}`)
+		case "/select/logsql/query":
+			slowCalled = true
+			t.Error("slow raw-log-fetch path must NOT be called for tumbling-window parser-stage rate")
+			w.Header().Set("Content-Type", "application/x-ndjson")
+		default:
+			if r.URL.Path != "/metrics" {
+				t.Logf("unhandled path: %s", r.URL.Path)
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	// step=300 == range=[5m]=300 → tumbling window.
+	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
+	params.Set("step", "300")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if slowCalled {
+		t.Error("slow /select/logsql/query was called — parser-stage guard was not removed")
+	}
+	if !statsCalled {
+		t.Error("expected /select/logsql/stats_query_range to be called for tumbling parser-stage rate")
+	}
+}
+
+func TestQueryRange_RateParserStageSlidingStaysManual(t *testing.T) {
+	// step=60 ≠ range=[5m]=300 → sliding window: slow path preserved.
+	base := time.Unix(1700000000, 0).UTC()
+	var slowCalled bool
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/query":
+			slowCalled = true
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			fmt.Fprintf(w,
+				`{"_time":%q,"_msg":"ok","_stream":"{app=\"api-gateway\"}","app":"api-gateway","status":"404"}`+"\n",
+				base.Format(time.RFC3339Nano),
+			)
+		case "/select/logsql/stats_query_range":
+			t.Error("stats_query_range must NOT be called for sliding-window parser-stage rate")
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			if r.URL.Path != "/metrics" {
+				t.Logf("unhandled: %s", r.URL.Path)
+			}
+			http.NotFound(w, r)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	params.Set("query", `sum by (app) (rate({app="api-gateway"} | json | status >= 400 [5m]))`)
+	params.Set("start", strconv.FormatInt(base.Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
+	params.Set("step", "60") // sliding: step=60 < range=300
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !slowCalled {
+		t.Error("expected slow /select/logsql/query for sliding-window parser-stage rate")
+	}
+}
