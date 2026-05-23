@@ -795,3 +795,33 @@ func TestEdge_BinaryOpOnLogQuery_Rejected(t *testing.T) {
 		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
 	}
 }
+
+// ─── regression tests (named per fix) ────────────────────────────────────────
+
+func TestRegression_BacktickLabelMatchers(t *testing.T) {
+	// Grafana Drilldown sends backtick-quoted label matchers; parser must accept TokRawString
+	// in label matcher positions (fix: parseLabelMatcher now accepts TokRawString).
+	valid := []string{
+		"{app=`api-gateway`}",
+		"{app=`api-gateway`,env=`production`}",
+		"{app=~`api-.*`,env=`production`}",
+		"{app=`api-gateway`,level!=`debug`}",
+		"{app=`api-gateway`} | json",
+		"count_over_time({app=`api-gateway`}[5m])",
+		"rate({app=`api-gateway`,env=`production`}[5m])",
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustValidateV(t, q) })
+	}
+}
+
+func TestRegression_DistinctStageRejected(t *testing.T) {
+	// | distinct is not a valid LogQL stage; proxy must reject it to match Loki behaviour.
+	invalid := []string{
+		`{app="api"} | distinct level`,
+		`{app="api"} | distinct app`,
+	}
+	for _, q := range invalid {
+		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
+	}
+}
