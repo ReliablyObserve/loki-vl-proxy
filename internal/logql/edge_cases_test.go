@@ -820,8 +820,307 @@ func TestRegression_DistinctStageRejected(t *testing.T) {
 	invalid := []string{
 		`{app="api"} | distinct level`,
 		`{app="api"} | distinct app`,
+		`{app="api"} | json | distinct level`,
+		`{app="api"} | logfmt | distinct msg`,
 	}
 	for _, q := range invalid {
 		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
+	}
+}
+
+// ─── ip() filter – pipeline integration ──────────────────────────────────────
+
+func TestEdge_IpFilter_PipelineIntegration(t *testing.T) {
+	valid := []string{
+		`{app="a"} |= ip("192.168.1.1")`,
+		`{app="a"} |= ip("::1")`,
+		`{app="a"} |= ip("10.0.0.0/8")`,
+		`{app="a"} |= ip("2001:db8::/32")`,
+		`{app="a"} |= ip("192.168.0.1-192.168.0.255")`,
+		`{app="a"} != ip("127.0.0.1")`,
+		`{app="a"} |~ "error" |= ip("10.0.0.0/8")`,
+		`rate({app="a"} |= ip("192.168.1.0/24") [5m])`,
+		`count_over_time({app="a"} != ip("10.0.0.1") [5m])`,
+		`{app="a"} | json | status>=500 |= ip("192.168.1.1")`,
+		`{app="a"} |= ip("::ffff:192.168.1.1")`,
+		`{app="a"} |= ip("0.0.0.0/0")`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustValidateV(t, q) })
+	}
+
+	invalid := []string{
+		`{app="a"} |= ip("999.999.999.999")`,
+		`{app="a"} |= ip("not-an-ip")`,
+		`{app="a"} |= ip("256.0.0.1/24")`,
+		`{app="a"} |= ip("192.168.1.1/33")`,
+		`{app="a"} |= ip("::gggg")`,
+		`{app="a"} |= ip("")`,
+	}
+	for _, q := range invalid {
+		t.Run("invalid:"+q, func(t *testing.T) { mustRejectV(t, q) })
+	}
+}
+
+// ─── label_replace / label_join – extended coverage ──────────────────────────
+
+func TestEdge_LabelReplace_Extended(t *testing.T) {
+	valid := []string{
+		// basic capture group
+		`label_replace(rate({app="a"}[5m]), "dst", "$1", "src", "(.*)")`,
+		// capture group with suffix
+		`label_replace(rate({app="a"}[5m]), "dst", "${1}-suffix", "src", "(.+)")`,
+		// no-match replacement (empty regex target)
+		`label_replace(sum by(app)(rate({app="a"}[5m])), "tier", "backend", "app", "^nonexistent$")`,
+		// multi-series result input
+		`label_replace(sum by(app, level)(count_over_time({env="production"}[5m])), "app_env", "$1-prod", "app", "(.*)")`,
+		// label_replace on vector agg
+		`label_replace(avg by(level)(rate({app="a"}[5m])), "lvl", "$1", "level", "(.*)")`,
+		// label_join with two labels
+		`label_join(sum by(app, level)(count_over_time({env="production"}[5m])), "combined", "/", "app", "level")`,
+		// label_join with single label
+		`label_join(sum by(app)(rate({env="production"}[5m])), "svc_copy", "_", "app")`,
+		// label_join with three labels
+		`label_join(sum by(app, env, level)(count_over_time({env="production"}[5m])), "full", ".", "app", "env", "level")`,
+		// nested label_replace
+		`label_replace(label_replace(rate({app="a"}[5m]), "a", "$1", "b", "(.*)"), "c", "x", "d", "(.*)")`,
+		// label_join of label_replace output
+		`label_join(label_replace(sum by(app)(rate({app="a"}[5m])), "svc", "$1", "app", "(.*)"), "combined", "/", "svc", "env")`,
+		// label_replace inside topk
+		`topk(5, label_replace(sum by(app)(rate({env="production"}[5m])), "service", "$1", "app", "(.*)"))`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+// ─── subqueries – all over_time ops on metric subqueries ─────────────────────
+
+func TestEdge_Subqueries_Extended(t *testing.T) {
+	valid := []string{
+		// Already tested: rate(count_over_time(...)[range:step])
+		// Additional over_time ops applied to subquery:
+		`avg_over_time(count_over_time({app="a"}[5m])[30m:5m])`,
+		`min_over_time(count_over_time({app="a"}[5m])[30m:5m])`,
+		`sum_over_time(count_over_time({app="a"}[5m])[30m:5m])`,
+		`max_over_time(count_over_time({app="a"}[5m])[1h:5m])`,
+		`quantile_over_time(0.5, count_over_time({app="a"}[5m])[30m:5m])`,
+		`stddev_over_time(count_over_time({app="a"}[5m])[30m:5m])`,
+		`stdvar_over_time(count_over_time({app="a"}[5m])[30m:5m])`,
+		// Nested: subquery inside vector agg
+		`sum by(app)(avg_over_time(count_over_time({app="a"}[5m])[30m:5m]))`,
+		`max by(level)(min_over_time(count_over_time({app="a"}[5m])[30m:5m]))`,
+		// Subquery over bytes_rate
+		`max_over_time(bytes_rate({app="a"}[5m])[1h:5m])`,
+		// Multiple subquery levels (subquery of subquery would be invalid syntax, skip)
+		// Subquery with unwrap inner
+		`max_over_time(sum_over_time({app="a"} | json | unwrap duration_ms [5m])[1h:5m])`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+// ─── @ modifier – extended contexts ──────────────────────────────────────────
+
+func TestEdge_AtModifier_Extended(t *testing.T) {
+	valid := []string{
+		// All range aggregation types with @ start()
+		`rate({app="a"}[5m] @ start())`,
+		`count_over_time({app="a"}[5m] @ start())`,
+		`bytes_rate({app="a"}[5m] @ start())`,
+		`bytes_over_time({app="a"}[5m] @ start())`,
+		`sum_over_time({app="a"} | json | unwrap duration_ms [5m] @ start())`,
+		// @ end()
+		`rate({app="a"}[5m] @ end())`,
+		`count_over_time({app="a"}[5m] @ end())`,
+		// @ unix timestamp
+		`rate({app="a"}[5m] @ 1609459200)`,
+		`bytes_over_time({app="a"}[5m] @ 1609459200)`,
+		// @ inside vector aggregation
+		`sum by(app)(rate({app="a"}[5m] @ start()))`,
+		`avg by(level)(count_over_time({app="a"}[5m] @ end()))`,
+		`topk(5, sum by(app)(rate({app="a"}[5m] @ 1609459200)))`,
+		// @ on both sides of binary op
+		`rate({app="a"}[5m] @ start()) / rate({app="a"}[5m] @ end())`,
+		`sum(rate({app="a"}[5m] @ start())) + sum(rate({app="a"}[5m] @ end()))`,
+		// @ combined with label filter
+		`rate({app="a"} | json | method="GET" [5m] @ start())`,
+		// @ with offset — both can coexist
+		`rate({app="a"}[5m] offset 1h @ start())`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+// ─── offset – extended contexts ───────────────────────────────────────────────
+
+func TestEdge_Offset_Extended(t *testing.T) {
+	valid := []string{
+		// All range aggregation types with offset
+		`count_over_time({app="a"}[5m] offset 5m)`,
+		`bytes_rate({app="a"}[5m] offset 10m)`,
+		`bytes_over_time({app="a"}[5m] offset 1h)`,
+		`sum_over_time({app="a"} | json | unwrap duration_ms [5m] offset 30m)`,
+		`avg_over_time({app="a"} | json | unwrap latency [5m] offset 1h)`,
+		`absent_over_time({app="a"}[5m] offset 5m)`,
+		// Offset inside vector aggregation
+		`sum by(app)(rate({app="a"}[5m] offset 1h))`,
+		`avg by(level)(count_over_time({app="a"}[5m] offset 30m))`,
+		`topk(5, sum by(app)(rate({app="a"}[5m] offset 1h)))`,
+		`max by(app)(bytes_rate({app="a"}[5m] offset 5m))`,
+		// Offset on binary op sides
+		`rate({app="a"}[5m] offset 1h) / rate({app="a"}[5m])`,
+		`rate({app="a"}[5m]) - rate({app="a"}[5m] offset 1h)`,
+		`sum(rate({app="a"}[5m] offset 1h)) + sum(rate({app="a"}[5m]))`,
+		// Offset with various durations
+		`rate({app="a"}[1h] offset 1d)`,
+		`count_over_time({app="a"}[5m] offset 24h)`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+// ─── binary op precedence ─────────────────────────────────────────────────────
+
+func TestEdge_BinaryOp_Precedence(t *testing.T) {
+	// All these metric expressions must parse without error. The parser must
+	// respect standard operator precedence: ^ > */% > +-  > comparisons > and/unless > or
+	valid := []string{
+		// multiplication before addition
+		`rate({a="b"}[5m]) + rate({a="b"}[5m]) * 2`,
+		`rate({a="b"}[5m]) * 2 + rate({a="b"}[5m])`,
+		// exponentiation highest
+		`rate({a="b"}[5m]) ^ 2 * rate({a="b"}[5m])`,
+		`rate({a="b"}[5m]) * rate({a="b"}[5m]) ^ 2`,
+		// explicit grouping overrides precedence
+		`(rate({a="b"}[5m]) + rate({a="b"}[5m])) * 2`,
+		`(rate({a="b"}[5m]) + rate({a="b"}[5m])) / (rate({a="b"}[5m]) + 1)`,
+		// comparison lower than arithmetic
+		`rate({a="b"}[5m]) + rate({a="b"}[5m]) > 0`,
+		`rate({a="b"}[5m]) * 2 > bool rate({a="b"}[5m])`,
+		// and/or lower than comparison
+		`sum(rate({a="b"}[5m])) > 0 and sum(rate({a="b"}[5m])) < 1000`,
+		`sum(rate({a="b"}[5m])) > 0 or sum(rate({a="b"}[5m])) > 100`,
+		// unless between and and or in precedence
+		`sum(rate({a="b"}[5m])) > 0 unless sum(rate({a="b"}[5m])) == 0`,
+		// chained same-precedence ops (left-associative)
+		`rate({a="b"}[5m]) + rate({a="b"}[5m]) + rate({a="b"}[5m])`,
+		`rate({a="b"}[5m]) * rate({a="b"}[5m]) * rate({a="b"}[5m])`,
+		// division chain
+		`sum(rate({a="b"}[5m])) / sum(rate({a="b"}[5m])) * 100`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+// ─── semantic validation – deep nesting ───────────────────────────────────────
+
+func TestEdge_Semantic_DeepNesting(t *testing.T) {
+	// __error__ and __error_details__ inside rate()/bytes_rate() must be rejected
+	// even when wrapped in vector aggregations.
+	invalid := []string{
+		// __error__ in rate nested inside vector agg
+		`sum by(app)(rate({__error__=""}[5m]))`,
+		`max by(level)(rate({__error__!=""}[5m]))`,
+		`avg(rate({__error__="timeout"}[5m]))`,
+		// __error_details__ in bytes_rate nested inside vector agg
+		`sum by(app)(bytes_rate({__error_details__=""}[5m]))`,
+		`count(bytes_rate({__error__=""}[5m]))`,
+		// doubly nested
+		`sum(max by(app)(rate({__error__=""}[5m])))`,
+		// __error__ via label filter inside rate
+		`sum by(app)(rate({app="a"} | json | __error__!="" [5m]))`,
+		`rate({app="a"} | json | __error_details__!="" [5m])`,
+	}
+	for _, q := range invalid {
+		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
+	}
+
+	// count_over_time and log queries DO allow __error__ labels.
+	valid := []string{
+		`sum by(app)(count_over_time({__error__!=""}[5m]))`,
+		`{app="a"} | json | __error__!=""`,
+		`count_over_time({app="a"} | json | __error__!="" [5m])`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustValidateV(t, q) })
+	}
+}
+
+// ─── pattern line filter (|> and !>) ─────────────────────────────────────────
+
+func TestEdge_PatternLineFilter(t *testing.T) {
+	// |> and !> are the pattern-match line filter operators (Loki 2.8+).
+	// Pattern syntax uses <field> captures and <_> wildcards.
+	valid := []string{
+		`{app="a"} |> "GET <_>"`,
+		`{app="a"} !> "GET <_>"`,
+		`{app="a"} |> "<method> <path> <status>"`,
+		"{app=\"a\"} |> `GET <_>`",
+		`{app="a"} |= "GET" |> "<_> /api <_>"`,
+		`{app="a"} !> "<_> /health <_>" |> "GET <_>"`,
+		`rate({app="a"} |> "GET <_>" [5m])`,
+		`count_over_time({app="a"} !> "<_> /health <_>" [5m])`,
+		`{app="a"} | json |> "<_> error <_>"`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+// ─── label filter boolean combinations ────────────────────────────────────────
+
+func TestEdge_LabelFilter_BooleanOps(t *testing.T) {
+	// Label filter boolean expressions are captured raw by the parser.
+	// All of these should parse without error.
+	valid := []string{
+		`{app="a"} | json | level="error" or level="warn"`,
+		`{app="a"} | json | status>=200 and status<300`,
+		`{app="a"} | json | level!="debug" and duration>100`,
+		`{app="a"} | json | method="GET" or method="POST"`,
+		`{app="a"} | logfmt | level="error" and msg=~".*timeout.*"`,
+		`{app="a"} | json | status>=500 or status<200`,
+		`rate({app="a"} | json | status>=200 and status<300 [5m])`,
+		`count_over_time({app="a"} | logfmt | level="error" and duration>1000 [5m])`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
+	}
+}
+
+// ─── drop / keep – extended edge cases ───────────────────────────────────────
+
+func TestEdge_DropKeep_Extended(t *testing.T) {
+	valid := []string{
+		// drop with negated regex matcher
+		`{app="a"} | json | drop level!~"error|warn"`,
+		// drop with numeric comparison
+		`{app="a"} | json | drop status<=200`,
+		`{app="a"} | json | drop status>500`,
+		// keep with __error__ label
+		`{app="a"} | json | keep __error__`,
+		`{app="a"} | json | keep level, msg, __error__, __error_details__`,
+		// chained drop stages
+		`{app="a"} | json | drop level | drop trace_id`,
+		`{app="a"} | json | drop level | drop trace_id | drop span_id`,
+		// drop in metric range context
+		`rate({app="a"} | json | drop trace_id [5m])`,
+		`count_over_time({app="a"} | json | drop __error__ [5m])`,
+		// keep in metric range context
+		`count_over_time({app="a"} | json | keep status [5m])`,
+		// drop with multiple mixed conditions
+		`{app="a"} | json | drop level="debug", trace_id, span_id`,
+		// logfmt + drop/keep
+		`{app="a"} | logfmt | drop level="debug"`,
+		`{app="a"} | logfmt | keep level, msg, duration`,
+		// drop with complex regex
+		`{app="a"} | json | drop level=~"(debug|trace|info)"`,
+	}
+	for _, q := range valid {
+		t.Run(q, func(t *testing.T) { mustParse(t, q) })
 	}
 }

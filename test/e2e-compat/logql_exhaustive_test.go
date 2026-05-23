@@ -125,6 +125,9 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 
 		// ── ip() with an invalid IP address (invalid octet > 255) ────────────
 		{"ip_line_filter_invalid_ipv4", `{app="api-gateway"} |= ip("999.999.999.999")`, "invalid_filter"},
+		{"ip_line_filter_invalid_text", `{app="api-gateway"} |= ip("not-an-ip-address")`, "invalid_filter"},
+		{"ip_line_filter_invalid_cidr_prefix", `{app="api-gateway"} |= ip("192.168.1.1/33")`, "invalid_filter"},
+		{"ip_filter_invalid_ipv6", `{app="api-gateway"} |= ip("::gggg")`, "invalid_filter"},
 
 		// ── rate() with __error__ label filter inside range vector ──────────────
 		// Loki 3.7.1 rejects __error__ filters inside rate() range vectors (proxy now validates).
@@ -705,6 +708,49 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		{"backtick_log_pipeline", "{app=`api-gateway`,env=`production`} | json | method=`GET`", "backtick_selector"},
 		{"backtick_line_format", "{app=`api-gateway`,env=`production`} | json | line_format `method={{.method}} status={{.status}}`", "backtick_selector"},
 		{"backtick_metric", "count_over_time({app=`api-gateway`,env=`production`}[5m])", "backtick_selector"},
+
+		// ── @ modifier ────────────────────────────────────────────────────────
+		// The @ modifier pins a range query to a fixed point in time.
+		// Both proxy and Loki must return 200 for valid @ modifier queries.
+		{"at_start_rate", `rate({app="api-gateway",env="production"}[5m] @ start())`, "at_modifier"},
+		{"at_end_rate", `rate({app="api-gateway",env="production"}[5m] @ end())`, "at_modifier"},
+		{"at_start_count", `count_over_time({app="api-gateway",env="production"}[5m] @ start())`, "at_modifier"},
+		{"at_start_bytes_rate", `bytes_rate({app="api-gateway",env="production"}[5m] @ start())`, "at_modifier"},
+		{"at_start_sum_by", `sum by(app)(rate({env="production"}[5m] @ start()))`, "at_modifier"},
+		{"at_end_avg_by", `avg by(level)(count_over_time({env="production"}[5m] @ end()))`, "at_modifier"},
+		{"at_binary_both_sides", `rate({app="api-gateway",env="production"}[5m] @ start()) / rate({app="api-gateway",env="production"}[5m] @ end())`, "at_modifier"},
+
+		// ── Extended subquery ops ─────────────────────────────────────────────
+		// avg/min/quantile_over_time of count_over_time subquery.
+		{"subquery_avg_count", `avg_over_time(count_over_time({app="api-gateway",env="production"}[5m])[30m:5m])`, "subquery_ext"},
+		{"subquery_min_count", `min_over_time(count_over_time({app="api-gateway",env="production"}[5m])[30m:5m])`, "subquery_ext"},
+		{"subquery_quantile_count", `quantile_over_time(0.5, count_over_time({app="api-gateway",env="production"}[5m])[30m:5m])`, "subquery_ext"},
+		{"subquery_vec_avg", `sum by(app)(avg_over_time(count_over_time({env="production"}[5m])[30m:5m]))`, "subquery_ext"},
+
+		// ── label_join ────────────────────────────────────────────────────────
+		{"label_join_two", `label_join(sum by(app, level)(count_over_time({env="production"}[5m])), "combined", "/", "app", "level")`, "label_transform"},
+		{"label_join_single", `label_join(sum by(app)(rate({env="production"}[5m])), "svc_copy", "_", "app")`, "label_transform"},
+
+		// ── Binary operator precedence (parse-level parity) ───────────────────
+		{"binary_precedence_mul_add", `sum(rate({env="production"}[5m])) * 2 + sum(rate({env="production"}[5m]))`, "binary_precedence"},
+		{"binary_precedence_cmp_and", `sum(rate({env="production"}[5m])) > 0 and sum(rate({env="production"}[5m])) < 100000`, "binary_precedence"},
+		{"binary_precedence_div_mul", `sum(rate({env="production"}[5m])) / sum(rate({env="production"}[5m])) * 100`, "binary_precedence"},
+
+		// ── Pattern line filter (|> and !>) ───────────────────────────────────
+		// Loki 2.8+ supports |> and !> as pattern-match line filter operators.
+		{"pattern_line_filter_pos", `{app="api-gateway",env="production"} |> "<_> GET <_>"`, "pattern_line_filter"},
+		{"pattern_line_filter_neg", `{app="api-gateway",env="production"} !> "<_> GET <_>"`, "pattern_line_filter"},
+		{"pattern_line_filter_metric", `count_over_time({app="api-gateway",env="production"} |> "<_> GET <_>" [5m])`, "pattern_line_filter"},
+
+		// ── Label filter boolean combinations ─────────────────────────────────
+		{"label_filter_and", `{app="api-gateway",env="production"} | json | status>=200 and status<300`, "label_filter_bool"},
+		{"label_filter_or", `{app="api-gateway",env="production"} | json | level="error" or level="warn"`, "label_filter_bool"},
+		{"label_filter_and_metric", `count_over_time({app="api-gateway",env="production"} | json | status>=200 and status<300 [5m])`, "label_filter_bool"},
+
+		// ── Offset inside vector aggregation ─────────────────────────────────
+		{"offset_inside_sum_by", `sum by(app)(rate({env="production"}[5m] offset 1h))`, "offset"},
+		{"offset_inside_topk", `topk(5, sum by(app)(rate({env="production"}[5m] offset 5m)))`, "offset"},
+		{"offset_both_sides_binary", `sum(rate({env="production"}[5m] offset 1h)) / sum(rate({env="production"}[5m]))`, "offset"},
 	}
 
 	score := &exhaustiveScore{}
