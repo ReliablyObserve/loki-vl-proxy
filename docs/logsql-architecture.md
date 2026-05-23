@@ -132,7 +132,7 @@ flowchart TD
     F --> E
     E -- TokEOF --> G[Query AST]
     G --> H[String()]
-    H --> I[LogsQL query string → VictoriaLogs]
+    H --> I[LogsQL query string to VictoriaLogs]
 
     subgraph Parser precedence
         D1[parseFilterExpr - OR level]
@@ -230,34 +230,12 @@ The translator (`internal/logql/translate.go`) continues to produce strings duri
 
 ---
 
-## PR Summary
+## Design Notes
 
-### What this PR adds
+`internal/logsql` is built in three layers:
 
-`internal/logsql` — a typed LogsQL AST, scanner, parser, capability-aware builder, and VL version gating for VictoriaLogs queries. It mirrors the structure of `internal/logql` and provides the foundation for migrating the translator from string concatenation to typed AST construction.
-
-### Architecture
-
-Three layers built bottom-up:
 1. **Typed AST** (`ast.go`) — 30+ node types whose `String()` methods emit valid LogsQL
 2. **Parser** (`scanner.go` + `parser.go`) — recursive-descent parser that round-trips what the translator emits
 3. **Capability-aware builder** (`capabilities.go` + `builder.go`) — selects the best LogsQL construct for the detected VL version
 
-### VictoriaLogs version support
-
-| Version | Feature |
-|---------|---------|
-| v1.40–v1.43 | Baseline (minimum supported) |
-| v1.44 | `rate_sum()` |
-| v1.45–v1.48 | `ipv4_range()` |
-| v1.49 | Metadata substring |
-| v1.50+ | Dense pattern windowing |
-
-### Test coverage
-
-282 tests across 7 test files. 4 fuzz targets. All 25 round-trip cases pass. Every minor version boundary (v1.43.9→v1.44.0, v1.44.9→v1.45.0, v1.48.9→v1.49.0, v1.49.9→v1.50.0) has explicit assertion.
-
-### What this PR does NOT do
-
-- Does not wire the logsql package into the translator (migration is a follow-on PR per function)
-- Does not support VL versions before v1.40
+The package does not wire into the translator directly — callers import it and construct queries using the builder API. Migration from the translator's string-concatenation approach is incremental, one function at a time. VictoriaLogs versions before v1.40 are not supported.
