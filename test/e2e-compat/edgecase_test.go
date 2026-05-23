@@ -581,3 +581,60 @@ func TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields(t *testing.T
 		}
 	}
 }
+
+// TestEdge_ValidationErrorIsJSON verifies that the proxy returns a Loki-compatible
+// JSON error body (not plain text) when a query fails LogQL validation.
+// Fix: validateQuery previously returned text/plain; now uses writeError for JSON shape.
+func TestEdge_ValidationErrorIsJSON(t *testing.T) {
+	ensureDataIngested(t)
+
+	invalidQueries := []struct {
+		name  string
+		query string
+	}{
+		{"empty_selector", `{}`},
+		{"no_selector", `rate([5m])`},
+		{"invalid_regex", `{app=~"[unclosed"}`},
+		{"binary_on_log", `{app="api-gateway"} == 1`},
+	}
+
+	for _, tc := range invalidQueries {
+		t.Run(tc.name, func(t *testing.T) {
+			params := url.Values{}
+			params.Set("query", tc.query)
+			params.Set("start", "1000000000000000000")
+			params.Set("end", "1000000060000000000")
+			params.Set("step", "60")
+
+			resp, err := http.Get(proxyURL + "/loki/api/v1/query_range?" + params.Encode())
+			if err != nil {
+				t.Fatalf("request failed: %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Errorf("expected 400 for invalid query %q, got %d", tc.query, resp.StatusCode)
+			}
+
+			ct := resp.Header.Get("Content-Type")
+			if !strings.Contains(ct, "application/json") {
+				t.Errorf("expected Content-Type application/json for validation error, got %q", ct)
+			}
+
+			var body map[string]interface{}
+			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+				t.Errorf("validation error body is not valid JSON for query %q: %v", tc.query, err)
+				return
+			}
+			if body["status"] != "error" {
+				t.Errorf("expected status=error in JSON body, got %v", body["status"])
+			}
+			if body["errorType"] != "bad_data" {
+				t.Errorf("expected errorType=bad_data in JSON body, got %v", body["errorType"])
+			}
+			if _, ok := body["error"].(string); !ok {
+				t.Errorf("expected non-empty error string in JSON body, got %v", body["error"])
+			}
+		})
+	}
+}

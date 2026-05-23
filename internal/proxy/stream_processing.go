@@ -17,8 +17,49 @@ import (
 
 	fj "github.com/valyala/fastjson"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
+
+// extractDropKeepFromAST extracts drop/keep conditions from the original LogQL query via the typed AST.
+// Falls back to the regex-based translator functions for metric expressions or parse failures.
+func extractDropKeepFromAST(query string) (
+	dropConds []translator.DropCondition,
+	keepConds []translator.DropCondition,
+	bareDropFields []string,
+	bareKeepFields []string,
+) {
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		// Metric expressions or unparseable queries: fall back to regex-based extraction.
+		dropConds = translator.ParseDropConditions(query)
+		keepConds = translator.ParseKeepConditions(query)
+		bareDropFields = translator.ParseBareDropFields(query)
+		bareKeepFields = translator.ParseBareKeepFields(query)
+		return
+	}
+	for _, stage := range lq.Pipeline {
+		switch s := stage.(type) {
+		case *logqlpkg.DropStage:
+			bareDropFields = append(bareDropFields, s.Labels...)
+			for _, m := range s.Matchers {
+				dc, e := translator.NewDropCondition(m.Name, m.Op, m.Value)
+				if e == nil {
+					dropConds = append(dropConds, dc)
+				}
+			}
+		case *logqlpkg.KeepStage:
+			bareKeepFields = append(bareKeepFields, s.Labels...)
+			for _, m := range s.Matchers {
+				dc, e := translator.NewDropCondition(m.Name, m.Op, m.Value)
+				if e == nil {
+					keepConds = append(keepConds, dc)
+				}
+			}
+		}
+	}
+	return
+}
 
 // proxyLogQuery fetches log lines from VictoriaLogs.
 func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
@@ -138,10 +179,7 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
 
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
-	dropConditions := translator.ParseDropConditions(originalQuery)
-	keepConditions := translator.ParseKeepConditions(originalQuery)
-	bareDropFields := translator.ParseBareDropFields(originalQuery)
-	bareKeepFields := translator.ParseBareKeepFields(originalQuery)
+	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
 	smBuf2 := metadataMapPool.Get().(map[string]string)
 	pfBuf2 := metadataMapPool.Get().(map[string]string)
 	defer func() {
@@ -484,10 +522,7 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	needsClassification := emitStructuredMetadata || categorizedLabels
-	dropConditions := translator.ParseDropConditions(originalQuery)
-	keepConditions := translator.ParseKeepConditions(originalQuery)
-	bareDropFields2 := translator.ParseBareDropFields(originalQuery)
-	bareKeepFields2 := translator.ParseBareKeepFields(originalQuery)
+	dropConditions, keepConditions, bareDropFields2, bareKeepFields2 := extractDropKeepFromAST(originalQuery)
 
 	var (
 		miner        *patternMiner

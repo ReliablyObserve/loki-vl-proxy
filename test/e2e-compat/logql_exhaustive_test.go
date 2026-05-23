@@ -125,6 +125,9 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 
 		// ── ip() with an invalid IP address (invalid octet > 255) ────────────
 		{"ip_line_filter_invalid_ipv4", `{app="api-gateway"} |= ip("999.999.999.999")`, "invalid_filter"},
+		{"ip_line_filter_invalid_text", `{app="api-gateway"} |= ip("not-an-ip-address")`, "invalid_filter"},
+		{"ip_line_filter_invalid_cidr_prefix", `{app="api-gateway"} |= ip("192.168.1.1/33")`, "invalid_filter"},
+		{"ip_filter_invalid_ipv6", `{app="api-gateway"} |= ip("::gggg")`, "invalid_filter"},
 
 		// ── rate() with __error__ label filter inside range vector ──────────────
 		// Loki 3.7.1 rejects __error__ filters inside rate() range vectors (proxy now validates).
@@ -695,6 +698,43 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		// ── vector arithmetic with scalar ──
 		{"rate_times_scalar", `rate({app="api-gateway",env="production"}[5m]) * 1000`, "binary_metric"},
 		{"rate_minus_scalar", `rate({app="api-gateway",env="production"}[5m]) - 0`, "binary_metric"},
+
+		// ── Backtick-quoted label matchers (fix: parseLabelMatcher now accepts TokRawString) ──
+		// Grafana Logs Drilldown sends queries with backtick-quoted label values.
+		// These are valid LogQL raw strings and must be accepted identically to double-quoted values.
+		{"backtick_exact_matcher", "{app=`api-gateway`,env=`production`}", "backtick_selector"},
+		{"backtick_regex_matcher", "{app=~`api-.*`,env=`production`}", "backtick_selector"},
+		{"backtick_ne_matcher", "{app=`api-gateway`,level!=`debug`}", "backtick_selector"},
+		{"backtick_log_pipeline", "{app=`api-gateway`,env=`production`} | json | method=`GET`", "backtick_selector"},
+		{"backtick_line_format", "{app=`api-gateway`,env=`production`} | json | line_format `method={{.method}} status={{.status}}`", "backtick_selector"},
+		{"backtick_metric", "count_over_time({app=`api-gateway`,env=`production`}[5m])", "backtick_selector"},
+
+		// ── Extended subquery ops ─────────────────────────────────────────────
+		// Both Loki 3.7.1 and the proxy reject these (matching 400) — parity holds.
+		// avg/min_over_time of count_over_time are proxy_extension gaps (tracked in KnownGaps).
+		{"subquery_quantile_count", `quantile_over_time(0.5, count_over_time({app="api-gateway",env="production"}[5m])[30m:5m])`, "subquery_ext"},
+		{"subquery_vec_avg", `sum by(app)(avg_over_time(count_over_time({env="production"}[5m])[30m:5m]))`, "subquery_ext"},
+
+		// ── Binary operator precedence (parse-level parity) ───────────────────
+		{"binary_precedence_mul_add", `sum(rate({env="production"}[5m])) * 2 + sum(rate({env="production"}[5m]))`, "binary_precedence"},
+		{"binary_precedence_cmp_and", `sum(rate({env="production"}[5m])) > 0 and sum(rate({env="production"}[5m])) < 100000`, "binary_precedence"},
+		{"binary_precedence_div_mul", `sum(rate({env="production"}[5m])) / sum(rate({env="production"}[5m])) * 100`, "binary_precedence"},
+
+		// ── Pattern line filter (|> and !>) ───────────────────────────────────
+		// Loki 2.8+ supports |> and !> as pattern-match line filter operators.
+		{"pattern_line_filter_pos", `{app="api-gateway",env="production"} |> "<_> GET <_>"`, "pattern_line_filter"},
+		{"pattern_line_filter_neg", `{app="api-gateway",env="production"} !> "<_> GET <_>"`, "pattern_line_filter"},
+		{"pattern_line_filter_metric", `count_over_time({app="api-gateway",env="production"} |> "<_> GET <_>" [5m])`, "pattern_line_filter"},
+
+		// ── Label filter boolean combinations ─────────────────────────────────
+		{"label_filter_and", `{app="api-gateway",env="production"} | json | status>=200 and status<300`, "label_filter_bool"},
+		{"label_filter_or", `{app="api-gateway",env="production"} | json | level="error" or level="warn"`, "label_filter_bool"},
+		{"label_filter_and_metric", `count_over_time({app="api-gateway",env="production"} | json | status>=200 and status<300 [5m])`, "label_filter_bool"},
+
+		// ── Offset inside vector aggregation ─────────────────────────────────
+		{"offset_inside_sum_by", `sum by(app)(rate({env="production"}[5m] offset 1h))`, "offset"},
+		{"offset_inside_topk", `topk(5, sum by(app)(rate({env="production"}[5m] offset 5m)))`, "offset"},
+		{"offset_both_sides_binary", `sum(rate({env="production"}[5m] offset 1h)) / sum(rate({env="production"}[5m]))`, "offset"},
 	}
 
 	score := &exhaustiveScore{}

@@ -18,6 +18,7 @@ import (
 
 	fj "github.com/valyala/fastjson"
 
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -343,6 +344,17 @@ func (p *Proxy) translateQuery(logql string) (string, error) {
 	return p.translateQueryWithContext(context.Background(), logql)
 }
 
+// translateBinOpSide translates one side of a binary expression.
+// Scalar literal expressions (e.g. "100") are returned as-is without translation,
+// since the translator cannot handle bare numeric literals and proxyBinaryMetric
+// already detects them via translator.IsScalar.
+func (p *Proxy) translateBinOpSide(ctx context.Context, expr logqlpkg.Expr) (string, error) {
+	if lit, ok := expr.(*logqlpkg.LiteralExpr); ok {
+		return lit.String(), nil
+	}
+	return p.translateQueryWithContext(ctx, expr.String())
+}
+
 func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (string, error) {
 	start := time.Now()
 	normalized := strings.TrimSpace(logql)
@@ -367,9 +379,9 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 		err        error
 	)
 	if streamFieldsMap != nil {
-		translated, err = translator.TranslateLogQLWithStreamFields(logql, labelFn, streamFieldsMap)
+		translated, err = translator.TranslateLogQLWithStreamFields(normalized, labelFn, streamFieldsMap)
 	} else {
-		translated, err = translator.TranslateLogQLWithLabels(logql, labelFn)
+		translated, err = translator.TranslateLogQLWithLabels(normalized, labelFn)
 	}
 	if err != nil {
 		if p.metrics != nil {
@@ -1135,28 +1147,19 @@ func parseAbsentOverTimeCompatSpec(logql string) (absentOverTimeCompatSpec, bool
 }
 
 func extractAbsentMetricLabels(query string) map[string]string {
-	selector, _, ok := splitLeadingSelector(strings.TrimSpace(query))
-	if !ok || len(selector) < 2 {
+	expr, err := logqlpkg.Parse(strings.TrimSpace(query))
+	if err != nil {
 		return map[string]string{}
 	}
-	matchers := splitSelectorMatchers(selector[1 : len(selector)-1])
-	labels := make(map[string]string, len(matchers))
-	for _, matcher := range matchers {
-		matcher = strings.TrimSpace(matcher)
-		if strings.Contains(matcher, "!=") || strings.Contains(matcher, "=~") || strings.Contains(matcher, "!~") {
-			continue
+	lq, ok := expr.(*logqlpkg.LogQuery)
+	if !ok {
+		return map[string]string{}
+	}
+	labels := make(map[string]string, len(lq.Selector.Matchers))
+	for _, m := range lq.Selector.Matchers {
+		if m.Op == logqlpkg.MatchEq {
+			labels[m.Name] = m.Value
 		}
-		idx := strings.Index(matcher, "=")
-		if idx <= 0 {
-			continue
-		}
-		label := strings.TrimSpace(matcher[:idx])
-		value := strings.TrimSpace(matcher[idx+1:])
-		value = strings.Trim(value, "\"`")
-		if label == "" || value == "" {
-			continue
-		}
-		labels[label] = value
 	}
 	return labels
 }

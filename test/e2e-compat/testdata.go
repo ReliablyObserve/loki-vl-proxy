@@ -189,6 +189,127 @@ func ingestRichTestData(t *testing.T) {
 		},
 	})
 
+	// ── OTel vs Non-OTel comparison pair: frontend service ──
+	//
+	// OTel path: data arrives via OTel collector into VL directly.
+	// Stream labels use dotted OTel conventions. Extra OTel span attributes
+	// (trace_id, span_id, http.method etc.) are pushed as extra VL fields
+	// and surface as structuredMetadata through the proxy.
+	pushStream(t, now, streamDef{
+		VLOnly: true,
+		Labels: map[string]string{
+			"service.name":           "otel-frontend",
+			"service.namespace":      "web",
+			"k8s.cluster.name":       "us-east-1",
+			"k8s.namespace.name":     "prod",
+			"k8s.pod.name":           "otel-frontend-abc123",
+			"k8s.container.name":     "frontend",
+			"deployment.environment": "production",
+			"deployment.version":     "v3.2.1",
+			"telemetry.sdk.name":     "opentelemetry",
+			"telemetry.sdk.language": "javascript",
+			"level":                  "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":         "otel-trace-fe-001",
+			"span_id":          "otel-span-fe-001",
+			"http.method":      "GET",
+			"http.target":      "/dashboard",
+			"http.status_code": "200",
+			"net.peer.ip":      "10.0.1.50",
+		},
+		Lines: []string{
+			`{"event":"page_load","route":"/dashboard","user_id":"usr-01","duration_ms":320,"cache_hit":false,"assets_loaded":12}`,
+			`{"event":"api_call","endpoint":"/api/v1/metrics","user_id":"usr-01","duration_ms":45,"status":200,"retries":0}`,
+			`{"event":"page_load","route":"/settings","user_id":"usr-02","duration_ms":180,"cache_hit":true,"assets_loaded":8}`,
+			`{"event":"error","route":"/reports","user_id":"usr-03","error":"timeout","duration_ms":5000,"retries":3}`,
+			`{"event":"api_call","endpoint":"/api/v1/users","user_id":"usr-02","duration_ms":22,"status":200,"retries":0}`,
+		},
+	})
+
+	// Non-OTel path: equivalent frontend service using Loki push (underscore labels).
+	// Trace context is structured metadata, not embedded in stream labels.
+	// Both Loki and VL receive identical data for side-by-side comparison.
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "frontend", "service_name": "frontend",
+			"namespace": "prod", "cluster": "us-east-1",
+			"version": "v3.2.1", "env": "production", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":   "nonotel-trace-fe-001",
+			"span_id":    "nonotel-span-fe-001",
+			"request_id": "req-nonotel-001",
+			"user_agent": "Mozilla/5.0 (compatible; test)",
+		},
+		Lines: []string{
+			`{"event":"page_load","route":"/dashboard","user_id":"usr-01","duration_ms":310,"cache_hit":false,"assets_loaded":11}`,
+			`{"event":"api_call","endpoint":"/api/v1/metrics","user_id":"usr-01","duration_ms":48,"status":200,"retries":0}`,
+			`{"event":"page_load","route":"/settings","user_id":"usr-02","duration_ms":175,"cache_hit":true,"assets_loaded":8}`,
+			`{"event":"error","route":"/reports","user_id":"usr-03","error":"timeout","duration_ms":5001,"retries":3}`,
+			`{"event":"api_call","endpoint":"/api/v1/users","user_id":"usr-02","duration_ms":25,"status":200,"retries":0}`,
+		},
+	})
+
+	// ── OTel vs Non-OTel: backend worker service ──
+	//
+	// OTel path: background job worker instrumented with OTel SDK.
+	// Rich resource attributes + span attributes as structured metadata.
+	pushStream(t, now, streamDef{
+		VLOnly: true,
+		Labels: map[string]string{
+			"service.name":           "otel-worker",
+			"service.namespace":      "jobs",
+			"k8s.cluster.name":       "us-east-1",
+			"k8s.namespace.name":     "prod",
+			"k8s.pod.name":           "otel-worker-def456",
+			"k8s.container.name":     "worker",
+			"deployment.environment": "production",
+			"deployment.version":     "v1.8.0",
+			"telemetry.sdk.name":     "opentelemetry",
+			"telemetry.sdk.language": "python",
+			"level":                  "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":         "otel-trace-worker-001",
+			"span_id":          "otel-span-worker-001",
+			"job.type":         "email",
+			"job.queue":        "notifications",
+			"messaging.system": "rabbitmq",
+		},
+		Lines: []string{
+			`{"event":"job_started","job_id":"job-001","type":"email","recipient":"alice@example.com","priority":"high"}`,
+			`{"event":"job_completed","job_id":"job-001","duration_ms":234,"emails_sent":1,"job_result":"success"}`,
+			`{"event":"job_started","job_id":"job-002","type":"report","report_id":"rpt-042","priority":"low"}`,
+			`{"event":"job_failed","job_id":"job-002","error":"disk_full","retryable":true,"attempt":2}`,
+			`{"event":"job_started","job_id":"job-003","type":"cleanup","target":"temp_files","files_count":1024}`,
+			`{"event":"job_completed","job_id":"job-003","duration_ms":8901,"files_deleted":987,"job_result":"success"}`,
+		},
+	})
+
+	// Non-OTel equivalent worker (both Loki + VL).
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "worker", "service_name": "worker",
+			"namespace": "prod", "cluster": "us-east-1",
+			"version": "v1.8.0", "env": "production", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":   "nonotel-trace-worker-001",
+			"span_id":    "nonotel-span-worker-001",
+			"queue_name": "notifications",
+			"worker_id":  "worker-node-7",
+		},
+		Lines: []string{
+			`{"event":"job_started","job_id":"job-101","type":"email","recipient":"bob@example.com","priority":"high"}`,
+			`{"event":"job_completed","job_id":"job-101","duration_ms":198,"emails_sent":1,"job_result":"success"}`,
+			`{"event":"job_started","job_id":"job-102","type":"report","report_id":"rpt-043","priority":"low"}`,
+			`{"event":"job_failed","job_id":"job-102","error":"db_timeout","retryable":true,"attempt":1}`,
+			`{"event":"job_started","job_id":"job-103","type":"cleanup","target":"logs","files_count":512}`,
+			`{"event":"job_completed","job_id":"job-103","duration_ms":4521,"files_deleted":498,"job_result":"success"}`,
+		},
+	})
+
 	// ── Multiline / special chars ──
 	pushStream(t, now, streamDef{
 		Labels: map[string]string{
@@ -259,30 +380,127 @@ func ingestRichTestData(t *testing.T) {
 		},
 	})
 
+	// ── Structured metadata: checkout-service with trace/span context ──
+	// Uses a unique app name to avoid cardinality collision with the existing
+	// api-gateway streams (which carry a pod label that would cause many-to-one
+	// matching errors in binary metric queries).
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "checkout-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"trace_id":   "abc123def456789",
+			"span_id":    "span001xyz",
+			"request_id": "req-001-structured",
+			"user_agent": "Mozilla/5.0 (compatible; e2e-test)",
+		},
+		Lines: []string{
+			`{"method":"GET","path":"/api/v1/dashboard","status":200,"duration_ms":22}`,
+			`{"method":"POST","path":"/api/v1/checkout","status":200,"duration_ms":315}`,
+			`{"method":"GET","path":"/api/v1/cart","status":200,"duration_ms":11}`,
+		},
+	})
+
+	// ── Structured metadata: billing-service with cloud context ──
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "billing-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"cloud.region":    "us-east-1",
+			"cloud.provider":  "aws",
+			"k8s.node.name":   "node-worker-42",
+			"deployment.name": "billing-service-v3",
+		},
+		Lines: []string{
+			`level=info msg="invoice generated" amount=99.99 currency=USD invoice_id=inv_12345`,
+			`level=info msg="invoice generated" amount=49.50 currency=EUR invoice_id=inv_12346`,
+			`level=info msg="credit issued" amount=15.00 currency=USD invoice_id=inv_12347`,
+		},
+	})
+
+	// ── Structured metadata: auth-service with OTel-style resource attributes ──
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "auth-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		StructuredMetadata: map[string]string{
+			"telemetry.sdk.name":     "opentelemetry",
+			"telemetry.sdk.language": "go",
+			"telemetry.sdk.version":  "1.21.0",
+			"deployment.version":     "v1.5.2",
+			"host.name":              "auth-host-1",
+		},
+		Lines: []string{
+			`{"event":"login","user":"alice@example.com","ip":"10.0.1.1","mfa":true,"duration_ms":45}`,
+			`{"event":"token_refresh","user":"bob@example.com","ip":"10.0.1.2","mfa":false,"duration_ms":12}`,
+			`{"event":"logout","user":"charlie@example.com","ip":"10.0.1.3","mfa":true,"duration_ms":8}`,
+		},
+	})
+
+	// ── Parsed fields: rich JSON logs for | json pipeline testing ──
+	// These JSON logs contain many nested fields that can be extracted via | json.
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "order-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		Lines: []string{
+			`{"event":"order_created","order_id":"ord-001","user_id":"usr-42","items":3,"total":149.99,"currency":"USD","payment_method":"card","shipping":"express","region":"us-east"}`,
+			`{"event":"order_shipped","order_id":"ord-001","tracking_id":"TRK123456","carrier":"fedex","estimated_delivery":"2026-05-25","weight_kg":2.5}`,
+			`{"event":"order_delivered","order_id":"ord-001","delivery_time_ms":345678,"signature_required":true,"delivered_to":"alice"}`,
+			`{"event":"order_created","order_id":"ord-002","user_id":"usr-99","items":1,"total":29.99,"currency":"EUR","payment_method":"paypal","shipping":"standard","region":"eu-west"}`,
+			`{"event":"order_failed","order_id":"ord-003","user_id":"usr-01","error":"payment_declined","code":4001,"retryable":false}`,
+		},
+	})
+
+	// ── Parsed fields: logfmt logs for | logfmt pipeline testing ──
+	pushStream(t, now, streamDef{
+		Labels: map[string]string{
+			"app": "inventory-service", "namespace": "prod", "env": "production",
+			"cluster": "us-east-1", "level": "info",
+		},
+		Lines: []string{
+			`level=info msg="stock check" sku=SKU-001 quantity=150 warehouse=east-1 reserved=12`,
+			`level=info msg="stock updated" sku=SKU-002 delta=-5 new_quantity=95 reason=sale`,
+			`level=warn msg="low stock alert" sku=SKU-003 quantity=3 threshold=10 auto_reorder=true`,
+			`level=info msg="restock received" sku=SKU-001 added=500 supplier=acme delivery_id=DEL-789`,
+			`level=error msg="stock sync failed" warehouse=west-2 error="connection timeout" retry_in=30s`,
+		},
+	})
+
 	time.Sleep(5 * time.Second) // VL needs time to index, especially in CI
 	t.Log("Rich test data ingested successfully")
 }
 
 type streamDef struct {
-	Labels map[string]string
-	Lines  []string
-	VLOnly bool // If true, push only to VL (not Loki) — for OTel data with dotted labels
+	Labels             map[string]string
+	Lines              []string
+	StructuredMetadata map[string]string // applied to all lines; exposed via categorize-labels
+	VLOnly             bool              // push only to VL (not Loki) — for OTel data with dotted labels
 }
 
 func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 	t.Helper()
 
-	// Push to Loki
-	values := make([][]string, len(sd.Lines))
-	for i, line := range sd.Lines {
-		ts := baseTime.Add(time.Duration(i) * time.Second)
-		values[i] = []string{fmt.Sprintf("%d", ts.UnixNano()), line}
-	}
-
 	if !sd.VLOnly {
+		// Loki: use 3-element values when structured metadata is set.
+		var lokiValues []interface{}
+		for i, line := range sd.Lines {
+			ts := baseTime.Add(time.Duration(i) * time.Second)
+			tsStr := fmt.Sprintf("%d", ts.UnixNano())
+			if len(sd.StructuredMetadata) > 0 {
+				lokiValues = append(lokiValues, []interface{}{tsStr, line, sd.StructuredMetadata})
+			} else {
+				lokiValues = append(lokiValues, []string{tsStr, line})
+			}
+		}
 		lokiPayload := map[string]interface{}{
 			"streams": []map[string]interface{}{
-				{"stream": sd.Labels, "values": values},
+				{"stream": sd.Labels, "values": lokiValues},
 			},
 		}
 		body, _ := json.Marshal(lokiPayload)
@@ -294,7 +512,7 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 		}
 	}
 
-	// Push to VictoriaLogs
+	// VictoriaLogs: structured metadata fields are pushed as extra non-stream fields.
 	var vlLines []string
 	for i, line := range sd.Lines {
 		ts := baseTime.Add(time.Duration(i) * time.Second)
@@ -302,13 +520,16 @@ func pushStream(t *testing.T, baseTime time.Time, sd streamDef) {
 		for k, v := range sd.Labels {
 			entry[k] = v
 		}
+		for k, v := range sd.StructuredMetadata {
+			entry[k] = v
+		}
 		j, _ := json.Marshal(entry)
 		vlLines = append(vlLines, string(j))
 	}
 
-	// Build stream fields from labels — include ALL labels to match Loki's
-	// stream label behavior (Loki indexes every push label as a stream label)
-	streamFields := []string{}
+	// Stream fields: only label keys (not structured metadata keys) — this
+	// ensures metadata fields appear as structuredMetadata in categorize-labels.
+	streamFields := make([]string, 0, len(sd.Labels))
 	for k := range sd.Labels {
 		streamFields = append(streamFields, k)
 	}

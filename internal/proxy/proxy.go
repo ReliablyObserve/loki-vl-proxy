@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -1473,23 +1474,41 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// Extract and apply LogQL offset: strip the offset clause and shift start/end
 	// backward so preferWorkingParser probes the historical window where the offset
 	// data actually lives. All downstream dispatch paths see the shifted times.
+	//
+	// Exception: binary metric expressions where only SOME sides carry an offset
+	// ("mixed" case). Loki evaluates each side independently so it accepts these;
+	// the proxy lets them through to the binary routing path which dispatches
+	// separate VL queries per side. The translator silently drops offset clauses,
+	// so time-shifting is not applied — results may differ from Loki for offset
+	// values but the proxy returns 200 rather than incorrectly rejecting the query.
+	// Expressions with multiple *different* offsets still return 400 (same as Loki).
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
-			p.writeError(w, http.StatusBadRequest, offsetErr.Error())
-			p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
-			return
-		}
-		logqlQuery = strippedQuery
-		if offsetDur != 0 {
-			// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
-			// it does not alias the map captured by withOrgID's origRequestKey reference.
-			_ = r.ParseForm()
-			if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
-				r.Form.Set("start", nanosToVLTimestamp(startNs-offsetDur.Nanoseconds()))
+			// Allow mixed-offset binary expressions: bypass only when the failure is
+			// "some range vectors have offset, others do not" AND the query is a
+			// top-level binary op (Loki handles these by evaluating sides independently).
+			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
+			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
+			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
+			if !isMixedOffset || !isBinaryForOffset {
+				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
+				p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
+				return
 			}
-			if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
-				r.Form.Set("end", nanosToVLTimestamp(endNs-offsetDur.Nanoseconds()))
+			// Mixed-offset binary: proceed without time-shifting; binary routing handles it.
+		} else {
+			logqlQuery = strippedQuery
+			if offsetDur != 0 {
+				// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
+				// it does not alias the map captured by withOrgID's origRequestKey reference.
+				_ = r.ParseForm()
+				if startNs, ok := parseLokiTimeToUnixNano(r.FormValue("start")); ok {
+					r.Form.Set("start", nanosToVLTimestamp(startNs-offsetDur.Nanoseconds()))
+				}
+				if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
+					r.Form.Set("end", nanosToVLTimestamp(endNs-offsetDur.Nanoseconds()))
+				}
 			}
 		}
 	}
@@ -1557,12 +1576,28 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		sc = &statusCapture{ResponseWriter: cacheTap, code: 200}
 	}
 
-	// Check for subquery expression (e.g., max_over_time(rate(...)[1h:5m]))
-	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(logsqlQuery); ok {
-		p.proxySubqueryRange(sc, r, outerFunc, innerQL, rng, step)
-	} else if op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(logsqlQuery); ok {
-		// Binary metric expression (e.g., sum(rate(...)) / sum(rate(...)))
-		p.proxyBinaryMetricQueryRangeVM(sc, r, op, left, right, vm)
+	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
+	parsedForRouting, _ := logqlpkg.Parse(logqlQuery)
+	if ra, ok := parsedForRouting.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
+		// Subquery: max_over_time(rate(...)[1h:5m])
+		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
+		if innerErr != nil {
+			p.writeError(sc, http.StatusBadRequest, innerErr.Error())
+		} else {
+			p.proxySubqueryRange(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
+		}
+	} else if binOp, ok := parsedForRouting.(*logqlpkg.BinOpExpr); ok {
+		// Binary metric expression: sum(rate(...)) / sum(rate(...))
+		// translateBinOpSide handles scalar literals (e.g. * 100) without translation.
+		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
+		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
+		if leftErr != nil {
+			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
+		} else if rightErr != nil {
+			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
+		} else {
+			p.proxyBinaryMetricQueryRangeVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
+		}
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQueryRange(sc, r, logsqlQuery)
 	} else {
@@ -1639,6 +1674,8 @@ func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 }
 
 // handleQuery translates Loki instant queries.
+//
+//nolint:gocyclo // dispatches across cache, multi-tenant fanout, stats vs logs, subquery, binary metric, and streaming modes; branching is inherent to Loki instant query parity.
 func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
@@ -1670,26 +1707,34 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	// Extract and apply LogQL offset: strip the offset clause and shift the eval
 	// time backward so preferWorkingParser probes the historical window where the
 	// offset data actually lives. All downstream dispatch paths see the shifted time.
+	//
+	// Mixed-offset binary expressions are treated the same as in query_range above.
 	{
 		offsetDur, strippedQuery, offsetErr := extractLogQLOffset(logqlQuery)
 		if offsetErr != nil {
-			p.writeError(w, http.StatusBadRequest, offsetErr.Error())
-			p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
-			return
-		}
-		logqlQuery = strippedQuery
-		if offsetDur != 0 {
-			// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
-			// it does not alias the map captured by withOrgID's origRequestKey reference.
-			_ = r.ParseForm()
-			rawTime := r.FormValue("time")
-			if rawTime == "" {
-				// Loki allows omitting "time"; it defaults to now.
-				// We must materialise that default here so the offset shift is applied.
-				rawTime = strconv.FormatInt(time.Now().UnixNano(), 10)
+			isMixedOffset := strings.Contains(offsetErr.Error(), "loki-vl-proxy requires a uniform offset")
+			parsedForOffset, _ := logqlpkg.Parse(logqlQuery)
+			_, isBinaryForOffset := parsedForOffset.(*logqlpkg.BinOpExpr)
+			if !isMixedOffset || !isBinaryForOffset {
+				p.writeError(w, http.StatusBadRequest, offsetErr.Error())
+				p.metrics.RecordRequest("query", http.StatusBadRequest, time.Since(start))
+				return
 			}
-			if timeNs, ok := parseLokiTimeToUnixNano(rawTime); ok {
-				r.Form.Set("time", nanosToVLTimestamp(timeNs-offsetDur.Nanoseconds()))
+		} else {
+			logqlQuery = strippedQuery
+			if offsetDur != 0 {
+				// r.ParseForm() allocates a new map on the post-WithContext shallow copy —
+				// it does not alias the map captured by withOrgID's origRequestKey reference.
+				_ = r.ParseForm()
+				rawTime := r.FormValue("time")
+				if rawTime == "" {
+					// Loki allows omitting "time"; it defaults to now.
+					// We must materialise that default here so the offset shift is applied.
+					rawTime = strconv.FormatInt(time.Now().UnixNano(), 10)
+				}
+				if timeNs, ok := parseLokiTimeToUnixNano(rawTime); ok {
+					r.Form.Set("time", nanosToVLTimestamp(timeNs-offsetDur.Nanoseconds()))
+				}
 			}
 		}
 	}
@@ -1752,10 +1797,25 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 		sc = &statusCapture{ResponseWriter: bw, code: 200}
 	}
 
-	if outerFunc, innerQL, rng, step, ok := translator.ParseSubqueryExpr(logsqlQuery); ok {
-		p.proxySubquery(sc, r, outerFunc, innerQL, rng, step)
-	} else if op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(logsqlQuery); ok {
-		p.proxyBinaryMetricQueryVM(sc, r, op, left, right, vm)
+	// Route using the original LogQL AST — more reliable than re-parsing translated markers.
+	parsedForRoutingQ, _ := logqlpkg.Parse(logqlQuery)
+	if ra, ok := parsedForRoutingQ.(*logqlpkg.RangeAggregation); ok && ra.Step != "" {
+		innerLogsql, innerErr := p.translateQueryWithContext(r.Context(), ra.Inner.String())
+		if innerErr != nil {
+			p.writeError(sc, http.StatusBadRequest, innerErr.Error())
+		} else {
+			p.proxySubquery(sc, r, string(ra.Op), innerLogsql, ra.Range, ra.Step)
+		}
+	} else if binOp, ok := parsedForRoutingQ.(*logqlpkg.BinOpExpr); ok {
+		leftLogsql, leftErr := p.translateBinOpSide(r.Context(), binOp.Left)
+		rightLogsql, rightErr := p.translateBinOpSide(r.Context(), binOp.Right)
+		if leftErr != nil {
+			p.writeError(sc, http.StatusBadRequest, leftErr.Error())
+		} else if rightErr != nil {
+			p.writeError(sc, http.StatusBadRequest, rightErr.Error())
+		} else {
+			p.proxyBinaryMetricQueryVM(sc, r, binOp.Op, leftLogsql, rightLogsql, binOpExprToVMInfo(binOp))
+		}
 	} else if isStatsQuery(logsqlQuery) {
 		p.proxyStatsQuery(sc, r, logsqlQuery)
 	} else {

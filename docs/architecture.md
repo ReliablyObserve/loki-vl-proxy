@@ -241,8 +241,19 @@ flowchart LR
 
 ## Component Design
 
+### LogQL Parser (`internal/logql/`)
+Typed recursive-descent parser for LogQL. Produces a fully-typed AST (`Expr` interface with concrete node types: `*LogQuery`, `*RangeAggregation`, `*VectorAggregation`, `*BinOpExpr`, `*OpaqueMetricExpr`, …) that drives three subsystems:
+
+- **Validation** — `ValidateLogQL(query)` returns Loki-compatible error strings for invalid queries before any work is done.
+- **Routing** — `proxy.go` type-switches on the parsed AST to dispatch subqueries, binary metric expressions, and stream queries to separate execution paths (more reliable than regex-based marker injection).
+- **Drop/Keep extraction** — `stream_processing.go` extracts `| drop`/`| keep` matchers from the AST for VL response post-processing.
+
+The parser includes a semantic pass for structural constraints (missing `| unwrap` inside `rate_counter`, `__error__` inside `rate()`, malformed `ip()` filters, quantile phi bounds, line-format template validity). All error messages are formatted to match Loki 3.x exactly so Grafana clients receive the expected error shape.
+
+See [LogQL Parser deep dive](logql-parser.md) for grammar, data flow diagrams, and extension points.
+
 ### Translator (`internal/translator/`)
-Pure string manipulation parser — no external LogQL parser library. Converts LogQL to LogsQL left-to-right using prefix matching and regex for templates.
+String-level LogQL→LogsQL converter. Receives canonical LogQL (produced by `Expr.String()` after AST normalisation) and converts it left-to-right using prefix matching and regex for templates. The typed parser upstream ensures the translator always receives well-formed input.
 
 ### Proxy (`internal/proxy/`)
 HTTP handlers for Loki-compatible read endpoints, split into domain-focused modules:

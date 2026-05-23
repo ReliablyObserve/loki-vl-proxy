@@ -690,15 +690,24 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 		return params
 	}
 
-	// Check if either side is a scalar (number)
+	// Check if either side is a scalar or a nested binary marker.
 	leftIsScalar := translator.IsScalar(leftQL)
 	rightIsScalar := translator.IsScalar(rightQL)
+	leftIsMarker := strings.HasPrefix(leftQL, translator.BinaryMetricPrefix)
+	rightIsMarker := strings.HasPrefix(rightQL, translator.BinaryMetricPrefix)
 
 	var leftBody, rightBody []byte
 	var leftErr, rightErr error
 
-	// Run both non-scalar VL fetches concurrently.
-	if !leftIsScalar && !rightIsScalar {
+	// When either side is a nested binary marker, resolve it recursively.
+	// Otherwise fall through to the plain VL fetch paths.
+	if leftIsMarker || rightIsMarker {
+		leftBody, leftIsScalar, leftErr = p.resolveBinOpBody(r, leftQL, vlEndpoint, resultType, buildParams)
+		if leftErr == nil {
+			rightBody, rightIsScalar, rightErr = p.resolveBinOpBody(r, rightQL, vlEndpoint, resultType, buildParams)
+		}
+	} else if !leftIsScalar && !rightIsScalar {
+		// Run both non-scalar VL fetches concurrently.
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() {
@@ -722,14 +731,6 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 		}()
 		wg.Wait()
-		if leftErr != nil {
-			p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
-			return
-		}
-		if rightErr != nil {
-			p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
-			return
-		}
 	} else {
 		if leftIsScalar {
 			leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
@@ -756,6 +757,15 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 		}
 	}
 
+	if leftErr != nil {
+		p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
+		return
+	}
+	if rightErr != nil {
+		p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
+		return
+	}
+
 	// Combine results with arithmetic at proxy level
 	result := combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
 	if origStartNs > 0 {
@@ -764,6 +774,50 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
+}
+
+// resolveBinOpBody returns the result body for one side of a binary expression.
+// Handles scalar strings, nested binary markers, and plain VL queries.
+func (p *Proxy) resolveBinOpBody(r *http.Request, query, vlEndpoint, resultType string, buildParams func(string) url.Values) (body []byte, isScalar bool, err error) {
+	if translator.IsScalar(query) {
+		return []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + query + `"]}}`), true, nil
+	}
+	if strings.HasPrefix(query, translator.BinaryMetricPrefix) {
+		body, err = p.evalBinaryMarker(r, query, vlEndpoint, resultType, buildParams)
+		return body, false, err
+	}
+	resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(query))
+	if e != nil {
+		return nil, false, e
+	}
+	defer resp.Body.Close()
+	body, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	return body, false, nil
+}
+
+// evalBinaryMarker recursively evaluates a __binary__: expression marker.
+func (p *Proxy) evalBinaryMarker(r *http.Request, marker, vlEndpoint, resultType string, buildParams func(string) url.Values) ([]byte, error) {
+	op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(marker)
+	if !ok {
+		return nil, fmt.Errorf("invalid binary expression marker")
+	}
+
+	leftBody, leftScalar, err := p.resolveBinOpBody(r, left, vlEndpoint, resultType, buildParams)
+	if err != nil {
+		return nil, err
+	}
+	rightBody, rightScalar, err := p.resolveBinOpBody(r, right, vlEndpoint, resultType, buildParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if vm != nil && len(vm.On) > 0 {
+		return applyOnMatching(leftBody, rightBody, op, vm.On, resultType), nil
+	}
+	if vm != nil && len(vm.Ignoring) > 0 {
+		return applyIgnoringMatching(leftBody, rightBody, op, vm.Ignoring, resultType), nil
+	}
+	return combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftScalar, rightScalar, left, right), nil
 }
 
 // combineBinaryMetricResults applies arithmetic op to two VL stats results.
