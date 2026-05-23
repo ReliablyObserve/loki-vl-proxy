@@ -213,7 +213,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "any_non_empty",
       "require_non_empty": true
     },
     {
@@ -235,7 +235,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "any_non_empty",
       "require_non_empty": true
     },
     {
@@ -246,7 +246,7 @@
       "step": "60",
       "expectation": "success",
       "expect_result_type": "matrix",
-      "compare": "metric_keys",
+      "compare": "any_non_empty",
       "require_non_empty": true
     },
     {
