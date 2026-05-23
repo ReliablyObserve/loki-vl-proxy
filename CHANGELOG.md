@@ -7,6 +7,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **GHCR badge workflow hardened against empty API outputs**: `checkout@v6` → `checkout@v4` (v6 does not exist); shell defaults prevent empty `GITHUB_OUTPUT` values; Python `fmt()` handles empty string instead of causing `SyntaxError`.
+
+## [1.39.0] - 2026-05-23
+
+### Performance
+
+- **Remove parser-stage guard from metric fast-path**: `rate`, `count_over_time`, `bytes_rate`, and `bytes_over_time` queries with `| json` or `| logfmt` pipeline stages now use VL native `stats_query_range` on tumbling windows (range == step) instead of the slow raw-log-fetch path.
+
+### Fixed
+
+- **`topk`/`bottomk` post-filtering**: `topk(K, expr)` and `bottomk(K, expr)` queries now return at most K series. Previously the translator stripped the wrapper and all series were returned unfiltered.
+
+### Added
+
+- **Dynamic GHCR pull count badges**: README now shows live download counts for the proxy image and Helm chart image, updated daily via GitHub Actions.
+
+## [1.38.0] - 2026-05-23
+
+### Added
+
+- **Typed LogQL parser and AST model layer** (`internal/logql`): stream selectors, all pipeline stage variants, range/vector aggregations with full `String()` round-trip serialisation. `ParseAndValidate()` provides a lightweight syntax gate for request handlers. `Translate()` converts the AST to LogsQL via the existing translator. A fuzz target ensures `Parse+String+Translate` never panic on arbitrary input.
+- **`extractQuery` proxy helper**: pure function in `internal/proxy/query_extract.go` that validates the `query` form parameter using the typed parser; available for incremental adoption across request handlers.
+
+## [1.37.2] - 2026-05-22
+
+### Fixed
+
+- **Helm chart: remove invalid `backend-read-buffer-size` / `backend-write-buffer-size` flags** ([#391](https://github.com/ReliablyObserve/loki-vl-proxy/issues/391)): The chart shipped two `extraArgs` flags that do not exist in the binary, causing startup failure with `flag provided but not defined`. Also removed invalid commented `disk-cache-encryption-key`. Added 19 previously undocumented Go flags to `values.yaml` for full 1:1 parity.
+
+### Added
+
+- **Helm ↔ binary flag parity CI gate**: Go tests (`TestHelmExtraArgsFlagParity`, `TestHelmExtraArgsCoverage`) and a rendered-template validation script (`validate_helm_flags.sh`) now run in CI. Any new flag added to Go without a `values.yaml` entry (or vice versa) will fail CI.
+
+## [1.37.1] - 2026-05-21
+
+### Fixed
+
+- **Bare `| drop field` / `| keep field` now mutates stream labels**: Added `ParseBareDropFields`, `ParseBareKeepFields`, and `applyBareFieldMutationToStreamLabels`. Both streaming and buffered response paths now remove bare-dropped fields from the stream label set and filter stream labels to only kept fields, matching Loki behaviour. Label translation (underscore↔dot) is applied when running with `-label-style=underscores`.
+- **Malformed drop/keep matchers return HTTP 400**: `ValidateDropKeepSyntax` now walks the pipeline and returns a parse error for any `| drop` / `| keep` item that contains `=` but uses an unsupported operator (e.g. `!=~`). Previously these were silently skipped.
+
+### Performance
+
+- **Multi-tenant fanout is now parallel**: Replaced the serial tenant loop in `multitenant.go` with concurrent goroutines (`sync.WaitGroup`); tenant sub-requests run in parallel, results merged in original index order for deterministic output.
+- **Backward cold merge read bounded to `limit` lines**: Replaced unbounded `io.ReadAll(coldResp.Body)` with `readAndReverseNDJSON(r, limit)` which reads at most `limit` NDJSON lines via a ring buffer before reversing, preventing unbounded memory growth for large cold responses.
+
+## [1.37.0] - 2026-05-21
+
+### Documentation
+
+- **Full docs refresh against v1.36.3**: All documentation updated to reflect current proxy features — translation reference (bare vs matcher drop/keep forms, stream label scope caveat), configuration (env vars, flags), getting-started (version), operations (tenant routing strategies, SIGHUP hot-reload, health endpoints), security (mTLS flags, require-tenant-header), performance (klauspost/compress, zstd window cache, loopback auto-detect), scaling (adaptive parallelism, peer discovery), architecture (cold storage routing and boundary table), compatibility pages (count_values error, emit-structured-metadata, backend-compression loopback, 3-tuple metadata format, categorize-labels), API reference (/alive, /healthz), roadmap, and README.
+- **Helm chart documentation**: Added `charts/loki-vl-proxy/README.md` with full values reference, and three example Helm values files (`single-instance.yaml`, `production-ha.yaml`, `multi-tenant.yaml`) under `examples/helm/`.
+- **`metadata-field-mode` default corrected**: Docs previously stated the default as `hybrid`; corrected to `translated` to match `cmd/proxy/main.go`.
+- **KNOWN_ISSUES updated**: Added three current limitations (matcher scope for drop/keep, serial multi-tenant fanout, backward cold merge buffer) and documented three recently resolved issues (absent_over_time, sort/sort_desc, cold storage).
+
+## [1.36.3] - 2026-05-21
+
+### Fixed
+
+- **`| drop` stream label fix under `label-style=underscores`**: `applyDropConditionsToStreamLabels` now translates the drop condition's Loki underscore field name (e.g. `service_name`) back to its VL dot-style raw key (e.g. `service.name`) via the label translator, so `| drop service_name="api"` correctly removes the stream label when the proxy runs with `-label-style=underscores`.
+- **`| keep field=value` per-entry conditional semantics**: Added `ParseKeepConditions` and `applyKeepConditions`; the proxy now strips a kept field from entries whose value does not match the keep condition, implementing Loki-equivalent per-entry behaviour instead of unconditional field projection.
+- **`!=~` invalid drop/keep matcher operator rejected**: `parseDropMatcher` now returns false immediately for `!=~` (scanned first to prevent `=~`/`!=` from matching within it); `splitDropSpec` and `translateKeepStage` skip items that look like matchers with unsupported operators rather than passing them through as malformed bare field names.
+
+### Security
+
+- **`ws` dependency in website upgraded to >=8.20.1**: `webpack-bundle-analyzer` pinned ws to `^7`, resolving to 7.5.10 which is affected by an uninitialized memory disclosure (dependabot alert #14). An npm `overrides` entry in `website/package.json` forces ws to `>=8.20.1`.
+
+## [1.36.2] - 2026-05-21
+
+### Fixed
+
+- **`detected_fields` underscore-proxy: `service.name` and `service_name` missing when OTel streams fall outside the 500-line scan window**: When running with `-label-style=underscores`, a wildcard `detected_fields` request samples the 500 most-recent log lines to infer field names. If all recent lines come from non-OTel streams (e.g. a continuous log generator), `service.name` and `service_name` never appear in the response even though OTel data exists in the time range. The fix checks the parallel-fetched native `field_names` index (which covers the full time range) and promotes both labels when `service.name` is present in the index but absent from the scan results. The promotion is skipped when the query already selects on `service_name` or `service.name` (stream-label selectors must stay suppressed from `detected_fields`, e.g. `{service_name="api-gateway"}`).
+
+## [1.36.1] - 2026-05-20
+
+### Fixed
+
+- **`| drop field=value` stream label mutation**: The proxy's matcher-form drop post-processing previously only removed matched fields from structured metadata and parsed fields, leaving stream labels (from VL's `_stream` field) unchanged. Loki's `| drop field=value` removes the field from the complete label set, including stream labels, when the value matches. The fix extends `applyDropConditionsToStreamLabels` to check stream labels and regroup entries under the modified label set when a match is found. The corrected behaviour applies to both the batch (FJ) query path and the streaming path.
+- **`| keep field=value` matcher syntax**: The proxy translated `| keep method="GET"` into `| fields _time, _msg, _stream, method="GET"`, passing the matcher expression as a literal field name to VL — invalid VL syntax that causes a 400 error. The fix parses matcher forms in `keep` specs and projects only the field name (e.g. `method`) into the VL `| fields` clause. The matcher-form conditional semantics (keep the field only when value matches) are a known limitation; the fix at minimum prevents invalid VL queries.
+- **Multi-tenant partial failures now surface Loki-compatible warnings**: When some (but not all) tenant sub-requests fail, the proxy returns HTTP 200 with an `X-Multi-Tenant-Partial-Failures` header. Grafana's Loki datasource reads the `warnings` array from the response body rather than custom headers, so the incomplete-data indicator was invisible. The fix injects a `"warnings"` field into the JSON response body for any partial-failure merge, matching the format Loki uses for similar scenarios.
+- **Hot+cold merge no longer buffers the full merged NDJSON before trimming**: The backward-direction path buffered the entire cold body for reversal (required) then buffered the full merged stream before applying the per-request limit. The fix replaces the final `io.ReadAll` + `trimNDJSONBodyToLimit` with `readNDJSONToLimit`, which stops reading from the merged stream as soon as the limit is reached — halving the maximum RSS spike on large limit values.
+- **`| drop field=value` matcher semantics**: The proxy previously translated `| drop field="value"` to VL's unconditional `| delete field`, which incorrectly removed the field from all log entries regardless of value. The fix: the translator no longer emits `| delete` for matcher-form drops; instead the proxy post-processes each classified entry and removes the field only when the value matches the condition. Bare-field drops (`| drop field`) continue to use `| delete` in VL unchanged. Supports `=`, `!=`, `=~`, and `!~` operators. Applies to both the batch query path (categorized-labels / Grafana Drilldown) and the streaming path.
+- **`detected_fields` regression: `service.name` ghost field in Drilldown Fields tab**: When the proxy runs with `-emit-structured-metadata=true`, VictoriaLogs stores both `service_name` (stream label, shown in Labels tab) and `service.name` (OTel alias injected by the proxy). The `service.name` alias was incorrectly appearing in the Drilldown Fields tab as a string field with a single value (the service name). Fix: dotted/dashed fields whose sanitized (underscore) form IS already a stream label are now suppressed from `detected_fields` — they are emit-structured-metadata aliases, not independent fields. Genuine OTel data (where `service.name` is itself a stream label key) is unaffected.
+- **`detected_fields` type instability: field type flipping between int/float and string**: When VictoriaLogs auto-indexes JSON log fields, some hex identifier strings (e.g. trace IDs like `"138ee486703e"`) accidentally satisfy Go's scientific-notation float parser (e.g. `"1e234"` parses as `+Inf`). A single such value caused `unifyDetectedType` to lock the entire field as `float` forever, because the prior implementation gave `float` precedence over `string`. The correct type-widening hierarchy (string > float > int) was inverted: `string` must always win so that any non-numeric sample forces the field to `string`. This caused Drilldown Fields to show numeric-looking types (float/int) for string fields, then flip on the next cache-miss refresh. Three regression tests added to prevent recurrence.
+- **Drilldown "Logs" tab counter displaying label value instead of count**: The subtitle of the Grafana Logs Drilldown "Logs" tab briefly showed a stream label value (e.g. `"api-gateway"`) then switched to `"api-gatewayundefined"` instead of the total log count. Root cause: `sum(count_over_time({...} | json | filter [range]))` instant queries (no `by()` clause) routed to the manual log-fetch path (`collectRangeMetricSamples`), which grouped results by stream+level and returned one series per distinct stream (118 series for api-gateway) instead of a single aggregated count. Fix: when the original LogQL carries a bare outer aggregation without a `by()` or `without()` grouping modifier, `byExplicit` is set to `true` so all stream series collapse into one empty-label result — matching Loki's behaviour. The same collapse is applied to the query_range manual path. Three regression tests added covering the helper function, instant queries, and the exact Drilldown query shape.
+
+## [1.36.0] - 2026-05-19
+
+### Added
+
+- **OTel structured metadata 3-tuple push**: E2E log generator now pushes OTel-originated log entries as Loki 3-tuple `[timestamp, line, metadata]` format, storing dotted OTel field names (`http.target`, `cloud.region`, `k8s.pod.name`) as structured metadata — matching real OTel Collector → Loki push behavior.
+
+### Changed
+
+- **Default `label-style` changed to `underscores`**: The proxy now translates OTel dotted stream label names (e.g., `service.name`, `k8s.pod.name`) to underscore form (`service_name`, `k8s_pod_name`) in all label and query responses by default. This matches Loki's OTel label translation behavior and eliminates dotted label names from Grafana UI. Previous default was `native` (pass-through). Set `-label-style=native` to restore previous behavior.
+- **Default `metadata-field-mode` changed to `translated`**: Dotted metadata field names (e.g., `http.target`, `cloud.region`) are now translated to underscore form (`http_target`, `cloud_region`) in structuredMetadata responses by default. This matches Loki's OTel metadata translation behavior. Previous default was `native`. Set `-metadata-field-mode=native` or `-metadata-field-mode=hybrid` to expose native dotted names.
+- **buildinfo version bumped to 3.7.1**: Grafana Loki datasource uses buildinfo to determine whether structuredMetadata is supported (requires Loki ≥ 3.0). Bumping the reported version to 3.7.1 enables structured metadata display in Grafana for VictoriaLogs-backed datasources.
+
+### Fixed
+
+- **`structuredMetadata` vs `parsedFields` classification**: Proxy now correctly classifies which fields belong in the `structuredMetadata` section vs `parsedFields` using `_msg` JSON content comparison. Fields present in the raw log line JSON are classified as parsedFields; fields absent from the log line are classified as structuredMetadata. Previously, all extra fields were misclassified.
+
+## [1.35.0] - 2026-05-18
+
+### Added
+
+- **`-tenant-label` flag**: Label-based VL tenant routing. When set to a VL field name (e.g., `-tenant-label=org_id`), injects `{org_id="<X-Scope-OrgID>"}` into every VL query instead of setting `AccountID`/`ProjectID` headers. Use when all log data lives under VL's default tenant (0:0) and is segregated by a label field. Explicit `-tenant-map` entries continue to use VL native tenancy and take priority. Default-tenant aliases (`0`, `fake`, `default`, `*`) bypass the filter. `TENANT_LABEL` environment variable also accepted.
+- **`-forward-tenant-header` flag** (default `true`): Forward the per-tenant `X-Scope-OrgID` header to the upstream backend on each sub-request. Safe for VictoriaLogs (silently ignored). Required for Victoria Lakehouse native tenant routing. Set `-forward-tenant-header=false` or `FORWARD_TENANT_HEADER=false` to disable.
+- **`-tenant-map-file` flag**: Load the OrgID→AccountID/ProjectID tenant mapping from a YAML or JSON file. Supports hot-reload via SIGHUP and automatic mtime-polling (default 30s) for Kubernetes ConfigMap volume updates without proxy restart. `TENANT_MAP_FILE` environment variable also accepted. File entries take priority over `-tenant-map` inline JSON for the same key.
+- **`-tenant-map-reload-interval` flag** (default `30s`): Poll interval for detecting `-tenant-map-file` changes. Set to `0` to disable polling and rely on SIGHUP-only reload.
+
+### Breaking Changes
+
+- **`X-Scope-OrgID` is now forwarded upstream by default**: The new `-forward-tenant-header` flag defaults to `true`, which means the proxy sends the client's `X-Scope-OrgID` header to the upstream backend on every sub-request — including deployments that use `-tenant-map` with numeric `AccountID`/`ProjectID` routing. VictoriaLogs silently ignores this header, so VL-backed deployments are unaffected. Deployments that proxy to a **Loki** or other backend that interprets `X-Scope-OrgID` may observe changed routing behavior. To restore the previous behavior (no `X-Scope-OrgID` forwarding), set `-forward-tenant-header=false` or `FORWARD_TENANT_HEADER=false`.
+
+- **Tenant map now rejects non-numeric `account_id`/`project_id` at load time**: Both `-tenant-map` JSON and `-tenant-map-file` YAML/JSON now validate that every `account_id` and `project_id` value is a non-negative integer in the uint32 range (0–4294967295). Mappings with empty, negative, non-numeric, or out-of-range values are rejected on startup or reload with a descriptive error. Previously these values were silently forwarded as-is to VictoriaLogs (which would have rejected the request at the HTTP layer). Action required only if you had non-numeric IDs in your tenant map — correct them to valid integer strings.
+
+## [1.34.1] - 2026-05-18
+
 ### CI
 
 - fix(ci): remove accidentally committed `bench/loki-bench` and `proxy.test` binaries; add both to `.gitignore` — fixes OpenSSF Scorecard Binary-Artifacts regression
@@ -28,6 +148,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - docs(readme): add Go Report Card badge
+
+### Tests
+
+- **e2e: multi-tenant `volume_range` regression tests**: verify `index/volume_range` returns time-series data with `__tenant_id__` labels in multi-tenant Drilldown context; cover both tenant-filtered and unfiltered cases.
+- **e2e: multi-tenant field/label cardinality accuracy**: verify `detected_fields` cardinality ≥ known distinct values (GET/POST/DELETE for `method`); verify `detected_labels` includes `cardinality` field with value ≥ 1.
+- **e2e: `| drop __error__` instant-query regression (#370)**: `sum(count_over_time(... | drop __error__))` as instant query must return exactly one aggregated result, not one per stream.
+- **e2e: `detected_fields` after multi-stage pipeline**: `| json | drop __error__` pipeline must not suppress parsed JSON field names in `detected_fields` response.
+- **e2e-ui: multi-tenant Explore scenarios**: cross-datasource switching (multi-tenant → single-tenant), missing tenant shows empty result not error banner, filter-for-value click interaction in multi-tenant context.
+- **e2e-ui: multi-tenant Drilldown cardinality and error boundary**: field cards show non-zero cardinality badges, label filter scopes results to selected tenant, missing tenant shows empty result not browser crash.
 
 ## [1.33.1] - 2026-05-14
 
