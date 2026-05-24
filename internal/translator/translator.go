@@ -1386,6 +1386,7 @@ func splitCSV(s string) []string {
 	return result
 }
 
+// TODO: replace with logsql.QuoteValue once FieldFilter migration is complete
 func quoteLogsQLFieldNameIfNeeded(label string) string {
 	if label == "" {
 		return label
@@ -1399,6 +1400,7 @@ func quoteLogsQLFieldNameIfNeeded(label string) string {
 	return label
 }
 
+// TODO: replace with logsql.QuoteValue once FieldFilter migration is complete
 func formatLogsQLEqualityValue(value string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -1410,6 +1412,7 @@ func formatLogsQLEqualityValue(value string) string {
 	return value
 }
 
+// TODO: replace with logsql.QuoteValue once FieldFilter migration is complete
 func logsQLEqualityValueNeedsQuoting(value string) bool {
 	if value == "" {
 		return true

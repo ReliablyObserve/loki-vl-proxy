@@ -23,6 +23,15 @@ func quoteLogsQLPattern(s string) string {
 	return `"` + s + `"`
 }
 
+// QuoteValue wraps s in double-quotes and escapes embedded backslashes and
+// double-quote characters so the result is always a valid LogsQL quoted string.
+func QuoteValue(s string) string { return quoteLogsQL(s) }
+
+// QuotePattern is like QuoteValue but for regexp/pattern strings that carry
+// their own backslash escape semantics. Only double-quotes are escaped;
+// backslashes pass through verbatim so regex escapes (\d, \w, etc.) are preserved.
+func QuotePattern(s string) string { return quoteLogsQLPattern(s) }
+
 // Expr is the top-level LogsQL expression interface.
 type Expr interface {
 	String() string
