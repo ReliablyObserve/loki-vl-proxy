@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.41.0] - 2026-05-24
 
+### Changed
+
+- **Proxy and translator migrated from regex to typed AST nodes**: Replaced `fmt.Sprintf` label filter string construction with typed `logsql.FieldFilter{}.String()` nodes for guaranteed correct quoting. Consolidated 5 near-identical drop/keep pipeline walkers into a single `walkDropKeepStages` helper (~90 LOC removed). Replaced hand-rolled brace-matcher in `streamSelectorPrefix` with `logqlpkg.ParseLogQuery().Selector.String()`. Replaced 4 regex-based parser-detection functions with logql AST type-switches (regex fallback retained for unparseable queries). Replaced regex-based strip-stage functions in `drilldown.go` with `filterPipeline` + AST predicate helpers. Migrated `isStatsQuery` 20-line quote-aware scanner to `logsql.Parse()` + type-switch. Added `parseBareParserMetricCompatSpecAST` path using logql `RangeAggregation` node (regex fallback for Grafana template windows). Uses typed `PipeSort`, `PipeFormat`, `PipeDecolorize`, `PipeUnpackJSON{From}`, `PipeUnpackLogfmt{From}` nodes throughout.
+- **`QuoteValue` and `QuotePattern` exported from `internal/logsql`**: Available for use by external consumers of the LogsQL AST.
+- **`From` field added to `PipeUnpackJSON` and `PipeUnpackLogfmt` AST nodes**: Supports `| unpack_json from field` and `| unpack_logfmt from field` LogsQL constructs.
+
 ### Fixed
 
 - **LogQL parser preserves whitespace in compound label filters**: `consumeRestOfStage()` now inserts spaces at word/number token boundaries so `| status>=200 and status<300` round-trips correctly through the AST instead of producing `| status>=200andstatus<300`. Affects all code paths that reconstruct query strings via `LogQuery.String()` (drilldown filter, metric fast-path, parser-stage stripping).
@@ -30,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`internal/logsql` package**: typed LogsQL AST, recursive-descent parser, capability-aware `Builder`, and scanner for VictoriaLogs queries. Covers all 48 pipe stages, 29 stats functions, and 30+ filter types tracked by the upstream VL source tree — achieving 0 coverage gaps. Includes a VL-HTTP compatibility test suite (`vl_compat` build tag) and a weekly CI coverage-check workflow.
+- **`internal/logsql` package**: typed LogsQL AST, recursive-descent parser, capability-aware `Builder`, and scanner for VictoriaLogs queries. Covers all 48 pipe stages, 29 stats functions, and 30+ filter types tracked by the upstream VL source tree — achieving 0 coverage gaps. `Capabilities` struct and `CapabilitiesFor(semver)` map VL versions to available features, enabling version-gated query construction via the `Builder` API (`BestTopN()`, `BestIPv4Range()`). Includes 363 tests across 7 files, a VL-HTTP compatibility test suite (`vl_compat` build tag), and a weekly CI coverage-check workflow (`vl-ast-coverage.yml`) that auto-detects new upstream VL constructs via `scripts/check-vl-ast-coverage.py`.
 
 ### Fixed
 
@@ -54,8 +60,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Typed LogQL parser and AST model layer** (`internal/logql`): stream selectors, all pipeline stage variants, range/vector aggregations with full `String()` round-trip serialisation. `ParseAndValidate()` provides a lightweight syntax gate for request handlers. `Translate()` converts the AST to LogsQL via the existing translator. A fuzz target ensures `Parse+String+Translate` never panic on arbitrary input.
+- **Typed LogQL parser and AST model layer** (`internal/logql`): full recursive-descent parser replacing the regex/marker-based LogQL handling. Typed AST covers stream selectors (including backtick-quoted label matchers), all pipeline stage variants, range/vector aggregations, `@ modifier`, `bool` comparator, `| pattern`/`| regexp` with double-quoted strings, and `ip()` address validation — with full `String()` round-trip serialisation. `ParseAndValidate()` provides a lightweight syntax gate for request handlers. `Translate()` converts the AST to LogsQL via the existing translator. Unknown functions (e.g. `label_replace`, `label_join`) are captured as `OpaqueMetricExpr` nodes and passed through unchanged. A fuzz target ensures `Parse+String+Translate` never panic on arbitrary input. Bounded `sync.Map` validation cache eliminates per-request AST allocations.
 - **`extractQuery` proxy helper**: pure function in `internal/proxy/query_extract.go` that validates the `query` form parameter using the typed parser; available for incremental adoption across request handlers.
+- **Proxy routing via AST type-switches**: `handleQueryRange` and `handleQuery` now dispatch subqueries, binary ops, and range aggregations via typed `Expr` switches instead of regex pattern matching.
+- **116-case exhaustive LogQL parity test machine**: `TestLogQL_Exhaustive_QueryParity` and `TestLogQL_Exhaustive_ErrorParity` verify result shape (resultType + series count) against Loki for all supported query forms across 16 categories (stream selectors, line filters, parsers, metric queries, binary ops, subqueries, offset modifier, unwrap, field-specific parsers, named regexp groups, vector matching, complex pipelines, edge cases). Total test count: 3,328.
+
+### Fixed
+
+- **`| distinct` stage correctly rejected**: Previously passed through to VL which does not support it; now returns HTTP 400 with a descriptive error, matching Loki's validation.
+- **Invalid regex in stream selectors rejected**: `{app=~"[invalid"}` now returns an error at parse time instead of being forwarded to VL.
+- **`rate_counter` without `| unwrap` rejected**: Correctly returns a parse error, matching Loki's requirement.
+- **JSON error response format**: Validation errors now return `{"status":"error","errorType":"bad_data","error":"..."}` matching Loki's error shape instead of plain text.
+- **Mixed-offset binary expressions no longer incorrectly rejected**: `sum(rate([5m] offset 1h)) / sum(rate([5m]))` now works — the proxy evaluates each side independently, matching Loki's behavior. Previously, the proxy rejected any expression where offset appeared on one side but not the other.
 
 ## [1.37.2] - 2026-05-22
 
@@ -135,6 +151,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`structuredMetadata` vs `parsedFields` classification**: Proxy now correctly classifies which fields belong in the `structuredMetadata` section vs `parsedFields` using `_msg` JSON content comparison. Fields present in the raw log line JSON are classified as parsedFields; fields absent from the log line are classified as structuredMetadata. Previously, all extra fields were misclassified.
 
+### Tests
+
+- **Exhaustive LogQL parity expanded to 316 cases**: 14 previously KnownGap test cases now pass and are promoted to full QueryParity assertions, covering `sort_desc(topk(...))`, `count_values`, nested `sum(sum(...))`, `| label_format` with template expressions, `| line_format` with Go template functions, multi-label `without()`, `label_replace`, `vector()`, `| decolorize`, `| unpack`, and double-negation regex filters.
+
 ## [1.35.0] - 2026-05-18
 
 ### Added
@@ -143,6 +163,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`-forward-tenant-header` flag** (default `true`): Forward the per-tenant `X-Scope-OrgID` header to the upstream backend on each sub-request. Safe for VictoriaLogs (silently ignored). Required for Victoria Lakehouse native tenant routing. Set `-forward-tenant-header=false` or `FORWARD_TENANT_HEADER=false` to disable.
 - **`-tenant-map-file` flag**: Load the OrgID→AccountID/ProjectID tenant mapping from a YAML or JSON file. Supports hot-reload via SIGHUP and automatic mtime-polling (default 30s) for Kubernetes ConfigMap volume updates without proxy restart. `TENANT_MAP_FILE` environment variable also accepted. File entries take priority over `-tenant-map` inline JSON for the same key.
 - **`-tenant-map-reload-interval` flag** (default `30s`): Poll interval for detecting `-tenant-map-file` changes. Set to `0` to disable polling and rely on SIGHUP-only reload.
+- **202-case exhaustive LogQL parity test machine**: `TestLogQL_Exhaustive_QueryParity`, `TestLogQL_Exhaustive_ErrorParity`, and `TestLogQL_Exhaustive_KnownGaps` verify result shape (resultType + series count) against Loki across 16 categories including stream selectors, line filters, parsers, metric queries, binary ops, subqueries, offset modifier, unwrap unit conversion, field-specific parsers, named regexp groups, vector matching, complex pipelines, and edge cases.
+- **Configuration examples**: New `examples/` folder with runnable env files, tenant map YAML, Docker Compose stack, Grafana datasource provisioning, systemd unit, and Kubernetes ConfigMap with full annotated flag/env reference.
+
+### Fixed
+
+- **`sort()` / `sort_desc()` returned 0 results in query_range**: `applyMatrixPostAggregation` used `k` as the trim limit; for sort/sort_desc `k=0` (no argument), silently returning empty. Only topk/bottomk now trim to k.
+- **`sort()` direction was wrong**: Was sorted descending (same as `sort_desc`). Fixed: `sort` ascending, `sort_desc` descending, matching Loki semantics.
+- **`count()` outer aggregation generated invalid VL syntax**: Emitted `| stats count(__lvp_inner)` but VL `count()` takes no field argument. Fixed to emit `| stats count()`.
+- **Recursive nested metric aggregation**: `count(sum by(app)(count_over_time(…)))` had no funcPattern match for the inner expression. `tryTranslateMetricQuery` now falls back to recursive translation when outerAgg is present and innerExpr contains a range selector.
+- **Tail endpoint leaked across tenants with `-tenant-label`**: `openNativeTailStream` was bypassing `vlGetInner` injection path and not injecting the tenant-label filter. Now correctly injects the label filter for all query paths including tail.
+
+### Security
+
+- **LogsQL injection prevention**: `injectTenantLabelFilter` escapes backslash before double-quote to prevent LogsQL injection via crafted `X-Scope-OrgID` values; control characters in orgID values are rejected with HTTP 400.
 
 ### Breaking Changes
 
