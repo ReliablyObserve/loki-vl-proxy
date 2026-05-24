@@ -27,7 +27,7 @@ jobs:
           MAIN_GQL=$(gh api graphql -f query='
             {
               organization(login: "ReliablyObserve") {
-                packages(first: 1, names: ["loki-vl-proxy"], packageType: CONTAINER) {
+                packages(first: 1, names: ["loki-vl-proxy"], packageType: DOCKER) {
                   nodes { name statistics { downloadsTotalCount } }
                 }
               }
@@ -38,7 +38,7 @@ jobs:
           CHART_GQL=$(gh api graphql -f query='
             {
               organization(login: "ReliablyObserve") {
-                packages(first: 1, names: ["charts/loki-vl-proxy"], packageType: CONTAINER) {
+                packages(first: 1, names: ["charts/loki-vl-proxy"], packageType: DOCKER) {
                   nodes { name statistics { downloadsTotalCount } }
                 }
               }
