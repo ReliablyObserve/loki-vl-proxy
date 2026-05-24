@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: write
+  packages: read   # allows GITHUB_TOKEN to read org package metadata (download_count)
 
 jobs:
   update-ghcr-badges:
@@ -18,29 +19,21 @@ jobs:
       - name: Fetch pull counts
         id: pulls
         env:
-          # RELEASE_WORKFLOW_TOKEN pushes images to GHCR so it has write:packages
-          # (which includes read:packages). RELEASE_PR_TOKEN only has repo scope.
-          RELEASE_WORKFLOW_TOKEN: ${{ secrets.RELEASE_WORKFLOW_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          # GHCR pull counts — requires read:packages scope on org packages API.
-          MAIN=0
-          CHART=0
-          if [ -n "${RELEASE_WORKFLOW_TOKEN}" ]; then
-            MAIN=$(curl -fsSL \
-              -H "Authorization: Bearer ${RELEASE_WORKFLOW_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/orgs/ReliablyObserve/packages/container/loki-vl-proxy" \
-              | jq -r '.download_count // 0' 2>/dev/null || echo 0)
-            CHART=$(curl -fsSL \
-              -H "Authorization: Bearer ${RELEASE_WORKFLOW_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy" \
-              | jq -r '.download_count // 0' 2>/dev/null || echo 0)
-          else
-            echo "::warning::RELEASE_WORKFLOW_TOKEN not set — GHCR pull counts will show 0."
-          fi
+          # GHCR pull counts via GITHUB_TOKEN with packages: read permission.
+          MAIN=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/ReliablyObserve/packages/container/loki-vl-proxy" \
+            | jq -r '.download_count // 0' 2>/dev/null || echo 0)
+          CHART=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy" \
+            | jq -r '.download_count // 0' 2>/dev/null || echo 0)
 
           # Docker Hub pull count — public API, no auth needed.
           DOCKERHUB=0
