@@ -18,6 +18,8 @@ jobs:
 
       - name: Fetch pull counts
         id: pulls
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
