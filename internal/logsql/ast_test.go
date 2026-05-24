@@ -114,7 +114,9 @@ func TestPipeString(t *testing.T) {
 		want string
 	}{
 		{"unpack_json", logsql.PipeUnpackJSON{}, "| unpack_json"},
+		{"unpack_json_from", logsql.PipeUnpackJSON{From: "_msg"}, "| unpack_json from _msg"},
 		{"unpack_logfmt", logsql.PipeUnpackLogfmt{}, "| unpack_logfmt"},
+		{"unpack_logfmt_from", logsql.PipeUnpackLogfmt{From: "_msg"}, "| unpack_logfmt from _msg"},
 		{"extract", logsql.PipeExtract{Pattern: "<_> <level>", From: "_msg"}, `| extract "<_> <level>" from _msg`},
 		{"extract_if", logsql.PipeExtract{Pattern: "<level>", From: "_msg", If: `level:*`}, `| extract "<level>" from _msg if (level:*)`},
 		{"extract_regexp", logsql.PipeExtractRegexp{Pattern: `(?P<level>\w+)`, From: "_msg"}, "| extract_regexp `(?P<level>\\w+)` from _msg"},

@@ -457,10 +457,16 @@ func (d DeferredExpr) filterExpr()    {}
 // ---------------------------------------------------------------------------
 
 // PipeUnpackJSON unpacks JSON fields from log lines.
-type PipeUnpackJSON struct{}
+// When From is non-empty the syntax is "| unpack_json from <From>".
+type PipeUnpackJSON struct{ From string }
 
-func (p PipeUnpackJSON) String() string { return "| unpack_json" }
-func (p PipeUnpackJSON) pipe()          {}
+func (p PipeUnpackJSON) String() string {
+	if p.From != "" {
+		return "| unpack_json from " + p.From
+	}
+	return "| unpack_json"
+}
+func (p PipeUnpackJSON) pipe() {}
 
 // PipeFilter applies an additional filter expression in the pipeline.
 type PipeFilter struct {
@@ -498,10 +504,16 @@ type SortField struct {
 // --- Parser pipe stages ---
 
 // PipeUnpackLogfmt unpacks logfmt key=value pairs from log lines.
-type PipeUnpackLogfmt struct{}
+// When From is non-empty the syntax is "| unpack_logfmt from <From>".
+type PipeUnpackLogfmt struct{ From string }
 
-func (p PipeUnpackLogfmt) String() string { return "| unpack_logfmt" }
-func (p PipeUnpackLogfmt) pipe()          {}
+func (p PipeUnpackLogfmt) String() string {
+	if p.From != "" {
+		return "| unpack_logfmt from " + p.From
+	}
+	return "| unpack_logfmt"
+}
+func (p PipeUnpackLogfmt) pipe() {}
 
 // PipeExtract extracts fields from a log line using a pattern.
 type PipeExtract struct {

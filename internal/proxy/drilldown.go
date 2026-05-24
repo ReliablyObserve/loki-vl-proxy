@@ -17,6 +17,8 @@ import (
 	"time"
 
 	fj "github.com/valyala/fastjson"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 const unknownServiceName = "unknown_service"
@@ -877,7 +879,7 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 		}
 	}
 	if needsLevelUnpack && !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
-		logsqlQuery = logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+		logsqlQuery = logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()
 	}
 
 	params := url.Values{}
@@ -2246,7 +2248,7 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 		// No values from native index — field may be inside JSON or logfmt _msg.
 		// Retry once with unpack pipes so VL extracts the field from _msg content.
 		if !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
-			unpackQuery := logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+			unpackQuery := logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()
 			params.Set("query", unpackQuery)
 			resp2, err2 := p.vlGet(ctx, "/select/logsql/field_values", params)
 			if err2 == nil {
@@ -2282,7 +2284,7 @@ func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end,
 	if strings.Contains(logsqlQuery, "unpack_json") || strings.Contains(logsqlQuery, "unpack_logfmt") {
 		return nil, nil
 	}
-	unpackQuery := logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+	unpackQuery := logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()
 	params := url.Values{}
 	params.Set("query", unpackQuery)
 	params.Set("field", field)
