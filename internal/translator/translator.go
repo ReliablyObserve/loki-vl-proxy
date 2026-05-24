@@ -196,25 +196,35 @@ func NewDropCondition(field, op, value string) (DropCondition, error) {
 	return dc, nil
 }
 
-// ParseDropConditions extracts matcher-form drop filters from a LogQL query.
-// Bare-field drops (`| drop field`) are handled by VL `| delete`; only
-// matcher forms (`| drop field=value`) are returned here for proxy post-processing.
-func ParseDropConditions(logqlQuery string) []DropCondition {
+// dropKeepResult holds the parsed contents of all | drop and | keep pipeline stages.
+type dropKeepResult struct {
+	dropBare   []string
+	dropConds  []DropCondition
+	keepBare   []string
+	keepConds  []DropCondition
+	parseError error
+}
+
+// walkDropKeepStages is the single shared walker for all ParseDrop*/ParseKeep*/Validate*
+// functions. It scans the pipeline stages of logqlQuery and returns bare field names and
+// matcher conditions found in | drop and | keep stages. Parse errors are returned in
+// result.parseError so callers can choose to propagate or silently ignore them.
+func walkDropKeepStages(logqlQuery string) dropKeepResult {
+	var res dropKeepResult
 	remaining := strings.TrimSpace(logqlQuery)
 	if strings.HasPrefix(remaining, "{") {
 		end := findMatchingBrace(remaining)
 		if end < 0 {
-			return nil
+			return res
 		}
 		remaining = strings.TrimSpace(remaining[end+1:])
 	}
-	var conds []DropCondition
 	for remaining != "" {
 		remaining = strings.TrimSpace(remaining)
 		if remaining == "" {
 			break
 		}
-		// Line filter operators: |= |~ |> (consume the value and continue)
+		// Line filter operators: |= |~ |> — consume value and continue.
 		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
 			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
 			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
@@ -234,12 +244,56 @@ func ParseDropConditions(logqlQuery string) []DropCondition {
 		stage, rest := extractPipelineStage(remaining)
 		remaining = rest
 		stage = strings.TrimSpace(stage)
+		var isDrop bool
+		var spec string
 		if strings.HasPrefix(stage, "drop ") {
-			_, stageConds := splitDropSpec(stage[5:])
-			conds = append(conds, stageConds...)
+			isDrop = true
+			spec = stage[5:]
+		} else if strings.HasPrefix(stage, "keep ") {
+			spec = stage[5:]
+		} else {
+			continue
+		}
+		// Validate and collect items.
+		for _, item := range splitDropItems(spec) {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			if strings.Contains(item, "=") {
+				field, op, val, ok := parseDropMatcher(item)
+				if !ok || field == "" {
+					if !ok {
+						res.parseError = fmt.Errorf("parse error at line 1, col 1: invalid drop/keep matcher %q: unsupported operator (!=~ is not a valid Loki operator)", item)
+					}
+					continue
+				}
+				dc, err := NewDropCondition(field, op, val)
+				if err != nil {
+					continue
+				}
+				if isDrop {
+					res.dropConds = append(res.dropConds, dc)
+				} else {
+					res.keepConds = append(res.keepConds, dc)
+				}
+			} else {
+				if isDrop {
+					res.dropBare = append(res.dropBare, item)
+				} else {
+					res.keepBare = append(res.keepBare, item)
+				}
+			}
 		}
 	}
-	return conds
+	return res
+}
+
+// ParseDropConditions extracts matcher-form drop filters from a LogQL query.
+// Bare-field drops (`| drop field`) are handled by VL `| delete`; only
+// matcher forms (`| drop field=value`) are returned here for proxy post-processing.
+func ParseDropConditions(logqlQuery string) []DropCondition {
+	return walkDropKeepStages(logqlQuery).dropConds
 }
 
 // ParseKeepConditions extracts matcher-form conditions from `| keep field=value` stages.
@@ -248,195 +302,36 @@ func ParseDropConditions(logqlQuery string) []DropCondition {
 // Bare-field keeps (`| keep field`) are handled by VL `| fields` projection; only
 // matcher forms (`| keep field=value`) are returned here.
 func ParseKeepConditions(logqlQuery string) []DropCondition {
-	remaining := strings.TrimSpace(logqlQuery)
-	if strings.HasPrefix(remaining, "{") {
-		end := findMatchingBrace(remaining)
-		if end < 0 {
-			return nil
-		}
-		remaining = strings.TrimSpace(remaining[end+1:])
-	}
-	var conds []DropCondition
-	for remaining != "" {
-		remaining = strings.TrimSpace(remaining)
-		if remaining == "" {
-			break
-		}
-		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
-			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
-			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
-			strings.HasPrefix(remaining, "|>`") {
-			_, remaining = extractPipelineStage(remaining[2:])
-			continue
-		}
-		if len(remaining) >= 2 && remaining[0] == '!' && (remaining[1] == '=' || remaining[1] == '~' || remaining[1] == '>') {
-			_, remaining = extractPipelineStage(remaining[2:])
-			continue
-		}
-		if !strings.HasPrefix(remaining, "|") {
-			break
-		}
-		remaining = strings.TrimSpace(remaining[1:])
-		stage, rest := extractPipelineStage(remaining)
-		remaining = rest
-		stage = strings.TrimSpace(stage)
-		if strings.HasPrefix(stage, "keep ") {
-			_, stageConds := splitDropSpec(stage[5:])
-			conds = append(conds, stageConds...)
-		}
-	}
-	return conds
+	return walkDropKeepStages(logqlQuery).keepConds
 }
 
 // ParseBareDropFields returns the bare field names from `| drop field` stages.
 // These are fields that are unconditionally deleted at the VL level via | delete,
 // but the proxy must also strip them from stream labels since _stream is not touched by VL's | delete.
 func ParseBareDropFields(logqlQuery string) []string {
-	remaining := strings.TrimSpace(logqlQuery)
-	if strings.HasPrefix(remaining, "{") {
-		end := findMatchingBrace(remaining)
-		if end < 0 {
-			return nil
-		}
-		remaining = strings.TrimSpace(remaining[end+1:])
-	}
-	var result []string
-	for remaining != "" {
-		remaining = strings.TrimSpace(remaining)
-		if remaining == "" {
-			break
-		}
-		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
-			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
-			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
-			strings.HasPrefix(remaining, "|>`") {
-			_, remaining = extractPipelineStage(remaining[2:])
-			continue
-		}
-		if len(remaining) >= 2 && remaining[0] == '!' && (remaining[1] == '=' || remaining[1] == '~' || remaining[1] == '>') {
-			_, remaining = extractPipelineStage(remaining[2:])
-			continue
-		}
-		if !strings.HasPrefix(remaining, "|") {
-			break
-		}
-		remaining = strings.TrimSpace(remaining[1:])
-		stage, rest := extractPipelineStage(remaining)
-		remaining = rest
-		stage = strings.TrimSpace(stage)
-		if strings.HasPrefix(stage, "drop ") {
-			bareFields, _ := splitDropSpec(stage[5:])
-			result = append(result, bareFields...)
-		}
-	}
-	if len(result) == 0 {
+	fields := walkDropKeepStages(logqlQuery).dropBare
+	if len(fields) == 0 {
 		return nil
 	}
-	return result
+	return fields
 }
 
 // ParseBareKeepFields returns the bare field names from `| keep field` stages.
 // VL projects these via | fields _time, _msg, _stream, ..., but _stream carries all
 // original stream labels; the proxy must filter the stream label set to only the kept fields.
 func ParseBareKeepFields(logqlQuery string) []string {
-	remaining := strings.TrimSpace(logqlQuery)
-	if strings.HasPrefix(remaining, "{") {
-		end := findMatchingBrace(remaining)
-		if end < 0 {
-			return nil
-		}
-		remaining = strings.TrimSpace(remaining[end+1:])
-	}
-	var result []string
-	for remaining != "" {
-		remaining = strings.TrimSpace(remaining)
-		if remaining == "" {
-			break
-		}
-		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
-			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
-			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
-			strings.HasPrefix(remaining, "|>`") {
-			_, remaining = extractPipelineStage(remaining[2:])
-			continue
-		}
-		if len(remaining) >= 2 && remaining[0] == '!' && (remaining[1] == '=' || remaining[1] == '~' || remaining[1] == '>') {
-			_, remaining = extractPipelineStage(remaining[2:])
-			continue
-		}
-		if !strings.HasPrefix(remaining, "|") {
-			break
-		}
-		remaining = strings.TrimSpace(remaining[1:])
-		stage, rest := extractPipelineStage(remaining)
-		remaining = rest
-		stage = strings.TrimSpace(stage)
-		if strings.HasPrefix(stage, "keep ") {
-			bareFields, _ := splitDropSpec(stage[5:])
-			result = append(result, bareFields...)
-		}
-	}
-	if len(result) == 0 {
+	fields := walkDropKeepStages(logqlQuery).keepBare
+	if len(fields) == 0 {
 		return nil
 	}
-	return result
+	return fields
 }
 
 // ValidateDropKeepSyntax returns a parse error if the query contains | drop or | keep
 // stages with malformed matcher items — items that look like matchers (contain "=")
 // but use unsupported operators. Callers should return HTTP 400.
 func ValidateDropKeepSyntax(logqlQuery string) error {
-	remaining := strings.TrimSpace(logqlQuery)
-	if strings.HasPrefix(remaining, "{") {
-		end := findMatchingBrace(remaining)
-		if end < 0 {
-			return nil
-		}
-		remaining = strings.TrimSpace(remaining[end+1:])
-	}
-	for remaining != "" {
-		remaining = strings.TrimSpace(remaining)
-		if remaining == "" {
-			break
-		}
-		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") ||
-			strings.HasPrefix(remaining, "|~ ") || strings.HasPrefix(remaining, "|~\"") ||
-			strings.HasPrefix(remaining, "|> ") || strings.HasPrefix(remaining, "|>\"") ||
-			strings.HasPrefix(remaining, "|>`") {
-			_, remaining = extractPipelineStage(remaining[2:])
-			continue
-		}
-		if len(remaining) >= 2 && remaining[0] == '!' && (remaining[1] == '=' || remaining[1] == '~' || remaining[1] == '>') {
-			_, remaining = extractPipelineStage(remaining[2:])
-			continue
-		}
-		if !strings.HasPrefix(remaining, "|") {
-			break
-		}
-		remaining = strings.TrimSpace(remaining[1:])
-		stage, rest := extractPipelineStage(remaining)
-		remaining = rest
-		stage = strings.TrimSpace(stage)
-		var spec string
-		if strings.HasPrefix(stage, "drop ") {
-			spec = stage[5:]
-		} else if strings.HasPrefix(stage, "keep ") {
-			spec = stage[5:]
-		} else {
-			continue
-		}
-		for _, item := range splitDropItems(spec) {
-			item = strings.TrimSpace(item)
-			if item == "" || !strings.Contains(item, "=") {
-				continue
-			}
-			// Item looks like a matcher but has "=" — validate it.
-			if _, _, _, ok := parseDropMatcher(item); !ok {
-				return fmt.Errorf("parse error at line 1, col 1: invalid drop/keep matcher %q: unsupported operator (!=~ is not a valid Loki operator)", item)
-			}
-		}
-	}
-	return nil
+	return walkDropKeepStages(logqlQuery).parseError
 }
 
 // splitDropSpec parses a drop spec into bare field names and matcher conditions.
@@ -1007,17 +902,22 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 	}
 
 	// decolorize — strips ANSI color codes.
-	// VL doesn't have native ANSI stripping yet.
-	// Proxy applies this post-processing on response log lines.
-	// TODO: Replace with VL native pipe when available.
+	// VL has native | decolorize support; emit the typed node for correctness.
+	// The string output is identical ("| decolorize"), but using the typed node
+	// ensures the representation stays in sync with the logsql AST definition.
 	if stage == "decolorize" {
-		return "| decolorize" // proxy-side post-processing marker
+		return logsql.PipeDecolorize{}.String() // "| decolorize"
 	}
 
 	// ip() label filter — CIDR matching on label values.
-	// VL doesn't have native IP range filtering yet.
-	// Proxy applies this post-processing on response labels.
-	// TODO: Replace with VL native filter when available.
+	// This handles a bare ip("cidr") stage (without a label prefix). The proxy
+	// applies IP-range filtering as post-processing on response log streams via
+	// ipFilterStreams (see internal/proxy/postprocess.go), keyed by parsing the
+	// original LogQL query with parseIPFilter.
+	// TODO: When the translator gains access to Capabilities, replace with
+	//   logsql.Builder.BestIPv4Range(label, cidr).String() which emits the
+	//   native :ipv4_range() field filter on VL v1.45+ and a regexp fallback
+	//   on older versions. That would eliminate the proxy-side post-processing.
 	if strings.HasPrefix(stage, "ip(") {
 		return "| " + stage // proxy-side post-processing marker
 	}
@@ -1194,30 +1094,52 @@ func splitLogicalStage(stage string) ([]string, []string, bool) {
 	return parts, ops, len(parts) > 1
 }
 
+// logqlSingleFilterOp maps a LogQL operator string to a FieldOp constant and
+// whether the operator implies negation. Operators are listed in order of
+// decreasing specificity so that "!~" is matched before "!" and "=" etc.
+type logqlSingleFilterOp struct {
+	vlOp   logsql.FieldOp
+	negate bool
+	isRe   bool // regex: value is a regexp pattern (QuotePattern semantics)
+	isComp bool // comparison: value is not quoted (>, >=, <, <=)
+}
+
+var logqlSingleFilterOps = []struct {
+	logql string
+	entry logqlSingleFilterOp
+}{
+	{"==", logqlSingleFilterOp{logsql.FieldOpExact, false, false, false}},
+	{"!=", logqlSingleFilterOp{logsql.FieldOpExact, true, false, false}},
+	{"=~", logqlSingleFilterOp{logsql.FieldOpRegexp, false, true, false}},
+	{"!~", logqlSingleFilterOp{logsql.FieldOpRegexp, true, true, false}},
+	{">=", logqlSingleFilterOp{logsql.FieldOpGTE, false, false, true}},
+	{"<=", logqlSingleFilterOp{logsql.FieldOpLTE, false, false, true}},
+	{">", logqlSingleFilterOp{logsql.FieldOpGT, false, false, true}},
+	{"<", logqlSingleFilterOp{logsql.FieldOpLT, false, false, true}},
+	{"=", logqlSingleFilterOp{logsql.FieldOpExact, false, false, false}},
+}
+
+// buildFieldFilterStr builds a LogsQL field filter string using logsql.FieldFilter
+// for all value quoting/formatting, but uses the legacy "-" negation prefix
+// (rather than "NOT ") so downstream string-matching in canonicalLabelFilterStage
+// and translatedFilterFieldOp continues to work without change.
+func buildFieldFilterStr(field string, op logsql.FieldOp, value string, negate bool) string {
+	ff := logsql.FieldFilter{Field: field, Op: op, Value: value}
+	core := ff.String()
+	if negate {
+		return "-" + core
+	}
+	return core
+}
+
 func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (string, bool) {
 	// Try: label == "value", label = "value", label != "value",
 	//      label =~ "value", label !~ "value", label > value, etc.
-	ops := []struct {
-		logql  string
-		logsql string
-		isRe   bool
-	}{
-		{"==", ":=", false},
-		{"!=", "-:=", false},
-		{"=~", ":~", true},
-		{"!~", "-:~", true},
-		{">=", ":>=", false},
-		{"<=", ":<=", false},
-		{">", ":>", false},
-		{"<", ":<", false},
-		{"=", ":=", false},
-	}
-
-	for _, op := range ops {
-		idx := strings.Index(stage, op.logql)
+	for _, entry := range logqlSingleFilterOps {
+		idx := strings.Index(stage, entry.logql)
 		if idx > 0 {
 			label := sanitizeFieldIdentifier(stage[:idx])
-			value := strings.TrimSpace(stage[idx+len(op.logql):])
+			value := strings.TrimSpace(stage[idx+len(entry.logql):])
 			if label == "" {
 				return "", false
 			}
@@ -1232,39 +1154,38 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 			}
 
 			value = strings.Trim(value, "\"`")
-			label = quoteLogsQLFieldNameIfNeeded(label)
 
-			if op.isRe {
-				// Regex values need quotes in VL
-				if strings.HasPrefix(op.logsql, "-") {
-					return fmt.Sprintf(`-%s%s"%s"`, label, op.logsql[1:], value), true
-				}
-				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value), true
+			// VL requires quoting for dotted field names (e.g. "service.name"):
+			// quote the label before passing it to FieldFilter so the output is
+			// "service.name":="foo" rather than service.name:="foo".
+			if strings.Contains(label, ".") {
+				label = `"` + label + `"`
 			}
+
+			if entry.entry.isComp {
+				// Comparison filters (>, >=, <, <=) do not quote the value.
+				return buildFieldFilterStr(label, entry.entry.vlOp, value, entry.entry.negate), true
+			}
+
 			if value == "" {
 				// detected_level="" means "no level detected": match log entries where
 				// the level field is absent or has an empty value. VL's -field:* does
 				// exactly this (absent OR empty), while field:="" only matches explicit
 				// empty strings and misses absent fields entirely.
-				if label == "level" && !strings.HasPrefix(op.logsql, "-") {
+				if label == "level" && !entry.entry.negate {
 					return `-level:*`, true
 				}
-				if strings.HasPrefix(op.logsql, "-") {
+				if entry.entry.negate {
+					// field:!"" means "field exists and is non-empty"; this is not
+					// directly representable by FieldFilter, so we keep the literal form.
 					return fmt.Sprintf(`%s:!""`, label), true
 				}
-				return fmt.Sprintf(`%s:=""`, label), true
+				// Empty equality: use FieldFilter with FieldOpExact and empty value
+				// which produces field:="" — equivalent to the previous explicit form.
+				return buildFieldFilterStr(label, logsql.FieldOpExact, "", false), true
 			}
-			formattedValue := value
-			if op.logsql == ":=" || op.logsql == "-:=" {
-				// Equality filters can carry arbitrary string payloads
-				// (for example stacktraces). Keep simple tokens bare and
-				// quote/escape complex values to preserve valid LogsQL.
-				formattedValue = formatLogsQLEqualityValue(value)
-			}
-			if strings.HasPrefix(op.logsql, "-") {
-				return fmt.Sprintf("-%s%s%s", label, op.logsql[1:], formattedValue), true
-			}
-			return fmt.Sprintf("%s%s%s", label, op.logsql, formattedValue), true
+
+			return buildFieldFilterStr(label, entry.entry.vlOp, value, entry.entry.negate), true
 		}
 	}
 
@@ -1386,55 +1307,6 @@ func splitCSV(s string) []string {
 	return result
 }
 
-func quoteLogsQLFieldNameIfNeeded(label string) string {
-	if label == "" {
-		return label
-	}
-	for _, r := range label {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
-			continue
-		}
-		return `"` + label + `"`
-	}
-	return label
-}
-
-func formatLogsQLEqualityValue(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return `""`
-	}
-	if logsQLEqualityValueNeedsQuoting(value) {
-		return strconv.Quote(value)
-	}
-	return value
-}
-
-func logsQLEqualityValueNeedsQuoting(value string) bool {
-	if value == "" {
-		return true
-	}
-	hasAlnum := false
-	for _, r := range value {
-		if unicode.IsSpace(r) {
-			return true
-		}
-		if (r >= 'a' && r <= 'z') ||
-			(r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') {
-			hasAlnum = true
-			continue
-		}
-		if r == '_' || r == '-' || r == '.' || r == '/' {
-			continue
-		}
-		return true
-	}
-	// Values made entirely of punctuation (e.g. "/" or "-") are compound tokens
-	// in VL's parser and must be quoted. Require at least one alphanumeric character.
-	return !hasAlnum
-}
-
 func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (string, bool) {
 	rawCandidate := normalizeFieldIdentifier(stage)
 	if rawCandidate == "" {
@@ -1468,7 +1340,13 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 		// impossible field matcher such as "k8s.cluster":!"".
 		return fmt.Sprintf(`~"%s"`, regexp.QuoteMeta(candidate+".")), true
 	}
-	return fmt.Sprintf(`%s:!""`, quoteLogsQLFieldNameIfNeeded(candidate)), true
+	// Dotted field names must be quoted in VL; the :!"" form (non-empty check)
+	// is not representable via FieldFilter, so we keep the literal format here.
+	quotedField := candidate
+	if strings.Contains(candidate, ".") {
+		quotedField = `"` + candidate + `"`
+	}
+	return fmt.Sprintf(`%s:!""`, quotedField), true
 }
 
 func canonicalLabelFilterStage(stage string, labelFn LabelTranslateFunc) (canonical string, baseKey string, ok bool) {
@@ -1547,7 +1425,11 @@ func translateLabelFormat(expr string) string {
 		}
 		labelName := strings.TrimSpace(parts[0])
 		template := strings.TrimSpace(parts[1])
-		pipes = append(pipes, fmt.Sprintf("| format %s as %s", convertGoTemplate(template), labelName))
+		// convertGoTemplate returns a quoted string like "<label>"; strip the
+		// outer quotes before passing to PipeFormat, which re-applies %q quoting.
+		converted := convertGoTemplate(template)
+		unquoted := strings.Trim(converted, `"`)
+		pipes = append(pipes, logsql.PipeFormat{Template: unquoted, ResultField: labelName}.String())
 	}
 	if len(pipes) == 0 {
 		return "| " + expr
@@ -2716,26 +2598,27 @@ func splitStreamMatchers(s string) []string {
 	return matchers
 }
 
+// streamMatcherOps maps LogQL stream-selector operators to FieldOp constants.
+// Only the four operators valid in stream selectors are listed here.
+var streamMatcherOps = []struct {
+	logql  string
+	vlOp   logsql.FieldOp
+	negate bool
+	isRe   bool
+}{
+	{"!~", logsql.FieldOpRegexp, true, true},
+	{"=~", logsql.FieldOpRegexp, false, true},
+	{"!=", logsql.FieldOpExact, true, false},
+	{"=", logsql.FieldOpExact, false, false},
+}
+
 // streamMatcherToFieldFilter converts a stream matcher like `level="error"`
 // to a LogsQL field filter like `level:="error"`.
 // Returns "" if the matcher can't be converted (shouldn't happen).
 func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) string {
 	matcher = strings.TrimSpace(matcher)
 
-	// Try operators in order of specificity
-	ops := []struct {
-		logql  string
-		logsql string
-		neg    bool
-		isRe   bool // regex values need quotes preserved
-	}{
-		{"!~", ":~", true, true},
-		{"=~", ":~", false, true},
-		{"!=", ":=", true, false},
-		{"=", ":=", false, false},
-	}
-
-	for _, op := range ops {
+	for _, op := range streamMatcherOps {
 		idx := strings.Index(matcher, op.logql)
 		if idx > 0 {
 			origLabel := sanitizeFieldIdentifier(matcher[:idx])
@@ -2747,7 +2630,12 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 
 			// Apply label name translation (e.g., service_name → service.name)
 			if origLabel == "service_name" {
-				return serviceNameMatcherFilter(op.logsql, value, op.neg, op.isRe)
+				// logsql op string for serviceNameMatcherFilter: ":=" or ":~"
+				vlOpStr := ":="
+				if op.isRe {
+					vlOpStr = ":~"
+				}
+				return serviceNameMatcherFilter(vlOpStr, value, op.negate, op.isRe)
 			}
 			// detected_level is a synthetic Loki label synthesized by the proxy.
 			// VL stores the field as "level"; translate unconditionally before
@@ -2762,40 +2650,29 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 				}
 			}
 
-			// VL requires quoting for dotted field names
+			// VL requires quoting for dotted field names. Quote the field name
+			// before passing to buildFieldFilterStr so FieldFilter uses it as-is.
 			if strings.Contains(label, ".") {
 				label = `"` + label + `"`
 			}
 
-			if op.isRe {
-				value = strings.Trim(value, "\"`")
-				if op.neg {
-					return fmt.Sprintf(`-%s%s"%s"`, label, op.logsql, value)
-				}
-				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value)
-			}
-
 			value = strings.Trim(value, "\"`")
-			if value == "" {
+
+			if value == "" && !op.isRe {
 				// detected_level="" in the stream selector means "no level detected":
 				// match entries where level is absent or empty. -level:* covers both
 				// cases; level:="" would only match explicit empty strings.
-				if label == "level" && !op.neg {
+				if label == "level" && !op.negate {
 					return `-level:*`
 				}
-				if op.neg {
+				if op.negate {
+					// field:!"" means "field exists and is non-empty"; keep literal form.
 					return fmt.Sprintf(`%s:!""`, label)
 				}
-				return fmt.Sprintf(`%s:=""`, label)
+				return buildFieldFilterStr(label, logsql.FieldOpExact, "", false)
 			}
-			formattedValue := value
-			if op.logsql == ":=" {
-				formattedValue = formatLogsQLEqualityValue(value)
-			}
-			if op.neg {
-				return fmt.Sprintf("-%s%s%s", label, op.logsql, formattedValue)
-			}
-			return fmt.Sprintf("%s%s%s", label, op.logsql, formattedValue)
+
+			return buildFieldFilterStr(label, op.vlOp, value, op.negate)
 		}
 	}
 	return ""
@@ -2854,37 +2731,30 @@ var syntheticServiceNameFields = []string{
 
 func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
 	value = strings.TrimSpace(strings.Trim(value, "\"`"))
-	formattedValue := value
-	if !isRegex {
-		formattedValue = formatLogsQLEqualityValue(value)
-	}
 	parts := make([]string, 0, len(syntheticServiceNameFields))
 	for _, field := range syntheticServiceNameFields {
+		// Quote dotted field names so VL can parse them.
 		name := field
 		if strings.Contains(name, ".") {
 			name = `"` + name + `"`
 		}
 		if isRegex {
-			if neg {
-				parts = append(parts, fmt.Sprintf(`-%s%s"%s"`, name, op, value))
-			} else {
-				parts = append(parts, fmt.Sprintf(`%s%s"%s"`, name, op, value))
-			}
+			// Regex values use FieldFilter with FieldOpRegexp (quoting via QuotePattern).
+			parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpRegexp, value, neg))
 			continue
 		}
 		if value == "" {
 			if neg {
-				parts = append(parts, fmt.Sprintf(`%s:!""`, name))
+				// ":!\"\"" is VL's "not empty" inline syntax; no FieldFilter op maps to it.
+				parts = append(parts, name+`:!""`)
 			} else {
-				parts = append(parts, fmt.Sprintf(`%s:=""`, name))
+				// Use FieldFilter for correct empty-equality formatting: field:=""
+				parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpExact, "", false))
 			}
 			continue
 		}
-		if neg {
-			parts = append(parts, fmt.Sprintf(`-%s%s%s`, name, op, formattedValue))
-		} else {
-			parts = append(parts, fmt.Sprintf(`%s%s%s`, name, op, formattedValue))
-		}
+		// Use FieldFilter for correct value quoting via logsql.QuoteValue.
+		parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpExact, value, neg))
 	}
 	if value == "" && !isRegex {
 		if neg {

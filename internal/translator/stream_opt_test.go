@@ -18,7 +18,7 @@ func TestStreamOpt_KnownStreamField_UsesStreamSelector(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Should use VL stream selector syntax for known stream fields
-	if !strings.Contains(result, `app:=nginx`) {
+	if !strings.Contains(result, `app:="nginx"`) {
 		// Field filter format is the fallback — but for stream fields,
 		// VL can use native stream selectors which are faster.
 		// The key: the query should still work correctly
@@ -35,7 +35,7 @@ func TestStreamOpt_UnknownField_UsesFieldFilter(t *testing.T) {
 		t.Fatal(err)
 	}
 	// level is NOT a stream field, so it must use field filter
-	if !strings.Contains(result, `level:=error`) {
+	if !strings.Contains(result, `level:="error"`) {
 		t.Errorf("expected field filter for non-stream field, got %q", result)
 	}
 }
@@ -62,7 +62,7 @@ func TestStreamOpt_NilStreamFields_FallsBackToFieldFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, `app:=nginx`) {
+	if !strings.Contains(result, `app:="nginx"`) {
 		t.Errorf("expected field filter when no stream fields configured, got %q", result)
 	}
 }
@@ -74,7 +74,7 @@ func TestStreamOpt_EmptyStreamFields_FallsBackToFieldFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(result, `app:=nginx`) {
+	if !strings.Contains(result, `app:="nginx"`) {
 		t.Errorf("expected field filter when stream fields empty, got %q", result)
 	}
 }

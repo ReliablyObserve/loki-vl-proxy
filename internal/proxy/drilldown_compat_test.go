@@ -37,7 +37,7 @@ func TestDrilldown_QueryRange_ServiceNameSelectorAndSyntheticLabel(t *testing.T)
 	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+params.Encode(), nil)
 	p.handleQueryRange(w, r)
 
-	if !strings.Contains(receivedQuery, "app:=api-gateway") {
+	if !strings.Contains(receivedQuery, `app:="api-gateway"`) {
 		t.Fatalf("expected synthetic service_name selector to include app matcher, got %q", receivedQuery)
 	}
 

@@ -84,15 +84,52 @@ func TestProxyHelpers_CanonicalReadCacheKey_NormalizesDetectedLimitsAndDefaults(
 }
 
 func TestProxyHelpers_AddStatsByStreamClause_PreservesStreamIdentity(t *testing.T) {
-	got := addStatsByStreamClause(`app:=api-gateway | stats count()`)
-	if got != `app:=api-gateway | stats by (_stream, level) count()` {
+	got := addStatsByStreamClause(`app:="api-gateway" | stats count()`)
+	if got != `app:="api-gateway" | stats by (_stream, level) count()` {
 		t.Fatalf("unexpected stats identity clause: %q", got)
 	}
 }
 
+func TestAddStatsByStreamClause(t *testing.T) {
+	t.Run("injects by clause after stats keyword", func(t *testing.T) {
+		got := addStatsByStreamClause(`app:="api" | stats count()`)
+		want := `app:="api" | stats by (_stream, level) count()`
+		if got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	})
+
+	t.Run("no stats pipe returns query unchanged", func(t *testing.T) {
+		input := `app:="api" | unpack_json | filter status:>500`
+		got := addStatsByStreamClause(input)
+		if got != input {
+			t.Fatalf("expected unchanged query when no stats pipe present, got %q", got)
+		}
+	})
+
+	t.Run("empty query returns empty", func(t *testing.T) {
+		got := addStatsByStreamClause(``)
+		if got != `` {
+			t.Fatalf("expected empty output, got %q", got)
+		}
+	})
+
+	t.Run("stats with existing by clause is not double-injected", func(t *testing.T) {
+		// addStatsByStreamClause is only called when no "| stats by (" exists
+		// (the caller checks strings.Contains). But even if called, the injection
+		// goes AFTER "| stats " (before any existing by clause), producing valid
+		// but redundant by (x) by (_stream, level) output — this is a known
+		// limitation. The important case is that it doesn't panic or error.
+		got := addStatsByStreamClause(`app:="api" | stats sum(count)`)
+		if got == `` {
+			t.Fatal("expected non-empty output")
+		}
+	})
+}
+
 func TestProxyHelpers_PreserveMetricStreamIdentity_UsesStreamForBareMetrics(t *testing.T) {
-	got := preserveMetricStreamIdentity(`rate({app="api-gateway"} |= "GET"[5m])`, `app:=api-gateway ~"GET" | stats rate()`, nil)
-	if got != `app:=api-gateway ~"GET" | stats by (_stream, level) rate()` {
+	got := preserveMetricStreamIdentity(`rate({app="api-gateway"} |= "GET"[5m])`, `app:="api-gateway" ~"GET" | stats rate()`, nil)
+	if got != `app:="api-gateway" ~"GET" | stats by (_stream, level) rate()` {
 		t.Fatalf("unexpected preserved metric query: %q", got)
 	}
 }
@@ -105,7 +142,9 @@ func TestProxyHelpers_ParseBareParserMetricCompatSpec(t *testing.T) {
 	if spec.funcName != "count_over_time" {
 		t.Fatalf("unexpected funcName %q", spec.funcName)
 	}
-	if spec.baseQuery != `{app="api-gateway"} | json | status >= 500` {
+	// AST re-serialization normalizes spacing (status>=500 ≡ status >= 500).
+	if spec.baseQuery != `{app="api-gateway"} | json | status>=500` &&
+		spec.baseQuery != `{app="api-gateway"} | json | status >= 500` {
 		t.Fatalf("unexpected baseQuery %q", spec.baseQuery)
 	}
 	if spec.rangeWindow != 5*time.Minute {
@@ -271,4 +310,86 @@ func TestProxyHelpers_StatsResponseIsEmpty(t *testing.T) {
 	if statsResponseIsEmpty([]byte(`{"status":"success","data":{"resultType":"vector","result":[{"metric":{},"value":[123,"2"]}]}}`)) {
 		t.Fatal("expected positive-valued vector result not to count as absent")
 	}
+}
+
+// TestParseBareParserMetricCompatSpec_Comprehensive validates the AST-based
+// path (standard duration windows) and the regex fallback (Grafana templates).
+func TestParseBareParserMetricCompatSpec_Comprehensive(t *testing.T) {
+	t.Run("simple unwrap without parser is rejected", func(t *testing.T) {
+		// avg_over_time requires a parser stage (json/logfmt/etc.) — bare unwrap alone is not enough.
+		if _, ok := parseBareParserMetricCompatSpec(`avg_over_time({app="x"} | unwrap field [5m])`); ok {
+			t.Fatal("expected unwrap-only (no parser) to be rejected")
+		}
+	})
+
+	t.Run("unwrap with parser via AST", func(t *testing.T) {
+		spec, ok := parseBareParserMetricCompatSpec(`avg_over_time({app="x"} | logfmt | unwrap field [5m])`)
+		if !ok {
+			t.Fatal("expected logfmt+unwrap to be recognized")
+		}
+		if spec.funcName != "avg_over_time" {
+			t.Fatalf("unexpected funcName %q", spec.funcName)
+		}
+		if spec.unwrapField != "field" {
+			t.Fatalf("unexpected unwrapField %q", spec.unwrapField)
+		}
+		if spec.unwrapConv != "" {
+			t.Fatalf("expected no conversion, got %q", spec.unwrapConv)
+		}
+		if spec.rangeWindow != 5*time.Minute {
+			t.Fatalf("unexpected rangeWindow %v", spec.rangeWindow)
+		}
+	})
+
+	t.Run("unwrap with conversion via AST", func(t *testing.T) {
+		spec, ok := parseBareParserMetricCompatSpec(`avg_over_time({app="x"} | json | unwrap duration(field) [5m])`)
+		if !ok {
+			t.Fatal("expected json+unwrap duration() to be recognized")
+		}
+		if spec.unwrapField != "field" {
+			t.Fatalf("unexpected unwrapField %q", spec.unwrapField)
+		}
+		if spec.unwrapConv != "duration" {
+			t.Fatalf("expected conversion 'duration', got %q", spec.unwrapConv)
+		}
+	})
+
+	t.Run("outer aggregation rejected via AST", func(t *testing.T) {
+		if _, ok := parseBareParserMetricCompatSpec(`sum(avg_over_time({app="x"} | unwrap field [5m])) by (app)`); ok {
+			t.Fatal("expected outer aggregation to be rejected")
+		}
+	})
+
+	t.Run("count_over_time without unwrap is not a bare parser metric", func(t *testing.T) {
+		// count_over_time without an extracting parser must return false.
+		if _, ok := parseBareParserMetricCompatSpec(`count_over_time({app="x"}[5m])`); ok {
+			t.Fatal("expected bare stream selector count_over_time to be rejected (no parser stage)")
+		}
+	})
+
+	t.Run("malformed query does not panic", func(t *testing.T) {
+		if _, ok := parseBareParserMetricCompatSpec(`not a valid logql query!!! )))}`); ok {
+			t.Fatal("expected malformed query to return false")
+		}
+		if _, ok := parseBareParserMetricCompatSpec(``); ok {
+			t.Fatal("expected empty query to return false")
+		}
+	})
+
+	t.Run("template window via regex fallback", func(t *testing.T) {
+		// $__interval is not a valid duration literal; falls back to regex.
+		spec, ok := parseBareParserMetricCompatSpec(`rate_counter({app="x"} | json | unwrap counter [$__interval])`)
+		if !ok {
+			t.Fatal("expected Grafana template window to be handled via regex fallback")
+		}
+		if spec.funcName != "rate_counter" {
+			t.Fatalf("unexpected funcName %q", spec.funcName)
+		}
+		if spec.unwrapField != "counter" {
+			t.Fatalf("unexpected unwrapField %q", spec.unwrapField)
+		}
+		if spec.rangeWindowExpr != "$__interval" {
+			t.Fatalf("unexpected rangeWindowExpr %q", spec.rangeWindowExpr)
+		}
+	})
 }

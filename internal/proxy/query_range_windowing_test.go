@@ -1652,24 +1652,24 @@ func TestQueryRangePrefilterQuery(t *testing.T) {
 		},
 		// Regression: the prefilter must pass through translated VL field-filter
 		// queries unchanged. Specifically, queries built from `{app="json-test"}`
-		// and `{level="warn"}` translate to `app:=json-test` and `level:=warn`
+		// and `{level="warn"}` translate to `app:="json-test"` and `level:="warn"`
 		// respectively. The prefilter must NOT mangle them into the buggy
 		// double-quoted form `"app="json-test""` / `"level="warn""` that was
 		// observed against e2e-proxy-underscore.
 		{
 			name:  "translated app field filter passes through",
-			input: `app:=json-test`,
-			want:  `app:=json-test`,
+			input: `app:="json-test"`,
+			want:  `app:="json-test"`,
 		},
 		{
 			name:  "translated level field filter passes through",
-			input: `level:=warn`,
-			want:  `level:=warn`,
+			input: `level:="warn"`,
+			want:  `level:="warn"`,
 		},
 		{
 			name:  "translated field filter with pipeline strips pipe",
-			input: `app:=json-test | unpack_json`,
-			want:  `app:=json-test`,
+			input: `app:="json-test" | unpack_json`,
+			want:  `app:="json-test"`,
 		},
 	}
 	for _, tc := range cases {
@@ -1785,8 +1785,8 @@ func maxInt64(a, b int64) int64 {
 
 // TestQueryRange_DoesNotEmitDoubleQuotedSelectorToVL is the end-to-end regression
 // guard for the production bug observed against e2e-proxy-underscore. The proxy
-// MUST translate `{app="json-test"}` to the VL field filter `app:=json-test`
-// (and `{level="warn"}` to `level:=warn`) before sending the query to VL —
+// MUST translate `{app="json-test"}` to the VL field filter `app:="json-test"`
+// (and `{level="warn"}` to `level:="warn"`) before sending the query to VL —
 // never the malformed phrase-filter form `"app="json-test""` / `"level="warn""`
 // that VL rejected with parse errors on /select/logsql/hits and
 // /select/logsql/query.
@@ -1807,13 +1807,13 @@ func TestQueryRange_DoesNotEmitDoubleQuotedSelectorToVL(t *testing.T) {
 		{
 			name:         "app matcher",
 			logqlQuery:   `{app="json-test"}`,
-			wantVLQuery:  `app:=json-test`,
+			wantVLQuery:  `app:="json-test"`,
 			bannedSubstr: `"app="json-test""`,
 		},
 		{
 			name:         "level matcher",
 			logqlQuery:   `{level="warn"}`,
-			wantVLQuery:  `level:=warn`,
+			wantVLQuery:  `level:="warn"`,
 			bannedSubstr: `"level="warn""`,
 		},
 	}

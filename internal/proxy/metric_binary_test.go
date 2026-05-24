@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 )
 
 func TestParseTopKWrapper(t *testing.T) {
@@ -224,4 +227,78 @@ func TestQueryRange_BottomKFiltersToKSeries(t *testing.T) {
 	if resp.Data.Result[0].Metric["app"] != "low" {
 		t.Errorf("bottomk(1) got app=%s, want low", resp.Data.Result[0].Metric["app"])
 	}
+}
+
+// TestAddUnderscorefallbackByLabels covers the by() clause augmentation and
+// the guard paths to prevent panic when the pattern is absent.
+func TestAddUnderscorefallbackByLabels(t *testing.T) {
+	newUnderscoreProxy := func(t *testing.T) *Proxy {
+		t.Helper()
+		p, err := New(Config{
+			BackendURL: "http://127.0.0.1:9999",
+			Cache:      cache.New(60e9, 100),
+			LogLevel:   "error",
+			LabelStyle: LabelStyleUnderscores,
+		})
+		if err != nil {
+			t.Fatalf("create proxy: %v", err)
+		}
+		return p
+	}
+
+	t.Run("injects underscore fallback for dotted OTel label", func(t *testing.T) {
+		p := newUnderscoreProxy(t)
+		query := `app:="svc" | stats by (service.name, level) count() as c`
+		got := p.addUnderscorefallbackByLabels(query, []string{"service_name", "level"})
+		// service_name → service.name (dotted): underscore fallback added.
+		// level has no dot translation: no fallback.
+		if !strings.Contains(got, "service_name") {
+			t.Fatalf("expected underscore fallback to include service_name, got: %q", got)
+		}
+		if !strings.Contains(got, "| stats by (") {
+			t.Fatalf("expected stats by clause to be present, got: %q", got)
+		}
+	})
+
+	t.Run("no stats by clause returns query unchanged", func(t *testing.T) {
+		p := newUnderscoreProxy(t)
+		input := `app:="svc" | unpack_json | filter status:>500`
+		got := p.addUnderscorefallbackByLabels(input, []string{"service_name"})
+		if got != input {
+			t.Fatalf("expected unchanged query when no '| stats by (' present, got %q", got)
+		}
+	})
+
+	t.Run("passthrough translator returns query unchanged", func(t *testing.T) {
+		p, _ := New(Config{
+			BackendURL: "http://127.0.0.1:9999",
+			Cache:      cache.New(60e9, 100),
+			LogLevel:   "error",
+		})
+		input := `app:="svc" | stats by (service.name) count()`
+		got := p.addUnderscorefallbackByLabels(input, []string{"service_name"})
+		if got != input {
+			t.Fatalf("expected passthrough proxy to leave query unchanged, got %q", got)
+		}
+	})
+
+	t.Run("empty origGroupBy returns query unchanged", func(t *testing.T) {
+		p := newUnderscoreProxy(t)
+		input := `app:="svc" | stats by (service.name) count()`
+		got := p.addUnderscorefallbackByLabels(input, nil)
+		if got != input {
+			t.Fatalf("expected empty origGroupBy to leave query unchanged, got %q", got)
+		}
+	})
+
+	t.Run("unclosed by clause guard returns query unchanged", func(t *testing.T) {
+		// Malformed query: '| stats by (' without closing ')' — guard prevents
+		// an out-of-bounds splice.
+		p := newUnderscoreProxy(t)
+		input := `app:="svc" | stats by (service.name`
+		got := p.addUnderscorefallbackByLabels(input, []string{"service_name"})
+		if got != input {
+			t.Fatalf("expected unclosed by-clause guard to return query unchanged, got %q", got)
+		}
+	})
 }

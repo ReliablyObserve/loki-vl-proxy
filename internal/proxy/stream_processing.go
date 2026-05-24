@@ -18,6 +18,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -1605,10 +1606,31 @@ type bareParserMetricSeries struct {
 }
 
 // isStatsQuery returns true if the LogsQL query contains a stats pipe.
-// It only matches top-level pipes, not strings inside quoted filter values
-// (e.g., ~"stats query" must NOT trigger this).
+// It uses the typed AST parser when possible, falling back to a quote-aware
+// string scanner on parse failure (e.g. malformed or unsupported syntax).
 func isStatsQuery(logsqlQuery string) bool {
-	// Walk the query, skipping quoted regions
+	q, err := logsql.Parse(logsqlQuery)
+	if err != nil {
+		// Fall back to old quote-aware heuristic only on parse failure.
+		return isStatsQueryHeuristic(logsqlQuery)
+	}
+	for _, p := range q.Pipes {
+		switch p.(type) {
+		case logsql.PipeStats, logsql.PipeRunningStats, logsql.PipeTotalStats:
+			return true
+		}
+	}
+	// VictoriaLogs shorthand "| rate(" / "| count(" are not yet modelled as
+	// standalone pipe types in the local AST; detect them with the heuristic
+	// but run it only when the query parsed successfully (so the filter region
+	// is well-formed and the quote-aware walk is safe).
+	return isStatsQueryHeuristic(logsqlQuery)
+}
+
+// isStatsQueryHeuristic is the original quote-aware string scanner for
+// detecting stats pipes. It is used as a fallback when the AST parser fails
+// and also to detect VL shorthand pipes (| rate(, | count() not yet in AST).
+func isStatsQueryHeuristic(logsqlQuery string) bool {
 	inQuote := false
 	for i := 0; i < len(logsqlQuery); i++ {
 		if logsqlQuery[i] == '"' {

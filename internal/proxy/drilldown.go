@@ -17,6 +17,9 @@ import (
 	"time"
 
 	fj "github.com/valyala/fastjson"
+
+	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 const unknownServiceName = "unknown_service"
@@ -611,33 +614,38 @@ func streamSelectorPrefix(query string) string {
 	if query == "" {
 		return ""
 	}
-	inQuote := byte(0)
-	escape := false
-	for i := 0; i < len(query); i++ {
-		ch := query[i]
-		if escape {
-			escape = false
-			continue
-		}
-		if inQuote != 0 {
-			if ch == '\\' && inQuote == '"' {
-				escape = true
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		// Fall back to brace-scanner on parse failure.
+		inQuote := byte(0)
+		escape := false
+		for i := 0; i < len(query); i++ {
+			ch := query[i]
+			if escape {
+				escape = false
 				continue
 			}
-			if ch == inQuote {
-				inQuote = 0
+			if inQuote != 0 {
+				if ch == '\\' && inQuote == '"' {
+					escape = true
+					continue
+				}
+				if ch == inQuote {
+					inQuote = 0
+				}
+				continue
 			}
-			continue
+			if ch == '"' || ch == '`' {
+				inQuote = ch
+				continue
+			}
+			if ch == '|' {
+				return strings.TrimSpace(query[:i])
+			}
 		}
-		if ch == '"' || ch == '`' {
-			inQuote = ch
-			continue
-		}
-		if ch == '|' {
-			return strings.TrimSpace(query[:i])
-		}
+		return query
 	}
-	return query
+	return lq.Selector.String()
 }
 
 func (p *Proxy) serviceNameValuesFromDetectedLabels(ctx context.Context, query, start, end string) ([]string, error) {
@@ -877,7 +885,7 @@ func (p *Proxy) volumeByDerivedLabels(ctx context.Context, query, start, end, ta
 		}
 	}
 	if needsLevelUnpack && !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
-		logsqlQuery = logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+		logsqlQuery = logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()
 	}
 
 	params := url.Values{}
@@ -1160,14 +1168,67 @@ func collapseSpaces(s string) string {
 	return strings.TrimSpace(s)
 }
 
+// isErrorDropStage reports whether ds is the `| drop __error__[, __error_details__]`
+// pattern that field-detection queries append. Only those specific drops are removed;
+// user-authored `| drop` stages are left intact.
+func isErrorDropStage(ds *logqlpkg.DropStage) bool {
+	if len(ds.Matchers) != 0 {
+		return false
+	}
+	labels := ds.Labels
+	if len(labels) == 0 || labels[0] != "__error__" {
+		return false
+	}
+	if len(labels) == 1 {
+		return true
+	}
+	return len(labels) == 2 && labels[1] == "__error_details__"
+}
+
+// isParserOnlyStage reports whether a stage is a json/logfmt/unpack parser (no regexp/pattern).
+func isParserOnlyStage(stage logqlpkg.Stage) bool {
+	ps, ok := stage.(*logqlpkg.ParserStage)
+	if !ok {
+		return false
+	}
+	return ps.Type == logqlpkg.ParserJSON ||
+		ps.Type == logqlpkg.ParserLogfmt ||
+		ps.Type == logqlpkg.ParserUnpack
+}
+
+// filterPipeline returns a new LogQuery with stages removed wherever keep returns false.
+func filterPipeline(lq *logqlpkg.LogQuery, keep func(logqlpkg.Stage) bool) *logqlpkg.LogQuery {
+	out := &logqlpkg.LogQuery{Selector: lq.Selector}
+	for _, s := range lq.Pipeline {
+		if keep(s) {
+			out.Pipeline = append(out.Pipeline, s)
+		}
+	}
+	return out
+}
+
 func stripUnwrapAndDropStages(query string) string {
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return query
 	}
-	query = reDropStage.ReplaceAllString(query, " ")
-	query = reUnwrapStage.ReplaceAllString(query, " ")
-	return collapseSpaces(query)
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		// Fall back to regex on parse failure.
+		query = reDropStage.ReplaceAllString(query, " ")
+		query = reUnwrapStage.ReplaceAllString(query, " ")
+		return collapseSpaces(query)
+	}
+	out := filterPipeline(lq, func(s logqlpkg.Stage) bool {
+		if ds, ok := s.(*logqlpkg.DropStage); ok && isErrorDropStage(ds) {
+			return false
+		}
+		if _, ok := s.(*logqlpkg.UnwrapStage); ok {
+			return false
+		}
+		return true
+	})
+	return out.String()
 }
 
 func stripParserOnlyStages(query string) string {
@@ -1175,15 +1236,36 @@ func stripParserOnlyStages(query string) string {
 	if query == "" {
 		return query
 	}
-	return collapseSpaces(reParserStage.ReplaceAllString(query, " "))
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		return collapseSpaces(reParserStage.ReplaceAllString(query, " "))
+	}
+	out := filterPipeline(lq, func(s logqlpkg.Stage) bool {
+		return !isParserOnlyStage(s)
+	})
+	return out.String()
 }
 
 func stripFieldDetectionStages(query string) string {
 	return stripParserOnlyStages(stripUnwrapAndDropStages(query))
 }
 
+// labelFilterHasComparison reports whether a LabelFilterStage.Raw string contains a
+// field-comparison operator (=, !=, =~, !~, >=, <=, >, <).
+var labelFilterCompareRE = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
+
 func hasFieldComparisonStages(query string) bool {
-	return regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`).MatchString(query)
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		return regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`).MatchString(query)
+	}
+	for _, stage := range lq.Pipeline {
+		lfs, ok := stage.(*logqlpkg.LabelFilterStage)
+		if ok && labelFilterCompareRE.MatchString(lfs.Raw) {
+			return true
+		}
+	}
+	return false
 }
 
 func stripFieldComparisonStages(query string) string {
@@ -1191,13 +1273,23 @@ func stripFieldComparisonStages(query string) string {
 	if query == "" {
 		return query
 	}
-
-	fieldComparisonStage := regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)\s*[^|]+`)
-	query = fieldComparisonStage.ReplaceAllString(query, " ")
-	for strings.Contains(query, "  ") {
-		query = strings.ReplaceAll(query, "  ", " ")
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		fieldComparisonStage := regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)\s*[^|]+`)
+		result := fieldComparisonStage.ReplaceAllString(query, " ")
+		for strings.Contains(result, "  ") {
+			result = strings.ReplaceAll(result, "  ", " ")
+		}
+		return strings.TrimSpace(result)
 	}
-	return strings.TrimSpace(query)
+	out := filterPipeline(lq, func(s logqlpkg.Stage) bool {
+		lfs, ok := s.(*logqlpkg.LabelFilterStage)
+		if ok && labelFilterCompareRE.MatchString(lfs.Raw) {
+			return false
+		}
+		return true
+	})
+	return out.String()
 }
 
 func inferDetectedType(value interface{}) string {
@@ -2246,7 +2338,7 @@ func (p *Proxy) fetchNativeFieldValues(ctx context.Context, query, start, end, f
 		// No values from native index — field may be inside JSON or logfmt _msg.
 		// Retry once with unpack pipes so VL extracts the field from _msg content.
 		if !strings.Contains(logsqlQuery, "unpack_json") && !strings.Contains(logsqlQuery, "unpack_logfmt") {
-			unpackQuery := logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+			unpackQuery := logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()
 			params.Set("query", unpackQuery)
 			resp2, err2 := p.vlGet(ctx, "/select/logsql/field_values", params)
 			if err2 == nil {
@@ -2282,7 +2374,7 @@ func (p *Proxy) fetchUnpackedFieldValues(ctx context.Context, query, start, end,
 	if strings.Contains(logsqlQuery, "unpack_json") || strings.Contains(logsqlQuery, "unpack_logfmt") {
 		return nil, nil
 	}
-	unpackQuery := logsqlQuery + " | unpack_json from _msg | unpack_logfmt from _msg"
+	unpackQuery := logsqlQuery + " " + logsql.PipeUnpackJSON{From: "_msg"}.String() + " " + logsql.PipeUnpackLogfmt{From: "_msg"}.String()
 	params := url.Values{}
 	params.Set("query", unpackQuery)
 	params.Set("field", field)

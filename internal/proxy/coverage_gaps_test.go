@@ -178,7 +178,7 @@ func TestDetectedFields_BareSelectorWithParserStagesStillFindsFields(t *testing.
 				t.Fatalf("parse form: %v", err)
 			}
 			got := r.Form.Get("query")
-			if !strings.Contains(got, `service_name:=otel-auth-service`) {
+			if !strings.Contains(got, `service_name:="otel-auth-service"`) {
 				t.Fatalf("expected translated bare selector after parser stripping, got %q", got)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -189,7 +189,7 @@ func TestDetectedFields_BareSelectorWithParserStagesStillFindsFields(t *testing.
 				t.Fatalf("parse form: %v", err)
 			}
 			got := r.Form.Get("query")
-			if !strings.Contains(got, `service_name:=otel-auth-service`) {
+			if !strings.Contains(got, `service_name:="otel-auth-service"`) {
 				t.Fatalf("expected translated bare selector after parser stripping, got %q", got)
 			}
 			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"msg\":\"ok\"}","_stream":"{service.name=\"otel-auth-service\",service_name=\"otel-auth-service\"}","service.name":"otel-auth-service","service_name":"otel-auth-service"}` + "\n"))
@@ -229,13 +229,13 @@ func TestIsStatsQuery_Comprehensive(t *testing.T) {
 		query string
 		want  bool
 	}{
-		{`app:=nginx | stats rate()`, true},
-		{`app:=nginx | rate(`, true},
-		{`app:=nginx | count(`, true},
-		{`app:=nginx ~"stats query"`, false},          // inside quotes
-		{`app:=nginx ~"| stats rate()"`, false},       // pipe inside quotes
-		{`app:=nginx`, false},                         // no stats
-		{`app:=nginx ~"error" | stats count()`, true}, // stats after filter
+		{`app:="nginx" | stats rate()`, true},
+		{`app:="nginx" | rate(`, true},
+		{`app:="nginx" | count(`, true},
+		{`app:="nginx" ~"stats query"`, false},          // inside quotes
+		{`app:="nginx" ~"| stats rate()"`, false},       // pipe inside quotes
+		{`app:="nginx"`, false},                         // no stats
+		{`app:="nginx" ~"error" | stats count()`, true}, // stats after filter
 		{``, false},
 	}
 	for _, tt := range tests {
@@ -373,9 +373,10 @@ func TestFieldDetectionQueryCandidates_StripsParserKeepsComparisons(t *testing.T
 	// Primary candidate strips | unwrap (which breaks log scanning) but keeps the
 	// parser stage and field-comparison filters together — VL needs the parser to
 	// evaluate field comparisons. Relaxed candidate strips both for maximum coverage.
+	// Note: the AST normalises spacing in label-filter stages (duration<1s not duration < 1s).
 	got := fieldDetectionQueryCandidates(`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms | unwrap duration(duration)`)
 	want := []string{
-		`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms`,
+		`{service_name="grafana"} | logfmt | duration<1s | duration>100ms`,
 		`{service_name="grafana"}`,
 	}
 	if len(got) != len(want) {
@@ -413,6 +414,7 @@ func TestFieldDetectionQueryCandidates_JSONParserAlwaysStripped(t *testing.T) {
 	// are present. VL v1.50+ auto-indexes JSON from _msg, so VL can evaluate the filter
 	// without | json. Keeping | json causes VL to expand _msg JSON into top-level NDJSON
 	// fields in the response, which the scanner then picks up as thousands of garbage names.
+	// Note: the AST normalises spacing in label-filter stages (model="anomaly-v2" not model = "anomaly-v2").
 	cases := []struct {
 		query   string
 		primary string
@@ -420,18 +422,18 @@ func TestFieldDetectionQueryCandidates_JSONParserAlwaysStripped(t *testing.T) {
 	}{
 		{
 			query:   `{cluster="us-east-1"} | json | model = "anomaly-v2"`,
-			primary: `{cluster="us-east-1"} | model = "anomaly-v2"`,
+			primary: `{cluster="us-east-1"} | model="anomaly-v2"`,
 			relaxed: `{cluster="us-east-1"}`,
 		},
 		{
 			query:   `{cluster="us-east-1"} | json | service.name = "ml-serving" | model = "anomaly-v2"`,
-			primary: `{cluster="us-east-1"} | service.name = "ml-serving" | model = "anomaly-v2"`,
+			primary: `{cluster="us-east-1"} | service.name="ml-serving" | model="anomaly-v2"`,
 			relaxed: `{cluster="us-east-1"}`,
 		},
 		{
 			// | logfmt must be kept (VL doesn't auto-index logfmt), but | json is stripped.
 			query:   `{cluster="us-east-1"} | json | logfmt | size_bytes = "0"`,
-			primary: `{cluster="us-east-1"} | logfmt | size_bytes = "0"`,
+			primary: `{cluster="us-east-1"} | logfmt | size_bytes="0"`,
 			relaxed: `{cluster="us-east-1"}`,
 		},
 	}
@@ -1082,7 +1084,7 @@ func TestHandleLabels_BareSelectorQuery(t *testing.T) {
 		if strings.Contains(got, `{`) || strings.Contains(got, `}`) {
 			t.Fatalf("bare selector should be translated before hitting VL, got %q", got)
 		}
-		if !strings.Contains(got, `service_name:=api-gateway`) {
+		if !strings.Contains(got, `service_name:="api-gateway"`) {
 			t.Fatalf("expected service_name matcher in translated query, got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")

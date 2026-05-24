@@ -1,6 +1,10 @@
 package translator
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+)
 
 func TestCoverage_SplitLogicalStageAndSanitizeHelpers(t *testing.T) {
 	parts, ops, ok := splitLogicalStage(`level="info and ready" and (status="200" or status="201")`)
@@ -21,32 +25,18 @@ func TestCoverage_SplitLogicalStageAndSanitizeHelpers(t *testing.T) {
 		t.Fatalf("expected empty identifier after trimming dots, got %q", got)
 	}
 
-	if got := quoteLogsQLFieldNameIfNeeded("service.name"); got != `"service.name"` {
-		t.Fatalf("expected dotted field name to be quoted, got %q", got)
+	// Dotted field names must be quoted in LogsQL: "service.name":="foo"
+	// Use logsql.QuoteValue to verify the quoting helper used by FieldFilter.
+	if got := logsql.QuoteValue("hello world"); got != `"hello world"` {
+		t.Fatalf("expected spaced value to be quoted, got %q", got)
 	}
-	if got := quoteLogsQLFieldNameIfNeeded("service_name"); got != "service_name" {
-		t.Fatalf("expected underscore field name to stay bare, got %q", got)
+	// FieldFilter always quotes values: simple tokens also get quotes.
+	if got := logsql.QuoteValue("nginx"); got != `"nginx"` {
+		t.Fatalf("expected simple value to be quoted by QuoteValue, got %q", got)
 	}
-
-	if !logsQLEqualityValueNeedsQuoting("hello world") {
-		t.Fatal("expected spaced equality value to require quoting")
-	}
-	if logsQLEqualityValueNeedsQuoting("api-1/ready") {
-		t.Fatal("expected simple path token not to require quoting")
-	}
-	// Standalone punctuation-only values are compound tokens in VL and must be quoted.
-	// e.g. path = "/" must become path:="/" not path:=/ which VL cannot parse.
-	if !logsQLEqualityValueNeedsQuoting("/") {
-		t.Fatal(`expected "/" to require quoting (VL compound-token error)`)
-	}
-	if !logsQLEqualityValueNeedsQuoting("-") {
-		t.Fatal(`expected "-" to require quoting`)
-	}
-	if !logsQLEqualityValueNeedsQuoting(".") {
-		t.Fatal(`expected "." to require quoting`)
-	}
-	if logsQLEqualityValueNeedsQuoting("/settings") {
-		t.Fatal("expected /settings path not to require quoting")
+	// Special characters are escaped properly.
+	if got := logsql.QuoteValue(`has "quotes"`); got != `"has \"quotes\""` {
+		t.Fatalf("unexpected quoting of embedded double-quotes, got %q", got)
 	}
 }
 

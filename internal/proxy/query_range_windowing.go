@@ -23,6 +23,8 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 var (
@@ -917,9 +919,9 @@ func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction str
 
 func withQueryDirectionSort(logsqlQuery, direction string) string {
 	if direction == "forward" {
-		return logsqlQuery + " | sort by (_time)"
+		return logsqlQuery + " " + logsql.PipeSort{By: []logsql.SortField{{Field: "_time"}}}.String()
 	}
-	return logsqlQuery + " | sort by (_time desc)"
+	return logsqlQuery + " " + logsql.PipeSort{By: []logsql.SortField{{Field: "_time", Desc: true}}}.String()
 }
 
 func splitQueryRangeWindows(startNs, endNs int64, interval time.Duration, direction string) []queryRangeWindow {

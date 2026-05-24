@@ -73,17 +73,17 @@ func TestMatrix_FilterOperators_AllSupported(t *testing.T) {
 		{name: "line_not_contains", logql: `{app="x"} != "debug"`, wantSubstring: `NOT ~"debug"`},
 		{name: "line_regex", logql: `{app="x"} |~ "err.*"`, wantSubstring: `~"err.*"`},
 		{name: "line_not_regex", logql: `{app="x"} !~ "dbg.*"`, wantSubstring: `NOT ~"dbg.*"`},
-		{name: "label_eq", logql: `{app="x"} | status == 200`, wantSubstring: `status:=200`},
-		{name: "label_assign_eq", logql: `{app="x"} | status = 200`, wantSubstring: `status:=200`},
-		{name: "label_ne", logql: `{app="x"} | status != 200`, wantSubstring: `-status:=200`},
+		{name: "label_eq", logql: `{app="x"} | status == 200`, wantSubstring: `status:="200"`},
+		{name: "label_assign_eq", logql: `{app="x"} | status = 200`, wantSubstring: `status:="200"`},
+		{name: "label_ne", logql: `{app="x"} | status != 200`, wantSubstring: `-status:="200"`},
 		{name: "label_re", logql: `{app="x"} | status =~ "2.."`, wantSubstring: `status:~"2.."`},
 		{name: "label_not_re", logql: `{app="x"} | status !~ "5.."`, wantSubstring: `-status:~"5.."`},
 		{name: "label_gt", logql: `{app="x"} | duration_ms > 100`, wantSubstring: `duration_ms:>100`},
 		{name: "label_lt", logql: `{app="x"} | duration_ms < 100`, wantSubstring: `duration_ms:<100`},
 		{name: "label_gte", logql: `{app="x"} | duration_ms >= 100`, wantSubstring: `duration_ms:>=100`},
 		{name: "label_lte", logql: `{app="x"} | duration_ms <= 100`, wantSubstring: `duration_ms:<=100`},
-		{name: "and_split", logql: `{app="x"} | status >= 500 and method="GET"`, wantSubstring: " and ", secondaryCheck: "method:=GET"},
-		{name: "or_split", logql: `{app="x"} | status >= 500 or status = 429`, wantSubstring: " or ", secondaryCheck: "status:=429"},
+		{name: "and_split", logql: `{app="x"} | status >= 500 and method="GET"`, wantSubstring: " and ", secondaryCheck: `method:="GET"`},
+		{name: "or_split", logql: `{app="x"} | status >= 500 or status = 429`, wantSubstring: " or ", secondaryCheck: `status:="429"`},
 	}
 
 	for _, tc := range cases {

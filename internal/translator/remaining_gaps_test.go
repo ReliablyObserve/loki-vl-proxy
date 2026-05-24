@@ -146,7 +146,7 @@ func TestBinaryQuery_BothSelectorsTranslated(t *testing.T) {
 	if len(parts) != 2 {
 		t.Fatalf("expected ||| separator in %q", result)
 	}
-	// Left side should have "app:=a" (translated), not {app="a"} (raw)
+	// Left side should have "app:="a"" (translated), not {app="a"} (raw)
 	if strings.Contains(parts[0], `{app="a"}`) {
 		t.Error("left side should be translated to LogsQL, not raw LogQL")
 	}
