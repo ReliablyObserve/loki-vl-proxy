@@ -2735,18 +2735,14 @@ func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
 			name = `"` + name + `"`
 		}
 		if isRegex {
-			// Regex values use QuotePattern (preserves backslash escapes).
-			quotedVal := logsql.QuotePattern(value)
-			if neg {
-				parts = append(parts, fmt.Sprintf(`-%s%s%s`, name, op, quotedVal))
-			} else {
-				parts = append(parts, fmt.Sprintf(`%s%s%s`, name, op, quotedVal))
-			}
+			// Regex values use FieldFilter with FieldOpRegexp (quoting via QuotePattern).
+			parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpRegexp, value, neg))
 			continue
 		}
 		if value == "" {
 			if neg {
-				parts = append(parts, fmt.Sprintf(`%s:!""`, name))
+				// ":!\"\"" is VL's "not empty" inline syntax; no FieldFilter op maps to it.
+				parts = append(parts, name+`:!""`)
 			} else {
 				// Use FieldFilter for correct empty-equality formatting: field:=""
 				parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpExact, "", false))
