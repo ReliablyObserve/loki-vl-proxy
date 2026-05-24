@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.41.0] - 2026-05-24
+
 ### Fixed
 
 - **LogQL parser preserves whitespace in compound label filters**: `consumeRestOfStage()` now inserts spaces at word/number token boundaries so `| status>=200 and status<300` round-trips correctly through the AST instead of producing `| status>=200andstatus<300`. Affects all code paths that reconstruct query strings via `LogQuery.String()` (drilldown filter, metric fast-path, parser-stage stripping).
