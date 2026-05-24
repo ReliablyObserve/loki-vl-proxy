@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "label": "Helm Chart pulls",
-  "message": "0",
+  "label": "Helm versions",
+  "message": "172",
   "color": "blue",
   "namedLogo": "github"
 }

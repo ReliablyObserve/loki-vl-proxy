@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "label": "GHCR pulls",
-  "message": "0",
+  "label": "GHCR versions",
+  "message": "860",
   "color": "blue",
   "namedLogo": "github"
 }
