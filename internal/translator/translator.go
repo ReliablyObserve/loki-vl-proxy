@@ -908,12 +908,13 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 	}
 
 	// ip() label filter — CIDR matching on label values.
-	// This handles a bare ip("cidr") stage (without a label prefix). The proxy
-	// applies IP-range filtering as post-processing on response log streams via
+	// The proxy applies IP-range filtering as post-processing on response log streams via
 	// ipFilterStreams (see internal/proxy/postprocess.go), keyed by parsing the
 	// original LogQL query with parseIPFilter.
-	// TODO(ast-migration): phase-2 — thread label name through translatePipelineStage to enable
-	// logsql.Builder.BestIPv4Range(field, cidr) which emits native ipv4_range() on VL v1.45+.
+	// Native VL migration requires two changes not yet done:
+	//   1. Thread logsql.Capabilities through translatePipelineStage so BestIPv4Range can
+	//      pick between ipv4_range() (v1.45+) and regexp fallback.
+	//   2. Remove the proxy-side ipFilterStreams calls once VL handles filtering natively.
 	if strings.HasPrefix(stage, "ip(") {
 		return "| " + stage // proxy-side post-processing marker
 	}
@@ -1815,19 +1816,19 @@ func outerAggregationStatsFn(outerAgg string) (statsFn string, pow2 bool) {
 	}
 }
 
-// TODO(ast-migration): phase-2 — migrate applyOuterAggregation to logsql.PipeStats + PipeMath for the pow2 case
 func applyOuterAggregation(baseQuery, outerAgg, field string) (string, bool) {
 	statsFn, pow2 := outerAggregationStatsFn(outerAgg)
 	if statsFn == "" {
 		return "", false
 	}
-	var result string
+	var rawFunc string
 	if statsFn == "count" {
-		// VL count() takes no field argument; count(*) is the correct form.
-		result = fmt.Sprintf("%s | stats count()", baseQuery)
+		rawFunc = "count()"
 	} else {
-		result = fmt.Sprintf("%s | stats %s(%s)", baseQuery, statsFn, field)
+		rawFunc = statsFn + "(" + field + ")"
 	}
+	pipe := logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: rawFunc}}}}
+	result := baseQuery + " " + pipe.String()
 	if pow2 {
 		result = fmt.Sprintf("%s^:%s|||2", BinaryMetricPrefix, result)
 	}
@@ -1866,7 +1867,8 @@ func extractRangeByClause(suffix string) (labels string, explicit bool) {
 	return strings.TrimSpace(m[1]), true
 }
 
-// TODO(ast-migration): phase-2 — migrate unwrapInnerGrouping stats assembly to logsql.PipeStats
+// unwrapInnerGrouping returns the by-labels string for buildStatsQuery.
+// It selects the effective group-by labels for unwrap/range aggregations.
 func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslateFunc, rangeByExplicit bool, rangeByLabels string) string {
 	// Explicit range-level by (...) takes precedence over all heuristics.
 	// by () means aggregate all entries into one series (no label grouping).
@@ -2886,8 +2888,10 @@ func looksLikeBareLabelMatcher(s string) bool {
 // SubqueryPrefix marks a translated subquery expression for proxy-side evaluation.
 const SubqueryPrefix = "__subquery__:"
 
-// TODO(ast-migration): phase-3 — migrate subquery translation to typed AST once subquery spec is finalized
 // tryTranslateSubquery detects and translates subquery syntax.
+// Output is a proxy-internal protocol string (__subquery__:func:innerQuery:range:step),
+// not a LogsQL expression — LogQL AST migration does not apply here.
+// The inner query is already translated via recursive TranslateLogQL.
 // Input: max_over_time(rate({app="nginx"}[5m])[1h:5m])
 // Output: __subquery__:max_over_time:<translated inner query>:1h:5m
 func tryTranslateSubquery(logql string) (string, bool) {

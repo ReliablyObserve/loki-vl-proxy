@@ -9,10 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 - Hoist 9 per-request `regexp.MustCompile` calls to package-level vars in the translator, eliminating repeated regex compilation on every query
+- Hoist `parseIPFilter` regex to package-level var in `internal/proxy/postprocess.go`, eliminating per-call compilation
 
 ### Changed
 - `buildStatsQuery` now uses `logsql.PipeStats` for by-clause assembly instead of `fmt.Sprintf` string construction; fix `pipeStatsString` to correctly omit `as` clause for empty alias
-- Add `TODO(ast-migration)` roadmap comments to deferred string-assembly paths in `translator.go` and `query_translation.go`
+- `applyOuterAggregation` now uses `logsql.PipeStats` + `logsql.DeferredExpr` for stats expression construction instead of `fmt.Sprintf`
+- Clarify `unwrapInnerGrouping` doc comment: function returns by-labels string for `buildStatsQuery`, not stats assembly
+- Replace misleading `TODO(ast-migration)` comments on `tryTranslateSubquery`, `translateStatsResponseLabelsWithContext`, and `fetchBareParserMetricSeries` with accurate constraint descriptions; document specific blockers for the ip() native VL filter migration
 
 ### Documentation
 - Add translation pipeline Mermaid diagram to `docs/architecture.md` showing the LogQL→LogsQL two-tier translation flow
