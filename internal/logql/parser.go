@@ -671,24 +671,41 @@ func (p *parser) consumeBalancedParens() int {
 // parser. Stops at [ and ) so that the outer range aggregation parser can
 // consume the [duration] and closing ) tokens.
 func (p *parser) consumeRestOfStage() string {
-	var parts []string
+	var b strings.Builder
 	for {
 		switch p.cur.Typ {
 		case TokEOF, TokPipe, TokPipeEq, TokPipeTilde, TokPipeGt, TokBangGt,
 			TokLBracket, TokRParen:
-			return strings.Join(parts, "")
+			return b.String()
 		case TokBangEq, TokBangTilde:
-			// When parts is non-empty we've already consumed `label=value` —
+			// When b is non-empty we've already consumed `label=value` —
 			// the `!=`/`!~` here starts a NEW line filter stage; stop.
-			// When parts is empty the `!=`/`!~` IS the label filter operator
+			// When b is empty the `!=`/`!~` IS the label filter operator
 			// (e.g. `status!=200`); continue consuming.
-			if len(parts) > 0 {
-				return strings.Join(parts, "")
+			if b.Len() > 0 {
+				return b.String()
 			}
 		}
-		parts = append(parts, tokenRaw(p.cur))
+		raw := tokenRaw(p.cur)
+		// Insert a space when adjacent tokens would merge without one.
+		// Two cases:
+		//   (a) alphanumeric + alphanumeric: `200`+`and` → `200and` (unparseable)
+		//   (b) string-end + alphanumeric:   `"error"`+`or` → `"error"or` (ambiguous)
+		if b.Len() > 0 && raw != "" && isAlphanumeric(raw[0]) {
+			prev := b.String()[b.Len()-1]
+			if isAlphanumeric(prev) || prev == '"' || prev == '`' {
+				b.WriteByte(' ')
+			}
+		}
+		b.WriteString(raw)
 		p.advance()
 	}
+}
+
+// isAlphanumeric reports whether c is a letter, digit, or underscore —
+// characters that must be separated by whitespace from adjacent word tokens.
+func isAlphanumeric(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
 }
 
 // tokenRaw reconstructs the approximate source text for a token.
