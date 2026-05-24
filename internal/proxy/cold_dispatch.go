@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 func (p *Proxy) coldRouteForRequest(r *http.Request) RouteDecision {
@@ -41,9 +43,9 @@ func (p *Proxy) proxyLogQueryWithCold(w http.ResponseWriter, r *http.Request, lo
 func (p *Proxy) buildLogQueryParams(r *http.Request, logsqlQuery string) url.Values {
 	direction := r.FormValue("direction")
 	if direction == "forward" {
-		logsqlQuery += " | sort by (_time)"
+		logsqlQuery += " " + logsql.PipeSort{By: []logsql.SortField{{Field: "_time"}}}.String()
 	} else {
-		logsqlQuery += " | sort by (_time desc)"
+		logsqlQuery += " " + logsql.PipeSort{By: []logsql.SortField{{Field: "_time", Desc: true}}}.String()
 	}
 
 	params := url.Values{}

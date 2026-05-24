@@ -141,6 +141,21 @@ func TestPipeString(t *testing.T) {
 			logsql.PipeSort{By: []logsql.SortField{{Field: "ts", Desc: false}}},
 			"| sort by (ts)",
 		},
+		{
+			"sort_time_asc",
+			logsql.PipeSort{By: []logsql.SortField{{Field: "_time"}}},
+			"| sort by (_time)",
+		},
+		{
+			"sort_time_desc",
+			logsql.PipeSort{By: []logsql.SortField{{Field: "_time", Desc: true}}},
+			"| sort by (_time desc)",
+		},
+		{
+			"sort_multi_field",
+			logsql.PipeSort{By: []logsql.SortField{{Field: "app"}, {Field: "_time", Desc: true}}},
+			"| sort by (app, _time desc)",
+		},
 		{"math", logsql.PipeMath{Expr: "rate/total*100", Alias: "pct"}, "| math pct:=rate/total*100"},
 		{
 			"stats_count",

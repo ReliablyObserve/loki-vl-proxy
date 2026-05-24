@@ -19,6 +19,7 @@ import (
 	fj "github.com/valyala/fastjson"
 
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
@@ -524,7 +525,7 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 	}
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	params.Set("query", logsqlQuery+" "+logsql.PipeSort{By: []logsql.SortField{{Field: "_time", Desc: true}}}.String())
 	params.Set("limit", "25")
 	if start != "" {
 		params.Set("start", formatVLTimestamp(start))
@@ -789,7 +790,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	}
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time)")
+	params.Set("query", logsqlQuery+" "+logsql.PipeSort{By: []logsql.SortField{{Field: "_time"}}}.String())
 	if start != "" {
 		params.Set("start", formatVLTimestamp(start))
 	}
