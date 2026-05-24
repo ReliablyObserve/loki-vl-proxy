@@ -169,8 +169,12 @@ func TestDetectedFields(t *testing.T) {
 	}
 	t.Logf("detected_fields: %v", keys(labels))
 
-	// Fields embedded in JSON lines must appear.
-	for _, want := range []string{"level", "status", "duration_ms"} {
+	// Fields embedded in JSON lines must appear. VictoriaLogs maps the "level"
+	// JSON field to "detected_level" internally, so accept either name.
+	if !labels["level"] && !labels["detected_level"] {
+		t.Errorf("detected_fields: missing level field (checked both \"level\" and \"detected_level\")")
+	}
+	for _, want := range []string{"status", "duration_ms"} {
 		if !labels[want] {
 			t.Errorf("detected_fields: missing expected field %q", want)
 		}

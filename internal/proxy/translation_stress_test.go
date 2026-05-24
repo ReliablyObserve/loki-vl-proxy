@@ -21,12 +21,12 @@ func TestTranslationConcurrency(t *testing.T) {
 		`count_over_time({app="api-gw"}[5m])`,
 		`rate({namespace="prod"}[1m])`,
 		`sum by (app) (count_over_time({namespace="prod"}[5m]))`,
-		`avg_over_time({app="worker"}|logfmt|unwrap duration_ms[5m])`,
-		`max_over_time({app="api-gw"}|json|unwrap duration_ms[5m])`,
+		`avg_over_time({app="worker"} | unwrap duration_ms [5m])`,
+		`max_over_time({app="api-gw"} | unwrap duration_ms [5m])`,
 		`sum(rate({namespace="prod"}[1m])) by (app)`,
 		`label_replace(count_over_time({app="api-gw"}[5m]),"dest","$1","app","(.*)")`,
 		`rate({app="api-gw"}[1m]) / rate({app="auth"}[1m])`,
-		`sum_over_time({app="db"}|json|unwrap duration_ms[10m])`,
+		`sum_over_time({app="db"} | unwrap duration_ms [10m])`,
 	}
 
 	const goroutines = 50

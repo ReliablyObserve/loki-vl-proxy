@@ -25,10 +25,11 @@ services:
     command:
       - "-listen=:3100"
       - "-backend=http://victorialogs:9428"
-      - "-log-level=debug"
+      - "-log-level=info"
       - "-cache-ttl=5s"
       - "-patterns-enabled=true"
       - "-patterns-autodetect-from-queries=true"
+      - "-server.admin-auth-token=e2e-pipeline-test"
     depends_on:
       victorialogs:
         condition: service_healthy

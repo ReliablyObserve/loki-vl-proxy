@@ -109,9 +109,9 @@ func pushViaProxy(t *testing.T, labels map[string]string, timestamps, lines []st
 		t.Fatalf("marshal push payload: %v", err)
 	}
 
-	resp, err := http.Post(proxyURL+"/loki/api/v1/push", "application/json", strings.NewReader(string(body)))
+	resp, err := http.Post(vlURL+"/insert/loki/api/v1/push", "application/json", strings.NewReader(string(body)))
 	if err != nil {
-		t.Fatalf("push to proxy: %v", err)
+		t.Fatalf("push to VictoriaLogs: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
