@@ -18,31 +18,31 @@ jobs:
       - name: Fetch pull counts
         id: pulls
         env:
-          # PACKAGES_READ_TOKEN must be a classic PAT or fine-grained token with
-          # the read:packages scope on the ReliablyObserve org. GITHUB_TOKEN cannot
-          # satisfy this scope (returns HTTP 403 on the org packages API).
-          # Create at: https://github.com/settings/tokens
-          # Store as:  Settings → Secrets → Actions → PACKAGES_READ_TOKEN
-          PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+          # The org packages API (download_count) requires the read:packages OAuth
+          # scope. GITHUB_TOKEN returns 403. We reuse RELEASE_PR_TOKEN which is
+          # already a PAT with repo scope and likely includes read:packages.
+          # If it doesn't work, GHCR counts will show 0 with a warning — no new
+          # secret is needed.
+          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
         run: |
           set -euo pipefail
 
           # GHCR pull counts — requires read:packages scope on org packages API.
           MAIN=0
           CHART=0
-          if [ -n "${PACKAGES_READ_TOKEN}" ]; then
+          if [ -n "${RELEASE_PR_TOKEN}" ]; then
             MAIN=$(curl -fsSL \
-              -H "Authorization: Bearer ${PACKAGES_READ_TOKEN}" \
+              -H "Authorization: Bearer ${RELEASE_PR_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/orgs/ReliablyObserve/packages/container/loki-vl-proxy" \
               | jq -r '.download_count // 0' 2>/dev/null || echo 0)
             CHART=$(curl -fsSL \
-              -H "Authorization: Bearer ${PACKAGES_READ_TOKEN}" \
+              -H "Authorization: Bearer ${RELEASE_PR_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy" \
               | jq -r '.download_count // 0' 2>/dev/null || echo 0)
           else
-            echo "::warning::PACKAGES_READ_TOKEN secret not configured — GHCR pull counts will show 0. See workflow comments for setup instructions."
+            echo "::warning::RELEASE_PR_TOKEN not set — GHCR pull counts will show 0."
           fi
 
           # Docker Hub pull count — public API, no auth needed.
