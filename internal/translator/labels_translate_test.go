@@ -3,6 +3,8 @@ package translator
 import (
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 func TestTranslateLogQLWithLabels(t *testing.T) {
@@ -245,7 +247,7 @@ func TestTranslateSingleLabelFilter_DottedTripletKeyOperatorValue(t *testing.T) 
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, ok := translateSingleLabelFilter(tt.stage, tt.labelFn)
+			got, ok := translateSingleLabelFilter(tt.stage, tt.labelFn, logsql.Capabilities{})
 			if !ok {
 				t.Fatalf("expected stage to be parsed as label/operator/value triplet: %q", tt.stage)
 			}
@@ -260,7 +262,7 @@ func TestTranslateSingleLabelFilter_DottedTripletComplexMultilineValueQuoted(t *
 	// The stage value contains actual newline and tab characters (from Go "\n\t" escapes
 	// in a double-quoted string, not literal backslash-n/t).
 	stage := "code.stacktrace = `first line\n\tsecond line`"
-	got, ok := translateSingleLabelFilter(stage, nil)
+	got, ok := translateSingleLabelFilter(stage, nil, logsql.Capabilities{})
 	if !ok {
 		t.Fatalf("expected stage to be parsed as label/operator/value triplet: %q", stage)
 	}

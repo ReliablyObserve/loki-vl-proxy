@@ -434,16 +434,22 @@ func TranslateLogQL(logql string) (string, error) {
 // selectors for labels known to be _stream_fields (faster index path), and field filters
 // for everything else. If streamFields is nil or empty, all matchers use field filters.
 func TranslateLogQLWithStreamFields(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool) (string, error) {
-	return translateLogQLFull(logql, labelFn, streamFields)
+	return translateLogQLFull(logql, labelFn, streamFields, logsql.Capabilities{})
 }
 
 // TranslateLogQLWithLabels converts a LogQL query to LogsQL, applying label name
 // translation in stream selectors and label filters.
 func TranslateLogQLWithLabels(logql string, labelFn LabelTranslateFunc) (string, error) {
-	return translateLogQLFull(logql, labelFn, nil)
+	return translateLogQLFull(logql, labelFn, nil, logsql.Capabilities{})
 }
 
-func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool) (string, error) {
+// TranslateLogQLWithCapabilities converts a LogQL query to LogsQL using VL-specific
+// capability flags to select the most efficient filter constructs.
+func TranslateLogQLWithCapabilities(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool, caps logsql.Capabilities) (string, error) {
+	return translateLogQLFull(logql, labelFn, streamFields, caps)
+}
+
+func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields map[string]bool, caps logsql.Capabilities) (string, error) {
 	logql = strings.TrimSpace(logql)
 	if logql == "" {
 		return "*", nil
@@ -501,7 +507,7 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 		return "", fmt.Errorf("%s() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))", outerAgg)
 	}
 
-	return translateLogQuery(logql, labelFn, streamFields)
+	return translateLogQuery(logql, labelFn, caps, streamFields)
 }
 
 // WithoutMarkerSuffix is appended to translated queries that need without() post-processing.
@@ -557,7 +563,7 @@ func extractWithoutLabels(logql string) (cleaned string, labels []string) {
 // translateLogQuery handles log queries (non-metric).
 //
 //nolint:gocyclo // staged LogQL→LogsQL pipeline parser: stream selector, line filters, parser stages, label filters, formatters; branching is inherent to LogQL grammar coverage.
-func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ...map[string]bool) (string, error) {
+func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Capabilities, streamFields ...map[string]bool) (string, error) {
 	var sf map[string]bool
 	if len(streamFields) > 0 {
 		sf = streamFields[0]
@@ -765,7 +771,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, streamFields ..
 			stage = rewriteJSONAliasedFilter(stage, jsonAliases)
 		}
 
-		translated := translatePipelineStage(stage, labelFn)
+		translated := translatePipelineStage(stage, labelFn, caps)
 		if strings.HasPrefix(translated, errUnknownParser) {
 			parserName := strings.TrimPrefix(translated, errUnknownParser)
 			return "", fmt.Errorf("unknown pipeline stage %q — not a valid LogQL parser or label filter", parserName)
@@ -834,7 +840,7 @@ var knownParsers = map[string]bool{
 const errUnknownParser = "__ERR_UNKNOWN_PARSER__:"
 
 // translatePipelineStage converts a single LogQL pipeline stage to LogsQL.
-func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
+func translatePipelineStage(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) string {
 	stage = strings.TrimSpace(stage)
 
 	// Note: Line filters (|=, !=, |~, !~) are handled in translateLogQuery
@@ -907,16 +913,14 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 		return logsql.PipeDecolorize{}.String() // "| decolorize"
 	}
 
-	// ip() label filter — CIDR matching on label values.
-	// The proxy applies IP-range filtering as post-processing on response log streams via
-	// ipFilterStreams (see internal/proxy/postprocess.go), keyed by parsing the
-	// original LogQL query with parseIPFilter.
-	// Native VL migration requires two changes not yet done:
-	//   1. Thread logsql.Capabilities through translatePipelineStage so BestIPv4Range can
-	//      pick between ipv4_range() (v1.45+) and regexp fallback.
-	//   2. Remove the proxy-side ipFilterStreams calls once VL handles filtering natively.
+	// ip() CIDR pipeline filter — emit VL-native ipv4_range() (v1.45+) or regexp fallback.
+	if strings.HasPrefix(stage, `ip("`) && strings.HasSuffix(stage, `")`) {
+		cidr := stage[4 : len(stage)-2]
+		filter := logsql.NewBuilder(caps).BestIPv4Range("_msg", cidr)
+		return logsql.PipeFilter{Expr: filter}.String()
+	}
 	if strings.HasPrefix(stage, "ip(") {
-		return "| " + stage // proxy-side post-processing marker
+		return "| " + stage // unknown ip() form, keep as proxy marker
 	}
 
 	// Detect unknown bare-word parsers (e.g. `| badparser`).
@@ -929,7 +933,7 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 	}
 
 	// Label filters: label op value
-	return translateLabelFilter(stage, labelFn)
+	return translateLabelFilter(stage, labelFn, caps)
 }
 
 func isBareIdentifier(s string) bool {
@@ -968,12 +972,12 @@ func isNoopPatternExpression(expr string) bool {
 }
 
 // translateLabelFilter handles label comparison filters.
-func translateLabelFilter(stage string, labelFn LabelTranslateFunc) string {
-	if chained, ok := translateLogicalLabelFilterChain(stage, labelFn); ok {
+func translateLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) string {
+	if chained, ok := translateLogicalLabelFilterChain(stage, labelFn, caps); ok {
 		return chained
 	}
 
-	if translated, ok := translateSingleLabelFilter(stage, labelFn); ok {
+	if translated, ok := translateSingleLabelFilter(stage, labelFn, caps); ok {
 		return translated
 	}
 
@@ -985,7 +989,7 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc) string {
 	return "| " + stage
 }
 
-func translateLogicalLabelFilterChain(stage string, labelFn LabelTranslateFunc) (string, bool) {
+func translateLogicalLabelFilterChain(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) (string, bool) {
 	parts, ops, ok := splitLogicalStage(stage)
 	if !ok || len(parts) < 2 {
 		return "", false
@@ -993,7 +997,7 @@ func translateLogicalLabelFilterChain(stage string, labelFn LabelTranslateFunc) 
 
 	translated := make([]string, 0, len(parts))
 	for _, part := range parts {
-		item, ok := translateSingleLabelFilter(part, labelFn)
+		item, ok := translateSingleLabelFilter(part, labelFn, caps)
 		if !ok {
 			return "", false
 		}
@@ -1129,7 +1133,7 @@ func buildFieldFilterStr(field string, op logsql.FieldOp, value string, negate b
 	return core
 }
 
-func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (string, bool) {
+func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) (string, bool) {
 	// Try: label == "value", label = "value", label != "value",
 	//      label =~ "value", label !~ "value", label > value, etc.
 	for _, entry := range logqlSingleFilterOps {
@@ -1151,6 +1155,17 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 			}
 
 			value = strings.Trim(value, "\"`")
+
+			// ip() CIDR filter: label = ip("cidr") or label != ip("cidr")
+			if strings.HasPrefix(value, `ip("`) && strings.HasSuffix(value, `")`) {
+				cidr := value[4 : len(value)-2]
+				filter := logsql.NewBuilder(caps).BestIPv4Range(label, cidr)
+				if ff, ok := filter.(logsql.FieldFilter); ok && entry.entry.negate {
+					ff.Negate = true
+					return ff.String(), true
+				}
+				return filter.String(), true
+			}
 
 			// VL requires quoting for dotted field names (e.g. "service.name"):
 			// quote the label before passing it to FieldFilter so the output is
@@ -1347,7 +1362,7 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 }
 
 func canonicalLabelFilterStage(stage string, labelFn LabelTranslateFunc) (canonical string, baseKey string, ok bool) {
-	if translated, ok := translateSingleLabelFilter(stage, labelFn); ok {
+	if translated, ok := translateSingleLabelFilter(stage, labelFn, logsql.Capabilities{}); ok {
 		if fieldKey, op, ok := translatedFilterFieldOp(translated); ok {
 			// Drilldown include/exclude interactions emit equality/regex filters.
 			// Keep only the latest filter per field so repeated clicks on the same
@@ -1530,7 +1545,7 @@ func tryTranslateLabelReplace(logql string, labelFn LabelTranslateFunc) (string,
 	if len(args) != 4 {
 		return "", false
 	}
-	translated, err := translateLogQLFull(inner, labelFn, nil)
+	translated, err := translateLogQLFull(inner, labelFn, nil, logsql.Capabilities{})
 	if err != nil {
 		return "", false
 	}
@@ -1555,7 +1570,7 @@ func tryTranslateLabelJoin(logql string, labelFn LabelTranslateFunc) (string, bo
 	if len(args) < 3 { // dst + sep + at least one src
 		return "", false
 	}
-	translated, err := translateLogQLFull(inner, labelFn, nil)
+	translated, err := translateLogQLFull(inner, labelFn, nil, logsql.Capabilities{})
 	if err != nil {
 		return "", false
 	}
@@ -1641,7 +1656,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 		}
 
 		// Translate the inner log query part
-		logsqlQuery, err := translateLogQuery(query, labelFn)
+		logsqlQuery, err := translateLogQuery(query, labelFn, logsql.Capabilities{})
 		if err != nil {
 			continue
 		}
@@ -1667,7 +1682,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 			if unwrapField == "" {
 				continue
 			}
-			statsExpr := fmt.Sprintf("%s(%s)", logsqlFunc, unwrapField)
+			statsExpr := logsqlFunc + "(" + unwrapField + ")"
 			innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels)
 
 			// stdvar_over_time uses stddev + square, since VL doesn't have stdvar().
@@ -1696,7 +1711,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 				unwrapByLabelsEmbedded = byLabels != ""
 			}
 		} else {
-			result = fmt.Sprintf("%s | stats %s", logsqlQuery, logsqlFunc)
+			result = logsqlQuery + " " + logsql.PipeStats{Funcs: []logsql.StatsFuncAlias{{Func: logsql.DeferredExpr{Raw: logsqlFunc}}}}.String()
 		}
 
 		// Add by labels — skip for unwrap functions where the grouping was already
@@ -1752,7 +1767,7 @@ func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAg
 	}
 
 	innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
-	withRate := fmt.Sprintf("%s | math __lvp_inner/%s as __lvp_rate", innerAliased, strconv.FormatFloat(seconds, 'f', -1, 64))
+	withRate := innerAliased + " | math __lvp_inner/" + strconv.FormatFloat(seconds, 'f', -1, 64) + " as __lvp_rate"
 
 	if outerAgg != "" && byLabels == "" {
 		if outerResult, ok := applyOuterAggregation(withRate, outerAgg, "__lvp_rate"); ok {
@@ -2325,7 +2340,7 @@ func tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels string, labelFn 
 	}
 
 	// Translate the inner log query
-	logsqlQuery, err := translateLogQuery(query, labelFn)
+	logsqlQuery, err := translateLogQuery(query, labelFn, logsql.Capabilities{})
 	if err != nil {
 		return "", false
 	}
@@ -2336,7 +2351,7 @@ func tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels string, labelFn 
 		return "", false
 	}
 
-	statsExpr := fmt.Sprintf("quantile(%s, %s)", phi, unwrapField)
+	statsExpr := "quantile(" + phi + ", " + unwrapField + ")"
 	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, false, "")
 
 	if outerAgg != "" && byLabels == "" {

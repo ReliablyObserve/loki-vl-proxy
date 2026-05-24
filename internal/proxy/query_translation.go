@@ -375,15 +375,17 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 	labelFn := p.labelTranslator.ToVL
 	streamFieldsMap := p.streamFieldsMap
 	p.configMu.RUnlock()
+
+	p.backendVersionMu.RLock()
+	semver := p.backendVersionSemver
+	p.backendVersionMu.RUnlock()
+	caps := logsql.CapabilitiesFor(semver)
+
 	var (
 		translated string
 		err        error
 	)
-	if streamFieldsMap != nil {
-		translated, err = translator.TranslateLogQLWithStreamFields(normalized, labelFn, streamFieldsMap)
-	} else {
-		translated, err = translator.TranslateLogQLWithLabels(normalized, labelFn)
-	}
+	translated, err = translator.TranslateLogQLWithCapabilities(normalized, labelFn, streamFieldsMap, caps)
 	if err != nil {
 		if p.metrics != nil {
 			p.metrics.RecordTranslationError()

@@ -148,9 +148,6 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	if strings.Contains(logqlQuery, "decolorize") {
 		decolorizeStreams(streams)
 	}
-	if label, cidr, ok := parseIPFilter(logqlQuery); ok {
-		streams = ipFilterStreams(streams, label, cidr)
-	}
 	if tmpl := extractLineFormatTemplate(logqlQuery); tmpl != "" {
 		applyLineFormatTemplate(streams, tmpl)
 	}
