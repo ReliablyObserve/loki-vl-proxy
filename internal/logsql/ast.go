@@ -451,6 +451,7 @@ type DeferredExpr struct {
 func (d DeferredExpr) String() string { return d.Raw }
 func (d DeferredExpr) expr()          {}
 func (d DeferredExpr) filterExpr()    {}
+func (d DeferredExpr) statsFunc()     {}
 
 // ---------------------------------------------------------------------------
 // Core pipe types
@@ -1066,8 +1067,10 @@ func pipeStatsString(keyword string, by []GroupKey, funcs []StatsFuncAlias) stri
 			b.WriteString(", ")
 		}
 		b.WriteString(fa.Func.String())
-		b.WriteString(" as ")
-		b.WriteString(fa.Alias)
+		if fa.Alias != "" {
+			b.WriteString(" as ")
+			b.WriteString(fa.Alias)
+		}
 	}
 	return b.String()
 }

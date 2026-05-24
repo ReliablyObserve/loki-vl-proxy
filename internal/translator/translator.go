@@ -1769,19 +1769,31 @@ func buildStatsQuery(baseQuery, statsExpr, byLabels, alias string) string {
 	if query == "" {
 		query = "*"
 	}
-	switch byLabels {
-	case emptyByGrouping:
-		// Explicit by () — emit the clause so the proxy can detect it and return one series.
-		query = fmt.Sprintf("%s | stats by () %s", query, statsExpr)
-	case "":
-		query = fmt.Sprintf("%s | stats %s", query, statsExpr)
-	default:
-		query = fmt.Sprintf("%s | stats by (%s) %s", query, byLabels, statsExpr)
+	// emptyByGrouping requires explicit "by ()" — PipeStats can't represent
+	// an empty-but-explicit grouping without a dedicated struct field.
+	if byLabels == emptyByGrouping {
+		q := fmt.Sprintf("%s | stats by () %s", query, statsExpr)
+		if alias != "" {
+			q += " as " + alias
+		}
+		return q
 	}
-	if alias != "" {
-		query += " as " + alias
+
+	fn := logsql.StatsFuncAlias{
+		Func:  logsql.DeferredExpr{Raw: statsExpr},
+		Alias: alias,
 	}
-	return query
+	var by []logsql.GroupKey
+	if byLabels != "" {
+		for _, lbl := range strings.Split(byLabels, ",") {
+			lbl = strings.TrimSpace(lbl)
+			if lbl != "" {
+				by = append(by, logsql.GroupKey{Field: lbl})
+			}
+		}
+	}
+	pipe := logsql.PipeStats{By: by, Funcs: []logsql.StatsFuncAlias{fn}}
+	return query + " " + pipe.String()
 }
 
 func outerAggregationStatsFn(outerAgg string) (statsFn string, pow2 bool) {
