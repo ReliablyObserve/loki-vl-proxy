@@ -1100,8 +1100,8 @@ func splitLogicalStage(stage string) ([]string, []string, bool) {
 type logqlSingleFilterOp struct {
 	vlOp   logsql.FieldOp
 	negate bool
-	isRe   bool  // regex: value is a regexp pattern (QuotePattern semantics)
-	isComp bool  // comparison: value is not quoted (>, >=, <, <=)
+	isRe   bool // regex: value is a regexp pattern (QuotePattern semantics)
+	isComp bool // comparison: value is not quoted (>, >=, <, <=)
 }
 
 var logqlSingleFilterOps = []struct {
@@ -1306,7 +1306,6 @@ func splitCSV(s string) []string {
 	result = append(result, s[start:])
 	return result
 }
-
 
 func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (string, bool) {
 	rawCandidate := normalizeFieldIdentifier(stage)

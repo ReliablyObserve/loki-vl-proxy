@@ -1284,7 +1284,10 @@ func stripFieldComparisonStages(query string) string {
 	}
 	out := filterPipeline(lq, func(s logqlpkg.Stage) bool {
 		lfs, ok := s.(*logqlpkg.LabelFilterStage)
-		return !(ok && labelFilterCompareRE.MatchString(lfs.Raw))
+		if ok && labelFilterCompareRE.MatchString(lfs.Raw) {
+			return false
+		}
+		return true
 	})
 	return out.String()
 }
