@@ -159,6 +159,19 @@ jobs:
           OWNER_LC="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
           helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://ghcr.io/${OWNER_LC}/charts"
 
+      - name: Login Helm to Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | helm registry login registry-1.docker.io \
+            --username "${{ secrets.DOCKERHUB_USERNAME }}" \
+            --password-stdin
+
+      - name: Publish Helm chart to Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          helm push "dist/loki-vl-proxy-${VERSION}.tgz" "oci://registry-1.docker.io/reliablyobserve/charts"
+
       - name: Ensure GHCR Helm chart package is public
         env:
           GH_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN }}
