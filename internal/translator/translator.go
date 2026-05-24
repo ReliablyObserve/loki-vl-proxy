@@ -1194,30 +1194,52 @@ func splitLogicalStage(stage string) ([]string, []string, bool) {
 	return parts, ops, len(parts) > 1
 }
 
+// logqlSingleFilterOp maps a LogQL operator string to a FieldOp constant and
+// whether the operator implies negation. Operators are listed in order of
+// decreasing specificity so that "!~" is matched before "!" and "=" etc.
+type logqlSingleFilterOp struct {
+	vlOp   logsql.FieldOp
+	negate bool
+	isRe   bool  // regex: value is a regexp pattern (QuotePattern semantics)
+	isComp bool  // comparison: value is not quoted (>, >=, <, <=)
+}
+
+var logqlSingleFilterOps = []struct {
+	logql string
+	entry logqlSingleFilterOp
+}{
+	{"==", logqlSingleFilterOp{logsql.FieldOpExact, false, false, false}},
+	{"!=", logqlSingleFilterOp{logsql.FieldOpExact, true, false, false}},
+	{"=~", logqlSingleFilterOp{logsql.FieldOpRegexp, false, true, false}},
+	{"!~", logqlSingleFilterOp{logsql.FieldOpRegexp, true, true, false}},
+	{">=", logqlSingleFilterOp{logsql.FieldOpGTE, false, false, true}},
+	{"<=", logqlSingleFilterOp{logsql.FieldOpLTE, false, false, true}},
+	{">", logqlSingleFilterOp{logsql.FieldOpGT, false, false, true}},
+	{"<", logqlSingleFilterOp{logsql.FieldOpLT, false, false, true}},
+	{"=", logqlSingleFilterOp{logsql.FieldOpExact, false, false, false}},
+}
+
+// buildFieldFilterStr builds a LogsQL field filter string using logsql.FieldFilter
+// for all value quoting/formatting, but uses the legacy "-" negation prefix
+// (rather than "NOT ") so downstream string-matching in canonicalLabelFilterStage
+// and translatedFilterFieldOp continues to work without change.
+func buildFieldFilterStr(field string, op logsql.FieldOp, value string, negate bool) string {
+	ff := logsql.FieldFilter{Field: field, Op: op, Value: value}
+	core := ff.String()
+	if negate {
+		return "-" + core
+	}
+	return core
+}
+
 func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (string, bool) {
 	// Try: label == "value", label = "value", label != "value",
 	//      label =~ "value", label !~ "value", label > value, etc.
-	ops := []struct {
-		logql  string
-		logsql string
-		isRe   bool
-	}{
-		{"==", ":=", false},
-		{"!=", "-:=", false},
-		{"=~", ":~", true},
-		{"!~", "-:~", true},
-		{">=", ":>=", false},
-		{"<=", ":<=", false},
-		{">", ":>", false},
-		{"<", ":<", false},
-		{"=", ":=", false},
-	}
-
-	for _, op := range ops {
-		idx := strings.Index(stage, op.logql)
+	for _, entry := range logqlSingleFilterOps {
+		idx := strings.Index(stage, entry.logql)
 		if idx > 0 {
 			label := sanitizeFieldIdentifier(stage[:idx])
-			value := strings.TrimSpace(stage[idx+len(op.logql):])
+			value := strings.TrimSpace(stage[idx+len(entry.logql):])
 			if label == "" {
 				return "", false
 			}
@@ -1232,39 +1254,38 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc) (strin
 			}
 
 			value = strings.Trim(value, "\"`")
-			label = quoteLogsQLFieldNameIfNeeded(label)
 
-			if op.isRe {
-				// Regex values need quotes in VL
-				if strings.HasPrefix(op.logsql, "-") {
-					return fmt.Sprintf(`-%s%s"%s"`, label, op.logsql[1:], value), true
-				}
-				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value), true
+			// VL requires quoting for dotted field names (e.g. "service.name"):
+			// quote the label before passing it to FieldFilter so the output is
+			// "service.name":="foo" rather than service.name:="foo".
+			if strings.Contains(label, ".") {
+				label = `"` + label + `"`
 			}
+
+			if entry.entry.isComp {
+				// Comparison filters (>, >=, <, <=) do not quote the value.
+				return buildFieldFilterStr(label, entry.entry.vlOp, value, entry.entry.negate), true
+			}
+
 			if value == "" {
 				// detected_level="" means "no level detected": match log entries where
 				// the level field is absent or has an empty value. VL's -field:* does
 				// exactly this (absent OR empty), while field:="" only matches explicit
 				// empty strings and misses absent fields entirely.
-				if label == "level" && !strings.HasPrefix(op.logsql, "-") {
+				if label == "level" && !entry.entry.negate {
 					return `-level:*`, true
 				}
-				if strings.HasPrefix(op.logsql, "-") {
+				if entry.entry.negate {
+					// field:!"" means "field exists and is non-empty"; this is not
+					// directly representable by FieldFilter, so we keep the literal form.
 					return fmt.Sprintf(`%s:!""`, label), true
 				}
-				return fmt.Sprintf(`%s:=""`, label), true
+				// Empty equality: use FieldFilter with FieldOpExact and empty value
+				// which produces field:="" — equivalent to the previous explicit form.
+				return buildFieldFilterStr(label, logsql.FieldOpExact, "", false), true
 			}
-			formattedValue := value
-			if op.logsql == ":=" || op.logsql == "-:=" {
-				// Equality filters can carry arbitrary string payloads
-				// (for example stacktraces). Keep simple tokens bare and
-				// quote/escape complex values to preserve valid LogsQL.
-				formattedValue = formatLogsQLEqualityValue(value)
-			}
-			if strings.HasPrefix(op.logsql, "-") {
-				return fmt.Sprintf("-%s%s%s", label, op.logsql[1:], formattedValue), true
-			}
-			return fmt.Sprintf("%s%s%s", label, op.logsql, formattedValue), true
+
+			return buildFieldFilterStr(label, entry.entry.vlOp, value, entry.entry.negate), true
 		}
 	}
 
@@ -1386,57 +1407,6 @@ func splitCSV(s string) []string {
 	return result
 }
 
-// TODO: replace with logsql.QuoteValue once FieldFilter migration is complete
-func quoteLogsQLFieldNameIfNeeded(label string) string {
-	if label == "" {
-		return label
-	}
-	for _, r := range label {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
-			continue
-		}
-		return `"` + label + `"`
-	}
-	return label
-}
-
-// TODO: replace with logsql.QuoteValue once FieldFilter migration is complete
-func formatLogsQLEqualityValue(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return `""`
-	}
-	if logsQLEqualityValueNeedsQuoting(value) {
-		return strconv.Quote(value)
-	}
-	return value
-}
-
-// TODO: replace with logsql.QuoteValue once FieldFilter migration is complete
-func logsQLEqualityValueNeedsQuoting(value string) bool {
-	if value == "" {
-		return true
-	}
-	hasAlnum := false
-	for _, r := range value {
-		if unicode.IsSpace(r) {
-			return true
-		}
-		if (r >= 'a' && r <= 'z') ||
-			(r >= 'A' && r <= 'Z') ||
-			(r >= '0' && r <= '9') {
-			hasAlnum = true
-			continue
-		}
-		if r == '_' || r == '-' || r == '.' || r == '/' {
-			continue
-		}
-		return true
-	}
-	// Values made entirely of punctuation (e.g. "/" or "-") are compound tokens
-	// in VL's parser and must be quoted. Require at least one alphanumeric character.
-	return !hasAlnum
-}
 
 func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (string, bool) {
 	rawCandidate := normalizeFieldIdentifier(stage)
@@ -1471,7 +1441,13 @@ func translateMalformedDottedStage(stage string, labelFn LabelTranslateFunc) (st
 		// impossible field matcher such as "k8s.cluster":!"".
 		return fmt.Sprintf(`~"%s"`, regexp.QuoteMeta(candidate+".")), true
 	}
-	return fmt.Sprintf(`%s:!""`, quoteLogsQLFieldNameIfNeeded(candidate)), true
+	// Dotted field names must be quoted in VL; the :!"" form (non-empty check)
+	// is not representable via FieldFilter, so we keep the literal format here.
+	quotedField := candidate
+	if strings.Contains(candidate, ".") {
+		quotedField = `"` + candidate + `"`
+	}
+	return fmt.Sprintf(`%s:!""`, quotedField), true
 }
 
 func canonicalLabelFilterStage(stage string, labelFn LabelTranslateFunc) (canonical string, baseKey string, ok bool) {
@@ -2723,26 +2699,27 @@ func splitStreamMatchers(s string) []string {
 	return matchers
 }
 
+// streamMatcherOps maps LogQL stream-selector operators to FieldOp constants.
+// Only the four operators valid in stream selectors are listed here.
+var streamMatcherOps = []struct {
+	logql  string
+	vlOp   logsql.FieldOp
+	negate bool
+	isRe   bool
+}{
+	{"!~", logsql.FieldOpRegexp, true, true},
+	{"=~", logsql.FieldOpRegexp, false, true},
+	{"!=", logsql.FieldOpExact, true, false},
+	{"=", logsql.FieldOpExact, false, false},
+}
+
 // streamMatcherToFieldFilter converts a stream matcher like `level="error"`
 // to a LogsQL field filter like `level:="error"`.
 // Returns "" if the matcher can't be converted (shouldn't happen).
 func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) string {
 	matcher = strings.TrimSpace(matcher)
 
-	// Try operators in order of specificity
-	ops := []struct {
-		logql  string
-		logsql string
-		neg    bool
-		isRe   bool // regex values need quotes preserved
-	}{
-		{"!~", ":~", true, true},
-		{"=~", ":~", false, true},
-		{"!=", ":=", true, false},
-		{"=", ":=", false, false},
-	}
-
-	for _, op := range ops {
+	for _, op := range streamMatcherOps {
 		idx := strings.Index(matcher, op.logql)
 		if idx > 0 {
 			origLabel := sanitizeFieldIdentifier(matcher[:idx])
@@ -2754,7 +2731,12 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 
 			// Apply label name translation (e.g., service_name → service.name)
 			if origLabel == "service_name" {
-				return serviceNameMatcherFilter(op.logsql, value, op.neg, op.isRe)
+				// logsql op string for serviceNameMatcherFilter: ":=" or ":~"
+				vlOpStr := ":="
+				if op.isRe {
+					vlOpStr = ":~"
+				}
+				return serviceNameMatcherFilter(vlOpStr, value, op.negate, op.isRe)
 			}
 			// detected_level is a synthetic Loki label synthesized by the proxy.
 			// VL stores the field as "level"; translate unconditionally before
@@ -2769,40 +2751,29 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 				}
 			}
 
-			// VL requires quoting for dotted field names
+			// VL requires quoting for dotted field names. Quote the field name
+			// before passing to buildFieldFilterStr so FieldFilter uses it as-is.
 			if strings.Contains(label, ".") {
 				label = `"` + label + `"`
 			}
 
-			if op.isRe {
-				value = strings.Trim(value, "\"`")
-				if op.neg {
-					return fmt.Sprintf(`-%s%s"%s"`, label, op.logsql, value)
-				}
-				return fmt.Sprintf(`%s%s"%s"`, label, op.logsql, value)
-			}
-
 			value = strings.Trim(value, "\"`")
-			if value == "" {
+
+			if value == "" && !op.isRe {
 				// detected_level="" in the stream selector means "no level detected":
 				// match entries where level is absent or empty. -level:* covers both
 				// cases; level:="" would only match explicit empty strings.
-				if label == "level" && !op.neg {
+				if label == "level" && !op.negate {
 					return `-level:*`
 				}
-				if op.neg {
+				if op.negate {
+					// field:!"" means "field exists and is non-empty"; keep literal form.
 					return fmt.Sprintf(`%s:!""`, label)
 				}
-				return fmt.Sprintf(`%s:=""`, label)
+				return buildFieldFilterStr(label, logsql.FieldOpExact, "", false)
 			}
-			formattedValue := value
-			if op.logsql == ":=" {
-				formattedValue = formatLogsQLEqualityValue(value)
-			}
-			if op.neg {
-				return fmt.Sprintf("-%s%s%s", label, op.logsql, formattedValue)
-			}
-			return fmt.Sprintf("%s%s%s", label, op.logsql, formattedValue)
+
+			return buildFieldFilterStr(label, op.vlOp, value, op.negate)
 		}
 	}
 	return ""
@@ -2861,21 +2832,20 @@ var syntheticServiceNameFields = []string{
 
 func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
 	value = strings.TrimSpace(strings.Trim(value, "\"`"))
-	formattedValue := value
-	if !isRegex {
-		formattedValue = formatLogsQLEqualityValue(value)
-	}
 	parts := make([]string, 0, len(syntheticServiceNameFields))
 	for _, field := range syntheticServiceNameFields {
+		// Quote dotted field names so VL can parse them.
 		name := field
 		if strings.Contains(name, ".") {
 			name = `"` + name + `"`
 		}
 		if isRegex {
+			// Regex values use QuotePattern (preserves backslash escapes).
+			quotedVal := logsql.QuotePattern(value)
 			if neg {
-				parts = append(parts, fmt.Sprintf(`-%s%s"%s"`, name, op, value))
+				parts = append(parts, fmt.Sprintf(`-%s%s%s`, name, op, quotedVal))
 			} else {
-				parts = append(parts, fmt.Sprintf(`%s%s"%s"`, name, op, value))
+				parts = append(parts, fmt.Sprintf(`%s%s%s`, name, op, quotedVal))
 			}
 			continue
 		}
@@ -2883,15 +2853,13 @@ func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
 			if neg {
 				parts = append(parts, fmt.Sprintf(`%s:!""`, name))
 			} else {
-				parts = append(parts, fmt.Sprintf(`%s:=""`, name))
+				// Use FieldFilter for correct empty-equality formatting: field:=""
+				parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpExact, "", false))
 			}
 			continue
 		}
-		if neg {
-			parts = append(parts, fmt.Sprintf(`-%s%s%s`, name, op, formattedValue))
-		} else {
-			parts = append(parts, fmt.Sprintf(`%s%s%s`, name, op, formattedValue))
-		}
+		// Use FieldFilter for correct value quoting via logsql.QuoteValue.
+		parts = append(parts, buildFieldFilterStr(name, logsql.FieldOpExact, value, neg))
 	}
 	if value == "" && !isRegex {
 		if neg {

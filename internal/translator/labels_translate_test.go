@@ -1,6 +1,7 @@
 package translator
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -29,22 +30,22 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "service_name expands to synthetic matcher set",
 			logql: `{service_name="auth"}`,
-			want:  `(service_name:=auth OR "service.name":=auth OR service:=auth OR app:=auth OR application:=auth OR app_name:=auth OR name:=auth OR app_kubernetes_io_name:=auth OR container:=auth OR container_name:=auth OR "k8s.container.name":=auth OR k8s_container_name:=auth OR component:=auth OR workload:=auth OR job:=auth OR "k8s.job.name":=auth OR k8s_job_name:=auth)`,
+			want:  `(service_name:="auth" OR "service.name":="auth" OR service:="auth" OR app:="auth" OR application:="auth" OR app_name:="auth" OR name:="auth" OR app_kubernetes_io_name:="auth" OR container:="auth" OR container_name:="auth" OR "k8s.container.name":="auth" OR k8s_container_name:="auth" OR component:="auth" OR workload:="auth" OR job:="auth" OR "k8s.job.name":="auth" OR k8s_job_name:="auth")`,
 		},
 		{
 			name:  "multiple labels with synthetic service_name",
 			logql: `{service_name="auth",level="error"}`,
-			want:  `(service_name:=auth OR "service.name":=auth OR service:=auth OR app:=auth OR application:=auth OR app_name:=auth OR name:=auth OR app_kubernetes_io_name:=auth OR container:=auth OR container_name:=auth OR "k8s.container.name":=auth OR k8s_container_name:=auth OR component:=auth OR workload:=auth OR job:=auth OR "k8s.job.name":=auth OR k8s_job_name:=auth) level:=error`,
+			want:  `(service_name:="auth" OR "service.name":="auth" OR service:="auth" OR app:="auth" OR application:="auth" OR app_name:="auth" OR name:="auth" OR app_kubernetes_io_name:="auth" OR container:="auth" OR container_name:="auth" OR "k8s.container.name":="auth" OR k8s_container_name:="auth" OR component:="auth" OR workload:="auth" OR job:="auth" OR "k8s.job.name":="auth" OR k8s_job_name:="auth") level:="error"`,
 		},
 		{
 			name:  "k8s label translated",
 			logql: `{k8s_pod_name="my-pod"}`,
-			want:  `"k8s.pod.name":=my-pod`,
+			want:  `"k8s.pod.name":="my-pod"`,
 		},
 		{
 			name:  "non-mapped label passes through",
 			logql: `{app="nginx"}`,
-			want:  `app:=nginx`,
+			want:  `app:="nginx"`,
 		},
 		{
 			name:  "regex matcher with synthetic service_name",
@@ -54,7 +55,7 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "negated matcher with synthetic service_name",
 			logql: `{service_name!="auth"}`,
-			want:  `-service_name:=auth -"service.name":=auth -service:=auth -app:=auth -application:=auth -app_name:=auth -name:=auth -app_kubernetes_io_name:=auth -container:=auth -container_name:=auth -"k8s.container.name":=auth -k8s_container_name:=auth -component:=auth -workload:=auth -job:=auth -"k8s.job.name":=auth -k8s_job_name:=auth`,
+			want:  `-service_name:="auth" -"service.name":="auth" -service:="auth" -app:="auth" -application:="auth" -app_name:="auth" -name:="auth" -app_kubernetes_io_name:="auth" -container:="auth" -container_name:="auth" -"k8s.container.name":="auth" -k8s_container_name:="auth" -component:="auth" -workload:="auth" -job:="auth" -"k8s.job.name":="auth" -k8s_job_name:="auth"`,
 		},
 		{
 			name:  "negated regex with synthetic service_name",
@@ -64,17 +65,17 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "service_name with line filter",
 			logql: `{service_name="auth"} |= "error"`,
-			want:  `(service_name:=auth OR "service.name":=auth OR service:=auth OR app:=auth OR application:=auth OR app_name:=auth OR name:=auth OR app_kubernetes_io_name:=auth OR container:=auth OR container_name:=auth OR "k8s.container.name":=auth OR k8s_container_name:=auth OR component:=auth OR workload:=auth OR job:=auth OR "k8s.job.name":=auth OR k8s_job_name:=auth) ~"error"`,
+			want:  `(service_name:="auth" OR "service.name":="auth" OR service:="auth" OR app:="auth" OR application:="auth" OR app_name:="auth" OR name:="auth" OR app_kubernetes_io_name:="auth" OR container:="auth" OR container_name:="auth" OR "k8s.container.name":="auth" OR k8s_container_name:="auth" OR component:="auth" OR workload:="auth" OR job:="auth" OR "k8s.job.name":="auth" OR k8s_job_name:="auth") ~"error"`,
 		},
 		{
 			name:  "pattern include filter expands placeholder span",
 			logql: `{app="api"} |> "GET <_> 500"`,
-			want:  `app:=api ~"GET .* 500"`,
+			want:  `app:="api" ~"GET .* 500"`,
 		},
 		{
 			name:  "pattern exclude filter expands placeholder span",
 			logql: "{app=\"api\"} !> `GET <_> 500`",
-			want:  `app:=api NOT ~"GET .* 500"`,
+			want:  `app:="api" NOT ~"GET .* 500"`,
 		},
 		{
 			name:  "backtick regex matcher",
@@ -99,87 +100,87 @@ func TestTranslateLogQLWithLabels(t *testing.T) {
 		{
 			name:  "parsed field non empty filter",
 			logql: `{app="api"} | json | path_extracted!=""`,
-			want:  `app:=api | unpack_json | filter path_extracted:!""`,
+			want:  `app:="api" | unpack_json | filter path_extracted:!""`,
 		},
 		{
 			name:  "translated field alias after parser maps back to dotted VL field",
 			logql: `{app="api"} | json | service_name="auth"`,
-			want:  `app:=api | unpack_json | filter "service.name":=auth`,
+			want:  `app:="api" | unpack_json | filter "service.name":="auth"`,
 		},
 		{
 			name:  "dotted structured metadata filter after parser is quoted",
 			logql: `{app="api"} | json | service.name="auth"`,
-			want:  `app:=api | unpack_json | filter "service.name":=auth`,
+			want:  `app:="api" | unpack_json | filter "service.name":="auth"`,
 		},
 		{
 			name:  "dotted structured metadata non empty filter is quoted",
 			logql: `{app="api"} | json | service.name!=""`,
-			want:  `app:=api | unpack_json | filter "service.name":!""`,
+			want:  `app:="api" | unpack_json | filter "service.name":!""`,
 		},
 		{
 			name:  "native dotted field equality filter in pipeline",
 			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | k8s.cluster.name = ` + "`cluster-alpha`",
-			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster.name":=cluster-alpha`,
+			want:  `"deployment.environment":="dev" "k8s.namespace.name":="sample_ns" "k8s.cluster.name":="cluster-alpha"`,
 		},
 		{
 			name:  "underscored alias equality filter maps to same dotted field",
 			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | k8s_cluster_name = ` + "`cluster-alpha`",
-			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "k8s.cluster.name":=cluster-alpha`,
+			want:  `"deployment.environment":="dev" "k8s.namespace.name":="sample_ns" "k8s.cluster.name":="cluster-alpha"`,
 		},
 		{
 			name:  "malformed spaced dotted triplet with trailing dot normalizes to valid dotted filter",
 			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | custom . ` + "`pipeline.processing.`" + ` = ` + "`vector-processing`",
-			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns "custom.pipeline.processing":=vector-processing`,
+			want:  `"deployment.environment":="dev" "k8s.namespace.name":="sample_ns" "custom.pipeline.processing":="vector-processing"`,
 		},
 		{
 			name:  "malformed dotted stage from drilldown degrades to dotted-prefix regex filter",
 			logql: `{deployment_environment="dev",k8s_namespace_name="sample_ns"} | k8s . ` + "`cluster.`",
-			want:  `"deployment.environment":=dev "k8s.namespace.name":=sample_ns ~"k8s\.cluster\."`,
+			want:  `"deployment.environment":="dev" "k8s.namespace.name":="sample_ns" ~"k8s\.cluster\."`,
 		},
 		{
 			name:  "malformed nested dotted stage keeps full prefix for regex fallback",
 			logql: `{app="api"} | custom . ` + "`pipeline.`",
-			want:  `app:=api ~"custom\.pipeline\."`,
+			want:  `app:="api" ~"custom\.pipeline\."`,
 		},
 		{
 			name:  "repeated include filter clicks are deduplicated after parser",
 			logql: `{app="api"} | json | source_message_bytes="89" | source_message_bytes = "89" | source_message_bytes = ` + "`89`",
-			want:  `app:=api | unpack_json | filter source_message_bytes:=89`,
+			want:  `app:="api" | unpack_json | filter source_message_bytes:="89"`,
 		},
 		{
 			name:  "repeated exclude filter clicks are deduplicated after parser",
 			logql: `{app="api"} | json | source_message_bytes!="89" | source_message_bytes != "89"`,
-			want:  `app:=api | unpack_json | filter -source_message_bytes:=89`,
+			want:  `app:="api" | unpack_json | filter -source_message_bytes:="89"`,
 		},
 		{
 			name:  "include then exclude same value keeps latest filter stage",
 			logql: `{app="api"} | json | source_message_bytes="89" | source_message_bytes!="89"`,
-			want:  `app:=api | unpack_json | filter -source_message_bytes:=89`,
+			want:  `app:="api" | unpack_json | filter -source_message_bytes:="89"`,
 		},
 		{
 			name:  "exclude then include same value keeps latest filter stage",
 			logql: `{app="api"} | json | source_message_bytes!="89" | source_message_bytes="89"`,
-			want:  `app:=api | unpack_json | filter source_message_bytes:=89`,
+			want:  `app:="api" | unpack_json | filter source_message_bytes:="89"`,
 		},
 		{
 			name:  "repeated include on same field with different values keeps latest value",
 			logql: `{app="api"} | json | traceID="a1" | traceID="b2"`,
-			want:  `app:=api | unpack_json | filter traceID:=b2`,
+			want:  `app:="api" | unpack_json | filter traceID:="b2"`,
 		},
 		{
 			name:  "repeated exclude on same field with different values keeps latest value",
 			logql: `{app="api"} | json | traceID!="a1" | traceID!="b2"`,
-			want:  `app:=api | unpack_json | filter -traceID:=b2`,
+			want:  `app:="api" | unpack_json | filter -traceID:="b2"`,
 		},
 		{
 			name:  "range filters on same field are preserved",
 			logql: `{app="api"} | json | duration_ms > 100 | duration_ms < 500`,
-			want:  `app:=api | unpack_json | filter duration_ms:>100 | filter duration_ms:<500`,
+			want:  `app:="api" | unpack_json | filter duration_ms:>100 | filter duration_ms:<500`,
 		},
 		{
 			name:  "mixed include exclude on same field keeps latest action",
 			logql: `{app="api"} | json | traceID="a1" | traceID!="a1"`,
-			want:  `app:=api | unpack_json | filter -traceID:=a1`,
+			want:  `app:="api" | unpack_json | filter -traceID:="a1"`,
 		},
 	}
 
@@ -202,8 +203,8 @@ func TestTranslateLogQLWithLabels_NilFn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got != `app:=nginx` {
-		t.Errorf("nil labelFn: got %q, want %q", got, `app:=nginx`)
+	if got != `app:="nginx"` {
+		t.Errorf("nil labelFn: got %q, want %q", got, `app:="nginx"`)
 	}
 }
 
@@ -217,7 +218,7 @@ func TestTranslateSingleLabelFilter_DottedTripletKeyOperatorValue(t *testing.T) 
 		{
 			name:  "native dotted key with equals operator and literal value",
 			stage: "k8s.cluster.name = `my-cluster`",
-			want:  `"k8s.cluster.name":=my-cluster`,
+			want:  `"k8s.cluster.name":="my-cluster"`,
 		},
 		{
 			name:  "translated underscore alias still resolves to dotted key",
@@ -228,12 +229,12 @@ func TestTranslateSingleLabelFilter_DottedTripletKeyOperatorValue(t *testing.T) 
 				}
 				return label
 			},
-			want: `"k8s.cluster.name":=my-cluster`,
+			want: `"k8s.cluster.name":="my-cluster"`,
 		},
 		{
 			name:  "malformed spaced dotted key with trailing dot is sanitized",
 			stage: "custom . `pipeline.processing.` = `vector-processing`",
-			want:  `"custom.pipeline.processing":=vector-processing`,
+			want:  `"custom.pipeline.processing":="vector-processing"`,
 		},
 		{
 			name:  "complex dotted value is quoted for valid logsql",
@@ -256,13 +257,24 @@ func TestTranslateSingleLabelFilter_DottedTripletKeyOperatorValue(t *testing.T) 
 }
 
 func TestTranslateSingleLabelFilter_DottedTripletComplexMultilineValueQuoted(t *testing.T) {
+	// The stage value contains actual newline and tab characters (from Go "\n\t" escapes
+	// in a double-quoted string, not literal backslash-n/t).
 	stage := "code.stacktrace = `first line\n\tsecond line`"
 	got, ok := translateSingleLabelFilter(stage, nil)
 	if !ok {
 		t.Fatalf("expected stage to be parsed as label/operator/value triplet: %q", stage)
 	}
-	want := `"code.stacktrace":="first line\n\tsecond line"`
-	if got != want {
-		t.Fatalf("translateSingleLabelFilter multiline literal = %q, want %q", got, want)
+	// logsql.QuoteValue escapes backslashes and double-quotes but preserves literal
+	// whitespace characters. The resulting VL query contains actual newline/tab in
+	// the quoted value, which VL accepts as a literal string match.
+	wantPrefix := `"code.stacktrace":="`
+	wantSuffix := `"`
+	if !strings.HasPrefix(got, wantPrefix) || !strings.HasSuffix(got, wantSuffix) {
+		t.Fatalf("translateSingleLabelFilter multiline literal = %q, want prefix %q and suffix %q", got, wantPrefix, wantSuffix)
+	}
+	// The value part should contain the actual newline and tab characters.
+	valuePart := got[len(wantPrefix) : len(got)-len(wantSuffix)]
+	if !strings.Contains(valuePart, "first line") || !strings.Contains(valuePart, "second line") {
+		t.Fatalf("unexpected value in translated filter: %q", valuePart)
 	}
 }

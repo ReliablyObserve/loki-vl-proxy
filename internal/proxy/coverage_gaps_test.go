@@ -178,7 +178,7 @@ func TestDetectedFields_BareSelectorWithParserStagesStillFindsFields(t *testing.
 				t.Fatalf("parse form: %v", err)
 			}
 			got := r.Form.Get("query")
-			if !strings.Contains(got, `service_name:=otel-auth-service`) {
+			if !strings.Contains(got, `service_name:="otel-auth-service"`) {
 				t.Fatalf("expected translated bare selector after parser stripping, got %q", got)
 			}
 			w.Header().Set("Content-Type", "application/json")
@@ -189,7 +189,7 @@ func TestDetectedFields_BareSelectorWithParserStagesStillFindsFields(t *testing.
 				t.Fatalf("parse form: %v", err)
 			}
 			got := r.Form.Get("query")
-			if !strings.Contains(got, `service_name:=otel-auth-service`) {
+			if !strings.Contains(got, `service_name:="otel-auth-service"`) {
 				t.Fatalf("expected translated bare selector after parser stripping, got %q", got)
 			}
 			w.Write([]byte(`{"_time":"2026-04-04T17:18:49.971082Z","_msg":"{\"msg\":\"ok\"}","_stream":"{service.name=\"otel-auth-service\",service_name=\"otel-auth-service\"}","service.name":"otel-auth-service","service_name":"otel-auth-service"}` + "\n"))
@@ -229,13 +229,13 @@ func TestIsStatsQuery_Comprehensive(t *testing.T) {
 		query string
 		want  bool
 	}{
-		{`app:=nginx | stats rate()`, true},
-		{`app:=nginx | rate(`, true},
-		{`app:=nginx | count(`, true},
-		{`app:=nginx ~"stats query"`, false},          // inside quotes
-		{`app:=nginx ~"| stats rate()"`, false},       // pipe inside quotes
-		{`app:=nginx`, false},                         // no stats
-		{`app:=nginx ~"error" | stats count()`, true}, // stats after filter
+		{`app:="nginx" | stats rate()`, true},
+		{`app:="nginx" | rate(`, true},
+		{`app:="nginx" | count(`, true},
+		{`app:="nginx" ~"stats query"`, false},          // inside quotes
+		{`app:="nginx" ~"| stats rate()"`, false},       // pipe inside quotes
+		{`app:="nginx"`, false},                         // no stats
+		{`app:="nginx" ~"error" | stats count()`, true}, // stats after filter
 		{``, false},
 	}
 	for _, tt := range tests {
@@ -1082,7 +1082,7 @@ func TestHandleLabels_BareSelectorQuery(t *testing.T) {
 		if strings.Contains(got, `{`) || strings.Contains(got, `}`) {
 			t.Fatalf("bare selector should be translated before hitting VL, got %q", got)
 		}
-		if !strings.Contains(got, `service_name:=api-gateway`) {
+		if !strings.Contains(got, `service_name:="api-gateway"`) {
 			t.Fatalf("expected service_name matcher in translated query, got %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")

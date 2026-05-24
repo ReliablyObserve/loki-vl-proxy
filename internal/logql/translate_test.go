@@ -13,11 +13,11 @@ func TestTranslate_StreamSelector(t *testing.T) {
 	}{
 		{
 			`{app="nginx"}`,
-			`app:=nginx`,
+			`app:="nginx"`,
 		},
 		{
 			`{app="nginx", env="prod"}`,
-			`app:=nginx env:=prod`,
+			`app:="nginx" env:="prod"`,
 		},
 		{
 			`{app=~"api.*"}`,
@@ -25,7 +25,7 @@ func TestTranslate_StreamSelector(t *testing.T) {
 		},
 		{
 			`{app!="debug"}`,
-			`-app:=debug`,
+			`-app:="debug"`,
 		},
 		{
 			`{app!~"kube-.*"}`,
@@ -56,19 +56,19 @@ func TestTranslate_LineFilter(t *testing.T) {
 	}{
 		{
 			`{app="nginx"} |= "error"`,
-			`app:=nginx ~"error"`,
+			`app:="nginx" ~"error"`,
 		},
 		{
 			`{app="nginx"} != "debug"`,
-			`app:=nginx NOT ~"debug"`,
+			`app:="nginx" NOT ~"debug"`,
 		},
 		{
 			`{app="nginx"} |~ "err.*"`,
-			`app:=nginx ~"err.*"`,
+			`app:="nginx" ~"err.*"`,
 		},
 		{
 			`{app="nginx"} !~ "ok.*"`,
-			`app:=nginx NOT ~"ok.*"`,
+			`app:="nginx" NOT ~"ok.*"`,
 		},
 	}
 	for _, tc := range tests {
@@ -104,7 +104,7 @@ func TestTranslate_WithLabelFn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Translate error: %v", err)
 	}
-	want := `"k8s.namespace.name":=default`
+	want := `"k8s.namespace.name":="default"`
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}

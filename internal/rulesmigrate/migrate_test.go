@@ -41,7 +41,7 @@ groups:
 	if got := group.Rules[0].Expr; got == `sum by (app) (rate({app="api-gateway"} |= "error" [5m]))` {
 		t.Fatalf("expected translated expr, got original %q", got)
 	}
-	if !strings.Contains(group.Rules[0].Expr, `app:=api-gateway`) {
+	if !strings.Contains(group.Rules[0].Expr, `app:="api-gateway"`) {
 		t.Fatalf("expected translated expr to contain LogsQL matcher, got %q", group.Rules[0].Expr)
 	}
 }

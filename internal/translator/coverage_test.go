@@ -3,16 +3,16 @@ package translator
 import "testing"
 
 func TestCoverage_ParseWithoutMarker(t *testing.T) {
-	clean, labels := ParseWithoutMarker(`app:=api` + WithoutMarkerSuffix + `pod,node`)
-	if clean != `app:=api` {
+	clean, labels := ParseWithoutMarker(`app:="api"` + WithoutMarkerSuffix + `pod,node`)
+	if clean != `app:="api"` {
 		t.Fatalf("unexpected clean query: %q", clean)
 	}
 	if len(labels) != 2 || labels[0] != "pod" || labels[1] != "node" {
 		t.Fatalf("unexpected labels: %#v", labels)
 	}
 
-	clean, labels = ParseWithoutMarker(`app:=api`)
-	if clean != `app:=api` || labels != nil {
+	clean, labels = ParseWithoutMarker(`app:="api"`)
+	if clean != `app:="api"` || labels != nil {
 		t.Fatalf("expected unchanged query without marker, got clean=%q labels=%#v", clean, labels)
 	}
 }
@@ -109,8 +109,8 @@ func TestCoverage_TranslateBareFilter(t *testing.T) {
 
 // Coverage gap: addByClause when no stats pipe exists
 func TestCoverage_AddByClause_NoStats(t *testing.T) {
-	got := addByClause("app:=nginx", "app", nil)
-	if got != "app:=nginx | stats by (app)" {
+	got := addByClause(`app:="nginx"`, "app", nil)
+	if got != `app:="nginx" | stats by (app)` {
 		t.Errorf("got %q", got)
 	}
 }
@@ -122,8 +122,8 @@ func TestCoverage_AddByClause_WithStatsAndTranslator(t *testing.T) {
 		}
 		return label
 	}
-	got := addByClause(`app:=nginx | stats count(*) as hits`, "service_name, cluster", labelFn)
-	want := `app:=nginx | stats by (service.name, cluster) count(*) as hits`
+	got := addByClause(`app:="nginx" | stats count(*) as hits`, "service_name, cluster", labelFn)
+	want := `app:="nginx" | stats by (service.name, cluster) count(*) as hits`
 	if got != want {
 		t.Fatalf("addByClause returned %q, want %q", got, want)
 	}
@@ -139,8 +139,8 @@ func TestCoverage_AddByClause_DeduplicatesTranslatedLabels(t *testing.T) {
 		}
 	}
 
-	got := addByClause(`service.name:=otel-app | stats count()`, "level, detected_level", labelFn)
-	want := `service.name:=otel-app | stats by (level) count()`
+	got := addByClause(`service.name:="otel-app" | stats count()`, "level, detected_level", labelFn)
+	want := `service.name:="otel-app" | stats by (level) count()`
 	if got != want {
 		t.Fatalf("addByClause returned %q, want %q", got, want)
 	}

@@ -13,11 +13,11 @@ import (
 )
 
 func TestParseStatsCompatSpec(t *testing.T) {
-	spec, ok := parseStatsCompatSpec(`app:=nginx | unpack_json | stats by (namespace, app) first(duration)`)
+	spec, ok := parseStatsCompatSpec(`app:="nginx" | unpack_json | stats by (namespace, app) first(duration)`)
 	if !ok {
 		t.Fatalf("expected parse success")
 	}
-	if spec.BaseQuery != `app:=nginx | unpack_json` {
+	if spec.BaseQuery != `app:="nginx" | unpack_json` {
 		t.Fatalf("unexpected base query: %q", spec.BaseQuery)
 	}
 	if spec.Func != "first" || spec.Field != "duration" {
@@ -29,7 +29,7 @@ func TestParseStatsCompatSpec(t *testing.T) {
 }
 
 func TestParseStatsCompatSpecByEmpty(t *testing.T) {
-	spec, ok := parseStatsCompatSpec(`app:=nginx | unpack_json | stats by () avg(confidence)`)
+	spec, ok := parseStatsCompatSpec(`app:="nginx" | unpack_json | stats by () avg(confidence)`)
 	if !ok {
 		t.Fatalf("expected parse success")
 	}
@@ -492,7 +492,7 @@ func TestQueryRange_BytesRateCompatScalesFromSumLen(t *testing.T) {
 		if r.URL.Path != "/select/logsql/query" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		if got := r.FormValue("query"); !strings.Contains(got, `app:=nginx`) {
+		if got := r.FormValue("query"); !strings.Contains(got, `app:="nginx"`) {
 			t.Fatalf("expected translated query, got %q", got)
 		}
 		lines := []string{
@@ -930,7 +930,7 @@ func TestShouldUseManualRangeMetricCompat_WithoutSlidingWindowNowUsesManualPath(
 	// buildManualMetricLabels correctly expands _stream into all stream labels.
 	// Previously this fell back to native VL tumbling stats, producing wrong results.
 	want := true
-	got := shouldUseManualRangeMetricCompat("app:=api", "rate", false /* sliding */)
+	got := shouldUseManualRangeMetricCompat(`app:="api"`, "rate", false /* sliding */)
 	if got != want {
 		t.Errorf("sliding-window without() should use manual path, got %v", got)
 	}

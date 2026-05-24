@@ -888,8 +888,8 @@ func TestContract_Patterns_StripsPipelineAndUsesLabelScope(t *testing.T) {
 	if strings.Contains(gotQuery, "extract") || strings.Contains(gotQuery, "filter") || strings.Contains(gotQuery, "json") {
 		t.Fatalf("expected /patterns backend query to be selector-scoped, got %q", gotQuery)
 	}
-	if gotQuery != `app:=web` {
-		t.Fatalf("expected translated selector query app:=web, got %q", gotQuery)
+	if gotQuery != `app:="web"` {
+		t.Fatalf("expected translated selector query app:=\"web\", got %q", gotQuery)
 	}
 	var resp map[string]interface{}
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
@@ -3107,7 +3107,7 @@ func TestTranslation_LineFilterForwarded(t *testing.T) {
 
 	// |= "error" becomes ~"text" (VL regex/substring filter on _msg, which contains reconstructed JSON)
 	// proxyLogQuery appends sort by _time desc by default (Loki backward direction)
-	if receivedQuery != `app:=nginx ~"error" | sort by (_time desc)` {
+	if receivedQuery != `app:="nginx" ~"error" | sort by (_time desc)` {
 		t.Errorf("expected translated query, got %q", receivedQuery)
 	}
 }
@@ -3123,7 +3123,7 @@ func TestTranslation_NegativeFilter(t *testing.T) {
 
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bapp%3D%22nginx%22%7D+%21%3D+%22debug%22&start=1&end=2&limit=10`)
 
-	if receivedQuery != `app:=nginx NOT ~"debug" | sort by (_time desc)` {
+	if receivedQuery != `app:="nginx" NOT ~"debug" | sort by (_time desc)` {
 		t.Errorf("expected translated negative filter, got %q", receivedQuery)
 	}
 }
@@ -3139,7 +3139,7 @@ func TestTranslation_JSONParser(t *testing.T) {
 
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bapp%3D%22x%22%7D+%7C+json&start=1&end=2&limit=10`)
 
-	if receivedQuery != `app:=x | unpack_json | sort by (_time desc)` {
+	if receivedQuery != `app:="x" | unpack_json | sort by (_time desc)` {
 		t.Errorf("expected json→unpack_json translation, got %q", receivedQuery)
 	}
 }
@@ -3156,7 +3156,7 @@ func TestTranslation_DrilldownPatternQueryForwarded(t *testing.T) {
 	logql := `{app="web"} |> ` + "`" + `GET <_> 500` + "`" + ` | pattern ` + "`" + `GET <field_1> 500` + "`" + ` | keep field_1 | line_format ""`
 	doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query="+url.QueryEscape(logql)+"&start=1&end=2&limit=10")
 
-	want := `app:=web ~"GET .* 500" | extract "GET <field_1> 500" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
+	want := `app:="web" ~"GET .* 500" | extract "GET <field_1> 500" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
 	if receivedQuery != want {
 		t.Fatalf("expected translated drilldown pattern query,\n got: %q\nwant: %q", receivedQuery, want)
 	}
@@ -3174,7 +3174,7 @@ func TestTranslation_DrilldownPatternStatsQueryForwarded(t *testing.T) {
 	logql := `{foo="bar"} |> ` + "`" + `test <_> pattern` + "`" + ` | pattern ` + "`" + `test <field_1> pattern` + "`" + ` | keep field_1 | line_format ""`
 	doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query="+url.QueryEscape(logql)+"&start=1&end=2&limit=10")
 
-	want := `foo:=bar ~"test .* pattern" | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
+	want := `foo:="bar" ~"test .* pattern" | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format "" | sort by (_time desc)`
 	if receivedQuery != want {
 		t.Fatalf("expected translated drilldown pattern stats query, got %q", receivedQuery)
 	}
@@ -3191,7 +3191,7 @@ func TestTranslation_DottedLabelFilterTripletForwarded(t *testing.T) {
 
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bservice_name%3D%22k8s-cluster-events%22%7D+%7C+k8s.cluster.name+%3D+%60my-cluster%60&start=1&end=2&limit=10`)
 
-	if !strings.Contains(receivedQuery, `"k8s.cluster.name":=my-cluster`) {
+	if !strings.Contains(receivedQuery, `"k8s.cluster.name":="my-cluster"`) {
 		t.Fatalf("expected translated dotted field filter in backend query, got %q", receivedQuery)
 	}
 	if !strings.HasSuffix(receivedQuery, `| sort by (_time desc)`) {
@@ -3210,7 +3210,7 @@ func TestTranslation_UnderscoreLabelFilterTripletPreservedInPassthroughMode(t *t
 
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bservice_name%3D%22k8s-cluster-events%22%7D+%7C+k8s_cluster_name+%3D+%60my-cluster%60&start=1&end=2&limit=10`)
 
-	if !strings.Contains(receivedQuery, `k8s_cluster_name:=my-cluster`) {
+	if !strings.Contains(receivedQuery, `k8s_cluster_name:="my-cluster"`) {
 		t.Fatalf("expected underscore key to be preserved in passthrough mode, got %q", receivedQuery)
 	}
 	if strings.Contains(receivedQuery, "k8s . `") {
@@ -3229,7 +3229,7 @@ func TestTranslation_MalformedSpacedDottedTripletNormalizedForDatasourceOps(t *t
 
 	doGet(t, vlBackend.URL, `/loki/api/v1/query_range?query=%7Bservice_name%3D%22k8s-cluster-events%22%7D+%7C+custom+.+%60pipeline.processing.%60+%3D+%60vector-processing%60&start=1&end=2&limit=10`)
 
-	if !strings.Contains(receivedQuery, `"custom.pipeline.processing":=vector-processing`) {
+	if !strings.Contains(receivedQuery, `"custom.pipeline.processing":="vector-processing"`) {
 		t.Fatalf("expected malformed dotted triplet to normalize to valid dotted equality, got %q", receivedQuery)
 	}
 	if strings.Contains(receivedQuery, "custom . `") {

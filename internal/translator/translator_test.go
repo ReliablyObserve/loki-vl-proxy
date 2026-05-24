@@ -20,37 +20,37 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "stream selector only — single label",
 			logql: `{app="nginx"}`,
-			want:  `app:=nginx`,
+			want:  `app:="nginx"`,
 		},
 		{
 			name:  "stream selector with multiple labels",
 			logql: `{app="nginx",host="host-42"}`,
-			want:  `app:=nginx host:=host-42`,
+			want:  `app:="nginx" host:="host-42"`,
 		},
 		{
 			name:  "line contains filter — substring semantics",
 			logql: `{app="nginx"} |= "error"`,
-			want:  `app:=nginx ~"error"`,
+			want:  `app:="nginx" ~"error"`,
 		},
 		{
 			name:  "line contains filter with backtick raw string",
 			logql: "{app=\"nginx\"} |= `api`",
-			want:  `app:=nginx ~"api"`,
+			want:  `app:="nginx" ~"api"`,
 		},
 		{
 			name:  "line contains backtick raw string with logfmt pipeline",
 			logql: "{app=\"nginx\"} |= `api` | logfmt",
-			want:  `app:=nginx ~"api" | unpack_logfmt`,
+			want:  `app:="nginx" ~"api" | unpack_logfmt`,
 		},
 		{
 			name:  "line contains backtick raw string containing pipe char",
 			logql: "{app=\"nginx\"} |= `api|v1` | logfmt",
-			want:  `app:=nginx ~"api|v1" | unpack_logfmt`,
+			want:  `app:="nginx" ~"api|v1" | unpack_logfmt`,
 		},
 		{
 			name:  "line not contains filter — substring semantics",
 			logql: `{app="nginx"} != "debug"`,
-			want:  `app:=nginx NOT ~"debug"`,
+			want:  `app:="nginx" NOT ~"debug"`,
 		},
 		{
 			name:    "invalid selector syntax returns error",
@@ -60,107 +60,107 @@ func TestTranslateLogQL(t *testing.T) {
 		{
 			name:  "regexp filter",
 			logql: `{app="nginx"} |~ "err.*"`,
-			want:  `app:=nginx ~"err.*"`,
+			want:  `app:="nginx" ~"err.*"`,
 		},
 		{
 			name:  "negative regexp filter",
 			logql: `{app="nginx"} !~ "debug.*"`,
-			want:  `app:=nginx NOT ~"debug.*"`,
+			want:  `app:="nginx" NOT ~"debug.*"`,
 		},
 		{
 			name:  "pattern line filter",
 			logql: `{app="nginx"} |> "test <_> pattern"`,
-			want:  `app:=nginx ~"test .* pattern"`,
+			want:  `app:="nginx" ~"test .* pattern"`,
 		},
 		{
 			name:  "negative pattern line filter",
 			logql: `{app="nginx"} !> "test <_> pattern"`,
-			want:  `app:=nginx NOT ~"test .* pattern"`,
+			want:  `app:="nginx" NOT ~"test .* pattern"`,
 		},
 		{
 			name:  "detected_level filter before pattern negation — drilldown patterns page",
 			logql: `{env="production"} | detected_level="error" !> "level=error msg=<_>"`,
-			want:  `env:=production | unpack_logfmt | filter level:=error NOT ~"level=error msg=.*"`,
+			want:  `env:="production" | unpack_logfmt | filter level:="error" NOT ~"level=error msg=.*"`,
 		},
 		{
 			name:  "pattern line filter with alternation",
 			logql: `{app="nginx"} |> "test <_> pattern" or "other <_> value"`,
-			want:  `app:=nginx ~"(?:test .* pattern)|(?:other .* value)"`,
+			want:  `app:="nginx" ~"(?:test .* pattern)|(?:other .* value)"`,
 		},
 		{
 			name:  "json parser",
 			logql: `{app="nginx"} | json`,
-			want:  `app:=nginx | unpack_json`,
+			want:  `app:="nginx" | unpack_json`,
 		},
 		{
 			name:  "logfmt parser",
 			logql: `{app="nginx"} | logfmt`,
-			want:  `app:=nginx | unpack_logfmt`,
+			want:  `app:="nginx" | unpack_logfmt`,
 		},
 		{
 			name:  "pattern parser",
 			logql: `{app="nginx"} | pattern "<ip> - - <_>"`,
-			want:  `app:=nginx | extract "<ip> - - <_>"`,
+			want:  `app:="nginx" | extract "<ip> - - <_>"`,
 		},
 		{
 			name:  "pattern wildcard no-op is dropped",
 			logql: `{app="nginx"} | pattern "(.*)" | status="500"`,
-			want:  `app:=nginx status:=500`,
+			want:  `app:="nginx" status:="500"`,
 		},
 		{
 			name:  "extract wildcard no-op is dropped defensively",
 			logql: "{app=\"nginx\"} | extract `(.*)` | status=`500`",
-			want:  `app:=nginx status:=500`,
+			want:  `app:="nginx" status:="500"`,
 		},
 		{
 			name:  "regexp parser",
 			logql: `{app="nginx"} | regexp "(?P<ip>\\d+\\.\\d+)"`,
-			want:  `app:=nginx | extract_regexp "(?P<ip>\\d+\\.\\d+)"`,
+			want:  `app:="nginx" | extract_regexp "(?P<ip>\\d+\\.\\d+)"`,
 		},
 		{
 			name:  "label equal filter after pipe",
 			logql: `{app="nginx"} | status == "200"`,
-			want:  `app:=nginx status:=200`,
+			want:  `app:="nginx" status:="200"`,
 		},
 		{
 			name:  "label not equal filter after pipe",
 			logql: `{app="nginx"} | status != "500"`,
-			want:  `app:=nginx -status:=500`,
+			want:  `app:="nginx" -status:="500"`,
 		},
 		{
 			name:  "drop labels",
 			logql: `{app="nginx"} | drop trace_id, span_id`,
-			want:  `app:=nginx | delete trace_id, span_id`,
+			want:  `app:="nginx" | delete trace_id, span_id`,
 		},
 		{
 			name:  "keep labels",
 			logql: `{app="nginx"} | keep app, message`,
-			want:  `app:=nginx | fields _time, _msg, _stream, app, message`,
+			want:  `app:="nginx" | fields _time, _msg, _stream, app, message`,
 		},
 		{
 			name:  "multiple line filters — both substring",
 			logql: `{app="nginx"} |= "error" |= "timeout"`,
-			want:  `app:=nginx ~"error" ~"timeout"`,
+			want:  `app:="nginx" ~"error" ~"timeout"`,
 		},
 		{
 			name:  "go template to logsql format",
 			logql: `{app="nginx"} | line_format "{{.status}} {{.method}}"`,
-			want:  `app:=nginx | format "<status> <method>"`,
+			want:  `app:="nginx" | format "<status> <method>"`,
 		},
 		{
 			name:  "multi-label with level filter",
 			logql: `{app="api",namespace="prod",level="error"}`,
-			want:  `app:=api namespace:=prod level:=error`,
+			want:  `app:="api" namespace:="prod" level:="error"`,
 		},
 		{
 			name:  "negative label in stream selector",
 			logql: `{app="api",level!="info"}`,
-			want:  `app:=api -level:=info`,
+			want:  `app:="api" -level:="info"`,
 		},
 		{
 			name:  "regex label in stream selector",
 			logql: `{app=~"api-.*",namespace="prod"}`,
-			want:  `app:~"api-.*" namespace:=prod`,
+			want:  `app:~"api-.*" namespace:="prod"`,
 		},
 		{
 			name:  "negative regex in stream selector",
@@ -177,63 +177,63 @@ func TestTranslateLogQL(t *testing.T) {
 			name:  "substring matches partial words like Loki does",
 			logql: `{app="nginx"} |= "err"`,
 			// ~"err" is VL regex/substring on _msg; with reconstructLogLine, _msg contains the full JSON.
-			want: `app:=nginx ~"err"`,
+			want: `app:="nginx" ~"err"`,
 		},
 		{
 			name:  "chained substring + negative substring",
 			logql: `{app="nginx"} |= "error" != "timeout"`,
-			want:  `app:=nginx ~"error" NOT ~"timeout"`,
+			want:  `app:="nginx" ~"error" NOT ~"timeout"`,
 		},
 		// Parser + filter chain tests
 		{
 			name:  "json then label filter",
 			logql: `{app="api"} | json | status >= 400`,
-			want:  `app:=api | unpack_json | filter status:>=400`,
+			want:  `app:="api" | unpack_json | filter status:>=400`,
 		},
 		{
 			name:  "json then multiple filters",
 			logql: `{app="api"} | json | status >= 500 | method = "POST"`,
-			want:  `app:=api | unpack_json | filter status:>=500 | filter method:=POST`,
+			want:  `app:="api" | unpack_json | filter status:>=500 | filter method:="POST"`,
 		},
 		{
 			name:  "logfmt then label filter",
 			logql: `{app="api"} | logfmt | duration > "1s"`,
-			want:  `app:=api | unpack_logfmt | filter duration:>1s`,
+			want:  `app:="api" | unpack_logfmt | filter duration:>1s`,
 		},
 		{
 			name:  "json then keep",
 			logql: `{app="api"} | json | keep level, status`,
-			want:  `app:=api | unpack_json | fields _time, _msg, _stream, level, status`,
+			want:  `app:="api" | unpack_json | fields _time, _msg, _stream, level, status`,
 		},
 		{
 			name:  "keep with matcher form extracts field name only",
 			logql: `{app="api"} | json | keep level, method="GET"`,
-			want:  `app:=api | unpack_json | fields _time, _msg, _stream, level, method`,
+			want:  `app:="api" | unpack_json | fields _time, _msg, _stream, level, method`,
 		},
 		{
 			name:  "keep with only matcher forms — invalid !=~ operator is skipped",
 			logql: `{app="api"} | json | keep method="GET", status!=~"5.."`,
-			want:  `app:=api | unpack_json | fields _time, _msg, _stream, method`,
+			want:  `app:="api" | unpack_json | fields _time, _msg, _stream, method`,
 		},
 		{
 			name:  "drilldown pattern stats query shape",
 			logql: `{foo="bar"} |> ` + "`" + `test <_> pattern` + "`" + ` | pattern ` + "`" + `test <field_1> pattern` + "`" + ` | keep field_1 | line_format ""`,
-			want:  `foo:=bar ~"test .* pattern" | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format ""`,
+			want:  `foo:="bar" ~"test .* pattern" | extract "test <field_1> pattern" | fields _time, _msg, _stream, field_1 | format ""`,
 		},
 		{
 			name:  "json then drop",
 			logql: `{app="api"} | json | drop __error__`,
-			want:  `app:=api | unpack_json | delete __error__`,
+			want:  `app:="api" | unpack_json | delete __error__`,
 		},
 		{
 			name:  "bare unwrap with no field — Grafana query builder incomplete state",
 			logql: `{env="production"} | unwrap `,
-			want:  `env:=production`,
+			want:  `env:="production"`,
 		},
 		{
 			name:  "bare unwrap no trailing space",
 			logql: `{env="production"} | unwrap`,
-			want:  `env:=production`,
+			want:  `env:="production"`,
 		},
 	}
 
@@ -278,53 +278,53 @@ func TestMetricQueryTranslation(t *testing.T) {
 		{
 			name:  "rate",
 			logql: `rate({app="nginx"}[5m])`,
-			want:  `app:=nginx | stats by (_stream, level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (_stream, level) sum(__lvp_rate)`,
+			want:  `app:="nginx" | stats by (_stream, level) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (_stream, level) sum(__lvp_rate)`,
 		},
 		{
 			name:  "count_over_time",
 			logql: `count_over_time({app="nginx"}[5m])`,
-			want:  `app:=nginx | stats count()`,
+			want:  `app:="nginx" | stats count()`,
 		},
 		{
 			name:  "sum of rate by label",
 			logql: `sum(rate({app="nginx"}[5m])) by (host)`,
-			want:  `app:=nginx | stats by (host) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (host) sum(__lvp_rate)`,
+			want:  `app:="nginx" | stats by (host) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (host) sum(__lvp_rate)`,
 		},
 		{
 			name:  "stddev outer aggregation",
 			logql: `stddev(rate({app="nginx"}[5m])) by (host)`,
-			want:  `app:=nginx | stats by (host) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (host) sum(__lvp_rate)`,
+			want:  `app:="nginx" | stats by (host) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (host) sum(__lvp_rate)`,
 		},
 		{
 			name:  "stdvar outer aggregation",
 			logql: `stdvar(rate({app="nginx"}[5m])) by (host)`,
-			want:  `app:=nginx | stats by (host) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (host) sum(__lvp_rate)`,
+			want:  `app:="nginx" | stats by (host) count() as __lvp_inner | math __lvp_inner/300 as __lvp_rate | stats by (host) sum(__lvp_rate)`,
 		},
 		// without() clause tests moved to fixes_test.go — now correctly returns error
 		{
 			name:  "quantile_over_time",
 			logql: `quantile_over_time(0.95, {app="nginx"} | unwrap duration [5m])`,
-			want:  `app:=nginx | stats quantile(0.95, duration)`,
+			want:  `app:="nginx" | stats quantile(0.95, duration)`,
 		},
 		{
 			name:  "quantile_over_time with by",
 			logql: `sum(quantile_over_time(0.99, {app="nginx"} | unwrap latency [5m])) by (host)`,
-			want:  `app:=nginx | stats by (host) quantile(0.99, latency)`,
+			want:  `app:="nginx" | stats by (host) quantile(0.99, latency)`,
 		},
 		{
 			name:  "absent_over_time",
 			logql: `absent_over_time({app="nginx"}[5m])`,
-			want:  `app:=nginx | stats count()`,
+			want:  `app:="nginx" | stats count()`,
 		},
 		{
 			name:  "avg_over_time with unwrap",
 			logql: `avg_over_time({app="nginx"} | unwrap response_time [5m])`,
-			want:  `app:=nginx | stats avg(response_time)`,
+			want:  `app:="nginx" | stats avg(response_time)`,
 		},
 		{
 			name:  "rate_counter with unwrap",
 			logql: `rate_counter({app="nginx"} | unwrap requests_total [5m])`,
-			want:  `app:=nginx | stats __rate_counter__(requests_total)`,
+			want:  `app:="nginx" | stats __rate_counter__(requests_total)`,
 		},
 	}
 
@@ -353,7 +353,7 @@ func TestMetricQueryTranslation_DedupesByLabelsAfterTranslation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
 	}
-	want := `foo:=bar | stats by (level) count()`
+	want := `foo:="bar" | stats by (level) count()`
 	if got != want {
 		t.Fatalf("TranslateLogQLWithLabels() = %q, want %q", got, want)
 	}
@@ -377,7 +377,7 @@ func TestMetricQueryTranslation_MalformedDottedDrilldownStage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TranslateLogQLWithLabels() error = %v", err)
 	}
-	want := `"deployment.environment":=dev "k8s.namespace.name":=sample_ns ~"k8s\.cluster\." | stats by (level) count()`
+	want := `"deployment.environment":="dev" "k8s.namespace.name":="sample_ns" ~"k8s\.cluster\." | stats by (level) count()`
 	if got != want {
 		t.Fatalf("TranslateLogQLWithLabels() = %q, want %q", got, want)
 	}
@@ -452,7 +452,7 @@ func TestBinaryOps_Extended(t *testing.T) {
 // raw matcher in double quotes and produced LogsQL like `"app="json-test""`,
 // which VictoriaLogs rejects with an "unexpected token" parse error.
 //
-// The correct VL LogsQL output for the equivalent braced query is `app:=json-test`.
+// The correct VL LogsQL output for the equivalent braced query is `app:="json-test"`.
 // `translateBareFilter` is a phrase-filter fallback for arbitrary text and must
 // never be reached for label-matcher syntax — callers are responsible for
 // ensuring the input is a valid LogQL stream selector. This test pins the
@@ -507,12 +507,12 @@ func TestBracedLabelMatcherTranslatesToVLFieldFilter(t *testing.T) {
 		{
 			name:  "app=json-test braced",
 			logql: `{app="json-test"}`,
-			want:  `app:=json-test`,
+			want:  `app:="json-test"`,
 		},
 		{
 			name:  "level=warn braced",
 			logql: `{level="warn"}`,
-			want:  `level:=warn`,
+			want:  `level:="warn"`,
 		},
 		{
 			// detected_level="" in the stream selector means "no level detected".
@@ -559,21 +559,21 @@ func TestDetectedLevelEmptyFilter(t *testing.T) {
 			// as a top-level LogsQL condition (no | filter prefix required).
 			name:  "detected_level empty in pipeline filter (no preceding parser)",
 			logql: `{app="nginx"} | detected_level=""`,
-			want:  `app:=nginx -level:*`,
+			want:  `app:="nginx" -level:*`,
 		},
 		{
 			// detected_level!="" before a parser: use logfmt pipeline.
 			name:  "detected_level empty negated in pipeline filter (no preceding parser)",
 			logql: `{app="nginx"} | detected_level!=""`,
-			want:  `app:=nginx | unpack_logfmt | filter level:!""`,
+			want:  `app:="nginx" | unpack_logfmt | filter level:!""`,
 		},
 		{
 			// After a parser, the translated filter is wrapped in | filter.
 			// -level:* uses negated-any syntax which is NOT a standard field filter
-			// (no :=/:~/etc.), so it lands in the main query position for now.
+			// (no :="/:~/etc."), so it lands in the main query position for now.
 			name:  "detected_level empty after logfmt parser",
 			logql: `{app="nginx"} | logfmt | detected_level=""`,
-			want:  `app:=nginx | unpack_logfmt -level:*`,
+			want:  `app:="nginx" | unpack_logfmt -level:*`,
 		},
 		{
 			name:  "detected_level empty in stream selector",
@@ -583,18 +583,18 @@ func TestDetectedLevelEmptyFilter(t *testing.T) {
 		{
 			name:  "detected_level empty with other labels",
 			logql: `{app="nginx", detected_level=""}`,
-			want:  `app:=nginx -level:*`,
+			want:  `app:="nginx" -level:*`,
 		},
 		{
 			// detected_level="warn" uses logfmt pipeline to check message-body level.
 			name:  "detected_level non-empty uses logfmt pipeline",
 			logql: `{detected_level="warn"}`,
-			want:  `* | unpack_logfmt | filter level:=warn`,
+			want:  `* | unpack_logfmt | filter level:="warn"`,
 		},
 		{
 			name:  "detected_level non-empty with other labels uses logfmt pipeline",
 			logql: `{app="nginx", detected_level="error"}`,
-			want:  `app:=nginx | unpack_logfmt | filter level:=error`,
+			want:  `app:="nginx" | unpack_logfmt | filter level:="error"`,
 		},
 	}
 	for _, tc := range cases {
@@ -620,12 +620,12 @@ func TestTranslateLabelFormat_MultiRename(t *testing.T) {
 		{
 			name:  "single rename",
 			logql: `{app="x"} | label_format level="{{.severity}}"`,
-			want:  `app:=x | format "<severity>" as level`,
+			want:  `app:="x" | format "<severity>" as level`,
 		},
 		{
 			name:  "multi rename",
 			logql: `{app="x"} | label_format level="{{.severity}}", status="{{.code}}"`,
-			want:  `app:=x | format "<severity>" as level | format "<code>" as status`,
+			want:  `app:="x" | format "<severity>" as level | format "<code>" as status`,
 		},
 	}
 
@@ -694,11 +694,11 @@ func TestTopkTranslation(t *testing.T) {
 	}{
 		{
 			in:      `topk by(level) (5, rate({cluster="us-east-1"} [5m]))`,
-			wantHas: "cluster:=us-east-1",
+			wantHas: `cluster:="us-east-1"`,
 		},
 		{
 			in:      `topk(5, rate({cluster="us-east-1"} [5m]))`,
-			wantHas: "cluster:=us-east-1",
+			wantHas: `cluster:="us-east-1"`,
 		},
 		{
 			in:      `sum by(level) ({cluster="us-east-1"})`,
@@ -706,7 +706,7 @@ func TestTopkTranslation(t *testing.T) {
 		},
 		{
 			in:      `topk by() (5, rate({cluster="us-east-1"} [5m]))`,
-			wantHas: "cluster:=us-east-1",
+			wantHas: `cluster:="us-east-1"`,
 		},
 	}
 	for _, tc := range cases {
@@ -795,13 +795,13 @@ func TestLabelReplaceTranslation(t *testing.T) {
 	}{
 		{
 			in:      `label_replace(rate({app="api"}[5m]), "host", "$1", "instance", "(.*):.+")`,
-			wantHas: "app:=api",
+			wantHas: `app:="api"`,
 			specDst: "host",
 			specSrc: "instance",
 		},
 		{
 			in:      `label_replace(count_over_time({job="x"}[1m]), "svc", "$1", "job", "(.*)")`,
-			wantHas: "job:=x",
+			wantHas: `job:="x"`,
 			specDst: "svc",
 			specSrc: "job",
 		},
@@ -842,7 +842,7 @@ func TestLabelJoinTranslation(t *testing.T) {
 	}{
 		{
 			in:      `label_join(rate({app="api"}[5m]), "service_host", "/", "service", "host")`,
-			wantHas: "app:=api",
+			wantHas: `app:="api"`,
 			specDst: "service_host",
 			specSep: "/",
 			specSrc: []string{"service", "host"},
@@ -1008,6 +1008,62 @@ func TestValidateDropKeepSyntax(t *testing.T) {
 			err := ValidateDropKeepSyntax(tt.logql)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("ValidateDropKeepSyntax(%q) error=%v, wantErr=%v", tt.logql, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestFieldFilterMigration verifies the logsql.FieldFilter-based translation
+// produces correct output for the cases required by the AST migration task.
+func TestFieldFilterMigration(t *testing.T) {
+	tests := []struct {
+		name  string
+		logql string
+		want  string
+	}{
+		{
+			// FieldFilter.String() quotes all equality values; "nginx" with internal
+			// double-quote uses logsql.QuoteValue which escapes both \ and ".
+			// Use a pipeline filter (not a stream selector) so we can test
+			// translateSingleLabelFilter directly via translateLogQuery.
+			name:  "value with special chars — pipeline label filter",
+			logql: `{app="api"} | status = "200 OK"`,
+			want:  `app:="api" status:="200 OK"`,
+		},
+		{
+			name:  "negated regex pipeline label filter",
+			logql: `{app="api"} | status !~ "5.."`,
+			want:  `app:="api" -status:~"5.."`,
+		},
+		{
+			name:  "empty value — non-level field in stream selector",
+			logql: `{app=""}`,
+			want:  `app:=""`,
+		},
+		{
+			name:  "non-empty — negated empty equality in stream selector",
+			logql: `{app!=""}`,
+			want:  `app:!""`,
+		},
+		{
+			name:  "dotted field name gets quoted in stream selector",
+			logql: `{service.name="foo"}`,
+			want:  `"service.name":="foo"`,
+		},
+		{
+			name:  "dotted field name gets quoted in pipeline filter",
+			logql: `{app="api"} | json | service.name = "bar"`,
+			want:  `app:="api" | unpack_json | filter "service.name":="bar"`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := TranslateLogQL(tc.logql)
+			if err != nil {
+				t.Fatalf("TranslateLogQL(%q) error: %v", tc.logql, err)
+			}
+			if got != tc.want {
+				t.Errorf("TranslateLogQL(%q)\n  got  = %q\n  want = %q", tc.logql, got, tc.want)
 			}
 		})
 	}
