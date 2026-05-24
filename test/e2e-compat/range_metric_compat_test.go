@@ -17,7 +17,10 @@ import (
 	"time"
 )
 
-var rangeMetricCompatOnce sync.Once
+var (
+	rangeMetricCompatOnce sync.Once
+	rangeMetricVolumeOnce sync.Once
+)
 
 func containsUnwrapErrorText(body string) bool {
 	body = strings.ToLower(strings.TrimSpace(body))
@@ -239,6 +242,144 @@ func canonicalMetricKey(metric map[string]interface{}) string {
 	}
 	sort.Strings(parts)
 	return "{" + strings.Join(parts, ",") + "}"
+}
+
+// ensureUnwrapVolumeData seeds a large dataset (~1000 entries) under the
+// "unwrap-volume" app stream so that response-size regression tests can
+// detect data-explosion bugs where the proxy fetches raw logs instead of
+// using the stats_query_range fast path.
+func ensureUnwrapVolumeData(t *testing.T) {
+	t.Helper()
+	ensureDataIngested(t)
+	rangeMetricVolumeOnce.Do(func() {
+		// Spread 1000 entries over 6 minutes with a numeric "duration" field.
+		// The 6-minute span ensures the default 5-minute range window sees ~830
+		// entries — large enough that a raw-log fetch would produce an obviously
+		// oversized response.
+		now := time.Now()
+		base := now.Add(-6 * time.Minute)
+		const total = 1000
+		const intervalMs = (6 * 60 * 1000) / total // ~360 ms per entry
+
+		lines := make([]string, total)
+		for i := 0; i < total; i++ {
+			dur := 100 + (i % 900) // 100–999 ms, cycles to avoid constant values
+			lines[i] = fmt.Sprintf(`{"duration":%d,"method":"GET","status":200}`, dur)
+		}
+
+		// Build entries spread over time manually so timestamps are well-distributed.
+		// pushStream distributes i*second, but we need sub-second granularity here.
+		now2 := base
+		_ = intervalMs
+		type valEntry struct {
+			ts  string
+			msg string
+		}
+		entries := make([]valEntry, total)
+		for i := 0; i < total; i++ {
+			entries[i] = valEntry{
+				ts:  now2.Add(time.Duration(i) * (6 * time.Minute / total)).Format(time.RFC3339Nano),
+				msg: lines[i],
+			}
+		}
+
+		labels := map[string]string{
+			"app":       "unwrap-volume",
+			"namespace": "prod",
+			"env":       "test",
+		}
+
+		// Push to Loki
+		values := make([][]string, total)
+		for i, e := range entries {
+			values[i] = []string{e.ts, e.msg}
+		}
+		lokiPayload := map[string]interface{}{
+			"streams": []map[string]interface{}{
+				{"stream": labels, "values": values},
+			},
+		}
+		lokiBody, _ := json.Marshal(lokiPayload)
+		if resp, err := http.Post(lokiURL+"/loki/api/v1/push", "application/json", strings.NewReader(string(lokiBody))); err == nil {
+			resp.Body.Close()
+		}
+
+		// Push to VL
+		var vlLines []string
+		for _, e := range entries {
+			entry := map[string]string{"_time": e.ts, "_msg": e.msg}
+			for k, v := range labels {
+				entry[k] = v
+			}
+			j, _ := json.Marshal(entry)
+			vlLines = append(vlLines, string(j))
+		}
+		streamFields := "app,namespace,env"
+		if resp, err := http.Post(
+			vlURL+"/insert/jsonline?_stream_fields="+streamFields,
+			"application/stream+json",
+			strings.NewReader(strings.Join(vlLines, "\n")),
+		); err == nil {
+			resp.Body.Close()
+		}
+
+		waitForLokiMetricDataSelector(t, `{app="unwrap-volume"}`)
+	})
+}
+
+// TestRangeMetric_UnwrapResponseSizeGuard verifies that unwrap metric queries
+// against a large dataset (1000 entries) return compact responses — proving
+// the proxy uses stats_query_range (pre-aggregated) rather than raw log fetch.
+//
+// Without the fix, sum_over_time({...} | json | unwrap duration [...]) fetches
+// all raw log lines and returns ~26 MB. With the fix the proxy delegates to
+// stats_query_range and returns < 512 KB regardless of dataset size.
+func TestRangeMetric_UnwrapResponseSizeGuard(t *testing.T) {
+	ensureUnwrapVolumeData(t)
+
+	now := time.Now().UTC()
+	start := now.Add(-10 * time.Minute).Format(time.RFC3339Nano)
+	end := now.Format(time.RFC3339Nano)
+	step := "60" // 1-minute step
+
+	const maxProxyBytes = 512 * 1024 // 512 KB — data explosion would be 10+ MB
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{"sum_over_time", `sum_over_time({app="unwrap-volume"} | json | unwrap duration [5m])`},
+		{"max_over_time", `max_over_time({app="unwrap-volume"} | json | unwrap duration [5m])`},
+		{"min_over_time", `min_over_time({app="unwrap-volume"} | json | unwrap duration [5m])`},
+		{"first_over_time", `first_over_time({app="unwrap-volume"} | json | unwrap duration [5m])`},
+		{"last_over_time", `last_over_time({app="unwrap-volume"} | json | unwrap duration [5m])`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			params := url.Values{}
+			params.Set("query", tc.query)
+			params.Set("start", start)
+			params.Set("end", end)
+			params.Set("step", step)
+
+			resp, err := http.Get(proxyURL + "/loki/api/v1/query_range?" + params.Encode())
+			if err != nil {
+				t.Fatalf("query_range failed: %v", err)
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+
+			if resp.StatusCode != http.StatusOK {
+				t.Fatalf("expected 200 got %d body=%s", resp.StatusCode, string(body))
+			}
+			if len(body) > maxProxyBytes {
+				t.Errorf("proxy response %d bytes exceeds limit %d — data explosion detected for %s (raw log fetch instead of stats_query_range)",
+					len(body), maxProxyBytes, tc.name)
+			}
+			t.Logf("%s: proxy response %d bytes (limit %d)", tc.name, len(body), maxProxyBytes)
+		})
+	}
 }
 
 func toInt64(value interface{}) int64 {

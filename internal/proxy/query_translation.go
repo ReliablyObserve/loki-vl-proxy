@@ -658,7 +658,7 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 		if err != nil || phi < 0 || phi > 1 {
 			return bareParserMetricCompatSpec{}, false
 		}
-		unwrapField := extractBareParserUnwrapField(baseQuery)
+		unwrapField, unwrapConv := extractBareParserUnwrapExpr(baseQuery)
 		if unwrapField == "" {
 			return bareParserMetricCompatSpec{}, false
 		}
@@ -668,6 +668,7 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 			rangeWindow:     window,
 			rangeWindowExpr: windowRaw,
 			unwrapField:     unwrapField,
+			unwrapConv:      unwrapConv,
 			quantile:        phi,
 		}, true
 	}
@@ -685,10 +686,10 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 	if !ok && !isGrafanaRangeTemplateSelector(windowRaw) {
 		return bareParserMetricCompatSpec{}, false
 	}
-	unwrapField := ""
+	unwrapField, unwrapConv := "", ""
 	switch matches[1] {
 	case "rate_counter", "sum_over_time", "avg_over_time", "max_over_time", "min_over_time", "first_over_time", "last_over_time", "stddev_over_time", "stdvar_over_time":
-		unwrapField = extractBareParserUnwrapField(baseQuery)
+		unwrapField, unwrapConv = extractBareParserUnwrapExpr(baseQuery)
 		if unwrapField == "" {
 			return bareParserMetricCompatSpec{}, false
 		}
@@ -699,6 +700,7 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 		rangeWindow:     window,
 		rangeWindowExpr: windowRaw,
 		unwrapField:     unwrapField,
+		unwrapConv:      unwrapConv,
 	}, true
 }
 
@@ -723,14 +725,33 @@ func resolveBareParserMetricRangeWindow(spec bareParserMetricCompatSpec, start, 
 }
 
 func extractBareParserUnwrapField(query string) string {
+	field, _ := extractBareParserUnwrapExpr(query)
+	return field
+}
+
+// extractBareParserUnwrapExpr returns (field, conv) from a | unwrap expression.
+// conv is "duration" or "bytes" when a unit-conversion wrapper is present;
+// empty when the unwrap references a raw numeric field.
+func extractBareParserUnwrapExpr(query string) (field, conv string) {
 	matches := bareParserUnwrapFieldRE.FindStringSubmatch(query)
 	if len(matches) != 3 {
-		return ""
+		return "", ""
 	}
-	if field := strings.TrimSpace(matches[1]); field != "" {
-		return field
+	if f := strings.TrimSpace(matches[1]); f != "" {
+		// matches[1] is non-empty only when the duration()/bytes() wrapper is present.
+		return f, inferUnwrapConv(query)
 	}
-	return strings.TrimSpace(matches[2])
+	return strings.TrimSpace(matches[2]), ""
+}
+
+func inferUnwrapConv(query string) string {
+	if strings.Contains(query, "duration(") {
+		return "duration"
+	}
+	if strings.Contains(query, "bytes(") {
+		return "bytes"
+	}
+	return ""
 }
 
 func formatMetricSampleValue(v float64) string {
@@ -973,6 +994,124 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 
 	isRate := spec.funcName == "rate"
 	return buildSlidingWindowSumsFromHits(buckets, labelSets, evalStart, evalEnd, stepNs, spec.rangeWindow.Nanoseconds(), isRate), nil
+}
+
+// fetchBareParserUnwrapViaStats fetches pre-aggregated per-step samples from
+// VL's stats_query_range endpoint for unwrap-based metric functions.
+// statsAggFunc is the VL stats expression appended to the query (e.g. "sum(duration) as c").
+// The returned map is keyed by canonical Loki label string and ready for use with
+// buildManualRangeMetricMatrix — the caller supplies the matching aggFunc name
+// ("sum", "max", "min", "first", or "last").
+func (p *Proxy) fetchBareParserUnwrapViaStats(
+	ctx context.Context,
+	spec bareParserMetricCompatSpec,
+	statsAggFunc string,
+	evalStartNs, evalEndNs, stepNs int64,
+) (map[string]manualSeriesSamples, error) {
+	logsqlQuery, err := p.translateQueryWithContext(ctx, spec.baseQuery)
+	if err != nil {
+		return nil, err
+	}
+
+	// Shift start back one range window so the first evaluation point can
+	// accumulate enough bucketed history for the sliding window.
+	fetchStartNs := evalStartNs - spec.rangeWindow.Nanoseconds()
+
+	stepSecs := stepNs / int64(time.Second)
+	if stepSecs < 1 {
+		stepSecs = 1
+	}
+
+	params := url.Values{}
+	params.Set("query", logsqlQuery+" | stats by (_stream) "+statsAggFunc)
+	params.Set("start", nanosToVLTimestamp(fetchStartNs))
+	params.Set("end", nanosToVLTimestamp(evalEndNs))
+	params.Set("step", strconv.FormatInt(stepSecs, 10)+"s")
+
+	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		return nil, fmt.Errorf("stats_query_range %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+
+	const maxBytes = 64 << 20 // 64 MB
+	body, err := readBodyLimited(resp.Body, maxBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	v, parseErr := fj.ParseBytes(body)
+	if parseErr != nil {
+		return nil, fmt.Errorf("parse stats_query_range: %w", parseErr)
+	}
+	if status := string(v.GetStringBytes("status")); status != "success" {
+		return nil, fmt.Errorf("stats_query_range non-success status: %s", status)
+	}
+
+	p.configMu.RLock()
+	lt := p.labelTranslator
+	p.configMu.RUnlock()
+
+	results := v.GetArray("data", "result")
+	seriesMap := make(map[string]manualSeriesSamples, len(results))
+	streamLabelCache := make(map[string]map[string]string, len(results))
+
+	for _, res := range results {
+		metricObj := res.GetObject("metric")
+		streamStr := string(metricObj.Get("_stream").GetStringBytes())
+
+		baseLabels, ok := streamLabelCache[streamStr]
+		if !ok {
+			baseLabels = parseStreamLabels(streamStr)
+			streamLabelCache[streamStr] = baseLabels
+		}
+
+		metric := make(map[string]string, len(baseLabels))
+		for k, lv := range baseLabels {
+			if lt != nil {
+				metric[lt.ToLoki(k)] = lv
+			} else {
+				metric[k] = lv
+			}
+		}
+		ensureDetectedLevel(metric)
+		ensureSyntheticServiceName(metric)
+
+		seriesKey := canonicalLabelsKey(metric)
+
+		values := res.GetArray("values")
+		samples := make([]rangeMetricSample, 0, len(values))
+		for _, pair := range values {
+			arr := pair.GetArray()
+			if len(arr) < 2 {
+				continue
+			}
+			tsUnix, tsErr := arr[0].Int64()
+			if tsErr != nil {
+				continue
+			}
+			valStr := string(arr[1].GetStringBytes())
+			val, valErr := strconv.ParseFloat(valStr, 64)
+			if valErr != nil || math.IsNaN(val) || math.IsInf(val, 0) {
+				continue
+			}
+			samples = append(samples, rangeMetricSample{ts: tsUnix * int64(time.Second), value: val})
+		}
+
+		if existing, ok := seriesMap[seriesKey]; ok {
+			existing.Samples = append(existing.Samples, samples...)
+			sort.Slice(existing.Samples, func(i, j int) bool { return existing.Samples[i].ts < existing.Samples[j].ts })
+			seriesMap[seriesKey] = existing
+		} else {
+			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
+		}
+	}
+	return seriesMap, nil
 }
 
 func bareParserMetricWindowValue(funcName string, window []bareParserMetricSample, spec bareParserMetricCompatSpec) float64 {
@@ -1587,6 +1726,47 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 				slog.WarnContext(r.Context(), "hits-based metric path failed, falling back to full-fetch",
 					"err", hitsErr, "query", originalQuery)
 			}
+		}
+	}
+
+	// Stats fast path for unwrap aggregations that compose correctly from per-step
+	// buckets: sum, max, min, first, last. Uses stats_query_range (pre-aggregated,
+	// O(buckets) not O(log-entries)) instead of raw log fetch. Falls back to the
+	// slow path on any error so correctness is preserved.
+	// Skip when unwrapConv is set (duration()/bytes()): VL's native max/min/etc.
+	// operates on raw string values ("15ms") rather than converted floats, so the
+	// aggregated result cannot be parsed as a number and all samples are dropped.
+	if spec.unwrapField != "" && spec.unwrapConv == "" {
+		vlField := p.labelTranslator.ToVL(spec.unwrapField)
+		var statsAggFunc, aggFunc string
+		switch spec.funcName {
+		case "sum_over_time":
+			statsAggFunc, aggFunc = "sum("+vlField+") as c", "sum"
+		case "max_over_time":
+			statsAggFunc, aggFunc = "max("+vlField+") as c", "max"
+		case "min_over_time":
+			statsAggFunc, aggFunc = "min("+vlField+") as c", "min"
+		case "first_over_time":
+			statsAggFunc, aggFunc = "first("+vlField+") as c", "first"
+		case "last_over_time":
+			statsAggFunc, aggFunc = "last("+vlField+") as c", "last"
+		}
+		if statsAggFunc != "" {
+			uwSeries, uwErr := p.fetchBareParserUnwrapViaStats(r.Context(), spec, statsAggFunc, startNanos, endNanos, stepNanos)
+			if uwErr == nil {
+				startT := time.Unix(0, startNanos)
+				endT := time.Unix(0, endNanos)
+				stepD := time.Duration(stepNanos)
+				result := buildManualRangeMetricMatrix(aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
+				elapsed := time.Since(start)
+				p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+				p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+				return
+			}
+			slog.WarnContext(r.Context(), "unwrap stats fast path failed, falling back to full-fetch",
+				"err", uwErr, "query", originalQuery)
 		}
 	}
 

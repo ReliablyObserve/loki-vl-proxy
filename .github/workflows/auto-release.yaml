@@ -28,7 +28,7 @@ jobs:
       next_version: ${{ steps.check.outputs.next_version }}
       latest_tag: ${{ steps.check.outputs.latest_tag }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -201,11 +201,11 @@ jobs:
       coverage_pct: ${{ steps.metrics.outputs.coverage_pct }}
       code_lines: ${{ steps.metrics.outputs.code_lines }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -257,12 +257,12 @@ jobs:
       HAS_RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
       HAS_GHCR_PACKAGE_ADMIN_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN != '' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true

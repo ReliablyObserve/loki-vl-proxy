@@ -1590,6 +1590,7 @@ type bareParserMetricCompatSpec struct {
 	rangeWindow     time.Duration
 	rangeWindowExpr string
 	unwrapField     string
+	unwrapConv      string // "duration" or "bytes" when the unwrap uses a unit-conversion func
 	quantile        float64
 }
 

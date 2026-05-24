@@ -19,7 +19,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Verify dashboard and alerting assets are synced to chart
         run: ./scripts/ci/sync_observability_assets.sh --check
@@ -27,7 +27,7 @@ jobs:
       - name: Unit tests (quality gate policy)
         run: python3 -m unittest scripts.ci.tests.test_check_quality_gate scripts.ci.tests.test_check_changelog_pr
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -73,9 +73,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -87,9 +87,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -182,9 +182,9 @@ jobs:
       PROXY_URL_CATEGORIZED: http://127.0.0.1:13102
       SMOKE_QUERY: '{app="e2e-test"}'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -230,9 +230,9 @@ jobs:
   bench:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -558,9 +558,9 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -584,7 +584,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - name: Build Docker image
         run: docker build -t loki-vl-proxy:test .
@@ -614,9 +614,9 @@ jobs:
             pattern: '^(TestSetup_IngestLogs|TestQuerySemanticsMatrixManifest|TestQuerySemanticsOperationsInventory|TestQuerySemanticsMatrix|TestGrafanaClickout_.*|TestMissingOps_.*|TestRangeMetricCompatibility.*|TestLogQL_Exhaustive_.*|TestPipeline_.*|TestEdge_DropErrorInstantQueryReturnsAggregatedResult|TestEdge_DetectedFieldsAfterJsonDropPipelineIncludesJsonFields)$'
     name: e2e-compat (${{ matrix.group.name }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -691,9 +691,9 @@ jobs:
     env:
       PROXY_IMAGE: loki-vl-proxy:fleet-ci
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -748,9 +748,9 @@ jobs:
             command: --grep @explore-mt
     name: e2e-ui (${{ matrix.shard.name }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true
@@ -825,12 +825,36 @@ jobs:
         working-directory: test/e2e-compat
         run: docker compose down -v
 
+  stress-tests:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+          cache: true
+
+      - name: Stress tests (concurrency + race detector)
+        run: |
+          go test -tags=stress -race -parallel=16 -timeout=120s -v ./internal/proxy/ \
+            -run '^(TestTranslation|TestCoalescer|TestRangeMetric)' \
+            | tee stress-results.txt
+
+      - name: Upload stress test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: stress-results
+          path: stress-results.txt
+
   helm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.26.3"
           cache: true

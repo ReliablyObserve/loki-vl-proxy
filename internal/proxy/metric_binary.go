@@ -74,6 +74,17 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 // proxyStatsQueryRangeDirect issues the VL stats_query_range request directly,
 // bypassing the compat layer and the rate-shift gate. Call this when the caller
 // has already applied any necessary start shift (e.g. proxyBareParserMetricViaStats).
+// maxStatsQueryRangeBytes caps the VL stats_query_range response size in the
+// direct (non-coalesced) path. High-cardinality by() clauses (e.g. by(extracted_float_field))
+// on broad selectors can return tens of megabytes per query; the Drilldown Fields
+// page issues ~20 such queries concurrently, causing OOM. When exceeded, an empty
+// Loki matrix is returned rather than buffering an unbounded response.
+const maxStatsQueryRangeBytes = 16 << 20 // 16 MB
+
+// emptyLokiMatrix is returned when a VL stats_query_range response exceeds
+// maxStatsQueryRangeBytes. Grafana renders it as a blank (no-data) series.
+var emptyLokiMatrix = []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+
 func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
 	// For the underscore proxy, expand dotted by() labels (e.g. "service.name") to
 	// also include their underscore equivalents (e.g. "service_name"). Loki-push data
@@ -87,17 +98,29 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	// window-level cache reuse are for raw log queries only.
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
-	// Coalesce concurrent identical range metric queries.
-	key := "stats_query_range:" + getOrgID(r.Context()) + ":" + params.Encode()
-	status, body, err := p.vlPostCoalesced(r.Context(), key, "/select/logsql/stats_query_range", params)
+	// Use vlPost directly (not coalesced) so readBodyLimited can bound the response
+	// before the full body is allocated. The coalescer's 256 MB cap is too generous
+	// when many concurrent field queries each produce a large stats response.
+	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 	if err != nil {
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return
 	}
+	defer resp.Body.Close()
 
-	// Propagate VL error status
-	if status >= 400 {
-		p.writeError(w, status, string(body))
+	if resp.StatusCode >= 400 {
+		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		p.writeError(w, resp.StatusCode, string(errBody))
+		return
+	}
+
+	body, bodyErr := readBodyLimited(resp.Body, maxStatsQueryRangeBytes)
+	if bodyErr != nil {
+		// Response exceeds the per-request cap — return empty matrix rather than OOMing.
+		// This protects against high-cardinality by() clauses (e.g. by(float_field)) on
+		// broad stream selectors producing tens of megabytes per concurrent field query.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(emptyLokiMatrix)
 		return
 	}
 
@@ -108,7 +131,7 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	// Translate label names (e.g., dots → underscores) in metric labels.
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(wrapAsLokiResponse(body, "matrix"))
+	_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
 }
 
 // addUnderscorefallbackByLabels augments a translated LogsQL stats query's by()

@@ -260,6 +260,16 @@ func TestQuerySemanticsMatrix(t *testing.T) {
 							t.Fatalf("metric-key mismatch for %s, proxy=%v loki=%v", tc.ID, proxyKeys, lokiKeys)
 						}
 					}
+				case "any_non_empty":
+					// Verifies both backends return results without comparing cardinality.
+					// Used for queries where VL groups by stream labels only (stats by
+					// (_stream)) while Loki extracts JSON fields as additional label
+					// dimensions — an inherent architectural difference, not a bug.
+					proxyCount := querySemanticsResultCount(proxyResp)
+					lokiCount := querySemanticsResultCount(lokiResp)
+					if tc.RequireNonEmpty && (proxyCount == 0 || lokiCount == 0) {
+						t.Fatalf("expected non-empty results for %s, proxy=%d loki=%d", tc.ID, proxyCount, lokiCount)
+					}
 				case "":
 				default:
 					t.Fatalf("unsupported comparison mode %q in case %q", tc.Compare, tc.ID)

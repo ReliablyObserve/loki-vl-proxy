@@ -582,18 +582,21 @@ func TestQueryRange_StdvarCompatSquaresStddev(t *testing.T) {
 	}
 }
 
-func TestQueryRange_FirstOverTimeManualFallback(t *testing.T) {
+// TestQueryRange_FirstOverTimeStatsPath verifies that first_over_time with an
+// unwrap field uses the stats_query_range fast path (not raw log fetch) and
+// produces the correct first-value result from per-step bucket aggregates.
+func TestQueryRange_FirstOverTimeStatsPath(t *testing.T) {
 	base := time.Unix(1700000000, 0).UTC()
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			t.Fatalf("unexpected backend path %s (expected stats_query_range)", r.URL.Path)
 		}
-		lines := []string{
-			fmt.Sprintf(`{"_time":%q,"_msg":"a","_stream":"{app=\"nginx\"}","latency":10}`, base.Format(time.RFC3339Nano)),
-			fmt.Sprintf(`{"_time":%q,"_msg":"b","_stream":"{app=\"nginx\"}","latency":20}`, base.Add(60*time.Second).Format(time.RFC3339Nano)),
-			fmt.Sprintf(`{"_time":%q,"_msg":"c","_stream":"{app=\"nginx\"}","latency":30}`, base.Add(120*time.Second).Format(time.RFC3339Nano)),
-		}
-		_, _ = w.Write([]byte(strings.Join(lines, "\n") + "\n"))
+		// Return per-step first(latency) values: bucket at T+0 has first=10,
+		// T+60 has first=20, T+120 has first=30.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"_stream":"{app=\"nginx\"}"},` +
+			`"values":[[1700000000,"10"],[1700000060,"20"],[1700000120,"30"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -624,10 +627,67 @@ func TestQueryRange_FirstOverTimeManualFallback(t *testing.T) {
 	if len(resp.Data.Result) != 1 || len(resp.Data.Result[0].Values) != 2 {
 		t.Fatalf("unexpected response: %s", rec.Body.String())
 	}
+	// At both eval points (T+60, T+120) the 2m sliding window includes the
+	// T+0 bucket (value=10) which is the chronological first — so result=10.
 	for _, pair := range resp.Data.Result[0].Values {
 		if pair[1] != "10" {
-			t.Fatalf("expected first_over_time value 10, got %v", pair[1])
+			t.Fatalf("expected first_over_time value 10 (earliest bucket in window), got %v", pair[1])
 		}
+	}
+}
+
+// TestQueryRange_SumOverTimeUsesStatsPath verifies that sum_over_time with an
+// unwrap field routes to stats_query_range (not raw log fetch) and correctly
+// sums per-step bucket values across the sliding window.
+func TestQueryRange_SumOverTimeUsesStatsPath(t *testing.T) {
+	base := time.Unix(1700000000, 0).UTC()
+	statsCalled := false
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			// Three 1-minute buckets with sum(duration) values: 100, 200, 300
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+				`{"metric":{"_stream":"{app=\"api\"}"},` +
+				`"values":[[1700000000,"100"],[1700000060,"200"],[1700000120,"300"]]}]}}`))
+		default:
+			t.Errorf("unexpected backend path %s — should use stats_query_range not raw log fetch", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+	params := url.Values{}
+	// window=2m > step=60s → sliding window
+	params.Set("query", `sum_over_time({app="api"} | json | unwrap duration [2m])`)
+	params.Set("start", strconv.FormatInt(base.Add(60*time.Second).Unix(), 10))
+	params.Set("end", strconv.FormatInt(base.Add(120*time.Second).Unix(), 10))
+	params.Set("step", "60")
+	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Error("expected stats_query_range to be called for sum_over_time unwrap (fast path)")
+	}
+
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Values [][]interface{} `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(resp.Data.Result) == 0 {
+		t.Fatalf("expected at least one series, got empty result: %s", rec.Body.String())
 	}
 }
 
