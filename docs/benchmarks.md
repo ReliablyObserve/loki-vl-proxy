@@ -282,7 +282,7 @@ These flags are already applied in `test/e2e-compat/docker-compose.yml`. In prod
 | VL NDJSON → Loki streams (100 lines) | 170 µs | 3,118 | 70 KB |
 | wrapAsLokiResponse | 2.8 µs | 58 | 2.6 KB |
 
-Translation overhead is 2.7–7.2 µs depending on query complexity. For a typical heavy-workload query taking 100–500 ms against VL, translation is <0.007% of wall-clock time. The AST-typed path (`PipeMath`, `PipeStats`) adds no overhead versus the previous string-concat approach.
+Translation overhead is 2.7–7.2 µs depending on query complexity. For a typical heavy-workload query taking 100–500 ms against VL, translation is under 0.007% of wall-clock time. The AST-typed path (`PipeMath`, `PipeStats`) adds no overhead versus the previous string-concat approach.
 
 ```bash
 # Run microbenchmarks
