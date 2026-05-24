@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: write
-  packages: read
 
 jobs:
   update-ghcr-badges:
@@ -16,15 +15,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch GHCR pull counts
+      - name: Fetch pull counts
         id: pulls
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # PACKAGES_READ_TOKEN must be a classic PAT or fine-grained token with
+          # the read:packages scope on the ReliablyObserve org. GITHUB_TOKEN cannot
+          # satisfy this scope (returns HTTP 403 on the org packages API).
+          # Create at: https://github.com/settings/tokens
+          # Store as:  Settings → Secrets → Actions → PACKAGES_READ_TOKEN
+          PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
         run: |
-          MAIN=$(gh api /orgs/ReliablyObserve/packages/container/loki-vl-proxy --jq '.download_count' 2>/dev/null || echo 0)
-          CHART=$(gh api '/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy' --jq '.download_count' 2>/dev/null || echo 0)
-          echo "main=${MAIN:-0}" >> "$GITHUB_OUTPUT"
-          echo "chart=${CHART:-0}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+
+          # GHCR pull counts — requires read:packages scope on org packages API.
+          MAIN=0
+          CHART=0
+          if [ -n "${PACKAGES_READ_TOKEN}" ]; then
+            MAIN=$(curl -fsSL \
+              -H "Authorization: Bearer ${PACKAGES_READ_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/orgs/ReliablyObserve/packages/container/loki-vl-proxy" \
+              | jq -r '.download_count // 0' 2>/dev/null || echo 0)
+            CHART=$(curl -fsSL \
+              -H "Authorization: Bearer ${PACKAGES_READ_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy" \
+              | jq -r '.download_count // 0' 2>/dev/null || echo 0)
+          else
+            echo "::warning::PACKAGES_READ_TOKEN secret not configured — GHCR pull counts will show 0. See workflow comments for setup instructions."
+          fi
+
+          # Docker Hub pull count — public API, no auth needed.
+          DOCKERHUB=0
+          DOCKERHUB=$(curl -fsSL \
+            "https://hub.docker.com/v2/repositories/reliablyobserve/loki-vl-proxy/" \
+            | jq -r '.pull_count // 0' 2>/dev/null || echo 0)
+
+          echo "main=${MAIN}"   >> "$GITHUB_OUTPUT"
+          echo "chart=${CHART}" >> "$GITHUB_OUTPUT"
+          echo "dockerhub=${DOCKERHUB}" >> "$GITHUB_OUTPUT"
+          echo "GHCR main pulls: ${MAIN}, chart pulls: ${CHART}, DockerHub pulls: ${DOCKERHUB}"
 
       - name: Write badge JSON files
         run: |
@@ -40,10 +70,9 @@ jobs:
           "
           }
 
-          MAIN_VAL="${{ steps.pulls.outputs.main }}"
-          CHART_VAL="${{ steps.pulls.outputs.chart }}"
-          MAIN_FMT=$(fmt "${MAIN_VAL:-0}")
-          CHART_FMT=$(fmt "${CHART_VAL:-0}")
+          MAIN_FMT=$(fmt "${{ steps.pulls.outputs.main }}")
+          CHART_FMT=$(fmt "${{ steps.pulls.outputs.chart }}")
+          DOCKERHUB_FMT=$(fmt "${{ steps.pulls.outputs.dockerhub }}")
 
           mkdir -p /tmp/badges
           cat > /tmp/badges/ghcr-pulls.json <<EOF
@@ -66,6 +95,16 @@ jobs:
           }
           EOF
 
+          cat > /tmp/badges/dockerhub-pulls.json <<EOF
+          {
+            "schemaVersion": 1,
+            "label": "Docker Hub pulls",
+            "message": "${DOCKERHUB_FMT}",
+            "color": "blue",
+            "namedLogo": "docker"
+          }
+          EOF
+
       - name: Push badge data to badges branch
         run: |
           git config user.name "github-actions[bot]"
@@ -81,9 +120,10 @@ jobs:
           fi
 
           mkdir -p .github/badges
-          cp /tmp/badges/ghcr-pulls.json .github/badges/ghcr-pulls.json
+          cp /tmp/badges/ghcr-pulls.json       .github/badges/ghcr-pulls.json
           cp /tmp/badges/ghcr-chart-pulls.json .github/badges/ghcr-chart-pulls.json
+          cp /tmp/badges/dockerhub-pulls.json  .github/badges/dockerhub-pulls.json
 
-          git add .github/badges/ghcr-pulls.json .github/badges/ghcr-chart-pulls.json
-          git diff --cached --quiet || git commit -m "chore: update GHCR pull count badge data [skip ci]"
+          git add .github/badges/
+          git diff --cached --quiet || git commit -m "chore: update pull count badge data [skip ci]"
           git push origin badges

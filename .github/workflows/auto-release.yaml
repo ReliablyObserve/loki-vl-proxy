@@ -384,8 +384,10 @@ jobs:
           {
             echo "tags<<EOF"
             echo "ghcr.io/${OWNER_LC}/loki-vl-proxy:${VERSION}"
+            echo "ghcr.io/${OWNER_LC}/loki-vl-proxy:latest"
             if [ -n "${DOCKERHUB_USERNAME}" ] && [ -n "${DOCKERHUB_TOKEN}" ]; then
               echo "docker.io/reliablyobserve/loki-vl-proxy:${VERSION}"
+              echo "docker.io/reliablyobserve/loki-vl-proxy:latest"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
