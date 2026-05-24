@@ -1,6 +1,9 @@
 package translator
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestCoverage_ParseWithoutMarker(t *testing.T) {
 	clean, labels := ParseWithoutMarker(`app:="api"` + WithoutMarkerSuffix + `pod,node`)
@@ -126,6 +129,36 @@ func TestCoverage_AddByClause_WithStatsAndTranslator(t *testing.T) {
 	want := `app:="nginx" | stats by (service.name, cluster) count(*) as hits`
 	if got != want {
 		t.Fatalf("addByClause returned %q, want %q", got, want)
+	}
+}
+
+// TestDecolorizePipelineStage verifies that | decolorize is translated to the
+// typed logsql.PipeDecolorize node string ("| decolorize") and passes through
+// in the full translator output so the proxy can apply post-processing.
+func TestDecolorizePipelineStage(t *testing.T) {
+	got, err := TranslateLogQL(`{app="nginx"} | decolorize`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, "| decolorize") {
+		t.Fatalf("expected '| decolorize' in translated output, got: %q", got)
+	}
+}
+
+// TestIPFilterPassThrough verifies that | ip("cidr") stages produce the
+// proxy-side post-processing marker so ipFilterStreams can apply the filter.
+func TestIPFilterPassThrough(t *testing.T) {
+	// translatePipelineStage with a bare ip() stage (no label prefix) should
+	// produce the pass-through marker "| ip(...)".
+	got := translatePipelineStage(`ip("10.0.0.0/8")`, nil)
+	if got != `| ip("10.0.0.0/8")` {
+		t.Fatalf("expected ip() pass-through marker, got: %q", got)
+	}
+
+	// A different CIDR should also pass through.
+	got = translatePipelineStage(`ip("192.168.0.0/16")`, nil)
+	if got != `| ip("192.168.0.0/16")` {
+		t.Fatalf("expected ip() CIDR pass-through, got: %q", got)
 	}
 }
 

@@ -902,17 +902,22 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 	}
 
 	// decolorize — strips ANSI color codes.
-	// VL doesn't have native ANSI stripping yet.
-	// Proxy applies this post-processing on response log lines.
-	// TODO: Replace with VL native pipe when available.
+	// VL has native | decolorize support; emit the typed node for correctness.
+	// The string output is identical ("| decolorize"), but using the typed node
+	// ensures the representation stays in sync with the logsql AST definition.
 	if stage == "decolorize" {
-		return "| decolorize" // proxy-side post-processing marker
+		return logsql.PipeDecolorize{}.String() // "| decolorize"
 	}
 
 	// ip() label filter — CIDR matching on label values.
-	// VL doesn't have native IP range filtering yet.
-	// Proxy applies this post-processing on response labels.
-	// TODO: Replace with VL native filter when available.
+	// This handles a bare ip("cidr") stage (without a label prefix). The proxy
+	// applies IP-range filtering as post-processing on response log streams via
+	// ipFilterStreams (see internal/proxy/postprocess.go), keyed by parsing the
+	// original LogQL query with parseIPFilter.
+	// TODO: When the translator gains access to Capabilities, replace with
+	//   logsql.Builder.BestIPv4Range(label, cidr).String() which emits the
+	//   native :ipv4_range() field filter on VL v1.45+ and a regexp fallback
+	//   on older versions. That would eliminate the proxy-side post-processing.
 	if strings.HasPrefix(stage, "ip(") {
 		return "| " + stage // proxy-side post-processing marker
 	}
