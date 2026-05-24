@@ -1689,7 +1689,7 @@ func tryTranslateMetricQuery(logql string, labelFn LabelTranslateFunc) (string, 
 			if funcName == "stdvar_over_time" {
 				if outerAgg != "" && byLabels == "" {
 					innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
-					withVariance := innerAliased + " | math __lvp_inner*__lvp_inner as __lvp_inner_var"
+					withVariance := innerAliased + " " + logsql.PipeMath{Alias: "__lvp_inner_var", Expr: "__lvp_inner*__lvp_inner"}.String()
 					if outerResult, ok := applyOuterAggregation(withVariance, outerAgg, "__lvp_inner_var"); ok {
 						return outerResult, true
 					}
@@ -1767,7 +1767,7 @@ func buildRateLikeQuery(logsqlQuery, originalQuery, statsExpr, duration, outerAg
 	}
 
 	innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
-	withRate := innerAliased + " | math __lvp_inner/" + strconv.FormatFloat(seconds, 'f', -1, 64) + " as __lvp_rate"
+	withRate := innerAliased + " " + logsql.PipeMath{Alias: "__lvp_rate", Expr: "__lvp_inner/" + strconv.FormatFloat(seconds, 'f', -1, 64)}.String()
 
 	if outerAgg != "" && byLabels == "" {
 		if outerResult, ok := applyOuterAggregation(withRate, outerAgg, "__lvp_rate"); ok {
