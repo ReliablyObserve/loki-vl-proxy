@@ -430,31 +430,72 @@ var (
 //
 // | json is included here: Loki returns the original JSON string unchanged;
 // wrapping it in a new JSON envelope is incorrect and adds per-entry CPU cost.
-func hasTextExtractionParser(logql string) bool {
-	return logfmtParserStageRE.MatchString(logql) ||
-		regexpParserStageRE.MatchString(logql) ||
-		patternParserStageRE.MatchString(logql) ||
-		jsonParserStageRE.MatchString(logql)
+func hasTextExtractionParser(query string) bool {
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		// Fall back to regex for queries the parser rejects (e.g. metric wrappers).
+		return logfmtParserStageRE.MatchString(query) ||
+			regexpParserStageRE.MatchString(query) ||
+			patternParserStageRE.MatchString(query) ||
+			jsonParserStageRE.MatchString(query)
+	}
+	for _, stage := range lq.Pipeline {
+		if _, ok := stage.(*logqlpkg.ParserStage); ok {
+			return true
+		}
+	}
+	return false
 }
 
-func hasParserStage(logql, parser string) bool {
-	re := jsonParserStageRE
-	if parser == "logfmt" {
-		re = logfmtParserStageRE
+func hasParserStage(query, parser string) bool {
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		re := jsonParserStageRE
+		if parser == "logfmt" {
+			re = logfmtParserStageRE
+		}
+		return re.MatchString(query)
 	}
-	return re.MatchString(logql)
+	want := logqlpkg.ParserJSON
+	if parser == "logfmt" {
+		want = logqlpkg.ParserLogfmt
+	}
+	for _, stage := range lq.Pipeline {
+		ps, ok := stage.(*logqlpkg.ParserStage)
+		if ok && ps.Type == want {
+			return true
+		}
+	}
+	return false
 }
 
-func removeParserStage(logql, parser string) string {
-	re := jsonParserStageRE
+func removeParserStage(query, parser string) string {
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		// Fall back to regex on parse failure.
+		re := jsonParserStageRE
+		if parser == "logfmt" {
+			re = logfmtParserStageRE
+		}
+		result := re.ReplaceAllString(query, "")
+		for strings.Contains(result, "  ") {
+			result = strings.ReplaceAll(result, "  ", " ")
+		}
+		return strings.TrimSpace(result)
+	}
+	remove := logqlpkg.ParserJSON
 	if parser == "logfmt" {
-		re = logfmtParserStageRE
+		remove = logqlpkg.ParserLogfmt
 	}
-	logql = re.ReplaceAllString(logql, "")
-	for strings.Contains(logql, "  ") {
-		logql = strings.ReplaceAll(logql, "  ", " ")
+	filtered := lq.Pipeline[:0]
+	for _, stage := range lq.Pipeline {
+		if ps, ok := stage.(*logqlpkg.ParserStage); ok && ps.Type == remove {
+			continue
+		}
+		filtered = append(filtered, stage)
 	}
-	return strings.TrimSpace(logql)
+	lq.Pipeline = filtered
+	return lq.String()
 }
 
 // extractLogQLOffset finds a LogQL offset modifier (e.g. "[5m] offset 1h"),
