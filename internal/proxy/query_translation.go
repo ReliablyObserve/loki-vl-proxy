@@ -685,8 +685,132 @@ func hasExtractingParserStage(logql string) bool {
 	return false
 }
 
-func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, bool) {
-	if matches := bareParserQuantileCompatRE.FindStringSubmatch(strings.TrimSpace(logql)); len(matches) == 4 {
+// parseBareParserMetricCompatSpec parses a bare (non-aggregated) LogQL metric
+// expression that wraps a log pipeline containing at least one extracting parser
+// stage (json, logfmt, regexp, pattern, etc.). When the logql AST can parse the
+// query (no Grafana template windows like $__interval), it uses typed nodes for
+// extraction. Template-window queries that the parser rejects fall back to the
+// regex-based path so runtime behaviour is identical.
+func parseBareParserMetricCompatSpec(query string) (bareParserMetricCompatSpec, bool) {
+	if spec, ok := parseBareParserMetricCompatSpecAST(strings.TrimSpace(query)); ok {
+		return spec, true
+	}
+	return parseBareParserMetricCompatSpecRegex(strings.TrimSpace(query))
+}
+
+// parseBareParserMetricCompatSpecAST uses the logql typed AST. It returns
+// (spec, false) on any parse or validation failure, signalling the caller to
+// fall back to the regex implementation.
+func parseBareParserMetricCompatSpecAST(query string) (bareParserMetricCompatSpec, bool) {
+	expr, err := logqlpkg.Parse(query)
+	if err != nil {
+		return bareParserMetricCompatSpec{}, false
+	}
+	// Reject VectorAggregation wrappers (e.g. sum(count_over_time(...))) — the
+	// outer aggregation means this is not a "bare" metric expression.
+	if _, isVec := expr.(*logqlpkg.VectorAggregation); isVec {
+		return bareParserMetricCompatSpec{}, false
+	}
+	ra, ok := expr.(*logqlpkg.RangeAggregation)
+	if !ok {
+		return bareParserMetricCompatSpec{}, false
+	}
+	// Reject expressions with an outer grouping clause such as `avg_over_time(...) by ()`.
+	// Those are handled via the stats translation path (handleStatsCompatRange), not the
+	// bare-parser-metric path. The regex implementation rejects them implicitly because
+	// bareParserMetricCompatRE matches only up to the closing ')' before any trailing text.
+	if ra.Grouping != nil {
+		return bareParserMetricCompatSpec{}, false
+	}
+	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
+	if !ok {
+		return bareParserMetricCompatSpec{}, false
+	}
+
+	// Require at least one extracting parser stage in the pipeline.
+	hasParser := false
+	for _, s := range lq.Pipeline {
+		if _, isParser := s.(*logqlpkg.ParserStage); isParser {
+			hasParser = true
+			break
+		}
+	}
+	if !hasParser {
+		return bareParserMetricCompatSpec{}, false
+	}
+
+	windowRaw := ra.Range
+	window, windowOK := parsePositiveStepDuration(windowRaw)
+	if !windowOK {
+		// A non-duration window would have caused a parse error already; guard anyway.
+		return bareParserMetricCompatSpec{}, false
+	}
+
+	funcName := string(ra.Op)
+
+	// Functions that require an unwrap stage.
+	var unwrapField, unwrapConv string
+	switch ra.Op {
+	case logqlpkg.RangeRateCounter,
+		logqlpkg.RangeSumOverTime,
+		logqlpkg.RangeAvgOverTime,
+		logqlpkg.RangeMaxOverTime,
+		logqlpkg.RangeMinOverTime,
+		logqlpkg.RangeFirstOverTime,
+		logqlpkg.RangeLastOverTime,
+		logqlpkg.RangeStddevOverTime,
+		logqlpkg.RangeStdvarOverTime:
+		// Find the UnwrapStage in the pipeline.
+		for _, s := range lq.Pipeline {
+			if uw, isUW := s.(*logqlpkg.UnwrapStage); isUW {
+				unwrapField = uw.Label
+				unwrapConv = uw.Converter
+				break
+			}
+		}
+		if unwrapField == "" {
+			return bareParserMetricCompatSpec{}, false
+		}
+	case logqlpkg.RangeQuantileOverTime:
+		if !ra.HasParam || ra.Param < 0 || ra.Param > 1 {
+			return bareParserMetricCompatSpec{}, false
+		}
+		for _, s := range lq.Pipeline {
+			if uw, isUW := s.(*logqlpkg.UnwrapStage); isUW {
+				unwrapField = uw.Label
+				unwrapConv = uw.Converter
+				break
+			}
+		}
+		if unwrapField == "" {
+			return bareParserMetricCompatSpec{}, false
+		}
+		return bareParserMetricCompatSpec{
+			funcName:        funcName,
+			baseQuery:       lq.String(),
+			rangeWindow:     window,
+			rangeWindowExpr: windowRaw,
+			unwrapField:     unwrapField,
+			unwrapConv:      unwrapConv,
+			quantile:        ra.Param,
+		}, true
+	}
+
+	return bareParserMetricCompatSpec{
+		funcName:        funcName,
+		baseQuery:       lq.String(),
+		rangeWindow:     window,
+		rangeWindowExpr: windowRaw,
+		unwrapField:     unwrapField,
+		unwrapConv:      unwrapConv,
+	}, true
+}
+
+// parseBareParserMetricCompatSpecRegex is the original regex-based fallback,
+// used when the logql parser cannot handle the query (e.g. Grafana template
+// windows like [$__interval] that are not valid duration literals).
+func parseBareParserMetricCompatSpecRegex(query string) (bareParserMetricCompatSpec, bool) {
+	if matches := bareParserQuantileCompatRE.FindStringSubmatch(query); len(matches) == 4 {
 		baseQuery := strings.TrimSpace(matches[2])
 		if baseQuery == "" || !hasExtractingParserStage(baseQuery) {
 			return bareParserMetricCompatSpec{}, false
@@ -715,7 +839,7 @@ func parseBareParserMetricCompatSpec(logql string) (bareParserMetricCompatSpec, 
 		}, true
 	}
 
-	matches := bareParserMetricCompatRE.FindStringSubmatch(strings.TrimSpace(logql))
+	matches := bareParserMetricCompatRE.FindStringSubmatch(query)
 	if len(matches) != 4 {
 		return bareParserMetricCompatSpec{}, false
 	}
