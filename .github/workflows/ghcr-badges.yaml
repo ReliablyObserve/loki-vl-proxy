@@ -18,26 +18,30 @@ jobs:
 
       - name: Fetch pull counts
         id: pulls
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          # GHCR pull counts via GITHUB_TOKEN with packages: read permission.
-          # Debug: log the raw API response to confirm field names.
-          MAIN_RAW=$(curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/orgs/ReliablyObserve/packages/container/loki-vl-proxy" 2>/dev/null || echo '{}')
-          echo "MAIN raw: $(echo "$MAIN_RAW" | jq -c '{download_count,version_count}')"
-          MAIN=$(echo "$MAIN_RAW" | jq -r '.download_count // 0')
+          # GHCR pull counts via GraphQL — REST API returns null for container packages.
+          # packages: read permission on GITHUB_TOKEN grants access to org package stats.
+          MAIN=$(gh api graphql -f query='
+            {
+              organization(login: "ReliablyObserve") {
+                packages(first: 1, names: ["loki-vl-proxy"], packageType: CONTAINER) {
+                  nodes { statistics { downloadsTotalCount } }
+                }
+              }
+            }' --jq '.data.organization.packages.nodes[0].statistics.downloadsTotalCount // 0' \
+            2>/dev/null || echo 0)
 
-          CHART_RAW=$(curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy" 2>/dev/null || echo '{}')
-          echo "CHART raw: $(echo "$CHART_RAW" | jq -c '{download_count,version_count}')"
-          CHART=$(echo "$CHART_RAW" | jq -r '.download_count // 0')
+          CHART=$(gh api graphql -f query='
+            {
+              organization(login: "ReliablyObserve") {
+                packages(first: 1, names: ["charts/loki-vl-proxy"], packageType: CONTAINER) {
+                  nodes { statistics { downloadsTotalCount } }
+                }
+              }
+            }' --jq '.data.organization.packages.nodes[0].statistics.downloadsTotalCount // 0' \
+            2>/dev/null || echo 0)
 
           # Docker Hub pull count — public API, no auth needed.
           DOCKERHUB=0
