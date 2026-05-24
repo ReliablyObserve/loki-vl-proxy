@@ -271,7 +271,7 @@ flowchart LR
     subgraph Translate["Translate (internal/translator/)"]
         TR["TranslateLogQL() / TranslateMetricQuery()"]
         TIER1["Tier 1: Stable string paths\nstream selectors · line filters\nlabel format · logfmt/json parsers"]
-        TIER2["Tier 2: AST-driven paths\nbuildStatsQuery → logsql.PipeStats\nip() filter → Builder.BestIPv4Range()"]
+        TIER2["Tier 2: AST-driven paths\nbuildStatsQuery → logsql.PipeStats\n(ip() filter: phase-2 roadmap)"]
     end
 
     subgraph Build["Build (internal/logsql/)"]

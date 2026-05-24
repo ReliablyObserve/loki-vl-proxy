@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Performance
-- Hoist 8 per-request `regexp.MustCompile` calls to package-level vars in the translator, eliminating repeated regex compilation on every query
+- Hoist 9 per-request `regexp.MustCompile` calls to package-level vars in the translator, eliminating repeated regex compilation on every query
 
 ### Changed
 - `buildStatsQuery` now uses `logsql.PipeStats` for by-clause assembly instead of `fmt.Sprintf` string construction; fix `pipeStatsString` to correctly omit `as` clause for empty alias
