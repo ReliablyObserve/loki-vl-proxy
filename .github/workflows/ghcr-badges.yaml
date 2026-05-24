@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: write
-  packages: read   # allows GITHUB_TOKEN to read org package metadata (download_count)
+  packages: read   # allows GITHUB_TOKEN to read org package metadata (version_count)
 
 jobs:
   update-ghcr-badges:
@@ -23,29 +23,20 @@ jobs:
         run: |
           set -euo pipefail
 
-          # GHCR pull counts via GraphQL.
-          # Discover package type and pull count via GraphQL (no packageType filter).
-          MAIN_GQL=$(gh api graphql -f query='
-            {
-              organization(login: "ReliablyObserve") {
-                packages(first: 5, names: ["loki-vl-proxy"]) {
-                  nodes { name packageType statistics { downloadsTotalCount } }
-                }
-              }
-            }' 2>&1 || echo '{"error":"graphql_failed"}')
-          echo "MAIN GraphQL: $MAIN_GQL"
-          MAIN=$(echo "$MAIN_GQL" | jq -r '[.data.organization.packages.nodes[].statistics.downloadsTotalCount] | add // 0' 2>/dev/null || echo 0)
+          # GHCR: pull counts are not exposed by any public API (download_count is null
+          # for container packages, GraphQL packageType CONTAINER not in schema).
+          # Use version_count instead — shows how many image versions are published.
+          MAIN=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/ReliablyObserve/packages/container/loki-vl-proxy" \
+            | jq -r '.version_count // 0' 2>/dev/null || echo 0)
 
-          CHART_GQL=$(gh api graphql -f query='
-            {
-              organization(login: "ReliablyObserve") {
-                packages(first: 5, names: ["charts/loki-vl-proxy"]) {
-                  nodes { name packageType statistics { downloadsTotalCount } }
-                }
-              }
-            }' 2>&1 || echo '{"error":"graphql_failed"}')
-          echo "CHART GraphQL: $CHART_GQL"
-          CHART=$(echo "$CHART_GQL" | jq -r '[.data.organization.packages.nodes[].statistics.downloadsTotalCount] | add // 0' 2>/dev/null || echo 0)
+          CHART=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy" \
+            | jq -r '.version_count // 0' 2>/dev/null || echo 0)
 
           # Docker Hub pull count — public API, no auth needed.
           DOCKERHUB=0
@@ -58,7 +49,7 @@ jobs:
             echo "chart=${CHART}"
             echo "dockerhub=${DOCKERHUB}"
           } >> "$GITHUB_OUTPUT"
-          echo "GHCR main pulls: ${MAIN}, chart pulls: ${CHART}, DockerHub pulls: ${DOCKERHUB}"
+          echo "GHCR main versions: ${MAIN}, chart versions: ${CHART}, DockerHub pulls: ${DOCKERHUB}"
 
       - name: Write badge JSON files
         run: |
@@ -82,7 +73,7 @@ jobs:
           cat > /tmp/badges/ghcr-pulls.json <<EOF
           {
             "schemaVersion": 1,
-            "label": "GHCR pulls",
+            "label": "GHCR versions",
             "message": "${MAIN_FMT}",
             "color": "blue",
             "namedLogo": "github"
@@ -92,7 +83,7 @@ jobs:
           cat > /tmp/badges/ghcr-chart-pulls.json <<EOF
           {
             "schemaVersion": 1,
-            "label": "Helm Chart pulls",
+            "label": "Helm versions",
             "message": "${CHART_FMT}",
             "color": "blue",
             "namedLogo": "github"
