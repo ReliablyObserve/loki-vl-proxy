@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.42.0] - 2026-05-24
+
 ### Performance
 - Remove redundant proxy-side Go CIDR filtering (`ipFilterStreams`) — VL now handles `ip()` filters natively
 - Hoist 9 per-request `regexp.MustCompile` calls to package-level vars in the translator, eliminating repeated regex compilation on every query
