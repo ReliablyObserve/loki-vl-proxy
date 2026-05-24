@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- Hoist 8 per-request `regexp.MustCompile` calls to package-level vars in the translator, eliminating repeated regex compilation on every query
+
+### Changed
+- `buildStatsQuery` now uses `logsql.PipeStats` for by-clause assembly instead of `fmt.Sprintf` string construction; fix `pipeStatsString` to correctly omit `as` clause for empty alias
+- Add `TODO(ast-migration)` roadmap comments to deferred string-assembly paths in `translator.go` and `query_translation.go`
+
+### Documentation
+- Add translation pipeline Mermaid diagram to `docs/architecture.md` showing the LogQL→LogsQL two-tier translation flow
+- Update main runtime-paths and request-path diagrams in `docs/architecture.md` to reflect the typed AST/builder layer
+- Update "Translator" subsection text in `docs/architecture.md` to describe both translation tiers
+- Add "How it works (TLDR)" collapsible section to README explaining the parse→translate→build pipeline
+
 ## [1.41.0] - 2026-05-24
 
 ### Fixed
