@@ -7,6 +7,22 @@ import (
 	"strings"
 )
 
+// quoteLogsQL wraps s in double-quotes and escapes any embedded backslashes or
+// double-quote characters so the result is always a valid LogsQL quoted string.
+func quoteLogsQL(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return `"` + s + `"`
+}
+
+// quoteLogsQLPattern is like quoteLogsQL but for regexp/pattern strings that
+// carry their own backslash escape semantics. Only double-quotes are escaped;
+// backslashes pass through verbatim so regex escapes (\d, \w, etc.) are preserved.
+func quoteLogsQLPattern(s string) string {
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return `"` + s + `"`
+}
+
 // Expr is the top-level LogsQL expression interface.
 type Expr interface {
 	String() string
@@ -68,7 +84,7 @@ func (w Word) filterExpr()    {}
 // Phrase matches an exact phrase (including spaces).
 type Phrase struct{ Value string }
 
-func (p Phrase) String() string { return `"` + p.Value + `"` }
+func (p Phrase) String() string { return quoteLogsQL(p.Value) }
 func (p Phrase) filterExpr()    {}
 
 // Prefix matches log lines containing a word with the given prefix.
@@ -86,13 +102,13 @@ func (s Substring) filterExpr()    {}
 // Exact matches an exact value using the `=` operator.
 type Exact struct{ Value string }
 
-func (e Exact) String() string { return `="` + e.Value + `"` }
+func (e Exact) String() string { return "=" + quoteLogsQL(e.Value) }
 func (e Exact) filterExpr()    {}
 
 // Regexp matches using a regular expression.
 type Regexp struct{ Pattern string }
 
-func (r Regexp) String() string { return `~"` + r.Pattern + `"` }
+func (r Regexp) String() string { return "~" + quoteLogsQLPattern(r.Pattern) }
 func (r Regexp) filterExpr()    {}
 
 // Sequence matches a sequence of words in order.
@@ -101,7 +117,7 @@ type Sequence struct{ Parts []string }
 func (s Sequence) String() string {
 	quoted := make([]string, len(s.Parts))
 	for i, p := range s.Parts {
-		quoted[i] = `"` + p + `"`
+		quoted[i] = quoteLogsQL(p)
 	}
 	return "seq(" + strings.Join(quoted, ",") + ")"
 }
@@ -110,7 +126,7 @@ func (s Sequence) filterExpr() {}
 // CaseInsensitive wraps a value for case-insensitive matching.
 type CaseInsensitive struct{ Value string }
 
-func (c CaseInsensitive) String() string { return `i("` + c.Value + `")` }
+func (c CaseInsensitive) String() string { return "i(" + quoteLogsQL(c.Value) + ")" }
 func (c CaseInsensitive) filterExpr()    {}
 
 // Wildcard matches any log line.
@@ -161,9 +177,9 @@ func (f FieldFilter) String() string {
 	var core string
 	switch f.Op {
 	case FieldOpExact:
-		core = f.Field + `:="` + f.Value + `"`
+		core = f.Field + ":=" + quoteLogsQL(f.Value)
 	case FieldOpRegexp:
-		core = f.Field + `:~"` + f.Value + `"`
+		core = f.Field + ":~" + quoteLogsQLPattern(f.Value)
 	case FieldOpPrefix:
 		core = f.Field + ":" + f.Value + "*"
 	case FieldOpSubstring:
@@ -189,7 +205,7 @@ func (f FieldFilter) String() string {
 	case FieldOpIPv6Range:
 		core = fmt.Sprintf(`%s:ipv6_range(%s)`, f.Field, f.Value)
 	case FieldOpExactPrefix:
-		core = fmt.Sprintf(`%s:="%s"*`, f.Field, f.Value)
+		core = f.Field + ":=" + quoteLogsQL(f.Value) + "*"
 	case FieldOpEqField:
 		core = f.Field + ":eq_field(" + f.Value + ")"
 	case FieldOpLeField:
@@ -225,7 +241,7 @@ type LabelMatcher struct {
 }
 
 func (m LabelMatcher) String() string {
-	return m.Name + m.Op + `"` + m.Value + `"`
+	return m.Name + m.Op + quoteLogsQL(m.Value)
 }
 
 // StreamFilter matches log streams by label selectors.
@@ -305,7 +321,7 @@ func (n NotExpr) filterExpr() {}
 // Corresponds to filter_any_case_phrase.go in VL upstream.
 type AnyCasePhrase struct{ Value string }
 
-func (a AnyCasePhrase) String() string { return `i("` + a.Value + `")` }
+func (a AnyCasePhrase) String() string { return "i(" + quoteLogsQL(a.Value) + ")" }
 func (a AnyCasePhrase) filterExpr()    {}
 
 // AnyCasePrefix matches a prefix case-insensitively using i(prefix*) syntax.
@@ -1020,7 +1036,7 @@ func pipeStatsString(keyword string, by []GroupKey, funcs []StatsFuncAlias) stri
 		b.WriteString(")")
 	}
 	if len(funcs) == 0 {
-		panic("logsql: " + keyword + " requires at least one stats function")
+		return "| " + keyword
 	}
 	for i, fa := range funcs {
 		if i == 0 {

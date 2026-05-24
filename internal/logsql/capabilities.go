@@ -90,12 +90,10 @@ func parseSemver(s string) (major, minor, patch int, ok bool) {
 }
 
 func numericPart(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			break
+	for i := range s {
+		if s[i] < '0' || s[i] > '9' {
+			return s[:i]
 		}
-		b.WriteRune(r)
 	}
-	return b.String()
+	return s
 }
