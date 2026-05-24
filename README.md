@@ -66,9 +66,25 @@ No cache, no coalescer. Pure translation overhead + HTTP proxying + VictoriaLogs
 - **Heavy pipeline queries:** parity to 4.2× faster depending on concurrency — `stats_query_range` fast path eliminates 39% cold CPU for `count_over_time`/`rate` queries.
 - **Long-range queries:** 2× faster cold — parallel sub-window fetching completes before Loki's sequential chunk scan.
 - **Compute aggregations (`quantile_over_time`, `topk`, multi-stage pipelines):** each metric query fans out to N VL calls; pprof-guided alloc fixes lifted cold throughput from 40 to 210 req/s. Historical sub-windows are cached on first fetch (24 h TTL), so repeated compute queries approach warm performance.
-- **Translation overhead:** LogQL→LogsQL translation is 2.7–7.2 µs per query (arm64 microbenchmark). `PipeMath.String()` and `PipeStats.String()` are 55–70 ns. Translation is <0.007% of wall-clock time for typical VL queries.
 
 † `sum(rate(...)) / sum(rate(...))`, `rate(...) * 100`, `sum(...) + sum(...)` — the AST migration in v1.35.0 fixed a parse error that caused these queries to silently return empty results from VictoriaLogs.
+
+### Translation overhead
+
+LogQL→LogsQL translation is **2.7–7.2 µs per query** (arm64). For a 100–500 ms VL round-trip this is under 0.007% of wall time.
+
+| Query type | Time | Allocs |
+|---|---:|---:|
+| Selector `{app="nginx"}` | 2.7 µs | 18 |
+| `rate({...}[5m])` | 3.6 µs | 45 |
+| `sum(rate({...}[5m])) by (host)` | 4.9 µs | 48 |
+| `sum(bytes_rate({...}[5m])) by (host)` | 5.2 µs | 48 |
+| `ip("10.0.0.0/8")` filter (v1.45+, capability-aware) | 4.4 µs | 36 |
+| Binary metric `sum(rate) / sum(rate)` | 7.2 µs | 76 |
+| `PipeMath.String()` (AST serialisation) | 55 ns | 3 |
+| `PipeStats.String()` (AST serialisation) | 70 ns | 5 |
+
+Measured: `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem -count=5` (Apple M5 Pro, Go 1.26, darwin/arm64). Binary metric queries are included in the compute workload above; the AST migration in v1.35.0 restored correctness — previously they silently returned empty results.
 
 ### Warm cache — what production steady-state looks like
 
