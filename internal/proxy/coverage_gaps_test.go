@@ -373,9 +373,10 @@ func TestFieldDetectionQueryCandidates_StripsParserKeepsComparisons(t *testing.T
 	// Primary candidate strips | unwrap (which breaks log scanning) but keeps the
 	// parser stage and field-comparison filters together — VL needs the parser to
 	// evaluate field comparisons. Relaxed candidate strips both for maximum coverage.
+	// Note: the AST normalises spacing in label-filter stages (duration<1s not duration < 1s).
 	got := fieldDetectionQueryCandidates(`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms | unwrap duration(duration)`)
 	want := []string{
-		`{service_name="grafana"} | logfmt | duration < 1s | duration > 100ms`,
+		`{service_name="grafana"} | logfmt | duration<1s | duration>100ms`,
 		`{service_name="grafana"}`,
 	}
 	if len(got) != len(want) {
@@ -413,6 +414,7 @@ func TestFieldDetectionQueryCandidates_JSONParserAlwaysStripped(t *testing.T) {
 	// are present. VL v1.50+ auto-indexes JSON from _msg, so VL can evaluate the filter
 	// without | json. Keeping | json causes VL to expand _msg JSON into top-level NDJSON
 	// fields in the response, which the scanner then picks up as thousands of garbage names.
+	// Note: the AST normalises spacing in label-filter stages (model="anomaly-v2" not model = "anomaly-v2").
 	cases := []struct {
 		query   string
 		primary string
@@ -420,18 +422,18 @@ func TestFieldDetectionQueryCandidates_JSONParserAlwaysStripped(t *testing.T) {
 	}{
 		{
 			query:   `{cluster="us-east-1"} | json | model = "anomaly-v2"`,
-			primary: `{cluster="us-east-1"} | model = "anomaly-v2"`,
+			primary: `{cluster="us-east-1"} | model="anomaly-v2"`,
 			relaxed: `{cluster="us-east-1"}`,
 		},
 		{
 			query:   `{cluster="us-east-1"} | json | service.name = "ml-serving" | model = "anomaly-v2"`,
-			primary: `{cluster="us-east-1"} | service.name = "ml-serving" | model = "anomaly-v2"`,
+			primary: `{cluster="us-east-1"} | service.name="ml-serving" | model="anomaly-v2"`,
 			relaxed: `{cluster="us-east-1"}`,
 		},
 		{
 			// | logfmt must be kept (VL doesn't auto-index logfmt), but | json is stripped.
 			query:   `{cluster="us-east-1"} | json | logfmt | size_bytes = "0"`,
-			primary: `{cluster="us-east-1"} | logfmt | size_bytes = "0"`,
+			primary: `{cluster="us-east-1"} | logfmt | size_bytes="0"`,
 			relaxed: `{cluster="us-east-1"}`,
 		},
 	}
