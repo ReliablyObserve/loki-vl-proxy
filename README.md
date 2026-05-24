@@ -60,11 +60,15 @@ No cache, no coalescer. Pure translation overhead + HTTP proxying + VictoriaLogs
 | Heavy pipeline queries | c=100 | 139 req/s | ~33 req/s | **4.2× faster** |
 | Long-range (6 h–72 h) | c=10 | 2× faster than Loki | — | parallel sub-window fetching |
 | Compute (rate, topk) | c=10 | 210 req/s | ~2,403 req/s | 0.09× — N VL calls per metric query |
+| Binary metric queries† | c=10 | ✓ working | ✓ working | correctness restored — were silently erroring |
 
 - **Small and metadata queries:** 1.4–2× faster than Loki cold — VL scans are faster than Loki's chunk store for label/series queries.
 - **Heavy pipeline queries:** parity to 4.2× faster depending on concurrency — `stats_query_range` fast path eliminates 39% cold CPU for `count_over_time`/`rate` queries.
 - **Long-range queries:** 2× faster cold — parallel sub-window fetching completes before Loki's sequential chunk scan.
 - **Compute aggregations (`quantile_over_time`, `topk`, multi-stage pipelines):** each metric query fans out to N VL calls; pprof-guided alloc fixes lifted cold throughput from 40 to 210 req/s. Historical sub-windows are cached on first fetch (24 h TTL), so repeated compute queries approach warm performance.
+- **Translation overhead:** LogQL→LogsQL translation is 2.7–7.2 µs per query (arm64 microbenchmark). `PipeMath.String()` and `PipeStats.String()` are 55–70 ns. Translation is <0.007% of wall-clock time for typical VL queries.
+
+† `sum(rate(...)) / sum(rate(...))`, `rate(...) * 100`, `sum(...) + sum(...)` — the AST migration in v1.35.0 fixed a parse error that caused these queries to silently return empty results from VictoriaLogs.
 
 ### Warm cache — what production steady-state looks like
 
