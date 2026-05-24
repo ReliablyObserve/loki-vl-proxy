@@ -1550,7 +1550,11 @@ func translateLabelFormat(expr string) string {
 		}
 		labelName := strings.TrimSpace(parts[0])
 		template := strings.TrimSpace(parts[1])
-		pipes = append(pipes, fmt.Sprintf("| format %s as %s", convertGoTemplate(template), labelName))
+		// convertGoTemplate returns a quoted string like "<label>"; strip the
+		// outer quotes before passing to PipeFormat, which re-applies %q quoting.
+		converted := convertGoTemplate(template)
+		unquoted := strings.Trim(converted, `"`)
+		pipes = append(pipes, logsql.PipeFormat{Template: unquoted, ResultField: labelName}.String())
 	}
 	if len(pipes) == 0 {
 		return "| " + expr
