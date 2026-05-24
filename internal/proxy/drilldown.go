@@ -614,33 +614,38 @@ func streamSelectorPrefix(query string) string {
 	if query == "" {
 		return ""
 	}
-	inQuote := byte(0)
-	escape := false
-	for i := 0; i < len(query); i++ {
-		ch := query[i]
-		if escape {
-			escape = false
-			continue
-		}
-		if inQuote != 0 {
-			if ch == '\\' && inQuote == '"' {
-				escape = true
+	lq, err := logqlpkg.ParseLogQuery(query)
+	if err != nil {
+		// Fall back to brace-scanner on parse failure.
+		inQuote := byte(0)
+		escape := false
+		for i := 0; i < len(query); i++ {
+			ch := query[i]
+			if escape {
+				escape = false
 				continue
 			}
-			if ch == inQuote {
-				inQuote = 0
+			if inQuote != 0 {
+				if ch == '\\' && inQuote == '"' {
+					escape = true
+					continue
+				}
+				if ch == inQuote {
+					inQuote = 0
+				}
+				continue
 			}
-			continue
+			if ch == '"' || ch == '`' {
+				inQuote = ch
+				continue
+			}
+			if ch == '|' {
+				return strings.TrimSpace(query[:i])
+			}
 		}
-		if ch == '"' || ch == '`' {
-			inQuote = ch
-			continue
-		}
-		if ch == '|' {
-			return strings.TrimSpace(query[:i])
-		}
+		return query
 	}
-	return query
+	return lq.Selector.String()
 }
 
 func (p *Proxy) serviceNameValuesFromDetectedLabels(ctx context.Context, query, start, end string) ([]string, error) {
