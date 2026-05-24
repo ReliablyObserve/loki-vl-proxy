@@ -18,31 +18,28 @@ jobs:
       - name: Fetch pull counts
         id: pulls
         env:
-          # The org packages API (download_count) requires the read:packages OAuth
-          # scope. GITHUB_TOKEN returns 403. We reuse RELEASE_PR_TOKEN which is
-          # already a PAT with repo scope and likely includes read:packages.
-          # If it doesn't work, GHCR counts will show 0 with a warning — no new
-          # secret is needed.
-          RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN }}
+          # RELEASE_WORKFLOW_TOKEN pushes images to GHCR so it has write:packages
+          # (which includes read:packages). RELEASE_PR_TOKEN only has repo scope.
+          RELEASE_WORKFLOW_TOKEN: ${{ secrets.RELEASE_WORKFLOW_TOKEN }}
         run: |
           set -euo pipefail
 
           # GHCR pull counts — requires read:packages scope on org packages API.
           MAIN=0
           CHART=0
-          if [ -n "${RELEASE_PR_TOKEN}" ]; then
+          if [ -n "${RELEASE_WORKFLOW_TOKEN}" ]; then
             MAIN=$(curl -fsSL \
-              -H "Authorization: Bearer ${RELEASE_PR_TOKEN}" \
+              -H "Authorization: Bearer ${RELEASE_WORKFLOW_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/orgs/ReliablyObserve/packages/container/loki-vl-proxy" \
               | jq -r '.download_count // 0' 2>/dev/null || echo 0)
             CHART=$(curl -fsSL \
-              -H "Authorization: Bearer ${RELEASE_PR_TOKEN}" \
+              -H "Authorization: Bearer ${RELEASE_WORKFLOW_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               "https://api.github.com/orgs/ReliablyObserve/packages/container/charts%2Floki-vl-proxy" \
               | jq -r '.download_count // 0' 2>/dev/null || echo 0)
           else
-            echo "::warning::RELEASE_PR_TOKEN not set — GHCR pull counts will show 0."
+            echo "::warning::RELEASE_WORKFLOW_TOKEN not set — GHCR pull counts will show 0."
           fi
 
           # Docker Hub pull count — public API, no auth needed.
