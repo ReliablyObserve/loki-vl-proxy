@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
 
 func deriveRequestType(endpoint, route string) string {
