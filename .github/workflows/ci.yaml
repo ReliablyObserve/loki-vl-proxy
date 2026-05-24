@@ -825,6 +825,30 @@ jobs:
         working-directory: test/e2e-compat
         run: docker compose down -v
 
+  stress-tests:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+          cache: true
+
+      - name: Stress tests (concurrency + race detector)
+        run: |
+          go test -tags=stress -race -parallel=16 -timeout=120s -v ./internal/proxy/ \
+            -run '^(TestTranslation|TestCoalescer|TestRangeMetric)' \
+            | tee stress-results.txt
+
+      - name: Upload stress test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: stress-results
+          path: stress-results.txt
+
   helm:
     runs-on: ubuntu-latest
     steps:

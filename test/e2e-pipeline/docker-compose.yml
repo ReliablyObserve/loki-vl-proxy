@@ -1,0 +1,43 @@
+services:
+  victorialogs:
+    image: ${VICTORIALOGS_IMAGE:-victoriametrics/victoria-logs:v1.49.0}
+    container_name: e2e-pipeline-vl
+    ports:
+      - "19528:9428"
+    command:
+      - "-storageDataPath=/vlogs"
+      - "-retentionPeriod=1d"
+      - "-httpListenAddr=:9428"
+    volumes:
+      - vl-pipeline-data:/vlogs
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:9428/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+      start_period: 5s
+
+  proxy:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-pipeline}
+    container_name: e2e-pipeline-proxy
+    ports:
+      - "13200:3100"
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-log-level=debug"
+      - "-cache-ttl=5s"
+      - "-patterns-enabled=true"
+      - "-patterns-autodetect-from-queries=true"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:3100/ready"]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+      start_period: 5s
+
+volumes:
+  vl-pipeline-data:

@@ -1,0 +1,66 @@
+name: E2E Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "CHANGELOG.md"
+      - "docs/observability.md"
+      - "charts/loki-vl-proxy/Chart.yaml"
+      - "README.md"
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-pipeline:
+    runs-on: ubuntu-latest
+    env:
+      PROXY_IMAGE: loki-vl-proxy:e2e-pipeline
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.3"
+          cache: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: ${{ env.PROXY_IMAGE }}
+          load: true
+          cache-from: type=gha,scope=e2e-pipeline-proxy
+          cache-to: type=gha,mode=max,scope=e2e-pipeline-proxy
+
+      - name: Start pipeline stack
+        working-directory: test/e2e-pipeline
+        run: |
+          docker compose up -d --no-build
+          ../../scripts/ci/wait_pipeline_stack.sh 120
+
+      - name: Run pipeline e2e tests
+        env:
+          PROXY_URL: http://127.0.0.1:13200
+          VL_URL: http://127.0.0.1:19528
+        run: |
+          go test -v -tags=e2e -timeout=180s -count=1 ./test/e2e-pipeline/ \
+            | tee pipeline-results.txt
+
+      - name: Upload pipeline test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pipeline-results
+          path: pipeline-results.txt
+
+      - name: Tear down pipeline stack
+        if: always()
+        working-directory: test/e2e-pipeline
+        run: docker compose down -v
