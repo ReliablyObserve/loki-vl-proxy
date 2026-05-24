@@ -948,6 +948,7 @@ func metricWindowValue(funcName string, total float64, rangeWindow time.Duration
 	}
 }
 
+// TODO(ast-migration): phase-3 — add per-query caching keyed by (query, start, end) to avoid redundant VL fetches
 func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery string, spec bareParserMetricCompatSpec, start, end string) ([]bareParserMetricSeries, error) {
 	logsqlQuery, err := p.translateQueryWithContext(ctx, spec.baseQuery)
 	if err != nil {
@@ -1977,6 +1978,7 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 var statsTranslateFJPool fj.ParserPool
 
 //nolint:gocyclo // walks VL stats JSON shape variants and remaps field/label names to Loki conventions across many edge cases; branching is inherent to schema translation.
+// TODO(ast-migration): phase-3 — replace string-walk JSON label translation with typed response structs
 func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
 	start := time.Now()
 

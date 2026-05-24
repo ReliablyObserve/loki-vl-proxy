@@ -912,10 +912,8 @@ func translatePipelineStage(stage string, labelFn LabelTranslateFunc) string {
 	// applies IP-range filtering as post-processing on response log streams via
 	// ipFilterStreams (see internal/proxy/postprocess.go), keyed by parsing the
 	// original LogQL query with parseIPFilter.
-	// TODO: When the translator gains access to Capabilities, replace with
-	//   logsql.Builder.BestIPv4Range(label, cidr).String() which emits the
-	//   native :ipv4_range() field filter on VL v1.45+ and a regexp fallback
-	//   on older versions. That would eliminate the proxy-side post-processing.
+	// TODO(ast-migration): phase-2 — thread label name through translatePipelineStage to enable
+	// logsql.Builder.BestIPv4Range(field, cidr) which emits native ipv4_range() on VL v1.45+.
 	if strings.HasPrefix(stage, "ip(") {
 		return "| " + stage // proxy-side post-processing marker
 	}
@@ -1817,6 +1815,7 @@ func outerAggregationStatsFn(outerAgg string) (statsFn string, pow2 bool) {
 	}
 }
 
+// TODO(ast-migration): phase-2 — migrate applyOuterAggregation to logsql.PipeStats + PipeMath for the pow2 case
 func applyOuterAggregation(baseQuery, outerAgg, field string) (string, bool) {
 	statsFn, pow2 := outerAggregationStatsFn(outerAgg)
 	if statsFn == "" {
@@ -1867,6 +1866,7 @@ func extractRangeByClause(suffix string) (labels string, explicit bool) {
 	return strings.TrimSpace(m[1]), true
 }
 
+// TODO(ast-migration): phase-2 — migrate unwrapInnerGrouping stats assembly to logsql.PipeStats
 func unwrapInnerGrouping(query, byLabels, outerAgg string, labelFn LabelTranslateFunc, rangeByExplicit bool, rangeByLabels string) string {
 	// Explicit range-level by (...) takes precedence over all heuristics.
 	// by () means aggregate all entries into one series (no label grouping).
@@ -2886,6 +2886,7 @@ func looksLikeBareLabelMatcher(s string) bool {
 // SubqueryPrefix marks a translated subquery expression for proxy-side evaluation.
 const SubqueryPrefix = "__subquery__:"
 
+// TODO(ast-migration): phase-3 — migrate subquery translation to typed AST once subquery spec is finalized
 // tryTranslateSubquery detects and translates subquery syntax.
 // Input: max_over_time(rate({app="nginx"}[5m])[1h:5m])
 // Output: __subquery__:max_over_time:<translated inner query>:1h:5m
