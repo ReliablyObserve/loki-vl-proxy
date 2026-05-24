@@ -1667,28 +1667,43 @@ func (p *parser) parseOptionalByClause() ([]string, error) {
 	return fields, nil
 }
 
-// parsePipeMath parses: math alias:=expr
+// parsePipeMath parses both forms:
+//   - alias:=expr  (legacy form, our internal parser)
+//   - expr as alias (VL canonical form, output of String())
 func (p *parser) parsePipeMath() (Pipe, error) {
-	// alias is an ident
-	alias, err := p.expectIdent()
-	if err != nil {
-		return nil, fmt.Errorf("logsql: pipe math: expected alias: %w", err)
-	}
-	// expect :=
-	if _, err := p.expect(TokColonEq); err != nil {
-		return nil, fmt.Errorf("logsql: pipe math: expected ':=': %w", err)
-	}
-	// Capture raw math expression (may contain +, -, *, /, (, ), etc.)
-	// p.buf may hold a lookahead token from the expect() call above;
-	// clear it so Remaining() reflects the true scanner position.
+	// Capture the full remaining chunk for this pipe stage before advancing.
 	p.buf = nil
 	raw := p.sc.Remaining()
+	end := len(raw)
 	if idx := strings.IndexByte(raw, '|'); idx >= 0 {
-		raw = raw[:idx]
+		end = idx
 		p.sc.AdvanceTo('|')
 	} else {
-		p.sc.AdvanceTo(0) // advance to EOF
+		p.sc.AdvanceTo(0)
 	}
-	p.advance() // reload cur token (will be TokPipe or TokEOF)
-	return PipeMath{Alias: alias, Expr: strings.TrimSpace(raw)}, nil
+	p.advance()
+	chunk := strings.TrimSpace(raw[:end])
+
+	// Try alias:=expr form first.
+	if idx := strings.Index(chunk, ":="); idx > 0 {
+		alias := strings.TrimSpace(chunk[:idx])
+		if !strings.ContainsAny(alias, " \t+-*/()|") {
+			expr := strings.TrimSpace(chunk[idx+2:])
+			if expr != "" {
+				return PipeMath{Alias: alias, Expr: expr}, nil
+			}
+		}
+	}
+
+	// Try expr as alias form (scan for last " as " separator).
+	lower := strings.ToLower(chunk)
+	if idx := strings.LastIndex(lower, " as "); idx >= 0 {
+		expr := strings.TrimSpace(chunk[:idx])
+		alias := strings.TrimSpace(chunk[idx+4:])
+		if expr != "" && alias != "" && !strings.ContainsAny(alias, " \t+-*/()") {
+			return PipeMath{Alias: alias, Expr: expr}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("logsql: pipe math: expected 'alias:=expr' or 'expr as alias', got %q", chunk)
 }

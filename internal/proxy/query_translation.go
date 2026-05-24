@@ -1981,9 +1981,10 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 // statsTranslateFJPool pools fastjson.Parser for translateStatsResponseLabels.
 var statsTranslateFJPool fj.ParserPool
 
-//nolint:gocyclo // walks VL stats JSON shape variants and remaps field/label names to Loki conventions across many edge cases; branching is inherent to schema translation.
 // translateStatsResponseLabelsWithContext remaps VL stats response label names to Loki conventions.
 // Uses fastjson for in-place manipulation — lower allocation than encoding/json with typed structs.
+//
+//nolint:gocyclo // walks VL stats JSON shape variants and remaps field/label names to Loki conventions across many edge cases; branching is inherent to schema translation.
 func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
 	start := time.Now()
 

@@ -140,10 +140,10 @@ func TestMatrix_MetricFunctions_AllSupported(t *testing.T) {
 		logql         string
 		wantFragments []string
 	}{
-		{name: "rate", logql: `rate({app="x"}[5m])`, wantFragments: []string{"| stats by (_stream, level) count() as __lvp_inner", "| math __lvp_rate:=__lvp_inner/300", "| stats by (_stream, level) sum(__lvp_rate)"}},
+		{name: "rate", logql: `rate({app="x"}[5m])`, wantFragments: []string{"| stats by (_stream, level) count() as __lvp_inner", "| math __lvp_inner/300 as __lvp_rate", "| stats by (_stream, level) sum(__lvp_rate)"}},
 		{name: "count_over_time", logql: `count_over_time({app="x"}[5m])`, wantFragments: []string{"| stats count()"}},
 		{name: "bytes_over_time", logql: `bytes_over_time({app="x"}[5m])`, wantFragments: []string{"| stats sum_len(_msg)"}},
-		{name: "bytes_rate", logql: `bytes_rate({app="x"}[5m])`, wantFragments: []string{"| stats by (_stream, level) sum_len(_msg) as __lvp_inner", "| math __lvp_rate:=__lvp_inner/300", "| stats by (_stream, level) sum(__lvp_rate)"}},
+		{name: "bytes_rate", logql: `bytes_rate({app="x"}[5m])`, wantFragments: []string{"| stats by (_stream, level) sum_len(_msg) as __lvp_inner", "| math __lvp_inner/300 as __lvp_rate", "| stats by (_stream, level) sum(__lvp_rate)"}},
 		{name: "sum_over_time", logql: `sum_over_time({app="x"} | unwrap duration [5m])`, wantFragments: []string{"| stats sum(duration)"}},
 		{name: "avg_over_time", logql: `avg_over_time({app="x"} | unwrap duration [5m])`, wantFragments: []string{"| stats avg(duration)"}},
 		{name: "max_over_time", logql: `max_over_time({app="x"} | unwrap duration [5m])`, wantFragments: []string{"| stats max(duration)"}},

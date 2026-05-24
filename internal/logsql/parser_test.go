@@ -36,7 +36,7 @@ func TestParseRoundTrip(t *testing.T) {
 		`NOT level:="debug"`,
 		`level:*`,
 		`level:""`,
-		`* | math pct:=rate/total*100`,
+		`* | math rate/total*100 as pct`,
 		`* | sort by (count desc) limit 10`,
 	}
 	for _, input := range cases {

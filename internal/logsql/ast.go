@@ -645,7 +645,7 @@ type PipeMath struct {
 	Alias string
 }
 
-func (p PipeMath) String() string { return fmt.Sprintf("| math %s:=%s", p.Alias, p.Expr) }
+func (p PipeMath) String() string { return fmt.Sprintf("| math %s as %s", p.Expr, p.Alias) }
 func (p PipeMath) pipe()          {}
 
 // PipeSort sorts log entries by one or more fields.
