@@ -30,7 +30,7 @@ flowchart TD
         FAN["Optional multi-tenant fanout<br/>and __tenant_id__ narrowing"]
         CACHE["L1 memory -> optional L2 disk -> optional L3 peer cache"]
         CO["Coalescing + query normalization"]
-        TR["LogQL -> LogsQL translation"]
+        TR["LogQL→LogsQL translation\nlogql AST · logsql builder · Capabilities"]
         SHAPE["Response shaping<br/>streams / labels / stats / drilldown"]
     end
 
@@ -124,7 +124,7 @@ flowchart TD
     EDGE -->|miss| CACHE["L1 memory -> optional L2 disk<br/>-> optional L3 peer cache"]
     CACHE -->|hit| RESP
     CACHE -->|miss| CO["Coalesce identical backend reads"]
-    CO --> TR["Translate LogQL / selectors / metadata queries"]
+    CO --> TR["Translate LogQL\nlogql AST · logsql builder"]
     TR --> VL["VictoriaLogs"]
     VL --> SHAPE["Shape response<br/>streams / labels / stats / drilldown"]
     SHAPE --> STORE["Store cacheable result in Tier0 and deeper caches"]
@@ -253,7 +253,41 @@ The parser includes a semantic pass for structural constraints (missing `| unwra
 See [LogQL Parser deep dive](logql-parser.md) for grammar, data flow diagrams, and extension points.
 
 ### Translator (`internal/translator/`)
-String-level LogQL→LogsQL converter. Receives canonical LogQL (produced by `Expr.String()` after AST normalisation) and converts it left-to-right using prefix matching and regex for templates. The typed parser upstream ensures the translator always receives well-formed input.
+LogQL→LogsQL converter. Receives canonical LogQL (produced by `Expr.String()` after AST normalisation). Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters, label format) and typed `logsql` builder calls for complex paths (stats aggregations, IP filters). Remaining string paths are tagged `TODO(ast-migration)` for future migration — run `grep -r "TODO(ast-migration)" internal/` to see the full backlog.
+
+### Translation Pipeline
+
+```mermaid
+flowchart LR
+    subgraph Input["Input"]
+        LQ["LogQL query string"]
+    end
+
+    subgraph Parse["Parse (internal/logql/)"]
+        PARSE["ParseLogQuery() / ParseExpr()"]
+        AST1["Typed LogQL AST\nLogQuery · Stage · LabelFilterStage\nRangeAggregation · BinOpExpr"]
+    end
+
+    subgraph Translate["Translate (internal/translator/)"]
+        TR["TranslateLogQL() / TranslateMetricQuery()"]
+        TIER1["Tier 1: Stable string paths\nstream selectors · line filters\nlabel format · logfmt/json parsers"]
+        TIER2["Tier 2: AST-driven paths\nbuildStatsQuery → logsql.PipeStats\nip() filter → Builder.BestIPv4Range()"]
+    end
+
+    subgraph Build["Build (internal/logsql/)"]
+        BUILDER["Builder (version-aware)\nCapabilities struct"]
+        LOGSQL["LogsQL query string\nready for VictoriaLogs"]
+    end
+
+    LQ --> PARSE --> AST1 --> TR
+    TR --> TIER1 --> LOGSQL
+    TR --> TIER2 --> BUILDER --> LOGSQL
+
+    style Input fill:#1a1a2e,stroke:#e94560,color:#fff
+    style Parse fill:#16213e,stroke:#4cc9f0,color:#fff
+    style Translate fill:#0f3460,stroke:#90e0ef,color:#fff
+    style Build fill:#1b4332,stroke:#52b788,color:#fff
+```
 
 ### Proxy (`internal/proxy/`)
 HTTP handlers for Loki-compatible read endpoints, split into domain-focused modules:
