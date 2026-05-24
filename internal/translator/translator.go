@@ -473,8 +473,7 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 	// Strip "bool" modifier from comparison operators before translation.
 	// Loki: "A > bool B" returns 1/0 instead of filtering. Our applyOp always
 	// returns 1/0 for comparisons, so "bool" is a no-op — just strip it.
-	boolRe := regexp.MustCompile(`\s+bool\s+`)
-	logql = boolRe.ReplaceAllString(logql, " ")
+	logql = boolModifierRE.ReplaceAllString(logql, " ")
 
 	// count_values groups by the VALUES of the inner metric — VL cannot compute this.
 	if outerAgg, _, _ := extractOuterAggregation(logql); outerAgg == "count_values" {
@@ -537,8 +536,7 @@ func ParseWithoutMarker(query string) (cleanQuery string, excludeLabels []string
 // extractWithoutLabels extracts the excluded labels stored by rewriteWithoutToMarker.
 // Called by the translator to attach metadata to the translated query.
 func extractWithoutLabels(logql string) (cleaned string, labels []string) {
-	withoutRe := regexp.MustCompile(`\bwithout\s*\(([^)]+)\)`)
-	m := withoutRe.FindStringSubmatch(logql)
+	m := withoutMarkerRE.FindStringSubmatch(logql)
 	if m == nil {
 		return logql, nil
 	}
@@ -549,7 +547,7 @@ func extractWithoutLabels(logql string) (cleaned string, labels []string) {
 			labels = append(labels, l)
 		}
 	}
-	cleaned = withoutRe.ReplaceAllString(logql, "")
+	cleaned = withoutMarkerRE.ReplaceAllString(logql, "")
 	for strings.Contains(cleaned, "  ") {
 		cleaned = strings.ReplaceAll(cleaned, "  ", " ")
 	}
@@ -1465,8 +1463,7 @@ func splitLabelFormatAssignments(s string) []string {
 // Handles dotted field names like {{.service.name}} → <service.name>.
 func convertGoTemplate(tmpl string) string {
 	tmpl = strings.Trim(tmpl, "\"")
-	re := regexp.MustCompile(`\{\{\s*\.([\w.]+)\s*\}\}`)
-	result := re.ReplaceAllString(tmpl, "<$1>")
+	result := goTemplateRE.ReplaceAllString(tmpl, "<$1>")
 	return `"` + result + `"`
 }
 
@@ -1834,6 +1831,19 @@ func hasParserPipeline(query string) bool {
 
 var rangeByClauseRE = regexp.MustCompile(`^by\s*\(([^)]*)\)`)
 
+// Package-level compiled regexes — compiled once at program start, not per-request.
+var (
+	boolModifierRE   = regexp.MustCompile(`\s+bool\s+`)
+	withoutMarkerRE  = regexp.MustCompile(`\bwithout\s*\(([^)]+)\)`)
+	goTemplateRE     = regexp.MustCompile(`\{\{\s*\.([\w.]+)\s*\}\}`)
+	vectorMatchRE    = regexp.MustCompile(`\s+(on|ignoring|group_left|group_right)\s*\(([^)]*)\)`)
+	aggByBeforeRE    = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values)\s+(?:by|without)\s*\(([^)]*)\)\s*\(`)
+	aggFuncRE        = regexp.MustCompile(`^(sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values)\s*\(`)
+	aggByAfterRE     = regexp.MustCompile(`^(?:by|without)\s*\(([^)]+)\)`)
+	subqueryInlineRE = regexp.MustCompile(`\[(\d+[smhd]+):(\d+[smhd]+)\]`)
+	durationPartRE   = regexp.MustCompile(`([0-9]*\.?[0-9]+)(ns|us|µs|ms|s|m|h|d|w|y)`)
+)
+
 // extractRangeByClause parses a trailing "by (...)" modifier that appears after
 // the closing paren of a range aggregation, e.g. "avg_over_time(...[5s]) by ()".
 // Returns the label list (empty string for "by ()") and whether the clause was present.
@@ -1877,8 +1887,7 @@ func durationSeconds(duration string) float64 {
 		return d.Seconds()
 	}
 
-	partRE := regexp.MustCompile(`([0-9]*\.?[0-9]+)(ns|us|µs|ms|s|m|h|d|w|y)`)
-	parts := partRE.FindAllStringSubmatch(duration, -1)
+	parts := durationPartRE.FindAllStringSubmatch(duration, -1)
 	if len(parts) == 0 {
 		return 0
 	}
@@ -1937,21 +1946,19 @@ func tryTranslateBinaryMetricExpr(logql string, labelFn LabelTranslateFunc) (str
 	// Strip the "bool" modifier from comparison operators.
 	// Loki: "A > bool B" means return 1/0 instead of filtering.
 	// We strip "bool" and let applyOp return 1/0 for all comparisons (matching Loki behavior).
-	boolRe := regexp.MustCompile(`\s+bool\s+`)
-	logql = boolRe.ReplaceAllString(logql, " ")
+	logql = boolModifierRE.ReplaceAllString(logql, " ")
 
 	// Extract vector matching modifiers before stripping them.
 	// on(labels), ignoring(labels) control join behavior.
 	// group_left(labels), group_right(labels) control one-to-many cardinality.
 	// We pass them through the binary expression format so the proxy can use them.
-	vectorMatchRe := regexp.MustCompile(`\s+(on|ignoring|group_left|group_right)\s*\(([^)]*)\)`)
 	var vectorMatchMeta []string
-	for _, m := range vectorMatchRe.FindAllStringSubmatch(logql, -1) {
+	for _, m := range vectorMatchRE.FindAllStringSubmatch(logql, -1) {
 		if len(m) >= 3 {
 			vectorMatchMeta = append(vectorMatchMeta, m[1]+":"+strings.TrimSpace(m[2]))
 		}
 	}
-	logql = vectorMatchRe.ReplaceAllString(logql, "")
+	logql = vectorMatchRE.ReplaceAllString(logql, "")
 	for strings.Contains(logql, "  ") {
 		logql = strings.ReplaceAll(logql, "  ", " ")
 	}
@@ -2155,11 +2162,8 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	// 2. sum by (labels) (...)    — by BEFORE
 	// 3. topk(K, sum by (labels) (...))  — nested
 
-	aggList := `sum|avg|max|min|count|topk|bottomk|stddev|stdvar|sort|sort_desc|group|count_values`
-
 	// Try form 2 first: sum by (labels) (...) or sum without (labels) (...)
-	byBeforeRe := regexp.MustCompile(`^(` + aggList + `)\s+(?:by|without)\s*\(([^)]*)\)\s*\(`)
-	bm := byBeforeRe.FindStringSubmatch(logql)
+	bm := aggByBeforeRE.FindStringSubmatch(logql)
 	if bm != nil {
 		agg = bm[1]
 		byLabels = bm[2]
@@ -2192,8 +2196,7 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	}
 
 	// Form 1: sum(...) by (labels) or sum(...) without (labels)
-	aggRe := regexp.MustCompile(`^(` + aggList + `)\s*\(`)
-	m := aggRe.FindStringSubmatch(logql)
+	m := aggFuncRE.FindStringSubmatch(logql)
 	if m == nil {
 		return "", "", ""
 	}
@@ -2231,8 +2234,7 @@ func extractOuterAggregation(logql string) (agg, inner, byLabels string) {
 	rest = strings.TrimSpace(rest[end+1:])
 
 	// Extract by or without clause after: ... by (labels) or ... without (labels)
-	byRe := regexp.MustCompile(`^(?:by|without)\s*\(([^)]+)\)`)
-	bm2 := byRe.FindStringSubmatch(rest)
+	bm2 := aggByAfterRE.FindStringSubmatch(rest)
 	if bm2 != nil {
 		byLabels = bm2[1]
 	}
@@ -2877,8 +2879,7 @@ const SubqueryPrefix = "__subquery__:"
 // Output: __subquery__:max_over_time:<translated inner query>:1h:5m
 func tryTranslateSubquery(logql string) (string, bool) {
 	// Look for [range:step] pattern inside the expression
-	subqInlineRe := regexp.MustCompile(`\[(\d+[smhd]+):(\d+[smhd]+)\]`)
-	if !subqInlineRe.MatchString(logql) {
+	if !subqueryInlineRE.MatchString(logql) {
 		return "", false
 	}
 
@@ -2912,7 +2913,7 @@ func tryTranslateSubquery(logql string) (string, bool) {
 	body = body[:lastParen]
 
 	// Find [range:step] at the end of body
-	loc := subqInlineRe.FindStringSubmatchIndex(body)
+	loc := subqueryInlineRE.FindStringSubmatchIndex(body)
 	if loc == nil {
 		return "", false
 	}
