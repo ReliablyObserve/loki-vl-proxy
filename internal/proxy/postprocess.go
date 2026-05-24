@@ -17,8 +17,12 @@ import (
 	fj "github.com/valyala/fastjson"
 )
 
-// ansiEscapeRe matches ANSI escape sequences (color codes, cursor movement, etc.)
-var ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+var (
+	// ansiEscapeRe matches ANSI escape sequences (color codes, cursor movement, etc.)
+	ansiEscapeRe = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+	// ipFilterRE matches LogQL ip() filter: label = ip("CIDR") or label == ip("CIDR")
+	ipFilterRE = regexp.MustCompile(`(\w+)\s*==?\s*ip\(\s*"([^"]+)"\s*\)`)
+)
 
 const maxPatternResponseLimit = 1000
 const (
@@ -113,9 +117,7 @@ func ipFilterStreams(streams []map[string]interface{}, labelName, cidr string) [
 // parseIPFilter extracts the label name and CIDR from a LogQL ip() filter expression.
 // Supports: `| addr = ip("192.168.0.0/16")` and `| addr == ip("10.0.0.0/8")`
 func parseIPFilter(query string) (label, cidr string, ok bool) {
-	// Match: label = ip("CIDR") or label == ip("CIDR")
-	re := regexp.MustCompile(`(\w+)\s*==?\s*ip\(\s*"([^"]+)"\s*\)`)
-	m := re.FindStringSubmatch(query)
+	m := ipFilterRE.FindStringSubmatch(query)
 	if m == nil {
 		return "", "", false
 	}

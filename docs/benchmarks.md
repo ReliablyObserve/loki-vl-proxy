@@ -165,7 +165,7 @@ Long-range memory parity (c=50, c=100) reflects the GOMEMLIMIT=2 GiB fix applied
 
 ## Cold cache, unique queries — honest worst case
 
-Every worker gets a distinct non-overlapping time window. This defeats both the singleflight coalescer and the response cache. What remains is raw proxy overhead: LogQL→LogsQL translation (~5 µs) + HTTP proxying + response shaping.
+Every worker gets a distinct non-overlapping time window. This defeats both the singleflight coalescer and the response cache. What remains is raw proxy overhead: LogQL→LogsQL translation (2.7–7.2 µs depending on complexity) + HTTP proxying + response shaping.
 
 ### Throughput (req/s)
 
@@ -244,6 +244,8 @@ What determines proxy performance when cache and coalescer provide no help:
 
 **Compute (metric aggregations):** The `stats_query_range` fast path routes `sum by (...) (count_over_time/rate({...}[W]))` and `bytes_over_time/bytes_rate` queries directly to VL's pre-aggregated Prometheus buckets, eliminating the raw NDJSON log scan that was 39% CPU in cold pprof. This delivered the headline improvement in this PR: heavy cold throughput 44→126 req/s (c=10, +2.9×) and 33→139 req/s (c=100, +4.2×). A follow-up round of pprof-guided allocation fixes (pooled fastjson scratch buffers, zero-alloc label map serialization, pre-computed stream keys, direct byte-building replacing `json.Marshal` reflection) eliminated ~20 GB of per-request allocations and raised cold `rate`/`topk` throughput from ~40 req/s to **210 req/s** (+5.25× on the loki-bench compute workload). For complex aggregations without a VL-native equivalent (`quantile_over_time`, `topk`, `sum by` with pipeline stages), the proxy still decomposes the query into N parallel sub-window fetches and aggregates locally. With warm cache (24 h TTL on historical windows), all compute queries hit cache on repeat and the structural overhead disappears.
 
+**AST-typed translation (v1.35.0+):** The LogQL→LogsQL translation layer was migrated from fragile `fmt.Sprintf` string assembly to a typed `logsql.PipeStats`/`PipeMath`/`PipeFilter` AST. This does not change throughput (translation is 2.7–7.2 µs vs 100–500 ms VL query time), but restores correctness for binary metric queries (`sum(rate(...)) / sum(rate(...))`, `rate(...) * 100`, `sum(...) + sum(...)`) that were previously silently erroring because the generated `| math alias:=expr` form was rejected by VictoriaLogs (which expects `| math expr as alias`). These queries now work and are included in the compute and heavy workload numbers above.
+
 ---
 
 ## VictoriaLogs tuning
@@ -271,9 +273,16 @@ These flags are already applied in `test/e2e-compat/docker-compose.yml`. In prod
 |-----------|--------:|-------:|---------:|
 | Labels (cache hit) | 2.0 µs | 25 | 6.6 KB |
 | QueryRange (cache hit) | 118 µs | 600 | 142 KB |
-| LogQL translation | ~5 µs | ~20 | ~2 KB |
+| LogQL→LogsQL translation (selector) | 2.7 µs | 18 | 836 B |
+| LogQL→LogsQL translation (rate/sum) | 4.9 µs | 48 | 2.1 KB |
+| LogQL→LogsQL translation (binary rate/rate) | 7.2 µs | 76 | 3.7 KB |
+| LogQL→LogsQL translation (ip() filter, v1.45+) | 4.4 µs | 36 | 1.4 KB |
+| `PipeMath.String()` (AST serialization) | 55 ns | 3 | 80 B |
+| `PipeStats.String()` (AST serialization) | 70 ns | 5 | 136 B |
 | VL NDJSON → Loki streams (100 lines) | 170 µs | 3,118 | 70 KB |
 | wrapAsLokiResponse | 2.8 µs | 58 | 2.6 KB |
+
+Translation overhead is 2.7–7.2 µs depending on query complexity. For a typical heavy-workload query taking 100–500 ms against VL, translation is under 0.007% of wall-clock time. The AST-typed path (`PipeMath`, `PipeStats`) adds no overhead versus the previous string-concat approach.
 
 ```bash
 # Run microbenchmarks

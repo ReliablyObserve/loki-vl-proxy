@@ -3,6 +3,8 @@ package translator
 import (
 	"strings"
 	"testing"
+
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 )
 
 func TestCoverage_ParseWithoutMarker(t *testing.T) {
@@ -145,20 +147,20 @@ func TestDecolorizePipelineStage(t *testing.T) {
 	}
 }
 
-// TestIPFilterPassThrough verifies that | ip("cidr") stages produce the
-// proxy-side post-processing marker so ipFilterStreams can apply the filter.
-func TestIPFilterPassThrough(t *testing.T) {
-	// translatePipelineStage with a bare ip() stage (no label prefix) should
-	// produce the pass-through marker "| ip(...)".
-	got := translatePipelineStage(`ip("10.0.0.0/8")`, nil)
-	if got != `| ip("10.0.0.0/8")` {
-		t.Fatalf("expected ip() pass-through marker, got: %q", got)
+// TestIPFilterTranslation verifies that | ip("cidr") stages emit VL-native
+// ipv4_range() on v1.45+ and regexp fallback on older versions.
+func TestIPFilterTranslation(t *testing.T) {
+	// With zero capabilities (pre-v1.45): regexp fallback via | filter _msg:~"..."
+	got := translatePipelineStage(`ip("10.0.0.0/8")`, nil, logsql.Capabilities{})
+	if !strings.HasPrefix(got, "| filter _msg:~") {
+		t.Fatalf("expected regexp fallback for ip() without FieldIPv4Range cap, got: %q", got)
 	}
 
-	// A different CIDR should also pass through.
-	got = translatePipelineStage(`ip("192.168.0.0/16")`, nil)
-	if got != `| ip("192.168.0.0/16")` {
-		t.Fatalf("expected ip() CIDR pass-through, got: %q", got)
+	// With v1.45+ capabilities: native ipv4_range() filter
+	caps := logsql.Capabilities{FieldIPv4Range: true}
+	got = translatePipelineStage(`ip("192.168.0.0/16")`, nil, caps)
+	if got != `| filter _msg:ipv4_range(192.168.0.0, 192.168.255.255)` {
+		t.Fatalf("expected native ipv4_range() filter, got: %q", got)
 	}
 }
 

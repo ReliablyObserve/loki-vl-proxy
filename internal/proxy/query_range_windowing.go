@@ -255,9 +255,6 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	if strings.Contains(originalQuery, "decolorize") {
 		decolorizeStreams(streams)
 	}
-	if label, cidr, matched := parseIPFilter(originalQuery); matched {
-		streams = ipFilterStreams(streams, label, cidr)
-	}
 	if tmpl := extractLineFormatTemplate(originalQuery); tmpl != "" {
 		applyLineFormatTemplate(streams, tmpl)
 	}

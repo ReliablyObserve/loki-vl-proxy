@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- Remove redundant proxy-side Go CIDR filtering (`ipFilterStreams`) — VL now handles `ip()` filters natively
+- Hoist 9 per-request `regexp.MustCompile` calls to package-level vars in the translator, eliminating repeated regex compilation on every query
+- Hoist `parseIPFilter` regex to package-level var in `internal/proxy/postprocess.go`, eliminating per-call compilation
+
+### Changed
+- `translatePipelineStage` now emits VL-native `ipv4_range()` (v1.45+) or regexp fallback for bare `| ip("cidr")` pipeline stages using capability-aware `logsql.Builder.BestIPv4Range`
+- `translateSingleLabelFilter` now emits VL-native `ipv4_range()` for `label = ip("cidr")` filter expressions; proxy-side `ipFilterStreams` post-processing removed
+- Non-unwrap stats path migrated to `logsql.PipeStats`; rate math pipe migrated to string concatenation (preserving VL `as` alias syntax)
+- `buildStatsQuery` now uses `logsql.PipeStats` for by-clause assembly instead of `fmt.Sprintf` string construction; fix `pipeStatsString` to correctly omit `as` clause for empty alias
+- `applyOuterAggregation` now uses `logsql.PipeStats` + `logsql.DeferredExpr` for stats expression construction instead of `fmt.Sprintf`
+- Clarify `unwrapInnerGrouping` doc comment: function returns by-labels string for `buildStatsQuery`, not stats assembly
+- Replace misleading `TODO(ast-migration)` comments on `tryTranslateSubquery`, `translateStatsResponseLabelsWithContext`, and `fetchBareParserMetricSeries` with accurate constraint descriptions; document specific blockers for the ip() native VL filter migration
+
+### Documentation
+- Add translation pipeline Mermaid diagram to `docs/architecture.md` showing the LogQL→LogsQL two-tier translation flow
+- Update main runtime-paths and request-path diagrams in `docs/architecture.md` to reflect the typed AST/builder layer
+- Update "Translator" subsection text in `docs/architecture.md` to describe both translation tiers
+- Add "How it works (TLDR)" collapsible section to README explaining the parse→translate→build pipeline
+
 ## [1.41.0] - 2026-05-24
 
 ### Changed

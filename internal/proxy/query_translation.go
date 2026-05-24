@@ -375,15 +375,17 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 	labelFn := p.labelTranslator.ToVL
 	streamFieldsMap := p.streamFieldsMap
 	p.configMu.RUnlock()
+
+	p.backendVersionMu.RLock()
+	semver := p.backendVersionSemver
+	p.backendVersionMu.RUnlock()
+	caps := logsql.CapabilitiesFor(semver)
+
 	var (
 		translated string
 		err        error
 	)
-	if streamFieldsMap != nil {
-		translated, err = translator.TranslateLogQLWithStreamFields(normalized, labelFn, streamFieldsMap)
-	} else {
-		translated, err = translator.TranslateLogQLWithLabels(normalized, labelFn)
-	}
+	translated, err = translator.TranslateLogQLWithCapabilities(normalized, labelFn, streamFieldsMap, caps)
 	if err != nil {
 		if p.metrics != nil {
 			p.metrics.RecordTranslationError()
@@ -948,6 +950,9 @@ func metricWindowValue(funcName string, total float64, rangeWindow time.Duration
 	}
 }
 
+// fetchBareParserMetricSeries fetches log series for bare-parser metric queries.
+// Caching keyed by (query, start, end) would reduce redundant VL fetches within a single
+// Grafana render cycle but requires a request-scoped cache — tracked as a separate concern.
 func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery string, spec bareParserMetricCompatSpec, start, end string) ([]bareParserMetricSeries, error) {
 	logsqlQuery, err := p.translateQueryWithContext(ctx, spec.baseQuery)
 	if err != nil {
@@ -1976,6 +1981,9 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 // statsTranslateFJPool pools fastjson.Parser for translateStatsResponseLabels.
 var statsTranslateFJPool fj.ParserPool
 
+// translateStatsResponseLabelsWithContext remaps VL stats response label names to Loki conventions.
+// Uses fastjson for in-place manipulation — lower allocation than encoding/json with typed structs.
+//
 //nolint:gocyclo // walks VL stats JSON shape variants and remaps field/label names to Loki conventions across many edge cases; branching is inherent to schema translation.
 func (p *Proxy) translateStatsResponseLabelsWithContext(ctx context.Context, body []byte, originalQuery string) []byte {
 	start := time.Now()

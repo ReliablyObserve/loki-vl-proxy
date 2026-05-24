@@ -25,6 +25,15 @@
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
 
+<details>
+<summary><strong>How it works (TLDR)</strong></summary>
+
+LogQL queries arrive → parsed into a typed AST (`internal/logql`) → translated into LogsQL via a typed builder (`internal/logsql`) → sent to VictoriaLogs.
+
+Both parsers are hand-written recursive descent. The LogQL side handles the full Loki grammar. The LogsQL side uses a builder API that produces typed, syntactically valid LogsQL at construction time. Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters), and typed AST construction for complex paths (stats aggregations). Future PRs tagged `TODO(ast-migration)` in the source will migrate remaining string paths.
+
+</details>
+
 **Keep your entire Loki stack — Grafana Explore, Drilldown, dashboards, API tooling — and run it on VictoriaLogs.**
 
 - **Drop-in Loki API.** Point your existing Grafana Loki datasource at the proxy. Zero plugin changes, zero query rewrites.
@@ -51,11 +60,31 @@ No cache, no coalescer. Pure translation overhead + HTTP proxying + VictoriaLogs
 | Heavy pipeline queries | c=100 | 139 req/s | ~33 req/s | **4.2× faster** |
 | Long-range (6 h–72 h) | c=10 | 2× faster than Loki | — | parallel sub-window fetching |
 | Compute (rate, topk) | c=10 | 210 req/s | ~2,403 req/s | 0.09× — N VL calls per metric query |
+| Binary metric queries† | c=10 | ✓ working | ✓ working | correctness restored — were silently erroring |
 
 - **Small and metadata queries:** 1.4–2× faster than Loki cold — VL scans are faster than Loki's chunk store for label/series queries.
 - **Heavy pipeline queries:** parity to 4.2× faster depending on concurrency — `stats_query_range` fast path eliminates 39% cold CPU for `count_over_time`/`rate` queries.
 - **Long-range queries:** 2× faster cold — parallel sub-window fetching completes before Loki's sequential chunk scan.
 - **Compute aggregations (`quantile_over_time`, `topk`, multi-stage pipelines):** each metric query fans out to N VL calls; pprof-guided alloc fixes lifted cold throughput from 40 to 210 req/s. Historical sub-windows are cached on first fetch (24 h TTL), so repeated compute queries approach warm performance.
+
+† `sum(rate(...)) / sum(rate(...))`, `rate(...) * 100`, `sum(...) + sum(...)` — the AST migration in v1.35.0 fixed a parse error that caused these queries to silently return empty results from VictoriaLogs.
+
+### Translation overhead
+
+LogQL→LogsQL translation is **2.7–7.2 µs per query** (arm64). For a 100–500 ms VL round-trip this is under 0.007% of wall time.
+
+| Query type | Time | Allocs |
+|---|---:|---:|
+| Selector `{app="nginx"}` | 2.7 µs | 18 |
+| `rate({...}[5m])` | 3.6 µs | 45 |
+| `sum(rate({...}[5m])) by (host)` | 4.9 µs | 48 |
+| `sum(bytes_rate({...}[5m])) by (host)` | 5.2 µs | 48 |
+| `ip("10.0.0.0/8")` filter (v1.45+, capability-aware) | 4.4 µs | 36 |
+| Binary metric `sum(rate) / sum(rate)` | 7.2 µs | 76 |
+| `PipeMath.String()` (AST serialisation) | 55 ns | 3 |
+| `PipeStats.String()` (AST serialisation) | 70 ns | 5 |
+
+Measured: `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem -count=5` (Apple M5 Pro, Go 1.26, darwin/arm64). Binary metric queries are included in the compute workload above; the AST migration in v1.35.0 restored correctness — previously they silently returned empty results.
 
 ### Warm cache — what production steady-state looks like
 
