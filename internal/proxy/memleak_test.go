@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"runtime"
 	"testing"
 	"time"
@@ -477,3 +478,213 @@ func TestMemLeak_Translation_HighVolume(t *testing.T) {
 	}
 	mlAssert(t, "translation/logql-to-logsql", before, mlHeapAfter(), cycles, boundMB)
 }
+
+// ── detected field values ─────────────────────────────────────────────────────
+
+// TestMemLeak_DetectedFieldValues_CacheHitCycles covers the detected-field-values
+// handler (used by Grafana Drilldown to populate value pickers for parsed fields).
+func TestMemLeak_DetectedFieldValues_CacheHitCycles(t *testing.T) {
+	const (
+		cycles  = 200
+		boundMB = 8
+	)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, vlFieldNamesBody())
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	p.handleDetectedFieldValues(httptest.NewRecorder(),
+		httptest.NewRequest("GET", `/loki/api/v1/detected_field_values/level?start=1700000000000000000&end=1700003600000000000&query={app="nginx"}`, nil))
+
+	before := mlHeapBefore()
+	for i := 0; i < cycles; i++ {
+		p.handleDetectedFieldValues(httptest.NewRecorder(),
+			httptest.NewRequest("GET", `/loki/api/v1/detected_field_values/level?start=1700000000000000000&end=1700003600000000000&query={app="nginx"}`, nil))
+	}
+	mlAssert(t, "handler/detected-field-values-cache-hit", before, mlHeapAfter(), cycles, boundMB)
+}
+
+// ── stream parsing ────────────────────────────────────────────────────────────
+
+// TestMemLeak_VLLogsToLokiStreams verifies the VL→Loki stream conversion does not
+// retain parsed results (maps/slices) across calls. 500 iterations of a 10-line
+// body should produce <5 MB of net heap growth.
+func TestMemLeak_VLLogsToLokiStreams(t *testing.T) {
+	const (
+		cycles  = 500
+		boundMB = 5
+	)
+	lines := ""
+	for i := 0; i < 10; i++ {
+		lines += fmt.Sprintf(`{"_msg":"log line %d","_time":"2026-01-01T00:0%d:00Z","_stream":"{app=\"nginx\",env=\"prod\"}","level":"info"}`+"\n", i, i)
+	}
+	body := []byte(lines)
+
+	before := mlHeapBefore()
+	for i := 0; i < cycles; i++ {
+		result := vlLogsToLokiStreams(body)
+		_ = result
+	}
+	mlAssert(t, "stream/vl-to-loki-streams", before, mlHeapAfter(), cycles, boundMB)
+}
+
+// ── label index ───────────────────────────────────────────────────────────────
+
+// TestMemLeak_LabelIndex_UpdateCycles verifies the label-values index does not
+// grow unboundedly when the same label names are updated with overlapping value
+// sets. The index uses bounded maps; re-inserting existing keys must not leak.
+func TestMemLeak_LabelIndex_UpdateCycles(t *testing.T) {
+	const (
+		cycles  = 500
+		boundMB = 5
+	)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, vlFieldValuesBody())
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	values := []string{"nginx", "gateway", "envoy", "caddy", "traefik"}
+
+	before := mlHeapBefore()
+	for i := 0; i < cycles; i++ {
+		// Re-update with the same values — should not grow the map.
+		p.updateLabelValuesIndex("", "app", values)
+	}
+	mlAssert(t, "label-index/update-same-values", before, mlHeapAfter(), cycles, boundMB)
+}
+
+// TestMemLeak_LabelIndex_UniqueValues verifies bounded growth when new values
+// are added to the index across cycles. Growth is expected but must stay within
+// the index's own eviction or capacity limit (10 MB bound for 500 unique values).
+func TestMemLeak_LabelIndex_UniqueValueSets(t *testing.T) {
+	const (
+		cycles  = 100
+		boundMB = 10
+	)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, vlFieldValuesBody())
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	before := mlHeapBefore()
+	for i := 0; i < cycles; i++ {
+		// Each cycle introduces one new service name to the index.
+		values := []string{fmt.Sprintf("svc-%d", i), "nginx", "gateway"}
+		p.updateLabelValuesIndex("", "service_name", values)
+	}
+	mlAssert(t, "label-index/unique-value-sets", before, mlHeapAfter(), cycles, boundMB)
+}
+
+// ── background refresh goroutines ─────────────────────────────────────────────
+
+// TestMemLeak_BackgroundRefresh_GoroutinesBounded verifies that firing background
+// label-refresh goroutines via refreshLabelsCacheAsync does not accumulate goroutines
+// (i.e., singleflight deduplication prevents unbounded goroutine spawning).
+func TestMemLeak_BackgroundRefresh_GoroutinesBounded(t *testing.T) {
+	const (
+		fires   = 200
+		boundMB = 10
+	)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, vlStreamFieldNamesBody())
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	cacheKey := "labels::end=1700003600000000000&query=%2A&start=1700000000000000000"
+
+	goroutinesBefore := runtime.NumGoroutine()
+	before := mlHeapBefore()
+
+	for i := 0; i < fires; i++ {
+		p.refreshLabelsCacheAsync("", cacheKey, "*", "1700000000000000000", "1700003600000000000", "", nil)
+	}
+	// Allow goroutines to finish.
+	time.Sleep(100 * time.Millisecond)
+
+	goroutinesAfter := runtime.NumGoroutine()
+	mlAssert(t, "background-refresh/labels-goroutine-heap", before, mlHeapAfter(), fires, boundMB)
+
+	// Goroutine count must not grow indefinitely — singleflight deduplicates.
+	if goroutinesAfter > goroutinesBefore+10 {
+		t.Errorf("background refresh goroutine leak: before=%d after=%d (delta>10)",
+			goroutinesBefore, goroutinesAfter)
+	}
+}
+
+// ── bucket metadata time ──────────────────────────────────────────────────────
+
+// TestMemLeak_BucketMetadataTime_HighVolume verifies that repeated bucketMetadataTime
+// calls (a pure function operating on int64) produce zero net allocation.
+func TestMemLeak_BucketMetadataTime_HighVolume(t *testing.T) {
+	const (
+		cycles  = 100_000
+		boundMB = 2
+	)
+	before := mlHeapBefore()
+
+	nowNs := int64(1700000000000000000)
+	for i := 0; i < cycles; i++ {
+		start := nowNs - int64(i%7)*int64(time.Hour)
+		end := nowNs
+		_, _ = bucketMetadataTime(start, end)
+	}
+	mlAssert(t, "cache-keys/bucket-metadata-time", before, mlHeapAfter(), cycles, boundMB)
+}
+
+// ── capMetadataTimeRange ──────────────────────────────────────────────────────
+
+// TestMemLeak_CapMetadataTimeRange_HighVolume verifies that repeated capMetadataTimeRange
+// calls on the same params produce bounded allocations. The function copies url.Values
+// only when capping is required; the copy path must not leak.
+func TestMemLeak_CapMetadataTimeRange_HighVolume(t *testing.T) {
+	const (
+		cycles  = 10_000
+		boundMB = 5
+	)
+	params := url.Values{
+		"start": {"1700000000000000000"},
+		"end":   {"1700090000000000000"}, // 25h → gets capped to 1h
+		"query": {`{app="nginx"}`},
+	}
+
+	before := mlHeapBefore()
+	for i := 0; i < cycles; i++ {
+		_ = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+	}
+	mlAssert(t, "label-metadata/cap-time-range", before, mlHeapAfter(), cycles, boundMB)
+}
+
+// ── metrics / build-info ──────────────────────────────────────────────────────
+
+// TestMemLeak_BuildInfo_RepeatedRequests covers the build-info and config-stub
+// handlers (static JSON responses, no caching). They should be allocation-minimal.
+func TestMemLeak_BuildInfo_RepeatedRequests(t *testing.T) {
+	const (
+		cycles  = 500
+		boundMB = 3
+	)
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{}`)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	before := mlHeapBefore()
+	for i := 0; i < cycles; i++ {
+		p.handleBuildInfo(httptest.NewRecorder(), httptest.NewRequest("GET", "/loki/api/v1/status/buildinfo", nil))
+		p.handleConfigStub(httptest.NewRecorder(), httptest.NewRequest("GET", "/config", nil))
+	}
+	mlAssert(t, "handler/build-info-config-stub", before, mlHeapAfter(), cycles, boundMB)
+}
+
