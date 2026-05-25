@@ -113,9 +113,13 @@ func TestMissingOps_UnpackParser(t *testing.T) {
 		query string
 		skip  bool
 	}{
-		// unpack_filter and unpack_status_filter are skipped: the test data uses
-		// plain JSON, not pack-produced format, so Loki returns empty results.
-		// Proxy-side unpack label filtering is also a known gap (TODO: implement).
+		// Skipped: the e2e test data for app="unpack-test" uses plain JSON (not
+		// Loki pack() format). Loki's | unpack only extracts fields from pack()-
+		// produced log entries, so Loki itself returns zero results for these
+		// queries. The translator correctly emits `| unpack_json | filter method:="GET"`
+		// (and `| unpack_json | filter status:>=400`), which works in VL, but
+		// parity testing against Loki is impossible without pack()-formatted test
+		// data. There is no proxy-side translation gap — the translation is correct.
 		{name: "unpack_filter", query: `{app="unpack-test"} | unpack | method="GET"`, skip: true},
 		{name: "unpack_status_filter", query: `{app="unpack-test"} | unpack | status >= 400`, skip: true},
 		{name: "unpack_no_filter", query: `{app="unpack-test"} | unpack`},

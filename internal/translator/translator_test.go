@@ -98,6 +98,21 @@ func TestTranslateLogQL(t *testing.T) {
 			want:  `app:="nginx" | unpack_logfmt`,
 		},
 		{
+			name:  "unpack parser bare",
+			logql: `{app="nginx"} | unpack`,
+			want:  `app:="nginx" | unpack_json`,
+		},
+		{
+			name:  "unpack then label string filter",
+			logql: `{app="unpack-test"} | unpack | method="GET"`,
+			want:  `app:="unpack-test" | unpack_json | filter method:="GET"`,
+		},
+		{
+			name:  "unpack then label numeric filter",
+			logql: `{app="unpack-test"} | unpack | status >= 400`,
+			want:  `app:="unpack-test" | unpack_json | filter status:>=400`,
+		},
+		{
 			name:  "pattern parser",
 			logql: `{app="nginx"} | pattern "<ip> - - <_>"`,
 			want:  `app:="nginx" | extract "<ip> - - <_>"`,
