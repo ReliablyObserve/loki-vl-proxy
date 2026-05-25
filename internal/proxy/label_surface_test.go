@@ -620,7 +620,7 @@ func TestLabelSurface_AsyncRefreshPathsPopulateCache(t *testing.T) {
 	waitForCachedKey(t, c, "detected_field_values:async:level")
 
 	if fieldValuesCalls.Load() == 0 {
-		t.Fatalf("expected field_values or stream_field_values calls from async refresh paths")
+		t.Fatalf("expected field_values calls from async refresh paths")
 	}
 	if streamsCalls.Load() == 0 {
 		t.Fatalf("expected streams call from async detected_labels refresh")
@@ -746,7 +746,7 @@ func TestLabelSurface_RefreshLabelValuesCacheAsync_ForwardsSubstringFilterWhenSu
 		case "/select/logsql/stream_field_names":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"app","hits":2}]}`))
-		case "/select/logsql/stream_field_values":
+		case "/select/logsql/field_values":
 			gotQ.Store(r.URL.Query().Get("q"))
 			gotFilter.Store(r.URL.Query().Get("filter"))
 			w.Header().Set("Content-Type", "application/json")

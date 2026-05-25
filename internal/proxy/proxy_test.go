@@ -199,22 +199,21 @@ func TestContract_Labels_FallsBackToGenericFieldNames(t *testing.T) {
 	}
 }
 
-func TestContract_LabelValues_PrefersStreamFieldValues(t *testing.T) {
-	var streamNameCalls, streamValueCalls, genericValueCalls int
+func TestContract_LabelValues_UsesFieldValues(t *testing.T) {
+	// stream_field_values is 19x slower than field_values for the same data;
+	// the proxy always uses field_values now regardless of stream/non-stream label.
+	var streamNameCalls, fieldValueCalls int
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/stream_field_names":
 			streamNameCalls++
 			writeVLFieldNames(w, []fieldHit{{"k8s.namespace.name", 1}, {"app", 1}})
-		case "/select/logsql/stream_field_values":
-			streamValueCalls++
+		case "/select/logsql/field_values":
+			fieldValueCalls++
 			if got := r.URL.Query().Get("field"); got != "k8s.namespace.name" {
-				t.Fatalf("expected stream field k8s.namespace.name, got %q", got)
+				t.Fatalf("expected field k8s.namespace.name, got %q", got)
 			}
 			writeVLFieldValues(w, []fieldHit{{"prod", 1}})
-		case "/select/logsql/field_values":
-			genericValueCalls++
-			writeVLFieldValues(w, []fieldHit{{"wrong", 1}})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -239,8 +238,8 @@ func TestContract_LabelValues_PrefersStreamFieldValues(t *testing.T) {
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
 	data := assertDataIsStringArray(t, resp)
 	assertContains(t, data, "prod")
-	if streamNameCalls != 1 || streamValueCalls != 1 || genericValueCalls != 0 {
-		t.Fatalf("expected stream metadata path only, got names=%d streamValues=%d genericValues=%d", streamNameCalls, streamValueCalls, genericValueCalls)
+	if streamNameCalls != 1 || fieldValueCalls != 1 {
+		t.Fatalf("expected stream_field_names + field_values path, got names=%d fieldValues=%d", streamNameCalls, fieldValueCalls)
 	}
 }
 
@@ -250,7 +249,7 @@ func TestContract_LabelValues_ForwardsSubstringFilter_OnV149Plus(t *testing.T) {
 		switch r.URL.Path {
 		case "/select/logsql/stream_field_names":
 			writeVLFieldNames(w, []fieldHit{{"app", 1}})
-		case "/select/logsql/stream_field_values":
+		case "/select/logsql/field_values":
 			receivedQ = r.URL.Query().Get("q")
 			receivedFilter = r.URL.Query().Get("filter")
 			writeVLFieldValues(w, []fieldHit{{"argocd", 1}})
@@ -283,7 +282,7 @@ func TestContract_LabelValues_DoesNotForwardSubstringFilter_OnV148(t *testing.T)
 		switch r.URL.Path {
 		case "/select/logsql/stream_field_names":
 			writeVLFieldNames(w, []fieldHit{{"app", 1}})
-		case "/select/logsql/stream_field_values":
+		case "/select/logsql/field_values":
 			receivedQ = r.URL.Query().Get("q")
 			receivedFilter = r.URL.Query().Get("filter")
 			writeVLFieldValues(w, []fieldHit{{"argocd", 1}})
@@ -315,7 +314,7 @@ func TestContract_LabelValues_JoinsAmbiguousStreamAliases(t *testing.T) {
 		switch r.URL.Path {
 		case "/select/logsql/stream_field_names":
 			writeVLFieldNames(w, []fieldHit{{"foo.bar", 1}, {"foo-bar", 1}})
-		case "/select/logsql/stream_field_values":
+		case "/select/logsql/field_values":
 			switch r.URL.Query().Get("field") {
 			case "foo.bar":
 				writeVLFieldValues(w, []fieldHit{{"alpha", 1}})
@@ -1025,8 +1024,9 @@ func TestContract_Patterns_UsesFromToWhenStartEndMissing(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
 	}
-	if receivedStart != "1712311200" || receivedEnd != "1712311800" {
-		t.Fatalf("expected from/to to be forwarded as start/end, got start=%q end=%q", receivedStart, receivedEnd)
+	// formatVLTimestamp normalizes seconds to nanoseconds for VL log-query endpoints.
+	if receivedStart != "1712311200000000000" || receivedEnd != "1712311800000000000" {
+		t.Fatalf("expected from/to to be forwarded as start/end (nanoseconds), got start=%q end=%q", receivedStart, receivedEnd)
 	}
 	if receivedStep != "" {
 		t.Fatalf("expected raw log patterns fetch not to forward step, got %q", receivedStep)
