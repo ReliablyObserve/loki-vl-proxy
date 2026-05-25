@@ -1278,6 +1278,11 @@ func stripUnwrapAndDropStages(query string) string {
 // Uses the AST parser instead of regex to robustly handle whitespace, comments,
 // and arbitrary surrounding pipeline stages.
 func stripIncompleteUnwrapStubs(query string) string {
+	// Fast path: incomplete unwrap stubs only appear in queries containing "unwrap".
+	// Skip the expensive AST parse for the common case.
+	if !strings.Contains(query, "unwrap") {
+		return query
+	}
 	expr, err := logqlpkg.Parse(query)
 	if err != nil {
 		return query
