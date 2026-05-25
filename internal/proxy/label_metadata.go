@@ -748,18 +748,18 @@ func (p *Proxy) queryPeerHas(ctx context.Context, peerAddr string, keys []string
 	return presence
 }
 
-// fetchLabelWindowsFromPeers performs a two-phase batch peer warmup for a set of
-// cache keys:
+// fetchCacheKeysFromPeers performs a two-phase batch peer warmup for a set of cache keys.
 //
 //  1. Discovery (tiny) — ask each peer "which of these N keys do you have?" via a
 //     single /_cache/has request per peer. No value data transferred.
 //  2. Fetch (targeted) — for each key, pull the value from the peer with the highest
 //     remaining TTL (freshest copy) via /_cache/get.
 //
-// For a fleet of P peers and W windows this costs P+W network round-trips instead
-// of the naive P×W approach of calling /_cache/get per (peer, window) pair.
+// cacheEndpoint is the namespace used when storing entries locally (e.g. "labels",
+// "query_range"). For a fleet of P peers and K keys this costs P+K' network round-trips
+// instead of the naive P×K approach (K' ≤ K = keys covered by peers).
 // Returns the set of keys that were successfully warmed from peers.
-func (p *Proxy) fetchLabelWindowsFromPeers(ctx context.Context, cacheKeys []string, ttl time.Duration) map[string]bool {
+func (p *Proxy) fetchCacheKeysFromPeers(ctx context.Context, cacheEndpoint string, cacheKeys []string, ttl time.Duration) map[string]bool {
 	if p.peerCache == nil || len(cacheKeys) == 0 {
 		return nil
 	}
@@ -836,7 +836,7 @@ func (p *Proxy) fetchLabelWindowsFromPeers(ctx context.Context, cacheKeys []stri
 		if len(body) == 0 {
 			continue
 		}
-		p.setEndpointReadCacheWithTTL("labels", key, body, ttl)
+		p.setEndpointReadCacheWithTTL(cacheEndpoint, key, body, ttl)
 		warmed[key] = true
 	}
 	return warmed
@@ -895,7 +895,7 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 	for i, w := range stale {
 		staleKeys[i] = w.cacheKey
 	}
-	warmedFromPeer := p.fetchLabelWindowsFromPeers(ctx, staleKeys, ttl)
+	warmedFromPeer := p.fetchCacheKeysFromPeers(ctx, "labels", staleKeys, ttl)
 
 	// Phase 3: fetch remaining stale windows from VL.
 	first := true

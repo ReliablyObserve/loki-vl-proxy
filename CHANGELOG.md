@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `GET /_cache/has?keys=k1,k2,...` peer endpoint: lightweight batch key-presence check returning JSON `{key: {ok, ttl_ms}}` per key with no value data transferred — enables informed peer selection based on cache freshness
+
 ### Performance
+- Label warmup on fleet restart is now two-phase: (1) one `/_cache/has` request per peer covering all window keys (metadata only, no data transferred); (2) targeted `/_cache/get` from the peer with the highest remaining TTL per key. For a 9-peer fleet with 4 windows this reduces peer network round-trips from up to 36 to at most 13 while routing each fetch to the freshest peer
+- `-warmup-max-jitter` flag spreads fleet startup warmup across a configurable random window; combined with 500ms inter-window sleep this prevents all instances from issuing simultaneous wide-range VL queries on rolling restarts
+- Peer-first warmup: instances that start later pull label windows from peers that already warmed them, so only the first instance to reach each window hits VL
 - Label-values requests now use `field_names` (0.25 s) instead of `stream_field_names` (7–8 s) for VL field candidate resolution — ~30× faster; `stream_field_names` is retained only for the labels-keys, volume, and target-label paths where stream-index semantics are required
 - Label-values requests already used `field_values` (0.35 s) instead of `stream_field_values` (7–9 s) — ~19× faster
 - `field_names` backend calls for candidate resolution are now capped to the most recent 1 h of the requested range; wide dashboard ranges (24 h, 7 d) no longer trigger full-range field-name scans
