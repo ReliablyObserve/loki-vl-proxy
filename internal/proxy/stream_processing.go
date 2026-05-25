@@ -519,7 +519,10 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
-	needsClassification := emitStructuredMetadata || categorizedLabels
+	// classifyAsParsed is included so | json / | logfmt parsed fields are classified even
+	// without emitStructuredMetadata or categorizedLabels. Parsed fields are merged into the
+	// stream label set (matching Loki behaviour) so Grafana's unwrap field picker can see them.
+	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed
 	dropConditions, keepConditions, bareDropFields2, bareKeepFields2 := extractDropKeepFromAST(originalQuery)
 
 	var (
@@ -635,6 +638,22 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 				streamKey = newKey
 				streamLabels = newLabels
 			}
+		}
+		// Merge parsed fields (from | json / | logfmt) into the stream label set.
+		// Loki includes parsed labels in the stream object of its API responses so that
+		// Grafana's unwrap field picker (extractUnwrapLabelKeysFromDataFrame) can find
+		// numeric/duration/bytes fields. Without this, the proxy only returns _stream
+		// labels and the picker stays empty.
+		if classifyAsParsed && len(parsedFields) > 0 {
+			extLabels := make(map[string]string, len(streamLabels)+len(parsedFields))
+			for k, v := range streamLabels {
+				extLabels[k] = v
+			}
+			for k, v := range parsedFields {
+				extLabels[k] = v
+			}
+			streamKey = canonicalLabelsKey(extLabels)
+			streamLabels = extLabels
 		}
 		se, ok := streamMap[streamKey]
 		if !ok {
