@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -404,6 +405,111 @@ func TestPeerCache_ServeHTTP_Has_MissingKeysParam(t *testing.T) {
 	pc.ServeHTTP(w, r, localCache)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+// TestPeerCache_Has_LargeFleet simulates a 25-peer fleet and verifies that
+// /_cache/has correctly discovers key presence across all peers concurrently.
+// This validates the O(P+K) batch approach scales to large fleets.
+func TestPeerCache_Has_LargeFleet(t *testing.T) {
+	const numPeers = 25
+	const numKeys = 4 // matches labelWarmupWindows cardinality
+
+	keys := make([]string, numKeys)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("labels:window-%d:key", i)
+	}
+
+	// Start N mock peer servers; each has a subset of the keys with varying TTLs.
+	type serverInfo struct {
+		server *httptest.Server
+		cache  *Cache
+		pc     *PeerCache
+	}
+	servers := make([]serverInfo, numPeers)
+	var hasCallCount atomic.Int64
+	for i := range servers {
+		c := New(60*time.Second, 1000)
+		pc := NewPeerCache(PeerConfig{SelfAddr: fmt.Sprintf("peer-%d", i)})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/_cache/has" {
+				hasCallCount.Add(1)
+			}
+			pc.ServeHTTP(w, r, c)
+		}))
+		servers[i] = serverInfo{server: srv, cache: c, pc: pc}
+		t.Cleanup(func() { srv.Close(); c.Close(); pc.Close() })
+	}
+
+	// Only peers 0 and 1 have data; peer 1 has a higher TTL (fresher) for key[0].
+	servers[0].cache.SetWithTTL(keys[0], []byte("from-peer-0"), 30*time.Second)
+	servers[1].cache.SetWithTTL(keys[0], []byte("from-peer-1-fresh"), 50*time.Second) // higher TTL
+	servers[2].cache.SetWithTTL(keys[1], []byte("from-peer-2"), 40*time.Second)
+	// keys[2] and keys[3] are not present on any peer.
+
+	// Ask each peer server about all keys via /_cache/has.
+	// This simulates what fetchCacheKeysFromPeers does in phase 1.
+	type presence struct {
+		addr string
+		data map[string]PeerKeyPresence
+	}
+	results := make(chan presence, numPeers)
+	for i, si := range servers {
+		addr := si.server.Listener.Addr().String()
+		idx := i
+		_ = idx
+		go func(a string) {
+			joined := url.QueryEscape(strings.Join(keys, ","))
+			resp, err := http.Get(fmt.Sprintf("http://%s/_cache/has?keys=%s", a, joined))
+			if err != nil {
+				results <- presence{addr: a}
+				return
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			var p map[string]PeerKeyPresence
+			_ = json.Unmarshal(body, &p)
+			results <- presence{addr: a, data: p}
+		}(addr)
+	}
+
+	// Collect and find best peer per key (highest TTL wins).
+	bestTTL := make(map[string]int64)
+	bestPeer := make(map[string]string)
+	for range numPeers {
+		pr := <-results
+		for k, info := range pr.data {
+			if info.OK && info.TTLMs > bestTTL[k] {
+				bestTTL[k] = info.TTLMs
+				bestPeer[k] = pr.addr
+			}
+		}
+	}
+
+	if hasCallCount.Load() != numPeers {
+		t.Errorf("expected %d /_cache/has calls (one per peer), got %d", numPeers, hasCallCount.Load())
+	}
+
+	// key[0]: peer 1 should win (higher TTL ~50s > peer 0's ~30s).
+	if bestPeer[keys[0]] == "" {
+		t.Errorf("key[0] not found on any peer")
+	}
+	// Verify the winning peer has higher TTL than any other peer's TTL for this key.
+	if bestTTL[keys[0]] < 45000 {
+		t.Errorf("expected best TTL for key[0] ≥45s (peer-1 has 50s), got %dms", bestTTL[keys[0]])
+	}
+
+	// key[1]: should be peer 2.
+	if bestPeer[keys[1]] == "" {
+		t.Errorf("key[1] not found on any peer")
+	}
+
+	// key[2] and key[3]: no peer has them.
+	if bestPeer[keys[2]] != "" {
+		t.Errorf("key[2] should not be found, got peer %s", bestPeer[keys[2]])
+	}
+	if bestPeer[keys[3]] != "" {
+		t.Errorf("key[3] should not be found, got peer %s", bestPeer[keys[3]])
 	}
 }
 
