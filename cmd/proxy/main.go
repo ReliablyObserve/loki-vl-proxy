@@ -146,6 +146,7 @@ type proxyRuntimeConfig struct {
 	metricsMaxConcurrency               int
 	logRequestSampleRate                int
 	labelCacheTTL                       time.Duration
+	warmupMaxJitter                     time.Duration
 	labelStyle                          string
 	metadataFieldMode                   string
 	fieldMappingJSON                    string
@@ -349,6 +350,7 @@ func run(
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
 	labelsCacheTTL := fs.Duration("labels-cache-ttl", 0, "Cache TTL for /labels and /label/{name}/values responses (default 5m). Keep-warm interval is derived automatically. 0 uses the default.")
+	warmupMaxJitter := fs.Duration("warmup-max-jitter", 0, "Maximum random delay before label cache warmup starts. Spread this across a fleet (e.g. 10s for ≥3 instances) to prevent all proxies hammering VL simultaneously on restart.")
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
@@ -703,6 +705,7 @@ func run(
 			metricsMaxConcurrency:               *metricsMaxConcurrency,
 			logRequestSampleRate:                *logRequestSampleRate,
 			labelCacheTTL:                       *labelsCacheTTL,
+			warmupMaxJitter:                     *warmupMaxJitter,
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			fieldMappingJSON:                    envCfg.fieldMappingJSON,
@@ -1658,6 +1661,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetricsExportSensitiveLabels:       cfg.metricsExportSensitiveLabels,
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
 		LabelCacheTTL:                      cfg.labelCacheTTL,
+		WarmupMaxJitter:                    cfg.warmupMaxJitter,
 		LabelStyle:                         ls,
 		MetadataFieldMode:                  mfm,
 		FieldMappings:                      fieldMappings,

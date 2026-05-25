@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"sort"
@@ -691,6 +692,17 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 			}
 		}
 
+		// Jitter: spread startup warmup across a random window to prevent
+		// all fleet instances from hammering VL with wide-range queries at once.
+		if p.warmupMaxJitter > 0 {
+			jitter := time.Duration(rand.Int64N(int64(p.warmupMaxJitter)))
+			select {
+			case <-warmCtx.Done():
+				return
+			case <-time.After(jitter):
+			}
+		}
+
 		// Use a very short TTL for startup warmup so stale pre-ingestion cache
 		// entries expire quickly. The keep-warm loop re-populates with the
 		// full CacheTTLs["labels"] TTL once actual label data is available.
@@ -703,9 +715,22 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 // stores it in the cache with the given ttl. Windows whose cache entry still has more
 // than minRemaining TTL are skipped (they are fresh enough). The full range is always
 // fetched so historical labels (services that ran last week but not today) are included.
+//
+// A 500ms inter-window pause is inserted between fetches to prevent consecutive
+// wide-range queries from monopolising VL's concurrency budget.
 func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Duration) {
 	nowNs := time.Now().UnixNano()
+	first := true
 	for _, window := range labelWarmupWindows {
+		if !first {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+		first = false
+
 		bs, be := bucketMetadataTime(nowNs-int64(window), nowNs)
 		startStr := strconv.FormatInt(bs, 10)
 		endStr := strconv.FormatInt(be, 10)

@@ -215,6 +215,12 @@ type Config struct {
 	// cache entries. Defaults to 5 minutes when unset. Keep-warm interval and skip
 	// threshold are derived automatically from this value.
 	LabelCacheTTL time.Duration
+	// WarmupMaxJitter is the upper bound of the random delay added before the
+	// startup label cache warmup begins. Spreading the delay across a fleet of
+	// proxies (all restarting at once) prevents a thundering-herd of concurrent
+	// wide-range stream_field_names queries hitting VL simultaneously.
+	// Default 0 (no jitter). Recommended: 5–15s for fleets of ≥3 instances.
+	WarmupMaxJitter time.Duration
 
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
@@ -438,6 +444,7 @@ type Proxy struct {
 	recentTailRefreshEnabled              bool
 	recentTailRefreshWindow               time.Duration
 	recentTailRefreshMaxStaleness         time.Duration
+	warmupMaxJitter                       time.Duration
 	labelRefreshGroup                     singleflight.Group
 	streamFieldNamesCache                 *cache.Cache // short-lived internal cache for stream_field_names routing decisions
 	labelValuesIndexedCache               bool
@@ -842,6 +849,10 @@ func New(cfg Config) (*Proxy, error) {
 	if recentTailRefreshMaxStaleness <= 0 {
 		recentTailRefreshMaxStaleness = 15 * time.Second
 	}
+	warmupMaxJitter := cfg.WarmupMaxJitter
+	if warmupMaxJitter < 0 {
+		warmupMaxJitter = 0
+	}
 	tailMode := cfg.TailMode
 	if tailMode == "" {
 		tailMode = TailModeAuto
@@ -1012,6 +1023,7 @@ func New(cfg Config) (*Proxy, error) {
 		recentTailRefreshEnabled:              cfg.RecentTailRefreshEnabled,
 		recentTailRefreshWindow:               recentTailRefreshWindow,
 		recentTailRefreshMaxStaleness:         recentTailRefreshMaxStaleness,
+		warmupMaxJitter:                       warmupMaxJitter,
 		labelValuesIndexedCache:               cfg.LabelValuesIndexedCache,
 		labelValuesHotLimit:                   labelValuesHotLimit,
 		labelValuesIndexMaxEntries:            labelValuesIndexMaxEntries,

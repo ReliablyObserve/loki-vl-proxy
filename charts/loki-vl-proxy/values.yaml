@@ -243,6 +243,7 @@ extraArgs:
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
+  # warmup-max-jitter: "10s"                   # max random delay before label cache warmup starts; spread across fleet to prevent thundering herd on restart (recommended: 5–15s for ≥3 instances)
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
   # compat-cache-max-percent: "10"              # Tier0 share of L1 cache budget (max 50)
   # backend-timeout: "120s"                     # upstream request timeout
