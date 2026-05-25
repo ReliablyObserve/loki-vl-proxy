@@ -24,7 +24,9 @@ func parsePrometheusCounter(body, metricName string, labels map[string]string) f
 		if strings.HasPrefix(line, "#") || line == "" {
 			continue
 		}
-		if !strings.HasPrefix(line, metricName+"{") && line != metricName {
+		hasLabels := strings.HasPrefix(line, metricName+"{")
+		noLabels := strings.HasPrefix(line, metricName+" ") || strings.HasPrefix(line, metricName+"\t")
+		if !hasLabels && !noLabels && line != metricName {
 			continue
 		}
 		allMatch := true
