@@ -67,6 +67,8 @@ func TestHelmExtraArgsCoverage(t *testing.T) {
 		"peer-discovery":  true, // injected by peerCache template logic
 		"peer-dns":        true, // injected by peerCache template logic
 		"peer-static":     true, // injected by peerCache template logic
+		"peer-srv":        true, // passed via extraArgs for srv discovery mode
+		"peer-http-url":   true, // passed via extraArgs for http discovery mode
 		"disk-cache-path": true, // injected when persistence.enabled=true
 	}
 

@@ -166,6 +166,8 @@ type proxyRuntimeConfig struct {
 	peerSelf                            string
 	peerDiscovery                       string
 	peerDNS                             string
+	peerSRV                             string
+	peerHTTPURL                         string
 	peerStatic                          string
 	peerTimeout                         time.Duration
 	peerAuthToken                       string
@@ -518,9 +520,11 @@ func run(
 
 	// Peer cache (fleet distribution)
 	peerSelf := fs.String("peer-self", "", `This instance's address for peer cache (e.g., "10.0.0.1:3100"). Empty disables peer cache.`)
-	peerDiscovery := fs.String("peer-discovery", "", `Peer discovery: "dns" (headless service) or "static" (comma-separated)`)
-	peerDNS := fs.String("peer-dns", "", `Headless service DNS name for peer discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
-	peerStatic := fs.String("peer-static", "", `Static peer list (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
+	peerDiscovery := fs.String("peer-discovery", "", `Peer discovery mode: "dns" (headless A-record), "srv" (DNS SRV), "http" (JSON endpoint), or "static" (comma-separated list)`)
+	peerDNS := fs.String("peer-dns", "", `Headless service DNS name for "dns" discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
+	peerSRV := fs.String("peer-srv", "", `Full SRV record name for "srv" discovery (e.g., "_loki-vl-proxy._tcp.proxy-headless.ns.svc.cluster.local")`)
+	peerHTTPURL := fs.String("peer-http-url", "", `URL returning a JSON peer list for "http" discovery. Supported formats: simple array, {"peers":[...]}, Prometheus HTTP SD, Consul catalog API`)
+	peerStatic := fs.String("peer-static", "", `Static peer list for "static" discovery (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
 	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
@@ -725,6 +729,8 @@ func run(
 			peerSelf:                            *peerSelf,
 			peerDiscovery:                       *peerDiscovery,
 			peerDNS:                             *peerDNS,
+			peerSRV:                             *peerSRV,
+			peerHTTPURL:                         *peerHTTPURL,
 			peerStatic:                          *peerStatic,
 			peerTimeout:                         *peerTimeout,
 			peerAuthToken:                       *peerAuthToken,
@@ -1560,6 +1566,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			SelfAddr:                 cfg.peerSelf,
 			DiscoveryType:            cfg.peerDiscovery,
 			DNSName:                  cfg.peerDNS,
+			SRVName:                  cfg.peerSRV,
+			HTTPPeersURL:             cfg.peerHTTPURL,
 			StaticPeers:              cfg.peerStatic,
 			Port:                     3100,
 			Timeout:                  cfg.peerTimeout,

@@ -761,9 +761,11 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-peer-self` | — | — | This instance address used for peer-cache ownership and fetches |
-| `-peer-discovery` | — | — | Peer discovery mode: `dns` or `static` |
-| `-peer-dns` | — | — | Headless service DNS name used when `-peer-discovery=dns` |
-| `-peer-static` | — | — | Comma-separated peer list used when `-peer-discovery=static` |
+| `-peer-discovery` | — | — | Peer discovery mode: `dns`, `srv`, `http`, or `static` |
+| `-peer-dns` | — | — | Headless service DNS name used when `-peer-discovery=dns` (e.g., `proxy-headless.ns.svc.cluster.local`) |
+| `-peer-srv` | — | — | Full SRV record name used when `-peer-discovery=srv` (e.g., `_loki-vl-proxy._tcp.proxy-headless.ns.svc.cluster.local`). Port is read from the SRV record — no separate port flag needed. |
+| `-peer-http-url` | — | — | URL returning a JSON peer list when `-peer-discovery=http`. Supported formats: simple array, `{"peers":[...]}`, Prometheus HTTP SD, Consul catalog. The URL is polled every `DiscoveryInterval`. |
+| `-peer-static` | — | — | Comma-separated peer list used when `-peer-discovery=static` (e.g., `10.0.0.1:3100,10.0.0.2:3100`) |
 | `-peer-timeout` | — | `2s` | Timeout applied to peer-cache owner fetches (`/_cache/get`) before falling back locally |
 | `-peer-auth-token` | — | — | Shared token used on `/_cache/get` and `/_cache/set` peer-cache requests. Strongly recommended for fleets so peer auth does not depend only on transient discovery/IP membership during startup. |
 | `-peer-write-through` | — | `true` | Push eligible non-owner cache writes to the owner peer (`/_cache/set`) to keep owner shards warm under skewed traffic |
@@ -783,7 +785,8 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 
 Peer-cache notes:
 
-- the Helm chart manages `-peer-self`, `-peer-discovery`, and `-peer-dns` automatically when `peerCache.enabled=true`
+- the Helm chart manages `-peer-self`, `-peer-discovery`, and `-peer-dns` automatically when `peerCache.enabled=true`; for `srv` or `http` modes use `extraArgs`
+- `GET /_cache/peers` returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful to verify discovery is working
 - peer-cache fetches preserve owner TTL and can compress larger `/_cache/get` responses with `zstd` or `gzip`
 - `loki_vl_proxy_peer_cache_error_reason_total{reason=...}` breaks opaque peer fetch failures into low-cardinality reasons like `timeout`, `transport`, `status_502`, `body_read`, and `decode`
 - with `-peer-write-through=true` (default), non-owner writes with TTL above threshold are pushed to owners and stored locally as short-lived shadows to reduce hot-pod disk skew

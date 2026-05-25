@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `GET /_cache/has?keys=k1,k2,...` peer endpoint: lightweight batch key-presence check returning JSON `{key: {ok, ttl_ms}}` per key with no value data transferred — enables informed peer selection based on cache freshness
+- `GET /_cache/peers` diagnostic endpoint: returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful for verifying discovery is working correctly without inspecting logs
+- `srv` peer discovery mode (`-peer-discovery=srv -peer-srv=_service._tcp.domain`): resolves peers from DNS SRV records which embed port numbers. Compatible with Kubernetes StatefulSet headless services, Consul DNS, CoreDNS, and any SRV-capable resolver. Inherits readiness gating from the DNS layer.
+- `http` peer discovery mode (`-peer-discovery=http -peer-http-url=...`): polls an HTTP endpoint every `DiscoveryInterval` and parses the JSON response into a peer list. Auto-detects four response formats: simple string array, `{"peers":[...]}`, Prometheus HTTP SD (`[{"targets":[...]}]`), and Consul catalog (`[{"ServiceAddress":"...","ServicePort":N}]`). Works with Consul, Nomad, and custom registries outside Kubernetes.
 
 ### Performance
 - Label warmup on fleet restart is now two-phase: (1) one `/_cache/has` request per peer covering all window keys (metadata only, no data transferred); (2) targeted `/_cache/get` from the peer with the highest remaining TTL per key. For a 9-peer fleet with 4 windows this reduces peer network round-trips from up to 36 to at most 13 while routing each fetch to the freshest peer

@@ -26,6 +26,7 @@ import (
 )
 
 var lookupHost = net.LookupHost
+var lookupSRV = net.LookupSRV
 
 const (
 	maxPeerResponseBytes    int64 = 32 << 20
@@ -114,9 +115,11 @@ type inflightEntry struct {
 // PeerConfig configures the distributed peer cache.
 type PeerConfig struct {
 	SelfAddr                 string        // this instance's address (ip:port)
-	DiscoveryType            string        // "dns", "static", or "" (disabled)
-	DNSName                  string        // headless service DNS name
-	StaticPeers              string        // comma-separated peer addresses
+	DiscoveryType            string        // "dns", "srv", "http", "static", or "" (disabled)
+	DNSName                  string        // headless service DNS name (for "dns" mode)
+	SRVName                  string        // full SRV name e.g. "_loki-vl-proxy._tcp.ns.svc.cluster.local" (for "srv" mode)
+	HTTPPeersURL             string        // URL returning JSON peer list (for "http" mode)
+	StaticPeers              string        // comma-separated peer addresses (for "static" mode)
 	Port                     int           // peer cache HTTP port (default: 3100)
 	DiscoveryInterval        time.Duration // peer list refresh interval (default: 15s)
 	Timeout                  time.Duration // peer HTTP request timeout (default: 2s)
@@ -236,6 +239,17 @@ func NewPeerCache(cfg PeerConfig) *PeerCache {
 	case "dns":
 		pc.discoveryFn = func() ([]string, error) {
 			return discoverDNS(cfg.DNSName, cfg.Port)
+		}
+	case "srv":
+		srvName := cfg.SRVName
+		pc.discoveryFn = func() ([]string, error) {
+			return discoverSRV(srvName)
+		}
+	case "http":
+		httpURL := cfg.HTTPPeersURL
+		httpTimeout := cfg.Timeout
+		pc.discoveryFn = func() ([]string, error) {
+			return discoverHTTPPeers(httpURL, httpTimeout)
 		}
 	case "static":
 		staticPeers := parsePeerList(cfg.StaticPeers)
@@ -506,10 +520,11 @@ func (pc *PeerCache) getInflight(key string) *inflightEntry {
 const MinUsableTTL = 5 * time.Second
 
 // ServeHTTP handles incoming peer cache requests.
-// GET /_cache/get?key=...     — return cached value with remaining TTL header (or 404)
-// GET /_cache/has?keys=k1,k2  — batch presence check; returns JSON presence+TTL map
-// GET /_cache/hot             — hot key index
-// POST /_cache/set?key=...    — store a value
+// GET  /_cache/get?key=...      — return cached value with remaining TTL header (or 404)
+// GET  /_cache/has?keys=k1,k2   — batch presence check; returns JSON presence+TTL map
+// GET  /_cache/hot              — hot key index
+// POST /_cache/set?key=...      — store a value
+// GET  /_cache/peers            — current known peer list (diagnostic)
 // Header X-Cache-TTL-Ms: remaining TTL in milliseconds (for shadow copy)
 func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCache *Cache) {
 	switch r.URL.Path {
@@ -518,6 +533,9 @@ func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCach
 		return
 	case "/_cache/has":
 		pc.serveHas(w, r, localCache)
+		return
+	case "/_cache/peers":
+		pc.servePeers(w, r)
 		return
 	}
 	if r.Method == http.MethodPost {
@@ -1237,6 +1255,26 @@ func (pc *PeerCache) discoveryLoop() {
 	}
 }
 
+// servePeers returns the current known peer list as JSON (diagnostic endpoint).
+// GET /_cache/peers → {"peers":["host:port",...],"self":"host:port"}
+func (pc *PeerCache) servePeers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	pc.mu.RLock()
+	peers := make([]string, len(pc.peers))
+	copy(peers, pc.peers)
+	pc.mu.RUnlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"peers": peers,
+		"self":  pc.selfAddr,
+		"count": len(peers),
+	})
+}
+
 // --- DNS Discovery ---
 
 func discoverDNS(name string, port int) ([]string, error) {
@@ -1250,6 +1288,153 @@ func discoverDNS(name string, port int) ([]string, error) {
 	}
 	sort.Strings(peers)
 	return peers, nil
+}
+
+// --- SRV Discovery ---
+
+// discoverSRV resolves peers from a DNS SRV record.
+// name must be a full SRV record name: "_service._proto.domain"
+// (e.g. "_loki-vl-proxy._tcp.proxy-headless.default.svc.cluster.local").
+// SRV records embed port numbers so no separate port flag is needed.
+// In Kubernetes, StatefulSet headless services expose SRV records per pod,
+// including only ready pods — giving the same readiness-gate behaviour as A-record headless DNS.
+func discoverSRV(name string) ([]string, error) {
+	if !strings.HasPrefix(name, "_") {
+		return nil, fmt.Errorf("SRV name %q must start with underscore (e.g. _service._tcp.domain)", name)
+	}
+	// Split "_service._proto.domain" into parts.
+	parts := strings.SplitN(strings.TrimPrefix(name, "_"), ".", 2)
+	if len(parts) < 2 || !strings.HasPrefix(parts[1], "_") {
+		return nil, fmt.Errorf("invalid SRV name %q: expected _service._proto.domain", name)
+	}
+	rest := strings.TrimPrefix(parts[1], "_")
+	protoParts := strings.SplitN(rest, ".", 2)
+	if len(protoParts) < 2 {
+		return nil, fmt.Errorf("invalid SRV name %q: expected _service._proto.domain", name)
+	}
+	service := parts[0]
+	proto := protoParts[0]
+	domain := protoParts[1]
+
+	_, addrs, err := lookupSRV(service, proto, domain)
+	if err != nil {
+		return nil, fmt.Errorf("SRV lookup %q: %w", name, err)
+	}
+	peers := make([]string, 0, len(addrs))
+	for _, srv := range addrs {
+		host := strings.TrimSuffix(srv.Target, ".")
+		peers = append(peers, fmt.Sprintf("%s:%d", host, srv.Port))
+	}
+	sort.Strings(peers)
+	return peers, nil
+}
+
+// --- HTTP Discovery ---
+
+// discoverHTTPPeers fetches a JSON peer list from an HTTP endpoint.
+// Supported response formats (auto-detected):
+//
+//   - Simple array:          ["host:port", ...]
+//   - Object with peers key: {"peers": ["host:port", ...]}
+//   - Prometheus targets:    [{"targets": ["host:port"]}]  (Prometheus HTTP SD format)
+//   - Consul catalog:        [{"ServiceAddress":"ip", "ServicePort":8080}]
+//
+// This makes the proxy compatible with Consul, Nomad, custom service registries,
+// and any Prometheus-compatible service discovery endpoint.
+func discoverHTTPPeers(rawURL string, timeout time.Duration) ([]string, error) {
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build HTTP peers request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("HTTP peers fetch %q: %w", rawURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP peers fetch %q: status %d", rawURL, resp.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("HTTP peers read body: %w", err)
+	}
+	return parseHTTPPeers(body)
+}
+
+// parseHTTPPeers decodes a JSON body into a list of "host:port" peer addresses.
+// It attempts each known format in order and returns on first success.
+func parseHTTPPeers(body []byte) ([]string, error) {
+	body = bytes.TrimSpace(body)
+
+	// Format 1: simple string array ["host:port", ...]
+	var simple []string
+	if err := json.Unmarshal(body, &simple); err == nil {
+		return filterValidPeers(simple), nil
+	}
+
+	// Format 2: {"peers": ["host:port", ...]}
+	var withPeers struct {
+		Peers []string `json:"peers"`
+	}
+	if json.Unmarshal(body, &withPeers) == nil && len(withPeers.Peers) > 0 {
+		return filterValidPeers(withPeers.Peers), nil
+	}
+
+	// Format 3: Prometheus HTTP SD — [{"targets":["host:port"],"labels":{}}]
+	var promSD []struct {
+		Targets []string `json:"targets"`
+	}
+	if json.Unmarshal(body, &promSD) == nil && len(promSD) > 0 {
+		var peers []string
+		for _, g := range promSD {
+			peers = append(peers, g.Targets...)
+		}
+		if len(peers) > 0 {
+			return filterValidPeers(peers), nil
+		}
+	}
+
+	// Format 4: Consul catalog — [{"ServiceAddress":"ip","ServicePort":8080}]
+	var consul []struct {
+		ServiceAddress string `json:"ServiceAddress"`
+		Address        string `json:"Address"`
+		ServicePort    int    `json:"ServicePort"`
+	}
+	if json.Unmarshal(body, &consul) == nil && len(consul) > 0 {
+		var peers []string
+		for _, svc := range consul {
+			host := svc.ServiceAddress
+			if host == "" {
+				host = svc.Address
+			}
+			if host != "" && svc.ServicePort > 0 {
+				peers = append(peers, fmt.Sprintf("%s:%d", host, svc.ServicePort))
+			}
+		}
+		if len(peers) > 0 {
+			return filterValidPeers(peers), nil
+		}
+	}
+
+	return nil, fmt.Errorf("unrecognised HTTP peer list format (body: %.120s)", body)
+}
+
+func filterValidPeers(peers []string) []string {
+	out := make([]string, 0, len(peers))
+	for _, p := range peers {
+		p = strings.TrimSpace(p)
+		if p != "" && strings.Contains(p, ":") {
+			out = append(out, p)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func parsePeerList(s string) []string {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	gzip "github.com/klauspost/compress/gzip"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1804,6 +1805,221 @@ func TestPeerCache_ReadAhead_BoundedFairPrefetch(t *testing.T) {
 	stats := followerPC.Stats()
 	if stats["ra_prefetches"].(int64) == 0 {
 		t.Fatalf("expected read-ahead prefetches > 0, got %+v", stats)
+	}
+}
+
+func TestDiscoverSRV(t *testing.T) {
+	t.Run("invalid name no underscore prefix", func(t *testing.T) {
+		_, err := discoverSRV("loki-vl-proxy.tcp.svc.cluster.local")
+		if err == nil {
+			t.Fatal("expected error for name without _ prefix")
+		}
+	})
+	t.Run("invalid name missing proto segment", func(t *testing.T) {
+		_, err := discoverSRV("_loki-vl-proxy.svc.cluster.local")
+		if err == nil {
+			t.Fatal("expected error for name with no proto segment")
+		}
+	})
+	t.Run("successful SRV lookup", func(t *testing.T) {
+		orig := lookupSRV
+		defer func() { lookupSRV = orig }()
+		lookupSRV = func(service, proto, name string) (string, []*net.SRV, error) {
+			if service != "loki-vl-proxy" || proto != "tcp" || name != "proxy.default.svc.cluster.local" {
+				return "", nil, fmt.Errorf("unexpected lookup: %s %s %s", service, proto, name)
+			}
+			return "", []*net.SRV{
+				{Target: "10.0.0.1.", Port: 3100},
+				{Target: "10.0.0.2.", Port: 3100},
+			}, nil
+		}
+		peers, err := discoverSRV("_loki-vl-proxy._tcp.proxy.default.svc.cluster.local")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(peers) != 2 {
+			t.Fatalf("want 2 peers, got %d: %v", len(peers), peers)
+		}
+		// Trailing dot must be stripped; addresses must be sorted.
+		if peers[0] != "10.0.0.1:3100" || peers[1] != "10.0.0.2:3100" {
+			t.Errorf("unexpected peers: %v", peers)
+		}
+	})
+	t.Run("SRV lookup failure propagated", func(t *testing.T) {
+		orig := lookupSRV
+		defer func() { lookupSRV = orig }()
+		lookupSRV = func(_, _, _ string) (string, []*net.SRV, error) {
+			return "", nil, fmt.Errorf("NXDOMAIN")
+		}
+		_, err := discoverSRV("_loki-vl-proxy._tcp.proxy.default.svc.cluster.local")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+}
+
+func TestParseHTTPPeers(t *testing.T) {
+	cases := []struct {
+		name  string
+		body  string
+		want  []string
+		isErr bool
+	}{
+		{
+			name: "simple string array",
+			body: `["10.0.0.1:3100","10.0.0.2:3100"]`,
+			want: []string{"10.0.0.1:3100", "10.0.0.2:3100"},
+		},
+		{
+			name: "object with peers key",
+			body: `{"peers":["10.0.0.1:3100","10.0.0.2:3100"]}`,
+			want: []string{"10.0.0.1:3100", "10.0.0.2:3100"},
+		},
+		{
+			name: "prometheus http sd format",
+			body: `[{"targets":["10.0.0.1:3100","10.0.0.2:3100"],"labels":{"env":"prod"}}]`,
+			want: []string{"10.0.0.1:3100", "10.0.0.2:3100"},
+		},
+		{
+			name: "consul catalog format",
+			body: `[{"ServiceAddress":"10.0.0.1","ServicePort":3100},{"ServiceAddress":"10.0.0.2","ServicePort":3100}]`,
+			want: []string{"10.0.0.1:3100", "10.0.0.2:3100"},
+		},
+		{
+			name: "consul catalog with fallback Address field",
+			body: `[{"Address":"10.0.0.3","ServicePort":3100}]`,
+			want: []string{"10.0.0.3:3100"},
+		},
+		{
+			name:  "unrecognised format",
+			body:  `{"unknown":"structure"}`,
+			isErr: true,
+		},
+		{
+			name:  "empty prometheus targets",
+			body:  `[{"targets":[]}]`,
+			isErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseHTTPPeers([]byte(tc.body))
+			if tc.isErr {
+				if err == nil {
+					t.Fatalf("expected error, got %v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("want %v, got %v", tc.want, got)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("[%d] want %q got %q", i, tc.want[i], got[i])
+				}
+			}
+		})
+	}
+}
+
+func TestDiscoverHTTPPeers_LiveServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `["10.0.0.1:3100","10.0.0.2:3100"]`)
+	}))
+	defer srv.Close()
+
+	peers, err := discoverHTTPPeers(srv.URL, 2*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 2 || peers[0] != "10.0.0.1:3100" {
+		t.Errorf("unexpected peers: %v", peers)
+	}
+}
+
+func TestDiscoverHTTPPeers_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	_, err := discoverHTTPPeers(srv.URL, 2*time.Second)
+	if err == nil {
+		t.Fatal("expected error on non-200 response")
+	}
+}
+
+func TestPeerCache_ServeHTTP_Peers(t *testing.T) {
+	pc := &PeerCache{
+		selfAddr: "10.0.0.1:3100",
+		ring:     newHashRing(150),
+		done:     make(chan struct{}),
+	}
+	pc.peers = []string{"10.0.0.1:3100", "10.0.0.2:3100"}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/_cache/peers", nil)
+	req.URL.Path = "/_cache/peers"
+	pc.servePeers(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rr.Code)
+	}
+	var body map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["self"] != "10.0.0.1:3100" {
+		t.Errorf("self = %v, want 10.0.0.1:3100", body["self"])
+	}
+	peers, _ := body["peers"].([]interface{})
+	if len(peers) != 2 {
+		t.Errorf("want 2 peers, got %v", peers)
+	}
+}
+
+func TestPeerCache_NewPeerCache_HTTPDiscovery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `[{"targets":["%s"]}]`, "10.0.0.1:3100")
+	}))
+	defer srv.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "10.0.0.99:3100",
+		DiscoveryType: "http",
+		HTTPPeersURL:  srv.URL,
+		Port:          3100,
+	})
+	defer pc.Close()
+
+	// Discovery is seeded eagerly in NewPeerCache.
+	if pc.PeerCount() == 0 {
+		t.Error("expected at least one peer discovered via HTTP")
+	}
+}
+
+func TestPeerCache_NewPeerCache_SRVDiscovery(t *testing.T) {
+	orig := lookupSRV
+	defer func() { lookupSRV = orig }()
+	lookupSRV = func(service, proto, name string) (string, []*net.SRV, error) {
+		return "", []*net.SRV{{Target: "10.0.0.1.", Port: 3100}}, nil
+	}
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "10.0.0.99:3100",
+		DiscoveryType: "srv",
+		SRVName:       "_loki-vl-proxy._tcp.proxy.default.svc.cluster.local",
+		Port:          3100,
+	})
+	defer pc.Close()
+
+	if pc.PeerCount() == 0 {
+		t.Error("expected at least one peer discovered via SRV")
 	}
 }
 

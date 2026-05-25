@@ -191,22 +191,158 @@ stateDiagram-v2
     HalfOpen --> Open: failure
 ```
 
-## Configuration
+## Peer Discovery
+
+Four discovery modes are supported. All share the same mechanics: a background goroutine re-runs discovery every `DiscoveryInterval` (default 15 s) and atomically rebuilds the consistent hash ring. Peers that disappear from the source are automatically removed; new peers that appear are added. No restart required.
+
+```mermaid
+flowchart TD
+    DL["discoveryLoop\n(every 15 s)"]
+    DNS["dns\nnet.LookupHost\nheadless A-records"]
+    SRV["srv\nnet.LookupSRV\nSRV port-embedded records"]
+    HTTP["http\nHTTP GET → JSON\nConsul / Prometheus SD / custom"]
+    STATIC["static\ncomma-separated list\nno refresh"]
+    RING["updatePeers()\nRebuild consistent hash ring"]
+
+    DL --> DNS
+    DL --> SRV
+    DL --> HTTP
+    DL --> STATIC
+    DNS --> RING
+    SRV --> RING
+    HTTP --> RING
+    STATIC --> RING
+```
+
+### `dns` — Kubernetes headless service (A records)
 
 ```bash
-# Kubernetes (DNS discovery via headless service)
+-peer-discovery=dns
+-peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local
+```
+
+`net.LookupHost` resolves the headless service name to the IP addresses of all running pods. In Kubernetes, a headless service DNS entry only includes pods that **pass their readiness probe** — unhealthy pods fall out of DNS within one TTL (typically 5–30 s), so the peer ring automatically excludes them.
+
+Use when:
+- Running in Kubernetes with an HPA-managed Deployment or StatefulSet
+- You want readiness-probe gating to control peer inclusion automatically
+- Pods have stable cluster IP (not required) but stable DNS subdomain
+
+### `srv` — DNS SRV records
+
+```bash
+-peer-discovery=srv
+-peer-srv=_loki-vl-proxy._tcp.loki-vl-proxy-headless.monitoring.svc.cluster.local
+```
+
+`net.LookupSRV` resolves a full SRV record (`_service._proto.domain`) and extracts host+port from each record. SRV records embed the port number, so no `-peer-port` flag is needed — each SRV record can point to a different port if required.
+
+In Kubernetes, StatefulSet headless services publish SRV records per pod (e.g., `_http._tcp.proxy-headless.ns.svc.cluster.local`). These carry the same readiness gating as A records.
+
+Outside Kubernetes, any DNS server that publishes SRV records works:
+- HAProxy DNS resolver
+- CoreDNS with custom zone
+- Consul DNS (`_service._tcp.service.consul`)
+- Manual BIND zone file
+
+The SRV name format is `_service._proto.domain`. All three segments are required and must start with `_`.
+
+### `http` — HTTP JSON endpoint
+
+```bash
+-peer-discovery=http
+-peer-http-url=http://consul:8500/v1/catalog/service/loki-vl-proxy
+```
+
+The proxy fetches the configured URL every `DiscoveryInterval`. The response body is parsed as JSON and must return a list of `host:port` strings. Four response formats are supported and auto-detected:
+
+| Format | Example |
+|--------|---------|
+| Simple array | `["10.0.0.1:3100","10.0.0.2:3100"]` |
+| Object with `peers` key | `{"peers":["10.0.0.1:3100"]}` |
+| Prometheus HTTP SD | `[{"targets":["10.0.0.1:3100"],"labels":{}}]` |
+| Consul catalog | `[{"ServiceAddress":"10.0.0.1","ServicePort":3100}]` |
+
+**Consul example** (includes health check filtering):
+```bash
+-peer-http-url=http://localhost:8500/v1/health/service/loki-vl-proxy?passing=true
+```
+Consul's `?passing=true` parameter returns only healthy instances — equivalent to Kubernetes readiness gating.
+
+**Prometheus HTTP SD example** (custom endpoint):
+```bash
+-peer-http-url=http://my-registry/sd/loki-vl-proxy
+```
+
+**Nomad example**:
+```bash
+-peer-http-url=http://nomad:4646/v1/service/loki-vl-proxy
+```
+
+Use when:
+- Running outside Kubernetes (VMs, bare metal, Nomad, Docker Swarm)
+- Already using Consul or another service registry
+- You have a custom service registry or health-checked load balancer
+- You want fine-grained control over which instances participate in the peer ring
+
+**How add/remove works:** The HTTP endpoint is the authoritative source. On each discovery tick the proxy fetches the URL and passes the result to `updatePeers()`. If an instance disappears from the response (failed health check, deregistered, shut down), it is removed from the hash ring within one `DiscoveryInterval`. There is no explicit register/deregister on the proxy side — that is handled by whatever manages the registry (Consul agent, health check cron, deployment tooling).
+
+### `static` — Fixed peer list
+
+```bash
+-peer-discovery=static
+-peer-static=10.0.0.1:3100,10.0.0.2:3100,10.0.0.3:3100
+```
+
+The peer list is parsed once at startup and never refreshed. Useful for small, fixed fleets where the topology does not change without a restart. Requires manual update (redeploy) when peers are added or removed.
+
+### Peer discovery comparison
+
+| Mode | Readiness gating | Dynamic add/remove | Works outside k8s | Port in config |
+|------|-----------------|-------------------|------------------|----------------|
+| `dns` | ✅ (k8s headless) | ✅ (every 15 s) | ⚠️ requires headless-style DNS | Yes (`-peer-port`) |
+| `srv` | ✅ (k8s or Consul DNS) | ✅ (every 15 s) | ✅ | No (embedded in SRV) |
+| `http` | ✅ (endpoint controls list) | ✅ (every 15 s) | ✅ | Yes (in response) |
+| `static` | ❌ | ❌ (restart required) | ✅ | Yes (in flag) |
+
+### Diagnostic endpoint
+
+`GET /_cache/peers` returns the current known peer list as JSON:
+
+```json
+{"peers":["10.0.0.1:3100","10.0.0.2:3100"],"self":"10.0.0.3:3100","count":2}
+```
+
+This reflects the ring at the moment of the request and is useful for verifying that discovery is working correctly.
+
+## Configuration Examples
+
+```bash
+# Kubernetes: DNS discovery via headless service
 ./loki-vl-proxy \
   -peer-self=$(hostname -i):3100 \
   -peer-discovery=dns \
-  -peer-dns=proxy-headless.ns.svc.cluster.local
+  -peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local
+
+# Kubernetes: SRV discovery (StatefulSet with headless service)
+./loki-vl-proxy \
+  -peer-self=$(hostname -i):3100 \
+  -peer-discovery=srv \
+  -peer-srv=_loki-vl-proxy._tcp.loki-vl-proxy-headless.monitoring.svc.cluster.local
+
+# Consul (health-checked, works outside k8s)
+./loki-vl-proxy \
+  -peer-self=$(hostname -i):3100 \
+  -peer-discovery=http \
+  -peer-http-url=http://localhost:8500/v1/health/service/loki-vl-proxy?passing=true
+
+# Custom JSON endpoint (e.g., internal registry)
+./loki-vl-proxy \
+  -peer-self=$(hostname -i):3100 \
+  -peer-discovery=http \
+  -peer-http-url=http://my-registry/peers/loki-vl-proxy
 
 # Static peer list
-./loki-vl-proxy \
-  -peer-self=10.0.0.1:3100 \
-  -peer-discovery=static \
-  -peer-static=10.0.0.1:3100,10.0.0.2:3100,10.0.0.3:3100
-
-# Shared-token protected peer cache
 ./loki-vl-proxy \
   -peer-self=10.0.0.1:3100 \
   -peer-discovery=static \
@@ -239,7 +375,7 @@ When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart w
 | Max VL calls per key | 1 (per owner) |
 | Shadow copy overhead | ~0 (uses owner's remaining TTL) |
 | Hash ring lookup | O(log N) |
-| Discovery refresh | Every 15s (DNS only) |
+| Discovery refresh | Every 15s (dns / srv / http modes) |
 
 Peer fetch behavior details:
 
