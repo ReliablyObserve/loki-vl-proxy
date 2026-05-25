@@ -61,26 +61,37 @@ func TestContract_Labels_PassesTimeRange(t *testing.T) {
 	// After normalisation and the 1h cap+bucketing applied by fetchStreamFieldNamesCached:
 	//   cappedStart = endNs - 1h = 1609545600e9 - 3600e9 = 1609542000e9 (already on 5-min boundary)
 	//   bucketedEnd  = floor(1609545600e9 / 300e9) * 300e9 = 1609545600e9 (already on 5-min boundary)
+	//
+	// Note: the handler also fires a background full-range refresh goroutine (because the
+	// 24h input range exceeds the 1h synchronous cap), which sends the raw uncapped params
+	// to VL. We capture ALL calls and verify that AT LEAST ONE used the capped params.
 	const (
 		wantStart = "1609542000000000000"
 		wantEnd   = "1609545600000000000"
 	)
-	var receivedStart, receivedEnd string
+	type call struct{ start, end string }
+	var mu sync.Mutex
+	var calls []call
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedStart = r.URL.Query().Get("start")
-		receivedEnd = r.URL.Query().Get("end")
+		mu.Lock()
+		calls = append(calls, call{r.URL.Query().Get("start"), r.URL.Query().Get("end")})
+		mu.Unlock()
 		writeVLFieldNames(w, nil)
 	}))
 	defer vlBackend.Close()
 
 	doGet(t, vlBackend.URL, "/loki/api/v1/labels?start=1609459200&end=1609545600")
 
-	if receivedStart != wantStart {
-		t.Errorf("expected start=%s (1h cap+bucketed), got %q", wantStart, receivedStart)
+	// The synchronous path must have made at least one capped+bucketed VL call.
+	// (The background full-range refresh will also appear with uncapped params — that is correct.)
+	mu.Lock()
+	defer mu.Unlock()
+	for _, c := range calls {
+		if c.start == wantStart && c.end == wantEnd {
+			return // pass
+		}
 	}
-	if receivedEnd != wantEnd {
-		t.Errorf("expected end=%s (bucketed), got %q", wantEnd, receivedEnd)
-	}
+	t.Errorf("no VL call with capped start=%s end=%s; all calls: %v", wantStart, wantEnd, calls)
 }
 
 func TestContract_Labels_EmptyResult(t *testing.T) {
@@ -3636,6 +3647,7 @@ func newTestProxy(t *testing.T, backendURL string) *Proxy {
 	if err != nil {
 		t.Fatalf("failed to create proxy: %v", err)
 	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	return p
 }
 
