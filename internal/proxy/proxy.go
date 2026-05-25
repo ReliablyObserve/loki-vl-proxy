@@ -1629,9 +1629,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 		}
 		if sc.code != http.StatusOK {
-			w.WriteHeader(sc.code)
+			// Rewrite VL error body to Loki-compliant format (Loki's errorType field
+			// uses strings like "execution", "timeout", etc.; VL may use "unavailable").
+			p.writeError(w, sc.code, extractVLErrorMsg(cacheOut))
+		} else {
+			_, _ = w.Write(cacheOut)
 		}
-		_, _ = w.Write(cacheOut)
 		if cacheable && sc.code == http.StatusOK {
 			p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), cacheOut...), CacheTTLs["query_range"])
 		}

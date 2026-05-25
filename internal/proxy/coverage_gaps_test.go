@@ -2148,18 +2148,25 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 	}
 }
 
-func TestProxyBareParserMetricViaStats_SlowPathWhenRangeNeStep(t *testing.T) {
-	manualCalled := false
+func TestProxyBareParserMetricViaStats_SlidingWindowUsesStatsPath(t *testing.T) {
+	// rate({...} | json [5m]) with step=60 is a sliding window (range != step).
+	// After the long-range memory fix, the sliding-window stats path routes these
+	// to stats_query_range (per-step counts with client-side sliding aggregation)
+	// instead of the 1M-limit raw log fetch. Avoids OOM on long time ranges.
+	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/select/logsql/query" {
-			// Manual NDJSON fetch path
-			manualCalled = true
-			w.Header().Set("Content-Type", "application/x-ndjson")
+		if r.URL.Path == "/select/logsql/stats_query_range" {
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"_stream":"{app=\"api-gateway\"}"},"values":[[1700000060,"5"],[1700000120,"3"]]}]}}`))
 			return
 		}
-		if r.URL.Path == "/select/logsql/stats_query_range" {
-			t.Error("stats_query_range should NOT be called when range != step")
-			w.WriteHeader(http.StatusInternalServerError)
+		if r.URL.Path == "/select/logsql/query" {
+			// Slow-path 1M-limit fetch must NOT be called for sliding-window rate without post-parser filter.
+			if r.FormValue("limit") == "1000000" {
+				t.Error("unexpected 1M-limit slow-path /select/logsql/query call for sliding-window rate (stats path should be used)")
+			}
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			return
 		}
 		if r.URL.Path == "/metrics" {
@@ -2172,7 +2179,7 @@ func TestProxyBareParserMetricViaStats_SlowPathWhenRangeNeStep(t *testing.T) {
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	base := time.Unix(1700000000, 0)
-	// step=60 != range=[5m]=300 → rangeEqualsStep=false → slow manual path
+	// step=60 != range=[5m]=300 → sliding window → stats fast path (not 1M log fetch).
 	params := url.Values{}
 	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
@@ -2182,8 +2189,11 @@ func TestProxyBareParserMetricViaStats_SlowPathWhenRangeNeStep(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, req)
 
-	if !manualCalled {
-		t.Fatal("expected manual NDJSON path to be used when range != step")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Fatal("expected stats_query_range to be called for sliding-window rate (not 1M-limit log fetch)")
 	}
 }
 

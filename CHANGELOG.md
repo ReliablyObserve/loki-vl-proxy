@@ -15,12 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `| line_format` with unclosed Go template action (e.g. `"{{.method"`) now returns 400 matching Loki's parse error
 - `<>` diamond operator in label filters now returns 400 matching Loki's rejection
 - `quantile_over_time` phi > 1.0 clamped to 1.0 so queries succeed rather than returning VL 422
+- VL error bodies (e.g. `{"error":"...","errorType":"unavailable"}`) are now rewritten to Loki-compliant format — only the `"error"` message field is extracted; the proxy maps HTTP status codes to Loki `errorType` strings so Grafana receives well-formed error responses
+- `count_over_time`, `rate`, `bytes_over_time`, `bytes_rate` with parser stages and range==step (tumbling window, e.g. `$__auto`) now always route to VL `stats_query_range` — previously required explicit `| drop __error__` to avoid the 1M-limit raw log fetch that caused OOM failures on >12h ranges
+- `count_over_time`, `rate`, `bytes_over_time`, `bytes_rate` with parser stages and range>step (sliding window) now route to VL `stats_query_range` for O(buckets) aggregation with client-side sliding window, eliminating OOM for long-range queries like `bytes_over_time({...} | json [5m])` over 24h
 
 ### Added
 - Multiple `| unwrap` stages in a range vector now detected and rejected with 400 (matching Loki 3.7.1 parse error)
 - `| distinct` pipeline stage now rejected with 400 (not supported in LogQL 3.7.1)
 - IPv6 ip() line filters (`::1`, `2001:db8::/32`, `::ffff:...`) accepted and translated via `net.ParseIP`/`net.ParseCIDR` validation
 - Exhaustive LogQL parity test suite expanded to 312 cases covering ErrorParity, QueryParity, and KnownGaps categories
+- Regression tests for VL error format compliance (`TestVLError_OOMBodyIsRewritten`, `TestExtractVLErrorMsg`) and long-range metric query routing (`TestLongRange_CountOverTimeUsesStats`, `TestLongRange_BytesOverTimeUsesStats`)
 
 ## [1.42.0] - 2026-05-24
 

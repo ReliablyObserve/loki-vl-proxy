@@ -364,20 +364,32 @@ func TestQueryRange_RateParserStageSlidingProducesResult(t *testing.T) {
 }
 
 func TestQueryRange_RateManualFallback(t *testing.T) {
+	// rate({app="nginx"} | json [2m]) with step=60s is a sliding window.
+	// The sliding-window stats path routes to stats_query_range (O(buckets))
+	// instead of the 1M-limit raw log fetch. Verifies multi-series label output.
 	base := time.Unix(1700000000, 0).UTC()
+	statsCalled := false
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/query":
-			lines := []string{
-				fmt.Sprintf(`{"_time":%q,"_msg":"a","_stream":"{app=\"nginx\",level=\"info\"}"}`, base.Format(time.RFC3339Nano)),
-				fmt.Sprintf(`{"_time":%q,"_msg":"b","_stream":"{app=\"nginx\",level=\"info\"}"}`, base.Add(60*time.Second).Format(time.RFC3339Nano)),
-				fmt.Sprintf(`{"_time":%q,"_msg":"c","_stream":"{app=\"nginx\",level=\"error\"}"}`, base.Add(120*time.Second).Format(time.RFC3339Nano)),
-			}
-			_, _ = w.Write([]byte(strings.Join(lines, "\n") + "\n"))
 		case "/select/logsql/stats_query_range":
-			t.Fatalf("expected manual fallback, stats_query_range must not be called")
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			// Return two per-step count buckets across two streams.
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+				`{"metric":{"_stream":"{app=\"nginx\",level=\"info\"}"},"values":[[` +
+				strconv.FormatInt(base.Unix(), 10) + `,"2"],[` +
+				strconv.FormatInt(base.Add(60*time.Second).Unix(), 10) + `,"1"]` +
+				`]},` +
+				`{"metric":{"_stream":"{app=\"nginx\",level=\"error\"}"},"values":[[` +
+				strconv.FormatInt(base.Add(120*time.Second).Unix(), 10) + `,"1"]` +
+				`]}]}}`))
+		case "/select/logsql/query":
+			if r.FormValue("limit") == "1000000" {
+				t.Errorf("slow-path 1M log fetch must not be called for sliding-window rate (stats path should be used)")
+			}
+			w.Header().Set("Content-Type", "application/x-ndjson")
 		default:
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
+			t.Errorf("unexpected backend path %s", r.URL.Path)
 		}
 	}))
 	defer vlBackend.Close()
@@ -394,6 +406,9 @@ func TestQueryRange_RateManualFallback(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Fatalf("expected stats_query_range to be called for sliding-window rate")
 	}
 
 	var resp struct {
@@ -486,21 +501,37 @@ func TestQueryRange_CountOverTimeParserUsesDirectStatsRange(t *testing.T) {
 }
 
 func TestQueryRange_BytesRateCompatScalesFromSumLen(t *testing.T) {
+	// bytes_rate({app="nginx"} | json [5m]) with step=60s is a sliding window
+	// (range=5m > step=60s). The proxy routes to stats_query_range (fast path)
+	// instead of the 1M-limit raw log fetch. Stats returns per-step byte buckets;
+	// the proxy sums them in the 5m window and divides by 300s.
+	//
+	// 3 entries × 100 bytes each = 300 bytes total in the [T-120s, T+180s] window
+	// → bytes_rate = 300 / 300s = 1 bytes/sec.
 	base := time.Unix(1700000000, 0).UTC()
-	msg := strings.Repeat("x", 100)
+	statsCalled := false
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/query" {
-			t.Fatalf("unexpected backend path %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/select/logsql/stats_query_range":
+			statsCalled = true
+			if got := r.FormValue("query"); !strings.Contains(got, `app:="nginx"`) {
+				t.Errorf("expected translated query, got %q", got)
+			}
+			// Return per-step byte buckets: 100 bytes at T+60s, T+120s, T+180s.
+			// (VL tumbling windows: bucket at T covers [T-step, T))
+			// Sliding window [T+180s-300s, T+180s] sums all three = 300 bytes.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+				`{"metric":{"_stream":"{app=\"nginx\"}"},` +
+				`"values":[` +
+				fmt.Sprintf("[%d,\"100\"],", base.Add(60*time.Second).Unix()) +
+				fmt.Sprintf("[%d,\"100\"],", base.Add(120*time.Second).Unix()) +
+				fmt.Sprintf("[%d,\"100\"]", base.Add(180*time.Second).Unix()) +
+				`]}]}}`))
+		default:
+			t.Errorf("unexpected backend path %s — should use stats_query_range for sliding-window bytes_rate", r.URL.Path)
+			http.NotFound(w, r)
 		}
-		if got := r.FormValue("query"); !strings.Contains(got, `app:="nginx"`) {
-			t.Fatalf("expected translated query, got %q", got)
-		}
-		lines := []string{
-			fmt.Sprintf(`{"_time":%q,"_msg":%q,"_stream":"{app=\"nginx\"}"}`, base.Format(time.RFC3339Nano), msg),
-			fmt.Sprintf(`{"_time":%q,"_msg":%q,"_stream":"{app=\"nginx\"}"}`, base.Add(60*time.Second).Format(time.RFC3339Nano), msg),
-			fmt.Sprintf(`{"_time":%q,"_msg":%q,"_stream":"{app=\"nginx\"}"}`, base.Add(120*time.Second).Format(time.RFC3339Nano), msg),
-		}
-		_, _ = w.Write([]byte(strings.Join(lines, "\n") + "\n"))
 	}))
 	defer vlBackend.Close()
 
@@ -516,6 +547,9 @@ func TestQueryRange_BytesRateCompatScalesFromSumLen(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Error("expected stats_query_range to be called for sliding-window bytes_rate (not raw log fetch)")
 	}
 
 	var resp struct {
@@ -534,7 +568,7 @@ func TestQueryRange_BytesRateCompatScalesFromSumLen(t *testing.T) {
 	}
 	got := resp.Data.Result[0].Values[0][1]
 	if got != "1" {
-		t.Fatalf("expected bytes_rate value 1 after normalization, got %v", got)
+		t.Fatalf("expected bytes_rate value 1 (300 bytes / 300s), got %v", got)
 	}
 }
 
@@ -1050,43 +1084,29 @@ func FuzzParseOriginalRangeMetricSpec(f *testing.F) {
 	})
 }
 
-// TestBareParserCountOverTime_MixedInput_SkipsFastPath ensures that a bare
-// parser count_over_time query WITHOUT explicit __error__ handling routes to
-// the slow log-fetch path, not native VL stats. VL stats would count ALL lines
-// regardless of parse success; Loki excludes lines that fail parsing.
-func TestBareParserCountOverTime_MixedInput_SkipsFastPath(t *testing.T) {
+// TestBareParserCountOverTime_TumblingWindowUsesStatsPath verifies that a bare
+// parser count_over_time query with range==step (tumbling window) routes to
+// VL's stats_query_range fast path. This avoids the 1M-limit raw log fetch
+// that causes memory exhaustion on long time ranges. VL stats count all log
+// lines including those that fail parsing (minor semantic difference from Loki
+// which excludes parse-failed lines), but correctness is far preferable to OOM.
+func TestBareParserCountOverTime_TumblingWindowUsesStatsPath(t *testing.T) {
 	base := time.Unix(1700000000, 0).UTC()
 
 	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/stats_query_range":
-			// The fast path must NOT be taken without __error__ handling.
 			statsCalled = true
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"_stream":"{app=\"api\"}"},"values":[[1700000000,"3"]]}]}}`))
 		case "/select/logsql/query":
-			// Slow path: return 3 valid JSON lines + 2 invalid ones.
-			w.Header().Set("Content-Type", "application/x-ndjson")
-			for i, msg := range []string{
-				`{"method":"GET","status":200}`,
-				`{"method":"POST","status":201}`,
-				`not-json-line-1`,
-				`{"method":"DELETE","status":204}`,
-				`not-json-line-2`,
-			} {
-				ts := base.Add(time.Duration(i) * time.Second)
-				_, _ = fmt.Fprintf(w,
-					`{"_time":%q,"_msg":%q,"_stream":"{app=\"api\"}"}`+"\n",
-					ts.Format(time.RFC3339Nano), msg,
-				)
-			}
-		default:
-			// Allow the parser-detection probe (limit=1) silently.
 			if r.FormValue("limit") == "1" {
 				w.Header().Set("Content-Type", "application/x-ndjson")
 				return
 			}
+			t.Errorf("slow-path query endpoint must not be called for tumbling-window count_over_time: path=%s", r.URL.Path)
+		default:
 			t.Errorf("unexpected backend path: %s", r.URL.Path)
 		}
 	}))
@@ -1094,7 +1114,7 @@ func TestBareParserCountOverTime_MixedInput_SkipsFastPath(t *testing.T) {
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	params := url.Values{}
-	// No "__error__" in query — must not take fast path.
+	// step=60 == range=[60s] → tumbling window → stats fast path regardless of __error__ handling.
 	params.Set("query", `count_over_time({app="api"} | json [60s])`)
 	params.Set("start", strconv.FormatInt(base.Add(-time.Minute).Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(time.Minute).Unix(), 10))
@@ -1106,9 +1126,8 @@ func TestBareParserCountOverTime_MixedInput_SkipsFastPath(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if statsCalled {
-		t.Fatalf("stats_query_range was called — fast path taken without __error__ handling; " +
-			"this violates Loki's error model (parse failures must be excluded from metric counts)")
+	if !statsCalled {
+		t.Fatalf("stats_query_range was not called — tumbling-window count_over_time must use stats fast path")
 	}
 }
 
