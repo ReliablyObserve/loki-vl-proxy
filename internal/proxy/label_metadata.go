@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 )
 
@@ -711,75 +712,142 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 	}()
 }
 
-// fetchLabelCacheWindowFromPeer tries to pull the labels cache entry for cacheKey
-// from any available peer. Returns true if a peer had a fresh copy and it was
-// written to local cache, false if all peers missed or no peers are configured.
-// Peers are queried concurrently; the first successful response wins.
-func (p *Proxy) fetchLabelCacheWindowFromPeer(ctx context.Context, cacheKey string, ttl time.Duration) bool {
-	if p.peerCache == nil {
-		return false
+// queryPeerHas asks a single peer which of the given cache keys it has, and their
+// remaining TTLs. Uses /_cache/has — no value data is transferred.
+// Returns nil on error (treated as "peer has nothing").
+func (p *Proxy) queryPeerHas(ctx context.Context, peerAddr string, keys []string) map[string]cache.PeerKeyPresence {
+	joined := url.QueryEscape(strings.Join(keys, ","))
+	endpoint := fmt.Sprintf("http://%s/_cache/has?keys=%s", peerAddr, joined)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil
+	}
+	if p.peerAuthToken != "" {
+		req.Header.Set("X-Peer-Token", p.peerAuthToken)
+	}
+	req.Header.Set("Accept-Encoding", "zstd, gzip")
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+	if err := decodeCompressedHTTPResponse(resp); err != nil {
+		return nil
+	}
+	body, err := readBodyLimited(resp.Body, 64<<10) // presence index is tiny
+	if err != nil {
+		return nil
+	}
+	var presence map[string]cache.PeerKeyPresence
+	if err := json.Unmarshal(body, &presence); err != nil {
+		return nil
+	}
+	return presence
+}
+
+// fetchLabelWindowsFromPeers performs a two-phase batch peer warmup for a set of
+// cache keys:
+//
+//  1. Discovery (tiny) — ask each peer "which of these N keys do you have?" via a
+//     single /_cache/has request per peer. No value data transferred.
+//  2. Fetch (targeted) — for each key, pull the value from the peer with the highest
+//     remaining TTL (freshest copy) via /_cache/get.
+//
+// For a fleet of P peers and W windows this costs P+W network round-trips instead
+// of the naive P×W approach of calling /_cache/get per (peer, window) pair.
+// Returns the set of keys that were successfully warmed from peers.
+func (p *Proxy) fetchLabelWindowsFromPeers(ctx context.Context, cacheKeys []string, ttl time.Duration) map[string]bool {
+	if p.peerCache == nil || len(cacheKeys) == 0 {
+		return nil
 	}
 	peers := p.peerCache.Peers()
 	if len(peers) == 0 {
-		return false
+		return nil
 	}
 
-	type result struct {
-		value []byte
-		err   error
+	type peerResult struct {
+		addr     string
+		presence map[string]cache.PeerKeyPresence
 	}
-	ch := make(chan result, len(peers))
+	ch := make(chan peerResult, len(peers))
 	for _, peerAddr := range peers {
-		peerAddr := strings.TrimSpace(peerAddr)
-		if peerAddr == "" {
-			ch <- result{err: errors.New("empty peer addr")}
+		addr := strings.TrimSpace(peerAddr)
+		if addr == "" {
+			ch <- peerResult{}
 			continue
 		}
-		go func(addr string) {
-			reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		go func(a string) {
+			hasCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			defer cancel()
-			endpoint := fmt.Sprintf("http://%s/_cache/get?key=%s", addr, url.QueryEscape(cacheKey))
-			req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, endpoint, nil)
-			if err != nil {
-				ch <- result{err: err}
-				return
-			}
-			if p.peerAuthToken != "" {
-				req.Header.Set("X-Peer-Token", p.peerAuthToken)
-			}
-			req.Header.Set("Accept-Encoding", "zstd, gzip")
-			resp, err := p.client.Do(req)
-			if err != nil {
-				ch <- result{err: err}
-				return
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				ch <- result{err: fmt.Errorf("peer %s: status %d", addr, resp.StatusCode)}
-				return
-			}
-			if err := decodeCompressedHTTPResponse(resp); err != nil {
-				ch <- result{err: err}
-				return
-			}
-			body, err := readBodyLimited(resp.Body, 4<<20)
-			if err != nil {
-				ch <- result{err: err}
-				return
-			}
-			ch <- result{value: body}
-		}(peerAddr)
+			ch <- peerResult{addr: a, presence: p.queryPeerHas(hasCtx, a, cacheKeys)}
+		}(addr)
 	}
 
+	// bestPeer[key] = addr with the highest remaining TTL for that key.
+	bestTTL := make(map[string]int64, len(cacheKeys))
+	bestPeer := make(map[string]string, len(cacheKeys))
 	for range peers {
-		res := <-ch
-		if res.err != nil || len(res.value) == 0 {
+		pr := <-ch
+		if pr.presence == nil {
 			continue
 		}
-		p.setEndpointReadCacheWithTTL("labels", cacheKey, res.value, ttl)
-		return true
+		for key, info := range pr.presence {
+			if info.OK && info.TTLMs > bestTTL[key] {
+				bestTTL[key] = info.TTLMs
+				bestPeer[key] = pr.addr
+			}
+		}
 	}
-	return false
+
+	// Phase 2: fetch values only for keys we need, from the best peer.
+	warmed := make(map[string]bool, len(cacheKeys))
+	for _, key := range cacheKeys {
+		addr, ok := bestPeer[key]
+		if !ok {
+			continue // no peer has this key
+		}
+		getCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		endpoint := fmt.Sprintf("http://%s/_cache/get?key=%s", addr, url.QueryEscape(key))
+		req, err := http.NewRequestWithContext(getCtx, http.MethodGet, endpoint, nil)
+		if err != nil {
+			cancel()
+			continue
+		}
+		if p.peerAuthToken != "" {
+			req.Header.Set("X-Peer-Token", p.peerAuthToken)
+		}
+		req.Header.Set("Accept-Encoding", "zstd, gzip")
+		resp, err := p.client.Do(req)
+		if err != nil {
+			cancel()
+			continue
+		}
+		var body []byte
+		if resp.StatusCode == http.StatusOK {
+			if decodeCompressedHTTPResponse(resp) == nil {
+				body, _ = readBodyLimited(resp.Body, 4<<20)
+			}
+		}
+		resp.Body.Close()
+		cancel()
+		if len(body) == 0 {
+			continue
+		}
+		p.setEndpointReadCacheWithTTL("labels", key, body, ttl)
+		warmed[key] = true
+	}
+	return warmed
+}
+
+// labelWarmupWindow carries the metadata needed to warm one Grafana time-window preset.
+type labelWarmupWindow struct {
+	window   time.Duration
+	startStr string
+	endStr   string
+	cacheKey string
 }
 
 // warmLabelWindows fetches label data from VL for all standard Grafana presets and
@@ -787,16 +855,55 @@ func (p *Proxy) fetchLabelCacheWindowFromPeer(ctx context.Context, cacheKey stri
 // than minRemaining TTL are skipped (they are fresh enough). The full range is always
 // fetched so historical labels (services that ran last week but not today) are included.
 //
-// Peer-first strategy: before hitting VL, each window checks whether any peer already
-// has a fresh cache entry. If so, the peer's copy is reused and the VL query is skipped.
-// This means only one fleet instance does the VL work per window; the rest pull from peer.
+// Peer-first strategy (batch, two-phase):
+//  1. Discovery — send one /_cache/has request per peer with all stale window keys.
+//     This is metadata-only (no value transfer) and costs P requests for P peers.
+//  2. Fetch — pull values from the best (freshest) peer for each window that a peer
+//     has cached, costing at most W requests for W windows.
 //
-// A 500ms inter-window pause is inserted between fetches to prevent consecutive
-// wide-range queries from monopolising VL's concurrency budget.
+// Only windows not covered by any peer fall through to VL queries.
+// A 500ms inter-window pause is inserted between VL fetches to prevent wide-range
+// queries from monopolising VL's concurrency budget.
 func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Duration) {
 	nowNs := time.Now().UnixNano()
-	first := true
+
+	// Build metadata for all windows and filter out locally-fresh entries.
+	stale := make([]labelWarmupWindow, 0, len(labelWarmupWindows))
 	for _, window := range labelWarmupWindows {
+		bs, be := bucketMetadataTime(nowNs-int64(window), nowNs)
+		startStr := strconv.FormatInt(bs, 10)
+		endStr := strconv.FormatInt(be, 10)
+		rawQ := "start=" + startStr + "&end=" + endStr + "&query=%2A"
+		req, err := http.NewRequest("GET", "/loki/api/v1/labels?"+rawQ, nil)
+		if err != nil {
+			continue
+		}
+		cacheKey := p.canonicalReadCacheKey("labels", "", req)
+		if _, remaining, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok && remaining > minRemaining {
+			continue // still sufficiently fresh
+		}
+		stale = append(stale, labelWarmupWindow{window: window, startStr: startStr, endStr: endStr, cacheKey: cacheKey})
+	}
+	if len(stale) == 0 {
+		return
+	}
+
+	// Phase 1+2: batch peer discovery + targeted fetch.
+	// One /_cache/has request per peer covers all stale keys; then one /_cache/get
+	// per covered key from the best peer. Total: P + W' requests (W' ≤ W).
+	staleKeys := make([]string, len(stale))
+	for i, w := range stale {
+		staleKeys[i] = w.cacheKey
+	}
+	warmedFromPeer := p.fetchLabelWindowsFromPeers(ctx, staleKeys, ttl)
+
+	// Phase 3: fetch remaining stale windows from VL.
+	first := true
+	for _, w := range stale {
+		if warmedFromPeer[w.cacheKey] {
+			p.log.Debug("label cache window warmed from peer", "window", w.window)
+			continue
+		}
 		if !first {
 			select {
 			case <-ctx.Done():
@@ -806,34 +913,12 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		}
 		first = false
 
-		bs, be := bucketMetadataTime(nowNs-int64(window), nowNs)
-		startStr := strconv.FormatInt(bs, 10)
-		endStr := strconv.FormatInt(be, 10)
-
-		rawQ := "start=" + startStr + "&end=" + endStr + "&query=%2A"
-		req, err := http.NewRequest("GET", "/loki/api/v1/labels?"+rawQ, nil)
-		if err != nil {
-			continue
-		}
-		cacheKey := p.canonicalReadCacheKey("labels", "", req)
-		if _, remaining, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok && remaining > minRemaining {
-			continue // Still sufficiently fresh
-		}
-
-		// Try peers first — if any fleet instance already has this window warm,
-		// pull from it instead of hitting VL.
-		if p.fetchLabelCacheWindowFromPeer(ctx, cacheKey, ttl) {
-			p.log.Debug("label cache window warmed from peer", "window", window)
-			continue
-		}
-
-		// Fetch using full range (labelFullRangeFetchKey) so historical data is included.
 		fetchCtx, fetchCancel := context.WithTimeout(ctx, 30*time.Second)
 		fetchCtx = context.WithValue(fetchCtx, labelFullRangeFetchKey{}, true)
-		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", startStr, endStr, "", false)
+		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
 		fetchCancel()
 		if fetchErr != nil {
-			p.log.Debug("label cache warmup failed", "window", window, "err", fetchErr)
+			p.log.Debug("label cache warmup failed", "window", w.window, "err", fetchErr)
 			continue
 		}
 		filtered := make([]string, 0, len(labels))
@@ -845,8 +930,8 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		}
 		labels = p.labelTranslator.TranslateLabelsList(filtered)
 		labels = appendSyntheticLabels(labels)
-		p.mergeLabelsIntoCache("labels", cacheKey, labels, ttl)
-		p.log.Debug("label cache warmed from VL", "window", window)
+		p.mergeLabelsIntoCache("labels", w.cacheKey, labels, ttl)
+		p.log.Debug("label cache warmed from VL", "window", w.window)
 	}
 }
 

@@ -355,6 +355,58 @@ func TestPeerCache_ServeHTTP_RejectsNearExpiryEntry(t *testing.T) {
 	}
 }
 
+func TestPeerCache_ServeHTTP_Has_BatchPresence(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+	localCache.SetWithTTL("key-a", []byte("value-a"), 60*time.Second)
+	localCache.SetWithTTL("key-b", []byte("value-b"), 60*time.Second)
+	localCache.SetWithTTL("near-expiry", []byte("x"), time.Second) // too close to expiry
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost"})
+	defer pc.Close()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/_cache/has?keys=key-a,key-b,near-expiry,missing", nil)
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var result map[string]PeerKeyPresence
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode has response: %v", err)
+	}
+	if !result["key-a"].OK {
+		t.Errorf("key-a should be present")
+	}
+	if result["key-a"].TTLMs <= 0 {
+		t.Errorf("key-a TTLMs should be positive, got %d", result["key-a"].TTLMs)
+	}
+	if !result["key-b"].OK {
+		t.Errorf("key-b should be present")
+	}
+	if result["near-expiry"].OK {
+		t.Errorf("near-expiry should not be present (near-expiry threshold)")
+	}
+	if result["missing"].OK {
+		t.Errorf("missing key should not be present")
+	}
+}
+
+func TestPeerCache_ServeHTTP_Has_MissingKeysParam(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost"})
+	defer pc.Close()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/_cache/has", nil)
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
 func TestPeerCache_FetchFromPeer(t *testing.T) {
 	// Peer server with data
 	peerCache := New(60*time.Second, 1000)

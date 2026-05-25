@@ -1340,6 +1340,7 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 		mux.Handle("/_cache/get", peerCacheHandler)
 		mux.Handle("/_cache/set", peerCacheHandler)
 		mux.Handle("/_cache/hot", peerCacheHandler)
+		mux.Handle("/_cache/has", peerCacheHandler)
 	}
 }
 

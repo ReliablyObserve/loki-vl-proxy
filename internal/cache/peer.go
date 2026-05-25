@@ -506,12 +506,18 @@ func (pc *PeerCache) getInflight(key string) *inflightEntry {
 const MinUsableTTL = 5 * time.Second
 
 // ServeHTTP handles incoming peer cache requests.
-// GET /_cache/get?key=... — return cached value with remaining TTL header (or 404)
+// GET /_cache/get?key=...     — return cached value with remaining TTL header (or 404)
+// GET /_cache/has?keys=k1,k2  — batch presence check; returns JSON presence+TTL map
+// GET /_cache/hot             — hot key index
+// POST /_cache/set?key=...    — store a value
 // Header X-Cache-TTL-Ms: remaining TTL in milliseconds (for shadow copy)
 func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCache *Cache) {
 	switch r.URL.Path {
 	case "/_cache/hot":
 		pc.serveHotIndex(w, r, localCache)
+		return
+	case "/_cache/has":
+		pc.serveHas(w, r, localCache)
 		return
 	}
 	if r.Method == http.MethodPost {
@@ -524,6 +530,54 @@ func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCach
 		return
 	}
 	pc.serveGet(w, r, localCache)
+}
+
+// PeerKeyPresence describes a single key's presence on a peer.
+type PeerKeyPresence struct {
+	OK        bool  `json:"ok"`
+	TTLMs     int64 `json:"ttl_ms,omitempty"`
+}
+
+// serveHas handles GET /_cache/has?keys=k1,k2,k3
+// Returns a JSON object mapping each requested key to its presence and remaining TTL.
+// Keys not found (or expiring soon) have ok=false. No value data is transferred.
+func (pc *PeerCache) serveHas(w http.ResponseWriter, r *http.Request, localCache *Cache) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	rawKeys := strings.TrimSpace(r.URL.Query().Get("keys"))
+	if rawKeys == "" {
+		http.Error(w, "missing keys", http.StatusBadRequest)
+		return
+	}
+	parts := strings.Split(rawKeys, ",")
+	if len(parts) > 200 {
+		http.Error(w, "too many keys (max 200)", http.StatusBadRequest)
+		return
+	}
+	result := make(map[string]PeerKeyPresence, len(parts))
+	for _, raw := range parts {
+		key := strings.TrimSpace(raw)
+		if key == "" {
+			continue
+		}
+		_, remaining, ok := localCache.GetWithTTL(key)
+		if ok && remaining >= MinUsableTTL {
+			result[key] = PeerKeyPresence{OK: true, TTLMs: remaining.Milliseconds()}
+		} else {
+			result[key] = PeerKeyPresence{OK: false}
+		}
+	}
+	body, err := json.Marshal(result)
+	if err != nil {
+		http.Error(w, "encode failed", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Peer-Set-Encoding", "zstd")
+	writePeerEncodedResponse(w, r, body)
 }
 
 func (pc *PeerCache) serveGet(w http.ResponseWriter, r *http.Request, localCache *Cache) {
