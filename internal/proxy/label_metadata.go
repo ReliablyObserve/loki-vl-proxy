@@ -711,10 +711,85 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 	}()
 }
 
+// fetchLabelCacheWindowFromPeer tries to pull the labels cache entry for cacheKey
+// from any available peer. Returns true if a peer had a fresh copy and it was
+// written to local cache, false if all peers missed or no peers are configured.
+// Peers are queried concurrently; the first successful response wins.
+func (p *Proxy) fetchLabelCacheWindowFromPeer(ctx context.Context, cacheKey string, ttl time.Duration) bool {
+	if p.peerCache == nil {
+		return false
+	}
+	peers := p.peerCache.Peers()
+	if len(peers) == 0 {
+		return false
+	}
+
+	type result struct {
+		value []byte
+		err   error
+	}
+	ch := make(chan result, len(peers))
+	for _, peerAddr := range peers {
+		peerAddr := strings.TrimSpace(peerAddr)
+		if peerAddr == "" {
+			ch <- result{err: errors.New("empty peer addr")}
+			continue
+		}
+		go func(addr string) {
+			reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			defer cancel()
+			endpoint := fmt.Sprintf("http://%s/_cache/get?key=%s", addr, url.QueryEscape(cacheKey))
+			req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, endpoint, nil)
+			if err != nil {
+				ch <- result{err: err}
+				return
+			}
+			if p.peerAuthToken != "" {
+				req.Header.Set("X-Peer-Token", p.peerAuthToken)
+			}
+			req.Header.Set("Accept-Encoding", "zstd, gzip")
+			resp, err := p.client.Do(req)
+			if err != nil {
+				ch <- result{err: err}
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				ch <- result{err: fmt.Errorf("peer %s: status %d", addr, resp.StatusCode)}
+				return
+			}
+			if err := decodeCompressedHTTPResponse(resp); err != nil {
+				ch <- result{err: err}
+				return
+			}
+			body, err := readBodyLimited(resp.Body, 4<<20)
+			if err != nil {
+				ch <- result{err: err}
+				return
+			}
+			ch <- result{value: body}
+		}(peerAddr)
+	}
+
+	for range peers {
+		res := <-ch
+		if res.err != nil || len(res.value) == 0 {
+			continue
+		}
+		p.setEndpointReadCacheWithTTL("labels", cacheKey, res.value, ttl)
+		return true
+	}
+	return false
+}
+
 // warmLabelWindows fetches label data from VL for all standard Grafana presets and
 // stores it in the cache with the given ttl. Windows whose cache entry still has more
 // than minRemaining TTL are skipped (they are fresh enough). The full range is always
 // fetched so historical labels (services that ran last week but not today) are included.
+//
+// Peer-first strategy: before hitting VL, each window checks whether any peer already
+// has a fresh cache entry. If so, the peer's copy is reused and the VL query is skipped.
+// This means only one fleet instance does the VL work per window; the rest pull from peer.
 //
 // A 500ms inter-window pause is inserted between fetches to prevent consecutive
 // wide-range queries from monopolising VL's concurrency budget.
@@ -745,6 +820,13 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 			continue // Still sufficiently fresh
 		}
 
+		// Try peers first — if any fleet instance already has this window warm,
+		// pull from it instead of hitting VL.
+		if p.fetchLabelCacheWindowFromPeer(ctx, cacheKey, ttl) {
+			p.log.Debug("label cache window warmed from peer", "window", window)
+			continue
+		}
+
 		// Fetch using full range (labelFullRangeFetchKey) so historical data is included.
 		fetchCtx, fetchCancel := context.WithTimeout(ctx, 30*time.Second)
 		fetchCtx = context.WithValue(fetchCtx, labelFullRangeFetchKey{}, true)
@@ -764,7 +846,7 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		labels = p.labelTranslator.TranslateLabelsList(filtered)
 		labels = appendSyntheticLabels(labels)
 		p.mergeLabelsIntoCache("labels", cacheKey, labels, ttl)
-		p.log.Debug("label cache warmed", "window", window)
+		p.log.Debug("label cache warmed from VL", "window", window)
 	}
 }
 
