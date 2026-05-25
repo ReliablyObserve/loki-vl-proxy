@@ -1697,7 +1697,11 @@ func formatVLTimestamp(ts string) string {
 	// inputs to Unix nanoseconds — VL log-query endpoints accept nanoseconds
 	// but not milliseconds (13-digit values are misinterpreted as seconds).
 	if integer, err := strconv.ParseInt(ts, 10, 64); err == nil {
-		return strconv.FormatInt(normalizeUnixNanos(integer), 10)
+		normalized := normalizeUnixNanos(integer)
+		if normalized == integer {
+			return ts // already nanoseconds — avoid allocation
+		}
+		return strconv.FormatInt(normalized, 10)
 	}
 	if floating, err := strconv.ParseFloat(ts, 64); err == nil {
 		// Float seconds (Prometheus-style: "1700000000.5") — convert to nanoseconds.
