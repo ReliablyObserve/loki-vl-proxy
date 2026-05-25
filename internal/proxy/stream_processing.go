@@ -645,7 +645,9 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		// numeric/duration/bytes fields. Without this, the proxy only returns _stream
 		// labels and the picker stays empty.
 		if classifyAsParsed && len(parsedFields) > 0 {
-			extLabels := make(map[string]string, len(streamLabels)+len(parsedFields))
+			// Capacity hint uses only one operand to avoid CodeQL's integer-overflow
+			// warning on len(a)+len(b); the map grows automatically for parsedFields.
+			extLabels := make(map[string]string, len(streamLabels))
 			for k, v := range streamLabels {
 				extLabels[k] = v
 			}
