@@ -1,4 +1,5 @@
-{{- if or (eq (include "loki-vl-proxy.workloadKind" .) "StatefulSet") (and .Values.peerCache.enabled (eq .Values.peerCache.discovery "dns")) }}
+{{- $dnsOrSRV := and .Values.peerCache.enabled (or (eq .Values.peerCache.discovery "dns") (eq .Values.peerCache.discovery "srv")) -}}
+{{- if or (eq (include "loki-vl-proxy.workloadKind" .) "StatefulSet") $dnsOrSRV }}
 {{- $headlessName := include "loki-vl-proxy.headlessServiceName" . -}}
 {{- $peerName := include "loki-vl-proxy.peerServiceName" . -}}
 apiVersion: v1
@@ -25,7 +26,7 @@ spec:
       name: http
   selector:
     {{- include "loki-vl-proxy.selectorLabels" . | nindent 4 }}
-{{- if and .Values.peerCache.enabled (eq .Values.peerCache.discovery "dns") (ne $peerName $headlessName) }}
+{{- if and $dnsOrSRV (ne $peerName $headlessName) }}
 ---
 apiVersion: v1
 kind: Service

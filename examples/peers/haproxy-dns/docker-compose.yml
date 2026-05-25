@@ -1,0 +1,184 @@
+# loki-vl-proxy — peer fleet with DNS discovery (CoreDNS + HAProxy)
+#
+# Simulates the Kubernetes headless-service A-record pattern outside k8s.
+# CoreDNS serves a static zone that resolves "proxy-peers.local" to all three
+# proxy IPs.  Each proxy uses -peer-discovery=dns and resolves the zone via
+# CoreDNS at startup and periodically thereafter.
+#
+# HAProxy acts as a TCP load balancer in front of the three proxies, exposing a
+# single entry point on port 3100 for log ingestion and queries.
+#
+# Usage:
+#   docker compose up -d
+#   curl http://localhost:3100/_cache/peers   (via HAProxy → any proxy)
+#   curl http://localhost:3200/_cache/peers   (proxy-a direct)
+#   curl http://localhost:3201/_cache/peers   (proxy-b direct)
+#   curl http://localhost:3202/_cache/peers   (proxy-c direct)
+
+networks:
+  proxy-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+services:
+
+  # ── VictoriaLogs ───────────────────────────────────────────────────────────
+  victorialogs:
+    image: victoriametrics/victoria-logs:latest
+    networks:
+      proxy-net:
+        ipv4_address: 172.28.0.5
+    command:
+      - -retentionPeriod=7d
+      - -storageDataPath=/vlogs
+    volumes:
+      - vlogs-data:/vlogs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9428/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── CoreDNS — headless A-record server ────────────────────────────────────
+  # Resolves proxy-peers.local → all three proxy IPs (one A record per host).
+  # This mirrors what a k8s headless Service provides automatically.
+  coredns:
+    image: coredns/coredns:latest
+    networks:
+      proxy-net:
+        ipv4_address: 172.28.0.2
+    volumes:
+      - ./Corefile:/etc/coredns/Corefile:ro
+    command: ["-conf", "/etc/coredns/Corefile"]
+    restart: unless-stopped
+
+  # ── proxy-a ────────────────────────────────────────────────────────────────
+  proxy-a:
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    networks:
+      proxy-net:
+        ipv4_address: 172.28.0.10
+    ports:
+      - "3200:3100"
+    dns:
+      - 172.28.0.2
+    command:
+      - -backend=http://victorialogs:9428
+      - -label-style=underscores
+      - -metadata-field-mode=translated
+      - -emit-structured-metadata=true
+      - -patterns-enabled=true
+      - -cache-ttl=60s
+      - -cache-max=5000
+      # Peer cache — DNS discovery
+      - -peer-self=proxy-a:3100
+      - -peer-discovery=dns
+      - -peer-dns=proxy-peers.local
+      - -peer-auth-token=fleet-secret
+      - -log-level=info
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      coredns:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── proxy-b ────────────────────────────────────────────────────────────────
+  proxy-b:
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    networks:
+      proxy-net:
+        ipv4_address: 172.28.0.11
+    ports:
+      - "3201:3100"
+    dns:
+      - 172.28.0.2
+    command:
+      - -backend=http://victorialogs:9428
+      - -label-style=underscores
+      - -metadata-field-mode=translated
+      - -emit-structured-metadata=true
+      - -patterns-enabled=true
+      - -cache-ttl=60s
+      - -cache-max=5000
+      - -peer-self=proxy-b:3100
+      - -peer-discovery=dns
+      - -peer-dns=proxy-peers.local
+      - -peer-auth-token=fleet-secret
+      - -log-level=info
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      coredns:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── proxy-c ────────────────────────────────────────────────────────────────
+  proxy-c:
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    networks:
+      proxy-net:
+        ipv4_address: 172.28.0.12
+    ports:
+      - "3202:3100"
+    dns:
+      - 172.28.0.2
+    command:
+      - -backend=http://victorialogs:9428
+      - -label-style=underscores
+      - -metadata-field-mode=translated
+      - -emit-structured-metadata=true
+      - -patterns-enabled=true
+      - -cache-ttl=60s
+      - -cache-max=5000
+      - -peer-self=proxy-c:3100
+      - -peer-discovery=dns
+      - -peer-dns=proxy-peers.local
+      - -peer-auth-token=fleet-secret
+      - -log-level=info
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      coredns:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── HAProxy — single entry point load balancer ─────────────────────────────
+  haproxy:
+    image: haproxy:latest
+    networks:
+      proxy-net:
+        ipv4_address: 172.28.0.20
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      proxy-a:
+        condition: service_healthy
+      proxy-b:
+        condition: service_healthy
+      proxy-c:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  vlogs-data:

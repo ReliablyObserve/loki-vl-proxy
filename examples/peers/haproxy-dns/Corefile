@@ -1,0 +1,29 @@
+. {
+    # Forward everything except our local zone to upstream DNS
+    forward . 8.8.8.8 8.8.4.4
+    cache 30
+    log
+    errors
+}
+
+proxy-peers.local:53 {
+    # Static host entries — one A record per proxy instance.
+    # The proxy-peers.local name resolves to ALL three IPs, simulating a
+    # Kubernetes headless Service that returns one A record per ready Pod.
+    hosts {
+        172.28.0.10 proxy-a.proxy-peers.local proxy-a
+        172.28.0.11 proxy-b.proxy-peers.local proxy-b
+        172.28.0.12 proxy-c.proxy-peers.local proxy-c
+
+        # The headless name itself resolves to all three IPs.
+        # Clients (the proxy -peer-discovery=dns code) resolve this name
+        # and get back all A records, treating each as a peer address.
+        172.28.0.10 proxy-peers.local
+        172.28.0.11 proxy-peers.local
+        172.28.0.12 proxy-peers.local
+
+        fallthrough
+    }
+    log
+    errors
+}

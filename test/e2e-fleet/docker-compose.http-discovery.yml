@@ -1,0 +1,83 @@
+version: "3.8"
+
+# Fleet e2e variant: HTTP discovery via a Prometheus HTTP SD endpoint.
+# A minimal nginx service serves the peer list as JSON.
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.http-discovery.yml up -d
+#   go test -v -tags=e2e -timeout=120s ./test/e2e-fleet/
+
+services:
+  # Lightweight service discovery endpoint — returns peer list in Prometheus HTTP SD format.
+  # Replace nginx with any service that returns a JSON peer list for production use.
+  sd-server:
+    image: nginx:alpine
+    container_name: fleet-sd-server
+    ports:
+      - "8099:80"
+    volumes:
+      - ./sd-peers.json:/usr/share/nginx/html/peers:ro
+      - ./sd-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/peers"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+
+  # Override proxy-a to use HTTP discovery instead of static.
+  proxy-a:
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-log-level=debug"
+      - "-cache-ttl=30s"
+      - "-cache-max=1000"
+      - "-disk-cache-path=/cache/proxy-a.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-flush-size=10"
+      - "-disk-cache-flush-interval=1s"
+      - "-peer-self=proxy-a:3100"
+      - "-peer-discovery=http"
+      - "-peer-http-url=http://sd-server/peers"
+      - "-server.admin-auth-token=e2e-test-token"
+    depends_on:
+      sd-server:
+        condition: service_healthy
+
+  proxy-b:
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-log-level=debug"
+      - "-cache-ttl=30s"
+      - "-cache-max=1000"
+      - "-disk-cache-path=/cache/proxy-b.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-flush-size=10"
+      - "-disk-cache-flush-interval=1s"
+      - "-peer-self=proxy-b:3100"
+      - "-peer-discovery=http"
+      - "-peer-http-url=http://sd-server/peers"
+      - "-server.admin-auth-token=e2e-test-token"
+    depends_on:
+      sd-server:
+        condition: service_healthy
+
+  proxy-c:
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-log-level=debug"
+      - "-cache-ttl=30s"
+      - "-cache-max=1000"
+      - "-disk-cache-path=/cache/proxy-c.db"
+      - "-disk-cache-compress=true"
+      - "-disk-cache-flush-size=10"
+      - "-disk-cache-flush-interval=1s"
+      - "-peer-self=proxy-c:3100"
+      - "-peer-discovery=http"
+      - "-peer-http-url=http://sd-server/peers"
+      - "-server.admin-auth-token=e2e-test-token"
+    depends_on:
+      sd-server:
+        condition: service_healthy

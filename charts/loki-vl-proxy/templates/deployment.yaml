@@ -167,6 +167,14 @@ spec:
             - {{ printf "-peer-discovery=%s" .Values.peerCache.discovery | quote }}
             {{- if eq .Values.peerCache.discovery "dns" }}
             - {{ printf "-peer-dns=%s.%s.svc.cluster.local" (include "loki-vl-proxy.peerServiceName" .) .Release.Namespace | quote }}
+            {{- else if eq .Values.peerCache.discovery "srv" }}
+            {{- if .Values.peerCache.srvName }}
+            - {{ printf "-peer-srv=%s" .Values.peerCache.srvName | quote }}
+            {{- else }}
+            - {{ printf "-peer-srv=_loki-vl-proxy._tcp.%s.%s.svc.cluster.local" (include "loki-vl-proxy.peerServiceName" .) .Release.Namespace | quote }}
+            {{- end }}
+            {{- else if eq .Values.peerCache.discovery "http" }}
+            - {{ printf "-peer-http-url=%s" .Values.peerCache.httpURL | quote }}
             {{- else if eq .Values.peerCache.discovery "static" }}
             - {{ printf "-peer-static=%s" (join "," .Values.peerCache.peers) | quote }}
             {{- end }}

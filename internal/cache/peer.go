@@ -552,8 +552,8 @@ func (pc *PeerCache) ServeHTTP(w http.ResponseWriter, r *http.Request, localCach
 
 // PeerKeyPresence describes a single key's presence on a peer.
 type PeerKeyPresence struct {
-	OK        bool  `json:"ok"`
-	TTLMs     int64 `json:"ttl_ms,omitempty"`
+	OK    bool  `json:"ok"`
+	TTLMs int64 `json:"ttl_ms,omitempty"`
 }
 
 // serveHas handles GET /_cache/has?keys=k1,k2,k3

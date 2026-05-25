@@ -189,6 +189,19 @@ That's it. Grafana Explore, Drilldown, and all dashboards work immediately.
 
 For StatefulSet persistence, peer-cache fleet setup, OTLP push wiring, and image source options, see [Getting Started](docs/getting-started.md) and [Operations](docs/operations.md).
 
+**Peer fleet discovery** — four modes, all refresh every 15 s and rebuild the hash ring live:
+
+| Mode | Flag | Best for |
+|------|------|----------|
+| `dns` | `-peer-dns=proxy-headless.ns.svc.cluster.local` | Kubernetes headless service — only ready pods appear |
+| `srv` | `-peer-srv=_loki-vl-proxy._tcp.proxy-headless.ns.svc.cluster.local` | Kubernetes StatefulSet, Consul DNS — port embedded in record |
+| `http` | `-peer-http-url=http://consul:8500/v1/health/service/loki-vl-proxy?passing=true` | Outside k8s: Consul, Nomad, Prometheus HTTP SD, or custom endpoint |
+| `static` | `-peer-static=10.0.0.1:3100,10.0.0.2:3100` | Fixed fleets, development |
+
+Verify the live ring at any time: `curl http://proxy:3100/_cache/peers` → `{"peers":[...],"self":"...","count":N}`.
+
+Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`examples/peers/`](examples/peers/).
+
 ---
 
 ## Why It's Fast
@@ -197,7 +210,7 @@ For StatefulSet persistence, peer-cache fleet setup, OTLP push wiring, and image
 - **Tier0** — compatibility-edge cache for safe GET responses (no backend hit at all)
 - **L1** — in-memory hot path
 - **L2** — disk (bbolt), survives restarts, warms historical windows across large working sets
-- **L3** — peer cache, lets warm fleet replicas share results instead of all hitting the backend
+- **L3** — peer cache, lets warm fleet replicas share results instead of all hitting the backend. Four peer discovery modes: `dns` (k8s headless A-records), `srv` (DNS SRV with embedded port, works with Consul DNS and k8s StatefulSets), `http` (polls any JSON endpoint — Consul catalog, Prometheus HTTP SD, custom registry), `static` (fixed list). Discovery refreshes every 15 s; the hash ring updates atomically so peer add/remove is live without restarts.
 
 **Window reuse.** Long `query_range` requests are split into 1h windows. Historical windows are served from cache; only the live edge fetches from VictoriaLogs. A 7-day query with warm cache may hit the backend for a single window.
 
