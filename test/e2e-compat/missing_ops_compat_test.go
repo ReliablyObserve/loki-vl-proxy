@@ -200,8 +200,7 @@ func TestMissingOps_PatternMatchLineFilter(t *testing.T) {
 		query string
 		skip  bool
 	}{
-		// include_pattern: proxy does not translate |> pattern match filter (TODO: implement).
-		{name: "include_pattern", query: `{app="pattern-filter-test"} |> "user=<_> action=login"`, skip: true},
+		{name: "include_pattern", query: `{app="pattern-filter-test"} |> "user=<_> action=login"`},
 		{name: "exclude_pattern", query: `{app="pattern-filter-test"} !> "result=failure"`},
 	}
 
@@ -313,7 +312,6 @@ func TestMissingOps_UnwrapBytesModifier(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMissingOps_LabelReplace(t *testing.T) {
-	t.Skip("known proxy gap: label_replace() not implemented in translator (TODO: implement)")
 	ensureMissingOpsData(t)
 
 	now := time.Now().UTC().Truncate(time.Minute)
