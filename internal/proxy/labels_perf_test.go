@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -170,6 +171,7 @@ func TestPerf_Labels_ColdAndWarmLatency(t *testing.T) {
 // requests — after capping — hit the same VL time window and therefore
 // produce identical proxy cache keys once the first request lands.
 func TestPerf_Labels_SameVLCallForAllWindows(t *testing.T) {
+	var mu sync.Mutex
 	var calls []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
@@ -177,8 +179,12 @@ func TestPerf_Labels_SameVLCallForAllWindows(t *testing.T) {
 			return
 		}
 		// Capture the bucketed window the proxy sends to VL.
+		// Mutex required: background refresh goroutines may call VL concurrently.
 		q := r.URL.Query()
-		calls = append(calls, q.Get("start")+"/"+q.Get("end"))
+		entry := q.Get("start") + "/" + q.Get("end")
+		mu.Lock()
+		calls = append(calls, entry)
+		mu.Unlock()
 		writeVLFieldNames(w, []fieldHit{{"app", 100}})
 	}))
 	t.Cleanup(srv.Close)
@@ -195,14 +201,18 @@ func TestPerf_Labels_SameVLCallForAllWindows(t *testing.T) {
 		mux.ServeHTTP(httptest.NewRecorder(), req)
 	}
 
+	mu.Lock()
+	snapshot := append([]string(nil), calls...)
+	mu.Unlock()
+
 	// All windows share the same capped end; the capped start differs by at
 	// most one bucket.  Every window > 1h should produce the same VL params
 	// (the 1h cap collapses them).
-	if len(calls) == 0 {
+	if len(snapshot) == 0 {
 		t.Fatal("no VL calls recorded")
 	}
-	first := calls[0]
-	for i, c := range calls[1:] {
+	first := snapshot[0]
+	for i, c := range snapshot[1:] {
 		if c != first {
 			// Two different VL windows is fine for the 1h case vs longer cases
 			// as long as each window is ≤1h+5min — that is verified by

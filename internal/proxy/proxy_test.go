@@ -208,17 +208,16 @@ func TestContract_Labels_FallsBackToGenericFieldNames(t *testing.T) {
 }
 
 func TestContract_LabelValues_UsesFieldValues(t *testing.T) {
-	// Values are always fetched via field_values (fast, 0.35s) not stream_field_values
-	// (slow, 7-9s). Candidate resolution uses field_names (fast, 0.25s) not
-	// stream_field_names (slow, 7-8s).
-	var fieldNameCalls, fieldValueCalls int
+	// Candidate resolution uses field_names (fast, 0.25s). Values are fetched via
+	// stream_field_values so stream-indexed labels (cluster, namespace, app) are covered.
+	var fieldNameCalls, streamValueCalls int
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
 			fieldNameCalls++
 			writeVLFieldNames(w, []fieldHit{{"k8s.namespace.name", 1}, {"app", 1}})
-		case "/select/logsql/field_values":
-			fieldValueCalls++
+		case "/select/logsql/stream_field_values":
+			streamValueCalls++
 			if got := r.URL.Query().Get("field"); got != "k8s.namespace.name" {
 				t.Fatalf("expected field k8s.namespace.name, got %q", got)
 			}
@@ -247,8 +246,8 @@ func TestContract_LabelValues_UsesFieldValues(t *testing.T) {
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
 	data := assertDataIsStringArray(t, resp)
 	assertContains(t, data, "prod")
-	if fieldNameCalls != 1 || fieldValueCalls != 1 {
-		t.Fatalf("expected field_names + field_values path, got names=%d fieldValues=%d", fieldNameCalls, fieldValueCalls)
+	if fieldNameCalls != 1 || streamValueCalls != 1 {
+		t.Fatalf("expected field_names + stream_field_values path, got names=%d streamValues=%d", fieldNameCalls, streamValueCalls)
 	}
 }
 
@@ -258,7 +257,7 @@ func TestContract_LabelValues_ForwardsSubstringFilter_OnV149Plus(t *testing.T) {
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
 			writeVLFieldNames(w, []fieldHit{{"app", 1}})
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_values":
 			receivedQ = r.URL.Query().Get("q")
 			receivedFilter = r.URL.Query().Get("filter")
 			writeVLFieldValues(w, []fieldHit{{"argocd", 1}})
@@ -291,7 +290,9 @@ func TestContract_LabelValues_DoesNotForwardSubstringFilter_OnV148(t *testing.T)
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
 			writeVLFieldNames(w, []fieldHit{{"app", 1}})
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_values":
+			// v1.48 supports stream_field_values (stream endpoints available since v1.30)
+			// but NOT the substring filter=substring param (added in v1.49).
 			receivedQ = r.URL.Query().Get("q")
 			receivedFilter = r.URL.Query().Get("filter")
 			writeVLFieldValues(w, []fieldHit{{"argocd", 1}})
@@ -323,7 +324,7 @@ func TestContract_LabelValues_JoinsAmbiguousStreamAliases(t *testing.T) {
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
 			writeVLFieldNames(w, []fieldHit{{"foo.bar", 1}, {"foo-bar", 1}})
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_values":
 			switch r.URL.Query().Get("field") {
 			case "foo.bar":
 				writeVLFieldValues(w, []fieldHit{{"alpha", 1}})

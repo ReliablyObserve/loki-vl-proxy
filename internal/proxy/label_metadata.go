@@ -418,11 +418,13 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 }
 
 func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string, params url.Values) ([]string, error) {
-	// Use field_names (fast, 0.25s) instead of stream_field_names (slow, 7-8s) for
-	// candidate resolution. field_names returns all fields; we only need the list to
-	// resolve aliased label names (e.g. k8s_namespace_name → k8s.namespace.name).
-	// stream_field_names is still used in fetchPreferredLabelNames where stream-only
-	// semantics matter for label discovery.
+	// Use cached field_names for candidate resolution (fast: 0.25s cold, instant cached).
+	// Candidate resolution only needs to discover VL field aliases (e.g. k8s_namespace_name →
+	// k8s.namespace.name); field_names provides this at much lower cost than stream_field_names.
+	//
+	// For the actual value fetch, use stream_field_values when available: stream-indexed labels
+	// (cluster, namespace, app, env, …) are stored only in VL's stream index and field_values
+	// returns empty for them. stream_field_values covers both stream-indexed and columnar fields.
 	streamFields := []string{}
 	if p.supportsStreamMetadataEndpoints() {
 		fields, err := p.fetchAllFieldNamesCached(ctx, params)
@@ -444,16 +446,16 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 		return []string{}, nil
 	}
 
-	// Always use field_values: stream_field_values returns identical data but is
-	// ~19x slower (7–9s vs 0.3s in benchmarks) because it scans stream index entries
-	// rather than the columnar field store. field_values works for both stream (indexed)
-	// and non-stream fields.
-	//
-	// Cap the backend time range to metadataMaxFieldValuesWindow (6h): for intervals
-	// wider than 6h the scan cost grows linearly but the returned value set is the
-	// same — active services/namespaces present in the last 6h are the same as those
-	// present in the last 7 days for typical workloads.
-	const endpoint = "/select/logsql/field_values"
+	// Prefer stream_field_values so stream-indexed labels (e.g. cluster, namespace)
+	// return their values. Fall back to field_values for older backends that don't
+	// support stream metadata endpoints.
+	endpoint := "/select/logsql/field_values"
+	if p.supportsStreamMetadataEndpoints() {
+		endpoint = "/select/logsql/stream_field_values"
+	}
+
+	// Cap the backend time range to 6h: active values in the last 6h match those
+	// in wider windows for typical workloads, avoiding O(days) scan cost.
 	cappedParams := capMetadataTimeRange(params, metadataMaxFieldValuesWindow)
 
 	seen := make(map[string]struct{}, 16)
@@ -468,6 +470,10 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 		queryParams.Set("field", candidate)
 
 		fieldValues, fieldErr := p.fetchVLFieldValues(ctx, endpoint, queryParams)
+		if fieldErr != nil && endpoint == "/select/logsql/stream_field_values" && shouldFallbackToGenericMetadata(fieldErr) {
+			endpoint = "/select/logsql/field_values"
+			fieldValues, fieldErr = p.fetchVLFieldValues(ctx, endpoint, queryParams)
+		}
 		if fieldErr != nil {
 			return nil, fieldErr
 		}
@@ -682,10 +688,10 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 			}
 		}
 
-		// Use a short TTL for startup warmup so stale pre-ingestion cache
+		// Use a very short TTL for startup warmup so stale pre-ingestion cache
 		// entries expire quickly. The keep-warm loop re-populates with the
-		// full CacheTTLs["labels"] TTL once data is actually available.
-		const startupWarmupTTL = 60 * time.Second
+		// full CacheTTLs["labels"] TTL once actual label data is available.
+		const startupWarmupTTL = 10 * time.Second
 		p.warmLabelWindows(warmCtx, warmupStaleThreshold, startupWarmupTTL)
 	}()
 }
