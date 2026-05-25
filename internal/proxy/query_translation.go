@@ -2067,44 +2067,10 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	}
 
 	// Stats fast path for unwrap aggregations that compose correctly from per-step
-	// buckets: sum, max, min, first, last. Uses stats_query_range (pre-aggregated,
-	// O(buckets) not O(log-entries)) instead of raw log fetch. Falls back to the
-	// slow path on any error so correctness is preserved.
-	// Skip when unwrapConv is set (duration()/bytes()): VL's native max/min/etc.
-	// operates on raw string values ("15ms") rather than converted floats, so the
-	// aggregated result cannot be parsed as a number and all samples are dropped.
-	if spec.unwrapField != "" && spec.unwrapConv == "" {
-		vlField := p.labelTranslator.ToVL(spec.unwrapField)
-		var statsAggFunc, aggFunc string
-		switch spec.funcName {
-		case "sum_over_time":
-			statsAggFunc, aggFunc = "sum("+vlField+") as c", "sum"
-		case "max_over_time":
-			statsAggFunc, aggFunc = "max("+vlField+") as c", "max"
-		case "min_over_time":
-			statsAggFunc, aggFunc = "min("+vlField+") as c", "min"
-		case "first_over_time":
-			statsAggFunc, aggFunc = "first("+vlField+") as c", "first"
-		case "last_over_time":
-			statsAggFunc, aggFunc = "last("+vlField+") as c", "last"
-		}
-		if statsAggFunc != "" {
-			uwSeries, uwErr := p.fetchBareParserUnwrapViaStats(r.Context(), spec, statsAggFunc, startNanos, endNanos, stepNanos)
-			if uwErr == nil {
-				startT := time.Unix(0, startNanos)
-				endT := time.Unix(0, endNanos)
-				stepD := time.Duration(stepNanos)
-				result := buildManualRangeMetricMatrix(aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow)
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
-				elapsed := time.Since(start)
-				p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
-				p.queryTracker.Record("query_range", originalQuery, elapsed, false)
-				return
-			}
-			slog.WarnContext(r.Context(), "unwrap stats fast path failed, falling back to full-fetch",
-				"err", uwErr, "query", originalQuery)
-		}
+	// buckets: sum, max, min, first, last. Skip when unwrapConv is set
+	// (duration()/bytes()): VL operates on raw strings, not converted floats.
+	if p.tryUnwrapViaStatsFastPath(w, r, start, originalQuery, spec, startNanos, endNanos, stepNanos) {
+		return
 	}
 
 	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, r.FormValue("start"), r.FormValue("end"))
@@ -2120,6 +2086,48 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 	elapsed := time.Since(start)
 	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
 	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+}
+
+// tryUnwrapViaStatsFastPath attempts to satisfy an unwrap range aggregation using
+// the VL stats endpoint (O(buckets) instead of O(log-entries)). Returns true if
+// the response was written, false if the caller should fall through to the slow path.
+func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec, startNanos, endNanos, stepNanos int64) bool {
+	if spec.unwrapField == "" || spec.unwrapConv != "" {
+		return false
+	}
+	vlField := p.labelTranslator.ToVL(spec.unwrapField)
+	var statsAggFunc, aggFunc string
+	switch spec.funcName {
+	case "sum_over_time":
+		statsAggFunc, aggFunc = "sum("+vlField+") as c", "sum"
+	case "max_over_time":
+		statsAggFunc, aggFunc = "max("+vlField+") as c", "max"
+	case "min_over_time":
+		statsAggFunc, aggFunc = "min("+vlField+") as c", "min"
+	case "first_over_time":
+		statsAggFunc, aggFunc = "first("+vlField+") as c", "first"
+	case "last_over_time":
+		statsAggFunc, aggFunc = "last("+vlField+") as c", "last"
+	}
+	if statsAggFunc == "" {
+		return false
+	}
+	uwSeries, uwErr := p.fetchBareParserUnwrapViaStats(r.Context(), spec, statsAggFunc, startNanos, endNanos, stepNanos)
+	if uwErr != nil {
+		slog.WarnContext(r.Context(), "unwrap stats fast path failed, falling back to full-fetch",
+			"err", uwErr, "query", originalQuery)
+		return false
+	}
+	startT := time.Unix(0, startNanos)
+	endT := time.Unix(0, endNanos)
+	stepD := time.Duration(stepNanos)
+	result := buildManualRangeMetricMatrix(aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
+	elapsed := time.Since(start)
+	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
+	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+	return true
 }
 
 func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, spec bareParserMetricCompatSpec) {

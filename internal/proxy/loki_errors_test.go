@@ -246,9 +246,9 @@ func TestLongRange_CountOverTimeUsesStats(t *testing.T) {
 // for both tumbling-window (range==step) and sliding-window (range>step) cases.
 func TestLongRange_BytesOverTimeUsesStats(t *testing.T) {
 	for _, tc := range []struct {
-		name    string
-		rangeW  string
-		step    int
+		name     string
+		rangeW   string
+		step     int
 		tumbling bool
 	}{
 		{"tumbling_window_range_eq_step", "15m", 900, true},
