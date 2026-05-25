@@ -666,8 +666,8 @@ func TestCoverage_FormatVLTimestamp(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"1234567890", "1234567890"},                              // numeric seconds
-		{"1234567890.123", "1234567890.123"},                      // numeric float
+		{"1234567890", "1234567890000000000"},                     // numeric seconds → nanoseconds
+		{"1234567890.123", "1234567890122999808"},                 // numeric float seconds → nanoseconds (float64 precision)
 		{"2024-01-15T10:30:00Z", "1705314600000000000"},           // RFC3339 → unix ns
 		{"2024-01-15T10:30:00.123456789Z", "1705314600123456789"}, // RFC3339Nano → unix ns
 		{"now-5m", "now-5m"},                                      // relative passthrough

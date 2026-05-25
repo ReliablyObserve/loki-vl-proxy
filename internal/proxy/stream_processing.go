@@ -1689,13 +1689,17 @@ func parseDeleteTimestamp(ts string) (int64, error) {
 }
 
 func formatVLTimestamp(ts string) string {
-	// Loki sends Unix timestamps (seconds or nanoseconds).
+	// Loki sends Unix timestamps (seconds, milliseconds, or nanoseconds).
 	// Grafana drilldown resource endpoints send RFC3339 timestamps, while
-	// query endpoints usually send numeric Unix values. Normalize RFC3339 to
-	// Unix nanoseconds so every VL endpoint sees the same time format.
-	if _, err := strconv.ParseFloat(ts, 64); err == nil {
-		// Already numeric — preserve caller precision.
-		return ts
+	// query endpoints usually send numeric Unix values. Normalize all numeric
+	// inputs to Unix nanoseconds — VL log-query endpoints accept nanoseconds
+	// but not milliseconds (13-digit values are misinterpreted as seconds).
+	if integer, err := strconv.ParseInt(ts, 10, 64); err == nil {
+		return strconv.FormatInt(normalizeUnixNanos(integer), 10)
+	}
+	if floating, err := strconv.ParseFloat(ts, 64); err == nil {
+		// Float seconds (Prometheus-style: "1700000000.5") — convert to nanoseconds.
+		return strconv.FormatInt(int64(floating*1e9), 10)
 	}
 	if parsed, err := time.Parse(time.RFC3339Nano, ts); err == nil {
 		return strconv.FormatInt(parsed.UnixNano(), 10)

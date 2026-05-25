@@ -243,10 +243,55 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 	return fields, nil
 }
 
+// metadataMaxFieldNamesWindow caps the time range sent to VL for field_names candidate
+// resolution. Field names are stable metadata; querying the full user-selected interval
+// (potentially 7d+) wastes backend time. A 1h recent window returns the same active
+// field set while keeping latency bounded. The cap is applied to the backend call only;
+// the response-level cache key retains the original range.
+const metadataMaxFieldNamesWindow = time.Hour
+
+// metadataMaxFieldValuesWindow caps the time range for field_values backend calls.
+// A 6h window is sufficient to discover all active label values while avoiding the
+// O(days) scan cost that makes the first request for a wide range feel slow.
+const metadataMaxFieldValuesWindow = 6 * time.Hour
+
+// capMetadataTimeRange returns params with start/end capped to the most recent maxWindow
+// anchored at the provided end time. If the interval already fits within maxWindow, or
+// if start/end cannot be parsed, the original params are returned unchanged.
+func capMetadataTimeRange(params url.Values, maxWindow time.Duration) url.Values {
+	startRaw := firstNonEmpty(params.Get("start"), params.Get("from"))
+	endRaw := firstNonEmpty(params.Get("end"), params.Get("to"))
+	if startRaw == "" || endRaw == "" {
+		return params
+	}
+	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
+	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
+	if !ok1 || !ok2 || endNs <= startNs {
+		return params
+	}
+	intervalNs := endNs - startNs
+	maxNs := maxWindow.Nanoseconds()
+	if intervalNs <= maxNs {
+		return params
+	}
+	capped := url.Values{}
+	for k, vs := range params {
+		capped[k] = vs
+	}
+	cappedStart := endNs - maxNs
+	capped.Set("start", fmt.Sprintf("%d", cappedStart))
+	capped.Del("from")
+	return capped
+}
+
 // fetchAllFieldNamesCached wraps field_names (all fields, not just stream index) with
 // a 30s internal cache. Used for label-value candidate resolution: field_names (0.25s)
 // is ~30x faster than stream_field_names (7-8s) and contains a superset of the same
 // alias information needed to resolve Loki label names to VL field names.
+//
+// The backend call is time-range-capped to metadataMaxFieldNamesWindow (1h) so that
+// wide dashboard ranges (24h, 7d) don't trigger expensive full-range scans for what
+// is essentially a field-name discovery call.
 func (p *Proxy) fetchAllFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
 	cacheKey := "afn:" + getOrgID(ctx) + ":" + params.Encode()
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
@@ -260,7 +305,8 @@ func (p *Proxy) fetchAllFieldNamesCached(ctx context.Context, params url.Values)
 			return fields, nil
 		}
 	}
-	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
+	backendParams := capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", backendParams)
 	if err != nil {
 		return nil, err
 	}
@@ -359,13 +405,19 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 	// ~19x slower (7–9s vs 0.3s in benchmarks) because it scans stream index entries
 	// rather than the columnar field store. field_values works for both stream (indexed)
 	// and non-stream fields.
+	//
+	// Cap the backend time range to metadataMaxFieldValuesWindow (6h): for intervals
+	// wider than 6h the scan cost grows linearly but the returned value set is the
+	// same — active services/namespaces present in the last 6h are the same as those
+	// present in the last 7 days for typical workloads.
 	const endpoint = "/select/logsql/field_values"
+	cappedParams := capMetadataTimeRange(params, metadataMaxFieldValuesWindow)
 
 	seen := make(map[string]struct{}, 16)
 	values := make([]string, 0, 16)
 	for _, candidate := range resolution.candidates {
 		queryParams := url.Values{}
-		for key, items := range params {
+		for key, items := range cappedParams {
 			for _, item := range items {
 				queryParams.Add(key, item)
 			}

@@ -813,3 +813,16 @@ func buildConcurrencyLimiter(limit int) chan struct{} {
 	}
 	return make(chan struct{}, limit)
 }
+
+// extractVLErrorMsg extracts the human-readable error string from a VictoriaLogs
+// JSON error body (e.g. {"error":"...","errorType":"unavailable"}). Returns the
+// raw body as a string if it is not valid JSON or has no "error" field.
+func extractVLErrorMsg(body []byte) string {
+	var v struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &v); err == nil && v.Error != "" {
+		return v.Error
+	}
+	return strings.TrimSpace(string(body))
+}

@@ -450,3 +450,27 @@ type OpaqueMetricExpr struct {
 
 func (o *OpaqueMetricExpr) String() string { return o.Raw }
 func (o *OpaqueMetricExpr) expr()          {}
+
+// StripIncompleteUnwrapStubs removes UnwrapStage nodes with an empty Label from a
+// log query's pipeline. These are emitted by Grafana's metric builder while the
+// user selects an unwrap field. Returns lq unchanged if no incomplete stubs exist.
+func StripIncompleteUnwrapStubs(lq *LogQuery) *LogQuery {
+	hasStub := false
+	for _, s := range lq.Pipeline {
+		if u, ok := s.(*UnwrapStage); ok && u.Label == "" {
+			hasStub = true
+			break
+		}
+	}
+	if !hasStub {
+		return lq
+	}
+	var pipeline []Stage
+	for _, s := range lq.Pipeline {
+		if u, ok := s.(*UnwrapStage); ok && u.Label == "" {
+			continue
+		}
+		pipeline = append(pipeline, s)
+	}
+	return &LogQuery{Selector: lq.Selector, Pipeline: pipeline}
+}

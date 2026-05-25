@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 - Label-values requests now use `field_names` (0.25 s) instead of `stream_field_names` (7–8 s) for VL field candidate resolution — ~30× faster; `stream_field_names` is retained only for the labels-keys, volume, and target-label paths where stream-index semantics are required
-- Label-values requests already used `field_values` (0.35 s) instead of `stream_field_values` (7–9 s) since the previous commit — ~19× faster
+- Label-values requests already used `field_values` (0.35 s) instead of `stream_field_values` (7–9 s) — ~19× faster
+- `field_names` backend calls for candidate resolution are now capped to the most recent 1 h of the requested range; wide dashboard ranges (24 h, 7 d) no longer trigger full-range field-name scans
+- `field_values` backend calls are capped to the most recent 6 h; the first label-values load for wide time ranges now has bounded latency regardless of interval size
 
 ### Fixed
 - Circuit breaker no longer trips on HTTP-level 4xx errors from VL (invalid queries, ip() filter rejections, unsupported syntax) — only transport failures count toward the failure threshold
