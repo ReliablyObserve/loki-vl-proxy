@@ -13,7 +13,7 @@ description: Complete list of Loki-compatible HTTP endpoints exposed by loki-vl-
 | `GET/POST /loki/api/v1/query_range` (metrics) | Implemented | `/select/logsql/stats_query_range` | 10s | 1+ (1) |
 | `GET/POST /loki/api/v1/query` | Implemented | `/select/logsql/query` or `stats_query` | 10s | 1+ (1) |
 | `GET /loki/api/v1/labels` | Implemented | `/select/logsql/stream_field_names` with fallback to `/select/logsql/field_names` | 60s | 3 |
-| `GET /loki/api/v1/label/{name}/values` | Implemented | `/select/logsql/stream_field_values` with fallback to `/select/logsql/field_values` | 60s | 3 |
+| `GET /loki/api/v1/label/{name}/values` | Implemented | `field_names` (candidate resolution, capped to 1h) → `stream_field_names` (endpoint gate) → `stream_field_values` if stream-indexed, else `field_values` | 60s | 3 |
 | `GET /loki/api/v1/series` | Implemented | `/select/logsql/streams` | 30s | 2 |
 | `GET /loki/api/v1/index/stats` | Implemented | `/select/logsql/hits` | 10s | 2 |
 | `GET /loki/api/v1/index/volume` | Implemented | `/select/logsql/hits` (field grouping) | 10s | 2 |
@@ -44,6 +44,7 @@ For Grafana Logs Drilldown and Explore compatibility:
 - Indexed label-values cache snapshots can be persisted to disk (`-label-values-index-persist-path`) and restored at startup.
 - On stale/missing disk snapshot, startup can warm from peer cache before serving (`-label-values-index-startup-stale-threshold`, `-label-values-index-startup-peer-warm-timeout`).
 - Peer cache payload fetches (`/_cache/get`) support `zstd` or `gzip` response compression for lower network latency/cost on large cache objects.
+- `GET /_cache/has?keys=k1,k2,...` is a lightweight batch peer endpoint that returns key presence and remaining TTL without transferring values. Used during startup warmup so instances can discover which peer has the freshest copy of each label window before fetching.
 - Parsed fields and structured metadata are surfaced through `detected_fields` and `detected_field/{name}/values`.
 - With `-metadata-field-mode=hybrid` (the default), field-oriented APIs expose both native VictoriaLogs dotted names and translated Loki aliases when they differ, for example `service.name` and `service_name`.
 - Synthetic compatibility labels such as `service_name` and `detected_level` stay available on the stream and label APIs.

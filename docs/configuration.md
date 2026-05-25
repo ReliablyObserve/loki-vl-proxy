@@ -779,6 +779,7 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 | `-peer-hot-read-ahead-max-object-bytes` | — | `262144` | Max object size eligible for read-ahead prefetch |
 | `-peer-hot-read-ahead-tenant-fair-share` | — | `50` | Per-tenant first-pass selection cap (% of key budget) |
 | `-peer-hot-read-ahead-error-backoff` | — | `15s` | Base cooldown after read-ahead/index pull failures |
+| `-warmup-max-jitter` | — | `0` (disabled) | Maximum random delay before label cache warmup starts on startup. Spreads fleet instances across a random window so they don't all hit VL simultaneously. Recommended: `5s` for ≤5 pods, `10s` for ≤15 pods, `20s` for ≤30 pods, `30s` for larger fleets. |
 
 Peer-cache notes:
 
@@ -788,11 +789,14 @@ Peer-cache notes:
 - with `-peer-write-through=true` (default), non-owner writes with TTL above threshold are pushed to owners and stored locally as short-lived shadows to reduce hot-pod disk skew
 - set `-peer-auth-token` fleet-wide whenever peer cache is enabled; it avoids transient startup or discovery-flap `403` responses caused by IP-membership-only peer auth
 - when `-peer-auth-token` is set, all peers must share the same token or peer-cache reuse will fail closed
+- `/_cache/has?keys=k1,k2,...` is a batch key-presence endpoint (metadata only, no value data transferred) used internally during startup warmup; callers can also use it to pick the freshest peer for a given set of keys before calling `/_cache/get`
+- startup warmup uses a two-phase peer-first strategy: one `/_cache/has` per peer to discover who has which label windows, then one `/_cache/get` per covered window from the freshest peer — only the first instance per window hits VL; see [Fleet Cache Architecture](fleet-cache.md#startup-coordination-and-fleet-restart-safety)
 
 ### Current Tuning For Higher Fleet Reuse
 
 Use these knobs first:
 
+- set `-warmup-max-jitter` for any fleet with ≥3 pods to prevent thundering herd on rolling restart (see sizing table in [Fleet Cache Architecture](fleet-cache.md#layer-1-startup-jitter))
 - keep `-peer-write-through=true` (default) to warm owner shards under skewed traffic
 - tune `-peer-write-through-min-ttl` so only stable/hot entries are replicated
 - keep `-response-compression=gzip` for explicit Loki/Grafana-safe frontend behavior, or `auto` if you want the same gzip behavior through the legacy default
