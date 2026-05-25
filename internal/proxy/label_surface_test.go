@@ -67,6 +67,9 @@ func TestLabelSurface_LabelValuesResolveCustomAliasFromConfiguredExtras(t *testi
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
 			http.Error(w, "unsupported", http.StatusNotFound)
+		case "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"host.id","hits":1}]}`))
 		case "/select/logsql/stream_field_values":
 			requestedField = r.URL.Query().Get("field")
 			w.Header().Set("Content-Type", "application/json")
@@ -114,6 +117,9 @@ func TestLabelSurface_LabelValuesIndexedBrowseUsesHotsetAndOffsetWithoutBackendR
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
 			http.Error(w, "unsupported", http.StatusNotFound)
+		case "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":1}]}`))
 		case "/select/logsql/stream_field_values":
 			fieldValuesCalls++
 			w.Header().Set("Content-Type", "application/json")
@@ -176,6 +182,9 @@ func TestLabelSurface_LabelValuesIndexedBrowseSearchUsesIndex(t *testing.T) {
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
 			http.Error(w, "unsupported", http.StatusNotFound)
+		case "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":1}]}`))
 		case "/select/logsql/stream_field_values":
 			fieldValuesCalls++
 			w.Header().Set("Content-Type", "application/json")
@@ -744,6 +753,9 @@ func TestLabelSurface_RefreshLabelValuesCacheAsync_ForwardsSubstringFilterWhenSu
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":2}]}`))
+		case "/select/logsql/stream_field_names":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"app","hits":2}]}`))
 		case "/select/logsql/stream_field_values":

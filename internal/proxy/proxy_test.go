@@ -216,6 +216,8 @@ func TestContract_LabelValues_UsesFieldValues(t *testing.T) {
 		case "/select/logsql/field_names":
 			fieldNameCalls++
 			writeVLFieldNames(w, []fieldHit{{"k8s.namespace.name", 1}, {"app", 1}})
+		case "/select/logsql/stream_field_names":
+			writeVLFieldNames(w, []fieldHit{{"k8s.namespace.name", 1}, {"app", 1}})
 		case "/select/logsql/stream_field_values":
 			streamValueCalls++
 			if got := r.URL.Query().Get("field"); got != "k8s.namespace.name" {
@@ -257,6 +259,8 @@ func TestContract_LabelValues_ForwardsSubstringFilter_OnV149Plus(t *testing.T) {
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
 			writeVLFieldNames(w, []fieldHit{{"app", 1}})
+		case "/select/logsql/stream_field_names":
+			writeVLFieldNames(w, []fieldHit{{"app", 1}})
 		case "/select/logsql/stream_field_values":
 			receivedQ = r.URL.Query().Get("q")
 			receivedFilter = r.URL.Query().Get("filter")
@@ -289,6 +293,8 @@ func TestContract_LabelValues_DoesNotForwardSubstringFilter_OnV148(t *testing.T)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
+			writeVLFieldNames(w, []fieldHit{{"app", 1}})
+		case "/select/logsql/stream_field_names":
 			writeVLFieldNames(w, []fieldHit{{"app", 1}})
 		case "/select/logsql/stream_field_values":
 			// v1.48 supports stream_field_values (stream endpoints available since v1.30)
@@ -323,6 +329,8 @@ func TestContract_LabelValues_JoinsAmbiguousStreamAliases(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/field_names":
+			writeVLFieldNames(w, []fieldHit{{"foo.bar", 1}, {"foo-bar", 1}})
+		case "/select/logsql/stream_field_names":
 			writeVLFieldNames(w, []fieldHit{{"foo.bar", 1}, {"foo-bar", 1}})
 		case "/select/logsql/stream_field_values":
 			switch r.URL.Query().Get("field") {
@@ -3377,14 +3385,14 @@ func TestCache_LabelValuesHitOnRepeat(t *testing.T) {
 
 	w1 := httptest.NewRecorder()
 	p.handleLabelValues(w1, httptest.NewRequest("GET", "/loki/api/v1/label/app/values?start=1&end=2", nil))
-	if callCount != 2 {
-		t.Fatalf("expected metadata lookup plus value lookup on miss, got %d calls", callCount)
+	if callCount != 3 {
+		t.Fatalf("expected field_names + stream_field_names + stream_field_values on miss, got %d calls", callCount)
 	}
 
 	w2 := httptest.NewRecorder()
 	p.handleLabelValues(w2, httptest.NewRequest("GET", "/loki/api/v1/label/app/values?start=1&end=2", nil))
-	if callCount != 2 {
-		t.Errorf("expected cache hit, got %d calls", callCount)
+	if callCount != 3 {
+		t.Errorf("expected cache hit (no new VL calls), got %d total calls", callCount)
 	}
 }
 

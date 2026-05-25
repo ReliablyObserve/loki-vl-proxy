@@ -325,6 +325,9 @@ func TestLabelValues_StripsFieldStagesForDrilldownQueries(t *testing.T) {
 		case "/select/logsql/field_names":
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintln(w, `{"values":[{"value":"app","hits":1}]}`)
+		case "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintln(w, `{"values":[{"value":"app","hits":1}]}`)
 		case "/select/logsql/stream_field_values":
 			query := r.URL.Query().Get("query")
 			receivedValueQueries = append(receivedValueQueries, query)
