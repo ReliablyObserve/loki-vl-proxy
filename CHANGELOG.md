@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Response cache keys for label/metadata endpoints bucket timestamps into 5-min/1-h/6-h intervals (matching Grafana's browser-side rounding and Loki's split-interval queryrange middleware) — repeated dashboard refreshes at slightly shifted timestamps now share a single cache entry
 - `capMetadataTimeRange` now also buckets the params sent to VictoriaLogs so VL receives identical timestamp pairs from all equivalent queries
 - Proxy startup pre-populates the label cache for common Grafana time presets (Last 1h, 6h, 24h, 7d) via a background goroutine, eliminating cold-start latency on first dashboard load
+- Label cache entries are persisted to disk (shared read cache) and reloaded on restart, giving fast warm-start from the last known state within TTL
+- Progressive two-stage label fetch: the synchronous path caps VL to 1h for immediate response; a background goroutine fetches the full requested range (up to 7d) so subsequent requests have complete historical label data
+- Keep-warm loop runs every 90s and refreshes any label cache window with <60s TTL remaining, ensuring labels stay hot even with zero user queries
 
 ## [1.43.0] - 2026-05-25
 
