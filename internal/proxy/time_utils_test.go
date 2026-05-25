@@ -128,3 +128,66 @@ func TestFormatVLStatsTimestampNeverNanoseconds(t *testing.T) {
 		}
 	}
 }
+
+// TestFormatVLTimestamp_MillisecondRegression is a regression guard for the
+// year-58366 bug: Grafana and tests using UnixMilli() send 13-digit millisecond
+// timestamps. Before the fix, formatVLTimestamp passed them through unchanged
+// and VL's log-query endpoint interpreted them as seconds → year 58366.
+func TestFormatVLTimestamp_MillisecondRegression(t *testing.T) {
+	anchor := time.Date(2025, 5, 25, 0, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "milliseconds (13-digit) must not produce year 58366",
+			input: strconv.FormatInt(anchor.UnixMilli(), 10),
+			want:  strconv.FormatInt(anchor.UnixNano(), 10),
+		},
+		{
+			name:  "nanoseconds (19-digit) pass through unchanged",
+			input: strconv.FormatInt(anchor.UnixNano(), 10),
+			want:  strconv.FormatInt(anchor.UnixNano(), 10),
+		},
+		{
+			name:  "seconds (10-digit) normalize to nanoseconds",
+			input: strconv.FormatInt(anchor.Unix(), 10),
+			want:  strconv.FormatInt(anchor.UnixNano(), 10),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := formatVLTimestamp(tc.input)
+			if got != tc.want {
+				t.Errorf("formatVLTimestamp(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+			// Guard: output must never be in the millisecond band (13 digits)
+			// which VL interprets as seconds → year 58366.
+			if len(got) >= 13 && len(got) <= 16 {
+				t.Errorf("formatVLTimestamp(%q) returned %q — millisecond/microsecond magnitude causes VL year-overflow", tc.input, got)
+			}
+		})
+	}
+}
+
+// TestFormatVLTimestamp_NeverMilliseconds is a property guard: formatVLTimestamp
+// must never return a 13-16 digit value (millisecond/microsecond range) because
+// VL's log-query endpoint interprets such values as seconds, producing far-future dates.
+func TestFormatVLTimestamp_NeverMilliseconds(t *testing.T) {
+	now := time.Now()
+	inputs := []string{
+		strconv.FormatInt(now.Unix(), 10),
+		strconv.FormatInt(now.UnixMilli(), 10),
+		strconv.FormatInt(now.UnixNano(), 10),
+		now.UTC().Format(time.RFC3339),
+		now.UTC().Format(time.RFC3339Nano),
+	}
+	for _, raw := range inputs {
+		got := formatVLTimestamp(raw)
+		if len(got) >= 13 && len(got) <= 16 {
+			t.Errorf("formatVLTimestamp(%q) = %q — 13-16 digit output causes VL year-overflow bug", raw, got)
+		}
+	}
+}

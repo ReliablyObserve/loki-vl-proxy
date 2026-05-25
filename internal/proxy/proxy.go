@@ -1431,6 +1431,10 @@ func (p *Proxy) peerCacheMetrics() string {
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
+	// Strip incomplete | unwrap stubs (no field name) that Grafana's metric builder
+	// emits while the unwrap field picker is open. These are syntactically invalid
+	// and would return 400, leaving the field picker empty.
+	logqlQuery = stripIncompleteUnwrapStubs(logqlQuery)
 	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query_range")
 	if !ok {
 		return
@@ -1629,9 +1633,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 		}
 		if sc.code != http.StatusOK {
-			w.WriteHeader(sc.code)
+			// Rewrite VL error body to Loki-compliant format (Loki's errorType field
+			// uses strings like "execution", "timeout", etc.; VL may use "unavailable").
+			p.writeError(w, sc.code, extractVLErrorMsg(cacheOut))
+		} else {
+			_, _ = w.Write(cacheOut)
 		}
-		_, _ = w.Write(cacheOut)
 		if cacheable && sc.code == http.StatusOK {
 			p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), cacheOut...), CacheTTLs["query_range"])
 		}

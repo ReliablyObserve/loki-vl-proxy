@@ -93,10 +93,10 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	}
 	defer resp.Body.Close()
 
-	// Propagate VL error status to the client
+	// Propagate VL error status to the client with Loki-compatible error format.
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		errMsg := string(body)
+		errMsg := extractVLErrorMsg(body)
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
 		}
@@ -519,7 +519,10 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 	exposureCache := make(map[string][]metadataFieldExposure, 16)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
-	needsClassification := emitStructuredMetadata || categorizedLabels
+	// classifyAsParsed is included so | json / | logfmt parsed fields are classified even
+	// without emitStructuredMetadata or categorizedLabels. Parsed fields are merged into the
+	// stream label set (matching Loki behaviour) so Grafana's unwrap field picker can see them.
+	needsClassification := emitStructuredMetadata || categorizedLabels || classifyAsParsed
 	dropConditions, keepConditions, bareDropFields2, bareKeepFields2 := extractDropKeepFromAST(originalQuery)
 
 	var (
@@ -635,6 +638,24 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 				streamKey = newKey
 				streamLabels = newLabels
 			}
+		}
+		// Merge parsed fields (from | json / | logfmt) into the stream label set.
+		// Loki includes parsed labels in the stream object of its API responses so that
+		// Grafana's unwrap field picker (extractUnwrapLabelKeysFromDataFrame) can find
+		// numeric/duration/bytes fields. Without this, the proxy only returns _stream
+		// labels and the picker stays empty.
+		if classifyAsParsed && len(parsedFields) > 0 {
+			// Capacity hint uses only one operand to avoid CodeQL's integer-overflow
+			// warning on len(a)+len(b); the map grows automatically for parsedFields.
+			extLabels := make(map[string]string, len(streamLabels))
+			for k, v := range streamLabels {
+				extLabels[k] = v
+			}
+			for k, v := range parsedFields {
+				extLabels[k] = v
+			}
+			streamKey = canonicalLabelsKey(extLabels)
+			streamLabels = extLabels
 		}
 		se, ok := streamMap[streamKey]
 		if !ok {
@@ -1670,13 +1691,21 @@ func parseDeleteTimestamp(ts string) (int64, error) {
 }
 
 func formatVLTimestamp(ts string) string {
-	// Loki sends Unix timestamps (seconds or nanoseconds).
+	// Loki sends Unix timestamps (seconds, milliseconds, or nanoseconds).
 	// Grafana drilldown resource endpoints send RFC3339 timestamps, while
-	// query endpoints usually send numeric Unix values. Normalize RFC3339 to
-	// Unix nanoseconds so every VL endpoint sees the same time format.
-	if _, err := strconv.ParseFloat(ts, 64); err == nil {
-		// Already numeric — preserve caller precision.
-		return ts
+	// query endpoints usually send numeric Unix values. Normalize all numeric
+	// inputs to Unix nanoseconds — VL log-query endpoints accept nanoseconds
+	// but not milliseconds (13-digit values are misinterpreted as seconds).
+	if integer, err := strconv.ParseInt(ts, 10, 64); err == nil {
+		normalized := normalizeUnixNanos(integer)
+		if normalized == integer {
+			return ts // already nanoseconds — avoid allocation
+		}
+		return strconv.FormatInt(normalized, 10)
+	}
+	if floating, err := strconv.ParseFloat(ts, 64); err == nil {
+		// Float seconds (Prometheus-style: "1700000000.5") — convert to nanoseconds.
+		return strconv.FormatInt(int64(floating*1e9), 10)
 	}
 	if parsed, err := time.Parse(time.RFC3339Nano, ts); err == nil {
 		return strconv.FormatInt(parsed.UnixNano(), 10)

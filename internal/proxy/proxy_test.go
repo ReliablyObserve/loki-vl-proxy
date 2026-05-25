@@ -1025,8 +1025,9 @@ func TestContract_Patterns_UsesFromToWhenStartEndMissing(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 for patterns endpoint, got %d body=%s", w.Code, w.Body.String())
 	}
-	if receivedStart != "1712311200" || receivedEnd != "1712311800" {
-		t.Fatalf("expected from/to to be forwarded as start/end, got start=%q end=%q", receivedStart, receivedEnd)
+	// formatVLTimestamp normalizes seconds to nanoseconds for VL log-query endpoints.
+	if receivedStart != "1712311200000000000" || receivedEnd != "1712311800000000000" {
+		t.Fatalf("expected from/to to be forwarded as start/end (nanoseconds), got start=%q end=%q", receivedStart, receivedEnd)
 	}
 	if receivedStep != "" {
 		t.Fatalf("expected raw log patterns fetch not to forward step, got %q", receivedStep)

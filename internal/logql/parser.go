@@ -2,7 +2,6 @@ package logql
 
 import (
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 )
@@ -514,8 +513,17 @@ func (p *parser) parsePipeBody() (Stage, error) {
 }
 
 // parseUnwrap parses `unwrap label` or `unwrap bytes(label)`.
+// Also handles Grafana's incomplete stub forms:
+//   - | unwrap [range]         → UnwrapStage{Label: ""}
+//   - | unwrap converter() [range] → UnwrapStage{Label: "", Converter: "converter"}
 func (p *parser) parseUnwrap() (Stage, error) {
-	// Peek: if current ident followed by '(' it's a converter form.
+	// Incomplete stub: | unwrap [range] — no label name, bare bracket.
+	// Grafana's metric builder emits this while the unwrap field picker is open.
+	if p.cur.Typ == TokLBracket {
+		p.consumeRange()
+		return &UnwrapStage{Label: ""}, nil
+	}
+
 	if p.cur.Typ != TokIdent {
 		return nil, fmt.Errorf("logql: expected label name after unwrap")
 	}
@@ -525,6 +533,14 @@ func (p *parser) parseUnwrap() (Stage, error) {
 		// converter(label) form
 		converter := name.Val
 		p.advance() // consume '('
+
+		// Incomplete stub: | unwrap converter() [range] — empty parens.
+		if p.cur.Typ == TokRParen {
+			p.advance() // consume ')'
+			p.consumeRange()
+			return &UnwrapStage{Label: "", Converter: converter}, nil
+		}
+
 		label, err := p.expect(TokIdent)
 		if err != nil {
 			return nil, err
@@ -536,6 +552,20 @@ func (p *parser) parseUnwrap() (Stage, error) {
 	}
 
 	return &UnwrapStage{Label: name.Val}, nil
+}
+
+// consumeRange consumes an optional [duration] token if present.
+func (p *parser) consumeRange() {
+	if p.cur.Typ != TokLBracket {
+		return
+	}
+	p.advance() // consume '['
+	for p.cur.Typ != TokRBracket && p.cur.Typ != TokEOF {
+		p.advance()
+	}
+	if p.cur.Typ == TokRBracket {
+		p.advance() // consume ']'
+	}
 }
 
 // expectStringOrRaw accepts either a quoted string, a raw (backtick) string,
@@ -557,9 +587,6 @@ func (p *parser) expectStringOrRaw() (string, error) {
 			}
 			if _, err := p.expect(TokRParen); err != nil {
 				return "", err
-			}
-			if name == "ip" && !isValidIPOrCIDR(val) {
-				return "", fmt.Errorf("logql: invalid ip filter value %q: not a valid IP address or CIDR", val)
 			}
 			return name + "(" + val + ")", nil
 		}
@@ -942,20 +969,4 @@ func (p *parser) parseGrouping() (*Grouping, error) {
 	}
 
 	return &Grouping{Without: without, Labels: labels}, nil
-}
-
-// isValidIPOrCIDR reports whether s is a valid IP address, CIDR block, or
-// IP range (a-b) as accepted by Loki's ip() line filter.
-func isValidIPOrCIDR(s string) bool {
-	if net.ParseIP(s) != nil {
-		return true
-	}
-	if _, _, err := net.ParseCIDR(s); err == nil {
-		return true
-	}
-	// IP range: "1.2.3.4-5.6.7.8"
-	if idx := strings.IndexByte(s, '-'); idx > 0 {
-		return net.ParseIP(s[:idx]) != nil && net.ParseIP(s[idx+1:]) != nil
-	}
-	return false
 }

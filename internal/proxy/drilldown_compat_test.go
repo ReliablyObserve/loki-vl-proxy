@@ -61,7 +61,12 @@ func TestDrilldown_QueryRange_ServiceNameSelectorAndSyntheticLabel(t *testing.T)
 	}
 }
 
-func TestDrilldown_QueryRange_ParsedFieldsStayOutOfStreamLabels(t *testing.T) {
+// TestDrilldown_QueryRange_ParsedFieldsInStreamLabels verifies that | json parsed fields
+// (method, path, status) ARE included in stream labels. Loki includes parsed labels in the
+// stream object so Grafana's unwrap field picker (extractUnwrapLabelKeysFromDataFrame) can
+// find numeric/duration/bytes fields. Prior behavior (keeping parsed fields out of stream
+// labels) broke the unwrap picker, leaving it empty.
+func TestDrilldown_QueryRange_ParsedFieldsInStreamLabels(t *testing.T) {
 	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
@@ -91,16 +96,18 @@ func TestDrilldown_QueryRange_ParsedFieldsStayOutOfStreamLabels(t *testing.T) {
 	data := assertDataIsObject(t, resp)
 	result := assertResultIsArray(t, data)
 	if len(result) != 1 {
-		t.Fatalf("expected a single logical stream, got %v", result)
+		t.Fatalf("expected a single logical stream (one unique label combination), got %d: %v", len(result), result)
 	}
 
 	entry := result[0].(map[string]interface{})
 	stream := entry["stream"].(map[string]interface{})
-	if _, ok := stream["method"]; ok {
-		t.Fatalf("parsed method must not be emitted as a stream label: %v", stream)
+	// Loki includes | json parsed fields as stream labels so Grafana can find them
+	// in the unwrap picker. method/path/status must appear in the stream object.
+	if _, ok := stream["method"]; !ok {
+		t.Errorf("parsed method must be emitted as a stream label (Loki parity): %v", stream)
 	}
-	if _, ok := stream["path"]; ok {
-		t.Fatalf("parsed path must not be emitted as a stream label: %v", stream)
+	if _, ok := stream["status"]; !ok {
+		t.Errorf("parsed status must be emitted as a stream label (Loki parity): %v", stream)
 	}
 	if stream["service_name"] != "api-gateway" {
 		t.Fatalf("expected synthetic service_name label, got %v", stream)

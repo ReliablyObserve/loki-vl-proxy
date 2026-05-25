@@ -492,22 +492,8 @@ func parseTimestamp(s string) (time.Time, error) {
 	if s == "" {
 		return time.Now(), nil
 	}
-
-	// Try as float (Unix seconds, possibly with fractional part)
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		sec := int64(f)
-		nsec := int64((f - float64(sec)) * 1e9)
-		// If the number is very large, it's nanoseconds
-		if sec > 1e15 {
-			return time.Unix(0, int64(f)), nil
-		}
-		return time.Unix(sec, nsec), nil
+	if nanos, ok := parseFlexibleUnixNanos(s); ok {
+		return time.Unix(0, nanos), nil
 	}
-
-	// Try RFC3339
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
-	}
-
 	return time.Time{}, fmt.Errorf("unparseable timestamp: %q", s)
 }

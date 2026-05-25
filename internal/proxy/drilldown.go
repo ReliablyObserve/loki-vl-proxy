@@ -1102,6 +1102,11 @@ func defaultQuery(query string) string {
 }
 
 func defaultFieldDetectionQuery(query string) string {
+	// Strip any metric wrapper (e.g. sum_over_time(...)) so that the inner log
+	// stream query can be processed normally. Grafana's metric builder passes
+	// the full metric query to detected_fields when populating the unwrap field picker.
+	query = stripMetricWrapper(query)
+
 	// Always strip | unwrap and | drop __error__ (they break log scanning for field detection).
 	// For parser stages:
 	//   | json   → always strip. VL v1.50+ auto-indexes JSON from _msg, so VL can evaluate
@@ -1124,7 +1129,7 @@ func defaultFieldDetectionQuery(query string) string {
 }
 
 func relaxedFieldDetectionQuery(query string) string {
-	return defaultQuery(stripFieldComparisonStages(stripFieldDetectionStages(query)))
+	return defaultQuery(stripFieldComparisonStages(stripFieldDetectionStages(stripMetricWrapper(query))))
 }
 
 func fieldDetectionQueryCandidates(query string) []string {
@@ -1159,7 +1164,42 @@ var (
 	reParserStage     = regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
 	reJSONParserStage = regexp.MustCompile(`\|\s*json(\s+[^|]+)?`)
 	reUnwrapStage     = regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
+	// reMetricWrapper matches a LogQL range-vector metric function prefix.
+	// Used to strip the wrapper before field detection so that the inner log
+	// stream query can be processed normally.
+	reMetricWrapper = regexp.MustCompile(`(?i)^(sum_over_time|count_over_time|rate|bytes_rate|bytes_over_time|avg_over_time|max_over_time|min_over_time|stddev_over_time|stdvar_over_time|first_over_time|last_over_time|absent_over_time|rate_counter)\s*\(`)
 )
+
+// stripMetricWrapper extracts the inner log stream query from a metric range-vector
+// expression. Grafana's metric builder passes the full query (including the
+// sum_over_time() wrapper) to detected_fields — the wrapper must be removed before
+// field detection so the inner log stream can be scanned normally.
+// Non-metric queries are returned unchanged.
+func stripMetricWrapper(query string) string {
+	query = strings.TrimSpace(query)
+	if !reMetricWrapper.MatchString(query) {
+		return query
+	}
+	// Find the opening paren and extract everything inside the outermost call.
+	open := strings.IndexByte(query, '(')
+	if open < 0 {
+		return query
+	}
+	inner := query[open+1:]
+	depth := 1
+	for i, ch := range inner {
+		switch ch {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return strings.TrimSpace(inner[:i])
+			}
+		}
+	}
+	return query
+}
 
 func collapseSpaces(s string) string {
 	for strings.Contains(s, "  ") {
@@ -1229,6 +1269,33 @@ func stripUnwrapAndDropStages(query string) string {
 		return true
 	})
 	return out.String()
+}
+
+// stripIncompleteUnwrapStubs removes | unwrap pipeline stages that have no field name.
+// Grafana's metric builder emits these while the unwrap field picker is open and no
+// field has been selected yet; the stage is syntactically invalid and causes a 400.
+// Stripping it lets query_range return sample log lines so the picker can populate.
+// Uses the AST parser instead of regex to robustly handle whitespace, comments,
+// and arbitrary surrounding pipeline stages.
+func stripIncompleteUnwrapStubs(query string) string {
+	// Fast path: incomplete unwrap stubs only appear in queries containing "unwrap".
+	// Skip the expensive AST parse for the common case.
+	if !strings.Contains(query, "unwrap") {
+		return query
+	}
+	expr, err := logqlpkg.Parse(query)
+	if err != nil {
+		return query
+	}
+	lq, ok := expr.(*logqlpkg.LogQuery)
+	if !ok {
+		return query
+	}
+	stripped := logqlpkg.StripIncompleteUnwrapStubs(lq)
+	if stripped == lq {
+		return query
+	}
+	return stripped.String()
 }
 
 func stripParserOnlyStages(query string) string {
