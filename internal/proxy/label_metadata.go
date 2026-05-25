@@ -234,7 +234,14 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 			return fields, nil
 		}
 	}
-	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", params)
+	// Cap the backend call to metadataMaxFieldNamesWindow (1h) so wide dashboard
+	// ranges (12h, 24h, 7d) don't trigger full-range stream-index scans. Stream
+	// labels are stable: the set of active services in the last 1h equals the set
+	// over a 7-day window for typical workloads. The cache key retains the
+	// original params so different user-selected ranges still share a single entry
+	// once warm — the cap is applied only to the VL query, not the key.
+	backendParams := capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", backendParams)
 	if err != nil {
 		return nil, err
 	}
@@ -616,12 +623,31 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 		7 * 24 * time.Hour,
 	}
 	go func() {
-		// Allow VL backend to become reachable before issuing warmup calls.
-		time.Sleep(5 * time.Second)
+		// Wait until VL is reachable and responding before warming. Poll the health
+		// endpoint with exponential backoff instead of a fixed sleep so the warmup
+		// proceeds as soon as VL is ready rather than always waiting the maximum time.
+		// Total deadline: 60 s (aligns with typical Kubernetes readiness probe timeout).
+		warmCtx, warmCancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer warmCancel()
+
+		backoff := 2 * time.Second
+		for {
+			status, _, err := p.vlGetMetadataCoalesced(warmCtx, "/health", url.Values{})
+			if err == nil && status < 500 {
+				break
+			}
+			select {
+			case <-warmCtx.Done():
+				p.log.Debug("label cache warmup aborted: VL not ready within deadline")
+				return
+			case <-time.After(backoff):
+				if backoff < 10*time.Second {
+					backoff *= 2
+				}
+			}
+		}
 
 		nowNs := time.Now().UnixNano()
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
 
 		for _, window := range windows {
 			bs, be := bucketMetadataTime(nowNs-int64(window), nowNs)
@@ -638,7 +664,9 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 				continue
 			}
 
-			labels, fetchErr := p.fetchScopedLabelNames(ctx, "*", startStr, endStr, "", true)
+			fetchCtx, fetchCancel := context.WithTimeout(warmCtx, 20*time.Second)
+			labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", startStr, endStr, "", true)
+			fetchCancel()
 			if fetchErr != nil {
 				p.log.Debug("label cache warmup failed", "window", window, "err", fetchErr)
 				continue

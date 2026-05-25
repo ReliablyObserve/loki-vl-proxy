@@ -57,6 +57,14 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 }
 
 func TestContract_Labels_PassesTimeRange(t *testing.T) {
+	// Input: start=1609459200 (seconds), end=1609545600 (seconds) → 24h interval.
+	// After normalisation and the 1h cap+bucketing applied by fetchStreamFieldNamesCached:
+	//   cappedStart = endNs - 1h = 1609545600e9 - 3600e9 = 1609542000e9 (already on 5-min boundary)
+	//   bucketedEnd  = floor(1609545600e9 / 300e9) * 300e9 = 1609545600e9 (already on 5-min boundary)
+	const (
+		wantStart = "1609542000000000000"
+		wantEnd   = "1609545600000000000"
+	)
 	var receivedStart, receivedEnd string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedStart = r.URL.Query().Get("start")
@@ -67,11 +75,11 @@ func TestContract_Labels_PassesTimeRange(t *testing.T) {
 
 	doGet(t, vlBackend.URL, "/loki/api/v1/labels?start=1609459200&end=1609545600")
 
-	if receivedStart != "1609459200" {
-		t.Errorf("expected start=1609459200, got %q", receivedStart)
+	if receivedStart != wantStart {
+		t.Errorf("expected start=%s (1h cap+bucketed), got %q", wantStart, receivedStart)
 	}
-	if receivedEnd != "1609545600" {
-		t.Errorf("expected end=1609545600, got %q", receivedEnd)
+	if receivedEnd != wantEnd {
+		t.Errorf("expected end=%s (bucketed), got %q", wantEnd, receivedEnd)
 	}
 }
 
