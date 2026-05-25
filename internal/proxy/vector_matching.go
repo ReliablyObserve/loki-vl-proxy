@@ -266,7 +266,9 @@ func validateVectorMatchCardinality(leftBody, rightBody []byte, onLabels []strin
 		if rightCount == 0 {
 			continue
 		}
-		if leftCount > 1 || rightCount > 1 {
+		// Only many-to-many is truly ambiguous — Loki accepts many-to-one and
+		// one-to-many with ignoring() implicitly (group_left/right not required).
+		if leftCount > 1 && rightCount > 1 {
 			return fmt.Errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
 		}
 	}
