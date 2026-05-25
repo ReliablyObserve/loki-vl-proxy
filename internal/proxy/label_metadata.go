@@ -592,7 +592,7 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 			}
 			labels = p.labelTranslator.TranslateLabelsList(filtered)
 			labels = appendSyntheticLabels(labels)
-			p.setEndpointReadCacheWithTTL("labels", cacheKey, lokiLabelsResponse(labels), CacheTTLs["labels"])
+			p.mergeLabelsIntoCache("labels", cacheKey, labels, CacheTTLs["labels"])
 			return nil, nil
 		})
 		if err != nil {
@@ -682,15 +682,19 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 			}
 		}
 
-		p.warmLabelWindows(warmCtx, warmupStaleThreshold)
+		// Use a short TTL for startup warmup so stale pre-ingestion cache
+		// entries expire quickly. The keep-warm loop re-populates with the
+		// full CacheTTLs["labels"] TTL once data is actually available.
+		const startupWarmupTTL = 60 * time.Second
+		p.warmLabelWindows(warmCtx, warmupStaleThreshold, startupWarmupTTL)
 	}()
 }
 
 // warmLabelWindows fetches label data from VL for all standard Grafana presets and
-// stores it in the cache. Windows whose cache entry still has more than minRemaining
-// TTL are skipped (they are fresh enough). The full range is always fetched so
-// historical labels (services that ran last week but not today) are included.
-func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining time.Duration) {
+// stores it in the cache with the given ttl. Windows whose cache entry still has more
+// than minRemaining TTL are skipped (they are fresh enough). The full range is always
+// fetched so historical labels (services that ran last week but not today) are included.
+func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Duration) {
 	nowNs := time.Now().UnixNano()
 	for _, window := range labelWarmupWindows {
 		bs, be := bucketMetadataTime(nowNs-int64(window), nowNs)
@@ -725,27 +729,59 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining time.Duration
 		}
 		labels = p.labelTranslator.TranslateLabelsList(filtered)
 		labels = appendSyntheticLabels(labels)
-		p.setEndpointReadCacheWithTTL("labels", cacheKey, lokiLabelsResponse(labels), CacheTTLs["labels"])
+		p.mergeLabelsIntoCache("labels", cacheKey, labels, ttl)
 		p.log.Debug("label cache warmed", "window", window)
 	}
 }
 
-// startLabelCacheKeepWarmLoop runs warmLabelWindows every 90 seconds so that label
+// startLabelCacheKeepWarmLoop runs warmLabelWindows periodically so that label
 // cache entries for standard Grafana presets never go cold when there are no user
-// queries. 90s is chosen to refresh before the 2-minute TTL expires, with a 30s
-// margin to tolerate scheduling jitter. Entries with >60s remaining TTL are skipped.
+// queries. The interval and skip threshold are derived from CacheTTLs["labels"]:
+// refresh at 75% of TTL, skip if >40% of TTL remains.
+// The goroutine exits when p.keepWarmStop is closed (via Shutdown).
 func (p *Proxy) startLabelCacheKeepWarmLoop() {
-	const (
-		interval         = 90 * time.Second
-		skipIfRemaining  = 60 * time.Second
-	)
+	ttl := CacheTTLs["labels"]
+	interval := ttl * 3 / 4
+	skipIfRemaining := ttl * 2 / 5
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		for range ticker.C {
-			ctx, cancel := context.WithTimeout(context.Background(), interval)
-			p.warmLabelWindows(ctx, skipIfRemaining)
-			cancel()
+		for {
+			select {
+			case <-p.keepWarmStop:
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), interval)
+				p.warmLabelWindows(ctx, skipIfRemaining, ttl)
+				cancel()
+			}
 		}
 	}()
+}
+
+// mergeLabelsIntoCache unions newLabels with the current cached label set for
+// cacheKey and writes the result back with a fresh TTL. This ensures that new
+// labels discovered by user queries or background refreshes are additive:
+// labels never disappear from the cache within a TTL window.
+func (p *Proxy) mergeLabelsIntoCache(endpoint, cacheKey string, newLabels []string, ttl time.Duration) {
+	merged := make(map[string]struct{}, len(newLabels))
+	for _, l := range newLabels {
+		merged[l] = struct{}{}
+	}
+	if cached, _, _, ok := p.endpointReadCacheEntry(endpoint, cacheKey); ok {
+		var existing struct {
+			Data []string `json:"data"`
+		}
+		if json.Unmarshal(cached, &existing) == nil {
+			for _, l := range existing.Data {
+				merged[l] = struct{}{}
+			}
+		}
+	}
+	all := make([]string, 0, len(merged))
+	for l := range merged {
+		all = append(all, l)
+	}
+	sort.Strings(all)
+	p.setEndpointReadCacheWithTTL(endpoint, cacheKey, lokiLabelsResponse(all), ttl)
 }

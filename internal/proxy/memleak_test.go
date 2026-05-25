@@ -81,9 +81,9 @@ func vlStreamFieldNamesBody() string {
 // dropped; after 100×50=5000 writes the heap must not have grown by >5 MB.
 func TestMemLeak_Cache_SetEvictCycles(t *testing.T) {
 	const (
-		cycles  = 100
+		cycles   = 100
 		perCycle = 50
-		boundMB = 5
+		boundMB  = 5
 	)
 	c := cache.New(30*time.Second, 1000)
 	payload := []byte(`{"status":"success","data":["app","env","level"]}`)
@@ -687,4 +687,3 @@ func TestMemLeak_BuildInfo_RepeatedRequests(t *testing.T) {
 	}
 	mlAssert(t, "handler/build-info-config-stub", before, mlHeapAfter(), cycles, boundMB)
 }
-

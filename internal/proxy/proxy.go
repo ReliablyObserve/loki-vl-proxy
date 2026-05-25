@@ -210,6 +210,12 @@ type Config struct {
 	// Older cache hits are bypassed and recomputed.
 	RecentTailRefreshMaxStaleness time.Duration
 
+	// Label cache
+	// LabelCacheTTL overrides the default TTL for /labels and /label/{name}/values
+	// cache entries. Defaults to 5 minutes when unset. Keep-warm interval and skip
+	// threshold are derived automatically from this value.
+	LabelCacheTTL time.Duration
+
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
 	MetadataFieldMode MetadataFieldMode // how to expose non-label VL fields through field-oriented APIs
@@ -325,10 +331,11 @@ const (
 	patternsCacheRetention = 100 * 365 * 24 * time.Hour
 )
 
-// CacheTTLs defines per-endpoint cache TTLs.
+// CacheTTLs defines per-endpoint cache TTLs. "labels" and "label_values" default
+// to 5 minutes and can be overridden at runtime via Config.LabelCacheTTL.
 var CacheTTLs = map[string]time.Duration{
-	"labels":                2 * time.Minute,
-	"label_values":          2 * time.Minute,
+	"labels":                5 * time.Minute,
+	"label_values":          5 * time.Minute,
 	"label_inventory":       5 * time.Minute,
 	"series":                30 * time.Second,
 	"detected_fields":       90 * time.Second,
@@ -468,6 +475,7 @@ type Proxy struct {
 	labelValuesIndexPersistDirty          atomic.Bool
 	labelValuesIndexPersistStop           chan struct{}
 	labelValuesIndexPersistDone           chan struct{}
+	keepWarmStop                          chan struct{}
 	labelValuesIndexMu                    sync.RWMutex
 	labelValuesIndex                      map[string]*labelValuesIndexState
 	labelValuesIndexPersistDigest         [sha256.Size]byte
@@ -887,6 +895,11 @@ func New(cfg Config) (*Proxy, error) {
 		return nil, fmt.Errorf("patterns persistence path %q is not writable: %w", patternsPersistPath, err)
 	}
 
+	if cfg.LabelCacheTTL > 0 {
+		CacheTTLs["labels"] = cfg.LabelCacheTTL
+		CacheTTLs["label_values"] = cfg.LabelCacheTTL
+	}
+
 	labelTranslator := NewLabelTranslator(cfg.LabelStyle, cfg.FieldMappings)
 	declaredLabelFields := buildDeclaredLabelFields(cfg.StreamFields, cfg.ExtraLabelFields, labelTranslator)
 	patternsEnabled := true
@@ -1015,6 +1028,7 @@ func New(cfg Config) (*Proxy, error) {
 		patternsSnapshotEntries:               make(map[string]patternSnapshotEntry),
 		labelValuesIndexPersistStop:           make(chan struct{}),
 		labelValuesIndexPersistDone:           make(chan struct{}),
+		keepWarmStop:                          make(chan struct{}),
 		labelValuesIndex:                      make(map[string]*labelValuesIndexState),
 		readCacheKeyMemo:                      make(map[canonicalReadCacheMemoKey]string, 2048),
 		coldRouter:                            coldRouter,
@@ -1170,6 +1184,13 @@ func (p *Proxy) ColdRouter() *ColdRouter { return p.coldRouter }
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
+	if p.keepWarmStop != nil {
+		select {
+		case <-p.keepWarmStop:
+		default:
+			close(p.keepWarmStop)
+		}
+	}
 	if p.limiter != nil {
 		p.limiter.Stop()
 	}
