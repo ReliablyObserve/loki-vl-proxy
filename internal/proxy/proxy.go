@@ -1155,6 +1155,7 @@ func (p *Proxy) Init() {
 	p.warmPatternsOnStartup()
 	p.startPatternsPersistenceLoop()
 	p.warmMetadataCacheOnStartup()
+	p.startLabelCacheKeepWarmLoop()
 	if p.coldRouter != nil {
 		p.coldRouter.Start(context.Background())
 		p.log.Info("cold storage routing enabled",

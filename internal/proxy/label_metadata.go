@@ -217,10 +217,23 @@ func (p *Proxy) fetchVLFieldNames(ctx context.Context, path string, params url.V
 	return fields, nil
 }
 
+// labelFullRangeFetchKey is a context key that instructs fetchStreamFieldNamesCached
+// and fetchAllFieldNamesCached to bypass both their in-process short-TTL cache and
+// the 1h backend cap. Background refresh goroutines set this key so they can fetch
+// the full user-requested range (e.g., 7d) rather than only the most recent 1h.
+// Synchronous (on-request) paths MUST NOT set this key — they rely on the cap for
+// bounded latency.
+type labelFullRangeFetchKey struct{}
+
 // fetchStreamFieldNamesCached wraps the stream_field_names VL call with a short-lived
 // internal cache (15s TTL, always-on regardless of -cache-disabled). All label_values and
 // label_names requests for the same query+timerange share one backend call, eliminating
 // the first of two sequential VL RTTs per label_values request.
+//
+// Progressive strategy: the synchronous path caps the VL query to 1h (fast initial
+// response), then a background goroutine fetches the full requested range via
+// refreshLabelsCacheAsync so subsequent requests return complete historical data.
+// Set labelFullRangeFetchKey in context to bypass the cap for background fetches.
 func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
 	cacheKey := "sfn:" + getOrgID(ctx) + ":" + params.Encode()
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
@@ -228,19 +241,21 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 			cacheKey += ":auth:" + fp
 		}
 	}
-	if cached, ok := p.streamFieldNamesCache.Get(cacheKey); ok {
-		var fields []string
-		if err := json.Unmarshal(cached, &fields); err == nil {
-			return fields, nil
+	fullRange := ctx.Value(labelFullRangeFetchKey{}) != nil
+	if !fullRange {
+		if cached, ok := p.streamFieldNamesCache.Get(cacheKey); ok {
+			var fields []string
+			if err := json.Unmarshal(cached, &fields); err == nil {
+				return fields, nil
+			}
 		}
 	}
-	// Cap the backend call to metadataMaxFieldNamesWindow (1h) so wide dashboard
-	// ranges (12h, 24h, 7d) don't trigger full-range stream-index scans. Stream
-	// labels are stable: the set of active services in the last 1h equals the set
-	// over a 7-day window for typical workloads. The cache key retains the
-	// original params so different user-selected ranges still share a single entry
-	// once warm — the cap is applied only to the VL query, not the key.
-	backendParams := capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+	backendParams := params
+	if !fullRange {
+		// Cap to 1h for synchronous path: fast initial response.
+		// The background refresh (labelFullRangeFetchKey) uses the full range.
+		backendParams = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+	}
 	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", backendParams)
 	if err != nil {
 		return nil, err
@@ -251,12 +266,20 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 	return fields, nil
 }
 
-// metadataMaxFieldNamesWindow caps the time range sent to VL for field_names candidate
-// resolution. Field names are stable metadata; querying the full user-selected interval
-// (potentially 7d+) wastes backend time. A 1h recent window returns the same active
-// field set while keeping latency bounded. The cap is applied to the backend call only;
-// the response-level cache key retains the original range.
+// metadataMaxFieldNamesWindow is the cap applied to VL backend calls on the synchronous
+// (on-request) path. Background refresh goroutines bypass this cap via labelFullRangeFetchKey.
 const metadataMaxFieldNamesWindow = time.Hour
+
+// rangeExceedsWindow returns true when the start/end pair spans more than threshold.
+// Returns false if either timestamp cannot be parsed.
+func rangeExceedsWindow(start, end string, threshold time.Duration) bool {
+	if start == "" || end == "" {
+		return false
+	}
+	startNs, ok1 := parseLokiTimeToUnixNano(start)
+	endNs, ok2 := parseLokiTimeToUnixNano(end)
+	return ok1 && ok2 && endNs-startNs > int64(threshold)
+}
 
 // metadataMaxFieldValuesWindow caps the time range for field_values backend calls.
 // A 6h window is sufficient to discover all active label values while avoiding the
@@ -304,9 +327,8 @@ func capMetadataTimeRange(params url.Values, maxWindow time.Duration) url.Values
 // is ~30x faster than stream_field_names (7-8s) and contains a superset of the same
 // alias information needed to resolve Loki label names to VL field names.
 //
-// The backend call is time-range-capped to metadataMaxFieldNamesWindow (1h) so that
-// wide dashboard ranges (24h, 7d) don't trigger expensive full-range scans for what
-// is essentially a field-name discovery call.
+// Same progressive strategy as fetchStreamFieldNamesCached: synchronous path caps to
+// 1h; background refresh (labelFullRangeFetchKey in context) uses the full range.
 func (p *Proxy) fetchAllFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
 	cacheKey := "afn:" + getOrgID(ctx) + ":" + params.Encode()
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
@@ -314,13 +336,19 @@ func (p *Proxy) fetchAllFieldNamesCached(ctx context.Context, params url.Values)
 			cacheKey += ":auth:" + fp
 		}
 	}
-	if cached, ok := p.streamFieldNamesCache.Get(cacheKey); ok {
-		var fields []string
-		if err := json.Unmarshal(cached, &fields); err == nil {
-			return fields, nil
+	fullRange := ctx.Value(labelFullRangeFetchKey{}) != nil
+	if !fullRange {
+		if cached, ok := p.streamFieldNamesCache.Get(cacheKey); ok {
+			var fields []string
+			if err := json.Unmarshal(cached, &fields); err == nil {
+				return fields, nil
+			}
 		}
 	}
-	backendParams := capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+	backendParams := params
+	if !fullRange {
+		backendParams = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+	}
 	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", backendParams)
 	if err != nil {
 		return nil, err
@@ -533,7 +561,12 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 	refreshKey := "refresh:labels:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
-			ctx, cancel := context.WithTimeout(context.Background(), p.labelBackgroundTimeout())
+			// Background label fetches fetch the full user-requested range rather than
+			// the synchronous 1h cap, so users with wide time windows (2d, 7d) see
+			// complete historical label sets on subsequent requests. Use a longer timeout
+			// since VL may need to scan more data for wide ranges.
+			timeout := 60 * time.Second
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 			if orgID != "" {
 				ctx = context.WithValue(ctx, orgIDKey, orgID)
@@ -541,6 +574,9 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 			if savedReq != nil {
 				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
+			// Bypass the 1h cap and in-process streamFieldNamesCache so the full
+			// range is actually queried against VL.
+			ctx = context.WithValue(ctx, labelFullRangeFetchKey{}, true)
 
 			labels, fetchErr := p.fetchScopedLabelNames(ctx, rawQuery, start, end, search, false)
 			if fetchErr != nil {
@@ -549,13 +585,11 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 
 			filtered := make([]string, 0, len(labels))
 			for _, v := range labels {
-				// Filter internal VL fields only (before translation)
 				if isVLInternalField(v) || v == "detected_level" {
 					continue
 				}
 				filtered = append(filtered, v)
 			}
-			// Translate dots to underscores
 			labels = p.labelTranslator.TranslateLabelsList(filtered)
 			labels = appendSyntheticLabels(labels)
 			p.setEndpointReadCacheWithTTL("labels", cacheKey, lokiLabelsResponse(labels), CacheTTLs["labels"])
@@ -609,24 +643,25 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 	}()
 }
 
+// labelWarmupWindows are the standard Grafana time-picker presets that the proxy
+// pre-populates on startup and keeps warm via the periodic keep-warm loop.
+var labelWarmupWindows = []time.Duration{
+	time.Hour,
+	6 * time.Hour,
+	24 * time.Hour,
+	7 * 24 * time.Hour,
+}
+
 // warmMetadataCacheOnStartup pre-populates the label cache for common Grafana time
-// presets (Last 1h, 6h, 24h, 7d). It uses the same time-bucketed cache keys that
-// normalizeReadCacheParams computes for real requests, so the first dashboard load
-// is a cache hit rather than a cold fetch. Runs in a background goroutine; does not
-// block startup. Each window warms only if not already cached by a prior warm cycle
-// or a real request that arrived first.
+// presets (Last 1h, 6h, 24h, 7d). On startup any entries loaded from disk are served
+// immediately (fast start); this goroutine refreshes entries that are expired or have
+// less than warmupStaleThreshold remaining TTL so users always see fresh data on first
+// request. Runs in a background goroutine; does not block startup.
 func (p *Proxy) warmMetadataCacheOnStartup() {
-	windows := []time.Duration{
-		time.Hour,
-		6 * time.Hour,
-		24 * time.Hour,
-		7 * 24 * time.Hour,
-	}
+	const warmupStaleThreshold = 30 * time.Second
 	go func() {
-		// Wait until VL is reachable and responding before warming. Poll the health
-		// endpoint with exponential backoff instead of a fixed sleep so the warmup
-		// proceeds as soon as VL is ready rather than always waiting the maximum time.
-		// Total deadline: 60 s (aligns with typical Kubernetes readiness probe timeout).
+		// Wait until VL is reachable before warming. Exponential backoff up to 10s
+		// per retry; total deadline 60s aligns with Kubernetes readiness probe timeout.
 		warmCtx, warmCancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer warmCancel()
 
@@ -647,41 +682,70 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 			}
 		}
 
-		nowNs := time.Now().UnixNano()
+		p.warmLabelWindows(warmCtx, warmupStaleThreshold)
+	}()
+}
 
-		for _, window := range windows {
-			bs, be := bucketMetadataTime(nowNs-int64(window), nowNs)
-			startStr := strconv.FormatInt(bs, 10)
-			endStr := strconv.FormatInt(be, 10)
+// warmLabelWindows fetches label data from VL for all standard Grafana presets and
+// stores it in the cache. Windows whose cache entry still has more than minRemaining
+// TTL are skipped (they are fresh enough). The full range is always fetched so
+// historical labels (services that ran last week but not today) are included.
+func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining time.Duration) {
+	nowNs := time.Now().UnixNano()
+	for _, window := range labelWarmupWindows {
+		bs, be := bucketMetadataTime(nowNs-int64(window), nowNs)
+		startStr := strconv.FormatInt(bs, 10)
+		endStr := strconv.FormatInt(be, 10)
 
-			rawQ := "start=" + startStr + "&end=" + endStr + "&query=%2A"
-			req, err := http.NewRequest("GET", "/loki/api/v1/labels?"+rawQ, nil)
-			if err != nil {
+		rawQ := "start=" + startStr + "&end=" + endStr + "&query=%2A"
+		req, err := http.NewRequest("GET", "/loki/api/v1/labels?"+rawQ, nil)
+		if err != nil {
+			continue
+		}
+		cacheKey := p.canonicalReadCacheKey("labels", "", req)
+		if _, remaining, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok && remaining > minRemaining {
+			continue // Still sufficiently fresh
+		}
+
+		// Fetch using full range (labelFullRangeFetchKey) so historical data is included.
+		fetchCtx, fetchCancel := context.WithTimeout(ctx, 30*time.Second)
+		fetchCtx = context.WithValue(fetchCtx, labelFullRangeFetchKey{}, true)
+		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", startStr, endStr, "", false)
+		fetchCancel()
+		if fetchErr != nil {
+			p.log.Debug("label cache warmup failed", "window", window, "err", fetchErr)
+			continue
+		}
+		filtered := make([]string, 0, len(labels))
+		for _, v := range labels {
+			if isVLInternalField(v) || v == "detected_level" {
 				continue
 			}
-			cacheKey := p.canonicalReadCacheKey("labels", "", req)
-			if _, _, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok {
-				continue
-			}
+			filtered = append(filtered, v)
+		}
+		labels = p.labelTranslator.TranslateLabelsList(filtered)
+		labels = appendSyntheticLabels(labels)
+		p.setEndpointReadCacheWithTTL("labels", cacheKey, lokiLabelsResponse(labels), CacheTTLs["labels"])
+		p.log.Debug("label cache warmed", "window", window)
+	}
+}
 
-			fetchCtx, fetchCancel := context.WithTimeout(warmCtx, 20*time.Second)
-			labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", startStr, endStr, "", true)
-			fetchCancel()
-			if fetchErr != nil {
-				p.log.Debug("label cache warmup failed", "window", window, "err", fetchErr)
-				continue
-			}
-			filtered := make([]string, 0, len(labels))
-			for _, v := range labels {
-				if isVLInternalField(v) || v == "detected_level" {
-					continue
-				}
-				filtered = append(filtered, v)
-			}
-			labels = p.labelTranslator.TranslateLabelsList(filtered)
-			labels = appendSyntheticLabels(labels)
-			p.setEndpointReadCacheWithTTL("labels", cacheKey, lokiLabelsResponse(labels), CacheTTLs["labels"])
-			p.log.Debug("label cache warmed", "window", window)
+// startLabelCacheKeepWarmLoop runs warmLabelWindows every 90 seconds so that label
+// cache entries for standard Grafana presets never go cold when there are no user
+// queries. 90s is chosen to refresh before the 2-minute TTL expires, with a 30s
+// margin to tolerate scheduling jitter. Entries with >60s remaining TTL are skipped.
+func (p *Proxy) startLabelCacheKeepWarmLoop() {
+	const (
+		interval         = 90 * time.Second
+		skipIfRemaining  = 60 * time.Second
+	)
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			ctx, cancel := context.WithTimeout(context.Background(), interval)
+			p.warmLabelWindows(ctx, skipIfRemaining)
+			cancel()
 		}
 	}()
 }

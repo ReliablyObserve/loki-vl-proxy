@@ -71,6 +71,13 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
+
+	// The synchronous fetch above caps VL to 1h for fast initial response. If the
+	// user selected a wider range (e.g. 2d, 7d), trigger a background full-range
+	// refresh so subsequent requests return complete historical label data.
+	if rangeExceedsWindow(r.FormValue("start"), r.FormValue("end"), metadataMaxFieldNamesWindow) {
+		p.refreshLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), search, p.snapshotForwardedAuth(r))
+	}
 }
 
 // handleLabelValues returns values for a specific label.

@@ -32,7 +32,7 @@ LogQL queries arrive → parsed into a typed AST (`internal/logql`) → translat
 
 Both parsers are hand-written recursive descent. The LogQL side handles the full Loki grammar. The LogsQL side uses a builder API that produces typed, syntactically valid LogsQL at construction time. Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters), and typed AST construction for complex paths (stats aggregations). Future PRs tagged `TODO(ast-migration)` in the source will migrate remaining string paths.
 
-**Label metadata:** regardless of the Grafana time-picker range (1h, 2d, 7d), the proxy caps the VictoriaLogs backend call to 1h for label names and 6h for label values. Stream labels are stable — the active service set in the last hour equals the set over 7 days. On startup the proxy pre-warms the label cache for the four standard Grafana presets (Last 1h / 6h / 24h / 7d) so the first dashboard load is a cache hit. Time-picker drift is absorbed by bucketed cache keys (5-min / 1h / 6h buckets by range), so repeated refreshes of the same dashboard never re-query VictoriaLogs.
+**Label metadata — fast and complete:** first request returns a 1h VL scan immediately (sub-ms proxy overhead); a background goroutine fetches the full requested range (1h → 7d) so the second request has complete historical label data from cache. Disk-backed cache survives proxy restarts; a 90-second keep-warm loop ensures labels stay hot even with no user queries. Time-bucketed cache keys (5-min / 1h / 6h buckets by range) collapse dashboard refresh drift to the same entry.
 
 </details>
 
@@ -40,7 +40,7 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 
 - **Drop-in Loki API.** Point your existing Grafana Loki datasource at the proxy. Zero plugin changes, zero query rewrites.
 - **Measured resource difference.** At 310 GiB/day ingest: VL + proxy runs on **1.4 cores and 6.1 GiB RAM**. Loki's published minimum for that ingest class: 38 cores, 59 GiB. That gap is real — not a benchmark artifact.
-- **Proxy intelligence built in.** 4-tier cache, time-bucketed label keys, startup warmup, adaptive parallelism, circuit breaker, rate limits, tenant isolation. One ~14 MB static binary.
+- **Proxy intelligence built in.** Disk-backed label cache with keep-warm loop, progressive full-range background fetch, time-bucketed keys, adaptive parallelism, circuit breaker, rate limits, tenant isolation. One ~14 MB static binary.
 
 Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
 
