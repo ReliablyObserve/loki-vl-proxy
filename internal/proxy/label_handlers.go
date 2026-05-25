@@ -67,7 +67,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	labels = appendSyntheticLabels(labels)
 
 	result := lokiLabelsResponse(labels)
-	p.setEndpointReadCacheWithTTL("labels", cacheKey, result, CacheTTLs["labels"])
+	p.mergeLabelsIntoCache("labels", cacheKey, labels, CacheTTLs["labels"])
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
