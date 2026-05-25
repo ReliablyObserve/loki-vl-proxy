@@ -243,6 +243,33 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 	return fields, nil
 }
 
+// fetchAllFieldNamesCached wraps field_names (all fields, not just stream index) with
+// a 30s internal cache. Used for label-value candidate resolution: field_names (0.25s)
+// is ~30x faster than stream_field_names (7-8s) and contains a superset of the same
+// alias information needed to resolve Loki label names to VL field names.
+func (p *Proxy) fetchAllFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
+	cacheKey := "afn:" + getOrgID(ctx) + ":" + params.Encode()
+	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
+		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
+			cacheKey += ":auth:" + fp
+		}
+	}
+	if cached, ok := p.streamFieldNamesCache.Get(cacheKey); ok {
+		var fields []string
+		if err := json.Unmarshal(cached, &fields); err == nil {
+			return fields, nil
+		}
+	}
+	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
+	if err != nil {
+		return nil, err
+	}
+	if encoded, encErr := json.Marshal(fields); encErr == nil {
+		p.streamFieldNamesCache.Set(cacheKey, encoded)
+	}
+	return fields, nil
+}
+
 func (p *Proxy) fetchVLFieldValues(ctx context.Context, path string, params url.Values) ([]string, error) {
 	status, body, err := p.vlGetMetadataCoalesced(ctx, path, params)
 	if err != nil {
@@ -302,23 +329,23 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 }
 
 func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string, params url.Values) ([]string, error) {
-	useStreamEndpoint := p.supportsStreamMetadataEndpoints()
+	// Use field_names (fast, 0.25s) instead of stream_field_names (slow, 7-8s) for
+	// candidate resolution. field_names returns all fields; we only need the list to
+	// resolve aliased label names (e.g. k8s_namespace_name → k8s.namespace.name).
+	// stream_field_names is still used in fetchPreferredLabelNames where stream-only
+	// semantics matter for label discovery.
 	streamFields := []string{}
-	if useStreamEndpoint {
-		var err error
-		streamFields, err = p.fetchStreamFieldNamesCached(ctx, params)
-		useStreamEndpoint = err == nil
+	if p.supportsStreamMetadataEndpoints() {
+		fields, err := p.fetchAllFieldNamesCached(ctx, params)
 		if err != nil && !shouldFallbackToGenericMetadata(err) {
 			return nil, err
 		}
+		streamFields = fields
 	}
 	streamFields = appendUniqueStrings(streamFields, p.snapshotDeclaredLabelFields()...)
 
 	resolution := p.labelTranslator.ResolveLabelCandidates(labelName, streamFields)
-	if len(resolution.candidates) == 0 && useStreamEndpoint {
-		useStreamEndpoint = false
-	}
-	if len(resolution.candidates) == 0 && !useStreamEndpoint {
+	if len(resolution.candidates) == 0 {
 		resolution = p.labelTranslator.ResolveLabelCandidates(labelName, p.snapshotDeclaredLabelFields())
 	}
 	if len(resolution.candidates) == 0 {
@@ -332,7 +359,6 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 	// ~19x slower (7–9s vs 0.3s in benchmarks) because it scans stream index entries
 	// rather than the columnar field store. field_values works for both stream (indexed)
 	// and non-stream fields.
-	_ = useStreamEndpoint
 	const endpoint = "/select/logsql/field_values"
 
 	seen := make(map[string]struct{}, 16)

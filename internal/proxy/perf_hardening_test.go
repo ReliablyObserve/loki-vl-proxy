@@ -322,10 +322,10 @@ func TestLabelValues_StripsFieldStagesForDrilldownQueries(t *testing.T) {
 	var receivedValueQueries []string
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
+		case "/select/logsql/field_names":
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprintln(w, `{"values":[{"value":"app","hits":1}]}`)
-		case "/select/logsql/stream_field_values", "/select/logsql/field_values":
+		case "/select/logsql/field_values":
 			query := r.URL.Query().Get("query")
 			receivedValueQueries = append(receivedValueQueries, query)
 			w.Header().Set("Content-Type", "application/json")

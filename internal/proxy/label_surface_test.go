@@ -65,7 +65,7 @@ func TestLabelSurface_LabelValuesResolveCustomAliasFromConfiguredExtras(t *testi
 	var requestedField string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
+		case "/select/logsql/field_names":
 			http.Error(w, "unsupported", http.StatusNotFound)
 		case "/select/logsql/field_values":
 			requestedField = r.URL.Query().Get("field")
@@ -112,7 +112,7 @@ func TestLabelSurface_LabelValuesIndexedBrowseUsesHotsetAndOffsetWithoutBackendR
 	fieldValuesCalls := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
+		case "/select/logsql/field_names":
 			http.Error(w, "unsupported", http.StatusNotFound)
 		case "/select/logsql/field_values":
 			fieldValuesCalls++
@@ -174,7 +174,7 @@ func TestLabelSurface_LabelValuesIndexedBrowseSearchUsesIndex(t *testing.T) {
 	fieldValuesCalls := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
+		case "/select/logsql/field_names":
 			http.Error(w, "unsupported", http.StatusNotFound)
 		case "/select/logsql/field_values":
 			fieldValuesCalls++
@@ -743,7 +743,7 @@ func TestLabelSurface_RefreshLabelValuesCacheAsync_ForwardsSubstringFilterWhenSu
 	var gotQ, gotFilter atomic.Value
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
+		case "/select/logsql/field_names":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"app","hits":2}]}`))
 		case "/select/logsql/field_values":
