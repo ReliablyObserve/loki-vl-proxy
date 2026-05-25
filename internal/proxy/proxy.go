@@ -1431,6 +1431,10 @@ func (p *Proxy) peerCacheMetrics() string {
 func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	logqlQuery := r.FormValue("query")
+	// Strip incomplete | unwrap stubs (no field name) that Grafana's metric builder
+	// emits while the unwrap field picker is open. These are syntactically invalid
+	// and would return 400, leaving the field picker empty.
+	logqlQuery = stripIncompleteUnwrapStubs(logqlQuery)
 	logqlQuery, ok := p.validateQuery(w, logqlQuery, "query_range")
 	if !ok {
 		return

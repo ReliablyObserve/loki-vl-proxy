@@ -1164,6 +1164,11 @@ var (
 	reParserStage     = regexp.MustCompile(`\|\s*(json|logfmt|unpack)(\s+[^|]+)?`)
 	reJSONParserStage = regexp.MustCompile(`\|\s*json(\s+[^|]+)?`)
 	reUnwrapStage     = regexp.MustCompile(`\|\s*unwrap(?:\s+[^|]+)?`)
+	// reIncompleteUnwrapStub matches a | unwrap stage that has no field name:
+	// either bare (| unwrap [range]) or an empty conversion function (| unwrap func() [range]).
+	// Grafana sends these partial stages while the user is still picking a field in the
+	// unwrap field selector; stripping them lets getDataSamples get valid log results.
+	reIncompleteUnwrapStub = regexp.MustCompile(`\|\s*unwrap\s*(?:[a-z_]+\s*\(\s*\)\s*)?\[`)
 	// reMetricWrapper matches a LogQL range-vector metric function prefix.
 	// Used to strip the wrapper before field detection so that the inner log
 	// stream query can be processed normally.
@@ -1269,6 +1274,17 @@ func stripUnwrapAndDropStages(query string) string {
 		return true
 	})
 	return out.String()
+}
+
+// stripIncompleteUnwrapStubs removes | unwrap pipeline stages that have no field name.
+// Grafana's metric builder emits these while the unwrap field picker is open and no
+// field has been selected yet; the stage is syntactically invalid and causes a 400.
+// Stripping it lets query_range return sample log lines so the picker can populate.
+func stripIncompleteUnwrapStubs(query string) string {
+	if !reIncompleteUnwrapStub.MatchString(query) {
+		return query
+	}
+	return collapseSpaces(reUnwrapStage.ReplaceAllString(query, " "))
 }
 
 func stripParserOnlyStages(query string) string {
