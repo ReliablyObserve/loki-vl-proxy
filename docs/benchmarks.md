@@ -13,6 +13,56 @@ description: "Six-workload read-path comparison: Loki vs VL+Proxy (warm/cold) vs
 
 **Loki flags:** `querier.max_concurrent=16`, `max_query_parallelism=64`, result + chunk caching enabled.
 
+## Label Metadata Performance
+
+Label endpoints (`/loki/api/v1/labels`, `/loki/api/v1/label/{name}/values`) are the first calls Grafana makes when opening Explore or a dashboard. Their latency is what determines perceived "snappiness".
+
+### How the proxy keeps label fetches fast
+
+**1h backend cap** — regardless of the Grafana time-picker setting, the proxy sends only the most recent 1h window to VictoriaLogs for label-name discovery and the most recent 6h for label-value resolution. Stream labels are stable: the set of active services in the last hour equals the set over a 7-day window for typical workloads. Wide ranges no longer trigger O(days) stream-index scans.
+
+**Time-bucketed cache keys** — Grafana's time picker slides by seconds between dashboard refreshes. The proxy quantises start/end timestamps to fixed bucket boundaries before building the cache key:
+
+| User-selected interval | Bucket size | Effect |
+|---|---|---|
+| ≤ 6 h | 5 minutes | Refreshes every 30 s collapse to the same key |
+| 6 h – 48 h | 1 hour | Intra-hour drift collapses to one entry |
+| > 48 h | 6 hours | 7-day queries share one cache entry all day |
+
+**Startup warmup** — on boot the proxy waits for VictoriaLogs to become healthy, then pre-populates the label cache for the four standard Grafana presets (Last 1h / 6h / 24h / 7d). The first dashboard load after a deployment is a cache hit rather than a cold backend call.
+
+### Measured latency (proxy overhead against a local VL mock)
+
+| Time range | First request (cold) | Subsequent requests (warm) | VL window sent |
+|---|---|---|---|
+| 1 h | ~200 µs | ~5 µs | 1 h (no cap needed) |
+| 6 h | ~200 µs | ~5 µs | 1 h (capped) |
+| 12 h | ~200 µs | ~5 µs | 1 h (capped) |
+| 24 h | ~200 µs | ~5 µs | 1 h (capped) |
+| 2 d | ~200 µs | ~5 µs | 1 h (capped) |
+| 7 d | ~200 µs | ~5 µs | 1 h (capped) |
+
+Numbers above are proxy-only overhead measured with a zero-latency in-process VL mock (`go test -bench BenchmarkLabels_`). In production, add your actual VL round-trip (~50–300 ms on first request; sub-ms on cache hit).
+
+**Against a real VictoriaLogs instance (manual measurement, 15 services, 8 M entries):**
+
+| Time range | First request | After first request |
+|---|---|---|
+| 1 h (pre-warmed at startup) | sub-ms (cache hit) | sub-ms |
+| 2 d / 7 d (capped to 1 h VL scan) | ~300 ms | sub-ms |
+
+### Running the label perf tests
+
+```bash
+# Correctness tests (run in normal CI)
+go test ./internal/proxy/ -run 'TestPerf_Labels_' -v
+
+# Cold and warm benchmarks
+go test ./internal/proxy/ -bench 'BenchmarkLabels_' -benchmem -count=3
+```
+
+---
+
 ## Running Benchmarks
 
 ```bash
