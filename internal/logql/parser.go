@@ -514,8 +514,17 @@ func (p *parser) parsePipeBody() (Stage, error) {
 }
 
 // parseUnwrap parses `unwrap label` or `unwrap bytes(label)`.
+// Also handles Grafana's incomplete stub forms:
+//   - | unwrap [range]         → UnwrapStage{Label: ""}
+//   - | unwrap converter() [range] → UnwrapStage{Label: "", Converter: "converter"}
 func (p *parser) parseUnwrap() (Stage, error) {
-	// Peek: if current ident followed by '(' it's a converter form.
+	// Incomplete stub: | unwrap [range] — no label name, bare bracket.
+	// Grafana's metric builder emits this while the unwrap field picker is open.
+	if p.cur.Typ == TokLBracket {
+		p.consumeRange()
+		return &UnwrapStage{Label: ""}, nil
+	}
+
 	if p.cur.Typ != TokIdent {
 		return nil, fmt.Errorf("logql: expected label name after unwrap")
 	}
@@ -525,6 +534,14 @@ func (p *parser) parseUnwrap() (Stage, error) {
 		// converter(label) form
 		converter := name.Val
 		p.advance() // consume '('
+
+		// Incomplete stub: | unwrap converter() [range] — empty parens.
+		if p.cur.Typ == TokRParen {
+			p.advance() // consume ')'
+			p.consumeRange()
+			return &UnwrapStage{Label: "", Converter: converter}, nil
+		}
+
 		label, err := p.expect(TokIdent)
 		if err != nil {
 			return nil, err
@@ -536,6 +553,20 @@ func (p *parser) parseUnwrap() (Stage, error) {
 	}
 
 	return &UnwrapStage{Label: name.Val}, nil
+}
+
+// consumeRange consumes an optional [duration] token if present.
+func (p *parser) consumeRange() {
+	if p.cur.Typ != TokLBracket {
+		return
+	}
+	p.advance() // consume '['
+	for p.cur.Typ != TokRBracket && p.cur.Typ != TokEOF {
+		p.advance()
+	}
+	if p.cur.Typ == TokRBracket {
+		p.advance() // consume ']'
+	}
 }
 
 // expectStringOrRaw accepts either a quoted string, a raw (backtick) string,
