@@ -642,16 +642,23 @@ func TestEdge_Semantic_Invalid(t *testing.T) {
 		`rate_counter({app="api"}[5m])`, // rate_counter without unwrap
 		`quantile_over_time(-0.1, {app="api"} | unwrap lat [5m])`,    // negative phi
 		`quantile_over_time(-1, {app="api"} | unwrap lat [5m])`,      // negative phi
-		`rate({__error__=""}[5m])`,                                   // __error__ in rate
-		`rate({__error_details__=""}[5m])`,                           // __error_details__ in rate
-		`bytes_rate({__error__=""}[5m])`,                             // __error__ in bytes_rate
-		`{app="nginx"} | line_format "{{.msg"`,                       // unclosed template
-		`{app="nginx"} | line_format "{{.level"`,                     // unclosed template 2
 		`{app="nginx"} | unwrap a | unwrap b`,                        // double unwrap
 		`avg_over_time({app="api"} | unwrap a [5m] | unwrap b [5m])`, // double unwrap in range
 	}
 	for _, q := range invalid {
 		t.Run(q, func(t *testing.T) { mustReject(t, q) })
+	}
+	// Loki 3.7.1 accepts __error__/__error_details__ inside rate()/bytes_rate()
+	// and does not validate line_format template syntax at parse time.
+	acceptedByLoki := []string{
+		`rate({__error__=""}[5m])`,
+		`rate({__error_details__=""}[5m])`,
+		`bytes_rate({__error__=""}[5m])`,
+		`{app="nginx"} | line_format "{{.msg"`,
+		`{app="nginx"} | line_format "{{.level"`,
+	}
+	for _, q := range acceptedByLoki {
+		t.Run("loki_accepts:"+q, func(t *testing.T) { mustValidate(t, q) })
 	}
 }
 
@@ -695,12 +702,18 @@ func TestEdge_ValidateLogQL_Invalid(t *testing.T) {
 		`| json`,
 		`rate_counter({app="api"}[5m])`,
 		`quantile_over_time(-0.5, {app="api"} | unwrap lat [5m])`,
-		`rate({__error__=""}[5m])`,
-		`{app="nginx"} | line_format "{{.msg"`,
 		`{app="nginx"} | unwrap a | unwrap b`,
 	}
 	for _, q := range invalid {
 		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
+	}
+	// Loki 3.7.1 accepts these at parse time.
+	lokiAccepts := []string{
+		`rate({__error__=""}[5m])`,
+		`{app="nginx"} | line_format "{{.msg"`,
+	}
+	for _, q := range lokiAccepts {
+		t.Run("loki_accepts:"+q, func(t *testing.T) { mustValidateV(t, q) })
 	}
 }
 
@@ -849,7 +862,9 @@ func TestEdge_IpFilter_PipelineIntegration(t *testing.T) {
 		t.Run(q, func(t *testing.T) { mustValidateV(t, q) })
 	}
 
-	invalid := []string{
+	// Loki 3.7.1 does not validate ip() argument syntax at parse time.
+	// Any string is accepted; runtime evaluation may fail instead.
+	syntacticallyInvalidButLokiAccepts := []string{
 		`{app="a"} |= ip("999.999.999.999")`,
 		`{app="a"} |= ip("not-an-ip")`,
 		`{app="a"} |= ip("256.0.0.1/24")`,
@@ -857,8 +872,8 @@ func TestEdge_IpFilter_PipelineIntegration(t *testing.T) {
 		`{app="a"} |= ip("::gggg")`,
 		`{app="a"} |= ip("")`,
 	}
-	for _, q := range invalid {
-		t.Run("invalid:"+q, func(t *testing.T) { mustRejectV(t, q) })
+	for _, q := range syntacticallyInvalidButLokiAccepts {
+		t.Run("loki_accepts:"+q, func(t *testing.T) { mustValidateV(t, q) })
 	}
 }
 
@@ -1020,10 +1035,10 @@ func TestEdge_BinaryOp_Precedence(t *testing.T) {
 // ─── semantic validation – deep nesting ───────────────────────────────────────
 
 func TestEdge_Semantic_DeepNesting(t *testing.T) {
-	// __error__ and __error_details__ inside rate()/bytes_rate() must be rejected
-	// even when wrapped in vector aggregations.
-	invalid := []string{
-		// __error__ in rate nested inside vector agg
+	// Loki 3.7.1 accepts __error__/__error_details__ inside rate()/bytes_rate()
+	// at parse time — any rejection happens at evaluation time, not parse time.
+	valid := []string{
+		// __error__ in rate nested inside vector agg — Loki accepts at parse time
 		`sum by(app)(rate({__error__=""}[5m]))`,
 		`max by(level)(rate({__error__!=""}[5m]))`,
 		`avg(rate({__error__="timeout"}[5m]))`,
@@ -1035,13 +1050,7 @@ func TestEdge_Semantic_DeepNesting(t *testing.T) {
 		// __error__ via label filter inside rate
 		`sum by(app)(rate({app="a"} | json | __error__!="" [5m]))`,
 		`rate({app="a"} | json | __error_details__!="" [5m])`,
-	}
-	for _, q := range invalid {
-		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
-	}
-
-	// count_over_time and log queries DO allow __error__ labels.
-	valid := []string{
+		// count_over_time and log queries
 		`sum by(app)(count_over_time({__error__!=""}[5m]))`,
 		`{app="a"} | json | __error__!=""`,
 		`count_over_time({app="a"} | json | __error__!="" [5m])`,
