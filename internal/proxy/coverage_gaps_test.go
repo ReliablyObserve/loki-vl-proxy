@@ -2769,3 +2769,46 @@ func TestMergeLabelValuesIndexEntry(t *testing.T) {
 		t.Errorf("mixed: got %+v", result3)
 	}
 }
+
+// TestDetectedFields_MetricQueryWrapper verifies that detected_fields returns 200
+// and numeric fields when Grafana's metric builder passes a full metric query
+// (e.g. sum_over_time({...} | json | unwrap field [5m])).
+// Before the fix, the proxy returned 502 because translateQuery cannot process
+// a metric expression — the outer sum_over_time() wrapper was never stripped.
+func TestDetectedFields_MetricQueryWrapper(t *testing.T) {
+	logLine := `{"_time":"2026-01-01T00:00:00Z","_msg":"{\"duration_ms\":150,\"status\":200}","_stream":"{app=\"api-gateway\"}","app":"api-gateway"}`
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[{"value":"app","hits":1},{"value":"duration_ms","hits":5},{"value":"status","hits":5}]}`))
+		case "/select/logsql/query":
+			_, _ = w.Write([]byte(logLine + "\n"))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+
+	metricQueries := []string{
+		`sum_over_time({app="api-gateway"} | json | unwrap duration_ms [5m])`,
+		`count_over_time({app="api-gateway"} | json [15m])`,
+		`rate({app="api-gateway"} | json [1m])`,
+		`bytes_over_time({app="api-gateway"} | json [1m])`,
+	}
+
+	for _, q := range metricQueries {
+		t.Run(q[:30], func(t *testing.T) {
+			w := httptest.NewRecorder()
+			params := url.Values{"query": {q}, "start": {"1"}, "end": {"2"}}
+			r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?"+params.Encode(), nil)
+			p.handleDetectedFields(w, r)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("metric query wrapper must return 200, got %d — body: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
