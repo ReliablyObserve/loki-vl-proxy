@@ -865,8 +865,10 @@ func exhaustiveQueryWithRange(t *testing.T, baseURL, query string, window time.D
 	now := time.Now()
 	params := url.Values{}
 	params.Set("query", query)
-	params.Set("start", fmt.Sprintf("%d", now.Add(-window).UnixNano()))
-	params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+	// Use millisecond timestamps — Loki 3.7.1 hangs on nanosecond-precision
+	// timestamps for unwrap metric queries (query engine bug with large nanos).
+	params.Set("start", fmt.Sprintf("%d", now.Add(-window).UnixMilli()))
+	params.Set("end", fmt.Sprintf("%d", now.UnixMilli()))
 	params.Set("limit", "10")
 	params.Set("step", fmt.Sprintf("%d", stepSec))
 
