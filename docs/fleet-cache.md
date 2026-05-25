@@ -234,6 +234,8 @@ When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart w
 | L3 latency (peer) | ~1-5ms |
 | VL latency | ~10-100ms |
 | Background traffic | Near zero; only request-path peer fetches and write-through pushes |
+| Startup warmup VL queries | ≤W (one per window, regardless of fleet size, with peer-first warmup) |
+| `/_cache/has` response size | ~50 bytes per key (JSON metadata, no values) |
 | Max VL calls per key | 1 (per owner) |
 | Shadow copy overhead | ~0 (uses owner's remaining TTL) |
 | Hash ring lookup | O(log N) |
@@ -337,3 +339,304 @@ Expected effect:
 | Singleflight per key | Prevent cache stampede on L3 misses |
 | Per-peer circuit breaker | Isolate failures, auto-recover after cooldown |
 | No disk encryption | Delegated to cloud provider (EBS/PD encryption at rest) |
+
+---
+
+## Startup Coordination and Fleet Restart Safety
+
+### The Problem: Thundering Herd
+
+Without coordination, a rolling restart of N proxy instances causes every instance to
+fire expensive metadata warmup queries to VL simultaneously:
+
+```
+t=0s: instance-1 restarts → stream_field_names [1h] → stream_field_names [6h] → ... (4 queries)
+t=0s: instance-2 restarts → stream_field_names [1h] → stream_field_names [6h] → ... (4 queries)
+t=0s: instance-3 restarts → ...
+...
+t=0s: instance-9 restarts → stream_field_names [7d] → (4 queries)
+
+Total: 9 instances × 4 windows × 14-46s query = 36 wide-range VL queries in parallel
+Result: VL OOM / restart
+```
+
+### Solution: Three-Layer Startup Defense
+
+```mermaid
+flowchart TD
+    Start(["Instance starts"]) --> Health["Wait for VL health check"]
+    Health --> Jitter["Layer 1: Startup jitter\n(random sleep 0–maxJitter)"]
+    Jitter --> PeerCheck["Layer 2: Batch peer discovery\n/_cache/has for all window keys"]
+    PeerCheck --> Hit{Any peer\nhas data?}
+    Hit -->|"yes (P+K requests)"| PullPeer["Pull from freshest peer\nO(K) targeted /_cache/get"]
+    Hit -->|"no — I'm first"| FetchVL["Fetch from VL\n(only this instance)"]
+    FetchVL --> Sleep["Layer 3: 500ms inter-window pause"]
+    Sleep --> NextWindow["Next window"]
+    PullPeer --> Done(["Warmup complete"])
+    NextWindow --> Done
+
+    style FetchVL fill:#e94560,color:#fff
+    style PullPeer fill:#1a7a4a,color:#fff
+    style Jitter fill:#0f3460,color:#fff
+```
+
+#### Layer 1: Startup Jitter
+
+Controlled by `-warmup-max-jitter`. Each instance sleeps for a random duration
+`[0, maxJitter)` before starting warmup queries. This staggers the fleet so instances
+don't all hit VL simultaneously.
+
+**Recommended settings:**
+
+| Fleet size | `-warmup-max-jitter` | Expected VL hits per window |
+|------------|----------------------|----------------------------|
+| 2–5 pods | `5s` | 1 (first pod only) |
+| 6–15 pods | `10s` | 1–2 |
+| 16–30 pods | `20s` | 2–3 |
+| 30+ pods | `30s` | ≤3 |
+
+A warmup of the 4 standard label windows takes ~2–8 s total. With `maxJitter=10s`
+a pod waking up at t=4s will find fresh data from a pod that woke at t=0s.
+
+#### Layer 2: Batch Peer Discovery (`/_cache/has`)
+
+After jitter, each instance checks whether any peer already has the data before
+touching VL. This is a **two-phase operation**:
+
+**Phase 1 — Discovery (metadata only, no value transfer):**
+
+```mermaid
+sequenceDiagram
+    participant I as Instance-7<br/>(waking up at t=6s)
+    participant P1 as Peer 1
+    participant P2 as Peer 2
+    participant PN as Peer N
+    participant VL as VictoriaLogs
+
+    Note over I: After jitter, check peers first
+    par Concurrent /_cache/has requests
+        I->>P1: GET /_cache/has?keys=window-1h,window-6h,window-24h,window-7d
+        I->>P2: GET /_cache/has?keys=window-1h,window-6h,window-24h,window-7d
+        I->>PN: GET /_cache/has?keys=window-1h,window-6h,window-24h,window-7d
+    end
+    P1-->>I: {"window-1h":{"ok":true,"ttl_ms":55000}, "window-6h":{"ok":true,"ttl_ms":52000}, ...}
+    P2-->>I: {"window-1h":{"ok":false}, "window-6h":{"ok":false}, ...}
+    PN-->>I: {"window-1h":{"ok":true,"ttl_ms":48000}, ...}
+    Note over I: Peer 1 has higher TTL for window-1h (55s > 48s) → prefer Peer 1
+    Note over I: Zero bytes of actual cache data transferred in phase 1
+```
+
+**Phase 2 — Targeted fetch (values only from the freshest peer):**
+
+```mermaid
+sequenceDiagram
+    participant I as Instance-7
+    participant P1 as Peer 1 (best for window-1h, 6h, 24h)
+    participant P3 as Peer 3 (best for window-7d)
+    participant VL as VictoriaLogs
+
+    I->>P1: GET /_cache/get?key=window-1h (TTL=55s)
+    P1-->>I: [label list, zstd-compressed] + X-Cache-TTL-Ms: 55000
+    I->>P1: GET /_cache/get?key=window-6h
+    P1-->>I: [label list, compressed]
+    I->>P1: GET /_cache/get?key=window-24h
+    P1-->>I: [label list, compressed]
+    I->>P3: GET /_cache/get?key=window-7d
+    P3-->>I: [label list, compressed]
+    Note over VL: VL receives zero requests from instance-7
+```
+
+#### Layer 3: Inter-Window Sleep
+
+When an instance must fetch from VL (it's the first one up or peers had nothing),
+a 500ms pause between each window prevents consecutive wide-range queries from
+monopolizing VL's query concurrency slots.
+
+---
+
+### Network Traffic Analysis
+
+#### Per-Restart Request Count
+
+For a fleet of **P peers** warming **W label windows** (default W=4):
+
+| Strategy | Requests per instance | Total fleet requests | Data transferred |
+|----------|----------------------|----------------------|------------------|
+| Old (per-key get) | P × W (worst case) | P² × W | full values × P² × W |
+| New (batch has + targeted get) | P + W' (W' ≤ W) | P² + P×W' | tiny JSON × P² + values × P×W' |
+
+**Example: 9-pod fleet restarting simultaneously**
+
+```mermaid
+xychart-beta
+    title "VL warmup queries: old vs. new (9 pods, 4 windows)"
+    x-axis ["Without coordination", "With jitter only", "Jitter + peer-first"]
+    y-axis "VL queries" 0 --> 40
+    bar [36, 12, 2]
+```
+
+**Example: 30-pod fleet**
+
+```mermaid
+xychart-beta
+    title "VL warmup queries on restart (30 pods, 4 windows)"
+    x-axis ["No coordination", "Jitter only (20s)", "Jitter + peer-first"]
+    y-axis "VL queries" 0 --> 130
+    bar [120, 12, 3]
+```
+
+The peer-first strategy means only the **first pod per window** needs to hit VL;
+all subsequent pods pull from that pod. With 4 windows and staggered jitter, the
+realistic steady state is 4 VL warmup queries total regardless of fleet size.
+
+---
+
+### Timeline: 30-Pod Rolling Restart
+
+```mermaid
+gantt
+    title 30-pod rolling restart with maxJitter=20s (one label window shown)
+    dateFormat  s
+    axisFormat  %Ss
+
+    section Instance 1 (wakes at t=1s)
+    Jitter sleep       :done, j1, 0, 1s
+    Peer check (miss)  :done, p1, 1s, 2s
+    VL fetch (window)  :crit, v1, 2s, 6s
+    Cache warm         :done, c1, 6s, 30s
+
+    section Instance 2 (wakes at t=2s)
+    Jitter sleep       :done, j2, 0, 2s
+    Peer check (miss)  :done, p2, 2s, 3s
+    VL fetch (window)  :crit, v2, 3s, 7s
+    Cache warm         :done, c2, 7s, 30s
+
+    section Instance 5 (wakes at t=7s)
+    Jitter sleep       :done, j5, 0, 7s
+    Peer check (HIT)   :active, ph5, 7s, 8s
+    Pull from peer 1   :active, pf5, 8s, 9s
+    Cache warm         :done, cf5, 9s, 30s
+
+    section Instance 15 (wakes at t=11s)
+    Jitter sleep       :done, j15, 0, 11s
+    Peer check (HIT)   :active, ph15, 11s, 12s
+    Pull from peer 2   :active, pf15, 12s, 13s
+    Cache warm         :done, cf15, 13s, 30s
+
+    section Instance 30 (wakes at t=19s)
+    Jitter sleep       :done, j30, 0, 19s
+    Peer check (HIT)   :active, ph30, 19s, 20s
+    Pull from peer     :active, pf30, 20s, 21s
+    Cache warm         :done, cf30, 21s, 30s
+```
+
+Key observation: VL only sees warmup queries from the first 2 instances. All
+subsequent instances pull from peers. This is true for **any fleet size** as long
+as `maxJitter` is larger than the warmup duration (~6–8s for 4 windows).
+
+---
+
+### `/_cache/has` Endpoint Reference
+
+**`GET /_cache/has?keys=key1,key2,key3`**
+
+Batch key-presence check. Returns JSON presence and remaining TTL for each
+requested key. No value data is transferred — responses are tiny (~50 bytes per key).
+
+**Query parameters:**
+
+| Parameter | Description |
+|-----------|-------------|
+| `keys` | Comma-separated cache keys (max 200) |
+
+**Response** — `200 OK`, `Content-Type: application/json`:
+
+```json
+{
+  "labels:start=1716278400000000000&end=1716282000000000000&query=%2A": {
+    "ok": true,
+    "ttl_ms": 55000
+  },
+  "labels:start=1716257200000000000&end=1716282000000000000&query=%2A": {
+    "ok": false
+  }
+}
+```
+
+| Field | Description |
+|-------|-------------|
+| `ok` | `true` if key is present and has > `MinUsableTTL` (5s) remaining |
+| `ttl_ms` | Remaining TTL in milliseconds; only present when `ok=true` |
+
+**Behavior:**
+- Keys near expiry (`remaining < 5s`) are reported as `ok: false` (treat as miss)
+- Response can be `zstd`- or `gzip`-compressed when `Accept-Encoding` header is set
+- Protected by the same `X-Peer-Token` authentication as `/_cache/get` and `/_cache/set`
+
+**Use case — pick the freshest peer before fetching:**
+
+```
+caller → each peer: GET /_cache/has?keys=k1,k2,k3,k4   (metadata, ~200 bytes/peer)
+caller ← each peer: {k1: {ok:true, ttl_ms:55000}, k2: {ok:false}, ...}
+caller selects peer with highest ttl_ms per key
+caller → best peer: GET /_cache/get?key=k1              (value fetch, only if needed)
+```
+
+---
+
+### Peer Endpoint Summary
+
+| Endpoint | Method | Purpose | Body transferred |
+|----------|--------|---------|-----------------|
+| `/_cache/get?key=K` | GET | Fetch value for one key | Full value (compressed) |
+| `/_cache/set?key=K&ttl_ms=T` | POST | Push a value to a peer (write-through) | Full value |
+| `/_cache/has?keys=k1,k2,...` | GET | Batch presence + TTL check | JSON metadata only (~50B/key) |
+| `/_cache/hot?limit=N` | GET | Top N hot keys with scores and TTL | JSON index (no values) |
+
+All endpoints respect `X-Peer-Token` when `-peer-auth-token` is configured.
+Responses ≥1 KB are offered compressed (`zstd` preferred, `gzip` fallback).
+
+---
+
+### Large-Fleet Configuration Reference
+
+#### Kubernetes (30+ pods)
+
+```yaml
+# values.yaml
+extraArgs:
+  peer-self: "$(POD_IP):3100"
+  peer-discovery: "dns"
+  peer-dns: "loki-vl-proxy-headless.monitoring.svc.cluster.local"
+  peer-auth-token: "$(PEER_AUTH_TOKEN)"  # from Secret
+  warmup-max-jitter: "20s"               # spread 30 pods over 20s window
+
+# Headless service for peer discovery
+# (chart creates this automatically when peerCache.enabled=true)
+```
+
+#### Jitter Sizing Formula
+
+```
+recommended_jitter = max(single_warmup_duration × 1.5, 5s)
+single_warmup_duration ≈ 4 windows × (avg_VL_latency + 500ms_inter_window_sleep)
+                       ≈ 4 × (2s + 0.5s) = 10s  (typical)
+recommended_jitter    ≈ 10s × 1.5 = 15s
+```
+
+For large fleets (30+ pods) add extra buffer: `recommended_jitter = 20–30s`.
+
+#### Expected Steady-State VL Load
+
+| Fleet size | maxJitter | VL warmup queries per full restart |
+|------------|-----------|-------------------------------------|
+| 3 pods | 5s | ≤4 (1 per window) |
+| 9 pods | 10s | ≤4 |
+| 20 pods | 15s | ≤4–8 |
+| 30 pods | 20s | ≤4–8 |
+| 50 pods | 30s | ≤8 |
+
+The theoretical minimum is W (one VL query per label window, regardless of fleet
+size) because the peer-first strategy means only the first instance per window
+touches VL. In practice, 1–2 additional instances may overlap before the first
+completes, giving ≤2W queries for the most contended windows.
