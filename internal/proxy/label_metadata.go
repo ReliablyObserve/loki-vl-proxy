@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -256,8 +257,12 @@ const metadataMaxFieldNamesWindow = time.Hour
 const metadataMaxFieldValuesWindow = 6 * time.Hour
 
 // capMetadataTimeRange returns params with start/end capped to the most recent maxWindow
-// anchored at the provided end time. If the interval already fits within maxWindow, or
-// if start/end cannot be parsed, the original params are returned unchanged.
+// anchored at the provided end time, then bucket-aligned so VL sees consistent params
+// regardless of small Grafana sliding-window drift. This mirrors the proxy response cache
+// key bucketing applied by normalizeReadCacheParams: by sending the same bucketed params
+// to VL on every equivalent query, VL's own internal response path can reuse identical
+// requests across dashboards. If the interval already fits within maxWindow, or if
+// start/end cannot be parsed, the original params are returned unchanged.
 func capMetadataTimeRange(params url.Values, maxWindow time.Duration) url.Values {
 	startRaw := firstNonEmpty(params.Get("start"), params.Get("from"))
 	endRaw := firstNonEmpty(params.Get("end"), params.Get("to"))
@@ -269,18 +274,21 @@ func capMetadataTimeRange(params url.Values, maxWindow time.Duration) url.Values
 	if !ok1 || !ok2 || endNs <= startNs {
 		return params
 	}
-	intervalNs := endNs - startNs
-	maxNs := maxWindow.Nanoseconds()
-	if intervalNs <= maxNs {
-		return params
-	}
 	capped := url.Values{}
 	for k, vs := range params {
 		capped[k] = vs
 	}
-	cappedStart := endNs - maxNs
-	capped.Set("start", fmt.Sprintf("%d", cappedStart))
+	maxNs := maxWindow.Nanoseconds()
+	cappedStart := startNs
+	if endNs-startNs > maxNs {
+		cappedStart = endNs - maxNs
+	}
+	// Bucket the capped range so VL sees identical timestamps from all equivalent queries.
+	bucketedStart, bucketedEnd := bucketMetadataTime(cappedStart, endNs)
+	capped.Set("start", fmt.Sprintf("%d", bucketedStart))
+	capped.Set("end", fmt.Sprintf("%d", bucketedEnd))
 	capped.Del("from")
+	capped.Del("to")
 	return capped
 }
 
@@ -590,6 +598,62 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 		})
 		if err != nil {
 			p.log.Debug("background label values refresh failed", "cache_key", cacheKey, "label", labelName, "error", err)
+		}
+	}()
+}
+
+// warmMetadataCacheOnStartup pre-populates the label cache for common Grafana time
+// presets (Last 1h, 6h, 24h, 7d). It uses the same time-bucketed cache keys that
+// normalizeReadCacheParams computes for real requests, so the first dashboard load
+// is a cache hit rather than a cold fetch. Runs in a background goroutine; does not
+// block startup. Each window warms only if not already cached by a prior warm cycle
+// or a real request that arrived first.
+func (p *Proxy) warmMetadataCacheOnStartup() {
+	windows := []time.Duration{
+		time.Hour,
+		6 * time.Hour,
+		24 * time.Hour,
+		7 * 24 * time.Hour,
+	}
+	go func() {
+		// Allow VL backend to become reachable before issuing warmup calls.
+		time.Sleep(5 * time.Second)
+
+		nowNs := time.Now().UnixNano()
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		for _, window := range windows {
+			bs, be := bucketMetadataTime(nowNs-int64(window), nowNs)
+			startStr := strconv.FormatInt(bs, 10)
+			endStr := strconv.FormatInt(be, 10)
+
+			rawQ := "start=" + startStr + "&end=" + endStr + "&query=%2A"
+			req, err := http.NewRequest("GET", "/loki/api/v1/labels?"+rawQ, nil)
+			if err != nil {
+				continue
+			}
+			cacheKey := p.canonicalReadCacheKey("labels", "", req)
+			if _, _, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok {
+				continue
+			}
+
+			labels, fetchErr := p.fetchScopedLabelNames(ctx, "*", startStr, endStr, "", true)
+			if fetchErr != nil {
+				p.log.Debug("label cache warmup failed", "window", window, "err", fetchErr)
+				continue
+			}
+			filtered := make([]string, 0, len(labels))
+			for _, v := range labels {
+				if isVLInternalField(v) || v == "detected_level" {
+					continue
+				}
+				filtered = append(filtered, v)
+			}
+			labels = p.labelTranslator.TranslateLabelsList(filtered)
+			labels = appendSyntheticLabels(labels)
+			p.setEndpointReadCacheWithTTL("labels", cacheKey, lokiLabelsResponse(labels), CacheTTLs["labels"])
+			p.log.Debug("label cache warmed", "window", window)
 		}
 	}()
 }

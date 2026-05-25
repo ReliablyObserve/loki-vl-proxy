@@ -3270,25 +3270,89 @@ func TestCache_LabelsHitOnRepeat(t *testing.T) {
 
 	p := newTestProxy(t, vlBackend.URL)
 
+	// Use realistic Unix nanosecond timestamps (≥ 1e18) so parseLokiTimeToUnixNano
+	// treats them as nanoseconds. Bucket size for a 1h interval is 5 minutes = 300e9 ns.
+	//
+	// Bucket boundaries for start=1700000000000000000:
+	//   floor(1700000000000000000 / 300000000000) = 5666666666 → bucket [5666666666*300e9, ...)
+	// A shift of 1ms (1e6 ns) stays in the same bucket: floor(…001000000 / 300e9) = same.
+	// A shift of +5 min (300e9 ns) moves to the next bucket: floor(…300000000000 / 300e9) ≠.
+	const (
+		// req1: T, req2: T+1ms (same 5-min bucket), req3: T+5min (next bucket)
+		req1 = "start=1700000000000000000&end=1700003600000000000"
+		req2 = "start=1700000000001000000&end=1700003600001000000"
+		req3 = "start=1700000300000000000&end=1700003900000000000"
+	)
+
 	// First call — miss
 	w1 := httptest.NewRecorder()
-	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?start=1&end=2", nil))
+	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req1, nil))
 	if callCount != 1 {
 		t.Fatalf("expected 1 backend call, got %d", callCount)
 	}
 
-	// Second call — hit
+	// Second call — same bucket → hit (time-bucketed cache key collapses sliding window)
 	w2 := httptest.NewRecorder()
-	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?start=1&end=2", nil))
+	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req2, nil))
 	if callCount != 1 {
 		t.Errorf("expected cache hit (still 1 call), got %d", callCount)
 	}
 
-	// Different params — miss
+	// Different 5-minute bucket — miss
 	w3 := httptest.NewRecorder()
-	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?start=3&end=4", nil))
+	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req3, nil))
 	if callCount != 2 {
-		t.Errorf("expected 2 calls after different params, got %d", callCount)
+		t.Errorf("expected 2 calls after different bucket params, got %d", callCount)
+	}
+}
+
+// TestCache_LabelsTimeBucketCollapsesSlidingWindow verifies that requests from
+// the same 5-minute time bucket share one cache key, matching how Grafana's
+// LanguageProvider already rounds browser-side and how Loki's queryrange
+// middleware buckets to split-interval. Without bucketing, every dashboard
+// reload at a new timestamp would miss even if the time range is essentially
+// identical.
+func TestCache_LabelsTimeBucketCollapsesSlidingWindow(t *testing.T) {
+	callCount := 0
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		writeVLFieldNames(w, []fieldHit{{"app", 1}})
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	// Use realistic Unix nanosecond timestamps (≥ 1e18) so parseLokiTimeToUnixNano
+	// treats them as nanoseconds (not seconds/ms). 5-min bucket = 300_000_000_000 ns.
+	//
+	// Base: T = 1700000000000000000 (epoch ns)
+	// req1: [T, T+1h] — 1h interval → 5-min buckets
+	// req2: [T+1s, T+1h+1s] — same 5-min bucket as req1 → must hit cache
+	// req3: [T+5m, T+1h+5m] — next 5-min bucket → must miss
+	const (
+		req1 = "start=1700000000000000000&end=1700003600000000000"
+		req2 = "start=1700000001000000000&end=1700003601000000000"
+		req3 = "start=1700000300000000000&end=1700003900000000000"
+	)
+
+	w1 := httptest.NewRecorder()
+	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req1, nil))
+	if callCount != 1 {
+		t.Fatalf("first call: expected 1 backend call, got %d", callCount)
+	}
+
+	// Shifted by 1 second inside the same bucket — must hit cache.
+	w2 := httptest.NewRecorder()
+	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req2, nil))
+	if callCount != 1 {
+		t.Errorf("same-bucket shift: expected cache hit (1 call), got %d — time-bucketing must collapse sliding window", callCount)
+	}
+
+	// Next 5-minute bucket — must miss.
+	w3 := httptest.NewRecorder()
+	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req3, nil))
+	if callCount != 2 {
+		t.Errorf("next bucket: expected 2 calls (miss), got %d", callCount)
 	}
 }
 
