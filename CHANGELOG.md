@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.43.0] - 2026-05-25
+
 ### Fixed
 - Circuit breaker no longer trips on HTTP-level 4xx errors from VL (invalid queries, ip() filter rejections, unsupported syntax) — only transport failures count toward the failure threshold
 - `validateQuery` rewrite result is now applied to downstream requests; `rewriteQuantilePhiGT1` and future query rewrites now take effect in `query_range` and `query` handlers
