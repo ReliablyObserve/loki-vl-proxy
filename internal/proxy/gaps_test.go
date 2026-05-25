@@ -666,11 +666,19 @@ func TestCoverage_FormatVLTimestamp(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"1234567890", "1234567890000000000"},                     // numeric seconds → nanoseconds
-		{"1234567890.123", "1234567890122999808"},                 // numeric float seconds → nanoseconds (float64 precision)
+		// Integer timestamps are always normalized to nanoseconds so VL
+		// log-query endpoints receive a consistent precision (VL interprets
+		// millisecond-range integers as seconds, causing year-58366 overflow).
+		{"1234567890", "1234567890000000000"},          // seconds → nanoseconds
+		{"1748089200000", "1748089200000000000"},       // milliseconds → nanoseconds
+		{"1748089200000000000", "1748089200000000000"}, // nanoseconds → unchanged
+		// Float seconds (Prometheus-style) → nanoseconds.
+		{"1234567890.123", "1234567890122999808"}, // float precision loss is expected
+		// RFC3339 variants → nanoseconds.
 		{"2024-01-15T10:30:00Z", "1705314600000000000"},           // RFC3339 → unix ns
 		{"2024-01-15T10:30:00.123456789Z", "1705314600123456789"}, // RFC3339Nano → unix ns
-		{"now-5m", "now-5m"},                                      // relative passthrough
+		// Non-numeric non-RFC3339 strings pass through unchanged.
+		{"now-5m", "now-5m"},
 	}
 	for _, tc := range tests {
 		got := formatVLTimestamp(tc.input)

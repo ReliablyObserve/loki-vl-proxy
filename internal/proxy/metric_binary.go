@@ -110,7 +110,7 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 
 	if resp.StatusCode >= 400 {
 		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeError(w, resp.StatusCode, string(errBody))
+		p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
 		return
 	}
 

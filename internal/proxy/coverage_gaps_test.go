@@ -2148,18 +2148,25 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 	}
 }
 
-func TestProxyBareParserMetricViaStats_SlowPathWhenRangeNeStep(t *testing.T) {
-	manualCalled := false
+func TestProxyBareParserMetricViaStats_SlidingWindowUsesStatsPath(t *testing.T) {
+	// rate({...} | json [5m]) with step=60 is a sliding window (range != step).
+	// After the long-range memory fix, the sliding-window stats path routes these
+	// to stats_query_range (per-step counts with client-side sliding aggregation)
+	// instead of the 1M-limit raw log fetch. Avoids OOM on long time ranges.
+	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/select/logsql/query" {
-			// Manual NDJSON fetch path
-			manualCalled = true
-			w.Header().Set("Content-Type", "application/x-ndjson")
+		if r.URL.Path == "/select/logsql/stats_query_range" {
+			statsCalled = true
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"_stream":"{app=\"api-gateway\"}"},"values":[[1700000060,"5"],[1700000120,"3"]]}]}}`))
 			return
 		}
-		if r.URL.Path == "/select/logsql/stats_query_range" {
-			t.Error("stats_query_range should NOT be called when range != step")
-			w.WriteHeader(http.StatusInternalServerError)
+		if r.URL.Path == "/select/logsql/query" {
+			// Slow-path 1M-limit fetch must NOT be called for sliding-window rate without post-parser filter.
+			if r.FormValue("limit") == "1000000" {
+				t.Error("unexpected 1M-limit slow-path /select/logsql/query call for sliding-window rate (stats path should be used)")
+			}
+			w.Header().Set("Content-Type", "application/x-ndjson")
 			return
 		}
 		if r.URL.Path == "/metrics" {
@@ -2172,7 +2179,7 @@ func TestProxyBareParserMetricViaStats_SlowPathWhenRangeNeStep(t *testing.T) {
 
 	p := newGapTestProxy(t, vlBackend.URL)
 	base := time.Unix(1700000000, 0)
-	// step=60 != range=[5m]=300 → rangeEqualsStep=false → slow manual path
+	// step=60 != range=[5m]=300 → sliding window → stats fast path (not 1M log fetch).
 	params := url.Values{}
 	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
@@ -2182,8 +2189,11 @@ func TestProxyBareParserMetricViaStats_SlowPathWhenRangeNeStep(t *testing.T) {
 	rec := httptest.NewRecorder()
 	p.handleQueryRange(rec, req)
 
-	if !manualCalled {
-		t.Fatal("expected manual NDJSON path to be used when range != step")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !statsCalled {
+		t.Fatal("expected stats_query_range to be called for sliding-window rate (not 1M-limit log fetch)")
 	}
 }
 
@@ -2757,5 +2767,48 @@ func TestMergeLabelValuesIndexEntry(t *testing.T) {
 	result3 := mergeLabelValuesIndexEntry(existing, mixed)
 	if result3.SeenCount != 7 || result3.LastSeen != 1000 {
 		t.Errorf("mixed: got %+v", result3)
+	}
+}
+
+// TestDetectedFields_MetricQueryWrapper verifies that detected_fields returns 200
+// and numeric fields when Grafana's metric builder passes a full metric query
+// (e.g. sum_over_time({...} | json | unwrap field [5m])).
+// Before the fix, the proxy returned 502 because translateQuery cannot process
+// a metric expression — the outer sum_over_time() wrapper was never stripped.
+func TestDetectedFields_MetricQueryWrapper(t *testing.T) {
+	logLine := `{"_time":"2026-01-01T00:00:00Z","_msg":"{\"duration_ms\":150,\"status\":200}","_stream":"{app=\"api-gateway\"}","app":"api-gateway"}`
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"values":[{"value":"app","hits":1},{"value":"duration_ms","hits":5},{"value":"status","hits":5}]}`))
+		case "/select/logsql/query":
+			_, _ = w.Write([]byte(logLine + "\n"))
+		default:
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer vlBackend.Close()
+
+	p := newGapTestProxy(t, vlBackend.URL)
+
+	metricQueries := []string{
+		`sum_over_time({app="api-gateway"} | json | unwrap duration_ms [5m])`,
+		`count_over_time({app="api-gateway"} | json [15m])`,
+		`rate({app="api-gateway"} | json [1m])`,
+		`bytes_over_time({app="api-gateway"} | json [1m])`,
+	}
+
+	for _, q := range metricQueries {
+		t.Run(q[:30], func(t *testing.T) {
+			w := httptest.NewRecorder()
+			params := url.Values{"query": {q}, "start": {"1"}, "end": {"2"}}
+			r := httptest.NewRequest("GET", "/loki/api/v1/detected_fields?"+params.Encode(), nil)
+			p.handleDetectedFields(w, r)
+
+			if w.Code != http.StatusOK {
+				t.Errorf("metric query wrapper must return 200, got %d — body: %s", w.Code, w.Body.String())
+			}
+		})
 	}
 }

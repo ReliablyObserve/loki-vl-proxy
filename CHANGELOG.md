@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Label-values requests already used `field_values` (0.35 s) instead of `stream_field_values` (7–9 s) — ~19× faster
 - `field_names` backend calls for candidate resolution are now capped to the most recent 1 h of the requested range; wide dashboard ranges (24 h, 7 d) no longer trigger full-range field-name scans
 - `field_values` backend calls are capped to the most recent 6 h; the first label-values load for wide time ranges now has bounded latency regardless of interval size
+- Response cache keys for label/metadata endpoints bucket timestamps into 5-min/1-h/6-h intervals (matching Grafana's browser-side rounding and Loki's split-interval queryrange middleware) — repeated dashboard refreshes at slightly shifted timestamps now share a single cache entry
+- `capMetadataTimeRange` now also buckets the params sent to VictoriaLogs so VL receives identical timestamp pairs from all equivalent queries
+- Proxy startup pre-populates the label cache for common Grafana time presets (Last 1h, 6h, 24h, 7d) via a background goroutine, eliminating cold-start latency on first dashboard load
+
+## [1.43.0] - 2026-05-25
 
 ### Fixed
 - Circuit breaker no longer trips on HTTP-level 4xx errors from VL (invalid queries, ip() filter rejections, unsupported syntax) — only transport failures count toward the failure threshold

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -163,6 +164,35 @@ func TestParseTimestamp(t *testing.T) {
 			_, err := parseTimestamp(tt.input)
 			if tt.wantOk && err != nil {
 				t.Errorf("parseTimestamp(%q) error: %v", tt.input, err)
+			}
+		})
+	}
+}
+
+func TestParseTimestamp_MillisecondRegression(t *testing.T) {
+	// Millisecond timestamps (13-digit) must not be interpreted as seconds (year ~58366).
+	anchor := time.Date(2025, 5, 25, 0, 0, 0, 0, time.UTC)
+	cases := []struct {
+		name  string
+		input string
+		want  time.Time
+	}{
+		{"seconds", strconv.FormatInt(anchor.Unix(), 10), anchor},
+		{"milliseconds", strconv.FormatInt(anchor.UnixMilli(), 10), anchor},
+		{"nanoseconds", strconv.FormatInt(anchor.UnixNano(), 10), anchor},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseTimestamp(tc.input)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !got.Equal(tc.want) {
+				t.Errorf("parseTimestamp(%q) = %v, want %v", tc.input, got, tc.want)
+			}
+			// Guard: result must not be in year 58366 (ms-as-seconds bug)
+			if got.Year() > 3000 {
+				t.Errorf("parseTimestamp(%q) produced year %d — ms-as-seconds bug", tc.input, got.Year())
 			}
 		})
 	}

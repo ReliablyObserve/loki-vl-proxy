@@ -93,10 +93,10 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	}
 	defer resp.Body.Close()
 
-	// Propagate VL error status to the client
+	// Propagate VL error status to the client with Loki-compatible error format.
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		errMsg := string(body)
+		errMsg := extractVLErrorMsg(body)
 		if errMsg == "" {
 			errMsg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
 		}
@@ -645,7 +645,9 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		// numeric/duration/bytes fields. Without this, the proxy only returns _stream
 		// labels and the picker stays empty.
 		if classifyAsParsed && len(parsedFields) > 0 {
-			extLabels := make(map[string]string, len(streamLabels)+len(parsedFields))
+			// Capacity hint uses only one operand to avoid CodeQL's integer-overflow
+			// warning on len(a)+len(b); the map grows automatically for parsedFields.
+			extLabels := make(map[string]string, len(streamLabels))
 			for k, v := range streamLabels {
 				extLabels[k] = v
 			}
@@ -1695,7 +1697,11 @@ func formatVLTimestamp(ts string) string {
 	// inputs to Unix nanoseconds — VL log-query endpoints accept nanoseconds
 	// but not milliseconds (13-digit values are misinterpreted as seconds).
 	if integer, err := strconv.ParseInt(ts, 10, 64); err == nil {
-		return strconv.FormatInt(normalizeUnixNanos(integer), 10)
+		normalized := normalizeUnixNanos(integer)
+		if normalized == integer {
+			return ts // already nanoseconds — avoid allocation
+		}
+		return strconv.FormatInt(normalized, 10)
 	}
 	if floating, err := strconv.ParseFloat(ts, 64); err == nil {
 		// Float seconds (Prometheus-style: "1700000000.5") — convert to nanoseconds.

@@ -2,7 +2,6 @@ package logql
 
 import (
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 )
@@ -589,9 +588,6 @@ func (p *parser) expectStringOrRaw() (string, error) {
 			if _, err := p.expect(TokRParen); err != nil {
 				return "", err
 			}
-			if name == "ip" && !isValidIPOrCIDR(val) {
-				return "", fmt.Errorf("logql: invalid ip filter value %q: not a valid IP address or CIDR", val)
-			}
 			return name + "(" + val + ")", nil
 		}
 		return "", fmt.Errorf("logql: expected STRING or RAWSTRING, got IDENT (%q)", name)
@@ -973,20 +969,4 @@ func (p *parser) parseGrouping() (*Grouping, error) {
 	}
 
 	return &Grouping{Without: without, Labels: labels}, nil
-}
-
-// isValidIPOrCIDR reports whether s is a valid IP address, CIDR block, or
-// IP range (a-b) as accepted by Loki's ip() line filter.
-func isValidIPOrCIDR(s string) bool {
-	if net.ParseIP(s) != nil {
-		return true
-	}
-	if _, _, err := net.ParseCIDR(s); err == nil {
-		return true
-	}
-	// IP range: "1.2.3.4-5.6.7.8"
-	if idx := strings.IndexByte(s, '-'); idx > 0 {
-		return net.ParseIP(s[:idx]) != nil && net.ParseIP(s[idx+1:]) != nil
-	}
-	return false
 }

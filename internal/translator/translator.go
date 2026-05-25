@@ -662,9 +662,8 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			arg, rest, ok := extractIPFilterArg(remaining)
 			remaining = rest
 			if ok {
-				if !isValidIPFilterArg(arg) {
-					return "", fmt.Errorf("parse error : stage '|= ip(%q)' : ip: invalid pattern: %q", arg, arg)
-				}
+				// Loki accepts any string in ip() at parse time; ipLineFilterToRegex
+				// falls back to regexp.QuoteMeta for unrecognised patterns.
 				parts = append(parts, "~"+strconv.Quote(ipLineFilterToRegex(arg)))
 			}
 			continue
@@ -674,9 +673,6 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			arg, rest, ok := extractIPFilterArg(remaining)
 			remaining = rest
 			if ok {
-				if !isValidIPFilterArg(arg) {
-					return "", fmt.Errorf("parse error : stage '!= ip(%q)' : ip: invalid pattern: %q", arg, arg)
-				}
 				parts = append(parts, "NOT ~"+strconv.Quote(ipLineFilterToRegex(arg)))
 			}
 			continue
@@ -3029,37 +3025,6 @@ func extractIPFilterArg(s string) (arg, rest string, ok bool) {
 		rest = strings.TrimSpace(rest[1:])
 	}
 	return arg, rest, true
-}
-
-// isValidIPv4 reports whether s is a valid IPv4 address (all octets 0-255).
-func isValidIPv4(s string) bool {
-	octets := strings.Split(s, ".")
-	if len(octets) != 4 {
-		return false
-	}
-	for _, oct := range octets {
-		n, err := strconv.Atoi(oct)
-		if err != nil || n < 0 || n > 255 {
-			return false
-		}
-	}
-	return true
-}
-
-// isValidIPFilterArg validates an ip() filter argument.
-// Valid forms: exact IP (IPv4 or IPv6), CIDR, or IPv4 range "A.B.C.D-E.F.G.H".
-func isValidIPFilterArg(arg string) bool {
-	// CIDR notation — use net.ParseCIDR for both IPv4 and IPv6
-	if strings.ContainsRune(arg, '/') {
-		_, _, err := net.ParseCIDR(arg)
-		return err == nil
-	}
-	// IPv4 range: A.B.C.D-E.F.G.H (IPv6 ranges not supported by Loki)
-	if dashIdx := strings.IndexByte(arg, '-'); dashIdx >= 0 && strings.Count(arg[:dashIdx], ".") == 3 {
-		return isValidIPv4(arg[:dashIdx]) && isValidIPv4(arg[dashIdx+1:])
-	}
-	// Plain IP address (IPv4 or IPv6)
-	return net.ParseIP(arg) != nil
 }
 
 // ipLineFilterToRegex converts an ip() filter argument to a VL-compatible regex.

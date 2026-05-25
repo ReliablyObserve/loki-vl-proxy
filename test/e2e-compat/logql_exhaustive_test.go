@@ -140,6 +140,17 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── | distinct pipeline stage (not in LogQL 3.7.1) ───────────────────
 		{"distinct_stage", `{app="api-gateway",env="production"} | json | distinct method`, "invalid_stage"},
 
+		// ── rate() with __error__ label filter inside range vector ──────────────
+		// Loki 3.7.1 rejects __error__ filters inside rate() range vectors (proxy now validates).
+		{"error_label_rate_metric", `rate({env="production"} | json | __error__!="" [5m])`, "error_label"},
+
+		// ── Multiple | unwrap stages in a range vector ────────────────────────
+		// Loki 3.7.1 rejects two unwrap stages as a parse error.
+		{"unwrap_multiple_stages", `sum_over_time({app="api-gateway",env="production"} | json | unwrap duration_ms | unwrap status [5m])`, "unwrap_multi"},
+
+		// ── | distinct pipeline stage (not in LogQL 3.7.1) ───────────────────
+		{"distinct_stage", `{app="api-gateway",env="production"} | json | distinct method`, "invalid_stage"},
+
 		// ── quantile_over_time with negative phi ──────────────────────────────
 		// Loki rejects phi < 0 with 400; phi > 1 is accepted by Loki (returns 200).
 		{"quantile_over_time_neg", `quantile_over_time(-0.1, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "invalid_filter"},
@@ -637,15 +648,14 @@ func TestLogQL_Exhaustive_QueryParity(t *testing.T) {
 		// but the query succeeds rather than failing with 422.
 		{"quantile_over_time_gt_one", `quantile_over_time(2.0, {app="api-gateway"} | json | unwrap duration_ms [5m])`, "quantile_phi_gt1"},
 
-		// ── drop with label matchers (proxy translates to unconditional | delete) ──
-		// Semantic gap: Loki conditionally drops the field only when matcher matches;
-		// proxy always deletes the field (VL v1.50.0 | if (filter) pipe without else
-		// filters entries rather than passing them through). HTTP parity is preserved:
-		// both return 200 with non-empty results.
-		{"drop_with_eq_matcher", `{app="api-gateway",env="production"} | json | drop level="debug"`, "drop_matcher"},
-		{"drop_with_regex_matcher", `{app="api-gateway",env="production"} | json | drop level=~"debug|trace"`, "drop_matcher"},
-		{"drop_with_ne_matcher", `{app="api-gateway",env="production"} | json | drop level!="info"`, "drop_matcher"},
-		{"drop_multi_mixed", `{app="api-gateway",env="production"} | json | drop trace_id, level="debug"`, "drop_matcher"},
+		// ── drop with label matchers (fixed: proxy post-processes per-entry) ──
+		// The proxy translator no longer emits `| delete` for matcher-form drops.
+		// ParseDropConditions extracts the condition; applyDropConditions removes the
+		// field only from entries where the value matches — matching Loki's semantics.
+		{"drop_with_eq_matcher", `{app="api-gateway",env="production"} | json | drop level="debug"`, "drop_keep"},
+		{"drop_with_regex_matcher", `{app="api-gateway",env="production"} | json | drop level=~"debug|trace"`, "drop_keep"},
+		{"drop_with_ne_matcher", `{app="api-gateway",env="production"} | json | drop level!="info"`, "drop_keep"},
+		{"drop_multi_mixed", `{app="api-gateway",env="production"} | json | drop trace_id, level="debug"`, "drop_keep"},
 
 		// ── ip() line filter (fixed: proxy now translates to regex approximation) ─
 		{"ip_line_filter_ipv4", `{app="api-gateway",env="production"} |= ip("192.168.1.1")`, "ip_line_filter"},

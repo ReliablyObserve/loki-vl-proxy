@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -229,6 +230,33 @@ func shouldRecordBreakerFailure(err error) bool {
 		return false
 	}
 	return true
+}
+
+// extractVLErrorMsg parses a VictoriaLogs JSON error body and returns the "error"
+// field value. If parsing fails or the field is absent, the raw body is returned
+// as a string so callers always get a usable message string.
+func extractVLErrorMsg(body []byte) string {
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		return ""
+	}
+	// Fast path: look for {"error":"..."} without a full JSON parse.
+	if body[0] == '{' {
+		const errKey = `"error"`
+		if idx := bytes.Index(body, []byte(errKey)); idx >= 0 {
+			rest := bytes.TrimSpace(body[idx+len(errKey):])
+			if len(rest) > 0 && rest[0] == ':' {
+				rest = bytes.TrimSpace(rest[1:])
+				if len(rest) > 0 && rest[0] == '"' {
+					end := bytes.IndexByte(rest[1:], '"')
+					if end >= 0 {
+						return string(rest[1 : end+1])
+					}
+				}
+			}
+		}
+	}
+	return strings.TrimSpace(string(body))
 }
 
 // lokiErrorType returns the Loki/Prometheus-style errorType for an HTTP status code.
@@ -812,17 +840,4 @@ func buildConcurrencyLimiter(limit int) chan struct{} {
 		return nil
 	}
 	return make(chan struct{}, limit)
-}
-
-// extractVLErrorMsg extracts the human-readable error string from a VictoriaLogs
-// JSON error body (e.g. {"error":"...","errorType":"unavailable"}). Returns the
-// raw body as a string if it is not valid JSON or has no "error" field.
-func extractVLErrorMsg(body []byte) string {
-	var v struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(body, &v); err == nil && v.Error != "" {
-		return v.Error
-	}
-	return strings.TrimSpace(string(body))
 }
