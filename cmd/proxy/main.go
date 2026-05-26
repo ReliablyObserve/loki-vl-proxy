@@ -1,3 +1,4 @@
+// Package main implements the loki-vl-proxy server.
 package main
 
 import (
