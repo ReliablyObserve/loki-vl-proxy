@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -428,10 +429,8 @@ func TestP2_ParseScalar_NegativeAndScientific(t *testing.T) {
 func TestMetrics_CBHalfOpen_GaugeValue(t *testing.T) {
 	p := newGapTestProxy(t, "http://unused")
 	p.Init()
+	t.Cleanup(func() { p.Shutdown(context.Background()) })
 
-	// Force circuit breaker into half-open: trip it, then wait for open duration to expire
-	// The CB defaults: failThreshold=5, openDuration=10s — too slow for tests.
-	// Instead, test the metrics handler directly with a mock state func.
 	m := p.GetMetrics()
 	m.SetCircuitBreakerFunc(func() string { return "half_open" })
 
