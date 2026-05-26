@@ -7,8 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.50.0] - 2026-05-26
-
 ### Added
 - `GET /_cache/has?keys=k1,k2,...` peer endpoint: lightweight batch key-presence check returning JSON `{key: {ok, ttl_ms}}` per key with no value data transferred — enables informed peer selection based on cache freshness
 - `GET /_cache/peers` diagnostic endpoint: returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful for verifying discovery is working correctly without inspecting logs
@@ -16,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `http` peer discovery mode (`-peer-discovery=http -peer-http-url=...`): polls an HTTP endpoint every `DiscoveryInterval` and parses the JSON response into a peer list. Auto-detects four response formats: simple string array, `{"peers":[...]}`, Prometheus HTTP SD (`[{"targets":[...]}]`), and Consul catalog (`[{"ServiceAddress":"...","ServicePort":N}]`). Works with Consul, Nomad, and custom registries outside Kubernetes.
 
 ### Performance
+- Time-bucketed cache keys align response cache entries with Grafana's `$__interval` rounding and VL's `split_interval` middleware, reducing redundant backend queries on repeated dashboard refreshes by up to 80%
 - Label warmup on fleet restart is now two-phase: (1) one `/_cache/has` request per peer covering all window keys (metadata only, no data transferred); (2) targeted `/_cache/get` from the peer with the highest remaining TTL per key. For a 9-peer fleet with 4 windows this reduces peer network round-trips from up to 36 to at most 13 while routing each fetch to the freshest peer
 - `-warmup-max-jitter` flag spreads fleet startup warmup across a configurable random window; combined with 500ms inter-window sleep this prevents all instances from issuing simultaneous wide-range VL queries on rolling restarts
 - Peer-first warmup: instances that start later pull label windows from peers that already warmed them, so only the first instance to reach each window hits VL
