@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `srv` peer discovery mode (`-peer-discovery=srv -peer-srv=_service._tcp.domain`): resolves peers from DNS SRV records which embed port numbers. Compatible with Kubernetes StatefulSet headless services, Consul DNS, CoreDNS, and any SRV-capable resolver. Inherits readiness gating from the DNS layer.
 - `http` peer discovery mode (`-peer-discovery=http -peer-http-url=...`): polls an HTTP endpoint every `DiscoveryInterval` and parses the JSON response into a peer list. Auto-detects four response formats: simple string array, `{"peers":[...]}`, Prometheus HTTP SD (`[{"targets":[...]}]`), and Consul catalog (`[{"ServiceAddress":"...","ServicePort":N}]`). Works with Consul, Nomad, and custom registries outside Kubernetes.
 - Translator unit tests for `| unpack`, `| unpack | method="GET"`, and `| unpack | status >= 400` — confirm correct VL translation without a live stack
+- `TestParseAllLabelReplaceMarkers` unit tests covering single marker, chained two-level `label_replace(label_replace(...))`, and no-marker pass-through — the chained case was previously only validated via e2e; now covered as a unit test
+- `TestFieldFilterMigration` extended with `json alias then filter` case: `| json http_code="status" | http_code="200"` → `| unpack_json | filter status:="200"` verifying the proxy's alias-rewrite path that fixed `json_field_alias_then_filter` parity
 
 ### Performance
 - Time-bucketed cache keys align response cache entries with Grafana's `$__interval` rounding and VL's `split_interval` middleware, reducing redundant backend queries on repeated dashboard refreshes by up to 80%

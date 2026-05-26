@@ -847,6 +847,63 @@ func TestLabelReplaceTranslation(t *testing.T) {
 	}
 }
 
+func TestParseAllLabelReplaceMarkers(t *testing.T) {
+	t.Run("single marker", func(t *testing.T) {
+		q := `label_replace(rate({app="api"}[5m]), "host", "$1", "instance", "(.*):.+")`
+		result, err := TranslateLogQL(q)
+		if err != nil {
+			t.Fatalf("TranslateLogQL: %v", err)
+		}
+		clean, specs := ParseAllLabelReplaceMarkers(result)
+		if len(specs) != 1 {
+			t.Fatalf("want 1 spec, got %d", len(specs))
+		}
+		if specs[0].DstLabel != "host" || specs[0].SrcLabel != "instance" {
+			t.Errorf("spec mismatch: %+v", specs[0])
+		}
+		if strings.Contains(clean, "__lvp_lr:") {
+			t.Errorf("marker not stripped from clean query: %q", clean)
+		}
+	})
+
+	t.Run("chained two markers — inner applied first", func(t *testing.T) {
+		// label_replace(label_replace(inner, "service","$1","app","(.*)"), "short","$1","service","^([^-]+)")
+		// Translator embeds one marker per nesting level; ParseAllLabelReplaceMarkers must return
+		// both in left-to-right (inner→outer) order so callers apply them in sequence.
+		q := `label_replace(label_replace(sum by(app)(count_over_time({env="production"}[5m])), "service", "$1", "app", "(.*)"), "short", "$1", "service", "^([^-]+)")`
+		result, err := TranslateLogQL(q)
+		if err != nil {
+			t.Fatalf("TranslateLogQL: %v", err)
+		}
+		clean, specs := ParseAllLabelReplaceMarkers(result)
+		if len(specs) != 2 {
+			t.Fatalf("want 2 specs (chained), got %d; raw=%q", len(specs), result)
+		}
+		// Inner marker: dst=service src=app
+		if specs[0].DstLabel != "service" || specs[0].SrcLabel != "app" {
+			t.Errorf("inner spec mismatch: %+v", specs[0])
+		}
+		// Outer marker: dst=short src=service
+		if specs[1].DstLabel != "short" || specs[1].SrcLabel != "service" {
+			t.Errorf("outer spec mismatch: %+v", specs[1])
+		}
+		if strings.Contains(clean, "__lvp_lr:") {
+			t.Errorf("markers not fully stripped from clean query: %q", clean)
+		}
+	})
+
+	t.Run("no markers — returns original", func(t *testing.T) {
+		q := `app:="nginx"`
+		clean, specs := ParseAllLabelReplaceMarkers(q)
+		if len(specs) != 0 {
+			t.Errorf("want 0 specs, got %d", len(specs))
+		}
+		if clean != q {
+			t.Errorf("no-marker query was modified: %q", clean)
+		}
+	})
+}
+
 func TestLabelJoinTranslation(t *testing.T) {
 	cases := []struct {
 		in      string
@@ -1069,6 +1126,14 @@ func TestFieldFilterMigration(t *testing.T) {
 			name:  "dotted field name gets quoted in pipeline filter",
 			logql: `{app="api"} | json | service.name = "bar"`,
 			want:  `app:="api" | unpack_json | filter "service.name":="bar"`,
+		},
+		{
+			// json_field_alias_then_filter: the proxy must rewrite a filter on the
+			// alias name back to the original field name so VL sees the correct field.
+			// Fixed: TranslateLogQL maps aliased filter targets to their source fields.
+			name:  "json alias then filter on alias — rewrites to original field",
+			logql: `{app="api-gateway"} | json http_code="status" | http_code="200"`,
+			want:  `app:="api-gateway" | unpack_json | filter status:="200"`,
 		},
 	}
 	for _, tc := range tests {
