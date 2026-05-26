@@ -850,10 +850,14 @@ type labelWarmupWindow struct {
 	cacheKey string
 }
 
-// warmLabelWindows fetches label data from VL for all standard Grafana presets and
-// stores it in the cache with the given ttl. Windows whose cache entry still has more
-// than minRemaining TTL are skipped (they are fresh enough). The full range is always
-// fetched so historical labels (services that ran last week but not today) are included.
+// warmLabelWindows pre-populates the label cache for the standard Grafana time presets.
+// Windows whose cache entry still has more than minRemaining TTL are skipped.
+//
+// VL queries are capped to the same 1h window as synchronous user requests (via the
+// normal capMetadataTimeRange path). This keeps warmup cheap and avoids wide-range scans
+// that would compete with user query_range requests. When users actually request wider
+// ranges (6h, 24h, 7d) the background refresh goroutines in handleLabels fetch the full
+// range from VL so subsequent requests see complete historical labels.
 //
 // Peer-first strategy (batch, two-phase):
 //  1. Discovery — send one /_cache/has request per peer with all stale window keys.
@@ -862,8 +866,6 @@ type labelWarmupWindow struct {
 //     has cached, costing at most W requests for W windows.
 //
 // Only windows not covered by any peer fall through to VL queries.
-// A 500ms inter-window pause is inserted between VL fetches to prevent wide-range
-// queries from monopolising VL's concurrency budget.
 func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Duration) {
 	nowNs := time.Now().UnixNano()
 
@@ -897,24 +899,14 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 	}
 	warmedFromPeer := p.fetchCacheKeysFromPeers(ctx, "labels", staleKeys, ttl)
 
-	// Phase 3: fetch remaining stale windows from VL.
-	first := true
+	// Phase 3: fetch remaining stale windows from VL (capped to 1h, same as user requests).
 	for _, w := range stale {
 		if warmedFromPeer[w.cacheKey] {
 			p.log.Debug("label cache window warmed from peer", "window", w.window)
 			continue
 		}
-		if !first {
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(500 * time.Millisecond):
-			}
-		}
-		first = false
 
-		fetchCtx, fetchCancel := context.WithTimeout(ctx, 30*time.Second)
-		fetchCtx = context.WithValue(fetchCtx, labelFullRangeFetchKey{}, true)
+		fetchCtx, fetchCancel := context.WithTimeout(ctx, 10*time.Second)
 		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
 		fetchCancel()
 		if fetchErr != nil {
