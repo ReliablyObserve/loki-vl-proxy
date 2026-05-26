@@ -457,15 +457,11 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 		endpoint = "/select/logsql/stream_field_values"
 	}
 
-	// Cap the backend time range to 6h: active values in the last 6h match those
-	// in wider windows for typical workloads, avoiding O(days) scan cost.
-	cappedParams := capMetadataTimeRange(params, metadataMaxFieldValuesWindow)
-
 	seen := make(map[string]struct{}, 16)
 	values := make([]string, 0, 16)
 	for _, candidate := range resolution.candidates {
 		queryParams := url.Values{}
-		for key, items := range cappedParams {
+		for key, items := range params {
 			for _, item := range items {
 				queryParams.Add(key, item)
 			}
