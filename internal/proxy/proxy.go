@@ -210,6 +210,18 @@ type Config struct {
 	// Older cache hits are bypassed and recomputed.
 	RecentTailRefreshMaxStaleness time.Duration
 
+	// Label cache
+	// LabelCacheTTL overrides the default TTL for /labels and /label/{name}/values
+	// cache entries. Defaults to 5 minutes when unset. Keep-warm interval and skip
+	// threshold are derived automatically from this value.
+	LabelCacheTTL time.Duration
+	// WarmupMaxJitter is the upper bound of the random delay added before the
+	// startup label cache warmup begins. Spreading the delay across a fleet of
+	// proxies (all restarting at once) prevents a thundering-herd of concurrent
+	// wide-range stream_field_names queries hitting VL simultaneously.
+	// Default 0 (no jitter). Recommended: 5–15s for fleets of ≥3 instances.
+	WarmupMaxJitter time.Duration
+
 	// Label translation
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
 	MetadataFieldMode MetadataFieldMode // how to expose non-label VL fields through field-oriented APIs
@@ -325,10 +337,26 @@ const (
 	patternsCacheRetention = 100 * 365 * 24 * time.Hour
 )
 
-// CacheTTLs defines per-endpoint cache TTLs.
+// cacheTTLFor returns the effective cache TTL for the given endpoint key.
+// "labels" and "label_values" respect per-Proxy configuration (Config.LabelCacheTTL);
+// all other keys use the package-level CacheTTLs defaults.
+func (p *Proxy) cacheTTLFor(endpoint string) time.Duration {
+	switch endpoint {
+	case "labels":
+		return p.cacheTTLLabels
+	case "label_values":
+		return p.cacheTTLLabelValues
+	default:
+		return CacheTTLs[endpoint]
+	}
+}
+
+// CacheTTLs defines per-endpoint cache TTLs. "labels" and "label_values" default
+// to 5 minutes; use Proxy.cacheTTLFor() instead of reading this map directly for
+// those two keys, as they can be overridden per-Proxy via Config.LabelCacheTTL.
 var CacheTTLs = map[string]time.Duration{
-	"labels":                2 * time.Minute,
-	"label_values":          2 * time.Minute,
+	"labels":                5 * time.Minute,
+	"label_values":          5 * time.Minute,
 	"label_inventory":       5 * time.Minute,
 	"series":                30 * time.Second,
 	"detected_fields":       90 * time.Second,
@@ -431,6 +459,7 @@ type Proxy struct {
 	recentTailRefreshEnabled              bool
 	recentTailRefreshWindow               time.Duration
 	recentTailRefreshMaxStaleness         time.Duration
+	warmupMaxJitter                       time.Duration
 	labelRefreshGroup                     singleflight.Group
 	streamFieldNamesCache                 *cache.Cache // short-lived internal cache for stream_field_names routing decisions
 	labelValuesIndexedCache               bool
@@ -468,6 +497,7 @@ type Proxy struct {
 	labelValuesIndexPersistDirty          atomic.Bool
 	labelValuesIndexPersistStop           chan struct{}
 	labelValuesIndexPersistDone           chan struct{}
+	keepWarmStop                          chan struct{}
 	labelValuesIndexMu                    sync.RWMutex
 	labelValuesIndex                      map[string]*labelValuesIndexState
 	labelValuesIndexPersistDigest         [sha256.Size]byte
@@ -476,6 +506,8 @@ type Proxy struct {
 	readCacheKeyMemo                      map[canonicalReadCacheMemoKey]string
 	logSampleN                            uint64 // 0 = log all; N>1 = log 1 in N successful requests
 	logSampleCount                        atomic.Uint64
+	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
+	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
 }
 
 const maxReadCacheKeyMemoEntries = 16384
@@ -834,6 +866,10 @@ func New(cfg Config) (*Proxy, error) {
 	if recentTailRefreshMaxStaleness <= 0 {
 		recentTailRefreshMaxStaleness = 15 * time.Second
 	}
+	warmupMaxJitter := cfg.WarmupMaxJitter
+	if warmupMaxJitter < 0 {
+		warmupMaxJitter = 0
+	}
 	tailMode := cfg.TailMode
 	if tailMode == "" {
 		tailMode = TailModeAuto
@@ -885,6 +921,11 @@ func New(cfg Config) (*Proxy, error) {
 	patternsPersistPath := strings.TrimSpace(cfg.PatternsPersistPath)
 	if err := ensureWritableSnapshotPath(patternsPersistPath); err != nil {
 		return nil, fmt.Errorf("patterns persistence path %q is not writable: %w", patternsPersistPath, err)
+	}
+
+	labelCacheTTL := CacheTTLs["labels"]
+	if cfg.LabelCacheTTL > 0 {
+		labelCacheTTL = cfg.LabelCacheTTL
 	}
 
 	labelTranslator := NewLabelTranslator(cfg.LabelStyle, cfg.FieldMappings)
@@ -971,7 +1012,7 @@ func New(cfg Config) (*Proxy, error) {
 		tenantDefaultLimits:                   tenantDefaultLimits,
 		tenantLimits:                          tenantLimits,
 		translationCache:                      cache.New(5*time.Minute, 5000),
-		streamFieldNamesCache:                 cache.New(15*time.Second, 500),
+		streamFieldNamesCache:                 cache.New(30*time.Second, 500),
 		queryRangeWindowing:                   cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,
 		queryRangeSplitInterval:               cfg.QueryRangeSplitInterval,
 		queryRangeMaxParallel:                 queryRangeMaxParallel,
@@ -999,6 +1040,7 @@ func New(cfg Config) (*Proxy, error) {
 		recentTailRefreshEnabled:              cfg.RecentTailRefreshEnabled,
 		recentTailRefreshWindow:               recentTailRefreshWindow,
 		recentTailRefreshMaxStaleness:         recentTailRefreshMaxStaleness,
+		warmupMaxJitter:                       warmupMaxJitter,
 		labelValuesIndexedCache:               cfg.LabelValuesIndexedCache,
 		labelValuesHotLimit:                   labelValuesHotLimit,
 		labelValuesIndexMaxEntries:            labelValuesIndexMaxEntries,
@@ -1015,9 +1057,12 @@ func New(cfg Config) (*Proxy, error) {
 		patternsSnapshotEntries:               make(map[string]patternSnapshotEntry),
 		labelValuesIndexPersistStop:           make(chan struct{}),
 		labelValuesIndexPersistDone:           make(chan struct{}),
+		keepWarmStop:                          make(chan struct{}),
 		labelValuesIndex:                      make(map[string]*labelValuesIndexState),
 		readCacheKeyMemo:                      make(map[canonicalReadCacheMemoKey]string, 2048),
 		coldRouter:                            coldRouter,
+		cacheTTLLabels:                        labelCacheTTL,
+		cacheTTLLabelValues:                   labelCacheTTL,
 	}
 	if cfg.LogRequestSampleRate > 1 {
 		p.logSampleN = uint64(cfg.LogRequestSampleRate)
@@ -1154,6 +1199,8 @@ func (p *Proxy) Init() {
 	}
 	p.warmPatternsOnStartup()
 	p.startPatternsPersistenceLoop()
+	p.warmMetadataCacheOnStartup()
+	p.startLabelCacheKeepWarmLoop()
 	if p.coldRouter != nil {
 		p.coldRouter.Start(context.Background())
 		p.log.Info("cold storage routing enabled",
@@ -1168,6 +1215,13 @@ func (p *Proxy) ColdRouter() *ColdRouter { return p.coldRouter }
 
 // Shutdown flushes in-memory caches that should survive rolling restarts.
 func (p *Proxy) Shutdown(ctx context.Context) error {
+	if p.keepWarmStop != nil {
+		select {
+		case <-p.keepWarmStop:
+		default:
+			close(p.keepWarmStop)
+		}
+	}
 	if p.limiter != nil {
 		p.limiter.Stop()
 	}
@@ -1305,6 +1359,8 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 		mux.Handle("/_cache/get", peerCacheHandler)
 		mux.Handle("/_cache/set", peerCacheHandler)
 		mux.Handle("/_cache/hot", peerCacheHandler)
+		mux.Handle("/_cache/has", peerCacheHandler)
+		mux.Handle("/_cache/peers", peerCacheHandler)
 	}
 }
 

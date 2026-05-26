@@ -514,7 +514,7 @@ func (p *parser) parsePipeBody() (Stage, error) {
 
 // parseUnwrap parses `unwrap label` or `unwrap bytes(label)`.
 // Also handles Grafana's incomplete stub forms:
-//   - | unwrap [range]         → UnwrapStage{Label: ""}
+//   - | unwrap [range]             → UnwrapStage{Label: ""}
 //   - | unwrap converter() [range] → UnwrapStage{Label: "", Converter: "converter"}
 func (p *parser) parseUnwrap() (Stage, error) {
 	// Incomplete stub: | unwrap [range] — no label name, bare bracket.

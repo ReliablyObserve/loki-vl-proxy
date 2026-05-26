@@ -1,0 +1,23 @@
+# Peer cache: static peer list.
+# Simplest setup — no dynamic discovery. Requires a restart to change the peer topology.
+# Best for development, small fixed fleets, or environments with no DNS/registry.
+replicaCount: 3
+
+workload:
+  kind: StatefulSet
+
+extraArgs:
+  backend: "http://victorialogs:9428"
+  peer-auth-token: "replace-with-shared-secret"
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+peerCache:
+  enabled: true
+  discovery: static
+  peers:
+    - "proxy-0.loki-vl-proxy-headless.default.svc.cluster.local:3100"
+    - "proxy-1.loki-vl-proxy-headless.default.svc.cluster.local:3100"
+    - "proxy-2.loki-vl-proxy-headless.default.svc.cluster.local:3100"

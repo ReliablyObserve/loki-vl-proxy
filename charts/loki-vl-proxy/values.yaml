@@ -242,6 +242,8 @@ extraArgs:
   #
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
+  # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
+  # warmup-max-jitter: "10s"                   # max random delay before label cache warmup starts; spread across fleet to prevent thundering herd on restart (recommended: 5–15s for ≥3 instances)
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
   # compat-cache-max-percent: "10"              # Tier0 share of L1 cache budget (max 50)
   # backend-timeout: "120s"                     # upstream request timeout
@@ -300,6 +302,7 @@ extraArgs:
   # peer-discovery: "dns"                       # chart-managed via peerCache.* values
   # peer-dns: ""                                # chart-managed when peerCache.enabled=true
   # peer-self: ""                               # chart-managed when peerCache.enabled=true
+  # peer-self-az: ""                            # availability zone for AZ-aware peer selection (e.g. "us-east-1a"); set automatically from node topology labels in Helm
   # peer-static: ""                             # used with peer-discovery=static
   # disk-cache-min-ttl: "30s"                   # skip L2 writes for very short-lived entries
   # tls-cert-file: ""                           # enable HTTPS listener when cert+key set
@@ -758,16 +761,63 @@ httpRoute:
 # so non-owner pods can warm owner shards under skewed traffic.
 peerCache:
   enabled: false
-  # Discovery: "dns" (headless service, recommended) or "static" (explicit peers list)
+  # Discovery mode: "dns" | "srv" | "http" | "static"
+  #
+  # dns  — resolves a headless service A-record; only ready pods appear (k8s readiness gating).
+  #         Requires a headless Service — the chart creates one automatically.
+  # srv  — resolves DNS SRV records; port is embedded in the record (no separate port flag).
+  #         Compatible with k8s StatefulSet headless services and Consul DNS.
+  # http — polls an HTTP endpoint every DiscoveryInterval (default 15 s) returning a JSON
+  #         peer list. Supported formats: simple array, {"peers":[...]}, Prometheus HTTP SD,
+  #         Consul catalog. Best for non-k8s (Consul, Nomad, custom registries).
+  # static — fixed comma-separated list; no refresh. Requires restart to change topology.
   discovery: "dns"
-  # Optional DNS service name used for peer discovery.
-  # Does NOT change StatefulSet spec.serviceName (that is controlled by workload.statefulSet.serviceName).
-  # Empty = reuse StatefulSet headless service.
+
+  # Optional headless service name for "dns" and "srv" modes.
+  # Does NOT change StatefulSet spec.serviceName (controlled by workload.statefulSet.serviceName).
+  # Empty = reuse the StatefulSet headless service name.
   serviceName: ""
-  # Static peer addresses in host:port form (if discovery=static)
+
+  # Full SRV record name for "srv" mode.
+  # Leave empty to auto-derive from the headless service (k8s only):
+  #   _loki-vl-proxy._tcp.<headless-svc>.<namespace>.svc.cluster.local
+  # Override if using Consul DNS or a different SRV name:
+  #   srvName: "_http._tcp.loki-vl-proxy.service.consul"
+  srvName: ""
+
+  # HTTP endpoint URL for "http" mode.
+  # Examples:
+  #   Consul (health-checked): http://consul:8500/v1/health/service/loki-vl-proxy?passing=true
+  #   Prometheus HTTP SD:      http://sd-server:8080/peers
+  #   Custom registry:         http://my-registry/peers/loki-vl-proxy
+  httpURL: ""
+
+  # Static peer addresses in host:port form for "static" mode.
   peers: []
     # - "proxy-0.proxy-peers:3100"
     # - "proxy-1.proxy-peers:3100"
+
+  # AZ-aware peer selection — prefer peers in the same availability zone to reduce
+  # cross-AZ traffic when fetching cached data from peers.
+  #
+  # Two ways to configure:
+  #
+  # 1. Explicit AZ (for non-k8s or when you know the zone at deploy time):
+  #      selfAZ: "us-east-1a"
+  #
+  # 2. Automatic detection from the pod's topology label (Kubernetes):
+  #    Leave selfAZ empty and set topologyLabel. The chart reads the label from
+  #    the pod via the downward API and injects it as the -peer-self-az flag.
+  #    For this to work the pod must carry the label — add it via podLabels:
+  #      podLabels:
+  #        topology.kubernetes.io/zone: us-east-1a
+  #    Or enable topologyLabel injection via your cluster's platform (e.g., GKE
+  #    Autopilot, Karpenter NodePool podLabels, AWS Node Label syncer, etc.).
+  #
+  #  When selfAZ is empty and the pod does not carry the topology label the env
+  #  var resolves to "" and AZ preference is silently disabled — no errors.
+  selfAZ: ""
+  topologyLabel: "topology.kubernetes.io/zone"
 
 # --- Disk cache persistent volume ---
 # Persistence is off by default.

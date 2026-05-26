@@ -90,7 +90,7 @@ The simplest way to understand the cache stack is by operational outcome:
 | `Tier0` | Fast answer cache at the Loki-compatible frontend | Repeated Grafana reads can return before most proxy logic runs |
 | `L1` memory | Hot cache inside the local process | Best-case latency for repeated dashboards and Explore refreshes |
 | `L2` disk | Persistent local cache | Useful cache survives beyond RAM pressure and supports larger working sets |
-| `L3` peer cache | Fleet-wide cache reuse between replicas | One warm pod can make the rest of the fleet faster and cheaper |
+| `L3` peer cache | Fleet-wide cache reuse between replicas | One warm pod can make the rest of the fleet faster and cheaper; peer-first startup warmup means only 1 instance per label window hits VL on rolling restart regardless of fleet size |
 
 This is the difference between “it speaks Loki” and “it feels like Loki at runtime.” The project is designed to preserve Loki-compatible UX while reducing repeated backend work aggressively.
 

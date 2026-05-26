@@ -537,10 +537,16 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 				}
 				queryParams := cloneURLValues(params)
 				queryParams.Set("field", field)
-				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/stream_field_values", queryParams)
-				if fieldErr != nil && shouldFallbackToGenericMetadata(fieldErr) {
-					fieldValues, fieldErr = p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
+				// Fields were identified via stream_field_names → they live in the stream
+				// index. Use stream_field_values so VL returns their values correctly;
+				// field_values only covers column-indexed fields and returns empty for
+				// stream-indexed labels (the common case for plain label names like app,
+				// service_name, job, container).
+				valEndpoint := "/select/logsql/field_values"
+				if p.supportsStreamMetadataEndpoints() {
+					valEndpoint = "/select/logsql/stream_field_values"
 				}
+				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, valEndpoint, queryParams)
 				if fieldErr != nil {
 					lastErr = fieldErr
 					continue
@@ -2276,6 +2282,7 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 	if end != "" {
 		params.Set("end", end)
 	}
+	params = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
 	body, err := p.vlGetCoalesced(ctx, p.nativeCoalescerKey("native_fields", ctx, params), "/select/logsql/field_names", params)
 	if err != nil {
 		return nil, err

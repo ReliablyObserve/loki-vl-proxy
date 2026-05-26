@@ -145,6 +145,8 @@ type proxyRuntimeConfig struct {
 	metricsExportSensitiveLabels        bool
 	metricsMaxConcurrency               int
 	logRequestSampleRate                int
+	labelCacheTTL                       time.Duration
+	warmupMaxJitter                     time.Duration
 	labelStyle                          string
 	metadataFieldMode                   string
 	fieldMappingJSON                    string
@@ -162,8 +164,11 @@ type proxyRuntimeConfig struct {
 	patternsStartupStale                time.Duration
 	patternsPeerWarmTimeout             time.Duration
 	peerSelf                            string
+	peerSelfAZ                          string
 	peerDiscovery                       string
 	peerDNS                             string
+	peerSRV                             string
+	peerHTTPURL                         string
 	peerStatic                          string
 	peerTimeout                         time.Duration
 	peerAuthToken                       string
@@ -347,6 +352,8 @@ func run(
 
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
+	labelsCacheTTL := fs.Duration("labels-cache-ttl", 0, "Cache TTL for /labels and /label/{name}/values responses (default 5m). Keep-warm interval is derived automatically. 0 uses the default.")
+	warmupMaxJitter := fs.Duration("warmup-max-jitter", 0, "Maximum random delay before label cache warmup starts. Spread this across a fleet (e.g. 10s for ≥3 instances) to prevent all proxies hammering VL simultaneously on restart.")
 	cacheMax := fs.Int("cache-max", 10000, "Maximum cache entries")
 	cacheMaxBytes := fs.Int("cache-max-bytes", defaultCacheMaxBytes, "Maximum in-memory L1 cache size in bytes")
 	cacheDisabled := fs.Bool("cache-disabled", false, "Disable the in-memory cache entirely (all requests pass through to the backend; useful for testing and cold-path measurement)")
@@ -514,9 +521,12 @@ func run(
 
 	// Peer cache (fleet distribution)
 	peerSelf := fs.String("peer-self", "", `This instance's address for peer cache (e.g., "10.0.0.1:3100"). Empty disables peer cache.`)
-	peerDiscovery := fs.String("peer-discovery", "", `Peer discovery: "dns" (headless service) or "static" (comma-separated)`)
-	peerDNS := fs.String("peer-dns", "", `Headless service DNS name for peer discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
-	peerStatic := fs.String("peer-static", "", `Static peer list (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
+	peerSelfAZ := fs.String("peer-self-az", "", `This instance's availability zone (e.g., "us-east-1a"). When set, same-AZ peers are preferred for cache fetches to minimise cross-AZ traffic.`)
+	peerDiscovery := fs.String("peer-discovery", "", `Peer discovery mode: "dns" (headless A-record), "srv" (DNS SRV), "http" (JSON endpoint), or "static" (comma-separated list)`)
+	peerDNS := fs.String("peer-dns", "", `Headless service DNS name for "dns" discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
+	peerSRV := fs.String("peer-srv", "", `Full SRV record name for "srv" discovery (e.g., "_loki-vl-proxy._tcp.proxy-headless.ns.svc.cluster.local")`)
+	peerHTTPURL := fs.String("peer-http-url", "", `URL returning a JSON peer list for "http" discovery. Supported formats: simple array, {"peers":[...]}, Prometheus HTTP SD, Consul catalog API`)
+	peerStatic := fs.String("peer-static", "", `Static peer list for "static" discovery (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
 	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
@@ -700,6 +710,8 @@ func run(
 			metricsExportSensitiveLabels:        *metricsExportSensitiveLabels,
 			metricsMaxConcurrency:               *metricsMaxConcurrency,
 			logRequestSampleRate:                *logRequestSampleRate,
+			labelCacheTTL:                       *labelsCacheTTL,
+			warmupMaxJitter:                     *warmupMaxJitter,
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
 			fieldMappingJSON:                    envCfg.fieldMappingJSON,
@@ -717,8 +729,11 @@ func run(
 			patternsStartupStale:                *patternsStartupStale,
 			patternsPeerWarmTimeout:             *patternsPeerWarmTimeout,
 			peerSelf:                            *peerSelf,
+			peerSelfAZ:                          *peerSelfAZ,
 			peerDiscovery:                       *peerDiscovery,
 			peerDNS:                             *peerDNS,
+			peerSRV:                             *peerSRV,
+			peerHTTPURL:                         *peerHTTPURL,
 			peerStatic:                          *peerStatic,
 			peerTimeout:                         *peerTimeout,
 			peerAuthToken:                       *peerAuthToken,
@@ -1552,8 +1567,11 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if cfg.peerSelf != "" && cfg.peerDiscovery != "" {
 		peerCache = cache.NewPeerCache(cache.PeerConfig{
 			SelfAddr:                 cfg.peerSelf,
+			SelfAZ:                   cfg.peerSelfAZ,
 			DiscoveryType:            cfg.peerDiscovery,
 			DNSName:                  cfg.peerDNS,
+			SRVName:                  cfg.peerSRV,
+			HTTPPeersURL:             cfg.peerHTTPURL,
 			StaticPeers:              cfg.peerStatic,
 			Port:                     3100,
 			Timeout:                  cfg.peerTimeout,
@@ -1654,6 +1672,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		LogRequestSampleRate:               cfg.logRequestSampleRate,
 		MetricsExportSensitiveLabels:       cfg.metricsExportSensitiveLabels,
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
+		LabelCacheTTL:                      cfg.labelCacheTTL,
+		WarmupMaxJitter:                    cfg.warmupMaxJitter,
 		LabelStyle:                         ls,
 		MetadataFieldMode:                  mfm,
 		FieldMappings:                      fieldMappings,

@@ -85,6 +85,10 @@ jobs:
         run: |
           set -euo pipefail
           go test -v -tags=e2e -run '^TestQuerySemantics' ./test/e2e-compat/
+      - name: Run label cache tests
+        run: |
+          set -euo pipefail
+          go test -v -tags=e2e -run '^TestLabelCache_' -timeout=120s ./test/e2e-compat/
       - name: Tear down pinned stack
         if: always()
         working-directory: test/e2e-compat
@@ -157,6 +161,12 @@ jobs:
         run: |
           set -euo pipefail
           go test -v -tags=e2e -run '^TestQuerySemantics' ./test/e2e-compat/
+      - name: Run label cache tests
+        env:
+          LOKI_IMAGE: grafana/loki:${{ matrix.loki_version }}
+        run: |
+          set -euo pipefail
+          go test -v -tags=e2e -run '^TestLabelCache_' -timeout=120s ./test/e2e-compat/
       - name: Tear down matrix stack
         if: always()
         working-directory: test/e2e-compat

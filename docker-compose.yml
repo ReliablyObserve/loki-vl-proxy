@@ -29,6 +29,7 @@ services:
       - "-backend=http://victorialogs:9428"
       - "-log-level=debug"
       - "-cache-ttl=30s"
+      - "-server.admin-auth-token=local-dev-token"
     depends_on:
       victorialogs:
         condition: service_healthy

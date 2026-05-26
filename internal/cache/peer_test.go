@@ -7,8 +7,10 @@ import (
 	"fmt"
 	gzip "github.com/klauspost/compress/gzip"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -352,6 +354,163 @@ func TestPeerCache_ServeHTTP_RejectsNearExpiryEntry(t *testing.T) {
 	pc.ServeHTTP(w, r, localCache)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected near-expiry cache entry to be treated as miss, got %d", w.Code)
+	}
+}
+
+func TestPeerCache_ServeHTTP_Has_BatchPresence(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+	localCache.SetWithTTL("key-a", []byte("value-a"), 60*time.Second)
+	localCache.SetWithTTL("key-b", []byte("value-b"), 60*time.Second)
+	localCache.SetWithTTL("near-expiry", []byte("x"), time.Second) // too close to expiry
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost"})
+	defer pc.Close()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/_cache/has?keys=key-a,key-b,near-expiry,missing", nil)
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var result map[string]PeerKeyPresence
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode has response: %v", err)
+	}
+	if !result["key-a"].OK {
+		t.Errorf("key-a should be present")
+	}
+	if result["key-a"].TTLMs <= 0 {
+		t.Errorf("key-a TTLMs should be positive, got %d", result["key-a"].TTLMs)
+	}
+	if !result["key-b"].OK {
+		t.Errorf("key-b should be present")
+	}
+	if result["near-expiry"].OK {
+		t.Errorf("near-expiry should not be present (near-expiry threshold)")
+	}
+	if result["missing"].OK {
+		t.Errorf("missing key should not be present")
+	}
+}
+
+func TestPeerCache_ServeHTTP_Has_MissingKeysParam(t *testing.T) {
+	localCache := New(60*time.Second, 1000)
+	defer localCache.Close()
+
+	pc := NewPeerCache(PeerConfig{SelfAddr: "localhost"})
+	defer pc.Close()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/_cache/has", nil)
+	pc.ServeHTTP(w, r, localCache)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+// TestPeerCache_Has_LargeFleet simulates a 25-peer fleet and verifies that
+// /_cache/has correctly discovers key presence across all peers concurrently.
+// This validates the O(P+K) batch approach scales to large fleets.
+func TestPeerCache_Has_LargeFleet(t *testing.T) {
+	const numPeers = 25
+	const numKeys = 4 // matches labelWarmupWindows cardinality
+
+	keys := make([]string, numKeys)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("labels:window-%d:key", i)
+	}
+
+	// Start N mock peer servers; each has a subset of the keys with varying TTLs.
+	type serverInfo struct {
+		server *httptest.Server
+		cache  *Cache
+		pc     *PeerCache
+	}
+	servers := make([]serverInfo, numPeers)
+	var hasCallCount atomic.Int64
+	for i := range servers {
+		c := New(60*time.Second, 1000)
+		pc := NewPeerCache(PeerConfig{SelfAddr: fmt.Sprintf("peer-%d", i)})
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/_cache/has" {
+				hasCallCount.Add(1)
+			}
+			pc.ServeHTTP(w, r, c)
+		}))
+		servers[i] = serverInfo{server: srv, cache: c, pc: pc}
+		t.Cleanup(func() { srv.Close(); c.Close(); pc.Close() })
+	}
+
+	// Only peers 0 and 1 have data; peer 1 has a higher TTL (fresher) for key[0].
+	servers[0].cache.SetWithTTL(keys[0], []byte("from-peer-0"), 30*time.Second)
+	servers[1].cache.SetWithTTL(keys[0], []byte("from-peer-1-fresh"), 50*time.Second) // higher TTL
+	servers[2].cache.SetWithTTL(keys[1], []byte("from-peer-2"), 40*time.Second)
+	// keys[2] and keys[3] are not present on any peer.
+
+	// Ask each peer server about all keys via /_cache/has.
+	// This simulates what fetchCacheKeysFromPeers does in phase 1.
+	type presence struct {
+		addr string
+		data map[string]PeerKeyPresence
+	}
+	results := make(chan presence, numPeers)
+	for i, si := range servers {
+		addr := si.server.Listener.Addr().String()
+		idx := i
+		_ = idx
+		go func(a string) {
+			joined := url.QueryEscape(strings.Join(keys, ","))
+			resp, err := http.Get(fmt.Sprintf("http://%s/_cache/has?keys=%s", a, joined))
+			if err != nil {
+				results <- presence{addr: a}
+				return
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			var p map[string]PeerKeyPresence
+			_ = json.Unmarshal(body, &p)
+			results <- presence{addr: a, data: p}
+		}(addr)
+	}
+
+	// Collect and find best peer per key (highest TTL wins).
+	bestTTL := make(map[string]int64)
+	bestPeer := make(map[string]string)
+	for range numPeers {
+		pr := <-results
+		for k, info := range pr.data {
+			if info.OK && info.TTLMs > bestTTL[k] {
+				bestTTL[k] = info.TTLMs
+				bestPeer[k] = pr.addr
+			}
+		}
+	}
+
+	if hasCallCount.Load() != numPeers {
+		t.Errorf("expected %d /_cache/has calls (one per peer), got %d", numPeers, hasCallCount.Load())
+	}
+
+	// key[0]: peer 1 should win (higher TTL ~50s > peer 0's ~30s).
+	if bestPeer[keys[0]] == "" {
+		t.Errorf("key[0] not found on any peer")
+	}
+	// Verify the winning peer has higher TTL than any other peer's TTL for this key.
+	if bestTTL[keys[0]] < 45000 {
+		t.Errorf("expected best TTL for key[0] ≥45s (peer-1 has 50s), got %dms", bestTTL[keys[0]])
+	}
+
+	// key[1]: should be peer 2.
+	if bestPeer[keys[1]] == "" {
+		t.Errorf("key[1] not found on any peer")
+	}
+
+	// key[2] and key[3]: no peer has them.
+	if bestPeer[keys[2]] != "" {
+		t.Errorf("key[2] should not be found, got peer %s", bestPeer[keys[2]])
+	}
+	if bestPeer[keys[3]] != "" {
+		t.Errorf("key[3] should not be found, got peer %s", bestPeer[keys[3]])
 	}
 }
 
@@ -1649,6 +1808,221 @@ func TestPeerCache_ReadAhead_BoundedFairPrefetch(t *testing.T) {
 	}
 }
 
+func TestDiscoverSRV(t *testing.T) {
+	t.Run("invalid name no underscore prefix", func(t *testing.T) {
+		_, err := discoverSRV("loki-vl-proxy.tcp.svc.cluster.local")
+		if err == nil {
+			t.Fatal("expected error for name without _ prefix")
+		}
+	})
+	t.Run("invalid name missing proto segment", func(t *testing.T) {
+		_, err := discoverSRV("_loki-vl-proxy.svc.cluster.local")
+		if err == nil {
+			t.Fatal("expected error for name with no proto segment")
+		}
+	})
+	t.Run("successful SRV lookup", func(t *testing.T) {
+		orig := lookupSRV
+		defer func() { lookupSRV = orig }()
+		lookupSRV = func(service, proto, name string) (string, []*net.SRV, error) {
+			if service != "loki-vl-proxy" || proto != "tcp" || name != "proxy.default.svc.cluster.local" {
+				return "", nil, fmt.Errorf("unexpected lookup: %s %s %s", service, proto, name)
+			}
+			return "", []*net.SRV{
+				{Target: "10.0.0.1.", Port: 3100},
+				{Target: "10.0.0.2.", Port: 3100},
+			}, nil
+		}
+		peers, err := discoverSRV("_loki-vl-proxy._tcp.proxy.default.svc.cluster.local")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(peers) != 2 {
+			t.Fatalf("want 2 peers, got %d: %v", len(peers), peers)
+		}
+		// Trailing dot must be stripped; addresses must be sorted.
+		if peers[0] != "10.0.0.1:3100" || peers[1] != "10.0.0.2:3100" {
+			t.Errorf("unexpected peers: %v", peers)
+		}
+	})
+	t.Run("SRV lookup failure propagated", func(t *testing.T) {
+		orig := lookupSRV
+		defer func() { lookupSRV = orig }()
+		lookupSRV = func(_, _, _ string) (string, []*net.SRV, error) {
+			return "", nil, fmt.Errorf("NXDOMAIN")
+		}
+		_, err := discoverSRV("_loki-vl-proxy._tcp.proxy.default.svc.cluster.local")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+	})
+}
+
+func TestParseHTTPPeers(t *testing.T) {
+	cases := []struct {
+		name  string
+		body  string
+		want  []string
+		isErr bool
+	}{
+		{
+			name: "simple string array",
+			body: `["10.0.0.1:3100","10.0.0.2:3100"]`,
+			want: []string{"10.0.0.1:3100", "10.0.0.2:3100"},
+		},
+		{
+			name: "object with peers key",
+			body: `{"peers":["10.0.0.1:3100","10.0.0.2:3100"]}`,
+			want: []string{"10.0.0.1:3100", "10.0.0.2:3100"},
+		},
+		{
+			name: "prometheus http sd format",
+			body: `[{"targets":["10.0.0.1:3100","10.0.0.2:3100"],"labels":{"env":"prod"}}]`,
+			want: []string{"10.0.0.1:3100", "10.0.0.2:3100"},
+		},
+		{
+			name: "consul catalog format",
+			body: `[{"ServiceAddress":"10.0.0.1","ServicePort":3100},{"ServiceAddress":"10.0.0.2","ServicePort":3100}]`,
+			want: []string{"10.0.0.1:3100", "10.0.0.2:3100"},
+		},
+		{
+			name: "consul catalog with fallback Address field",
+			body: `[{"Address":"10.0.0.3","ServicePort":3100}]`,
+			want: []string{"10.0.0.3:3100"},
+		},
+		{
+			name:  "unrecognised format",
+			body:  `{"unknown":"structure"}`,
+			isErr: true,
+		},
+		{
+			name:  "empty prometheus targets",
+			body:  `[{"targets":[]}]`,
+			isErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseHTTPPeers([]byte(tc.body))
+			if tc.isErr {
+				if err == nil {
+					t.Fatalf("expected error, got %v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("want %v, got %v", tc.want, got)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("[%d] want %q got %q", i, tc.want[i], got[i])
+				}
+			}
+		})
+	}
+}
+
+func TestDiscoverHTTPPeers_LiveServer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `["10.0.0.1:3100","10.0.0.2:3100"]`)
+	}))
+	defer srv.Close()
+
+	peers, err := discoverHTTPPeers(srv.URL, 2*time.Second)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(peers) != 2 || peers[0] != "10.0.0.1:3100" {
+		t.Errorf("unexpected peers: %v", peers)
+	}
+}
+
+func TestDiscoverHTTPPeers_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "service unavailable", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	_, err := discoverHTTPPeers(srv.URL, 2*time.Second)
+	if err == nil {
+		t.Fatal("expected error on non-200 response")
+	}
+}
+
+func TestPeerCache_ServeHTTP_Peers(t *testing.T) {
+	pc := &PeerCache{
+		selfAddr: "10.0.0.1:3100",
+		ring:     newHashRing(150),
+		done:     make(chan struct{}),
+	}
+	pc.peers = []string{"10.0.0.1:3100", "10.0.0.2:3100"}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/_cache/peers", nil)
+	req.URL.Path = "/_cache/peers"
+	pc.servePeers(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rr.Code)
+	}
+	var body map[string]interface{}
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body["self"] != "10.0.0.1:3100" {
+		t.Errorf("self = %v, want 10.0.0.1:3100", body["self"])
+	}
+	peers, _ := body["peers"].([]interface{})
+	if len(peers) != 2 {
+		t.Errorf("want 2 peers, got %v", peers)
+	}
+}
+
+func TestPeerCache_NewPeerCache_HTTPDiscovery(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `[{"targets":["%s"]}]`, "10.0.0.1:3100")
+	}))
+	defer srv.Close()
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "10.0.0.99:3100",
+		DiscoveryType: "http",
+		HTTPPeersURL:  srv.URL,
+		Port:          3100,
+	})
+	defer pc.Close()
+
+	// Discovery is seeded eagerly in NewPeerCache.
+	if pc.PeerCount() == 0 {
+		t.Error("expected at least one peer discovered via HTTP")
+	}
+}
+
+func TestPeerCache_NewPeerCache_SRVDiscovery(t *testing.T) {
+	orig := lookupSRV
+	defer func() { lookupSRV = orig }()
+	lookupSRV = func(service, proto, name string) (string, []*net.SRV, error) {
+		return "", []*net.SRV{{Target: "10.0.0.1.", Port: 3100}}, nil
+	}
+
+	pc := NewPeerCache(PeerConfig{
+		SelfAddr:      "10.0.0.99:3100",
+		DiscoveryType: "srv",
+		SRVName:       "_loki-vl-proxy._tcp.proxy.default.svc.cluster.local",
+		Port:          3100,
+	})
+	defer pc.Close()
+
+	if pc.PeerCount() == 0 {
+		t.Error("expected at least one peer discovered via SRV")
+	}
+}
+
 func TestParsePeerList(t *testing.T) {
 	tests := []struct {
 		input string
@@ -1665,4 +2039,100 @@ func TestParsePeerList(t *testing.T) {
 			t.Errorf("parsePeerList(%q) = %d, want %d", tt.input, len(got), tt.want)
 		}
 	}
+}
+
+func TestParseHTTPPeersWithAZ(t *testing.T) {
+	t.Run("prometheus sd with az label", func(t *testing.T) {
+		body := `[{"targets":["10.0.0.1:3100","10.0.0.2:3100"],"labels":{"az":"us-east-1a","env":"prod"}},` +
+			`{"targets":["10.0.0.3:3100"],"labels":{"az":"us-east-1b"}}]`
+		peers, azMap, err := parseHTTPPeersWithAZ([]byte(body))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(peers) != 3 {
+			t.Fatalf("want 3 peers, got %d: %v", len(peers), peers)
+		}
+		if azMap["10.0.0.1:3100"] != "us-east-1a" {
+			t.Errorf("10.0.0.1:3100 az want us-east-1a, got %q", azMap["10.0.0.1:3100"])
+		}
+		if azMap["10.0.0.2:3100"] != "us-east-1a" {
+			t.Errorf("10.0.0.2:3100 az want us-east-1a, got %q", azMap["10.0.0.2:3100"])
+		}
+		if azMap["10.0.0.3:3100"] != "us-east-1b" {
+			t.Errorf("10.0.0.3:3100 az want us-east-1b, got %q", azMap["10.0.0.3:3100"])
+		}
+	})
+	t.Run("prometheus sd with availability_zone label", func(t *testing.T) {
+		body := `[{"targets":["10.0.0.1:3100"],"labels":{"availability_zone":"eu-west-1c"}}]`
+		_, azMap, err := parseHTTPPeersWithAZ([]byte(body))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if azMap["10.0.0.1:3100"] != "eu-west-1c" {
+			t.Errorf("want eu-west-1c, got %q", azMap["10.0.0.1:3100"])
+		}
+	})
+	t.Run("prometheus sd without az labels returns nil azMap", func(t *testing.T) {
+		body := `[{"targets":["10.0.0.1:3100","10.0.0.2:3100"],"labels":{"env":"prod"}}]`
+		peers, azMap, err := parseHTTPPeersWithAZ([]byte(body))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(peers) != 2 {
+			t.Fatalf("want 2 peers, got %d", len(peers))
+		}
+		if len(azMap) != 0 {
+			t.Errorf("want nil/empty azMap, got %v", azMap)
+		}
+	})
+	t.Run("simple array has no az map", func(t *testing.T) {
+		body := `["10.0.0.1:3100","10.0.0.2:3100"]`
+		_, azMap, err := parseHTTPPeersWithAZ([]byte(body))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(azMap) != 0 {
+			t.Errorf("want nil azMap for simple array format, got %v", azMap)
+		}
+	})
+}
+
+func TestPeerCache_AZMethods(t *testing.T) {
+	t.Run("nil cache returns empty strings", func(t *testing.T) {
+		var pc *PeerCache
+		if got := pc.SelfAZ(); got != "" {
+			t.Errorf("nil.SelfAZ() = %q, want empty", got)
+		}
+		if got := pc.PeerAZ("10.0.0.1:3100"); got != "" {
+			t.Errorf("nil.PeerAZ() = %q, want empty", got)
+		}
+	})
+	t.Run("SelfAZ returns configured value", func(t *testing.T) {
+		pc := &PeerCache{selfAZ: "us-east-1a"}
+		if got := pc.SelfAZ(); got != "us-east-1a" {
+			t.Errorf("SelfAZ() = %q, want us-east-1a", got)
+		}
+	})
+	t.Run("PeerAZ returns stored value", func(t *testing.T) {
+		pc := &PeerCache{}
+		pc.peerAZs.Store("10.0.0.2:3100", "us-east-1b")
+		if got := pc.PeerAZ("10.0.0.2:3100"); got != "us-east-1b" {
+			t.Errorf("PeerAZ() = %q, want us-east-1b", got)
+		}
+		if got := pc.PeerAZ("10.0.0.3:3100"); got != "" {
+			t.Errorf("PeerAZ(unknown) = %q, want empty", got)
+		}
+	})
+	t.Run("NewPeerCache propagates SelfAZ", func(t *testing.T) {
+		pc := NewPeerCache(PeerConfig{
+			SelfAddr:      "10.0.0.1:3100",
+			SelfAZ:        "  ap-southeast-1a  ",
+			DiscoveryType: "static",
+			StaticPeers:   "10.0.0.2:3100",
+		})
+		defer pc.Close()
+		if got := pc.SelfAZ(); got != "ap-southeast-1a" {
+			t.Errorf("SelfAZ() = %q, want ap-southeast-1a (trimmed)", got)
+		}
+	})
 }

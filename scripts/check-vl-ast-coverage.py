@@ -14,17 +14,15 @@ Exit codes:
     1 — gaps found (new upstream constructs not in our registry)
     2 — API error (rate limit, network failure)
 """
+import http.client
 import json
 import re
 import sys
-import urllib.request
-import urllib.error
 from pathlib import Path
 
-VL_API_URL = (
-    "https://api.github.com/repos/VictoriaMetrics/VictoriaLogs"
-    "/contents/lib/logstorage"
-)
+# Hardcoded HTTPS endpoint — no user-controlled URL component.
+VL_API_HOST = "api.github.com"
+VL_API_PATH = "/repos/VictoriaMetrics/VictoriaLogs/contents/lib/logstorage"
 REGISTRY_PATH = Path(__file__).parent.parent / "docs" / "vl-ast-coverage.json"
 
 CATEGORY_PATTERNS = {
@@ -52,22 +50,29 @@ IGNORED = {
 
 
 def fetch_file_list(token: str | None) -> list[str]:
-    req = urllib.request.Request(VL_API_URL)
-    req.add_header("Accept", "application/vnd.github+json")
-    req.add_header("X-GitHub-Api-Version", "2022-11-28")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "loki-vl-proxy-coverage-check",
+    }
     if token:
-        req.add_header("Authorization", f"Bearer {token}")
+        headers["Authorization"] = f"Bearer {token}"
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-    except urllib.error.HTTPError as e:
-        print(f"ERROR: GitHub API returned {e.code}: {e.reason}", file=sys.stderr)
-        if e.code == 403:
-            print("Tip: set GITHUB_TOKEN env var to avoid rate limiting", file=sys.stderr)
+        conn = http.client.HTTPSConnection(VL_API_HOST, timeout=15)
+        conn.request("GET", VL_API_PATH, headers=headers)
+        resp = conn.getresponse()
+        body = resp.read()
+        if resp.status != 200:
+            print(f"ERROR: GitHub API returned {resp.status}: {resp.reason}", file=sys.stderr)
+            if resp.status == 403:
+                print("Tip: set GITHUB_TOKEN env var to avoid rate limiting", file=sys.stderr)
+            sys.exit(2)
+        data = json.loads(body)
+    except OSError as e:
+        print(f"ERROR: Network failure: {e}", file=sys.stderr)
         sys.exit(2)
-    except urllib.error.URLError as e:
-        print(f"ERROR: Network failure: {e.reason}", file=sys.stderr)
-        sys.exit(2)
+    finally:
+        conn.close()
     return [entry["name"] for entry in data if entry["type"] == "file"]
 
 

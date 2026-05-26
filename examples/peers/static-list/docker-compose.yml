@@ -1,0 +1,115 @@
+# loki-vl-proxy — peer fleet with static discovery
+#
+# Three proxy instances sharing a fixed peer list.  No external discovery
+# service needed — each proxy knows all peers at startup.
+#
+# Usage:
+#   docker compose up -d
+#   curl http://localhost:3100/_cache/peers
+#   curl http://localhost:3101/_cache/peers
+#   curl http://localhost:3102/_cache/peers
+
+services:
+
+  # ── VictoriaLogs ───────────────────────────────────────────────────────────
+  victorialogs:
+    image: victoriametrics/victoria-logs:latest
+    command:
+      - -retentionPeriod=7d
+      - -storageDataPath=/vlogs
+    volumes:
+      - vlogs-data:/vlogs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9428/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── proxy-a ────────────────────────────────────────────────────────────────
+  proxy-a:
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    ports:
+      - "3100:3100"
+    command:
+      - -backend=http://victorialogs:9428
+      - -label-style=underscores
+      - -metadata-field-mode=translated
+      - -emit-structured-metadata=true
+      - -patterns-enabled=true
+      - -cache-ttl=60s
+      - -cache-max=5000
+      # Peer cache — static discovery
+      - -peer-self=proxy-a:3100
+      - -peer-discovery=static
+      - -peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100
+      - -peer-auth-token=fleet-secret
+      - -log-level=info
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── proxy-b ────────────────────────────────────────────────────────────────
+  proxy-b:
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    ports:
+      - "3101:3100"
+    command:
+      - -backend=http://victorialogs:9428
+      - -label-style=underscores
+      - -metadata-field-mode=translated
+      - -emit-structured-metadata=true
+      - -patterns-enabled=true
+      - -cache-ttl=60s
+      - -cache-max=5000
+      - -peer-self=proxy-b:3100
+      - -peer-discovery=static
+      - -peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100
+      - -peer-auth-token=fleet-secret
+      - -log-level=info
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── proxy-c ────────────────────────────────────────────────────────────────
+  proxy-c:
+    image: ghcr.io/reliablyobserve/loki-vl-proxy:latest
+    ports:
+      - "3102:3100"
+    command:
+      - -backend=http://victorialogs:9428
+      - -label-style=underscores
+      - -metadata-field-mode=translated
+      - -emit-structured-metadata=true
+      - -patterns-enabled=true
+      - -cache-ttl=60s
+      - -cache-max=5000
+      - -peer-self=proxy-c:3100
+      - -peer-discovery=static
+      - -peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100
+      - -peer-auth-token=fleet-secret
+      - -log-level=info
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3100/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  vlogs-data:

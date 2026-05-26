@@ -113,16 +113,66 @@ func computeCanonicalReadCacheKey(endpoint, orgID string, r *http.Request, extra
 	return strings.Join(parts, ":")
 }
 
+// bucketMetadataTime rounds a nanosecond timestamp down to the nearest bucket
+// boundary, matching the split-interval cache-key strategy used by Loki's
+// queryrange middleware. This prevents every dashboard reload at a slightly
+// different time from generating a new cache key: Grafana already rounds to
+// 5-minute intervals at the browser level; we mirror that for label/value
+// metadata so the proxy response cache achieves a high hit rate.
+//
+// Bucket sizes (anchored to the interval between start and end):
+//   - interval ≤  6h → 5-minute buckets  (matches Grafana's browser rounding)
+//   - interval ≤ 48h → 1-hour  buckets
+//   - interval  > 48h → 6-hour  buckets
+func bucketMetadataTime(startNs, endNs int64) (bucketedStartNs, bucketedEndNs int64) {
+	const (
+		ns5m  = int64(5 * time.Minute)
+		ns1h  = int64(time.Hour)
+		ns6h  = int64(6 * time.Hour)
+		ns48h = int64(48 * time.Hour)
+	)
+	interval := endNs - startNs
+	var bucket int64
+	switch {
+	case interval <= ns6h*1:
+		bucket = ns5m
+	case interval <= ns48h:
+		bucket = ns1h
+	default:
+		bucket = ns6h
+	}
+	bucketedStartNs = (startNs / bucket) * bucket
+	bucketedEndNs = (endNs / bucket) * bucket
+	return bucketedStartNs, bucketedEndNs
+}
+
 func normalizeReadCacheParams(endpoint string, params url.Values) {
 	if params == nil {
 		return
 	}
-	if start := strings.TrimSpace(firstNonEmpty(params.Get("start"), params.Get("from"))); start != "" {
-		params.Set("start", start)
+	startRaw := strings.TrimSpace(firstNonEmpty(params.Get("start"), params.Get("from")))
+	endRaw := strings.TrimSpace(firstNonEmpty(params.Get("end"), params.Get("to")))
+
+	// For label/value metadata endpoints, bucket start/end to reduce cache misses
+	// from the sliding dashboard time window. Raw query and instant endpoints are
+	// left unmodified — only metadata responses benefit from time-bucketed keys.
+	switch endpoint {
+	case "labels", "label_values", "detected_fields", "detected_field_values", "detected_labels":
+		if startNs, ok1 := parseLokiTimeToUnixNano(startRaw); ok1 {
+			if endNs, ok2 := parseLokiTimeToUnixNano(endRaw); ok2 && endNs > startNs {
+				bs, be := bucketMetadataTime(startNs, endNs)
+				startRaw = strconv.FormatInt(bs, 10)
+				endRaw = strconv.FormatInt(be, 10)
+			}
+		}
+	}
+
+	if startRaw != "" {
+		params.Set("start", startRaw)
 	}
 	params.Del("from")
-	if end := strings.TrimSpace(firstNonEmpty(params.Get("end"), params.Get("to"))); end != "" {
-		params.Set("end", end)
+	if endRaw != "" {
+		params.Set("end", endRaw)
 	}
 	params.Del("to")
 

@@ -1,0 +1,26 @@
+# Peer cache: SRV discovery via k8s StatefulSet headless service.
+# SRV records embed port numbers — no separate port flag needed.
+# Same readiness gating as DNS mode: only ready pods appear in SRV records.
+# The chart creates the headless Service and auto-derives the SRV name.
+replicaCount: 3
+
+workload:
+  kind: StatefulSet
+
+extraArgs:
+  backend: "http://victorialogs:9428"
+  peer-auth-token: "replace-with-shared-secret"
+  warmup-max-jitter: "10s"
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+peerCache:
+  enabled: true
+  discovery: srv
+  # srvName: ""  # empty = auto-derive from headless service:
+  #              # _loki-vl-proxy._tcp.<svc>.<namespace>.svc.cluster.local
+  #
+  # Override for Consul DNS:
+  # srvName: "_http._tcp.loki-vl-proxy.service.consul"

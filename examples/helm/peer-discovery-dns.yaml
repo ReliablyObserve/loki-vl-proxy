@@ -1,0 +1,21 @@
+# Peer cache: DNS discovery via k8s headless service (default, recommended)
+# Only ready pods appear in DNS — unhealthy pods are automatically excluded.
+# The chart creates the headless Service automatically.
+replicaCount: 3
+
+workload:
+  kind: StatefulSet
+
+extraArgs:
+  backend: "http://victorialogs:9428"
+  peer-auth-token: "replace-with-shared-secret"
+  warmup-max-jitter: "10s"
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+peerCache:
+  enabled: true
+  discovery: dns
+  # serviceName: ""  # empty = reuse StatefulSet headless service name

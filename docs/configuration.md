@@ -761,9 +761,12 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-peer-self` | — | — | This instance address used for peer-cache ownership and fetches |
-| `-peer-discovery` | — | — | Peer discovery mode: `dns` or `static` |
-| `-peer-dns` | — | — | Headless service DNS name used when `-peer-discovery=dns` |
-| `-peer-static` | — | — | Comma-separated peer list used when `-peer-discovery=static` |
+| `-peer-self-az` | — | — | This instance's availability zone (e.g. `us-east-1a`). When set, same-AZ peers are preferred when fetching keys at startup and warmup to reduce cross-AZ traffic. Falls back to any peer with fresh data when no same-AZ peer has the key. Helm chart can inject this automatically from the pod's topology label via the Kubernetes Downward API (see `peerCache.topologyLabel`). |
+| `-peer-discovery` | — | — | Peer discovery mode: `dns`, `srv`, `http`, or `static` |
+| `-peer-dns` | — | — | Headless service DNS name used when `-peer-discovery=dns` (e.g., `proxy-headless.ns.svc.cluster.local`) |
+| `-peer-srv` | — | — | Full SRV record name used when `-peer-discovery=srv` (e.g., `_loki-vl-proxy._tcp.proxy-headless.ns.svc.cluster.local`). Port is read from the SRV record — no separate port flag needed. |
+| `-peer-http-url` | — | — | URL returning a JSON peer list when `-peer-discovery=http`. Supported formats: simple array, `{"peers":[...]}`, Prometheus HTTP SD, Consul catalog. The URL is polled every `DiscoveryInterval`. |
+| `-peer-static` | — | — | Comma-separated peer list used when `-peer-discovery=static` (e.g., `10.0.0.1:3100,10.0.0.2:3100`) |
 | `-peer-timeout` | — | `2s` | Timeout applied to peer-cache owner fetches (`/_cache/get`) before falling back locally |
 | `-peer-auth-token` | — | — | Shared token used on `/_cache/get` and `/_cache/set` peer-cache requests. Strongly recommended for fleets so peer auth does not depend only on transient discovery/IP membership during startup. |
 | `-peer-write-through` | — | `true` | Push eligible non-owner cache writes to the owner peer (`/_cache/set`) to keep owner shards warm under skewed traffic |
@@ -779,20 +782,27 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 | `-peer-hot-read-ahead-max-object-bytes` | — | `262144` | Max object size eligible for read-ahead prefetch |
 | `-peer-hot-read-ahead-tenant-fair-share` | — | `50` | Per-tenant first-pass selection cap (% of key budget) |
 | `-peer-hot-read-ahead-error-backoff` | — | `15s` | Base cooldown after read-ahead/index pull failures |
+| `-warmup-max-jitter` | — | `0` (disabled) | Maximum random delay before label cache warmup starts on startup. Spreads fleet instances across a random window so they don't all hit VL simultaneously. Recommended: `5s` for ≤5 pods, `10s` for ≤15 pods, `20s` for ≤30 pods, `30s` for larger fleets. |
 
 Peer-cache notes:
 
-- the Helm chart manages `-peer-self`, `-peer-discovery`, and `-peer-dns` automatically when `peerCache.enabled=true`
+- the Helm chart manages `-peer-self`, `-peer-discovery`, and `-peer-dns` automatically when `peerCache.enabled=true`; for `srv` or `http` modes use `extraArgs`
+- AZ-aware peer selection (`-peer-self-az`) prefers same-AZ peers for key fetches; Helm auto-injects it from `metadata.labels['topology.kubernetes.io/zone']` via Downward API when `peerCache.topologyLabel` is set (default). Set `podLabels: {topology.kubernetes.io/zone: <zone>}` or rely on a platform webhook/node label syncer to populate the pod label.
+- for `http` discovery with a Prometheus HTTP SD endpoint, per-peer AZ is read automatically from `labels.az` or `labels.availability_zone` in the SD response — no extra flag required
+- `GET /_cache/peers` returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful to verify discovery is working
 - peer-cache fetches preserve owner TTL and can compress larger `/_cache/get` responses with `zstd` or `gzip`
 - `loki_vl_proxy_peer_cache_error_reason_total{reason=...}` breaks opaque peer fetch failures into low-cardinality reasons like `timeout`, `transport`, `status_502`, `body_read`, and `decode`
 - with `-peer-write-through=true` (default), non-owner writes with TTL above threshold are pushed to owners and stored locally as short-lived shadows to reduce hot-pod disk skew
 - set `-peer-auth-token` fleet-wide whenever peer cache is enabled; it avoids transient startup or discovery-flap `403` responses caused by IP-membership-only peer auth
 - when `-peer-auth-token` is set, all peers must share the same token or peer-cache reuse will fail closed
+- `/_cache/has?keys=k1,k2,...` is a batch key-presence endpoint (metadata only, no value data transferred) used internally during startup warmup; callers can also use it to pick the freshest peer for a given set of keys before calling `/_cache/get`
+- startup warmup uses a two-phase peer-first strategy: one `/_cache/has` per peer to discover who has which label windows, then one `/_cache/get` per covered window from the freshest peer — only the first instance per window hits VL; see [Fleet Cache Architecture](fleet-cache.md#startup-coordination-and-fleet-restart-safety)
 
 ### Current Tuning For Higher Fleet Reuse
 
 Use these knobs first:
 
+- set `-warmup-max-jitter` for any fleet with ≥3 pods to prevent thundering herd on rolling restart (see sizing table in [Fleet Cache Architecture](fleet-cache.md#layer-1-startup-jitter))
 - keep `-peer-write-through=true` (default) to warm owner shards under skewed traffic
 - tune `-peer-write-through-min-ttl` so only stable/hot entries are replicated
 - keep `-response-compression=gzip` for explicit Loki/Grafana-safe frontend behavior, or `auto` if you want the same gzip behavior through the legacy default

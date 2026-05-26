@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `GET /_cache/has?keys=k1,k2,...` peer endpoint: lightweight batch key-presence check returning JSON `{key: {ok, ttl_ms}}` per key with no value data transferred — enables informed peer selection based on cache freshness
+- `GET /_cache/peers` diagnostic endpoint: returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful for verifying discovery is working correctly without inspecting logs
+- `srv` peer discovery mode (`-peer-discovery=srv -peer-srv=_service._tcp.domain`): resolves peers from DNS SRV records which embed port numbers. Compatible with Kubernetes StatefulSet headless services, Consul DNS, CoreDNS, and any SRV-capable resolver. Inherits readiness gating from the DNS layer.
+- `http` peer discovery mode (`-peer-discovery=http -peer-http-url=...`): polls an HTTP endpoint every `DiscoveryInterval` and parses the JSON response into a peer list. Auto-detects four response formats: simple string array, `{"peers":[...]}`, Prometheus HTTP SD (`[{"targets":[...]}]`), and Consul catalog (`[{"ServiceAddress":"...","ServicePort":N}]`). Works with Consul, Nomad, and custom registries outside Kubernetes.
+
+### Performance
+- Label warmup on fleet restart is now two-phase: (1) one `/_cache/has` request per peer covering all window keys (metadata only, no data transferred); (2) targeted `/_cache/get` from the peer with the highest remaining TTL per key. For a 9-peer fleet with 4 windows this reduces peer network round-trips from up to 36 to at most 13 while routing each fetch to the freshest peer
+- `-warmup-max-jitter` flag spreads fleet startup warmup across a configurable random window; combined with 500ms inter-window sleep this prevents all instances from issuing simultaneous wide-range VL queries on rolling restarts
+- Peer-first warmup: instances that start later pull label windows from peers that already warmed them, so only the first instance to reach each window hits VL
+- Label-values requests now use `field_names` (0.25 s) instead of `stream_field_names` (7–8 s) for VL field candidate resolution — ~30× faster; `stream_field_names` is retained only for the labels-keys, volume, and target-label paths where stream-index semantics are required
+- Label-values requests already used `field_values` (0.35 s) instead of `stream_field_values` (7–9 s) — ~19× faster
+- `field_names` backend calls for candidate resolution are now capped to the most recent 1 h of the requested range; wide dashboard ranges (24 h, 7 d) no longer trigger full-range field-name scans
+- `field_values` backend calls are capped to the most recent 6 h; the first label-values load for wide time ranges now has bounded latency regardless of interval size
+- Response cache keys for label/metadata endpoints bucket timestamps into 5-min/1-h/6-h intervals (matching Grafana's browser-side rounding and Loki's split-interval queryrange middleware) — repeated dashboard refreshes at slightly shifted timestamps now share a single cache entry
+- `capMetadataTimeRange` now also buckets the params sent to VictoriaLogs so VL receives identical timestamp pairs from all equivalent queries
+- Proxy startup pre-populates the label cache for common Grafana time presets (Last 1h, 6h, 24h, 7d) via a background goroutine, eliminating cold-start latency on first dashboard load
+- Label cache entries are persisted to disk (shared read cache) and reloaded on restart, giving fast warm-start from the last known state within TTL
+- Progressive two-stage label fetch: the synchronous path caps VL to 1h for immediate response; a background goroutine fetches the full requested range (up to 7d) so subsequent requests have complete historical label data
+- Keep-warm loop runs every 90s and refreshes any label cache window with <60s TTL remaining, ensuring labels stay hot even with zero user queries
+
 ## [1.43.0] - 2026-05-25
 
 ### Fixed

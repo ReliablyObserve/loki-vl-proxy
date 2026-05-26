@@ -849,6 +849,29 @@ jobs:
           name: stress-results
           path: stress-results.txt
 
+  memory-leak-tests:
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.3"
+          cache: true
+
+      - name: Memory-leak tests (bounded heap growth + race detector)
+        run: |
+          go test -tags=memleak -race -run 'TestMemLeak_' -timeout=10m -v ./internal/proxy/ \
+            | tee memleak-results.txt
+
+      - name: Upload memory-leak test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: memleak-results
+          path: memleak-results.txt
+
   helm:
     runs-on: ubuntu-latest
     steps:

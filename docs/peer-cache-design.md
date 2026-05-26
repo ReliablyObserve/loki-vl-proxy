@@ -45,9 +45,9 @@ flowchart TD
     LB -->|random| PB["Proxy B"]
     LB -->|random| PC["Proxy C"]
 
-    PA <-->|"/_cache/get"| PB
-    PA <-->|"/_cache/get"| PC
-    PB <-->|"/_cache/get"| PC
+    PA <-->|"/_cache/get\n/_cache/has"| PB
+    PA <-->|"/_cache/get\n/_cache/has"| PC
+    PB <-->|"/_cache/get\n/_cache/has"| PC
 
     PA --> VL["VictoriaLogs"]
     PB --> VL
@@ -75,7 +75,7 @@ flowchart TD
   -peer-static=10.0.0.1:3100,10.0.0.2:3100,10.0.0.3:3100
 ```
 
-For full details including request flow diagrams, TTL preservation, circuit breaker states, and performance characteristics, see [Fleet Cache Architecture](fleet-cache.md).
+For full details including request flow diagrams, TTL preservation, circuit breaker states, performance characteristics, and large-fleet startup coordination, see [Fleet Cache Architecture](fleet-cache.md).
 
 Current implementation notes:
 
@@ -83,3 +83,5 @@ Current implementation notes:
 - larger `/_cache/get` responses can be `zstd`- or `gzip`-compressed between peers
 - `-peer-write-through=true` is enabled by default; non-owner writes above `-peer-write-through-min-ttl` are pushed to owners
 - `-peer-auth-token` can require a shared token on peer fetch and write-through endpoints when the fleet crosses a broader network boundary
+- `/_cache/has?keys=k1,k2,...` is a lightweight batch presence endpoint (no value data transferred) used by the startup warmup to discover which peer has the freshest copy of each label window before fetching; see [Startup Coordination](fleet-cache.md#startup-coordination-and-fleet-restart-safety)
+- `-warmup-max-jitter` spreads fleet startup queries across a configurable window to prevent thundering herd on rolling restarts

@@ -57,22 +57,41 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 }
 
 func TestContract_Labels_PassesTimeRange(t *testing.T) {
-	var receivedStart, receivedEnd string
+	// Input: start=1609459200 (seconds), end=1609545600 (seconds) → 24h interval.
+	// After normalisation and the 1h cap+bucketing applied by fetchStreamFieldNamesCached:
+	//   cappedStart = endNs - 1h = 1609545600e9 - 3600e9 = 1609542000e9 (already on 5-min boundary)
+	//   bucketedEnd  = floor(1609545600e9 / 300e9) * 300e9 = 1609545600e9 (already on 5-min boundary)
+	//
+	// Note: the handler also fires a background full-range refresh goroutine (because the
+	// 24h input range exceeds the 1h synchronous cap), which sends the raw uncapped params
+	// to VL. We capture ALL calls and verify that AT LEAST ONE used the capped params.
+	const (
+		wantStart = "1609542000000000000"
+		wantEnd   = "1609545600000000000"
+	)
+	type call struct{ start, end string }
+	var mu sync.Mutex
+	var calls []call
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedStart = r.URL.Query().Get("start")
-		receivedEnd = r.URL.Query().Get("end")
+		mu.Lock()
+		calls = append(calls, call{r.URL.Query().Get("start"), r.URL.Query().Get("end")})
+		mu.Unlock()
 		writeVLFieldNames(w, nil)
 	}))
 	defer vlBackend.Close()
 
 	doGet(t, vlBackend.URL, "/loki/api/v1/labels?start=1609459200&end=1609545600")
 
-	if receivedStart != "1609459200" {
-		t.Errorf("expected start=1609459200, got %q", receivedStart)
+	// The synchronous path must have made at least one capped+bucketed VL call.
+	// (The background full-range refresh will also appear with uncapped params — that is correct.)
+	mu.Lock()
+	defer mu.Unlock()
+	for _, c := range calls {
+		if c.start == wantStart && c.end == wantEnd {
+			return // pass
+		}
 	}
-	if receivedEnd != "1609545600" {
-		t.Errorf("expected end=1609545600, got %q", receivedEnd)
-	}
+	t.Errorf("no VL call with capped start=%s end=%s; all calls: %v", wantStart, wantEnd, calls)
 }
 
 func TestContract_Labels_EmptyResult(t *testing.T) {
@@ -199,22 +218,23 @@ func TestContract_Labels_FallsBackToGenericFieldNames(t *testing.T) {
 	}
 }
 
-func TestContract_LabelValues_PrefersStreamFieldValues(t *testing.T) {
-	var streamNameCalls, streamValueCalls, genericValueCalls int
+func TestContract_LabelValues_UsesFieldValues(t *testing.T) {
+	// Candidate resolution uses field_names (fast, 0.25s). Values are fetched via
+	// stream_field_values so stream-indexed labels (cluster, namespace, app) are covered.
+	var fieldNameCalls, streamValueCalls int
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			fieldNameCalls++
+			writeVLFieldNames(w, []fieldHit{{"k8s.namespace.name", 1}, {"app", 1}})
 		case "/select/logsql/stream_field_names":
-			streamNameCalls++
 			writeVLFieldNames(w, []fieldHit{{"k8s.namespace.name", 1}, {"app", 1}})
 		case "/select/logsql/stream_field_values":
 			streamValueCalls++
 			if got := r.URL.Query().Get("field"); got != "k8s.namespace.name" {
-				t.Fatalf("expected stream field k8s.namespace.name, got %q", got)
+				t.Fatalf("expected field k8s.namespace.name, got %q", got)
 			}
 			writeVLFieldValues(w, []fieldHit{{"prod", 1}})
-		case "/select/logsql/field_values":
-			genericValueCalls++
-			writeVLFieldValues(w, []fieldHit{{"wrong", 1}})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -239,8 +259,8 @@ func TestContract_LabelValues_PrefersStreamFieldValues(t *testing.T) {
 	mustUnmarshal(t, w.Body.Bytes(), &resp)
 	data := assertDataIsStringArray(t, resp)
 	assertContains(t, data, "prod")
-	if streamNameCalls != 1 || streamValueCalls != 1 || genericValueCalls != 0 {
-		t.Fatalf("expected stream metadata path only, got names=%d streamValues=%d genericValues=%d", streamNameCalls, streamValueCalls, genericValueCalls)
+	if fieldNameCalls != 1 || streamValueCalls != 1 {
+		t.Fatalf("expected field_names + stream_field_values path, got names=%d streamValues=%d", fieldNameCalls, streamValueCalls)
 	}
 }
 
@@ -248,6 +268,8 @@ func TestContract_LabelValues_ForwardsSubstringFilter_OnV149Plus(t *testing.T) {
 	var receivedQ, receivedFilter string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			writeVLFieldNames(w, []fieldHit{{"app", 1}})
 		case "/select/logsql/stream_field_names":
 			writeVLFieldNames(w, []fieldHit{{"app", 1}})
 		case "/select/logsql/stream_field_values":
@@ -281,9 +303,13 @@ func TestContract_LabelValues_DoesNotForwardSubstringFilter_OnV148(t *testing.T)
 	var receivedQ, receivedFilter string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			writeVLFieldNames(w, []fieldHit{{"app", 1}})
 		case "/select/logsql/stream_field_names":
 			writeVLFieldNames(w, []fieldHit{{"app", 1}})
 		case "/select/logsql/stream_field_values":
+			// v1.48 supports stream_field_values (stream endpoints available since v1.30)
+			// but NOT the substring filter=substring param (added in v1.49).
 			receivedQ = r.URL.Query().Get("q")
 			receivedFilter = r.URL.Query().Get("filter")
 			writeVLFieldValues(w, []fieldHit{{"argocd", 1}})
@@ -313,6 +339,8 @@ func TestContract_LabelValues_DoesNotForwardSubstringFilter_OnV148(t *testing.T)
 func TestContract_LabelValues_JoinsAmbiguousStreamAliases(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			writeVLFieldNames(w, []fieldHit{{"foo.bar", 1}, {"foo-bar", 1}})
 		case "/select/logsql/stream_field_names":
 			writeVLFieldNames(w, []fieldHit{{"foo.bar", 1}, {"foo-bar", 1}})
 		case "/select/logsql/stream_field_values":
@@ -3270,25 +3298,89 @@ func TestCache_LabelsHitOnRepeat(t *testing.T) {
 
 	p := newTestProxy(t, vlBackend.URL)
 
+	// Use realistic Unix nanosecond timestamps (≥ 1e18) so parseLokiTimeToUnixNano
+	// treats them as nanoseconds. Bucket size for a 1h interval is 5 minutes = 300e9 ns.
+	//
+	// Bucket boundaries for start=1700000000000000000:
+	//   floor(1700000000000000000 / 300000000000) = 5666666666 → bucket [5666666666*300e9, ...)
+	// A shift of 1ms (1e6 ns) stays in the same bucket: floor(…001000000 / 300e9) = same.
+	// A shift of +5 min (300e9 ns) moves to the next bucket: floor(…300000000000 / 300e9) ≠.
+	const (
+		// req1: T, req2: T+1ms (same 5-min bucket), req3: T+5min (next bucket)
+		req1 = "start=1700000000000000000&end=1700003600000000000"
+		req2 = "start=1700000000001000000&end=1700003600001000000"
+		req3 = "start=1700000300000000000&end=1700003900000000000"
+	)
+
 	// First call — miss
 	w1 := httptest.NewRecorder()
-	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?start=1&end=2", nil))
+	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req1, nil))
 	if callCount != 1 {
 		t.Fatalf("expected 1 backend call, got %d", callCount)
 	}
 
-	// Second call — hit
+	// Second call — same bucket → hit (time-bucketed cache key collapses sliding window)
 	w2 := httptest.NewRecorder()
-	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?start=1&end=2", nil))
+	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req2, nil))
 	if callCount != 1 {
 		t.Errorf("expected cache hit (still 1 call), got %d", callCount)
 	}
 
-	// Different params — miss
+	// Different 5-minute bucket — miss
 	w3 := httptest.NewRecorder()
-	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?start=3&end=4", nil))
+	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req3, nil))
 	if callCount != 2 {
-		t.Errorf("expected 2 calls after different params, got %d", callCount)
+		t.Errorf("expected 2 calls after different bucket params, got %d", callCount)
+	}
+}
+
+// TestCache_LabelsTimeBucketCollapsesSlidingWindow verifies that requests from
+// the same 5-minute time bucket share one cache key, matching how Grafana's
+// LanguageProvider already rounds browser-side and how Loki's queryrange
+// middleware buckets to split-interval. Without bucketing, every dashboard
+// reload at a new timestamp would miss even if the time range is essentially
+// identical.
+func TestCache_LabelsTimeBucketCollapsesSlidingWindow(t *testing.T) {
+	callCount := 0
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		writeVLFieldNames(w, []fieldHit{{"app", 1}})
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	// Use realistic Unix nanosecond timestamps (≥ 1e18) so parseLokiTimeToUnixNano
+	// treats them as nanoseconds (not seconds/ms). 5-min bucket = 300_000_000_000 ns.
+	//
+	// Base: T = 1700000000000000000 (epoch ns)
+	// req1: [T, T+1h] — 1h interval → 5-min buckets
+	// req2: [T+1s, T+1h+1s] — same 5-min bucket as req1 → must hit cache
+	// req3: [T+5m, T+1h+5m] — next 5-min bucket → must miss
+	const (
+		req1 = "start=1700000000000000000&end=1700003600000000000"
+		req2 = "start=1700000001000000000&end=1700003601000000000"
+		req3 = "start=1700000300000000000&end=1700003900000000000"
+	)
+
+	w1 := httptest.NewRecorder()
+	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req1, nil))
+	if callCount != 1 {
+		t.Fatalf("first call: expected 1 backend call, got %d", callCount)
+	}
+
+	// Shifted by 1 second inside the same bucket — must hit cache.
+	w2 := httptest.NewRecorder()
+	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req2, nil))
+	if callCount != 1 {
+		t.Errorf("same-bucket shift: expected cache hit (1 call), got %d — time-bucketing must collapse sliding window", callCount)
+	}
+
+	// Next 5-minute bucket — must miss.
+	w3 := httptest.NewRecorder()
+	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req3, nil))
+	if callCount != 2 {
+		t.Errorf("next bucket: expected 2 calls (miss), got %d", callCount)
 	}
 }
 
@@ -3305,13 +3397,13 @@ func TestCache_LabelValuesHitOnRepeat(t *testing.T) {
 	w1 := httptest.NewRecorder()
 	p.handleLabelValues(w1, httptest.NewRequest("GET", "/loki/api/v1/label/app/values?start=1&end=2", nil))
 	if callCount != 2 {
-		t.Fatalf("expected metadata lookup plus value lookup on miss, got %d calls", callCount)
+		t.Fatalf("expected field_names + stream_field_values on miss, got %d calls", callCount)
 	}
 
 	w2 := httptest.NewRecorder()
 	p.handleLabelValues(w2, httptest.NewRequest("GET", "/loki/api/v1/label/app/values?start=1&end=2", nil))
 	if callCount != 2 {
-		t.Errorf("expected cache hit, got %d calls", callCount)
+		t.Errorf("expected cache hit (no new VL calls), got %d total calls", callCount)
 	}
 }
 
@@ -3555,6 +3647,7 @@ func newTestProxy(t *testing.T, backendURL string) *Proxy {
 	if err != nil {
 		t.Fatalf("failed to create proxy: %v", err)
 	}
+	t.Cleanup(func() { _ = p.Shutdown(context.Background()) })
 	return p
 }
 

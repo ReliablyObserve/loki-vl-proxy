@@ -65,9 +65,12 @@ func TestLabelSurface_LabelValuesResolveCustomAliasFromConfiguredExtras(t *testi
 	var requestedField string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
+		case "/select/logsql/field_names":
 			http.Error(w, "unsupported", http.StatusNotFound)
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"host.id","hits":1}]}`))
+		case "/select/logsql/stream_field_values":
 			requestedField = r.URL.Query().Get("field")
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"i-host-1","hits":1}]}`))
@@ -112,9 +115,12 @@ func TestLabelSurface_LabelValuesIndexedBrowseUsesHotsetAndOffsetWithoutBackendR
 	fieldValuesCalls := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
+		case "/select/logsql/field_names":
 			http.Error(w, "unsupported", http.StatusNotFound)
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":1}]}`))
+		case "/select/logsql/stream_field_values":
 			fieldValuesCalls++
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"delta","hits":1},{"value":"alpha","hits":1},{"value":"gamma","hits":1},{"value":"beta","hits":1}]}`))
@@ -166,7 +172,7 @@ func TestLabelSurface_LabelValuesIndexedBrowseUsesHotsetAndOffsetWithoutBackendR
 		t.Fatalf("expected offset window [delta gamma], got %v", resp2.Data)
 	}
 	if fieldValuesCalls != 1 {
-		t.Fatalf("expected single backend field_values call with indexed browse cache, got %d", fieldValuesCalls)
+		t.Fatalf("expected single backend stream_field_values call with indexed browse cache, got %d", fieldValuesCalls)
 	}
 }
 
@@ -174,9 +180,12 @@ func TestLabelSurface_LabelValuesIndexedBrowseSearchUsesIndex(t *testing.T) {
 	fieldValuesCalls := 0
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
+		case "/select/logsql/field_names":
 			http.Error(w, "unsupported", http.StatusNotFound)
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":1}]}`))
+		case "/select/logsql/stream_field_values":
 			fieldValuesCalls++
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"alpha","hits":1},{"value":"beta","hits":1},{"value":"delta","hits":1},{"value":"gamma","hits":1}]}`))
@@ -620,7 +629,7 @@ func TestLabelSurface_AsyncRefreshPathsPopulateCache(t *testing.T) {
 	waitForCachedKey(t, c, "detected_field_values:async:level")
 
 	if fieldValuesCalls.Load() == 0 {
-		t.Fatalf("expected field_values or stream_field_values calls from async refresh paths")
+		t.Fatalf("expected field_values calls from async refresh paths")
 	}
 	if streamsCalls.Load() == 0 {
 		t.Fatalf("expected streams call from async detected_labels refresh")
@@ -743,6 +752,9 @@ func TestLabelSurface_RefreshLabelValuesCacheAsync_ForwardsSubstringFilterWhenSu
 	var gotQ, gotFilter atomic.Value
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/select/logsql/field_names":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"values":[{"value":"app","hits":2}]}`))
 		case "/select/logsql/stream_field_names":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"app","hits":2}]}`))

@@ -844,28 +844,34 @@ func TestDrilldown_LabelValues_ServiceNameMergesStreamAndStructuredMetadataInven
 				},
 			})
 		case "/select/logsql/stream_field_values":
-			if got := r.URL.Query().Get("field"); got != "app" {
-				t.Fatalf("expected stream service inventory lookup to use app field, got %q", got)
+			// Phase 1: stream-indexed fields (app) fetched via stream_field_values.
+			switch r.URL.Query().Get("field") {
+			case "app":
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"values": []map[string]interface{}{
+						{"value": "api-gateway", "hits": 12},
+						{"value": "worker", "hits": 5},
+					},
+				})
+			default:
+				t.Fatalf("unexpected field %q for stream_field_values", r.URL.Query().Get("field"))
 			}
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"values": []map[string]interface{}{
-					{"value": "api-gateway", "hits": 12},
-					{"value": "worker", "hits": 5},
-				},
-			})
+		case "/select/logsql/field_values":
+			// Phase 2: column-indexed fields (service.name) fetched via field_values.
+			switch r.URL.Query().Get("field") {
+			case "service.name":
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"values": []map[string]interface{}{
+						{"value": "otel-auth-service", "hits": 4},
+					},
+				})
+			default:
+				t.Fatalf("unexpected field %q for field_values", r.URL.Query().Get("field"))
+			}
 		case "/select/logsql/field_names":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"values": []map[string]interface{}{
 					{"value": "service.name", "hits": 4},
-				},
-			})
-		case "/select/logsql/field_values":
-			if got := r.URL.Query().Get("field"); got != "service.name" {
-				t.Fatalf("expected structured metadata lookup to use service.name field, got %q", got)
-			}
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"values": []map[string]interface{}{
-					{"value": "otel-auth-service", "hits": 4},
 				},
 			})
 		case "/select/logsql/streams", "/select/logsql/query":

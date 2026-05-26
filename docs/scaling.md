@@ -378,6 +378,7 @@ flowchart TD
 - PDB ensures at least 2 pods during rolling updates
 - Anti-affinity spreads pods across nodes/zones
 - Proxy is stateless — any pod can serve any request
+- Set `-warmup-max-jitter` to spread label cache warmup across the fleet on rolling restart — without it all pods hit VL simultaneously on redeploy. Recommended: `10s` for ≤15 pods, `20s` for ≤30 pods. See [Fleet Cache Architecture](fleet-cache.md#startup-coordination-and-fleet-restart-safety).
 
 ### Multi-Region
 

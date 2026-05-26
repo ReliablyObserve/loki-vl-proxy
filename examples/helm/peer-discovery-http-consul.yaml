@@ -1,0 +1,36 @@
+# Peer cache: HTTP discovery via Consul health API.
+# Consul's ?passing=true returns only healthy instances — equivalent to k8s readiness gating.
+# Use when running outside Kubernetes or with a Consul service mesh.
+# No headless Service is created — the proxy polls the Consul API directly.
+replicaCount: 3
+
+workload:
+  kind: StatefulSet
+
+extraArgs:
+  backend: "http://victorialogs:9428"
+  peer-auth-token: "replace-with-shared-secret"
+  warmup-max-jitter: "10s"
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+peerCache:
+  enabled: true
+  discovery: http
+  httpURL: "http://consul.consul.svc.cluster.local:8500/v1/health/service/loki-vl-proxy?passing=true"
+  # Other supported formats:
+  #   Prometheus HTTP SD:  http://sd-server:8080/peers
+  #   Simple array:        http://my-registry/peers  (returns ["host:port",...])
+  #   Nomad:               http://nomad:4646/v1/service/loki-vl-proxy
+
+# Register the proxy in Consul — example Consul service registration ConfigMap.
+# Apply separately or use consul-agent sidecar injection.
+# consul register:
+#   name: loki-vl-proxy
+#   address: $(POD_IP)
+#   port: 3100
+#   check:
+#     http: http://$(POD_IP):3100/ready
+#     interval: 10s

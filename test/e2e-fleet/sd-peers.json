@@ -1,0 +1,1 @@
+[{"targets":["proxy-a:3100","proxy-b:3100","proxy-c:3100"],"labels":{"env":"e2e"}}]
