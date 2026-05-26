@@ -236,6 +236,30 @@ func TestProxyHelpers_ParseBareParserMetricCompatSpec_QuantileAndRejects(t *test
 	}
 }
 
+// TestParseBareParserMetricCompatSpec_OuterAggregationRejected documents that
+// parseBareParserMetricCompatSpec handles BARE metric expressions only. Queries
+// wrapped in an outer vector aggregation (sum, avg, max, …) must go through the
+// generic translation path, not the bare-parser compat path.
+//
+// This matters for quantile_over_time specifically: sum(quantile_over_time(...))
+// is NOT handled by the bare-parser path, so callers should use bare
+// quantile_over_time(...) when a single sub-stream is expected.
+func TestParseBareParserMetricCompatSpec_OuterAggregationRejected(t *testing.T) {
+	t.Parallel()
+	outerAggCases := []string{
+		`sum(quantile_over_time(0.95, {app="x"} | json | unwrap duration_ms [5m]))`,
+		`sum(avg_over_time({app="x"} | json | unwrap duration_ms [5m]))`,
+		`max(max_over_time({app="x"} | json | unwrap duration_ms [5m]))`,
+		`avg(stddev_over_time({app="x"} | json | unwrap duration_ms [5m]))`,
+	}
+	for _, q := range outerAggCases {
+		_, ok := parseBareParserMetricCompatSpec(q)
+		if ok {
+			t.Errorf("parseBareParserMetricCompatSpec should reject outer-aggregated query %q", q)
+		}
+	}
+}
+
 func TestProxyHelpers_BareParserMetricWindowValue_CoversMetricFunctions(t *testing.T) {
 	window := []bareParserMetricSample{{value: 10}, {value: 20}, {value: 30}}
 	spec := bareParserMetricCompatSpec{rangeWindow: 10 * time.Second, quantile: 0.5}
