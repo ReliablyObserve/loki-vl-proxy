@@ -448,15 +448,13 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 		return []string{}, nil
 	}
 
-	// Use stream_field_values only when stream_field_names confirms the query filter's
-	// labels are stream-indexed. When the filter uses non-stream labels (e.g. service_name),
-	// stream_field_values returns empty — field_values covers both stream and columnar fields.
+	// Prefer stream_field_values so stream-indexed labels (e.g. cluster, namespace)
+	// return their values. VL's stream_field_values works with both stream-index and
+	// column field filters, so it's safe to use unconditionally when the backend
+	// supports it. Fall back to field_values on error or for older backends.
 	endpoint := "/select/logsql/field_values"
 	if p.supportsStreamMetadataEndpoints() {
-		streamOnlyFields, err := p.fetchStreamFieldNamesCached(ctx, params)
-		if err == nil && len(streamOnlyFields) > 0 {
-			endpoint = "/select/logsql/stream_field_values"
-		}
+		endpoint = "/select/logsql/stream_field_values"
 	}
 
 	// Cap the backend time range to 6h: active values in the last 6h match those

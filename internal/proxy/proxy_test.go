@@ -3396,13 +3396,13 @@ func TestCache_LabelValuesHitOnRepeat(t *testing.T) {
 
 	w1 := httptest.NewRecorder()
 	p.handleLabelValues(w1, httptest.NewRequest("GET", "/loki/api/v1/label/app/values?start=1&end=2", nil))
-	if callCount != 3 {
-		t.Fatalf("expected field_names + stream_field_names + stream_field_values on miss, got %d calls", callCount)
+	if callCount != 2 {
+		t.Fatalf("expected field_names + stream_field_values on miss, got %d calls", callCount)
 	}
 
 	w2 := httptest.NewRecorder()
 	p.handleLabelValues(w2, httptest.NewRequest("GET", "/loki/api/v1/label/app/values?start=1&end=2", nil))
-	if callCount != 3 {
+	if callCount != 2 {
 		t.Errorf("expected cache hit (no new VL calls), got %d total calls", callCount)
 	}
 }
