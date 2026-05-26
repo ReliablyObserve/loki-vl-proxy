@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.44.0] - 2026-05-26
+
 ### Added
 - `GET /_cache/has?keys=k1,k2,...` peer endpoint: lightweight batch key-presence check returning JSON `{key: {ok, ttl_ms}}` per key with no value data transferred — enables informed peer selection based on cache freshness
 - `GET /_cache/peers` diagnostic endpoint: returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful for verifying discovery is working correctly without inspecting logs
