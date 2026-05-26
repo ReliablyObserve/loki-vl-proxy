@@ -2273,6 +2273,7 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 	if end != "" {
 		params.Set("end", end)
 	}
+	params = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
 	body, err := p.vlGetCoalesced(ctx, p.nativeCoalescerKey("native_fields", ctx, params), "/select/logsql/field_names", params)
 	if err != nil {
 		return nil, err
