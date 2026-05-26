@@ -164,6 +164,7 @@ type proxyRuntimeConfig struct {
 	patternsStartupStale                time.Duration
 	patternsPeerWarmTimeout             time.Duration
 	peerSelf                            string
+	peerSelfAZ                          string
 	peerDiscovery                       string
 	peerDNS                             string
 	peerSRV                             string
@@ -520,6 +521,7 @@ func run(
 
 	// Peer cache (fleet distribution)
 	peerSelf := fs.String("peer-self", "", `This instance's address for peer cache (e.g., "10.0.0.1:3100"). Empty disables peer cache.`)
+	peerSelfAZ := fs.String("peer-self-az", "", `This instance's availability zone (e.g., "us-east-1a"). When set, same-AZ peers are preferred for cache fetches to minimise cross-AZ traffic.`)
 	peerDiscovery := fs.String("peer-discovery", "", `Peer discovery mode: "dns" (headless A-record), "srv" (DNS SRV), "http" (JSON endpoint), or "static" (comma-separated list)`)
 	peerDNS := fs.String("peer-dns", "", `Headless service DNS name for "dns" discovery (e.g., "proxy-headless.ns.svc.cluster.local")`)
 	peerSRV := fs.String("peer-srv", "", `Full SRV record name for "srv" discovery (e.g., "_loki-vl-proxy._tcp.proxy-headless.ns.svc.cluster.local")`)
@@ -727,6 +729,7 @@ func run(
 			patternsStartupStale:                *patternsStartupStale,
 			patternsPeerWarmTimeout:             *patternsPeerWarmTimeout,
 			peerSelf:                            *peerSelf,
+			peerSelfAZ:                          *peerSelfAZ,
 			peerDiscovery:                       *peerDiscovery,
 			peerDNS:                             *peerDNS,
 			peerSRV:                             *peerSRV,
@@ -1564,6 +1567,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 	if cfg.peerSelf != "" && cfg.peerDiscovery != "" {
 		peerCache = cache.NewPeerCache(cache.PeerConfig{
 			SelfAddr:                 cfg.peerSelf,
+			SelfAZ:                   cfg.peerSelfAZ,
 			DiscoveryType:            cfg.peerDiscovery,
 			DNSName:                  cfg.peerDNS,
 			SRVName:                  cfg.peerSRV,

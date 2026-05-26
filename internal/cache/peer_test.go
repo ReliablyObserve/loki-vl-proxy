@@ -2040,3 +2040,99 @@ func TestParsePeerList(t *testing.T) {
 		}
 	}
 }
+
+func TestParseHTTPPeersWithAZ(t *testing.T) {
+	t.Run("prometheus sd with az label", func(t *testing.T) {
+		body := `[{"targets":["10.0.0.1:3100","10.0.0.2:3100"],"labels":{"az":"us-east-1a","env":"prod"}},` +
+			`{"targets":["10.0.0.3:3100"],"labels":{"az":"us-east-1b"}}]`
+		peers, azMap, err := parseHTTPPeersWithAZ([]byte(body))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(peers) != 3 {
+			t.Fatalf("want 3 peers, got %d: %v", len(peers), peers)
+		}
+		if azMap["10.0.0.1:3100"] != "us-east-1a" {
+			t.Errorf("10.0.0.1:3100 az want us-east-1a, got %q", azMap["10.0.0.1:3100"])
+		}
+		if azMap["10.0.0.2:3100"] != "us-east-1a" {
+			t.Errorf("10.0.0.2:3100 az want us-east-1a, got %q", azMap["10.0.0.2:3100"])
+		}
+		if azMap["10.0.0.3:3100"] != "us-east-1b" {
+			t.Errorf("10.0.0.3:3100 az want us-east-1b, got %q", azMap["10.0.0.3:3100"])
+		}
+	})
+	t.Run("prometheus sd with availability_zone label", func(t *testing.T) {
+		body := `[{"targets":["10.0.0.1:3100"],"labels":{"availability_zone":"eu-west-1c"}}]`
+		_, azMap, err := parseHTTPPeersWithAZ([]byte(body))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if azMap["10.0.0.1:3100"] != "eu-west-1c" {
+			t.Errorf("want eu-west-1c, got %q", azMap["10.0.0.1:3100"])
+		}
+	})
+	t.Run("prometheus sd without az labels returns nil azMap", func(t *testing.T) {
+		body := `[{"targets":["10.0.0.1:3100","10.0.0.2:3100"],"labels":{"env":"prod"}}]`
+		peers, azMap, err := parseHTTPPeersWithAZ([]byte(body))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(peers) != 2 {
+			t.Fatalf("want 2 peers, got %d", len(peers))
+		}
+		if len(azMap) != 0 {
+			t.Errorf("want nil/empty azMap, got %v", azMap)
+		}
+	})
+	t.Run("simple array has no az map", func(t *testing.T) {
+		body := `["10.0.0.1:3100","10.0.0.2:3100"]`
+		_, azMap, err := parseHTTPPeersWithAZ([]byte(body))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(azMap) != 0 {
+			t.Errorf("want nil azMap for simple array format, got %v", azMap)
+		}
+	})
+}
+
+func TestPeerCache_AZMethods(t *testing.T) {
+	t.Run("nil cache returns empty strings", func(t *testing.T) {
+		var pc *PeerCache
+		if got := pc.SelfAZ(); got != "" {
+			t.Errorf("nil.SelfAZ() = %q, want empty", got)
+		}
+		if got := pc.PeerAZ("10.0.0.1:3100"); got != "" {
+			t.Errorf("nil.PeerAZ() = %q, want empty", got)
+		}
+	})
+	t.Run("SelfAZ returns configured value", func(t *testing.T) {
+		pc := &PeerCache{selfAZ: "us-east-1a"}
+		if got := pc.SelfAZ(); got != "us-east-1a" {
+			t.Errorf("SelfAZ() = %q, want us-east-1a", got)
+		}
+	})
+	t.Run("PeerAZ returns stored value", func(t *testing.T) {
+		pc := &PeerCache{}
+		pc.peerAZs.Store("10.0.0.2:3100", "us-east-1b")
+		if got := pc.PeerAZ("10.0.0.2:3100"); got != "us-east-1b" {
+			t.Errorf("PeerAZ() = %q, want us-east-1b", got)
+		}
+		if got := pc.PeerAZ("10.0.0.3:3100"); got != "" {
+			t.Errorf("PeerAZ(unknown) = %q, want empty", got)
+		}
+	})
+	t.Run("NewPeerCache propagates SelfAZ", func(t *testing.T) {
+		pc := NewPeerCache(PeerConfig{
+			SelfAddr:      "10.0.0.1:3100",
+			SelfAZ:        "  ap-southeast-1a  ",
+			DiscoveryType: "static",
+			StaticPeers:   "10.0.0.2:3100",
+		})
+		defer pc.Close()
+		if got := pc.SelfAZ(); got != "ap-southeast-1a" {
+			t.Errorf("SelfAZ() = %q, want ap-southeast-1a (trimmed)", got)
+		}
+	})
+}

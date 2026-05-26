@@ -787,25 +787,40 @@ func (p *Proxy) fetchCacheKeysFromPeers(ctx context.Context, cacheEndpoint strin
 	}
 
 	// bestPeer[key] = addr with the highest remaining TTL for that key.
+	// bestAZPeer tracks the same-AZ peer with the highest TTL when selfAZ is set.
+	selfAZ := p.peerCache.SelfAZ()
 	bestTTL := make(map[string]int64, len(cacheKeys))
 	bestPeer := make(map[string]string, len(cacheKeys))
+	bestAZTTL := make(map[string]int64, len(cacheKeys))
+	bestAZPeer := make(map[string]string, len(cacheKeys))
 	for range peers {
 		pr := <-ch
 		if pr.presence == nil {
 			continue
 		}
 		for key, info := range pr.presence {
-			if info.OK && info.TTLMs > bestTTL[key] {
+			if !info.OK {
+				continue
+			}
+			if info.TTLMs > bestTTL[key] {
 				bestTTL[key] = info.TTLMs
 				bestPeer[key] = pr.addr
+			}
+			if selfAZ != "" && p.peerCache.PeerAZ(pr.addr) == selfAZ && info.TTLMs > bestAZTTL[key] {
+				bestAZTTL[key] = info.TTLMs
+				bestAZPeer[key] = pr.addr
 			}
 		}
 	}
 
-	// Phase 2: fetch values only for keys we need, from the best peer.
+	// Phase 2: fetch values only for keys we need.
+	// Prefer same-AZ peers to reduce cross-AZ traffic; fall back to any peer with fresh data.
 	warmed := make(map[string]bool, len(cacheKeys))
 	for _, key := range cacheKeys {
-		addr, ok := bestPeer[key]
+		addr, ok := bestAZPeer[key]
+		if !ok {
+			addr, ok = bestPeer[key]
+		}
 		if !ok {
 			continue // no peer has this key
 		}

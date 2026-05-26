@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -341,5 +342,94 @@ func benchmarkLabelsWarm(b *testing.B, window time.Duration) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+}
+
+// =============================================================================
+// AZ-aware peer selection: same-AZ peer preferred over cross-AZ peer
+// =============================================================================
+
+// TestFetchCacheKeysFromPeers_AZPreference verifies that fetchCacheKeysFromPeers
+// selects the same-AZ peer when multiple peers carry the same key, even if the
+// cross-AZ peer also has fresh data.
+func TestFetchCacheKeysFromPeers_AZPreference(t *testing.T) {
+	const testKey = "labels:test-az-key"
+	const testValue = `["app","env"]`
+
+	// sameAZ peer: responds to /_cache/has with this key present (long TTL)
+	// and serves the value on /_cache/get.
+	var sameAZGets atomic.Int32
+	sameAZSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/_cache/has":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]cache.PeerKeyPresence{
+				testKey: {OK: true, TTLMs: 50_000}, // 50s TTL
+			})
+		case "/_cache/get":
+			sameAZGets.Add(1)
+			w.Header().Set("X-Cache-TTL-Ms", "50000")
+			_, _ = w.Write([]byte(testValue))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(sameAZSrv.Close)
+
+	// crossAZ peer: also has the key with a slightly lower TTL.
+	var crossAZGets atomic.Int32
+	crossAZSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/_cache/has":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]cache.PeerKeyPresence{
+				testKey: {OK: true, TTLMs: 40_000}, // 40s TTL (lower than same-AZ)
+			})
+		case "/_cache/get":
+			crossAZGets.Add(1)
+			w.Header().Set("X-Cache-TTL-Ms", "40000")
+			_, _ = w.Write([]byte(testValue))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(crossAZSrv.Close)
+
+	// Build a PeerCache where selfAZ="az-a" and sameAZSrv is in "az-a",
+	// crossAZSrv is in "az-b".
+	pc := cache.NewPeerCache(cache.PeerConfig{
+		SelfAddr:      "self:3100",
+		SelfAZ:        "az-a",
+		DiscoveryType: "static",
+		StaticPeers:   sameAZSrv.Listener.Addr().String() + "," + crossAZSrv.Listener.Addr().String(),
+		Timeout:       100 * time.Millisecond,
+	})
+	// Mark sameAZSrv as az-a, crossAZSrv as az-b so AZ-aware selection fires.
+	pc.SetPeerAZ(sameAZSrv.Listener.Addr().String(), "az-a")
+	pc.SetPeerAZ(crossAZSrv.Listener.Addr().String(), "az-b")
+	t.Cleanup(pc.Close)
+
+	c := cache.New(60*time.Second, 10000)
+	c.SetL3(pc)
+
+	vlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeVLFieldNames(w, []fieldHit{{"app", 100}})
+	}))
+	t.Cleanup(vlSrv.Close)
+
+	p, err := New(Config{BackendURL: vlSrv.URL, Cache: c, PeerCache: pc, LogLevel: "error"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	warmed := p.fetchCacheKeysFromPeers(t.Context(), "labels", []string{testKey}, 30*time.Second)
+	if !warmed[testKey] {
+		t.Fatalf("expected key to be warmed from a peer")
+	}
+	if sameAZGets.Load() == 0 {
+		t.Errorf("expected same-AZ peer to be fetched from, got 0 fetches")
+	}
+	if crossAZGets.Load() > 0 {
+		t.Errorf("expected cross-AZ peer to be skipped, but got %d fetches", crossAZGets.Load())
 	}
 }

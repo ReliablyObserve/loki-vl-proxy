@@ -164,6 +164,11 @@ spec:
             {{- end }}
             {{- if .Values.peerCache.enabled }}
             - {{ "-peer-self=$(POD_IP):3100" | quote }}
+            {{- if .Values.peerCache.selfAZ }}
+            - {{ printf "-peer-self-az=%s" .Values.peerCache.selfAZ | quote }}
+            {{- else if .Values.peerCache.topologyLabel }}
+            - {{ "-peer-self-az=$(PEER_SELF_AZ)" | quote }}
+            {{- end }}
             - {{ printf "-peer-discovery=%s" .Values.peerCache.discovery | quote }}
             {{- if eq .Values.peerCache.discovery "dns" }}
             - {{ printf "-peer-dns=%s.%s.svc.cluster.local" (include "loki-vl-proxy.peerServiceName" .) .Release.Namespace | quote }}
@@ -202,6 +207,12 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
+            {{- if and (not .Values.peerCache.selfAZ) .Values.peerCache.topologyLabel }}
+            - name: PEER_SELF_AZ
+              valueFrom:
+                fieldRef:
+                  fieldPath: {{ printf "metadata.labels['%s']" .Values.peerCache.topologyLabel | quote }}
+            {{- end }}
             {{- end }}
             {{- if $hasChartEnv }}
             {{- toYaml .Values.env | nindent 12 }}

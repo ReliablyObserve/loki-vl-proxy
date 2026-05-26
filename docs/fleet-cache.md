@@ -315,12 +315,86 @@ The peer list is parsed once at startup and never refreshed. Useful for small, f
 
 This reflects the ring at the moment of the request and is useful for verifying that discovery is working correctly.
 
+## AZ-Aware Peer Selection
+
+When a proxy instance needs to fetch a key from a peer (startup warmup, L1 miss, read-ahead), it picks the peer with the **highest remaining TTL** by default — maximising cache freshness. With AZ-aware selection enabled it applies a two-tier preference:
+
+1. **Same-AZ peers with fresh data** — lowest latency and no cross-AZ transfer cost.
+2. **Any peer with fresh data** — fallback when no same-AZ peer has the key.
+
+This reduces cross-AZ data-transfer costs and latency in multi-AZ cloud deployments without sacrificing correctness. If no peer has the key, the proxy falls through to VictoriaLogs as usual.
+
+### How to configure
+
+**Flag:**
+```bash
+-peer-self-az=us-east-1a
+```
+
+Set this to the availability zone of the current instance. When empty (the default), AZ preference is disabled and peers are selected purely by TTL freshness.
+
+**Helm — explicit AZ:**
+```yaml
+peerCache:
+  enabled: true
+  selfAZ: "us-east-1a"
+```
+
+**Helm — automatic detection from pod topology label (recommended for Kubernetes):**
+```yaml
+peerCache:
+  enabled: true
+  # selfAZ: ""         # empty = auto-detect from topologyLabel (default)
+  topologyLabel: "topology.kubernetes.io/zone"  # default; matches standard k8s node topology label
+
+# Ensure pods carry the topology zone label so the downward API can read it:
+podLabels:
+  topology.kubernetes.io/zone: "us-east-1a"
+```
+
+The chart injects a `PEER_SELF_AZ` env var sourced from `metadata.labels['topology.kubernetes.io/zone']` via the Kubernetes Downward API and passes it as `-peer-self-az=$(PEER_SELF_AZ)`. If the pod does not carry the label (e.g., it was not set via `podLabels` or a platform webhook), the env var resolves to `""` and AZ preference is silently disabled.
+
+**Kubernetes platforms that populate the topology label automatically:**
+
+| Platform | How to enable |
+|----------|--------------|
+| Karpenter | Add the label to `NodePool.spec.template.metadata.labels` |
+| GKE Autopilot | Use `cloud.google.com/gke-nodepool` or set `podLabels` in Helm values |
+| EKS with Karpenter or managed node groups | `NodePool.spec.template.metadata.labels: {topology.kubernetes.io/zone: <zone>}` |
+| Cluster with a node label syncer / mutating webhook | Labels propagated automatically |
+
+**HTTP SD — AZ from discovery labels:**
+
+When using `peer-discovery=http` with a Prometheus HTTP SD endpoint, the proxy extracts AZ from the target group's `labels.az` or `labels.availability_zone` field automatically — no extra flag needed:
+
+```json
+[
+  {
+    "targets": ["10.0.0.1:3100", "10.0.0.2:3100"],
+    "labels": {"az": "us-east-1a", "env": "prod"}
+  },
+  {
+    "targets": ["10.0.0.3:3100"],
+    "labels": {"az": "us-east-1b"}
+  }
+]
+```
+
+Each target's AZ is stored at discovery refresh time and used during peer selection. No configuration beyond the SD labels is required.
+
 ## Configuration Examples
 
 ```bash
-# Kubernetes: DNS discovery via headless service
+# Kubernetes: DNS discovery via headless service (single-AZ or no AZ preference)
 ./loki-vl-proxy \
   -peer-self=$(hostname -i):3100 \
+  -peer-discovery=dns \
+  -peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local
+
+# Kubernetes: DNS discovery with AZ-aware peer selection
+./loki-vl-proxy \
+  -peer-self=$(hostname -i):3100 \
+  -peer-self-az=us-east-1a \
   -peer-discovery=dns \
   -peer-dns=loki-vl-proxy-headless.monitoring.svc.cluster.local
 
@@ -336,11 +410,12 @@ This reflects the ring at the moment of the request and is useful for verifying 
   -peer-discovery=http \
   -peer-http-url=http://localhost:8500/v1/health/service/loki-vl-proxy?passing=true
 
-# Custom JSON endpoint (e.g., internal registry)
+# Prometheus HTTP SD with AZ labels (AZ extracted automatically from labels.az)
 ./loki-vl-proxy \
   -peer-self=$(hostname -i):3100 \
+  -peer-self-az=us-east-1a \
   -peer-discovery=http \
-  -peer-http-url=http://my-registry/peers/loki-vl-proxy
+  -peer-http-url=http://my-registry/sd/loki-vl-proxy
 
 # Static peer list
 ./loki-vl-proxy \
@@ -353,10 +428,27 @@ This reflects the ring at the moment of the request and is useful for verifying 
 ### Helm Values
 
 ```yaml
-extraArgs:
-  peer-self: "$(POD_IP):3100"
-  peer-discovery: "dns"
-  peer-dns: "loki-vl-proxy-headless.default.svc.cluster.local"
+# Minimal — chart auto-wires peer-self, peer-discovery, and peer-dns
+peerCache:
+  enabled: true
+```
+
+```yaml
+# With AZ-aware peer selection — automatic from pod topology label
+peerCache:
+  enabled: true
+  topologyLabel: "topology.kubernetes.io/zone"  # default
+
+# Ensure pods carry the label (set by platform or explicitly):
+podLabels:
+  topology.kubernetes.io/zone: "us-east-1a"
+```
+
+```yaml
+# With AZ-aware peer selection — explicit zone
+peerCache:
+  enabled: true
+  selfAZ: "us-east-1a"
 ```
 
 When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart wire the discovery flags. Use `extraArgs.peer-auth-token` only when you need a shared secret for peer fetches.

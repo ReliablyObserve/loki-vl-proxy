@@ -761,6 +761,7 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 | Flag | Env | Default | Description |
 |---|---|---|---|
 | `-peer-self` | — | — | This instance address used for peer-cache ownership and fetches |
+| `-peer-self-az` | — | — | This instance's availability zone (e.g. `us-east-1a`). When set, same-AZ peers are preferred when fetching keys at startup and warmup to reduce cross-AZ traffic. Falls back to any peer with fresh data when no same-AZ peer has the key. Helm chart can inject this automatically from the pod's topology label via the Kubernetes Downward API (see `peerCache.topologyLabel`). |
 | `-peer-discovery` | — | — | Peer discovery mode: `dns`, `srv`, `http`, or `static` |
 | `-peer-dns` | — | — | Headless service DNS name used when `-peer-discovery=dns` (e.g., `proxy-headless.ns.svc.cluster.local`) |
 | `-peer-srv` | — | — | Full SRV record name used when `-peer-discovery=srv` (e.g., `_loki-vl-proxy._tcp.proxy-headless.ns.svc.cluster.local`). Port is read from the SRV record — no separate port flag needed. |
@@ -786,6 +787,8 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 Peer-cache notes:
 
 - the Helm chart manages `-peer-self`, `-peer-discovery`, and `-peer-dns` automatically when `peerCache.enabled=true`; for `srv` or `http` modes use `extraArgs`
+- AZ-aware peer selection (`-peer-self-az`) prefers same-AZ peers for key fetches; Helm auto-injects it from `metadata.labels['topology.kubernetes.io/zone']` via Downward API when `peerCache.topologyLabel` is set (default). Set `podLabels: {topology.kubernetes.io/zone: <zone>}` or rely on a platform webhook/node label syncer to populate the pod label.
+- for `http` discovery with a Prometheus HTTP SD endpoint, per-peer AZ is read automatically from `labels.az` or `labels.availability_zone` in the SD response — no extra flag required
 - `GET /_cache/peers` returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful to verify discovery is working
 - peer-cache fetches preserve owner TTL and can compress larger `/_cache/get` responses with `zstd` or `gzip`
 - `loki_vl_proxy_peer_cache_error_reason_total{reason=...}` breaks opaque peer fetch failures into low-cardinality reasons like `timeout`, `transport`, `status_502`, `body_read`, and `decode`

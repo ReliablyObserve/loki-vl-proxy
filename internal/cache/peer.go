@@ -52,6 +52,8 @@ type PeerCache struct {
 	mu           sync.RWMutex
 	ring         *hashRing
 	selfAddr     string
+	selfAZ       string      // this instance's availability zone (optional)
+	peerAZs      sync.Map   // string → string: peer addr → availability zone
 	peers        []string
 	client       *http.Client
 	log          *slog.Logger
@@ -115,6 +117,7 @@ type inflightEntry struct {
 // PeerConfig configures the distributed peer cache.
 type PeerConfig struct {
 	SelfAddr                 string        // this instance's address (ip:port)
+	SelfAZ                   string        // this instance's availability zone (e.g. "us-east-1a"); prefer same-AZ peers when set
 	DiscoveryType            string        // "dns", "srv", "http", "static", or "" (disabled)
 	DNSName                  string        // headless service DNS name (for "dns" mode)
 	SRVName                  string        // full SRV name e.g. "_loki-vl-proxy._tcp.ns.svc.cluster.local" (for "srv" mode)
@@ -203,6 +206,7 @@ func NewPeerCache(cfg PeerConfig) *PeerCache {
 
 	pc := &PeerCache{
 		selfAddr: cfg.SelfAddr,
+		selfAZ:   strings.TrimSpace(cfg.SelfAZ),
 		ring:     newHashRing(150),
 		client: &http.Client{
 			Timeout: cfg.Timeout,
@@ -249,7 +253,13 @@ func NewPeerCache(cfg PeerConfig) *PeerCache {
 		httpURL := cfg.HTTPPeersURL
 		httpTimeout := cfg.Timeout
 		pc.discoveryFn = func() ([]string, error) {
-			return discoverHTTPPeers(httpURL, httpTimeout)
+			peers, azMap, err := discoverHTTPPeersWithAZ(httpURL, httpTimeout)
+			for peer, az := range azMap {
+				if az != "" {
+					pc.peerAZs.Store(peer, az)
+				}
+			}
+			return peers, err
 		}
 	case "static":
 		staticPeers := parsePeerList(cfg.StaticPeers)
@@ -1089,6 +1099,41 @@ func (pc *PeerCache) peerPreferredSetEncoding(peerAddr string) (string, bool) {
 	return "", false
 }
 
+// SelfAZ returns this instance's configured availability zone, or "" if not set.
+func (pc *PeerCache) SelfAZ() string {
+	if pc == nil {
+		return ""
+	}
+	return pc.selfAZ
+}
+
+// PeerAZ returns the availability zone label for the given peer addr, or "" if unknown.
+// AZ labels are populated from Prometheus HTTP SD response labels["az"] or labels["availability_zone"].
+func (pc *PeerCache) PeerAZ(addr string) string {
+	if pc == nil {
+		return ""
+	}
+	if v, ok := pc.peerAZs.Load(addr); ok {
+		if az, ok := v.(string); ok {
+			return az
+		}
+	}
+	return ""
+}
+
+// SetPeerAZ records the availability zone for the given peer address.
+// Useful for tests and for static/manual AZ assignment outside of HTTP SD discovery.
+func (pc *PeerCache) SetPeerAZ(addr, az string) {
+	if pc == nil || addr == "" {
+		return
+	}
+	if az != "" {
+		pc.peerAZs.Store(addr, az)
+	} else {
+		pc.peerAZs.Delete(addr)
+	}
+}
+
 // PeerCount returns the number of active peers (excluding self).
 func (pc *PeerCache) PeerCount() int {
 	pc.mu.RLock()
@@ -1342,6 +1387,14 @@ func discoverSRV(name string) ([]string, error) {
 // This makes the proxy compatible with Consul, Nomad, custom service registries,
 // and any Prometheus-compatible service discovery endpoint.
 func discoverHTTPPeers(rawURL string, timeout time.Duration) ([]string, error) {
+	peers, _, err := discoverHTTPPeersWithAZ(rawURL, timeout)
+	return peers, err
+}
+
+// discoverHTTPPeersWithAZ is like discoverHTTPPeers but also returns a peer→AZ map.
+// The AZ map is populated when the response uses Prometheus HTTP SD format and includes
+// an "az" or "availability_zone" label on each target group.
+func discoverHTTPPeersWithAZ(rawURL string, timeout time.Duration) ([]string, map[string]string, error) {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
@@ -1349,33 +1402,40 @@ func discoverHTTPPeers(rawURL string, timeout time.Duration) ([]string, error) {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build HTTP peers request: %w", err)
+		return nil, nil, fmt.Errorf("build HTTP peers request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("HTTP peers fetch %q: %w", rawURL, err)
+		return nil, nil, fmt.Errorf("HTTP peers fetch %q: %w", rawURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("HTTP peers fetch %q: status %d", rawURL, resp.StatusCode)
+		return nil, nil, fmt.Errorf("HTTP peers fetch %q: status %d", rawURL, resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("HTTP peers read body: %w", err)
+		return nil, nil, fmt.Errorf("HTTP peers read body: %w", err)
 	}
-	return parseHTTPPeers(body)
+	return parseHTTPPeersWithAZ(body)
 }
 
 // parseHTTPPeers decodes a JSON body into a list of "host:port" peer addresses.
 // It attempts each known format in order and returns on first success.
 func parseHTTPPeers(body []byte) ([]string, error) {
+	peers, _, err := parseHTTPPeersWithAZ(body)
+	return peers, err
+}
+
+// parseHTTPPeersWithAZ decodes a JSON body into a peer list and an optional peer→AZ map.
+// The AZ map is populated from Prometheus HTTP SD labels["az"] or labels["availability_zone"].
+func parseHTTPPeersWithAZ(body []byte) ([]string, map[string]string, error) {
 	body = bytes.TrimSpace(body)
 
 	// Format 1: simple string array ["host:port", ...]
 	var simple []string
 	if err := json.Unmarshal(body, &simple); err == nil {
-		return filterValidPeers(simple), nil
+		return filterValidPeers(simple), nil, nil
 	}
 
 	// Format 2: {"peers": ["host:port", ...]}
@@ -1383,20 +1443,35 @@ func parseHTTPPeers(body []byte) ([]string, error) {
 		Peers []string `json:"peers"`
 	}
 	if json.Unmarshal(body, &withPeers) == nil && len(withPeers.Peers) > 0 {
-		return filterValidPeers(withPeers.Peers), nil
+		return filterValidPeers(withPeers.Peers), nil, nil
 	}
 
-	// Format 3: Prometheus HTTP SD — [{"targets":["host:port"],"labels":{}}]
+	// Format 3: Prometheus HTTP SD — [{"targets":["host:port"],"labels":{...}}]
+	// Labels may include "az" or "availability_zone" for AZ-aware peer selection.
 	var promSD []struct {
-		Targets []string `json:"targets"`
+		Targets []string          `json:"targets"`
+		Labels  map[string]string `json:"labels"`
 	}
 	if json.Unmarshal(body, &promSD) == nil && len(promSD) > 0 {
 		var peers []string
+		azMap := make(map[string]string)
 		for _, g := range promSD {
-			peers = append(peers, g.Targets...)
+			az := g.Labels["az"]
+			if az == "" {
+				az = g.Labels["availability_zone"]
+			}
+			for _, t := range g.Targets {
+				peers = append(peers, t)
+				if az != "" {
+					azMap[t] = az
+				}
+			}
 		}
 		if len(peers) > 0 {
-			return filterValidPeers(peers), nil
+			if len(azMap) == 0 {
+				azMap = nil
+			}
+			return filterValidPeers(peers), azMap, nil
 		}
 	}
 
@@ -1418,11 +1493,11 @@ func parseHTTPPeers(body []byte) ([]string, error) {
 			}
 		}
 		if len(peers) > 0 {
-			return filterValidPeers(peers), nil
+			return filterValidPeers(peers), nil, nil
 		}
 	}
 
-	return nil, fmt.Errorf("unrecognised HTTP peer list format (body: %.120s)", body)
+	return nil, nil, fmt.Errorf("unrecognised HTTP peer list format (body: %.120s)", body)
 }
 
 func filterValidPeers(peers []string) []string {

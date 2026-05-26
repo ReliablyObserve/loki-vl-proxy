@@ -302,6 +302,7 @@ extraArgs:
   # peer-discovery: "dns"                       # chart-managed via peerCache.* values
   # peer-dns: ""                                # chart-managed when peerCache.enabled=true
   # peer-self: ""                               # chart-managed when peerCache.enabled=true
+  # peer-self-az: ""                            # availability zone for AZ-aware peer selection (e.g. "us-east-1a"); set automatically from node topology labels in Helm
   # peer-static: ""                             # used with peer-discovery=static
   # disk-cache-min-ttl: "30s"                   # skip L2 writes for very short-lived entries
   # tls-cert-file: ""                           # enable HTTPS listener when cert+key set
@@ -795,6 +796,28 @@ peerCache:
   peers: []
     # - "proxy-0.proxy-peers:3100"
     # - "proxy-1.proxy-peers:3100"
+
+  # AZ-aware peer selection — prefer peers in the same availability zone to reduce
+  # cross-AZ traffic when fetching cached data from peers.
+  #
+  # Two ways to configure:
+  #
+  # 1. Explicit AZ (for non-k8s or when you know the zone at deploy time):
+  #      selfAZ: "us-east-1a"
+  #
+  # 2. Automatic detection from the pod's topology label (Kubernetes):
+  #    Leave selfAZ empty and set topologyLabel. The chart reads the label from
+  #    the pod via the downward API and injects it as the -peer-self-az flag.
+  #    For this to work the pod must carry the label — add it via podLabels:
+  #      podLabels:
+  #        topology.kubernetes.io/zone: us-east-1a
+  #    Or enable topologyLabel injection via your cluster's platform (e.g., GKE
+  #    Autopilot, Karpenter NodePool podLabels, AWS Node Label syncer, etc.).
+  #
+  #  When selfAZ is empty and the pod does not carry the topology label the env
+  #  var resolves to "" and AZ preference is silently disabled — no errors.
+  selfAZ: ""
+  topologyLabel: "topology.kubernetes.io/zone"
 
 # --- Disk cache persistent volume ---
 # Persistence is off by default.
