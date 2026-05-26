@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.50.1] - 2026-05-26
+
 ### Fixed
 - Correct misleading "proxy gap" comment on `unpack_filter`/`unpack_status_filter` e2e tests — the translator correctly emits `| unpack_json | filter ...`; the tests remain skipped only because the e2e test data is plain JSON (not `pack()`-format), which Loki's `| unpack` requires
 
