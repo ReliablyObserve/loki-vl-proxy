@@ -100,15 +100,6 @@ func TestBucketMetadataTime_BucketedStartNotExceedsOriginal(t *testing.T) {
 
 // ── capMetadataStartOnly ──────────────────────────────────────────────────────
 
-func mustParseNs(t *testing.T, s string) int64 {
-	t.Helper()
-	ns, ok := parseLokiTimeToUnixNano(s)
-	if !ok {
-		t.Fatalf("parseLokiTimeToUnixNano(%q) failed", s)
-	}
-	return ns
-}
-
 func TestCapMetadataStartOnly_WithinWindow_Unchanged(t *testing.T) {
 	t.Parallel()
 	params := url.Values{
