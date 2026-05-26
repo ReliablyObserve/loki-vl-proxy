@@ -324,6 +324,34 @@ func capMetadataTimeRange(params url.Values, maxWindow time.Duration) url.Values
 	return capped
 }
 
+// capMetadataStartOnly caps the start of the time range to at most maxWindow before
+// end, without bucketing either timestamp. This preserves the original end value so
+// that recently-ingested data (within the last bucket interval) is never excluded,
+// while still bounding the VL scan range to avoid O(days) scans.
+func capMetadataStartOnly(params url.Values, maxWindow time.Duration) url.Values {
+	startRaw := firstNonEmpty(params.Get("start"), params.Get("from"))
+	endRaw := firstNonEmpty(params.Get("end"), params.Get("to"))
+	if startRaw == "" || endRaw == "" {
+		return params
+	}
+	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
+	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
+	if !ok1 || !ok2 || endNs <= startNs {
+		return params
+	}
+	maxNs := maxWindow.Nanoseconds()
+	if endNs-startNs <= maxNs {
+		return params
+	}
+	capped := url.Values{}
+	for k, vs := range params {
+		capped[k] = vs
+	}
+	capped.Set("start", fmt.Sprintf("%d", endNs-maxNs))
+	capped.Del("from")
+	return capped
+}
+
 // fetchAllFieldNamesCached wraps field_names (all fields, not just stream index) with
 // a 30s internal cache. Used for label-value candidate resolution: field_names (0.25s)
 // is ~30x faster than stream_field_names (7-8s) and contains a superset of the same
@@ -457,11 +485,17 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 		endpoint = "/select/logsql/stream_field_values"
 	}
 
+	// Cap the scan range to 6h to avoid O(days) VL scans on wide Grafana windows.
+	// Use capMetadataStartOnly (not capMetadataTimeRange) so the original end timestamp
+	// is preserved — bucketing the end floor can exclude data ingested in the last
+	// few minutes, causing empty results immediately after ingestion.
+	backendParams := capMetadataStartOnly(params, metadataMaxFieldValuesWindow)
+
 	seen := make(map[string]struct{}, 16)
 	values := make([]string, 0, 16)
 	for _, candidate := range resolution.candidates {
 		queryParams := url.Values{}
-		for key, items := range params {
+		for key, items := range backendParams {
 			for _, item := range items {
 				queryParams.Add(key, item)
 			}
