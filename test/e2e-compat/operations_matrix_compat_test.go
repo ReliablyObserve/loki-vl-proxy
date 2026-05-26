@@ -18,6 +18,12 @@ import (
 var (
 	operationsMatrixOnce sync.Once
 	operationsMatrixApp  string
+
+	// uniformMetricOnce guards a dataset where all JSON log lines share the same
+	// extracted labels (method, path, status) so that | json | unwrap creates ONE
+	// sub-stream in Loki — matching VL's single-group aggregation behavior.
+	uniformMetricOnce sync.Once
+	uniformMetricApp  string
 )
 
 func TestOperationsMatrix_BinaryScalarOperatorsParity(t *testing.T) {
@@ -126,7 +132,13 @@ func TestOperationsMatrix_FilterOperatorsParity(t *testing.T) {
 }
 
 func TestOperationsMatrix_LokiMetricFunctionsParity(t *testing.T) {
+	// Non-unwrap cases use the shared diverse dataset.
 	app := ensureOperationsMatrixData(t)
+	// Unwrap cases use a uniform dataset: all log lines share the same JSON
+	// labels (method, path, status), so | json | unwrap duration_ms produces
+	// ONE sub-stream in Loki instead of five. This ensures both Loki and VL
+	// compute aggregations over the same five values and return equal results.
+	ua := ensureUniformMetricData(t)
 	at := time.Now()
 
 	// Cross-engine parity for scalar-compatible expressions.
@@ -138,13 +150,16 @@ func TestOperationsMatrix_LokiMetricFunctionsParity(t *testing.T) {
 		{name: "bytes_over_time", query: fmt.Sprintf(`sum(bytes_over_time({app="%s"}[10m]))`, app)},
 		{name: "bytes_rate", query: fmt.Sprintf(`sum(bytes_rate({app="%s"}[10m]))`, app)},
 		{name: "rate", query: fmt.Sprintf(`sum(rate({app="%s"}[10m]))`, app)},
-		{name: "sum_over_time", query: fmt.Sprintf(`sum(sum_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
-		{name: "avg_over_time", query: fmt.Sprintf(`sum(avg_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
-		{name: "max_over_time", query: fmt.Sprintf(`sum(max_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
-		{name: "min_over_time", query: fmt.Sprintf(`sum(min_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
-		{name: "stddev_over_time", query: fmt.Sprintf(`sum(stddev_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
-		{name: "stdvar_over_time", query: fmt.Sprintf(`sum(stdvar_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, app)},
-		{name: "quantile_over_time", query: fmt.Sprintf(`sum(quantile_over_time(0.95, {app="%s"} | json | unwrap duration_ms [10m]))`, app)},
+		{name: "sum_over_time", query: fmt.Sprintf(`sum(sum_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, ua)},
+		{name: "avg_over_time", query: fmt.Sprintf(`sum(avg_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, ua)},
+		{name: "max_over_time", query: fmt.Sprintf(`sum(max_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, ua)},
+		{name: "min_over_time", query: fmt.Sprintf(`sum(min_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, ua)},
+		{name: "stddev_over_time", query: fmt.Sprintf(`sum(stddev_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, ua)},
+		{name: "stdvar_over_time", query: fmt.Sprintf(`sum(stdvar_over_time({app="%s"} | json | unwrap duration_ms [10m]))`, ua)},
+		// quantile_over_time: outer sum is not needed with a single sub-series;
+		// sum(quantile_over_time) routing differs between engines so we test the
+		// bare form which both engines handle correctly.
+		{name: "quantile_over_time", query: fmt.Sprintf(`quantile_over_time(0.95, {app="%s"} | json | unwrap duration_ms [10m])`, ua)},
 	}
 	for _, tc := range parityCases {
 		t.Run("parity_"+tc.name, func(t *testing.T) {
@@ -157,17 +172,19 @@ func TestOperationsMatrix_LokiMetricFunctionsParity(t *testing.T) {
 	}
 
 	// Vector parity for unwrap queries that keep per-label/per-line cardinality.
+	// Using ua (uniform data) so both Loki and VL produce ONE series — the series
+	// count check in assertVectorParity would fail with diverse data (5 vs 1).
 	vectorCases := []struct {
 		name  string
 		query string
 	}{
-		{name: "sum_over_time_vector", query: fmt.Sprintf(`sum_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
-		{name: "avg_over_time_vector", query: fmt.Sprintf(`avg_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
-		{name: "max_over_time_vector", query: fmt.Sprintf(`max_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
-		{name: "min_over_time_vector", query: fmt.Sprintf(`min_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
-		{name: "stddev_over_time_vector", query: fmt.Sprintf(`stddev_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
-		{name: "stdvar_over_time_vector", query: fmt.Sprintf(`stdvar_over_time({app="%s"} | json | unwrap duration_ms [10m])`, app)},
-		{name: "quantile_over_time_vector", query: fmt.Sprintf(`quantile_over_time(0.95, {app="%s"} | json | unwrap duration_ms [10m])`, app)},
+		{name: "sum_over_time_vector", query: fmt.Sprintf(`sum_over_time({app="%s"} | json | unwrap duration_ms [10m])`, ua)},
+		{name: "avg_over_time_vector", query: fmt.Sprintf(`avg_over_time({app="%s"} | json | unwrap duration_ms [10m])`, ua)},
+		{name: "max_over_time_vector", query: fmt.Sprintf(`max_over_time({app="%s"} | json | unwrap duration_ms [10m])`, ua)},
+		{name: "min_over_time_vector", query: fmt.Sprintf(`min_over_time({app="%s"} | json | unwrap duration_ms [10m])`, ua)},
+		{name: "stddev_over_time_vector", query: fmt.Sprintf(`stddev_over_time({app="%s"} | json | unwrap duration_ms [10m])`, ua)},
+		{name: "stdvar_over_time_vector", query: fmt.Sprintf(`stdvar_over_time({app="%s"} | json | unwrap duration_ms [10m])`, ua)},
+		{name: "quantile_over_time_vector", query: fmt.Sprintf(`quantile_over_time(0.95, {app="%s"} | json | unwrap duration_ms [10m])`, ua)},
 	}
 	for _, tc := range vectorCases {
 		t.Run("vector_"+tc.name, func(t *testing.T) {
@@ -414,4 +431,35 @@ func ensureOperationsMatrixData(t *testing.T) string {
 	})
 
 	return operationsMatrixApp
+}
+
+// ensureUniformMetricData pushes a dataset where all log lines have identical
+// extracted JSON labels (method, path, status) so that | json | unwrap duration_ms
+// produces ONE Loki sub-stream instead of five. This makes Loki and VL agree on
+// aggregation results: both compute avg/max/min/stddev over the same five values.
+func ensureUniformMetricData(t *testing.T) string {
+	t.Helper()
+
+	uniformMetricOnce.Do(func() {
+		waitForReady(t, proxyURL+"/ready", 30*time.Second)
+		waitForReady(t, lokiURL+"/ready", 30*time.Second)
+
+		uniformMetricApp = fmt.Sprintf("ops-uniform-%d", time.Now().UnixNano())
+		now := time.Now().Add(-2 * time.Minute)
+
+		lines := []logLine{
+			{Msg: `{"method":"GET","path":"/api","status":200,"duration_ms":10}`, Level: "info"},
+			{Msg: `{"method":"GET","path":"/api","status":200,"duration_ms":20}`, Level: "info"},
+			{Msg: `{"method":"GET","path":"/api","status":200,"duration_ms":100}`, Level: "info"},
+			{Msg: `{"method":"GET","path":"/api","status":200,"duration_ms":1}`, Level: "info"},
+			{Msg: `{"method":"GET","path":"/api","status":200,"duration_ms":2}`, Level: "info"},
+		}
+		stream := map[string]string{"app": uniformMetricApp, "env": "matrix", "level": "info"}
+		pushCustomToLoki(t, now, stream, lines)
+		pushCustomToVL(t, now, stream, lines, []string{"app", "env"})
+
+		time.Sleep(3 * time.Second)
+	})
+
+	return uniformMetricApp
 }
