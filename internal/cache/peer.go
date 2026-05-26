@@ -52,8 +52,8 @@ type PeerCache struct {
 	mu           sync.RWMutex
 	ring         *hashRing
 	selfAddr     string
-	selfAZ       string      // this instance's availability zone (optional)
-	peerAZs      sync.Map   // string → string: peer addr → availability zone
+	selfAZ       string   // this instance's availability zone (optional)
+	peerAZs      sync.Map // string → string: peer addr → availability zone
 	peers        []string
 	client       *http.Client
 	log          *slog.Logger
