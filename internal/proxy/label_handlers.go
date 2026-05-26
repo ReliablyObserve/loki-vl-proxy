@@ -28,7 +28,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
-		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["labels"]) {
+		if p.shouldRefreshLabelsInBackground(remaining, p.cacheTTLLabels) {
 			search := strings.TrimSpace(r.FormValue("search"))
 			if search == "" {
 				search = strings.TrimSpace(r.FormValue("q"))
@@ -67,7 +67,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	labels = appendSyntheticLabels(labels)
 
 	result := lokiLabelsResponse(labels)
-	p.mergeLabelsIntoCache("labels", cacheKey, labels, CacheTTLs["labels"])
+	p.mergeLabelsIntoCache("labels", cacheKey, labels, p.cacheTTLLabels)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
@@ -126,7 +126,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
-		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["label_values"]) {
+		if p.shouldRefreshLabelsInBackground(remaining, p.cacheTTLLabelValues) {
 			p.refreshLabelValuesCacheAsync(
 				orgID,
 				cacheKey,
@@ -147,7 +147,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	if p.labelValuesBrowseMode(rawQuery) {
 		if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, search, offset, limit); ok {
 			result := lokiLabelsResponse(indexedValues)
-			p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, CacheTTLs["label_values"])
+			p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, p.cacheTTLLabelValues)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(result)
 			p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -172,7 +172,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result := lokiLabelsResponse(values)
-		p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, CacheTTLs["label_values"])
+		p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, p.cacheTTLLabelValues)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -199,7 +199,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := lokiLabelsResponse(values)
-	p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, CacheTTLs["label_values"])
+	p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, p.cacheTTLLabelValues)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))

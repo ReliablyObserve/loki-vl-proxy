@@ -618,7 +618,6 @@ func (pc *PeerCache) serveGet(w http.ResponseWriter, r *http.Request, localCache
 	value, remaining, ok := localCache.GetWithTTL(key)
 	if !ok || remaining < MinUsableTTL {
 		// Expired or about to expire — treat as miss (force refresh from VL)
-		w.Header().Set("X-Peer-Set-Encoding", "zstd")
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}

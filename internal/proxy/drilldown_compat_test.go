@@ -843,7 +843,8 @@ func TestDrilldown_LabelValues_ServiceNameMergesStreamAndStructuredMetadataInven
 					{"value": "app", "hits": 12},
 				},
 			})
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_values":
+			// Phase 1: stream-indexed fields (app) fetched via stream_field_values.
 			switch r.URL.Query().Get("field") {
 			case "app":
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -852,6 +853,12 @@ func TestDrilldown_LabelValues_ServiceNameMergesStreamAndStructuredMetadataInven
 						{"value": "worker", "hits": 5},
 					},
 				})
+			default:
+				t.Fatalf("unexpected field %q for stream_field_values", r.URL.Query().Get("field"))
+			}
+		case "/select/logsql/field_values":
+			// Phase 2: column-indexed fields (service.name) fetched via field_values.
+			switch r.URL.Query().Get("field") {
 			case "service.name":
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"values": []map[string]interface{}{

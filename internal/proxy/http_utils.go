@@ -241,19 +241,14 @@ func extractVLErrorMsg(body []byte) string {
 		return ""
 	}
 	// Fast path: look for {"error":"..."} without a full JSON parse.
+	// Uses json.Unmarshal on just the object so escaped quotes (e.g. \")
+	// inside the error value are handled correctly.
 	if body[0] == '{' {
-		const errKey = `"error"`
-		if idx := bytes.Index(body, []byte(errKey)); idx >= 0 {
-			rest := bytes.TrimSpace(body[idx+len(errKey):])
-			if len(rest) > 0 && rest[0] == ':' {
-				rest = bytes.TrimSpace(rest[1:])
-				if len(rest) > 0 && rest[0] == '"' {
-					end := bytes.IndexByte(rest[1:], '"')
-					if end >= 0 {
-						return string(rest[1 : end+1])
-					}
-				}
-			}
+		var obj struct {
+			Error string `json:"error"`
+		}
+		if err := json.Unmarshal(body, &obj); err == nil && obj.Error != "" {
+			return obj.Error
 		}
 	}
 	return strings.TrimSpace(string(body))

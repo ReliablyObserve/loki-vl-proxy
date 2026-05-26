@@ -337,8 +337,23 @@ const (
 	patternsCacheRetention = 100 * 365 * 24 * time.Hour
 )
 
+// cacheTTLFor returns the effective cache TTL for the given endpoint key.
+// "labels" and "label_values" respect per-Proxy configuration (Config.LabelCacheTTL);
+// all other keys use the package-level CacheTTLs defaults.
+func (p *Proxy) cacheTTLFor(endpoint string) time.Duration {
+	switch endpoint {
+	case "labels":
+		return p.cacheTTLLabels
+	case "label_values":
+		return p.cacheTTLLabelValues
+	default:
+		return CacheTTLs[endpoint]
+	}
+}
+
 // CacheTTLs defines per-endpoint cache TTLs. "labels" and "label_values" default
-// to 5 minutes and can be overridden at runtime via Config.LabelCacheTTL.
+// to 5 minutes; use Proxy.cacheTTLFor() instead of reading this map directly for
+// those two keys, as they can be overridden per-Proxy via Config.LabelCacheTTL.
 var CacheTTLs = map[string]time.Duration{
 	"labels":                5 * time.Minute,
 	"label_values":          5 * time.Minute,
@@ -491,6 +506,8 @@ type Proxy struct {
 	readCacheKeyMemo                      map[canonicalReadCacheMemoKey]string
 	logSampleN                            uint64 // 0 = log all; N>1 = log 1 in N successful requests
 	logSampleCount                        atomic.Uint64
+	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
+	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
 }
 
 const maxReadCacheKeyMemoEntries = 16384
@@ -906,9 +923,9 @@ func New(cfg Config) (*Proxy, error) {
 		return nil, fmt.Errorf("patterns persistence path %q is not writable: %w", patternsPersistPath, err)
 	}
 
+	labelCacheTTL := CacheTTLs["labels"]
 	if cfg.LabelCacheTTL > 0 {
-		CacheTTLs["labels"] = cfg.LabelCacheTTL
-		CacheTTLs["label_values"] = cfg.LabelCacheTTL
+		labelCacheTTL = cfg.LabelCacheTTL
 	}
 
 	labelTranslator := NewLabelTranslator(cfg.LabelStyle, cfg.FieldMappings)
@@ -1044,6 +1061,8 @@ func New(cfg Config) (*Proxy, error) {
 		labelValuesIndex:                      make(map[string]*labelValuesIndexState),
 		readCacheKeyMemo:                      make(map[canonicalReadCacheMemoKey]string, 2048),
 		coldRouter:                            coldRouter,
+		cacheTTLLabels:                        labelCacheTTL,
+		cacheTTLLabelValues:                   labelCacheTTL,
 	}
 	if cfg.LogRequestSampleRate > 1 {
 		p.logSampleN = uint64(cfg.LogRequestSampleRate)

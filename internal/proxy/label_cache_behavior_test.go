@@ -93,29 +93,32 @@ func containsAll(got, want []string) bool {
 
 func TestLabelCache_CustomTTLApplied(t *testing.T) {
 	srv, _ := fieldNamesServer(t, []string{"app", "env"})
-	_, mux := newBehaviorProxy(t, srv.URL, 3*time.Minute)
+	p, mux := newBehaviorProxy(t, srv.URL, 3*time.Minute)
 
 	// First call populates the cache.
 	_ = getLabels(t, mux, time.Hour)
 
-	// CacheTTLs["labels"] should have been overridden to 3m.
-	if got := CacheTTLs["labels"]; got != 3*time.Minute {
-		t.Errorf("CacheTTLs[\"labels\"] = %v, want 3m", got)
+	// Per-proxy TTL fields must reflect the configured override (not the global map).
+	if got := p.cacheTTLLabels; got != 3*time.Minute {
+		t.Errorf("p.cacheTTLLabels = %v, want 3m", got)
+	}
+	if got := p.cacheTTLLabelValues; got != 3*time.Minute {
+		t.Errorf("p.cacheTTLLabelValues = %v, want 3m", got)
+	}
+	// Global CacheTTLs must NOT be mutated — it's shared across Proxy instances.
+	if got := CacheTTLs["labels"]; got != 5*time.Minute {
+		t.Errorf("CacheTTLs[\"labels\"] was mutated: %v, want 5m (global must stay immutable)", got)
 	}
 }
 
 func TestLabelCache_ZeroTTLUsesDefault(t *testing.T) {
-	// TTL=0 should leave the default (5m) unchanged.
-	saved := CacheTTLs["labels"]
-	defer func() { CacheTTLs["labels"] = saved }()
-
-	CacheTTLs["labels"] = 5 * time.Minute
+	// TTL=0 should use the global default (5m) on the per-proxy fields.
 	srv, _ := fieldNamesServer(t, []string{"app"})
-	_, mux := newBehaviorProxy(t, srv.URL, 0)
+	p, mux := newBehaviorProxy(t, srv.URL, 0)
 	_ = getLabels(t, mux, time.Hour)
 
-	if got := CacheTTLs["labels"]; got != 5*time.Minute {
-		t.Errorf("CacheTTLs[\"labels\"] changed from default: %v", got)
+	if got := p.cacheTTLLabels; got != 5*time.Minute {
+		t.Errorf("zero TTL: p.cacheTTLLabels = %v, want 5m (global default)", got)
 	}
 }
 

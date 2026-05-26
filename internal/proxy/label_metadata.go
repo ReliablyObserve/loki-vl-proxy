@@ -557,7 +557,7 @@ func (p *Proxy) shouldBypassRecentTailCache(endpoint string, remaining time.Dura
 	if p == nil || !p.recentTailRefreshEnabled {
 		return false
 	}
-	ttl := CacheTTLs[endpoint]
+	ttl := p.cacheTTLFor(endpoint)
 	if ttl <= 0 || remaining <= 0 {
 		return false
 	}
@@ -631,7 +631,7 @@ func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, s
 			}
 			labels = p.labelTranslator.TranslateLabelsList(filtered)
 			labels = appendSyntheticLabels(labels)
-			p.mergeLabelsIntoCache("labels", cacheKey, labels, CacheTTLs["labels"])
+			p.mergeLabelsIntoCache("labels", cacheKey, labels, p.cacheTTLLabels)
 			return nil, nil
 		})
 		if err != nil {
@@ -673,7 +673,7 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 					values = indexedValues
 				}
 			}
-			p.setEndpointReadCacheWithTTL("label_values", cacheKey, lokiLabelsResponse(values), CacheTTLs["label_values"])
+			p.setEndpointReadCacheWithTTL("label_values", cacheKey, lokiLabelsResponse(values), p.cacheTTLLabelValues)
 			return nil, nil
 		})
 		if err != nil {
@@ -732,10 +732,11 @@ func (p *Proxy) warmMetadataCacheOnStartup() {
 			}
 		}
 
-		// Use a very short TTL for startup warmup so stale pre-ingestion cache
-		// entries expire quickly. The keep-warm loop re-populates with the
-		// full CacheTTLs["labels"] TTL once actual label data is available.
-		const startupWarmupTTL = 10 * time.Second
+		// Use the same TTL as the keep-warm interval (75% of the label TTL) so
+		// startup-warmed entries survive until the first keep-warm tick fires.
+		// A shorter TTL (e.g. 10s) would let entries expire before the first tick,
+		// creating a ~3-minute cold window after startup.
+		startupWarmupTTL := p.cacheTTLLabels * 3 / 4
 		p.warmLabelWindows(warmCtx, warmupStaleThreshold, startupWarmupTTL)
 	}()
 }
@@ -972,11 +973,11 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 
 // startLabelCacheKeepWarmLoop runs warmLabelWindows periodically so that label
 // cache entries for standard Grafana presets never go cold when there are no user
-// queries. The interval and skip threshold are derived from CacheTTLs["labels"]:
+// queries. The interval and skip threshold are derived from p.cacheTTLLabels:
 // refresh at 75% of TTL, skip if >40% of TTL remains.
 // The goroutine exits when p.keepWarmStop is closed (via Shutdown).
 func (p *Proxy) startLabelCacheKeepWarmLoop() {
-	ttl := CacheTTLs["labels"]
+	ttl := p.cacheTTLLabels
 	interval := ttl * 3 / 4
 	skipIfRemaining := ttl * 2 / 5
 	go func() {
