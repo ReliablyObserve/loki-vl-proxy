@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Correct misleading "proxy gap" comment on `unpack_filter`/`unpack_status_filter` e2e tests — the translator correctly emits `| unpack_json | filter ...`; the tests remain skipped only because the e2e test data is plain JSON (not `pack()`-format), which Loki's `| unpack` requires
+
 ## [1.50.0] - 2026-05-26
 
 ### Added
@@ -14,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `GET /_cache/peers` diagnostic endpoint: returns the current peer ring as `{"peers":[...],"self":"...","count":N}` — useful for verifying discovery is working correctly without inspecting logs
 - `srv` peer discovery mode (`-peer-discovery=srv -peer-srv=_service._tcp.domain`): resolves peers from DNS SRV records which embed port numbers. Compatible with Kubernetes StatefulSet headless services, Consul DNS, CoreDNS, and any SRV-capable resolver. Inherits readiness gating from the DNS layer.
 - `http` peer discovery mode (`-peer-discovery=http -peer-http-url=...`): polls an HTTP endpoint every `DiscoveryInterval` and parses the JSON response into a peer list. Auto-detects four response formats: simple string array, `{"peers":[...]}`, Prometheus HTTP SD (`[{"targets":[...]}]`), and Consul catalog (`[{"ServiceAddress":"...","ServicePort":N}]`). Works with Consul, Nomad, and custom registries outside Kubernetes.
+- Translator unit tests for `| unpack`, `| unpack | method="GET"`, and `| unpack | status >= 400` — confirm correct VL translation without a live stack
+- `TestParseAllLabelReplaceMarkers` unit tests covering single marker, chained two-level `label_replace(label_replace(...))`, and no-marker pass-through — the chained case was previously only validated via e2e; now covered as a unit test
+- `TestFieldFilterMigration` extended with `json alias then filter` case: `| json http_code="status" | http_code="200"` → `| unpack_json | filter status:="200"` verifying the proxy's alias-rewrite path that fixed `json_field_alias_then_filter` parity
 
 ### Performance
 - Time-bucketed cache keys align response cache entries with Grafana's `$__interval` rounding and VL's `split_interval` middleware, reducing redundant backend queries on repeated dashboard refreshes by up to 80%
@@ -53,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Regression tests for VL error format compliance (`TestVLError_OOMBodyIsRewritten`, `TestExtractVLErrorMsg`) and long-range metric query routing (`TestLongRange_CountOverTimeUsesStats`, `TestLongRange_BytesOverTimeUsesStats`)
 
 ## [1.42.0] - 2026-05-24
+
 
 ### Performance
 - Remove redundant proxy-side Go CIDR filtering (`ipFilterStreams`) — VL now handles `ip()` filters natively
