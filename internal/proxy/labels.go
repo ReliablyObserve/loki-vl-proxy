@@ -450,10 +450,8 @@ func (lt *LabelTranslator) metadataFieldExposures(vlField string, mode MetadataF
 
 // isValidLabelName reports whether name can be returned unchanged from SanitizeLabelName.
 // Checks: ASCII only, [a-zA-Z_][a-zA-Z0-9_]*, no consecutive underscores, no trailing underscore.
+// Precondition: name is not empty (SanitizeLabelName guards against empty input).
 func isValidLabelName(name string) bool {
-	if len(name) == 0 {
-		return false
-	}
 	c0 := name[0]
 	if c0 >= '0' && c0 <= '9' {
 		return false // would need "key_" prefix

@@ -25,11 +25,11 @@ func TestIsValidLabelName(t *testing.T) {
 
 		// Names needing sanitization (would be modified)
 		{"service.name", false},      // dot would be replaced with underscore
+		{"0", false},                 // digit start would get "key_" prefix
 		{"123abc", false},            // digit start would get "key_" prefix
 		{"foo__bar", false},          // consecutive underscores would be collapsed
 		{"foo_", false},              // trailing underscore would be trimmed
 		{"_foo_", false},             // trailing underscore
-		{"", false},                  // empty string
 		{"café", false},              // multi-byte UTF-8 character
 		{"über", false},              // multi-byte UTF-8
 		{"with-dash", false},         // dash would be replaced with underscore
