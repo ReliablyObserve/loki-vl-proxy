@@ -16,10 +16,13 @@ type TranslateOptions struct {
 
 	// StreamFields is the set of VL _stream_fields labels for which the
 	// translator can emit the faster stream-selector syntax.
+	// Reserved: the string translator uses this for stream-selector optimisation;
+	// the AST path will use it in a follow-on PR.
 	StreamFields map[string]bool
 
-	// Caps controls VictoriaLogs version-gated features.
-	// The zero value disables all gated features.
+	// Caps gates VL version-specific features in the AST path.
+	// Reserved: will be used to select capability-gated logsql constructs
+	// (e.g. ipv4_range). The zero value disables all gated features.
 	Caps logsql.Capabilities
 }
 
@@ -95,15 +98,24 @@ func translateLogQuery(lq *LogQuery, opts TranslateOptions) (*logsql.Query, erro
 			return nil, errFallthrough
 
 		case *DropStage:
-			pipe := translateDrop(s, opts)
+			pipe, err := translateDrop(s, opts)
+			if err != nil {
+				return nil, err
+			}
 			pipes = append(pipes, pipe)
 
 		case *KeepStage:
-			pipe := translateKeep(s, opts)
+			pipe, err := translateKeep(s, opts)
+			if err != nil {
+				return nil, err
+			}
 			pipes = append(pipes, pipe)
 
 		case *LineFormatStage:
-			pipe := translateLineFormat(s)
+			pipe, err := translateLineFormat(s)
+			if err != nil {
+				return nil, err
+			}
 			pipes = append(pipes, pipe)
 
 		case *LabelFormatStage:
@@ -244,45 +256,49 @@ func translateParser(s *ParserStage) (logsql.Pipe, error) {
 }
 
 // translateDrop converts a LogQL | drop stage to a logsql PipeDelete.
-func translateDrop(s *DropStage, opts TranslateOptions) logsql.Pipe {
-	labels := make([]string, 0, len(s.Labels)+len(s.Matchers))
+// Conditional drops (| drop level="debug") cannot be expressed natively in
+// LogsQL; return errFallthrough so the string translator handles the query.
+func translateDrop(s *DropStage, opts TranslateOptions) (logsql.Pipe, error) {
+	if len(s.Matchers) > 0 {
+		return nil, errFallthrough
+	}
+	labels := make([]string, 0, len(s.Labels))
 	for _, l := range s.Labels {
 		if opts.LabelFn != nil {
 			l = opts.LabelFn(l)
 		}
 		labels = append(labels, l)
 	}
-	// Conditional drop matchers: extract field name from each matcher.
-	for _, m := range s.Matchers {
-		l := m.Name
-		if opts.LabelFn != nil {
-			l = opts.LabelFn(l)
-		}
-		labels = append(labels, l)
-	}
-	return logsql.PipeDelete{Labels: labels}
+	return logsql.PipeDelete{Labels: labels}, nil
 }
 
 // translateKeep converts a LogQL | keep stage to a logsql PipeFields.
-func translateKeep(s *KeepStage, opts TranslateOptions) logsql.Pipe {
-	labels := make([]string, 0, len(s.Labels)+len(s.Matchers))
+// Conditional keeps (| keep level="debug") cannot be expressed natively in
+// LogsQL; return errFallthrough so the string translator handles the query.
+func translateKeep(s *KeepStage, opts TranslateOptions) (logsql.Pipe, error) {
+	if len(s.Matchers) > 0 {
+		return nil, errFallthrough
+	}
+	labels := make([]string, 0, len(s.Labels))
 	for _, l := range s.Labels {
 		if opts.LabelFn != nil {
 			l = opts.LabelFn(l)
 		}
 		labels = append(labels, l)
 	}
-	for _, m := range s.Matchers {
-		l := m.Name
-		if opts.LabelFn != nil {
-			l = opts.LabelFn(l)
-		}
-		labels = append(labels, l)
-	}
-	return logsql.PipeFields{Labels: labels}
+	return logsql.PipeFields{Labels: labels}, nil
 }
 
 // translateLineFormat converts a LogQL | line_format stage to a logsql PipeFormat.
-func translateLineFormat(s *LineFormatStage) logsql.Pipe {
-	return logsql.PipeFormat{Template: s.Template, ResultField: "_msg"}
+// Complex Go template directives ({{if}}, {{range}}, {{with}}, pipes, or the
+// special __line__/__timestamp__ variables) are not expressible in LogsQL
+// | format; fall through to the string translator for those cases.
+func translateLineFormat(s *LineFormatStage) (logsql.Pipe, error) {
+	tmpl := s.Template
+	if strings.Contains(tmpl, "{{if") || strings.Contains(tmpl, "{{range") ||
+		strings.Contains(tmpl, "{{with") || strings.Contains(tmpl, "__line__") ||
+		strings.Contains(tmpl, "__timestamp__") || strings.Contains(tmpl, "| ") {
+		return nil, errFallthrough
+	}
+	return logsql.PipeFormat{Template: tmpl, ResultField: "_msg"}, nil
 }
