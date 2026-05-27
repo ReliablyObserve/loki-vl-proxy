@@ -304,6 +304,9 @@ type Config struct {
 	TenantDefaultLimits map[string]any
 	// TenantLimits applies per-tenant published limits overrides keyed by X-Scope-OrgID.
 	TenantLimits map[string]map[string]any
+	// DefaultMaxQueryLength is the default maximum allowed query time range enforced
+	// for all tenants unless overridden by per-tenant limits. 0 means unlimited.
+	DefaultMaxQueryLength time.Duration
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -431,6 +434,7 @@ type Proxy struct {
 	tenantLimitsAllowPublish              []string
 	tenantDefaultLimits                   map[string]any
 	tenantLimits                          map[string]map[string]any
+	defaultMaxQueryLength                 time.Duration // 0 = unlimited
 	translationCache                      *cache.Cache
 	queryRangeWindowing                   bool
 	queryRangeSplitInterval               time.Duration
@@ -1018,6 +1022,7 @@ func New(cfg Config) (*Proxy, error) {
 		tenantLimitsAllowPublish:              tenantLimitsAllowPublish,
 		tenantDefaultLimits:                   tenantDefaultLimits,
 		tenantLimits:                          tenantLimits,
+		defaultMaxQueryLength:                 cfg.DefaultMaxQueryLength,
 		translationCache:                      cache.New(5*time.Minute, 5000),
 		streamFieldNamesCache:                 cache.New(30*time.Second, 500),
 		queryRangeWindowing:                   cfg.QueryRangeWindowingEnabled && cfg.QueryRangeSplitInterval > 0,

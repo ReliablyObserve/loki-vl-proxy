@@ -195,6 +195,7 @@ type proxyRuntimeConfig struct {
 	coldBackendEnabled                  bool
 	coldBackendManifestRefresh          time.Duration
 	coldBackendTimeout                  time.Duration
+	defaultMaxQueryLength               time.Duration
 }
 
 type otlpRuntimeConfig struct {
@@ -478,6 +479,7 @@ func run(
 	recentTailRefreshEnabled := fs.Bool("recent-tail-refresh-enabled", true, "Bypass stale near-now cache hits and fetch latest backend data while preserving historical cache")
 	recentTailRefreshWindow := fs.Duration("recent-tail-refresh-window", 2*time.Minute, "How close request end must be to now to enable near-now cache freshness bypass")
 	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 15*time.Second, "Maximum acceptable cache age for near-now requests before cache bypass")
+	defaultMaxQueryLength := fs.Duration("default-max-query-length", 0, "Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default)")
 
 	// Go runtime tuning
 	goMemLimitBytes := fs.Int64("go-mem-limit", 0, "Explicit GOMEMLIMIT in bytes. Overrides -go-mem-limit-percent. 0 = use percentage or GOMEMLIMIT env var.")
@@ -778,6 +780,7 @@ func run(
 			coldBackendEnabled:                  *coldBackendEnabled,
 			coldBackendManifestRefresh:          *coldBackendManifestRefresh,
 			coldBackendTimeout:                  *coldBackendTimeout,
+			defaultMaxQueryLength:               *defaultMaxQueryLength,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1729,6 +1732,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			ManifestRefresh: cfg.coldBackendManifestRefresh,
 			Timeout:         cfg.coldBackendTimeout,
 		},
+		DefaultMaxQueryLength: cfg.defaultMaxQueryLength,
 	}, nil
 }
 
