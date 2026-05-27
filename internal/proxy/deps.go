@@ -15,18 +15,18 @@ import (
 // These mirror the corresponding fields in Proxy and are extracted here
 // to support future decomposition of the Proxy struct.
 type Deps struct {
-	backend    *url.URL
-	rulerBackend *url.URL
+	backend       *url.URL
+	rulerBackend  *url.URL
 	alertsBackend *url.URL
 
 	client     *http.Client
 	tailClient *http.Client
 
-	cache              *cache.Cache
-	compatCache        *cache.Cache
-	translationCache   *cache.Cache
+	cache                 *cache.Cache
+	compatCache           *cache.Cache
+	translationCache      *cache.Cache
 	streamFieldNamesCache *cache.Cache
-	peerCache          *cache.PeerCache
+	peerCache             *cache.PeerCache
 
 	log          *slog.Logger
 	metrics      *metrics.Metrics
