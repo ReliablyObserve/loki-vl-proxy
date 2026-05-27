@@ -465,6 +465,8 @@ type Proxy struct {
 	recentTailRefreshMaxStaleness         time.Duration
 	warmupMaxJitter                       time.Duration
 	labelRefreshGroup                     singleflight.Group
+	parserProbeGroup                      singleflight.Group
+	translationGroup                      singleflight.Group
 	streamFieldNamesCache                 *cache.Cache // short-lived internal cache for stream_field_names routing decisions
 	labelValuesIndexedCache               bool
 	labelValuesHotLimit                   int

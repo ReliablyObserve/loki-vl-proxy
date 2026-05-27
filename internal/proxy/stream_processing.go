@@ -353,6 +353,13 @@ func lokiLabelsResponse(labels []string) []byte {
 	return result
 }
 
+var scannerBufPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, 0, 64*1024)
+		return &buf
+	},
+}
+
 // vlEntryPool pools map[string]interface{} to reduce GC pressure in NDJSON parsing.
 var vlEntryPool = sync.Pool{
 	New: func() interface{} {
@@ -514,8 +521,14 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		hasDupTs bool
 	}
 
+	scanBufPtr := scannerBufPool.Get().(*[]byte)
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	scanner.Buffer((*scanBufPtr)[:0], 8*1024*1024)
+	defer func() {
+		if cap(*scanBufPtr) <= 256*1024 {
+			scannerBufPool.Put(scanBufPtr)
+		}
+	}()
 
 	streamMap := make(map[string]*streamEntry, 32)
 	streamOrder := make([]string, 0, 32)

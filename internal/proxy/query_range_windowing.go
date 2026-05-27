@@ -785,8 +785,14 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 	needsClassification := categorizedLabels && emitStructuredMetadata
 	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
 
+	scanBufPtr := scannerBufPool.Get().(*[]byte)
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), windowEntryScannerLineBytes)
+	scanner.Buffer((*scanBufPtr)[:0], windowEntryScannerLineBytes)
+	defer func() {
+		if cap(*scanBufPtr) <= 256*1024 {
+			scannerBufPool.Put(scanBufPtr)
+		}
+	}()
 
 	for scanner.Scan() {
 		line := scanner.Bytes()

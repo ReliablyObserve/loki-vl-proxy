@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"fmt"
-	"math"
 	"net"
 	"net/http"
 	"runtime"
@@ -148,11 +147,11 @@ type Metrics struct {
 }
 
 type histogram struct {
-	mu      sync.Mutex // only held by the /metrics handler for consistent snapshots
-	sum     atomic.Uint64
-	count   atomic.Int64
+	mu      sync.RWMutex
+	sum     float64
+	count   int64
 	buckets []float64
-	counts  []atomic.Int64
+	counts  []int64
 }
 
 var defaultBuckets = []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10}
@@ -305,7 +304,7 @@ func newHistogram() *histogram {
 func newHistogramWithBuckets(buckets []float64) *histogram {
 	return &histogram{
 		buckets: append([]float64(nil), buckets...),
-		counts:  make([]atomic.Int64, len(buckets)),
+		counts:  make([]int64, len(buckets)),
 	}
 }
 
@@ -313,22 +312,41 @@ func newCountHistogram() *histogram {
 	return newHistogramWithBuckets(countBuckets)
 }
 
-func (h *histogram) loadSum() float64 { return math.Float64frombits(h.sum.Load()) }
-func (h *histogram) loadCount() int64 { return h.count.Load() }
+type histogramSnapshot struct {
+	sum     float64
+	count   int64
+	buckets []float64
+	counts  []int64
+}
+
+func (s histogramSnapshot) loadSum() float64 { return s.sum }
+func (s histogramSnapshot) loadCount() int64 { return s.count }
+
+func (h *histogram) snapshot() histogramSnapshot {
+	h.mu.RLock()
+	s := histogramSnapshot{
+		sum:     h.sum,
+		count:   h.count,
+		buckets: h.buckets,
+		counts:  append([]int64(nil), h.counts...),
+	}
+	h.mu.RUnlock()
+	return s
+}
+
+func (h *histogram) loadSum() float64 { return h.sum }
+func (h *histogram) loadCount() int64 { return h.count }
 
 func (h *histogram) observe(v float64) {
-	for {
-		old := h.sum.Load()
-		if h.sum.CompareAndSwap(old, math.Float64bits(math.Float64frombits(old)+v)) {
-			break
-		}
-	}
-	h.count.Add(1)
+	h.mu.Lock()
+	h.sum += v
+	h.count++
 	for i, b := range h.buckets {
 		if v <= b {
-			h.counts[i].Add(1)
+			h.counts[i]++
 		}
 	}
+	h.mu.Unlock()
 }
 
 func NewMetrics() *Metrics {
@@ -1485,10 +1503,10 @@ func snapshotAtomicMap(m map[string]*atomic.Int64) map[string]*atomic.Int64 {
 	return out
 }
 
-func snapshotHistogramMap(m map[string]*histogram) map[string]*histogram {
-	out := make(map[string]*histogram, len(m))
+func snapshotHistogramMap(m map[string]*histogram) map[string]histogramSnapshot {
+	out := make(map[string]histogramSnapshot, len(m))
 	for k, v := range m {
-		out[k] = v
+		out[k] = v.snapshot()
 	}
 	return out
 }
@@ -1520,13 +1538,13 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sCbStateFn := m.cbStateFunc
 	sExportSensitive := m.exportSensitiveLabels
 	var sTenantRequests map[string]*atomic.Int64
-	var sTenantDurations map[string]*histogram
+	var sTenantDurations map[string]histogramSnapshot
 	var sClientRequests map[string]*atomic.Int64
 	var sClientBytes map[string]*atomic.Int64
 	var sClientStatuses map[string]*atomic.Int64
 	var sClientInflight map[string]*atomic.Int64
-	var sClientDurations map[string]*histogram
-	var sClientQueryLengths map[string]*histogram
+	var sClientDurations map[string]histogramSnapshot
+	var sClientQueryLengths map[string]histogramSnapshot
 	if sExportSensitive {
 		sTenantRequests = snapshotAtomicMap(m.tenantRequests)
 		sTenantDurations = snapshotHistogramMap(m.tenantDurations)
@@ -1570,7 +1588,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		}
 		h := sRequestDurations[key]
 		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", parts[0], parts[1], parts[2], parts[3], b, h.counts[i].Load())
+			fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", parts[0], parts[1], parts[2], parts[3], b, h.counts[i])
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", parts[0], parts[1], parts[2], parts[3], h.loadCount())
 		fmt.Fprintf(&sb, "loki_vl_proxy_request_duration_seconds_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", parts[0], parts[1], parts[2], parts[3], h.loadSum())
@@ -1867,7 +1885,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			h := sTenantDurations[key]
 			for i, b := range h.buckets {
 				fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-					lokiSystemLabel, downstreamDirection, tenant, endpoint, route, b, h.counts[i].Load())
+					lokiSystemLabel, downstreamDirection, tenant, endpoint, route, b, h.counts[i])
 			}
 			fmt.Fprintf(&sb, "loki_vl_proxy_tenant_request_duration_seconds_bucket{system=%q,direction=%q,tenant=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
 				lokiSystemLabel, downstreamDirection, tenant, endpoint, route, h.loadCount())
@@ -1942,7 +1960,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		route := parts[1]
 		h := sBackendDurations[key]
 		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, b, h.counts[i].Load())
+			fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, b, h.counts[i])
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", vlSystemLabel, upstreamDirection, endpoint, route, h.loadCount())
 		fmt.Fprintf(&sb, "loki_vl_proxy_backend_duration_seconds_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", vlSystemLabel, upstreamDirection, endpoint, route, h.loadSum())
@@ -1965,7 +1983,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		route := parts[1]
 		h := sUpstreamCallsPerRequest[key]
 		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, b, h.counts[i].Load())
+			fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, b, h.counts[i])
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_bucket{system=%q,direction=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.loadCount())
 		fmt.Fprintf(&sb, "loki_vl_proxy_upstream_calls_per_request_sum{system=%q,direction=%q,endpoint=%q,route=%q} %g\n", lokiSystemLabel, downstreamDirection, endpoint, route, h.loadSum())
@@ -2001,7 +2019,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 		}
 		h := sInternalOperationDurations[key]
 		for i, b := range h.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_bucket{operation=%q,outcome=%q,le=\"%g\"} %d\n", parts[0], parts[1], b, h.counts[i].Load())
+			fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_bucket{operation=%q,outcome=%q,le=\"%g\"} %d\n", parts[0], parts[1], b, h.counts[i])
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_bucket{operation=%q,outcome=%q,le=\"+Inf\"} %d\n", parts[0], parts[1], h.loadCount())
 		fmt.Fprintf(&sb, "loki_vl_proxy_internal_operation_duration_seconds_sum{operation=%q,outcome=%q} %g\n", parts[0], parts[1], h.loadSum())
@@ -2027,7 +2045,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# TYPE loki_vl_proxy_window_fetch_seconds histogram\n")
 	if m.windowFetch != nil {
 		for i, b := range m.windowFetch.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_bucket{le=\"%g\"} %d\n", b, m.windowFetch.counts[i].Load())
+			fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_bucket{le=\"%g\"} %d\n", b, m.windowFetch.counts[i])
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_bucket{le=\"+Inf\"} %d\n", m.windowFetch.loadCount())
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_fetch_seconds_sum %g\n", m.windowFetch.loadSum())
@@ -2038,7 +2056,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# TYPE loki_vl_proxy_window_merge_seconds histogram\n")
 	if m.windowMerge != nil {
 		for i, b := range m.windowMerge.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_bucket{le=\"%g\"} %d\n", b, m.windowMerge.counts[i].Load())
+			fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_bucket{le=\"%g\"} %d\n", b, m.windowMerge.counts[i])
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_bucket{le=\"+Inf\"} %d\n", m.windowMerge.loadCount())
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_merge_seconds_sum %g\n", m.windowMerge.loadSum())
@@ -2049,7 +2067,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# TYPE loki_vl_proxy_window_count histogram\n")
 	if m.windowCount != nil {
 		for i, b := range m.windowCount.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_count_bucket{le=\"%g\"} %d\n", b, m.windowCount.counts[i].Load())
+			fmt.Fprintf(&sb, "loki_vl_proxy_window_count_bucket{le=\"%g\"} %d\n", b, m.windowCount.counts[i])
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_bucket{le=\"+Inf\"} %d\n", m.windowCount.loadCount())
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_count_sum %g\n", m.windowCount.loadSum())
@@ -2091,7 +2109,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# TYPE loki_vl_proxy_window_prefilter_duration_seconds histogram\n")
 	if m.windowPrefilterDuration != nil {
 		for i, b := range m.windowPrefilterDuration.buckets {
-			fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_bucket{le=\"%g\"} %d\n", b, m.windowPrefilterDuration.counts[i].Load())
+			fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_bucket{le=\"%g\"} %d\n", b, m.windowPrefilterDuration.counts[i])
 		}
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_bucket{le=\"+Inf\"} %d\n", m.windowPrefilterDuration.loadCount())
 		fmt.Fprintf(&sb, "loki_vl_proxy_window_prefilter_duration_seconds_sum %g\n", m.windowPrefilterDuration.loadSum())
@@ -2183,7 +2201,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			h := sClientDurations[key]
 			for i, b := range h.buckets {
 				fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i].Load())
+					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
 			}
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_request_duration_seconds_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
 				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadCount())
@@ -2209,7 +2227,7 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 			h := sClientQueryLengths[key]
 			for i, b := range h.buckets {
 				fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"%g\"} %d\n",
-					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i].Load())
+					lokiSystemLabel, downstreamDirection, client, endpoint, route, b, h.counts[i])
 			}
 			fmt.Fprintf(&sb, "loki_vl_proxy_client_query_length_chars_bucket{system=%q,direction=%q,client=%q,endpoint=%q,route=%q,le=\"+Inf\"} %d\n",
 				lokiSystemLabel, downstreamDirection, client, endpoint, route, h.loadCount())

@@ -570,7 +570,7 @@ func (p *OTLPPusher) histogramDP(h *histogram, timeUnixNano int64, attrs ...map[
 	bucketCounts := make([]int64, 0, len(h.counts)+1)
 	prev := int64(0)
 	for i := range h.counts {
-		c := h.counts[i].Load()
+		c := h.counts[i]
 		bucketCounts = append(bucketCounts, c-prev)
 		prev = c
 	}
