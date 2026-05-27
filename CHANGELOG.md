@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `-default-max-query-length` flag enforces a global max query time range (0 = unlimited; per-tenant limits configured via per-tenant config override it)
+- `ParseError` and `UnsupportedError` typed errors in `internal/translator` for HTTP-layer error-type discrimination
+- Typed AST-to-AST translation layer in `internal/logql/translate.go` for log queries (metric queries continue using string translator via `errFallthrough` sentinel)
+
+### Changed
+- `Proxy` struct decomposed into `Handler` (carrying `Deps`, `HandlerConfig`, `State`) for future testability without full stack construction
+- `RegisterRoutes` uses named `routeHandler` method instead of anonymous closure
+
 ## [1.52.0] - 2026-05-27
 
 ### Performance
