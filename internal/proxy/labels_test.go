@@ -4,6 +4,52 @@ import (
 	"testing"
 )
 
+func TestIsValidLabelName(t *testing.T) {
+	tests := []struct {
+		input   string
+		isValid bool
+	}{
+		// Already-valid names (fast-path candidates)
+		{"service_name", true},
+		{"detected_level", true},
+		{"k8s_namespace", true},
+		{"_leading_underscore", true},
+		{"simple", true},
+		{"a", true},
+		{"abc", true},
+		{"valid_name_already", true},
+		{"MixedCase", true},
+		{"a_b_c", true},
+		{"_a", true},
+		{"_ab_cd", true},
+
+		// Names needing sanitization (would be modified)
+		{"service.name", false},      // dot would be replaced with underscore
+		{"123abc", false},            // digit start would get "key_" prefix
+		{"foo__bar", false},          // consecutive underscores would be collapsed
+		{"foo_", false},              // trailing underscore would be trimmed
+		{"_foo_", false},             // trailing underscore
+		{"", false},                  // empty string
+		{"café", false},              // multi-byte UTF-8 character
+		{"über", false},              // multi-byte UTF-8
+		{"with-dash", false},         // dash would be replaced with underscore
+		{"with space", false},        // space would be replaced with underscore
+		{"a.b.c", false},             // multiple dots would be replaced
+		{"___", false},               // all underscores (trailing would be trimmed)
+		{"_", false},                 // single underscore (trailing would be trimmed)
+		{"_trailing_", false},        // trailing underscore
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := isValidLabelName(tt.input)
+			if got != tt.isValid {
+				t.Errorf("isValidLabelName(%q) = %v, want %v", tt.input, got, tt.isValid)
+			}
+		})
+	}
+}
+
 func TestSanitizeLabelName(t *testing.T) {
 	tests := []struct {
 		input    string
