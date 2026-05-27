@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
@@ -361,6 +362,10 @@ func compatCacheResponseAllowed(rec *httptest.ResponseRecorder) bool {
 	return contentType == "" || strings.Contains(contentType, "application/json")
 }
 
+var compatCacheCapturePool = sync.Pool{
+	New: func() interface{} { return &compatCacheCaptureWriter{} },
+}
+
 type compatCacheCaptureWriter struct {
 	http.ResponseWriter
 	body       []byte
@@ -372,10 +377,14 @@ type compatCacheCaptureWriter struct {
 }
 
 func newCompatCacheCaptureWriter(w http.ResponseWriter, limit int) *compatCacheCaptureWriter {
-	cw := &compatCacheCaptureWriter{
-		ResponseWriter: w,
-		limit:          limit,
-	}
+	cw := compatCacheCapturePool.Get().(*compatCacheCaptureWriter)
+	cw.ResponseWriter = w
+	cw.code = 0
+	cw.flushed = false
+	cw.limit = limit
+	cw.overflowed = false
+	cw.body = nil
+	cw.bufHolder = nil
 	if limit <= 0 {
 		// limit=0 means the cache is disabled or has no capacity — mark overflowed
 		// immediately so capture() is a no-op and no memory is allocated.
@@ -446,6 +455,8 @@ func (w *compatCacheCaptureWriter) Release() {
 	releaseCompatCaptureBuf(w.body, w.bufHolder)
 	w.body = nil
 	w.bufHolder = nil
+	w.ResponseWriter = nil // avoid retaining reference to the underlying writer
+	compatCacheCapturePool.Put(w)
 }
 
 func acquireCompatCaptureBuf(limit int) ([]byte, *pooledCompatCaptureBuf) {
