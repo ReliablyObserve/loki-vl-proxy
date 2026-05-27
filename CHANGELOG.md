@@ -8,13 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `-default-max-query-length` flag enforces a global max query time range (0 = unlimited; per-tenant limits configured via per-tenant config override it)
-- `ParseError` and `UnsupportedError` typed errors in `internal/translator` for HTTP-layer error-type discrimination
-- Typed AST-to-AST translation layer in `internal/logql/translate.go` for log queries (metric queries continue using string translator via `errFallthrough` sentinel)
+- `-default-max-query-length` flag enforces a global maximum query time range (0 = unlimited); per-tenant limits in `-tenant-limits` or `-tenant-default-limits` take precedence, so the flag acts as a safe fleet-wide ceiling
+- `ParseError{Msg, Pos}` and `UnsupportedError{Msg, Func}` typed errors in `internal/translator`: HTTP handlers now discriminate error type to return `"parse error"` (400) vs `"bad_data"` (400) vs `"execution"` (500) Loki error envelopes instead of a flat string
+- AST-to-AST translation layer in `internal/logql/translate.go`: typed `LogQuery → logsql.Query` mapper covers stream selector matchers (eq/neq/re/nre), line filters, parsers (json/logfmt/regexp/pattern), bare drop/keep, and simple `line_format` templates; unsupported nodes fall through via `errFallthrough` sentinel to the existing string translator, leaving metric/range/vector paths unchanged
+- `TranslateOptions{LabelFn, StreamFields, Caps}` plumbing in the AST translator for future label-alias and capability-gated translation
 
 ### Changed
-- `Proxy` struct decomposed into `Handler` (carrying `Deps`, `HandlerConfig`, `State`) for future testability without full stack construction
-- `RegisterRoutes` uses named `routeHandler` method instead of anonymous closure
+- `Proxy` struct decomposed into `Deps` (external dependencies), `HandlerConfig` (immutable flag-derived config, 83 fields), and `State` (mutable runtime state with pointer-typed mutexes/atomics); `Handler{Deps, Cfg, State}` type defined and wired in `New()` with live pointer sharing so Handler and Proxy see the same lock and map instances
+- `RegisterRoutes` dispatches via named `routeHandler` method instead of anonymous closure
+- Helm `values.yaml` updated with commented-out `default-max-query-length` entry
 
 ## [1.52.0] - 2026-05-27
 

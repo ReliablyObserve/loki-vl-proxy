@@ -95,4 +95,3 @@ type State struct {
 	// coldRouter handles cold/warm storage routing.
 	coldRouter *ColdRouter
 }
-

@@ -44,8 +44,8 @@ type HandlerConfig struct {
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool
 	tenantLimitsAllowPublish              []string
-	tenantDefaultLimits                   map[string]any
-	tenantLimits                          map[string]map[string]any
+	tenantDefaultLimits                   map[string]any            // snapshot at construction — not hot-reloadable via HandlerConfig
+	tenantLimits                          map[string]map[string]any // snapshot at construction — not hot-reloadable via HandlerConfig
 	defaultMaxQueryLength                 time.Duration
 	queryRangeWindowing                   bool
 	queryRangeSplitInterval               time.Duration
