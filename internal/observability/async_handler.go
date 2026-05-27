@@ -20,7 +20,7 @@ type AsyncHandler struct {
 	ch     chan slog.Record
 	done   chan struct{}
 	wg     sync.WaitGroup
-	drops  atomic.Int64
+	drops  *atomic.Int64
 	closed atomic.Bool
 }
 
@@ -34,6 +34,7 @@ func NewAsyncHandler(inner slog.Handler, bufSize int) *AsyncHandler {
 		inner: inner,
 		ch:    make(chan slog.Record, bufSize),
 		done:  make(chan struct{}),
+		drops: &atomic.Int64{},
 	}
 	h.wg.Add(1)
 	go h.drain()

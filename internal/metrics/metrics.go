@@ -313,9 +313,8 @@ func newCountHistogram() *histogram {
 	return newHistogramWithBuckets(countBuckets)
 }
 
-func (h *histogram) loadSum() float64       { return math.Float64frombits(h.sum.Load()) }
-func (h *histogram) loadCount() int64       { return h.count.Load() }
-func (h *histogram) loadBucket(i int) int64 { return h.counts[i].Load() }
+func (h *histogram) loadSum() float64 { return math.Float64frombits(h.sum.Load()) }
+func (h *histogram) loadCount() int64 { return h.count.Load() }
 
 func (h *histogram) observe(v float64) {
 	for {

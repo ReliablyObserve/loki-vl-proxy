@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 var (
@@ -851,26 +852,9 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 			}
 		}
 
-		streamLabels := desc.translatedLabels
-		streamKey := desc.translatedKey
-		if len(dropConditions) > 0 {
-			if newKey, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, streamLabels, p.labelTranslator); changed {
-				streamKey = newKey
-				streamLabels = newLabels
-			}
-		}
-		if len(keepConditions) > 0 {
-			if newKey, newLabels, changed := applyKeepConditionsToStreamLabels(keepConditions, desc.rawLabels, streamLabels, p.labelTranslator); changed {
-				streamKey = newKey
-				streamLabels = newLabels
-			}
-		}
-		if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
-			if newKey, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, desc.rawLabels, streamLabels, p.labelTranslator); changed {
-				streamKey = newKey
-				streamLabels = newLabels
-			}
-		}
+		streamKey, streamLabels := applyStreamLabelMutations(
+			desc, dropConditions, keepConditions, bareDropFields, bareKeepFields, p.labelTranslator,
+		)
 
 		entries = append(entries, queryRangeWindowEntry{
 			Stream: streamLabels,
@@ -883,6 +867,35 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 		vlFJParserPool.Put(fjParser)
 	}
 	return entries
+}
+
+func applyStreamLabelMutations(
+	desc cachedLogQueryStreamDescriptor,
+	dropConditions, keepConditions []translator.DropCondition,
+	bareDropFields, bareKeepFields []string,
+	lt *LabelTranslator,
+) (string, map[string]string) {
+	streamKey := desc.translatedKey
+	streamLabels := desc.translatedLabels
+	if len(dropConditions) > 0 {
+		if newKey, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, streamLabels, lt); changed {
+			streamKey = newKey
+			streamLabels = newLabels
+		}
+	}
+	if len(keepConditions) > 0 {
+		if newKey, newLabels, changed := applyKeepConditionsToStreamLabels(keepConditions, desc.rawLabels, streamLabels, lt); changed {
+			streamKey = newKey
+			streamLabels = newLabels
+		}
+	}
+	if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
+		if newKey, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, desc.rawLabels, streamLabels, lt); changed {
+			streamKey = newKey
+			streamLabels = newLabels
+		}
+	}
+	return streamKey, streamLabels
 }
 
 func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction string, emitSM, categorizedLabels bool) []map[string]interface{} {

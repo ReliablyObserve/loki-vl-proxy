@@ -511,7 +511,6 @@ type Proxy struct {
 	logSampleN                            uint64 // 0 = log all; N>1 = log 1 in N successful requests
 	logSampleCount                        atomic.Uint64
 	requestSampler                        *observability.RequestSampler
-	asyncLogHandler                       *observability.AsyncHandler
 	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
 }
