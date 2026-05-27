@@ -373,6 +373,10 @@ See [LogQL Parser deep dive](logql-parser.md) for grammar, data flow diagrams, a
 ### Translator (`internal/translator/`)
 LogQL→LogsQL converter. Receives canonical LogQL (produced by `Expr.String()` after AST normalisation). Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters, label format) and typed `logsql` builder calls for complex paths (stats aggregations, IP filters). Remaining string paths are tagged `TODO(ast-migration)` for future migration — run `grep -r "TODO(ast-migration)" internal/` to see the full backlog.
 
+Typed errors in `internal/translator/errors.go` replace bare `fmt.Errorf` for two failure classes: `ParseError` (invalid LogQL input) and `UnsupportedError` (LogQL constructs with no LogsQL equivalent). Callers can type-assert to distinguish parse failures from unsupported-feature fallbacks.
+
+`internal/logql/translate.go` adds a second, typed translation path alongside the string-based translator: `Translate(expr Expr, opts TranslateOptions) (string, error)`. For `*LogQuery` nodes it performs a direct AST-to-AST mapping — stream selector → `logsql.FilterExpr`, pipeline stages → `[]logsql.Pipe` — without a `String()` roundtrip. Metric nodes (`*RangeAggregation`, `*VectorAggregation`, `*BinOpExpr`, `*OpaqueMetricExpr`) return an `errFallthrough` sentinel that routes to the existing string translator unchanged. `TranslateOptions` carries `LabelFn`, `StreamFields`, and `Caps`; the `Caps` field gates VL version-specific features. The proxy's main translation path (`translator.TranslateLogQLWithCapabilities`) is unchanged — `logql.Translate` is wired but not yet called by handlers; handler migration is planned for a follow-on PR.
+
 ### Translation Pipeline
 
 ```mermaid
@@ -386,10 +390,11 @@ flowchart LR
         AST1["Typed LogQL AST\nLogQuery · Stage · LabelFilterStage\nRangeAggregation · BinOpExpr"]
     end
 
-    subgraph Translate["Translate (internal/translator/)"]
-        TR["TranslateLogQL() / TranslateMetricQuery()"]
+    subgraph Translate["Translate (internal/translator/ + internal/logql/)"]
+        TR["TranslateLogQL() / TranslateMetricQuery()\n(proxy main path — unchanged)"]
         TIER1["Tier 1: Stable string paths\nstream selectors · line filters\nlabel format · logfmt/json parsers"]
         TIER2["Tier 2: AST-driven paths\nbuildStatsQuery → logsql.PipeStats\n(ip() filter: phase-2 roadmap)"]
+        TIER3["Tier 3: Typed AST-to-AST mapper (new)\nlogql.Translate(*LogQuery)\nstream selector → logsql.FilterExpr\npipeline stages → []logsql.Pipe\n(metric nodes → errFallthrough → Tier 1/2)"]
     end
 
     subgraph Build["Build (internal/logsql/)"]
@@ -400,6 +405,7 @@ flowchart LR
     LQ --> PARSE --> AST1 --> TR
     TR --> TIER1 --> LOGSQL
     TR --> TIER2 --> BUILDER --> LOGSQL
+    AST1 -.->|"follow-on PR"| TIER3 --> BUILDER --> LOGSQL
 
     style Input fill:#1a1a2e,stroke:#e94560,color:#fff
     style Parse fill:#16213e,stroke:#4cc9f0,color:#fff
@@ -408,11 +414,22 @@ flowchart LR
 ```
 
 ### Proxy (`internal/proxy/`)
-HTTP handlers for Loki-compatible read endpoints, split into domain-focused modules:
+HTTP handlers for Loki-compatible read endpoints, split into domain-focused modules.
+
+The `Proxy` struct is being decomposed into three explicit types (migration in progress, follow-on PRs will move receivers):
+
+- **`Deps`** (`deps.go`) — external dependencies: backend URLs, HTTP clients, caches, logger, metrics, rate limiter, circuit breaker.
+- **`HandlerConfig`** (`config.go`) — immutable startup configuration (83 flag-derived fields); pointer-shared across goroutines.
+- **`State`** (`state.go`) — mutable runtime state: tenant maps, label indices, pattern snapshots, backend version, atomics; pointer-typed mutexes for safe sharing.
+- **`Handler{Deps, Cfg *HandlerConfig, State *State}`** (`handler.go`) — carries all three concerns; populated by `New()`; `routeHandler` method extracted from the former anonymous `rl` closure in `RegisterRoutes`.
 
 | Module | Responsibility |
 |---|---|
-| `proxy.go` | Proxy struct, configuration, constructor, and HTTP router setup |
+| `handler.go` | `Handler` struct definition and `routeHandler` dispatch method |
+| `deps.go` | `Deps` struct: external dependency container |
+| `config.go` | `HandlerConfig` struct: immutable startup configuration |
+| `state.go` | `State` struct: mutable runtime state |
+| `proxy.go` | Constructor (`New()`), `RegisterRoutes`, and remaining Proxy wiring |
 | `middleware.go` | Request middleware chain: security headers, tenant validation, rate limiting, WebSocket upgrade checks |
 | `middleware_security.go` | Security-specific middleware: auth forwarding, token redaction, request fingerprinting |
 | `query_translation.go` | LogQL→LogsQL translation per request, structured request logging |
