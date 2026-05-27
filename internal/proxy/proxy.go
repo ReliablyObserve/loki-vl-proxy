@@ -1292,36 +1292,42 @@ func (p *Proxy) GetMetrics() *metrics.Metrics { return p.metrics }
 // GetQueryTracker returns the query analytics tracker.
 func (p *Proxy) GetQueryTracker() *metrics.QueryTracker { return p.queryTracker }
 
+// routeHandler wraps h with the standard per-route middleware chain:
+// security headers → tenant auth → rate limiter → request logger → compat cache.
+func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Handler {
+	return securityHeaders(
+		p.tenantMiddleware(
+			p.limiter.Middleware(
+				p.requestLogger(endpoint, route,
+					p.compatCacheMiddleware(endpoint, route, h)))))
+}
+
 func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
-	// Rate-limited endpoints with security headers + request logging
-	rl := func(endpoint, route string, h http.HandlerFunc) http.Handler {
-		return securityHeaders(p.tenantMiddleware(p.limiter.Middleware(p.requestLogger(endpoint, route, p.compatCacheMiddleware(endpoint, route, h)))))
-	}
 	rlNoTenant := func(endpoint, route string, h http.HandlerFunc) http.Handler {
 		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h)))
 	}
 
 	// Loki API endpoints — data queries are rate-limited
-	mux.Handle("/loki/api/v1/query_range", rl("query_range", "/loki/api/v1/query_range", p.handleQueryRange))
-	mux.Handle("/loki/api/v1/query", rl("query", "/loki/api/v1/query", p.handleQuery))
-	mux.Handle("/loki/api/v1/series", rl("series", "/loki/api/v1/series", p.handleSeries))
+	mux.Handle("/loki/api/v1/query_range", p.routeHandler("query_range", "/loki/api/v1/query_range", p.handleQueryRange))
+	mux.Handle("/loki/api/v1/query", p.routeHandler("query", "/loki/api/v1/query", p.handleQuery))
+	mux.Handle("/loki/api/v1/series", p.routeHandler("series", "/loki/api/v1/series", p.handleSeries))
 
 	// Metadata endpoints — rate-limited but cached
-	mux.Handle("/loki/api/v1/labels", rl("labels", "/loki/api/v1/labels", p.handleLabels))
-	mux.Handle("/loki/api/v1/label/", rl("label_values", "/loki/api/v1/label/{name}/values", p.handleLabelValues))
-	mux.Handle("/loki/api/v1/detected_fields", rl("detected_fields", "/loki/api/v1/detected_fields", p.handleDetectedFields))
-	mux.Handle("/loki/api/v1/detected_field/", rl("detected_field_values", "/loki/api/v1/detected_field/{name}/values", p.handleDetectedFieldValues))
+	mux.Handle("/loki/api/v1/labels", p.routeHandler("labels", "/loki/api/v1/labels", p.handleLabels))
+	mux.Handle("/loki/api/v1/label/", p.routeHandler("label_values", "/loki/api/v1/label/{name}/values", p.handleLabelValues))
+	mux.Handle("/loki/api/v1/detected_fields", p.routeHandler("detected_fields", "/loki/api/v1/detected_fields", p.handleDetectedFields))
+	mux.Handle("/loki/api/v1/detected_field/", p.routeHandler("detected_field_values", "/loki/api/v1/detected_field/{name}/values", p.handleDetectedFieldValues))
 
 	// Lighter endpoints — still rate-limited
-	mux.Handle("/loki/api/v1/index/stats", rl("index_stats", "/loki/api/v1/index/stats", p.handleIndexStats))
-	mux.Handle("/loki/api/v1/index/volume", rl("volume", "/loki/api/v1/index/volume", p.handleVolume))
-	mux.Handle("/loki/api/v1/index/volume_range", rl("volume_range", "/loki/api/v1/index/volume_range", p.handleVolumeRange))
-	mux.Handle("/loki/api/v1/patterns", rl("patterns", "/loki/api/v1/patterns", p.handlePatterns))
-	mux.Handle("/loki/api/v1/tail", rl("tail", "/loki/api/v1/tail", p.handleTail))
+	mux.Handle("/loki/api/v1/index/stats", p.routeHandler("index_stats", "/loki/api/v1/index/stats", p.handleIndexStats))
+	mux.Handle("/loki/api/v1/index/volume", p.routeHandler("volume", "/loki/api/v1/index/volume", p.handleVolume))
+	mux.Handle("/loki/api/v1/index/volume_range", p.routeHandler("volume_range", "/loki/api/v1/index/volume_range", p.handleVolumeRange))
+	mux.Handle("/loki/api/v1/patterns", p.routeHandler("patterns", "/loki/api/v1/patterns", p.handlePatterns))
+	mux.Handle("/loki/api/v1/tail", p.routeHandler("tail", "/loki/api/v1/tail", p.handleTail))
 
 	// Read-only API additions
-	mux.Handle("/loki/api/v1/format_query", rl("format_query", "/loki/api/v1/format_query", p.handleFormatQuery))
-	mux.Handle("/loki/api/v1/detected_labels", rl("detected_labels", "/loki/api/v1/detected_labels", p.handleDetectedLabels))
+	mux.Handle("/loki/api/v1/format_query", p.routeHandler("format_query", "/loki/api/v1/format_query", p.handleFormatQuery))
+	mux.Handle("/loki/api/v1/detected_labels", p.routeHandler("detected_labels", "/loki/api/v1/detected_labels", p.handleDetectedLabels))
 	mux.Handle("/loki/api/v1/drilldown-limits", rlNoTenant("drilldown_limits", "/loki/api/v1/drilldown-limits", p.handleDrilldownLimits))
 	mux.Handle("/config/tenant/v1/limits", rlNoTenant("tenant_limits", "/config/tenant/v1/limits", p.handleTenantLimitsConfig))
 
@@ -1329,7 +1335,7 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/loki/api/v1/push", p.handleWriteBlocked)
 
 	// Delete endpoint — exception to read-only with strict safeguards
-	mux.Handle("/loki/api/v1/delete", rl("delete", "/loki/api/v1/delete", p.handleDelete))
+	mux.Handle("/loki/api/v1/delete", p.routeHandler("delete", "/loki/api/v1/delete", p.handleDelete))
 
 	// Alerting / ruler read endpoints
 	alertRead := func(endpoint, route string, h http.HandlerFunc) http.Handler {
@@ -1588,6 +1594,16 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 				if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
 					r.Form.Set("end", nanosToVLTimestamp(endNs-offsetDur.Nanoseconds()))
 				}
+			}
+		}
+	}
+
+	// Enforce max query length AFTER offset is applied (start/end reflect shifted range).
+	if startNs, okS := parseLokiTimeToUnixNano(r.FormValue("start")); okS {
+		if endNs, okE := parseLokiTimeToUnixNano(r.FormValue("end")); okE {
+			if errMsg := p.checkQueryRangeLength(r.Context(), startNs, endNs); errMsg != "" {
+				p.writeError(w, http.StatusBadRequest, errMsg)
+				return
 			}
 		}
 	}
