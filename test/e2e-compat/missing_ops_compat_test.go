@@ -128,7 +128,7 @@ func TestMissingOps_UnpackParser(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.skip {
-				t.Skip("known proxy gap — skipped")
+				t.Skip("test data gap — Loki requires pack() format, not plain JSON")
 			}
 			lokiResult := queryRangeResult(t, lokiURL, tc.query, start, end, "")
 			proxyResult := queryRangeResult(t, proxyURL, tc.query, start, end, "")
@@ -211,7 +211,7 @@ func TestMissingOps_PatternMatchLineFilter(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.skip {
-				t.Skip("known proxy gap — skipped")
+				t.Skip("|> include returns mismatched line counts (proxy=6 loki=0)")
 			}
 			lokiResult := queryRangeResult(t, lokiURL, tc.query, start, end, "")
 			proxyResult := queryRangeResult(t, proxyURL, tc.query, start, end, "")
@@ -334,7 +334,7 @@ func TestMissingOps_LabelReplace(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.skip {
-				t.Skip("known proxy gap — skipped")
+				t.Skip("nested label_replace inside sum causes VL parse error (400)")
 			}
 			lokiResult := queryRangeResult(t, lokiURL, tc.query, start, end, "60")
 			proxyResult := queryRangeResult(t, proxyURL, tc.query, start, end, "60")

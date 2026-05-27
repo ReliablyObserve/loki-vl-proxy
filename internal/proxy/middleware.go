@@ -248,12 +248,7 @@ func (p *Proxy) isKnownPeerHost(host string) bool {
 	if p.peerCache == nil {
 		return false
 	}
-	for _, peer := range p.peerCache.Peers() {
-		if hostOnly(peer) == host {
-			return true
-		}
-	}
-	return false
+	return p.peerCache.HasPeerHost(host)
 }
 
 func (p *Proxy) peerCacheMiddleware(next http.Handler) http.Handler {

@@ -186,7 +186,7 @@ Recent PRs added targeted guards in areas that were previously flaky in live Gra
 | `test/e2e-compat/grafana_surface_test.go` | Grafana datasource catalog, datasource health, proxy bootstrap/control-plane surface |
 | `test/e2e-compat/features_test.go` | Live Grafana-facing edge cases including multi-tenant `__tenant_id__`, long-lived tail sessions, and Drilldown level-filter regressions |
 | `test/e2e-ui/tests/url-state.spec.ts` | Pure URL/state builder tests for Explore and Logs Drilldown reloadable state |
-| `test/e2e-compat/missing_ops_compat_test.go` | offset, unpack, `\|>` pattern match, unwrap duration/bytes, label_replace parity |
+| `test/e2e-compat/missing_ops_compat_test.go` | Edge-case parity coverage: unpack (test-data gap), `\|>` pattern match, unwrap duration/bytes, label_replace (nested sum gap) |
 | `test/e2e-ui/tests/explore-operations.spec.ts` | Explore Loki operations browser smoke (12 tests) |
 | `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts` | Comprehensive Loki Explorer UI coverage (30+ tests covering all clickable elements, edge cases, and performance metrics) |
 | `test/e2e-ui/tests/performance-baseline.spec.ts` | Performance baseline measurements (page load, query response, UI interactions, label selector, filter changes) |

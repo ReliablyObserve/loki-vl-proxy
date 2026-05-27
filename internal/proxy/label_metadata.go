@@ -256,7 +256,7 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 	if !fullRange {
 		// Cap to 1h for synchronous path: fast initial response.
 		// The background refresh (labelFullRangeFetchKey) uses the full range.
-		backendParams = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+		backendParams = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 	}
 	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", backendParams)
 	if err != nil {
@@ -348,7 +348,9 @@ func capMetadataStartOnly(params url.Values, maxWindow time.Duration) url.Values
 		capped[k] = vs
 	}
 	capped.Set("start", fmt.Sprintf("%d", endNs-maxNs))
+	capped.Set("end", fmt.Sprintf("%d", endNs))
 	capped.Del("from")
+	capped.Del("to")
 	return capped
 }
 
@@ -377,7 +379,7 @@ func (p *Proxy) fetchAllFieldNamesCached(ctx context.Context, params url.Values)
 	}
 	backendParams := params
 	if !fullRange {
-		backendParams = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+		backendParams = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 	}
 	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", backendParams)
 	if err != nil {
