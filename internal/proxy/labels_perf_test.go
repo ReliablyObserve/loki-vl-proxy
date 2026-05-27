@@ -272,8 +272,10 @@ func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 	}
 
 	// Post-warmup: requests for the same window must be cache hits.
-	// Allow ≤1 extra backend call for 5-min bucket-boundary drift between
-	// the warmup instant and the test instant.
+	// Allow ≤2 extra backend calls: the 1h and 6h windows share 5-min bucket
+	// granularity, so a single 5-min boundary crossing between warmup and test
+	// produces 2 misses. The 24h (1h bucket) and 7d (6h bucket) tiers cross
+	// boundaries much more rarely, so the practical maximum is 2 extra calls.
 	beforePost := backendCalls.Load()
 	nowNs := time.Now().UnixNano()
 	for _, w := range warmupWindows {
@@ -283,8 +285,8 @@ func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 	}
 	afterPost := backendCalls.Load()
 
-	if afterPost-beforePost > 1 {
-		t.Errorf("post-warmup requests triggered %d backend calls (want 0–1); cache not populated",
+	if afterPost-beforePost > 2 {
+		t.Errorf("post-warmup requests triggered %d backend calls (want 0–2); cache not populated",
 			afterPost-beforePost)
 	}
 }
