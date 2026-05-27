@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"math"
@@ -26,10 +27,16 @@ func readBodyLimited(r io.Reader, limit int64) ([]byte, error) {
 	if limit <= 0 {
 		return io.ReadAll(r)
 	}
-	body, err := io.ReadAll(io.LimitReader(r, limit+1))
+	cap := limit + 1
+	if cap > 128*1024 {
+		cap = 128 * 1024
+	}
+	buf := bytes.NewBuffer(make([]byte, 0, cap))
+	_, err := buf.ReadFrom(io.LimitReader(r, limit+1))
 	if err != nil {
 		return nil, err
 	}
+	body := buf.Bytes()
 	if int64(len(body)) > limit {
 		return body[:limit], errBodyTooLarge
 	}

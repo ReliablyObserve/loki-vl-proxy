@@ -242,94 +242,184 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 
 ```mermaid
 flowchart LR
-    A[Clients<br/>Grafana, Loki API tools, MCP/LLM, scripts]
-    B[Loki-VL-proxy<br/>Loki API compatibility + translation + shaping + cache]
-    C[Upstream<br/>VictoriaLogs data + vmalert rules/alerts]
+    A[Clients<br/>Grafana Explore / Drilldown<br/>MCP / LLM / API tools]
 
-    A --> B --> C
+    subgraph PROXY["Loki-VL-proxy"]
+        direction TB
+        MW["Middleware<br/>security, tenants,<br/>rate limit, circuit breaker"]
+        TR["Translation<br/>LogQL AST → LogsQL"]
+        CACHE["4-tier cache<br/>Tier0 + L1 mem + L2 disk + L3 peer"]
+        SHAPE["Response shaping<br/>streams, stats, patterns,<br/>windowing, labels"]
+    end
+
+    subgraph UP["Upstream"]
+        VL["VictoriaLogs<br/>hot backend"]
+        VMA["vmalert<br/>rules / alerts"]
+        LH[("Lakehouse<br/>cold backend")]
+    end
+
+    A --> MW --> TR --> CACHE --> VL
+    TR --> VMA
+    CACHE -.-> LH
+    VL --> SHAPE --> A
 
     classDef client fill:#1f2937,stroke:#60a5fa,color:#f3f4f6,stroke-width:2px;
     classDef proxy fill:#172554,stroke:#22d3ee,color:#f8fafc,stroke-width:2px;
     classDef upstream fill:#052e16,stroke:#34d399,color:#ecfeff,stroke-width:2px;
+    classDef cold fill:#1c1917,stroke:#a8a29e,color:#f5f5f4,stroke-width:1px,stroke-dasharray:4 4;
     class A client;
-    class B proxy;
-    class C upstream;
+    class MW,TR,CACHE,SHAPE proxy;
+    class VL,VMA upstream;
+    class LH cold;
 ```
 
 ## Detailed Architecture
 
 ```mermaid
 flowchart TD
-    subgraph L1["Clients"]
+    subgraph Clients["Clients"]
         G["Grafana<br/>Explore / Drilldown / Dashboards"]
         M["MCP / LLM / API Tools"]
         C["CLI / SDK Consumers"]
     end
 
-    subgraph L2["Loki Compatibility Layer (Proxy)"]
-        API["Loki HTTP + WS API<br/>query / query_range / labels / tail / rules / alerts"]
-        GUARD["Tenant guardrails + auth context + rate limits + policy checks"]
-        EDGE["Compatibility-edge cache (Tier0)<br/>safe GET response cache"]
+    subgraph Ingress["Loki API Surface"]
+        API["HTTP + WebSocket routes<br/>query, query_range, labels, series,<br/>detected_fields, patterns, volume,<br/>tail, rules, alerts, delete"]
+        SEC["Security headers<br/>auth forwarding, token redaction"]
     end
 
-    subgraph L3["Execution Paths"]
-        Q["Query translation + shaping"]
-        T["Tail path (native or synthetic)"]
-        R["Rules / alerts read bridge"]
-        RESP["Loki-compatible response"]
+    subgraph Middleware["Protection Layer"]
+        TENANT["Tenant validation<br/>X-Scope-OrgID mapping + isolation"]
+        RL["Rate limiter<br/>per-client token bucket + global semaphore"]
+        CB["Circuit breaker<br/>sliding window, 3-state"]
+        COAL["Request coalescer<br/>singleflight dedup"]
     end
 
-    subgraph L4["Cache Tiers"]
-        L1C["L1 memory cache"]
-        L2C["L2 disk cache (optional)"]
-        L3C["L3 peer cache (optional)"]
+    subgraph Cache["Cache Tiers"]
+        T0["Tier0 edge cache<br/>safe GET short-circuit"]
+        L1C["L1 memory<br/>sync.Map + atomic counters"]
+        L2C["L2 disk (bbolt)<br/>gzip, survives restarts"]
+        L3C["L3 peer cache<br/>hash ring, zstd, write-through"]
     end
 
-    subgraph L5["Upstream Systems"]
+    subgraph Translation["Query Translation"]
+        PARSE["LogQL parser<br/>typed recursive-descent AST"]
+        XLATE["Translator<br/>LogQL AST → LogsQL builder"]
+        CAPS["VL capabilities<br/>version-gated features"]
+        LABEL["Label translator<br/>OTel dotted ↔ underscore<br/>hot-reload via SIGHUP"]
+    end
+
+    subgraph Execution["Execution Paths"]
+        WINDOW["Windowed query_range<br/>1h splits, adaptive parallelism<br/>EWMA backpressure, prefilter"]
+        METRIC["Metric queries<br/>stats_query_range, binary ops<br/>vector matching, topK"]
+        STREAM["Stream processing<br/>VL → Loki streams, drop/keep<br/>structured metadata, 2/3-tuple"]
+        PATTERN["Patterns mining<br/>Drain clustering, cross-window merge<br/>snapshot persist (disk + peer)"]
+        DRILLDOWN["Drilldown support<br/>detected labels, field values<br/>service_name synthesis"]
+        VOLUME["Volume / index stats<br/>hits estimation"]
+    end
+
+    subgraph Tail["Tail Path"]
+        WS["WebSocket /tail<br/>origin allowlist"]
+        NATIVE["Native VL tail"]
+        SYNTH["Synthetic polling"]
+    end
+
+    subgraph Alerts["Rules + Alerts"]
+        RULER["Read bridge<br/>Loki / Prometheus format"]
+        LIMITS["Tenant limits publish<br/>drilldown-limits"]
+    end
+
+    subgraph Backends["Upstream Systems"]
         VL["VictoriaLogs<br/>hot backend"]
-        Lakehouse[("Victoria Lakehouse<br/>cold backend, optional")]
-        VMA["vmalert<br/>rules / alerts state"]
-        VM["VictoriaMetrics (optional)<br/>recording rule outputs"]
+        LH[("Victoria Lakehouse<br/>cold backend")]
+        VMA["vmalert<br/>rules / alerts"]
+        VM["VictoriaMetrics<br/>recording-rule sink"]
+    end
+
+    subgraph Observability["Observability"]
+        PROM["100+ Prometheus metrics<br/>per-endpoint, per-tenant, per-client"]
+        OTLP["OTLP metrics push"]
+        QT["Query tracker<br/>top-N by freq/latency"]
+        LOG["Structured JSON logs<br/>semconv, request sampling"]
+    end
+
+    subgraph Admin["Infrastructure"]
+        HEALTH["Health / ready / alive probes<br/>VL health + CB state check"]
+        BUILD["buildinfo version gate"]
+        PPROF["pprof + query analytics"]
+        CFLUSH["Admin cache flush"]
+        PEER["Peer endpoints<br/>/_cache/* (get/set/hot/has/peers)"]
+        CONN["Connection rotation<br/>max-age, jitter, overload"]
     end
 
     G --> API
     M --> API
     C --> API
 
-    API --> GUARD
-    GUARD --> EDGE
-    EDGE -->|hit| RESP
-    EDGE -->|miss| Q
+    API --> SEC --> TENANT --> RL
+    RL --> T0
+    T0 -->|hit| G
+    T0 -->|miss| COAL
 
-    GUARD --> T
-    GUARD --> R
+    COAL --> PARSE --> XLATE --> CAPS
+    XLATE --> LABEL
+    CAPS --> L1C
+    L1C -->|miss| L2C -->|miss| L3C -->|miss| CB --> VL
+    L3C -. cold range .-> LH
 
-    Q --> L1C
-    L1C -->|miss| L2C
-    L2C -->|miss| L3C
-    L3C -->|miss| VL
-    L3C -. cold queries ≥ boundary .-> Lakehouse
-    VL --> Q
-    Lakehouse -. cold results .-> Q
-    Q --> RESP
+    VL --> STREAM
+    VL --> WINDOW
+    VL --> METRIC
+    LH -. cold results .-> STREAM
 
-    T --> VL
-    R --> VMA
-    VMA -. optional remote write .-> VM
+    STREAM --> T0
+    WINDOW --> T0
+    METRIC --> T0
+    PATTERN --> T0
+    DRILLDOWN --> T0
+    VOLUME --> T0
+
+    RL --> WS --> NATIVE --> VL
+    WS --> SYNTH --> VL
+
+    RL --> RULER --> VMA
+    VMA -. recording writes .-> VM
+    LIMITS --> G
+
+    PROM --> OTLP
+    CB --> PROM
+    STREAM --> QT
+    API --> LOG
+
+    HEALTH --> VL
+    HEALTH --> CB
+    PEER --> L3C
 
     classDef client fill:#1f2937,stroke:#93c5fd,color:#f3f4f6,stroke-width:2px;
     classDef api fill:#0f172a,stroke:#22d3ee,color:#f8fafc,stroke-width:2px;
-    classDef exec fill:#172554,stroke:#818cf8,color:#eef2ff,stroke-width:2px;
+    classDef mw fill:#1e1b4b,stroke:#a78bfa,color:#f5f3ff,stroke-width:2px;
     classDef cache fill:#3f1d2e,stroke:#f472b6,color:#fdf2f8,stroke-width:2px;
+    classDef trans fill:#172554,stroke:#38bdf8,color:#f0f9ff,stroke-width:2px;
+    classDef exec fill:#172554,stroke:#818cf8,color:#eef2ff,stroke-width:2px;
+    classDef tail fill:#0f3460,stroke:#90e0ef,color:#fff,stroke-width:2px;
+    classDef alert fill:#1b4332,stroke:#52b788,color:#fff,stroke-width:2px;
     classDef upstream fill:#052e16,stroke:#34d399,color:#ecfdf5,stroke-width:2px;
     classDef cold fill:#1c1917,stroke:#a8a29e,color:#f5f5f4,stroke-width:1px,stroke-dasharray:4 4;
+    classDef obs fill:#422006,stroke:#f59e0b,color:#fffbeb,stroke-width:2px;
+    classDef infra fill:#1c1917,stroke:#78716c,color:#f5f5f4,stroke-width:1px;
 
     class G,M,C client;
-    class API,GUARD,EDGE api;
-    class Q,T,R,RESP exec;
-    class L1C,L2C,L3C cache;
+    class API,SEC api;
+    class TENANT,RL,CB,COAL mw;
+    class T0,L1C,L2C,L3C cache;
+    class PARSE,XLATE,CAPS,LABEL trans;
+    class WINDOW,METRIC,STREAM,PATTERN,DRILLDOWN,VOLUME exec;
+    class WS,NATIVE,SYNTH tail;
+    class RULER,LIMITS alert;
     class VL,VMA,VM upstream;
-    class Lakehouse cold;
+    class LH cold;
+    class PROM,OTLP,QT,LOG obs;
+    class HEALTH,BUILD,PPROF,CFLUSH,PEER,CONN infra;
 ```
 
 ---

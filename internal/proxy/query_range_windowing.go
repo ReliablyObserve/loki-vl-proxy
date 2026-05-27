@@ -782,6 +782,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	needsClassification := categorizedLabels && emitStructuredMetadata
+	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
 
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), windowEntryScannerLineBytes)
@@ -842,11 +843,38 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 			structuredMetadata, parsedFields := p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 			sm = metadataFieldMap(structuredMetadata)
 			parsed = metadataFieldMap(parsedFields)
+			if len(dropConditions) > 0 {
+				applyDropConditions(dropConditions, sm, parsed)
+			}
+			if len(keepConditions) > 0 {
+				applyKeepConditions(keepConditions, sm, parsed)
+			}
+		}
+
+		streamLabels := desc.translatedLabels
+		streamKey := desc.translatedKey
+		if len(dropConditions) > 0 {
+			if newKey, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, streamLabels, p.labelTranslator); changed {
+				streamKey = newKey
+				streamLabels = newLabels
+			}
+		}
+		if len(keepConditions) > 0 {
+			if newKey, newLabels, changed := applyKeepConditionsToStreamLabels(keepConditions, desc.rawLabels, streamLabels, p.labelTranslator); changed {
+				streamKey = newKey
+				streamLabels = newLabels
+			}
+		}
+		if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
+			if newKey, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, desc.rawLabels, streamLabels, p.labelTranslator); changed {
+				streamKey = newKey
+				streamLabels = newLabels
+			}
 		}
 
 		entries = append(entries, queryRangeWindowEntry{
-			Stream: desc.translatedLabels,
-			Key:    desc.translatedKey,
+			Stream: streamLabels,
+			Key:    streamKey,
 			Ts:     tsNanos,
 			Msg:    msg,
 			SM:     sm,

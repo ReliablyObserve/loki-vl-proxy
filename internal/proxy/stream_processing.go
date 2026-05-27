@@ -236,6 +236,11 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 				translatedLabels = newLabels
 			}
 		}
+		if len(keepConditions) > 0 {
+			if _, newLabels, changed := applyKeepConditionsToStreamLabels(keepConditions, streamLabels, translatedLabels, p.labelTranslator); changed {
+				translatedLabels = newLabels
+			}
+		}
 		// Apply bare-field drop/keep to stream labels.
 		// | drop f removes f from the stream label set unconditionally.
 		// | keep f1, f2 removes any stream label NOT in the keep list.
