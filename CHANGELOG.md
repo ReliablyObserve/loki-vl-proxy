@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.51.0] - 2026-05-27
+
 ### Fixed
 - Eliminate potential RWMutex deadlock in metrics handler: nested RLock in `cacheStatsSnapshot()` could deadlock when a writer queued between acquisitions; replaced with direct function-pointer call that does not re-acquire the lock
 - Peer cache `/_cache/set` now rejects payloads exceeding `maxPeerSetBodyBytes` instead of silently truncating via `io.LimitReader`
