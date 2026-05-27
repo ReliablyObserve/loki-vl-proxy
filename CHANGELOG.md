@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.52.0] - 2026-05-27
+
 ### Performance
 - Lock-free circuit breaker fast path: closed-state `Allow()` and `RecordSuccess()` use `atomic.Int32` instead of acquiring a mutex, eliminating lock contention on the happy path
 - Lock-free metrics histograms: `observe()` and scrape handler use atomic CAS loops instead of a shared RWMutex, removing the #1 mutex hotspot from `/metrics` scrapes under load
