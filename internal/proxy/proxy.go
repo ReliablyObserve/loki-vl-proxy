@@ -519,6 +519,9 @@ type Proxy struct {
 	requestSampler                        *observability.RequestSampler
 	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
+	// handler is the decomposed view of this Proxy's deps + config + state.
+	// Populated alongside the existing fields during the Task 9 migration.
+	handler *Handler
 }
 
 const maxReadCacheKeyMemoEntries = 16384
