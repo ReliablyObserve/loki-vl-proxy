@@ -1194,10 +1194,56 @@ func New(cfg Config) (*Proxy, error) {
 			cacheTTLLabelValues:                   p.cacheTTLLabelValues,
 			logSampleN:                            p.logSampleN,
 		},
-		// WARNING: fresh State — Proxy still owns the live mutable fields (tenantMap,
-		// labelValuesIndex, etc.). The receiver migration (follow-on PR) must share or
-		// transfer those pointers into State, not double-allocate.
-		State: newState(),
+		// State shares the exact same mutex instances and map/channel references as
+		// Proxy so that Handler.State and Proxy never diverge.  Mutex fields are held
+		// by pointer (required: sync.Mutex/sync.RWMutex must not be copied); atomic
+		// fields are similarly held by pointer.  Map and channel fields are reference
+		// types in Go and are shared directly.
+		State: &State{
+			configMu:                            &p.configMu,
+			tenantMap:                           p.tenantMap,
+			labelTranslator:                     p.labelTranslator,
+			queryRangeAdaptiveMu:                &p.queryRangeAdaptiveMu,
+			queryRangeParallelCurrent:           &p.queryRangeParallelCurrent,
+			queryRangeLatencyEWMA:               &p.queryRangeLatencyEWMA,
+			queryRangeErrorEWMA:                 &p.queryRangeErrorEWMA,
+			queryRangeAdaptiveLastAdjust:        &p.queryRangeAdaptiveLastAdjust,
+			patternsSnapshotMu:                  &p.patternsSnapshotMu,
+			patternsSnapshotEntries:             p.patternsSnapshotEntries,
+			patternsSnapshotPatternCount:        &p.patternsSnapshotPatternCount,
+			patternsSnapshotPayloadBytes:        &p.patternsSnapshotPayloadBytes,
+			patternsPersistDigest:               &p.patternsPersistDigest,
+			patternsPersistDigestReady:          &p.patternsPersistDigestReady,
+			patternsWarmReady:                   &p.patternsWarmReady,
+			patternsPersistStarted:              &p.patternsPersistStarted,
+			patternsPersistDirty:                &p.patternsPersistDirty,
+			patternsPersistStop:                 p.patternsPersistStop,
+			patternsPersistDone:                 p.patternsPersistDone,
+			backendVersionMu:                    &p.backendVersionMu,
+			backendVersionRaw:                   &p.backendVersionRaw,
+			backendVersionSemver:                &p.backendVersionSemver,
+			backendCapabilityProfile:            &p.backendCapabilityProfile,
+			backendSupportsStreamMetadata:       &p.backendSupportsStreamMetadata,
+			backendSupportsDensePatternWindowing: &p.backendSupportsDensePatternWindowing,
+			backendSupportsMetadataSubstring:    &p.backendSupportsMetadataSubstring,
+			backendVersionLogged:                &p.backendVersionLogged,
+			labelValuesIndexMu:                  &p.labelValuesIndexMu,
+			labelValuesIndex:                    p.labelValuesIndex,
+			labelValuesIndexPersistDigest:       &p.labelValuesIndexPersistDigest,
+			labelValuesIndexPersistDigestReady:  &p.labelValuesIndexPersistDigestReady,
+			labelValuesIndexWarmReady:           &p.labelValuesIndexWarmReady,
+			labelValuesIndexPersistStarted:      &p.labelValuesIndexPersistStarted,
+			labelValuesIndexPersistDirty:        &p.labelValuesIndexPersistDirty,
+			labelValuesIndexPersistStop:         p.labelValuesIndexPersistStop,
+			labelValuesIndexPersistDone:         p.labelValuesIndexPersistDone,
+			keepWarmStop:                        p.keepWarmStop,
+			readCacheKeyMemoMu:                  &p.readCacheKeyMemoMu,
+			readCacheKeyMemo:                    p.readCacheKeyMemo,
+			labelRefreshGroup:                   &p.labelRefreshGroup,
+			logSampleCount:                      &p.logSampleCount,
+			metricsConcurrencyLimiter:           p.metricsConcurrencyLimiter,
+			coldRouter:                          p.coldRouter,
+		},
 	}
 
 	return p, nil
