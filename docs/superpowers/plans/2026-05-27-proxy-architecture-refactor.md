@@ -6,6 +6,14 @@
 
 **Architecture:** Three sequential commits in one PR (Part 1 → Part 2 → Part 3). Each commit leaves all 554 translator unit tests, proxy tests, and e2e parity suite green. The proxy's main translation path remains `translator.TranslateLogQLWithCapabilities` throughout — `logql.Translate` is wired but not yet called by proxy handlers (that migration is a follow-on PR).
 
+**Capability matrix principle:** The AST-to-AST path in Part 2 must prefer native LogsQL features over proxy-side processing whenever the VL version supports them. `logsql.Capabilities` (from `logsql.CapabilitiesFor(vlVersion)`) gates which constructs are emitted. `logsql.Builder` wraps these decisions. Examples:
+- `ip()` label filter → `Builder.BestIPv4Range()` emits `ipv4_range()` on v1.45+, regexp fallback on older
+- `| stats rate_sum(field)` on v1.44+; proxy-side rate counting on older (fallthrough)
+- `| sort by (field desc) | limit N` (v1.40 baseline — always available for topk/bottomk)
+- VL's native `| filter`, `| unpack_json`, `| delete`, `| fields`, `| format` are always preferred — zero proxy post-processing
+
+`TranslateOptions.Caps` carries the `Capabilities` value into every translate function. Always build `logsql.Builder` from it and use `builder.Best*` helpers wherever capability varies.
+
 **Tech Stack:** Go 1.22+, `internal/logql` (LogQL AST), `internal/logsql` (LogsQL AST + builder), `internal/translator`, `internal/proxy`. No new dependencies.
 
 ---
@@ -488,6 +496,22 @@ git commit -m "feat: add ParseError/UnsupportedError + query-length enforcement 
 
 **Context:** The current `internal/logql/translate.go` roundtrips through the string translator. This task replaces it with a typed mapper. Metric queries (`RangeAggregation`, `VectorAggregation`, `BinOpExpr`) fall through to the string translator — their string-based handling is unchanged. The proxy does NOT call `logql.Translate` yet (follow-on PR).
 
+**Capability matrix integration in translate.go:** Every translate function receives `opts TranslateOptions`. Build a `*logsql.Builder` at the top of `translateLogQuery` from `opts.Caps` and pass it down to helpers that make capability-gated decisions:
+
+```go
+func translateLogQuery(lq *LogQuery, opts TranslateOptions) (*logsql.Query, error) {
+    b := logsql.NewBuilder(opts.Caps) // capability-aware builder
+    filter, err := translateStreamSelector(lq.Selector, b, opts)
+    ...
+}
+```
+
+Use `b.BestIPv4Range(field, cidr)` for IP label filters, `b.BestTopN(k, field)` for topk/bottomk in the metric path. For label filters that contain `ip()` matchers (e.g., `| ip="10.0.0.0/8"`), the builder emits:
+- `field:ipv4_range(first, last)` on v1.45+ (native VL, no proxy post-processing)
+- `field:~"regexp-approximation"` on v1.44 and earlier (proxy-compatible fallback)
+
+**Native-first rule:** Every pipe stage in the AST path must emit a native LogsQL pipe or filter — never buffer results in the proxy for post-processing. If a stage cannot be expressed natively in LogsQL (e.g., complex conditional label operations), return `errFallthrough`.
+
 The logsql builder constructors are in `internal/logsql/builder.go`:
 - `logsql.NewQuery(filter, pipes...)` — builds `*logsql.Query`
 - `logsql.And(left, right)`, `logsql.Or(...)`, `logsql.Not(...)`
@@ -496,6 +520,24 @@ The logsql builder constructors are in `internal/logsql/builder.go`:
 The logsql filter types used for stream selectors:
 - `logsql.StreamFilter{Matchers: []logsql.LabelMatcher{{Name, Op, Value}}}` — emits `{app="x"}`
 - `logsql.FieldFilter{Field, Op: logsql.FieldOpExact, Value}` — emits `app:="x"`
+
+**Capability matrix test:** Add one test that verifies capabilities gate output:
+
+```go
+func TestTranslate_Capabilities_IPv4Range_GatedByVersion(t *testing.T) {
+    // On v1.45+ the ip() filter emits ipv4_range(); on older it emits regexp
+    // This test verifies the Builder.BestIPv4Range path is wired in translateLabelFilter
+    // when the raw filter expression contains an ip() matcher.
+    // (Full test implementation once ip() label filter parsing is confirmed to
+    // reach translateLabelFilter — may still fall through via DeferredExpr;
+    // update this test to match actual behavior)
+    capsNew := logsql.CapabilitiesFor("v1.45.0")
+    capsOld := logsql.CapabilitiesFor("v1.44.0")
+    _ = capsNew
+    _ = capsOld
+    // Placeholder — implement once ip() filter path is confirmed in AST
+}
+```
 
 - [ ] **Step 1: Write the failing test file**
 
