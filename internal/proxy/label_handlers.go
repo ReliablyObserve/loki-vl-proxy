@@ -274,11 +274,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 			if len(stream) == 0 {
 				continue
 			}
-			labels := make(map[string]string, len(stream))
-			for k, val := range stream {
-				labels[k] = val
-			}
-			labels = p.labelTranslator.TranslateLabelsMap(labels)
+			labels := p.labelTranslator.TranslateLabelsMap(stream)
 			ensureSyntheticServiceName(labels)
 
 			keys := make([]string, 0, len(labels))

@@ -349,12 +349,17 @@ func (lt *LabelTranslator) ResolveMetadataCandidates(fieldName string, available
 }
 
 // TranslateLabelsMap translates all keys in a labels map (response direction).
+// Always returns a new map — callers may mutate the result (e.g. ensureSyntheticServiceName)
+// and the input may be a cached map from parseStreamLabels.
 func (lt *LabelTranslator) TranslateLabelsMap(labels map[string]string) map[string]string {
 	lt.learnFieldAliasesFromMap(labels)
-	if lt.style == LabelStylePassthrough && len(lt.vlToLoki) == 0 {
-		return labels
-	}
 	result := make(map[string]string, len(labels))
+	if lt.style == LabelStylePassthrough && len(lt.vlToLoki) == 0 {
+		for k, v := range labels {
+			result[k] = v
+		}
+		return result
+	}
 	for k, v := range labels {
 		lokiKey := lt.ToLoki(k)
 		// Coalesce: prefer non-empty when multiple source fields map to the same
@@ -364,6 +369,25 @@ func (lt *LabelTranslator) TranslateLabelsMap(labels map[string]string) map[stri
 		}
 	}
 	return result
+}
+
+// TranslateLabelsMapInto translates all keys in src and writes the result into dst.
+// dst must be empty (caller's responsibility). It is filled in-place so the caller
+// can pool the backing map and avoid per-call allocation.
+func (lt *LabelTranslator) TranslateLabelsMapInto(src, dst map[string]string) {
+	lt.learnFieldAliasesFromMap(src)
+	if lt.style == LabelStylePassthrough && len(lt.vlToLoki) == 0 {
+		for k, v := range src {
+			dst[k] = v
+		}
+		return
+	}
+	for k, v := range src {
+		lokiKey := lt.ToLoki(k)
+		if v != "" || dst[lokiKey] == "" {
+			dst[lokiKey] = v
+		}
+	}
 }
 
 // TranslateLabelsList translates a list of label names (response direction).
