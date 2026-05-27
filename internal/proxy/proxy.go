@@ -1603,6 +1603,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if endNs, okE := parseLokiTimeToUnixNano(r.FormValue("end")); okE {
 			if errMsg := p.checkQueryRangeLength(r.Context(), startNs, endNs); errMsg != "" {
 				p.writeError(w, http.StatusBadRequest, errMsg)
+				p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 				return
 			}
 		}
