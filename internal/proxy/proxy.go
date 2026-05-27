@@ -1194,6 +1194,9 @@ func New(cfg Config) (*Proxy, error) {
 			cacheTTLLabelValues:                   p.cacheTTLLabelValues,
 			logSampleN:                            p.logSampleN,
 		},
+		// WARNING: fresh State — Proxy still owns the live mutable fields (tenantMap,
+		// labelValuesIndex, etc.). The receiver migration (follow-on PR) must share or
+		// transfer those pointers into State, not double-allocate.
 		State: newState(),
 	}
 
