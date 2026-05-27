@@ -274,10 +274,29 @@ func TestDrilldown_StatsQueryDoesNotInjectUnknownServiceName(t *testing.T) {
 	}
 }
 
+func waitForProxyLabels(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	params := url.Values{}
+	params.Set("query", `{app="api-gateway"}`)
+	params.Set("start", fmt.Sprintf("%d", time.Now().Add(-10*time.Minute).UnixNano()))
+	params.Set("end", fmt.Sprintf("%d", time.Now().UnixNano()))
+	for time.Now().Before(deadline) {
+		resp := getJSON(t, proxyURL+"/loki/api/v1/labels?"+params.Encode())
+		values := extractStrings(resp, "data")
+		if contains(values, "cluster") {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Log("warning: proxy label index not fully populated after 30s — labels tests may be flaky")
+}
+
 func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 	ensureDataIngested(t)
 	ingestPatternData(t)
 	ensureOTelData(t)
+	waitForProxyLabels(t)
 	now := time.Now()
 	start := now.Add(-2 * time.Hour).Format(time.RFC3339Nano)
 	end := now.Format(time.RFC3339Nano)
