@@ -17,6 +17,10 @@ type TranslateOptions struct {
 	// StreamFields is the set of VL _stream_fields labels for which the
 	// translator can emit the faster stream-selector syntax.
 	StreamFields map[string]bool
+
+	// Caps controls VictoriaLogs version-gated features.
+	// The zero value disables all gated features.
+	Caps logsql.Capabilities
 }
 
 // errFallthrough signals that translateExpr cannot handle this node and the

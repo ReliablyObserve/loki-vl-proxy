@@ -158,3 +158,29 @@ func TestTranslate_RoundTrip(t *testing.T) {
 		t.Errorf("round-trip mismatch:\n  first:  %q\n  second: %q", out1, out2)
 	}
 }
+
+func TestTranslate_OpaqueMetricExpr_FallsThrough(t *testing.T) {
+	// label_replace falls through to string translator — must not panic
+	expr, err := logql.Parse(`label_replace(rate({app="x"}[5m]), "new", "$1", "old", "(.*)")`)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	_, err = logql.Translate(expr, logql.TranslateOptions{})
+	// error is acceptable; panic is not
+	_ = err
+}
+
+func TestTranslate_RangeAgg_FallsThrough(t *testing.T) {
+	expr, err := logql.Parse(`rate({app="x"}[5m])`)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	got, err := logql.Translate(expr, logql.TranslateOptions{})
+	if err != nil {
+		t.Logf("translate returned error (acceptable for metric path): %v", err)
+		return
+	}
+	if got == "" {
+		t.Error("want non-empty LogsQL output from string translator fallthrough")
+	}
+}
