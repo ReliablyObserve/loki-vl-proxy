@@ -238,6 +238,7 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 - **100+ Prometheus metrics** — all under `loki_vl_proxy_*` prefix
 - **Read-only by default** — `/push` blocked, delete gated, debug/admin disabled unless explicitly enabled
 - **Cold storage routing** — time-boundary split to Victoria Lakehouse for long-range queries
+- **Query-length enforcement** — per-tenant max query time range via `-default-max-query-length` flag; per-tenant override via limits config
 
 ---
 
