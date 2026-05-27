@@ -268,6 +268,9 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 		if need := 32 + len(arr)*80; sb.Cap() < need {
 			sb.Grow(need)
 		}
+		// Get a pooled keys slice (outside the loop to reuse across all stream entries)
+		kp := seriesKeysPool.Get().(*[]string)
+		keys := (*kp)[:0]
 		for _, item := range arr {
 			streamStr := string(item.GetStringBytes("value"))
 			stream := parseStreamLabels(streamStr)
@@ -277,7 +280,8 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 			labels := p.labelTranslator.TranslateLabelsMap(stream)
 			ensureSyntheticServiceName(labels)
 
-			keys := make([]string, 0, len(labels))
+			// Reuse the keys slice (reset length, keep capacity)
+			keys = keys[:0]
 			for k := range labels {
 				keys = append(keys, k)
 			}
@@ -298,6 +302,9 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 			}
 			sb.WriteByte('}')
 		}
+		// Save potentially-grown slice back to pool (after the loop)
+		*kp = keys
+		seriesKeysPool.Put(kp)
 	}
 	sb.WriteString(`]}`)
 	result := sb.String()

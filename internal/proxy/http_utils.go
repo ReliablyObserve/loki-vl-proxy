@@ -37,6 +37,9 @@ var jsonBuilderPool = sync.Pool{New: func() interface{} { return new(strings.Bui
 // per-response allocation. New is nil — Get returns nil until readers are returned.
 var gzipReaderPool sync.Pool
 
+// seriesKeysPool recycles the sorted-keys slice used per stream entry in handleSeries.
+var seriesKeysPool = sync.Pool{New: func() interface{} { s := make([]string, 0, 16); return &s }}
+
 // Pre-canonicalized VL request header names eliminate net/textproto.CanonicalMIMEHeaderKey
 // allocations in applyBackendHeaders. Custom headers with non-canonical capitalisation
 // (e.g. "VL" → "Vl") would allocate a new string on every Header.Set call otherwise.
