@@ -507,26 +507,22 @@ func TestRateLimiter_StopAndCleanupStaleClients(t *testing.T) {
 	})
 
 	rl := NewRateLimiter(1, 10, 10)
-	rl.mu.Lock()
-	rl.clients["stale"] = &tokenBucket{
+	rl.clients.Store("stale", &tokenBucket{
 		tokens:    1,
 		lastTime:  time.Now().Add(-time.Second),
 		rate:      10,
 		burstSize: 10,
-	}
-	rl.clients["fresh"] = &tokenBucket{
+	})
+	rl.clients.Store("fresh", &tokenBucket{
 		tokens:    1,
 		lastTime:  time.Now(),
 		rate:      10,
 		burstSize: 10,
-	}
-	rl.mu.Unlock()
+	})
 
 	requireEventuallyMiddleware(t, 200*time.Millisecond, func() bool {
-		rl.mu.Lock()
-		defer rl.mu.Unlock()
-		_, staleExists := rl.clients["stale"]
-		_, freshExists := rl.clients["fresh"]
+		_, staleExists := rl.clients.Load("stale")
+		_, freshExists := rl.clients.Load("fresh")
 		return !staleExists && freshExists
 	})
 

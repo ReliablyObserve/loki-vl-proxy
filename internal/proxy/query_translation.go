@@ -21,6 +21,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -75,7 +76,10 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			p.metrics.RecordClientErrorWithRoute(endpoint, route, reason)
 		}
 
-		// Structured request log — includes tenant, query, status, latency, cache info
+		// Adaptive request log sampling:
+		// - At low rate (<QuietThreshold req/s): log every request individually
+		// - At high rate: suppress OK traffic, emit periodic digest; errors always counted,
+		//   collapsed into digest at high error rates
 		logLevel := slog.LevelInfo
 		if sc.code >= 500 {
 			logLevel = slog.LevelError
@@ -84,14 +88,46 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		}
 		reqCtx := reqWithTelemetry.Context()
 		if !p.log.Enabled(reqCtx, logLevel) {
+			// Still feed the sampler for digest stats even when level is disabled.
+			if p.requestSampler != nil {
+				p.requestSampler.ShouldLog(observability.RequestInfo{
+					StatusCode: sc.code,
+					LatencyMs:  elapsed.Milliseconds(),
+					CacheHit:   telemetry.cacheResult == "hit",
+				})
+			}
 			return
 		}
-		// Sample successful requests: skip log assembly for N-1 out of every N 2xx
-		// responses to avoid slice allocation and slog formatting overhead.
-		if p.logSampleN > 1 && sc.code < 400 {
-			if p.logSampleCount.Add(1)%p.logSampleN != 0 {
-				return
+
+		// Emit periodic digest if interval elapsed.
+		if p.requestSampler != nil {
+			if attrs := p.requestSampler.DigestAttrs(); attrs != nil {
+				dr := slog.NewRecord(time.Now(), slog.LevelInfo, "request_digest", 0)
+				dr.AddAttrs(attrs...)
+				_ = p.log.Handler().Handle(reqCtx, dr)
 			}
+		}
+
+		// Adaptive sampling decision.
+		shouldLog := true
+		if p.requestSampler != nil {
+			shouldLog = p.requestSampler.ShouldLog(observability.RequestInfo{
+				StatusCode: sc.code,
+				LatencyMs:  elapsed.Milliseconds(),
+				Query:      r.FormValue("query"),
+				CacheHit:   telemetry.cacheResult == "hit",
+				Endpoint:   endpoint,
+				Route:      route,
+				Tenant:     tenant,
+			})
+		} else if p.logSampleN > 1 && sc.code < 400 {
+			// Legacy fallback: static sampling when sampler not initialized.
+			if p.logSampleCount.Add(1)%p.logSampleN != 0 {
+				shouldLog = false
+			}
+		}
+		if !shouldLog {
+			return
 		}
 
 		authUser, authSource := metrics.ResolveAuthContext(r)
@@ -108,7 +144,8 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		for key, value := range telemetry.internalDurationByType {
 			internalDurationByTypeMs[key] = value.Milliseconds()
 		}
-		logAttrs := []interface{}{
+		logAttrs := make([]interface{}, 0, 40)
+		logAttrs = append(logAttrs,
 			"http.route", route,
 			"url.path", r.URL.Path,
 			"http.request.method", r.Method,
@@ -128,7 +165,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.duration_ms", telemetry.upstreamDuration.Milliseconds(),
 			"upstream.status_code", telemetry.upstreamLastCode,
 			"upstream.error", telemetry.upstreamErrorSeen,
-		}
+		)
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
 		}
@@ -371,40 +408,53 @@ func (p *Proxy) translateQueryWithContext(ctx context.Context, logql string) (st
 		}
 	}
 
-	p.configMu.RLock()
-	labelFn := p.labelTranslator.ToVL
-	streamFieldsMap := p.streamFieldsMap
-	p.configMu.RUnlock()
+	type translationResult struct {
+		query string
+		err   error
+	}
+	v, _, _ := p.translationGroup.Do(normalized, func() (interface{}, error) {
+		if p.translationCache != nil {
+			if cached, ok := p.translationCache.Get(normalized); ok {
+				return translationResult{query: string(cached)}, nil
+			}
+		}
 
-	p.backendVersionMu.RLock()
-	semver := p.backendVersionSemver
-	p.backendVersionMu.RUnlock()
-	caps := logsql.CapabilitiesFor(semver)
+		p.configMu.RLock()
+		labelFn := p.labelTranslator.ToVL
+		streamFieldsMap := p.streamFieldsMap
+		p.configMu.RUnlock()
 
-	var (
-		translated string
-		err        error
-	)
-	translated, err = translator.TranslateLogQLWithCapabilities(normalized, labelFn, streamFieldsMap, caps)
-	if err != nil {
+		p.backendVersionMu.RLock()
+		semver := p.backendVersionSemver
+		p.backendVersionMu.RUnlock()
+		caps := logsql.CapabilitiesFor(semver)
+
+		translated, err := translator.TranslateLogQLWithCapabilities(normalized, labelFn, streamFieldsMap, caps)
+		if err != nil {
+			return translationResult{err: err}, nil
+		}
+		trimmed := strings.TrimSpace(translated)
+		if strings.HasPrefix(trimmed, "|") {
+			translated = "* " + trimmed
+		}
+		if p.translationCache != nil {
+			p.translationCache.SetWithTTL(normalized, []byte(translated), 5*time.Minute)
+		}
+		return translationResult{query: translated}, nil
+	})
+	res := v.(translationResult)
+	if res.err != nil {
 		if p.metrics != nil {
 			p.metrics.RecordTranslationError()
 		}
 		p.observeInternalOperation(ctx, "translate_query", "error", time.Since(start))
-		return "", err
-	}
-	trimmed := strings.TrimSpace(translated)
-	if strings.HasPrefix(trimmed, "|") {
-		translated = "* " + trimmed
-	}
-	if p.translationCache != nil {
-		p.translationCache.SetWithTTL(normalized, []byte(translated), 5*time.Minute)
+		return "", res.err
 	}
 	if p.metrics != nil {
 		p.metrics.RecordTranslation()
 	}
 	p.observeInternalOperation(ctx, "translate_query", "translated", time.Since(start))
-	return translated, nil
+	return res.query, nil
 }
 
 var (
@@ -561,10 +611,32 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 		baseQuery = logql
 	}
 	baseQuery = defaultFieldDetectionQuery(baseQuery)
+
+	probeKey := baseQuery + "\x00" + start + "\x00" + end
+	v, _, _ := p.parserProbeGroup.Do(probeKey, func() (interface{}, error) {
+		return p.probePreferredParser(ctx, baseQuery, start, end), nil
+	})
+	preferred := v.(string)
+
+	switch preferred {
+	case "json":
+		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_json", time.Since(opStart))
+		return removeParserStage(logql, "logfmt")
+	case "logfmt":
+		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_logfmt", time.Since(opStart))
+		return removeParserStage(logql, "json")
+	default:
+		p.observeInternalOperation(ctx, "prefer_working_parser", "no_parser_signal", time.Since(opStart))
+		return logql
+	}
+}
+
+var metricParserProbeRE = regexp.MustCompile(`(?s)(?:count_over_time|bytes_over_time|rate|bytes_rate|rate_counter|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time|quantile_over_time)\((.*?)\[[^][]+\]\)`)
+
+func (p *Proxy) probePreferredParser(ctx context.Context, baseQuery, start, end string) string {
 	logsqlQuery, err := p.translateQueryWithContext(ctx, baseQuery)
 	if err != nil {
-		p.observeInternalOperation(ctx, "prefer_working_parser", "probe_translate_error", time.Since(opStart))
-		return logql
+		return ""
 	}
 
 	params := url.Values{}
@@ -579,15 +651,13 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
-		p.observeInternalOperation(ctx, "prefer_working_parser", "probe_upstream_error", time.Since(opStart))
-		return logql
+		return ""
 	}
 	defer resp.Body.Close()
 
 	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if err != nil || len(body) == 0 {
-		p.observeInternalOperation(ctx, "prefer_working_parser", "probe_empty", time.Since(opStart))
-		return logql
+		return ""
 	}
 
 	jsonHits := 0
@@ -628,18 +698,13 @@ func (p *Proxy) preferWorkingParser(ctx context.Context, logql, start, end strin
 
 	switch {
 	case jsonHits == 0 && logfmtHits == 0:
-		p.observeInternalOperation(ctx, "prefer_working_parser", "no_parser_signal", time.Since(opStart))
-		return logql
+		return ""
 	case jsonHits >= logfmtHits:
-		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_json", time.Since(opStart))
-		return removeParserStage(logql, "logfmt")
+		return "json"
 	default:
-		p.observeInternalOperation(ctx, "prefer_working_parser", "prefer_logfmt", time.Since(opStart))
-		return removeParserStage(logql, "json")
+		return "logfmt"
 	}
 }
-
-var metricParserProbeRE = regexp.MustCompile(`(?s)(?:count_over_time|bytes_over_time|rate|bytes_rate|rate_counter|sum_over_time|avg_over_time|max_over_time|min_over_time|first_over_time|last_over_time|stddev_over_time|stdvar_over_time|quantile_over_time)\((.*?)\[[^][]+\]\)`)
 
 var (
 	absentOverTimeCompatRE         = regexp.MustCompile(`(?s)^\s*absent_over_time\(\s*(.*)\[([^][]+)\]\s*\)\s*$`)

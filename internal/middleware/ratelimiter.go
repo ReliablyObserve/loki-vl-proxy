@@ -17,8 +17,7 @@ var (
 // RateLimiter provides per-client token bucket rate limiting
 // and a global concurrent query semaphore.
 type RateLimiter struct {
-	mu      sync.Mutex
-	clients map[string]*tokenBucket
+	clients sync.Map // string → *tokenBucket (lock-free reads, per-bucket mutex)
 
 	// Global concurrent query limit
 	maxConcurrent int
@@ -41,6 +40,7 @@ type RateLimiter struct {
 }
 
 type tokenBucket struct {
+	mu        sync.Mutex
 	tokens    float64
 	lastTime  time.Time
 	rate      float64
@@ -49,7 +49,6 @@ type tokenBucket struct {
 
 func NewRateLimiter(maxConcurrent int, ratePerSecond float64, burstSize int) *RateLimiter {
 	rl := &RateLimiter{
-		clients:         make(map[string]*tokenBucket),
 		maxConcurrent:   maxConcurrent,
 		ratePerSecond:   ratePerSecond,
 		burstSize:       burstSize,
@@ -87,24 +86,22 @@ func (rl *RateLimiter) ReleaseConcurrent() {
 }
 
 // AllowClient checks if the client (by IP or key) is within rate limits.
+// Uses sync.Map for lock-free client lookup; only the per-bucket mutex is held.
 func (rl *RateLimiter) AllowClient(clientID string) bool {
 	if rl.ratePerSecond <= 0 {
-		return true // no limit
+		return true
 	}
 
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
+	val, _ := rl.clients.LoadOrStore(clientID, &tokenBucket{
+		tokens:    float64(rl.burstSize),
+		lastTime:  time.Now(),
+		rate:      rl.ratePerSecond,
+		burstSize: rl.burstSize,
+	})
+	bucket := val.(*tokenBucket)
 
-	bucket, ok := rl.clients[clientID]
-	if !ok {
-		bucket = &tokenBucket{
-			tokens:    float64(rl.burstSize),
-			lastTime:  time.Now(),
-			rate:      rl.ratePerSecond,
-			burstSize: rl.burstSize,
-		}
-		rl.clients[clientID] = bucket
-	}
+	bucket.mu.Lock()
+	defer bucket.mu.Unlock()
 
 	now := time.Now()
 	elapsed := now.Sub(bucket.lastTime).Seconds()
@@ -177,14 +174,17 @@ func (rl *RateLimiter) cleanupStaleClients() {
 		case <-rl.done:
 			return
 		case <-ticker.C:
-			rl.mu.Lock()
 			cutoff := time.Now().Add(-rl.staleAfter)
-			for k, b := range rl.clients {
-				if b.lastTime.Before(cutoff) {
-					delete(rl.clients, k)
+			rl.clients.Range(func(key, value any) bool {
+				b := value.(*tokenBucket)
+				b.mu.Lock()
+				stale := b.lastTime.Before(cutoff)
+				b.mu.Unlock()
+				if stale {
+					rl.clients.Delete(key)
 				}
-			}
-			rl.mu.Unlock()
+				return true
+			})
 		}
 	}
 }

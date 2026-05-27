@@ -15,65 +15,183 @@ Loki-VL-proxy is a read-only Loki compatibility proxy that sits between Grafana 
 flowchart TD
     subgraph Clients["Clients"]
         G["Grafana<br/>Explore / Drilldown / Dashboards"]
-        M["MCP / Agents"]
+        M["MCP / LLM / Agents"]
         C["CLI / API Consumers"]
     end
 
     subgraph Front["Loki-VL-proxy :3100"]
-        API["Loki HTTP + WebSocket surface<br/>query / labels / detected_* / tail / rules / alerts"]
-        GUARD["Security headers + tenant validation<br/>auth checks + rate limits + request logging"]
-        ROUTE["Route-specific execution"]
-        EDGE["Tier0 compatibility-edge cache<br/>safe GET Loki-shaped responses only"]
+        API["Loki HTTP + WebSocket surface<br/>query, query_range, labels, series, detected_*,<br/>patterns, volume, tail, rules, alerts, delete"]
+        SEC["Security headers<br/>auth forwarding, token redaction,<br/>request fingerprinting"]
+        TENANT["Tenant validation<br/>X-Scope-OrgID mapping, isolation,<br/>multi-tenant fanout"]
+        RL["Rate limiter<br/>per-client token bucket + global semaphore"]
+        REQLOG["Request logger<br/>semconv JSON, Grafana client profiling,<br/>sample rate control"]
     end
 
-    subgraph Query["Query + Metadata Path"]
-        FAN["Optional multi-tenant fanout<br/>and __tenant_id__ narrowing"]
-        CACHE["L1 memory -> optional L2 disk -> optional L3 peer cache"]
-        CO["Coalescing + query normalization"]
-        TR["LogQL→LogsQL translation\nlogql AST · logsql builder · Capabilities"]
-        SHAPE["Response shaping<br/>streams / labels / stats / drilldown"]
+    subgraph Edge["Tier0 Edge Cache"]
+        T0["Compatibility-edge cache<br/>safe GET responses only<br/>10% of L1 budget, tenant-segregated"]
+    end
+
+    subgraph Translation["Query Translation"]
+        CO["Coalescer<br/>singleflight dedup + normalization"]
+        PARSE["LogQL parser<br/>recursive-descent typed AST<br/>semantic validation"]
+        XLATE["Translator<br/>Tier 1: string ops (selectors, filters)<br/>Tier 2: AST-driven (stats, logsql builder)"]
+        CAPS["VL Capabilities<br/>backend version gating"]
+        LABEL["Label translator<br/>OTel dotted ↔ underscore<br/>custom field mappings<br/>hot-reload (SIGHUP)"]
+    end
+
+    subgraph Exec["Execution Paths"]
+        subgraph LogQ["Log Queries"]
+            WINDOW["Windowed query_range<br/>1h splits, batch retry,<br/>partial responses"]
+            ADAPT["Adaptive parallelism<br/>EWMA latency + error tracking<br/>ramp up / back off"]
+            PREFILT["Window prefilter<br/>hits estimation, skip empty"]
+        end
+        subgraph MetricQ["Metric Queries"]
+            STATS["stats_query_range<br/>rate, count_over_time, topK"]
+            BINARY["Binary metric ops<br/>sum(rate) / sum(rate)"]
+            VECM["Vector matching<br/>on/ignoring, group_left/right"]
+            SUBQ["Subquery expansion"]
+        end
+        subgraph StreamP["Stream Processing"]
+            STREAM["VL → Loki streams<br/>label shaping, dedup, sorting"]
+            DROPKEEP["Drop / keep extraction<br/>from parsed AST"]
+            SMETA["Structured metadata<br/>2-tuple / 3-tuple mode"]
+            POSTPROC["Post-processing<br/>limit enforcement, ordering"]
+        end
+        subgraph Meta["Metadata + Patterns"]
+            LBLH["Label handlers<br/>labels, label values,<br/>series, detected fields"]
+            LBLIDX["Label-values index<br/>hot subset, offset/limit,<br/>disk persist + peer warm"]
+            PATTERN["Pattern mining<br/>Drain-like clustering<br/>autodetect from queries"]
+            PATSNAP["Pattern persistence<br/>disk snapshot + peer sync<br/>cross-window merge"]
+            DRILLDOWN["Drilldown metadata<br/>detected labels, field values<br/>service_name synthesis"]
+            VOLUME["Volume / index stats<br/>hits estimation"]
+        end
+    end
+
+    subgraph CacheTiers["Cache Tiers (L1 / L2 / L3)"]
+        L1["L1 in-memory<br/>sync.Map + atomic counters"]
+        L2["L2 disk (bbolt)<br/>gzip, survives restarts"]
+        L3["L3 peer cache<br/>consistent hash ring<br/>zstd, write-through"]
+        WARM["Cache warmer<br/>keep-warm loop + top-N<br/>startup jitter + peer-first"]
     end
 
     subgraph Tail["/tail WebSocket Path"]
-        ORIGIN["Origin allowlist + websocket upgrade"]
-        MODE["tail.mode = auto | native | synthetic"]
+        ORIGIN["Origin allowlist<br/>websocket upgrade checks"]
+        MODE{"tail.mode"}
         NATIVE["Native VL tail stream"]
         SYN["Synthetic polling fallback"]
     end
 
-    subgraph Reads["Rules + Alerts Read Path"]
-        ALERT["Read-compatible Loki / Prometheus rules and alerts views"]
+    subgraph Alerts["Rules + Alerts Path"]
+        RULER["Read bridge<br/>Loki YAML + Prometheus JSON"]
+        LIMITS["Tenant limits publish<br/>drilldown-limits, /config/tenant"]
     end
 
-    subgraph Backends["Backends + Outputs"]
-        VL["VictoriaLogs"]
-        VMR["vmalert / ruler read backend"]
-        VMTS["optional VictoriaMetrics<br/>recording-rule outputs"]
-        OBS["Prometheus metrics + OTLP + JSON logs"]
+    subgraph Cold["Cold Storage Routing"]
+        COLD{"Query spans<br/>boundary?"}
+        HOT["Hot only → VL"]
+        COLDONLY["Cold only → Lakehouse"]
+        MERGE["Both → merge at proxy"]
+    end
+
+    subgraph Backends["Upstream Systems"]
+        VL["VictoriaLogs<br/>hot backend"]
+        LH[("Victoria Lakehouse<br/>cold backend")]
+        CB["Circuit breaker<br/>closed → open → half-open<br/>sliding window failures"]
+        VMR["vmalert / ruler backend"]
+        VMTS["VictoriaMetrics<br/>recording-rule sink"]
+    end
+
+    subgraph Obs["Observability"]
+        PROM["100+ Prometheus metrics<br/>per-endpoint, per-tenant,<br/>per-client, cache, windowing"]
+        OTLP["OTLP metrics push<br/>lightweight JSON, no SDK"]
+        QT["Query tracker<br/>top-N freq, top-N latency,<br/>recent errors"]
+        LOGS["Structured JSON logs<br/>route-aware, semconv"]
+    end
+
+    subgraph Infra["Infrastructure"]
+        HEALTH["Health / ready / alive probes<br/>VL health + CB state"]
+        BUILD["buildinfo version gate"]
+        ADMIN["Admin endpoints<br/>pprof, cache flush,<br/>query analytics"]
+        PEERE["Peer endpoints<br/>/_cache/* (get/set/hot/has/peers)"]
+        CONNR["Connection rotation<br/>max-age, jitter, overload shed"]
     end
 
     G --> API
     M --> API
     C --> API
-    API --> GUARD --> ROUTE
-    ROUTE --> FAN --> EDGE
-    EDGE -->|miss| CACHE
-    CACHE -->|miss| CO --> TR --> VL
-    VL --> SHAPE --> CACHE
-    SHAPE --> EDGE
-    ROUTE --> ORIGIN --> MODE
-    MODE --> NATIVE --> VL
-    MODE --> SYN --> VL
-    ROUTE --> ALERT --> VMR
+
+    API --> SEC --> TENANT --> RL --> REQLOG
+
+    REQLOG --> T0
+    T0 -->|hit| G
+    T0 -->|miss| CO
+
+    CO --> PARSE --> XLATE
+    XLATE --> CAPS
+    XLATE --> LABEL
+
+    CAPS --> L1
+    L1 -->|miss| L2
+    L2 -->|miss| L3
+    WARM --> L1
+    WARM --> L3
+
+    L3 -->|miss| COLD
+    COLD -->|hot| HOT --> CB --> VL
+    COLD -->|cold| COLDONLY --> LH
+    COLD -->|overlap| MERGE
+    MERGE --> VL
+    MERGE --> LH
+
+    VL --> STREAM
+    VL --> WINDOW
+    VL --> STATS
+    LH --> STREAM
+
+    WINDOW --> ADAPT
+    WINDOW --> PREFILT
+    STATS --> BINARY --> VECM
+    STREAM --> DROPKEEP --> SMETA --> POSTPROC
+    POSTPROC --> T0
+
+    LBLH --> VL
+    LBLIDX --> LBLH
+    PATTERN --> PATSNAP
+    DRILLDOWN --> VL
+    VOLUME --> VL
+
+    REQLOG --> ORIGIN --> MODE
+    MODE -->|native| NATIVE --> VL
+    MODE -->|synthetic| SYN --> VL
+
+    REQLOG --> RULER --> VMR
     VMR -. recording writes .-> VMTS
-    GUARD --> OBS
-    SHAPE --> OBS
+
+    REQLOG --> LOGS
+    CB --> PROM
+    PROM --> OTLP
+    POSTPROC --> QT
+
+    HEALTH --> VL
+    HEALTH --> CB
+    PEERE --> L3
+    CONNR --> API
 
     style Front fill:#1a1a2e,stroke:#e94560,color:#fff
-    style Query fill:#16213e,stroke:#4cc9f0,color:#fff
+    style Edge fill:#2d1a3e,stroke:#c084fc,color:#fff
+    style Translation fill:#16213e,stroke:#4cc9f0,color:#fff
+    style Exec fill:#0c1426,stroke:#818cf8,color:#fff
+    style LogQ fill:#111827,stroke:#6366f1,color:#fff
+    style MetricQ fill:#111827,stroke:#6366f1,color:#fff
+    style StreamP fill:#111827,stroke:#6366f1,color:#fff
+    style Meta fill:#111827,stroke:#6366f1,color:#fff
+    style CacheTiers fill:#3b1c32,stroke:#f472b6,color:#fff
     style Tail fill:#0f3460,stroke:#90e0ef,color:#fff
-    style Reads fill:#1b4332,stroke:#52b788,color:#fff
-    style Backends fill:#3b1c32,stroke:#ff7f50,color:#fff
+    style Alerts fill:#1b4332,stroke:#52b788,color:#fff
+    style Cold fill:#1c1917,stroke:#a8a29e,color:#fff
+    style Backends fill:#052e16,stroke:#34d399,color:#fff
+    style Obs fill:#422006,stroke:#f59e0b,color:#fff
+    style Infra fill:#1c1917,stroke:#78716c,color:#fff
 ```
 
 ## Protection Layers

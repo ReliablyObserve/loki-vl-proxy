@@ -1,11 +1,11 @@
 package metrics
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
+	"hash/maphash"
 	"net/http"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -155,7 +155,8 @@ func (qt *QueryTracker) size() int {
 	return len(qt.queries)
 }
 
+var qtHashSeed = maphash.MakeSeed()
+
 func fingerprint(query string) string {
-	h := sha256.Sum256([]byte(query))
-	return fmt.Sprintf("%x", h[:8])
+	return strconv.FormatUint(maphash.String(qtHashSeed, query), 16)
 }

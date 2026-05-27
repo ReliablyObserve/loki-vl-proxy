@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"net/http/httptest"
 	"strconv"
 	"testing"
@@ -122,5 +123,91 @@ func TestVLLogsToLokiWindowEntries_SkipsInvalidAndDerivesFields(t *testing.T) {
 	}
 	if got := entries[0].Ts; got != strconv.FormatInt(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano(), 10) {
 		t.Fatalf("unexpected translated timestamp %v", got)
+	}
+}
+
+func makeVLLine(app, level, extra string) string {
+	base := fmt.Sprintf(`{"_time":"2026-04-01T00:00:00Z","_msg":"hello","_stream":"{app=\"%s\",level=\"%s\"}"`, app, level)
+	if extra != "" {
+		base += "," + extra
+	}
+	return base + "}\n"
+}
+
+func TestWindowEntries_DropMatcherFormRemovesStreamLabel(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	body := []byte(makeVLLine("api", "info", ""))
+	entries := p.vlLogsToLokiWindowEntries(body, `{app="api"} | drop level="info"`, false, false)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if _, ok := entries[0].Stream["level"]; ok {
+		t.Fatalf("expected level to be dropped from stream labels, got %v", entries[0].Stream)
+	}
+}
+
+func TestWindowEntries_KeepMatcherFormRetainsMatchingLabel(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	body := []byte(makeVLLine("api", "warn", ""))
+	entries := p.vlLogsToLokiWindowEntries(body, `{app="api"} | keep app="api"`, false, false)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Stream["app"] != "api" {
+		t.Fatalf("expected app=api to be kept, got %v", entries[0].Stream)
+	}
+}
+
+func TestWindowEntries_KeepMatcherFormRemovesNonMatchingLabel(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	body := []byte(makeVLLine("api", "error", ""))
+	entries := p.vlLogsToLokiWindowEntries(body, `{app="api"} | keep level="warn"`, false, false)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if _, ok := entries[0].Stream["level"]; ok {
+		t.Fatalf("expected level to be removed (value error != warn), got %v", entries[0].Stream)
+	}
+}
+
+func TestWindowEntries_BareDropRemovesStreamLabel(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	body := []byte(makeVLLine("api", "info", ""))
+	entries := p.vlLogsToLokiWindowEntries(body, `{app="api"} | drop detected_level`, false, false)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if _, ok := entries[0].Stream["detected_level"]; ok {
+		t.Fatalf("expected detected_level to be bare-dropped, got %v", entries[0].Stream)
+	}
+}
+
+func TestWindowEntries_BareKeepFiltersStreamLabels(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	body := []byte(makeVLLine("api", "info", ""))
+	entries := p.vlLogsToLokiWindowEntries(body, `{app="api"} | keep app`, false, false)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Stream["app"] != "api" {
+		t.Fatalf("expected app to be kept, got %v", entries[0].Stream)
+	}
+	if _, ok := entries[0].Stream["detected_level"]; ok {
+		t.Fatalf("expected detected_level removed by bare keep, got %v", entries[0].Stream)
+	}
+}
+
+func TestWindowEntries_NoDropKeepPreservesAllLabels(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	body := []byte(makeVLLine("api", "warn", ""))
+	entries := p.vlLogsToLokiWindowEntries(body, `{app="api"}`, false, false)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Stream["app"] != "api" {
+		t.Fatalf("expected app label, got %v", entries[0].Stream)
+	}
+	if entries[0].Stream["detected_level"] != "warn" {
+		t.Fatalf("expected detected_level label, got %v", entries[0].Stream)
 	}
 }

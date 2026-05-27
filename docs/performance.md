@@ -7,6 +7,20 @@ description: Per-request latency, throughput benchmarks, cache hit rates, and co
 
 ## Architecture Optimizations
 
+### Lock-Free Hot Paths
+
+At high concurrency (100+ concurrent requests), mutex contention becomes the
+dominant source of latency. The proxy eliminates locks from the request hot path
+in several subsystems:
+
+| Component | Before | After | Impact |
+|---|---|---|---|
+| Circuit breaker | `sync.Mutex` on every `Allow()`/`RecordSuccess()` | Atomic state machine; mutex only on state transitions | Zero contention in closed (healthy) state |
+| Metrics histograms | `sync.RWMutex` on `observe()` and scrape | Atomic CAS loops for all counters | Scrape no longer blocks request recording |
+| Rate limiter | Single global `sync.Mutex` + `map` | `sync.Map` + per-bucket `sync.Mutex` | Eliminates convoy effect across tenants |
+| Query fingerprinting | `crypto/sha256` | `hash/maphash` | ~30x faster hashing |
+| Structured logging | `slog.JSONHandler` internal mutex (52% of contention at c=100) | Async buffered handler with 8192-slot channel | Writer goroutine decouples logs from request path |
+
 ### Connection Pool Tuning
 
 The proxy's HTTP transport is tuned for high-concurrency single-backend proxying:
