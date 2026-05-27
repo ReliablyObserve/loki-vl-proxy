@@ -360,6 +360,42 @@ Route queries for old data to a separate cold backend (e.g. Victoria Lakehouse o
   -cold-boundary=336h  # 14 days
 ```
 
+## Query Length Limits
+
+The proxy can enforce a maximum query time range, matching Loki's `max_query_length` behavior.
+
+| Flag | Env | Default | Description |
+|---|---|---|---|
+| `-default-max-query-length` | — | `0` | Default maximum query time range enforced for all tenants. `0` disables the limit (unlimited, matching Loki's default). Accepts Go duration strings: `30d`, `7d`, `24h`. |
+
+### Precedence
+
+When multiple limits are configured, the most specific takes effect:
+
+1. **Per-tenant** — `max_query_length` in the tenant limits config (highest priority)
+2. **Tenant defaults** — `max_query_length` in `tenantDefaultLimits`
+3. **Global flag** — `-default-max-query-length`
+4. **No limit** — when all of the above are `0` or unset
+
+### Behavior
+
+- Applied after LogQL offset extraction (the enforced range reflects any `offset` modifier in the query)
+- Rejected queries return HTTP 400 with `{"status":"error","errorType":"bad_data","error":"query length ... exceeds limit ..."}`
+- Matches Loki's `max_query_length` semantics for client compatibility
+
+### Examples
+
+```bash
+# Limit all queries to 30 days by default
+loki-vl-proxy -default-max-query-length=720h
+
+# Allow a specific tenant to query further back (in tenant limits config)
+# max_query_length: "90d"
+
+# No global limit (default — operator manages limits via per-tenant config)
+loki-vl-proxy -default-max-query-length=0
+```
+
 ## Query Range Window Cache
 
 These flags control Loki-compatible `query_range` split/merge execution with per-window cache reuse.
