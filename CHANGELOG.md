@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Eliminate potential RWMutex deadlock in metrics handler: nested RLock in `cacheStatsSnapshot()` could deadlock when a writer queued between acquisitions; replaced with direct function-pointer call that does not re-acquire the lock
+- Peer cache `/_cache/set` now rejects payloads exceeding `maxPeerSetBodyBytes` instead of silently truncating via `io.LimitReader`
+- `| keep field=value` matcher form now applies to stream labels (not just structured metadata and parsed fields), matching the existing `| drop field=value` stream-label path
+- Peer host authentication uses O(1) map lookup instead of O(n) linear scan of the peer list
+- Synchronous label-metadata backend calls preserve the original query end time instead of bucketing it, improving freshness for recent data
+- Drilldown compat e2e tests poll for VL label index readiness before asserting, fixing intermittent failures on slow CI runners
+
+### Changed
+- GHCR badge workflow scrapes public GitHub package pages instead of Docker Hub API
+- Docs audit: api-reference.md adds missing health/cache/peer endpoints, observability.md fixes stale peer-cache metric names, compatibility-loki.md and roadmap.md updated to 555+ parity cases
+
 ## [1.50.1] - 2026-05-26
 
 ### Fixed

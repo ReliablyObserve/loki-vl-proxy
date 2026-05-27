@@ -58,9 +58,10 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 
 func TestContract_Labels_PassesTimeRange(t *testing.T) {
 	// Input: start=1609459200 (seconds), end=1609545600 (seconds) → 24h interval.
-	// After normalisation and the 1h cap+bucketing applied by fetchStreamFieldNamesCached:
-	//   cappedStart = endNs - 1h = 1609545600e9 - 3600e9 = 1609542000e9 (already on 5-min boundary)
-	//   bucketedEnd  = floor(1609545600e9 / 300e9) * 300e9 = 1609545600e9 (already on 5-min boundary)
+	// After the 1h cap applied by capMetadataStartOnly (no bucketing — preserves
+	// original end so recently-ingested data is never hidden):
+	//   cappedStart = endNs - 1h = 1609545600e9 - 3600e9 = 1609542000e9
+	//   end         = 1609545600e9 (preserved, normalized to nanoseconds)
 	//
 	// Note: the handler also fires a background full-range refresh goroutine (because the
 	// 24h input range exceeds the 1h synchronous cap), which sends the raw uncapped params
@@ -82,7 +83,7 @@ func TestContract_Labels_PassesTimeRange(t *testing.T) {
 
 	doGet(t, vlBackend.URL, "/loki/api/v1/labels?start=1609459200&end=1609545600")
 
-	// The synchronous path must have made at least one capped+bucketed VL call.
+	// The synchronous path must have made at least one capped VL call.
 	// (The background full-range refresh will also appear with uncapped params — that is correct.)
 	mu.Lock()
 	defer mu.Unlock()

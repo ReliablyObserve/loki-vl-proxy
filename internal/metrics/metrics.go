@@ -1525,8 +1525,11 @@ func (m *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString("# HELP loki_vl_proxy_cache_misses_total Cache misses.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_misses_total counter\n")
 	fmt.Fprintf(&sb, "loki_vl_proxy_cache_misses_total %d\n", m.cacheMisses.Load())
-	if stats, ok := m.cacheStatsSnapshot(); ok {
-		writeCacheTierMetrics(&sb, stats)
+	// Read cacheStatsProvider directly — we already hold m.mu.RLock, so calling
+	// cacheStatsSnapshot() would re-acquire the same RLock and deadlock if a
+	// writer is queued between the two acquisitions.
+	if fn := m.cacheStatsProvider; fn != nil {
+		writeCacheTierMetrics(&sb, fn())
 	}
 
 	sb.WriteString("# HELP loki_vl_proxy_translations_total LogQL to LogsQL translations.\n")

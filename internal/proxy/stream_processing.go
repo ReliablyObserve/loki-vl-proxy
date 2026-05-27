@@ -630,6 +630,12 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 				streamLabels = newLabels
 			}
 		}
+		if len(keepConditions) > 0 {
+			if newKey, newLabels, changed := applyKeepConditionsToStreamLabels(keepConditions, desc.rawLabels, streamLabels, p.labelTranslator); changed {
+				streamKey = newKey
+				streamLabels = newLabels
+			}
+		}
 		// Apply bare-field drop/keep to stream labels.
 		// | drop f removes f from the stream label set unconditionally.
 		// | keep f1, f2 removes any stream label NOT in the keep list.
@@ -1003,6 +1009,47 @@ func applyDropConditionsToStreamLabels(conds []translator.DropCondition, rawLabe
 // | drop fields: removes each bare-dropped field from the stream label set.
 // | keep fields: removes any stream label not in the keep list.
 // Returns the new stream key, translated labels map, and whether any change occurred.
+// applyKeepConditionsToStreamLabels mirrors applyDropConditionsToStreamLabels
+// for matcher-form keep: `| keep field=value` keeps the stream label only when
+// the value matches, stripping it otherwise.
+func applyKeepConditionsToStreamLabels(conds []translator.DropCondition, rawLabels, translatedLabels map[string]string, lt *LabelTranslator) (newKey string, newTranslated map[string]string, changed bool) {
+	for _, dc := range conds {
+		field := dc.Field
+		if val, ok := rawLabels[field]; ok && !dc.Matches(val) {
+			changed = true
+			break
+		}
+		if lt != nil {
+			if vlField := lt.ToVL(field); vlField != field {
+				if val, ok := rawLabels[vlField]; ok && !dc.Matches(val) {
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	if !changed {
+		return "", nil, false
+	}
+	newTranslated = cloneStringMap(translatedLabels)
+	newRaw := cloneStringMap(rawLabels)
+	for _, dc := range conds {
+		if val, ok := rawLabels[dc.Field]; ok && !dc.Matches(val) {
+			delete(newRaw, dc.Field)
+			delete(newTranslated, dc.Field)
+		}
+		if lt != nil {
+			if vlField := lt.ToVL(dc.Field); vlField != dc.Field {
+				if val, ok := rawLabels[vlField]; ok && !dc.Matches(val) {
+					delete(newRaw, vlField)
+					delete(newTranslated, dc.Field)
+				}
+			}
+		}
+	}
+	return canonicalLabelsKey(newRaw), newTranslated, true
+}
+
 func applyBareFieldMutationToStreamLabels(
 	dropFields, keepFields []string,
 	rawLabels, translatedLabels map[string]string,

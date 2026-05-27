@@ -55,6 +55,7 @@ type PeerCache struct {
 	selfAZ       string   // this instance's availability zone (optional)
 	peerAZs      sync.Map // string → string: peer addr → availability zone
 	peers        []string
+	peerHosts    map[string]struct{}
 	client       *http.Client
 	log          *slog.Logger
 	done         chan struct{}
@@ -645,7 +646,7 @@ func (pc *PeerCache) serveSet(w http.ResponseWriter, r *http.Request, localCache
 	if ttl <= 0 {
 		ttl = 30 * time.Second
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxPeerSetBodyBytes))
+	body, err := readPeerBodyLimited(r.Body, maxPeerSetBodyBytes)
 	if err != nil {
 		http.Error(w, "read body failed", http.StatusBadRequest)
 		return
@@ -1169,6 +1170,14 @@ func (pc *PeerCache) Peers() []string {
 	return result
 }
 
+// HasPeerHost reports whether host (without port) is a known peer.
+func (pc *PeerCache) HasPeerHost(host string) bool {
+	pc.mu.RLock()
+	defer pc.mu.RUnlock()
+	_, ok := pc.peerHosts[host]
+	return ok
+}
+
 // WriteThroughEnabled reports whether owner write-through is active.
 func (pc *PeerCache) WriteThroughEnabled() bool {
 	return pc != nil && pc.writeThrough
@@ -1253,6 +1262,14 @@ func (pc *PeerCache) updatePeers(peers []string) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 	pc.peers = peers
+	pc.peerHosts = make(map[string]struct{}, len(peers))
+	for _, p := range peers {
+		if host, _, err := net.SplitHostPort(p); err == nil {
+			pc.peerHosts[host] = struct{}{}
+		} else {
+			pc.peerHosts[p] = struct{}{}
+		}
+	}
 	pc.ring = newHashRing(150)
 	for _, p := range peers {
 		pc.ring.add(p)

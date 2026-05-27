@@ -109,7 +109,7 @@ The `__error__` / `| drop __error__` mechanism for opting parser-stage metric qu
 
 The `-emit-structured-metadata` flag (default: `true`) controls whether log entries are returned as Loki 3-tuples `[timestamp, line, {metadata}]` or 2-tuples `[timestamp, line]`. Grafana Loki datasource requires 3-tuple format; only disable if your client cannot handle structured metadata.
 
-The LogQL exhaustive parity machine expanded from 202 to 316 cases, with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved. Default `label-style` is now `underscores` and `metadata-field-mode` is now `translated`.
+The LogQL exhaustive parity machine covers 555+ cases, with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved. Default `label-style` is now `underscores` and `metadata-field-mode` is now `translated`.
 
 ## Edge Cases Covered
 
@@ -209,7 +209,7 @@ The required matrix is intentionally not limited to happy-path selectors. It now
 - `rate_counter` parity for parser and non-parser query forms
 - metric aggregations that do not group by service labels must not receive synthetic `service_name="unknown_service"` in query/query_range responses
 - invalid log/metric shape rejections that must fail with the same class of error as Loki
-- `offset` modifier -- time-shifting parity (proxy gap: silently ignored, tracked as known issue)
+- `offset` modifier -- time-shifting parity (fully implemented since v1.32.0)
 - `unpack` parser -- translates to `unpack_json`, e2e parity tested
 - `unwrap duration()` / `unwrap bytes()` conversion modifiers -- proxy-side conversion parity
 - `label_replace()` -- proxy-side post-processing implementation, parity tested

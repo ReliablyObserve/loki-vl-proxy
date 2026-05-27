@@ -30,7 +30,7 @@
 
 LogQL queries arrive → parsed into a typed AST (`internal/logql`) → translated into LogsQL via a typed builder (`internal/logsql`) → sent to VictoriaLogs.
 
-Both parsers are hand-written recursive descent. The LogQL side handles the full Loki grammar. The LogsQL side uses a builder API that produces typed, syntactically valid LogsQL at construction time. Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters), and typed AST construction for complex paths (stats aggregations). Future PRs tagged `TODO(ast-migration)` in the source will migrate remaining string paths.
+Both parsers are hand-written recursive descent. The LogQL side handles the full Loki grammar. The LogsQL side uses a builder API that produces typed, syntactically valid LogsQL at construction time. Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters), and typed AST construction for complex paths (stats aggregations, binary metric expressions, `PipeMath`/`PipeStats`/`PipeFilter` nodes).
 
 **Label metadata — fast and complete:** first request returns a 1h VL scan immediately (sub-ms proxy overhead); a background goroutine fetches the full requested range (1h → 7d) so the second request has complete historical label data from cache. Disk-backed cache survives proxy restarts; a 90-second keep-warm loop ensures labels stay hot even with no user queries. Time-bucketed cache keys (5-min / 1h / 6h buckets by range) collapse dashboard refresh drift to the same entry. Label-value routing uses `stream_field_names` as an endpoint gate — only stream-indexed labels use `stream_field_values`; non-stream labels fall through to `field_values` so queries like `cluster` always return results.
 
@@ -52,71 +52,61 @@ Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
 
 Measured head-to-head against tuned Loki: Apple M5 Pro (18 cores, 64 GB RAM), ~8 M log entries across 15 services, 7-day window.
 
-### Cold proxy — honest baseline
+### Production-realistic throughput (v1.50.0)
 
-No cache, no coalescer. Pure translation overhead + HTTP proxying + VictoriaLogs response time. This is the floor — what you get before any caching kicks in.
+Measured with `loki-bench --jitter=2h --warmup=5s --duration=30s` — a realistic mix of cache hits and misses simulating Grafana dashboard refresh patterns. Not a 100% cache-hit ceiling; not a 100% cold floor. This is what you get in production.
 
-| Workload | Concurrency | Cold proxy | Loki | Ratio |
-|---|:---:|---:|---:|:---:|
-| Small metadata queries | c=10 | 1,212 req/s | ~880 req/s | **1.4× faster** |
-| Small metadata queries | c=50 | 1,583 req/s | ~780 req/s | **2× faster** |
-| Heavy pipeline queries | c=10 | 126–188 req/s | ~161–472 req/s | **~parity** |
-| Heavy pipeline queries | c=100 | 139 req/s | ~33 req/s | **4.2× faster** |
-| Long-range (6 h–72 h) | c=10 | 2× faster than Loki | — | parallel sub-window fetching |
-| Compute (rate, topk) | c=10 | 210 req/s | ~2,403 req/s | 0.09× — N VL calls per metric query |
-| Binary metric queries† | c=10 | ✓ working | ✓ working | correctness restored — were silently erroring |
+| Workload | Concurrency | Loki | Proxy | VL native | Proxy / Loki |
+|---|:---:|---:|---:|---:|:---:|
+| Small (metadata) | c=10 | 919 req/s | 2,785 req/s | 3,756 req/s | **3.0×** |
+| Small (metadata) | c=50 | 726 req/s | 2,099 req/s | 3,793 req/s | **2.9×** |
+| Small (metadata) | c=100 | 578 req/s | 1,822 req/s | 3,538 req/s | **3.2×** |
+| Heavy (pipelines) | c=10 | 146 req/s | 483 req/s | 2,532 req/s | **3.3×** |
+| Heavy (pipelines) | c=50 | 247 req/s | 582 req/s | 2,000 req/s | **2.4×** |
+| Heavy (pipelines) | c=100 | 279 req/s | 568 req/s | 1,952 req/s | **2.0×** |
+| Compute (rate, topk) | c=10 | 625 req/s | 629 req/s | 3,947 req/s | **parity** |
+| Compute (rate, topk) | c=50 | 343 req/s† | 539 req/s | 4,338 req/s | **1.6×** |
+| Compute (rate, topk) | c=100 | 410 req/s† | 468 req/s | 4,473 req/s | **1.1×** |
 
-- **Small and metadata queries:** 1.4–2× faster than Loki cold — VL scans are faster than Loki's chunk store for label/series queries.
-- **Heavy pipeline queries:** parity to 4.2× faster depending on concurrency — `stats_query_range` fast path eliminates 39% cold CPU for `count_over_time`/`rate` queries.
-- **Long-range queries:** 2× faster cold — parallel sub-window fetching completes before Loki's sequential chunk scan.
-- **Compute aggregations (`quantile_over_time`, `topk`, multi-stage pipelines):** each metric query fans out to N VL calls; pprof-guided alloc fixes lifted cold throughput from 40 to 210 req/s. Historical sub-windows are cached on first fetch (24 h TTL), so repeated compute queries approach warm performance.
+- **Small metadata:** 2.9–3.2× faster — VL label/series scans outperform Loki's chunk store, amplified by proxy cache.
+- **Heavy pipelines:** 2.0–3.3× faster — `stats_query_range` fast path + response caching.
+- **Compute:** parity at c=10; proxy dominates under pressure because Loki saturates.
 
-† `sum(rate(...)) / sum(rate(...))`, `rate(...) * 100`, `sum(...) + sum(...)` — the AST migration in v1.35.0 fixed a parse error that caused these queries to silently return empty results from VictoriaLogs.
+† Loki compute c=50: **90.55% error rate** (saturated). c=100: **97.49% error rate**. Proxy: 0% errors at all concurrency levels.
 
 ### Translation overhead
 
-LogQL→LogsQL translation is **2.7–7.2 µs per query** (arm64). For a 100–500 ms VL round-trip this is under 0.007% of wall time.
+LogQL→LogsQL translation is **4.7–15.5 µs per query** (arm64). For a 100–500 ms VL round-trip this is under 0.01% of wall time.
 
 | Query type | Time | Allocs |
 |---|---:|---:|
-| Selector `{app="nginx"}` | 2.7 µs | 18 |
-| `rate({...}[5m])` | 3.6 µs | 45 |
-| `sum(rate({...}[5m])) by (host)` | 4.9 µs | 48 |
-| `sum(bytes_rate({...}[5m])) by (host)` | 5.2 µs | 48 |
-| `ip("10.0.0.0/8")` filter (v1.45+, capability-aware) | 4.4 µs | 36 |
-| Binary metric `sum(rate) / sum(rate)` | 7.2 µs | 76 |
-| `PipeMath.String()` (AST serialisation) | 55 ns | 3 |
-| `PipeStats.String()` (AST serialisation) | 70 ns | 5 |
+| Selector `{app="nginx"}` | 4.7 µs | 18 |
+| `rate({...}[5m])` | 6.1 µs | 45 |
+| `sum(rate({...}[5m])) by (host)` | 8.9 µs | 48 |
+| `ip("10.0.0.0/8")` filter (v1.45+, capability-aware) | 8.4 µs | 36 |
+| Binary metric `sum(rate) / sum(rate)` | 12.5 µs | 76 |
 
-Measured: `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem -count=5` (Apple M5 Pro, Go 1.26, darwin/arm64). Binary metric queries are included in the compute workload above; the AST migration in v1.35.0 restored correctness — previously they silently returned empty results.
+Measured: `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem -count=5` (Apple M5 Pro, Go 1.26, darwin/arm64).
 
-### Warm cache — what production steady-state looks like
+### P50 latency
 
-Grafana dashboards auto-refresh every 30 s. After the first fetch, repeated queries are served from in-memory cache without touching VictoriaLogs. The numbers below are **100% cache-hit results** — they represent the ceiling, not the typical case. Real production performance sits between the cold floor above and these warm numbers depending on your dashboard diversity and refresh interval.
+| Workload | Concurrency | Loki | Proxy | VL native |
+|---|:---:|---:|---:|---:|
+| Small | c=10 | 5 ms | 1 ms | 1 ms |
+| Small | c=50 | 57 ms | 5 ms | 6 ms |
+| Small | c=100 | 156 ms | 22 ms | 13 ms |
+| Heavy | c=10 | 13 ms | 2 ms | 1 ms |
+| Heavy | c=50 | 21 ms | 22 ms | 13 ms |
+| Heavy | c=100 | 31 ms | 96 ms | 30 ms |
+| Compute | c=10 | 2 ms | 2 ms | 1 ms |
+| Compute | c=50 | 5 ms | 38 ms | 7 ms |
+| Compute | c=100 | 10 ms† | 144 ms | 13 ms |
 
-| Workload | Concurrency | Loki req/s | Proxy cold req/s | Proxy warm req/s | Warm gain | P50 Loki | P50 cold | P50 warm | Latency gain |
-|---|:---:|---:|---:|---:|:---:|---:|---:|---:|:---:|
-| Small panels | c=10 | 2,011 | 1,201 | 15,626 | **7.8×** | 4 ms | 4 ms | 587 µs | **6.8×** |
-| Small panels | c=100 | 2,290 | — | 27,513 | **12×** | 42 ms | — | 3 ms | **14×** |
-| Heavy queries | c=10 | 407 | 179 | 5,944 | **14.6×** | 4 ms | 21 ms | 1 ms | **4×** |
-| Heavy queries | c=100 | 162† | — | 7,134 | **44×** | ~1,800 ms† | — | 12 ms | **150×** |
-| Long-range | c=10 | 8 | 19 | 157 | **18.7×** | 481 ms | 39 ms | 1 ms | **481×** |
-| Compute | c=10 | 2,803 | 352 | 11,162 | **4×** | 1 ms | 10 ms | 675 µs | **1.5×** |
-| Compute | c=100 | 1,611 | 366 | 16,456 | **10.2×** | 4 ms | 261 ms | 4 ms | parity |
-
-CPU: **6–408× less** than Loki under cache load. RAM: **1.7–3.9× less** for most workloads.
-
-† Loki heavy c=100 was saturated — P90=1,818 ms, P99=6,950 ms, delivering only 162 req/s vs 7,134 for the proxy.
+† Loki compute c=100 P50 is misleading — 97.49% errors, so only 2.51% of requests completed; survivors have low latency.
 
 ### Dashboard load spikes — request coalescer
 
-When many panels hit the same query simultaneously, the proxy collapses them into a single backend call. First-hit coalescing avoids the N-fan-out but pays one backend round-trip (cold proxy P50 for a single request); subsequent hits are served from cache.
-
-| Workload | Loki P50 | Proxy P50 (first hit) | Proxy P50 (warm) |
-|---|---:|---:|---:|
-| Metadata queries | 196 ms | **~4 ms** | **1 ms** |
-| Heavy aggregations | 2,399 ms | **~21 ms** | **1 ms** |
-| Content search | 13,415 ms | **~39 ms** | **1 ms** |
+When many panels hit the same query simultaneously, the proxy collapses them into a single backend call. First-hit coalescing avoids the N-fan-out but pays one backend round-trip; subsequent hits are served from cache.
 
 Full throughput tables, P90/P99 latency, CPU and RSS breakdowns: [Benchmarks](docs/benchmarks.md) · [Performance](docs/performance.md)
 

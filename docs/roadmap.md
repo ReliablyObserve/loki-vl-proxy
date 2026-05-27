@@ -103,8 +103,8 @@ description: Planned features, known gaps, and the contribution priority list fo
 
 - [ ] Tighten remaining merged-tenant Drilldown metadata accuracy for field and label cardinality surfaces
 - [x] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
-- [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests (ongoing — LogQL parity machine at 202 cases)
-- [ ] Bare `| drop`/`| keep` stream label mutation — matcher form currently applies only to structured metadata; stream labels not yet mutated
-- [ ] Malformed drop/keep matcher → HTTP 400 error — currently silently skipped, should return parse error
-- [ ] Parallel multi-tenant fanout — currently serial; high tenant counts scale latency linearly
-- [ ] Streaming backward hot+cold merge — currently buffers cold body; large backward ranges materialize in proxy RAM
+- [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests (ongoing — LogQL parity machine at 555+ cases)
+- [x] `| keep field=value` stream label mutation — matcher form now applies to stream labels in addition to structured metadata and parsed fields (v1.50.1)
+- [ ] Malformed drop/keep matcher → HTTP 400 error — currently silently skipped, should return parse error (validation exists in `ValidateDropKeepSyntax` but not wired into handler)
+- [x] Parallel multi-tenant fanout — goroutine-per-tenant dispatch with `sync.WaitGroup` (v1.43.0)
+- [x] Streaming backward hot+cold merge — ring-buffer reverse with bounded memory (`maxRingSize=5000`) and early termination (v1.43.0)

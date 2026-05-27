@@ -125,13 +125,26 @@ Tenant limits notes:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /alive` | Liveness probe — returns 200 when proxy process is healthy |
-| `GET /healthz` | Liveness probe alias for `/alive` |
+| `GET /alive`, `GET /livez` | Liveness probe — returns 200 when proxy process is healthy |
+| `GET /health`, `GET /healthz` | Health probe — returns 200 when healthy |
 | `GET /ready` | Readiness probe (checks VL `/health` + circuit breaker) |
 | `GET /loki/api/v1/status/buildinfo` | Returns Loki `3.7.1` build info — version ≥ 3.0.0 is required for Grafana to send `X-Loki-Response-Encoding-Flags: categorize-labels`, which enables `structuredMetadata` in `query_range` responses |
 | `GET /metrics` | Prometheus text exposition (`-server.register-instrumentation`); low-cardinality by default unless `-metrics.export-sensitive-labels=true` |
+| `POST /admin/cache/flush` | Flush all caches (requires `-admin-auth-token`) |
 | `GET /debug/queries` | Query analytics, disabled by default (`-server.enable-query-analytics`) |
 | `GET /debug/pprof/` | Go profiling, disabled by default (`-server.enable-pprof`) |
+
+### Peer Cache Endpoints
+
+These endpoints are registered when peer cache is enabled. Protected by `-peer-auth-token` or source-IP peer membership.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /_cache/get?key=…` | Fetch a cached entry from this peer |
+| `POST /_cache/set?key=…&ttl_ms=…` | Push a cache entry to this peer (write-through) |
+| `GET /_cache/hot?limit=…` | Return top-N hot cache keys for read-ahead |
+| `GET /_cache/has?key=…` | Check whether a key exists in this peer's cache |
+| `GET /_cache/peers` | Return the current peer list |
 
 ## Observability
 

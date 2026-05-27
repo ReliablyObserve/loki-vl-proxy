@@ -58,7 +58,7 @@ def fetch_file_list(token: str | None) -> list[str]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     try:
-        conn = http.client.HTTPSConnection(VL_API_HOST, timeout=15)
+        conn = http.client.HTTPSConnection(VL_API_HOST, timeout=15)  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         conn.request("GET", VL_API_PATH, headers=headers)
         resp = conn.getresponse()
         body = resp.read()

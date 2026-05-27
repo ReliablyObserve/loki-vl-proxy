@@ -311,23 +311,23 @@ These metrics track the proxy-side pattern cache and snapshot lifecycle.
 
 ### Peer Cache Metrics
 
-These families are currently exposed on Prometheus scrape at `/metrics`.
+Peer cache statistics are exposed as a JSON object via `PeerCache.Stats()` (used internally and by `/_cache/peers`), not as Prometheus metrics on `/metrics`. The counters available are:
 
-| Metric | Type | Labels | Cardinality | Description |
-|---|---|---|---|---|
-| `loki_vl_proxy_peer_cache_peers` | gauge | none | `Low` | remote peers currently in the fleet-cache ring |
-| `loki_vl_proxy_peer_cache_cluster_members` | gauge | none | `Low` | total fleet-cache ring members including self |
-| `loki_vl_proxy_peer_cache_hits_total` | counter | none | `Low` | successful peer-cache fetches |
-| `loki_vl_proxy_peer_cache_misses_total` | counter | none | `Low` | peer-cache lookups that missed on the owner |
-| `loki_vl_proxy_peer_cache_errors_total` | counter | none | `Low` | peer-cache fetch errors |
-| `loki_vl_proxy_peer_cache_write_through_pushes_total` | counter | none | `Low` | successful owner write-through pushes from non-owner peers |
-| `loki_vl_proxy_peer_cache_write_through_errors_total` | counter | none | `Low` | owner write-through push errors |
-| `loki_vl_proxy_peer_cache_hot_index_requests_total` | counter | none | `Low` | peer hot-index requests |
-| `loki_vl_proxy_peer_cache_hot_index_errors_total` | counter | none | `Low` | peer hot-index request errors |
-| `loki_vl_proxy_peer_cache_read_ahead_prefetches_total` | counter | none | `Low` | successful hot read-ahead prefetches |
-| `loki_vl_proxy_peer_cache_read_ahead_prefetch_bytes_total` | counter | none | `Low` | bytes prefetched by hot read-ahead |
-| `loki_vl_proxy_peer_cache_read_ahead_budget_drops_total` | counter | none | `Low` | hot read-ahead candidates dropped by budget or size filters |
-| `loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total` | counter | none | `Low` | hot read-ahead candidates skipped by tenant fairness |
+| JSON Key | Description |
+|---|---|
+| `peers` | Remote peers currently in the fleet-cache ring |
+| `peer_hits` | Successful peer-cache fetches |
+| `peer_misses` | Peer-cache lookups that missed on the owner |
+| `peer_errors` | Peer-cache fetch errors |
+| `peer_error_reasons` | Low-cardinality error reason breakdown (map) |
+| `wt_pushes` | Successful owner write-through pushes |
+| `wt_errors` | Owner write-through push errors |
+| `ra_hot_requests` | Peer hot-index requests |
+| `ra_hot_errors` | Peer hot-index request errors |
+| `ra_prefetches` | Successful hot read-ahead prefetches |
+| `ra_prefetch_bytes` | Bytes prefetched by hot read-ahead |
+| `ra_budget_drops` | Read-ahead candidates dropped by budget or size filters |
+| `ra_tenant_skips` | Read-ahead candidates skipped by tenant fairness |
 
 ### Tenant and Client Metrics
 
