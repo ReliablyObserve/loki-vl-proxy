@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -68,7 +69,7 @@ func TestHandleQueryRange_ExceedsMaxQueryLength_Returns400(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create proxy: %v", err)
 	}
-	t.Cleanup(func() { _ = p.Shutdown(nil) })
+	t.Cleanup(func() { _ = p.Shutdown(context.TODO()) })
 
 	// start=0s, end=10800s (3h) expressed as Unix seconds — parseLokiTimeToUnixNano
 	// normalises abs<1e11 as seconds, so the range becomes 3h in nanoseconds,
