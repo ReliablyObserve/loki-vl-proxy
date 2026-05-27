@@ -994,6 +994,7 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []str
 // pre-built label map.
 func (p *Proxy) buildParsedGroupByCacheKey(streamStr, levelStr string, v *fj.Value, groupBy []string) string {
 	var b strings.Builder
+	b.Grow(len(streamStr) + 2 + len(levelStr) + len(groupBy)*32)
 	b.WriteString(streamStr)
 	b.WriteByte('|')
 	b.WriteString(levelStr)

@@ -264,6 +264,10 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 
 	if err == nil {
 		arr := fjRoot.GetArray("values")
+		// Pre-grow: 32 (header+footer) + ~80 bytes per stream (labels JSON).
+		if need := 32 + len(arr)*80; sb.Cap() < need {
+			sb.Grow(need)
+		}
 		for _, item := range arr {
 			streamStr := string(item.GetStringBytes("value"))
 			stream := parseStreamLabels(streamStr)
