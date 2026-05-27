@@ -109,7 +109,7 @@ The `__error__` / `| drop __error__` mechanism for opting parser-stage metric qu
 
 The `-emit-structured-metadata` flag (default: `true`) controls whether log entries are returned as Loki 3-tuples `[timestamp, line, {metadata}]` or 2-tuples `[timestamp, line]`. Grafana Loki datasource requires 3-tuple format; only disable if your client cannot handle structured metadata.
 
-The LogQL exhaustive parity machine expanded from 202 to 316 cases, with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved. Default `label-style` is now `underscores` and `metadata-field-mode` is now `translated`.
+The LogQL exhaustive parity machine covers 555+ cases, with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved. Default `label-style` is now `underscores` and `metadata-field-mode` is now `translated`.
 
 ## Edge Cases Covered
 

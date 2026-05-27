@@ -4,7 +4,10 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '0 6 * * *'  # daily at 06:00 UTC
+    - cron: '15 */4 * * *'  # every 4 hours at :15
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
 
 permissions:
   contents: write
@@ -15,51 +18,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Fetch pull counts
+      - name: Fetch GHCR pull counts
         id: pulls
         run: |
-          set -euo pipefail
-
-          # Docker Hub container image pulls — public API, no auth needed.
-          IMAGE=$(curl -fsSL \
-            "https://hub.docker.com/v2/repositories/reliablyobserve/loki-vl-proxy/" \
-            | jq -r '.pull_count // 0' 2>/dev/null || echo 0)
-
-          # Docker Hub Helm chart pulls (OCI artifact, same API).
-          # Falls back to 0 until first chart release is pushed to Docker Hub.
-          CHART=$(curl -fsSL \
-            "https://hub.docker.com/v2/repositories/reliablyobserve/charts%2Floki-vl-proxy/" \
-            | jq -r '.pull_count // 0' 2>/dev/null || echo 0)
-
-          {
-            echo "image=${IMAGE}"
-            echo "chart=${CHART}"
-          } >> "$GITHUB_OUTPUT"
-          echo "Container pulls: ${IMAGE}, Helm chart pulls: ${CHART}"
+          chmod +x scripts/ci/fetch_ghcr_pulls.sh
+          scripts/ci/fetch_ghcr_pulls.sh ReliablyObserve loki-vl-proxy
 
       - name: Write badge JSON files
         run: |
-          fmt() {
-            python3 -c "
-          n = int('$1') if '$1' else 0
-          if n >= 1_000_000:
-              print(f'{n/1_000_000:.1f}M')
-          elif n >= 1_000:
-              print(f'{n/1_000:.1f}k')
-          else:
-              print(str(n))
-          "
-          }
-
-          IMAGE_FMT=$(fmt "${{ steps.pulls.outputs.image }}")
-          CHART_FMT=$(fmt "${{ steps.pulls.outputs.chart }}")
-
           mkdir -p /tmp/badges
+
           cat > /tmp/badges/ghcr-pulls.json <<EOF
           {
             "schemaVersion": 1,
-            "label": "container pulls",
-            "message": "${IMAGE_FMT}",
+            "label": "GHCR pulls",
+            "message": "${{ steps.pulls.outputs.image_fmt }}",
             "color": "blue",
             "namedLogo": "docker"
           }
@@ -68,8 +41,8 @@ jobs:
           cat > /tmp/badges/ghcr-chart-pulls.json <<EOF
           {
             "schemaVersion": 1,
-            "label": "helm pulls",
-            "message": "${CHART_FMT}",
+            "label": "Helm pulls",
+            "message": "${{ steps.pulls.outputs.chart_fmt }}",
             "color": "blue",
             "namedLogo": "helm"
           }
@@ -94,5 +67,5 @@ jobs:
           cp /tmp/badges/ghcr-chart-pulls.json .github/badges/ghcr-chart-pulls.json
 
           git add .github/badges/
-          git diff --cached --quiet || git commit -m "chore: update pull count badge data [skip ci]"
+          git diff --cached --quiet || git commit -m "chore: update GHCR pull count badges [skip ci]"
           git push origin badges
