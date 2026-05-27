@@ -41,6 +41,16 @@ func CaptureGoroutine(ctx context.Context, baseURL, authToken string) ([]byte, e
 	return fetch(ctx, baseURL+"/debug/pprof/goroutine?debug=1", authToken)
 }
 
+// CaptureMutex fetches a mutex contention profile (requires SetMutexProfileFraction > 0).
+func CaptureMutex(ctx context.Context, baseURL, authToken string) ([]byte, error) {
+	return fetch(ctx, baseURL+"/debug/pprof/mutex", authToken)
+}
+
+// CaptureBlock fetches a blocking profile (requires SetBlockProfileRate > 0).
+func CaptureBlock(ctx context.Context, baseURL, authToken string) ([]byte, error) {
+	return fetch(ctx, baseURL+"/debug/pprof/block", authToken)
+}
+
 // Save writes data to path, creating parent directories as needed.
 func Save(data []byte, path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

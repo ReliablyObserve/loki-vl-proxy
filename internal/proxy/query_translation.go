@@ -21,6 +21,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
@@ -75,7 +76,10 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			p.metrics.RecordClientErrorWithRoute(endpoint, route, reason)
 		}
 
-		// Structured request log — includes tenant, query, status, latency, cache info
+		// Adaptive request log sampling:
+		// - At low rate (<QuietThreshold req/s): log every request individually
+		// - At high rate: suppress OK traffic, emit periodic digest; errors always counted,
+		//   collapsed into digest at high error rates
 		logLevel := slog.LevelInfo
 		if sc.code >= 500 {
 			logLevel = slog.LevelError
@@ -84,14 +88,46 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		}
 		reqCtx := reqWithTelemetry.Context()
 		if !p.log.Enabled(reqCtx, logLevel) {
+			// Still feed the sampler for digest stats even when level is disabled.
+			if p.requestSampler != nil {
+				p.requestSampler.ShouldLog(observability.RequestInfo{
+					StatusCode: sc.code,
+					LatencyMs:  elapsed.Milliseconds(),
+					CacheHit:   telemetry.cacheResult == "hit",
+				})
+			}
 			return
 		}
-		// Sample successful requests: skip log assembly for N-1 out of every N 2xx
-		// responses to avoid slice allocation and slog formatting overhead.
-		if p.logSampleN > 1 && sc.code < 400 {
-			if p.logSampleCount.Add(1)%p.logSampleN != 0 {
-				return
+
+		// Emit periodic digest if interval elapsed.
+		if p.requestSampler != nil {
+			if attrs := p.requestSampler.DigestAttrs(); attrs != nil {
+				dr := slog.NewRecord(time.Now(), slog.LevelInfo, "request_digest", 0)
+				dr.AddAttrs(attrs...)
+				_ = p.log.Handler().Handle(reqCtx, dr)
 			}
+		}
+
+		// Adaptive sampling decision.
+		shouldLog := true
+		if p.requestSampler != nil {
+			shouldLog = p.requestSampler.ShouldLog(observability.RequestInfo{
+				StatusCode: sc.code,
+				LatencyMs:  elapsed.Milliseconds(),
+				Query:      r.FormValue("query"),
+				CacheHit:   telemetry.cacheResult == "hit",
+				Endpoint:   endpoint,
+				Route:      route,
+				Tenant:     tenant,
+			})
+		} else if p.logSampleN > 1 && sc.code < 400 {
+			// Legacy fallback: static sampling when sampler not initialized.
+			if p.logSampleCount.Add(1)%p.logSampleN != 0 {
+				shouldLog = false
+			}
+		}
+		if !shouldLog {
+			return
 		}
 
 		authUser, authSource := metrics.ResolveAuthContext(r)
@@ -108,7 +144,8 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		for key, value := range telemetry.internalDurationByType {
 			internalDurationByTypeMs[key] = value.Milliseconds()
 		}
-		logAttrs := []interface{}{
+		logAttrs := make([]interface{}, 0, 40)
+		logAttrs = append(logAttrs,
 			"http.route", route,
 			"url.path", r.URL.Path,
 			"http.request.method", r.Method,
@@ -128,7 +165,7 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			"upstream.duration_ms", telemetry.upstreamDuration.Milliseconds(),
 			"upstream.status_code", telemetry.upstreamLastCode,
 			"upstream.error", telemetry.upstreamErrorSeen,
-		}
+		)
 		if len(telemetry.upstreamCallsByType) > 0 {
 			logAttrs = append(logAttrs, "upstream.call_types", len(telemetry.upstreamCallsByType))
 		}

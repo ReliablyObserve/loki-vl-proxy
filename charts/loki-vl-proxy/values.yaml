@@ -145,6 +145,9 @@ extraArgs:
 
   log-level: "info"
   # log-request-sample-rate: "0"    # 0=log all 2xx; N>1 logs 1-in-N (saves log build overhead at high throughput)
+  # log-buffered: "true"            # write logs in the background for better performance under load
+  # log-stats-interval: "10s"       # how often to print a request statistics summary
+  # log-rate-threshold: "10"        # above this req/s, replace per-request logs with periodic summaries
 
   # --- HTTP server hardening ---
   http-read-timeout: "30s"

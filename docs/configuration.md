@@ -21,7 +21,10 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 | `-tls-key-file` | — | — | TLS key file for HTTPS |
 | `-tls-client-ca-file` | — | — | CA file for verifying HTTPS client certificates |
 | `-tls-require-client-cert` | — | `false` | Require and verify HTTPS client certificates |
-| `-log-request-sample-rate` | — | `0` | Log one in every N requests for access logging (`0` = disabled) |
+| `-log-request-sample-rate` | — | `0` | Log one in every N requests for access logging (`0` = disabled). Superseded by adaptive sampling (see below). |
+| `-log-buffered` | — | `true` | Write logs in the background to avoid slowing down requests under high load |
+| `-log-stats-interval` | — | `10s` | How often to print a request statistics summary (total, errors, latency, cache rate) |
+| `-log-rate-threshold` | — | `10` | When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged. |
 | `-cache-disabled` | — | `false` | Disable the in-memory L1 cache entirely (useful for benchmarking raw translation overhead) |
 
 ## Label Translation

@@ -105,6 +105,28 @@ The proxy writes structured logs for:
 - cache warmer and disk cache internals
 - OTLP export failures
 
+### Adaptive Log Sampling
+
+At low traffic (below `-log-rate-threshold`, default 10 req/s), every request is
+logged individually for easy debugging. When traffic exceeds the threshold, the
+proxy switches to a summary mode:
+
+- **OK traffic (2xx/3xx)**: individual request logs are suppressed. A periodic
+  summary is printed every `-log-stats-interval` (default 10s) with total
+  requests, error count, average/max latency, and cache hit rate.
+- **Errors (4xx/5xx)**: always logged. At high error rates, repeated status codes
+  are collapsed into digest lines (e.g., "429 x312 in last 10s") instead of one
+  line per request.
+
+This keeps logs useful for troubleshooting without flooding pipelines during
+normal traffic.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `-log-buffered` | `true` | Write logs in the background for lower request latency |
+| `-log-rate-threshold` | `10` | Req/s above which OK logs become periodic summaries |
+| `-log-stats-interval` | `10s` | How often to print the request statistics summary |
+
 ### OpenTelemetry Fields Used in Logs
 
 | Field | Meaning |

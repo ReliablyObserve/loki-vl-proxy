@@ -27,6 +27,7 @@ import (
 	logqlpkg "github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/metrics"
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"golang.org/x/sync/singleflight"
 )
@@ -291,6 +292,9 @@ type Config struct {
 	// 4xx/5xx requests are always logged regardless of this setting.
 	LogRequestSampleRate int
 
+	LogStatsInterval time.Duration
+	LogRateThreshold int
+
 	// Tenant limits runtime exposure.
 	// TenantLimitsAllowPublish controls which fields are exposed by
 	// /config/tenant/v1/limits and /loki/api/v1/drilldown-limits.
@@ -506,6 +510,8 @@ type Proxy struct {
 	readCacheKeyMemo                      map[canonicalReadCacheMemoKey]string
 	logSampleN                            uint64 // 0 = log all; N>1 = log 1 in N successful requests
 	logSampleCount                        atomic.Uint64
+	requestSampler                        *observability.RequestSampler
+	asyncLogHandler                       *observability.AsyncHandler
 	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
 }
@@ -1066,6 +1072,13 @@ func New(cfg Config) (*Proxy, error) {
 	}
 	if cfg.LogRequestSampleRate > 1 {
 		p.logSampleN = uint64(cfg.LogRequestSampleRate)
+	}
+	p.requestSampler = observability.NewRequestSampler()
+	if cfg.LogStatsInterval > 0 {
+		p.requestSampler.DigestInterval = cfg.LogStatsInterval
+	}
+	if cfg.LogRateThreshold > 0 {
+		p.requestSampler.QuietThreshold = int64(cfg.LogRateThreshold)
 	}
 	return p, nil
 }

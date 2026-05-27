@@ -208,6 +208,8 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 
 **Request coalescing.** Concurrent identical queries collapse into one upstream request.
 
+**Lock-free hot paths.** Circuit breaker, metrics histograms, and rate limiter use atomic operations instead of mutexes. Structured logging uses an async buffered handler. At 100+ concurrent requests, these eliminate the contention that dominates proxy-added latency.
+
 ---
 
 ## What Works Out of the Box
@@ -225,8 +227,9 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 
 ## Production Features
 
-- **Circuit breaker** — opens on backend failure, closes automatically on recovery
-- **Per-client rate limits** — token bucket, configurable per tenant
+- **Circuit breaker** — opens on backend failure, closes automatically on recovery; lock-free fast path in healthy state
+- **Per-client rate limits** — token bucket per tenant with sharded locks; no convoy effects at high tenant count
+- **Adaptive log sampling** — below 10 req/s logs everything; above it, OK traffic becomes periodic summaries while errors are always logged
 - **Tenant isolation** — strict `X-Scope-OrgID` fanout guardrails; no cross-tenant data bleed
 - **TLS / mTLS** — configurable on both northbound (client) and southbound (backend) boundaries
 - **OTLP push** — proxy emits its own traces to any OTLP endpoint
