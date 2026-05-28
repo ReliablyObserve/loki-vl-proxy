@@ -200,6 +200,8 @@ type proxyRuntimeConfig struct {
 	defaultMaxQueryLength               time.Duration
 	maxStatsQuerySeries                 int
 	statsQueryRangeConcurrency          int
+	drilldownBurstWindowMs              int
+	drilldownBurstMaxFields             int
 }
 
 type otlpRuntimeConfig struct {
@@ -486,6 +488,11 @@ func run(
 	defaultMaxQueryLength := fs.Duration("default-max-query-length", 0, "Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default)")
 	maxStatsQuerySeries := fs.Int("max-stats-query-series", 0, "Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). Matches Loki's max_query_series (0 = built-in default of 5000).")
 	statsQueryRangeConcurrency := fs.Int("stats-query-range-concurrency", 0, "Maximum concurrent stats_query_range calls to VictoriaLogs. Drilldown Fields fires ~30 in parallel; capping prevents CPU storms. 0 = built-in default of 4.")
+	drilldownBurstWindowMs := fs.Int("drilldown-burst-window-ms", 50,
+		"time window in ms for coalescing concurrent Drilldown Fields per-field count queries "+
+			"into a single fused VL conditional-stats call (0 disables the coalescer)")
+	drilldownBurstMaxFields := fs.Int("drilldown-burst-max-fields", 30,
+		"maximum fields per coalesced VL burst call; fields beyond this cap form a second call")
 
 	// Go runtime tuning
 	goMemLimitBytes := fs.Int64("go-mem-limit", 0, "Explicit GOMEMLIMIT in bytes. Overrides -go-mem-limit-percent. 0 = use percentage or GOMEMLIMIT env var.")
@@ -792,6 +799,8 @@ func run(
 			defaultMaxQueryLength:               *defaultMaxQueryLength,
 			maxStatsQuerySeries:                 *maxStatsQuerySeries,
 			statsQueryRangeConcurrency:          *statsQueryRangeConcurrency,
+			drilldownBurstWindowMs:              *drilldownBurstWindowMs,
+			drilldownBurstMaxFields:             *drilldownBurstMaxFields,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1752,6 +1761,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DefaultMaxQueryLength: cfg.defaultMaxQueryLength,
 		MaxStatsQuerySeries:            cfg.maxStatsQuerySeries,
 		StatsQueryRangeConcurrency:     cfg.statsQueryRangeConcurrency,
+		DrilldownBurstWindowMs:         cfg.drilldownBurstWindowMs,
+		DrilldownBurstMaxFields:        cfg.drilldownBurstMaxFields,
 	}, nil
 }
 
