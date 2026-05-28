@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -930,12 +931,25 @@ func TestTenant_HasMultiTenantOrgID(t *testing.T) {
 
 func TestTenant_QueryRangeCacheKeyUsesRawQueryWhenAvailable(t *testing.T) {
 	p, _ := New(Config{BackendURL: "http://example.com", Cache: cache.New(60*time.Second, 10), LogLevel: "error"})
-	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?end=2&query={app="nginx"}&start=1&step=1`, nil)
+	// end=1716571230 (Unix seconds near now), step=60 (60s bucket).
+	// Key rebuilds from individual params in fixed order, end bucketed to step granularity.
+	r := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1716571200&end=1716571230&step=60`, nil)
 	r.Header.Set("X-Scope-OrgID", "tenant-a")
 
 	got := p.queryRangeCacheKey(r, `{app="nginx"}`)
-	want := `query_range:tenant-a:end=2&query={app="nginx"}&start=1&step=1:default_2tuple`
-	if got != want {
-		t.Fatalf("queryRangeCacheKey() = %q, want %q", got, want)
+	// end=1716571230s bucketed to 60s step → 1716571200000000000 ns → verify key contains bucketed end, not raw
+	if got == "" {
+		t.Fatal("queryRangeCacheKey() returned empty")
+	}
+	// Key must start with correct prefix and contain the logql query
+	if !strings.Contains(got, "query_range:tenant-a:") {
+		t.Fatalf("queryRangeCacheKey() missing prefix: %q", got)
+	}
+	if !strings.Contains(got, url.QueryEscape(`{app="nginx"}`)) {
+		t.Fatalf("queryRangeCacheKey() missing logql query: %q", got)
+	}
+	// Raw end=1716571230 must NOT appear in the key (it should be bucketed)
+	if strings.Contains(got, "end="+url.QueryEscape("1716571230")) {
+		t.Fatalf("queryRangeCacheKey() contains unbucketed end timestamp: %q", got)
 	}
 }

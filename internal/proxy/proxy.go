@@ -502,6 +502,7 @@ type Proxy struct {
 	backendSupportsStreamMetadata         bool
 	backendSupportsDensePatternWindowing  bool
 	backendSupportsMetadataSubstring      bool
+	backendSupportsColumnFieldValues      bool
 	backendVersionLogged                  bool
 	labelValuesIndexWarmReady             atomic.Bool
 	labelValuesIndexPersistStarted        atomic.Bool
