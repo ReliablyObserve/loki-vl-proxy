@@ -647,6 +647,11 @@ func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep
 
 	scratch := fjMarshalPool.Get().(*[]byte)
 	defer fjMarshalPool.Put(scratch)
+	// Fix 2: pre-grow scratch to body length so values.MarshalTo doesn't
+	// chain-reallocate when serialising a large values array in one shot.
+	if cap(*scratch) < len(body) {
+		*scratch = make([]byte, 0, len(body))
+	}
 
 	buf.WriteString(`{"status":"success"`)
 	needsComma := true
@@ -737,25 +742,36 @@ func writeTrimmedTranslatedStatsFJ(buf *bytes.Buffer, items []*fj.Value, results
 				buf.WriteString(`,"value":`)
 				marshalFJ(buf, val, scratch)
 			}
-			// Range values — apply keep filter.
+			// Range values: when filtering is needed, serialise the whole array
+			// once via MarshalTo and scan raw bytes — avoids N fastjson
+			// re-serialisations for N points (Fix 3).
 			if values := item.Get("values"); values != nil {
-				buf.WriteString(`,"values":[`)
-				pts, _ := values.Array()
-				first := true
-				for _, pt := range pts {
-					if keep != nil {
-						ptArr, _ := pt.Array()
-						if len(ptArr) > 0 && !keep(statsQRFJPointNano(ptArr[0])) {
-							continue
+				buf.WriteString(`,"values":`)
+				if res.valsTrim && keep != nil {
+					rawVals := values.MarshalTo((*scratch)[:0])
+					*scratch = rawVals
+					if !writeFilteredValuesRaw(buf, rawVals, keep) {
+						// Malformed values array — fall back to fastjson typed nodes.
+						buf.WriteByte('[')
+						pts, _ := values.Array()
+						first := true
+						for _, pt := range pts {
+							ptArr, _ := pt.Array()
+							if len(ptArr) > 0 && !keep(statsQRFJPointNano(ptArr[0])) {
+								continue
+							}
+							if !first {
+								buf.WriteByte(',')
+							}
+							first = false
+							marshalFJ(buf, pt, scratch)
 						}
+						buf.WriteByte(']')
 					}
-					if !first {
-						buf.WriteByte(',')
-					}
-					first = false
-					marshalFJ(buf, pt, scratch)
+				} else {
+					// No time filtering needed: copy the whole array in one shot.
+					marshalFJ(buf, values, scratch)
 				}
-				buf.WriteByte(']')
 			}
 			buf.WriteByte('}')
 		} else {
@@ -763,6 +779,154 @@ func writeTrimmedTranslatedStatsFJ(buf *bytes.Buffer, items []*fj.Value, results
 		}
 	}
 	buf.WriteByte(']')
+}
+
+// writeFilteredValuesRaw scans the raw JSON bytes of a stats_query_range
+// values array — [[ts,"val"],[ts,"val"],...] — and writes to buf only those
+// points where keep(tsNano) is true.
+//
+// The raw bytes are obtained from fastjson's MarshalTo in one call per series,
+// avoiding N per-point MarshalTo+Write cycles for N values (Fix 3). Returns
+// false if the bytes are not a recognisable values array; the caller falls back
+// to fastjson typed-node iteration.
+func writeFilteredValuesRaw(buf *bytes.Buffer, raw []byte, keep func(int64) bool) bool {
+	i := 0
+	for i < len(raw) && raw[i] <= ' ' {
+		i++
+	}
+	if i >= len(raw) || raw[i] != '[' {
+		return false
+	}
+	i++
+
+	buf.WriteByte('[')
+	first := true
+
+	for {
+		// Skip whitespace and commas between elements.
+		for i < len(raw) && (raw[i] <= ' ' || raw[i] == ',') {
+			i++
+		}
+		if i >= len(raw) {
+			return false
+		}
+		if raw[i] == ']' {
+			break
+		}
+		if raw[i] != '[' {
+			return false // unexpected token in outer array
+		}
+
+		pointStart := i
+		i++ // consume inner '['
+
+		for i < len(raw) && raw[i] <= ' ' {
+			i++
+		}
+
+		// Parse the timestamp number (first element of the inner array).
+		numStart := i
+		if i < len(raw) && (raw[i] == '-' || raw[i] == '+') {
+			i++
+		}
+		digitStart := i
+		for i < len(raw) && raw[i] >= '0' && raw[i] <= '9' {
+			i++
+		}
+		if i == digitStart {
+			return false // no digits found
+		}
+		hasDot := false
+		if i < len(raw) && raw[i] == '.' {
+			hasDot = true
+			i++
+			for i < len(raw) && raw[i] >= '0' && raw[i] <= '9' {
+				i++
+			}
+		}
+		if i < len(raw) && (raw[i] == 'e' || raw[i] == 'E') {
+			hasDot = true // treat scientific notation as float
+			i++
+			if i < len(raw) && (raw[i] == '+' || raw[i] == '-') {
+				i++
+			}
+			for i < len(raw) && raw[i] >= '0' && raw[i] <= '9' {
+				i++
+			}
+		}
+
+		var tsNano int64
+		if hasDot {
+			f, err := strconv.ParseFloat(string(raw[numStart:i]), 64)
+			if err != nil {
+				return false
+			}
+			tsNano = normalizeLokiNumericTimeToUnixNano(f)
+		} else {
+			tsNano = normalizeLokiIntTimeToUnixNano(rawBytesToInt64(raw[numStart:i]))
+		}
+
+		// Advance past the rest of this point to its closing ']', handling
+		// nested strings (escaped quotes) and nested arrays.
+		depth := 1
+		for i < len(raw) && depth > 0 {
+			switch raw[i] {
+			case '[':
+				depth++
+				i++
+			case ']':
+				depth--
+				i++
+			case '"':
+				i++ // skip opening '"'
+				for i < len(raw) && raw[i] != '"' {
+					if raw[i] == '\\' {
+						i++ // skip escaped character
+					}
+					i++
+				}
+				if i < len(raw) {
+					i++ // skip closing '"'
+				}
+			default:
+				i++
+			}
+		}
+
+		if keep == nil || keep(tsNano) {
+			if !first {
+				buf.WriteByte(',')
+			}
+			first = false
+			buf.Write(raw[pointStart:i])
+		}
+	}
+
+	buf.WriteByte(']')
+	return true
+}
+
+// rawBytesToInt64 parses a decimal integer from a byte slice without allocating
+// a string. The caller must ensure b contains only ASCII digits with an optional
+// leading '-'. Overflow is not checked — Loki/VL timestamps fit in int64.
+func rawBytesToInt64(b []byte) int64 {
+	if len(b) == 0 {
+		return 0
+	}
+	neg := false
+	i := 0
+	if b[0] == '-' {
+		neg = true
+		i++
+	}
+	var n int64
+	for ; i < len(b); i++ {
+		n = n*10 + int64(b[i]-'0')
+	}
+	if neg {
+		return -n
+	}
+	return n
 }
 
 // statsQRFJPointNano extracts the unix-nano timestamp from the first element
