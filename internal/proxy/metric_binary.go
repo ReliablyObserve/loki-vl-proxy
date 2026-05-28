@@ -303,14 +303,6 @@ func trimStatsQueryRangeResponseFromStart(body []byte, startNs int64) []byte {
 	return trimStatsQRByTimeFJ(body, func(tsNs int64) bool { return tsNs >= startNs })
 }
 
-func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
-	endNs, ok := parseLokiTimeToUnixNano(endRaw)
-	if !ok {
-		return body
-	}
-	return trimStatsQRByTimeFJ(body, func(tsNs int64) bool { return tsNs <= endNs })
-}
-
 // trimStatsQRByTimeFJ filters stats_query_range point arrays using fastjson,
 // eliminating json.Unmarshal struct allocations and json.Marshal reflection.
 func trimStatsQRByTimeFJ(body []byte, keep func(int64) bool) []byte {
@@ -789,6 +781,8 @@ func writeTrimmedTranslatedStatsFJ(buf *bytes.Buffer, items []*fj.Value, results
 // avoiding N per-point MarshalTo+Write cycles for N values (Fix 3). Returns
 // false if the bytes are not a recognisable values array; the caller falls back
 // to fastjson typed-node iteration.
+//
+//nolint:gocyclo // byte-scanner state machine; branching is inherent to the [[ts,"val"],...] format.
 func writeFilteredValuesRaw(buf *bytes.Buffer, raw []byte, keep func(int64) bool) bool {
 	i := 0
 	for i < len(raw) && raw[i] <= ' ' {
