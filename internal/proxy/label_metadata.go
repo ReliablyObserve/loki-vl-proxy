@@ -308,6 +308,17 @@ func fieldMetaCacheKey(prefix, orgID string, params url.Values, authFP string) s
 	return key
 }
 
+// bucketTimestampString floors a raw timestamp string to the given bucket granularity
+// and returns it as a nanosecond string. Returns raw unchanged if parsing fails.
+// Used to stabilise singleflight keys against Grafana's sliding end-timestamp.
+func bucketTimestampString(raw string, bucket time.Duration) string {
+	if ns, ok := parseLokiTimeToUnixNano(raw); ok && ns > 0 {
+		bucketNs := bucket.Nanoseconds()
+		return fmt.Sprintf("%d", (ns/bucketNs)*bucketNs)
+	}
+	return raw
+}
+
 // rangeExceedsWindow returns true when the start/end pair spans more than threshold.
 // Returns false if either timestamp cannot be parsed.
 func rangeExceedsWindow(start, end string, threshold time.Duration) bool {
@@ -633,7 +644,12 @@ func (p *Proxy) labelBackgroundTimeout() time.Duration {
 }
 
 func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, search string, savedReq *http.Request) {
-	refreshKey := "refresh:labels:" + cacheKey
+	// Bucket the refresh key so Grafana's sliding end-timestamp doesn't spawn a
+	// new background goroutine on every panel load. All requests within the same
+	// 30s window share one singleflight call; the result is stored under the
+	// caller's exact cacheKey so subsequent requests still hit the cache.
+	bucketedEnd := bucketTimestampString(end, fieldNamesCacheBucket)
+	refreshKey := "refresh:labels:" + orgID + ":" + rawQuery + ":" + start + ":" + bucketedEnd + ":" + search
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
 			// Background label fetches fetch the full user-requested range rather than

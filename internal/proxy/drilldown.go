@@ -538,19 +538,40 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 			for _, field := range allFields {
 				available[field] = struct{}{}
 			}
+			// Collect matching fields first, then fetch their values in parallel.
+			// Sequential fetches caused N×RTT latency (5-10 calls at ~200ms each = 1-2s).
+			candidates := make([]string, 0, 8)
 			for _, field := range serviceNameSourceFields {
-				if _, ok := available[field]; !ok {
+				if _, ok := available[field]; ok {
+					candidates = append(candidates, field)
+				}
+			}
+			type fieldResult struct {
+				values []string
+				err    error
+			}
+			results := make([]fieldResult, len(candidates))
+			var wg sync.WaitGroup
+			sem := make(chan struct{}, 4) // limit parallelism to 4 concurrent VL calls
+			for i, field := range candidates {
+				wg.Add(1)
+				go func(i int, field string) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					queryParams := cloneURLValues(params)
+					queryParams.Set("field", field)
+					fv, fErr := p.fetchVLFieldValues(ctx, "/select/logsql/stream_field_values", queryParams)
+					results[i] = fieldResult{values: fv, err: fErr}
+				}(i, field)
+			}
+			wg.Wait()
+			for _, r := range results {
+				if r.err != nil {
+					lastErr = r.err
 					continue
 				}
-				queryParams := cloneURLValues(params)
-				queryParams.Set("field", field)
-				// stream_field_values covers both stream-indexed labels and column fields.
-				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/stream_field_values", queryParams)
-				if fieldErr != nil {
-					lastErr = fieldErr
-					continue
-				}
-				appendFieldValues(fieldValues)
+				appendFieldValues(r.values)
 			}
 		} else if !shouldFallbackToGenericMetadata(err) {
 			lastErr = err
@@ -568,18 +589,40 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 			for _, field := range fieldNames {
 				available[field] = struct{}{}
 			}
+			candidates2 := make([]string, 0, 8)
 			for _, field := range serviceNameSourceFields {
-				if _, ok := available[field]; !ok {
+				if _, ok := available[field]; ok {
+					candidates2 = append(candidates2, field)
+				}
+			}
+			results2 := make([]struct {
+				values []string
+				err    error
+			}, len(candidates2))
+			var wg2 sync.WaitGroup
+			sem2 := make(chan struct{}, 4)
+			for i, field := range candidates2 {
+				wg2.Add(1)
+				go func(i int, field string) {
+					defer wg2.Done()
+					sem2 <- struct{}{}
+					defer func() { <-sem2 }()
+					queryParams := cloneURLValues(params)
+					queryParams.Set("field", field)
+					fv, fErr := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
+					results2[i] = struct {
+						values []string
+						err    error
+					}{values: fv, err: fErr}
+				}(i, field)
+			}
+			wg2.Wait()
+			for _, r := range results2 {
+				if r.err != nil {
+					lastErr = r.err
 					continue
 				}
-				queryParams := cloneURLValues(params)
-				queryParams.Set("field", field)
-				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
-				if fieldErr != nil {
-					lastErr = fieldErr
-					continue
-				}
-				appendFieldValues(fieldValues)
+				appendFieldValues(r.values)
 			}
 		} else if lastErr == nil {
 			lastErr = err
@@ -1321,12 +1364,16 @@ func stripFieldDetectionStages(query string) string {
 
 // labelFilterHasComparison reports whether a LabelFilterStage.Raw string contains a
 // field-comparison operator (=, !=, =~, !~, >=, <=, >, <).
-var labelFilterCompareRE = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
+var (
+	labelFilterCompareRE     = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
+	hasFieldComparisonRE     = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
+	stripFieldComparisonStgRE = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)\s*[^|]+`)
+)
 
 func hasFieldComparisonStages(query string) bool {
 	lq, err := logqlpkg.ParseLogQuery(query)
 	if err != nil {
-		return regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`).MatchString(query)
+		return hasFieldComparisonRE.MatchString(query)
 	}
 	for _, stage := range lq.Pipeline {
 		lfs, ok := stage.(*logqlpkg.LabelFilterStage)
@@ -1344,8 +1391,7 @@ func stripFieldComparisonStages(query string) string {
 	}
 	lq, err := logqlpkg.ParseLogQuery(query)
 	if err != nil {
-		fieldComparisonStage := regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)\s*[^|]+`)
-		result := fieldComparisonStage.ReplaceAllString(query, " ")
+		result := stripFieldComparisonStgRE.ReplaceAllString(query, " ")
 		for strings.Contains(result, "  ") {
 			result = strings.ReplaceAll(result, "  ", " ")
 		}
@@ -1939,6 +1985,11 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		vlFJParserPool.Put(fjParser)
 
 		if len(msgBytes) == 0 {
+			continue
+		}
+		// Skip logfmt parsing when _msg is JSON — we already extracted fields
+		// via the fastjson pass above and a logfmt scan would misparse JSON tokens.
+		if msgBytes[0] == '{' {
 			continue
 		}
 		msg := string(msgBytes)
