@@ -2571,6 +2571,14 @@ func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, en
 }
 
 func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string) (map[string]*detectedLabelSummary, error) {
+	// VL v1.50+: stream label values are in the column index.
+	// Replace O(stream-scan) streams call (~1s) with stream_field_names (~300ms)
+	// + parallel field_values (~40ms each) for a ~3x speedup on detected_labels.
+	if p.supportsColumnIndexedFields() {
+		if summaries, err := p.detectNativeLabelsViaFieldValues(ctx, query, start, end); err == nil {
+			return summaries, nil
+		}
+	}
 	parsed, err := p.fetchNativeStreams(ctx, query, start, end)
 	if err != nil {
 		return nil, err
@@ -2594,6 +2602,81 @@ func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string
 			}
 			summary.values[value] = struct{}{}
 		}
+	}
+	return summaries, nil
+}
+
+// detectNativeLabelsViaFieldValues fetches stream label names via stream_field_names
+// then their values in parallel via field_values. Used on VL v1.50+ where both endpoints
+// use the column index (~300ms + 40ms) instead of the stream index scan (~1100ms for streams).
+func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, start, end string) (map[string]*detectedLabelSummary, error) {
+	var labelNames []string
+	var baseParams url.Values
+	for _, candidate := range fieldDetectionQueryCandidates(query) {
+		logsqlQuery, err := p.translateQuery(candidate)
+		if err != nil {
+			continue
+		}
+		params := url.Values{}
+		params.Set("query", logsqlQuery)
+		if start != "" {
+			params.Set("start", start)
+		}
+		if end != "" {
+			params.Set("end", end)
+		}
+		names, err := p.fetchStreamFieldNamesCached(ctx, params)
+		if err != nil || len(names) == 0 {
+			continue
+		}
+		labelNames = names
+		baseParams = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
+		break
+	}
+	if len(labelNames) == 0 {
+		return nil, fmt.Errorf("no stream label names found")
+	}
+
+	type labelResult struct {
+		lokiLabel string
+		values    []string
+	}
+	resultsCh := make(chan labelResult, len(labelNames))
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for _, name := range labelNames {
+		lokiLabel := p.labelTranslator.ToLoki(name)
+		if lokiLabel == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(vlName, lokiName string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			queryParams := cloneURLValues(baseParams)
+			queryParams.Set("field", vlName)
+			vals, err := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
+			if err != nil || len(vals) == 0 {
+				return
+			}
+			resultsCh <- labelResult{lokiLabel: lokiName, values: vals}
+		}(name, lokiLabel)
+	}
+	wg.Wait()
+	close(resultsCh)
+
+	summaries := make(map[string]*detectedLabelSummary, len(labelNames))
+	for r := range resultsCh {
+		summary := &detectedLabelSummary{
+			label:  r.lokiLabel,
+			values: make(map[string]struct{}, len(r.values)),
+		}
+		for _, v := range r.values {
+			summary.values[v] = struct{}{}
+		}
+		summaries[r.lokiLabel] = summary
 	}
 	return summaries, nil
 }
