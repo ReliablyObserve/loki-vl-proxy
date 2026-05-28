@@ -317,7 +317,30 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	if !p.shouldUseCompatCache(endpoint, r) {
 		return "", false
 	}
-	key := "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + r.URL.RawQuery
+	// For query_range and query, bucket `end` to the same 5-minute granularity used
+	// by queryRangeCacheKey. Grafana's sliding window drifts `end` by a few seconds on
+	// every panel refresh, producing a unique raw query string each time even when the
+	// logical query hasn't changed. Without bucketing, every refresh misses the compat
+	// cache and triggers a full VL re-scan.
+	rawQuery := r.URL.RawQuery
+	if endpoint == "query_range" || endpoint == "query" {
+		if endRaw := r.FormValue("end"); endRaw != "" {
+			stepRaw := r.FormValue("step")
+			bucket := 5 * time.Minute
+			if stepRaw != "" {
+				if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
+					bucket = d
+				}
+			}
+			endBucketed := bucketTimestampString(endRaw, bucket)
+			if endBucketed != endRaw {
+				q := r.URL.Query()
+				q.Set("end", endBucketed)
+				rawQuery = q.Encode()
+			}
+		}
+	}
+	key := "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + rawQuery
 	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		key += ":auth:" + fp
 	}
