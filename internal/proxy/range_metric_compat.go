@@ -589,6 +589,31 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// shouldUseManualRangeMetricCompat returning true. Skip the stats_query_range
 	// fast path for them: VL's tumbling-bucket stats would diverge from LogQL's
 	// sliding-window semantics when combined with | json / | logfmt exclusion.
+	// Drilldown burst coalescer: groups ~30 per-field field-presence count_over_time
+	// queries into a single fused VL conditional-stats call. Detects byExplicit
+	// aggregate-all queries with a | filter field != "" pattern.
+	// extractCommonBase strips | json / | logfmt + the field filter so VL uses its
+	// pre-indexed column index (| json before count() if returns empty in VL).
+	if p.drilldownCoalescer != nil && statsAggFunc == "count() as c" && spec.ByExplicit && len(spec.GroupBy) == 0 {
+		if base, field, ok := extractCommonBase(spec.BaseQuery); ok {
+			orgID := r.Header.Get("X-Scope-OrgID")
+			bKey := burstKey{
+				orgID:    orgID,
+				base:     base,
+				startSec: startTS.Add(-origSpec.Window).Unix(),
+				endSec:   endTS.Unix(),
+				stepNs:   int64(step),
+			}
+			fireFn := p.fusedFieldHits(orgID, base, startTS.Add(-origSpec.Window), endTS, step)
+			if series, coalErr := p.drilldownCoalescer.Submit(r.Context(), bKey, field, fireFn); coalErr == nil {
+				result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write(result) // nosemgrep
+				return true
+			}
+			// Fall through on error — coalescer failure is non-fatal.
+		}
+	}
 	if statsAggFunc != "" && !queryUsesParserStages(spec.BaseQuery) {
 		hasStreamSentinel := false
 		for _, g := range spec.GroupBy {

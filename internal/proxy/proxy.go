@@ -317,6 +317,14 @@ type Config struct {
 	// page load fires ~30 such calls simultaneously; without a cap they all
 	// hit VL at once, causing a CPU storm. 0 means use the built-in default (4).
 	StatsQueryRangeConcurrency int
+	// DrilldownBurstWindowMs is the time window in milliseconds during which
+	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
+	// are coalesced into a single fused VL conditional-stats call.
+	// 0 disables the burst coalescer. Default when enabled: 50.
+	DrilldownBurstWindowMs int
+	// DrilldownBurstMaxFields caps the number of fields per coalesced VL call.
+	// Excess fields form a second call. Default: 30.
+	DrilldownBurstMaxFields int
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -440,6 +448,7 @@ type Proxy struct {
 	rangeMetricRowLimit                   int // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
 	maxStatsQuerySeries                   int        // max series returned by collectRangeMetricHits (0=5000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
+	drilldownCoalescer                    *DrilldownBurstCoalescer
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool
@@ -1010,6 +1019,7 @@ func New(cfg Config) (*Proxy, error) {
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
+		drilldownCoalescer:                    makeDrilldownBurstCoalescer(cfg.DrilldownBurstWindowMs, cfg.DrilldownBurstMaxFields),
 		forwardHeaders:                        cfg.ForwardHeaders,
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
@@ -1280,6 +1290,15 @@ func makeStatsQueryRangeSem(concurrency int) chan struct{} {
 		sem <- struct{}{}
 	}
 	return sem
+}
+
+// makeDrilldownBurstCoalescer creates a DrilldownBurstCoalescer if windowMs > 0.
+// Returns nil when windowMs == 0 (disabled); callers must nil-check before use.
+func makeDrilldownBurstCoalescer(windowMs, maxFields int) *DrilldownBurstCoalescer {
+	if windowMs == 0 {
+		return nil
+	}
+	return newDrilldownBurstCoalescer(windowMs, maxFields)
 }
 
 func computeBackendLoopback(u *url.URL) bool {
