@@ -317,14 +317,16 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	if !p.shouldUseCompatCache(endpoint, r) {
 		return "", false
 	}
-	// For query_range and query, bucket `end` to the same 5-minute granularity used
-	// by queryRangeCacheKey. Grafana's sliding window drifts `end` by a few seconds on
-	// every panel refresh, producing a unique raw query string each time even when the
-	// logical query hasn't changed. Without bucketing, every refresh misses the compat
-	// cache and triggers a full VL re-scan.
+	// For query_range and query, bucket both `start` and `end` to the same 5-minute
+	// granularity used by queryRangeCacheKey. Grafana's sliding "now-12h to now" window
+	// drifts BOTH endpoints by a few seconds on every panel refresh, so the raw query
+	// string produces a unique cache key every time even when the logical query is
+	// identical. Without bucketing both, every refresh misses the compat cache.
 	rawQuery := r.URL.RawQuery
 	if endpoint == "query_range" || endpoint == "query" {
-		if endRaw := r.FormValue("end"); endRaw != "" {
+		endRaw := r.FormValue("end")
+		startRaw := r.FormValue("start")
+		if endRaw != "" || startRaw != "" {
 			stepRaw := r.FormValue("step")
 			bucket := 5 * time.Minute
 			if stepRaw != "" {
@@ -332,10 +334,21 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 					bucket = d
 				}
 			}
-			endBucketed := bucketTimestampString(endRaw, bucket)
-			if endBucketed != endRaw {
-				q := r.URL.Query()
-				q.Set("end", endBucketed)
+			q := r.URL.Query()
+			changed := false
+			if endRaw != "" {
+				if endB := bucketTimestampString(endRaw, bucket); endB != endRaw {
+					q.Set("end", endB)
+					changed = true
+				}
+			}
+			if startRaw != "" {
+				if startB := bucketTimestampString(startRaw, bucket); startB != startRaw {
+					q.Set("start", startB)
+					changed = true
+				}
+			}
+			if changed {
 				rawQuery = q.Encode()
 			}
 		}
