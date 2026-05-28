@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TranslateLabelsMap` gains `TranslateLabelsMapInto` variant for caller-controlled result-map pooling; original wrapper unchanged
 - `handleSeries` pools the per-stream keys slice via `sync.Pool`, eliminating one alloc per log stream on the hot ingest path
 - Coalescer body buffer pooled via `sync.Pool` (`readBodyPooled`); replaces per-request `io.ReadAll` allocation with a reused 64 KB buffer
+- Fix `query_range` cache key drift: Grafana's sliding `now-12h to now` window increments `end` by a few seconds on every panel refresh, causing every `stats_query_range` fan-out call to cache-miss and hammer VictoriaLogs with 20+ concurrent 2–22s metric queries. `queryRangeCacheKey` now buckets `end` to the step granularity (minimum 30s) so consecutive refreshes share one cache entry and VL is queried at most once per step bucket.
 
 ## [1.51.0] - 2026-05-27
 

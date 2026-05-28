@@ -1915,23 +1915,41 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
-	rawQuery := r.URL.RawQuery
-	if rawQuery == "" {
-		var b strings.Builder
-		b.Grow(len(logqlQuery) + 64)
-		b.WriteString("query=")
-		b.WriteString(url.QueryEscape(logqlQuery))
-		for _, key := range []string{"start", "end", "step", "limit", "direction"} {
-			if value := r.FormValue(key); value != "" {
-				b.WriteByte('&')
-				b.WriteString(key)
-				b.WriteByte('=')
-				b.WriteString(url.QueryEscape(value))
+	// Build a stable key by bucketing `end` to the step granularity. Grafana's sliding
+	// time window drifts `end` by a few seconds on each panel refresh, producing a unique
+	// cache key every time even for the same logical query. Bucketing to step (or 30s when
+	// step is absent/small) turns consecutive refreshes into cache hits within the same step
+	// bucket, while still expiring the cache when the user moves the time range.
+	endRaw := r.FormValue("end")
+	endBucketed := endRaw
+	if endRaw != "" {
+		stepRaw := r.FormValue("step")
+		bucket := 30 * time.Second
+		if stepRaw != "" {
+			if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
+				bucket = d
 			}
 		}
-		rawQuery = b.String()
+		endBucketed = bucketTimestampString(endRaw, bucket)
 	}
-	key := "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + rawQuery + ":" + p.tupleModeCacheKey(r)
+
+	var b strings.Builder
+	b.Grow(len(logqlQuery) + 128)
+	b.WriteString("query=")
+	b.WriteString(url.QueryEscape(logqlQuery))
+	for _, key := range []string{"start", "step", "limit", "direction"} {
+		if value := r.FormValue(key); value != "" {
+			b.WriteByte('&')
+			b.WriteString(key)
+			b.WriteByte('=')
+			b.WriteString(url.QueryEscape(value))
+		}
+	}
+	if endBucketed != "" {
+		b.WriteString("&end=")
+		b.WriteString(url.QueryEscape(endBucketed))
+	}
+	key := "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + b.String() + ":" + p.tupleModeCacheKey(r)
 	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		key += ":auth:" + fp
 	}
