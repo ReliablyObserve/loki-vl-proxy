@@ -380,33 +380,51 @@ Typed errors in `internal/translator/errors.go` replace bare `fmt.Errorf` for tw
 
 ### Translation Pipeline
 
+See [LogQL parser — Translation](logql-parser.md#translation) for the stage-by-stage mapping table and edge case reference.
+
 ```mermaid
 flowchart LR
     subgraph Input["Input"]
         LQ["LogQL query string"]
     end
 
-    subgraph Parse["Parse (internal/logql/)"]
-        PARSE["ParseLogQuery() / ParseExpr()"]
-        AST1["Typed LogQL AST\nLogQuery · Stage · LabelFilterStage\nRangeAggregation · BinOpExpr"]
+    subgraph Parse["Parse — internal/logql"]
+        PARSE["Scanner → Parser → Semantic validation"]
+        PERR["ParseError → 400"]
+        AST_LOG["*LogQuery\nstream selector + []Stage"]
+        AST_MET["Metric nodes\n*RangeAgg · *VectorAgg\n*BinOpExpr · *OpaqueMetricExpr"]
     end
 
-    subgraph Translate["Translate (internal/translator/ + internal/logql/)"]
-        TR["TranslateLogQL() / TranslateMetricQuery()\n(proxy main path — unchanged)"]
-        TIER1["Tier 1: Stable string paths\nstream selectors · line filters\nlabel format · logfmt/json parsers"]
-        TIER2["Tier 2: AST-driven paths\nbuildStatsQuery → logsql.PipeStats\n(ip() filter: phase-2 roadmap)"]
-        TIER3["Tier 3: Typed AST-to-AST mapper (new)\nlogql.Translate(*LogQuery)\nstream selector → logsql.FilterExpr\npipeline stages → []logsql.Pipe\n(metric nodes → errFallthrough → Tier 1/2)"]
+    subgraph Translate["Translate — internal/translator + internal/logql"]
+        T1["Tier 1 — String ops\nstream selectors · line filters\nlabel format · json/logfmt parsers\n(current proxy main path)"]
+        T2["Tier 2 — AST-driven\nbuildStatsQuery → logsql.PipeStats\nipv4_range via logsql.Builder"]
+        T3["Tier 3 — AST-to-AST (new)\nlogql.Translate(*LogQuery)\nStreamSelector → FilterExpr\n[]Stage → []logsql.Pipe\nLabelFn · Caps gating\n(metric nodes → errFallthrough → T1)"]
+        UNSUP["UnsupportedError → 501"]
+        RAW["OpaqueMetricExpr\nraw pass-through"]
     end
 
-    subgraph Build["Build (internal/logsql/)"]
-        BUILDER["Builder (version-aware)\nCapabilities struct"]
-        LOGSQL["LogsQL query string\nready for VictoriaLogs"]
+    subgraph Build["Build — internal/logsql"]
+        BUILDER["Capabilities-aware Builder\n(VL v1.40 → v1.5x)"]
+        LOGSQL["LogsQL query string"]
     end
 
-    LQ --> PARSE --> AST1 --> TR
-    TR --> TIER1 --> LOGSQL
-    TR --> TIER2 --> BUILDER --> LOGSQL
-    AST1 -.->|"follow-on PR"| TIER3 --> BUILDER --> LOGSQL
+    LQ --> PARSE
+    PARSE -->|"structural error"| PERR
+    PARSE --> AST_LOG
+    PARSE --> AST_MET
+
+    AST_LOG -->|"current path"| T1
+    AST_LOG -.->|"follow-on PR"| T3
+    AST_MET -->|"metric/stats"| T2
+    AST_MET -->|"opaque fn"| RAW
+
+    T1 --> LOGSQL
+    T2 --> BUILDER --> LOGSQL
+    T2 --> UNSUP
+    T3 --> BUILDER
+    T3 -->|"unhandled stage"| T1
+
+    RAW --> LOGSQL
 
     style Input fill:#1a1a2e,stroke:#e94560,color:#fff
     style Parse fill:#16213e,stroke:#4cc9f0,color:#fff

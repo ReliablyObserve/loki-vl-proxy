@@ -33,26 +33,80 @@ The typed AST makes these cases explicit. Each node type is a Go struct with typ
 
 ```mermaid
 flowchart TD
-    Q["Raw query string"]
-    SC["Scanner<br/>tokenise runes → tokens"]
-    PA["Parser<br/>recursive descent → Expr"]
-    SE["Semantic pass<br/>structural constraints"]
-    VA["ValidateLogQL<br/>Loki-compatible error string"]
-    RT["Proxy routing<br/>type-switch on Expr"]
-    TR["Translate<br/>Expr.String() → LogsQL"]
+    Q["Raw query string\n(from Grafana / Loki client)"]
 
-    Q --> SC --> PA --> SE --> VA
-    PA --> RT
-    PA --> TR
+    subgraph Parse["internal/logql — Parse"]
+        SC["Scanner\ntokenize runes → tokens"]
+        PA["Parser\nrecursive descent → Expr"]
+        SE["Semantic validation\nstructural constraints"]
+        PARSE_ERR["ParseError\n→ 400 Bad Request\nLoki-shaped error string"]
+    end
+
+    subgraph Route["internal/proxy — Route"]
+        LQ["*LogQuery\n(stream + pipeline)"]
+        RA["*RangeAggregation\n(rate, max_over_time…)"]
+        BE["*BinOpExpr\n(left op right)"]
+        OM["*OpaqueMetricExpr\n(label_replace, label_join…)"]
+        VA["*VectorAggregation\n(sum by, topk…)"]
+    end
+
+    subgraph Translate["internal/translator + internal/logql — Translate"]
+        direction TB
+        subgraph AST["AST-to-AST path — logql.Translate (follow-on PR)"]
+            SS["translateStreamSelector\n→ logsql.FilterExpr"]
+            PIPE_STAGES["translateLogQuery\n→ []logsql.Pipe"]
+            LABEL_FN["LabelFn applied\n(OTel dotted → underscore)"]
+            CAPS_GATE["Capabilities gating\n(VL v1.40 min, v1.5x features)"]
+            FT["errFallthrough\n→ String Translator"]
+        end
+        subgraph STR["String Translator — TranslateLogQLWithCapabilities"]
+            T1["Tier 1: string ops\nstream selectors · line filters\nlabel format · json/logfmt"]
+            T2["Tier 2: AST-driven\nbuildStatsQuery → logsql.PipeStats\nipv4_range via logsql.Builder"]
+            UNSUP["UnsupportedError\n→ 501 or fallback"]
+        end
+    end
+
+    subgraph Build["internal/logsql — Build"]
+        LSQL_AST["logsql.Query\nFilterExpr + Pipes"]
+        LSQL_STR["Query.String()\nLogsQL query string"]
+    end
+
+    VL["VictoriaLogs\n/select/logsql/query_range\n/select/logsql/stats_query_range\netc."]
+
+    Q --> SC --> PA --> SE
+    SE -->|"structural error"| PARSE_ERR
+    SE -->|"valid"| LQ
+    SE -->|"valid"| RA
+    SE -->|"valid"| BE
+    SE -->|"valid"| OM
+    SE -->|"valid"| VA
+
+    LQ -->|"current proxy path"| T1
+    LQ -.->|"follow-on PR"| SS
+    SS --> LABEL_FN --> PIPE_STAGES --> CAPS_GATE --> LSQL_AST
+    PIPE_STAGES -->|"unhandled stage"| FT --> T1
+
+    RA --> T2
+    BE -->|"both sides"| T1
+    VA --> T2
+    OM -->|"raw pass-through"| LSQL_STR
+
+    T1 --> LSQL_STR
+    T2 --> LSQL_AST --> LSQL_STR
+    T2 -->|"no LogsQL equivalent"| UNSUP
+
+    LSQL_STR --> VL
 ```
 
-**Three consumers of the AST:**
+**Four consumers of the LogQL AST:**
 
-1. **Validation** (`ValidateLogQL`) — called on every inbound query before any work is done. Returns a Loki-shaped error string (e.g. `"parse error at line 1, col 1: ..."`) or `""` if valid.
+1. **Validation** (`ValidateLogQL`) — called on every inbound query before any work is done. Returns a Loki-shaped error string (`"parse error at line 1, col 1: ..."`) or `""` if valid.
 
 2. **Routing** (`proxy.go`) — calls `logql.Parse()` on the validated query and type-switches to dispatch subqueries, binary expressions, and range aggregations to separate execution paths.
 
-3. **Drop/Keep extraction** (`stream_processing.go`) — calls `logql.ParseAndValidate()` to extract `| drop` / `| keep` matchers for post-processing VL response streams.
+3. **Translation** (`TranslateLogQLWithCapabilities` and `logql.Translate`) — two paths described in detail below.
+
+4. **Drop/Keep extraction** (`stream_processing.go`) — calls `logql.ParseAndValidate()` to extract `| drop` / `| keep` matchers for post-processing VL response streams.
 
 ## AST Node Hierarchy
 
@@ -176,6 +230,50 @@ Fast-path cases handled before parsing:
 - Contains `<>` → parse error at the `>` position
 
 Everything else goes through the full parse + semantic pass.
+
+## Translation
+
+### LogQL stage → LogsQL pipe mapping
+
+The AST-to-AST translator (`logql.Translate`) maps LogQL pipeline stages to `logsql` typed pipe nodes:
+
+| LogQL stage | Condition | LogsQL output | Notes |
+|---|---|---|---|
+| `*StreamSelectorExpr` | always | `logsql.FilterExpr` | Label matchers `=`, `!=`, `=~`, `!~` |
+| `*LineFilterStage` | `\|=` / `!=` / `\|~` / `!~` / `\|>` / `!>` | `logsql.PipeFilter` | Pattern filter `\|>` mapped to VL `seq()` or regexp |
+| `*LabelFilterStage` | bare label condition | `logsql.PipeFilter` | Raw expression preserved; complex filters fall through |
+| `*ParserStage` — json | always | `logsql.PipeUnpackJSON` | |
+| `*ParserStage` — logfmt | always | `logsql.PipeUnpackLogfmt` | |
+| `*ParserStage` — regexp | always | `logsql.PipeExtractRegexp` | |
+| `*ParserStage` — unpack | always | `logsql.PipeUnpackJSON` | |
+| `*DropStage` | bare labels only | `logsql.PipeDelete` | Matcher-based drop → `errFallthrough` |
+| `*KeepStage` | bare labels only | `logsql.PipeKeep` | Matcher-based keep → `errFallthrough` |
+| `*LineFormatStage` | simple templates | `logsql.PipeFormat` | Complex `{{` templates → `errFallthrough` |
+| `*LabelFormatStage` | any | `errFallthrough` | No LogsQL equivalent yet |
+| `*UnwrapStage` | any | `errFallthrough` | Handled by metric translator |
+| `*DecolorizeStage` | any | `errFallthrough` | No LogsQL equivalent |
+| `*RangeAggregation` | any | `errFallthrough` | Metric path via string translator |
+| `*VectorAggregation` | any | `errFallthrough` | Metric path via string translator |
+| `*BinOpExpr` | any | `errFallthrough` | Binary metric path |
+| `*OpaqueMetricExpr` | any | raw pass-through | `label_replace`, `label_join` etc. |
+
+`errFallthrough` is a package-private sentinel — callers route to `TranslateLogQLWithCapabilities` unchanged.
+
+### Edge cases
+
+| Situation | Behaviour |
+|---|---|
+| Empty stream selector `{}` | Semantic validation rejects before translation: `"queries require at least one matcher that is not a wildcard"` |
+| `*=` / `!*=` matchers | Converted to `=~.*` / `!=.*` (LogsQL has no native glob) |
+| Label names with dots (`service.name`) | `LabelFn` rewrites to underscores if OTel mode enabled; otherwise passed through |
+| `\|~ ".+"` — always-true regex | Optimised away (no LogsQL equivalent needed) |
+| `rate()` / `bytes_rate()` over `__error__` | Rejected at semantic pass: 400 |
+| `quantile_over_time` φ < 0 | Rejected at semantic pass: 400 |
+| Unknown function (`label_replace`, custom) | `OpaqueMetricExpr`: raw text forwarded to VL unchanged |
+| VL version < required capability | `Capabilities` gating downgrades construct (e.g. `BestIPv4Range` → regexp fallback) |
+| No LogsQL equivalent for valid LogQL | `UnsupportedError` — handler decides: 501, partial result, or silent drop |
+| `| line_format` unclosed template | Rejected at semantic pass: 400 with template parse error |
+| `| pattern` parser stage | Mapped to VL `seq()` word-match filter if caps allow, else regexp |
 
 ## How Routing Uses the AST
 
