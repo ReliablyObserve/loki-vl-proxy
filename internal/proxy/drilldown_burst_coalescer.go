@@ -3,10 +3,14 @@ package proxy
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	fj "github.com/valyala/fastjson"
 )
 
 var (
@@ -141,5 +145,95 @@ func (c *DrilldownBurstCoalescer) fire(
 			r.err = fmt.Errorf("burst coalescer: no result for field %q", f)
 		}
 		g.chans[i] <- r
+	}
+}
+
+// fusedFieldHits returns a fireFn for DrilldownBurstCoalescer.Submit.
+// It fires one VL stats_query_range with count() if (field:*) conditional
+// aggregations for all fields, parsing each alias's time series into fieldResult.
+//
+// VL's count() if (field:*) works on pre-indexed columns without | json / | logfmt.
+// extractCommonBase must have stripped parser pipes from commonBase already.
+func (p *Proxy) fusedFieldHits(
+	orgID, commonBase string,
+	start, end time.Time,
+	step time.Duration,
+) func(ctx context.Context, fields []string) (map[string]fieldResult, error) {
+	return func(ctx context.Context, fields []string) (map[string]fieldResult, error) {
+		aliasToField := make(map[string]string, len(fields))
+		var sb strings.Builder
+		for i, f := range fields {
+			alias := fmt.Sprintf("_f%d", i)
+			aliasToField[alias] = f
+			if i > 0 {
+				sb.WriteString(", ")
+			}
+			fmt.Fprintf(&sb, "count() if (%s:*) as %s", f, alias)
+		}
+		fusedQuery := commonBase + " | stats " + sb.String()
+
+		params := url.Values{}
+		params.Set("query", fusedQuery)
+		params.Set("start", strconv.FormatInt(start.Unix(), 10))
+		params.Set("end", strconv.FormatInt(end.Unix(), 10))
+		params.Set("step", strconv.FormatFloat(step.Seconds(), 'f', 0, 64)+"s")
+
+		callCtx := context.WithValue(ctx, orgIDKey, orgID)
+		resp, err := p.vlPost(callCtx, "/select/logsql/stats_query_range", params)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+			return nil, fmt.Errorf("fused stats_query_range %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		}
+
+		const maxFusedResponseBytes = 64 << 20
+		body, err := readBodyLimited(resp.Body, maxFusedResponseBytes)
+		if err != nil {
+			return nil, err
+		}
+
+		v, parseErr := fj.ParseBytes(body)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse fused stats_query_range: %w", parseErr)
+		}
+		if status := string(v.GetStringBytes("status")); status != "success" {
+			return nil, fmt.Errorf("fused stats_query_range non-success: %s", status)
+		}
+
+		out := make(map[string]fieldResult, len(fields))
+		for _, res := range v.GetArray("data", "result") {
+			alias := string(res.GetStringBytes("metric", "__name__"))
+			field, ok := aliasToField[alias]
+			if !ok {
+				continue
+			}
+			rawValues := res.GetArray("values")
+			samples := make([]rangeMetricSample, 0, len(rawValues))
+			for _, pair := range rawValues {
+				arr := pair.GetArray()
+				if len(arr) < 2 {
+					continue
+				}
+				tsSec := arr[0].GetFloat64()
+				val, parseFloatErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
+				if parseFloatErr != nil {
+					continue
+				}
+				samples = append(samples, rangeMetricSample{
+					ts:    int64(tsSec * 1e9),
+					value: val,
+				})
+			}
+			out[field] = fieldResult{
+				series: map[string]manualSeriesSamples{
+					"": {Metric: map[string]string{}, Samples: samples},
+				},
+			}
+		}
+		return out, nil
 	}
 }

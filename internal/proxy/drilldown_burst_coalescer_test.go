@@ -2,6 +2,10 @@ package proxy
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -158,5 +162,60 @@ func TestDrilldownBurstCoalescer_ContextCancellation(t *testing.T) {
 	_, err := c.Submit(ctx, key, "trace_id", fireFn)
 	if err == nil {
 		t.Error("expected context cancellation error, got nil")
+	}
+}
+
+func TestFusedFieldHits_MockVL(t *testing.T) {
+	base := time.Unix(1700000000, 0).UTC()
+	end := base.Add(5 * time.Minute)
+	step := time.Minute
+	ts1 := base.Add(time.Minute).Unix()
+	ts2 := base.Add(2 * time.Minute).Unix()
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.FormValue("query")
+		if !strings.Contains(query, "count() if") {
+			http.Error(w, "unexpected query: "+query, http.StatusInternalServerError)
+			return
+		}
+		resp := fmt.Sprintf(
+			`{"status":"success","data":{"resultType":"matrix","result":[`+
+				`{"metric":{"__name__":"_f0"},"values":[[%d,"10"],[%d,"20"]]},`+
+				`{"metric":{"__name__":"_f1"},"values":[[%d,"5"],[%d,"8"]]}]}}`,
+			ts1, ts2, ts1, ts2,
+		)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, resp)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	fireFn := p.fusedFieldHits("default", `{app="foo"}`, base, end, step)
+	results, err := fireFn(context.Background(), []string{"trace_id", "span_id"})
+	if err != nil {
+		t.Fatalf("fusedFieldHits: %v", err)
+	}
+
+	r0, ok := results["trace_id"]
+	if !ok || r0.err != nil {
+		t.Fatalf("trace_id missing or errored: %v", r0.err)
+	}
+	if got := len(r0.series[""].Samples); got != 2 {
+		t.Errorf("trace_id samples=%d want 2", got)
+	}
+	if r0.series[""].Samples[0].value != 10 {
+		t.Errorf("trace_id[0].value=%v want 10", r0.series[""].Samples[0].value)
+	}
+
+	r1, ok := results["span_id"]
+	if !ok || r1.err != nil {
+		t.Fatalf("span_id missing or errored: %v", r1.err)
+	}
+	if got := len(r1.series[""].Samples); got != 2 {
+		t.Errorf("span_id samples=%d want 2", got)
+	}
+	if r1.series[""].Samples[0].value != 5 {
+		t.Errorf("span_id[0].value=%v want 5", r1.series[""].Samples[0].value)
 	}
 }
