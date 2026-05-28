@@ -257,7 +257,14 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 		// The background refresh (labelFullRangeFetchKey) uses the full range.
 		backendParams = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 	}
-	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", backendParams)
+	// Background (full-range) path uses field_names: stream_field_names at 12-24h is
+	// 7-8s+ and causes CPU spikes. field_names covers the same label discovery at ~0.25s.
+	// Sync path keeps stream_field_names (1h cap) for strict Loki-label-only semantics.
+	endpoint := "/select/logsql/stream_field_names"
+	if fullRange {
+		endpoint = "/select/logsql/field_names"
+	}
+	fields, err := p.fetchVLFieldNames(ctx, endpoint, backendParams)
 	if err != nil {
 		return nil, err
 	}
@@ -454,12 +461,11 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 		return p.fetchPreferredLabelNames(ctx, params)
 	}
 
-	cacheKey := "label_inventory:" + getOrgID(ctx) + ":" + params.Encode()
+	var authFP string
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
-			cacheKey += ":auth:" + fp
-		}
+		authFP = p.fingerprintFromCtx(ctx, origReq)
 	}
+	cacheKey := fieldMetaCacheKey("label_inventory:", getOrgID(ctx), params, authFP)
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		var labels []string
 		if err := json.Unmarshal(cached, &labels); err == nil {
