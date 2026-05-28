@@ -128,6 +128,9 @@ func (c *DrilldownBurstCoalescer) fire(
 	defer cancel()
 
 	results, err := fireFn(ctx, g.fields)
+	if err != nil {
+		err = fmt.Errorf("burst coalescer fused query: %w", err)
+	}
 	for i, f := range g.fields {
 		var r fieldResult
 		if err != nil {

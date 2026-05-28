@@ -67,9 +67,12 @@ func TestExtractCommonBase(t *testing.T) {
 }
 
 func TestDrilldownBurstCoalescer_CoalescesTwoFields(t *testing.T) {
-	callCount := 0
+	var callCount int
+	var callMu sync.Mutex
 	fireFn := func(ctx context.Context, fields []string) (map[string]fieldResult, error) {
+		callMu.Lock()
 		callCount++
+		callMu.Unlock()
 		result := make(map[string]fieldResult, len(fields))
 		for _, f := range fields {
 			result[f] = fieldResult{
@@ -97,8 +100,11 @@ func TestDrilldownBurstCoalescer_CoalescesTwoFields(t *testing.T) {
 	}
 	wg.Wait()
 
-	if callCount != 1 {
-		t.Errorf("fireFn called %d times, want 1", callCount)
+	callMu.Lock()
+	count := callCount
+	callMu.Unlock()
+	if count != 1 {
+		t.Errorf("fireFn called %d times, want 1", count)
 	}
 }
 
