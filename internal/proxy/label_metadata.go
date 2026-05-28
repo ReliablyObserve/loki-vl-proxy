@@ -237,12 +237,11 @@ type labelFullRangeFetchKey struct{}
 // refreshLabelsCacheAsync so subsequent requests return complete historical data.
 // Set labelFullRangeFetchKey in context to bypass the cap for background fetches.
 func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
-	cacheKey := "sfn:" + getOrgID(ctx) + ":" + params.Encode()
+	var authFP string
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
-			cacheKey += ":auth:" + fp
-		}
+		authFP = p.fingerprintFromCtx(ctx, origReq)
 	}
+	cacheKey := fieldMetaCacheKey("sfn:", getOrgID(ctx), params, authFP)
 	fullRange := ctx.Value(labelFullRangeFetchKey{}) != nil
 	if !fullRange {
 		if cached, ok := p.streamFieldNamesCache.Get(cacheKey); ok {
@@ -271,6 +270,36 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 // metadataMaxFieldNamesWindow is the cap applied to VL backend calls on the synchronous
 // (on-request) path. Background refresh goroutines bypass this cap via labelFullRangeFetchKey.
 const metadataMaxFieldNamesWindow = time.Hour
+
+// fieldNamesCacheBucket is the granularity used to stabilise field-names cache keys.
+// Grafana's sliding window causes the `end` timestamp to drift a few seconds between
+// consecutive requests, creating a unique cache key on every click even though the
+// logical query is identical. Bucketing to 30s aligns all requests within the same
+// window to one key, so the 30s TTL cache actually gets hits.
+const fieldNamesCacheBucket = 30 * time.Second
+
+// fieldMetaCacheKey builds a stable cache key for stream_field_names and field_names
+// responses. The end timestamp is floor-rounded to fieldNamesCacheBucket intervals.
+func fieldMetaCacheKey(prefix, orgID string, params url.Values, authFP string) string {
+	endRaw := firstNonEmpty(params.Get("end"), params.Get("to"))
+	if endNs, ok := parseLokiTimeToUnixNano(endRaw); ok && endNs > 0 {
+		bucket := int64(fieldNamesCacheBucket)
+		bucketed := (endNs / bucket) * bucket
+		capped := cloneURLValues(params)
+		capped.Set("end", fmt.Sprintf("%d", bucketed))
+		capped.Del("to")
+		key := prefix + orgID + ":" + capped.Encode()
+		if authFP != "" {
+			key += ":auth:" + authFP
+		}
+		return key
+	}
+	key := prefix + orgID + ":" + params.Encode()
+	if authFP != "" {
+		key += ":auth:" + authFP
+	}
+	return key
+}
 
 // rangeExceedsWindow returns true when the start/end pair spans more than threshold.
 // Returns false if either timestamp cannot be parsed.
@@ -362,12 +391,11 @@ func capMetadataStartOnly(params url.Values, maxWindow time.Duration) url.Values
 // Same progressive strategy as fetchStreamFieldNamesCached: synchronous path caps to
 // 1h; background refresh (labelFullRangeFetchKey in context) uses the full range.
 func (p *Proxy) fetchAllFieldNamesCached(ctx context.Context, params url.Values) ([]string, error) {
-	cacheKey := "afn:" + getOrgID(ctx) + ":" + params.Encode()
+	var authFP string
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
-		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
-			cacheKey += ":auth:" + fp
-		}
+		authFP = p.fingerprintFromCtx(ctx, origReq)
 	}
+	cacheKey := fieldMetaCacheKey("afn:", getOrgID(ctx), params, authFP)
 	fullRange := ctx.Value(labelFullRangeFetchKey{}) != nil
 	if !fullRange {
 		if cached, ok := p.streamFieldNamesCache.Get(cacheKey); ok {

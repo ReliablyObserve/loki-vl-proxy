@@ -760,15 +760,13 @@ func TestDrilldown_IndexVolumeRange_TargetLabelsServiceName_FillsFullRangeBucket
 func TestDrilldown_LabelValues_ServiceNameUsesNativeFieldValues(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
-			http.NotFound(w, r)
 		case "/select/logsql/field_names":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"values": []map[string]interface{}{
 					{"value": "service.name", "hits": 12},
 				},
 			})
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_values":
 			if got := r.URL.Query().Get("field"); got != "service.name" {
 				t.Fatalf("expected service_name fast path to use service.name field first, got %q", got)
 			}
@@ -793,8 +791,6 @@ func TestDrilldown_LabelValues_ServiceNameUsesNativeFieldValues(t *testing.T) {
 func TestDrilldown_LabelValues_ServiceNamePrefersConcreteNativeFieldInventory(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
-			http.NotFound(w, r)
 		case "/select/logsql/field_names":
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"values": []map[string]interface{}{
@@ -802,7 +798,8 @@ func TestDrilldown_LabelValues_ServiceNamePrefersConcreteNativeFieldInventory(t 
 					{"value": "app", "hits": 12},
 				},
 			})
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_values":
+			// Phase 1 uses stream_field_values for all candidates.
 			switch got := r.URL.Query().Get("field"); got {
 			case "app":
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -837,14 +834,16 @@ func TestDrilldown_LabelValues_ServiceNamePrefersConcreteNativeFieldInventory(t 
 func TestDrilldown_LabelValues_ServiceNameMergesStreamAndStructuredMetadataInventory(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
+		case "/select/logsql/field_names":
+			// Single field_names fetch covers both stream-indexed labels and OTel fields.
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"values": []map[string]interface{}{
 					{"value": "app", "hits": 12},
+					{"value": "service.name", "hits": 4},
 				},
 			})
 		case "/select/logsql/stream_field_values":
-			// Phase 1: stream-indexed fields (app) fetched via stream_field_values.
+			// Phase 1: all service-name candidates fetched via stream_field_values.
 			switch r.URL.Query().Get("field") {
 			case "app":
 				json.NewEncoder(w).Encode(map[string]interface{}{
@@ -853,12 +852,6 @@ func TestDrilldown_LabelValues_ServiceNameMergesStreamAndStructuredMetadataInven
 						{"value": "worker", "hits": 5},
 					},
 				})
-			default:
-				t.Fatalf("unexpected field %q for stream_field_values", r.URL.Query().Get("field"))
-			}
-		case "/select/logsql/field_values":
-			// Phase 2: column-indexed fields (service.name) fetched via field_values.
-			switch r.URL.Query().Get("field") {
 			case "service.name":
 				json.NewEncoder(w).Encode(map[string]interface{}{
 					"values": []map[string]interface{}{
@@ -866,14 +859,8 @@ func TestDrilldown_LabelValues_ServiceNameMergesStreamAndStructuredMetadataInven
 					},
 				})
 			default:
-				t.Fatalf("unexpected field %q for field_values", r.URL.Query().Get("field"))
+				t.Fatalf("unexpected field %q for stream_field_values", r.URL.Query().Get("field"))
 			}
-		case "/select/logsql/field_names":
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"values": []map[string]interface{}{
-					{"value": "service.name", "hits": 4},
-				},
-			})
 		case "/select/logsql/streams", "/select/logsql/query":
 			t.Fatalf("service_name label values must be resolved from metadata inventory before stream scans, got %s", r.URL.Path)
 		default:
@@ -1478,21 +1465,20 @@ func TestDrilldown_DetectedFieldValues_ReturnStructuredMetadataValues(t *testing
 
 func TestDrilldown_DetectedFieldValues_ServiceNameUsesFastPath(t *testing.T) {
 	var (
-		sawFieldNames  bool
-		sawFieldValues bool
+		sawFieldNames   bool
+		sawFieldValues  bool
 	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/select/logsql/stream_field_names":
-			http.NotFound(w, r)
 		case "/select/logsql/field_names":
 			sawFieldNames = true
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"service.name","hits":2}]}`))
-		case "/select/logsql/field_values":
+		case "/select/logsql/stream_field_values":
+			// Phase 1 uses stream_field_values for all candidates (covers both stream and column fields).
 			sawFieldValues = true
 			if r.URL.Query().Get("field") != "service.name" {
-				t.Fatalf("expected service_name fast path to use service.name field first, got %q", r.URL.Query().Get("field"))
+				t.Fatalf("expected service_name fast path to use service.name field, got %q", r.URL.Query().Get("field"))
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"grafana","hits":2}]}`))
@@ -1533,7 +1519,7 @@ func TestDrilldown_DetectedFieldValues_ServiceNameUsesFastPath(t *testing.T) {
 		t.Fatalf("expected service_name values from fast path, got %v", values)
 	}
 	if !sawFieldNames || !sawFieldValues {
-		t.Fatalf("expected field_names + field_values fast path, got fieldNames=%v fieldValues=%v", sawFieldNames, sawFieldValues)
+		t.Fatalf("expected field_names + stream_field_values fast path, got fieldNames=%v fieldValues=%v", sawFieldNames, sawFieldValues)
 	}
 }
 

@@ -521,14 +521,20 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 		}
 	}
 
+	// Phase 1: use field_names (fast, ~0.25s) instead of stream_field_names (~2-4s).
+	// field_names returns a superset of all field names including stream-indexed labels,
+	// so it covers both plain labels (app, service_name) and dotted OTel fields (service.name).
+	// stream_field_values is used for the value fetch so stream-indexed labels return correctly.
+	// Phase 2 (field_values fallback) only runs when Phase 1 is unavailable — avoiding the
+	// redundant second field_names call that the old two-phase design required.
 	phase1Succeeded := false
 	if p.supportsStreamMetadataEndpoints() {
-		streamFields, err := p.fetchStreamFieldNamesCached(ctx, params)
+		allFields, err := p.fetchAllFieldNamesCached(ctx, params)
 		if err == nil {
 			phase1Succeeded = true
-			streamFields = appendUniqueStrings(streamFields, p.snapshotDeclaredLabelFields()...)
-			available := make(map[string]struct{}, len(streamFields))
-			for _, field := range streamFields {
+			allFields = appendUniqueStrings(allFields, p.snapshotDeclaredLabelFields()...)
+			available := make(map[string]struct{}, len(allFields))
+			for _, field := range allFields {
 				available[field] = struct{}{}
 			}
 			for _, field := range serviceNameSourceFields {
@@ -537,16 +543,8 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 				}
 				queryParams := cloneURLValues(params)
 				queryParams.Set("field", field)
-				// Fields were identified via stream_field_names → they live in the stream
-				// index. Use stream_field_values so VL returns their values correctly;
-				// field_values only covers column-indexed fields and returns empty for
-				// stream-indexed labels (the common case for plain label names like app,
-				// service_name, job, container).
-				valEndpoint := "/select/logsql/field_values"
-				if p.supportsStreamMetadataEndpoints() {
-					valEndpoint = "/select/logsql/stream_field_values"
-				}
-				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, valEndpoint, queryParams)
+				// stream_field_values covers both stream-indexed labels and column fields.
+				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/stream_field_values", queryParams)
 				if fieldErr != nil {
 					lastErr = fieldErr
 					continue
@@ -558,36 +556,33 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 		}
 	}
 
-	// Phase 2: supplement with document-level fields (e.g. OTel service.name).
-	// When Phase 1 succeeded via stream labels, restrict Phase 2 to dotted-name
-	// fields only: stream labels cannot contain dots, so dotted names must come
-	// from structured document fields. Skipping plain underscore names prevents
-	// logfmt-parsed document fields like "job=sync-users" from appearing as
-	// service names when stream labels already provide the correct service list.
-	fieldNames, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
-	if err == nil {
-		available := make(map[string]struct{}, len(fieldNames))
-		for _, field := range fieldNames {
-			available[field] = struct{}{}
+	// Phase 2: fallback when stream metadata endpoints are unavailable or Phase 1 failed.
+	// Discovers document-level fields (service.name, …) via field_values on the full range.
+	// Skipped when Phase 1 succeeded — fetchAllFieldNamesCached already returns a superset,
+	// so a second field_names round-trip would be redundant.
+	if !phase1Succeeded {
+		fieldNames, err := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
+		if err == nil {
+			available := make(map[string]struct{}, len(fieldNames))
+			for _, field := range fieldNames {
+				available[field] = struct{}{}
+			}
+			for _, field := range serviceNameSourceFields {
+				if _, ok := available[field]; !ok {
+					continue
+				}
+				queryParams := cloneURLValues(params)
+				queryParams.Set("field", field)
+				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
+				if fieldErr != nil {
+					lastErr = fieldErr
+					continue
+				}
+				appendFieldValues(fieldValues)
+			}
+		} else if lastErr == nil {
+			lastErr = err
 		}
-		for _, field := range serviceNameSourceFields {
-			if phase1Succeeded && !strings.ContainsAny(field, ".-") {
-				continue
-			}
-			if _, ok := available[field]; !ok {
-				continue
-			}
-			queryParams := cloneURLValues(params)
-			queryParams.Set("field", field)
-			fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
-			if fieldErr != nil {
-				lastErr = fieldErr
-				continue
-			}
-			appendFieldValues(fieldValues)
-		}
-	} else if lastErr == nil {
-		lastErr = err
 	}
 
 	values = uniqueSortedNonEmptyStrings(values)
