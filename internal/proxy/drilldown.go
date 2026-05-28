@@ -508,6 +508,12 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 	if err != nil {
 		return nil, err
 	}
+	// Cap time range for stream_field_values calls. metadataQueryParams passes the raw
+	// user range (e.g. 12h) which causes O(data-volume) scans on VL. Capping to 1h matches
+	// the cap already applied to stream_field_names/field_names calls and brings cold
+	// stream_field_values latency from 5-8s to <400ms. fetchAllFieldNamesCached applies
+	// its own internal 1h cap, so double-capping is harmless.
+	params = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 	appendFieldValues := func(fieldValues []string) {
 		for _, value := range fieldValues {
 			value = strings.TrimSpace(value)
