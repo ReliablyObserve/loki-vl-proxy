@@ -2606,9 +2606,9 @@ func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string
 	return summaries, nil
 }
 
-// detectNativeLabelsViaFieldValues fetches field names via field_names (0.25s, column index)
-// then their values in parallel via field_values. Used on VL v1.50+ where both endpoints
-// use the column index instead of the stream index scan (~1100ms for streams).
+// detectNativeLabelsViaFieldValues fetches stream label names via stream_field_names
+// then their values in parallel via field_values. Returns only stream labels (not all
+// indexed fields) to match Loki's detected_labels semantics.
 func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, start, end string) (map[string]*detectedLabelSummary, error) {
 	var labelNames []string
 	var baseParams url.Values
@@ -2625,7 +2625,7 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 		if end != "" {
 			params.Set("end", end)
 		}
-		names, err := p.fetchAllFieldNamesCached(ctx, params)
+		names, err := p.fetchStreamFieldNamesCached(ctx, params)
 		if err != nil || len(names) == 0 {
 			continue
 		}

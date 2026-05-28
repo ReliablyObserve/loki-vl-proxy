@@ -632,6 +632,36 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			// Fall through to raw log path on error.
 		}
 	}
+	// For parser-stage GroupBy count queries (e.g. Drilldown field histograms):
+	// strip unpack_json/unpack_logfmt parser stages and retry via stats_query_range.
+	// VL's column index stores OTel and indexed fields without parser stages, so
+	// stats by (field) count() as c evaluates correctly. Drilldown only queries
+	// fields from detected_fields, which only lists column-indexed fields, so
+	// non-indexed fields (only in JSON _msg) are never queried this way.
+	// Guard: only safe when stripping leaves no "| filter" post-parser stage —
+	// parsed-field filters (e.g. | status >= 400) require the parser to have run.
+	// Accepts VL's tumbling-bucket approximation (already the case for sliding windows).
+	if statsAggFunc != "" && queryUsesParserStages(spec.BaseQuery) && len(spec.GroupBy) > 0 {
+		hasStreamSentinel := false
+		for _, g := range spec.GroupBy {
+			if g == "_stream" {
+				hasStreamSentinel = true
+				break
+			}
+		}
+		if !hasStreamSentinel {
+			strippedBase := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, ""))
+			if strippedBase != spec.BaseQuery && !strings.Contains(strippedBase, "| filter ") {
+				if series, hitsErr := p.collectRangeMetricHits(r.Context(), strippedBase, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil {
+					result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(result) // nosemgrep
+					return true
+				}
+				// Fall through to raw log path on error.
+			}
+		}
+	}
 
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), endTS)
 	if err != nil {
