@@ -34,6 +34,7 @@ operational caveats that still matter in the current codebase.
 | Patterns surface | `/loki/api/v1/patterns` is optional (`-patterns-enabled`) and responses are clamped to `1000` patterns per request. |
 | `count_values()` aggregation | Not translatable. VictoriaLogs has no equivalent function that groups by metric values. Queries using `count_values` return a descriptive error. |
 | Log stream ordering above split interval | For queries spanning more than one windowing interval, log entries within each stream are sorted ascending by timestamp; however Grafana may display them in the requested `direction` based on the overall response. This is stable as of v1.21.1. |
+| OTel attribute translation in upstream queries | By default (`-translate-otel-attributes=true`), the LogQL→LogsQL translator rewrites known OTel semantic convention labels from underscore to dotted form (e.g., `k8s_container_name` → `k8s.container.name`). Deployments that store these fields with underscores (Vector, Promtail, Fluent-bit via Elasticsearch bulk ingest) should set `-translate-otel-attributes=false`. |
 
 ## Translation and Performance Caveats
 

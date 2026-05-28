@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `-translate-otel-attributes` flag (default: `true`, env `TRANSLATE_OTEL_ATTRIBUTES`). Gates the built-in `knownUnderscoreToDot` OTel semantic convention rewrite in the `ToVL()` query-direction translator. Set to `false` when VictoriaLogs stores OTel attributes with underscores (e.g., Vector / Promtail / Fluent-bit via `/insert/elasticsearch/_bulk`); custom `-field-mapping` rules and runtime-learned aliases keep working in both modes. Resolves empty results for multi-label queries containing known OTel names like `k8s_container_name` against underscore-storage backends.
+
+### Fixed
+- When `-translate-otel-attributes=false`, the `ToVL()` query-direction translator no longer rewrites entries in `knownUnderscoreToDot` to dotted form. `ResolveLabelCandidates` and the `resolveTargetLabelFields` fallback are gated on the same flag, so the dotted form is no longer added as a candidate or fallback when OTel translation is disabled. Previously the rewrite/fallback always fired when `-label-style=underscores` was active.
+
 ## [1.51.0] - 2026-05-27
 
 ### Fixed

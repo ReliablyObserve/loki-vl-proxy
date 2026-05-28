@@ -25,6 +25,25 @@ func TestProxyHelpers_ReloadFieldMappings(t *testing.T) {
 	}
 }
 
+// ReloadFieldMappings rebuilds the LabelTranslator from scratch, which would
+// reset translateOTel to its NewLabelTranslator default (true). The reload
+// path must explicitly carry the prior value across so operators using the
+// SIGHUP-driven hot-reload don't silently lose -translate-otel-attributes=false.
+func TestProxyHelpers_ReloadFieldMappings_PreservesTranslateOTel(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+
+	p.labelTranslator.SetTranslateOTel(false)
+
+	p.ReloadFieldMappings([]FieldMapping{{VLField: "service.name", LokiLabel: "service_name"}})
+
+	if p.labelTranslator.translateOTel {
+		t.Fatal("expected translateOTel=false to survive ReloadFieldMappings")
+	}
+	if got := p.labelTranslator.ToLoki("service.name"); got != "service_name" {
+		t.Fatalf("expected reloaded field mapping to apply, got %q", got)
+	}
+}
+
 func TestProxyHelpers_RequestPolicyError(t *testing.T) {
 	err := &requestPolicyError{status: 403, msg: "denied"}
 	if got := err.Error(); got != "denied" {
