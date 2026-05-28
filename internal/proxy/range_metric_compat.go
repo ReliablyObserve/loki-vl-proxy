@@ -752,6 +752,16 @@ func (p *Proxy) collectRangeMetricHits(
 	}
 
 	results := v.GetArray("data", "result")
+	// Cap to maxStatsQuerySeries (default 5000) to match Loki's max_query_series limit.
+	// High-cardinality by() clauses (e.g. 670k unique pods) produce tens of MB of VL
+	// response that take 30+ seconds to parse and serialize without a series cap.
+	maxSeries := p.maxStatsQuerySeries
+	if maxSeries <= 0 {
+		maxSeries = 5000
+	}
+	if len(results) > maxSeries {
+		results = results[:maxSeries]
+	}
 	seriesMap := make(map[string]manualSeriesSamples, len(results))
 	for _, res := range results {
 		metricObj := res.GetObject("metric")

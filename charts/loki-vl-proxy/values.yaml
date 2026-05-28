@@ -103,6 +103,7 @@ extraArgs:
   # query-range-background-warm: "true"                # continue warming failed windows in background
   # query-range-background-warm-max-windows: "24"      # cap background warm fanout
   # default-max-query-length: "0"                      # max query time range for all tenants (0 = unlimited; per-tenant limits override)
+  # max-stats-query-series: "5000"                      # max series returned by stats metric queries (count_over_time, rate, bytes_rate); 0 = built-in default of 5000
 
   # --- Indexed label-values browse cache ---
   # Keep disabled by default; enable when label value lists are large and you

@@ -308,6 +308,10 @@ type Config struct {
 	// DefaultMaxQueryLength is the default maximum allowed query time range enforced
 	// for all tenants unless overridden by per-tenant limits. 0 means unlimited.
 	DefaultMaxQueryLength time.Duration
+	// MaxStatsQuerySeries caps the number of series returned by stats_query_range
+	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
+	// max_query_series behaviour. 0 means use the built-in default (5000).
+	MaxStatsQuerySeries int
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -429,6 +433,7 @@ type Proxy struct {
 	adminAuthToken                        string
 	metricsConcurrencyLimiter             chan struct{}
 	rangeMetricRowLimit                   int // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
+	maxStatsQuerySeries                   int // max series returned by collectRangeMetricHits (0=5000)
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool
@@ -997,6 +1002,7 @@ func New(cfg Config) (*Proxy, error) {
 		forwardTenantHeader:                   cfg.ForwardTenantHeader,
 		maxLines:                              maxLines,
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
+		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		forwardHeaders:                        cfg.ForwardHeaders,
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
