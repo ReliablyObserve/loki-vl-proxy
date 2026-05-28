@@ -205,6 +205,7 @@ flowchart TD
 | Query normalization | Improve cache hit rate | Sort matchers, collapse whitespace |
 | Tier0 response cache | Short-circuit repeated safe GET reads after tenant validation | Enabled, 10% of L1 memory budget, safe GET read endpoints only |
 | Tiered cache | Reduce backend calls with local, disk, and peer reuse | L1 memory, optional L2 disk, optional L3 peer cache |
+| Query-length enforcement | Reject requests whose time range exceeds the configured maximum | `-default-max-query-length=0` (disabled); per-tenant override via limits config; tenant limit takes precedence |
 | Circuit breaker | Protect VL from cascading failure | Built-in default: opens after `5` failures, `10s` backoff |
 | Tail origin allowlist | Reject browser websocket origins unless explicitly trusted | Deny browser origins by default |
 
