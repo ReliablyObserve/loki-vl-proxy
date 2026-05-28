@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.53.0] - 2026-05-28
+
 ### Added
 - `-default-max-query-length` flag enforces a global maximum query time range (0 = unlimited); per-tenant limits in `-tenant-limits` or `-tenant-default-limits` take precedence, so the flag acts as a safe fleet-wide ceiling
 - `ParseError{Msg, Pos}` and `UnsupportedError{Msg, Func}` typed errors in `internal/translator`: HTTP handlers now discriminate error type to return `"parse error"` (400) vs `"bad_data"` (400) vs `"execution"` (500) Loki error envelopes instead of a flat string
