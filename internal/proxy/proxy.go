@@ -1918,14 +1918,19 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	// Build a stable key by bucketing `end` to the step granularity. Grafana's sliding
 	// time window drifts `end` by a few seconds on each panel refresh, producing a unique
-	// cache key every time even for the same logical query. Bucketing to step (or 30s when
-	// step is absent/small) turns consecutive refreshes into cache hits within the same step
-	// bucket, while still expiring the cache when the user moves the time range.
+	// cache key every time even for the same logical query.
+	//
+	// Minimum bucket is 5 minutes (not just 30s) so the windowed query cache's last partial
+	// window — which covers from the previous 1h boundary up to `end` — stays stable for 5
+	// minutes. Without this, every 60-second tick produces a new window boundary, forcing VL
+	// to re-scan the last partial window on every Drilldown refresh (20+ concurrent JSON/logfmt
+	// parse scans every minute). With a 5-minute bucket, VL is called at most once per 5 min
+	// per field, reducing steady-state VL CPU by ~5x for the Fields page.
 	endRaw := r.FormValue("end")
 	endBucketed := endRaw
 	if endRaw != "" {
 		stepRaw := r.FormValue("step")
-		bucket := 30 * time.Second
+		bucket := 5 * time.Minute
 		if stepRaw != "" {
 			if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
 				bucket = d
