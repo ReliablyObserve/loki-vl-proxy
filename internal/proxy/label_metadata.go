@@ -998,7 +998,9 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 	}
 	warmedFromPeer := p.fetchCacheKeysFromPeers(ctx, "labels", staleKeys, ttl)
 
-	// Phase 3: fetch remaining stale windows from VL (capped to 1h, same as user requests).
+	// Phase 3: fetch remaining stale windows from VL.
+	// Use labelFullRangeFetchKey so fetchStreamFieldNamesCached routes to field_names
+	// (~0.25s via column index) instead of stream_field_names (~1.4-2.3s per window).
 	for _, w := range stale {
 		if warmedFromPeer[w.cacheKey] {
 			p.log.Debug("label cache window warmed from peer", "window", w.window)
@@ -1006,6 +1008,7 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		}
 
 		fetchCtx, fetchCancel := context.WithTimeout(ctx, 10*time.Second)
+		fetchCtx = context.WithValue(fetchCtx, labelFullRangeFetchKey{}, true)
 		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
 		fetchCancel()
 		if fetchErr != nil {
