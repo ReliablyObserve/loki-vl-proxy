@@ -2606,9 +2606,9 @@ func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string
 	return summaries, nil
 }
 
-// detectNativeLabelsViaFieldValues fetches stream label names via stream_field_names
+// detectNativeLabelsViaFieldValues fetches field names via field_names (0.25s, column index)
 // then their values in parallel via field_values. Used on VL v1.50+ where both endpoints
-// use the column index (~300ms + 40ms) instead of the stream index scan (~1100ms for streams).
+// use the column index instead of the stream index scan (~1100ms for streams).
 func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, start, end string) (map[string]*detectedLabelSummary, error) {
 	var labelNames []string
 	var baseParams url.Values
@@ -2625,7 +2625,7 @@ func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, sta
 		if end != "" {
 			params.Set("end", end)
 		}
-		names, err := p.fetchStreamFieldNamesCached(ctx, params)
+		names, err := p.fetchAllFieldNamesCached(ctx, params)
 		if err != nil || len(names) == 0 {
 			continue
 		}
@@ -2807,7 +2807,8 @@ type detectedLabelsCachePayload struct {
 }
 
 func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	key := "detect_fields:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	key := "detect_fields:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" +
+		bucketTimestampString(start, fieldNamesCacheBucket) + ":" + bucketTimestampString(end, fieldNamesCacheBucket) + ":" + strconv.Itoa(lineLimit)
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
@@ -2817,7 +2818,8 @@ func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end st
 }
 
 func (p *Proxy) detectedLabelsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	key := "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
+	key := "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" +
+		bucketTimestampString(start, fieldNamesCacheBucket) + ":" + bucketTimestampString(end, fieldNamesCacheBucket) + ":" + strconv.Itoa(lineLimit)
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp

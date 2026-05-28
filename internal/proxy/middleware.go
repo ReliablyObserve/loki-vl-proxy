@@ -317,13 +317,14 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	if !p.shouldUseCompatCache(endpoint, r) {
 		return "", false
 	}
-	// For query_range and query, bucket both `start` and `end` to the same 5-minute
-	// granularity used by queryRangeCacheKey. Grafana's sliding "now-12h to now" window
-	// drifts BOTH endpoints by a few seconds on every panel refresh, so the raw query
-	// string produces a unique cache key every time even when the logical query is
-	// identical. Without bucketing both, every refresh misses the compat cache.
+	// Bucket both `start` and `end` to a stable granularity. Grafana's sliding
+	// "now-12h to now" window drifts both by a few seconds on every panel refresh,
+	// producing a unique cache key every time even when the logical query is identical.
+	// query_range/query: 5-minute bucket (or step, whichever is larger).
+	// detected_*: 30-second bucket matching fieldNamesCacheBucket used internally.
 	rawQuery := r.URL.RawQuery
-	if endpoint == "query_range" || endpoint == "query" {
+	switch endpoint {
+	case "query_range", "query":
 		endRaw := r.FormValue("end")
 		startRaw := r.FormValue("start")
 		if endRaw != "" || startRaw != "" {
@@ -344,6 +345,28 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 			}
 			if startRaw != "" {
 				if startB := bucketTimestampString(startRaw, bucket); startB != startRaw {
+					q.Set("start", startB)
+					changed = true
+				}
+			}
+			if changed {
+				rawQuery = q.Encode()
+			}
+		}
+	case "detected_fields", "detected_field_values", "detected_labels":
+		endRaw := r.FormValue("end")
+		startRaw := r.FormValue("start")
+		if endRaw != "" || startRaw != "" {
+			q := r.URL.Query()
+			changed := false
+			if endRaw != "" {
+				if endB := bucketTimestampString(endRaw, fieldNamesCacheBucket); endB != endRaw {
+					q.Set("end", endB)
+					changed = true
+				}
+			}
+			if startRaw != "" {
+				if startB := bucketTimestampString(startRaw, fieldNamesCacheBucket); startB != startRaw {
 					q.Set("start", startB)
 					changed = true
 				}
