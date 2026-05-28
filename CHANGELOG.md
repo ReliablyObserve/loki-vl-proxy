@@ -26,16 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RegisterRoutes` dispatches via named `routeHandler` method instead of anonymous closure
 - Helm `values.yaml` updated with commented-out `default-max-query-length` entry
 
-## [1.52.0] - 2026-05-27
-
 ### Performance
-- Lock-free circuit breaker fast path: closed-state `Allow()` and `RecordSuccess()` use `atomic.Int32` instead of acquiring a mutex, eliminating lock contention on the happy path
-- Lock-free metrics histograms: `observe()` and scrape handler use atomic CAS loops instead of a shared RWMutex, removing the #1 mutex hotspot from `/metrics` scrapes under load
-- Sharded rate limiter: per-tenant token buckets use `sync.Map` with per-bucket mutexes instead of a single global lock, eliminating convoy effects at high tenant counts
-- `hash/maphash` query fingerprinting replaces `crypto/sha256` in the query tracker (~30x faster hashing)
-- Pre-sized body read buffer in `readBodyLimited` avoids repeated slice growth for push payloads up to 128KB
-- Async buffered logger (`--log-buffered`): log records are written by a dedicated goroutine via an 8192-slot channel, removing the slog output mutex from the request hot path (was 52% of all mutex contention at c=100)
-- Adaptive request log sampling (`--log-rate-threshold`, `--log-stats-interval`): above the configured rate, per-request OK logs are replaced with periodic statistics summaries (total, errors, latency, cache rate); errors are always logged. Below the threshold, every request is logged for debugging convenience.
+- `SanitizeLabelName` fast-path skips allocation for already-valid label names; dead-code branch removed and covered by tests
+- `strings.Builder` in hot response serialisation paths pre-sized with `Grow` to avoid append chain-realloc
+- `compatCacheCaptureWriter` struct pooled via `sync.Pool` to cut per-request allocation on non-cacheable paths
+- Window-range cache serialisation replaced `encoding/gob` with `encoding/json`, halving round-trip CPU and removing reflect overhead
+- `TranslateLabelsMap` gains `TranslateLabelsMapInto` variant for caller-controlled result-map pooling; original wrapper unchanged
+- `handleSeries` pools the per-stream keys slice via `sync.Pool`, eliminating one alloc per log stream on the hot ingest path
+- Coalescer body buffer pooled via `sync.Pool` (`readBodyPooled`); replaces per-request `io.ReadAll` allocation with a reused 64 KB buffer
 
 ## [1.51.0] - 2026-05-27
 

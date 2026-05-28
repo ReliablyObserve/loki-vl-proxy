@@ -24,20 +24,20 @@ func TestIsValidLabelName(t *testing.T) {
 		{"_ab_cd", true},
 
 		// Names needing sanitization (would be modified)
-		{"service.name", false},      // dot would be replaced with underscore
-		{"0", false},                 // digit start would get "key_" prefix
-		{"123abc", false},            // digit start would get "key_" prefix
-		{"foo__bar", false},          // consecutive underscores would be collapsed
-		{"foo_", false},              // trailing underscore would be trimmed
-		{"_foo_", false},             // trailing underscore
-		{"café", false},              // multi-byte UTF-8 character
-		{"über", false},              // multi-byte UTF-8
-		{"with-dash", false},         // dash would be replaced with underscore
-		{"with space", false},        // space would be replaced with underscore
-		{"a.b.c", false},             // multiple dots would be replaced
-		{"___", false},               // all underscores (trailing would be trimmed)
-		{"_", false},                 // single underscore (trailing would be trimmed)
-		{"_trailing_", false},        // trailing underscore
+		{"service.name", false}, // dot would be replaced with underscore
+		{"0", false},            // digit start would get "key_" prefix
+		{"123abc", false},       // digit start would get "key_" prefix
+		{"foo__bar", false},     // consecutive underscores would be collapsed
+		{"foo_", false},         // trailing underscore would be trimmed
+		{"_foo_", false},        // trailing underscore
+		{"café", false},         // multi-byte UTF-8 character
+		{"über", false},         // multi-byte UTF-8
+		{"with-dash", false},    // dash would be replaced with underscore
+		{"with space", false},   // space would be replaced with underscore
+		{"a.b.c", false},        // multiple dots would be replaced
+		{"___", false},          // all underscores (trailing would be trimmed)
+		{"_", false},            // single underscore (trailing would be trimmed)
+		{"_trailing_", false},   // trailing underscore
 	}
 
 	for _, tt := range tests {
