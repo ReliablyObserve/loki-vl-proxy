@@ -312,6 +312,11 @@ type Config struct {
 	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
 	// max_query_series behaviour. 0 means use the built-in default (5000).
 	MaxStatsQuerySeries int
+	// StatsQueryRangeConcurrency limits the number of concurrent
+	// stats_query_range calls the proxy makes to VL. Each Drilldown Fields
+	// page load fires ~30 such calls simultaneously; without a cap they all
+	// hit VL at once, causing a CPU storm. 0 means use the built-in default (4).
+	StatsQueryRangeConcurrency int
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -433,7 +438,8 @@ type Proxy struct {
 	adminAuthToken                        string
 	metricsConcurrencyLimiter             chan struct{}
 	rangeMetricRowLimit                   int // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
-	maxStatsQuerySeries                   int // max series returned by collectRangeMetricHits (0=5000)
+	maxStatsQuerySeries                   int        // max series returned by collectRangeMetricHits (0=5000)
+	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool
@@ -1003,6 +1009,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxLines:                              maxLines,
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
+		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		forwardHeaders:                        cfg.ForwardHeaders,
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
@@ -1263,6 +1270,18 @@ func New(cfg Config) (*Proxy, error) {
 // computeBackendLoopback returns true when u's host is a loopback address or
 // the hostname "localhost". The result is computed once at startup and cached in
 // Proxy.backendLoopback so that applyBackendHeaders never parses URLs per-request.
+func makeStatsQueryRangeSem(concurrency int) chan struct{} {
+	const defaultConcurrency = 4
+	if concurrency <= 0 {
+		concurrency = defaultConcurrency
+	}
+	sem := make(chan struct{}, concurrency)
+	for range concurrency {
+		sem <- struct{}{}
+	}
+	return sem
+}
+
 func computeBackendLoopback(u *url.URL) bool {
 	if u == nil {
 		return false

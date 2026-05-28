@@ -199,6 +199,7 @@ type proxyRuntimeConfig struct {
 	coldBackendTimeout                  time.Duration
 	defaultMaxQueryLength               time.Duration
 	maxStatsQuerySeries                 int
+	statsQueryRangeConcurrency          int
 }
 
 type otlpRuntimeConfig struct {
@@ -484,6 +485,7 @@ func run(
 	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 15*time.Second, "Maximum acceptable cache age for near-now requests before cache bypass")
 	defaultMaxQueryLength := fs.Duration("default-max-query-length", 0, "Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default)")
 	maxStatsQuerySeries := fs.Int("max-stats-query-series", 0, "Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). Matches Loki's max_query_series (0 = built-in default of 5000).")
+	statsQueryRangeConcurrency := fs.Int("stats-query-range-concurrency", 0, "Maximum concurrent stats_query_range calls to VictoriaLogs. Drilldown Fields fires ~30 in parallel; capping prevents CPU storms. 0 = built-in default of 4.")
 
 	// Go runtime tuning
 	goMemLimitBytes := fs.Int64("go-mem-limit", 0, "Explicit GOMEMLIMIT in bytes. Overrides -go-mem-limit-percent. 0 = use percentage or GOMEMLIMIT env var.")
@@ -789,6 +791,7 @@ func run(
 			coldBackendTimeout:                  *coldBackendTimeout,
 			defaultMaxQueryLength:               *defaultMaxQueryLength,
 			maxStatsQuerySeries:                 *maxStatsQuerySeries,
+			statsQueryRangeConcurrency:          *statsQueryRangeConcurrency,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1747,7 +1750,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			Timeout:         cfg.coldBackendTimeout,
 		},
 		DefaultMaxQueryLength: cfg.defaultMaxQueryLength,
-		MaxStatsQuerySeries:   cfg.maxStatsQuerySeries,
+		MaxStatsQuerySeries:            cfg.maxStatsQuerySeries,
+		StatsQueryRangeConcurrency:     cfg.statsQueryRangeConcurrency,
 	}, nil
 }
 

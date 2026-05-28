@@ -714,6 +714,18 @@ func (p *Proxy) collectRangeMetricHits(
 	params.Set("end", strconv.FormatInt(end.Unix(), 10))
 	params.Set("step", strconv.FormatFloat(hitStep.Seconds(), 'f', 0, 64)+"s")
 
+	// Acquire concurrency slot. The Drilldown Fields page fires ~30 of these
+	// in parallel; without a cap all 30 hit VL simultaneously, causing a CPU storm.
+	// Block until a slot is free or the request is cancelled.
+	if sem := p.statsQueryRangeSem; sem != nil {
+		select {
+		case <-sem:
+			defer func() { sem <- struct{}{} }()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
 		return nil, err
