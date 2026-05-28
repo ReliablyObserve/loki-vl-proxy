@@ -121,6 +121,26 @@ Tenant limits notes:
 - published fields are filtered by `-tenant-limits-allow-publish`
 - `-tenant-default-limits` and `-tenant-limits` only override the published compatibility payload; they are not backend quota enforcement
 
+## Error Response Format
+
+All error responses from the proxy use the standard Loki JSON error envelope:
+
+```json
+{"status": "error", "errorType": "<type>", "error": "<message>"}
+```
+
+| `errorType` | HTTP Status | Source | When |
+|---|---|---|---|
+| `"parse error"` | 400 | `translator.ParseError` | Invalid LogQL syntax that cannot be parsed |
+| `"bad_data"` | 400 | `translator.UnsupportedError` | Valid LogQL with no LogsQL equivalent (e.g. unsupported function) |
+| `"execution"` | 500 | Backend or proxy runtime error | VictoriaLogs error, fanout failure, or unexpected proxy failure |
+
+**`parse error`** is returned when the query string cannot be parsed at all. Grafana and LogQL clients display this as a syntax error.
+
+**`bad_data`** is returned when the query is syntactically valid LogQL but uses a construct the proxy cannot translate to a VictoriaLogs equivalent. The `error` field includes the unsupported function or operator name where applicable.
+
+**Query-length violations** return HTTP 400 with a plain `error` field (no `errorType`): `"query length X exceeds limit Y"`.
+
 ## Infrastructure Endpoints
 
 | Endpoint | Purpose |

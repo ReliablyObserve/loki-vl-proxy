@@ -483,7 +483,7 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 
 	// count_values groups by the VALUES of the inner metric — VL cannot compute this.
 	if outerAgg, _, _ := extractOuterAggregation(logql); outerAgg == "count_values" {
-		return "", fmt.Errorf("count_values is not supported: it groups by metric values which VictoriaLogs cannot compute; use count() grouped by an existing label instead")
+		return "", &UnsupportedError{Msg: "count_values is not translatable to LogsQL", Func: "count_values"}
 	}
 
 	// Check binary metric expressions FIRST — they may contain metric sub-expressions.
@@ -497,14 +497,14 @@ func translateLogQLFull(logql string, labelFn LabelTranslateFunc, streamFields m
 		return appendWithoutMarker(metricResult, withoutLabels), nil
 	}
 	if unwrapFunc := missingUnwrapRangeMetricFunc(logql); unwrapFunc != "" {
-		return "", fmt.Errorf("%s requires `| unwrap <field>` for range aggregation", unwrapFunc)
+		return "", &UnsupportedError{Msg: unwrapFunc + " requires `| unwrap <field>` for range aggregation", Func: unwrapFunc}
 	}
 
 	// Guard: metric aggregation (sum/avg/topk/etc) applied directly to a log stream
 	// without a range vector has no meaning and would fall through to bare-text wrapping,
 	// producing malformed VL queries. Return a clear error instead.
 	if outerAgg, _, _ := extractOuterAggregation(logql); outerAgg != "" && !strings.Contains(logql, "[") {
-		return "", fmt.Errorf("%s() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))", outerAgg)
+		return "", &UnsupportedError{Msg: outerAgg + "() requires a range metric inside (e.g. rate({...}[5m]), count_over_time({...}[5m]))", Func: outerAgg}
 	}
 
 	return translateLogQuery(logql, labelFn, caps, streamFields)
@@ -585,7 +585,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 	if strings.HasPrefix(remaining, "{") {
 		end := findMatchingBrace(remaining)
 		if end < 0 {
-			return "", fmt.Errorf("unmatched '{' in stream selector")
+			return "", &ParseError{Msg: "unmatched '{' in stream selector", Pos: -1}
 		}
 		streamContent := remaining[1:end]
 		remaining = strings.TrimSpace(remaining[end+1:])
@@ -742,7 +742,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			// parse. Surface this as a translation error so the proxy returns
 			// 400, matching Loki's behavior.
 			if looksLikeBareLabelMatcher(remaining) {
-				return "", fmt.Errorf("parse error : syntax error: stream selector must be wrapped in braces, got %q", remaining)
+				return "", &ParseError{Msg: fmt.Sprintf("parse error : syntax error: stream selector must be wrapped in braces, got %q", remaining), Pos: -1}
 			}
 			parts = append(parts, translateBareFilter(remaining))
 			break

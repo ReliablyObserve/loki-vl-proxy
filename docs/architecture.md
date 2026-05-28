@@ -205,6 +205,7 @@ flowchart TD
 | Query normalization | Improve cache hit rate | Sort matchers, collapse whitespace |
 | Tier0 response cache | Short-circuit repeated safe GET reads after tenant validation | Enabled, 10% of L1 memory budget, safe GET read endpoints only |
 | Tiered cache | Reduce backend calls with local, disk, and peer reuse | L1 memory, optional L2 disk, optional L3 peer cache |
+| Query-length enforcement | Reject requests whose time range exceeds the configured maximum | `-default-max-query-length=0` (disabled); per-tenant override via limits config; tenant limit takes precedence |
 | Circuit breaker | Protect VL from cascading failure | Built-in default: opens after `5` failures, `10s` backoff |
 | Tail origin allowlist | Reject browser websocket origins unless explicitly trusted | Deny browser origins by default |
 
@@ -373,7 +374,13 @@ See [LogQL Parser deep dive](logql-parser.md) for grammar, data flow diagrams, a
 ### Translator (`internal/translator/`)
 LogQL→LogsQL converter. Receives canonical LogQL (produced by `Expr.String()` after AST normalisation). Translation uses two tiers: stable string operations for well-understood paths (stream selectors, line filters, label format) and typed `logsql` builder calls for complex paths (stats aggregations, IP filters). Remaining string paths are tagged `TODO(ast-migration)` for future migration — run `grep -r "TODO(ast-migration)" internal/` to see the full backlog.
 
+Typed errors in `internal/translator/errors.go` replace bare `fmt.Errorf` for two failure classes: `ParseError` (invalid LogQL input) and `UnsupportedError` (LogQL constructs with no LogsQL equivalent). Callers can type-assert to distinguish parse failures from unsupported-feature fallbacks.
+
+`internal/logql/translate.go` adds a second, typed translation path alongside the string-based translator: `Translate(expr Expr, opts TranslateOptions) (string, error)`. For `*LogQuery` nodes it performs a direct AST-to-AST mapping — stream selector → `logsql.FilterExpr`, pipeline stages → `[]logsql.Pipe` — without a `String()` roundtrip. Metric nodes (`*RangeAggregation`, `*VectorAggregation`, `*BinOpExpr`, `*OpaqueMetricExpr`) return an `errFallthrough` sentinel that routes to the existing string translator unchanged. `TranslateOptions` carries `LabelFn`, `StreamFields`, and `Caps`; the `Caps` field gates VL version-specific features. The proxy's main translation path (`translator.TranslateLogQLWithCapabilities`) is unchanged — `logql.Translate` is wired but not yet called by handlers; handler migration is planned for a follow-on PR.
+
 ### Translation Pipeline
+
+See [LogQL parser — Translation](logql-parser.md#translation) for the stage-by-stage mapping table and edge case reference.
 
 ```mermaid
 flowchart LR
@@ -381,25 +388,43 @@ flowchart LR
         LQ["LogQL query string"]
     end
 
-    subgraph Parse["Parse (internal/logql/)"]
-        PARSE["ParseLogQuery() / ParseExpr()"]
-        AST1["Typed LogQL AST\nLogQuery · Stage · LabelFilterStage\nRangeAggregation · BinOpExpr"]
+    subgraph Parse["Parse — internal/logql"]
+        PARSE["Scanner → Parser → Semantic validation"]
+        PERR["ParseError → 400"]
+        AST_LOG["*LogQuery\nstream selector + []Stage"]
+        AST_MET["Metric nodes\n*RangeAgg · *VectorAgg\n*BinOpExpr · *OpaqueMetricExpr"]
     end
 
-    subgraph Translate["Translate (internal/translator/)"]
-        TR["TranslateLogQL() / TranslateMetricQuery()"]
-        TIER1["Tier 1: Stable string paths\nstream selectors · line filters\nlabel format · logfmt/json parsers"]
-        TIER2["Tier 2: AST-driven paths\nbuildStatsQuery → logsql.PipeStats\n(ip() filter: phase-2 roadmap)"]
+    subgraph Translate["Translate — internal/translator + internal/logql"]
+        T1["Tier 1 — String ops\nstream selectors · line filters\nlabel format · json/logfmt parsers\n(current proxy main path)"]
+        T2["Tier 2 — AST-driven\nbuildStatsQuery → logsql.PipeStats\nipv4_range via logsql.Builder"]
+        T3["Tier 3 — AST-to-AST (new)\nlogql.Translate(*LogQuery)\nStreamSelector → FilterExpr\n[]Stage → []logsql.Pipe\nLabelFn · Caps gating\n(metric nodes → errFallthrough → T1)"]
+        UNSUP["UnsupportedError → 501"]
+        RAW["OpaqueMetricExpr\nraw pass-through"]
     end
 
-    subgraph Build["Build (internal/logsql/)"]
-        BUILDER["Builder (version-aware)\nCapabilities struct"]
-        LOGSQL["LogsQL query string\nready for VictoriaLogs"]
+    subgraph Build["Build — internal/logsql"]
+        BUILDER["Capabilities-aware Builder\n(VL v1.40 → v1.5x)"]
+        LOGSQL["LogsQL query string"]
     end
 
-    LQ --> PARSE --> AST1 --> TR
-    TR --> TIER1 --> LOGSQL
-    TR --> TIER2 --> BUILDER --> LOGSQL
+    LQ --> PARSE
+    PARSE -->|"structural error"| PERR
+    PARSE --> AST_LOG
+    PARSE --> AST_MET
+
+    AST_LOG -->|"current path"| T1
+    AST_LOG -.->|"follow-on PR"| T3
+    AST_MET -->|"metric/stats"| T2
+    AST_MET -->|"opaque fn"| RAW
+
+    T1 --> LOGSQL
+    T2 --> BUILDER --> LOGSQL
+    T2 --> UNSUP
+    T3 --> BUILDER
+    T3 -->|"unhandled stage"| T1
+
+    RAW --> LOGSQL
 
     style Input fill:#1a1a2e,stroke:#e94560,color:#fff
     style Parse fill:#16213e,stroke:#4cc9f0,color:#fff
@@ -408,11 +433,22 @@ flowchart LR
 ```
 
 ### Proxy (`internal/proxy/`)
-HTTP handlers for Loki-compatible read endpoints, split into domain-focused modules:
+HTTP handlers for Loki-compatible read endpoints, split into domain-focused modules.
+
+The `Proxy` struct is being decomposed into three explicit types (migration in progress, follow-on PRs will move receivers):
+
+- **`Deps`** (`deps.go`) — external dependencies: backend URLs, HTTP clients, caches, logger, metrics, rate limiter, circuit breaker.
+- **`HandlerConfig`** (`config.go`) — immutable startup configuration (83 flag-derived fields); pointer-shared across goroutines.
+- **`State`** (`state.go`) — mutable runtime state: tenant maps, label indices, pattern snapshots, backend version, atomics; pointer-typed mutexes for safe sharing.
+- **`Handler{Deps, Cfg *HandlerConfig, State *State}`** (`handler.go`) — carries all three concerns; populated by `New()`; `routeHandler` method extracted from the former anonymous `rl` closure in `RegisterRoutes`.
 
 | Module | Responsibility |
 |---|---|
-| `proxy.go` | Proxy struct, configuration, constructor, and HTTP router setup |
+| `handler.go` | `Handler` struct definition and `routeHandler` dispatch method |
+| `deps.go` | `Deps` struct: external dependency container |
+| `config.go` | `HandlerConfig` struct: immutable startup configuration |
+| `state.go` | `State` struct: mutable runtime state |
+| `proxy.go` | Constructor (`New()`), `RegisterRoutes`, and remaining Proxy wiring |
 | `middleware.go` | Request middleware chain: security headers, tenant validation, rate limiting, WebSocket upgrade checks |
 | `middleware_security.go` | Security-specific middleware: auth forwarding, token redaction, request fingerprinting |
 | `query_translation.go` | LogQL→LogsQL translation per request, structured request logging |

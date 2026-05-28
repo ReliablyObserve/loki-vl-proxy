@@ -2,6 +2,7 @@
 package middleware
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -16,6 +17,32 @@ import (
 // ErrGuardRejected is returned by DoWithGuard when guard() returns false and no
 // call for that key is currently in-flight. Callers should treat it as a 503.
 var ErrGuardRejected = errors.New("guard rejected: no in-flight call to join")
+
+// coalescerBodyPool recycles bytes.Buffer scratch buffers for reading response bodies.
+// Each buffer grows to steady-state capacity on first use and is reused, replacing
+// the io.ReadAll growth chain (9+ intermediate allocations for a 256KB response).
+var coalescerBodyPool = sync.Pool{
+	New: func() interface{} {
+		return bytes.NewBuffer(make([]byte, 0, 64*1024)) // 64KB initial
+	},
+}
+
+// readBodyPooled reads r (up to limit bytes) using a pooled scratch buffer,
+// then returns a right-sized stable copy. The scratch buffer is returned to
+// the pool, so only the final copy allocation escapes to the heap.
+func readBodyPooled(r io.Reader, limit int64) ([]byte, error) {
+	buf := coalescerBodyPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	_, err := io.Copy(buf, io.LimitReader(r, limit))
+	if err != nil {
+		coalescerBodyPool.Put(buf)
+		return nil, err
+	}
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	coalescerBodyPool.Put(buf)
+	return result, nil
+}
 
 // Coalescer deduplicates identical concurrent requests.
 // When N clients send the same query simultaneously, only 1 request
@@ -69,7 +96,7 @@ func (c *Coalescer) Do(key string, fn func() (*http.Response, error)) (int, http
 		defer func() { _ = resp.Body.Close() }()
 
 		// Limit response body to 256MB to prevent unbounded memory allocation
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
+		body, err := readBodyPooled(resp.Body, 256<<20)
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +129,7 @@ func (c *Coalescer) callDirect(fn func() (*http.Response, error)) (int, http.Hea
 		return 0, nil, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
+	body, err := readBodyPooled(resp.Body, 256<<20)
 	if err != nil {
 		return 0, nil, nil, err
 	}

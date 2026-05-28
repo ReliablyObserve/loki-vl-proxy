@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,10 +31,6 @@ var (
 	windowCacheEnc *zstd.Encoder
 	windowCacheDec *zstd.Decoder
 )
-
-// windowGobBufPool recycles bytes.Buffer instances used to gob-encode window
-// cache entries, eliminating one heap allocation per cached window fetch.
-var windowGobBufPool = sync.Pool{New: func() interface{} { return new(bytes.Buffer) }}
 
 func init() {
 	windowCacheEnc, _ = zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest))
@@ -365,7 +360,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		if decompressed, err := windowCacheDec.DecodeAll(cached, make([]byte, 0, len(cached)*4)); err == nil {
 			var entry queryRangeWindowCacheEntry
-			if err := gob.NewDecoder(bytes.NewReader(decompressed)).Decode(&entry); err == nil {
+			if err := json.Unmarshal(decompressed, &entry); err == nil {
 				p.metrics.RecordQueryRangeWindowCacheHit()
 				return entry, nil
 			}
@@ -405,17 +400,13 @@ func (p *Proxy) fetchQueryRangeWindow(
 			_ = resp.Body.Close()
 			cacheEntry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
-				gobBuf := windowGobBufPool.Get().(*bytes.Buffer)
-				gobBuf.Reset()
-				if err := gob.NewEncoder(gobBuf).Encode(cacheEntry); err == nil {
-					compressed := windowCacheEnc.EncodeAll(gobBuf.Bytes(), make([]byte, 0, gobBuf.Len()/8))
+				if data, encErr := json.Marshal(cacheEntry); encErr == nil {
+					compressed := windowCacheEnc.EncodeAll(data, make([]byte, 0, len(data)/4))
 					// Window fragments are short-lived and high churn. Keeping them
 					// local avoids concentrating peer-cache write-through on a single
 					// ring owner when Drilldown or Explore fans a read into many windows.
 					p.cache.SetLocalOnlyWithTTL(cacheKey, compressed, ttl)
 				}
-				gobBuf.Reset() // clear entries reference before returning to pool
-				windowGobBufPool.Put(gobBuf)
 			}
 			return cacheEntry, nil
 		}

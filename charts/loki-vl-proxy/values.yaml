@@ -102,6 +102,7 @@ extraArgs:
   # query-range-partial-responses: "false"             # return partial response on retryable backend failures
   # query-range-background-warm: "true"                # continue warming failed windows in background
   # query-range-background-warm-max-windows: "24"      # cap background warm fanout
+  # default-max-query-length: "0"                      # max query time range for all tenants (0 = unlimited; per-tenant limits override)
 
   # --- Indexed label-values browse cache ---
   # Keep disabled by default; enable when label value lists are large and you
