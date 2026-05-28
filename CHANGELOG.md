@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AST-to-AST translation layer in `internal/logql/translate.go`: typed `LogQuery → logsql.Query` mapper covers stream selector matchers (eq/neq/re/nre), line filters, parsers (json/logfmt/regexp/pattern), bare drop/keep, and simple `line_format` templates; unsupported nodes fall through via `errFallthrough` sentinel to the existing string translator, leaving metric/range/vector paths unchanged
 - `TranslateOptions{LabelFn, StreamFields, Caps}` plumbing in the AST translator for future label-alias and capability-gated translation
 
+### Performance
+- Replace `stream_field_names` with `field_names` in service-name detection path (`serviceNameValuesFromNativeFields`): cold request drops from ~5s (4× stream_field_names at 1.25s each) to ~235ms (field_names 29ms + stream_field_values per field). Cache hits drop to ~12ms after the first request within a 30s window.
+- Replace `stream_field_names` with `field_names` for background label refresh (`refreshLabelsCacheAsync`): the full-range path (triggered on wide Grafana windows: 6h/12h/24h) was sending the full user-requested range to `stream_field_names` — an O(data-volume) scan taking 5–10s. Now uses `field_names` (O(index), ~30ms at any range) for the background path, keeping `stream_field_names` (1h-capped) for the synchronous labels endpoint where strict Loki label-only semantics apply.
+- Fix cache key drift in `fetchPreferredLabelNamesCached` and service-name detection: Grafana's sliding time window causes the `end` timestamp to drift a few seconds per request, producing a unique cache key on every click and defeating the 30s TTL cache. Now uses `fieldMetaCacheKey` with 30s end-timestamp bucketing so all requests within the same window share one cache entry.
+
 ### Changed
 - `Proxy` struct decomposed into `Deps` (external dependencies), `HandlerConfig` (immutable flag-derived config, 83 fields), and `State` (mutable runtime state with pointer-typed mutexes/atomics); `Handler{Deps, Cfg, State}` type defined and wired in `New()` with live pointer sharing so Handler and Proxy see the same lock and map instances
 - `RegisterRoutes` dispatches via named `routeHandler` method instead of anonymous closure

@@ -104,6 +104,15 @@ Measured: `go test ./internal/translator/ -bench BenchmarkTranslate -benchmem -c
 
 † Loki compute c=100 P50 is misleading — 97.49% errors, so only 2.51% of requests completed; survivors have low latency.
 
+### Drilldown and label-browser latency
+
+| Path | Before | After (cold) | After (warm) |
+|---|---:|---:|---:|
+| `service_name/values` | ~5,000ms | **235ms** | **12ms** |
+| Background label refresh (6–24h) | 5–10s per call | **<100ms** | — |
+
+The proxy previously called `stream_field_names` — an O(data-volume) scan — for every service-name lookup and every background label refresh. Wide Grafana time windows (6h/24h) produced 5–10s backend calls, appearing as CPU spikes in Grafana. Now uses `field_names` (O(index), ~30ms at any range) for all non-strict paths. The synchronous `/loki/api/v1/labels` endpoint keeps `stream_field_names` (1h-capped) for strict Loki label-only semantics.
+
 ### Dashboard load spikes — request coalescer
 
 When many panels hit the same query simultaneously, the proxy collapses them into a single backend call. First-hit coalescing avoids the N-fan-out but pays one backend round-trip; subsequent hits are served from cache.
