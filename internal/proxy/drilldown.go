@@ -531,7 +531,8 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 	// Phase 1: use field_names (fast, ~0.25s) instead of stream_field_names (~2-4s).
 	// field_names returns a superset of all field names including stream-indexed labels,
 	// so it covers both plain labels (app, service_name) and dotted OTel fields (service.name).
-	// stream_field_values is used for the value fetch so stream-indexed labels return correctly.
+	// On VL v1.50+ use field_values (20x faster than stream_field_values at any range).
+	// On older backends use stream_field_values so stream-indexed labels return correctly.
 	// Phase 2 (field_values fallback) only runs when Phase 1 is unavailable — avoiding the
 	// redundant second field_names call that the old two-phase design required.
 	phase1Succeeded := false
@@ -552,6 +553,12 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 					candidates = append(candidates, field)
 				}
 			}
+			// VL v1.50+: field_values is identical to stream_field_values for stream fields
+			// but ~20x faster (37ms vs 700ms at 1h). Use it when available.
+			fieldValuesEndpoint := "/select/logsql/stream_field_values"
+			if p.supportsColumnIndexedFields() {
+				fieldValuesEndpoint = "/select/logsql/field_values"
+			}
 			type fieldResult struct {
 				values []string
 				err    error
@@ -567,7 +574,7 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 					defer func() { <-sem }()
 					queryParams := cloneURLValues(params)
 					queryParams.Set("field", field)
-					fv, fErr := p.fetchVLFieldValues(ctx, "/select/logsql/stream_field_values", queryParams)
+					fv, fErr := p.fetchVLFieldValues(ctx, fieldValuesEndpoint, queryParams)
 					results[i] = fieldResult{values: fv, err: fErr}
 				}(i, field)
 			}
