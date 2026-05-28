@@ -66,7 +66,22 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	p.proxyStatsQueryRangeDirect(out, r, logsqlQuery)
+	// For Drilldown field-presence queries that opted into VL's count-all semantics via
+	// | drop __error__: strip | unpack_json / | unpack_logfmt from the VL query before
+	// forwarding. Drilldown only surfaces column-indexed fields via detected_fields, so
+	// VL can evaluate existence filters (field:!"") and stats directly from the column
+	// index — no JSON parsing needed. This avoids O(logs × fields) JSON parsing overhead
+	// that makes 12h Drilldown field histogram queries take 2-8 seconds each.
+	effectiveQuery := logsqlQuery
+	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok &&
+		queryUsesParserStages(spec.BaseQuery) &&
+		strings.Contains(spec.BaseQuery, "| delete __error__") {
+		stripped := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, ""))
+		if stripped != spec.BaseQuery && allFiltersAreExistenceChecks(stripped) {
+			effectiveQuery = stripped + logsqlQuery[len(spec.BaseQuery):]
+		}
+	}
+	p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
 	if hasTopK {
 		writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
 	}

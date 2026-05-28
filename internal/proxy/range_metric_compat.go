@@ -638,10 +638,13 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// stats by (field) count() as c evaluates correctly. Drilldown only queries
 	// fields from detected_fields, which only lists column-indexed fields, so
 	// non-indexed fields (only in JSON _msg) are never queried this way.
-	// Guard: only safe when stripping leaves no "| filter" post-parser stage —
-	// parsed-field filters (e.g. | status >= 400) require the parser to have run.
-	// Accepts VL's tumbling-bucket approximation (already the case for sliding windows).
-	if statsAggFunc != "" && queryUsesParserStages(spec.BaseQuery) && len(spec.GroupBy) > 0 {
+	//
+	// Safe when the query has an explicit drop-error opt-in (| delete __error__)
+	// AND all remaining | filter clauses after stripping are field!="" existence
+	// checks (not value-comparison filters like | status >= 400 that need the
+	// parser to have run first). Accepts VL's tumbling-bucket approximation.
+	if statsAggFunc != "" && queryUsesParserStages(spec.BaseQuery) && len(spec.GroupBy) > 0 &&
+		strings.Contains(spec.BaseQuery, "| delete __error__") {
 		hasStreamSentinel := false
 		for _, g := range spec.GroupBy {
 			if g == "_stream" {
@@ -651,7 +654,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		}
 		if !hasStreamSentinel {
 			strippedBase := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, ""))
-			if strippedBase != spec.BaseQuery && !strings.Contains(strippedBase, "| filter ") {
+			if strippedBase != spec.BaseQuery && allFiltersAreExistenceChecks(strippedBase) {
 				if series, hitsErr := p.collectRangeMetricHits(r.Context(), strippedBase, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil {
 					result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
 					w.Header().Set("Content-Type", "application/json")

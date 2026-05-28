@@ -14,13 +14,27 @@ import (
 )
 
 var (
-	// drilldownFieldFilterRE matches "| filter <field> != \"\"" in a baseQuery.
-	drilldownFieldFilterRE = regexp.MustCompile(`\|\s*filter\s+([\w.]+)\s*!=\s*""`)
+	// drilldownFieldFilterRE matches field-not-empty existence filters in a base query.
+	// Two formats: Loki-style "| filter field != \"\"" and VL-style "| filter field:!\"\"".
+	// The VL format (field:!"") is what the translator generates from Loki's field!="".
+	drilldownFieldFilterRE = regexp.MustCompile(`\|\s*filter\s+([\w.]+)(?:\s*!=\s*""|:!"")`)
 	// drilldownParserPipeRE matches parser-stage pipes to strip before building
 	// fused conditional-stats queries. VL's field:* existence check works on
 	// pre-indexed columns WITHOUT | json / | logfmt. Including them returns empty.
 	drilldownParserPipeRE = regexp.MustCompile(`\|\s*(?:unpack_json|unpack_logfmt|json|logfmt)\b[^|]*`)
 )
+
+// allFiltersAreExistenceChecks returns true when every | filter clause in the
+// VL base query is a pure field-not-empty existence check — Loki: field!="" or
+// VL translated: field:!"". These are safe to evaluate without a preceding
+// | unpack_json / | unpack_logfmt when the fields are stored in VL's column
+// index (OTel / explicitly indexed).
+// Used to decide whether stripping parser stages is safe for the stats fast path.
+func allFiltersAreExistenceChecks(vlQuery string) bool {
+	// Remove all existence-filter clauses; if any | filter remains, it's a
+	// value-comparison filter that requires the parser stage to have run.
+	return !strings.Contains(drilldownFieldFilterRE.ReplaceAllString(vlQuery, ""), "| filter ")
+}
 
 // extractCommonBase strips the per-field filter and parser-stage pipes from a
 // Drilldown Fields baseQuery, returning the pure stream selector and field name.
