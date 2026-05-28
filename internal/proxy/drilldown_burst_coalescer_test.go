@@ -219,3 +219,32 @@ func TestFusedFieldHits_MockVL(t *testing.T) {
 		t.Errorf("span_id[0].value=%v want 5", r1.series[""].Samples[0].value)
 	}
 }
+
+func TestFusedFieldHits_VLError(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	fireFn := p.fusedFieldHits("default", `{app="foo"}`, time.Unix(1700000000, 0), time.Unix(1700000300, 0), time.Minute)
+	_, err := fireFn(context.Background(), []string{"trace_id"})
+	if err == nil {
+		t.Fatal("expected error from VL 500, got nil")
+	}
+}
+
+func TestFusedFieldHits_VLNonSuccess(t *testing.T) {
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"status":"error","error":"query parse error"}`)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	fireFn := p.fusedFieldHits("default", `{app="foo"}`, time.Unix(1700000000, 0), time.Unix(1700000300, 0), time.Minute)
+	_, err := fireFn(context.Background(), []string{"trace_id"})
+	if err == nil {
+		t.Fatal("expected error from non-success status, got nil")
+	}
+}

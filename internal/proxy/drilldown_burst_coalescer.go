@@ -148,6 +148,17 @@ func (c *DrilldownBurstCoalescer) fire(
 	}
 }
 
+// quoteLogsQLIdent wraps a field name in backticks if it contains characters
+// that are not safe as bare LogsQL identifiers (letters, digits, underscore).
+func quoteLogsQLIdent(name string) string {
+	for _, c := range name {
+		if !('a' <= c && c <= 'z') && !('A' <= c && c <= 'Z') && !('0' <= c && c <= '9') && c != '_' {
+			return "`" + strings.ReplaceAll(name, "`", "\\`") + "`"
+		}
+	}
+	return name
+}
+
 // fusedFieldHits returns a fireFn for DrilldownBurstCoalescer.Submit.
 // It fires one VL stats_query_range with count() if (field:*) conditional
 // aggregations for all fields, parsing each alias's time series into fieldResult.
@@ -160,6 +171,10 @@ func (p *Proxy) fusedFieldHits(
 	step time.Duration,
 ) func(ctx context.Context, fields []string) (map[string]fieldResult, error) {
 	return func(ctx context.Context, fields []string) (map[string]fieldResult, error) {
+		if len(fields) == 0 {
+			return map[string]fieldResult{}, nil
+		}
+
 		aliasToField := make(map[string]string, len(fields))
 		var sb strings.Builder
 		for i, f := range fields {
@@ -168,7 +183,7 @@ func (p *Proxy) fusedFieldHits(
 			if i > 0 {
 				sb.WriteString(", ")
 			}
-			fmt.Fprintf(&sb, "count() if (%s:*) as %s", f, alias)
+			fmt.Fprintf(&sb, "count() if (%s:*) as %s", quoteLogsQLIdent(f), alias)
 		}
 		fusedQuery := commonBase + " | stats " + sb.String()
 
@@ -177,6 +192,17 @@ func (p *Proxy) fusedFieldHits(
 		params.Set("start", strconv.FormatInt(start.Unix(), 10))
 		params.Set("end", strconv.FormatInt(end.Unix(), 10))
 		params.Set("step", strconv.FormatFloat(step.Seconds(), 'f', 0, 64)+"s")
+
+		// Acquire the same concurrency slot used by individual stats_query_range calls
+		// so burst-fused calls don't bypass the back-pressure contract.
+		if sem := p.statsQueryRangeSem; sem != nil {
+			select {
+			case <-sem:
+				defer func() { sem <- struct{}{} }()
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
 
 		callCtx := context.WithValue(ctx, orgIDKey, orgID)
 		resp, err := p.vlPost(callCtx, "/select/logsql/stats_query_range", params)
@@ -218,13 +244,16 @@ func (p *Proxy) fusedFieldHits(
 				if len(arr) < 2 {
 					continue
 				}
-				tsSec := arr[0].GetFloat64()
+				tsUnix, tsErr := arr[0].Int64()
+				if tsErr != nil {
+					continue
+				}
 				val, parseFloatErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
 				if parseFloatErr != nil {
 					continue
 				}
 				samples = append(samples, rangeMetricSample{
-					ts:    int64(tsSec * 1e9),
+					ts:    tsUnix * int64(time.Second), // nanoseconds, exact integer arithmetic
 					value: val,
 				})
 			}
