@@ -460,6 +460,7 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 	if end != "" {
 		params.Set("end", end)
 	}
+	params = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 
 	resp, err := p.vlGet(ctx, "/select/logsql/streams", params)
 	if err != nil {
@@ -2549,6 +2550,7 @@ func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string
 		if end != "" {
 			params.Set("end", end)
 		}
+		params = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 		body, err := p.vlGetCoalesced(ctx, p.nativeCoalescerKey("native_streams", ctx, params), "/select/logsql/streams", params)
 		if err != nil {
 			lastErr = err
