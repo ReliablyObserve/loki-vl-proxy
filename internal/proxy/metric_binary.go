@@ -164,9 +164,18 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 }
 
 // maxDrilldownResponseBytes is the per-request body cap for Drilldown single-field
-// count queries. appendDrilldownSeriesLimit pushes a VL-side sort+limit so only
-// maxDrilldownSeries unique groups are transmitted; this cap is a safety net only.
-const maxDrilldownResponseBytes = 5 << 20 // 5 MB
+// count queries. VL applies | limit per-bucket (not globally), so for a 12 h/60 s
+// query: 720 buckets × 500/bucket × ~90 bytes/series ≈ 32 MB. This cap is set to
+// accommodate that worst case. The proxy-side limitLokiMatrixSeries then cuts the
+// Grafana response to maxDrilldownSeries (500) before sending, so Grafana only
+// receives ~45 KB regardless of the intermediate buffer size.
+//
+// Do NOT inflate the step to reduce VL response size: changing the step breaks
+// Grafana's timestamp alignment expectations and causes "no data" for all fields.
+// Since Grafana's $__auto step scales proportionally with the time range, the
+// bucket count (and thus response size) is bounded by panel width (~720 px) ×
+// maxDrilldownSeries × ~90 bytes ≈ 32 MB for any range.
+const maxDrilldownResponseBytes = 32 << 20 // 32 MB
 
 // maxDrilldownSeries is the maximum series returned for Drilldown single-field
 // count queries. Matches Loki's default max_query_series (500) for Drilldown
@@ -174,13 +183,6 @@ const maxDrilldownResponseBytes = 5 << 20 // 5 MB
 // threshold rather than an error, allowing Grafana Drilldown to display real
 // per-value histogram data.
 const maxDrilldownSeries = 500
-
-// maxDrilldownBuckets caps the number of VL time buckets for Drilldown single-field
-// count queries. VL applies | limit per-bucket (not globally), so unbounded bucket
-// counts produce oversized responses: 720 buckets × 500 limit = 360,000 series ≈ 32 MB
-// for a 12 h/60 s query. With 100 buckets the total stays under 5 MB regardless of
-// time range (100 × 500 × ~90 bytes/series ≈ 4.5 MB).
-const maxDrilldownBuckets = 100
 
 // appendDrilldownSeriesLimit rewrites a VL stats count() query to sort by count
 // descending and limit to N unique groups. This pushes the cardinality cap into
@@ -196,55 +198,16 @@ func appendDrilldownSeriesLimit(query string, limit int) string {
 	return q + " as _c | sort by (_c desc) | limit " + strconv.Itoa(limit)
 }
 
-// adaptDrilldownStep returns the effective VL step for Drilldown queries.
-// When the original step would produce more than maxDrilldownBuckets time
-// buckets over [startNs, endNs], the step is inflated to
-// ceil(range / maxDrilldownBuckets) so the per-bucket | limit stays effective
-// and the total response stays under maxDrilldownResponseBytes.
-// Returns stepNs unchanged when already within bounds or when parsing fails.
-func adaptDrilldownStep(startNs, endNs, stepNs int64) int64 {
-	if stepNs <= 0 || endNs <= startNs {
-		return stepNs
-	}
-	rangeNs := endNs - startNs
-	minStepNs := rangeNs / maxDrilldownBuckets
-	if stepNs < minStepNs {
-		return minStepNs
-	}
-	return stepNs
-}
-
 // proxyStatsQueryRangeDrilldown handles Drilldown single-field count queries.
-// It appends a VL-side sort+limit and inflates the step for long time ranges
-// to keep VL responses under maxDrilldownResponseBytes.
-//
-// Two complementary mechanisms bound the response size:
-//  1. | sort … | limit N — caps unique groups per time bucket.
-//  2. Step inflation — limits the bucket count when range/step > maxDrilldownBuckets,
-//     because VL applies | limit per-bucket (not globally). Without inflation,
-//     12 h/60 s = 720 buckets × 500/bucket = 360,000 series ≈ 32 MB.
-//     With 100-bucket cap: 100 × 500 × ~90 bytes ≈ 4.5 MB.
+// It appends a VL-side sort+limit so only the top-maxDrilldownSeries unique
+// field values are transmitted per time bucket, then proxy-side limits the
+// matrix to maxDrilldownSeries series before responding to Grafana.
 func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
 	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
 	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
 	logsqlQuery = appendDrilldownSeriesLimit(logsqlQuery, maxDrilldownSeries)
 
-	// Inflate step for long ranges: VL applies | limit per-bucket, so a 12 h/60 s
-	// query produces 720 buckets × 500/bucket = 360,000 series ≈ 32 MB.
-	// Cap to maxDrilldownBuckets so the response stays under 5 MB.
-	effectiveStep := r.FormValue("step")
-	if startNs, ok1 := parseLokiTimeToUnixNano(r.FormValue("start")); ok1 {
-		if endNs, ok2 := parseLokiTimeToUnixNano(r.FormValue("end")); ok2 {
-			if stepNs, ok3 := parseStepToNanos(r.FormValue("step")); ok3 {
-				if adapted := adaptDrilldownStep(startNs, endNs, stepNs); adapted > stepNs {
-					adaptedSecs := (adapted + int64(time.Second) - 1) / int64(time.Second)
-					effectiveStep = strconv.FormatInt(adaptedSecs, 10) + "s"
-				}
-			}
-		}
-	}
-
-	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), effectiveStep)
+	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 	if err != nil {
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())

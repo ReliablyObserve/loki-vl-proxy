@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 )
 
 // TestProxyStatsQueryRange_StripsParserAndDelete verifies that proxyStatsQueryRange
@@ -284,79 +283,3 @@ func TestProxyStatsQueryRange_StripsDeleteAlone(t *testing.T) {
 	}
 }
 
-// TestAdaptDrilldownStep verifies that step inflation kicks in only when the
-// range/step ratio exceeds maxDrilldownBuckets, and that short ranges pass through
-// unchanged. This is critical for 12h+ Drilldown queries: without inflation,
-// 720 buckets × 500 per-bucket limit = 360,000 series ≈ 32 MB.
-func TestAdaptDrilldownStep(t *testing.T) {
-	sec := int64(time.Second)
-
-	tests := []struct {
-		name             string
-		startNs, endNs   int64
-		stepNs           int64
-		wantNs           int64
-		wantInflated     bool
-	}{
-		{
-			name:    "1h/60s — 60 buckets, no inflation needed",
-			startNs: 0, endNs: 3600 * sec, stepNs: 60 * sec,
-			wantNs: 60 * sec,
-		},
-		{
-			name:    "12h/60s — 720 buckets, inflated to 432s",
-			startNs: 0, endNs: 12 * 3600 * sec, stepNs: 60 * sec,
-			// minStep = 12*3600 / 100 = 432s
-			wantNs: 432 * sec, wantInflated: true,
-		},
-		{
-			name:    "24h/60s — 1440 buckets, inflated to 864s",
-			startNs: 0, endNs: 24 * 3600 * sec, stepNs: 60 * sec,
-			// minStep = 24*3600 / 100 = 864s
-			wantNs: 864 * sec, wantInflated: true,
-		},
-		{
-			name:    "12h/900s — 48 buckets, no inflation needed",
-			startNs: 0, endNs: 12 * 3600 * sec, stepNs: 900 * sec,
-			wantNs: 900 * sec,
-		},
-		{
-			name:    "exactly 100 buckets — boundary, no inflation",
-			startNs: 0, endNs: 6000 * sec, stepNs: 60 * sec,
-			// 6000/60 = 100 buckets exactly — minStep = 6000/100 = 60s, equal to step
-			wantNs: 60 * sec,
-		},
-		{
-			name:    "101 buckets — just over boundary, inflated",
-			startNs: 0, endNs: 6060 * sec, stepNs: 60 * sec,
-			// minStep = 6060/100 = 60.6s → 60 × sec, but 60.6 > 60 so adapted = 60.6s
-			// which is > stepNs (60s), so inflation applies
-			wantNs: 6060 * sec / maxDrilldownBuckets, wantInflated: true,
-		},
-		{
-			name:    "zero step — returned unchanged",
-			startNs: 0, endNs: 3600 * sec, stepNs: 0,
-			wantNs: 0,
-		},
-		{
-			name:    "inverted range — returned unchanged",
-			startNs: 3600 * sec, endNs: 0, stepNs: 60 * sec,
-			wantNs: 60 * sec,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := adaptDrilldownStep(tc.startNs, tc.endNs, tc.stepNs)
-			if got != tc.wantNs {
-				t.Errorf("adaptDrilldownStep() = %d ns, want %d ns", got, tc.wantNs)
-			}
-			if tc.wantInflated && got <= tc.stepNs {
-				t.Errorf("expected step inflation (got %d <= original %d)", got, tc.stepNs)
-			}
-			if !tc.wantInflated && got != tc.stepNs {
-				t.Errorf("expected step unchanged (got %d != original %d)", got, tc.stepNs)
-			}
-		})
-	}
-}
