@@ -751,6 +751,11 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 
 // labelWarmupWindows are the standard Grafana time-picker presets that the proxy
 // pre-populates on startup and keeps warm via the periodic keep-warm loop.
+// VL queries for each window are capped to metadataMaxFieldNamesWindow (1h) via
+// capMetadataStartOnly so warmup stays cheap (~20ms per window, ~30ms p99). The
+// cache stores a result under each window's cache key so users requesting "last 6h"
+// or "last 7d" get an immediate cache hit; refreshLabelsCacheAsync then updates
+// that key with the full historical range in the background.
 var labelWarmupWindows = []time.Duration{
 	time.Hour,
 	6 * time.Hour,
@@ -1011,8 +1016,13 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 	warmedFromPeer := p.fetchCacheKeysFromPeers(ctx, "labels", staleKeys, ttl)
 
 	// Phase 3: fetch remaining stale windows from VL.
-	// Use labelFullRangeFetchKey so fetchStreamFieldNamesCached routes to field_names
-	// (~0.25s via column index) instead of stream_field_names (~1.4-2.3s per window).
+	// Do NOT set labelFullRangeFetchKey: that bypasses the 1h cap (capMetadataStartOnly)
+	// and causes 24h/7d warmup calls to scan the full window (700ms–1.5s each).
+	// The keep-warm loop runs every 3.75min across all proxy instances; with 9 instances
+	// and 4 windows, setting fullRange produced 36 concurrent heavy VL queries every
+	// 3.75min — spiking VL CPU to 18 cores. The synchronous path's 1h cap makes each
+	// call ~20–30ms; the background refresh (refreshLabelsCacheAsync) handles full-range
+	// fetches when users actually request wide time windows.
 	for _, w := range stale {
 		if warmedFromPeer[w.cacheKey] {
 			p.log.Debug("label cache window warmed from peer", "window", w.window)
@@ -1020,7 +1030,6 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 		}
 
 		fetchCtx, fetchCancel := context.WithTimeout(ctx, 10*time.Second)
-		fetchCtx = context.WithValue(fetchCtx, labelFullRangeFetchKey{}, true)
 		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
 		fetchCancel()
 		if fetchErr != nil {
