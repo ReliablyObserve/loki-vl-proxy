@@ -453,7 +453,12 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 	}
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	// No | sort pipe: the /streams endpoint uses column-index lookups to enumerate
+	// unique stream label sets. Adding | sort by (_time desc) forces VL to load and
+	// sort ALL matching log entries before grouping into streams — an O(N_logs) heap
+	// sort that OOMs on wide time windows. Stream order is irrelevant for service
+	// name detection; we only need to know which streams exist in the window.
+	params.Set("query", logsqlQuery)
 	if start != "" {
 		params.Set("start", start)
 	}
@@ -2690,7 +2695,10 @@ func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string
 			continue
 		}
 		params := url.Values{}
-		params.Set("query", logsqlQuery+" | sort by (_time desc)")
+		// No | sort pipe: the /streams endpoint uses column-index lookups. Adding
+		// | sort by (_time desc) forces VL to sort all matching log entries before
+		// grouping into streams — an O(N_logs) heap sort that OOMs at wide ranges.
+		params.Set("query", logsqlQuery)
 		if start != "" {
 			params.Set("start", start)
 		}

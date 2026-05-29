@@ -443,7 +443,7 @@ func TestIsLikelyHighCardinalityField(t *testing.T) {
 	}
 }
 
-// TestDrilldownShouldEagerTwoPhase verifies all three triggers for skipping the
+// TestDrilldownShouldEagerTwoPhase verifies all two triggers for skipping the
 // direct VL path in proxyStatsQueryRangeDrilldown.
 func TestDrilldownShouldEagerTwoPhase(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
@@ -466,23 +466,11 @@ func TestDrilldownShouldEagerTwoPhase(t *testing.T) {
 		}
 	})
 
-	t.Run("low_cardinality_field_short_range_no_trigger", func(t *testing.T) {
-		// 1h at 60s step = exactly 60 buckets — at threshold boundary, does NOT trigger
-		// (condition is > drilldownEagerTwoPhaseMinBuckets, not >=).
+	t.Run("low_cardinality_field_no_trigger", func(t *testing.T) {
+		// Short range (60 buckets); not an HC field name; not in cardinality cache.
 		req := makeReq("1700000000000000000", "1700003600000000000", "60s", "org1")
 		if p.drilldownShouldEagerTwoPhase(req, `env:="prod"`, "level") {
-			t.Error("level with 60-bucket range must NOT trigger eager two-phase (boundary)")
-		}
-	})
-
-	t.Run("long_range_triggers_eager", func(t *testing.T) {
-		// 6h at 60s step = 360 buckets > drilldownEagerTwoPhaseMinBuckets (60).
-		// Two-phase (1 global sort + filtered scan) is cheaper than 360 per-bucket sorts.
-		start := "1700000000000000000"
-		end := "1700021600000000000" // start + 6h in nanoseconds
-		req := makeReq(start, end, "60s", "org1")
-		if !p.drilldownShouldEagerTwoPhase(req, `env:="prod"`, "status") {
-			t.Error("status with 360-bucket range must trigger eager two-phase")
+			t.Error("level with short range must NOT trigger eager two-phase")
 		}
 	})
 

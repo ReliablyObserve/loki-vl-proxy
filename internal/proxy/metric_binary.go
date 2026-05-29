@@ -284,39 +284,21 @@ func appendDrilldownSeriesLimit(query string, limit int) string {
 	return q + " as _c | sort by (_c desc) | limit " + strconv.Itoa(limit)
 }
 
-// drilldownEagerTwoPhaseMinBuckets is the bucket-count threshold above which the
-// proxy skips the direct VL path and goes straight to two-phase. The direct path
-// runs one per-bucket sort in VL for every time bucket; two-phase runs a single
-// global sort (Phase 1) and a filtered range scan (Phase 2). Beyond this threshold
-// two-phase is cheaper in VL CPU even accounting for the extra round trip.
+// drilldownShouldEagerTwoPhase returns true when the proxy can predict that the
+// direct VL path (| limit 500 per bucket → readBodyLimited) will overflow
+// maxDrilldownResponseBytes, making a straight two-phase call cheaper. Two
+// independent signals trigger eager two-phase:
 //
-// At 60s step: 60 buckets = 1 hour. At 15s step: 60 buckets = 15 minutes.
-const drilldownEagerTwoPhaseMinBuckets = 60
-
-// drilldownShouldEagerTwoPhase returns true when the proxy should skip the direct
-// VL path and go straight to two-phase. Three independent signals trigger it:
+//  1. Known high-cardinality field name (trace_id, span_id, *_id, *_token, …) —
+//     these fields carry unique-per-request values, so each time bucket produces a
+//     different set of values; | limit 500 per bucket ≠ global top 500.
 //
-//  1. Known high-cardinality field name (trace_id, span_id, *_id, *_token, …).
-//
-//  2. Long range: more than drilldownEagerTwoPhaseMinBuckets time buckets. The
-//     direct path runs one per-bucket sort per bucket; two-phase (single global
-//     sort + filtered scan) is cheaper beyond this point.
-//
-//  3. Cardinality cache: a previous request for {orgID, cleanBase, field} already
-//     overflowed maxDrilldownResponseBytes on the direct path.
+//  2. Cardinality cache: a previous request for {orgID, cleanBase, field} already
+//     overflowed the cap, so subsequent re-renders (triggered by Grafana filter/time
+//     changes) skip the direct attempt entirely.
 func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field string) bool {
 	if isLikelyHighCardinalityField(field) {
 		return true
-	}
-	if startNs, ok1 := parseLokiTimeToUnixNano(r.FormValue("start")); ok1 {
-		if endNs, ok2 := parseLokiTimeToUnixNano(r.FormValue("end")); ok2 && endNs > startNs {
-			if stepSec, ok := parseDuration(r.FormValue("step")); ok && stepSec > 0 {
-				rangeSec := float64(endNs-startNs) / float64(time.Second)
-				if int64(rangeSec/stepSec) > drilldownEagerTwoPhaseMinBuckets {
-					return true
-				}
-			}
-		}
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	return p.drilldownCardCache != nil && p.drilldownCardCache.isHigh(orgID, cleanBase, field)
@@ -331,28 +313,27 @@ func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field s
 const drilldownStatsCacheTTL = 60 * time.Second
 
 // drilldownStatsCacheKey returns a cache key for a Drilldown single-field
-// count response. The key includes orgID, the original LogQL query (stable
-// across re-renders), start, end (bucketed to 5-min to absorb Grafana's
-// sliding time window), and step. Auth fingerprint is appended when present.
+// count response. Both start and end are bucketed to 5-minute (or step)
+// granularity to absorb Grafana's sliding "last N h" window: for a "last 6h"
+// panel, both start and end drift by ~30 s on every Grafana refresh, producing
+// a unique key every tick and defeating the cache. Bucketing both timestamps to
+// the same granularity keeps the key stable within a 5-minute window.
 func (p *Proxy) drilldownStatsCacheKey(r *http.Request) string {
-	endRaw := r.FormValue("end")
-	endBucketed := endRaw
-	if endRaw != "" {
-		bucket := 5 * time.Minute
-		if stepRaw := r.FormValue("step"); stepRaw != "" {
-			if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
-				bucket = d
-			}
+	bucket := 5 * time.Minute
+	if stepRaw := r.FormValue("step"); stepRaw != "" {
+		if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
+			bucket = d
 		}
-		endBucketed = bucketTimestampString(endRaw, bucket)
 	}
+	startBucketed := bucketTimestampString(r.FormValue("start"), bucket)
+	endBucketed := bucketTimestampString(r.FormValue("end"), bucket)
 	var b strings.Builder
 	b.WriteString("drilldown_stats:")
 	b.WriteString(r.Header.Get("X-Scope-OrgID"))
 	b.WriteByte(':')
 	b.WriteString(r.FormValue("query"))
 	b.WriteByte(':')
-	b.WriteString(r.FormValue("start"))
+	b.WriteString(startBucketed)
 	b.WriteByte(':')
 	b.WriteString(endBucketed)
 	b.WriteByte(':')
