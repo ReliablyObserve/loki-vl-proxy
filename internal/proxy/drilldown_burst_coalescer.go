@@ -40,6 +40,41 @@ func allFiltersAreExistenceChecks(vlQuery string) bool {
 	return !strings.Contains(drilldownFieldFilterRE.ReplaceAllString(vlQuery, ""), "| filter ")
 }
 
+// detectDrilldownSingleField returns the pure stream-selector base (no existence
+// filters, no delete pipes) and the single grouped field when effectiveQuery is a
+// Drilldown tumbling-window single-field count query whose filters are all pure
+// existence checks and whose base has no parser stages. Returns ("", "", false)
+// when the query does not match the pattern.
+//
+// Used to identify queries that are safe to fall back to count() if (field:*)
+// when stats by (field) count() exceeds the per-request 16 MB response cap.
+func detectDrilldownSingleField(effectiveQuery string) (cleanBase, field string, ok bool) {
+	spec, specOK := parseStatsCompatSpec(effectiveQuery)
+	if !specOK || len(spec.GroupBy) != 1 || spec.Func != "count" {
+		return "", "", false
+	}
+	// count() if (field:*) works on column-indexed fields only; reject queries
+	// that still require a parser stage (unpack_json / extract).
+	if queryUsesParserStages(spec.BaseQuery) {
+		return "", "", false
+	}
+	f := spec.GroupBy[0]
+	// All remaining | filter clauses must be pure existence checks — value
+	// comparisons (e.g. | filter status:>="400") require the parser to have run.
+	if !allFiltersAreExistenceChecks(spec.BaseQuery) {
+		return "", "", false
+	}
+	// Require at least one existence filter so we know which field to probe.
+	if !drilldownFieldFilterRE.MatchString(spec.BaseQuery) {
+		return "", "", false
+	}
+	// Strip existence filters and delete pipes — safe because allFiltersAreExistenceChecks
+	// confirmed no value-comparison filters remain; count() if (field:*) replaces them.
+	base := drilldownFieldFilterRE.ReplaceAllString(spec.BaseQuery, "")
+	base = drilldownDeletePipeRE.ReplaceAllString(base, "")
+	return strings.TrimSpace(base), f, true
+}
+
 // extractCommonBase strips the per-field filter and parser-stage pipes from a
 // Drilldown Fields baseQuery, returning the pure stream selector and field name.
 // Returns ("", "", false) if baseQuery does not match the Drilldown presence pattern.

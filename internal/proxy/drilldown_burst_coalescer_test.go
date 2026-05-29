@@ -104,6 +104,85 @@ func TestAllFiltersAreExistenceChecks(t *testing.T) {
 	}
 }
 
+func TestDetectDrilldownSingleField(t *testing.T) {
+	tests := []struct {
+		name          string
+		query         string
+		wantOK        bool
+		wantBase      string
+		wantField     string
+	}{
+		{
+			name:      "clean drilldown query after strip",
+			query:     `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`,
+			wantOK:    true,
+			wantBase:  `env:="production"`,
+			wantField: "trace_id",
+		},
+		{
+			name:      "multiple stream filters, single existence filter",
+			query:     `env:="production" app:="myapp" | filter span_id:!"" | stats by (span_id) count()`,
+			wantOK:    true,
+			wantBase:  `env:="production" app:="myapp"`,
+			wantField: "span_id",
+		},
+		{
+			name:      "delete pipe stripped",
+			query:     `env:="production" | delete __error__ | filter trace_id:!"" | stats by (trace_id) count()`,
+			wantOK:    true,
+			wantBase:  `env:="production"`,
+			wantField: "trace_id",
+		},
+		{
+			name:   "multiple group-by fields — not a single-field drilldown",
+			query:  `env:="production" | filter trace_id:!"" | stats by (trace_id, span_id) count()`,
+			wantOK: false,
+		},
+		{
+			name:   "no existence filter — not drilldown",
+			query:  `env:="production" | stats by (trace_id) count()`,
+			wantOK: false,
+		},
+		{
+			name:   "value-comparison filter — not safe for count() if",
+			query:  `env:="production" | filter status:>="400" | stats by (status) count()`,
+			wantOK: false,
+		},
+		{
+			name:   "sum() not count()",
+			query:  `env:="production" | filter trace_id:!"" | stats by (trace_id) sum(bytes)`,
+			wantOK: false,
+		},
+		{
+			name:   "parser stage still present — not safe",
+			query:  `env:="production" | unpack_json | filter trace_id:!"" | stats by (trace_id) count()`,
+			wantOK: false,
+		},
+		{
+			name:   "no stats clause",
+			query:  `env:="production" | filter trace_id:!""`,
+			wantOK: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			base, field, ok := detectDrilldownSingleField(tc.query)
+			if ok != tc.wantOK {
+				t.Fatalf("detectDrilldownSingleField(%q) ok=%v want %v", tc.query, ok, tc.wantOK)
+			}
+			if !ok {
+				return
+			}
+			if base != tc.wantBase {
+				t.Errorf("base=%q want %q", base, tc.wantBase)
+			}
+			if field != tc.wantField {
+				t.Errorf("field=%q want %q", field, tc.wantField)
+			}
+		})
+	}
+}
+
 func TestDrilldownBurstCoalescer_CoalescesTwoFields(t *testing.T) {
 	var callCount int
 	var callMu sync.Mutex

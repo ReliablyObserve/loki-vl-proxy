@@ -87,8 +87,8 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// 300k+ trace_id UUIDs over 12 h produce a 50 MB+ VL response. Loki caps at
 	// max_query_series (default 500) for Drilldown and returns partial results with
 	// a series-limit notice; this path matches that behaviour.
-	if _, _, isDrilldown := detectDrilldownSingleField(effectiveQuery); isDrilldown {
-		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery)
+	if cleanBase, field, isDrilldown := detectDrilldownSingleField(effectiveQuery); isDrilldown {
+		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery, cleanBase, field)
 	} else {
 		p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
 	}
@@ -164,18 +164,19 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 }
 
 // maxDrilldownResponseBytes is the per-request body cap for Drilldown single-field
-// count queries. VL applies | limit per-bucket (not globally), so for a 12 h/60 s
-// query: 720 buckets × 500/bucket × ~90 bytes/series ≈ 32 MB. This cap is set to
-// accommodate that worst case. The proxy-side limitLokiMatrixSeries then cuts the
-// Grafana response to maxDrilldownSeries (500) before sending, so Grafana only
-// receives ~45 KB regardless of the intermediate buffer size.
+// count queries on the DIRECT path (when | limit 500 per-bucket is effective).
 //
-// Do NOT inflate the step to reduce VL response size: changing the step breaks
-// Grafana's timestamp alignment expectations and causes "no data" for all fields.
-// Since Grafana's $__auto step scales proportionally with the time range, the
-// bucket count (and thus response size) is bounded by panel width (~720 px) ×
-// maxDrilldownSeries × ~90 bytes ≈ 32 MB for any range.
-const maxDrilldownResponseBytes = 32 << 20 // 32 MB
+// VL applies | limit per-bucket, not globally. For high-cardinality short-lived
+// fields (trace_id, span_id, session_id): each bucket has different unique values, so
+// 720 buckets × 500/bucket = 360k unique series (~32.8 MB) even with | limit 500.
+// When the direct-path response exceeds this cap, drilldownTwoPhase takes over:
+//
+//   Phase 1 — single-bucket query (step = entire range) → global top-N values, tiny
+//   Phase 2 — range query filtered via field:in(...) → ≤500 series with original step
+//
+// Do NOT inflate the step sent to VL: changing the step breaks Grafana's timestamp
+// alignment expectations and causes "no data" for all fields.
+const maxDrilldownResponseBytes = 32 << 20 // 32 MB — triggers two-phase fallback if exceeded
 
 // maxDrilldownSeries is the maximum series returned for Drilldown single-field
 // count queries. Matches Loki's default max_query_series (500) for Drilldown
@@ -202,9 +203,17 @@ func appendDrilldownSeriesLimit(query string, limit int) string {
 // It appends a VL-side sort+limit so only the top-maxDrilldownSeries unique
 // field values are transmitted per time bucket, then proxy-side limits the
 // matrix to maxDrilldownSeries series before responding to Grafana.
-func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+//
+// cleanBase is the stream-selector base without the field existence filter
+// (e.g. `env:="production"` from `env:="production" | filter trace_id:!""`).
+// field is the grouped field name (e.g. "trace_id"). Both are provided by
+// detectDrilldownSingleField so we avoid reparsing on the fallback path.
+func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Request, logsqlQuery, cleanBase, field string) {
 	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
 	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
+	// Save pre-limit version for the two-phase fallback (drilldownTwoPhase reuses it
+	// as Phase 1's base query before appending sort+limit with a single-bucket step).
+	effectiveForFallback := logsqlQuery
 	logsqlQuery = appendDrilldownSeriesLimit(logsqlQuery, maxDrilldownSeries)
 
 	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -223,10 +232,21 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 
 	body, bodyErr := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
 	if bodyErr != nil {
-		// Safety net: VL sort+limit should keep response well under 5 MB;
-		// if exceeded, return empty rather than OOMing.
+		// VL | limit is per time-bucket, not global. For high-cardinality short-lived
+		// fields (trace_id, span_id): 720 buckets × 500/bucket = 360k unique series,
+		// ~32.8 MB — still exceeds the cap even with | limit 500. Fall back to
+		// two-phase: Phase 1 collapses all time buckets into one (step = entire range)
+		// to get the global top-N values cheaply; Phase 2 does a filtered range query
+		// restricted to those N values via field:in(...), bounding the response to
+		// ≤maxDrilldownSeries series regardless of field cardinality.
+		body = p.drilldownTwoPhase(r, effectiveForFallback, cleanBase, field)
+		if body == nil {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(emptyLokiMatrix)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(emptyLokiMatrix)
+		_, _ = w.Write(body)
 		return
 	}
 
@@ -238,6 +258,129 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 	body = limitLokiMatrixSeries(body, maxDrilldownSeries)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
+}
+
+// drilldownTwoPhase is the fallback for proxyStatsQueryRangeDrilldown when the
+// direct VL response exceeds maxDrilldownResponseBytes. It runs two VL calls:
+//
+//  1. Phase 1 — a single-bucket stats_query_range (step = entire range) to get
+//     the global top-maxDrilldownSeries field values. One bucket means VL's
+//     per-bucket | limit N is equivalent to a true global limit.
+//
+//  2. Phase 2 — a range query filtered to the Phase 1 values via field:in(...),
+//     returning ≤maxDrilldownSeries unique series with the original step/granularity.
+//
+// Returns the translated Loki matrix response, or nil on any VL error.
+func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, field string) []byte {
+	ctx := r.Context()
+	start, end, step := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
+
+	startNs, ok1 := parseLokiTimeToUnixNano(start)
+	endNs, ok2 := parseLokiTimeToUnixNano(end)
+	if !ok1 || !ok2 || endNs <= startNs {
+		return nil
+	}
+	rangeSec := (endNs - startNs) / int64(time.Second)
+	if rangeSec < 1 {
+		rangeSec = 1
+	}
+
+	p1Params := url.Values{}
+	p1Params.Set("query", appendDrilldownSeriesLimit(effectiveQuery, maxDrilldownSeries))
+	p1Params.Set("start", nanosToVLTimestamp(startNs))
+	p1Params.Set("end", nanosToVLTimestamp(endNs))
+	p1Params.Set("step", strconv.FormatInt(rangeSec, 10)+"s")
+
+	resp1, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p1Params)
+	if err != nil {
+		return nil
+	}
+	defer resp1.Body.Close()
+	if resp1.StatusCode >= 400 {
+		return nil
+	}
+
+	// 1 MB is generous for ≤maxDrilldownSeries × ~256 bytes per UUID entry.
+	p1Body, p1Err := readBodyLimited(resp1.Body, 1<<20)
+	if p1Err != nil {
+		return nil
+	}
+
+	topValues := drilldownTopValuesFromMatrix(p1Body, field)
+	if len(topValues) == 0 {
+		return emptyLokiMatrix
+	}
+
+	// Phase 2: range query restricted to the global top-N values.
+	inFilter := buildVLInFilter(field, topValues)
+	p2Query := cleanBase + " | filter " + inFilter + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
+	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
+	p2Query = p.addUnderscorefallbackByLabels(p2Query, origGroupBy)
+
+	p2Params := buildStatsQueryRangeParams(p2Query, start, end, step)
+	resp2, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p2Params)
+	if err != nil {
+		return nil
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode >= 400 {
+		return nil
+	}
+
+	p2Body, p2Err := readBodyLimited(resp2.Body, maxDrilldownResponseBytes)
+	if p2Err != nil {
+		return nil
+	}
+
+	var keepFn func(int64) bool
+	if ok2 {
+		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
+	}
+	p2Body = p.trimAndTranslateStatsQRFJ(ctx, p2Body, keepFn, r.FormValue("query"))
+	p2Body = limitLokiMatrixSeries(p2Body, maxDrilldownSeries)
+	return wrapAsLokiResponse(p2Body, "matrix")
+}
+
+// drilldownTopValuesFromMatrix extracts the label values for field from a Loki
+// matrix JSON response. Used by drilldownTwoPhase to parse the Phase 1 result
+// (one bucket → global top-N values from a single-bucket stats_query_range call).
+func drilldownTopValuesFromMatrix(body []byte, field string) []string {
+	v, err := fj.ParseBytes(body)
+	if err != nil {
+		return nil
+	}
+	result := v.GetArray("data", "result")
+	if len(result) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(result))
+	for _, entry := range result {
+		val := string(entry.GetStringBytes("metric", field))
+		if val != "" {
+			out = append(out, val)
+		}
+	}
+	return out
+}
+
+// buildVLInFilter builds a LogsQL field:in("v1","v2",...) existence filter.
+// VL evaluates in() filters against pre-indexed columns without a parser stage,
+// making them fast even for high-cardinality fields. Used by drilldownTwoPhase
+// to restrict Phase 2 queries to the values returned by Phase 1.
+func buildVLInFilter(field string, values []string) string {
+	var sb strings.Builder
+	sb.WriteString(quoteLogsQLIdent(field))
+	sb.WriteString(`:in(`)
+	for i, v := range values {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteByte('"')
+		sb.WriteString(strings.ReplaceAll(v, `"`, `\"`))
+		sb.WriteByte('"')
+	}
+	sb.WriteByte(')')
+	return sb.String()
 }
 
 // limitLokiMatrixSeries truncates the result array in a Loki matrix response to
