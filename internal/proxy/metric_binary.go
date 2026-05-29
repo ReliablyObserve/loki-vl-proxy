@@ -66,42 +66,21 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	// For Drilldown field-presence queries that opted into VL's count-all semantics via
-	// | drop __error__: strip | unpack_json / | unpack_logfmt from the VL query before
-	// forwarding. Drilldown only surfaces column-indexed fields via detected_fields, so
-	// VL can evaluate existence filters (field:!"") and stats directly from the column
-	// index — no JSON parsing needed. This avoids O(logs × fields) JSON parsing overhead
-	// that makes 12h Drilldown field histogram queries take 2-8 seconds each.
+	// For Drilldown field-presence queries strip:
+	//   1. | unpack_json / | unpack_logfmt — column-indexed fields need no JSON parsing
+	//   2. | delete __error__, __error_details__ — removes a field from each row but
+	//      does not filter any logs, so counts are identical without it
+	// Both strips are safe: Drilldown only surfaces column-indexed fields via
+	// detected_fields, and the stats grouping is unaffected by deleting __error__.
 	effectiveQuery := logsqlQuery
 	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok &&
-		queryUsesParserStages(spec.BaseQuery) &&
 		strings.Contains(spec.BaseQuery, "| delete __error__") {
-		stripped := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, ""))
+		stripped := drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, "")
+		stripped = strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(stripped, ""))
 		if stripped != spec.BaseQuery && allFiltersAreExistenceChecks(stripped) {
 			effectiveQuery = stripped + logsqlQuery[len(spec.BaseQuery):]
 		}
 	}
-
-	// Second pass: for single-field Drilldown presence queries replace
-	// "stats by (field) count()" with "count() if (field:*)". This avoids
-	// building an O(unique_values) hash map for high-cardinality fields like
-	// trace_id — the same rewrite the burst coalescer uses for sliding windows.
-	// Only applied when the sole filter is an existence check for the GroupBy
-	// field (semantically equivalent; Drilldown histograms only need total counts).
-	if spec2, ok2 := parseStatsCompatSpec(effectiveQuery); ok2 &&
-		len(spec2.GroupBy) == 1 &&
-		spec2.Func == "count" &&
-		!queryUsesParserStages(spec2.BaseQuery) {
-		field := spec2.GroupBy[0]
-		allFilters := drilldownFieldFilterRE.FindAllStringSubmatch(spec2.BaseQuery, -1)
-		if len(allFilters) == 1 && allFilters[0][1] == field && allFiltersAreExistenceChecks(spec2.BaseQuery) {
-			cleanBase := drilldownFieldFilterRE.ReplaceAllString(spec2.BaseQuery, "")
-			cleanBase = drilldownDeletePipeRE.ReplaceAllString(cleanBase, "")
-			cleanBase = strings.TrimSpace(cleanBase)
-			effectiveQuery = cleanBase + " | stats count() if (" + quoteLogsQLIdent(field) + ":*)"
-		}
-	}
-
 	p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
 	if hasTopK {
 		writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
