@@ -87,7 +87,12 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// 300k+ trace_id UUIDs over 12 h produce a 50 MB+ VL response. Loki caps at
 	// max_query_series (default 500) for Drilldown and returns partial results with
 	// a series-limit notice; this path matches that behaviour.
-	if cleanBase, field, isDrilldown := detectDrilldownSingleField(effectiveQuery); isDrilldown {
+	//
+	// Gate behind isGrafanaDrilldownRequest: the query pattern alone is not
+	// sufficient to distinguish Drilldown from Explore/API clients. Explore users
+	// who write the same LogQL pattern must not be subject to the 500-series cap
+	// or two-phase fallback — those are Drilldown-specific semantics.
+	if cleanBase, field, ok := detectDrilldownSingleField(effectiveQuery); ok && isGrafanaDrilldownRequest(r) {
 		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery, cleanBase, field)
 	} else {
 		p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
@@ -184,6 +189,17 @@ const maxDrilldownResponseBytes = 32 << 20 // 32 MB — triggers two-phase fallb
 // threshold rather than an error, allowing Grafana Drilldown to display real
 // per-value histogram data.
 const maxDrilldownSeries = 500
+
+// isGrafanaDrilldownRequest reports whether r originates from Grafana Logs Drilldown.
+// Grafana Logs Drilldown sets supportingQueryType="grafana-lokiexplore-app" on every
+// Loki data query; the datasource Go backend translates this to the HTTP header
+// X-Query-Tags: Source=grafana-lokiexplore-app. This header gates Drilldown-specific
+// optimizations (500-series cap, two-phase fallback) so that identical query patterns
+// from Explore or direct API clients are not subject to the series limit.
+func isGrafanaDrilldownRequest(r *http.Request) bool {
+	tag := strings.ToLower(parseGrafanaSourceTag(r.Header.Values("X-Query-Tags")))
+	return strings.Contains(tag, "lokiexplore") || strings.Contains(tag, "drilldown")
+}
 
 // appendDrilldownSeriesLimit rewrites a VL stats count() query to sort by count
 // descending and limit to N unique groups. This pushes the cardinality cap into

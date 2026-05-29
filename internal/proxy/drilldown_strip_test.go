@@ -126,6 +126,57 @@ func TestLimitLokiMatrixSeries(t *testing.T) {
 	})
 }
 
+// TestProxyStatsQueryRange_DrilldownHeaderGate verifies that Drilldown-specific
+// optimizations (500-series cap via | limit, two-phase fallback) are gated behind
+// the X-Query-Tags header. Explore and direct API clients with the same query pattern
+// must go through the direct path and receive unfiltered results.
+func TestProxyStatsQueryRange_DrilldownHeaderGate(t *testing.T) {
+	var receivedQuery string
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedQuery = r.FormValue("query")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+	effectiveQuery := `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`
+
+	form := url.Values{}
+	form.Set("query", `sum by (trace_id) (count_over_time({env="production"}|trace_id!=""`+` [1m]))`)
+	form.Set("start", "1700000000")
+	form.Set("end", "1700003600")
+	form.Set("step", "60s")
+
+	t.Run("without_header_uses_direct_path_no_limit", func(t *testing.T) {
+		receivedQuery = ""
+		req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
+		req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
+		req.Header.Set("X-Scope-OrgID", "default")
+		// No X-Query-Tags — simulates Explore or direct API client
+
+		p.proxyStatsQueryRange(httptest.NewRecorder(), req, effectiveQuery)
+
+		if strings.Contains(receivedQuery, "| limit") {
+			t.Errorf("direct path (no header) must not apply series limit; VL received: %s", receivedQuery)
+		}
+	})
+
+	t.Run("with_drilldown_header_uses_drilldown_path_with_limit", func(t *testing.T) {
+		receivedQuery = ""
+		req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
+		req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
+		req.Header.Set("X-Scope-OrgID", "default")
+		req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+
+		p.proxyStatsQueryRange(httptest.NewRecorder(), req, effectiveQuery)
+
+		if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
+			t.Errorf("Drilldown path must add VL-side | limit %d; VL received: %s", maxDrilldownSeries, receivedQuery)
+		}
+	})
+}
+
 // TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries verifies that the
 // Drilldown path returns actual per-value series (not a single aggregate) from VL,
 // appends a VL-side sort+limit, and applies series limiting when the response

@@ -658,6 +658,8 @@ func TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries(t *testing.T) {
 		// Real Grafana Logs Drilldown query format for a JSON-parsed field.
 		// Proxy strips |unpack_json + |delete __error__ before drilldown detection,
 		// leaving | filter trace_id:!"" which detectDrilldownSingleField matches.
+		// X-Query-Tags: Source=grafana-lokiexplore-app gates the Drilldown path —
+		// without it the request would use the direct path and return all 600 series.
 		params := url.Values{}
 		params.Set("query", fmt.Sprintf(
 			`sum by (trace_id) (count_over_time({service_name=%q}|json|drop __error__,__error_details__|trace_id!="" [%ds]))`,
@@ -667,7 +669,9 @@ func TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries(t *testing.T) {
 		params.Set("end", endNs)
 		params.Set("step", stepStr)
 
-		resp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+		resp := getJSONWithHeaders(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode(), map[string]string{
+			"X-Query-Tags": "Source=grafana-lokiexplore-app",
+		})
 		data := extractMap(resp, "data")
 		if data == nil {
 			t.Fatalf("expected query_range data envelope for trace_id, got %v", resp)
