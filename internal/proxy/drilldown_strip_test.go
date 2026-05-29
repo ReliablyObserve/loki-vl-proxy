@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestProxyStatsQueryRange_StripsParserAndDelete verifies that proxyStatsQueryRange
@@ -611,7 +613,7 @@ func TestDrilldownTwoPhase_BasicFlow(t *testing.T) {
 	effectiveQuery := `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`
 	cleanBase := `env:="production"`
 
-	body := p.drilldownTwoPhase(req, effectiveQuery, cleanBase, "trace_id")
+	body := p.drilldownTwoPhase(req, effectiveQuery, cleanBase, "trace_id", "")
 
 	if body == nil {
 		t.Fatal("drilldownTwoPhase returned nil, expected valid response")
@@ -676,7 +678,7 @@ func TestDrilldownTwoPhase_EmptyPhase1(t *testing.T) {
 
 	body := p.drilldownTwoPhase(req,
 		`env:="production" | filter trace_id:!"" | stats by (trace_id) count()`,
-		`env:="production"`, "trace_id")
+		`env:="production"`, "trace_id", "")
 
 	// Must return emptyLokiMatrix — not nil — so the caller can write it to Grafana
 	if body == nil {
@@ -684,6 +686,75 @@ func TestDrilldownTwoPhase_EmptyPhase1(t *testing.T) {
 	}
 	if string(body) != string(emptyLokiMatrix) {
 		t.Errorf("expected emptyLokiMatrix, got %q", body)
+	}
+}
+
+func TestCoarsenDrilldownStep(t *testing.T) {
+	// Use Unix second strings with a realistic base timestamp.
+	// parseLokiTimeToUnixNano treats values < 1e11 as seconds, so real
+	// Unix timestamps (~1.75e9) are safely in that range and avoid the
+	// millisecond misclassification that hits ns-formatted near-epoch values.
+	const baseTS int64 = 1748000000 // 2025-05-23, well within the seconds range
+	ts := func(relSec int64) string { return strconv.FormatInt(baseTS+relSec, 10) }
+
+	tests := []struct {
+		name     string
+		start    string
+		end      string
+		step     time.Duration
+		wantStep time.Duration
+	}{
+		{
+			name:     "12h range step=60s coarsens to 5min",
+			start:    ts(0),
+			end:      ts(12 * 3600),
+			step:     60 * time.Second,
+			wantStep: 5 * time.Minute, // 12h/200 = 216s → snap to 300s
+		},
+		{
+			name:     "6h range step=60s coarsens to 2min",
+			start:    ts(0),
+			end:      ts(6 * 3600),
+			step:     60 * time.Second,
+			wantStep: 2 * time.Minute, // 6h/200 = 108s → snap to 120s
+		},
+		{
+			name:     "1h range step=60s no coarsening",
+			start:    ts(0),
+			end:      ts(3600),
+			step:     60 * time.Second,
+			wantStep: 60 * time.Second, // 1h/200 = 18s < 60s → unchanged
+		},
+		{
+			name:     "24h range step=120s coarsens to 10min",
+			start:    ts(0),
+			end:      ts(24 * 3600),
+			step:     120 * time.Second,
+			wantStep: 10 * time.Minute, // 24h/200 = 432s → snap to 600s
+		},
+		{
+			name:     "short range step=30s no coarsening",
+			start:    ts(0),
+			end:      ts(1800),
+			step:     30 * time.Second,
+			wantStep: 30 * time.Second, // 30min/200 = 9s < 30s → unchanged
+		},
+		{
+			name:     "zero step passes through",
+			start:    ts(0),
+			end:      ts(12 * 3600),
+			step:     0,
+			wantStep: 0,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := coarsenDrilldownStep(tt.start, tt.end, tt.step)
+			if got != tt.wantStep {
+				t.Errorf("coarsenDrilldownStep(%q, %q, %v) = %v, want %v",
+					tt.start, tt.end, tt.step, got, tt.wantStep)
+			}
+		})
 	}
 }
 

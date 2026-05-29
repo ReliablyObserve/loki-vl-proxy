@@ -306,27 +306,84 @@ func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field s
 
 // drilldownStatsCacheTTL is the response cache TTL for Drilldown single-field
 // count queries. Drilldown fires 20–100 concurrent query_range calls on every
-// tab open or re-render; a 60-second cache window eliminates all VL calls for
-// re-renders (filter interactions, Grafana ticks, second tab open) within that
-// window. The cache is checked before the concurrency semaphore so cached
-// responses bypass the semaphore entirely.
-const drilldownStatsCacheTTL = 60 * time.Second
+// tab open or re-render; a 5-minute cache window eliminates all VL calls for
+// re-renders and periodic Grafana auto-refreshes within that window. The cache
+// is checked before the concurrency semaphore so cached responses bypass the
+// semaphore entirely. With coarsened steps and bucketed timestamps the key is
+// stable across minor Grafana panel-width changes so the window is effectively
+// used.
+const drilldownStatsCacheTTL = 5 * time.Minute
+
+// maxDrilldownStatsBuckets caps the number of time buckets sent to VL in a
+// Drilldown stats_query_range call. Drilldown fires one query per detected
+// field; each query scans the full time range in step-sized slots. For a 12h
+// range with step=60s that is 720 slots × N fields — each slot requires a VL
+// aggregation pass. Coarsening the step to at most range/maxBuckets reduces VL
+// computation by 3–10× while preserving the histogram shape.
+const maxDrilldownStatsBuckets = 200
+
+// drilldownNiceSteps are the candidate step values to snap to after coarsening.
+var drilldownNiceSteps = []time.Duration{
+	30 * time.Second,
+	60 * time.Second,
+	2 * time.Minute,
+	5 * time.Minute,
+	10 * time.Minute,
+	30 * time.Minute,
+	time.Hour,
+	2 * time.Hour,
+}
+
+// coarsenDrilldownStep returns an effective step that is at least step but
+// ensures the range [startRaw, endRaw] contains at most maxDrilldownStatsBuckets
+// buckets. The result is snapped up to the next "nice" step so VL timestamps are
+// round numbers. If the requested step already satisfies the budget, it is
+// returned unchanged.
+func coarsenDrilldownStep(startRaw, endRaw string, step time.Duration) time.Duration {
+	if step <= 0 {
+		return step
+	}
+	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
+	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
+	if !ok1 || !ok2 || endNs <= startNs {
+		return step
+	}
+	minStep := time.Duration(endNs-startNs) / maxDrilldownStatsBuckets
+	if minStep <= step {
+		return step
+	}
+	for _, nice := range drilldownNiceSteps {
+		if minStep <= nice {
+			return nice
+		}
+	}
+	return minStep
+}
 
 // drilldownStatsCacheKey returns a cache key for a Drilldown single-field
-// count response. Both start and end are bucketed to 5-minute (or step)
+// count response. Both start and end are bucketed to 5-minute (or effective-step)
 // granularity to absorb Grafana's sliding "last N h" window: for a "last 6h"
 // panel, both start and end drift by ~30 s on every Grafana refresh, producing
 // a unique key every tick and defeating the cache. Bucketing both timestamps to
 // the same granularity keeps the key stable within a 5-minute window.
+//
+// The step is coarsened via coarsenDrilldownStep before being written to the
+// key. Grafana derives the step from the panel's pixel width, so minor window
+// resizes produce slightly different step values (e.g. 59s vs 60s). Including
+// the raw step would bust the cache on every resize; the coarsened step is
+// stable for the entire range/bucket combination, eliminating spurious misses.
 func (p *Proxy) drilldownStatsCacheKey(r *http.Request) string {
-	bucket := 5 * time.Minute
-	if stepRaw := r.FormValue("step"); stepRaw != "" {
-		if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
-			bucket = d
-		}
+	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
+	effectiveStep := time.Duration(0)
+	if d, ok := parsePositiveStepDuration(stepRaw); ok {
+		effectiveStep = coarsenDrilldownStep(startRaw, endRaw, d)
 	}
-	startBucketed := bucketTimestampString(r.FormValue("start"), bucket)
-	endBucketed := bucketTimestampString(r.FormValue("end"), bucket)
+	bucket := 5 * time.Minute
+	if effectiveStep > bucket {
+		bucket = effectiveStep
+	}
+	startBucketed := bucketTimestampString(startRaw, bucket)
+	endBucketed := bucketTimestampString(endRaw, bucket)
 	var b strings.Builder
 	b.WriteString("drilldown_stats:")
 	b.WriteString(r.Header.Get("X-Scope-OrgID"))
@@ -337,7 +394,12 @@ func (p *Proxy) drilldownStatsCacheKey(r *http.Request) string {
 	b.WriteByte(':')
 	b.WriteString(endBucketed)
 	b.WriteByte(':')
-	b.WriteString(r.FormValue("step"))
+	if effectiveStep > 0 {
+		b.WriteString(strconv.FormatInt(int64(effectiveStep.Seconds()), 10))
+		b.WriteByte('s')
+	} else {
+		b.WriteString(stepRaw)
+	}
 	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		b.WriteString(":auth:")
 		b.WriteString(fp)
@@ -396,11 +458,23 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 	// sort+limit suffix so it can set step = entire range for a single bucket).
 	effectiveForFallback := logsqlQuery
 
+	// Coarsen the step to at most range/maxDrilldownStatsBuckets. Drilldown fires
+	// one stats_query_range per field; for 12h/step=60s that is 720 buckets × N
+	// fields each requiring a VL aggregation pass — coarsening to 200 buckets max
+	// reduces VL computation by 3–10× while preserving the histogram shape.
+	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
+	effectiveStepRaw := stepRaw
+	if d, ok := parsePositiveStepDuration(stepRaw); ok {
+		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d); coarsened != d {
+			effectiveStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
+		}
+	}
+
 	if !p.drilldownShouldEagerTwoPhase(r, cleanBase, field) {
 		// Direct path: VL-side | limit 500 per bucket bounds the per-bucket result;
 		// proxy-side limitLokiMatrixSeries caps the global matrix to maxDrilldownSeries.
 		limitedQuery := appendDrilldownSeriesLimit(logsqlQuery, maxDrilldownSeries)
-		params := buildStatsQueryRangeParams(limitedQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+		params := buildStatsQueryRangeParams(limitedQuery, startRaw, endRaw, effectiveStepRaw)
 		resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 		if err != nil {
 			p.writeError(w, statusFromUpstreamErr(err), err.Error())
@@ -439,7 +513,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 	}
 
 	// Two-phase path (either eager or after direct-path overflow).
-	body := p.drilldownTwoPhase(r, effectiveForFallback, cleanBase, field)
+	body := p.drilldownTwoPhase(r, effectiveForFallback, cleanBase, field, effectiveStepRaw)
 	if body == nil {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(emptyLokiMatrix)
@@ -458,12 +532,19 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 //     per-bucket | limit N is equivalent to a true global limit.
 //
 //  2. Phase 2 — a range query filtered to the Phase 1 values via field:in(...),
-//     returning ≤maxDrilldownSeries unique series with the original step/granularity.
+//     returning ≤maxDrilldownSeries unique series with the effective step.
+//
+// effectiveStep is the coarsened step (from coarsenDrilldownStep); Phase 2 uses
+// it instead of the raw Grafana step to cap bucket count and reduce VL CPU.
 //
 // Returns the translated Loki matrix response, or nil on any VL error.
-func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, field string) []byte {
+func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, field, effectiveStep string) []byte {
 	ctx := r.Context()
-	start, end, step := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
+	start, end := r.FormValue("start"), r.FormValue("end")
+	step := effectiveStep
+	if step == "" {
+		step = r.FormValue("step")
+	}
 
 	startNs, ok1 := parseLokiTimeToUnixNano(start)
 	endNs, ok2 := parseLokiTimeToUnixNano(end)
