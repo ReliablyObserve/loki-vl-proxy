@@ -449,6 +449,7 @@ type Proxy struct {
 	maxStatsQuerySeries                   int        // max series returned by collectRangeMetricHits (0=5000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	drilldownCoalescer                    *DrilldownBurstCoalescer
+	drilldownCardCache                    *drilldownCardinalityCache
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool
@@ -1020,6 +1021,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
 		drilldownCoalescer:                    makeDrilldownBurstCoalescer(cfg.DrilldownBurstWindowMs, cfg.DrilldownBurstMaxFields),
+		drilldownCardCache:                    newDrilldownCardinalityCache(),
 		forwardHeaders:                        cfg.ForwardHeaders,
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,

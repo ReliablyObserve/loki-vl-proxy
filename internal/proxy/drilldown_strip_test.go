@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -178,29 +179,27 @@ func TestProxyStatsQueryRange_DrilldownHeaderGate(t *testing.T) {
 }
 
 // TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries verifies that the
-// Drilldown path returns actual per-value series (not a single aggregate) from VL,
-// appends a VL-side sort+limit, and applies series limiting when the response
-// contains more than maxDrilldownSeries.
+// Drilldown direct path (low-cardinality field, short range) returns per-value
+// series, appends VL-side sort+limit, and preserves the original step.
+// Uses status_code — not a known high-cardinality field, short range (60 buckets).
 func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	var receivedQuery, receivedStep string
-	// VL returns 3 per-value series for trace_id — the Drilldown path must preserve
-	// all of them (unlike a count() if approach which collapses to one).
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.FormValue("query")
 		receivedStep = r.FormValue("step")
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
-			`{"metric":{"trace_id":"abc"},"values":[[1700000060,"3"]]},`+
-			`{"metric":{"trace_id":"def"},"values":[[1700000060,"2"]]},`+
-			`{"metric":{"trace_id":"ghi"},"values":[[1700000060,"1"]]}]}}`)
+			`{"metric":{"status_code":"200"},"values":[[1700000060,"3"]]},`+
+			`{"metric":{"status_code":"404"},"values":[[1700000060,"2"]]},`+
+			`{"metric":{"status_code":"500"},"values":[[1700000060,"1"]]}]}}`)
 	}))
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
 
-	effectiveQuery := `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`
+	effectiveQuery := `env:="production" | filter status_code:!"" | stats by (status_code) count()`
 	form := url.Values{}
-	form.Set("query", `sum by (trace_id) (count_over_time({env="production"}|trace_id!=""`+` [1m]))`)
+	form.Set("query", `sum by (status_code) (count_over_time({env="production"}|status_code!=""`+` [1m]))`)
 	form.Set("start", "1700000000")
 	form.Set("end", "1700003600")
 	form.Set("step", "60s")
@@ -210,35 +209,103 @@ func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	req.Header.Set("X-Scope-OrgID", "default")
 
 	w := httptest.NewRecorder()
-	p.proxyStatsQueryRangeDrilldown(w, req, effectiveQuery, `env:="production"`, "trace_id")
+	p.proxyStatsQueryRangeDrilldown(w, req, effectiveQuery, `env:="production"`, "status_code")
 
 	t.Logf("VL received query: %s step: %s", receivedQuery, receivedStep)
 	body := w.Body.String()
 
-	// Must forward stats by (trace_id) count() with VL-side sort+limit
-	if !strings.Contains(receivedQuery, "stats by (trace_id) count()") {
+	// Direct path must append VL-side sort+limit
+	if !strings.Contains(receivedQuery, "stats by (status_code) count()") {
 		t.Errorf("Drilldown path changed the query: %s", receivedQuery)
 	}
-	// Must append VL-side limit to bound high-cardinality responses at source
 	if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
 		t.Errorf("Drilldown path must add VL-side | limit %d: %s", maxDrilldownSeries, receivedQuery)
 	}
 	// Must return 3 separate per-value series — NOT a single aggregate
-	seriesCount := strings.Count(body, `"trace_id"`)
+	seriesCount := strings.Count(body, `"status_code"`)
 	if seriesCount != 3 {
-		t.Errorf("expected 3 per-value series, got %d occurrences of trace_id in: %s", seriesCount, body)
+		t.Errorf("expected 3 per-value series, got %d occurrences of status_code in: %s", seriesCount, body)
 	}
-	// Must NOT use count() if
 	if strings.Contains(receivedQuery, "count() if") {
 		t.Errorf("Drilldown path must not rewrite to count() if: %s", receivedQuery)
 	}
-	// REGRESSION GUARD: step must NOT be inflated. Inflating the step to VL breaks
-	// Grafana's timestamp alignment and causes "no data" for ALL Drilldown fields.
-	// The step VL receives on the direct path must exactly match Grafana's 60s step.
-	// (The two-phase fallback uses a different step only for its Phase 1 single-bucket
-	// call — Phase 2 always uses the original step.)
+	// REGRESSION GUARD: step must NOT be inflated.
 	if receivedStep != "60s" {
 		t.Errorf("step must be preserved as 60s (not inflated), VL received: %q", receivedStep)
+	}
+}
+
+// TestProxyStatsQueryRangeDrilldown_EagerTwoPhaseForKnownHCField verifies that
+// trace_id (and other *_id fields) skip the direct VL attempt entirely and go
+// straight to the two-phase path. This is the primary CPU/memory optimization:
+// no wasted 32 MB read-and-reject for known high-cardinality fields.
+func TestProxyStatsQueryRangeDrilldown_EagerTwoPhaseForKnownHCField(t *testing.T) {
+	var receivedQueries []string
+	var mu sync.Mutex
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		receivedQueries = append(receivedQueries, r.FormValue("query"))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		// Return 3 trace_id values from Phase 1 (single-bucket query)
+		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
+			`{"metric":{"trace_id":"abc"},"values":[[1700001800,"3"]]},`+
+			`{"metric":{"trace_id":"def"},"values":[[1700001800,"2"]]},`+
+			`{"metric":{"trace_id":"ghi"},"values":[[1700001800,"1"]]}]}}`)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	effectiveQuery := `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`
+	form := url.Values{}
+	form.Set("query", `sum by (trace_id) (count_over_time({env="production"}|trace_id!=""`+` [1m]))`)
+	form.Set("start", "1700000000000000000")
+	form.Set("end", "1700003600000000000")
+	form.Set("step", "60s")
+
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
+	req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
+	req.Header.Set("X-Scope-OrgID", "default")
+
+	w := httptest.NewRecorder()
+	p.proxyStatsQueryRangeDrilldown(w, req, effectiveQuery, `env:="production"`, "trace_id")
+
+	mu.Lock()
+	nCalls := len(receivedQueries)
+	q0 := ""
+	q1 := ""
+	if nCalls > 0 {
+		q0 = receivedQueries[0]
+	}
+	if nCalls > 1 {
+		q1 = receivedQueries[1]
+	}
+	mu.Unlock()
+
+	t.Logf("VL received %d calls: q0=%s | q1=%s", nCalls, q0, q1)
+
+	// Eager two-phase must issue exactly 2 VL calls (Phase 1 + Phase 2), NOT 1.
+	// If only 1 call was made, the direct path was used — that's a regression.
+	if nCalls != 2 {
+		t.Errorf("expected 2 VL calls (two-phase), got %d — direct path used for trace_id?", nCalls)
+	}
+	// Phase 1: single-bucket call with the entire range as step, must have | limit 500
+	if !strings.Contains(q0, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
+		t.Errorf("Phase 1 query must have | limit %d: %s", maxDrilldownSeries, q0)
+	}
+	// Phase 2: filtered range with field:in(...) — NOT | limit (already bounded by Phase 1)
+	if !strings.Contains(q1, `trace_id:in(`) {
+		t.Errorf("Phase 2 query must filter via trace_id:in(...): %s", q1)
+	}
+	// Phase 2 must NOT have the direct | limit suffix — Phase 1 already bounded the values
+	if strings.Contains(q1, "| limit") {
+		t.Errorf("Phase 2 query must not add a second | limit: %s", q1)
+	}
+	// Response must include all 3 series the VL backend returned
+	body := w.Body.String()
+	if strings.Count(body, `"trace_id"`) < 3 {
+		t.Errorf("response must include 3 trace_id series, body: %s", body)
 	}
 }
 
@@ -341,6 +408,120 @@ func TestProxyStatsQueryRange_StripsDeleteAlone(t *testing.T) {
 	if !strings.Contains(receivedQuery, "| filter trace_id") {
 		t.Errorf("query lost | filter trace_id: %s", receivedQuery)
 	}
+}
+
+// TestIsLikelyHighCardinalityField verifies the field-name heuristic that gates
+// eager two-phase skipping the direct VL path for known high-cardinality fields.
+func TestIsLikelyHighCardinalityField(t *testing.T) {
+	yes := []string{
+		"trace_id", "span_id", "parent_id", "session_id",
+		"request_id", "correlation_id", "transaction_id",
+		"traceid", "spanid", "parentid",
+		"trace.id", "span.id",
+		"user_id", "order_id", "invoice_id",    // arbitrary _id suffix
+		"request_uuid", "session_uuid",          // _uuid suffix
+		"auth_token", "csrf_token",              // _token suffix
+		"content_hash", "body_hash",             // _hash suffix
+		"api_key", "secret_key",                 // _key suffix
+		"TRACE_ID", "Span_ID",                   // case-insensitive
+	}
+	no := []string{
+		"level", "env", "service_name", "status_code",
+		"method", "path", "duration_ms", "host",
+		"app", "cluster", "namespace", "pod",
+		"detected_level", "log_level",
+	}
+	for _, name := range yes {
+		if !isLikelyHighCardinalityField(name) {
+			t.Errorf("expected isLikelyHighCardinalityField(%q) = true", name)
+		}
+	}
+	for _, name := range no {
+		if isLikelyHighCardinalityField(name) {
+			t.Errorf("expected isLikelyHighCardinalityField(%q) = false", name)
+		}
+	}
+}
+
+// TestDrilldownEstimateBuckets verifies bucket count computation from request params.
+func TestDrilldownEstimateBuckets(t *testing.T) {
+	tests := []struct {
+		start, end, step string
+		want             int64
+	}{
+		// 12h range, 60s step → 720 buckets
+		{"1700000000000000000", "1700043200000000000", "60s", 720},
+		// 1h range, 5m step → 12 buckets
+		{"1700000000000000000", "1700003600000000000", "300s", 12},
+		// zero-length range → 0
+		{"1700000000000000000", "1700000000000000000", "60s", 0},
+		// missing step → 0
+		{"1700000000000000000", "1700003600000000000", "", 0},
+		// invalid step → 0
+		{"1700000000000000000", "1700003600000000000", "bad", 0},
+	}
+	for _, tc := range tests {
+		got := drilldownEstimateBuckets(tc.start, tc.end, tc.step)
+		if got != tc.want {
+			t.Errorf("drilldownEstimateBuckets(%q,%q,%q)=%d want %d", tc.start, tc.end, tc.step, got, tc.want)
+		}
+	}
+}
+
+// TestDrilldownShouldEagerTwoPhase verifies all three triggers for skipping the
+// direct VL path in proxyStatsQueryRangeDrilldown.
+func TestDrilldownShouldEagerTwoPhase(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+
+	makeReq := func(start, end, step, orgID string) *http.Request {
+		form := url.Values{}
+		form.Set("start", start)
+		form.Set("end", end)
+		form.Set("step", step)
+		req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
+		req = req.WithContext(context.WithValue(req.Context(), orgIDKey, orgID))
+		req.Header.Set("X-Scope-OrgID", orgID)
+		return req
+	}
+
+	t.Run("known_hc_field_triggers_eager", func(t *testing.T) {
+		req := makeReq("1700000000000000000", "1700003600000000000", "60s", "org1")
+		if !p.drilldownShouldEagerTwoPhase(req, `env:="prod"`, "trace_id") {
+			t.Error("trace_id must trigger eager two-phase")
+		}
+	})
+
+	t.Run("low_cardinality_field_no_trigger", func(t *testing.T) {
+		// Short range, few buckets (60 buckets × 500 × 200 = 6 MB < 32 MB)
+		req := makeReq("1700000000000000000", "1700003600000000000", "60s", "org1")
+		if p.drilldownShouldEagerTwoPhase(req, `env:="prod"`, "level") {
+			t.Error("level with short range must NOT trigger eager two-phase")
+		}
+	})
+
+	t.Run("bucket_overflow_triggers_eager", func(t *testing.T) {
+		// 12h range, 60s step → 720 buckets; 720×500×200 = 72 MB > 32 MB
+		req := makeReq("1700000000000000000", "1700043200000000000", "60s", "org1")
+		if !p.drilldownShouldEagerTwoPhase(req, `env:="prod"`, "status_code") {
+			t.Error("720-bucket range must trigger eager two-phase via bucket-overflow check")
+		}
+	})
+
+	t.Run("cardinality_cache_triggers_eager", func(t *testing.T) {
+		req := makeReq("1700000000000000000", "1700003600000000000", "60s", "org2")
+		p.drilldownCardCache.markHigh("org2", `env:="prod"`, "custom_id_field")
+		if !p.drilldownShouldEagerTwoPhase(req, `env:="prod"`, "custom_id_field") {
+			t.Error("cached high-cardinality must trigger eager two-phase")
+		}
+	})
+
+	t.Run("cardinality_cache_other_org_no_trigger", func(t *testing.T) {
+		req := makeReq("1700000000000000000", "1700003600000000000", "60s", "org3")
+		// cache entry is for org2, not org3
+		if p.drilldownShouldEagerTwoPhase(req, `env:="prod"`, "custom_id_field") {
+			t.Error("cache entry for different org must not trigger eager two-phase")
+		}
+	})
 }
 
 // TestDrilldownTopValuesFromMatrix verifies that drilldownTopValuesFromMatrix

@@ -201,6 +201,88 @@ func isGrafanaDrilldownRequest(r *http.Request) bool {
 	return strings.Contains(tag, "lokiexplore") || strings.Contains(tag, "drilldown")
 }
 
+// drilldownAvgBytesPerSeries is a conservative estimate of bytes per series entry in
+// a VL stats_query_range response. Used to predict whether the direct path would
+// overflow maxDrilldownResponseBytes for a given (numBuckets × maxDrilldownSeries).
+// Based on observed responses: each trace_id UUID series entry ≈ 150-250 bytes of JSON.
+const drilldownAvgBytesPerSeries = 200
+
+// isLikelyHighCardinalityField returns true for field names whose values are
+// typically unique per log entry — trace/span IDs, session tokens, request keys.
+// For these fields the direct VL path (| limit 500 per bucket) still produces
+// numBuckets×500 unique series (e.g. 720×500=360k for a 12h/60s range), which
+// overflows maxDrilldownResponseBytes and forces two-phase fallback every time.
+// Detecting them eagerly skips the wasted 32 MB read-and-reject round trip.
+func isLikelyHighCardinalityField(name string) bool {
+	lower := strings.ToLower(name)
+	// Exact common names first (fast path, no allocation).
+	switch lower {
+	case "trace_id", "span_id", "parent_id", "session_id",
+		"request_id", "correlation_id", "transaction_id",
+		"traceid", "spanid", "parentid",
+		"trace.id", "span.id":
+		return true
+	}
+	// Suffix patterns — anything ending in _id/.id/_uuid/_token/_hash/_key is
+	// likely to carry a unique-per-request value.
+	return strings.HasSuffix(lower, "_id") ||
+		strings.HasSuffix(lower, ".id") ||
+		strings.HasSuffix(lower, "_uuid") ||
+		strings.HasSuffix(lower, ".uuid") ||
+		strings.HasSuffix(lower, "_token") ||
+		strings.HasSuffix(lower, "_hash") ||
+		strings.HasSuffix(lower, "_key")
+}
+
+// drilldownEstimateBuckets returns the number of time buckets a stats_query_range
+// call would produce for the given start/end/step. Returns 0 when any parameter
+// is missing or invalid. Used to pre-check whether | limit 500 per bucket would
+// still overflow maxDrilldownResponseBytes (numBuckets × 500 × avgBytes > 32 MB).
+func drilldownEstimateBuckets(startRaw, endRaw, stepRaw string) int64 {
+	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
+	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
+	step, stepOk := parsePositiveStepDuration(stepRaw)
+	if !ok1 || !ok2 || !stepOk || step <= 0 || endNs <= startNs {
+		return 0
+	}
+	return (endNs - startNs) / int64(step)
+}
+
+// drilldownCardinalityCache remembers which {orgID, base, field} triples have
+// already overflowed maxDrilldownResponseBytes on the direct path. On subsequent
+// requests (e.g. after a Grafana filter change re-fires all N field queries), the
+// cache lets proxyStatsQueryRangeDrilldown skip the direct attempt and go straight
+// to the cheaper two-phase path.
+type drilldownCardinalityCache struct {
+	mu      sync.RWMutex
+	entries map[string]time.Time // key → expiry
+}
+
+const drilldownCardinalityCacheTTL = 5 * time.Minute
+
+func newDrilldownCardinalityCache() *drilldownCardinalityCache {
+	return &drilldownCardinalityCache{entries: make(map[string]time.Time)}
+}
+
+func (c *drilldownCardinalityCache) key(orgID, base, field string) string {
+	return orgID + "\x00" + base + "\x00" + field
+}
+
+func (c *drilldownCardinalityCache) isHigh(orgID, base, field string) bool {
+	k := c.key(orgID, base, field)
+	c.mu.RLock()
+	exp, ok := c.entries[k]
+	c.mu.RUnlock()
+	return ok && time.Now().Before(exp)
+}
+
+func (c *drilldownCardinalityCache) markHigh(orgID, base, field string) {
+	k := c.key(orgID, base, field)
+	c.mu.Lock()
+	c.entries[k] = time.Now().Add(drilldownCardinalityCacheTTL)
+	c.mu.Unlock()
+}
+
 // appendDrilldownSeriesLimit rewrites a VL stats count() query to sort by count
 // descending and limit to N unique groups. This pushes the cardinality cap into
 // VL so only the top-N series are transmitted to the proxy — critical for
@@ -215,65 +297,107 @@ func appendDrilldownSeriesLimit(query string, limit int) string {
 	return q + " as _c | sort by (_c desc) | limit " + strconv.Itoa(limit)
 }
 
-// proxyStatsQueryRangeDrilldown handles Drilldown single-field count queries.
-// It appends a VL-side sort+limit so only the top-maxDrilldownSeries unique
-// field values are transmitted per time bucket, then proxy-side limits the
-// matrix to maxDrilldownSeries series before responding to Grafana.
+// drilldownShouldEagerTwoPhase returns true when the proxy can predict that the
+// direct VL path (| limit 500 per bucket → readBodyLimited) will overflow
+// maxDrilldownResponseBytes, making a straight two-phase call cheaper. Three
+// independent signals trigger eager two-phase:
 //
-// cleanBase is the stream-selector base without the field existence filter
-// (e.g. `env:="production"` from `env:="production" | filter trace_id:!""`).
-// field is the grouped field name (e.g. "trace_id"). Both are provided by
-// detectDrilldownSingleField so we avoid reparsing on the fallback path.
+//  1. Known high-cardinality field name (trace_id, span_id, *_id, *_token, …) —
+//     these fields carry unique-per-request values, so each time bucket produces a
+//     different set of values; | limit 500 per bucket ≠ global top 500.
+//
+//  2. Bucket-count overflow: numBuckets × maxDrilldownSeries × drilldownAvgBytesPerSeries
+//     exceeds maxDrilldownResponseBytes. For any field (even low-cardinality ones)
+//     a very long range with a fine step produces enough unique series to overflow.
+//
+//  3. Cardinality cache: a previous request for {orgID, cleanBase, field} already
+//     overflowed the cap, so subsequent re-renders (triggered by Grafana filter/time
+//     changes) skip the direct attempt entirely.
+func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field string) bool {
+	if isLikelyHighCardinalityField(field) {
+		return true
+	}
+	numBuckets := drilldownEstimateBuckets(r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+	if numBuckets > 0 && numBuckets*maxDrilldownSeries*drilldownAvgBytesPerSeries > maxDrilldownResponseBytes {
+		return true
+	}
+	orgID := r.Header.Get("X-Scope-OrgID")
+	return p.drilldownCardCache != nil && p.drilldownCardCache.isHigh(orgID, cleanBase, field)
+}
+
+// proxyStatsQueryRangeDrilldown handles Drilldown single-field count queries.
+//
+// Fast path (low-cardinality fields over short ranges): appends VL-side
+// sort+limit so only the top-maxDrilldownSeries unique values are transmitted
+// per time bucket, then proxy-side caps to maxDrilldownSeries series.
+//
+// Eager two-phase path (high-cardinality fields or long ranges): detected via
+// drilldownShouldEagerTwoPhase, bypasses the direct VL attempt entirely and
+// goes straight to drilldownTwoPhase — saving one 32 MB read-and-reject cycle
+// and the corresponding VL scan CPU.
+//
+// Fallback two-phase path: when the direct response still overflows
+// maxDrilldownResponseBytes (unknown HC field, first request for a new selector),
+// records the decision in drilldownCardCache and falls through to two-phase.
+//
+// cleanBase is the stream-selector base without the field existence filter.
+// field is the grouped field name. Both come from detectDrilldownSingleField.
 func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Request, logsqlQuery, cleanBase, field string) {
 	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
 	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
-	// Save pre-limit version for the two-phase fallback (drilldownTwoPhase reuses it
-	// as Phase 1's base query before appending sort+limit with a single-bucket step).
+	// Keep pre-limit query for two-phase fallback (Phase 1 needs it without the
+	// sort+limit suffix so it can set step = entire range for a single bucket).
 	effectiveForFallback := logsqlQuery
-	logsqlQuery = appendDrilldownSeriesLimit(logsqlQuery, maxDrilldownSeries)
 
-	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
-	if err != nil {
-		p.writeError(w, statusFromUpstreamErr(err), err.Error())
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
-		return
-	}
-
-	body, bodyErr := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
-	if bodyErr != nil {
-		// VL | limit is per time-bucket, not global. For high-cardinality short-lived
-		// fields (trace_id, span_id): 720 buckets × 500/bucket = 360k unique series,
-		// ~32.8 MB — still exceeds the cap even with | limit 500. Fall back to
-		// two-phase: Phase 1 collapses all time buckets into one (step = entire range)
-		// to get the global top-N values cheaply; Phase 2 does a filtered range query
-		// restricted to those N values via field:in(...), bounding the response to
-		// ≤maxDrilldownSeries series regardless of field cardinality.
-		body = p.drilldownTwoPhase(r, effectiveForFallback, cleanBase, field)
-		if body == nil {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(emptyLokiMatrix)
+	if !p.drilldownShouldEagerTwoPhase(r, cleanBase, field) {
+		// Direct path: VL-side | limit 500 per bucket bounds the per-bucket result;
+		// proxy-side limitLokiMatrixSeries caps the global matrix to maxDrilldownSeries.
+		limitedQuery := appendDrilldownSeriesLimit(logsqlQuery, maxDrilldownSeries)
+		params := buildStatsQueryRangeParams(limitedQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
+		resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
+		if err != nil {
+			p.writeError(w, statusFromUpstreamErr(err), err.Error())
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
-		return
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+			p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
+			return
+		}
+
+		body, bodyErr := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+		if bodyErr == nil {
+			// Direct path succeeded — serve the trimmed, translated matrix.
+			var keepFn func(int64) bool
+			if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
+				keepFn = func(tsNs int64) bool { return tsNs <= endNs }
+			}
+			body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
+			body = limitLokiMatrixSeries(body, maxDrilldownSeries)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
+			return
+		}
+
+		// Response overflowed maxDrilldownResponseBytes — remember for next re-render
+		// so subsequent requests for the same {org, base, field} skip the direct path.
+		orgID := r.Header.Get("X-Scope-OrgID")
+		if p.drilldownCardCache != nil {
+			p.drilldownCardCache.markHigh(orgID, cleanBase, field)
+		}
 	}
 
-	var keepFn func(int64) bool
-	if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
-		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
+	// Two-phase path (either eager or after direct-path overflow).
+	body := p.drilldownTwoPhase(r, effectiveForFallback, cleanBase, field)
+	if body == nil {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(emptyLokiMatrix)
+		return
 	}
-	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
-	body = limitLokiMatrixSeries(body, maxDrilldownSeries)
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
+	_, _ = w.Write(body)
 }
 
 // drilldownTwoPhase is the fallback for proxyStatsQueryRangeDrilldown when the
