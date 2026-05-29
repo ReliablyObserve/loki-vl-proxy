@@ -325,6 +325,16 @@ type Config struct {
 	// DrilldownBurstMaxFields caps the number of fields per coalesced VL call.
 	// Excess fields form a second call. Default: 30.
 	DrilldownBurstMaxFields int
+	// DrilldownFieldBatchWindowMs is the accumulation window in milliseconds for
+	// the multi-field stats batcher. Concurrent per-field stats_query_range calls
+	// arriving within this window are folded into one multi-field VL query whose
+	// result is marginalized back into per-field responses. 0 disables batching.
+	// Default when enabled: 25.
+	DrilldownFieldBatchWindowMs int
+	// DrilldownFieldBatchMaxFields caps fields per batched VL call. When the batch
+	// window closes with more than this many fields, the excess form a second batch.
+	// Default: 6.
+	DrilldownFieldBatchMaxFields int
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -449,6 +459,7 @@ type Proxy struct {
 	maxStatsQuerySeries                   int        // max series returned by collectRangeMetricHits (0=5000)
 	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
 	drilldownCoalescer                    *DrilldownBurstCoalescer
+	drilldownFieldBatcher                 *drilldownFieldBatcher
 	drilldownCardCache                    *drilldownCardinalityCache
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
@@ -1108,6 +1119,13 @@ func New(cfg Config) (*Proxy, error) {
 		coldRouter:                            coldRouter,
 		cacheTTLLabels:                        labelCacheTTL,
 		cacheTTLLabelValues:                   labelCacheTTL,
+	}
+	if cfg.DrilldownFieldBatchWindowMs > 0 {
+		maxFields := cfg.DrilldownFieldBatchMaxFields
+		if maxFields <= 0 {
+			maxFields = 6
+		}
+		p.drilldownFieldBatcher = newDrilldownFieldBatcher(p, time.Duration(cfg.DrilldownFieldBatchWindowMs)*time.Millisecond, maxFields)
 	}
 	if cfg.LogRequestSampleRate > 1 {
 		p.logSampleN = uint64(cfg.LogRequestSampleRate)

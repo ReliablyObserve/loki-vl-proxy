@@ -270,6 +270,17 @@ func (c *drilldownCardinalityCache) markHigh(orgID, base, field string) {
 	c.mu.Unlock()
 }
 
+// extractStatsGroupByFields returns the field names from a LogsQL "| stats by (...)"
+// clause. Used by the field batcher to collect the VL-side field names (including
+// underscore fallbacks added by addUnderscorefallbackByLabels) for the batched query.
+func extractStatsGroupByFields(logsqlQuery string) []string {
+	spec, ok := parseStatsCompatSpec(logsqlQuery)
+	if !ok {
+		return nil
+	}
+	return spec.GroupBy
+}
+
 // appendDrilldownSeriesLimit rewrites a VL stats count() query to sort by count
 // descending and limit to N unique groups. This pushes the cardinality cap into
 // VL so only the top-N series are transmitted to the proxy — critical for
@@ -429,8 +440,7 @@ func (p *Proxy) drilldownStatsCacheKey(r *http.Request) string {
 // cleanBase is the stream-selector base without the field existence filter.
 // field is the grouped field name. Both come from detectDrilldownSingleField.
 func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Request, logsqlQuery, cleanBase, field string) {
-	// Check the 60-second Drilldown response cache before acquiring the semaphore.
-	// On a cache hit no VL call is made and no semaphore slot is consumed.
+	// Check the 5-minute Drilldown response cache before any VL work.
 	drillCacheKey := p.drilldownStatsCacheKey(r)
 	if cached, _, ok := p.cache.GetWithTTL(drillCacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
@@ -438,10 +448,48 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Acquire a concurrency slot. Grafana Logs Drilldown fires one query_range per
-	// detected field simultaneously (~20–100 concurrent calls on the fields tab).
-	// Without a cap all calls hit VL at once, causing a CPU storm. Block until a
-	// slot is free or the request is cancelled. Covers both direct and two-phase paths.
+	// Apply transforms up-front (before both batcher and semaphore paths) so they
+	// run exactly once regardless of which path handles the request.
+	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
+	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
+	// Keep pre-limit query for two-phase fallback (Phase 1 needs it without the
+	// sort+limit suffix so it can set step = entire range for a single bucket).
+	effectiveForFallback := logsqlQuery
+
+	// Coarsen the step to at most range/maxDrilldownStatsBuckets.
+	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
+	effectiveStepRaw := stepRaw
+	if d, ok := parsePositiveStepDuration(stepRaw); ok {
+		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d); coarsened != d {
+			effectiveStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
+		}
+	}
+
+	// Field batcher: fold N concurrent single-field queries into one multi-field VL
+	// call and marginalize the result. Only applies to the direct path (non-high-card
+	// fields). High-cardinality fields bypass via two-phase which has its own logic.
+	if batcher := p.drilldownFieldBatcher; batcher != nil && !p.drilldownShouldEagerTwoPhase(r, cleanBase, field) {
+		vlFields := extractStatsGroupByFields(logsqlQuery)
+		if len(vlFields) == 0 {
+			vlFields = []string{field}
+		}
+		lokiField := field
+		if lt := p.labelTranslator; lt != nil && !lt.IsPassthrough() {
+			lokiField = lt.ToLoki(field)
+		}
+		orgID := r.Header.Get("X-Scope-OrgID")
+		if body := batcher.submit(r.Context(), orgID, cleanBase, lokiField, vlFields, startRaw, endRaw, effectiveStepRaw); body != nil {
+			p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(body)
+			return
+		}
+		// nil = batcher miss (window already launched, VL error, response overflow)
+		// → fall through to individual semaphore-controlled path below.
+	}
+
+	// Individual path: semaphore limits concurrent VL stats_query_range calls.
+	// Covers both direct and two-phase for non-batched fields.
 	if sem := p.statsQueryRangeSem; sem != nil {
 		select {
 		case <-sem:
@@ -449,24 +497,6 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		case <-r.Context().Done():
 			p.writeError(w, http.StatusServiceUnavailable, "request cancelled waiting for stats_query_range slot")
 			return
-		}
-	}
-
-	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
-	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
-	// Keep pre-limit query for two-phase fallback (Phase 1 needs it without the
-	// sort+limit suffix so it can set step = entire range for a single bucket).
-	effectiveForFallback := logsqlQuery
-
-	// Coarsen the step to at most range/maxDrilldownStatsBuckets. Drilldown fires
-	// one stats_query_range per field; for 12h/step=60s that is 720 buckets × N
-	// fields each requiring a VL aggregation pass — coarsening to 200 buckets max
-	// reduces VL computation by 3–10× while preserving the histogram shape.
-	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
-	effectiveStepRaw := stepRaw
-	if d, ok := parsePositiveStepDuration(stepRaw); ok {
-		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d); coarsened != d {
-			effectiveStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
 		}
 	}
 
