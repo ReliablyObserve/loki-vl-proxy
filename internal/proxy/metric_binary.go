@@ -190,6 +190,13 @@ const maxDrilldownResponseBytes = 32 << 20 // 32 MB — triggers two-phase fallb
 // per-value histogram data.
 const maxDrilldownSeries = 500
 
+// maxDrilldownPhase2Values caps the number of field values passed to the Phase 2
+// in() filter. VL's default -search.maxQueryLen is 16384 bytes; 200 UUID-length
+// values (≈38 bytes each) consume ~7.6 KB, leaving ample room for the base query
+// and stats clause. Drilldown's field-values breakdown UI caps at 100 visible series,
+// so 200 is already 2× what the UI can display.
+const maxDrilldownPhase2Values = 200
+
 // isGrafanaDrilldownRequest reports whether r originates from Grafana Logs Drilldown.
 // Grafana Logs Drilldown sets supportingQueryType="grafana-lokiexplore-app" on every
 // Loki data query; the datasource Go backend translates this to the HTTP header
@@ -343,6 +350,20 @@ func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field s
 // cleanBase is the stream-selector base without the field existence filter.
 // field is the grouped field name. Both come from detectDrilldownSingleField.
 func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Request, logsqlQuery, cleanBase, field string) {
+	// Acquire a concurrency slot. Grafana Logs Drilldown fires one query_range per
+	// detected field simultaneously (~20–100 concurrent calls on the fields tab).
+	// Without a cap all calls hit VL at once, causing a CPU storm. Block until a
+	// slot is free or the request is cancelled. Covers both direct and two-phase paths.
+	if sem := p.statsQueryRangeSem; sem != nil {
+		select {
+		case <-sem:
+			defer func() { sem <- struct{}{} }()
+		case <-r.Context().Done():
+			p.writeError(w, http.StatusServiceUnavailable, "request cancelled waiting for stats_query_range slot")
+			return
+		}
+	}
+
 	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
 	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
 	// Keep pre-limit query for two-phase fallback (Phase 1 needs it without the
@@ -449,6 +470,9 @@ func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, fi
 	topValues := drilldownTopValuesFromMatrix(p1Body, field)
 	if len(topValues) == 0 {
 		return emptyLokiMatrix
+	}
+	if len(topValues) > maxDrilldownPhase2Values {
+		topValues = topValues[:maxDrilldownPhase2Values]
 	}
 
 	// Phase 2: range query restricted to the global top-N values.
