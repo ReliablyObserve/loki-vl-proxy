@@ -81,6 +81,27 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 			effectiveQuery = stripped + logsqlQuery[len(spec.BaseQuery):]
 		}
 	}
+
+	// Second pass: for single-field Drilldown presence queries replace
+	// "stats by (field) count()" with "count() if (field:*)". This avoids
+	// building an O(unique_values) hash map for high-cardinality fields like
+	// trace_id — the same rewrite the burst coalescer uses for sliding windows.
+	// Only applied when the sole filter is an existence check for the GroupBy
+	// field (semantically equivalent; Drilldown histograms only need total counts).
+	if spec2, ok2 := parseStatsCompatSpec(effectiveQuery); ok2 &&
+		len(spec2.GroupBy) == 1 &&
+		spec2.Func == "count" &&
+		!queryUsesParserStages(spec2.BaseQuery) {
+		field := spec2.GroupBy[0]
+		allFilters := drilldownFieldFilterRE.FindAllStringSubmatch(spec2.BaseQuery, -1)
+		if len(allFilters) == 1 && allFilters[0][1] == field && allFiltersAreExistenceChecks(spec2.BaseQuery) {
+			cleanBase := drilldownFieldFilterRE.ReplaceAllString(spec2.BaseQuery, "")
+			cleanBase = drilldownDeletePipeRE.ReplaceAllString(cleanBase, "")
+			cleanBase = strings.TrimSpace(cleanBase)
+			effectiveQuery = cleanBase + " | stats count() if (" + quoteLogsQLIdent(field) + ":*)"
+		}
+	}
+
 	p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
 	if hasTopK {
 		writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")

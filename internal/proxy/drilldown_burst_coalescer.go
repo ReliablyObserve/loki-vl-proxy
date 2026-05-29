@@ -22,6 +22,10 @@ var (
 	// fused conditional-stats queries. VL's field:* existence check works on
 	// pre-indexed columns WITHOUT | json / | logfmt. Including them returns empty.
 	drilldownParserPipeRE = regexp.MustCompile(`\|\s*(?:unpack_json|unpack_logfmt|json|logfmt)\b[^|]*`)
+	// drilldownDeletePipeRE matches | delete pipes that are safe to drop when
+	// rewriting to a conditional-count fast path (column-indexed fields don't
+	// need __error__ cleanup before a count() if aggregation).
+	drilldownDeletePipeRE = regexp.MustCompile(`\|\s*delete\b[^|]*`)
 )
 
 // allFiltersAreExistenceChecks returns true when every | filter clause in the
