@@ -68,6 +68,17 @@ Because of that, version-specific behavior should be gated by:
 2. Grafana runtime family (`12.x`, `13.x`),
 3. compatibility matrix contract version bands (`1.0.x`, `2.0.x`), validated in CI.
 
+## Field Histogram Series Cap
+
+Grafana Logs Drilldown renders per-field histograms by sending `sum by (field) (count_over_time({...}|json|drop __error__,__error_details__|field!="" [...]))` queries to `query_range`. For high-cardinality fields (`trace_id`, `span_id`, `session_id`) over long time ranges, an unfiltered VL response can reach 50 MB+ (300k+ unique values). The proxy caps this at **500 series** to match Loki's `max_query_series` default.
+
+**This cap is scoped exclusively to Grafana Logs Drilldown requests.** The proxy identifies them via the `X-Query-Tags: Source=grafana-lokiexplore-app` header, which the Grafana datasource backend injects for every query where Drilldown sets `supportingQueryType: "grafana-lokiexplore-app"`. Requests without this header — Explore, Alerting, API clients — are routed through the direct path and receive unfiltered results regardless of query pattern.
+
+Implementation path for requests carrying the header:
+
+1. **Direct path**: proxy appends `as _c | sort by (_c desc) | limit 500` to the VL stats query, pushing the cap into VL per time bucket. If the response fits within 32 MB, it is returned after proxy-side `limitLokiMatrixSeries(500)`.
+2. **Two-phase fallback** (triggered when the direct-path response exceeds 32 MB): Phase 1 issues a single-bucket `stats_query_range` (step = entire range) to get the global top-500 field values cheaply (~40 KB). Phase 2 issues a range query filtered to those values via `field:in(...)`, returning ≤500 series with the original step (~80 KB). Step is never modified — changing it breaks Grafana's timestamp alignment and causes "no data" for all fields.
+
 ## Drilldown Capability Profiles
 
 | Drilldown version family | Capability profile | Proxy handling focus |
