@@ -146,6 +146,9 @@ type proxyRuntimeConfig struct {
 	metricsExportSensitiveLabels        bool
 	metricsMaxConcurrency               int
 	logRequestSampleRate                int
+	logBuffered                         bool
+	logStatsInterval                    time.Duration
+	logRateThreshold                    int
 	labelCacheTTL                       time.Duration
 	warmupMaxJitter                     time.Duration
 	labelStyle                          string
@@ -194,6 +197,7 @@ type proxyRuntimeConfig struct {
 	coldBackendEnabled                  bool
 	coldBackendManifestRefresh          time.Duration
 	coldBackendTimeout                  time.Duration
+	defaultMaxQueryLength               time.Duration
 }
 
 type otlpRuntimeConfig struct {
@@ -251,6 +255,12 @@ type loggerConfig struct {
 	serviceVersion        string
 	serviceInstanceID     string
 	deploymentEnvironment string
+	buffered              bool
+}
+
+type loggerResult struct {
+	logger       *slog.Logger
+	asyncHandler *observability.AsyncHandler
 }
 
 type reloadableProxy interface {
@@ -351,6 +361,9 @@ func run(
 	alertsBackendURL := fs.String("alerts-backend", "", "Optional alert backend URL for /alerts passthrough (defaults to -ruler-backend when unset)")
 	logLevel := fs.String("log-level", "info", "Log level: debug, info, warn, error")
 	logRequestSampleRate := fs.Int("log-request-sample-rate", 0, "Sample rate for per-request access logs on successful (2xx) responses. 0 or 1 logs every request. N>1 logs 1 in every N requests. 4xx/5xx are always logged.")
+	logBuffered := fs.Bool("log-buffered", true, "Write logs in the background to avoid slowing down requests under high load")
+	logStatsInterval := fs.Duration("log-stats-interval", 10*time.Second, "How often to print a request statistics summary (total, errors, latency, cache rate)")
+	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
 
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
@@ -468,6 +481,7 @@ func run(
 	recentTailRefreshEnabled := fs.Bool("recent-tail-refresh-enabled", true, "Bypass stale near-now cache hits and fetch latest backend data while preserving historical cache")
 	recentTailRefreshWindow := fs.Duration("recent-tail-refresh-window", 2*time.Minute, "How close request end must be to now to enable near-now cache freshness bypass")
 	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 15*time.Second, "Maximum acceptable cache age for near-now requests before cache bypass")
+	defaultMaxQueryLength := fs.Duration("default-max-query-length", 0, "Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default)")
 
 	// Go runtime tuning
 	goMemLimitBytes := fs.Int64("go-mem-limit", 0, "Explicit GOMEMLIMIT in bytes. Overrides -go-mem-limit-percent. 0 = use percentage or GOMEMLIMIT env var.")
@@ -601,15 +615,21 @@ func run(
 		return err
 	}
 
-	logger := buildLogger(logWriter, loggerConfig{
+	logResult := buildLogger(logWriter, loggerConfig{
 		level:                 *logLevel,
 		serviceName:           envCfg.serviceName,
 		serviceNamespace:      envCfg.serviceNamespace,
 		serviceVersion:        version,
 		serviceInstanceID:     envCfg.serviceInstanceID,
 		deploymentEnvironment: envCfg.deploymentEnv,
+		buffered:              *logBuffered,
 	})
+	logger := logResult.logger
 	memlimit.Apply(*goMemLimitBytes, *goMemLimitPercent, *gcPercent, logger)
+	if *enablePprof {
+		runtime.SetMutexProfileFraction(5)
+		runtime.SetBlockProfileRate(1000)
+	}
 	metrics.SetProcRoot(envCfg.procRoot)
 	logSystemMetricsStartup(logger)
 
@@ -714,6 +734,9 @@ func run(
 			metricsExportSensitiveLabels:        *metricsExportSensitiveLabels,
 			metricsMaxConcurrency:               *metricsMaxConcurrency,
 			logRequestSampleRate:                *logRequestSampleRate,
+			logBuffered:                         *logBuffered,
+			logStatsInterval:                    *logStatsInterval,
+			logRateThreshold:                    *logRateThreshold,
 			labelCacheTTL:                       *labelsCacheTTL,
 			warmupMaxJitter:                     *warmupMaxJitter,
 			labelStyle:                          envCfg.labelStyle,
@@ -762,6 +785,7 @@ func run(
 			coldBackendEnabled:                  *coldBackendEnabled,
 			coldBackendManifestRefresh:          *coldBackendManifestRefresh,
 			coldBackendTimeout:                  *coldBackendTimeout,
+			defaultMaxQueryLength:               *defaultMaxQueryLength,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -818,6 +842,9 @@ func run(
 	handleShutdownFn(runtime.shutdownCh, runtime.server, 30*time.Second, logger)
 	if err := runtime.proxy.Shutdown(context.Background()); err != nil {
 		logger.Error("proxy shutdown hook failed", "error", err)
+	}
+	if logResult.asyncHandler != nil {
+		logResult.asyncHandler.Stop()
 	}
 	return nil
 }
@@ -960,17 +987,20 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	}, nil
 }
 
-func buildLogger(w io.Writer, cfg loggerConfig) *slog.Logger {
-	logger := observability.NewLogger(w, observability.LoggerConfig{
+func buildLogger(w io.Writer, cfg loggerConfig) loggerResult {
+	res := observability.NewLoggerWithAsync(w, observability.LoggerConfig{
 		Level:                 cfg.level,
 		ServiceName:           cfg.serviceName,
 		ServiceNamespace:      cfg.serviceNamespace,
 		ServiceVersion:        cfg.serviceVersion,
 		ServiceInstanceID:     cfg.serviceInstanceID,
 		DeploymentEnvironment: cfg.deploymentEnvironment,
-	})
-	slog.SetDefault(logger)
-	return logger
+	}, cfg.buffered)
+	slog.SetDefault(res.Logger)
+	return loggerResult{
+		logger:       res.Logger,
+		asyncHandler: res.AsyncHandler,
+	}
 }
 
 func buildSignalChannels(notify signalNotifier) (chan os.Signal, chan os.Signal) {
@@ -1680,6 +1710,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		MetricsMaxClients:                  cfg.metricsMaxClients,
 		MetricsTrustProxyHeaders:           cfg.metricsTrustProxyHeaders,
 		LogRequestSampleRate:               cfg.logRequestSampleRate,
+		LogStatsInterval:                   cfg.logStatsInterval,
+		LogRateThreshold:                   cfg.logRateThreshold,
 		MetricsExportSensitiveLabels:       cfg.metricsExportSensitiveLabels,
 		MetricsMaxConcurrency:              cfg.metricsMaxConcurrency,
 		LabelCacheTTL:                      cfg.labelCacheTTL,
@@ -1711,6 +1743,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			ManifestRefresh: cfg.coldBackendManifestRefresh,
 			Timeout:         cfg.coldBackendTimeout,
 		},
+		DefaultMaxQueryLength: cfg.defaultMaxQueryLength,
 	}, nil
 }
 

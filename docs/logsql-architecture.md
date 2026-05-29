@@ -206,9 +206,40 @@ The package targets **v1.40 minimum**. All features in the v1.40 baseline are al
 
 ## Integration Path
 
-The translator (`internal/logql/translate.go`) continues to produce strings during migration. The integration path is:
+### Typed AST-to-AST translator (`internal/logql/translate.go`)
 
-1. Translator calls `logsql.NewBuilder(caps)` at query construction time
+`Translate(expr Expr, opts TranslateOptions) (string, error)` is a second, typed translation path that maps LogQL AST nodes directly to `internal/logsql` types — no `String()` roundtrip through the LogQL printer.
+
+**`TranslateOptions`** carries three fields:
+- `LabelFn func(string) string` — optional label-name rewriter (e.g. OTel dotted→underscore)
+- `StreamFields []string` — fields declared as stream labels; routed to `FilterExpr` instead of pipes
+- `Caps *logsql.Capabilities` — gates VL version-specific constructs
+
+**Node mapping:**
+
+| LogQL node | LogsQL output |
+|---|---|
+| `*LogQuery` | `FilterExpr` + `[]Pipe` via stream selector + pipeline stages |
+| `*StreamSelectorExpr` | `logsql.FilterExpr` (label matchers) |
+| `*LineFilterStage` | `logsql.PipeFilter` |
+| `*LabelFilterStage` | `logsql.PipeFilter` (label conditions) |
+| `*JSONParserStage` | `logsql.PipeUnpackJSON` |
+| `*LogfmtParserStage` | `logsql.PipeUnpackLogfmt` |
+| `*RegexpParserStage` | `logsql.PipeExtractRegexp` |
+| `*DropStage` (bare labels) | `logsql.PipeDelete` |
+| `*KeepStage` (bare labels) | `logsql.PipeKeep` |
+| `*LineFormatStage` (simple) | `logsql.PipeFormat` |
+| `*RangeAggregation`, `*VectorAggregation`, `*BinOpExpr`, `*OpaqueMetricExpr` | `errFallthrough` → delegate to existing string translator |
+
+**`errFallthrough`** is a package-private sentinel error. When returned, callers fall back to the existing `translator.TranslateLogQLWithCapabilities` string path unchanged — metric nodes are not yet handled by the typed path and route to the existing Tier 1/2 translators.
+
+The proxy's main translation path (`translator.TranslateLogQLWithCapabilities`) is unchanged. `logql.Translate` is wired but not yet called by handlers; handler migration is planned for a follow-on PR.
+
+### Builder integration path
+
+Once the AST-to-AST path is wired to handlers, the full pipeline becomes:
+
+1. `logql.Translate(expr, opts)` maps LogQL AST → `logsql` AST
 2. Builder's `Build*` methods return `logsql.FilterExpr` or `[]logsql.Pipe`
 3. `logsql.NewQuery(filter, pipes...)` assembles the full AST
 4. `q.String()` emits the final LogsQL query at the HTTP boundary
@@ -226,7 +257,8 @@ The translator (`internal/logql/translate.go`) continues to produce strings duri
 | `parser_test.go` | 38 | Round-trip (25 cases), ParseFilter, error cases, stats funcs |
 | `edge_cases_test.go` | ~110 | All FieldOps, nesting, boundary versions, malformed semver |
 | `fuzz_test.go` | 4 fuzz | Never panics on arbitrary input |
-| **Total** | **282** | |
+| `translate_test.go` | 17 | `Translate()`: stream selectors, line/label filters, parsers, drop/keep/lineformat, errFallthrough for metric nodes |
+| **Total** | **299** | |
 
 ---
 

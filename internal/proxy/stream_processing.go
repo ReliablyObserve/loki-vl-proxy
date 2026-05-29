@@ -236,6 +236,11 @@ func (p *Proxy) streamLogQuery(w http.ResponseWriter, resp *http.Response, origi
 				translatedLabels = newLabels
 			}
 		}
+		if len(keepConditions) > 0 {
+			if _, newLabels, changed := applyKeepConditionsToStreamLabels(keepConditions, streamLabels, translatedLabels, p.labelTranslator); changed {
+				translatedLabels = newLabels
+			}
+		}
 		// Apply bare-field drop/keep to stream labels.
 		// | drop f removes f from the stream label set unconditionally.
 		// | keep f1, f2 removes any stream label NOT in the keep list.
@@ -346,6 +351,13 @@ func lokiLabelsResponse(labels []string) []byte {
 		"data":   labels,
 	})
 	return result
+}
+
+var scannerBufPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, 0, 64*1024)
+		return &buf
+	},
 }
 
 // vlEntryPool pools map[string]interface{} to reduce GC pressure in NDJSON parsing.
@@ -509,8 +521,14 @@ func (p *Proxy) vlReaderToLokiStreams(r io.Reader, originalQuery, step string, c
 		hasDupTs bool
 	}
 
+	scanBufPtr := scannerBufPool.Get().(*[]byte)
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
+	scanner.Buffer((*scanBufPtr)[:0], 8*1024*1024)
+	defer func() {
+		if cap(*scanBufPtr) <= 256*1024 {
+			scannerBufPool.Put(scanBufPtr)
+		}
+	}()
 
 	streamMap := make(map[string]*streamEntry, 32)
 	streamOrder := make([]string, 0, 32)

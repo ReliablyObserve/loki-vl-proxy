@@ -13,9 +13,14 @@ import (
 // failures. This prevents sporadic slow-query connection resets (which look
 // like transport errors) from opening the breaker when VL is healthy overall.
 // Only a burst of N failures within windowDuration opens the circuit.
+//
+// Hot-path optimization: atomicState allows Allow() and RecordSuccess() to
+// bypass the mutex entirely in the closed state (the 99.9% common case).
+// State transitions always go through mu and then publish via atomicState.
 type CircuitBreaker struct {
 	mu sync.Mutex
 
+	atomicState    atomic.Int32 // shadow of state for lock-free read on hot path
 	state          cbState
 	failureTimes   []time.Time // ring of recent failure timestamps (pruned by window)
 	successes      int
@@ -60,6 +65,10 @@ func NewCircuitBreaker(failureThreshold, successThreshold int, openDuration, win
 
 // Allow checks if a request should be allowed through.
 func (cb *CircuitBreaker) Allow() bool {
+	if cbState(cb.atomicState.Load()) == cbClosed {
+		return true
+	}
+
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
@@ -69,24 +78,28 @@ func (cb *CircuitBreaker) Allow() bool {
 	case cbOpen:
 		if time.Now().After(cb.openUntil) {
 			cb.state = cbHalfOpen
+			cb.atomicState.Store(int32(cbHalfOpen))
 			cb.successes = 0
-			cb.halfOpenProbes = 1 // first probe already counted
-			return true           // allow first probe request
+			cb.halfOpenProbes = 1
+			return true
 		}
 		return false
 	case cbHalfOpen:
-		// Only allow up to successThreshold probe requests.
 		if cb.halfOpenProbes < cb.successThreshold {
 			cb.halfOpenProbes++
 			return true
 		}
-		return false // reject excess requests during probe phase
+		return false
 	}
 	return true
 }
 
 // RecordSuccess records a successful backend response.
 func (cb *CircuitBreaker) RecordSuccess() {
+	if cbState(cb.atomicState.Load()) == cbClosed {
+		return
+	}
+
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
@@ -95,13 +108,11 @@ func (cb *CircuitBreaker) RecordSuccess() {
 		cb.successes++
 		if cb.successes >= cb.successThreshold {
 			cb.state = cbClosed
+			cb.atomicState.Store(int32(cbClosed))
 			cb.failureTimes = cb.failureTimes[:0]
 		}
 	case cbClosed:
-		// Prune expired failures but do NOT reset the window on success.
-		// A success between two failures doesn't make the failures disappear;
-		// they still happened and still count toward the burst threshold.
-		cb.pruneWindow()
+		// Pruning deferred to failure path — not needed on success hot path.
 	}
 }
 
@@ -117,12 +128,13 @@ func (cb *CircuitBreaker) RecordFailure() {
 		cb.failureTimes = append(cb.failureTimes, time.Now())
 		if len(cb.failureTimes) >= cb.failureThreshold {
 			cb.state = cbOpen
+			cb.atomicState.Store(int32(cbOpen))
 			cb.openUntil = time.Now().Add(cb.openDuration)
 			cb.TripsTotal.Add(1)
 		}
 	case cbHalfOpen:
-		// Probe failed — go back to open.
 		cb.state = cbOpen
+		cb.atomicState.Store(int32(cbOpen))
 		cb.openUntil = time.Now().Add(cb.openDuration)
 		cb.TripsTotal.Add(1)
 	}

@@ -13,6 +13,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - When `-translate-otel-attributes=false`, the `ToVL()` query-direction translator no longer rewrites entries in `knownUnderscoreToDot` to dotted form. `ResolveLabelCandidates` and the `resolveTargetLabelFields` fallback are gated on the same flag, so the dotted form is no longer added as a candidate or fallback when OTel translation is disabled. Previously the rewrite/fallback always fired when `-label-style=underscores` was active.
 
+## [1.53.0] - 2026-05-28
+
+### Added
+- `-default-max-query-length` flag enforces a global maximum query time range (0 = unlimited); per-tenant limits in `-tenant-limits` or `-tenant-default-limits` take precedence, so the flag acts as a safe fleet-wide ceiling
+- `ParseError{Msg, Pos}` and `UnsupportedError{Msg, Func}` typed errors in `internal/translator`: HTTP handlers now discriminate error type to return `"parse error"` (400) vs `"bad_data"` (400) vs `"execution"` (500) Loki error envelopes instead of a flat string
+- AST-to-AST translation layer in `internal/logql/translate.go`: typed `LogQuery → logsql.Query` mapper covers stream selector matchers (eq/neq/re/nre), line filters, parsers (json/logfmt/regexp/pattern), bare drop/keep, and simple `line_format` templates; unsupported nodes fall through via `errFallthrough` sentinel to the existing string translator, leaving metric/range/vector paths unchanged
+- `TranslateOptions{LabelFn, StreamFields, Caps}` plumbing in the AST translator for future label-alias and capability-gated translation
+
+### Changed
+- `Proxy` struct decomposed into `Deps` (external dependencies), `HandlerConfig` (immutable flag-derived config, 83 fields), and `State` (mutable runtime state with pointer-typed mutexes/atomics); `Handler{Deps, Cfg, State}` type defined and wired in `New()` with live pointer sharing so Handler and Proxy see the same lock and map instances
+- `RegisterRoutes` dispatches via named `routeHandler` method instead of anonymous closure
+- Helm `values.yaml` updated with commented-out `default-max-query-length` entry
+
+## [1.52.0] - 2026-05-27
+
+### Performance
+- Lock-free circuit breaker fast path: closed-state `Allow()` and `RecordSuccess()` use `atomic.Int32` instead of acquiring a mutex, eliminating lock contention on the happy path
+- Lock-free metrics histograms: `observe()` and scrape handler use atomic CAS loops instead of a shared RWMutex, removing the #1 mutex hotspot from `/metrics` scrapes under load
+- Sharded rate limiter: per-tenant token buckets use `sync.Map` with per-bucket mutexes instead of a single global lock, eliminating convoy effects at high tenant counts
+- `hash/maphash` query fingerprinting replaces `crypto/sha256` in the query tracker (~30x faster hashing)
+- Pre-sized body read buffer in `readBodyLimited` avoids repeated slice growth for push payloads up to 128KB
+- Async buffered logger (`--log-buffered`): log records are written by a dedicated goroutine via an 8192-slot channel, removing the slog output mutex from the request hot path (was 52% of all mutex contention at c=100)
+- Adaptive request log sampling (`--log-rate-threshold`, `--log-stats-interval`): above the configured rate, per-request OK logs are replaced with periodic statistics summaries (total, errors, latency, cache rate); errors are always logged. Below the threshold, every request is logged for debugging convenience.
+
 ## [1.51.0] - 2026-05-27
 
 ### Fixed

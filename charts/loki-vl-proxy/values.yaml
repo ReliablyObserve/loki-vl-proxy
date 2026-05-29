@@ -102,6 +102,7 @@ extraArgs:
   # query-range-partial-responses: "false"             # return partial response on retryable backend failures
   # query-range-background-warm: "true"                # continue warming failed windows in background
   # query-range-background-warm-max-windows: "24"      # cap background warm fanout
+  # default-max-query-length: "0"                      # max query time range for all tenants (0 = unlimited; per-tenant limits override)
 
   # --- Indexed label-values browse cache ---
   # Keep disabled by default; enable when label value lists are large and you
@@ -145,6 +146,9 @@ extraArgs:
 
   log-level: "info"
   # log-request-sample-rate: "0"    # 0=log all 2xx; N>1 logs 1-in-N (saves log build overhead at high throughput)
+  # log-buffered: "true"            # write logs in the background for better performance under load
+  # log-stats-interval: "10s"       # how often to print a request statistics summary
+  # log-rate-threshold: "10"        # above this req/s, replace per-request logs with periodic summaries
 
   # --- HTTP server hardening ---
   http-read-timeout: "30s"

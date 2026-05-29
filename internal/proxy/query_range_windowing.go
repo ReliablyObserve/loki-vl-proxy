@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,16 +24,13 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 )
 
 var (
 	windowCacheEnc *zstd.Encoder
 	windowCacheDec *zstd.Decoder
 )
-
-// windowGobBufPool recycles bytes.Buffer instances used to gob-encode window
-// cache entries, eliminating one heap allocation per cached window fetch.
-var windowGobBufPool = sync.Pool{New: func() interface{} { return new(bytes.Buffer) }}
 
 func init() {
 	windowCacheEnc, _ = zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedFastest))
@@ -364,7 +360,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 	if cached, ok := p.cache.Get(cacheKey); ok {
 		if decompressed, err := windowCacheDec.DecodeAll(cached, make([]byte, 0, len(cached)*4)); err == nil {
 			var entry queryRangeWindowCacheEntry
-			if err := gob.NewDecoder(bytes.NewReader(decompressed)).Decode(&entry); err == nil {
+			if err := json.Unmarshal(decompressed, &entry); err == nil {
 				p.metrics.RecordQueryRangeWindowCacheHit()
 				return entry, nil
 			}
@@ -404,17 +400,13 @@ func (p *Proxy) fetchQueryRangeWindow(
 			_ = resp.Body.Close()
 			cacheEntry := queryRangeWindowCacheEntry{Entries: entries}
 			if ttl := p.queryRangeWindowTTL(window.endNs); ttl > 0 {
-				gobBuf := windowGobBufPool.Get().(*bytes.Buffer)
-				gobBuf.Reset()
-				if err := gob.NewEncoder(gobBuf).Encode(cacheEntry); err == nil {
-					compressed := windowCacheEnc.EncodeAll(gobBuf.Bytes(), make([]byte, 0, gobBuf.Len()/8))
+				if data, encErr := json.Marshal(cacheEntry); encErr == nil {
+					compressed := windowCacheEnc.EncodeAll(data, make([]byte, 0, len(data)/4))
 					// Window fragments are short-lived and high churn. Keeping them
 					// local avoids concentrating peer-cache write-through on a single
 					// ring owner when Drilldown or Explore fans a read into many windows.
 					p.cache.SetLocalOnlyWithTTL(cacheKey, compressed, ttl)
 				}
-				gobBuf.Reset() // clear entries reference before returning to pool
-				windowGobBufPool.Put(gobBuf)
 			}
 			return cacheEntry, nil
 		}
@@ -782,9 +774,16 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
 	needsClassification := categorizedLabels && emitStructuredMetadata
+	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
 
+	scanBufPtr := scannerBufPool.Get().(*[]byte)
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), windowEntryScannerLineBytes)
+	scanner.Buffer((*scanBufPtr)[:0], windowEntryScannerLineBytes)
+	defer func() {
+		if cap(*scanBufPtr) <= 256*1024 {
+			scannerBufPool.Put(scanBufPtr)
+		}
+	}()
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -842,11 +841,21 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 			structuredMetadata, parsedFields := p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
 			sm = metadataFieldMap(structuredMetadata)
 			parsed = metadataFieldMap(parsedFields)
+			if len(dropConditions) > 0 {
+				applyDropConditions(dropConditions, sm, parsed)
+			}
+			if len(keepConditions) > 0 {
+				applyKeepConditions(keepConditions, sm, parsed)
+			}
 		}
 
+		streamKey, streamLabels := applyStreamLabelMutations(
+			desc, dropConditions, keepConditions, bareDropFields, bareKeepFields, p.labelTranslator,
+		)
+
 		entries = append(entries, queryRangeWindowEntry{
-			Stream: desc.translatedLabels,
-			Key:    desc.translatedKey,
+			Stream: streamLabels,
+			Key:    streamKey,
 			Ts:     tsNanos,
 			Msg:    msg,
 			SM:     sm,
@@ -855,6 +864,35 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 		vlFJParserPool.Put(fjParser)
 	}
 	return entries
+}
+
+func applyStreamLabelMutations(
+	desc cachedLogQueryStreamDescriptor,
+	dropConditions, keepConditions []translator.DropCondition,
+	bareDropFields, bareKeepFields []string,
+	lt *LabelTranslator,
+) (string, map[string]string) {
+	streamKey := desc.translatedKey
+	streamLabels := desc.translatedLabels
+	if len(dropConditions) > 0 {
+		if newKey, newLabels, changed := applyDropConditionsToStreamLabels(dropConditions, desc.rawLabels, streamLabels, lt); changed {
+			streamKey = newKey
+			streamLabels = newLabels
+		}
+	}
+	if len(keepConditions) > 0 {
+		if newKey, newLabels, changed := applyKeepConditionsToStreamLabels(keepConditions, desc.rawLabels, streamLabels, lt); changed {
+			streamKey = newKey
+			streamLabels = newLabels
+		}
+	}
+	if len(bareDropFields) > 0 || len(bareKeepFields) > 0 {
+		if newKey, newLabels, changed := applyBareFieldMutationToStreamLabels(bareDropFields, bareKeepFields, desc.rawLabels, streamLabels, lt); changed {
+			streamKey = newKey
+			streamLabels = newLabels
+		}
+	}
+	return streamKey, streamLabels
 }
 
 func groupQueryRangeWindowEntries(entries []queryRangeWindowEntry, direction string, emitSM, categorizedLabels bool) []map[string]interface{} {

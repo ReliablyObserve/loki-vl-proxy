@@ -569,15 +569,16 @@ func (p *OTLPPusher) histogramDP(h *histogram, timeUnixNano int64, attrs ...map[
 	defer h.mu.Unlock()
 	bucketCounts := make([]int64, 0, len(h.counts)+1)
 	prev := int64(0)
-	for _, cumulative := range h.counts {
-		bucketCounts = append(bucketCounts, cumulative-prev)
-		prev = cumulative
+	for i := range h.counts {
+		c := h.counts[i]
+		bucketCounts = append(bucketCounts, c-prev)
+		prev = c
 	}
-	bucketCounts = append(bucketCounts, h.count-prev)
+	bucketCounts = append(bucketCounts, h.loadCount()-prev)
 	dp := map[string]interface{}{
 		"timeUnixNano":   fmt.Sprintf("%d", timeUnixNano),
-		"count":          fmt.Sprintf("%d", h.count),
-		"sum":            h.sum,
+		"count":          fmt.Sprintf("%d", h.loadCount()),
+		"sum":            h.loadSum(),
 		"explicitBounds": append([]float64(nil), h.buckets...),
 		"bucketCounts":   bucketCounts,
 	}

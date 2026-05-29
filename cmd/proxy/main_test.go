@@ -122,7 +122,7 @@ func withSyntheticProcRoot(t *testing.T, files map[string]string) string {
 
 func TestBuildLogger(t *testing.T) {
 	buf := &bytes.Buffer{}
-	logger := buildLogger(buf, loggerConfig{
+	res := buildLogger(buf, loggerConfig{
 		level:                 "debug",
 		serviceName:           "proxy",
 		serviceNamespace:      "platform",
@@ -130,10 +130,10 @@ func TestBuildLogger(t *testing.T) {
 		serviceInstanceID:     "proxy-1",
 		deploymentEnvironment: "prod",
 	})
-	if logger == nil {
+	if res.logger == nil {
 		t.Fatal("expected logger")
 	}
-	logger.Info("hello")
+	res.logger.Info("hello")
 	logs := buf.String()
 	for _, want := range []string{"\"body\":\"hello\"", "\"severity\":{\"text\":\"INFO\",\"number\":9}"} {
 		if !strings.Contains(logs, want) {

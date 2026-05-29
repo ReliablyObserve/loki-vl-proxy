@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -124,12 +125,13 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	body = trimStatsQueryRangeResponseToEnd(body, r.FormValue("end"))
-
-	// VL stats_query_range returns Prometheus-compatible format.
-	// Just wrap it in Loki's envelope.
-	// Translate label names (e.g., dots → underscores) in metric labels.
-	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
+	// Single parse pass: filter points to the requested end time AND translate
+	// metric labels. Replaces two sequential fastjson parses (trim then translate).
+	var keepFn func(int64) bool
+	if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
+		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
+	}
+	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
 }
@@ -301,14 +303,6 @@ func trimStatsQueryRangeResponseFromStart(body []byte, startNs int64) []byte {
 	return trimStatsQRByTimeFJ(body, func(tsNs int64) bool { return tsNs >= startNs })
 }
 
-func trimStatsQueryRangeResponseToEnd(body []byte, endRaw string) []byte {
-	endNs, ok := parseLokiTimeToUnixNano(endRaw)
-	if !ok {
-		return body
-	}
-	return trimStatsQRByTimeFJ(body, func(tsNs int64) bool { return tsNs <= endNs })
-}
-
 // trimStatsQRByTimeFJ filters stats_query_range point arrays using fastjson,
 // eliminating json.Unmarshal struct allocations and json.Marshal reflection.
 func trimStatsQRByTimeFJ(body []byte, keep func(int64) bool) []byte {
@@ -452,6 +446,481 @@ func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep
 		buf.WriteByte('}')
 	}
 	buf.WriteByte(']')
+}
+
+// trimTranslateResult holds per-item output of trimAndTranslateStatsQRFJ's analysis pass.
+type trimTranslateResult struct {
+	metric   map[string]string // nil = metric unchanged
+	valsTrim bool              // at least one values point filtered by keep
+}
+
+// trimAndTranslateStatsQRFJ performs time-window filtering and metric-label
+// translation in a single fastjson parse, replacing the two-parse sequence of
+// trimStatsQRByTimeFJ followed by translateStatsResponseLabelsWithContext.
+//
+// keep may be nil (no time filtering). If neither filtering nor label translation
+// is needed, the original body is returned unchanged with no allocation.
+//
+//nolint:gocyclo // combines two existing functions; branching is inherent to the schema variants.
+func (p *Proxy) trimAndTranslateStatsQRFJ(ctx context.Context, body []byte, keep func(int64) bool, originalQuery string) []byte {
+	start := time.Now()
+
+	parser := statsTranslateFJPool.Get()
+	defer statsTranslateFJPool.Put(parser)
+
+	v, err := parser.ParseBytes(body)
+	if err != nil {
+		return body
+	}
+
+	// Locate result series across all three JSON shapes the VL stats endpoints emit:
+	//   {"data":{"resultType":"…","result":[…]}}  ← Prometheus-compatible (stats_query_range)
+	//   {"result":[…]}                             ← bare result
+	//   {"results":[…]}                            ← bare results
+	type resultSlot struct {
+		items  []*fj.Value
+		key    string
+		inData bool
+	}
+	var slots []resultSlot
+	var dataVal *fj.Value
+
+	if data := v.Get("data"); data != nil {
+		if r := data.Get("result"); r != nil && r.Type() == fj.TypeArray {
+			if arr, _ := r.Array(); len(arr) > 0 {
+				slots = append(slots, resultSlot{items: arr, key: "result", inData: true})
+				dataVal = data
+			}
+		}
+	}
+	if r := v.Get("result"); r != nil && r.Type() == fj.TypeArray {
+		if arr, _ := r.Array(); len(arr) > 0 {
+			slots = append(slots, resultSlot{items: arr, key: "result", inData: false})
+		}
+	}
+	if r := v.Get("results"); r != nil && r.Type() == fj.TypeArray {
+		if arr, _ := r.Array(); len(arr) > 0 {
+			slots = append(slots, resultSlot{items: arr, key: "results", inData: false})
+		}
+	}
+
+	if len(slots) == 0 {
+		return body
+	}
+
+	// Allocate per-item result state.
+	slotResults := make([][]trimTranslateResult, len(slots))
+	for i, s := range slots {
+		slotResults[i] = make([]trimTranslateResult, len(s.items))
+	}
+
+	// Workspace maps reused across items (same pattern as translateStatsResponseLabelsWithContext).
+	translated := make(map[string]string, 8)
+	syntheticLabels := make(map[string]string, 8)
+
+	needsRebuild := false
+	translatedCount := 0
+
+	for si, slot := range slots {
+		for ii, item := range slot.items {
+			res := &slotResults[si][ii]
+
+			// Pass 1: check whether any values points fall outside keep.
+			if keep != nil {
+				if values := item.Get("values"); values != nil {
+					pts, _ := values.Array()
+					for _, pt := range pts {
+						ptArr, _ := pt.Array()
+						if len(ptArr) > 0 && !keep(statsQRFJPointNano(ptArr[0])) {
+							res.valsTrim = true
+							needsRebuild = true
+							break
+						}
+					}
+				}
+			}
+
+			// Pass 2: compute translated metric labels (identical logic to translateStatsResponseLabelsWithContext).
+			metricVal := item.Get("metric")
+			if metricVal == nil || metricVal.Type() != fj.TypeObject {
+				continue
+			}
+
+			for k := range translated {
+				delete(translated, k)
+			}
+			changed := false
+			hadStream := false
+
+			metricVal.GetObject().Visit(func(k []byte, vv *fj.Value) {
+				key := string(k)
+				val := string(vv.GetStringBytes())
+				switch key {
+				case "__name__":
+					changed = true
+				case "_stream":
+					hadStream = true
+					for streamKey, streamValue := range parseStreamLabels(val) {
+						lokiKey := streamKey
+						if !p.labelTranslator.IsPassthrough() {
+							lokiKey = p.labelTranslator.ToLoki(streamKey)
+						}
+						if streamValue != "" || translated[lokiKey] == "" {
+							translated[lokiKey] = streamValue
+						}
+					}
+					changed = true
+				default:
+					lokiKey := key
+					if !p.labelTranslator.IsPassthrough() {
+						lokiKey = p.labelTranslator.ToLoki(key)
+					}
+					if lokiKey != key {
+						changed = true
+					}
+					if val != "" || translated[lokiKey] == "" {
+						translated[lokiKey] = val
+					}
+				}
+			})
+
+			for k := range syntheticLabels {
+				delete(syntheticLabels, k)
+			}
+			for k, val := range translated {
+				syntheticLabels[k] = val
+			}
+
+			serviceSignal := hasServiceSignal(syntheticLabels)
+			beforeSyntheticCount := len(syntheticLabels)
+			hadLevel := syntheticLabels["level"] != ""
+			ensureDetectedLevel(syntheticLabels)
+			if hadLevel && !hadStream && syntheticLabels["detected_level"] != "" {
+				delete(syntheticLabels, "level")
+				delete(translated, "level")
+			}
+			if hadStream {
+				ensureSyntheticServiceName(syntheticLabels)
+				if !serviceSignal && strings.TrimSpace(syntheticLabels["service_name"]) == unknownServiceName {
+					delete(syntheticLabels, "service_name")
+				}
+			}
+			if len(syntheticLabels) != beforeSyntheticCount {
+				changed = true
+			}
+			for key, value := range syntheticLabels {
+				if existing, ok := translated[key]; ok && existing == value {
+					continue
+				}
+				translated[key] = value
+				changed = true
+			}
+
+			if changed {
+				translatedCount++
+				needsRebuild = true
+				res.metric = cloneStringMap(syntheticLabels)
+			}
+		}
+	}
+
+	if !needsRebuild {
+		p.observeInternalOperation(ctx, "trim_translate_stats_qr", "noop", time.Since(start))
+		return body
+	}
+
+	// Rebuild the JSON response once, applying both filtering and translation.
+	// Always emit "status":"success" first so wrapAsLokiResponse fast-path A matches
+	// and returns the buffer zero-alloc instead of splicing a new []byte.
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer jsonBufPool.Put(buf)
+	buf.Grow(len(body) + len(`{"status":"success",`))
+
+	scratch := fjMarshalPool.Get().(*[]byte)
+	defer fjMarshalPool.Put(scratch)
+	// Fix 2: pre-grow scratch to body length so values.MarshalTo doesn't
+	// chain-reallocate when serialising a large values array in one shot.
+	if cap(*scratch) < len(body) {
+		*scratch = make([]byte, 0, len(body))
+	}
+
+	buf.WriteString(`{"status":"success"`)
+	needsComma := true
+
+	if dataVal != nil {
+		si := -1
+		for i, s := range slots {
+			if s.inData {
+				si = i
+				break
+			}
+		}
+		buf.WriteString(`,"data":{`)
+		if rt := dataVal.Get("resultType"); rt != nil {
+			buf.WriteString(`"resultType":`)
+			marshalFJ(buf, rt, scratch)
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`"result":`)
+		if si >= 0 {
+			writeTrimmedTranslatedStatsFJ(buf, slots[si].items, slotResults[si], keep, scratch)
+		} else {
+			if r := dataVal.Get("result"); r != nil {
+				marshalFJ(buf, r, scratch)
+			} else {
+				buf.WriteString(`[]`)
+			}
+		}
+		if statsF := dataVal.Get("stats"); statsF != nil {
+			buf.WriteString(`,"stats":`)
+			marshalFJ(buf, statsF, scratch)
+		}
+		buf.WriteByte('}')
+	}
+
+	for si, slot := range slots {
+		if slot.inData {
+			continue
+		}
+		if needsComma {
+			buf.WriteByte(',')
+		}
+		buf.WriteByte('"')
+		buf.WriteString(slot.key)
+		buf.WriteString(`":`)
+		writeTrimmedTranslatedStatsFJ(buf, slot.items, slotResults[si], keep, scratch)
+		needsComma = true
+	}
+
+	if errVal := v.Get("error"); errVal != nil {
+		if needsComma {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`"error":`)
+		marshalFJ(buf, errVal, scratch)
+	}
+
+	buf.WriteByte('}')
+
+	result := make([]byte, buf.Len())
+	copy(result, buf.Bytes())
+	p.observeInternalOperation(ctx, "trim_translate_stats_qr", "ok", time.Since(start))
+	_ = translatedCount
+	return result
+}
+
+// writeTrimmedTranslatedStatsFJ writes a JSON array of stats items, applying
+// time-window filtering (keep != nil) and metric label translation (res.metric != nil)
+// in a single write pass.
+func writeTrimmedTranslatedStatsFJ(buf *bytes.Buffer, items []*fj.Value, results []trimTranslateResult, keep func(int64) bool, scratch *[]byte) {
+	buf.WriteByte('[')
+	for i, item := range items {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		res := results[i]
+		if res.metric != nil || res.valsTrim {
+			buf.WriteString(`{"metric":`)
+			if res.metric != nil {
+				marshalStringMapJSONTo(buf, res.metric)
+			} else if m := item.Get("metric"); m != nil {
+				marshalFJ(buf, m, scratch)
+			} else {
+				buf.WriteString(`{}`)
+			}
+			// Instant value — no time filtering (single point, not an array).
+			if val := item.Get("value"); val != nil {
+				buf.WriteString(`,"value":`)
+				marshalFJ(buf, val, scratch)
+			}
+			// Range values: when filtering is needed, serialise the whole array
+			// once via MarshalTo and scan raw bytes — avoids N fastjson
+			// re-serialisations for N points (Fix 3).
+			if values := item.Get("values"); values != nil {
+				buf.WriteString(`,"values":`)
+				if res.valsTrim && keep != nil {
+					rawVals := values.MarshalTo((*scratch)[:0])
+					*scratch = rawVals
+					if !writeFilteredValuesRaw(buf, rawVals, keep) {
+						// Malformed values array — fall back to fastjson typed nodes.
+						buf.WriteByte('[')
+						pts, _ := values.Array()
+						first := true
+						for _, pt := range pts {
+							ptArr, _ := pt.Array()
+							if len(ptArr) > 0 && !keep(statsQRFJPointNano(ptArr[0])) {
+								continue
+							}
+							if !first {
+								buf.WriteByte(',')
+							}
+							first = false
+							marshalFJ(buf, pt, scratch)
+						}
+						buf.WriteByte(']')
+					}
+				} else {
+					// No time filtering needed: copy the whole array in one shot.
+					marshalFJ(buf, values, scratch)
+				}
+			}
+			buf.WriteByte('}')
+		} else {
+			marshalFJ(buf, item, scratch)
+		}
+	}
+	buf.WriteByte(']')
+}
+
+// writeFilteredValuesRaw scans the raw JSON bytes of a stats_query_range
+// values array — [[ts,"val"],[ts,"val"],...] — and writes to buf only those
+// points where keep(tsNano) is true.
+//
+// The raw bytes are obtained from fastjson's MarshalTo in one call per series,
+// avoiding N per-point MarshalTo+Write cycles for N values (Fix 3). Returns
+// false if the bytes are not a recognisable values array; the caller falls back
+// to fastjson typed-node iteration.
+//
+//nolint:gocyclo // byte-scanner state machine; branching is inherent to the [[ts,"val"],...] format.
+func writeFilteredValuesRaw(buf *bytes.Buffer, raw []byte, keep func(int64) bool) bool {
+	i := 0
+	for i < len(raw) && raw[i] <= ' ' {
+		i++
+	}
+	if i >= len(raw) || raw[i] != '[' {
+		return false
+	}
+	i++
+
+	buf.WriteByte('[')
+	first := true
+
+	for {
+		// Skip whitespace and commas between elements.
+		for i < len(raw) && (raw[i] <= ' ' || raw[i] == ',') {
+			i++
+		}
+		if i >= len(raw) {
+			return false
+		}
+		if raw[i] == ']' {
+			break
+		}
+		if raw[i] != '[' {
+			return false // unexpected token in outer array
+		}
+
+		pointStart := i
+		i++ // consume inner '['
+
+		for i < len(raw) && raw[i] <= ' ' {
+			i++
+		}
+
+		// Parse the timestamp number (first element of the inner array).
+		numStart := i
+		if i < len(raw) && (raw[i] == '-' || raw[i] == '+') {
+			i++
+		}
+		digitStart := i
+		for i < len(raw) && raw[i] >= '0' && raw[i] <= '9' {
+			i++
+		}
+		if i == digitStart {
+			return false // no digits found
+		}
+		hasDot := false
+		if i < len(raw) && raw[i] == '.' {
+			hasDot = true
+			i++
+			for i < len(raw) && raw[i] >= '0' && raw[i] <= '9' {
+				i++
+			}
+		}
+		if i < len(raw) && (raw[i] == 'e' || raw[i] == 'E') {
+			hasDot = true // treat scientific notation as float
+			i++
+			if i < len(raw) && (raw[i] == '+' || raw[i] == '-') {
+				i++
+			}
+			for i < len(raw) && raw[i] >= '0' && raw[i] <= '9' {
+				i++
+			}
+		}
+
+		var tsNano int64
+		if hasDot {
+			f, err := strconv.ParseFloat(string(raw[numStart:i]), 64)
+			if err != nil {
+				return false
+			}
+			tsNano = normalizeLokiNumericTimeToUnixNano(f)
+		} else {
+			tsNano = normalizeLokiIntTimeToUnixNano(rawBytesToInt64(raw[numStart:i]))
+		}
+
+		// Advance past the rest of this point to its closing ']', handling
+		// nested strings (escaped quotes) and nested arrays.
+		depth := 1
+		for i < len(raw) && depth > 0 {
+			switch raw[i] {
+			case '[':
+				depth++
+				i++
+			case ']':
+				depth--
+				i++
+			case '"':
+				i++ // skip opening '"'
+				for i < len(raw) && raw[i] != '"' {
+					if raw[i] == '\\' {
+						i++ // skip escaped character
+					}
+					i++
+				}
+				if i < len(raw) {
+					i++ // skip closing '"'
+				}
+			default:
+				i++
+			}
+		}
+
+		if keep == nil || keep(tsNano) {
+			if !first {
+				buf.WriteByte(',')
+			}
+			first = false
+			buf.Write(raw[pointStart:i])
+		}
+	}
+
+	buf.WriteByte(']')
+	return true
+}
+
+// rawBytesToInt64 parses a decimal integer from a byte slice without allocating
+// a string. The caller must ensure b contains only ASCII digits with an optional
+// leading '-'. Overflow is not checked — Loki/VL timestamps fit in int64.
+func rawBytesToInt64(b []byte) int64 {
+	if len(b) == 0 {
+		return 0
+	}
+	neg := false
+	i := 0
+	if b[0] == '-' {
+		neg = true
+		i++
+	}
+	var n int64
+	for ; i < len(b); i++ {
+		n = n*10 + int64(b[i]-'0')
+	}
+	if neg {
+		return -n
+	}
+	return n
 }
 
 // statsQRFJPointNano extracts the unix-nano timestamp from the first element
