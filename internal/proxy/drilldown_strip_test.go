@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestProxyStatsQueryRange_StripsParserAndDelete verifies that proxyStatsQueryRange
@@ -59,6 +60,186 @@ func TestProxyStatsQueryRange_StripsParserAndDelete(t *testing.T) {
 	}
 }
 
+// TestLimitLokiMatrixSeries verifies that limitLokiMatrixSeries truncates a matrix
+// response to the first N series without modifying responses that are already within
+// the limit.
+func TestLimitLokiMatrixSeries(t *testing.T) {
+	makeSeries := func(n int) []byte {
+		var sb strings.Builder
+		sb.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+		for i := 0; i < n; i++ {
+			if i > 0 {
+				sb.WriteString(",")
+			}
+			fmt.Fprintf(&sb, `{"metric":{"trace_id":"id-%d"},"values":[[1700000060,"1"]]}`, i)
+		}
+		sb.WriteString(`]}}`)
+		return []byte(sb.String())
+	}
+
+	t.Run("under limit unchanged", func(t *testing.T) {
+		body := makeSeries(10)
+		got := limitLokiMatrixSeries(body, 100)
+		if string(got) != string(body) {
+			t.Errorf("expected body unchanged, got different result")
+		}
+	})
+
+	t.Run("at limit unchanged", func(t *testing.T) {
+		body := makeSeries(100)
+		got := limitLokiMatrixSeries(body, 100)
+		if string(got) != string(body) {
+			t.Errorf("expected body unchanged at exact limit")
+		}
+	})
+
+	t.Run("over limit truncated keeping top by count", func(t *testing.T) {
+		// Build 200 series where series 150 has a very high count and should survive
+		// even though it's beyond the first-100 position by index.
+		var sb strings.Builder
+		sb.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+		for i := 0; i < 200; i++ {
+			if i > 0 {
+				sb.WriteString(",")
+			}
+			count := "1"
+			if i == 150 {
+				count = "9999" // highest count — must survive the cut
+			}
+			fmt.Fprintf(&sb, `{"metric":{"trace_id":"id-%d"},"values":[[1700000060,"%s"]]}`, i, count)
+		}
+		sb.WriteString(`]}}`)
+		body := []byte(sb.String())
+
+		got := limitLokiMatrixSeries(body, 100)
+		// High-count series at index 150 must be in the top-100 output
+		if !strings.Contains(string(got), `"id-150"`) {
+			t.Errorf("high-count series (id-150) should survive top-by-count cut")
+		}
+	})
+
+	t.Run("invalid json returned unchanged", func(t *testing.T) {
+		body := []byte(`not json`)
+		got := limitLokiMatrixSeries(body, 5)
+		if string(got) != string(body) {
+			t.Errorf("invalid JSON should be returned unchanged")
+		}
+	})
+}
+
+// TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries verifies that the
+// Drilldown path returns actual per-value series (not a single aggregate) from VL,
+// appends a VL-side sort+limit, and applies series limiting when the response
+// contains more than maxDrilldownSeries.
+func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
+	var receivedQuery string
+	// VL returns 3 per-value series for trace_id — the Drilldown path must preserve
+	// all of them (unlike a count() if approach which collapses to one).
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedQuery = r.FormValue("query")
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
+			`{"metric":{"trace_id":"abc"},"values":[[1700000060,"3"]]},`+
+			`{"metric":{"trace_id":"def"},"values":[[1700000060,"2"]]},`+
+			`{"metric":{"trace_id":"ghi"},"values":[[1700000060,"1"]]}]}}`)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	effectiveQuery := `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`
+	form := url.Values{}
+	form.Set("query", `sum by (trace_id) (count_over_time({env="production"}|trace_id!=""`+` [1m]))`)
+	form.Set("start", "1700000000")
+	form.Set("end", "1700003600")
+	form.Set("step", "60s")
+
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
+	req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
+	req.Header.Set("X-Scope-OrgID", "default")
+
+	w := httptest.NewRecorder()
+	p.proxyStatsQueryRangeDrilldown(w, req, effectiveQuery)
+
+	t.Logf("VL received query: %s", receivedQuery)
+	body := w.Body.String()
+
+	// Must forward stats by (trace_id) count() with VL-side sort+limit
+	if !strings.Contains(receivedQuery, "stats by (trace_id) count()") {
+		t.Errorf("Drilldown path changed the query: %s", receivedQuery)
+	}
+	// Must append VL-side limit to bound high-cardinality responses at source
+	if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
+		t.Errorf("Drilldown path must add VL-side | limit %d: %s", maxDrilldownSeries, receivedQuery)
+	}
+	// Must return 3 separate per-value series — NOT a single aggregate
+	seriesCount := strings.Count(body, `"trace_id"`)
+	if seriesCount != 3 {
+		t.Errorf("expected 3 per-value series, got %d occurrences of trace_id in: %s", seriesCount, body)
+	}
+	// Must NOT use count() if
+	if strings.Contains(receivedQuery, "count() if") {
+		t.Errorf("Drilldown path must not rewrite to count() if: %s", receivedQuery)
+	}
+}
+
+// TestAppendDrilldownSeriesLimit verifies the helper that appends VL-side sort+limit
+// to Drilldown count() queries, and leaves other queries unchanged.
+func TestAppendDrilldownSeriesLimit(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		limit     int
+		want      string
+		unchanged bool
+	}{
+		{
+			name:  "standard drilldown count query",
+			query: `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`,
+			limit: 500,
+			want:  `env:="production" | filter trace_id:!"" | stats by (trace_id) count() as _c | sort by (_c desc) | limit 500`,
+		},
+		{
+			name:  "with underscore fallback expansion in by()",
+			query: `env:="production" | filter trace_id:!"" | stats by (trace_id, _trace_id) count()`,
+			limit: 500,
+			want:  `env:="production" | filter trace_id:!"" | stats by (trace_id, _trace_id) count() as _c | sort by (_c desc) | limit 500`,
+		},
+		{
+			name:  "limit value is respected",
+			query: `env:="production" | stats by (level) count()`,
+			limit: 100,
+			want:  `env:="production" | stats by (level) count() as _c | sort by (_c desc) | limit 100`,
+		},
+		{
+			name:      "already-aliased count — suffix is not bare count()",
+			query:     `env:="production" | stats by (trace_id) count() as x`,
+			limit:     500,
+			unchanged: true,
+		},
+		{
+			name:      "non-count aggregation — unchanged",
+			query:     `env:="production" | stats by (trace_id) sum(bytes)`,
+			limit:     500,
+			unchanged: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := appendDrilldownSeriesLimit(tc.query, tc.limit)
+			if tc.unchanged {
+				if got != tc.query {
+					t.Errorf("expected unchanged, got %q", got)
+				}
+				return
+			}
+			if got != tc.want {
+				t.Errorf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestProxyStatsQueryRange_StripsDeleteAlone verifies that | delete is stripped
 // even when | unpack_json is already absent (e.g. second query after first pass).
 // This matches the real-world slow query pattern: no unpack_json but still slow
@@ -100,5 +281,82 @@ func TestProxyStatsQueryRange_StripsDeleteAlone(t *testing.T) {
 	}
 	if !strings.Contains(receivedQuery, "| filter trace_id") {
 		t.Errorf("query lost | filter trace_id: %s", receivedQuery)
+	}
+}
+
+// TestAdaptDrilldownStep verifies that step inflation kicks in only when the
+// range/step ratio exceeds maxDrilldownBuckets, and that short ranges pass through
+// unchanged. This is critical for 12h+ Drilldown queries: without inflation,
+// 720 buckets × 500 per-bucket limit = 360,000 series ≈ 32 MB.
+func TestAdaptDrilldownStep(t *testing.T) {
+	sec := int64(time.Second)
+
+	tests := []struct {
+		name             string
+		startNs, endNs   int64
+		stepNs           int64
+		wantNs           int64
+		wantInflated     bool
+	}{
+		{
+			name:    "1h/60s — 60 buckets, no inflation needed",
+			startNs: 0, endNs: 3600 * sec, stepNs: 60 * sec,
+			wantNs: 60 * sec,
+		},
+		{
+			name:    "12h/60s — 720 buckets, inflated to 432s",
+			startNs: 0, endNs: 12 * 3600 * sec, stepNs: 60 * sec,
+			// minStep = 12*3600 / 100 = 432s
+			wantNs: 432 * sec, wantInflated: true,
+		},
+		{
+			name:    "24h/60s — 1440 buckets, inflated to 864s",
+			startNs: 0, endNs: 24 * 3600 * sec, stepNs: 60 * sec,
+			// minStep = 24*3600 / 100 = 864s
+			wantNs: 864 * sec, wantInflated: true,
+		},
+		{
+			name:    "12h/900s — 48 buckets, no inflation needed",
+			startNs: 0, endNs: 12 * 3600 * sec, stepNs: 900 * sec,
+			wantNs: 900 * sec,
+		},
+		{
+			name:    "exactly 100 buckets — boundary, no inflation",
+			startNs: 0, endNs: 6000 * sec, stepNs: 60 * sec,
+			// 6000/60 = 100 buckets exactly — minStep = 6000/100 = 60s, equal to step
+			wantNs: 60 * sec,
+		},
+		{
+			name:    "101 buckets — just over boundary, inflated",
+			startNs: 0, endNs: 6060 * sec, stepNs: 60 * sec,
+			// minStep = 6060/100 = 60.6s → 60 × sec, but 60.6 > 60 so adapted = 60.6s
+			// which is > stepNs (60s), so inflation applies
+			wantNs: 6060 * sec / maxDrilldownBuckets, wantInflated: true,
+		},
+		{
+			name:    "zero step — returned unchanged",
+			startNs: 0, endNs: 3600 * sec, stepNs: 0,
+			wantNs: 0,
+		},
+		{
+			name:    "inverted range — returned unchanged",
+			startNs: 3600 * sec, endNs: 0, stepNs: 60 * sec,
+			wantNs: 60 * sec,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := adaptDrilldownStep(tc.startNs, tc.endNs, tc.stepNs)
+			if got != tc.wantNs {
+				t.Errorf("adaptDrilldownStep() = %d ns, want %d ns", got, tc.wantNs)
+			}
+			if tc.wantInflated && got <= tc.stepNs {
+				t.Errorf("expected step inflation (got %d <= original %d)", got, tc.stepNs)
+			}
+			if !tc.wantInflated && got != tc.stepNs {
+				t.Errorf("expected step unchanged (got %d != original %d)", got, tc.stepNs)
+			}
+		})
 	}
 }

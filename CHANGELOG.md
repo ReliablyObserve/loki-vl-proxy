@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - When `-translate-otel-attributes=false`, the `ToVL()` query-direction translator no longer rewrites entries in `knownUnderscoreToDot` to dotted form. `ResolveLabelCandidates` and the `resolveTargetLabelFields` fallback are gated on the same flag, so the dotted form is no longer added as a candidate or fallback when OTel translation is disabled. Previously the rewrite/fallback always fired when `-label-style=underscores` was active.
 
+### Performance
+- Fix "no data" for high-cardinality Drilldown fields (e.g. `trace_id`, `span_id`) over 12h+ time ranges: VictoriaLogs applies `| limit` **per time bucket** (not globally), so a 12h/60s query with `| limit 500` produces 720 × 500 = 360,000 unique series ≈ 32 MB — exceeding the 5 MB response cap. Two complementary fixes in `proxyStatsQueryRangeDrilldown`: (1) push VL-side `| sort by (_c desc) | limit 500` to cap unique groups per bucket; (2) inflate the VL step when the range/step ratio exceeds `maxDrilldownBuckets` (100), so at most 100 buckets are sent regardless of range — keeping the total at 100 × 500 × ~90 bytes ≈ 4.5 MB. For a 12h/60s query the step inflates from 60s to 432s; for 24h/60s to 864s. Matches Loki's `max_query_series` default (500). Also corrects `maxDrilldownSeries` from the wrong value of 5000 to Loki's actual default of 500.
+
 ## [1.53.0] - 2026-05-28
 
 ### Added

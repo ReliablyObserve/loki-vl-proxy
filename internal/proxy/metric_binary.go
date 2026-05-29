@@ -49,7 +49,7 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		shiftedR := r.Clone(r.Context())
 		_ = shiftedR.ParseForm()
 		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-origSpec.Window.Nanoseconds()))
-		p.proxyStatsQueryRangeDirect(buf, shiftedR, logsqlQuery)
+		_ = p.proxyStatsQueryRangeDirect(buf, shiftedR, logsqlQuery)
 		body := trimStatsQueryRangeResponseFromStart(buf.body, origStartNs)
 		if hasTopK {
 			body = applyTopKToMatrix(body, topK, topKDesc)
@@ -81,7 +81,18 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 			effectiveQuery = stripped + logsqlQuery[len(spec.BaseQuery):]
 		}
 	}
-	p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
+
+	// For Drilldown single-field count queries, push sort+limit into VL so only
+	// the top-maxDrilldownSeries unique field values are transmitted. Without this,
+	// 300k+ trace_id UUIDs over 12 h produce a 50 MB+ VL response. Loki caps at
+	// max_query_series (default 500) for Drilldown and returns partial results with
+	// a series-limit notice; this path matches that behaviour.
+	if _, _, isDrilldown := detectDrilldownSingleField(effectiveQuery); isDrilldown {
+		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery)
+	} else {
+		p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
+	}
+
 	if hasTopK {
 		writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
 	}
@@ -101,7 +112,7 @@ const maxStatsQueryRangeBytes = 16 << 20 // 16 MB
 // maxStatsQueryRangeBytes. Grafana renders it as a blank (no-data) series.
 var emptyLokiMatrix = []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 
-func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) (capExceeded bool) {
 	// For the underscore proxy, expand dotted by() labels (e.g. "service.name") to
 	// also include their underscore equivalents (e.g. "service_name"). Loki-push data
 	// stores these as stream labels under the underscore name; OTel data uses the dotted
@@ -120,14 +131,14 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 	if err != nil {
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())
-		return
+		return false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 		p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
-		return
+		return false
 	}
 
 	body, bodyErr := readBodyLimited(resp.Body, maxStatsQueryRangeBytes)
@@ -137,7 +148,7 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 		// broad stream selectors producing tens of megabytes per concurrent field query.
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(emptyLokiMatrix)
-		return
+		return true
 	}
 
 	// Single parse pass: filter points to the requested end time AND translate
@@ -149,6 +160,173 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
+	return false
+}
+
+// maxDrilldownResponseBytes is the per-request body cap for Drilldown single-field
+// count queries. appendDrilldownSeriesLimit pushes a VL-side sort+limit so only
+// maxDrilldownSeries unique groups are transmitted; this cap is a safety net only.
+const maxDrilldownResponseBytes = 5 << 20 // 5 MB
+
+// maxDrilldownSeries is the maximum series returned for Drilldown single-field
+// count queries. Matches Loki's default max_query_series (500) for Drilldown
+// requests — Loki returns partial results with a series-limit notice at this
+// threshold rather than an error, allowing Grafana Drilldown to display real
+// per-value histogram data.
+const maxDrilldownSeries = 500
+
+// maxDrilldownBuckets caps the number of VL time buckets for Drilldown single-field
+// count queries. VL applies | limit per-bucket (not globally), so unbounded bucket
+// counts produce oversized responses: 720 buckets × 500 limit = 360,000 series ≈ 32 MB
+// for a 12 h/60 s query. With 100 buckets the total stays under 5 MB regardless of
+// time range (100 × 500 × ~90 bytes/series ≈ 4.5 MB).
+const maxDrilldownBuckets = 100
+
+// appendDrilldownSeriesLimit rewrites a VL stats count() query to sort by count
+// descending and limit to N unique groups. This pushes the cardinality cap into
+// VL so only the top-N series are transmitted to the proxy — critical for
+// high-cardinality fields (trace_id, span_id) where unbound VL responses are
+// 50 MB+ for 300k+ unique values over long time ranges.
+// Returns query unchanged if it does not end with the bare count() token.
+func appendDrilldownSeriesLimit(query string, limit int) string {
+	q := strings.TrimSpace(query)
+	if !strings.HasSuffix(q, "count()") {
+		return query
+	}
+	return q + " as _c | sort by (_c desc) | limit " + strconv.Itoa(limit)
+}
+
+// adaptDrilldownStep returns the effective VL step for Drilldown queries.
+// When the original step would produce more than maxDrilldownBuckets time
+// buckets over [startNs, endNs], the step is inflated to
+// ceil(range / maxDrilldownBuckets) so the per-bucket | limit stays effective
+// and the total response stays under maxDrilldownResponseBytes.
+// Returns stepNs unchanged when already within bounds or when parsing fails.
+func adaptDrilldownStep(startNs, endNs, stepNs int64) int64 {
+	if stepNs <= 0 || endNs <= startNs {
+		return stepNs
+	}
+	rangeNs := endNs - startNs
+	minStepNs := rangeNs / maxDrilldownBuckets
+	if stepNs < minStepNs {
+		return minStepNs
+	}
+	return stepNs
+}
+
+// proxyStatsQueryRangeDrilldown handles Drilldown single-field count queries.
+// It appends a VL-side sort+limit and inflates the step for long time ranges
+// to keep VL responses under maxDrilldownResponseBytes.
+//
+// Two complementary mechanisms bound the response size:
+//  1. | sort … | limit N — caps unique groups per time bucket.
+//  2. Step inflation — limits the bucket count when range/step > maxDrilldownBuckets,
+//     because VL applies | limit per-bucket (not globally). Without inflation,
+//     12 h/60 s = 720 buckets × 500/bucket = 360,000 series ≈ 32 MB.
+//     With 100-bucket cap: 100 × 500 × ~90 bytes ≈ 4.5 MB.
+func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
+	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
+	logsqlQuery = appendDrilldownSeriesLimit(logsqlQuery, maxDrilldownSeries)
+
+	// Inflate step for long ranges: VL applies | limit per-bucket, so a 12 h/60 s
+	// query produces 720 buckets × 500/bucket = 360,000 series ≈ 32 MB.
+	// Cap to maxDrilldownBuckets so the response stays under 5 MB.
+	effectiveStep := r.FormValue("step")
+	if startNs, ok1 := parseLokiTimeToUnixNano(r.FormValue("start")); ok1 {
+		if endNs, ok2 := parseLokiTimeToUnixNano(r.FormValue("end")); ok2 {
+			if stepNs, ok3 := parseStepToNanos(r.FormValue("step")); ok3 {
+				if adapted := adaptDrilldownStep(startNs, endNs, stepNs); adapted > stepNs {
+					adaptedSecs := (adapted + int64(time.Second) - 1) / int64(time.Second)
+					effectiveStep = strconv.FormatInt(adaptedSecs, 10) + "s"
+				}
+			}
+		}
+	}
+
+	params := buildStatsQueryRangeParams(logsqlQuery, r.FormValue("start"), r.FormValue("end"), effectiveStep)
+	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
+	if err != nil {
+		p.writeError(w, statusFromUpstreamErr(err), err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
+		return
+	}
+
+	body, bodyErr := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+	if bodyErr != nil {
+		// Safety net: VL sort+limit should keep response well under 5 MB;
+		// if exceeded, return empty rather than OOMing.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(emptyLokiMatrix)
+		return
+	}
+
+	var keepFn func(int64) bool
+	if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
+		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
+	}
+	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
+	body = limitLokiMatrixSeries(body, maxDrilldownSeries)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
+}
+
+// limitLokiMatrixSeries truncates the result array in a Loki matrix response to
+// the top maxSeries entries by total count (sum of all sample values), matching
+// Loki's max_series_per_query behaviour. Grafana Drilldown then picks the top 100
+// from those series for display — sorting here ensures the most active field values
+// survive the cut when VL returns tens of thousands of unique series.
+// Returns body unchanged if parsing fails or len(result) <= maxSeries.
+func limitLokiMatrixSeries(body []byte, maxSeries int) []byte {
+	if maxSeries <= 0 {
+		return body
+	}
+	v, err := fj.ParseBytes(body)
+	if err != nil {
+		return body
+	}
+	result := v.GetArray("data", "result")
+	if len(result) <= maxSeries {
+		return body
+	}
+
+	// Compute total count per series and sort descending so the most active
+	// field values survive the maxSeries cut, not an arbitrary VL ordering.
+	type ranked struct {
+		idx   int
+		total float64
+	}
+	ranks := make([]ranked, len(result))
+	for i, entry := range result {
+		var total float64
+		for _, pair := range entry.GetArray("values") {
+			arr := pair.GetArray()
+			if len(arr) >= 2 {
+				if f, e := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64); e == nil {
+					total += f
+				}
+			}
+		}
+		ranks[i] = ranked{idx: i, total: total}
+	}
+	sort.Slice(ranks, func(i, j int) bool { return ranks[i].total > ranks[j].total })
+
+	buf := make([]byte, 0, maxSeries*256)
+	buf = append(buf, `{"status":"success","data":{"resultType":"matrix","result":[`...)
+	for i := 0; i < maxSeries; i++ {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		buf = result[ranks[i].idx].MarshalTo(buf)
+	}
+	buf = append(buf, `]}}`...)
+	return buf
 }
 
 // addUnderscorefallbackByLabels augments a translated LogsQL stats query's by()
