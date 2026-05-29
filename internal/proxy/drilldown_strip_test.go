@@ -131,11 +131,12 @@ func TestLimitLokiMatrixSeries(t *testing.T) {
 // appends a VL-side sort+limit, and applies series limiting when the response
 // contains more than maxDrilldownSeries.
 func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
-	var receivedQuery string
+	var receivedQuery, receivedStep string
 	// VL returns 3 per-value series for trace_id — the Drilldown path must preserve
 	// all of them (unlike a count() if approach which collapses to one).
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.FormValue("query")
+		receivedStep = r.FormValue("step")
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
 			`{"metric":{"trace_id":"abc"},"values":[[1700000060,"3"]]},`+
@@ -160,7 +161,7 @@ func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	w := httptest.NewRecorder()
 	p.proxyStatsQueryRangeDrilldown(w, req, effectiveQuery, `env:="production"`, "trace_id")
 
-	t.Logf("VL received query: %s", receivedQuery)
+	t.Logf("VL received query: %s step: %s", receivedQuery, receivedStep)
 	body := w.Body.String()
 
 	// Must forward stats by (trace_id) count() with VL-side sort+limit
@@ -179,6 +180,14 @@ func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	// Must NOT use count() if
 	if strings.Contains(receivedQuery, "count() if") {
 		t.Errorf("Drilldown path must not rewrite to count() if: %s", receivedQuery)
+	}
+	// REGRESSION GUARD: step must NOT be inflated. Inflating the step to VL breaks
+	// Grafana's timestamp alignment and causes "no data" for ALL Drilldown fields.
+	// The step VL receives on the direct path must exactly match Grafana's 60s step.
+	// (The two-phase fallback uses a different step only for its Phase 1 single-bucket
+	// call — Phase 2 always uses the original step.)
+	if receivedStep != "60s" {
+		t.Errorf("step must be preserved as 60s (not inflated), VL received: %q", receivedStep)
 	}
 }
 

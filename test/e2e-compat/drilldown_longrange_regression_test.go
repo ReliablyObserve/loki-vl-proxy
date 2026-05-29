@@ -3,6 +3,7 @@
 package e2e_compat
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -573,4 +574,162 @@ func uniqueSortedInt64s(values []int64) []int64 {
 		}
 	}
 	return out
+}
+
+// TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries is a regression test
+// for the "no data" bug where high-cardinality fields (trace_id, span_id, session_id)
+// returned empty results for 12h+ ranges. Root cause: VL's | limit 500 is per
+// time-bucket, not global — 720 buckets × 500 unique values/bucket = 360k series
+// (~32.8 MB) exceeded the 32 MB cap. The two-phase fallback (unit-tested in
+// drilldown_strip_test.go:TestDrilldownTwoPhase_BasicFlow) fixes this.
+//
+// This e2e test covers the direct path (< 32 MB; 600 unique trace_ids × 30 buckets
+// stays well within cap) and verifies:
+//   - trace_id histogram is non-empty (regression: was "no data" before fix)
+//   - series count is bounded at ≤ maxDrilldownSeries (500)
+//   - step is not inflated (timestamps spaced at the query step, not the range)
+//   - low-cardinality fields (level) return their natural count unaffected
+//
+// Data format: trace_id is embedded in JSON _msg (matching Grafana Logs Drilldown's
+// behaviour for JSON-parsed fields — Grafana sends |json|drop __error__|field!="").
+// This translates to VL's | unpack_json | delete __error__ | filter trace_id:!"",
+// which the proxy strips to | filter trace_id:!"" before the drilldown detection.
+func TestDrilldown_HighCardinality_TraceID_ReturnsBoundedSeries(t *testing.T) {
+	ensureDataIngested(t)
+	waitForReady(t, proxyURL+"/ready", 30*time.Second)
+
+	const (
+		numUniqueTraceIDs  = 600
+		stepSeconds        = 60
+		maxDrilldownSeries = 500
+	)
+
+	serviceName := fmt.Sprintf("drilldown-hc-trace-%d", time.Now().UnixNano())
+	now := time.Now().UTC()
+	rangeWindow := 30 * time.Minute
+	step := time.Duration(stepSeconds) * time.Second
+	start := now.Add(-rangeWindow).Truncate(step)
+	end := now.Truncate(step).Add(step)
+
+	t.Logf("seeding service=%s with %d unique trace_ids over %s", serviceName, numUniqueTraceIDs, rangeWindow)
+
+	// Batch-push 600 entries to VL's jsonline endpoint.
+	// trace_id is a top-level VL column field (NOT a stream field, NOT in _msg JSON).
+	// The proxy strips |unpack_json before sending to VL, so column-indexed fields
+	// are found by | filter trace_id:!"" without needing | unpack_json.
+	// level is a stream field so the level sub-test exercises the direct proxy path.
+	insertURL := vlURL + "/insert/jsonline?_stream_fields=" + url.QueryEscape("service_name,app,level")
+	var batchBody strings.Builder
+	batchBody.Grow(numUniqueTraceIDs * 250)
+	levels := []string{"info", "warn", "error"}
+	for i := 0; i < numUniqueTraceIDs; i++ {
+		traceID := fmt.Sprintf("t-%08x-%08x-%08x-%08x", i, i*7+3, i*13+5, i*17+9)
+		level := levels[i%len(levels)]
+		// Spread entries uniformly across the time window so they land in different 60s buckets.
+		ts := start.Add(time.Duration(int64(i) * int64(rangeWindow) / int64(numUniqueTraceIDs)))
+		entry, _ := json.Marshal(map[string]string{
+			"_time":        ts.Format(time.RFC3339Nano),
+			"_msg":         fmt.Sprintf("trace request id=%s", traceID),
+			"service_name": serviceName,
+			"app":          serviceName,
+			"level":        level,
+			"trace_id":     traceID,
+		})
+		batchBody.Write(entry)
+		batchBody.WriteByte('\n')
+	}
+	pushResp, err := http.Post(insertURL, "application/stream+json", strings.NewReader(batchBody.String()))
+	if err != nil {
+		t.Fatalf("VL batch push failed: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, pushResp.Body)
+	pushResp.Body.Close()
+	if pushResp.StatusCode/100 != 2 {
+		t.Fatalf("VL batch push returned status=%d", pushResp.StatusCode)
+	}
+
+	waitForDrilldownServiceVisible(t, serviceName, start, end)
+
+	startNs := strconv.FormatInt(start.UnixNano(), 10)
+	endNs := strconv.FormatInt(end.UnixNano(), 10)
+	stepStr := strconv.Itoa(stepSeconds)
+
+	t.Run("trace_id_returns_non_empty_bounded_series", func(t *testing.T) {
+		// Real Grafana Logs Drilldown query format for a JSON-parsed field.
+		// Proxy strips |unpack_json + |delete __error__ before drilldown detection,
+		// leaving | filter trace_id:!"" which detectDrilldownSingleField matches.
+		params := url.Values{}
+		params.Set("query", fmt.Sprintf(
+			`sum by (trace_id) (count_over_time({service_name=%q}|json|drop __error__,__error_details__|trace_id!="" [%ds]))`,
+			serviceName, stepSeconds,
+		))
+		params.Set("start", startNs)
+		params.Set("end", endNs)
+		params.Set("step", stepStr)
+
+		resp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+		data := extractMap(resp, "data")
+		if data == nil {
+			t.Fatalf("expected query_range data envelope for trace_id, got %v", resp)
+		}
+		if data["resultType"] != "matrix" {
+			t.Fatalf("expected resultType=matrix for trace_id, got %v", data["resultType"])
+		}
+		result := extractArray(data, "result")
+		if len(result) == 0 {
+			t.Fatalf("trace_id histogram is empty (regression: high-cardinality fields returned 'no data' before two-phase fix), response=%v", resp)
+		}
+		if len(result) > maxDrilldownSeries {
+			t.Fatalf("trace_id histogram returned %d series, exceeds maxDrilldownSeries=%d", len(result), maxDrilldownSeries)
+		}
+		t.Logf("trace_id histogram: %d series (max=%d) OK", len(result), maxDrilldownSeries)
+
+		// Step-inflation regression guard: timestamps must be spaced at stepSeconds,
+		// NOT at the full range duration. Prior attempt inflated step to the full range
+		// (e.g. 1800s for 30m), breaking ALL fields because Grafana expects the original
+		// step interval in the response.
+		if series0, ok := result[0].(map[string]interface{}); ok {
+			if vals, ok := series0["values"].([]interface{}); ok && len(vals) >= 2 {
+				s0, _ := vals[0].([]interface{})
+				s1, _ := vals[1].([]interface{})
+				if s0 != nil && s1 != nil {
+					ts0, _ := s0[0].(float64)
+					ts1, _ := s1[0].(float64)
+					gap := int64(ts1 - ts0)
+					if gap != stepSeconds {
+						t.Errorf("timestamp gap between samples=%ds expected=%ds (step-inflation regression)", gap, stepSeconds)
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("level_returns_natural_small_count_unaffected", func(t *testing.T) {
+		// level is a stream label — goes through proxyStatsQueryRangeDirect (not the
+		// drilldown path). Verifies that changes to the drilldown path don't break
+		// adjacent stream-label aggregations.
+		params := url.Values{}
+		params.Set("query", fmt.Sprintf(
+			`sum by (level) (count_over_time({service_name=%q}[%ds]))`,
+			serviceName, stepSeconds,
+		))
+		params.Set("start", startNs)
+		params.Set("end", endNs)
+		params.Set("step", stepStr)
+
+		resp := getJSON(t, proxyURL+"/loki/api/v1/query_range?"+params.Encode())
+		data := extractMap(resp, "data")
+		if data == nil {
+			t.Fatalf("expected query_range data envelope for level, got %v", resp)
+		}
+		result := extractArray(data, "result")
+		if len(result) == 0 {
+			t.Fatalf("level histogram is empty (low-cardinality fields must not be broken by high-cardinality fix), response=%v", resp)
+		}
+		// We pushed 3 distinct levels (info/warn/error); proxy must return ≤3 series.
+		if len(result) > 3 {
+			t.Errorf("level histogram returned %d series, expected ≤3 (info/warn/error)", len(result))
+		}
+		t.Logf("level histogram: %d series OK", len(result))
+	})
 }
