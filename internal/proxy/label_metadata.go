@@ -470,7 +470,10 @@ func (p *Proxy) fetchPreferredLabelNames(ctx context.Context, params url.Values)
 			return nil, err
 		}
 	}
-	fallback, fallbackErr := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", params)
+	// Apply the same 1h cap that fetchStreamFieldNamesCached uses; without this, warmup
+	// calls for 24h/7d windows pass the full uncapped range → 700ms–1.5s VL scans.
+	fallbackParams := capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
+	fallback, fallbackErr := p.fetchVLFieldNames(ctx, "/select/logsql/field_names", fallbackParams)
 	if fallbackErr != nil {
 		return nil, fallbackErr
 	}
