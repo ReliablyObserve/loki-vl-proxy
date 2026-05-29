@@ -284,36 +284,100 @@ func appendDrilldownSeriesLimit(query string, limit int) string {
 	return q + " as _c | sort by (_c desc) | limit " + strconv.Itoa(limit)
 }
 
-// drilldownShouldEagerTwoPhase returns true when the proxy can predict that the
-// direct VL path (| limit 500 per bucket → readBodyLimited) will overflow
-// maxDrilldownResponseBytes, making a straight two-phase call cheaper. Two
-// independent signals trigger eager two-phase:
+// drilldownEagerTwoPhaseMinBuckets is the bucket-count threshold above which the
+// proxy skips the direct VL path and goes straight to two-phase. The direct path
+// runs one per-bucket sort in VL for every time bucket; two-phase runs a single
+// global sort (Phase 1) and a filtered range scan (Phase 2). Beyond this threshold
+// two-phase is cheaper in VL CPU even accounting for the extra round trip.
 //
-//  1. Known high-cardinality field name (trace_id, span_id, *_id, *_token, …) —
-//     these fields carry unique-per-request values, so each time bucket produces a
-//     different set of values; | limit 500 per bucket ≠ global top 500.
+// At 60s step: 60 buckets = 1 hour. At 15s step: 60 buckets = 15 minutes.
+const drilldownEagerTwoPhaseMinBuckets = 60
+
+// drilldownShouldEagerTwoPhase returns true when the proxy should skip the direct
+// VL path and go straight to two-phase. Three independent signals trigger it:
 //
-//  2. Cardinality cache: a previous request for {orgID, cleanBase, field} already
-//     overflowed the cap, so subsequent re-renders (triggered by Grafana filter/time
-//     changes) skip the direct attempt entirely.
+//  1. Known high-cardinality field name (trace_id, span_id, *_id, *_token, …).
+//
+//  2. Long range: more than drilldownEagerTwoPhaseMinBuckets time buckets. The
+//     direct path runs one per-bucket sort per bucket; two-phase (single global
+//     sort + filtered scan) is cheaper beyond this point.
+//
+//  3. Cardinality cache: a previous request for {orgID, cleanBase, field} already
+//     overflowed maxDrilldownResponseBytes on the direct path.
 func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field string) bool {
 	if isLikelyHighCardinalityField(field) {
 		return true
+	}
+	if startNs, ok1 := parseLokiTimeToUnixNano(r.FormValue("start")); ok1 {
+		if endNs, ok2 := parseLokiTimeToUnixNano(r.FormValue("end")); ok2 && endNs > startNs {
+			if stepSec, ok := parseDuration(r.FormValue("step")); ok && stepSec > 0 {
+				rangeSec := float64(endNs-startNs) / float64(time.Second)
+				if int64(rangeSec/stepSec) > drilldownEagerTwoPhaseMinBuckets {
+					return true
+				}
+			}
+		}
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	return p.drilldownCardCache != nil && p.drilldownCardCache.isHigh(orgID, cleanBase, field)
 }
 
+// drilldownStatsCacheTTL is the response cache TTL for Drilldown single-field
+// count queries. Drilldown fires 20–100 concurrent query_range calls on every
+// tab open or re-render; a 60-second cache window eliminates all VL calls for
+// re-renders (filter interactions, Grafana ticks, second tab open) within that
+// window. The cache is checked before the concurrency semaphore so cached
+// responses bypass the semaphore entirely.
+const drilldownStatsCacheTTL = 60 * time.Second
+
+// drilldownStatsCacheKey returns a cache key for a Drilldown single-field
+// count response. The key includes orgID, the original LogQL query (stable
+// across re-renders), start, end (bucketed to 5-min to absorb Grafana's
+// sliding time window), and step. Auth fingerprint is appended when present.
+func (p *Proxy) drilldownStatsCacheKey(r *http.Request) string {
+	endRaw := r.FormValue("end")
+	endBucketed := endRaw
+	if endRaw != "" {
+		bucket := 5 * time.Minute
+		if stepRaw := r.FormValue("step"); stepRaw != "" {
+			if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
+				bucket = d
+			}
+		}
+		endBucketed = bucketTimestampString(endRaw, bucket)
+	}
+	var b strings.Builder
+	b.WriteString("drilldown_stats:")
+	b.WriteString(r.Header.Get("X-Scope-OrgID"))
+	b.WriteByte(':')
+	b.WriteString(r.FormValue("query"))
+	b.WriteByte(':')
+	b.WriteString(r.FormValue("start"))
+	b.WriteByte(':')
+	b.WriteString(endBucketed)
+	b.WriteByte(':')
+	b.WriteString(r.FormValue("step"))
+	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
+		b.WriteString(":auth:")
+		b.WriteString(fp)
+	}
+	return b.String()
+}
+
 // proxyStatsQueryRangeDrilldown handles Drilldown single-field count queries.
 //
-// Fast path (low-cardinality fields over short ranges): appends VL-side
-// sort+limit so only the top-maxDrilldownSeries unique values are transmitted
-// per time bucket, then proxy-side caps to maxDrilldownSeries series.
+// Response cache path: checks a 60-second Drilldown-specific cache before
+// acquiring the concurrency semaphore. Re-renders (filter interactions, Grafana
+// ticks, second tab) are served from cache with zero VL calls.
 //
-// Eager two-phase path (high-cardinality fields or long ranges): detected via
-// drilldownShouldEagerTwoPhase, bypasses the direct VL attempt entirely and
-// goes straight to drilldownTwoPhase — saving one 32 MB read-and-reject cycle
-// and the corresponding VL scan CPU.
+// Fast path (low-cardinality fields, short ranges): appends VL-side sort+limit
+// so only the top-maxDrilldownSeries unique values are transmitted per time
+// bucket, then proxy-side caps to maxDrilldownSeries series.
+//
+// Eager two-phase path: detected via drilldownShouldEagerTwoPhase (HC field
+// name, range > 60 buckets, or cached overflow). Bypasses the direct VL attempt
+// and goes straight to drilldownTwoPhase — one global sort (Phase 1) + filtered
+// scan (Phase 2) instead of per-bucket sorts.
 //
 // Fallback two-phase path: when the direct response still overflows
 // maxDrilldownResponseBytes (unknown HC field, first request for a new selector),
@@ -322,6 +386,15 @@ func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field s
 // cleanBase is the stream-selector base without the field existence filter.
 // field is the grouped field name. Both come from detectDrilldownSingleField.
 func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Request, logsqlQuery, cleanBase, field string) {
+	// Check the 60-second Drilldown response cache before acquiring the semaphore.
+	// On a cache hit no VL call is made and no semaphore slot is consumed.
+	drillCacheKey := p.drilldownStatsCacheKey(r)
+	if cached, _, ok := p.cache.GetWithTTL(drillCacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(cached)
+		return
+	}
+
 	// Acquire a concurrency slot. Grafana Logs Drilldown fires one query_range per
 	// detected field simultaneously (~20–100 concurrent calls on the fields tab).
 	// Without a cap all calls hit VL at once, causing a CPU storm. Block until a
@@ -369,8 +442,10 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 			}
 			body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
 			body = limitLokiMatrixSeries(body, maxDrilldownSeries)
+			final := wrapAsLokiResponse(body, "matrix")
+			p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
+			_, _ = w.Write(final)
 			return
 		}
 
@@ -389,6 +464,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		_, _ = w.Write(emptyLokiMatrix)
 		return
 	}
+	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
 }
