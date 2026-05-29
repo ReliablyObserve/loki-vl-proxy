@@ -443,32 +443,7 @@ func TestIsLikelyHighCardinalityField(t *testing.T) {
 	}
 }
 
-// TestDrilldownEstimateBuckets verifies bucket count computation from request params.
-func TestDrilldownEstimateBuckets(t *testing.T) {
-	tests := []struct {
-		start, end, step string
-		want             int64
-	}{
-		// 12h range, 60s step → 720 buckets
-		{"1700000000000000000", "1700043200000000000", "60s", 720},
-		// 1h range, 5m step → 12 buckets
-		{"1700000000000000000", "1700003600000000000", "300s", 12},
-		// zero-length range → 0
-		{"1700000000000000000", "1700000000000000000", "60s", 0},
-		// missing step → 0
-		{"1700000000000000000", "1700003600000000000", "", 0},
-		// invalid step → 0
-		{"1700000000000000000", "1700003600000000000", "bad", 0},
-	}
-	for _, tc := range tests {
-		got := drilldownEstimateBuckets(tc.start, tc.end, tc.step)
-		if got != tc.want {
-			t.Errorf("drilldownEstimateBuckets(%q,%q,%q)=%d want %d", tc.start, tc.end, tc.step, got, tc.want)
-		}
-	}
-}
-
-// TestDrilldownShouldEagerTwoPhase verifies all three triggers for skipping the
+// TestDrilldownShouldEagerTwoPhase verifies all two triggers for skipping the
 // direct VL path in proxyStatsQueryRangeDrilldown.
 func TestDrilldownShouldEagerTwoPhase(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
@@ -496,14 +471,6 @@ func TestDrilldownShouldEagerTwoPhase(t *testing.T) {
 		req := makeReq("1700000000000000000", "1700003600000000000", "60s", "org1")
 		if p.drilldownShouldEagerTwoPhase(req, `env:="prod"`, "level") {
 			t.Error("level with short range must NOT trigger eager two-phase")
-		}
-	})
-
-	t.Run("bucket_overflow_triggers_eager", func(t *testing.T) {
-		// 12h range, 60s step → 720 buckets; 720×500×200 = 72 MB > 32 MB
-		req := makeReq("1700000000000000000", "1700043200000000000", "60s", "org1")
-		if !p.drilldownShouldEagerTwoPhase(req, `env:="prod"`, "status_code") {
-			t.Error("720-bucket range must trigger eager two-phase via bucket-overflow check")
 		}
 	})
 

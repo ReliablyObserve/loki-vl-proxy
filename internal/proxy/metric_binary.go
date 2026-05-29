@@ -208,12 +208,6 @@ func isGrafanaDrilldownRequest(r *http.Request) bool {
 	return strings.Contains(tag, "lokiexplore") || strings.Contains(tag, "drilldown")
 }
 
-// drilldownAvgBytesPerSeries is a conservative estimate of bytes per series entry in
-// a VL stats_query_range response. Used to predict whether the direct path would
-// overflow maxDrilldownResponseBytes for a given (numBuckets × maxDrilldownSeries).
-// Based on observed responses: each trace_id UUID series entry ≈ 150-250 bytes of JSON.
-const drilldownAvgBytesPerSeries = 200
-
 // isLikelyHighCardinalityField returns true for field names whose values are
 // typically unique per log entry — trace/span IDs, session tokens, request keys.
 // For these fields the direct VL path (| limit 500 per bucket) still produces
@@ -239,20 +233,6 @@ func isLikelyHighCardinalityField(name string) bool {
 		strings.HasSuffix(lower, "_token") ||
 		strings.HasSuffix(lower, "_hash") ||
 		strings.HasSuffix(lower, "_key")
-}
-
-// drilldownEstimateBuckets returns the number of time buckets a stats_query_range
-// call would produce for the given start/end/step. Returns 0 when any parameter
-// is missing or invalid. Used to pre-check whether | limit 500 per bucket would
-// still overflow maxDrilldownResponseBytes (numBuckets × 500 × avgBytes > 32 MB).
-func drilldownEstimateBuckets(startRaw, endRaw, stepRaw string) int64 {
-	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
-	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
-	step, stepOk := parsePositiveStepDuration(stepRaw)
-	if !ok1 || !ok2 || !stepOk || step <= 0 || endNs <= startNs {
-		return 0
-	}
-	return (endNs - startNs) / int64(step)
 }
 
 // drilldownCardinalityCache remembers which {orgID, base, field} triples have
@@ -306,26 +286,18 @@ func appendDrilldownSeriesLimit(query string, limit int) string {
 
 // drilldownShouldEagerTwoPhase returns true when the proxy can predict that the
 // direct VL path (| limit 500 per bucket → readBodyLimited) will overflow
-// maxDrilldownResponseBytes, making a straight two-phase call cheaper. Three
+// maxDrilldownResponseBytes, making a straight two-phase call cheaper. Two
 // independent signals trigger eager two-phase:
 //
 //  1. Known high-cardinality field name (trace_id, span_id, *_id, *_token, …) —
 //     these fields carry unique-per-request values, so each time bucket produces a
 //     different set of values; | limit 500 per bucket ≠ global top 500.
 //
-//  2. Bucket-count overflow: numBuckets × maxDrilldownSeries × drilldownAvgBytesPerSeries
-//     exceeds maxDrilldownResponseBytes. For any field (even low-cardinality ones)
-//     a very long range with a fine step produces enough unique series to overflow.
-//
-//  3. Cardinality cache: a previous request for {orgID, cleanBase, field} already
+//  2. Cardinality cache: a previous request for {orgID, cleanBase, field} already
 //     overflowed the cap, so subsequent re-renders (triggered by Grafana filter/time
 //     changes) skip the direct attempt entirely.
 func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field string) bool {
 	if isLikelyHighCardinalityField(field) {
-		return true
-	}
-	numBuckets := drilldownEstimateBuckets(r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
-	if numBuckets > 0 && numBuckets*maxDrilldownSeries*drilldownAvgBytesPerSeries > maxDrilldownResponseBytes {
 		return true
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
