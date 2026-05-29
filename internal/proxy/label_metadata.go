@@ -286,15 +286,26 @@ const metadataMaxFieldNamesWindow = time.Hour
 const fieldNamesCacheBucket = 30 * time.Second
 
 // fieldMetaCacheKey builds a stable cache key for stream_field_names and field_names
-// responses. The end timestamp is floor-rounded to fieldNamesCacheBucket intervals.
+// responses. Both start and end timestamps are floor-rounded to fieldNamesCacheBucket
+// intervals to absorb Grafana's sliding "last N h" window: on every Grafana auto-refresh
+// both endpoints drift by the same real-time delta (~30s), so bucketing only end left
+// start raw and produced a unique key on every request — defeating the cache entirely.
 func fieldMetaCacheKey(prefix, orgID string, params url.Values, authFP string) string {
 	endRaw := firstNonEmpty(params.Get("end"), params.Get("to"))
-	if endNs, ok := parseLokiTimeToUnixNano(endRaw); ok && endNs > 0 {
+	startRaw := firstNonEmpty(params.Get("start"), params.Get("from"))
+	endNs, okEnd := parseLokiTimeToUnixNano(endRaw)
+	startNs, okStart := parseLokiTimeToUnixNano(startRaw)
+	if (okEnd && endNs > 0) || (okStart && startNs > 0) {
 		bucket := int64(fieldNamesCacheBucket)
-		bucketed := (endNs / bucket) * bucket
 		capped := cloneURLValues(params)
-		capped.Set("end", fmt.Sprintf("%d", bucketed))
-		capped.Del("to")
+		if okEnd && endNs > 0 {
+			capped.Set("end", fmt.Sprintf("%d", (endNs/bucket)*bucket))
+			capped.Del("to")
+		}
+		if okStart && startNs > 0 {
+			capped.Set("start", fmt.Sprintf("%d", (startNs/bucket)*bucket))
+			capped.Del("from")
+		}
 		key := prefix + orgID + ":" + capped.Encode()
 		if authFP != "" {
 			key += ":auth:" + authFP
@@ -647,12 +658,13 @@ func (p *Proxy) labelBackgroundTimeout() time.Duration {
 }
 
 func (p *Proxy) refreshLabelsCacheAsync(orgID, cacheKey, rawQuery, start, end, search string, savedReq *http.Request) {
-	// Bucket the refresh key so Grafana's sliding end-timestamp doesn't spawn a
-	// new background goroutine on every panel load. All requests within the same
-	// 30s window share one singleflight call; the result is stored under the
-	// caller's exact cacheKey so subsequent requests still hit the cache.
+	// Bucket both start and end so Grafana's sliding "last N h" window doesn't
+	// spawn a new background goroutine on every panel load. Both timestamps drift
+	// by the same real-time delta, so only bucketing end left start raw and caused
+	// a unique singleflight key (and thus a new VL call) on every refresh tick.
+	bucketedStart := bucketTimestampString(start, fieldNamesCacheBucket)
 	bucketedEnd := bucketTimestampString(end, fieldNamesCacheBucket)
-	refreshKey := "refresh:labels:" + orgID + ":" + rawQuery + ":" + start + ":" + bucketedEnd + ":" + search
+	refreshKey := "refresh:labels:" + orgID + ":" + rawQuery + ":" + bucketedStart + ":" + bucketedEnd + ":" + search
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
 			// Background label fetches fetch the full user-requested range rather than
