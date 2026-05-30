@@ -233,11 +233,11 @@ func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	if strings.Contains(receivedQuery, "count() if") {
 		t.Errorf("Drilldown path must not rewrite to count() if: %s", receivedQuery)
 	}
-	// Step must NOT be coarsened: 1h range uses the 60-bucket cap
-	// (ranges ≤6h use maxDrilldownStatsBucketsShort=60), so minStep=3600/60=60s
-	// which equals the requested step → proxy passes it through unchanged.
+	// Step must NOT be coarsened: 1h range uses the 120-bucket cap
+	// (ranges ≤ drilldownHybridThreshold use maxDrilldownStatsBucketsShort=120),
+	// so minStep=3600/120=30s which is ≤ the requested 60s → unchanged.
 	if receivedStep != "60s" {
-		t.Errorf("step must be unchanged (60s) for 1h/60s query with 60-bucket cap, VL received: %q", receivedStep)
+		t.Errorf("step must be unchanged (60s) for 1h/60s query with 120-bucket cap, VL received: %q", receivedStep)
 	}
 }
 

@@ -473,9 +473,13 @@ func writeJSONEscaped(b *bytes.Buffer, s string) {
 // mergeDrilldownWithFieldValues merges a stats_query_range Loki matrix (statsBody,
 // covering only the recent histogram window) with field_values entries (covering the
 // full requested range). Series present in statsBody keep their per-bucket histogram;
-// series present only in field_values get a single data point at endSec scaled to
-// approximate a per-bucket count (totalHits * histStepNs / fullRangeNs) so the
-// stub is visually comparable to active histogram bars.
+// series present only in field_values get evenly-distributed stub bars spanning the
+// full range (not just a single spike at endSec) so Grafana renders a complete
+// time-series chart rather than an empty-looking chart with one point at the right edge.
+//
+// For stats-covered series the stats bars already cover the histogram window; this
+// function additionally prefixes averaged stubs from startSec to the first stats
+// timestamp so the full range appears populated.
 func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries []drilldownFVEntry, endSec, fullRangeNs, histStepNs int64) []byte {
 	v, err := fj.ParseBytes(statsBody)
 	if err != nil || v == nil {
@@ -483,18 +487,79 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 	}
 	result := v.GetArray("data", "result")
 
-	// Track which values already have histogram data.
+	// Build value → total-hits lookup (field_values covers the full range).
+	fvHits := make(map[string]int64, len(entries))
+	for _, e := range entries {
+		fvHits[e.Value] = e.Hits
+	}
+
+	// Track which values already have histogram data and find the stats window start.
 	inStats := make(map[string]struct{}, len(result))
+	histStartSec := endSec // sentinel; updated below
 	for _, item := range result {
 		val := string(item.GetStringBytes("metric", lokiField))
 		if val != "" {
 			inStats[val] = struct{}{}
 		}
+		// Find minimum timestamp across all stats series — that is the histogram window start.
+		if values := item.GetArray("values"); len(values) > 0 {
+			if arr := values[0].GetArray(); len(arr) >= 1 {
+				if ts := arr[0].GetInt64(); ts > 0 && ts < histStartSec {
+					histStartSec = ts
+				}
+			}
+		}
+	}
+
+	// Compute stub grid: distribute field-values-only hits across the full range
+	// using at most maxDrilldownStatsBucketsShort evenly-spaced time points.
+	startSec := endSec - fullRangeNs/int64(time.Second)
+	var nStub, stubStepSec int64
+	if fullRangeNs > 0 && histStepNs > 0 {
+		nStub = fullRangeNs / histStepNs
+		if nStub > int64(maxDrilldownStatsBucketsShort) {
+			nStub = int64(maxDrilldownStatsBucketsShort)
+		}
+		if nStub < 1 {
+			nStub = 1
+		}
+		stubStepSec = fullRangeNs / int64(time.Second) / nStub
+		if stubStepSec < 1 {
+			stubStepSec = 1
+		}
+	}
+
+	// stubCount returns the per-bucket hit count for the full-range grid.
+	stubCount := func(totalHits int64) int64 {
+		if nStub < 1 {
+			return totalHits
+		}
+		c := totalHits / nStub
+		if c < 1 {
+			c = 1
+		}
+		return c
+	}
+
+	// writeStubs emits nBuckets time-value pairs starting at tsSec with stepSec.
+	writeStubs := func(buf *bytes.Buffer, tsSec, stepSec, nBuckets, hitsPerBucket int64, firstPoint *bool) {
+		hitsStr := strconv.FormatInt(hitsPerBucket, 10)
+		for i := int64(0); i < nBuckets; i++ {
+			if !*firstPoint {
+				buf.WriteByte(',')
+			}
+			*firstPoint = false
+			buf.WriteByte('[')
+			buf.WriteString(strconv.FormatInt(tsSec+i*stepSec, 10))
+			buf.WriteString(`,"`)
+			buf.WriteString(hitsStr)
+			buf.WriteString(`"]`)
+		}
 	}
 
 	endStr := strconv.FormatInt(endSec, 10)
 	var b bytes.Buffer
-	b.Grow(len(statsBody) + len(entries)*128)
+	b.Grow(len(statsBody) + len(entries)*int(nStub+1)*24 + 64)
 	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
 
 	first := true
@@ -503,8 +568,41 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 			b.WriteByte(',')
 		}
 		first = false
+
+		// Prefix pre-stats window with averaged stubs so the full range is populated.
+		val := string(item.GetStringBytes("metric", lokiField))
+		totalHits := fvHits[val]
+		preStatsGapSec := histStartSec - startSec
+
+		if preStatsGapSec > 0 && nStub > 0 && totalHits > 0 {
+			preNBuckets := preStatsGapSec / stubStepSec
+			if preNBuckets > 0 {
+				b.WriteString(`{"metric":`)
+				if m := item.Get("metric"); m != nil {
+					b.Write(m.MarshalTo(nil))
+				} else {
+					b.WriteString(`{}`)
+				}
+				b.WriteString(`,"values":[`)
+				firstPoint := true
+				hitsPerBucket := stubCount(totalHits)
+				writeStubs(&b, startSec, stubStepSec, preNBuckets, hitsPerBucket, &firstPoint)
+				for _, vv := range item.GetArray("values") {
+					if !firstPoint {
+						b.WriteByte(',')
+					}
+					firstPoint = false
+					b.Write(vv.MarshalTo(nil))
+				}
+				b.WriteString(`]}`)
+				continue
+			}
+		}
+		// No pre-stats gap or no fv data: emit stats item verbatim.
 		b.Write(item.MarshalTo(nil))
 	}
+
+	// Emit field_values-only entries with full-range stub bars.
 	for _, e := range entries {
 		if _, ok := inStats[e.Value]; ok {
 			continue
@@ -513,26 +611,24 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 			b.WriteByte(',')
 		}
 		first = false
-		// Scale total hits to approximate a per-bucket count so the stub is
-		// visually consistent with active histogram bars in the same response.
-		stubHits := e.Hits
-		if fullRangeNs > 0 && histStepNs > 0 && histStepNs < fullRangeNs {
-			scaled := e.Hits * histStepNs / fullRangeNs
-			if scaled < 1 {
-				scaled = 1
-			}
-			stubHits = scaled
-		}
 		b.WriteString(`{"metric":{"`)
 		writeJSONEscaped(&b, lokiField)
 		b.WriteString(`":"`)
 		writeJSONEscaped(&b, e.Value)
-		b.WriteString(`"},"values":[[`)
-		b.WriteString(endStr)
-		b.WriteString(`,"`)
-		b.WriteString(strconv.FormatInt(stubHits, 10))
-		b.WriteString(`"]]`)
-		b.WriteByte('}')
+		b.WriteString(`"},"values":[`)
+
+		if nStub > 0 && stubStepSec > 0 {
+			firstPoint := true
+			writeStubs(&b, startSec, stubStepSec, nStub, stubCount(e.Hits), &firstPoint)
+		} else {
+			// Fallback when we can't compute a grid: single point at endSec.
+			b.WriteByte('[')
+			b.WriteString(endStr)
+			b.WriteString(`,"`)
+			b.WriteString(strconv.FormatInt(e.Hits, 10))
+			b.WriteString(`"]`)
+		}
+		b.WriteString(`]}`)
 	}
 	b.WriteString(`]}}`)
 	return b.Bytes()
