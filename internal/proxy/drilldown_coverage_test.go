@@ -301,7 +301,7 @@ func TestExpandDrilldownStep(t *testing.T) {
 		`{"metric":{"level":"error"},"values":[[1748000000,"120"],[1748003600,"240"]]}` +
 		`]}}`
 
-	t.Run("expands 2 coarse buckets into 24 fine buckets", func(t *testing.T) {
+	t.Run("expands 2 coarse buckets into 24 fine buckets replicating coarse value", func(t *testing.T) {
 		got := expandDrilldownStep([]byte(coarseBody), "300s", "3600s", "1748007200")
 		v, err := fj.ParseBytes(got)
 		if err != nil {
@@ -315,7 +315,8 @@ func TestExpandDrilldownStep(t *testing.T) {
 		if len(values) != 24 {
 			t.Fatalf("expected 24 fine buckets (2 coarse × 12), got %d", len(values))
 		}
-		// First sub-bucket: ts=1748000000, value=120/12=10.00
+		// First sub-bucket: ts=1748000000, value=120 (full coarse value replicated, not divided by 12).
+		// Replication preserves relative bar heights across series and makes sparse fields visible.
 		first := values[0].GetArray()
 		if len(first) < 2 {
 			t.Fatal("expected [ts, val] pair")
@@ -323,16 +324,16 @@ func TestExpandDrilldownStep(t *testing.T) {
 		if first[0].GetInt64() != 1748000000 {
 			t.Errorf("first ts = %d, want 1748000000", first[0].GetInt64())
 		}
-		if string(first[1].GetStringBytes()) != "10.00" {
-			t.Errorf("first val = %q, want %q", string(first[1].GetStringBytes()), "10.00")
+		if string(first[1].GetStringBytes()) != "120.00" {
+			t.Errorf("first val = %q, want %q", string(first[1].GetStringBytes()), "120.00")
 		}
-		// 13th sub-bucket: ts=1748003600 (start of 2nd coarse bucket), value=240/12=20.00
+		// 13th sub-bucket: ts=1748003600 (start of 2nd coarse bucket), value=240.00.
 		thirteenth := values[12].GetArray()
 		if thirteenth[0].GetInt64() != 1748003600 {
 			t.Errorf("13th ts = %d, want 1748003600", thirteenth[0].GetInt64())
 		}
-		if string(thirteenth[1].GetStringBytes()) != "20.00" {
-			t.Errorf("13th val = %q, want %q", string(thirteenth[1].GetStringBytes()), "20.00")
+		if string(thirteenth[1].GetStringBytes()) != "240.00" {
+			t.Errorf("13th val = %q, want %q", string(thirteenth[1].GetStringBytes()), "240.00")
 		}
 	})
 

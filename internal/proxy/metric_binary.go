@@ -446,12 +446,14 @@ const maxDrilldownExpansionFactor = 120
 
 // expandDrilldownStep expands a Loki matrix JSON response produced at coarseStepRaw
 // into fineStepRaw resolution by replicating each coarse bucket value across
-// (coarseStep/fineStep) fine sub-buckets, each with value = coarseValue/factor.
+// (coarseStep/fineStep) fine sub-buckets, each carrying the full coarseValue.
 //
 // This converts e.g. 25 sparse bars (3600s step, 24h) into 288 dense bars (300s
-// step), matching Loki's visual resolution without additional VL queries. Each
-// sub-bucket carries coarseValue/factor so the per-window magnitude is preserved.
-// Sub-buckets whose timestamps exceed endRaw are omitted (edge bucket handling).
+// step), matching Loki's visual resolution without additional VL queries. The full
+// coarse value is replicated (not divided) into each sub-bucket so that sparse
+// high-cardinality fields (trace_id, span_id) remain visible. Relative bar heights
+// across series within the same field are preserved since all series use the same
+// factor. Sub-buckets whose timestamps exceed endRaw are omitted (edge bucket handling).
 //
 // Returns body unchanged when fineStep >= coarseStep, factor > maxDrilldownExpansionFactor
 // (to preserve readable bar heights for long ranges), or either step cannot be parsed.
@@ -510,8 +512,12 @@ func expandDrilldownStep(body []byte, fineStepRaw, coarseStepRaw, endRaw string)
 			if parseFloatErr != nil {
 				continue
 			}
-			subVal := coarseVal / float64(factor)
-			subValStr := strconv.FormatFloat(subVal, 'f', 2, 64)
+			// Replicate the full coarse count into every fine sub-bucket rather than
+			// dividing by factor. Dividing makes sparse fields (trace_id, span_id with
+			// 1-3 occurrences per coarse window) produce sub-1 values that are nearly
+			// invisible in Grafana's bar chart. Relative proportions between series are
+			// preserved since all series in the same field chart use the same factor.
+			subValStr := strconv.FormatFloat(coarseVal, 'f', 2, 64)
 
 			for i := int64(0); i < factor; i++ {
 				tsFine := tsCoarse + i*fineStepSec
