@@ -343,20 +343,24 @@ func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field s
 const drilldownStatsCacheTTL = 5 * time.Minute
 
 // maxDrilldownStatsBuckets caps the number of time buckets sent to VL in a
-// Drilldown stats_query_range call for ranges >6h. Must be ≤ maxBatchBuckets.
-// maxDrilldownStatsBucketsShort raises the cap for ranges ≤6h: more buckets
-// reduce the expansion factor (coarseStep/fineStep) so sub-bars within each
-// coarse bucket reflect real VL variation rather than a staircase pattern.
+// Drilldown stats_query_range call for ranges > drilldownHybridThreshold. Must
+// be ≤ maxBatchBuckets. maxDrilldownStatsBucketsShort raises the cap for ranges
+// ≤ drilldownHybridThreshold: more buckets reduce the expansion factor
+// (coarseStep/fineStep) so sub-bars reflect real VL variation and the precision
+// slider in Grafana Drilldown has a visible effect.
 const (
 	maxDrilldownStatsBuckets      = 30
-	maxDrilldownStatsBucketsShort = 60 // for ranges ≤6h
+	maxDrilldownStatsBucketsShort = 120 // for ranges ≤ drilldownHybridThreshold
 )
 
 // drilldownHybridThreshold is the range above which proxyStatsQueryRangeDrilldown
 // switches to the hybrid path: field_values (O(column-index), ~30ms at any range)
 // for value discovery over the full range, plus a capped stats_query_range for the
 // recent histogram window only. Below this threshold the direct/two-phase path is used.
-const drilldownHybridThreshold = 6 * time.Hour
+// Set to 12h so that 6h ranges (which Grafana's sliding "now-6h" window occasionally
+// exceeds by ~30s due to time rounding) stay on the full-range non-hybrid path and
+// show complete coverage rather than the ~1h adaptive histogram window.
+const drilldownHybridThreshold = 12 * time.Hour
 
 // drilldownHybridMaxWindow caps the stats_query_range histogram window in hybrid mode
 // regardless of the adaptive formula. The formula uses range/8 (bounded [1h, 24h])
@@ -567,7 +571,7 @@ func coarsenDrilldownStep(startRaw, endRaw string, step time.Duration) time.Dura
 	}
 	rangeNs := endNs - startNs
 	cap := int64(maxDrilldownStatsBuckets)
-	if rangeNs <= int64(6*time.Hour) {
+	if rangeNs <= int64(drilldownHybridThreshold) {
 		cap = int64(maxDrilldownStatsBucketsShort)
 	}
 	minStep := time.Duration(rangeNs) / time.Duration(cap)

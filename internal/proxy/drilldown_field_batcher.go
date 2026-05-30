@@ -12,7 +12,7 @@ import (
 	fj "github.com/valyala/fastjson"
 )
 
-const maxBatchBuckets = 60 // skip batching when n_buckets > this; must be ≥ maxDrilldownStatsBucketsShort
+const maxBatchBuckets = 120 // skip batching when n_buckets > this; must be ≥ maxDrilldownStatsBucketsShort
 
 type fieldBatchEntry struct {
 	lokiField      string   // Loki-side field name (used in output metric key)

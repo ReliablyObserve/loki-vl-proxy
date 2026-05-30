@@ -708,14 +708,7 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 		step     time.Duration
 		wantStep time.Duration
 	}{
-		// Ranges >6h use the 30-bucket cap.
-		{
-			name:     "12h range step=60s coarsens to 30min",
-			start:    ts(0),
-			end:      ts(12 * 3600),
-			step:     60 * time.Second,
-			wantStep: 30 * time.Minute, // 12h/30 = 1440s → snap to 30min
-		},
+		// Ranges > drilldownHybridThreshold (12h) use the 30-bucket cap.
 		{
 			name:     "24h range step=120s coarsens to 1h",
 			start:    ts(0),
@@ -723,35 +716,42 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 			step:     120 * time.Second,
 			wantStep: time.Hour, // 24h/30 = 2880s → snap to 1h
 		},
-		// Ranges ≤6h use the 60-bucket cap, reducing expansion factor and
-		// giving finer-grained VL data without the staircase pattern.
+		// Ranges ≤ drilldownHybridThreshold (12h) use the 120-bucket cap,
+		// giving finer-grained VL data and making the Grafana precision slider effective.
 		{
-			name:     "6h range step=60s coarsens to 10min",
+			name:     "12h range step=60s coarsens to 10min",
+			start:    ts(0),
+			end:      ts(12 * 3600),
+			step:     60 * time.Second,
+			wantStep: 10 * time.Minute, // 12h/120 = 360s = 6min → snap to 10min
+		},
+		{
+			name:     "6h range step=60s coarsens to 3min",
 			start:    ts(0),
 			end:      ts(6 * 3600),
 			step:     60 * time.Second,
-			wantStep: 10 * time.Minute, // 6h/60 = 360s → snap to 10min
+			wantStep: 3 * time.Minute, // 6h/120 = 180s → snap to 3min
 		},
 		{
-			name:     "3h range step=38s coarsens to 3min",
+			name:     "3h range step=38s coarsens to 2min",
 			start:    ts(0),
 			end:      ts(3 * 3600),
 			step:     38 * time.Second,
-			wantStep: 3 * time.Minute, // 3h/60 = 180s → snap to 3min (factor ≈4 vs old 15)
+			wantStep: 2 * time.Minute, // 3h/120 = 90s → snap to 2min
 		},
 		{
-			name:     "1h range step=60s within 60-bucket budget, no coarsening",
+			name:     "1h range step=60s within 120-bucket budget, no coarsening",
 			start:    ts(0),
 			end:      ts(3600),
 			step:     60 * time.Second,
-			wantStep: 60 * time.Second, // 1h/60 = 60s ≤ step → unchanged
+			wantStep: 60 * time.Second, // 1h/120 = 30s ≤ step → unchanged
 		},
 		{
-			name:     "30min range step=30s within 60-bucket budget, no coarsening",
+			name:     "30min range step=30s within 120-bucket budget, no coarsening",
 			start:    ts(0),
 			end:      ts(1800),
 			step:     30 * time.Second,
-			wantStep: 30 * time.Second, // 30min/60 = 30s ≤ step → unchanged
+			wantStep: 30 * time.Second, // 30min/120 = 15s ≤ step → unchanged
 		},
 		{
 			name:     "zero step passes through",
