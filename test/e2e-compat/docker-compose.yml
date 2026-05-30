@@ -22,7 +22,7 @@ services:
     # Bench peak: 1,798 MB (heavy c=100). +30% headroom = 2,337 MB → 2.4g.
     # Loki RSS is stable across all workloads (1.4–1.8 GB range), so this
     # cap is not expected to trigger; it guards against runaway situations.
-    mem_limit: 2400m
+    mem_limit: 4096m
     restart: unless-stopped
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
@@ -238,6 +238,7 @@ services:
       - "-patterns-persist-interval=5s"
       - "-patterns-startup-stale-threshold=30s"
       - "-patterns-startup-peer-warm-timeout=2s"
+      - "-server.enable-pprof"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -270,6 +271,7 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
+      - "-server.enable-pprof"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       vmauth:
@@ -315,6 +317,7 @@ services:
       # are not throttled — matches the main proxy benchmark configuration.
       - "-rate-limit-per-second=0"
       - "-max-concurrent=0"
+      - "-server.enable-pprof"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -347,6 +350,7 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=native"
       - "-emit-structured-metadata=true"
+      - "-server.enable-pprof"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -379,6 +383,7 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
+      - "-server.enable-pprof"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -411,6 +416,7 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=false"
+      - "-server.enable-pprof"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -443,6 +449,7 @@ services:
       - "-label-style=underscores"
       - "-tail.mode=synthetic"
       - "-tail.allowed-origins=http://grafana:3000,http://127.0.0.1:3002,http://localhost:3002"
+      - "-server.enable-pprof"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -474,6 +481,7 @@ services:
       - "-label-style=underscores"
       - "-tail.mode=native"
       - "-tail.allowed-origins=http://grafana:3000,http://127.0.0.1:3002,http://localhost:3002"
+      - "-server.enable-pprof"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:

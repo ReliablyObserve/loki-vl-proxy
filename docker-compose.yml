@@ -20,7 +20,7 @@ services:
       start_period: 5s
 
   loki-vl-proxy:
-    image: ghcr.io/reliablyobserve/loki-vl-proxy:1.16.0
+    image: loki-vl-proxy:local
     container_name: loki-vl-proxy
     ports:
       - "3100:3100"

@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -351,6 +352,178 @@ const (
 	maxDrilldownStatsBucketsShort = 60 // for ranges ≤6h
 )
 
+// drilldownHybridThreshold is the range above which proxyStatsQueryRangeDrilldown
+// switches to the hybrid path: field_values (O(column-index), ~30ms at any range)
+// for value discovery over the full range, plus a capped stats_query_range for the
+// recent histogram window only. Below this threshold the direct/two-phase path is used.
+const drilldownHybridThreshold = 6 * time.Hour
+
+// drilldownHybridMaxWindow caps the stats_query_range histogram window in hybrid mode
+// regardless of the adaptive formula. The formula uses range/8 (bounded [1h, 24h])
+// but expands to range/3 (bounded at 24h) for sparse data to show more history.
+const drilldownHybridMaxWindow = 24 * time.Hour
+
+// adaptiveHistogramWindow returns the stats_query_range window to scan in hybrid mode.
+// For dense data: range/8, bounded [1h, 24h].
+// For sparse data (totalHits < 1000): range/3, bounded [1h, 24h].
+// Sparse data means the full window is cheap to scan — expand for better coverage.
+func adaptiveHistogramWindow(rangeNs, totalHits int64) time.Duration {
+	const (
+		minWin = time.Hour
+		maxWin = drilldownHybridMaxWindow
+	)
+	base := time.Duration(rangeNs / 8)
+	if base < minWin {
+		base = minWin
+	}
+	if base > maxWin {
+		base = maxWin
+	}
+	if totalHits > 0 && totalHits < 1000 {
+		expanded := time.Duration(rangeNs / 3)
+		if expanded > maxWin {
+			expanded = maxWin
+		}
+		if expanded > base {
+			base = expanded
+		}
+	}
+	return base
+}
+
+// drilldownFVEntry is a field value returned by the VL field_values endpoint,
+// with its hit count for use in single-point matrix synthesis.
+type drilldownFVEntry struct {
+	Value string
+	Hits  int64
+}
+
+// vlStatsNameKeyRE matches VL's internal __name__ column marker that appears in
+// stats_query_range metric objects (e.g. "__name__":"_c",). VL adds it for
+// Prometheus compatibility; Loki/Grafana clients don't expect it.
+var vlStatsNameKeyRE = regexp.MustCompile(`"__name__":"[^"]*",?`)
+
+// stripVLStatsNameKey removes VL's __name__ column marker from a stats_query_range
+// body. Called in the hybrid path where label translation is skipped — we need to
+// clean __name__ without invoking ensureDetectedLevel which would rename level→detected_level.
+func stripVLStatsNameKey(body []byte) []byte {
+	if !bytes.Contains(body, []byte(`"__name__"`)) {
+		return body
+	}
+	return vlStatsNameKeyRE.ReplaceAll(body, nil)
+}
+
+// synthesizeDrilldownMatrix builds a Loki matrix response with one data point per
+// field value at endSec. Used when stats_query_range is skipped (high-cardinality)
+// or as the fallback when VL returns an error.
+func synthesizeDrilldownMatrix(lokiField string, entries []drilldownFVEntry, endSec int64) []byte {
+	if len(entries) == 0 {
+		return emptyLokiMatrix
+	}
+	endStr := strconv.FormatInt(endSec, 10)
+	var b bytes.Buffer
+	b.Grow(len(entries)*128 + 64)
+	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+	for i, e := range entries {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(`{"metric":{"`)
+		writeJSONEscaped(&b, lokiField)
+		b.WriteString(`":"`)
+		writeJSONEscaped(&b, e.Value)
+		b.WriteString(`"},"values":[[`)
+		b.WriteString(endStr)
+		b.WriteString(`,"`)
+		b.WriteString(strconv.FormatInt(e.Hits, 10))
+		b.WriteString(`"]]`)
+		b.WriteByte('}')
+	}
+	b.WriteString(`]}}`)
+	return b.Bytes()
+}
+
+// writeJSONEscaped writes s to b, escaping only the characters that must be escaped
+// in a JSON string value (quotes and backslashes). Field names/values from VL do not
+// contain control characters so this fast path is sufficient.
+func writeJSONEscaped(b *bytes.Buffer, s string) {
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c == '"' || c == '\\' {
+			b.WriteByte('\\')
+		}
+		b.WriteByte(c)
+	}
+}
+
+// mergeDrilldownWithFieldValues merges a stats_query_range Loki matrix (statsBody,
+// covering only the recent histogram window) with field_values entries (covering the
+// full requested range). Series present in statsBody keep their per-bucket histogram;
+// series present only in field_values get a single data point at endSec scaled to
+// approximate a per-bucket count (totalHits * histStepNs / fullRangeNs) so the
+// stub is visually comparable to active histogram bars.
+func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries []drilldownFVEntry, endSec, fullRangeNs, histStepNs int64) []byte {
+	v, err := fj.ParseBytes(statsBody)
+	if err != nil || v == nil {
+		return synthesizeDrilldownMatrix(lokiField, entries, endSec)
+	}
+	result := v.GetArray("data", "result")
+
+	// Track which values already have histogram data.
+	inStats := make(map[string]struct{}, len(result))
+	for _, item := range result {
+		val := string(item.GetStringBytes("metric", lokiField))
+		if val != "" {
+			inStats[val] = struct{}{}
+		}
+	}
+
+	endStr := strconv.FormatInt(endSec, 10)
+	var b bytes.Buffer
+	b.Grow(len(statsBody) + len(entries)*128)
+	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+
+	first := true
+	for _, item := range result {
+		if !first {
+			b.WriteByte(',')
+		}
+		first = false
+		b.Write(item.MarshalTo(nil))
+	}
+	for _, e := range entries {
+		if _, ok := inStats[e.Value]; ok {
+			continue
+		}
+		if !first {
+			b.WriteByte(',')
+		}
+		first = false
+		// Scale total hits to approximate a per-bucket count so the stub is
+		// visually consistent with active histogram bars in the same response.
+		stubHits := e.Hits
+		if fullRangeNs > 0 && histStepNs > 0 && histStepNs < fullRangeNs {
+			scaled := e.Hits * histStepNs / fullRangeNs
+			if scaled < 1 {
+				scaled = 1
+			}
+			stubHits = scaled
+		}
+		b.WriteString(`{"metric":{"`)
+		writeJSONEscaped(&b, lokiField)
+		b.WriteString(`":"`)
+		writeJSONEscaped(&b, e.Value)
+		b.WriteString(`"},"values":[[`)
+		b.WriteString(endStr)
+		b.WriteString(`,"`)
+		b.WriteString(strconv.FormatInt(stubHits, 10))
+		b.WriteString(`"]]`)
+		b.WriteByte('}')
+	}
+	b.WriteString(`]}}`)
+	return b.Bytes()
+}
+
 // drilldownNiceSteps are the candidate step values to snap to after coarsening.
 var drilldownNiceSteps = []time.Duration{
 	30 * time.Second,
@@ -600,17 +773,33 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	// Field batcher: fold N concurrent single-field queries into one multi-field VL
-	// call and marginalize the result. Only applies to the direct path (non-high-card
-	// fields). High-cardinality fields bypass via two-phase which has its own logic.
+	// Hybrid path for wide ranges (> drilldownHybridThreshold = 6h) — checked BEFORE
+	// the batcher because the batcher issues stats_query_range over the full range,
+	// defeating the hybrid's purpose of capping the scan to a recent window.
+	// - Fast tier: field_values over the full range (O(column-index), ~30ms) for value discovery.
+	// - Slow tier: stats_query_range over a recent adaptive window only (not the full range).
+	// - Merge: histogram series from stats + single-point stubs from field_values.
+	// - High-cardinality fields: field_values synthesis only, no stats_query_range.
+	// This replaces the "return emptyLokiMatrix" for _id/_uid fields over 6h and eliminates
+	// the O(log-volume) full-range scan that made 2d+ fields slow.
+	{
+		startNs, sok := parseLokiTimeToUnixNano(startRaw)
+		endNs, eok := parseLokiTimeToUnixNano(endRaw)
+		if sok && eok && endNs-startNs > int64(drilldownHybridThreshold) {
+			p.proxyStatsQueryRangeDrilldownHybrid(w, r, logsqlQuery, cleanBase, field, effectiveStepRaw, startNs, endNs, drillCacheKey, origGroupBy)
+			return
+		}
+	}
+
+	// Field batcher (short ranges ≤ drilldownHybridThreshold only): folds N concurrent
+	// single-field queries into one multi-field VL call. Wide ranges are handled by
+	// the hybrid path above which caps the scan window, so batcher only runs here for
+	// ranges where a full stats_query_range is cheap (≤6h).
 	if batcher := p.drilldownFieldBatcher; batcher != nil && !p.drilldownShouldEagerTwoPhase(r, cleanBase, field) {
 		vlFields := extractStatsGroupByFields(logsqlQuery)
 		if len(vlFields) == 0 {
 			vlFields = []string{field}
 		}
-		// Use the original Loki label name from the query (e.g. "detected_level") so
-		// the batcher output key matches what Grafana expects. ToLoki("level")=="level"
-		// which is wrong for the detected_level→level translation direction.
 		lokiField := field
 		if len(origGroupBy) == 1 {
 			lokiField = origGroupBy[0]
@@ -623,21 +812,6 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 			p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(body)
-			return
-		}
-		// nil = batcher miss (window already launched, VL error, response overflow)
-		// → fall through to individual semaphore-controlled path below.
-	}
-
-	// Skip high-cardinality *_id fields for ranges > 6 h: the combination space
-	// (unique trace/span IDs × other label values × buckets) saturates VL CPU
-	// without producing useful per-value patterns at that scale.
-	if isHighCardinalityFieldName(field) {
-		startNs, sok := parseLokiTimeToUnixNano(startRaw)
-		endNs, eok := parseLokiTimeToUnixNano(endRaw)
-		if sok && eok && endNs-startNs > int64(6*time.Hour) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(emptyLokiMatrix)
 			return
 		}
 	}
@@ -714,6 +888,189 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
+}
+
+// proxyStatsQueryRangeDrilldownHybrid handles Drilldown fields queries for ranges
+// wider than drilldownHybridThreshold (6h). Instead of scanning the full range
+// with stats_query_range (O(log-volume), slow), it:
+//
+//  1. Issues field_values over the full range (~30ms, O(column-index)) to discover
+//     all unique values and their total hit counts.
+//  2. Computes an adaptive histogram window based on range size and data volume.
+//  3. Issues stats_query_range over only the recent adaptive window for sparkline data.
+//  4. Merges: values in stats get real histogram bars; values only in field_values get
+//     a single data point at endSec with their total count.
+//
+// High-cardinality fields (trace_id, *_id, *_uid, etc.) skip stats_query_range entirely
+// and return a pure field_values synthesis.
+//
+// X-Proxy-Drilldown-Path response header signals which path was taken for debugging.
+func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
+	w http.ResponseWriter, r *http.Request,
+	logsqlQuery, cleanBase, field, effectiveStepRaw string,
+	startNs, endNs int64,
+	drillCacheKey string, origGroupBy []string,
+) {
+	ctx := r.Context()
+	endRaw, stepRaw := r.FormValue("end"), r.FormValue("step")
+
+	// Loki field name for response metric keys (what Grafana expects).
+	lokiField := field
+	if len(origGroupBy) == 1 {
+		lokiField = origGroupBy[0]
+	} else if lt := p.labelTranslator; lt != nil && !lt.IsPassthrough() {
+		lokiField = lt.ToLoki(field)
+	}
+
+	endSec := endNs / int64(time.Second)
+
+	// Fast tier: field_values over the full range (O(column-index)).
+	fvParams := url.Values{}
+	fvParams.Set("query", cleanBase)
+	fvParams.Set("field", field)
+	fvParams.Set("start", nanosToVLTimestamp(startNs))
+	fvParams.Set("end", nanosToVLTimestamp(endNs))
+	fvParams.Set("limit", strconv.Itoa(maxDrilldownSeries))
+
+	var fvEntries []drilldownFVEntry
+	if resp, err := p.vlGet(ctx, "/select/logsql/field_values", fvParams); err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode < 400 {
+			fvBody, _ := readBodyLimited(resp.Body, 1<<20)
+			var parsed vlFieldValuesResponse
+			if json.Unmarshal(fvBody, &parsed) == nil {
+				for _, item := range parsed.Values {
+					if strings.TrimSpace(item.Value) == "" || item.Hits < 0 {
+						continue
+					}
+					fvEntries = append(fvEntries, drilldownFVEntry{Value: item.Value, Hits: item.Hits})
+				}
+			}
+		}
+	}
+
+	// Compute adaptive histogram window from data volume.
+	var totalHits int64
+	for _, e := range fvEntries {
+		totalHits += e.Hits
+	}
+	rangeNs := endNs - startNs
+	histWin := adaptiveHistogramWindow(rangeNs, totalHits)
+
+	// High-cardinality fields: field_values synthesis only — no stats_query_range.
+	// These fields (trace_id, span_id, *_id, *_uid, *_token, …) have too many unique
+	// values per bucket to produce a useful histogram; the total count from field_values
+	// is the useful signal.
+	isHighCard := isLikelyHighCardinalityField(field) || isHighCardinalityFieldName(field)
+	if isHighCard {
+		var body []byte
+		pathLabel := "field_values_hc"
+		if len(fvEntries) > 0 {
+			body = synthesizeDrilldownMatrix(lokiField, fvEntries, endSec)
+		} else {
+			body = emptyLokiMatrix
+			pathLabel = "field_values_hc_empty"
+		}
+		p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Proxy-Drilldown-Path", pathLabel)
+		_, _ = w.Write(body)
+		return
+	}
+
+	// Slow tier: stats_query_range over the recent adaptive window only.
+	histStartNs := endNs - int64(histWin)
+	if histStartNs < startNs {
+		histStartNs = startNs
+	}
+	histStartRaw := nanosToVLTimestamp(histStartNs)
+
+	// Re-coarsen step for the (shorter) histogram window.
+	histStepRaw := effectiveStepRaw
+	var histStepNs int64
+	if d, ok := parsePositiveStepDuration(effectiveStepRaw); ok {
+		coarsened := d
+		if c := coarsenDrilldownStep(histStartRaw, endRaw, d); c != d {
+			coarsened = c
+			histStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
+		}
+		histStepNs = int64(coarsened)
+	}
+
+	// Build a clean stats query grouping by only the target field. logsqlQuery has
+	// underscore-fallback variants (e.g. detected_level) added by addUnderscorefallbackByLabels,
+	// which would produce duplicate series (level + detected_level) confusing Grafana.
+	// In the hybrid path, field_values handles value discovery; stats is only needed
+	// for histogram shape — no underscore expansion required.
+	hybridStatsQuery := cleanBase + " | filter " + field + `:!"" | stats by (` + field + `) count()`
+	limitedQuery := appendDrilldownSeriesLimit(hybridStatsQuery, maxDrilldownSeries)
+	statsParams := buildStatsQueryRangeParams(limitedQuery, histStartRaw, endRaw, histStepRaw)
+
+	var statsBody []byte
+	pathLabel := fmt.Sprintf("hybrid/fv+%s-stats", histWin.Round(time.Minute))
+
+	// Acquire semaphore slot before issuing the stats_query_range.
+	if sem := p.statsQueryRangeSem; sem != nil {
+		select {
+		case <-sem:
+			delay := p.statsQueryRangeInterQueryDelay
+			defer func() {
+				if delay > 0 {
+					time.Sleep(delay)
+				}
+				sem <- struct{}{}
+			}()
+		case <-ctx.Done():
+			// Context cancelled — serve field_values synthesis immediately.
+			body := synthesizeDrilldownMatrix(lokiField, fvEntries, endSec)
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Proxy-Drilldown-Path", "field_values_sem_timeout")
+			_, _ = w.Write(body)
+			return
+		}
+	}
+
+	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", statsParams)
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode < 400 {
+			rawBody, bodyErr := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+			if bodyErr == nil {
+				// Skip trimAndTranslateStatsQRFJ: the hybrid stats query groups by
+				// `field` only (no underscore variants), so VL returns metric keys that
+				// already match lokiField. The generic translator would apply
+				// ensureDetectedLevel which renames level→detected_level, breaking
+				// Grafana Drilldown's expectation of finding `level` in metric keys.
+				// Strip only VL's internal __name__ column marker (e.g. "__name__":"_c").
+				rawBody = stripVLStatsNameKey(rawBody)
+				rawBody = limitLokiMatrixSeries(rawBody, maxDrilldownSeries)
+				statsBody = rawBody
+			}
+		}
+	}
+
+	// Merge: stats histogram + field_values stubs for values missing from recent window.
+	var final []byte
+	switch {
+	case statsBody != nil && len(fvEntries) > 0:
+		final = mergeDrilldownWithFieldValues(statsBody, lokiField, fvEntries, endSec, rangeNs, histStepNs)
+		final = limitLokiMatrixSeries(final, maxDrilldownSeries)
+	case statsBody != nil:
+		final = statsBody
+		pathLabel += "/no_fv"
+	case len(fvEntries) > 0:
+		final = synthesizeDrilldownMatrix(lokiField, fvEntries, endSec)
+		pathLabel = "field_values_stats_err"
+	default:
+		final = emptyLokiMatrix
+		pathLabel = "empty"
+	}
+
+	final = expandDrilldownStep(final, stepRaw, histStepRaw, endRaw)
+	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Proxy-Drilldown-Path", pathLabel)
+	_, _ = w.Write(final)
 }
 
 // drilldownTwoPhase is the fallback for proxyStatsQueryRangeDrilldown when the
