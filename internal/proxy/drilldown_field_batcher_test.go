@@ -148,6 +148,25 @@ func TestFieldBatchKey(t *testing.T) {
 	}
 }
 
+func TestBucketCount(t *testing.T) {
+	const base int64 = 1748000000
+	// 1h / 300s = 12 buckets → should batch
+	n := bucketCount("1748000000", "1748003600", "300s")
+	if n != 12 {
+		t.Errorf("expected 12 buckets for 1h/300s, got %d", n)
+	}
+	// 12h / 300s = 144 buckets → should skip
+	n = bucketCount("1748000000", "1748043200", "300s")
+	if n <= maxBatchBuckets {
+		t.Errorf("12h/300s should exceed maxBatchBuckets=%d, got %d", maxBatchBuckets, n)
+	}
+	// Invalid inputs → 0
+	if n := bucketCount("bad", "1748003600", "300s"); n != 0 {
+		t.Errorf("expected 0 for invalid start, got %d", n)
+	}
+	_ = base
+}
+
 func indexOf(s, substr string) int {
 	for i := range s {
 		if i+len(substr) <= len(s) && s[i:i+len(substr)] == substr {

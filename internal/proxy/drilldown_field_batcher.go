@@ -13,7 +13,10 @@ import (
 	fj "github.com/valyala/fastjson"
 )
 
-const maxBatchCombos = 2000
+const (
+	maxBatchCombos   = 2000
+	maxBatchBuckets  = 30 // skip batching when n_buckets > this; combined query cost scales with buckets × combos
+)
 
 type fieldBatchEntry struct {
 	lokiField string
@@ -69,7 +72,26 @@ func fieldBatchKey(orgID, cleanBase, startRaw, endRaw, stepRaw string) string {
 	return orgID + "\x00" + cleanBase + "\x00" + startBucketed + "\x00" + endBucketed + "\x00" + stepRaw
 }
 
+func bucketCount(startRaw, endRaw, stepRaw string) int {
+	startNs, startOk := parseLokiTimeToUnixNano(startRaw)
+	endNs, endOk := parseLokiTimeToUnixNano(endRaw)
+	stepDur, ok := parsePositiveStepDuration(stepRaw)
+	if !ok || !startOk || !endOk || stepDur <= 0 || startNs <= 0 || endNs <= startNs {
+		return 0
+	}
+	rangeNs := endNs - startNs
+	stepNs := stepDur.Nanoseconds()
+	n := int(rangeNs / stepNs)
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
 func (b *drilldownFieldBatcher) submit(ctx context.Context, orgID, cleanBase, lokiField string, vlFields []string, startRaw, endRaw, stepRaw string) []byte {
+	if n := bucketCount(startRaw, endRaw, stepRaw); n > maxBatchBuckets {
+		return nil
+	}
 	key := fieldBatchKey(orgID, cleanBase, startRaw, endRaw, stepRaw)
 
 	b.mu.Lock()
