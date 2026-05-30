@@ -58,16 +58,16 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 
 func TestContract_Labels_PassesTimeRange(t *testing.T) {
 	// Input: start=1609459200 (seconds), end=1609545600 (seconds) → 24h interval.
-	// After the 1h cap applied by capMetadataStartOnly (no bucketing — preserves
+	// After the 15-min cap applied by capMetadataStartOnly (no bucketing — preserves
 	// original end so recently-ingested data is never hidden):
-	//   cappedStart = endNs - 1h = 1609545600e9 - 3600e9 = 1609542000e9
+	//   cappedStart = endNs - 15min = 1609545600e9 - 900e9 = 1609544700e9
 	//   end         = 1609545600e9 (preserved, normalized to nanoseconds)
 	//
 	// Note: the handler also fires a background full-range refresh goroutine (because the
-	// 24h input range exceeds the 1h synchronous cap), which sends the raw uncapped params
-	// to VL. We capture ALL calls and verify that AT LEAST ONE used the capped params.
+	// 24h input range exceeds the 15-min synchronous cap), which sends the raw uncapped
+	// params to VL. We capture ALL calls and verify that AT LEAST ONE used the capped params.
 	const (
-		wantStart = "1609542000000000000"
+		wantStart = "1609544700000000000"
 		wantEnd   = "1609545600000000000"
 	)
 	type call struct{ start, end string }

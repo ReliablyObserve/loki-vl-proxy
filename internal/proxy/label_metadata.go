@@ -259,7 +259,8 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 	}
 	// Background (full-range) path uses field_names: stream_field_names at 12-24h is
 	// 7-8s+ and causes CPU spikes. field_names covers the same label discovery at ~0.25s.
-	// Sync path keeps stream_field_names (1h cap) for strict Loki-label-only semantics.
+	// Sync path keeps stream_field_names but with a tighter cap (15 min) so VL only
+	// scans recent log content; background refresh covers the full range for completeness.
 	endpoint := "/select/logsql/stream_field_names"
 	if fullRange {
 		endpoint = "/select/logsql/field_names"
@@ -274,9 +275,11 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 	return fields, nil
 }
 
-// metadataMaxFieldNamesWindow is the cap applied to VL backend calls on the synchronous
-// (on-request) path. Background refresh goroutines bypass this cap via labelFullRangeFetchKey.
-const metadataMaxFieldNamesWindow = time.Hour
+// metadataMaxFieldNamesWindow is the cap applied to stream_field_names VL backend calls
+// on the synchronous (on-request) path. Background refresh goroutines bypass this cap
+// via labelFullRangeFetchKey and use field_names instead. 15 min keeps the content scan
+// fast (~100 ms) under load; background refresh covers the full range for completeness.
+const metadataMaxFieldNamesWindow = 15 * time.Minute
 
 // fieldNamesCacheBucket is the granularity used to stabilise field-names cache keys.
 // Grafana's sliding window causes the `end` timestamp to drift a few seconds between
