@@ -22,3 +22,4 @@ docker-compose.override.yml
 .claude/
 internal/translator/transdebug_test.go
 .worktrees/
+docs/superpowers/
