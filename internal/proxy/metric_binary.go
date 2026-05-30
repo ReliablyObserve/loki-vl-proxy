@@ -511,30 +511,27 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 		}
 	}
 
-	// Compute stub grid: distribute field-values-only hits across the full range
-	// using at most maxDrilldownStatsBucketsShort evenly-spaced time points.
+	// Stubs MUST use histStepNs as their step, because expandDrilldownStep (called
+	// by the hybrid path after this function returns) expands every point in the
+	// merged response using histStepNs as the coarse step. Using a different stub
+	// step would cause adjacent stubs to generate overlapping fine sub-buckets,
+	// producing a garbled time axis in Grafana.
 	startSec := endSec - fullRangeNs/int64(time.Second)
-	var nStub, stubStepSec int64
-	if fullRangeNs > 0 && histStepNs > 0 {
-		nStub = fullRangeNs / histStepNs
-		if nStub > int64(maxDrilldownStatsBucketsShort) {
-			nStub = int64(maxDrilldownStatsBucketsShort)
-		}
-		if nStub < 1 {
-			nStub = 1
-		}
-		stubStepSec = fullRangeNs / int64(time.Second) / nStub
+	var nFullStub, stubStepSec int64
+	if histStepNs > 0 {
+		stubStepSec = histStepNs / int64(time.Second)
 		if stubStepSec < 1 {
 			stubStepSec = 1
 		}
+		nFullStub = fullRangeNs / histStepNs // e.g. 24h/1h = 24 stubs for a 24h range with 1h histStep
 	}
 
-	// stubCount returns the per-bucket hit count for the full-range grid.
+	// stubCount returns the per-bucket hit count averaged across the full range.
 	stubCount := func(totalHits int64) int64 {
-		if nStub < 1 {
+		if nFullStub < 1 {
 			return totalHits
 		}
-		c := totalHits / nStub
+		c := totalHits / nFullStub
 		if c < 1 {
 			c = 1
 		}
@@ -559,7 +556,7 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 
 	endStr := strconv.FormatInt(endSec, 10)
 	var b bytes.Buffer
-	b.Grow(len(statsBody) + len(entries)*int(nStub+1)*24 + 64)
+	b.Grow(len(statsBody) + len(entries)*int(nFullStub+1)*24 + 64)
 	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
 
 	first := true
@@ -574,7 +571,7 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 		totalHits := fvHits[val]
 		preStatsGapSec := histStartSec - startSec
 
-		if preStatsGapSec > 0 && nStub > 0 && totalHits > 0 {
+		if preStatsGapSec > 0 && stubStepSec > 0 && totalHits > 0 {
 			preNBuckets := preStatsGapSec / stubStepSec
 			if preNBuckets > 0 {
 				b.WriteString(`{"metric":`)
@@ -617,9 +614,9 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 		writeJSONEscaped(&b, e.Value)
 		b.WriteString(`"},"values":[`)
 
-		if nStub > 0 && stubStepSec > 0 {
+		if nFullStub > 0 && stubStepSec > 0 {
 			firstPoint := true
-			writeStubs(&b, startSec, stubStepSec, nStub, stubCount(e.Hits), &firstPoint)
+			writeStubs(&b, startSec, stubStepSec, nFullStub, stubCount(e.Hits), &firstPoint)
 		} else {
 			// Fallback when we can't compute a grid: single point at endSec.
 			b.WriteByte('[')
