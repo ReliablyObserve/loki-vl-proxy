@@ -6,17 +6,13 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	fj "github.com/valyala/fastjson"
 )
 
-const (
-	maxBatchCombos  = 2000
-	maxBatchBuckets = 60 // skip batching when n_buckets > this; must be ≥ maxDrilldownStatsBucketsShort
-)
+const maxBatchBuckets = 60 // skip batching when n_buckets > this; must be ≥ maxDrilldownStatsBucketsShort
 
 type fieldBatchEntry struct {
 	lokiField      string   // Loki-side field name (used in output metric key)
@@ -176,63 +172,68 @@ func (batch *fieldBatch) fire() {
 		return
 	}
 
-	// Collect unique VL field names preserving first-occurrence order.
-	seen := make(map[string]bool)
-	var allVLFields []string
-	for _, e := range entries {
-		for _, f := range e.vlFields {
-			if !seen[f] {
-				seen[f] = true
-				allVLFields = append(allVLFields, f)
-			}
-		}
-	}
-
-	batchQuery := batch.cleanBase +
-		" | stats by (" + strings.Join(allVLFields, ", ") + ") count() as _c" +
-		" | sort by (_c desc)" +
-		" | limit " + strconv.Itoa(maxBatchCombos)
-
 	ctx30s, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Acquire semaphore — limits concurrent batch VL calls to 2.
-	select {
-	case <-b.sem:
-	case <-ctx30s.Done():
-		distribute(nil)
-		return
+	// Issue one per-field stats_query_range per entry in parallel, instead of a
+	// single cross-product stats by (f1, f2, ...) query. The cross-product approach
+	// truncates at limit 2000 combinations — any high-cardinality field (e.g.
+	// duration_ms with 500+ values) paired with other fields in the same batch
+	// causes the rare value combinations to be cut off, making common values appear
+	// to dominate every field chart. Per-field queries avoid the cross-product
+	// entirely and give each field an accurate per-value breakdown.
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	results := make(map[string][]byte, len(entries))
+
+	for _, e := range entries {
+		e := e
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Acquire batch semaphore to limit concurrent VL calls.
+			select {
+			case <-b.sem:
+			case <-ctx30s.Done():
+				return
+			}
+			defer func() { b.sem <- struct{}{} }()
+
+			perFieldQuery := batch.cleanBase +
+				" | " + quoteLogsQLIdent(e.primaryVLField) + ":*" +
+				" | stats by (" + quoteLogsQLIdent(e.primaryVLField) + ") count() as _c" +
+				" | sort by (_c desc)" +
+				" | limit " + strconv.Itoa(maxDrilldownSeries)
+
+			params := buildStatsQueryRangeParams(perFieldQuery, batch.startRaw, batch.endRaw, batch.stepRaw)
+			resp, err := b.proxy.vlPost(ctx30s, "/select/logsql/stats_query_range", params)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode >= http.StatusBadRequest {
+				return
+			}
+
+			rawBody, err := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+			if err != nil {
+				return
+			}
+
+			rawBody = stripVLStatsNameKey(rawBody)
+			if e.primaryVLField != e.lokiField {
+				rawBody = renameStatsBodyMetricKey(rawBody, e.primaryVLField, e.lokiField)
+			}
+			rawBody = limitLokiMatrixSeries(rawBody, maxDrilldownSeries)
+
+			mu.Lock()
+			results[e.lokiField] = rawBody
+			mu.Unlock()
+		}()
 	}
-	defer func() { b.sem <- struct{}{} }()
-
-	params := buildStatsQueryRangeParams(batchQuery, batch.startRaw, batch.endRaw, batch.stepRaw)
-
-	resp, err := b.proxy.vlPost(ctx30s, "/select/logsql/stats_query_range", params)
-	if err != nil {
-		distribute(nil)
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= http.StatusBadRequest {
-		distribute(nil)
-		return
-	}
-
-	body, err := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
-	if err != nil {
-		distribute(nil)
-		return
-	}
-
-	// Use raw VL body (no label translation) so marginalizeBatchResult can look up
-	// fields by their VL names (primaryVLField). Translation renames/removes keys
-	// (e.g., level→detected_level) which breaks the per-field metric lookup.
-	results := marginalizeBatchResult(body, entries)
-
-	for lokiField, data := range results {
-		results[lokiField] = limitLokiMatrixSeries(data, maxDrilldownSeries)
-	}
+	wg.Wait()
 
 	distribute(results)
 }
