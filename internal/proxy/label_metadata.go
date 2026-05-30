@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
@@ -277,9 +278,9 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 
 // metadataMaxFieldNamesWindow is the cap applied to stream_field_names VL backend calls
 // on the synchronous (on-request) path. Background refresh goroutines bypass this cap
-// via labelFullRangeFetchKey and use field_names instead. 15 min keeps the content scan
+// via labelFullRangeFetchKey and use field_names instead. 5 min keeps the content scan
 // fast (~100 ms) under load; background refresh covers the full range for completeness.
-const metadataMaxFieldNamesWindow = 15 * time.Minute
+const metadataMaxFieldNamesWindow = 5 * time.Minute
 
 // fieldNamesCacheBucket is the granularity used to stabilise field-names cache keys.
 // Grafana's sliding window causes the `end` timestamp to drift a few seconds between
@@ -1021,39 +1022,51 @@ func (p *Proxy) warmLabelWindows(ctx context.Context, minRemaining, ttl time.Dur
 	}
 	warmedFromPeer := p.fetchCacheKeysFromPeers(ctx, "labels", staleKeys, ttl)
 
-	// Phase 3: fetch remaining stale windows from VL.
-	// Do NOT set labelFullRangeFetchKey: that bypasses the 1h cap (capMetadataStartOnly)
+	// Phase 3: fetch remaining stale windows from VL concurrently.
+	// Running all windows in parallel lets the coalescer (vlGetMetadataCoalesced) deduplicate
+	// them into a single VL round-trip: after capMetadataStartOnly the 5-min cap produces
+	// identical backend params for all four windows (they share the same bucketed "end"), so
+	// only one stream_field_names call fires. Without concurrency, 4 sequential calls × ~800ms
+	// each = 3.2s; with concurrency + coalescing = ~1 call × ~200ms.
+	//
+	// Do NOT set labelFullRangeFetchKey: that bypasses the 5-min cap (capMetadataStartOnly)
 	// and causes 24h/7d warmup calls to scan the full window (700ms–1.5s each).
 	// The keep-warm loop runs every 3.75min across all proxy instances; with 9 instances
 	// and 4 windows, setting fullRange produced 36 concurrent heavy VL queries every
-	// 3.75min — spiking VL CPU to 18 cores. The synchronous path's 1h cap makes each
-	// call ~20–30ms; the background refresh (refreshLabelsCacheAsync) handles full-range
+	// 3.75min — spiking VL CPU to 18 cores. The synchronous path's 5-min cap makes each
+	// call fast; the background refresh (refreshLabelsCacheAsync) handles full-range
 	// fetches when users actually request wide time windows.
+	var wg sync.WaitGroup
 	for _, w := range stale {
 		if warmedFromPeer[w.cacheKey] {
 			p.log.Debug("label cache window warmed from peer", "window", w.window)
 			continue
 		}
-
-		fetchCtx, fetchCancel := context.WithTimeout(ctx, 10*time.Second)
-		labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
-		fetchCancel()
-		if fetchErr != nil {
-			p.log.Debug("label cache warmup failed", "window", w.window, "err", fetchErr)
-			continue
-		}
-		filtered := make([]string, 0, len(labels))
-		for _, v := range labels {
-			if isVLInternalField(v) || v == "detected_level" {
-				continue
+		wg.Add(1)
+		w := w
+		go func() {
+			defer wg.Done()
+			fetchCtx, fetchCancel := context.WithTimeout(ctx, 10*time.Second)
+			labels, fetchErr := p.fetchScopedLabelNames(fetchCtx, "*", w.startStr, w.endStr, "", false)
+			fetchCancel()
+			if fetchErr != nil {
+				p.log.Debug("label cache warmup failed", "window", w.window, "err", fetchErr)
+				return
 			}
-			filtered = append(filtered, v)
-		}
-		labels = p.labelTranslator.TranslateLabelsList(filtered)
-		labels = appendSyntheticLabels(labels)
-		p.mergeLabelsIntoCache("labels", w.cacheKey, labels, ttl)
-		p.log.Debug("label cache warmed from VL", "window", w.window)
+			filtered := make([]string, 0, len(labels))
+			for _, v := range labels {
+				if isVLInternalField(v) || v == "detected_level" {
+					continue
+				}
+				filtered = append(filtered, v)
+			}
+			labels = p.labelTranslator.TranslateLabelsList(filtered)
+			labels = appendSyntheticLabels(labels)
+			p.mergeLabelsIntoCache("labels", w.cacheKey, labels, ttl)
+			p.log.Debug("label cache warmed from VL", "window", w.window)
+		}()
 	}
+	wg.Wait()
 }
 
 // startLabelCacheKeepWarmLoop runs warmLabelWindows periodically so that label

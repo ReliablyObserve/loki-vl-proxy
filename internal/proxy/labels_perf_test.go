@@ -258,17 +258,22 @@ func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 	p.warmMetadataCacheOnStartup()
 
 	// Poll until warmup completes; VL is immediately reachable so this is fast.
+	// Concurrent warmup + coalescing: the 1h and 6h windows share the same 5-min
+	// bucket end timestamp, so their capped params are identical and the coalescer
+	// deduplicates them into a single VL call. Minimum expected backend calls = 3
+	// (1h+6h coalesced = 1, 24h = 1, 7d = 1).
+	const minWarmupCalls = 3
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if int(backendCalls.Load()) >= len(warmupWindows) {
+		if int(backendCalls.Load()) >= minWarmupCalls {
 			break
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
 
 	warmupCallCount := backendCalls.Load()
-	if int(warmupCallCount) < len(warmupWindows) {
-		t.Fatalf("warmup made %d backend calls, want ≥%d", warmupCallCount, len(warmupWindows))
+	if int(warmupCallCount) < minWarmupCalls {
+		t.Fatalf("warmup made %d backend calls, want ≥%d", warmupCallCount, minWarmupCalls)
 	}
 
 	// Post-warmup: requests for the same window must be cache hits.

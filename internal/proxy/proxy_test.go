@@ -58,16 +58,16 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 
 func TestContract_Labels_PassesTimeRange(t *testing.T) {
 	// Input: start=1609459200 (seconds), end=1609545600 (seconds) → 24h interval.
-	// After the 15-min cap applied by capMetadataStartOnly (no bucketing — preserves
+	// After the 5-min cap applied by capMetadataStartOnly (no bucketing — preserves
 	// original end so recently-ingested data is never hidden):
-	//   cappedStart = endNs - 15min = 1609545600e9 - 900e9 = 1609544700e9
+	//   cappedStart = endNs - 5min = 1609545600e9 - 300e9 = 1609545300e9
 	//   end         = 1609545600e9 (preserved, normalized to nanoseconds)
 	//
 	// Note: the handler also fires a background full-range refresh goroutine (because the
-	// 24h input range exceeds the 15-min synchronous cap), which sends the raw uncapped
+	// 24h input range exceeds the 5-min synchronous cap), which sends the raw uncapped
 	// params to VL. We capture ALL calls and verify that AT LEAST ONE used the capped params.
 	const (
-		wantStart = "1609544700000000000"
+		wantStart = "1609545300000000000"
 		wantEnd   = "1609545600000000000"
 	)
 	type call struct{ start, end string }
@@ -3377,11 +3377,15 @@ func TestCache_LabelsTimeBucketCollapsesSlidingWindow(t *testing.T) {
 		t.Errorf("same-bucket shift: expected cache hit (1 call), got %d — time-bucketing must collapse sliding window", callCount)
 	}
 
-	// Next 5-minute bucket — must miss.
+	// Next 5-minute bucket — must miss. Measure delta across only req3 because
+	// an async background-refresh goroutine from req1 may race and complete during
+	// req3, making the cumulative total 3 or 4. The important invariant is that req3
+	// itself caused at least one additional backend call (cache miss).
+	callCountBeforeReq3 := callCount
 	w3 := httptest.NewRecorder()
 	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req3, nil))
-	if callCount != 2 {
-		t.Errorf("next bucket: expected 2 calls (miss), got %d", callCount)
+	if callCount <= callCountBeforeReq3 {
+		t.Errorf("next bucket: expected cache miss (>%d calls after req3), got %d — req3 should not share req1's bucket", callCountBeforeReq3, callCount)
 	}
 }
 
