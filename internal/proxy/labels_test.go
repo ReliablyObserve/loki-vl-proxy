@@ -374,6 +374,148 @@ func TestLabelTranslator_ResolveLabelCandidates(t *testing.T) {
 	}
 }
 
+func TestToVL_TranslateOTelTrue_RewritesKnownOTelLabels(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(true)
+	if got := lt.ToVL("k8s_container_name"); got != "k8s.container.name" {
+		t.Errorf("ToVL(k8s_container_name) = %q, want %q", got, "k8s.container.name")
+	}
+}
+
+func TestToVL_TranslateOTelFalse_PreservesUnderscoreLabels(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(false)
+	if got := lt.ToVL("k8s_container_name"); got != "k8s_container_name" {
+		t.Errorf("ToVL(k8s_container_name) = %q, want %q", got, "k8s_container_name")
+	}
+}
+
+func TestToVL_TranslateOTelFalse_UnknownLabelsStillPassThrough(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(false)
+	if got := lt.ToVL("k8s_app"); got != "k8s_app" {
+		t.Errorf("ToVL(k8s_app) = %q, want %q", got, "k8s_app")
+	}
+}
+
+func TestToVL_TranslateOTelFalse_CustomMappingsStillWork(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, []FieldMapping{
+		{VLField: "custom.field", LokiLabel: "custom_label"},
+	})
+	lt.SetTranslateOTel(false)
+	if got := lt.ToVL("custom_label"); got != "custom.field" {
+		t.Errorf("ToVL(custom_label) = %q, want %q", got, "custom.field")
+	}
+}
+
+func TestToVL_TranslateOTelFalse_DetectedLevelUnaffected(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(false)
+	if got := lt.ToVL("detected_level"); got != "level" {
+		t.Errorf("ToVL(detected_level) = %q, want %q", got, "level")
+	}
+}
+
+func TestToVL_TranslateOTelFalse_PassthroughModeUnaffected(t *testing.T) {
+	lt := NewLabelTranslator(LabelStylePassthrough, nil)
+	lt.SetTranslateOTel(false)
+	if got := lt.ToVL("k8s_container_name"); got != "k8s_container_name" {
+		t.Errorf("ToVL(k8s_container_name) = %q, want %q", got, "k8s_container_name")
+	}
+	lt.SetTranslateOTel(true)
+	if got := lt.ToVL("k8s_container_name"); got != "k8s_container_name" {
+		t.Errorf("ToVL(k8s_container_name) with translateOTel=true = %q, want %q", got, "k8s_container_name")
+	}
+}
+
+func TestToVL_K8sContainerName_Regression(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(true)
+	if got := lt.ToVL("k8s_container_name"); got != "k8s.container.name" {
+		t.Errorf("ToVL(k8s_container_name) with translateOTel=true = %q, want %q", got, "k8s.container.name")
+	}
+	lt.SetTranslateOTel(false)
+	if got := lt.ToVL("k8s_container_name"); got != "k8s_container_name" {
+		t.Errorf("ToVL(k8s_container_name) with translateOTel=false = %q, want %q", got, "k8s_container_name")
+	}
+}
+
+func TestLearnFieldAliases_TranslateOTelTrue_SkipsKnownOTelEntries(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(true)
+	lt.LearnFieldAliases([]string{"k8s.container.name"})
+	if got := lt.ToVL("k8s_container_name"); got != "k8s.container.name" {
+		t.Errorf("ToVL(k8s_container_name) = %q, want %q", got, "k8s.container.name")
+	}
+}
+
+func TestLearnFieldAliases_TranslateOTelFalse_NeverCreatesAliasForKnownOTel(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(false)
+	lt.LearnFieldAliases([]string{"k8s.container.name"})
+	// With translateOTel=false, LearnFieldAliases unconditionally skips known OTel entries.
+	// ToVL preserves the underscore label (no rewrite from any source).
+	if got := lt.ToVL("k8s_container_name"); got != "k8s_container_name" {
+		t.Errorf("ToVL(k8s_container_name) with translateOTel=false = %q, want %q (should be preserved as-is)", got, "k8s_container_name")
+	}
+}
+
+func TestLearnFieldAliases_TranslateOTelFalse_LearnFromVLFieldInventory(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(false)
+	lt.LearnFieldAliases([]string{"k8s_container_name"})
+	if got := lt.ToVL("k8s_container_name"); got != "k8s_container_name" {
+		t.Errorf("ToVL(k8s_container_name) = %q, want %q", got, "k8s_container_name")
+	}
+}
+
+// Underscore-storage deployment: VL has the underscore form, operator disabled
+// the OTel rewrite. Candidate resolution must short-circuit on the underscore
+// field present in the inventory.
+func TestResolveLabelCandidates_TranslateOTelFalse_PrefersUnderscoreFromInventory(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(false)
+
+	got := lt.ResolveLabelCandidates("k8s_container_name", []string{"k8s_container_name"})
+	if len(got.candidates) != 1 || got.candidates[0] != "k8s_container_name" {
+		t.Fatalf("expected [k8s_container_name], got %v", got.candidates)
+	}
+	if got.ambiguous {
+		t.Fatalf("expected unambiguous single candidate, got ambiguous=%v", got.ambiguous)
+	}
+}
+
+// Edge case: operator disabled the OTel rewrite, but VL actually only has the
+// dotted form. The gated knownUnderscoreToDot shortcut is skipped, but the
+// generic ToLoki loop still finds the dotted field via translation so the
+// candidate is non-empty (we can't query a field VL doesn't have).
+func TestResolveLabelCandidates_TranslateOTelFalse_FallsBackToDottedFromInventory(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(false)
+
+	got := lt.ResolveLabelCandidates("k8s_container_name", []string{"k8s.container.name"})
+	if len(got.candidates) != 1 || got.candidates[0] != "k8s.container.name" {
+		t.Fatalf("expected fallback to [k8s.container.name] via generic loop, got %v", got.candidates)
+	}
+	if got.ambiguous {
+		t.Fatalf("expected unambiguous, got %v", got.ambiguous)
+	}
+}
+
+// Regression for the ordering of `lt.translateOTel` vs. the side-effecting
+// `addIfAvailable(dotted)`: when both forms are present but the underscore
+// matches first via line 280, we must never even touch the gated dotted
+// shortcut so it cannot pollute candidates.
+func TestResolveLabelCandidates_TranslateOTelFalse_ExactUnderscoreShortCircuits(t *testing.T) {
+	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
+	lt.SetTranslateOTel(false)
+
+	got := lt.ResolveLabelCandidates("service_name", []string{"service_name", "service.name"})
+	if len(got.candidates) != 1 || got.candidates[0] != "service_name" {
+		t.Fatalf("expected exact underscore match to short-circuit, got %v", got.candidates)
+	}
+}
+
 func TestLabelTranslator_ResolveMetadataCandidates(t *testing.T) {
 	lt := NewLabelTranslator(LabelStyleUnderscores, nil)
 

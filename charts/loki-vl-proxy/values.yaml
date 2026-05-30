@@ -210,6 +210,7 @@ extraArgs:
   # emit-structured-metadata: "true"         # include 3-tuple stream values [timestamp, line, metadata]
   # Label translation (OTel compatibility)
   # label-style: "underscores"  # convert VL dotted fields (service.name) to Loki underscores (service_name)
+  # translate-otel-attributes: "true"  # rewrite known OTel labels to dotted form in upstream queries (set "false" for underscore storage)
   # field-mapping: '[{"vl_field":"custom.field","loki_label":"custom_label"}]'
   # Derived fields (trace linking)
   # derived-fields: '[{"name":"traceID","matcherRegex":"trace_id=([a-f0-9]+)","url":"http://tempo/trace/${__value.raw}"}]'

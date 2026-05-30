@@ -55,6 +55,7 @@ type envConfig struct {
 	labelStyle        string
 	fieldMappingJSON  string
 	metadataFieldMode string
+	translateOTel     *bool
 	extraLabelFields  string
 	serviceName       string
 	serviceNamespace  string
@@ -152,6 +153,7 @@ type proxyRuntimeConfig struct {
 	warmupMaxJitter                     time.Duration
 	labelStyle                          string
 	metadataFieldMode                   string
+	translateOTel                       *bool
 	fieldMappingJSON                    string
 	streamFieldsCSV                     string
 	extraLabelFieldsCSV                 string
@@ -509,6 +511,7 @@ func run(
   native      - expose VictoriaLogs field names as-is
   translated  - expose only Loki-compatible translated aliases
   hybrid      - expose both native VL field names and translated aliases when they differ`)
+	translateOTel := fs.Bool("translate-otel-attributes", true, "Translate known OTel semantic convention labels from underscore to dotted form in upstream queries (set false to preserve client label names)")
 	fieldMappingJSON := fs.String("field-mapping", "", `JSON custom field mappings: [{"vl_field":"service.name","loki_label":"service_name"}]`)
 	streamFieldsCSV := fs.String("stream-fields", "", `Comma-separated VL _stream_fields labels for stream selector optimization (e.g., "app,env,namespace")`)
 	extraLabelFieldsCSV := fs.String("extra-label-fields", "", `Comma-separated additional VL field names exposed on /labels and eligible for alias resolution (for example "host.id,custom.pipeline.processing")`)
@@ -590,6 +593,7 @@ func run(
 		labelStyle:        *labelStyle,
 		fieldMappingJSON:  *fieldMappingJSON,
 		metadataFieldMode: *metadataFieldMode,
+		translateOTel:     translateOTel,
 		extraLabelFields:  *extraLabelFieldsCSV,
 		serviceName:       *otelServiceName,
 		serviceNamespace:  *otelServiceNamespace,
@@ -737,6 +741,7 @@ func run(
 			warmupMaxJitter:                     *warmupMaxJitter,
 			labelStyle:                          envCfg.labelStyle,
 			metadataFieldMode:                   envCfg.metadataFieldMode,
+			translateOTel:                       envCfg.translateOTel,
 			fieldMappingJSON:                    envCfg.fieldMappingJSON,
 			streamFieldsCSV:                     *streamFieldsCSV,
 			extraLabelFieldsCSV:                 envCfg.extraLabelFields,
@@ -1236,6 +1241,11 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	if v := getenv("METADATA_FIELD_MODE"); v != "" && cfg.metadataFieldMode == "hybrid" {
 		cfg.metadataFieldMode = v
 	}
+	if v := getenv("TRANSLATE_OTEL_ATTRIBUTES"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			cfg.translateOTel = &b
+		}
+	}
 	if v := getenv("EXTRA_LABEL_FIELDS"); v != "" && cfg.extraLabelFields == "" {
 		cfg.extraLabelFields = v
 	}
@@ -1708,6 +1718,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		WarmupMaxJitter:                    cfg.warmupMaxJitter,
 		LabelStyle:                         ls,
 		MetadataFieldMode:                  mfm,
+		TranslateOTel:                      cfg.translateOTel,
 		FieldMappings:                      fieldMappings,
 		StreamFields:                       parseCSV(cfg.streamFieldsCSV),
 		ExtraLabelFields:                   parseCSV(cfg.extraLabelFieldsCSV),

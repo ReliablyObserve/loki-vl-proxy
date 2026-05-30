@@ -454,7 +454,12 @@ func (p *Proxy) resolveTargetLabelFields(ctx context.Context, targetLabels strin
 		// custom fields resolved via inventory (those are stored as dotted OTel).
 		if p.labelTranslator != nil && p.labelTranslator.style == LabelStyleUnderscores {
 			if _, isKnownOTel := knownUnderscoreToDot[name]; isKnownOTel {
-				resolved = appendUniqueStrings(resolved, name)
+				// When OTel translation is enabled, the primary form is dotted;
+				// add the underscore form as a fallback for Loki-push data.
+				// When disabled, ToVL already returns the underscore form — skip.
+				if p.labelTranslator.translateOTel {
+					resolved = appendUniqueStrings(resolved, name)
+				}
 			}
 		}
 	}

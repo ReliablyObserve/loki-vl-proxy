@@ -785,6 +785,63 @@ func TestApplyEnvOverrides_PreservesExplicitFlags(t *testing.T) {
 	}
 }
 
+// TRANSLATE_OTEL_ATTRIBUTES uses a *bool so "unset" stays distinct from "false".
+// The override unconditionally replaces the CLI default (unlike most other env
+// vars, which only fill in when the CLI value is the documented default), so
+// these tests pin both directions and the invalid-value safe-fallback.
+func TestApplyEnvOverrides_TranslateOTelAttributes(t *testing.T) {
+	t.Run("env false overrides default true", func(t *testing.T) {
+		def := true
+		cfg := envConfig{translateOTel: &def}
+		got := applyEnvOverrides(cfg, func(key string) string {
+			if key == "TRANSLATE_OTEL_ATTRIBUTES" {
+				return "false"
+			}
+			return ""
+		})
+		if got.translateOTel == nil || *got.translateOTel {
+			t.Fatalf("expected translateOTel=false after env override, got %+v", got.translateOTel)
+		}
+	})
+
+	t.Run("env true overrides default false", func(t *testing.T) {
+		def := false
+		cfg := envConfig{translateOTel: &def}
+		got := applyEnvOverrides(cfg, func(key string) string {
+			if key == "TRANSLATE_OTEL_ATTRIBUTES" {
+				return "true"
+			}
+			return ""
+		})
+		if got.translateOTel == nil || !*got.translateOTel {
+			t.Fatalf("expected translateOTel=true after env override, got %+v", got.translateOTel)
+		}
+	})
+
+	t.Run("invalid env value leaves explicit flag intact", func(t *testing.T) {
+		def := true
+		cfg := envConfig{translateOTel: &def}
+		got := applyEnvOverrides(cfg, func(key string) string {
+			if key == "TRANSLATE_OTEL_ATTRIBUTES" {
+				return "not-a-bool"
+			}
+			return ""
+		})
+		if got.translateOTel == nil || !*got.translateOTel {
+			t.Fatalf("expected invalid env to leave explicit flag intact, got %+v", got.translateOTel)
+		}
+	})
+
+	t.Run("empty env preserves CLI value", func(t *testing.T) {
+		def := false
+		cfg := envConfig{translateOTel: &def}
+		got := applyEnvOverrides(cfg, func(string) string { return "" })
+		if got.translateOTel == nil || *got.translateOTel {
+			t.Fatalf("expected empty env to preserve CLI value, got %+v", got.translateOTel)
+		}
+	})
+}
+
 func TestApplyEnvOverrides_ProcRoot(t *testing.T) {
 	cfg := envConfig{procRoot: "/proc"}
 	env := map[string]string{"PROC_ROOT": "/host/proc"}

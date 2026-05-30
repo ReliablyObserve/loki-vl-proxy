@@ -227,6 +227,7 @@ type Config struct {
 	LabelStyle        LabelStyle        // how to translate VL field names to Loki labels
 	MetadataFieldMode MetadataFieldMode // how to expose non-label VL fields through field-oriented APIs
 	FieldMappings     []FieldMapping    // custom VL↔Loki field name mappings
+	TranslateOTel     *bool
 
 	// Stream optimization
 	StreamFields []string // VL _stream_fields labels — use native stream selectors for these (faster)
@@ -943,6 +944,9 @@ func New(cfg Config) (*Proxy, error) {
 	}
 
 	labelTranslator := NewLabelTranslator(cfg.LabelStyle, cfg.FieldMappings)
+	if cfg.TranslateOTel != nil {
+		labelTranslator.SetTranslateOTel(*cfg.TranslateOTel)
+	}
 	declaredLabelFields := buildDeclaredLabelFields(cfg.StreamFields, cfg.ExtraLabelFields, labelTranslator)
 	patternsEnabled := true
 	if cfg.PatternsEnabled != nil {
@@ -1432,7 +1436,9 @@ func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
 // ReloadFieldMappings hot-reloads field mappings and rebuilds the label translator.
 func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
 	p.configMu.Lock()
+	prevTranslateOTel := p.labelTranslator.translateOTel
 	p.labelTranslator = NewLabelTranslator(p.labelTranslator.style, mappings)
+	p.labelTranslator.SetTranslateOTel(prevTranslateOTel)
 	if p.translationCache != nil {
 		p.translationCache.InvalidatePrefix("")
 	}

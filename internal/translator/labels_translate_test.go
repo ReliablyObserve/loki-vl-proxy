@@ -210,6 +210,23 @@ func TestTranslateLogQLWithLabels_NilFn(t *testing.T) {
 	}
 }
 
+func TestTranslation_UnderscoreLabelPreservedWhenTranslateOTelDisabled(t *testing.T) {
+	labelFn := func(label string) string {
+		return label
+	}
+
+	got, err := TranslateLogQLWithCapabilities(`{k8s_container_name="notificationgo-chat"}`, labelFn, nil, logsql.Capabilities{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(got, `k8s_container_name:=`) {
+		t.Errorf("output missing k8s_container_name:=; got %q", got)
+	}
+	if strings.Contains(got, `"k8s.container.name":=`) {
+		t.Errorf("output unexpectedly contains dotted OTel field; got %q", got)
+	}
+}
+
 func TestTranslateSingleLabelFilter_DottedTripletKeyOperatorValue(t *testing.T) {
 	tests := []struct {
 		name    string

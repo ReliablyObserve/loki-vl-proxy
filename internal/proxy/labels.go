@@ -64,6 +64,8 @@ type LabelTranslator struct {
 	learnedMu        sync.RWMutex
 	learnedLokiToVL  map[string]string
 	learnedAmbiguous map[string]struct{}
+
+	translateOTel bool
 }
 
 // NewLabelTranslator creates a label translator with the given style and custom mappings.
@@ -75,6 +77,7 @@ func NewLabelTranslator(style LabelStyle, mappings []FieldMapping) *LabelTransla
 		lokiToVL:         make(map[string]string),
 		learnedLokiToVL:  make(map[string]string),
 		learnedAmbiguous: make(map[string]struct{}),
+		translateOTel:    true,
 	}
 
 	// Register custom mappings (bidirectional)
@@ -115,10 +118,24 @@ func (lt *LabelTranslator) ToVL(lokiLabel string) string {
 
 	switch lt.style {
 	case LabelStyleUnderscores:
-		// For query direction, we check known OTel semantic conventions.
-		// If the underscore label matches a known OTel dotted field, use the dotted form.
-		if dotted, ok := knownUnderscoreToDot[lokiLabel]; ok {
-			return dotted
+		// Scope note: translateOTel gates ONLY the built-in knownUnderscoreToDot
+		// mapping below. Custom -field-mapping rules (handled above via lt.lokiToVL)
+		// and runtime-learned aliases (below) are intentionally NOT gated — the
+		// former is explicit operator intent and the latter reflects the actual VL
+		// field inventory, so both stay correct regardless of how known OTel labels
+		// are stored.
+		//
+		// When translateOTel is enabled (default), rewrite known OTel semantic
+		// convention labels from underscore to dotted form (e.g.
+		// k8s_container_name → k8s.container.name) for the upstream query.
+		// When disabled (-translate-otel-attributes=false), skip this layer so the
+		// underscore form reaches the loop/passthrough below — useful when VL
+		// stores OTel attributes with underscores (Vector/Promtail/Fluent-bit via
+		// Elasticsearch bulk ingest).
+		if lt.translateOTel {
+			if dotted, ok := knownUnderscoreToDot[lokiLabel]; ok {
+				return dotted
+			}
 		}
 		// For custom attributes, use learned aliases only when they were resolved
 		// uniquely from backend field inventory.
@@ -143,6 +160,10 @@ func (lt *LabelTranslator) resolveLearnedAlias(lokiLabel string) (string, bool) 
 	}
 	mapped, ok := lt.learnedLokiToVL[lokiLabel]
 	return mapped, ok
+}
+
+func (lt *LabelTranslator) SetTranslateOTel(v bool) {
+	lt.translateOTel = v
 }
 
 // LearnFieldAliases captures runtime underscore -> dotted mappings for custom
@@ -268,7 +289,12 @@ func (lt *LabelTranslator) ResolveLabelCandidates(lokiLabel string, available []
 	if addIfAvailable(label) {
 		return fieldResolution{candidates: candidates}
 	}
-	if lt != nil {
+	// Same scope rule as ToVL: only the built-in knownUnderscoreToDot lookup is
+	// gated by translateOTel. The check goes BEFORE addIfAvailable because
+	// addIfAvailable has a side effect (it appends to `candidates`) — short-
+	// circuiting on the flag after the append would still leave the dotted
+	// form in the result set.
+	if lt != nil && lt.translateOTel {
 		if dotted, ok := knownUnderscoreToDot[label]; ok && addIfAvailable(dotted) {
 			return fieldResolution{candidates: candidates}
 		}

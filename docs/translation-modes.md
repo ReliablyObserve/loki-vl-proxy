@@ -17,6 +17,27 @@ This guide explains how field and label translation behaves across proxy surface
 | `-field-mapping` | Custom mapping between VL field name and Loki label name | JSON mappings |
 | `-extra-label-fields` | Explicitly extends label-facing APIs and dot/underscore alias resolution for custom fields | comma-separated VL field names |
 
+### OTel Attribute Translation
+
+**Flag:** `-translate-otel-attributes` (default: `true`, env `TRANSLATE_OTEL_ATTRIBUTES`)
+
+Controls whether the LogQL→LogsQL translator rewrites the built-in list of known OTel semantic convention labels from underscore to dotted form in upstream queries to VictoriaLogs.
+
+- `true` (default): Labels like `k8s_container_name` are rewritten to `k8s.container.name` in the upstream LogsQL query. Correct when VictoriaLogs stores these fields in dotted OTel form.
+- `false`: The built-in `knownUnderscoreToDot` rewrite is skipped, so known OTel labels reach VL with their underscore form intact. Use this when your ingest pipeline (Vector, Promtail, Fluent-bit) stores OTel attributes with underscores in VictoriaLogs.
+
+**Scope.** This flag gates only the built-in OTel rewrite layer. The other parts of `ToVL()` keep working in both modes:
+
+| Layer | Affected by `-translate-otel-attributes=false`? |
+|---|---|
+| Explicit `-field-mapping` rules (`lokiToVL`) | No — operator intent always wins |
+| `detected_level` → `level` alias | No |
+| Built-in `knownUnderscoreToDot` semconv rewrite | Yes — disabled when flag is `false` |
+| Runtime-learned aliases from VL field inventory | No — reflects what VL actually stores |
+| Unknown labels (passthrough) | No |
+
+The flag also gates `ResolveLabelCandidates` and the `resolveTargetLabelFields` underscore-fallback, so the dotted form is not added as a candidate or fallback when OTel translation is disabled. This flag only affects the **query direction** (Loki→VL); response-side label translation is controlled by `-label-style` and `-metadata-field-mode`.
+
 ## Surfaces Affected
 
 | Surface | Uses `label-style` | Uses `metadata-field-mode` |
