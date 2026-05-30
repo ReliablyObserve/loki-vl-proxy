@@ -1465,8 +1465,8 @@ func TestDrilldown_DetectedFieldValues_ReturnStructuredMetadataValues(t *testing
 
 func TestDrilldown_DetectedFieldValues_ServiceNameUsesFastPath(t *testing.T) {
 	var (
-		sawFieldNames   bool
-		sawFieldValues  bool
+		sawFieldNames  bool
+		sawFieldValues bool
 	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

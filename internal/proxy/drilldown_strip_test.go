@@ -424,12 +424,12 @@ func TestIsLikelyHighCardinalityField(t *testing.T) {
 		"request_id", "correlation_id", "transaction_id",
 		"traceid", "spanid", "parentid",
 		"trace.id", "span.id",
-		"user_id", "order_id", "invoice_id",    // arbitrary _id suffix
-		"request_uuid", "session_uuid",          // _uuid suffix
-		"auth_token", "csrf_token",              // _token suffix
-		"content_hash", "body_hash",             // _hash suffix
-		"api_key", "secret_key",                 // _key suffix
-		"TRACE_ID", "Span_ID",                   // case-insensitive
+		"user_id", "order_id", "invoice_id", // arbitrary _id suffix
+		"request_uuid", "session_uuid", // _uuid suffix
+		"auth_token", "csrf_token", // _token suffix
+		"content_hash", "body_hash", // _hash suffix
+		"api_key", "secret_key", // _key suffix
+		"TRACE_ID", "Span_ID", // case-insensitive
 	}
 	no := []string{
 		"level", "env", "service_name", "status_code",

@@ -461,10 +461,10 @@ type Proxy struct {
 	enableQueryAnalytics                  bool
 	adminAuthToken                        string
 	metricsConcurrencyLimiter             chan struct{}
-	rangeMetricRowLimit                   int // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
-	maxStatsQuerySeries                   int        // max series returned by collectRangeMetricHits (0=5000)
-	statsQueryRangeSem                    chan struct{}    // limits concurrent VL stats_query_range calls (nil=unlimited)
-	statsQueryRangeInterQueryDelay        time.Duration   // min pause between consecutive individual VL stats calls
+	rangeMetricRowLimit                   int           // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
+	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
+	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
+	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
 	drilldownCoalescer                    *DrilldownBurstCoalescer
 	drilldownFieldBatcher                 *drilldownFieldBatcher
 	drilldownCardCache                    *drilldownCardinalityCache

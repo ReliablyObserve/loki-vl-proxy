@@ -1383,8 +1383,8 @@ func stripFieldDetectionStages(query string) string {
 // labelFilterHasComparison reports whether a LabelFilterStage.Raw string contains a
 // field-comparison operator (=, !=, =~, !~, >=, <=, >, <).
 var (
-	labelFilterCompareRE     = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
-	hasFieldComparisonRE     = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
+	labelFilterCompareRE      = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
+	hasFieldComparisonRE      = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
 	stripFieldComparisonStgRE = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)\s*[^|]+`)
 )
 

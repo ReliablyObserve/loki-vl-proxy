@@ -245,11 +245,11 @@ func semverAtLeast(semver string, major, minor, patch int) bool {
 }
 
 type backendCapabilities struct {
-	profile                    string
-	supportsStreamMetadata     bool
-	supportsDensePatternWin    bool
-	supportsMetadataSubstring  bool
-	supportsColumnFieldValues  bool // v1.50+: stream fields stored in column index; field_values == stream_field_values but 20x faster
+	profile                   string
+	supportsStreamMetadata    bool
+	supportsDensePatternWin   bool
+	supportsMetadataSubstring bool
+	supportsColumnFieldValues bool // v1.50+: stream fields stored in column index; field_values == stream_field_values but 20x faster
 }
 
 func deriveBackendCapabilities(semver string) backendCapabilities {

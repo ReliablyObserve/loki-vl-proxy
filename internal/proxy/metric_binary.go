@@ -183,8 +183,8 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 // 720 buckets × 500/bucket = 360k unique series (~32.8 MB) even with | limit 500.
 // When the direct-path response exceeds this cap, drilldownTwoPhase takes over:
 //
-//   Phase 1 — single-bucket query (step = entire range) → global top-N values, tiny
-//   Phase 2 — range query filtered via field:in(...) → ≤500 series with original step
+//	Phase 1 — single-bucket query (step = entire range) → global top-N values, tiny
+//	Phase 2 — range query filtered via field:in(...) → ≤500 series with original step
 //
 // Do NOT inflate the step sent to VL: changing the step breaks Grafana's timestamp
 // alignment expectations and causes "no data" for all fields.

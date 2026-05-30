@@ -421,7 +421,6 @@ func TestExpandDrilldownStep(t *testing.T) {
 	})
 }
 
-
 func TestIsHighCardinalityFieldName(t *testing.T) {
 	high := []string{"trace_id", "span_id", "request_id", "correlation_id", "parent_id", "user_uid"}
 	for _, f := range high {

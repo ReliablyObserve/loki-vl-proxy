@@ -202,9 +202,9 @@ type proxyRuntimeConfig struct {
 	statsQueryRangeConcurrency          int
 	drilldownBurstWindowMs              int
 	drilldownBurstMaxFields             int
-	drilldownFieldBatchWindowMs              int
-	drilldownFieldBatchMaxFields             int
-	statsQueryRangeInterQueryDelayMs         int
+	drilldownFieldBatchWindowMs         int
+	drilldownFieldBatchMaxFields        int
+	statsQueryRangeInterQueryDelayMs    int
 }
 
 type otlpRuntimeConfig struct {
@@ -815,9 +815,9 @@ func run(
 			statsQueryRangeConcurrency:          *statsQueryRangeConcurrency,
 			drilldownBurstWindowMs:              *drilldownBurstWindowMs,
 			drilldownBurstMaxFields:             *drilldownBurstMaxFields,
-			drilldownFieldBatchWindowMs:              *drilldownFieldBatchWindowMs,
-			drilldownFieldBatchMaxFields:             *drilldownFieldBatchMaxFields,
-			statsQueryRangeInterQueryDelayMs:         *statsQueryRangeInterQueryDelayMs,
+			drilldownFieldBatchWindowMs:         *drilldownFieldBatchWindowMs,
+			drilldownFieldBatchMaxFields:        *drilldownFieldBatchMaxFields,
+			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1775,14 +1775,14 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			ManifestRefresh: cfg.coldBackendManifestRefresh,
 			Timeout:         cfg.coldBackendTimeout,
 		},
-		DefaultMaxQueryLength: cfg.defaultMaxQueryLength,
-		MaxStatsQuerySeries:            cfg.maxStatsQuerySeries,
-		StatsQueryRangeConcurrency:     cfg.statsQueryRangeConcurrency,
-		DrilldownBurstWindowMs:          cfg.drilldownBurstWindowMs,
-		DrilldownBurstMaxFields:         cfg.drilldownBurstMaxFields,
-		DrilldownFieldBatchWindowMs:          cfg.drilldownFieldBatchWindowMs,
-		DrilldownFieldBatchMaxFields:         cfg.drilldownFieldBatchMaxFields,
-		StatsQueryRangeInterQueryDelayMs:     cfg.statsQueryRangeInterQueryDelayMs,
+		DefaultMaxQueryLength:            cfg.defaultMaxQueryLength,
+		MaxStatsQuerySeries:              cfg.maxStatsQuerySeries,
+		StatsQueryRangeConcurrency:       cfg.statsQueryRangeConcurrency,
+		DrilldownBurstWindowMs:           cfg.drilldownBurstWindowMs,
+		DrilldownBurstMaxFields:          cfg.drilldownBurstMaxFields,
+		DrilldownFieldBatchWindowMs:      cfg.drilldownFieldBatchWindowMs,
+		DrilldownFieldBatchMaxFields:     cfg.drilldownFieldBatchMaxFields,
+		StatsQueryRangeInterQueryDelayMs: cfg.statsQueryRangeInterQueryDelayMs,
 	}, nil
 }
 

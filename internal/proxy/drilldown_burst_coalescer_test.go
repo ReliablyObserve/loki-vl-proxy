@@ -106,11 +106,11 @@ func TestAllFiltersAreExistenceChecks(t *testing.T) {
 
 func TestDetectDrilldownSingleField(t *testing.T) {
 	tests := []struct {
-		name          string
-		query         string
-		wantOK        bool
-		wantBase      string
-		wantField     string
+		name      string
+		query     string
+		wantOK    bool
+		wantBase  string
+		wantField string
 	}{
 		{
 			name:      "clean drilldown query after strip",
