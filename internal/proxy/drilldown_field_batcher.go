@@ -19,9 +19,10 @@ const (
 )
 
 type fieldBatchEntry struct {
-	lokiField string
-	vlFields  []string
-	resultCh  chan []byte
+	lokiField      string   // Loki-side field name (used in output metric key)
+	primaryVLField string   // raw VL field name for raw-body metric lookup
+	vlFields       []string // all VL by() fields contributed by this entry
+	resultCh       chan []byte
 }
 
 type fieldBatch struct {
@@ -88,7 +89,7 @@ func bucketCount(startRaw, endRaw, stepRaw string) int {
 	return n
 }
 
-func (b *drilldownFieldBatcher) submit(ctx context.Context, orgID, cleanBase, lokiField string, vlFields []string, startRaw, endRaw, stepRaw string) []byte {
+func (b *drilldownFieldBatcher) submit(ctx context.Context, orgID, cleanBase, lokiField, primaryVLField string, vlFields []string, startRaw, endRaw, stepRaw string) []byte {
 	if n := bucketCount(startRaw, endRaw, stepRaw); n > maxBatchBuckets {
 		return nil
 	}
@@ -118,9 +119,10 @@ func (b *drilldownFieldBatcher) submit(ctx context.Context, orgID, cleanBase, lo
 	}
 	resultCh := make(chan []byte, 1)
 	batch.entries = append(batch.entries, fieldBatchEntry{
-		lokiField: lokiField,
-		vlFields:  vlFields,
-		resultCh:  resultCh,
+		lokiField:      lokiField,
+		primaryVLField: primaryVLField,
+		vlFields:       vlFields,
+		resultCh:       resultCh,
 	})
 	shouldFire := len(batch.entries) >= b.maxFields
 	batch.mu.Unlock()
@@ -214,8 +216,10 @@ func (batch *fieldBatch) fire() {
 		return
 	}
 
-	translated := b.proxy.trimAndTranslateStatsQRFJ(ctx30s, body, nil, "")
-	results := marginalizeBatchResult(translated, entries)
+	// Use raw VL body (no label translation) so marginalizeBatchResult can look up
+	// fields by their VL names (primaryVLField). Translation renames/removes keys
+	// (e.g., level→detected_level) which breaks the per-field metric lookup.
+	results := marginalizeBatchResult(body, entries)
 
 	for lokiField, data := range results {
 		results[lokiField] = limitLokiMatrixSeries(data, maxDrilldownSeries)
@@ -240,9 +244,10 @@ func marginalizeBatchResult(translated []byte, entries []fieldBatchEntry) map[st
 	type marginals = map[string]map[int64]int64
 	fieldMarginals := make(map[string]marginals)
 
-	lokiFieldSet := make(map[string]bool)
+	// vlField → lokiField: raw VL body uses VL field names (e.g. "level"), output uses Loki names.
+	vlToLoki := make(map[string]string, len(entries))
 	for _, e := range entries {
-		lokiFieldSet[e.lokiField] = true
+		vlToLoki[e.primaryVLField] = e.lokiField
 		if fieldMarginals[e.lokiField] == nil {
 			fieldMarginals[e.lokiField] = make(marginals)
 		}
@@ -264,8 +269,8 @@ func marginalizeBatchResult(translated []byte, entries []fieldBatchEntry) map[st
 			labelMap[string(k)] = string(val.GetStringBytes())
 		})
 
-		for lokiField := range lokiFieldSet {
-			fieldValue, ok := labelMap[lokiField]
+		for vlField, lokiField := range vlToLoki {
+			fieldValue, ok := labelMap[vlField]
 			if !ok {
 				continue
 			}

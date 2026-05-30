@@ -41,6 +41,8 @@ func TestProxyStatsQueryRange_StripsParserAndDelete(t *testing.T) {
 	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
 	req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
 	req.Header.Set("X-Scope-OrgID", "default")
+	// Parser stage stripping is gated on the Drilldown header — simulate Drilldown request.
+	req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
 
 	w := httptest.NewRecorder()
 	p.proxyStatsQueryRange(w, req, logsqlQuery)
@@ -231,9 +233,10 @@ func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	if strings.Contains(receivedQuery, "count() if") {
 		t.Errorf("Drilldown path must not rewrite to count() if: %s", receivedQuery)
 	}
-	// REGRESSION GUARD: step must NOT be inflated.
-	if receivedStep != "60s" {
-		t.Errorf("step must be preserved as 60s (not inflated), VL received: %q", receivedStep)
+	// Step must be coarsened: 1h/60s = 60 buckets > maxDrilldownStatsBuckets(30),
+	// so proxy coarsens to 120s (first nice step ≥ 1h/30 = 120s).
+	if receivedStep != "120s" {
+		t.Errorf("step must be coarsened to 120s for 1h/60s query, VL received: %q", receivedStep)
 	}
 }
 
@@ -705,39 +708,39 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 		wantStep time.Duration
 	}{
 		{
-			name:     "12h range step=60s coarsens to 5min",
+			name:     "12h range step=60s coarsens to 30min",
 			start:    ts(0),
 			end:      ts(12 * 3600),
 			step:     60 * time.Second,
-			wantStep: 5 * time.Minute, // 12h/200 = 216s → snap to 300s
+			wantStep: 30 * time.Minute, // 12h/30 = 1440s → snap to 1800s
 		},
 		{
-			name:     "6h range step=60s coarsens to 2min",
+			name:     "6h range step=60s coarsens to 30min",
 			start:    ts(0),
 			end:      ts(6 * 3600),
 			step:     60 * time.Second,
-			wantStep: 2 * time.Minute, // 6h/200 = 108s → snap to 120s
+			wantStep: 30 * time.Minute, // 6h/30 = 720s → snap to 1800s
 		},
 		{
-			name:     "1h range step=60s no coarsening",
+			name:     "1h range step=60s coarsens to 2min",
 			start:    ts(0),
 			end:      ts(3600),
 			step:     60 * time.Second,
-			wantStep: 60 * time.Second, // 1h/200 = 18s < 60s → unchanged
+			wantStep: 2 * time.Minute, // 1h/30 = 120s → snap to 120s
 		},
 		{
-			name:     "24h range step=120s coarsens to 10min",
+			name:     "24h range step=120s coarsens to 1h",
 			start:    ts(0),
 			end:      ts(24 * 3600),
 			step:     120 * time.Second,
-			wantStep: 10 * time.Minute, // 24h/200 = 432s → snap to 600s
+			wantStep: time.Hour, // 24h/30 = 2880s → snap to 3600s
 		},
 		{
-			name:     "short range step=30s no coarsening",
+			name:     "short range step=30s coarsens to 60s",
 			start:    ts(0),
 			end:      ts(1800),
 			step:     30 * time.Second,
-			wantStep: 30 * time.Second, // 30min/200 = 9s < 30s → unchanged
+			wantStep: 60 * time.Second, // 30min/30 = 60s → snap to 60s
 		},
 		{
 			name:     "zero step passes through",
@@ -758,3 +761,77 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 	}
 }
 
+// TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries verifies that
+// both translation patterns that previously broke drilldown detection now work:
+//
+//  1. detected_level (pipe-filter after parser strip): after translation the query
+//     contains | unpack_logfmt | filter level:!""; the proxy must strip the parser
+//     stage and detect drilldown, coarsening the step for the 12h range.
+//
+//  2. stream-label level (stream-selector existence check): the VL stream selector
+//     contains level:!"" without a | filter prefix; detection must recognise the
+//     existence check and coarsen the step.
+func TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries(t *testing.T) {
+	const baseTS int64 = 1748000000 // 2025-05-23
+	ts := func(relSec int64) string { return strconv.FormatInt(baseTS+relSec, 10) }
+
+	cases := []struct {
+		name      string
+		logsql    string // VL-translated query as proxy receives it
+		wantStrip string // pipe stage that must NOT appear in the forwarded query
+	}{
+		{
+			// detected_level: Loki adds | logfmt level | drop __error__ | level!="" before
+			// the stats clause; proxy must strip | unpack_logfmt and route drilldown path.
+			name:      "detected_level_with_parser_stage",
+			logsql:    `env:="production" | unpack_logfmt | filter level:!"" | stats by (level) count()`,
+			wantStrip: "unpack_logfmt",
+		},
+		{
+			// stream-label level: Loki stream selector {env="production", level!=""} translates
+			// to env:="production" level:!"" in VL — no | filter prefix for the existence check.
+			name:   "stream_label_level_selector",
+			logsql: `env:="production" level:!"" | stats by (level) count()`,
+			// No parser stage to strip — just verify drilldown detection fires (step coarsened).
+			wantStrip: "",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var receivedQuery, receivedStep string
+			vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedQuery = r.FormValue("query")
+				receivedStep = r.FormValue("step")
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+			}))
+			defer vlBackend.Close()
+
+			p := newTestProxy(t, vlBackend.URL)
+
+			form := url.Values{}
+			form.Set("query", `sum by (level) (count_over_time({env="production",level!=""} [1m]))`)
+			form.Set("start", ts(0))
+			form.Set("end", ts(12*3600)) // 12h range
+			form.Set("step", "60s")      // fine step — must coarsen to ≥1800s
+
+			req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
+			req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
+			req.Header.Set("X-Scope-OrgID", "default")
+			req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+
+			p.proxyStatsQueryRange(httptest.NewRecorder(), req, tc.logsql)
+
+			t.Logf("VL received query=%s step=%s", receivedQuery, receivedStep)
+
+			if tc.wantStrip != "" && strings.Contains(receivedQuery, tc.wantStrip) {
+				t.Errorf("parser stage %q still present in VL query: %s", tc.wantStrip, receivedQuery)
+			}
+			// Drilldown detection must fire — step must be coarsened (12h/60s=720 buckets > 30).
+			if receivedStep == "60s" {
+				t.Errorf("step not coarsened (still 60s) — drilldown detection did not fire for %q", tc.logsql)
+			}
+		})
+	}
+}

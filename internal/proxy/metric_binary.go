@@ -66,19 +66,26 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	// For Drilldown field-presence queries strip:
-	//   1. | unpack_json / | unpack_logfmt — column-indexed fields need no JSON parsing
-	//   2. | delete __error__, __error_details__ — removes a field from each row but
-	//      does not filter any logs, so counts are identical without it
-	// Both strips are safe: Drilldown only surfaces column-indexed fields via
-	// detected_fields, and the stats grouping is unaffected by deleting __error__.
+	// For stats queries, strip two classes of pipes:
+	//   1. | delete __error__, __error_details__ — removes a field per row but never
+	//      filters logs; counts are identical without it. Safe to strip for any caller.
+	//   2. | unpack_json / | unpack_logfmt — column-indexed fields need no JSON parsing.
+	//      Gate to Drilldown only: Explore/API callers expect parser semantics to apply.
 	effectiveQuery := logsqlQuery
-	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok &&
-		strings.Contains(spec.BaseQuery, "| delete __error__") {
-		stripped := drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, "")
-		stripped = strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(stripped, ""))
-		if stripped != spec.BaseQuery && allFiltersAreExistenceChecks(stripped) {
-			effectiveQuery = stripped + logsqlQuery[len(spec.BaseQuery):]
+	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok {
+		base := spec.BaseQuery
+		if isGrafanaDrilldownRequest(r) {
+			// Strip parser pipes — safe because Drilldown only surfaces column-indexed
+			// fields via detected_fields; stripping changes no semantics for those fields.
+			stripped := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(base, ""))
+			if stripped != base && allFiltersAreExistenceChecks(stripped) {
+				base = stripped
+			}
+		}
+		// Strip delete pipes for any stats query — never affects counts or filters.
+		noDelete := strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(base, ""))
+		if noDelete != spec.BaseQuery {
+			effectiveQuery = noDelete + logsqlQuery[len(spec.BaseQuery):]
 		}
 	}
 
@@ -326,12 +333,11 @@ func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field s
 const drilldownStatsCacheTTL = 5 * time.Minute
 
 // maxDrilldownStatsBuckets caps the number of time buckets sent to VL in a
-// Drilldown stats_query_range call. Drilldown fires one query per detected
-// field; each query scans the full time range in step-sized slots. For a 12h
-// range with step=60s that is 720 slots × N fields — each slot requires a VL
-// aggregation pass. Coarsening the step to at most range/maxBuckets reduces VL
-// computation by 3–10× while preserving the histogram shape.
-const maxDrilldownStatsBuckets = 200
+// Drilldown stats_query_range call. This must be ≤ maxBatchBuckets so that
+// step coarsening always brings queries into the batcher's range: after
+// coarsening, all field queries for any window fire as a single multi-field
+// VL call instead of N individual calls.
+const maxDrilldownStatsBuckets = 30
 
 // drilldownNiceSteps are the candidate step values to snap to after coarsening.
 var drilldownNiceSteps = []time.Duration{
@@ -343,6 +349,9 @@ var drilldownNiceSteps = []time.Duration{
 	30 * time.Minute,
 	time.Hour,
 	2 * time.Hour,
+	6 * time.Hour,
+	12 * time.Hour,
+	24 * time.Hour,
 }
 
 // coarsenDrilldownStep returns an effective step that is at least step but
@@ -478,7 +487,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 			lokiField = lt.ToLoki(field)
 		}
 		orgID := r.Header.Get("X-Scope-OrgID")
-		if body := batcher.submit(r.Context(), orgID, cleanBase, lokiField, vlFields, startRaw, endRaw, effectiveStepRaw); body != nil {
+		if body := batcher.submit(r.Context(), orgID, cleanBase, lokiField, field, vlFields, startRaw, endRaw, effectiveStepRaw); body != nil {
 			p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(body)
@@ -493,7 +502,13 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 	if sem := p.statsQueryRangeSem; sem != nil {
 		select {
 		case <-sem:
-			defer func() { sem <- struct{}{} }()
+			delay := p.statsQueryRangeInterQueryDelay
+			defer func() {
+				if delay > 0 {
+					time.Sleep(delay)
+				}
+				sem <- struct{}{}
+			}()
 		case <-r.Context().Done():
 			p.writeError(w, http.StatusServiceUnavailable, "request cancelled waiting for stats_query_range slot")
 			return

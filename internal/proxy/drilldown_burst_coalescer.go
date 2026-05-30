@@ -40,6 +40,25 @@ func allFiltersAreExistenceChecks(vlQuery string) bool {
 	return !strings.Contains(drilldownFieldFilterRE.ReplaceAllString(vlQuery, ""), "| filter ")
 }
 
+// fieldHasExistenceFilter returns true if field appears as an existence check
+// (field:!"" or field!="") in baseQuery — either as a | filter pipe stage or
+// directly in the stream selector (stream-label existence checks are written
+// without the | filter prefix, e.g. env:="production" level:!"").
+func fieldHasExistenceFilter(baseQuery, field string) bool {
+	// Check common prefixes: space before field (stream selector or after filter keyword)
+	// and comma (multi-label stream selectors). Use string operations to avoid per-call
+	// regexp compilation; field names are already validated as [\w.]+ by the parser.
+	for _, pre := range []string{" ", ","} {
+		if strings.Contains(baseQuery, pre+field+`:!""`) ||
+			strings.Contains(baseQuery, pre+field+`!=""`) {
+			return true
+		}
+	}
+	// Check at the very start of the query (stream selector starts at position 0).
+	return strings.HasPrefix(baseQuery, field+`:!""`) ||
+		strings.HasPrefix(baseQuery, field+`!=""`)
+}
+
 // detectDrilldownSingleField returns the pure stream-selector base (no existence
 // filters, no delete pipes) and the single grouped field when effectiveQuery is a
 // Drilldown tumbling-window single-field count query whose filters are all pure
@@ -61,15 +80,22 @@ func detectDrilldownSingleField(effectiveQuery string) (cleanBase, field string,
 	f := spec.GroupBy[0]
 	// All remaining | filter clauses must be pure existence checks — value
 	// comparisons (e.g. | filter status:>="400") require the parser to have run.
+	// Stream-selector-style filters (e.g. level:!"" in the selector) are also
+	// existence checks; allFiltersAreExistenceChecks handles only pipe-style ones,
+	// but the stream-selector form never produces | filter so it passes that check.
 	if !allFiltersAreExistenceChecks(spec.BaseQuery) {
 		return "", "", false
 	}
-	// Require at least one existence filter so we know which field to probe.
-	if !drilldownFieldFilterRE.MatchString(spec.BaseQuery) {
+	// Require the grouped field to have some existence check — either a pipe-style
+	// | filter f:!"" or a stream-selector-style f:!"" (written without | filter).
+	// Without this guard a plain count-by-field query (no existence intent) would
+	// be incorrectly routed through the drilldown fast path.
+	if !fieldHasExistenceFilter(spec.BaseQuery, f) {
 		return "", "", false
 	}
-	// Strip existence filters and delete pipes — safe because allFiltersAreExistenceChecks
-	// confirmed no value-comparison filters remain; count() if (field:*) replaces them.
+	// Strip pipe-style existence filters and delete pipes. Stream-selector
+	// existence filters (level:!"") remain in cleanBase — they are valid VL
+	// selector predicates that the batcher query passes through unchanged.
 	base := drilldownFieldFilterRE.ReplaceAllString(spec.BaseQuery, "")
 	base = drilldownDeletePipeRE.ReplaceAllString(base, "")
 	return strings.TrimSpace(base), f, true

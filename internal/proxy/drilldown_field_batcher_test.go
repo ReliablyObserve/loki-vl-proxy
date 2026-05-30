@@ -15,8 +15,8 @@ func TestMarginalizeBatchResult(t *testing.T) {
 	]}}`)
 
 	entries := []fieldBatchEntry{
-		{lokiField: "level", resultCh: make(chan []byte, 1)},
-		{lokiField: "env", resultCh: make(chan []byte, 1)},
+		{lokiField: "level", primaryVLField: "level", resultCh: make(chan []byte, 1)},
+		{lokiField: "env", primaryVLField: "env", resultCh: make(chan []byte, 1)},
 	}
 
 	results := marginalizeBatchResult(twoFieldMatrix, entries)
@@ -79,7 +79,7 @@ func TestMarginalizeBatchResult(t *testing.T) {
 func TestMarginalizeBatchResultEmpty(t *testing.T) {
 	// Empty result array → nil return.
 	emptyMatrix := []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
-	entries := []fieldBatchEntry{{lokiField: "level", resultCh: make(chan []byte, 1)}}
+	entries := []fieldBatchEntry{{lokiField: "level", primaryVLField: "level", resultCh: make(chan []byte, 1)}}
 	results := marginalizeBatchResult(emptyMatrix, entries)
 	if len(results) != 0 {
 		t.Errorf("expected empty results for empty matrix, got %d", len(results))
@@ -93,7 +93,7 @@ func TestMarginalizeBatchResultSingleField(t *testing.T) {
 		{"metric":{"level":"info"},"values":[[1748000000,"60"],[1748000300,"53"]]}
 	]}}`)
 
-	entries := []fieldBatchEntry{{lokiField: "level", resultCh: make(chan []byte, 1)}}
+	entries := []fieldBatchEntry{{lokiField: "level", primaryVLField: "level", resultCh: make(chan []byte, 1)}}
 	results := marginalizeBatchResult(singleFieldMatrix, entries)
 
 	if _, ok := results["level"]; !ok {
@@ -113,8 +113,8 @@ func TestMarginalizeBatchResultMissingField(t *testing.T) {
 	]}}`)
 
 	entries := []fieldBatchEntry{
-		{lokiField: "level", resultCh: make(chan []byte, 1)},
-		{lokiField: "region", resultCh: make(chan []byte, 1)},
+		{lokiField: "level", primaryVLField: "level", resultCh: make(chan []byte, 1)},
+		{lokiField: "region", primaryVLField: "region", resultCh: make(chan []byte, 1)},
 	}
 	results := marginalizeBatchResult(matrix, entries)
 

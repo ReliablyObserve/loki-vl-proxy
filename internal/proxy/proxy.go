@@ -335,6 +335,12 @@ type Config struct {
 	// window closes with more than this many fields, the excess form a second batch.
 	// Default: 6.
 	DrilldownFieldBatchMaxFields int
+	// StatsQueryRangeInterQueryDelayMs is the minimum pause in milliseconds between
+	// consecutive VL stats_query_range calls on the individual (non-batched) path.
+	// After each call the semaphore slot is held for this duration before release,
+	// spreading the query burst over time and giving VL CPU headroom. 0 disables.
+	// Default: 200.
+	StatsQueryRangeInterQueryDelayMs int
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -457,7 +463,8 @@ type Proxy struct {
 	metricsConcurrencyLimiter             chan struct{}
 	rangeMetricRowLimit                   int // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
 	maxStatsQuerySeries                   int        // max series returned by collectRangeMetricHits (0=5000)
-	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
+	statsQueryRangeSem                    chan struct{}    // limits concurrent VL stats_query_range calls (nil=unlimited)
+	statsQueryRangeInterQueryDelay        time.Duration   // min pause between consecutive individual VL stats calls
 	drilldownCoalescer                    *DrilldownBurstCoalescer
 	drilldownFieldBatcher                 *drilldownFieldBatcher
 	drilldownCardCache                    *drilldownCardinalityCache
@@ -1031,6 +1038,7 @@ func New(cfg Config) (*Proxy, error) {
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
 		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
 		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
+		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
 		drilldownCoalescer:                    makeDrilldownBurstCoalescer(cfg.DrilldownBurstWindowMs, cfg.DrilldownBurstMaxFields),
 		drilldownCardCache:                    newDrilldownCardinalityCache(),
 		forwardHeaders:                        cfg.ForwardHeaders,
