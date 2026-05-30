@@ -421,3 +421,18 @@ func TestExpandDrilldownStep(t *testing.T) {
 	})
 }
 
+
+func TestIsHighCardinalityFieldName(t *testing.T) {
+	high := []string{"trace_id", "span_id", "request_id", "correlation_id", "parent_id", "user_uid"}
+	for _, f := range high {
+		if !isHighCardinalityFieldName(f) {
+			t.Errorf("expected %q to be high-cardinality", f)
+		}
+	}
+	low := []string{"level", "status_code", "service_name", "duration_ms", "method", "detected_level"}
+	for _, f := range low {
+		if isHighCardinalityFieldName(f) {
+			t.Errorf("expected %q NOT to be high-cardinality", f)
+		}
+	}
+}

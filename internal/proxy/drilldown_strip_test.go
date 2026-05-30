@@ -34,7 +34,7 @@ func TestProxyStatsQueryRange_StripsParserAndDelete(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("query", `sum by (trace_id) (count_over_time({env="production",_msg!=""}|json trace_id|drop __error__,__error_details__|trace_id!=""`+` [1m]))`)
-	form.Set("start", "1779957360")
+	form.Set("start", "1779993470") // 2 h before end — within 6 h high-card guard
 	form.Set("end", "1780000670")
 	form.Set("step", "60s")
 

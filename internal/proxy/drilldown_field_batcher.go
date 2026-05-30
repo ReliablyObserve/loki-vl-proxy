@@ -93,6 +93,18 @@ func (b *drilldownFieldBatcher) submit(ctx context.Context, orgID, cleanBase, lo
 	if n := bucketCount(startRaw, endRaw, stepRaw); n > maxBatchBuckets {
 		return nil
 	}
+	// Exclude high-cardinality *_id fields from the combined batch query for
+	// long ranges. Including trace_id / span_id in a multi-field stats by()
+	// multiplies the result combination space by millions of unique ID values,
+	// which saturates VL CPU and slows every other field in the same batch.
+	// The individual path in the handler also guards against issuing a VL query.
+	if isHighCardinalityFieldName(lokiField) {
+		startNs, sok := parseLokiTimeToUnixNano(startRaw)
+		endNs, eok := parseLokiTimeToUnixNano(endRaw)
+		if sok && eok && endNs-startNs > int64(6*time.Hour) {
+			return nil
+		}
+	}
 	key := fieldBatchKey(orgID, cleanBase, startRaw, endRaw, stepRaw)
 
 	b.mu.Lock()

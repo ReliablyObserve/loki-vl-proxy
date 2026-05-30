@@ -288,6 +288,15 @@ func extractStatsGroupByFields(logsqlQuery string) []string {
 	return spec.GroupBy
 }
 
+// isHighCardinalityFieldName returns true for fields whose values are nearly
+// unique per log entry (trace_id, span_id, request_id, …). Including these in
+// a batch stats query multiplies the combination space by the number of unique
+// values (potentially millions) and saturates VL CPU. Beyond 6 h the proxy
+// returns empty rather than issuing the query.
+func isHighCardinalityFieldName(name string) bool {
+	return strings.HasSuffix(name, "_id") || strings.HasSuffix(name, "_uid")
+}
+
 // appendDrilldownSeriesLimit rewrites a VL stats count() query to sort by count
 // descending and limit to N unique groups. This pushes the cardinality cap into
 // VL so only the top-N series are transmitted to the proxy — critical for
@@ -618,6 +627,19 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		}
 		// nil = batcher miss (window already launched, VL error, response overflow)
 		// → fall through to individual semaphore-controlled path below.
+	}
+
+	// Skip high-cardinality *_id fields for ranges > 6 h: the combination space
+	// (unique trace/span IDs × other label values × buckets) saturates VL CPU
+	// without producing useful per-value patterns at that scale.
+	if isHighCardinalityFieldName(field) {
+		startNs, sok := parseLokiTimeToUnixNano(startRaw)
+		endNs, eok := parseLokiTimeToUnixNano(endRaw)
+		if sok && eok && endNs-startNs > int64(6*time.Hour) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(emptyLokiMatrix)
+			return
+		}
 	}
 
 	// Individual path: semaphore limits concurrent VL stats_query_range calls.
