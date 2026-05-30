@@ -413,6 +413,16 @@ func stripVLStatsNameKey(body []byte) []byte {
 	return vlStatsNameKeyRE.ReplaceAll(body, nil)
 }
 
+// renameStatsBodyMetricKey renames a JSON metric key in a stats_query_range
+// response body. Used in the hybrid drilldown path when the VL field name
+// (e.g. "level") differs from the Loki label name (e.g. "detected_level").
+func renameStatsBodyMetricKey(body []byte, from, to string) []byte {
+	if from == to || len(body) == 0 {
+		return body
+	}
+	return bytes.ReplaceAll(body, []byte(`"`+from+`":`), []byte(`"`+to+`":`))
+}
+
 // synthesizeDrilldownMatrix builds a Loki matrix response with one data point per
 // field value at endSec. Used when stats_query_range is skipped (high-cardinality)
 // or as the fallback when VL returns an error.
@@ -1038,11 +1048,16 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 			if bodyErr == nil {
 				// Skip trimAndTranslateStatsQRFJ: the hybrid stats query groups by
 				// `field` only (no underscore variants), so VL returns metric keys that
-				// already match lokiField. The generic translator would apply
-				// ensureDetectedLevel which renames level→detected_level, breaking
-				// Grafana Drilldown's expectation of finding `level` in metric keys.
-				// Strip only VL's internal __name__ column marker (e.g. "__name__":"_c").
+				// match `field` (the VL name). Strip VL's internal __name__ marker, then
+				// rename metric keys from `field` to `lokiField` when they differ (e.g.
+				// VL "level" → Loki "detected_level") so mergeDrilldownWithFieldValues
+				// can look up the correct key. The generic translator is intentionally
+				// skipped: its ensureDetectedLevel would break when the query explicitly
+				// groups by "level".
 				rawBody = stripVLStatsNameKey(rawBody)
+				if field != lokiField {
+					rawBody = renameStatsBodyMetricKey(rawBody, field, lokiField)
+				}
 				rawBody = limitLokiMatrixSeries(rawBody, maxDrilldownSeries)
 				statsBody = rawBody
 			}
