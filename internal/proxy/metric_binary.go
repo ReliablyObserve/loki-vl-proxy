@@ -511,11 +511,9 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 		}
 	}
 
-	// Stubs MUST use histStepNs as their step, because expandDrilldownStep (called
-	// by the hybrid path after this function returns) expands every point in the
-	// merged response using histStepNs as the coarse step. Using a different stub
-	// step would cause adjacent stubs to generate overlapping fine sub-buckets,
-	// producing a garbled time axis in Grafana.
+	// histStepNs here is the full-range stub step (stubStepNs from the caller).
+	// The hybrid path no longer calls expandDrilldownStep after merge, so stubs
+	// and stats may have different resolutions — this is intentional.
 	startSec := endSec - fullRangeNs/int64(time.Second)
 	var nFullStub, stubStepSec int64
 	if histStepNs > 0 {
@@ -583,7 +581,11 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 				b.WriteString(`,"values":[`)
 				firstPoint := true
 				hitsPerBucket := stubCount(totalHits)
-				writeStubs(&b, startSec, stubStepSec, preNBuckets, hitsPerBucket, &firstPoint)
+				// Anchor stubs to histStartSec grid: last stub lands exactly at
+				// histStartSec-stubStepSec, eliminating the 1-2 step gap that
+				// would otherwise appear at the transition to the stats region.
+				alignedPreStart := histStartSec - preNBuckets*stubStepSec
+				writeStubs(&b, alignedPreStart, stubStepSec, preNBuckets, hitsPerBucket, &firstPoint)
 				for _, vv := range item.GetArray("values") {
 					if !firstPoint {
 						b.WriteByte(',')
@@ -1019,7 +1021,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	drillCacheKey string, origGroupBy []string,
 ) {
 	ctx := r.Context()
-	endRaw, stepRaw := r.FormValue("end"), r.FormValue("step")
+	endRaw := r.FormValue("end")
 
 	// Loki field name for response metric keys (what Grafana expects).
 	lokiField := field
@@ -1092,16 +1094,23 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	}
 	histStartRaw := nanosToVLTimestamp(histStartNs)
 
-	// Re-coarsen step for the (shorter) histogram window.
-	histStepRaw := effectiveStepRaw
-	var histStepNs int64
+	// stubStepNs drives stub placement in mergeDrilldownWithFieldValues.
+	// Derived from effectiveStepRaw (coarsened for the full range) to keep
+	// stub count ≤ maxDrilldownStatsBuckets over the full range.
+	var stubStepNs int64
 	if d, ok := parsePositiveStepDuration(effectiveStepRaw); ok {
-		coarsened := d
-		if c := coarsenDrilldownStep(histStartRaw, endRaw, d); c != d {
-			coarsened = c
-			histStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
-		}
-		histStepNs = int64(coarsened)
+		stubStepNs = int64(d)
+	}
+
+	// histStepRaw drives the stats sub-query resolution. effectiveStepRaw is
+	// coarsened for the full range and may exceed histWin (e.g. a 25.6h step
+	// for a 24h window), producing fewer than 1 useful bucket. Re-coarsen from
+	// the original request step for the hist window to get up to
+	// maxDrilldownStatsBuckets buckets regardless of the full-range step.
+	histStepRaw := effectiveStepRaw // fallback if parse fails
+	if origStep, ok := parsePositiveStepDuration(r.FormValue("step")); ok && origStep > 0 {
+		coarsened := coarsenDrilldownStep(histStartRaw, endRaw, origStep)
+		histStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
 	}
 
 	// Build a clean stats query grouping by only the target field. logsqlQuery has
@@ -1165,7 +1174,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	var final []byte
 	switch {
 	case statsBody != nil && len(fvEntries) > 0:
-		final = mergeDrilldownWithFieldValues(statsBody, lokiField, fvEntries, endSec, rangeNs, histStepNs)
+		final = mergeDrilldownWithFieldValues(statsBody, lokiField, fvEntries, endSec, rangeNs, stubStepNs)
 		final = limitLokiMatrixSeries(final, maxDrilldownSeries)
 	case statsBody != nil:
 		final = statsBody
@@ -1178,7 +1187,10 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 		pathLabel = "empty"
 	}
 
-	final = expandDrilldownStep(final, stepRaw, histStepRaw, endRaw)
+	// Expansion is skipped for the hybrid path: stubs (at stubStepNs, coarsened
+	// for the full range) and stats (at histStepRaw, coarsened for histWin) may
+	// differ in resolution. Applying a single coarseStep via expandDrilldownStep
+	// would corrupt the mixed-resolution output. The non-hybrid path still expands.
 	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Proxy-Drilldown-Path", pathLabel)
