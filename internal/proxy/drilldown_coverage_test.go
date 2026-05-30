@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	fj "github.com/valyala/fastjson"
 )
 
 func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
@@ -291,3 +292,131 @@ func TestUnifyDetectedType_TraceIDScenario(t *testing.T) {
 		t.Errorf("accumulated type = %q, want %q — hex trace_id field must resolve to string", current, "string")
 	}
 }
+
+// TestExpandDrilldownStep verifies proxy-side step expansion converts sparse coarse
+// VL buckets into dense fine-resolution sub-buckets for Grafana's bar-chart view.
+func TestExpandDrilldownStep(t *testing.T) {
+	// A 2-bucket coarse response at 3600s step (3600 / 300 = 12 sub-buckets each).
+	coarseBody := `{"status":"success","data":{"resultType":"matrix","result":[` +
+		`{"metric":{"level":"error"},"values":[[1748000000,"120"],[1748003600,"240"]]}` +
+		`]}}`
+
+	t.Run("expands 2 coarse buckets into 24 fine buckets", func(t *testing.T) {
+		got := expandDrilldownStep([]byte(coarseBody), "300s", "3600s", "1748007200")
+		v, err := fj.ParseBytes(got)
+		if err != nil {
+			t.Fatalf("parse expanded body: %v", err)
+		}
+		results := v.GetArray("data", "result")
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result series, got %d", len(results))
+		}
+		values := results[0].GetArray("values")
+		if len(values) != 24 {
+			t.Fatalf("expected 24 fine buckets (2 coarse × 12), got %d", len(values))
+		}
+		// First sub-bucket: ts=1748000000, value=120/12=10.00
+		first := values[0].GetArray()
+		if len(first) < 2 {
+			t.Fatal("expected [ts, val] pair")
+		}
+		if first[0].GetInt64() != 1748000000 {
+			t.Errorf("first ts = %d, want 1748000000", first[0].GetInt64())
+		}
+		if string(first[1].GetStringBytes()) != "10.00" {
+			t.Errorf("first val = %q, want %q", string(first[1].GetStringBytes()), "10.00")
+		}
+		// 13th sub-bucket: ts=1748003600 (start of 2nd coarse bucket), value=240/12=20.00
+		thirteenth := values[12].GetArray()
+		if thirteenth[0].GetInt64() != 1748003600 {
+			t.Errorf("13th ts = %d, want 1748003600", thirteenth[0].GetInt64())
+		}
+		if string(thirteenth[1].GetStringBytes()) != "20.00" {
+			t.Errorf("13th val = %q, want %q", string(thirteenth[1].GetStringBytes()), "20.00")
+		}
+	})
+
+	t.Run("no-op when fine step equals coarse step", func(t *testing.T) {
+		got := expandDrilldownStep([]byte(coarseBody), "3600s", "3600s", "1748007200")
+		if string(got) != coarseBody {
+			t.Errorf("expected body unchanged when steps are equal")
+		}
+	})
+
+	t.Run("no-op when fine step exceeds coarse step", func(t *testing.T) {
+		got := expandDrilldownStep([]byte(coarseBody), "7200s", "3600s", "1748007200")
+		if string(got) != coarseBody {
+			t.Errorf("expected body unchanged when fine step > coarse step")
+		}
+	})
+
+	t.Run("truncates sub-buckets at end boundary", func(t *testing.T) {
+		// End is 1748001200: only 4 sub-buckets of 2nd coarse bucket fit within
+		// coarse bucket 1 (1748000000..1748003599): ts 1748000000,300,600,900 → 4 sub-buckets.
+		// Then coarse bucket 2 at 1748003600 > end=1748001200 → trimmed.
+		// Actually end=1748001200 means: bucket 1 sub-buckets: 1748000000,300,600,900,1200 → 5 fit
+		// (1748001200 == end so it's included). Bucket 2 at 1748003600 > end → all 0 sub-buckets.
+		got := expandDrilldownStep([]byte(coarseBody), "300s", "3600s", "1748001200")
+		v, err := fj.ParseBytes(got)
+		if err != nil {
+			t.Fatalf("parse truncated body: %v", err)
+		}
+		values := v.GetArray("data", "result")[0].GetArray("values")
+		// 1748000000,300,600,900,1200 = 5 sub-buckets from first coarse; second coarse
+		// starts at 1748003600 > 1748001200, so all 12 sub-buckets are truncated.
+		if len(values) != 5 {
+			t.Errorf("expected 5 sub-buckets before end, got %d", len(values))
+		}
+	})
+
+	t.Run("empty result passes through unchanged", func(t *testing.T) {
+		empty := `{"status":"success","data":{"resultType":"matrix","result":[]}}`
+		got := expandDrilldownStep([]byte(empty), "300s", "3600s", "1748007200")
+		if string(got) != empty {
+			t.Errorf("expected empty result unchanged")
+		}
+	})
+
+	t.Run("no-op when factor exceeds maxDrilldownExpansionFactor", func(t *testing.T) {
+		// 7-day range: fineStep=20s, coarseStep=6h=21600s → factor=1080 > 120.
+		// Expanding would divide counts by 1080, making bars invisible. Return as-is.
+		got := expandDrilldownStep([]byte(coarseBody), "20s", "21600s", "1748604800")
+		if string(got) != coarseBody {
+			t.Errorf("expected body unchanged when expansion factor > %d", maxDrilldownExpansionFactor)
+		}
+	})
+
+	t.Run("factor exactly at threshold expands", func(t *testing.T) {
+		// factor=120 (coarseStep=3600s / fineStep=30s) is ≤ threshold → expand.
+		got := expandDrilldownStep([]byte(coarseBody), "30s", "3600s", "1748007200")
+		v, err := fj.ParseBytes(got)
+		if err != nil {
+			t.Fatalf("parse body: %v", err)
+		}
+		values := v.GetArray("data", "result")[0].GetArray("values")
+		// 2 coarse buckets × 120 = 240 fine buckets.
+		if len(values) != 240 {
+			t.Errorf("expected 240 fine buckets at threshold factor, got %d", len(values))
+		}
+	})
+
+	t.Run("multiple series expanded independently", func(t *testing.T) {
+		multi := `{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"level":"error"},"values":[[1748000000,"120"]]}` +
+			`,{"metric":{"level":"warn"},"values":[[1748000000,"60"]]}` +
+			`]}}`
+		got := expandDrilldownStep([]byte(multi), "300s", "3600s", "1748003600")
+		v, _ := fj.ParseBytes(got)
+		results := v.GetArray("data", "result")
+		if len(results) != 2 {
+			t.Fatalf("expected 2 series, got %d", len(results))
+		}
+		// Each coarse bucket should expand to 12 sub-buckets.
+		for i, res := range results {
+			if n := len(res.GetArray("values")); n != 12 {
+				t.Errorf("series %d: expected 12 sub-buckets, got %d", i, n)
+			}
+		}
+	})
+}
+

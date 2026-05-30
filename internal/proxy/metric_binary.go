@@ -333,19 +333,24 @@ func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field s
 const drilldownStatsCacheTTL = 5 * time.Minute
 
 // maxDrilldownStatsBuckets caps the number of time buckets sent to VL in a
-// Drilldown stats_query_range call. This must be ≤ maxBatchBuckets so that
-// step coarsening always brings queries into the batcher's range: after
-// coarsening, all field queries for any window fire as a single multi-field
-// VL call instead of N individual calls.
-const maxDrilldownStatsBuckets = 30
+// Drilldown stats_query_range call for ranges >6h. Must be ≤ maxBatchBuckets.
+// maxDrilldownStatsBucketsShort raises the cap for ranges ≤6h: more buckets
+// reduce the expansion factor (coarseStep/fineStep) so sub-bars within each
+// coarse bucket reflect real VL variation rather than a staircase pattern.
+const (
+	maxDrilldownStatsBuckets      = 30
+	maxDrilldownStatsBucketsShort = 60 // for ranges ≤6h
+)
 
 // drilldownNiceSteps are the candidate step values to snap to after coarsening.
 var drilldownNiceSteps = []time.Duration{
 	30 * time.Second,
 	60 * time.Second,
 	2 * time.Minute,
+	3 * time.Minute,
 	5 * time.Minute,
 	10 * time.Minute,
+	15 * time.Minute,
 	30 * time.Minute,
 	time.Hour,
 	2 * time.Hour,
@@ -356,9 +361,9 @@ var drilldownNiceSteps = []time.Duration{
 
 // coarsenDrilldownStep returns an effective step that is at least step but
 // ensures the range [startRaw, endRaw] contains at most maxDrilldownStatsBuckets
-// buckets. The result is snapped up to the next "nice" step so VL timestamps are
-// round numbers. If the requested step already satisfies the budget, it is
-// returned unchanged.
+// buckets (or maxDrilldownStatsBucketsShort for ranges ≤6h). The result is
+// snapped up to the next "nice" step so VL timestamps are round numbers.
+// If the requested step already satisfies the budget, it is returned unchanged.
 func coarsenDrilldownStep(startRaw, endRaw string, step time.Duration) time.Duration {
 	if step <= 0 {
 		return step
@@ -368,7 +373,12 @@ func coarsenDrilldownStep(startRaw, endRaw string, step time.Duration) time.Dura
 	if !ok1 || !ok2 || endNs <= startNs {
 		return step
 	}
-	minStep := time.Duration(endNs-startNs) / maxDrilldownStatsBuckets
+	rangeNs := endNs - startNs
+	cap := int64(maxDrilldownStatsBuckets)
+	if rangeNs <= int64(6*time.Hour) {
+		cap = int64(maxDrilldownStatsBucketsShort)
+	}
+	minStep := time.Duration(rangeNs) / time.Duration(cap)
 	if minStep <= step {
 		return step
 	}
@@ -427,6 +437,107 @@ func (p *Proxy) drilldownStatsCacheKey(r *http.Request) string {
 	return b.String()
 }
 
+// maxDrilldownExpansionFactor caps how many fine sub-buckets one coarse bucket
+// may be expanded into. When the Grafana-requested step is very fine (e.g. 20 s)
+// but the VL coarse step is large (e.g. 6 h for a 7-day range), dividing the
+// per-bucket count by 1080 makes every bar effectively invisible. Above this
+// threshold we return the coarse data as-is so bar heights remain readable.
+const maxDrilldownExpansionFactor = 120
+
+// expandDrilldownStep expands a Loki matrix JSON response produced at coarseStepRaw
+// into fineStepRaw resolution by replicating each coarse bucket value across
+// (coarseStep/fineStep) fine sub-buckets, each with value = coarseValue/factor.
+//
+// This converts e.g. 25 sparse bars (3600s step, 24h) into 288 dense bars (300s
+// step), matching Loki's visual resolution without additional VL queries. Each
+// sub-bucket carries coarseValue/factor so the per-window magnitude is preserved.
+// Sub-buckets whose timestamps exceed endRaw are omitted (edge bucket handling).
+//
+// Returns body unchanged when fineStep >= coarseStep, factor > maxDrilldownExpansionFactor
+// (to preserve readable bar heights for long ranges), or either step cannot be parsed.
+func expandDrilldownStep(body []byte, fineStepRaw, coarseStepRaw, endRaw string) []byte {
+	fineStep, fineOK := parsePositiveStepDuration(fineStepRaw)
+	coarseStep, coarseOK := parsePositiveStepDuration(coarseStepRaw)
+	if !fineOK || !coarseOK || fineStep <= 0 || coarseStep <= fineStep {
+		return body
+	}
+	factor := int64(coarseStep / fineStep)
+	if factor <= 1 || factor > maxDrilldownExpansionFactor {
+		return body
+	}
+	fineStepSec := int64(fineStep / time.Second)
+
+	var endSec int64
+	if endNs, ok := parseLokiTimeToUnixNano(endRaw); ok {
+		endSec = endNs / int64(time.Second)
+	}
+
+	v, parseErr := fj.ParseBytes(body)
+	if parseErr != nil {
+		return body
+	}
+	resultArr := v.GetArray("data", "result")
+	if len(resultArr) == 0 {
+		return body
+	}
+
+	var buf bytes.Buffer
+	buf.Grow(len(body) * int(factor))
+	buf.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+
+	scratch := make([]byte, 0, 512)
+	for si, series := range resultArr {
+		if si > 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`{"metric":`)
+		if metric := series.Get("metric"); metric != nil {
+			scratch = metric.MarshalTo(scratch[:0])
+			buf.Write(scratch)
+		} else {
+			buf.WriteString(`{}`)
+		}
+		buf.WriteString(`,"values":[`)
+
+		firstPoint := true
+		for _, pair := range series.GetArray("values") {
+			arr := pair.GetArray()
+			if len(arr) < 2 {
+				continue
+			}
+			tsCoarse := arr[0].GetInt64()
+			coarseVal, parseFloatErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
+			if parseFloatErr != nil {
+				continue
+			}
+			subVal := coarseVal / float64(factor)
+			subValStr := strconv.FormatFloat(subVal, 'f', 2, 64)
+
+			for i := int64(0); i < factor; i++ {
+				tsFine := tsCoarse + i*fineStepSec
+				if endSec > 0 && tsFine > endSec {
+					break
+				}
+				if !firstPoint {
+					buf.WriteByte(',')
+				}
+				firstPoint = false
+				buf.WriteByte('[')
+				scratch = strconv.AppendInt(scratch[:0], tsFine, 10)
+				buf.Write(scratch)
+				buf.WriteString(`,"`)
+				buf.WriteString(subValStr)
+				buf.WriteString(`"]`)
+			}
+		}
+
+		buf.WriteString(`]}`)
+	}
+
+	buf.WriteString(`]}}`)
+	return buf.Bytes()
+}
+
 // proxyStatsQueryRangeDrilldown handles Drilldown single-field count queries.
 //
 // Response cache path: checks a 60-second Drilldown-specific cache before
@@ -482,12 +593,18 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		if len(vlFields) == 0 {
 			vlFields = []string{field}
 		}
+		// Use the original Loki label name from the query (e.g. "detected_level") so
+		// the batcher output key matches what Grafana expects. ToLoki("level")=="level"
+		// which is wrong for the detected_level→level translation direction.
 		lokiField := field
-		if lt := p.labelTranslator; lt != nil && !lt.IsPassthrough() {
+		if len(origGroupBy) == 1 {
+			lokiField = origGroupBy[0]
+		} else if lt := p.labelTranslator; lt != nil && !lt.IsPassthrough() {
 			lokiField = lt.ToLoki(field)
 		}
 		orgID := r.Header.Get("X-Scope-OrgID")
 		if body := batcher.submit(r.Context(), orgID, cleanBase, lokiField, field, vlFields, startRaw, endRaw, effectiveStepRaw); body != nil {
+			body = expandDrilldownStep(body, stepRaw, effectiveStepRaw, endRaw)
 			p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(body)
@@ -543,6 +660,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 			body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
 			body = limitLokiMatrixSeries(body, maxDrilldownSeries)
 			final := wrapAsLokiResponse(body, "matrix")
+			final = expandDrilldownStep(final, stepRaw, effectiveStepRaw, endRaw)
 			p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(final)
@@ -564,6 +682,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		_, _ = w.Write(emptyLokiMatrix)
 		return
 	}
+	body = expandDrilldownStep(body, stepRaw, effectiveStepRaw, endRaw)
 	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)

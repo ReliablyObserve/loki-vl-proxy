@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	maxBatchCombos   = 2000
-	maxBatchBuckets  = 30 // skip batching when n_buckets > this; combined query cost scales with buckets × combos
+	maxBatchCombos  = 2000
+	maxBatchBuckets = 60 // skip batching when n_buckets > this; must be ≥ maxDrilldownStatsBucketsShort
 )
 
 type fieldBatchEntry struct {

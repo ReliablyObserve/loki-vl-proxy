@@ -233,10 +233,11 @@ func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	if strings.Contains(receivedQuery, "count() if") {
 		t.Errorf("Drilldown path must not rewrite to count() if: %s", receivedQuery)
 	}
-	// Step must be coarsened: 1h/60s = 60 buckets > maxDrilldownStatsBuckets(30),
-	// so proxy coarsens to 120s (first nice step ≥ 1h/30 = 120s).
-	if receivedStep != "120s" {
-		t.Errorf("step must be coarsened to 120s for 1h/60s query, VL received: %q", receivedStep)
+	// Step must NOT be coarsened: 1h range uses the 60-bucket cap
+	// (ranges ≤6h use maxDrilldownStatsBucketsShort=60), so minStep=3600/60=60s
+	// which equals the requested step → proxy passes it through unchanged.
+	if receivedStep != "60s" {
+		t.Errorf("step must be unchanged (60s) for 1h/60s query with 60-bucket cap, VL received: %q", receivedStep)
 	}
 }
 
@@ -707,40 +708,50 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 		step     time.Duration
 		wantStep time.Duration
 	}{
+		// Ranges >6h use the 30-bucket cap.
 		{
 			name:     "12h range step=60s coarsens to 30min",
 			start:    ts(0),
 			end:      ts(12 * 3600),
 			step:     60 * time.Second,
-			wantStep: 30 * time.Minute, // 12h/30 = 1440s → snap to 1800s
-		},
-		{
-			name:     "6h range step=60s coarsens to 30min",
-			start:    ts(0),
-			end:      ts(6 * 3600),
-			step:     60 * time.Second,
-			wantStep: 30 * time.Minute, // 6h/30 = 720s → snap to 1800s
-		},
-		{
-			name:     "1h range step=60s coarsens to 2min",
-			start:    ts(0),
-			end:      ts(3600),
-			step:     60 * time.Second,
-			wantStep: 2 * time.Minute, // 1h/30 = 120s → snap to 120s
+			wantStep: 30 * time.Minute, // 12h/30 = 1440s → snap to 30min
 		},
 		{
 			name:     "24h range step=120s coarsens to 1h",
 			start:    ts(0),
 			end:      ts(24 * 3600),
 			step:     120 * time.Second,
-			wantStep: time.Hour, // 24h/30 = 2880s → snap to 3600s
+			wantStep: time.Hour, // 24h/30 = 2880s → snap to 1h
+		},
+		// Ranges ≤6h use the 60-bucket cap, reducing expansion factor and
+		// giving finer-grained VL data without the staircase pattern.
+		{
+			name:     "6h range step=60s coarsens to 10min",
+			start:    ts(0),
+			end:      ts(6 * 3600),
+			step:     60 * time.Second,
+			wantStep: 10 * time.Minute, // 6h/60 = 360s → snap to 10min
 		},
 		{
-			name:     "short range step=30s coarsens to 60s",
+			name:     "3h range step=38s coarsens to 3min",
+			start:    ts(0),
+			end:      ts(3 * 3600),
+			step:     38 * time.Second,
+			wantStep: 3 * time.Minute, // 3h/60 = 180s → snap to 3min (factor ≈4 vs old 15)
+		},
+		{
+			name:     "1h range step=60s within 60-bucket budget, no coarsening",
+			start:    ts(0),
+			end:      ts(3600),
+			step:     60 * time.Second,
+			wantStep: 60 * time.Second, // 1h/60 = 60s ≤ step → unchanged
+		},
+		{
+			name:     "30min range step=30s within 60-bucket budget, no coarsening",
 			start:    ts(0),
 			end:      ts(1800),
 			step:     30 * time.Second,
-			wantStep: 60 * time.Second, // 30min/30 = 60s → snap to 60s
+			wantStep: 30 * time.Second, // 30min/60 = 30s ≤ step → unchanged
 		},
 		{
 			name:     "zero step passes through",
