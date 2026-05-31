@@ -215,9 +215,8 @@ func measureDrilldownQuality(t *testing.T, svc string, f drilldownQualityField, 
 
 	res.seriesCount = len(payload.Data.Result)
 	for _, s := range payload.Data.Result {
-		for _, raw := range s.Values {
+		for _, pair := range s.Values {
 			res.totalBuckets++
-			pair, _ := raw.([]interface{})
 			if len(pair) < 2 {
 				continue
 			}
