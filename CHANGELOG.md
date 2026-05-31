@@ -10,9 +10,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.54.0] - 2026-05-30
 
 ### Added
+- E2E quality matrix test (`TestDrilldown_QualityMatrix`): seeds 1 200
+  controlled log entries and measures bucket density, total count, and proxy
+  latency for 5 field types × 7 time ranges. Reports metrics via `t.Logf`;
+  never blocks CI except for hard regressions (empty `level` result, proxy 5xx).
+- E2E Loki comparison test (`TestDrilldown_LokiCompare_FieldQuality`): seeds
+  identical logs into both Loki and VL, then asserts that the proxy response
+  matches Loki within ±15% count and ≥90% non-zero bucket coverage for
+  low-cardinality fields.
+- Architecture doc `docs/proxy/drilldown-quality.md` covering path selection,
+  cardinality tiers, zero-fill implementation, and Loki parity methodology.
 - `-translate-otel-attributes` flag (default: `true`, env `TRANSLATE_OTEL_ATTRIBUTES`). Gates the built-in `knownUnderscoreToDot` OTel semantic convention rewrite in the `ToVL()` query-direction translator. Set to `false` when VictoriaLogs stores OTel attributes with underscores (e.g., Vector / Promtail / Fluent-bit via `/insert/elasticsearch/_bulk`); custom `-field-mapping` rules and runtime-learned aliases keep working in both modes. Resolves empty results for multi-label queries containing known OTel names like `k8s_container_name` against underscore-storage backends.
 
 ### Fixed
+- Drilldown field histograms now show a continuous line at quiet time periods
+  instead of disconnected spikes. VictoriaLogs `stats_query_range` omits
+  zero-count buckets; the proxy now fills them with `"0"` to match Loki's
+  behaviour (`zerofillStatsMatrix` applied in both the short-range batcher
+  and the long-range hybrid path).
 - When `-translate-otel-attributes=false`, the `ToVL()` query-direction translator no longer rewrites entries in `knownUnderscoreToDot` to dotted form. `ResolveLabelCandidates` and the `resolveTargetLabelFields` fallback are gated on the same flag, so the dotted form is no longer added as a candidate or fallback when OTel translation is disabled. Previously the rewrite/fallback always fired when `-label-style=underscores` was active.
 - Drilldown hybrid path (ranges >6h) no longer emits duplicate `detected_level` series alongside `level` series: the hybrid stats query now groups by only the requested field (e.g. `level`), bypassing the underscore-fallback expansion (`addUnderscorefallbackByLabels`) that was incorrectly applied to the hybrid's narrow-window stats_query_range. Previously, both `level` and `detected_level` groupings were sent to VL and the result was merged, causing Grafana to display phantom "Value" series for the unrecognised `detected_level` metric key.
 - Drilldown hybrid path no longer passes results through `trimAndTranslateStatsQRFJ`, which was renaming `level` → `detected_level` (via `ensureDetectedLevel`) in stats metric keys. Grafana Drilldown reads the metric key by the exact field name it requested; renaming it broke the sparkline display for the `level` field on 12h+ ranges. VL's internal `__name__` column marker (`"__name__":"_c"`) is now stripped by the lightweight `stripVLStatsNameKey` regex before the response is returned.
@@ -23,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Drilldown field-histogram series cap (500 series, two-phase fallback) is now gated behind the `X-Query-Tags: Source=grafana-lokiexplore-app` header that Grafana Logs Drilldown sets on every `query_range` request via `supportingQueryType`. Previously, the cap applied to any client whose query matched the Drilldown pattern, silently truncating results for Explore and direct API users. Requests without the header go through `proxyStatsQueryRangeDirect` and receive unfiltered results.
 
 ### Performance
+- Drilldown hybrid path (ranges >12 h) issues one `field_values` + one
+  `stats_query_range` per field request, covering the full requested range
+  at ≤30 coarsened buckets. Different time ranges now produce different
+  histograms (the previous adaptive window made 12 h and 48 h look identical).
 - **Hybrid drilldown path for wide ranges (>12h)**: `proxyStatsQueryRangeDrilldownHybrid` uses a two-tier approach for time ranges above 12h. Tier 1: `field_values` over the full range (~30ms, O(column-index)) discovers all unique values and their total hit counts. Tier 2: `stats_query_range` over the full requested range at a coarsened step (≤30 buckets) provides accurate per-bucket histogram bars. The two results are merged: values present in stats keep their real per-bucket distribution; values present only in `field_values` (beyond the top-500 limit) get evenly-distributed stub bars across the full range. High-cardinality fields (`trace_id`, `span_id`, `*_id`, `*_uid`) skip Tier 2 entirely and return a pure `field_values` synthesis (~30ms regardless of range). Reports the chosen path in `X-Proxy-Drilldown-Path` response header (`hybrid/fv+full-range-stats`, `field_values_hc`, `field_values_stats_err`, `empty`). Before this change, the proxy returned an empty matrix for all fields on 12h+ ranges (the two-phase fallback ran but was capped to 500 series per bucket, making it effectively useless for wide ranges).
 - **Drilldown field batching**: `drilldownFieldBatcher` coalesces concurrent per-field `stats_query_range` calls (Grafana Logs Drilldown fires one request per visible field simultaneously) into a single multi-field VL query `by(f1,f2,...,fN) count() as _c`, then marginalizes the combined result back into individual per-field Loki matrix responses inside the proxy. One VL scan replaces N scans, cutting VL CPU proportionally to the number of visible fields (typically 4–8). High-cardinality fields (`trace_id`, `span_id`, UUID-like names) bypass batching and route through the existing two-phase path. Configurable via `-drilldown-field-batch-window-ms` (collection window, default 25ms) and `-drilldown-field-batch-max-fields` (trigger threshold, default 6 fields). Concurrent batch VL calls are limited to 2 (independent semaphore).
 - **Drilldown step coarsening**: `proxyStatsQueryRangeDrilldown` caps the effective bucket count to 200 by snapping the client-supplied `step` up to the nearest "nice" interval (2m, 5m, 10m, 15m, 30m, 1h, 3h, 6h, 12h) when the raw step would produce more buckets. For a 12h Drilldown with step=60s this cuts from 720 to 144 buckets per field query — a 5× reduction in VL data scanned. `drilldownStatsCacheTTL` raised from 60s to 5min and the cache key now uses the coarsened step, so Grafana panel-width drift (which changes step by a few seconds per resize) no longer causes cache misses.
