@@ -34,46 +34,6 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		out = topKBuf
 	}
 
-	// Compute effectiveQuery early (strip parser and delete pipes) so drilldown
-	// detection can run before handleStatsCompatRange. count_over_time with a
-	// sliding window (range > step) would otherwise be claimed by the manual
-	// log-fetch path, bypassing hybrid/batcher optimizations entirely.
-	//
-	// Pipe stripping:
-	//   1. | delete __error__ — safe for any stats query (never affects counts).
-	//   2. | unpack_json / | unpack_logfmt — gate to Drilldown only; column-indexed
-	//      fields need no parser stage. Stripping for Explore/API would change semantics.
-	effectiveQuery := logsqlQuery
-	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok {
-		base := spec.BaseQuery
-		if isGrafanaDrilldownRequest(r) {
-			stripped := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(base, ""))
-			if stripped != base && allFiltersAreExistenceChecks(stripped) {
-				base = stripped
-			}
-		}
-		noDelete := strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(base, ""))
-		if noDelete != spec.BaseQuery {
-			effectiveQuery = noDelete + logsqlQuery[len(spec.BaseQuery):]
-		}
-	}
-
-	// Drilldown check runs BEFORE handleStatsCompatRange so sliding-window queries
-	// (range > step, e.g. count_over_time[5m] with step=60) are not intercepted by
-	// the manual log-fetch path. The drilldown path uses VL field_values + tumbling
-	// stats_query_range which give the correct "log presence over time" signal for
-	// the Fields panel regardless of whether the LogQL range matches the step.
-	//
-	// Gate behind isGrafanaDrilldownRequest: the query pattern alone is not
-	// sufficient to distinguish Drilldown from Explore/API clients.
-	if cleanBase, field, ok := detectDrilldownSingleField(effectiveQuery); ok && isGrafanaDrilldownRequest(r) {
-		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery, cleanBase, field)
-		if hasTopK {
-			writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
-		}
-		return
-	}
-
 	if p.handleStatsCompatRange(out, r, originalLogql, logsqlQuery) {
 		if hasTopK {
 			writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
@@ -107,7 +67,44 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
+	// For stats queries, strip two classes of pipes:
+	//   1. | delete __error__, __error_details__ — removes a field per row but never
+	//      filters logs; counts are identical without it. Safe to strip for any caller.
+	//   2. | unpack_json / | unpack_logfmt — column-indexed fields need no JSON parsing.
+	//      Gate to Drilldown only: Explore/API callers expect parser semantics to apply.
+	effectiveQuery := logsqlQuery
+	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok {
+		base := spec.BaseQuery
+		if isGrafanaDrilldownRequest(r) {
+			// Strip parser pipes — safe because Drilldown only surfaces column-indexed
+			// fields via detected_fields; stripping changes no semantics for those fields.
+			stripped := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(base, ""))
+			if stripped != base && allFiltersAreExistenceChecks(stripped) {
+				base = stripped
+			}
+		}
+		// Strip delete pipes for any stats query — never affects counts or filters.
+		noDelete := strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(base, ""))
+		if noDelete != spec.BaseQuery {
+			effectiveQuery = noDelete + logsqlQuery[len(spec.BaseQuery):]
+		}
+	}
+
+	// For Drilldown single-field count queries, push sort+limit into VL so only
+	// the top-maxDrilldownSeries unique field values are transmitted. Without this,
+	// 300k+ trace_id UUIDs over 12 h produce a 50 MB+ VL response. Loki caps at
+	// max_query_series (default 500) for Drilldown and returns partial results with
+	// a series-limit notice; this path matches that behaviour.
+	//
+	// Gate behind isGrafanaDrilldownRequest: the query pattern alone is not
+	// sufficient to distinguish Drilldown from Explore/API clients. Explore users
+	// who write the same LogQL pattern must not be subject to the 500-series cap
+	// or two-phase fallback — those are Drilldown-specific semantics.
+	if cleanBase, field, ok := detectDrilldownSingleField(effectiveQuery); ok && isGrafanaDrilldownRequest(r) {
+		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery, cleanBase, field)
+	} else {
+		p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
+	}
 
 	if hasTopK {
 		writeTopKFiltered(w, topKBuf, topK, topKDesc, "matrix")
