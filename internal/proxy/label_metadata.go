@@ -257,9 +257,10 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 	}
 	backendParams := params
 	if !fullRange {
-		// Cap to 1h for synchronous path: fast initial response.
+		// Cap start to end-5min (capMetadataStartOnly) so the synchronous path
+		// sees only the most recent data while preserving the exact end timestamp.
 		// The background refresh (labelFullRangeFetchKey) uses the full range.
-		backendParams = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+		backendParams = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 	}
 
 	// Check the capped-params cache before calling VL. When multiple callers have
@@ -281,7 +282,15 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 		}
 	}
 
-	fields, err := p.fetchVLFieldNames(ctx, "/select/logsql/stream_field_names", backendParams)
+	// Background (full-range) path uses field_names: stream_field_names at 12-24h is
+	// 7-8s+ and causes CPU spikes. field_names covers the same label discovery at ~0.25s.
+	// Sync path keeps stream_field_names but with a tighter cap so VL only scans recent
+	// log content; background refresh covers the full range for completeness.
+	endpoint := "/select/logsql/stream_field_names"
+	if fullRange {
+		endpoint = "/select/logsql/field_names"
+	}
+	fields, err := p.fetchVLFieldNames(ctx, endpoint, backendParams)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +305,7 @@ func (p *Proxy) fetchStreamFieldNamesCached(ctx context.Context, params url.Valu
 
 // metadataMaxFieldNamesWindow is the cap applied to VL backend calls on the synchronous
 // (on-request) path. Background refresh goroutines bypass this cap via labelFullRangeFetchKey.
-const metadataMaxFieldNamesWindow = time.Hour
+const metadataMaxFieldNamesWindow = 5 * time.Minute
 
 // rangeExceedsWindow returns true when the start/end pair spans more than threshold.
 // Returns false if either timestamp cannot be parsed.
@@ -345,6 +354,36 @@ func capMetadataTimeRange(params url.Values, maxWindow time.Duration) url.Values
 	bucketedStart, bucketedEnd := bucketMetadataTime(cappedStart, endNs)
 	capped.Set("start", fmt.Sprintf("%d", bucketedStart))
 	capped.Set("end", fmt.Sprintf("%d", bucketedEnd))
+	capped.Del("from")
+	capped.Del("to")
+	return capped
+}
+
+// capMetadataStartOnly caps the start of the time range to at most maxWindow before
+// end, without bucketing either timestamp. This preserves the original end value so
+// that recently-ingested data (within the last bucket interval) is never excluded,
+// while still bounding the VL scan range to avoid O(days) scans.
+func capMetadataStartOnly(params url.Values, maxWindow time.Duration) url.Values {
+	startRaw := firstNonEmpty(params.Get("start"), params.Get("from"))
+	endRaw := firstNonEmpty(params.Get("end"), params.Get("to"))
+	if startRaw == "" || endRaw == "" {
+		return params
+	}
+	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
+	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
+	if !ok1 || !ok2 || endNs <= startNs {
+		return params
+	}
+	maxNs := maxWindow.Nanoseconds()
+	if endNs-startNs <= maxNs {
+		return params
+	}
+	capped := url.Values{}
+	for k, vs := range params {
+		capped[k] = vs
+	}
+	capped.Set("start", fmt.Sprintf("%d", endNs-maxNs))
+	capped.Set("end", fmt.Sprintf("%d", endNs))
 	capped.Del("from")
 	capped.Del("to")
 	return capped
@@ -493,15 +532,13 @@ func (p *Proxy) fetchPreferredLabelValues(ctx context.Context, labelName string,
 		return []string{}, nil
 	}
 
-	// Use stream_field_values only when stream_field_names confirms the query filter's
-	// labels are stream-indexed. When the filter uses non-stream labels (e.g. service_name),
-	// stream_field_values returns empty — field_values covers both stream and columnar fields.
+	// Prefer stream_field_values on backends that support stream metadata endpoints:
+	// stream-indexed labels (cluster, namespace, app, …) are only in the stream index and
+	// field_values returns empty for them. If stream_field_values returns empty or errors,
+	// the loop below falls back to field_values automatically.
 	endpoint := "/select/logsql/field_values"
 	if p.supportsStreamMetadataEndpoints() {
-		streamOnlyFields, err := p.fetchStreamFieldNamesCached(ctx, params)
-		if err == nil && len(streamOnlyFields) > 0 {
-			endpoint = "/select/logsql/stream_field_values"
-		}
+		endpoint = "/select/logsql/stream_field_values"
 	}
 
 	// Cap the backend time range to 6h: active values in the last 6h match those
