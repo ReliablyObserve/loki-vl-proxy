@@ -107,6 +107,9 @@ extraArgs:
   # stats-query-range-concurrency: "4"                  # max concurrent stats_query_range calls to VL; higher = more VL CPU pressure; 0 = built-in default of 4
   # drilldown-burst-window-ms: "50"
   # drilldown-burst-max-fields: "30"
+  # drilldown-field-batch-window-ms: "100"               # window for coalescing per-field stats batch calls (ms); 0 disables batching
+  # drilldown-field-batch-max-fields: "6"                # max fields per batched stats call; limits fused query width
+  # stats-query-range-inter-query-delay-ms: "200"        # inter-query delay between sequential stats_query_range VL calls (ms); reduces CPU pressure
 
   # --- Indexed label-values browse cache ---
   # Keep disabled by default; enable when label value lists are large and you
