@@ -14,13 +14,9 @@ import (
 //
 // VictoriaLogs stats_query_range omits time buckets with zero count.
 // Loki's count_over_time emits every step in the query window, including
-// zeros. Filling the gaps here makes the proxy response match Loki's
+// zeros. Filling the gaps makes the proxy response match Loki's
 // continuous-line behaviour — Grafana draws a solid line rather than
 // disconnected spikes.
-//
-// Rules:
-//   - Only existing series are zero-filled; no new series are introduced.
-//   - If stepSec ≤ 0 or startSec ≥ endSec the body is returned unchanged.
 func zerofillStatsMatrix(body []byte, startSec, endSec, stepSec int64) []byte {
 	if stepSec <= 0 || startSec >= endSec {
 		return body
@@ -37,7 +33,8 @@ func zerofillStatsMatrix(body []byte, startSec, endSec, stepSec int64) []byte {
 	}
 
 	// Build the complete expected time axis once.
-	var axis []int64
+	n := (endSec-startSec)/stepSec + 1
+	axis := make([]int64, 0, n)
 	for ts := startSec; ts <= endSec; ts += stepSec {
 		axis = append(axis, ts)
 	}
