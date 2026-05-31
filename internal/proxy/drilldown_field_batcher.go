@@ -175,6 +175,15 @@ func (batch *fieldBatch) fire() {
 	ctx30s, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// Parse the query time bounds once; all per-field goroutines share them.
+	batchStartNs, startOK := parseLokiTimeToUnixNano(batch.startRaw)
+	batchEndNs, endOK := parseLokiTimeToUnixNano(batch.endRaw)
+	batchStepDur, stepOK := parsePositiveStepDuration(batch.stepRaw)
+	doZerofill := startOK && endOK && stepOK && batchStepDur > 0 && batchEndNs > batchStartNs
+	batchStartSec := batchStartNs / int64(time.Second)
+	batchEndSec := batchEndNs / int64(time.Second)
+	batchStepSec := int64(batchStepDur / time.Second)
+
 	// Issue one per-field stats_query_range per entry in parallel, instead of a
 	// single cross-product stats by (f1, f2, ...) query. The cross-product approach
 	// truncates at limit 2000 combinations — any high-cardinality field (e.g.
@@ -227,6 +236,9 @@ func (batch *fieldBatch) fire() {
 				rawBody = renameStatsBodyMetricKey(rawBody, e.primaryVLField, e.lokiField)
 			}
 			rawBody = limitLokiMatrixSeries(rawBody, maxDrilldownSeries)
+			if doZerofill {
+				rawBody = zerofillStatsMatrix(rawBody, batchStartSec, batchEndSec, batchStepSec)
+			}
 
 			mu.Lock()
 			results[e.lokiField] = rawBody
