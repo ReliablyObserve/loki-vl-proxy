@@ -362,38 +362,7 @@ const (
 // show complete coverage rather than the ~1h adaptive histogram window.
 const drilldownHybridThreshold = 12 * time.Hour
 
-// drilldownHybridMaxWindow caps the stats_query_range histogram window in hybrid mode
-// regardless of the adaptive formula. The formula uses range/8 (bounded [1h, 24h])
-// but expands to range/3 (bounded at 24h) for sparse data to show more history.
-const drilldownHybridMaxWindow = 24 * time.Hour
 
-// adaptiveHistogramWindow returns the stats_query_range window to scan in hybrid mode.
-// For dense data: range/8, bounded [1h, 24h].
-// For sparse data (totalHits < 1000): range/3, bounded [1h, 24h].
-// Sparse data means the full window is cheap to scan — expand for better coverage.
-func adaptiveHistogramWindow(rangeNs, totalHits int64) time.Duration {
-	const (
-		minWin = time.Hour
-		maxWin = drilldownHybridMaxWindow
-	)
-	base := time.Duration(rangeNs / 8)
-	if base < minWin {
-		base = minWin
-	}
-	if base > maxWin {
-		base = maxWin
-	}
-	if totalHits > 0 && totalHits < 1000 {
-		expanded := time.Duration(rangeNs / 3)
-		if expanded > maxWin {
-			expanded = maxWin
-		}
-		if expanded > base {
-			base = expanded
-		}
-	}
-	return base
-}
 
 // drilldownFVEntry is a field value returned by the VL field_values endpoint,
 // with its hit count for use in single-point matrix synthesis.
@@ -1058,13 +1027,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 		}
 	}
 
-	// Compute adaptive histogram window from data volume.
-	var totalHits int64
-	for _, e := range fvEntries {
-		totalHits += e.Hits
-	}
 	rangeNs := endNs - startNs
-	histWin := adaptiveHistogramWindow(rangeNs, totalHits)
 
 	// High-cardinality fields: field_values synthesis only — no stats_query_range.
 	// These fields (trace_id, span_id, *_id, *_uid, *_token, …) have too many unique
@@ -1087,43 +1050,31 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 		return
 	}
 
-	// Slow tier: stats_query_range over the recent adaptive window only.
-	histStartNs := endNs - int64(histWin)
-	if histStartNs < startNs {
-		histStartNs = startNs
-	}
-	histStartRaw := nanosToVLTimestamp(histStartNs)
+	// Stats tier: stats_query_range over the full requested range at coarsened step.
+	// VL column-index stats are fast even for wide ranges (< 1s for 7d), so scanning
+	// only a recent partial window and filling the rest with flat stub bars is
+	// unnecessary — it makes different time ranges look identical (same flat bars).
+	// effectiveStepRaw is already coarsened to ≤ maxDrilldownStatsBuckets buckets.
+	histStartRaw := nanosToVLTimestamp(startNs)
 
-	// stubStepNs drives stub placement in mergeDrilldownWithFieldValues.
-	// Derived from effectiveStepRaw (coarsened for the full range) to keep
-	// stub count ≤ maxDrilldownStatsBuckets over the full range.
+	// stubStepNs drives stub placement in mergeDrilldownWithFieldValues for values
+	// that appear in field_values but not in the top-N stats result (values beyond
+	// the maxDrilldownSeries limit). Use effectiveStepRaw resolution so stubs
+	// align with the stats bars.
 	var stubStepNs int64
 	if d, ok := parsePositiveStepDuration(effectiveStepRaw); ok {
 		stubStepNs = int64(d)
 	}
 
-	// histStepRaw drives the stats sub-query resolution. effectiveStepRaw is
-	// coarsened for the full range and may exceed histWin (e.g. a 25.6h step
-	// for a 24h window), producing fewer than 1 useful bucket. Re-coarsen from
-	// the original request step for the hist window to get up to
-	// maxDrilldownStatsBuckets buckets regardless of the full-range step.
-	histStepRaw := effectiveStepRaw // fallback if parse fails
-	if origStep, ok := parsePositiveStepDuration(r.FormValue("step")); ok && origStep > 0 {
-		coarsened := coarsenDrilldownStep(histStartRaw, endRaw, origStep)
-		histStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
-	}
-
 	// Build a clean stats query grouping by only the target field. logsqlQuery has
 	// underscore-fallback variants (e.g. detected_level) added by addUnderscorefallbackByLabels,
 	// which would produce duplicate series (level + detected_level) confusing Grafana.
-	// In the hybrid path, field_values handles value discovery; stats is only needed
-	// for histogram shape — no underscore expansion required.
 	hybridStatsQuery := cleanBase + " | filter " + field + `:!"" | stats by (` + field + `) count()`
 	limitedQuery := appendDrilldownSeriesLimit(hybridStatsQuery, maxDrilldownSeries)
-	statsParams := buildStatsQueryRangeParams(limitedQuery, histStartRaw, endRaw, histStepRaw)
+	statsParams := buildStatsQueryRangeParams(limitedQuery, histStartRaw, endRaw, effectiveStepRaw)
 
 	var statsBody []byte
-	pathLabel := fmt.Sprintf("hybrid/fv+%s-stats", histWin.Round(time.Minute))
+	pathLabel := "hybrid/fv+full-range-stats"
 
 	// Acquire semaphore slot before issuing the stats_query_range.
 	if sem := p.statsQueryRangeSem; sem != nil {
