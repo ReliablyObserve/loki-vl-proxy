@@ -655,13 +655,14 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		if !hasStreamSentinel {
 			strippedBase := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, ""))
 			if strippedBase != spec.BaseQuery && allFiltersAreExistenceChecks(strippedBase) {
-				if series, hitsErr := p.collectRangeMetricHits(r.Context(), strippedBase, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil {
+				if series, hitsErr := p.collectRangeMetricHits(r.Context(), strippedBase, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil && len(series) > 0 {
 					result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = w.Write(result) // nosemgrep
 					return true
 				}
-				// Fall through to raw log path on error.
+				// Fall through: either error, or 0 series (field not in VL column index —
+				// non-indexed JSON fields need parser stages to evaluate correctly).
 			}
 		}
 	}
