@@ -1116,6 +1116,16 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 					rawBody = renameStatsBodyMetricKey(rawBody, field, lokiField)
 				}
 				rawBody = limitLokiMatrixSeries(rawBody, maxDrilldownSeries)
+				// Zero-fill missing time steps so Grafana draws a continuous line rather
+				// than disconnected spikes. VL stats_query_range omits zero-count buckets;
+				// Loki always emits every step in the query window.
+				if stepDur, ok := parsePositiveStepDuration(effectiveStepRaw); ok && stepDur > 0 {
+					stepSec := int64(stepDur / time.Second)
+					rawBody = zerofillStatsMatrix(rawBody,
+						startNs/int64(time.Second),
+						endNs/int64(time.Second),
+						stepSec)
+				}
 				statsBody = rawBody
 			}
 		}
