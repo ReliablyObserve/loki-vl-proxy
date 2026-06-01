@@ -88,7 +88,7 @@ func TestHitsToVolumeMatrix_FiltersToTargetLabels(t *testing.T) {
 		"service_name": "my-service",
 	})
 
-	result := p.hitsToVolumeMatrix(body, "container", "1746057600", "1746061200", "1h")
+	result := p.hitsToVolumeMatrix(body, "container", "1746057600", "1746061200", "1h", defaultVolumeSeriesLimit)
 	data := result["data"].(map[string]interface{})
 	rows := data["result"].([]map[string]interface{})
 	if len(rows) == 0 {

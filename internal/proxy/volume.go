@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
+
+const defaultVolumeSeriesLimit = 1000
 
 func sumHitsValues(body []byte) int {
 	hits := parseHits(body)
@@ -75,9 +78,21 @@ func (p *Proxy) hitsToVolumeVector(body []byte, targetLabels string) map[string]
 	}
 }
 
-func (p *Proxy) hitsToVolumeMatrix(body []byte, targetLabels, start, end, step string) map[string]interface{} {
+func (p *Proxy) hitsToVolumeMatrix(body []byte, targetLabels, start, end, step string, limit int) map[string]interface{} {
 	hits := parseHits(body)
 	targets := splitTargetLabels(targetLabels)
+
+	// Apply series limit: sort by total count descending, take top limit.
+	// Matches Loki volume_range behavior where limit (default 1000) caps results.
+	if limit <= 0 {
+		limit = defaultVolumeSeriesLimit
+	}
+	if len(hits.Hits) > limit {
+		sort.Slice(hits.Hits, func(i, j int) bool {
+			return hits.Hits[i].Total > hits.Hits[j].Total
+		})
+		hits.Hits = hits.Hits[:limit]
+	}
 	bucketRange, fillMissing := parseRequestedBucketRange(start, end, step)
 	result := make([]map[string]interface{}, 0, len(hits.Hits))
 	for _, h := range hits.Hits {
@@ -311,6 +326,12 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	endParam := strings.TrimSpace(firstNonEmpty(r.FormValue("end"), r.FormValue("to")))
 	stepParam := r.FormValue("step")
 	targetLabels := requestedVolumeTargetLabels(r)
+	seriesLimit := defaultVolumeSeriesLimit
+	if lv := r.FormValue("limit"); lv != "" {
+		if n, err := strconv.Atoi(lv); err == nil && n > 0 {
+			seriesLimit = n
+		}
+	}
 	cacheKey := p.canonicalReadCacheKey("volume_range", orgID, r)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("volume_range", cacheKey); ok {
 		if !p.shouldBypassRecentTailCache("volume_range", remaining, r) {
@@ -319,14 +340,14 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 			p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
 			p.metrics.RecordCacheHit()
 			if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["volume_range"]) {
-				p.refreshVolumeRangeCacheAsync(orgID, cacheKey, query, startParam, endParam, stepParam, targetLabels, p.snapshotForwardedAuth(r))
+				p.refreshVolumeRangeCacheAsync(orgID, cacheKey, query, startParam, endParam, stepParam, targetLabels, seriesLimit, p.snapshotForwardedAuth(r))
 			}
 			return
 		}
 	}
 	p.metrics.RecordCacheMiss()
 
-	result, err := p.computeVolumeRangeResult(r.Context(), query, startParam, endParam, stepParam, targetLabels)
+	result, err := p.computeVolumeRangeResult(r.Context(), query, startParam, endParam, stepParam, targetLabels, seriesLimit)
 	if err != nil {
 		if p.serveStaleReadCacheOnError(w, "volume_range", cacheKey, start, err) {
 			return
@@ -341,7 +362,7 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	p.metrics.RecordRequest("volume_range", http.StatusOK, time.Since(start))
 }
 
-func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end, step, targetLabels string) (map[string]interface{}, error) {
+func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end, step, targetLabels string, limit int) (map[string]interface{}, error) {
 	if query == "" {
 		query = "*"
 	}
@@ -391,10 +412,10 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 		return nil, fmt.Errorf("%s", msg)
 	}
 
-	return p.hitsToVolumeMatrix(body, targetLabels, start, end, step), nil
+	return p.hitsToVolumeMatrix(body, targetLabels, start, end, step, limit), nil
 }
 
-func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, end, step, targetLabels string, savedReq *http.Request) {
+func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, end, step, targetLabels string, limit int, savedReq *http.Request) {
 	refreshKey := "refresh:volume_range:" + cacheKey
 	go func() {
 		_, err, _ := p.labelRefreshGroup.Do(refreshKey, func() (interface{}, error) {
@@ -406,7 +427,7 @@ func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, e
 			if savedReq != nil {
 				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
-			result, err := p.computeVolumeRangeResult(ctx, rawQuery, start, end, step, targetLabels)
+			result, err := p.computeVolumeRangeResult(ctx, rawQuery, start, end, step, targetLabels, limit)
 			if err == nil {
 				p.setEndpointJSONCacheWithTTL("volume_range", cacheKey, CacheTTLs["volume_range"], result)
 			}

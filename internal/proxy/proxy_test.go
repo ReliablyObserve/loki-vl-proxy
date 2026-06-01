@@ -2400,7 +2400,7 @@ func TestContract_RefreshVolumeRangeCacheAsync_PopulatesCache(t *testing.T) {
 
 	p := newTestProxy(t, vlBackend.URL)
 	cacheKey := "volume_range:test-refresh"
-	p.refreshVolumeRangeCacheAsync("", cacheKey, `{app="api"}`, "", "", "60", "", nil)
+	p.refreshVolumeRangeCacheAsync("", cacheKey, `{app="api"}`, "", "", "60", "", defaultVolumeSeriesLimit, nil)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
