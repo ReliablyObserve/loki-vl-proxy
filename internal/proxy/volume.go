@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	fj "github.com/valyala/fastjson"
 )
 
 const defaultVolumeSeriesLimit = 1000
@@ -425,9 +427,11 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 	return p.hitsToVolumeMatrix(body, targetLabels, start, end, step, limit), nil
 }
 
-// computeVolumeRangeViaStats uses stats_query_range with a native | limit N to
-// return top-N series by count — avoiding the hits endpoint's unbounded response
-// for high-cardinality labels (e.g. pod with thousands of unique values).
+// computeVolumeRangeViaStats uses stats_query_range to avoid the hits endpoint's
+// unbounded response for high-cardinality labels (e.g. pod with thousands of unique
+// values). VL's stats_query_range returns per-bucket flat entries (one value per entry);
+// consolidateSingleLabelStats groups them into proper time series and applies the global
+// top-N limit server-side.
 func (p *Proxy) computeVolumeRangeViaStats(ctx context.Context, logsqlQuery, targetLabel, start, end, step string, limit int) (map[string]interface{}, error) {
 	// Resolve VL field name via the same alias resolution as the hits path so that
 	// underscore-to-dotted mappings (e.g. host_id → host.id) are honoured.
@@ -443,6 +447,9 @@ func (p *Proxy) computeVolumeRangeViaStats(ctx context.Context, logsqlQuery, tar
 	if resolved := p.resolveTargetLabelFields(ctx, targetLabel, resolutionParams); len(resolved) > 0 {
 		vlField = resolved[0]
 	}
+	// Apply | sort | limit N per bucket to bound the VL response:
+	// N × buckets × ~90 bytes stays well under the body cap even for long ranges.
+	// consolidateSingleLabelStats then re-ranks globally across all buckets.
 	statsQuery := logsqlQuery + " | stats by (" + quoteLogsQLIdent(vlField) + ") count() as _c" +
 		" | sort by (_c desc) | limit " + strconv.Itoa(limit)
 	params := buildStatsQueryRangeParams(statsQuery, start, end, step)
@@ -451,7 +458,7 @@ func (p *Proxy) computeVolumeRangeViaStats(ctx context.Context, logsqlQuery, tar
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -462,16 +469,108 @@ func (p *Proxy) computeVolumeRangeViaStats(ctx context.Context, logsqlQuery, tar
 		}
 		return nil, fmt.Errorf("%s", msg)
 	}
-	body = stripVLStatsNameKey(body)
-	if vlField != targetLabel {
-		body = renameStatsBodyMetricKey(body, vlField, targetLabel)
-	}
-	// The stats_query_range response is already a Loki matrix — return directly.
+	consolidated := consolidateSingleLabelStats(body, vlField, targetLabel, limit)
 	var result map[string]interface{}
-	if err := stdjson.Unmarshal(body, &result); err != nil {
+	if err := stdjson.Unmarshal(consolidated, &result); err != nil {
 		return nil, err
 	}
 	return result, nil
+}
+
+// consolidateSingleLabelStats groups VL stats_query_range per-bucket flat entries by
+// vlField value, accumulates counts across all time buckets, ranks by total descending,
+// limits to the top-limit series, and emits a Loki matrix with targetLabel as the
+// metric key (handles the underscore→dotted rename when vlField != targetLabel).
+func consolidateSingleLabelStats(body []byte, vlField, targetLabel string, limit int) []byte {
+	var p fj.Parser
+	v, err := p.ParseBytes(body)
+	if err != nil || v == nil {
+		return body
+	}
+	resultArr := v.GetArray("data", "result")
+	if len(resultArr) == 0 {
+		return body
+	}
+
+	// labelValue → timestamp → accumulated count
+	type tsMap = map[int64]int64
+	counts := make(map[string]tsMap, 512)
+
+	for _, item := range resultArr {
+		labelVal := string(item.GetStringBytes("metric", vlField))
+		if labelVal == "" {
+			continue
+		}
+		if counts[labelVal] == nil {
+			counts[labelVal] = make(tsMap, 16)
+		}
+		for _, pair := range item.GetArray("values") {
+			arr := pair.GetArray()
+			if len(arr) < 2 {
+				continue
+			}
+			ts := arr[0].GetInt64()
+			cnt, _ := strconv.ParseInt(string(arr[1].GetStringBytes()), 10, 64)
+			counts[labelVal][ts] += cnt
+		}
+	}
+
+	// Rank by total count descending, apply limit.
+	type valCount struct {
+		val   string
+		total int64
+	}
+	ranked := make([]valCount, 0, len(counts))
+	for val, tsCounts := range counts {
+		var total int64
+		for _, c := range tsCounts {
+			total += c
+		}
+		ranked = append(ranked, valCount{val, total})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].total != ranked[j].total {
+			return ranked[i].total > ranked[j].total
+		}
+		return ranked[i].val < ranked[j].val
+	})
+	if limit > 0 && len(ranked) > limit {
+		ranked = ranked[:limit]
+	}
+
+	// Build Loki matrix: one entry per unique label value with all time-bucket values.
+	var buf []byte
+	buf = append(buf, `{"status":"success","data":{"resultType":"matrix","result":[`...)
+	for i, r := range ranked {
+		if i > 0 {
+			buf = append(buf, ',')
+		}
+		tsCounts := counts[r.val]
+		tsList := make([]int64, 0, len(tsCounts))
+		for ts := range tsCounts {
+			tsList = append(tsList, ts)
+		}
+		sort.Slice(tsList, func(i, j int) bool { return tsList[i] < tsList[j] })
+
+		buf = append(buf, `{"metric":{`...)
+		buf = appendJSONQuoted(buf, targetLabel)
+		buf = append(buf, ':')
+		buf = appendJSONQuoted(buf, r.val)
+		buf = append(buf, `},"values":[`...)
+		for j, ts := range tsList {
+			if j > 0 {
+				buf = append(buf, ',')
+			}
+			buf = append(buf, '[')
+			buf = strconv.AppendInt(buf, ts, 10)
+			buf = append(buf, `,"`...)
+			buf = strconv.AppendInt(buf, tsCounts[ts], 10)
+			buf = append(buf, '"', ']')
+		}
+		buf = append(buf, `]}`...)
+	}
+	buf = append(buf, `]}}`...)
+	return buf
 }
 
 func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, end, step, targetLabels string, limit int, savedReq *http.Request) {
