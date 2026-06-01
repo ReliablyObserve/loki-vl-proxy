@@ -2391,10 +2391,11 @@ func TestContract_RefreshVolumeCacheAsync_PopulatesCache(t *testing.T) {
 
 func TestContract_RefreshVolumeRangeCacheAsync_PopulatesCache(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[5]}]}`))
+		// stats_query_range returns Loki matrix format directly.
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api"},"values":[[1746057600,"5"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 

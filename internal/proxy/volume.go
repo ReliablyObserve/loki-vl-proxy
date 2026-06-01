@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	stdjson "encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -377,6 +378,16 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 	}
 	logsqlQuery, _ := p.translateQueryWithContext(ctx, query)
 
+	// For single-label volume_range with a limit, use stats_query_range so VL applies
+	// the limit natively — the hits endpoint returns ALL unique label values (up to
+	// 64 MB cap) which causes truncation for high-cardinality labels like pod.
+	if targetLabels != "" && !strings.Contains(targetLabels, ",") {
+		if result, err := p.computeVolumeRangeViaStats(ctx, logsqlQuery, targetLabels, start, end, step, limit); err == nil {
+			return result, nil
+		}
+		// Fall through to hits on error.
+	}
+
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	if s := start; s != "" {
@@ -388,7 +399,6 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 	if step != "" {
 		params.Set("step", formatVLStep(step))
 	}
-	// Forward targetLabels for field-level grouping (same as /volume)
 	if targetLabels != "" {
 		mappedFields := p.resolveTargetLabelFields(ctx, targetLabels, params)
 		if len(mappedFields) > 0 {
@@ -413,6 +423,55 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 	}
 
 	return p.hitsToVolumeMatrix(body, targetLabels, start, end, step, limit), nil
+}
+
+// computeVolumeRangeViaStats uses stats_query_range with a native | limit N to
+// return top-N series by count — avoiding the hits endpoint's unbounded response
+// for high-cardinality labels (e.g. pod with thousands of unique values).
+func (p *Proxy) computeVolumeRangeViaStats(ctx context.Context, logsqlQuery, targetLabel, start, end, step string, limit int) (map[string]interface{}, error) {
+	// Resolve VL field name via the same alias resolution as the hits path so that
+	// underscore-to-dotted mappings (e.g. host_id → host.id) are honoured.
+	vlField := targetLabel
+	resolutionParams := url.Values{}
+	resolutionParams.Set("query", logsqlQuery)
+	if start != "" {
+		resolutionParams.Set("start", formatVLTimestamp(start))
+	}
+	if end != "" {
+		resolutionParams.Set("end", formatVLTimestamp(end))
+	}
+	if resolved := p.resolveTargetLabelFields(ctx, targetLabel, resolutionParams); len(resolved) > 0 {
+		vlField = resolved[0]
+	}
+	statsQuery := logsqlQuery + " | stats by (" + quoteLogsQLIdent(vlField) + ") count() as _c" +
+		" | sort by (_c desc) | limit " + strconv.Itoa(limit)
+	params := buildStatsQueryRangeParams(statsQuery, start, end, step)
+	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("%s", msg)
+	}
+	body = stripVLStatsNameKey(body)
+	if vlField != targetLabel {
+		body = renameStatsBodyMetricKey(body, vlField, targetLabel)
+	}
+	// The stats_query_range response is already a Loki matrix — return directly.
+	var result map[string]interface{}
+	if err := stdjson.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (p *Proxy) refreshVolumeRangeCacheAsync(orgID, cacheKey, rawQuery, start, end, step, targetLabels string, limit int, savedReq *http.Request) {
