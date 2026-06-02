@@ -37,6 +37,50 @@ func shouldFallbackToGenericMetadata(err error) bool {
 	return apiErr.status >= 400 && apiErr.status < 500
 }
 
+// metadataWindowTTL scales a base TTL upward for wide time ranges where metadata
+// changes rarely. A 7-day historical view does not need the same sub-5-minute
+// freshness as a live 1-hour view: labels and field names are stable over hours.
+// Longer TTLs cut VL call frequency and eliminate the constant "loading" indicator
+// Grafana shows when the cache expires mid-session.
+//
+// Scale factors (capped at 1 hour):
+//
+//	≤  1h  → ×1   (keep base TTL for live ranges)
+//	≤  6h  → ×3
+//	≤ 24h  → ×10
+//	≤  7d  → ×20
+//	>  7d  → 1h hard cap
+func metadataWindowTTL(startRaw, endRaw string, baseTTL time.Duration) time.Duration {
+	const maxTTL = time.Hour
+	if startRaw == "" || endRaw == "" {
+		return baseTTL
+	}
+	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
+	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
+	if !ok1 || !ok2 || endNs <= startNs {
+		return baseTTL
+	}
+	window := time.Duration(endNs - startNs)
+	clamp := func(d time.Duration) time.Duration {
+		if d > maxTTL {
+			return maxTTL
+		}
+		return d
+	}
+	switch {
+	case window <= time.Hour:
+		return baseTTL
+	case window <= 6*time.Hour:
+		return clamp(baseTTL * 3)
+	case window <= 24*time.Hour:
+		return clamp(baseTTL * 10)
+	case window <= 7*24*time.Hour:
+		return clamp(baseTTL * 20)
+	default:
+		return maxTTL
+	}
+}
+
 func decodeVLFieldHits(body []byte) ([]string, error) {
 	var resp struct {
 		Values []struct {

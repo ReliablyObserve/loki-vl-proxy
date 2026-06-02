@@ -1345,12 +1345,13 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := p.canonicalReadCacheKey("detected_labels", orgID, r)
+	detectedLabelsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_labels"])
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_labels", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
-		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["detected_labels"]) {
+		if p.shouldRefreshLabelsInBackground(remaining, detectedLabelsTTL) {
 			p.refreshDetectedLabelsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), parseDetectedLineLimit(r), p.snapshotForwardedAuth(r))
 		}
 		return
@@ -1376,7 +1377,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 		"detectedLabels": detectedLabels,
 		"limit":          lineLimit,
 	}
-	p.setEndpointJSONCacheWithTTL("detected_labels", cacheKey, CacheTTLs["detected_labels"], payload)
+	p.setEndpointJSONCacheWithTTL("detected_labels", cacheKey, detectedLabelsTTL, payload)
 	p.writeJSON(w, payload)
 	p.metrics.RecordRequest("detected_labels", http.StatusOK, time.Since(start))
 }

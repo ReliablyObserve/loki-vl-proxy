@@ -101,6 +101,7 @@ type detectedFieldSummary struct {
 	values      map[string]struct{}
 	jsonPath    []string
 	cardinality int
+	nativeHits  int64 // hits from VL field_names index; 0 for scan-found fields
 }
 
 type detectedLabelSummary struct {
@@ -1633,24 +1634,15 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	}
 
 	if len(scanFieldList) > 0 {
-		// When the log-line scan produced results, use them as-is.
-		// The scan's outer obj.Visit already captures native VL metadata fields
-		// (OTel service.name, trace_id, etc.) for entries whose _msg is not JSON,
-		// and the _msg JSON parsing pass finds all JSON fields with parser="json".
-		// Merging the native field_names index here would flood the response:
-		// VL auto-indexes every JSON key across the entire time range, so the index
-		// may contain thousands of field names accumulated from rare log variants
-		// that the 500-line scan sample correctly excludes.
+		// Merge scan results with native index fields that passed the hit threshold in
+		// fetchNativeFieldNamesForCandidate (hits ≥ minNativeFieldHits, top-N by hits).
+		// The hit filter prevents VL's accumulated one-off JSON keys from flooding the
+		// response — only fields with meaningful presence (e.g. trace_id, session_id)
+		// get promoted. service.name / service_name are handled separately below so the
+		// querySelectsServiceName guard is applied correctly.
 		//
-		// Exception: selectively promote service.name / service_name when the native
-		// label index shows service.name exists but the scan window missed it. OTel
-		// streams may be older than the 500-line window; the native index covers the
-		// full time range and is the authoritative source for stream label existence.
-		// Selectively promote service.name / service_name when the native label index
-		// shows service.name exists but the 500-line scan window missed it.
-		//
-		// Guard: skip when the query already selects on service_name or service.name —
-		// those are stream label selectors and must be suppressed from detected_fields
+		// Guard: skip service.name / service_name from the general merge when the query
+		// already selects on them — stream label selectors must not reappear as fields
 		// (e.g. {service_name="api-gateway"} must not expose service_name as a field).
 		querySelectsServiceName := strings.Contains(query, "service_name") || strings.Contains(query, "service.name")
 		if nativeFields != nil && !querySelectsServiceName {
@@ -1677,7 +1669,26 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 				}
 			}
 		}
-		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, nil)
+		// Build a filtered native map that excludes service.name/service_name (handled
+		// above) so the general merge does not bypass the querySelectsServiceName guard.
+		// Also apply the minNativeFieldHits threshold here (scan-success path only):
+		// native fields with low hit counts are noise from VL's accumulated field index
+		// and must not inflate the response when the log-line scan has results.
+		// Fields with nativeHits==0 are VL non-indexed fields (valid, not noise) and pass.
+		var nativeSparse map[string]*detectedFieldSummary
+		if nativeFields != nil {
+			nativeSparse = make(map[string]*detectedFieldSummary, len(nativeFields))
+			for k, v := range nativeFields {
+				if k == "service.name" || k == "service_name" {
+					continue
+				}
+				if v.nativeHits > 0 && v.nativeHits < minNativeFieldHits {
+					continue
+				}
+				nativeSparse[k] = v
+			}
+		}
+		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, nativeSparse)
 		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
 		return fieldList, fieldValues, nil
 	}
@@ -2261,7 +2272,7 @@ func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string
 		return nil, err
 	}
 	out := make(map[string]*detectedFieldSummary, len(fieldNames))
-	for _, field := range fieldNames {
+	for field, hits := range fieldNames {
 		for _, exposure := range p.metadataFieldExposures(field) {
 			if shouldSuppressDetectedField(exposure.name) {
 				continue
@@ -2271,6 +2282,7 @@ func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string
 				typ:         "string",
 				values:      map[string]struct{}{},
 				cardinality: 1,
+				nativeHits:  hits,
 			}
 		}
 	}
@@ -2331,7 +2343,22 @@ func mergeNativeDetectedFields(scanned []map[string]interface{}, scannedValues m
 	return out, outValues
 }
 
-func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate, start, end string) ([]string, error) {
+// minNativeFieldHits is the minimum hit count a field must have in VL's column index
+// to be promoted into detected_fields when the log-line scan missed it.
+// Fields appearing fewer than 10 times are treated as ephemeral noise and excluded.
+// This threshold prevents the VL field_names index (which accumulates every JSON key
+// ever seen, including one-off debug keys) from flooding the detected_fields response.
+// The test fixture uses hits=5 for artificial extra fields — they are intentionally
+// below this threshold and will not be promoted (regression guard preserved).
+const minNativeFieldHits = 10
+
+// maxNativeFieldsToPromote caps the number of native-index fields added to the
+// detected_fields response above what the log-line scan found. In environments
+// with highly diverse log schemas the VL column index may contain many entries;
+// promoting only the top-N by hit count keeps the field list manageable.
+const maxNativeFieldsToPromote = 50
+
+func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate, start, end string) (map[string]int64, error) {
 	logsqlQuery, err := p.translateQuery(candidate)
 	if err != nil {
 		return nil, err
@@ -2344,7 +2371,12 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 	if end != "" {
 		params.Set("end", end)
 	}
-	params = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+	// Use the full requested time range (no 5-min cap): field_names uses VL's column
+	// index and is fast even on multi-day ranges. A wider window yields meaningful
+	// hit counts so sparse fields (trace_id, session_id, span_id, etc.) accumulate
+	// enough hits to pass the minNativeFieldHits threshold even when they don't appear
+	// in the most-recent N log lines that the log-scan samples. Cap at 7d for safety.
+	params = capMetadataStartOnly(params, 7*24*time.Hour)
 	body, err := p.vlGetCoalesced(ctx, p.nativeCoalescerKey("native_fields", ctx, params), "/select/logsql/field_names", params)
 	if err != nil {
 		return nil, err
@@ -2353,14 +2385,24 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 	if err := stdjson.Unmarshal(body, &resp); err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, len(resp.Values))
-	for _, item := range resp.Values {
-		out = append(out, item.Value)
+	// Sort by hits descending so the most consistently-present fields are promoted first.
+	sort.Slice(resp.Values, func(i, j int) bool {
+		return resp.Values[i].Hits > resp.Values[j].Hits
+	})
+	// Return all fields (up to maxNativeFieldsToPromote) with their hit counts.
+	// Callers that merge with scan results apply minNativeFieldHits; callers that use
+	// native fields as a fallback (scan-empty, field resolution) use all fields.
+	out := make(map[string]int64, min(len(resp.Values), maxNativeFieldsToPromote))
+	for i, item := range resp.Values {
+		if i >= maxNativeFieldsToPromote {
+			break
+		}
+		out[item.Value] = item.Hits
 	}
 	return out, nil
 }
 
-func (p *Proxy) fetchNativeFieldNames(ctx context.Context, query, start, end string) ([]string, error) {
+func (p *Proxy) fetchNativeFieldNames(ctx context.Context, query, start, end string) (map[string]int64, error) {
 	var lastErr error
 	for _, candidate := range fieldDetectionQueryCandidates(query) {
 		fields, err := p.fetchNativeFieldNamesForCandidate(ctx, candidate, start, end)
@@ -2550,13 +2592,16 @@ func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, en
 	var lastErr error
 	queryCandidates := fieldDetectionQueryCandidates(query)
 	for i, candidate := range queryCandidates {
-		fieldNames, err := p.fetchNativeFieldNamesForCandidate(ctx, candidate, start, end)
+		fieldNamesMap, err := p.fetchNativeFieldNamesForCandidate(ctx, candidate, start, end)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		fieldCandidates := make([]string, 0, len(fieldNames))
-		fieldCandidates = append(fieldCandidates, fieldNames...)
+		fieldCandidates := make([]string, 0, len(fieldNamesMap))
+		for name := range fieldNamesMap {
+			fieldCandidates = append(fieldCandidates, name)
+		}
+		sort.Strings(fieldCandidates)
 		resolution := p.labelTranslator.ResolveMetadataCandidates(fieldName, fieldCandidates, p.metadataFieldMode)
 		if len(resolution.candidates) == 1 {
 			return resolution.candidates[0], true, nil
