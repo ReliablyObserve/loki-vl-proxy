@@ -362,8 +362,6 @@ const (
 // show complete coverage rather than the ~1h adaptive histogram window.
 const drilldownHybridThreshold = 12 * time.Hour
 
-
-
 // drilldownFVEntry is a field value returned by the VL field_values endpoint,
 // with its hit count for use in single-point matrix synthesis.
 type drilldownFVEntry struct {

@@ -138,7 +138,7 @@ Grafana's time picker uses a sliding end-timestamp that drifts a few seconds bet
 | `service_name/values` | ~5,028ms (4 × stream_field_names) | **235ms** | **12ms** |
 | Speedup | — | **21×** | **~420×** |
 
-Wide-range background refresh: eliminated 5–10s `stream_field_names` calls for 6h/12h/24h windows. All background metadata calls now complete in <100ms regardless of the Grafana time picker selection.
+Wide-range background refresh: eliminated 5–10s `stream_field_names` calls for 6h/12h/24h windows. All background metadata calls now complete in &lt;100ms regardless of the Grafana time picker selection.
 
 ## VictoriaLogs Native Stats Offloading
 

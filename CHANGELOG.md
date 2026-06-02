@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Reduce proxy allocations by ~75%: stream VL NDJSON response instead of buffering
+  with `io.ReadAll`, pool `TranslateLabelsMap` result maps via `sync.Pool`, pre-size
+  `strings.Builder` in serialization paths, fast-path `SanitizeLabelName` for already-valid
+  names, skip `compatCacheCapture` for non-cacheable requests, and pool keys slice +
+  eliminate redundant map copy in `handleSeries`.
+- Drilldown field queries: batch concurrent per-field `stats_query_range` calls into a
+  single multi-field VL call, coarsen step to cap bucket count, skip high-cardinality ID
+  fields for wide ranges, and gate fan-out with a semaphore to avoid thundering-herd.
+- Background label refresh: fix `fieldMetaCacheKey` drift so the singleflight key is
+  stable across Grafana auto-refresh ticks; eliminate 5–10 s `stream_field_names` scans
+  for 6h/12h/24h windows by capping the metadata range to 15 minutes.
+- `volume_range`: use `stats_query_range` for single-label queries to avoid the hits
+  endpoint's unbounded response for high-cardinality labels (e.g. `pod`).
+
+### Fixed
+
+- `volume_range` for multi-tenant `__tenant_id__` target label now returns data: skip the
+  `stats_query_range` fast path for synthetic `__`-prefixed labels that VL cannot group by
+  natively and fall through to the hits endpoint which handles them correctly.
+- `detected_fields` background cache refresh now picks up newly ingested parsed fields
+  within the existing 20 s freshness window: reverted inner-cache time-bucketing in
+  `detectedFieldsCacheKey`/`detectedLabelsCacheKey` so refresh calls get a cache miss and
+  fetch live data from VL instead of serving the previously cached result.
+
 ## [1.54.0] - 2026-05-30
 
 ### Added

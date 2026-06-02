@@ -383,7 +383,9 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 	// For single-label volume_range with a limit, use stats_query_range so VL applies
 	// the limit natively — the hits endpoint returns ALL unique label values (up to
 	// 64 MB cap) which causes truncation for high-cardinality labels like pod.
-	if targetLabels != "" && !strings.Contains(targetLabels, ",") {
+	// Skip synthetic __ labels (e.g. __tenant_id__): they are not native VL fields
+	// and the stats pipe cannot group by them; the hits path handles them correctly.
+	if targetLabels != "" && !strings.Contains(targetLabels, ",") && !strings.HasPrefix(targetLabels, "__") {
 		if result, err := p.computeVolumeRangeViaStats(ctx, logsqlQuery, targetLabels, start, end, step, limit); err == nil {
 			return result, nil
 		}

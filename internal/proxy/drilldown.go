@@ -2013,9 +2013,6 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		msg := string(msgBytes)
 
 		for key, value := range parseLogfmtFields(msg) {
-			if key == "msg" {
-				continue
-			}
 			if key == "level" {
 				addDetectedField(fields, "detected_level", "", "string", nil, value)
 				continue
@@ -2815,8 +2812,7 @@ type detectedLabelsCachePayload struct {
 }
 
 func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	key := "detect_fields:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" +
-		bucketTimestampString(start, fieldNamesCacheBucket) + ":" + bucketTimestampString(end, fieldNamesCacheBucket) + ":" + strconv.Itoa(lineLimit)
+	key := "detect_fields:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
@@ -2826,8 +2822,7 @@ func (p *Proxy) detectedFieldsCacheKey(ctx context.Context, query, start, end st
 }
 
 func (p *Proxy) detectedLabelsCacheKey(ctx context.Context, query, start, end string, lineLimit int) string {
-	key := "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" +
-		bucketTimestampString(start, fieldNamesCacheBucket) + ":" + bucketTimestampString(end, fieldNamesCacheBucket) + ":" + strconv.Itoa(lineLimit)
+	key := "detect_labels:" + getOrgID(ctx) + ":" + defaultFieldDetectionQuery(query) + ":" + start + ":" + end + ":" + strconv.Itoa(lineLimit)
 	if origReq, ok := ctx.Value(origRequestKey).(*http.Request); ok && origReq != nil {
 		if fp := p.fingerprintFromCtx(ctx, origReq); fp != "" {
 			key += ":auth:" + fp
