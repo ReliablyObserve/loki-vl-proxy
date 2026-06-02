@@ -236,8 +236,13 @@ func TestPerf_Labels_SameVLCallForAllWindows(t *testing.T) {
 // TestPerf_Labels_WarmupCoverage verifies that warmMetadataCacheOnStartup
 // populates the read cache for all 4 preset windows (1h, 6h, 24h, 7d) and that
 // post-warmup requests for those windows are served from cache (≤1 extra call
-// allowed for bucket-boundary rounding). The warmup may make fewer than 4 backend
-// calls when windows cap to the same 1h backend params and share the capped-key cache.
+// allowed for bucket-boundary rounding).
+//
+// Design notes:
+//   - warmLabelWindows caps all windows to the same 1h VL call, so streamFieldNamesCache
+//     deduplication means only 1 backend call is made (not 4). The poll waits for ≥1.
+//   - LabelCacheTTL matches startupWarmupTTL (10s) so shouldRefreshLabelsInBackground
+//     does not trigger on post-warmup cache hits (remaining ≈ TTL > 4/5·TTL threshold).
 func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 	warmupWindows := []time.Duration{
 		time.Hour, 6 * time.Hour, 24 * time.Hour, 7 * 24 * time.Hour,
@@ -254,8 +259,11 @@ func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
+	// LabelCacheTTL matches startupWarmupTTL (10s) so shouldRefreshLabelsInBackground
+	// returns false for post-warmup hits: remaining≈10s > threshold=8s=(10s*4/5).
+	const warmupTTL = 10 * time.Second
 	c := cache.New(60*time.Second, 10000)
-	p, err := New(Config{BackendURL: srv.URL, Cache: c, LogLevel: "error"})
+	p, err := New(Config{BackendURL: srv.URL, Cache: c, LogLevel: "error", LabelCacheTTL: warmupTTL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,10 +272,11 @@ func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 
 	p.warmMetadataCacheOnStartup()
 
-	// Poll until warmup completes; VL is immediately reachable so this is fast.
+	// All 4 windows cap to the same 1h VL call; streamFieldNamesCache deduplication
+	// means only 1 backend call is made. Poll for ≥1 (not ≥4).
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if int(backendCalls.Load()) >= len(warmupWindows) {
+		if backendCalls.Load() >= 1 {
 			break
 		}
 		time.Sleep(25 * time.Millisecond)
@@ -277,6 +286,10 @@ func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 	if warmupCallCount == 0 {
 		t.Fatalf("warmup made 0 backend calls, want ≥1")
 	}
+
+	// Allow 25 ms for the warmup goroutine to finish the remaining sequential
+	// mergeLabelsIntoCache writes (no I/O — just in-memory map writes).
+	time.Sleep(25 * time.Millisecond)
 
 	// Post-warmup: requests for the same window must be cache hits.
 	// Allow ≤1 extra backend call for 5-min bucket-boundary drift between

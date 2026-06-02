@@ -2831,8 +2831,18 @@ func (p *Proxy) detectedLabelsCacheKey(ctx context.Context, query, start, end st
 	return key
 }
 
+// detectedFieldsRefreshKey is a context key set by refreshDetectedFieldsCacheAsync
+// to bypass the inner detected-fields cache (getCachedDetectedFields). Without this
+// bypass, background refresh re-uses the stale cached result from the original request
+// (same raw start/end params) and never queries VL for fresh data.
+type detectedFieldsRefreshKey struct{}
+
 func (p *Proxy) getCachedDetectedFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, bool) {
 	if p.cache == nil {
+		return nil, nil, false
+	}
+	// Background refresh must bypass the inner cache so it fetches fresh data from VL.
+	if ctx.Value(detectedFieldsRefreshKey{}) != nil {
 		return nil, nil, false
 	}
 	raw, ok := p.cache.Get(p.detectedFieldsCacheKey(ctx, query, start, end, lineLimit))

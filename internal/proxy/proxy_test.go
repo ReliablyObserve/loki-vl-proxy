@@ -3346,9 +3346,9 @@ func TestCache_LabelsHitOnRepeat(t *testing.T) {
 // reload at a new timestamp would miss even if the time range is essentially
 // identical.
 func TestCache_LabelsTimeBucketCollapsesSlidingWindow(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		writeVLFieldNames(w, []fieldHit{{"app", 1}})
 	}))
 	defer vlBackend.Close()
@@ -3370,26 +3370,26 @@ func TestCache_LabelsTimeBucketCollapsesSlidingWindow(t *testing.T) {
 
 	w1 := httptest.NewRecorder()
 	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req1, nil))
-	if callCount != 1 {
-		t.Fatalf("first call: expected 1 backend call, got %d", callCount)
+	if callCount.Load() != 1 {
+		t.Fatalf("first call: expected 1 backend call, got %d", callCount.Load())
 	}
 
 	// Shifted by 1 second inside the same bucket — must hit cache.
 	w2 := httptest.NewRecorder()
 	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req2, nil))
-	if callCount != 1 {
-		t.Errorf("same-bucket shift: expected cache hit (1 call), got %d — time-bucketing must collapse sliding window", callCount)
+	if callCount.Load() != 1 {
+		t.Errorf("same-bucket shift: expected cache hit (1 call), got %d — time-bucketing must collapse sliding window", callCount.Load())
 	}
 
 	// Next 5-minute bucket — must miss. Measure delta across only req3 because
 	// an async background-refresh goroutine from req1 may race and complete during
 	// req3, making the cumulative total 3 or 4. The important invariant is that req3
 	// itself caused at least one additional backend call (cache miss).
-	callCountBeforeReq3 := callCount
+	callCountBeforeReq3 := callCount.Load()
 	w3 := httptest.NewRecorder()
 	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req3, nil))
-	if callCount <= callCountBeforeReq3 {
-		t.Errorf("next bucket: expected cache miss (>%d calls after req3), got %d — req3 should not share req1's bucket", callCountBeforeReq3, callCount)
+	if callCount.Load() <= callCountBeforeReq3 {
+		t.Errorf("next bucket: expected cache miss (>%d calls after req3), got %d — req3 should not share req1's bucket", callCountBeforeReq3, callCount.Load())
 	}
 }
 

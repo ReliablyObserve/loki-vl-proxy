@@ -318,6 +318,9 @@ func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, e
 			if savedReq != nil {
 				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
+			// Bypass inner detected-fields cache so this goroutine fetches fresh data
+			// from VL rather than re-using the stale result from the original request.
+			ctx = context.WithValue(ctx, detectedFieldsRefreshKey{}, true)
 			fields, _, detectErr := p.detectFields(ctx, query, start, end, lineLimit)
 			if detectErr != nil {
 				return nil, detectErr
