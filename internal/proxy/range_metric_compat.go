@@ -614,57 +614,17 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			// Fall through on error — coalescer failure is non-fatal.
 		}
 	}
-	if statsAggFunc != "" && !queryUsesParserStages(spec.BaseQuery) {
-		hasStreamSentinel := false
-		for _, g := range spec.GroupBy {
-			if g == "_stream" {
-				hasStreamSentinel = true
-				break
-			}
-		}
-		if !hasStreamSentinel && (len(spec.GroupBy) > 0 || spec.ByExplicit) {
-			if series, hitsErr := p.collectRangeMetricHits(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil {
-				result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write(result) // nosemgrep
-				return true
-			}
-			// Fall through to raw log path on error.
-		}
+	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
+		result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(result) // nosemgrep
+		return true
 	}
-	// For parser-stage GroupBy count queries (e.g. Drilldown field histograms):
-	// strip unpack_json/unpack_logfmt parser stages and retry via stats_query_range.
-	// VL's column index stores OTel and indexed fields without parser stages, so
-	// stats by (field) count() as c evaluates correctly. Drilldown only queries
-	// fields from detected_fields, which only lists column-indexed fields, so
-	// non-indexed fields (only in JSON _msg) are never queried this way.
-	//
-	// Safe when the query has an explicit drop-error opt-in (| delete __error__)
-	// AND all remaining | filter clauses after stripping are field!="" existence
-	// checks (not value-comparison filters like | status >= 400 that need the
-	// parser to have run first). Accepts VL's tumbling-bucket approximation.
-	if statsAggFunc != "" && queryUsesParserStages(spec.BaseQuery) && len(spec.GroupBy) > 0 &&
-		strings.Contains(spec.BaseQuery, "| delete __error__") {
-		hasStreamSentinel := false
-		for _, g := range spec.GroupBy {
-			if g == "_stream" {
-				hasStreamSentinel = true
-				break
-			}
-		}
-		if !hasStreamSentinel {
-			strippedBase := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, ""))
-			if strippedBase != spec.BaseQuery && allFiltersAreExistenceChecks(strippedBase) {
-				if series, hitsErr := p.collectRangeMetricHits(r.Context(), strippedBase, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil && len(series) > 0 {
-					result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = w.Write(result) // nosemgrep
-					return true
-				}
-				// Fall through: either error, or 0 series (field not in VL column index —
-				// non-indexed JSON fields need parser stages to evaluate correctly).
-			}
-		}
+	if series, ok := p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
+		result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(result) // nosemgrep
+		return true
 	}
 
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), endTS)
@@ -704,6 +664,57 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
+}
+
+// collectStatsFastPathHits handles count_over_time / rate / bytes_* queries that have no
+// parser stages and an explicit groupBy — served from VL's stats_query_range endpoint.
+// Returns nil, false when the fast path is not applicable or VL returns an error.
+func (p *Proxy) collectStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, bool) {
+	if statsAggFunc == "" || queryUsesParserStages(spec.BaseQuery) {
+		return nil, false
+	}
+	for _, g := range spec.GroupBy {
+		if g == "_stream" {
+			return nil, false
+		}
+	}
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit {
+		return nil, false
+	}
+	series, err := p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	if err != nil {
+		return nil, false
+	}
+	return series, true
+}
+
+// collectParserStageStatsFastPathHits handles parser-stage GroupBy count queries
+// (e.g. Drilldown field histograms with | json | delete __error__) by stripping
+// the parser stages and retrying via stats_query_range against VL's column index.
+// Safe only when all remaining filters after stripping are field-existence checks.
+// Returns nil, false when inapplicable, on error, or when VL returns 0 series
+// (non-indexed JSON fields still need parser stages to evaluate correctly).
+func (p *Proxy) collectParserStageStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, bool) {
+	if statsAggFunc == "" || !queryUsesParserStages(spec.BaseQuery) || len(spec.GroupBy) == 0 {
+		return nil, false
+	}
+	if !strings.Contains(spec.BaseQuery, "| delete __error__") {
+		return nil, false
+	}
+	for _, g := range spec.GroupBy {
+		if g == "_stream" {
+			return nil, false
+		}
+	}
+	strippedBase := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, ""))
+	if strippedBase == spec.BaseQuery || !allFiltersAreExistenceChecks(strippedBase) {
+		return nil, false
+	}
+	series, err := p.collectRangeMetricHits(ctx, strippedBase, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	if err != nil || len(series) == 0 {
+		return nil, false
+	}
+	return series, true
 }
 
 func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string) (string, float64, error) {

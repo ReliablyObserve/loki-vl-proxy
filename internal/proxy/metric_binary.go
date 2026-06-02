@@ -532,8 +532,7 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 		first = false
 
 		// Prefix pre-stats window with averaged stubs so the full range is populated.
-		val := string(item.GetStringBytes("metric", lokiField))
-		totalHits := fvHits[val]
+		totalHits := fvHits[string(item.GetStringBytes("metric", lokiField))]
 		preStatsGapSec := histStartSec - startSec
 
 		if preStatsGapSec > 0 && stubStepSec > 0 && totalHits > 0 {

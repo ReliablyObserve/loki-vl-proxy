@@ -378,23 +378,9 @@ const (
 	patternsCacheRetention = 100 * 365 * 24 * time.Hour
 )
 
-// cacheTTLFor returns the effective cache TTL for the given endpoint key.
-// "labels" and "label_values" respect per-Proxy configuration (Config.LabelCacheTTL);
-// all other keys use the package-level CacheTTLs defaults.
-func (p *Proxy) cacheTTLFor(endpoint string) time.Duration {
-	switch endpoint {
-	case "labels":
-		return p.cacheTTLLabels
-	case "label_values":
-		return p.cacheTTLLabelValues
-	default:
-		return CacheTTLs[endpoint]
-	}
-}
-
 // CacheTTLs defines per-endpoint cache TTLs. "labels" and "label_values" default
-// to 5 minutes; use Proxy.cacheTTLFor() instead of reading this map directly for
-// those two keys, as they can be overridden per-Proxy via Config.LabelCacheTTL.
+// to 5 minutes but can be overridden per-Proxy via Config.LabelCacheTTL;
+// read p.cacheTTLLabels / p.cacheTTLLabelValues directly for those two keys.
 var CacheTTLs = map[string]time.Duration{
 	"labels":                5 * time.Minute,
 	"label_values":          5 * time.Minute,

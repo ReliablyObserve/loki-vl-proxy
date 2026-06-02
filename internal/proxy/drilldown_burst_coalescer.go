@@ -227,11 +227,17 @@ func (c *DrilldownBurstCoalescer) fire(
 	}
 }
 
+// isLogsQLIdentChar reports whether c is a valid bare LogsQL identifier character
+// (ASCII letter, digit, or underscore).
+func isLogsQLIdentChar(c rune) bool {
+	return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9' || c == '_'
+}
+
 // quoteLogsQLIdent wraps a field name in backticks if it contains characters
 // that are not safe as bare LogsQL identifiers (letters, digits, underscore).
 func quoteLogsQLIdent(name string) string {
 	for _, c := range name {
-		if !('a' <= c && c <= 'z') && !('A' <= c && c <= 'Z') && !('0' <= c && c <= '9') && c != '_' {
+		if !isLogsQLIdentChar(c) {
 			return "`" + strings.ReplaceAll(name, "`", "\\`") + "`"
 		}
 	}
@@ -311,8 +317,7 @@ func (p *Proxy) fusedFieldHits(
 
 		out := make(map[string]fieldResult, len(fields))
 		for _, res := range v.GetArray("data", "result") {
-			alias := string(res.GetStringBytes("metric", "__name__"))
-			field, ok := aliasToField[alias]
+			field, ok := aliasToField[string(res.GetStringBytes("metric", "__name__"))]
 			if !ok {
 				continue
 			}
