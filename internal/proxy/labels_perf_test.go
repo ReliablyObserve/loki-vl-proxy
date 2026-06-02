@@ -85,23 +85,30 @@ func TestPerf_Labels_BackendWindowCap(t *testing.T) {
 	for _, tc := range labelsWindowCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			var receivedStart, receivedEnd string
+			// Capture only the FIRST non-health VL call so that the background
+			// refresh goroutine (launched for wide ranges like 24h/7d) cannot
+			// overwrite the params with the full user-selected range before the
+			// assertion runs.
+			var firstStart, firstEnd atomic.Value
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/health" {
 					w.WriteHeader(http.StatusOK)
 					return
 				}
 				q := r.URL.Query()
-				receivedStart = q.Get("start")
-				receivedEnd = q.Get("end")
+				firstStart.CompareAndSwap(nil, q.Get("start"))
+				firstEnd.CompareAndSwap(nil, q.Get("end"))
 				writeVLFieldNames(w, []fieldHit{{"app", 100}})
 			}))
 			t.Cleanup(srv.Close)
+			var receivedStart, receivedEnd string
 
 			mux := newPerfProxy(t, srv.URL)
 			req := httptest.NewRequest(http.MethodGet, labelsPath(tc.duration), nil)
 			mux.ServeHTTP(httptest.NewRecorder(), req)
 
+			receivedStart, _ = firstStart.Load().(string)
+			receivedEnd, _ = firstEnd.Load().(string)
 			if receivedStart == "" || receivedEnd == "" {
 				t.Fatal("VL backend was not called")
 			}
