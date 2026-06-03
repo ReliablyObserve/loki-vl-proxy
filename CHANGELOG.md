@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for 6h/12h/24h windows by capping the metadata range to 15 minutes.
 - `volume_range`: use `stats_query_range` for single-label queries to avoid the hits
   endpoint's unbounded response for high-cardinality labels (e.g. `pod`).
+- `query_range` and `query` compat cache TTL set to 5 minutes (fixed) instead of
+  `max(5min, step)`: eliminates visible right-edge chart gaps when step=1h (Drilldown 2d/7d
+  field histograms) while still reducing VL calls 30× vs the original 10 s TTL.
+- `labels` and `label_values` compat cache keys now bucket `start`/`end` to the same 5-min
+  granularity as `detected_*` endpoints so repeated Grafana auto-refreshes within the
+  same window produce stable keys and serve responses from the compat cache.
+- Scale `detected_fields`, `labels`, `label_values`, and `detected_labels` inner cache
+  TTLs proportionally to the requested time range (1h cap for 7d+ windows): historical
+  Drilldown pages stop re-fetching metadata on every sub-minute cache miss.
+- `field_names` (native VL column index) scan window widened from 5 min to 7 days so
+  sparse fields (`trace_id`, `session_id`, `span_id`, `job_id`, `tx_id`) accumulate
+  sufficient index hits to be promoted into `detected_fields` for long time ranges.
 
 ### Fixed
 
