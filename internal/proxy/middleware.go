@@ -353,7 +353,7 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 				rawQuery = q.Encode()
 			}
 		}
-	case "detected_fields", "detected_field_values", "detected_labels":
+	case "labels", "label_values", "detected_fields", "detected_field_values", "detected_labels":
 		endRaw := r.FormValue("end")
 		startRaw := r.FormValue("start")
 		if endRaw != "" || startRaw != "" {
@@ -580,13 +580,12 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			return
 		}
 		ttl := CacheTTLs[endpoint]
-		// For query_range (and query), use the step-based bucket as the TTL so the
-		// cache entry lives at least as long as the bucket used to generate the key.
-		// Without this, a 2-day window with step=1h produces a 1-hour-stable cache key
-		// but a 10-second TTL — every request is a miss because the entry expires before
-		// the next Drilldown panel refresh.
+		// For query_range (and query), use a fixed 5-minute TTL so the cache entry
+		// outlives the bucket used to generate the key (max(5min, step)) while keeping
+		// staleness imperceptible: on a 2-day chart a 5-min gap is 0.17% of width.
+		// Using step (up to 1h) as TTL caused visible empty spaces at the chart right edge.
 		if endpoint == "query_range" || endpoint == "query" {
-			ttl = queryRangeBucket(r)
+			ttl = 5 * time.Minute
 		}
 		if ttl <= 0 {
 			setCacheResult(r.Context(), "bypass")

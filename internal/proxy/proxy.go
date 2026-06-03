@@ -1957,12 +1957,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(cacheOut)
 		}
 		if cacheable && sc.code == http.StatusOK {
-			p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), cacheOut...), queryRangeBucket(r))
+			p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), cacheOut...), 5*time.Minute)
 		}
 	} else if cacheTap != nil {
 		if cacheable && sc.code == http.StatusOK {
 			if body := cacheTap.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), body...), queryRangeBucket(r))
+				p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), body...), 5*time.Minute)
 			}
 		}
 		cacheTap.Release()
