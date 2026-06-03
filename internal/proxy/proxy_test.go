@@ -3427,14 +3427,16 @@ func TestCache_QueryRangeHitOnRepeat(t *testing.T) {
 
 	p := newTestProxy(t, vlBackend.URL)
 
-	r1 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&limit=10`, nil)
+	// Use timestamps in distinct 5-minute buckets (5min = 300_000_000_000 ns).
+	// r1/r2: 100s–200s past epoch → bucket 0. r3: 400s–600s → bucket 300s.
+	r1 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=100000000000&end=200000000000&limit=10`, nil)
 	w1 := httptest.NewRecorder()
 	p.handleQueryRange(w1, r1)
 	if callCount != 1 {
 		t.Fatalf("expected 1 backend call, got %d", callCount)
 	}
 
-	r2 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&limit=10`, nil)
+	r2 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=100000000000&end=200000000000&limit=10`, nil)
 	w2 := httptest.NewRecorder()
 	p.handleQueryRange(w2, r2)
 	if callCount != 1 {
@@ -3444,7 +3446,7 @@ func TestCache_QueryRangeHitOnRepeat(t *testing.T) {
 		t.Fatalf("expected cached query_range body to match original response")
 	}
 
-	r3 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=3&end=4&limit=10`, nil)
+	r3 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=400000000000&end=600000000000&limit=10`, nil)
 	w3 := httptest.NewRecorder()
 	p.handleQueryRange(w3, r3)
 	if callCount != 2 {

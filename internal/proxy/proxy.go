@@ -1957,12 +1957,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(cacheOut)
 		}
 		if cacheable && sc.code == http.StatusOK {
-			p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), cacheOut...), CacheTTLs["query_range"])
+			p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), cacheOut...), queryRangeBucket(r))
 		}
 	} else if cacheTap != nil {
 		if cacheable && sc.code == http.StatusOK {
 			if body := cacheTap.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), body...), CacheTTLs["query_range"])
+				p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), body...), queryRangeBucket(r))
 			}
 		}
 		cacheTap.Release()
@@ -1973,41 +1973,57 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	p.queryTracker.Record("query_range", logqlQuery, elapsed, sc.code >= 400)
 }
 
-func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
-	// Build a stable key by bucketing `end` to the step granularity. Grafana's sliding
-	// time window drifts `end` by a few seconds on each panel refresh, producing a unique
-	// cache key every time even for the same logical query.
-	//
-	// Minimum bucket is 5 minutes (not just 30s) so the windowed query cache's last partial
-	// window — which covers from the previous 1h boundary up to `end` — stays stable for 5
-	// minutes. Without this, every 60-second tick produces a new window boundary, forcing VL
-	// to re-scan the last partial window on every Drilldown refresh (20+ concurrent JSON/logfmt
-	// parse scans every minute). With a 5-minute bucket, VL is called at most once per 5 min
-	// per field, reducing steady-state VL CPU by ~5x for the Fields page.
-	endRaw := r.FormValue("end")
-	endBucketed := endRaw
-	if endRaw != "" {
-		stepRaw := r.FormValue("step")
-		bucket := 5 * time.Minute
-		if stepRaw != "" {
-			if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
-				bucket = d
-			}
-		}
-		endBucketed = bucketTimestampString(endRaw, bucket)
+// queryRangeBucket returns the cache-key bucket size for a query_range request.
+// Bucket = max(5 min, step), capped at 1 hour so very large steps don't produce
+// multi-day cache entries that hold stale data too long.
+func queryRangeBucket(r *http.Request) time.Duration {
+	const (
+		minBucket = 5 * time.Minute
+		maxBucket = time.Hour
+	)
+	stepRaw := r.FormValue("step")
+	if stepRaw == "" {
+		return minBucket
 	}
+	d, ok := parsePositiveStepDuration(stepRaw)
+	if !ok || d <= minBucket {
+		return minBucket
+	}
+	if d > maxBucket {
+		return maxBucket
+	}
+	return d
+}
+
+func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
+	// Build a stable key by bucketing both `start` and `end` to the step granularity.
+	// Grafana's sliding time window ("from=now-2d&to=now") resolves to absolute
+	// nanosecond timestamps that advance every second, so both start and end change on
+	// every panel refresh. Bucketing only `end` (the previous behaviour) still produced
+	// a unique key on each tick because the raw `start` value was included verbatim.
+	//
+	// With both endpoints bucketed to max(5min, step), the cache key is stable for the
+	// full bucket duration. A 2-day window with step=1h now produces one VL call per
+	// field per hour instead of one per 10 seconds (~360x fewer upstream calls).
+	bucket := queryRangeBucket(r)
+	startBucketed := bucketTimestampString(r.FormValue("start"), bucket)
+	endBucketed := bucketTimestampString(r.FormValue("end"), bucket)
 
 	var b strings.Builder
 	b.Grow(len(logqlQuery) + 128)
 	b.WriteString("query=")
 	b.WriteString(url.QueryEscape(logqlQuery))
-	for _, key := range []string{"start", "step", "limit", "direction"} {
+	for _, key := range []string{"step", "limit", "direction"} {
 		if value := r.FormValue(key); value != "" {
 			b.WriteByte('&')
 			b.WriteString(key)
 			b.WriteByte('=')
 			b.WriteString(url.QueryEscape(value))
 		}
+	}
+	if startBucketed != "" {
+		b.WriteString("&start=")
+		b.WriteString(url.QueryEscape(startBucketed))
 	}
 	if endBucketed != "" {
 		b.WriteString("&end=")

@@ -580,6 +580,14 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			return
 		}
 		ttl := CacheTTLs[endpoint]
+		// For query_range (and query), use the step-based bucket as the TTL so the
+		// cache entry lives at least as long as the bucket used to generate the key.
+		// Without this, a 2-day window with step=1h produces a 1-hour-stable cache key
+		// but a 10-second TTL — every request is a miss because the entry expires before
+		// the next Drilldown panel refresh.
+		if endpoint == "query_range" || endpoint == "query" {
+			ttl = queryRangeBucket(r)
+		}
 		if ttl <= 0 {
 			setCacheResult(r.Context(), "bypass")
 			next(w, r)
