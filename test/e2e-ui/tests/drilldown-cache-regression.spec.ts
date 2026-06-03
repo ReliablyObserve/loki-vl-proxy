@@ -60,6 +60,10 @@ async function openFieldsView(
 test.describe("Drilldown Fields — all time ranges load without errors @drilldown-cache", () => {
   for (const { from, to, label } of TIME_RANGES) {
     test(`no errors — ${label} range`, async ({ page }) => {
+      // Wide ranges (7d) load more logfmt queries via the direct stats path and
+      // need extra time for VL to parse and aggregate the full window.
+      if (label === "7d") test.setTimeout(120_000);
+
       const guards = installGrafanaGuards(page, {
         allowedAlertErrors: [/^Unknown error$/i],
         allowedResponseErrors: [

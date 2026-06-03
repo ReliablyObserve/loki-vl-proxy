@@ -76,9 +76,12 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok {
 		base := spec.BaseQuery
 		if isGrafanaDrilldownRequest(r) {
-			// Strip parser pipes — safe because Drilldown only surfaces column-indexed
-			// fields via detected_fields; stripping changes no semantics for those fields.
-			stripped := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(base, ""))
+			// Strip JSON parser pipes only. JSON fields are stored in VL's column
+			// index and do not need | unpack_json. logfmt fields are NOT column-indexed;
+			// preserving | unpack_logfmt causes detectDrilldownSingleField to reject
+			// the query (queryUsesParserStages returns true), falling through to the
+			// direct stats path where VL parses and filters logfmt fields correctly.
+			stripped := strings.TrimSpace(drilldownJsonParserPipeRE.ReplaceAllString(base, ""))
 			if stripped != base && allFiltersAreExistenceChecks(stripped) {
 				base = stripped
 			}

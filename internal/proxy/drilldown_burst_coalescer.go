@@ -22,6 +22,14 @@ var (
 	// fused conditional-stats queries. VL's field:* existence check works on
 	// pre-indexed columns WITHOUT | json / | logfmt. Including them returns empty.
 	drilldownParserPipeRE = regexp.MustCompile(`\|\s*(?:unpack_json|unpack_logfmt|json|logfmt)\b[^|]*`)
+	// drilldownJsonParserPipeRE matches only JSON parser-stage pipes for the
+	// Drilldown stripping path in proxyStatsQueryRange. JSON fields are stored in
+	// VL's column index and do not need | unpack_json to be queried. logfmt fields
+	// are NOT column-indexed — stripping | unpack_logfmt makes VL blind to them,
+	// causing 0 results. Keeping logfmt pipes lets detectDrilldownSingleField
+	// reject these queries so they fall through to proxyStatsQueryRangeDirect where
+	// VL parses and filters logfmt fields correctly.
+	drilldownJsonParserPipeRE = regexp.MustCompile(`\|\s*(?:unpack_json|json)\b[^|]*`)
 	// drilldownDeletePipeRE matches | delete pipes that are safe to drop when
 	// rewriting to a conditional-count fast path (column-indexed fields don't
 	// need __error__ cleanup before a count() if aggregation).

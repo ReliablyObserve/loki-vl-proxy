@@ -772,39 +772,44 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 	}
 }
 
-// TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries verifies that
-// both translation patterns that previously broke drilldown detection now work:
+// TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries verifies the
+// routing behaviour for translated Drilldown queries:
 //
-//  1. detected_level (pipe-filter after parser strip): after translation the query
-//     contains | unpack_logfmt | filter level:!""; the proxy must strip the parser
-//     stage and detect drilldown, coarsening the step for the 12h range.
+//  1. detected_level_with_parser_stage — logfmt fields (level with | unpack_logfmt)
+//     must NOT have their parser stage stripped; the direct stats path is used so VL
+//     can parse the logfmt line and return correct counts. Step is not coarsened
+//     (the drilldown single-field fast path is intentionally bypassed).
 //
-//  2. stream-label level (stream-selector existence check): the VL stream selector
-//     contains level:!"" without a | filter prefix; detection must recognise the
-//     existence check and coarsen the step.
+//  2. stream_label_level_selector — stream-selector existence checks (level:!"" in
+//     the selector, no | filter prefix) have no parser stage and reach the drilldown
+//     fast path; step must be coarsened for the 12h range.
 func TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries(t *testing.T) {
 	const baseTS int64 = 1748000000 // 2025-05-23
 	ts := func(relSec int64) string { return strconv.FormatInt(baseTS+relSec, 10) }
 
 	cases := []struct {
-		name      string
-		logsql    string // VL-translated query as proxy receives it
-		wantStrip string // pipe stage that must NOT appear in the forwarded query
+		name            string
+		logsql          string // VL-translated query as proxy receives it
+		wantParserKept  string // pipe stage that MUST appear in the forwarded query (logfmt fields)
+		wantStepCoarsen bool   // whether the step must be coarsened (drilldown fast path fired)
 	}{
 		{
-			// detected_level: Loki adds | logfmt level | drop __error__ | level!="" before
-			// the stats clause; proxy must strip | unpack_logfmt and route drilldown path.
-			name:      "detected_level_with_parser_stage",
-			logsql:    `env:="production" | unpack_logfmt | filter level:!"" | stats by (level) count()`,
-			wantStrip: "unpack_logfmt",
+			// logfmt field — proxy must preserve | unpack_logfmt so VL can parse and
+			// filter level. The drilldown single-field fast path is intentionally skipped
+			// for parser-stage queries; the direct stats path is used instead.
+			name:            "detected_level_with_parser_stage",
+			logsql:          `env:="production" | unpack_logfmt | filter level:!"" | stats by (level) count()`,
+			wantParserKept:  "unpack_logfmt",
+			wantStepCoarsen: false,
 		},
 		{
-			// stream-label level: Loki stream selector {env="production", level!=""} translates
-			// to env:="production" level:!"" in VL — no | filter prefix for the existence check.
-			name:   "stream_label_level_selector",
-			logsql: `env:="production" level:!"" | stats by (level) count()`,
-			// No parser stage to strip — just verify drilldown detection fires (step coarsened).
-			wantStrip: "",
+			// Stream-selector existence check — level:!"" is in the VL stream selector
+			// without a | filter prefix. No parser stage is present; drilldown detection
+			// fires and coarsens the step for the 12h range.
+			name:            "stream_label_level_selector",
+			logsql:          `env:="production" level:!"" | stats by (level) count()`,
+			wantParserKept:  "",
+			wantStepCoarsen: true,
 		},
 	}
 
@@ -825,8 +830,7 @@ func TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries(t *testing.
 			form.Set("query", `sum by (level) (count_over_time({env="production",level!=""} [1m]))`)
 			form.Set("start", ts(0))
 			form.Set("end", ts(12*3600)) // 12h range
-			form.Set("step", "60s")      // fine step — must coarsen to ≥1800s
-
+			form.Set("step", "60s")      // fine step
 			req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
 			req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
 			req.Header.Set("X-Scope-OrgID", "default")
@@ -836,12 +840,17 @@ func TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries(t *testing.
 
 			t.Logf("VL received query=%s step=%s", receivedQuery, receivedStep)
 
-			if tc.wantStrip != "" && strings.Contains(receivedQuery, tc.wantStrip) {
-				t.Errorf("parser stage %q still present in VL query: %s", tc.wantStrip, receivedQuery)
+			// Logfmt parser stage must be preserved so VL can extract the field.
+			if tc.wantParserKept != "" && !strings.Contains(receivedQuery, tc.wantParserKept) {
+				t.Errorf("parser stage %q was stripped from VL query — logfmt fields cannot be found without it: %s", tc.wantParserKept, receivedQuery)
 			}
-			// Drilldown detection must fire — step must be coarsened (12h/60s=720 buckets > 30).
-			if receivedStep == "60s" {
+			// Drilldown fast path check: step coarsened iff expected.
+			stepCoarsened := receivedStep != "60s"
+			if tc.wantStepCoarsen && !stepCoarsened {
 				t.Errorf("step not coarsened (still 60s) — drilldown detection did not fire for %q", tc.logsql)
+			}
+			if !tc.wantStepCoarsen && stepCoarsened {
+				t.Errorf("step was unexpectedly coarsened to %s for parser-stage query %q — direct path expected", receivedStep, tc.logsql)
 			}
 		})
 	}
