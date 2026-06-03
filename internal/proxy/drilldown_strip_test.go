@@ -13,11 +13,11 @@ import (
 	"time"
 )
 
-// TestProxyStatsQueryRange_StripsParserAndDelete verifies that proxyStatsQueryRange
-// removes | unpack_json and | delete __error__ from Drilldown field histogram queries
-// but preserves the stats by (field) count() grouping (needed for Grafana's histogram
-// and top-values display).
-func TestProxyStatsQueryRange_StripsParserAndDelete(t *testing.T) {
+// TestProxyStatsQueryRange_ParserDirectPath verifies that proxyStatsQueryRange routes
+// Drilldown queries with parser stages (| unpack_json) through the parser-direct path:
+// the parser is preserved (not stripped), | delete is stripped, and VL-side | limit 500
+// is appended so the per-bucket cardinality is bounded.
+func TestProxyStatsQueryRange_ParserDirectPath(t *testing.T) {
 	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.FormValue("query")
@@ -34,14 +34,13 @@ func TestProxyStatsQueryRange_StripsParserAndDelete(t *testing.T) {
 
 	form := url.Values{}
 	form.Set("query", `sum by (trace_id) (count_over_time({env="production",_msg!=""}|json trace_id|drop __error__,__error_details__|trace_id!=""`+` [1m]))`)
-	form.Set("start", "1779993470") // 2 h before end — within 6 h high-card guard
+	form.Set("start", "1779993470") // 2 h before end
 	form.Set("end", "1780000670")
 	form.Set("step", "60s")
 
 	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
 	req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
 	req.Header.Set("X-Scope-OrgID", "default")
-	// Parser stage stripping is gated on the Drilldown header — simulate Drilldown request.
 	req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
 
 	w := httptest.NewRecorder()
@@ -49,18 +48,23 @@ func TestProxyStatsQueryRange_StripsParserAndDelete(t *testing.T) {
 
 	t.Logf("VL received: %s", receivedQuery)
 
-	if strings.Contains(receivedQuery, "unpack_json") {
-		t.Errorf("query still contains | unpack_json: %s", receivedQuery)
+	// Parser stage must be preserved — JSON-embedded fields need | unpack_json to be found.
+	if !strings.Contains(receivedQuery, "unpack_json") {
+		t.Errorf("| unpack_json was stripped — JSON-embedded trace_id will return no data: %s", receivedQuery)
 	}
 	if strings.Contains(receivedQuery, "| delete") {
 		t.Errorf("query still contains | delete (should be stripped): %s", receivedQuery)
 	}
-	// stats by (trace_id) count() MUST be preserved — Grafana needs per-value breakdown
+	// stats by (trace_id) count() MUST be preserved — Grafana needs per-value breakdown.
 	if !strings.Contains(receivedQuery, "stats by (trace_id) count()") {
 		t.Errorf("query lost stats by (trace_id) count() grouping: %s", receivedQuery)
 	}
 	if !strings.Contains(receivedQuery, "| filter trace_id") {
 		t.Errorf("query lost | filter trace_id existence check: %s", receivedQuery)
+	}
+	// Parser-direct path must add VL-side | limit to bound per-bucket cardinality.
+	if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
+		t.Errorf("parser-direct path must add | limit %d: %s", maxDrilldownSeries, receivedQuery)
 	}
 }
 
@@ -776,9 +780,9 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 // routing behaviour for translated Drilldown queries:
 //
 //  1. detected_level_with_parser_stage — logfmt fields (level with | unpack_logfmt)
-//     must NOT have their parser stage stripped; the direct stats path is used so VL
-//     can parse the logfmt line and return correct counts. Step is not coarsened
-//     (the drilldown single-field fast path is intentionally bypassed).
+//     route through proxyStatsQueryRangeDrilldownParserDirect; the parser is preserved
+//     so VL can extract the field, and the step is coarsened like the column-indexed
+//     path (12h/120 buckets → 10min).
 //
 //  2. stream_label_level_selector — stream-selector existence checks (level:!"" in
 //     the selector, no | filter prefix) have no parser stage and reach the drilldown
@@ -795,12 +799,12 @@ func TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries(t *testing.
 	}{
 		{
 			// logfmt field — proxy must preserve | unpack_logfmt so VL can parse and
-			// filter level. The drilldown single-field fast path is intentionally skipped
-			// for parser-stage queries; the direct stats path is used instead.
+			// filter level. The parser-direct path is used; it applies the same step
+			// coarsening as the column-indexed fast path (12h/120 buckets → 10min).
 			name:            "detected_level_with_parser_stage",
 			logsql:          `env:="production" | unpack_logfmt | filter level:!"" | stats by (level) count()`,
 			wantParserKept:  "unpack_logfmt",
-			wantStepCoarsen: false,
+			wantStepCoarsen: true,
 		},
 		{
 			// Stream-selector existence check — level:!"" is in the VL stream selector

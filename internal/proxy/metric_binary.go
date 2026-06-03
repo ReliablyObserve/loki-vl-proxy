@@ -67,44 +67,34 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	// For stats queries, strip two classes of pipes:
-	//   1. | delete __error__, __error_details__ — removes a field per row but never
-	//      filters logs; counts are identical without it. Safe to strip for any caller.
-	//   2. | unpack_json / | unpack_logfmt — column-indexed fields need no JSON parsing.
-	//      Gate to Drilldown only: Explore/API callers expect parser semantics to apply.
+	// Strip | delete __error__, __error_details__ for any stats query — it removes
+	// a field per row but never filters logs; counts are identical without it.
 	effectiveQuery := logsqlQuery
 	if spec, ok := parseStatsCompatSpec(logsqlQuery); ok {
-		base := spec.BaseQuery
-		if isGrafanaDrilldownRequest(r) {
-			// Strip JSON parser pipes only. JSON fields are stored in VL's column
-			// index and do not need | unpack_json. logfmt fields are NOT column-indexed;
-			// preserving | unpack_logfmt causes detectDrilldownSingleField to reject
-			// the query (queryUsesParserStages returns true), falling through to the
-			// direct stats path where VL parses and filters logfmt fields correctly.
-			stripped := strings.TrimSpace(drilldownJsonParserPipeRE.ReplaceAllString(base, ""))
-			if stripped != base && allFiltersAreExistenceChecks(stripped) {
-				base = stripped
-			}
-		}
-		// Strip delete pipes for any stats query — never affects counts or filters.
-		noDelete := strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(base, ""))
+		noDelete := strings.TrimSpace(drilldownDeletePipeRE.ReplaceAllString(spec.BaseQuery, ""))
 		if noDelete != spec.BaseQuery {
 			effectiveQuery = noDelete + logsqlQuery[len(spec.BaseQuery):]
 		}
 	}
 
-	// For Drilldown single-field count queries, push sort+limit into VL so only
-	// the top-maxDrilldownSeries unique field values are transmitted. Without this,
-	// 300k+ trace_id UUIDs over 12 h produce a 50 MB+ VL response. Loki caps at
-	// max_query_series (default 500) for Drilldown and returns partial results with
-	// a series-limit notice; this path matches that behaviour.
+	// Route Drilldown single-field count queries to the appropriate fast path.
+	// Gate behind isGrafanaDrilldownRequest: Explore/API clients with the same
+	// LogQL pattern must not be subject to the 500-series cap or two-phase fallback.
 	//
-	// Gate behind isGrafanaDrilldownRequest: the query pattern alone is not
-	// sufficient to distinguish Drilldown from Explore/API clients. Explore users
-	// who write the same LogQL pattern must not be subject to the 500-series cap
-	// or two-phase fallback — those are Drilldown-specific semantics.
+	// Two sub-cases:
+	//  1. No parser stages (column-indexed fields: stream labels, OTel attrs) →
+	//     proxyStatsQueryRangeDrilldown (batcher / two-phase / hybrid).
+	//  2. With parser stages (body-embedded fields: trace_id, span_id, level from
+	//     logfmt) → proxyStatsQueryRangeDrilldownParserDirect (one direct VL call
+	//     with parser preserved and VL-side | limit 500).
 	if cleanBase, field, ok := detectDrilldownSingleField(effectiveQuery); ok && isGrafanaDrilldownRequest(r) {
 		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery, cleanBase, field)
+	} else if isGrafanaDrilldownRequest(r) {
+		if _, _, ok := detectDrilldownSingleFieldWithParser(effectiveQuery); ok {
+			p.proxyStatsQueryRangeDrilldownParserDirect(out, r, effectiveQuery)
+		} else {
+			p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
+		}
 	} else {
 		p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
 	}
@@ -966,6 +956,90 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
+}
+
+// proxyStatsQueryRangeDrilldownParserDirect handles Drilldown single-field count
+// queries that require parser stages (| unpack_json, | unpack_logfmt) to access
+// fields embedded in the log body rather than VL's column index (e.g. trace_id,
+// span_id, level from logfmt). Unlike proxyStatsQueryRangeDrilldown — which strips
+// parser stages and uses column-index fast paths (batcher, two-phase, hybrid) —
+// this path issues one direct stats_query_range call with the parser preserved and
+// a VL-side | limit 500 to bound the per-bucket cardinality.
+//
+// Applies the same step coarsening, 5-minute response caching, trim-and-translate,
+// and proxy-side series cap as the direct subpath within proxyStatsQueryRangeDrilldown.
+func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
+	w http.ResponseWriter, r *http.Request,
+	logsqlQuery string,
+) {
+	drillCacheKey := p.drilldownStatsCacheKey(r)
+	if cached, _, ok := p.cache.GetWithTTL(drillCacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(cached)
+		return
+	}
+
+	origGroupBy := parseOriginalByLabels(r.FormValue("query"))
+	logsqlQuery = p.addUnderscorefallbackByLabels(logsqlQuery, origGroupBy)
+
+	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
+	effectiveStepRaw := stepRaw
+	if d, ok := parsePositiveStepDuration(stepRaw); ok {
+		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d); coarsened != d {
+			effectiveStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
+		}
+	}
+
+	if sem := p.statsQueryRangeSem; sem != nil {
+		select {
+		case <-sem:
+			delay := p.statsQueryRangeInterQueryDelay
+			defer func() {
+				if delay > 0 {
+					time.Sleep(delay)
+				}
+				sem <- struct{}{}
+			}()
+		case <-r.Context().Done():
+			p.writeError(w, http.StatusServiceUnavailable, "request cancelled waiting for stats_query_range slot")
+			return
+		}
+	}
+
+	limitedQuery := appendDrilldownSeriesLimit(logsqlQuery, maxDrilldownSeries)
+	params := buildStatsQueryRangeParams(limitedQuery, startRaw, endRaw, effectiveStepRaw)
+	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
+	if err != nil {
+		p.writeError(w, statusFromUpstreamErr(err), err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
+		return
+	}
+
+	body, bodyErr := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+	if bodyErr != nil {
+		// VL-side limit should prevent this, but if it overflows serve empty.
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(emptyLokiMatrix)
+		return
+	}
+
+	var keepFn func(int64) bool
+	if endNs, ok := parseLokiTimeToUnixNano(r.FormValue("end")); ok {
+		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
+	}
+	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
+	body = limitLokiMatrixSeries(body, maxDrilldownSeries)
+	final := wrapAsLokiResponse(body, "matrix")
+	final = expandDrilldownStep(final, stepRaw, effectiveStepRaw, endRaw)
+	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(final)
 }
 
 // proxyStatsQueryRangeDrilldownHybrid handles Drilldown fields queries for ranges

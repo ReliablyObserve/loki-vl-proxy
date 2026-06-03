@@ -22,14 +22,6 @@ var (
 	// fused conditional-stats queries. VL's field:* existence check works on
 	// pre-indexed columns WITHOUT | json / | logfmt. Including them returns empty.
 	drilldownParserPipeRE = regexp.MustCompile(`\|\s*(?:unpack_json|unpack_logfmt|json|logfmt)\b[^|]*`)
-	// drilldownJsonParserPipeRE matches only JSON parser-stage pipes for the
-	// Drilldown stripping path in proxyStatsQueryRange. JSON fields are stored in
-	// VL's column index and do not need | unpack_json to be queried. logfmt fields
-	// are NOT column-indexed — stripping | unpack_logfmt makes VL blind to them,
-	// causing 0 results. Keeping logfmt pipes lets detectDrilldownSingleField
-	// reject these queries so they fall through to proxyStatsQueryRangeDirect where
-	// VL parses and filters logfmt fields correctly.
-	drilldownJsonParserPipeRE = regexp.MustCompile(`\|\s*(?:unpack_json|json)\b[^|]*`)
 	// drilldownDeletePipeRE matches | delete pipes that are safe to drop when
 	// rewriting to a conditional-count fast path (column-indexed fields don't
 	// need __error__ cleanup before a count() if aggregation).
@@ -65,6 +57,35 @@ func fieldHasExistenceFilter(baseQuery, field string) bool {
 	// Check at the very start of the query (stream selector starts at position 0).
 	return strings.HasPrefix(baseQuery, field+`:!""`) ||
 		strings.HasPrefix(baseQuery, field+`!=""`)
+}
+
+// detectDrilldownSingleFieldWithParser is like detectDrilldownSingleField but
+// accepts queries that contain parser stages (| unpack_json, | unpack_logfmt, etc.).
+// Used by proxyStatsQueryRange to identify Drilldown single-field count queries
+// for fields that are NOT column-indexed (JSON/logfmt-embedded fields such as
+// trace_id, span_id, level) and must be queried with the parser stages preserved.
+//
+// cleanBase retains parser stages but has existence filters and delete pipes stripped.
+// Returns ("", "", false) when the query does not match the Drilldown single-field
+// count pattern.
+func detectDrilldownSingleFieldWithParser(effectiveQuery string) (cleanBase, field string, ok bool) {
+	spec, specOK := parseStatsCompatSpec(effectiveQuery)
+	if !specOK || len(spec.GroupBy) != 1 || spec.Func != "count" {
+		return "", "", false
+	}
+	// Unlike detectDrilldownSingleField, we do NOT reject queries with parser stages —
+	// the caller must preserve the parser in the query it sends to VL.
+	f := spec.GroupBy[0]
+	if !allFiltersAreExistenceChecks(spec.BaseQuery) {
+		return "", "", false
+	}
+	if !fieldHasExistenceFilter(spec.BaseQuery, f) {
+		return "", "", false
+	}
+	// Strip existence filters and delete pipes; preserve parser stages.
+	base := drilldownFieldFilterRE.ReplaceAllString(spec.BaseQuery, "")
+	base = drilldownDeletePipeRE.ReplaceAllString(base, "")
+	return strings.TrimSpace(base), f, true
 }
 
 // detectDrilldownSingleField returns the pure stream-selector base (no existence
