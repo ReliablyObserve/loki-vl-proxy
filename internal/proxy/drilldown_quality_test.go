@@ -214,14 +214,14 @@ func TestMergeDrilldownWithFieldValues_AlignsStubsToStatsGrid(t *testing.T) {
 	// 1000000000 - 86400 = 999913600. 999913600 mod 900 = 100. ✓
 	fullRangeNs := fullRangeSec * int64(time.Second)
 
-	// Stats body: one series ("p1") with step-aligned VL timestamps.
-	// First stats ts: 999914400 (== 999913600 aligned UP to next 900 boundary).
-	statsBody := []byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
-		`{"metric":{"pod":"p1"},"values":[[999914400,"5"],[999915300,"7"]]}` +
-		`]}}`)
+	// Empty stats body — this test specifically exercises the stub-fill path,
+	// which only runs when stats has no series. (When stats has data, stub-only
+	// fv entries are intentionally skipped to keep Grafana's stacked bar Y-axis
+	// from getting flattened by a synthetic value=1 baseline.)
+	statsBody := []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 
-	// field_values contains "p1" (in stats) AND "p2" (stub-only). After merge,
-	// "p2" gets full-range stubs which must align to the same grid as "p1".
+	// Both entries are stub-only since stats is empty. The fix guarantees that
+	// their timestamps align to the step grid (multiples of stepSec).
 	entries := []drilldownFVEntry{
 		{Value: "p1", Hits: 100},
 		{Value: "p2", Hits: 50},
@@ -268,20 +268,22 @@ func TestMergeDrilldownWithFieldValues_AlignsStubsToStatsGrid(t *testing.T) {
 		}
 	}
 
-	// REGRESSION CHECK 2: The stub-only series' timestamps must INTERSECT
-	// (overlap) with the stats series' timestamps. Before the fix, they were
-	// disjoint sets, producing the zebra pattern.
+	// REGRESSION CHECK 2: BOTH stub-only series share the same step-aligned
+	// grid (since both go through the same writeStubs path with the same
+	// alignedStart). Before the alignment fix, stub timestamps were offset by
+	// `startSec mod stepSec` and could land on inconsistent ticks across series.
 	p1Set := tsBySeries["p1"]
 	p2Set := tsBySeries["p2"]
-	intersect := 0
-	for ts := range p2Set {
-		if _, ok := p1Set[ts]; ok {
-			intersect++
-		}
+	if len(p1Set) != len(p2Set) {
+		t.Errorf("stub-only series p1 and p2 must have the same number of timestamps (both go through the same stub-fill loop). p1: %d, p2: %d",
+			len(p1Set), len(p2Set))
 	}
-	if intersect == 0 {
-		t.Errorf("stub-only series timestamps must intersect with stats series timestamps (both on the same step-aligned grid). p1 ts: %v, p2 ts: %v",
-			sortedKeys(p1Set), sortedKeys(p2Set))
+	for ts := range p2Set {
+		if _, ok := p1Set[ts]; !ok {
+			t.Errorf("p2 has ts=%d that p1 does not — stub-fill grids diverged. p1: %v, p2: %v",
+				ts, sortedKeys(p1Set), sortedKeys(p2Set))
+			break
+		}
 	}
 }
 

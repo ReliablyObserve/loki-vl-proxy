@@ -644,41 +644,51 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 		b.Write(item.MarshalTo(nil))
 	}
 
-	// Emit field_values-only entries with full-range stub bars.
-	for _, e := range entries {
-		if _, ok := inStats[e.Value]; ok {
-			continue
-		}
-		if !first {
-			b.WriteByte(',')
-		}
-		first = false
-		b.WriteString(`{"metric":{"`)
-		writeJSONEscaped(&b, lokiField)
-		b.WriteString(`":"`)
-		writeJSONEscaped(&b, e.Value)
-		b.WriteString(`"},"values":[`)
-
-		if nFullStub > 0 && stubStepSec > 0 {
-			firstPoint := true
-			// Align stub start UP to step boundary so the stub grid matches VL's
-			// step-aligned stats grid. Without alignment, stats and stub timestamps
-			// land at different offsets, doubling the time-axis tick count and
-			// scattering data across cells Grafana cannot reconcile.
-			alignedStart := startSec
-			if rem := alignedStart % stubStepSec; rem != 0 {
-				alignedStart += stubStepSec - rem
+	// Emit field_values-only entries with full-range stub bars — BUT ONLY when
+	// stats returned no real data. With real stats coverage, adding 500 stub-only
+	// series (each value=1 across N buckets) creates a synthetic "flat baseline"
+	// equal to ~500 in every time bucket. Grafana's stacked-bar Y-axis then
+	// auto-scales to (500 baseline + real data spikes) — and the real per-bucket
+	// variation looks like a thin band on top of a large flat floor. The user-
+	// visible symptom is "24h chart shows only a few minutes of data" because
+	// only the recent spikes stand out against the baseline.
+	//
+	// When stats has data, that data alone IS the useful signal. Skip stub-fill
+	// so the chart's Y-axis reflects real per-bucket counts (typically 1-30 per
+	// pod per coarse window) and bars span the actual range with visible variation.
+	if len(inStats) == 0 {
+		for _, e := range entries {
+			if !first {
+				b.WriteByte(',')
 			}
-			writeStubs(&b, alignedStart, stubStepSec, nFullStub, stubCount(e.Hits), &firstPoint)
-		} else {
-			// Fallback when we can't compute a grid: single point at endSec.
-			b.WriteByte('[')
-			b.WriteString(endStr)
-			b.WriteString(`,"`)
-			b.WriteString(strconv.FormatInt(e.Hits, 10))
-			b.WriteString(`"]`)
+			first = false
+			b.WriteString(`{"metric":{"`)
+			writeJSONEscaped(&b, lokiField)
+			b.WriteString(`":"`)
+			writeJSONEscaped(&b, e.Value)
+			b.WriteString(`"},"values":[`)
+
+			if nFullStub > 0 && stubStepSec > 0 {
+				firstPoint := true
+				// Align stub start UP to step boundary so the stub grid matches VL's
+				// step-aligned stats grid. Without alignment, stats and stub timestamps
+				// land at different offsets, doubling the time-axis tick count and
+				// scattering data across cells Grafana cannot reconcile.
+				alignedStart := startSec
+				if rem := alignedStart % stubStepSec; rem != 0 {
+					alignedStart += stubStepSec - rem
+				}
+				writeStubs(&b, alignedStart, stubStepSec, nFullStub, stubCount(e.Hits), &firstPoint)
+			} else {
+				// Fallback when we can't compute a grid: single point at endSec.
+				b.WriteByte('[')
+				b.WriteString(endStr)
+				b.WriteString(`,"`)
+				b.WriteString(strconv.FormatInt(e.Hits, 10))
+				b.WriteString(`"]`)
+			}
+			b.WriteString(`]}`)
 		}
-		b.WriteString(`]}`)
 	}
 	b.WriteString(`]}}`)
 	return b.Bytes()
