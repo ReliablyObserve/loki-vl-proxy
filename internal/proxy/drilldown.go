@@ -1557,8 +1557,9 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	var lastErr error
 	var hadScanFailure bool
 	var (
-		scanFieldList   []map[string]interface{}
-		scanFieldValues map[string][]string
+		scanFieldList    []map[string]interface{}
+		scanFieldValues  map[string][]string
+		scanStreamLabels map[string]string
 	)
 
 	for _, candidate := range candidates {
@@ -1609,7 +1610,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 			return nil, nil, fmt.Errorf("%s", msg)
 		}
 		// Stream the NDJSON response line-by-line without buffering the full body.
-		scanFieldList, scanFieldValues, _ = p.detectFieldSummariesStream(resp.Body)
+		scanFieldList, scanFieldValues, scanStreamLabels = p.detectFieldSummariesStream(resp.Body)
 		_ = resp.Body.Close()
 		break
 	}
@@ -1683,6 +1684,14 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 					continue
 				}
 				if v.nativeHits > 0 && v.nativeHits < minNativeFieldHits {
+					continue
+				}
+				// Suppress plain stream labels (e.g. container, env, pod, version, level)
+				// that VL's field_names index returns alongside JSON body fields.
+				// Stream labels belong in detected_labels, not detected_fields.
+				// We only apply this filter when the scan returned a stream label set;
+				// OTel dotted/dashed labels (service.name) are handled by the guard above.
+				if len(scanStreamLabels) > 0 && !shouldExposeStructuredField(k, scanStreamLabels, p.labelTranslator) {
 					continue
 				}
 				nativeSparse[k] = v
