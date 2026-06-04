@@ -1227,6 +1227,138 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 	_, _ = w.Write(final)
 }
 
+// hitsRemainderLabel is the value emitted for the synthetic "other" series that
+// represents the aggregate of all values beyond the top-N returned by VL /hits.
+// VL emits this series with `fields: {}` (empty); Grafana cannot render a series
+// with no label, so we synthesize a placeholder value the user recognises.
+const hitsRemainderLabel = "__other__"
+
+// drilldownHitsFieldsLimit caps the number of top-N values returned per
+// /select/logsql/hits call. 100 matches Loki's effective detected_field_values
+// limit and gives Grafana's Drilldown plugin (which renders the first ~20 by
+// default) enough variety to choose from without overloading the browser.
+// The "remainder" series added by VL is in addition to this count.
+const drilldownHitsFieldsLimit = 100
+
+// proxyStatsQueryRangeDrilldownHits handles a Drilldown single-field histogram
+// using VL's /select/logsql/hits endpoint. Unlike the stats+merge pipeline,
+// /hits natively returns top-N series with REAL per-bucket counts PLUS a
+// remainder bucket aggregating all other values. The remainder series spans
+// the full requested range and is what makes Grafana's default top-N rendering
+// useful for high-cardinality fields (where every value would otherwise appear
+// in only one or two buckets, making the chart look concentrated).
+//
+// Response shape from VL:
+//
+//	{"hits": [
+//	  {"fields": {"pod": "..."}, "timestamps": ["..."], "values": [...], "total": N},
+//	  ...,
+//	  {"fields": {}, "timestamps": [...], "values": [...], "total": LARGE}  // remainder
+//	]}
+//
+// Translation to Loki matrix: each hit becomes one series; ISO timestamps
+// parsed to Unix seconds. Remainder bucket (empty fields) labelled with
+// hitsRemainderLabel.
+func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
+	w http.ResponseWriter, r *http.Request,
+	cleanBase, field, lokiField string,
+	startRaw, endRaw, stepRaw string,
+	drillCacheKey string,
+) bool {
+	// Check 5-min response cache before any VL work.
+	if cached, _, ok := p.cache.GetWithTTL(drillCacheKey); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(cached)
+		return true
+	}
+
+	params := url.Values{}
+	params.Set("query", cleanBase)
+	params.Set("field", field)
+	params.Set("fields_limit", strconv.Itoa(drilldownHitsFieldsLimit))
+	params.Set("start", startRaw)
+	params.Set("end", endRaw)
+	params.Set("step", stepRaw)
+	// ignore_pipes=1 strips any pipe stages from the source query so /hits
+	// runs against the raw selector. The proxy has already extracted cleanBase
+	// from the full LogQL; we don't need VL to re-apply any pipes.
+	params.Set("ignore_pipes", "1")
+
+	resp, err := p.vlPost(r.Context(), "/select/logsql/hits", params)
+	if err != nil {
+		return false // caller falls back to stats+merge pipeline
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return false
+	}
+
+	body, err := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+	if err != nil {
+		return false
+	}
+
+	hits := parseHits(body)
+	if len(hits.Hits) == 0 {
+		return false
+	}
+
+	// Translate to Loki matrix. Skip series with zero total — they add noise.
+	var buf bytes.Buffer
+	buf.Grow(len(body))
+	buf.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+	first := true
+	for _, h := range hits.Hits {
+		if h.Total == 0 {
+			continue
+		}
+		labelValue := h.Fields[field]
+		if labelValue == "" {
+			// Remainder bucket — give it a synthetic label so Grafana renders it.
+			labelValue = hitsRemainderLabel
+		}
+		if !first {
+			buf.WriteByte(',')
+		}
+		first = false
+		buf.WriteString(`{"metric":{"`)
+		writeJSONEscaped(&buf, lokiField)
+		buf.WriteString(`":"`)
+		writeJSONEscaped(&buf, labelValue)
+		buf.WriteString(`"},"values":[`)
+		// Walk timestamps + values in lockstep.
+		n := len(h.Timestamps)
+		if len(h.Values) < n {
+			n = len(h.Values)
+		}
+		firstPt := true
+		for i := 0; i < n; i++ {
+			t, terr := time.Parse(time.RFC3339, string(h.Timestamps[i]))
+			if terr != nil {
+				continue
+			}
+			if !firstPt {
+				buf.WriteByte(',')
+			}
+			firstPt = false
+			buf.WriteByte('[')
+			buf.WriteString(strconv.FormatInt(t.Unix(), 10))
+			buf.WriteString(`,"`)
+			buf.WriteString(strconv.Itoa(h.Values[i]))
+			buf.WriteString(`"]`)
+		}
+		buf.WriteString(`]}`)
+	}
+	buf.WriteString(`]}}`)
+
+	final := buf.Bytes()
+	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Proxy-Drilldown-Path", "hits")
+	_, _ = w.Write(final)
+	return true
+}
+
 // proxyStatsQueryRangeDrilldownHybrid handles Drilldown fields queries for ranges
 // wider than drilldownHybridThreshold (6h). Instead of scanning the full range
 // with stats_query_range (O(log-volume), slow), it:
@@ -1250,6 +1382,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 ) {
 	ctx := r.Context()
 	endRaw := r.FormValue("end")
+	startRaw := r.FormValue("start")
 
 	// Loki field name for response metric keys (what Grafana expects).
 	lokiField := field
@@ -1258,6 +1391,19 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	} else if lt := p.labelTranslator; lt != nil && !lt.IsPassthrough() {
 		lokiField = lt.ToLoki(field)
 	}
+
+	// /select/logsql/hits fast path — returns top-N + remainder bucket natively.
+	// Try this first; it produces a far better chart shape than the stats+merge
+	// pipeline because the remainder series naturally spans the full time range,
+	// guaranteeing Grafana's default top-N rendering shows something meaningful
+	// across the whole window (instead of a few concentrated tall spikes).
+	// Falls through to the legacy stats+merge path on any failure (404 on older
+	// VL, parse error, empty response, etc.).
+	if p.proxyStatsQueryRangeDrilldownHits(w, r, cleanBase, field, lokiField, startRaw, endRaw, effectiveStepRaw, drillCacheKey) {
+		return
+	}
+	// Mark response so callers / load tests know the fallback fired.
+	w.Header().Set("X-Proxy-Drilldown-Hits-Fallback", "1")
 
 	endSec := endNs / int64(time.Second)
 
