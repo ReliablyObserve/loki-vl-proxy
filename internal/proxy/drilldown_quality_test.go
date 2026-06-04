@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestZerofillStatsMatrix_FillsGaps(t *testing.T) {
@@ -123,6 +124,116 @@ func TestZerofillStatsMatrix_PreservesMetricKey(t *testing.T) {
 	if !bytes.Contains(got, []byte(`[300,"0"]`)) {
 		t.Errorf("ts=300 not zero-filled\nbody: %s", got)
 	}
+}
+
+// TestMergeDrilldownWithFieldValues_AlignsStubsToStatsGrid is the regression
+// guard for the bug where stub-only entries (field_values values that did not
+// appear in the stats top-N) were emitted at startSec + N*stepSec without
+// aligning to the step grid. VL stats_query_range always returns timestamps as
+// multiples of step, so unaligned stubs produce a "zebra" pattern of stats
+// timestamps interleaved with stub timestamps, doubling the time axis tick count
+// and scattering data across cells Grafana cannot reconcile. The user-visible
+// symptom is alternating filled/empty bars or a chart that appears to show
+// only "1 recent datapoint" per series.
+//
+// After the fix: the stub start is aligned UP to the step boundary so every
+// stub timestamp coincides with a stats grid tick. The result must have the
+// SAME unique timestamps from both the stats series and the stub-only series.
+func TestMergeDrilldownWithFieldValues_AlignsStubsToStatsGrid(t *testing.T) {
+	const (
+		stepSec      = int64(900) // 15min — typical hybrid coarsening at 24h
+		endSec       = int64(1000_000_000)
+		fullRangeSec = int64(24 * 3600)
+		histStepNs   = stepSec * int64(time.Second)
+	)
+	// startSec is intentionally NOT step-aligned: endSec - fullRangeSec must
+	// have a non-zero remainder mod stepSec to exercise the alignment fix.
+	// 1000000000 - 86400 = 999913600. 999913600 mod 900 = 100. ✓
+	fullRangeNs := fullRangeSec * int64(time.Second)
+
+	// Stats body: one series ("p1") with step-aligned VL timestamps.
+	// First stats ts: 999914400 (== 999913600 aligned UP to next 900 boundary).
+	statsBody := []byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+		`{"metric":{"pod":"p1"},"values":[[999914400,"5"],[999915300,"7"]]}` +
+		`]}}`)
+
+	// field_values contains "p1" (in stats) AND "p2" (stub-only). After merge,
+	// "p2" gets full-range stubs which must align to the same grid as "p1".
+	entries := []drilldownFVEntry{
+		{Value: "p1", Hits: 100},
+		{Value: "p2", Hits: 50},
+	}
+
+	got := mergeDrilldownWithFieldValues(statsBody, "pod", entries, endSec, fullRangeNs, histStepNs)
+
+	// Parse result and collect ALL emitted timestamps from BOTH series.
+	var resp struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]interface{}   `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(got, &resp); err != nil {
+		t.Fatalf("unmarshal: %v\nbody: %s", err, got)
+	}
+	if len(resp.Data.Result) != 2 {
+		t.Fatalf("expected 2 series, got %d\nbody: %s", len(resp.Data.Result), got)
+	}
+
+	// Collect each series' timestamps.
+	tsBySeries := make(map[string]map[int64]struct{})
+	for _, s := range resp.Data.Result {
+		pod := s.Metric["pod"]
+		tsBySeries[pod] = make(map[int64]struct{})
+		for _, pair := range s.Values {
+			ts := int64(pair[0].(float64))
+			tsBySeries[pod][ts] = struct{}{}
+		}
+	}
+
+	// REGRESSION CHECK 1: EVERY emitted timestamp must be a multiple of stepSec
+	// (i.e., on the step grid). Before the fix, stub-only series had timestamps
+	// offset by `startSec mod stepSec`.
+	for pod, tsSet := range tsBySeries {
+		for ts := range tsSet {
+			if ts%stepSec != 0 {
+				t.Errorf("series %q emitted ts=%d, which is NOT step-aligned (mod %d = %d)",
+					pod, ts, stepSec, ts%stepSec)
+			}
+		}
+	}
+
+	// REGRESSION CHECK 2: The stub-only series' timestamps must INTERSECT
+	// (overlap) with the stats series' timestamps. Before the fix, they were
+	// disjoint sets, producing the zebra pattern.
+	p1Set := tsBySeries["p1"]
+	p2Set := tsBySeries["p2"]
+	intersect := 0
+	for ts := range p2Set {
+		if _, ok := p1Set[ts]; ok {
+			intersect++
+		}
+	}
+	if intersect == 0 {
+		t.Errorf("stub-only series timestamps must intersect with stats series timestamps (both on the same step-aligned grid). p1 ts: %v, p2 ts: %v",
+			sortedKeys(p1Set), sortedKeys(p2Set))
+	}
+}
+
+// sortedKeys is a tiny helper for diagnostic output.
+func sortedKeys(m map[int64]struct{}) []int64 {
+	out := make([]int64, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j-1] > out[j]; j-- {
+			out[j-1], out[j] = out[j], out[j-1]
+		}
+	}
+	return out
 }
 
 // TestSynthesizeDrilldownMatrixSpread verifies the high-cardinality hybrid

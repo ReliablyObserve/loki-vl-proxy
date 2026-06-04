@@ -51,6 +51,39 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 			t.Fatal("expected unknown structured field to be exposed")
 		}
 
+		// Regression guard: stream labels returned by VL's field_names index
+		// (container, env, pod, level, version) must NOT pass shouldExposeStructuredField
+		// when the scanned stream-label set contains them. This is the contract
+		// the nativeSparse merge in detectFields relies on; removing the filter
+		// from the merge would silently re-leak stream labels into detected_fields.
+		// See drilldown.go: nativeSparse building applies shouldExposeStructuredField.
+		streamLabels := map[string]string{
+			"container":    "api",
+			"env":          "production",
+			"pod":          "api-gateway-abc",
+			"level":        "info",
+			"version":      "v2",
+			"namespace":    "prod",
+			"app":          "api-gateway",
+			"cluster":      "us-east-1",
+			"service_name": "api-gateway",
+		}
+		for streamLabel := range streamLabels {
+			if shouldExposeStructuredField(streamLabel, streamLabels, lt) {
+				t.Errorf("stream label %q must NOT be exposed as a detected field (it belongs in detected_labels). The nativeSparse merge in detectFields relies on this filter to prevent VL field_names from leaking stream labels into the fields list.", streamLabel)
+			}
+		}
+		// JSON body fields that just happen to share a name with a stream label
+		// also stay suppressed — Loki's convention is to drop the conflict (we
+		// previously verified `level_extracted` is NOT emitted either).
+		// Real JSON body fields (without a stream-label collision) must still pass.
+		if !shouldExposeStructuredField("method", streamLabels, lt) {
+			t.Error("genuine JSON body field 'method' must be exposed even when stream labels are present")
+		}
+		if !shouldExposeStructuredField("duration_ms", streamLabels, lt) {
+			t.Error("genuine JSON body field 'duration_ms' must be exposed even when stream labels are present")
+		}
+
 		fields := map[string]*detectedFieldSummary{}
 		addDetectedField(fields, "", "", "string", nil, "ignored")
 		addDetectedField(fields, "duration", "json", "int", []string{"duration"}, "10")

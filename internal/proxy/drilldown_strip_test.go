@@ -778,6 +778,80 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 	}
 }
 
+// TestHighCardStepFloor verifies the hybrid path's high-cardinality step floor.
+// This guards against any future change that would let trace_id/span_id-style
+// queries use the standard 120-bucket cap, which would push VL's stats map past
+// its memory budget for 500k+ cardinality fields and trigger OOM.
+//
+// Floor formula: minStep = rangeNs / drilldownHighCardStatsBuckets (currently 30),
+// then snapped UP to the next "nice" duration so VL timestamps stay clean.
+func TestHighCardStepFloor(t *testing.T) {
+	const day = 24 * 3600
+
+	tests := []struct {
+		name     string
+		origStep string
+		rangeSec int64
+		wantStep string
+	}{
+		{
+			name:     "24h with native 120s step floors to 1h (24h/30 = 2880s → snap 3600s)",
+			origStep: "120s",
+			rangeSec: day,
+			wantStep: "3600s",
+		},
+		{
+			name:     "7d with native 1200s step floors to 6h (7d/30 = 20160s → snap 21600s)",
+			origStep: "1200s",
+			rangeSec: 7 * day,
+			wantStep: "21600s",
+		},
+		{
+			name:     "13h with native 60s step floors to 30min (13h/30 = 1560s → snap 1800s)",
+			origStep: "60s",
+			rangeSec: 13 * 3600,
+			wantStep: "1800s",
+		},
+		{
+			name:     "step that already satisfies the floor is preserved",
+			origStep: "7200s",
+			rangeSec: day, // floor would be 2880s; 7200s > 2880s so no change
+			wantStep: "7200s",
+		},
+		{
+			name:     "missing step passes through unchanged",
+			origStep: "",
+			rangeSec: day,
+			wantStep: "",
+		},
+		{
+			name:     "zero range passes through unchanged",
+			origStep: "60s",
+			rangeSec: 0,
+			wantStep: "60s",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := highCardStepFloor(tt.origStep, tt.rangeSec*int64(time.Second))
+			if got != tt.wantStep {
+				t.Errorf("highCardStepFloor(%q, %ds) = %q, want %q",
+					tt.origStep, tt.rangeSec, got, tt.wantStep)
+			}
+		})
+	}
+}
+
+// TestHighCardStepFloor_TighterThanRegularCap is a structural guarantee: the
+// high-card cap MUST stay strictly tighter than the regular hybrid cap. If both
+// were the same, high-card fields would no longer be protected from VL OOM.
+func TestHighCardStepFloor_TighterThanRegularCap(t *testing.T) {
+	if drilldownHighCardStatsBuckets >= maxDrilldownStatsBuckets {
+		t.Fatalf("drilldownHighCardStatsBuckets (%d) must be < maxDrilldownStatsBuckets (%d) so high-card fields get a tighter step cap; otherwise VL stats pipe risks OOM on 500k+ cardinality grouping",
+			drilldownHighCardStatsBuckets, maxDrilldownStatsBuckets)
+	}
+}
+
 // TestRelaxStepForLowCardinality verifies the hybrid path's cardinality-aware
 // step relaxation. For low-cardinality groupings (e.g. app, env, cluster) we
 // restore the client-requested step so the proxy matches Loki's resolution at

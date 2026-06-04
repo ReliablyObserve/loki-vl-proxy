@@ -366,6 +366,14 @@ const drilldownLowCardThreshold = 50
 // The floor only kicks in when a client sends an absurdly fine step (e.g. step=1s at 7d).
 const drilldownLowCardStatsBuckets = 1000
 
+// drilldownHighCardStatsBuckets is the tighter bucket cap used when the by-field
+// is detected as truly high-cardinality (trace_id, span_id, *_id, *_uid). VL's
+// stats pipe materializes one entry per (bucket × distinct-value) pair before the
+// top-N heap can trim, so the memory cost scales with cardinality × buckets.
+// 30 buckets × ~500k unique trace_ids ≈ 15M map entries ≈ 750 MB — within VL's 40%
+// stats memory budget but tight enough that 120 buckets (3 GB) is risky.
+const drilldownHighCardStatsBuckets = 30
+
 // drilldownHybridThreshold is the range above which proxyStatsQueryRangeDrilldown
 // switches to the hybrid path: field_values (O(column-index), ~30ms at any range)
 // for value discovery over the full range, plus a capped stats_query_range for the
@@ -691,6 +699,35 @@ var drilldownNiceSteps = []time.Duration{
 	6 * time.Hour,
 	12 * time.Hour,
 	24 * time.Hour,
+}
+
+// highCardStepFloor enforces a tighter step floor on the hybrid path when the
+// by-field is detected as truly high-cardinality (trace_id, span_id, *_id, *_uid).
+// VL's stats pipe materializes one map entry per (bucket × distinct-value) pair
+// before the top-N heap can trim, so memory cost scales with cardinality × buckets.
+// Capping the number of buckets at drilldownHighCardStatsBuckets keeps the worst-
+// case stats map within VL's 40% memory budget even for 500k+ unique values.
+//
+// Returns the original effectiveStepRaw unchanged if its parsed step already
+// satisfies the floor. The returned step is snapped UP to the next "nice" duration
+// for clean VL timestamps. Unparseable input passes through.
+func highCardStepFloor(effectiveStepRaw string, rangeNs int64) string {
+	d, ok := parsePositiveStepDuration(effectiveStepRaw)
+	if !ok || rangeNs <= 0 {
+		return effectiveStepRaw
+	}
+	hcMinStep := time.Duration(rangeNs) / drilldownHighCardStatsBuckets
+	if hcMinStep <= d {
+		return effectiveStepRaw
+	}
+	snapped := hcMinStep
+	for _, nice := range drilldownNiceSteps {
+		if hcMinStep <= nice {
+			snapped = nice
+			break
+		}
+	}
+	return strconv.FormatInt(int64(snapped/time.Second), 10) + "s"
 }
 
 // relaxStepForLowCardinality returns a finer effective step when the by-field
@@ -1221,25 +1258,18 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 
 	rangeNs := endNs - startNs
 
-	// High-cardinality fields: field_values synthesis only — no stats_query_range.
-	// These fields (trace_id, span_id, *_id, *_uid, *_token, …) have too many unique
-	// values per bucket to produce a useful histogram; the total count from field_values
-	// is the useful signal.
+	// High-cardinality fields (trace_id, span_id, *_id, *_uid, *_token, …): route
+	// through stats_query_range so per-bucket counts are real, not synthesized.
+	// field_values is unreliable here — when the limit truncates, hits are zeroed
+	// and a synthesized matrix shows all-zero values that Grafana renders blank.
+	// Tighten the step cap to drilldownHighCardStatsBuckets so VL's stats pipe
+	// doesn't OOM on 500k-cardinality grouping over many buckets.
 	isHighCard := isLikelyHighCardinalityField(field) || isHighCardinalityFieldName(field)
 	if isHighCard {
-		var body []byte
-		pathLabel := "field_values_hc"
-		if len(fvEntries) > 0 {
-			body = synthesizeDrilldownMatrixSpread(lokiField, fvEntries, startNs/int64(time.Second), endSec, int64(time.Duration(rangeNs)/drilldownSynthesizeBuckets/time.Second))
-		} else {
-			body = emptyLokiMatrix
-			pathLabel = "field_values_hc_empty"
-		}
-		p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), body...), drilldownStatsCacheTTL)
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("X-Proxy-Drilldown-Path", pathLabel)
-		_, _ = w.Write(body)
-		return
+		effectiveStepRaw = highCardStepFloor(effectiveStepRaw, rangeNs)
+		// Fall through to the regular stats tier below. The synthesize-from-
+		// field_values fallback inside that tier still acts as the last-resort
+		// safety net if VL returns no usable rows.
 	}
 
 	// Low-cardinality groupings (≤ drilldownLowCardThreshold distinct values):
