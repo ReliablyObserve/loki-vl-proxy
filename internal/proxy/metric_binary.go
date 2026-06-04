@@ -1190,6 +1190,21 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 	}
 	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
 	body = limitLokiMatrixSeries(body, maxDrilldownSeries)
+	// Zero-fill missing time buckets so Grafana renders a continuous histogram
+	// rather than disconnected spikes — VL stats_query_range omits zero-count
+	// buckets while Loki count_over_time always emits every step. The hybrid path
+	// already does this; without it here, parser-stage fields (most Drilldown
+	// queries — they include "| json field=..." stages) get gappy charts.
+	if stepDur, ok := parsePositiveStepDuration(effectiveStepRaw); ok && stepDur > 0 {
+		startNs, sok := parseLokiTimeToUnixNano(startRaw)
+		endNs, eok := parseLokiTimeToUnixNano(endRaw)
+		if sok && eok {
+			body = zerofillStatsMatrix(body,
+				startNs/int64(time.Second),
+				endNs/int64(time.Second),
+				int64(stepDur/time.Second))
+		}
+	}
 	final := wrapAsLokiResponse(body, "matrix")
 	final = expandDrilldownStep(final, stepRaw, effectiveStepRaw, endRaw)
 	p.setLocalReadCacheWithTTL(drillCacheKey, append([]byte(nil), final...), drilldownStatsCacheTTL)

@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -1034,4 +1035,91 @@ func TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries(t *testing.
 			}
 		})
 	}
+}
+
+// TestProxyStatsQueryRangeDrilldownParserDirect_ZerofillsMissingBuckets is the
+// regression guard for the bug where parser-stage Drilldown field queries (which
+// is what Grafana Drilldown actually sends — every field card query goes
+// "sum by (X) (count_over_time({...} | json X=\"...\" | drop __error__ | X!=\"\" [step]))",
+// always with a parser stage) returned VL's sparse response unchanged. Grafana
+// rendered the missing buckets as gaps, producing the "spike at the end with
+// nothing else" symptom users see at 24h+ for fields like trace_id, span_id,
+// ip, request_id when their data only spans part of the requested range.
+//
+// The fix wires zerofillStatsMatrix into proxyStatsQueryRangeDrilldownParserDirect
+// so missing time buckets get [ts,"0"] entries and Grafana draws a continuous
+// histogram. This test asserts: when VL returns 2 buckets out of an expected
+// dense grid, the proxy emits ALL grid buckets with the missing ones zeroed.
+func TestProxyStatsQueryRangeDrilldownParserDirect_ZerofillsMissingBuckets(t *testing.T) {
+	// Pick a step-aligned baseTS so the zerofill axis (which aligns UP from start
+	// and DOWN from end) covers the full range without shifting. 1748000040 has
+	// mod 60 == 0 so step=60s gives a clean grid.
+	const baseTS int64 = 1748000040
+	startSec := baseTS
+	endSec := baseTS + 3600 // 1h range → 60 step-aligned buckets
+
+	// VL returns only 2 buckets out of 60 (sparse). Both step-aligned.
+	vlTS1 := baseTS + 600
+	vlTS2 := baseTS + 1800
+
+	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
+			`{"metric":{"level":"info"},"values":[[%d,"5"],[%d,"7"]]}`+
+			`]}}`, vlTS1, vlTS2)
+	}))
+	defer vlBackend.Close()
+
+	p := newTestProxy(t, vlBackend.URL)
+
+	form := url.Values{}
+	form.Set("query", `sum by (level) (count_over_time({env="production"} | logfmt | level!="" [1m]))`)
+	form.Set("start", strconv.FormatInt(startSec, 10))
+	form.Set("end", strconv.FormatInt(endSec, 10))
+	form.Set("step", "60s")
+	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
+	req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
+	req.Header.Set("X-Scope-OrgID", "default")
+	req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+
+	rec := httptest.NewRecorder()
+	p.proxyStatsQueryRange(rec, req, `env:="production" | unpack_logfmt | filter level:!"" | stats by (level) count()`)
+
+	body := rec.Body.Bytes()
+
+	// The response MUST contain step-aligned zero buckets that VL did not return.
+	// VL returned vlTS1 and vlTS2; the rest must be zero-filled at step=60s.
+	missingZeroBuckets := []int64{
+		baseTS,           // first bucket
+		baseTS + 60,      // 2nd bucket
+		vlTS1 + 60,       // bucket right after VL's first data point
+		vlTS2 + 60,       // bucket right after VL's second data point
+		endSec - 60,      // last bucket before endSec
+	}
+	for _, ts := range missingZeroBuckets {
+		zeroEntry := []byte(fmt.Sprintf(`[%d,"0"]`, ts))
+		if !bytes.Contains(body, zeroEntry) {
+			t.Errorf("expected zero-filled bucket at ts=%d in response (parser-direct path must apply zerofillStatsMatrix); body excerpt: %s",
+				ts, snippet(body, 0, 500))
+		}
+	}
+	// VL's real data must still be present (we don't overwrite it).
+	if !bytes.Contains(body, []byte(fmt.Sprintf(`[%d,"5"]`, vlTS1))) {
+		t.Errorf("VL's real data point at ts=%d lost; body: %s", vlTS1, snippet(body, 0, 800))
+	}
+	if !bytes.Contains(body, []byte(fmt.Sprintf(`[%d,"7"]`, vlTS2))) {
+		t.Errorf("VL's real data point at ts=%d lost; body: %s", vlTS2, snippet(body, 0, 800))
+	}
+}
+
+// snippet returns up to n bytes of b starting at off for compact error output.
+func snippet(b []byte, off, n int) string {
+	if off >= len(b) {
+		return ""
+	}
+	end := off + n
+	if end > len(b) {
+		end = len(b)
+	}
+	return string(b[off:end])
 }
