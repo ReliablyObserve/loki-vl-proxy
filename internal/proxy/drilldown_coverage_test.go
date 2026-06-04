@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -363,8 +364,19 @@ func TestExpandDrilldownStep(t *testing.T) {
 		if len(values) != 24 {
 			t.Fatalf("expected 24 fine buckets (2 coarse × 12), got %d", len(values))
 		}
+		// Regression guard: integer values must NOT carry decimal places. Loki returns
+		// count_over_time results as integer strings ("120"), and the proxy MUST match
+		// to keep wire output identical across backends. Reverting to '%f' with precision 2
+		// would re-introduce "120.00" — this assertion catches that.
+		if bytes.Contains(got, []byte(`.00"`)) {
+			t.Errorf("response contains %q which means an integer count was formatted with 2 decimal places (was strconv.FormatFloat(_, 'f', 2, 64)). Must use precision -1 to match Loki's integer-string output. Body: %s",
+				`.00"`, string(got))
+		}
+
 		// First sub-bucket: ts=1748000000, value=120 (full coarse value replicated, not divided by 12).
 		// Replication preserves relative bar heights across series and makes sparse fields visible.
+		// Value format is integer-string ("120" not "120.00") to match Loki's count_over_time output
+		// for whole counts; fractional values from rate-style aggregations still render correctly.
 		first := values[0].GetArray()
 		if len(first) < 2 {
 			t.Fatal("expected [ts, val] pair")
@@ -372,16 +384,16 @@ func TestExpandDrilldownStep(t *testing.T) {
 		if first[0].GetInt64() != 1748000000 {
 			t.Errorf("first ts = %d, want 1748000000", first[0].GetInt64())
 		}
-		if string(first[1].GetStringBytes()) != "120.00" {
-			t.Errorf("first val = %q, want %q", string(first[1].GetStringBytes()), "120.00")
+		if string(first[1].GetStringBytes()) != "120" {
+			t.Errorf("first val = %q, want %q", string(first[1].GetStringBytes()), "120")
 		}
-		// 13th sub-bucket: ts=1748003600 (start of 2nd coarse bucket), value=240.00.
+		// 13th sub-bucket: ts=1748003600 (start of 2nd coarse bucket), value=240.
 		thirteenth := values[12].GetArray()
 		if thirteenth[0].GetInt64() != 1748003600 {
 			t.Errorf("13th ts = %d, want 1748003600", thirteenth[0].GetInt64())
 		}
-		if string(thirteenth[1].GetStringBytes()) != "240.00" {
-			t.Errorf("13th val = %q, want %q", string(thirteenth[1].GetStringBytes()), "240.00")
+		if string(thirteenth[1].GetStringBytes()) != "240" {
+			t.Errorf("13th val = %q, want %q", string(thirteenth[1].GetStringBytes()), "240")
 		}
 	})
 

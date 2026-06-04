@@ -922,7 +922,12 @@ func expandDrilldownStep(body []byte, fineStepRaw, coarseStepRaw, endRaw string)
 			// 1-3 occurrences per coarse window) produce sub-1 values that are nearly
 			// invisible in Grafana's bar chart. Relative proportions between series are
 			// preserved since all series in the same field chart use the same factor.
-			subValStr := strconv.FormatFloat(coarseVal, 'f', 2, 64)
+			//
+			// Format with precision -1 (shortest representation) to match Loki's
+			// integer-string output ("78" not "78.00") for whole counts, while still
+			// rendering floats correctly when fractional values come up from rate-style
+			// aggregations.
+			subValStr := strconv.FormatFloat(coarseVal, 'f', -1, 64)
 
 			for i := int64(0); i < factor; i++ {
 				tsFine := tsCoarse + i*fineStepSec
