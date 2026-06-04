@@ -405,13 +405,54 @@ func renameStatsBodyMetricKey(body []byte, from, to string) []byte {
 // synthesizeDrilldownMatrix builds a Loki matrix response with one data point per
 // field value at endSec. Used when stats_query_range is skipped (high-cardinality)
 // or as the fallback when VL returns an error.
+// drilldownSynthesizeBuckets is the number of stub buckets per series for the
+// synthesize-only path. Spreading the total hits across this many points produces
+// a visible "presence" band in Grafana even when field_values cannot give us a
+// real histogram (high-cardinality fields where the limit truncated hits to 0).
+// 30 buckets matches maxDrilldownStatsBuckets for visual consistency with stats.
+const drilldownSynthesizeBuckets = 30
+
 func synthesizeDrilldownMatrix(lokiField string, entries []drilldownFVEntry, endSec int64) []byte {
+	return synthesizeDrilldownMatrixSpread(lokiField, entries, endSec, endSec, 0)
+}
+
+// synthesizeDrilldownMatrixSpread builds a Loki matrix response and, when
+// (startSec, stepSec) describe a non-degenerate range, evenly distributes each
+// entry's total hits across drilldownSynthesizeBuckets points spanning that range.
+// Used by the hybrid path's high-cardinality and fallback branches so the chart
+// renders as a populated band rather than a single dot at the right edge.
+//
+// stepSec=0 (or startSec==endSec) falls back to a single point at endSec for
+// backwards compatibility with callers that have no range context.
+func synthesizeDrilldownMatrixSpread(lokiField string, entries []drilldownFVEntry, startSec, endSec, stepSec int64) []byte {
 	if len(entries) == 0 {
 		return emptyLokiMatrix
 	}
-	endStr := strconv.FormatInt(endSec, 10)
+	// Number of stub points per series and the step between them. When the caller
+	// supplies a usable range, spread across drilldownSynthesizeBuckets points
+	// anchored so the LAST point lands exactly at endSec.
+	nPoints := int64(1)
+	bucketStep := int64(0)
+	firstTs := endSec
+	if stepSec > 0 && endSec > startSec {
+		rangeSec := endSec - startSec
+		bucketStep = rangeSec / drilldownSynthesizeBuckets
+		if bucketStep < stepSec {
+			bucketStep = stepSec
+		}
+		// Snap bucketStep up to a step-aligned value so timestamps stay clean.
+		if rem := bucketStep % stepSec; rem != 0 {
+			bucketStep += stepSec - rem
+		}
+		nPoints = rangeSec/bucketStep + 1
+		if nPoints < 1 {
+			nPoints = 1
+		}
+		firstTs = endSec - (nPoints-1)*bucketStep
+	}
+
 	var b bytes.Buffer
-	b.Grow(len(entries)*128 + 64)
+	b.Grow(len(entries)*int(nPoints)*24 + 64)
 	b.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
 	for i, e := range entries {
 		if i > 0 {
@@ -421,12 +462,25 @@ func synthesizeDrilldownMatrix(lokiField string, entries []drilldownFVEntry, end
 		writeJSONEscaped(&b, lokiField)
 		b.WriteString(`":"`)
 		writeJSONEscaped(&b, e.Value)
-		b.WriteString(`"},"values":[[`)
-		b.WriteString(endStr)
-		b.WriteString(`,"`)
-		b.WriteString(strconv.FormatInt(e.Hits, 10))
-		b.WriteString(`"]]`)
-		b.WriteByte('}')
+		b.WriteString(`"},"values":[`)
+		// Divide total hits across the stub buckets so the sum still matches
+		// the total. Floor to 1 when hits>0 so the band remains visible.
+		perBucket := e.Hits / nPoints
+		if perBucket < 1 && e.Hits > 0 {
+			perBucket = 1
+		}
+		perStr := strconv.FormatInt(perBucket, 10)
+		for j := int64(0); j < nPoints; j++ {
+			if j > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteByte('[')
+			b.WriteString(strconv.FormatInt(firstTs+j*bucketStep, 10))
+			b.WriteString(`,"`)
+			b.WriteString(perStr)
+			b.WriteString(`"]`)
+		}
+		b.WriteString(`]}`)
 	}
 	b.WriteString(`]}}`)
 	return b.Bytes()
@@ -458,7 +512,8 @@ func writeJSONEscaped(b *bytes.Buffer, s string) {
 func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries []drilldownFVEntry, endSec, fullRangeNs, histStepNs int64) []byte {
 	v, err := fj.ParseBytes(statsBody)
 	if err != nil || v == nil {
-		return synthesizeDrilldownMatrix(lokiField, entries, endSec)
+		startSec := endSec - fullRangeNs/int64(time.Second)
+		return synthesizeDrilldownMatrixSpread(lokiField, entries, startSec, endSec, histStepNs/int64(time.Second))
 	}
 	result := v.GetArray("data", "result")
 
@@ -1161,7 +1216,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 		var body []byte
 		pathLabel := "field_values_hc"
 		if len(fvEntries) > 0 {
-			body = synthesizeDrilldownMatrix(lokiField, fvEntries, endSec)
+			body = synthesizeDrilldownMatrixSpread(lokiField, fvEntries, startNs/int64(time.Second), endSec, int64(time.Duration(rangeNs)/drilldownSynthesizeBuckets/time.Second))
 		} else {
 			body = emptyLokiMatrix
 			pathLabel = "field_values_hc_empty"
@@ -1223,7 +1278,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 			}()
 		case <-ctx.Done():
 			// Context cancelled — serve field_values synthesis immediately.
-			body := synthesizeDrilldownMatrix(lokiField, fvEntries, endSec)
+			body := synthesizeDrilldownMatrixSpread(lokiField, fvEntries, startNs/int64(time.Second), endSec, int64(time.Duration(rangeNs)/drilldownSynthesizeBuckets/time.Second))
 			w.Header().Set("Content-Type", "application/json")
 			w.Header().Set("X-Proxy-Drilldown-Path", "field_values_sem_timeout")
 			_, _ = w.Write(body)
@@ -1275,7 +1330,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 		final = statsBody
 		pathLabel += "/no_fv"
 	case len(fvEntries) > 0:
-		final = synthesizeDrilldownMatrix(lokiField, fvEntries, endSec)
+		final = synthesizeDrilldownMatrixSpread(lokiField, fvEntries, startNs/int64(time.Second), endSec, int64(time.Duration(rangeNs)/drilldownSynthesizeBuckets/time.Second))
 		pathLabel = "field_values_stats_err"
 	default:
 		final = emptyLokiMatrix

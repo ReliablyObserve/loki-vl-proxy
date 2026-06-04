@@ -125,6 +125,71 @@ func TestZerofillStatsMatrix_PreservesMetricKey(t *testing.T) {
 	}
 }
 
+// TestSynthesizeDrilldownMatrixSpread verifies the high-cardinality hybrid
+// path's stub spreading. The single-point synthesizeDrilldownMatrix (stepSec=0)
+// produces a single dot at endSec, which Grafana renders as an empty-looking
+// chart with one point at the right edge. The spread variant distributes total
+// hits across drilldownSynthesizeBuckets points so the chart shows a populated
+// band.
+func TestSynthesizeDrilldownMatrixSpread(t *testing.T) {
+	entries := []drilldownFVEntry{
+		{Value: "v1", Hits: 600},
+		{Value: "v2", Hits: 30},
+	}
+
+	t.Run("single point at endSec when stepSec=0", func(t *testing.T) {
+		got := synthesizeDrilldownMatrix("trace_id", entries, 1000)
+		// Both series should have exactly one point at ts=1000.
+		// First series: hits=600 → value="600".
+		if !bytes.Contains(got, []byte(`[1000,"600"]`)) {
+			t.Errorf("expected single point at 1000 with value 600\nbody: %s", got)
+		}
+		if !bytes.Contains(got, []byte(`[1000,"30"]`)) {
+			t.Errorf("expected single point at 1000 with value 30\nbody: %s", got)
+		}
+	})
+
+	t.Run("spread across range when stepSec>0", func(t *testing.T) {
+		// 1000s range, stepSec=10. Spread should produce drilldownSynthesizeBuckets+1 points
+		// (or fewer if step floor kicks in). Last point lands at endSec.
+		got := synthesizeDrilldownMatrixSpread("trace_id", entries, 0, 1000, 10)
+
+		// Last point of the first series (v1, 600 hits) should land at ts=1000.
+		// perBucket value depends on nPoints; with bucketStep snapping and 1000s/30 = 33s
+		// snapped to 40s, nPoints = 1000/40+1 = 26. perBucket = 600/26 = 23.
+		if !bytes.Contains(got, []byte(`,"23"`)) {
+			t.Errorf("expected perBucket=23 in v1's values (600 hits / 26 buckets)\nbody: %s", got)
+		}
+		// Last point at endSec=1000 should appear for both series.
+		if !bytes.Contains(got, []byte(`[1000,"23"]`)) {
+			t.Errorf("expected last point of v1 at ts=1000\nbody: %s", got)
+		}
+		// For v2 with 30 hits / 26 buckets = 1, floor to 1.
+		if !bytes.Contains(got, []byte(`[1000,"1"]`)) {
+			t.Errorf("expected v2 last point with value=1 (floored)\nbody: %s", got)
+		}
+	})
+
+	t.Run("zero hits do not produce floor-to-1 phantom data", func(t *testing.T) {
+		zeroEntries := []drilldownFVEntry{{Value: "trunc", Hits: 0}}
+		got := synthesizeDrilldownMatrixSpread("trace_id", zeroEntries, 0, 1000, 10)
+		// All values should be "0" — the floor only applies when hits>0.
+		if bytes.Contains(got, []byte(`,"1"]`)) {
+			t.Errorf("expected no '1' values for zero-hit entry\nbody: %s", got)
+		}
+		if !bytes.Contains(got, []byte(`,"0"]`)) {
+			t.Errorf("expected zero values for truncated-hit entry\nbody: %s", got)
+		}
+	})
+
+	t.Run("empty entries returns empty matrix", func(t *testing.T) {
+		got := synthesizeDrilldownMatrixSpread("trace_id", nil, 0, 1000, 10)
+		if !bytes.Contains(got, []byte(`"result":[]`)) {
+			t.Errorf("expected empty result for nil entries\nbody: %s", got)
+		}
+	})
+}
+
 // TestZerofillStatsMatrix_AlignsStartToStepGrid verifies that when the request
 // start timestamp is not a multiple of step, the axis is aligned UP to the next
 // step boundary so that VL's step-aligned timestamps actually match the axis.
