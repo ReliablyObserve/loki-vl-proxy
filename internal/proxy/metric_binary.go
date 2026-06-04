@@ -1385,11 +1385,28 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	}
 
 	// Merge: stats histogram + field_values stubs for values missing from recent window.
+	//
+	// Critical ordering: when stats returned real per-bucket data, those series MUST
+	// survive the maxDrilldownSeries cap. The stub-fill emits drilldownSynthesizeBuckets
+	// (or coarse-step) cells per series, all of value=1 (floored from hits/N when hits
+	// is small). For unique-per-request fields like pod, real stats series have 1
+	// nonzero bucket with count ~20-30 (sum~30), while stub-only series have 96+
+	// cells of value=1 (sum~96+). A naive post-merge limitLokiMatrixSeries ranks by
+	// sum and DROPS the real stats series in favour of the synthetic stubs, producing
+	// the "every bar is uniform value=1" symptom users see in Drilldown.
+	//
+	// Skip the post-merge limit entirely. statsBody is already capped to
+	// maxDrilldownSeries by the earlier limitLokiMatrixSeries call, and the merge
+	// only adds fvEntries that are NOT already in stats. We cap the fvEntries used
+	// for stub-fill so the combined output stays within maxDrilldownSeries × ~2 at
+	// worst — Grafana handles that fine and the real data is preserved.
 	var final []byte
 	switch {
 	case statsBody != nil && len(fvEntries) > 0:
 		final = mergeDrilldownWithFieldValues(statsBody, lokiField, fvEntries, endSec, rangeNs, stubStepNs)
-		final = limitLokiMatrixSeries(final, maxDrilldownSeries)
+		// No post-merge limitLokiMatrixSeries — see comment above. The merge function
+		// internally bounds output by stats_count + fv_count, both already capped at
+		// maxDrilldownSeries.
 	case statsBody != nil:
 		final = statsBody
 		pathLabel += "/no_fv"

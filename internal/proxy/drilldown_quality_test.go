@@ -126,6 +126,69 @@ func TestZerofillStatsMatrix_PreservesMetricKey(t *testing.T) {
 	}
 }
 
+// TestMergeDrilldownWithFieldValues_RealDataSurvivesAlongsideStubs is the
+// regression guard for the bug where the post-merge limitLokiMatrixSeries
+// dropped real stats data in favour of synthetic stub-fills. The stub-only
+// path emits N cells of value=1 per series (sum ~= N), while real stats series
+// for unique-per-request fields like pod have only 1 nonzero bucket with count
+// ~20-30 (sum ~= 30). Ranking by sum favoured stubs and produced the "every
+// bar is uniform value=1" symptom users saw in Drilldown at 24h+.
+//
+// The fix removed the post-merge limitLokiMatrixSeries call. This test
+// constructs a stats body with a real-data series (1 nonzero bucket, sum=30)
+// + field_values entries that would otherwise stub-fill, and asserts the
+// real-data series survives in the output.
+func TestMergeDrilldownWithFieldValues_RealDataSurvivesAlongsideStubs(t *testing.T) {
+	const (
+		stepSec      = int64(900)
+		endSec       = int64(1000_000_000)
+		fullRangeSec = int64(24 * 3600)
+		histStepNs   = stepSec * int64(time.Second)
+	)
+	fullRangeNs := fullRangeSec * int64(time.Second)
+
+	// Stats: ONE real-data pod series with 1 nonzero bucket of value=30.
+	// This is what VL returns for a unique-per-request pod that appeared once.
+	statsBody := []byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+		`{"metric":{"pod":"real-pod-with-data"},"values":[[999913500,"30"]]}` +
+		`]}}`)
+
+	// field_values: same pod (in stats) + 2 stub-only pods.
+	entries := []drilldownFVEntry{
+		{Value: "real-pod-with-data", Hits: 30},
+		{Value: "stub-only-pod-1", Hits: 5},
+		{Value: "stub-only-pod-2", Hits: 5},
+	}
+
+	got := mergeDrilldownWithFieldValues(statsBody, "pod", entries, endSec, fullRangeNs, histStepNs)
+
+	// The real stats data point MUST be preserved verbatim in the output.
+	// Before the fix, this cell would be replaced by stub-fill (value=1).
+	if !bytes.Contains(got, []byte(`[999913500,"30"]`)) {
+		t.Errorf("real stats data point [999913500,\"30\"] lost — likely dropped by post-merge limitLokiMatrixSeries ranking stubs (sum=96) above real data (sum=30). Body excerpt: %s",
+			snippetQ(got, 0, 600))
+	}
+
+	// Real pod's metric label must remain. The stub-only pods can be present
+	// too — they're filtered/limited at the proxy level by maxDrilldownSeries
+	// before reaching here.
+	if !bytes.Contains(got, []byte(`"real-pod-with-data"`)) {
+		t.Errorf("real-pod-with-data series missing from output\nbody: %s", snippetQ(got, 0, 600))
+	}
+}
+
+// snippetQ returns up to n bytes of b starting at off for compact error output.
+func snippetQ(b []byte, off, n int) string {
+	if off >= len(b) {
+		return ""
+	}
+	end := off + n
+	if end > len(b) {
+		end = len(b)
+	}
+	return string(b[off:end])
+}
+
 // TestMergeDrilldownWithFieldValues_AlignsStubsToStatsGrid is the regression
 // guard for the bug where stub-only entries (field_values values that did not
 // appear in the stats top-N) were emitted at startSec + N*stepSec without
