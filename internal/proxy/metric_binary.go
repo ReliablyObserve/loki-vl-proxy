@@ -653,7 +653,15 @@ func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries [
 
 		if nFullStub > 0 && stubStepSec > 0 {
 			firstPoint := true
-			writeStubs(&b, startSec, stubStepSec, nFullStub, stubCount(e.Hits), &firstPoint)
+			// Align stub start UP to step boundary so the stub grid matches VL's
+			// step-aligned stats grid. Without alignment, stats and stub timestamps
+			// land at different offsets, doubling the time-axis tick count and
+			// scattering data across cells Grafana cannot reconcile.
+			alignedStart := startSec
+			if rem := alignedStart % stubStepSec; rem != 0 {
+				alignedStart += stubStepSec - rem
+			}
+			writeStubs(&b, alignedStart, stubStepSec, nFullStub, stubCount(e.Hits), &firstPoint)
 		} else {
 			// Fallback when we can't compute a grid: single point at endSec.
 			b.WriteByte('[')
