@@ -252,8 +252,20 @@ type patternResultEntry struct {
 	Samples [][]interface{} `json:"samples"`
 }
 
+// detectedFieldValuesDefaultLimit is the default cap for
+// /loki/api/v1/detected_field/{name}/values when the client does not supply
+// an explicit limit. Matches Loki's effective default (100): even when the
+// upstream HTTP API allows up to 1000, Loki's sample-based detection caps the
+// unique-value set at ~100 entries per field. Grafana Drilldown's plugin uses
+// the returned count as a render-vs-placeholder signal — fields with 100
+// values get a sparkline placeholder while fields with 1000 get a chart that
+// Grafana cannot render usefully for unique-per-request data (trace_id,
+// span_id, *_id). Keeping the proxy default at 100 produces identical
+// Drilldown UI behaviour across backends.
+const detectedFieldValuesDefaultLimit = 100
+
 func parseDetectedLineLimit(r *http.Request) int {
-	lineLimit := 1000
+	lineLimit := detectedFieldValuesDefaultLimit
 	if value := strings.TrimSpace(r.FormValue("line_limit")); value != "" {
 		if n, err := strconv.Atoi(value); err == nil && n > 0 {
 			lineLimit = n

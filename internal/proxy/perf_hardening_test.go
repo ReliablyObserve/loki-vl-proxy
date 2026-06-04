@@ -683,10 +683,15 @@ func TestParseDetectedLineLimit(t *testing.T) {
 		url  string
 		want int
 	}{
-		{name: "default", url: "/loki/api/v1/detected_fields", want: 1000},
+		// Default MUST be 100 to match Loki's effective default for
+		// /loki/api/v1/detected_field/{name}/values. Grafana Drilldown's plugin
+		// uses the returned value count to decide chart-vs-placeholder rendering;
+		// proxy and Loki must agree or users see divergent UI per backend.
+		{name: "default", url: "/loki/api/v1/detected_fields", want: 100},
 		{name: "line_limit", url: "/loki/api/v1/detected_fields?line_limit=25", want: 25},
 		{name: "limit_overrides", url: "/loki/api/v1/detected_fields?line_limit=25&limit=11", want: 11},
-		{name: "invalid_values", url: "/loki/api/v1/detected_fields?line_limit=bad&limit=-1", want: 1000},
+		// Invalid inputs fall back to the default, not zero.
+		{name: "invalid_values", url: "/loki/api/v1/detected_fields?line_limit=bad&limit=-1", want: 100},
 	}
 
 	for _, tc := range cases {
@@ -696,5 +701,17 @@ func TestParseDetectedLineLimit(t *testing.T) {
 				t.Fatalf("parseDetectedLineLimit() = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestParseDetectedLineLimit_DefaultMatchesLokiContract is a structural guard:
+// the proxy's default limit MUST match Loki's effective default. If anyone
+// bumps detectedFieldValuesDefaultLimit without coordinating Loki-side, this
+// fails with a pointer to the divergence.
+func TestParseDetectedLineLimit_DefaultMatchesLokiContract(t *testing.T) {
+	const lokiEffectiveDefault = 100
+	if detectedFieldValuesDefaultLimit != lokiEffectiveDefault {
+		t.Errorf("detectedFieldValuesDefaultLimit (%d) must match Loki's effective default (%d). Grafana Drilldown plugin renders chart vs placeholder based on this count; divergence produces different UI per backend (blank chart on proxy, sparkline on Loki for high-card *_id fields).",
+			detectedFieldValuesDefaultLimit, lokiEffectiveDefault)
 	}
 }
