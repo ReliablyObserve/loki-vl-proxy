@@ -20,13 +20,20 @@ services:
     ports:
       - "13101:3100"
     # Bench peak: 1,798 MB (heavy c=100). +30% headroom = 2,337 MB → 2.4g.
-    # Loki RSS is stable across all workloads (1.4–1.8 GB range), so this
-    # cap is not expected to trigger; it guards against runaway situations.
-    mem_limit: 4096m
+    # Bumped to 8g on 2026-06-04 because 4g caused Loki to error/OOM at 12h+
+    # range queries on the namespace=prod e2e dataset (45 fields × 100 cardinality
+    # × 720 buckets exceeded the previous cap). 8g gives Loki enough headroom to
+    # actually serve 24h–48h queries for fair side-by-side comparison with the proxy.
+    mem_limit: 8192m
     restart: unless-stopped
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./loki-local-config.yaml:/etc/loki/local-config.yaml:ro
+      # Persist chunks across container recreations. Without this the
+      # in-container /tmp/loki gets wiped on every restart, losing all
+      # ingested logs and making any range > "since restart" return empty —
+      # which fakes a divergence with the proxy (whose VL backend IS persisted).
+      - e2e-loki-data:/tmp/loki
     # Loki 3.7.1 image is minimal (no wget/curl/shell) — healthcheck uses NONE.
     # Tests retry on connection failure.
     healthcheck:
@@ -570,3 +577,4 @@ volumes:
   vl-data:
   vm-data:
   patterns-cache:
+  e2e-loki-data:  # Loki chunks (BoltDB-shipper + filesystem) — persist across container restarts
