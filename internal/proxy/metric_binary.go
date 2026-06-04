@@ -346,6 +346,21 @@ const (
 	maxDrilldownStatsBucketsShort = 120 // for ranges ≤ drilldownHybridThreshold
 )
 
+// drilldownLowCardThreshold is the cardinality (distinct grouped-field values)
+// at or below which the hybrid path skips step coarsening — for stream labels
+// like app/env/cluster/level (1–10 values) the result set stays small even at
+// native resolution, so we match Loki's per-bucket point count instead of the
+// 30-bucket cap.
+const drilldownLowCardThreshold = 50
+
+// drilldownLowCardStatsBuckets caps buckets for the low-cardinality hybrid path.
+// 1000 buckets × 50-value cardinality = 50k row response, well within the 32 MB
+// drilldown cap even with JSON serialization overhead. Crucially, this is large
+// enough that Grafana's native Drilldown steps (worst case 2d→300s = 576 buckets,
+// 7d→1200s = 504 buckets) are always preserved at the client's requested resolution.
+// The floor only kicks in when a client sends an absurdly fine step (e.g. step=1s at 7d).
+const drilldownLowCardStatsBuckets = 1000
+
 // drilldownHybridThreshold is the range above which proxyStatsQueryRangeDrilldown
 // switches to the hybrid path: field_values (O(column-index), ~30ms at any range)
 // for value discovery over the full range, plus a capped stats_query_range for the
@@ -607,6 +622,40 @@ var drilldownNiceSteps = []time.Duration{
 	6 * time.Hour,
 	12 * time.Hour,
 	24 * time.Hour,
+}
+
+// relaxStepForLowCardinality returns a finer effective step when the by-field
+// has low cardinality and can therefore be aggregated cheaply at native step.
+// originalStep is the step the client requested (before coarsening); cardinality
+// is the number of distinct values returned by the field_values fast tier;
+// rangeNs is the requested time range in nanoseconds.
+//
+// Returns (newStep, true) only when:
+//   - cardinality is small (≤ drilldownLowCardThreshold)
+//   - cardinality is known to be the full distinct set (< maxDrilldownSeries, i.e. not truncated by the limit param)
+//   - the original step parses
+//
+// The returned step floor is rangeNs/drilldownLowCardStatsBuckets so VL still
+// stays bounded for very wide ranges.
+func relaxStepForLowCardinality(originalStepRaw string, cardinality int, rangeNs int64) (string, bool) {
+	if cardinality <= 0 || cardinality > drilldownLowCardThreshold {
+		return "", false
+	}
+	if cardinality >= maxDrilldownSeries {
+		// field_values was truncated by limit=maxDrilldownSeries; we don't know
+		// the true cardinality so assume high-card and keep the coarsened step.
+		return "", false
+	}
+	origStep, ok := parsePositiveStepDuration(originalStepRaw)
+	if !ok || origStep <= 0 || rangeNs <= 0 {
+		return "", false
+	}
+	minStep := time.Duration(rangeNs) / drilldownLowCardStatsBuckets
+	finerStep := origStep
+	if finerStep < minStep {
+		finerStep = minStep
+	}
+	return strconv.FormatInt(int64(finerStep/time.Second), 10) + "s", true
 }
 
 // coarsenDrilldownStep returns an effective step that is at least step but
@@ -1124,11 +1173,22 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 		return
 	}
 
+	// Low-cardinality groupings (≤ drilldownLowCardThreshold distinct values):
+	// the 30-bucket cap from coarsenDrilldownStep is pure quality loss for stream
+	// labels like app/env/cluster/level — VL handles native step trivially when
+	// the result set is small. Restore the original requested step (capped to
+	// drilldownLowCardStatsBuckets buckets as a safety floor) so the proxy
+	// matches Loki's per-bucket resolution at 2d/7d.
+	if relaxed, ok := relaxStepForLowCardinality(r.FormValue("step"), len(fvEntries), rangeNs); ok {
+		effectiveStepRaw = relaxed
+	}
+
 	// Stats tier: stats_query_range over the full requested range at coarsened step.
 	// VL column-index stats are fast even for wide ranges (< 1s for 7d), so scanning
 	// only a recent partial window and filling the rest with flat stub bars is
 	// unnecessary — it makes different time ranges look identical (same flat bars).
-	// effectiveStepRaw is already coarsened to ≤ maxDrilldownStatsBuckets buckets.
+	// effectiveStepRaw is already coarsened to ≤ maxDrilldownStatsBuckets buckets
+	// (or relaxed to native step for low-cardinality groupings, see above).
 	histStartRaw := nanosToVLTimestamp(startNs)
 
 	// stubStepNs drives stub placement in mergeDrilldownWithFieldValues for values

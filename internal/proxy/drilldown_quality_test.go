@@ -124,3 +124,35 @@ func TestZerofillStatsMatrix_PreservesMetricKey(t *testing.T) {
 		t.Errorf("ts=300 not zero-filled\nbody: %s", got)
 	}
 }
+
+// TestZerofillStatsMatrix_AlignsStartToStepGrid verifies that when the request
+// start timestamp is not a multiple of step, the axis is aligned UP to the next
+// step boundary so that VL's step-aligned timestamps actually match the axis.
+//
+// Regression guard: previously, an unaligned startSec (e.g. 1780405844 mod 300 = 44)
+// produced an axis at 1780405844, +300, +600 … which never matched VL's
+// 1780406100, 1780406400 … grid, so every VL data point was silently dropped and
+// replaced by a zero-fill entry. The proxy reported a "non-sparse" series with
+// every value "0".
+func TestZerofillStatsMatrix_AlignsStartToStepGrid(t *testing.T) {
+	// VL returns step-aligned timestamps (100, 200, 300). Request range starts
+	// at 44 (not a multiple of 100) and ends at 344. The axis must align to
+	// the step grid so VL's [100,"42"] and [300,"17"] are preserved.
+	input := []byte(`{"status":"success","data":{"resultType":"matrix","result":[` +
+		`{"metric":{"app":"api"},"values":[[100,"42"],[300,"17"]]}` +
+		`]}}`)
+	got := zerofillStatsMatrix(input, 44, 344, 100)
+	if !bytes.Contains(got, []byte(`[100,"42"]`)) {
+		t.Errorf("VL data point at ts=100 lost (overwritten by zero-fill)\nbody: %s", got)
+	}
+	if !bytes.Contains(got, []byte(`[300,"17"]`)) {
+		t.Errorf("VL data point at ts=300 lost (overwritten by zero-fill)\nbody: %s", got)
+	}
+	if !bytes.Contains(got, []byte(`[200,"0"]`)) {
+		t.Errorf("zero-fill for missing ts=200 not present\nbody: %s", got)
+	}
+	// Ensure no garbage points outside the step grid (e.g. ts=44 or ts=344).
+	if bytes.Contains(got, []byte(`[44,`)) || bytes.Contains(got, []byte(`[344,`)) {
+		t.Errorf("axis includes unaligned timestamps\nbody: %s", got)
+	}
+}

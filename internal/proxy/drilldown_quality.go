@@ -17,8 +17,22 @@ import (
 // zeros. Filling the gaps makes the proxy response match Loki's
 // continuous-line behaviour — Grafana draws a solid line rather than
 // disconnected spikes.
+//
+// startSec is aligned UP and endSec aligned DOWN to step boundaries so the axis
+// matches VL's stats_query_range grid (VL always returns timestamps as multiples
+// of step). Without alignment the lookup misses every bucket and silently
+// overwrites VL data with zeros.
 func zerofillStatsMatrix(body []byte, startSec, endSec, stepSec int64) []byte {
 	if stepSec <= 0 || startSec >= endSec {
+		return body
+	}
+
+	// Align bounds to the VL step grid.
+	if rem := startSec % stepSec; rem != 0 {
+		startSec += stepSec - rem
+	}
+	endSec -= endSec % stepSec
+	if startSec > endSec {
 		return body
 	}
 
@@ -32,7 +46,7 @@ func zerofillStatsMatrix(body []byte, startSec, endSec, stepSec int64) []byte {
 		return body
 	}
 
-	// Build the complete expected time axis once.
+	// Build the complete expected time axis once (all step-aligned).
 	n := (endSec-startSec)/stepSec + 1
 	axis := make([]int64, 0, n)
 	for ts := startSec; ts <= endSec; ts += stepSec {

@@ -776,6 +776,106 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 	}
 }
 
+// TestRelaxStepForLowCardinality verifies the hybrid path's cardinality-aware
+// step relaxation. For low-cardinality groupings (e.g. app, env, cluster) we
+// restore the client-requested step so the proxy matches Loki's resolution at
+// 2d/7d; for high-cardinality fields we keep the coarsened step so VL stays
+// bounded.
+func TestRelaxStepForLowCardinality(t *testing.T) {
+	const day = 24 * 3600
+
+	tests := []struct {
+		name        string
+		origStep    string
+		cardinality int
+		rangeSec    int64
+		wantStep    string
+		wantOK      bool
+	}{
+		{
+			name:        "low-card at 2d preserves native 300s step",
+			origStep:    "300s",
+			cardinality: 1, // single app/cluster value
+			rangeSec:    2 * day,
+			wantStep:    "300s",
+			wantOK:      true,
+		},
+		{
+			name:        "low-card at 7d preserves native 1200s step",
+			origStep:    "1200s",
+			cardinality: 3, // detected_level (3 values)
+			rangeSec:    7 * day,
+			wantStep:    "1200s",
+			wantOK:      true,
+		},
+		{
+			name:        "low-card threshold boundary (50) still relaxes",
+			origStep:    "300s",
+			cardinality: 50,
+			rangeSec:    2 * day,
+			wantStep:    "300s",
+			wantOK:      true,
+		},
+		{
+			name:        "low-card with very fine step is floored to safety budget",
+			origStep:    "1s",
+			cardinality: 5,
+			rangeSec:    2 * day,
+			// 2d/1000 buckets = 172s minimum step
+			wantStep: "172s",
+			wantOK:   true,
+		},
+		{
+			name:        "high-card (51) does not relax — keeps coarsened step",
+			origStep:    "300s",
+			cardinality: 51,
+			rangeSec:    2 * day,
+			wantOK:      false,
+		},
+		{
+			name:        "cardinality at limit (500) means truncated — does not relax",
+			origStep:    "300s",
+			cardinality: maxDrilldownSeries,
+			rangeSec:    2 * day,
+			wantOK:      false,
+		},
+		{
+			name:        "zero cardinality (no field_values data) does not relax",
+			origStep:    "300s",
+			cardinality: 0,
+			rangeSec:    2 * day,
+			wantOK:      false,
+		},
+		{
+			name:        "missing original step does not relax",
+			origStep:    "",
+			cardinality: 5,
+			rangeSec:    2 * day,
+			wantOK:      false,
+		},
+		{
+			name:        "zero range does not relax",
+			origStep:    "300s",
+			cardinality: 5,
+			rangeSec:    0,
+			wantOK:      false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := relaxStepForLowCardinality(tt.origStep, tt.cardinality, tt.rangeSec*int64(time.Second))
+			if ok != tt.wantOK {
+				t.Fatalf("relaxStepForLowCardinality(%q, %d, %ds) ok = %v, want %v",
+					tt.origStep, tt.cardinality, tt.rangeSec, ok, tt.wantOK)
+			}
+			if ok && got != tt.wantStep {
+				t.Errorf("relaxStepForLowCardinality(%q, %d, %ds) = %q, want %q",
+					tt.origStep, tt.cardinality, tt.rangeSec, got, tt.wantStep)
+			}
+		})
+	}
+}
+
 // TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries verifies the
 // routing behaviour for translated Drilldown queries:
 //
