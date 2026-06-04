@@ -150,21 +150,16 @@ func TestSynthesizeDrilldownMatrixSpread(t *testing.T) {
 	})
 
 	t.Run("spread across range when stepSec>0", func(t *testing.T) {
-		// 1000s range, stepSec=10. Spread should produce drilldownSynthesizeBuckets+1 points
-		// (or fewer if step floor kicks in). Last point lands at endSec.
+		// 1000s range, stepSec=10. drilldownSynthesizeBuckets=120 gives bucketStep
+		// rangeSec/120 = 8s, which is below the step floor (10s) so bucketStep = 10s.
+		// nPoints = 1000/10 + 1 = 101. perBucket for v1: 600/101 = 5.
 		got := synthesizeDrilldownMatrixSpread("trace_id", entries, 0, 1000, 10)
 
-		// Last point of the first series (v1, 600 hits) should land at ts=1000.
-		// perBucket value depends on nPoints; with bucketStep snapping and 1000s/30 = 33s
-		// snapped to 40s, nPoints = 1000/40+1 = 26. perBucket = 600/26 = 23.
-		if !bytes.Contains(got, []byte(`,"23"`)) {
-			t.Errorf("expected perBucket=23 in v1's values (600 hits / 26 buckets)\nbody: %s", got)
+		// Last point of v1 should land at ts=1000 with value=5.
+		if !bytes.Contains(got, []byte(`[1000,"5"]`)) {
+			t.Errorf("expected v1 last point at ts=1000 with value=5\nbody: %s", got)
 		}
-		// Last point at endSec=1000 should appear for both series.
-		if !bytes.Contains(got, []byte(`[1000,"23"]`)) {
-			t.Errorf("expected last point of v1 at ts=1000\nbody: %s", got)
-		}
-		// For v2 with 30 hits / 26 buckets = 1, floor to 1.
+		// For v2 with 30 hits / 101 buckets = 0, floor to 1.
 		if !bytes.Contains(got, []byte(`[1000,"1"]`)) {
 			t.Errorf("expected v2 last point with value=1 (floored)\nbody: %s", got)
 		}

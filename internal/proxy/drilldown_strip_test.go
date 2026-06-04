@@ -712,13 +712,15 @@ func TestCoarsenDrilldownStep(t *testing.T) {
 		step     time.Duration
 		wantStep time.Duration
 	}{
-		// Ranges > drilldownHybridThreshold (12h) use the 30-bucket cap.
+		// Ranges > drilldownHybridThreshold (12h) use the 120-bucket cap (same as
+		// short-range cap so the transition is seamless and the chart resolution at
+		// 13h is comparable to 11h).
 		{
-			name:     "24h range step=120s coarsens to 1h",
+			name:     "24h range step=120s coarsens to 15min",
 			start:    ts(0),
 			end:      ts(24 * 3600),
 			step:     120 * time.Second,
-			wantStep: time.Hour, // 24h/30 = 2880s → snap to 1h
+			wantStep: 15 * time.Minute, // 24h/120 = 720s → snap to 15min
 		},
 		// Ranges ≤ drilldownHybridThreshold (12h) use the 120-bucket cap,
 		// giving finer-grained VL data and making the Grafana precision slider effective.

@@ -336,14 +336,19 @@ func (p *Proxy) drilldownShouldEagerTwoPhase(r *http.Request, cleanBase, field s
 const drilldownStatsCacheTTL = 5 * time.Minute
 
 // maxDrilldownStatsBuckets caps the number of time buckets sent to VL in a
-// Drilldown stats_query_range call for ranges > drilldownHybridThreshold. Must
-// be ≤ maxBatchBuckets. maxDrilldownStatsBucketsShort raises the cap for ranges
-// ≤ drilldownHybridThreshold: more buckets reduce the expansion factor
-// (coarseStep/fineStep) so sub-bars reflect real VL variation and the precision
-// slider in Grafana Drilldown has a visible effect.
+// Drilldown stats_query_range call for ranges > drilldownHybridThreshold.
+// maxDrilldownStatsBucketsShort raises the cap for ranges ≤ drilldownHybridThreshold:
+// more buckets reduce the expansion factor (coarseStep/fineStep) so sub-bars reflect
+// real VL variation and the precision slider in Grafana Drilldown has a visible effect.
+//
+// Both caps are aligned at 120 so the transition at drilldownHybridThreshold (12h)
+// is seamless — a 13h query produces ~120 bars at ~390s step instead of the previous
+// ~30 bars at ~1560s step. With high-card groupings already capped at maxDrilldownSeries
+// (500 series), the worst-case stats matrix is 120 × 500 = 60k cells ≈ 3 MB on the wire,
+// well within maxDrilldownResponseBytes (32 MB).
 const (
-	maxDrilldownStatsBuckets      = 30
-	maxDrilldownStatsBucketsShort = 120 // for ranges ≤ drilldownHybridThreshold
+	maxDrilldownStatsBuckets      = 120
+	maxDrilldownStatsBucketsShort = 120
 )
 
 // drilldownLowCardThreshold is the cardinality (distinct grouped-field values)
@@ -409,8 +414,9 @@ func renameStatsBodyMetricKey(body []byte, from, to string) []byte {
 // synthesize-only path. Spreading the total hits across this many points produces
 // a visible "presence" band in Grafana even when field_values cannot give us a
 // real histogram (high-cardinality fields where the limit truncated hits to 0).
-// 30 buckets matches maxDrilldownStatsBuckets for visual consistency with stats.
-const drilldownSynthesizeBuckets = 30
+// Matches maxDrilldownStatsBuckets so the high-card synthesize path keeps the
+// same horizontal resolution as the stats path at wide ranges.
+const drilldownSynthesizeBuckets = maxDrilldownStatsBuckets
 
 func synthesizeDrilldownMatrix(lokiField string, entries []drilldownFVEntry, endSec int64) []byte {
 	return synthesizeDrilldownMatrixSpread(lokiField, entries, endSec, endSec, 0)
