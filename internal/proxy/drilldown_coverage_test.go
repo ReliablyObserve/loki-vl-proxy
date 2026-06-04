@@ -51,6 +51,21 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 			t.Fatal("expected unknown structured field to be exposed")
 		}
 
+		// Regression guard: detectedFieldsSampleLimit must match Loki's default
+		// LIMIT for detected_fields/detected_labels. The Grafana Drilldown plugin
+		// uses the cardinality number to decide chart vs placeholder rendering;
+		// if the proxy reports cardinality=500 while Loki reports cardinality=100,
+		// users see different UI behaviour across backends. Concretely, high-card
+		// fields (trace_id, span_id, *_id) end up with blank chart panels on the
+		// proxy and a sparkline placeholder on Loki. Setting both to 100 keeps
+		// the behaviour identical. If anyone bumps this to chase higher cardinality
+		// without coordinating a Loki-side change, this test will fail.
+		const lokiDetectedFieldsDefaultLimit = 100
+		if detectedFieldsSampleLimit != lokiDetectedFieldsDefaultLimit {
+			t.Errorf("detectedFieldsSampleLimit must match Loki's default LIMIT (%d) for parity in Drilldown UI rendering; got %d. See https://github.com/grafana/loki/blob/main/pkg/querier/queryrange/detected_fields.go for upstream default.",
+				lokiDetectedFieldsDefaultLimit, detectedFieldsSampleLimit)
+		}
+
 		// Regression guard: stream labels returned by VL's field_names index
 		// (container, env, pod, level, version) must NOT pass shouldExposeStructuredField
 		// when the scanned stream-label set contains them. This is the contract

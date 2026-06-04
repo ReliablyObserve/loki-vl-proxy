@@ -23,7 +23,16 @@ import (
 )
 
 const unknownServiceName = "unknown_service"
-const detectedFieldsSampleLimit = 500
+
+// detectedFieldsSampleLimit caps the number of distinct VALUES sampled per
+// detected field during scan. Matches Loki's default (LIMIT 100) so the
+// "cardinality" Grafana Drilldown shows is identical across backends and so
+// high-cardinality fields (trace_id, span_id, *_id, *_uid) report the same
+// capped 100 instead of 500. Drilldown's plugin uses this number to decide
+// when to render a chart vs a placeholder, so divergence here made the proxy
+// produce blank-looking field-card charts for ID-style fields where Loki
+// would render the same placeholder.
+const detectedFieldsSampleLimit = 100
 
 // detectedFieldsScannerLineBytes is the maximum NDJSON line length the streaming
 // scanner will accept. VL log entries rarely exceed a few KB; 2 MB is a safe cap
