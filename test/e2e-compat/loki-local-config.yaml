@@ -56,9 +56,15 @@ limits_config:
   creation_grace_period: 48h
   per_stream_rate_limit: 512MB
   per_stream_rate_limit_burst: 1024MB
-  # Set high to avoid 422 on metric queries with many series (e.g. rate() with
-  # high-cardinality labels). Loki treats 0 as zero series allowed, not unlimited.
-  max_query_series: 100000
+  # Bumped 100k → 1M so Loki can serve queries against {namespace="prod"} at
+  # 24h+ where `pod` is a per-request unique stream label and Loki accumulates
+  # 700k+ unique streams in a day. Without this, every Drilldown aggregate
+  # panel against namespace=prod returned "maximum number of series reached"
+  # and Grafana rendered 0 panels — making it appear that the proxy was
+  # producing wrong data when in fact Loki literally could not serve the
+  # comparable query. Loki treats 0 as zero allowed, not unlimited, so we set
+  # an explicit high number rather than 0.
+  max_query_series: 1000000
   # Set to 0 (unlimited) for benchmarking — high-concurrency runs can produce
   # more log entries per query than the default 5000 cap.
   max_entries_limit_per_query: 0
