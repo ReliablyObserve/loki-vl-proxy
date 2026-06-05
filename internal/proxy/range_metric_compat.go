@@ -1401,6 +1401,12 @@ func buildManualRangeMetricMatrix(functionName string, quantile float64, series 
 // hit counts returned by collectRangeMetricHits. Each sample is a bucket count;
 // the window is applied by summing all buckets whose start falls in [T-window, T)
 // for each step point T. Supports count_over_time (sum) and rate (sum/window_s).
+//
+// Pre-sizes the per-series `values` slice to the expected step count rather
+// than the previous starting cap of 16. For a 24 h / 5 s step range that's
+// 17 280 points per series; the 16 → 17 280 doubling cascade was a hot spot
+// in pprof's cumulative allocation profile (1.31 GB total). Pre-sizing
+// eliminates the cascade — one allocation per series instead of ten.
 func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) []byte {
 	if end.Before(start) {
 		return marshalManualMetricResponse("matrix", []map[string]interface{}{})
@@ -1413,6 +1419,22 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+
+	// Estimate the number of step buckets the loop will iterate over so we
+	// can pre-grow per-series `values` slices. Caps protect against absurd
+	// inputs (step=0 or negative duration). Most series won't hit `expected`
+	// (zero-buckets are skipped) — but doubling from 16 is more expensive
+	// than over-allocating once at the expected upper bound.
+	expectedBuckets := 16
+	if step > 0 && !end.Before(start) {
+		expectedBuckets = int(end.Sub(start)/step) + 1
+		if expectedBuckets < 16 {
+			expectedBuckets = 16
+		}
+		if expectedBuckets > 32768 { // safety cap — no Drilldown query exceeds this
+			expectedBuckets = 32768
+		}
+	}
 
 	perSeries := make(map[string]map[string]interface{}, len(series))
 
@@ -1442,7 +1464,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			if dst == nil {
 				dst = map[string]interface{}{
 					"metric": seriesEntry.Metric,
-					"values": make([][]interface{}, 0, 16),
+					"values": make([][]interface{}, 0, expectedBuckets),
 				}
 				perSeries[key] = dst
 			}
