@@ -1264,18 +1264,14 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 	_, _ = w.Write(final)
 }
 
-// hitsRemainderLabel is the value emitted for the synthetic "other" series that
-// represents the aggregate of all values beyond the top-N returned by VL /hits.
-// VL emits this series with `fields: {}` (empty); Grafana cannot render a series
-// with no label, so we synthesize a placeholder value the user recognises.
-const hitsRemainderLabel = "__other__"
-
 // drilldownHitsFieldsLimit caps the number of top-N values returned per
-// /select/logsql/hits call. 100 matches Loki's effective detected_field_values
-// limit and gives Grafana's Drilldown plugin (which renders the first ~20 by
-// default) enough variety to choose from without overloading the browser.
-// The "remainder" series added by VL is in addition to this count.
-const drilldownHitsFieldsLimit = 100
+// /select/logsql/hits call. 20 matches Grafana Drilldown's default top-N
+// rendering in `VizPanelSeriesLimit` — sending more series than the plugin
+// will render wastes bandwidth and slows the browser. With dozens of field
+// panels on the page, even 100 series per field becomes thousands of series
+// total and Grafana noticeably lags.
+const drilldownHitsFieldsLimit = 20
+
 
 // proxyStatsQueryRangeDrilldownHits handles a Drilldown single-field histogram
 // using VL's /select/logsql/hits endpoint. Unlike the stats+merge pipeline,
@@ -1294,8 +1290,11 @@ const drilldownHitsFieldsLimit = 100
 //	]}
 //
 // Translation to Loki matrix: each hit becomes one series; ISO timestamps
-// parsed to Unix seconds. Remainder bucket (empty fields) labelled with
-// hitsRemainderLabel.
+// parsed to Unix seconds. The remainder bucket (VL emits it with empty fields{})
+// is dropped — it aggregates everything outside top-N and dominates Grafana's
+// Y-axis for high-cardinality fields, hiding individual top-N values. Loki
+// Drilldown doesn't emit a catchall; matching that behaviour keeps the chart
+// readable.
 func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 	w http.ResponseWriter, r *http.Request,
 	cleanBase, field, lokiField string,
@@ -1346,8 +1345,29 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 	if len(hits.Hits) == 0 {
 		return false
 	}
+	// Fall back when VL returned only the remainder bucket (fields:{}). This
+	// happens for ultra-high-cardinality numeric fields (latency_ms, duration_ms)
+	// where every value is unique — VL has no meaningful top-N to compute, so it
+	// puts everything in remainder. Since we drop the remainder, accepting this
+	// response would emit zero series. The legacy stats+merge path produces a
+	// usable per-bucket histogram for these fields.
+	hasNamed := false
+	for _, h := range hits.Hits {
+		if h.Total > 0 && h.Fields[field] != "" {
+			hasNamed = true
+			break
+		}
+	}
+	if !hasNamed {
+		return false
+	}
 
-	// Translate to Loki matrix. Skip series with zero total — they add noise.
+	// Per-value rendering: emit one Loki series per top-N value. Drop the
+	// remainder bucket (VL's fields:{} catchall) — including it dominates the
+	// Y-axis and hides individual values for high-cardinality fields. This
+	// matches Loki Drilldown's behaviour: for ephemeral-value fields (trace_id
+	// with random IDs, pods with random suffixes) the chart shows scattered
+	// dots, which is a faithful representation of the underlying data.
 	var buf bytes.Buffer
 	buf.Grow(len(body))
 	buf.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
@@ -1358,8 +1378,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 		}
 		labelValue := h.Fields[field]
 		if labelValue == "" {
-			// Remainder bucket — give it a synthetic label so Grafana renders it.
-			labelValue = hitsRemainderLabel
+			continue
 		}
 		if !first {
 			buf.WriteByte(',')
@@ -1370,7 +1389,6 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 		buf.WriteString(`":"`)
 		writeJSONEscaped(&buf, labelValue)
 		buf.WriteString(`"},"values":[`)
-		// Walk timestamps + values in lockstep.
 		n := len(h.Timestamps)
 		if len(h.Values) < n {
 			n = len(h.Values)
