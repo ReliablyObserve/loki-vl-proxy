@@ -58,8 +58,10 @@ extraArgs:
   # BREAKING (v1.56.0): the chart now enforces conservative request limits by
   # default. Previously all three knobs defaulted to "0" (unlimited / disabled),
   # which let a single noisy client drive expensive fanout into VictoriaLogs.
-  # The new defaults match the binary's defaults and are sized for a small
-  # Grafana fleet. See docs/tuning.md for guidance on sizing for your workload.
+  # The new defaults align with the binary's rate-limit defaults (50/100);
+  # max-concurrent is set to 64 (tighter than the binary's 100) to leave
+  # backend headroom for a small Grafana fleet. See docs/tuning.md for
+  # guidance on sizing for your workload.
   #
   # 0 = unlimited (NOT recommended — a single noisy client can drive expensive
   # fanout). To restore the prior unlimited behavior, set all three back to "0".

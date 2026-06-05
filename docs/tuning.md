@@ -20,8 +20,10 @@ and as `-<flag>` on the proxy binary.
 | `extraArgs.rate-limit-per-second`    | 50      | 0             | Per-client token bucket refill rate (req/s). Identifies clients by source IP. |
 | `extraArgs.rate-limit-burst`         | 100     | 0             | Per-client burst size. Lets dashboard loads burst above the steady-state rate briefly. |
 
-The binary defaults are identical (100 / 50 / 100); the chart historically
-shipped `0/0/0`, which is why this is a chart-only BREAKING change.
+The binary's defaults are 100 / 50 / 100; the chart ships 64 / 50 / 100
+(one tighter in-flight cap to leave backend headroom for a small Grafana
+fleet). The chart historically shipped `0/0/0` (unlimited), which is why
+this is a chart-only BREAKING change.
 
 ### Tuning guidance
 
