@@ -1,0 +1,24 @@
+{{- /*
+NOTES rendered on `helm install` / `helm upgrade`.
+Keep this short and operationally focused: surface the BREAKING defaults
+operators need to know about, and point at docs/tuning.md for the rest.
+*/ -}}
+This release enforces conservative request limits by default:
+  - max-concurrent          = {{ index .Values.extraArgs "max-concurrent" | default "64" }}  (per-replica in-flight ceiling)
+  - rate-limit-per-second   = {{ index .Values.extraArgs "rate-limit-per-second" | default "50" }}  (per-client token bucket refill, req/s)
+  - rate-limit-burst        = {{ index .Values.extraArgs "rate-limit-burst" | default "100" }}  (per-client burst size)
+
+These map to the proxy binary's --max-concurrent, --rate-limit-per-second,
+and --rate-limit-burst flags.
+
+To restore the previous unlimited behavior (NOT recommended — a single noisy
+client can drive expensive fanout into VictoriaLogs), set all three back to
+"0":
+
+  helm upgrade {{ .Release.Name }} . \
+    --set extraArgs.max-concurrent=0 \
+    --set extraArgs.rate-limit-per-second=0 \
+    --set extraArgs.rate-limit-burst=0
+
+See docs/tuning.md for guidance on appropriate values for your workload
+(Grafana replica count, p99 backend latency, backend headroom).

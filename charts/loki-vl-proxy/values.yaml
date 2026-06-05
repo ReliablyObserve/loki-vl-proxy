@@ -55,12 +55,17 @@ extraArgs:
   backend: "http://victorialogs:9428"
 
   # --- Concurrency & rate limiting ---
-  # Disabled by default; the proxy sits behind Kubernetes resource limits
-  # and VictoriaLogs has its own rate limiting. Enabling these at proxy level
-  # adds a surprise throttle — set only if you intentionally want per-client caps.
-  max-concurrent: "0"           # 0 = unlimited (binary default: 100)
-  rate-limit-per-second: "0"    # 0 = unlimited (binary default: 50 req/s per client)
-  rate-limit-burst: "0"         # 0 = unlimited (binary default: 100)
+  # BREAKING (v1.56.0): the chart now enforces conservative request limits by
+  # default. Previously all three knobs defaulted to "0" (unlimited / disabled),
+  # which let a single noisy client drive expensive fanout into VictoriaLogs.
+  # The new defaults match the binary's defaults and are sized for a small
+  # Grafana fleet. See docs/tuning.md for guidance on sizing for your workload.
+  #
+  # 0 = unlimited (NOT recommended — a single noisy client can drive expensive
+  # fanout). To restore the prior unlimited behavior, set all three back to "0".
+  max-concurrent: "64"          # per-replica in-flight ceiling; 0 = unlimited (NOT recommended)
+  rate-limit-per-second: "50"   # per-client token bucket refill (req/s); 0 = disabled
+  rate-limit-burst: "100"       # per-client burst size; 0 = disabled
 
   # --- Cache ---
   cache-ttl: "60s"
