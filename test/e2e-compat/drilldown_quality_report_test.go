@@ -176,8 +176,14 @@ func measureDrilldownQuality(t *testing.T, svc string, f drilldownQualityField, 
 	endStr := strconv.FormatInt(end.UnixNano(), 10)
 	stepStr := strconv.FormatInt(int64(r.step/time.Second), 10)
 
+	// LogQL requires the range bracket to be a single duration unit ([60s] or
+	// [1m]). time.Duration.String() emits compound forms with trailing zero
+	// components (60s → "1m0s", 5760s → "96m0s") which the parser rejects:
+	//   parse error : logql: expected ], got DURATION ("0s")
+	// Format the range as integer seconds — same representation as the step.
+	rangeStr := stepStr + "s"
 	query := fmt.Sprintf(`sum by (%s) (count_over_time({service_name=%q}%s [%s]))`,
-		f.lokiName, svc, f.filter, r.step)
+		f.lokiName, svc, f.filter, rangeStr)
 
 	params := url.Values{}
 	params.Set("query", query)
