@@ -7,19 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.55.1] - 2026-06-05
-
-### Docs
-
-- README `One-glance comparison` + `Honest TLDR` + `Proxy heap behaviour` +
-  `What this is and isn't` sections (~105 lines) trimmed to a single ~20-line
-  `One-glance comparison` summary with the headline outcome / latency / CPU
-  / RSS numbers + a link to the new `docs/honest-tldr.md`. The long-form
-  per-query breakdown, methodology, heap-pool deep-dive, and tuning history
-  moved verbatim to the docs page so they're discoverable from the
-  Docusaurus sidebar (under "Cost & Comparison") and still findable from
-  GitHub via the README link.
-
 ### CI
 
 - `scripts/ci/check_quality_gate.py` gains a per-benchmark `abs` threshold
@@ -36,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (noise floor) stays at default so a 25× regression still fails.
   Locked by `PoolOverheadOverrideTests` in
   `scripts/ci/tests/test_check_quality_gate.py`.
+
+## [1.55.1] - 2026-06-05
+
+### Docs
+
+- README `One-glance comparison` + `Honest TLDR` + `Proxy heap behaviour` +
+  `What this is and isn't` sections (~105 lines) trimmed to a single ~20-line
+  `One-glance comparison` summary with the headline outcome / latency / CPU
+  / RSS numbers + a link to the new `docs/honest-tldr.md`. The long-form
+  per-query breakdown, methodology, heap-pool deep-dive, and tuning history
+  moved verbatim to the docs page so they're discoverable from the
+  Docusaurus sidebar (under "Cost & Comparison") and still findable from
+  GitHub via the README link.
 
 ## [1.55.0] - 2026-06-05
 
