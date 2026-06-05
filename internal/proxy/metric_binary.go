@@ -77,24 +77,24 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		}
 	}
 
-	// Route Drilldown single-field count queries to the appropriate fast path.
-	// Gate behind isGrafanaDrilldownRequest: Explore/API clients with the same
-	// LogQL pattern must not be subject to the 500-series cap or two-phase fallback.
-	//
-	// Two sub-cases:
+	// Drilldown-style single-field count queries route through the /hits
+	// fast paths regardless of source tag. Two sub-cases:
 	//  1. No parser stages (column-indexed fields: stream labels, OTel attrs) →
 	//     proxyStatsQueryRangeDrilldown (batcher / two-phase / hybrid).
 	//  2. With parser stages (body-embedded fields: trace_id, span_id, level from
 	//     logfmt) → proxyStatsQueryRangeDrilldownParserDirect (one direct VL call
 	//     with parser preserved and VL-side | limit 500).
-	if cleanBase, field, ok := detectDrilldownSingleField(effectiveQuery); ok && isGrafanaDrilldownRequest(r) {
+	//
+	// Explore-source clients hit the same path: their `sum by (X) (count_over_time(
+	// {...} | X!="" [w]))` queries previously fell through to
+	// proxyStatsQueryRangeDirect, which exceeds the 16 MB stats_query_range cap at
+	// long ranges on high-card fields (pod, trace_id, *_id) and returns an empty
+	// matrix. The /hits fast paths sample sub-windows and return top-N + distributed
+	// timestamps in one call, avoiding the cap.
+	if cleanBase, field, ok := detectDrilldownSingleField(effectiveQuery); ok {
 		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery, cleanBase, field)
-	} else if isGrafanaDrilldownRequest(r) {
-		if cleanBase, field, ok := detectDrilldownSingleFieldWithParser(effectiveQuery); ok {
-			p.proxyStatsQueryRangeDrilldownParserDirect(out, r, effectiveQuery, cleanBase, field)
-		} else {
-			p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
-		}
+	} else if cleanBase, field, ok := detectDrilldownSingleFieldWithParser(effectiveQuery); ok {
+		p.proxyStatsQueryRangeDrilldownParserDirect(out, r, effectiveQuery, cleanBase, field)
 	} else {
 		p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
 	}
@@ -207,6 +207,38 @@ const maxDrilldownPhase2Values = 200
 func isGrafanaDrilldownRequest(r *http.Request) bool {
 	tag := strings.ToLower(parseGrafanaSourceTag(r.Header.Values("X-Query-Tags")))
 	return strings.Contains(tag, "lokiexplore") || strings.Contains(tag, "drilldown")
+}
+
+// isGrafanaSourcedRequest reports whether r comes from any Grafana UI client
+// (Explore, Drilldown, dashboard panels). Used to gate fixes that target
+// Grafana's querySplitting behavior — applies to ANY Grafana client because
+// querySplitting fires unconditionally for metric range queries in the Loki
+// datasource, regardless of which Grafana app issued them.
+//
+// Detection signals (any one is sufficient):
+//   - X-Query-Tags carries a `Source=grafana-…` tag (Drilldown / Explore set this).
+//   - User-Agent starts with "Grafana/" (every Grafana backend HTTP client).
+//   - X-Grafana-* header present (org id, user id, request id — sent by the
+//     Grafana backend on dashboard/explore queries).
+//
+// Returning a false negative is acceptable (raw curl/scripts query is served
+// normally). Returning a false positive on a non-Grafana client could trigger
+// the leftover-chunk suppression for legitimate small queries — so the gates
+// in callers also bound the suppression to range ≤ 2 × step, which is too
+// small to plausibly be a real user query at chunked-merge step sizes.
+func isGrafanaSourcedRequest(r *http.Request) bool {
+	if isGrafanaDrilldownRequest(r) {
+		return true
+	}
+	if ua := r.Header.Get("User-Agent"); strings.HasPrefix(ua, "Grafana/") {
+		return true
+	}
+	for k := range r.Header {
+		if strings.HasPrefix(strings.ToLower(k), "x-grafana-") {
+			return true
+		}
+	}
+	return false
 }
 
 // isLikelyHighCardinalityField returns true for field names whose values are
@@ -1011,19 +1043,26 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	// Hybrid path for wide ranges (> drilldownHybridThreshold = 6h) — checked BEFORE
-	// the batcher because the batcher issues stats_query_range over the full range,
-	// defeating the hybrid's purpose of capping the scan to a recent window.
-	// - Fast tier: field_values over the full range (O(column-index), ~30ms) for value discovery.
-	// - Slow tier: stats_query_range over a recent adaptive window only (not the full range).
-	// - Merge: histogram series from stats + single-point stubs from field_values.
-	// - High-cardinality fields: field_values synthesis only, no stats_query_range.
-	// This replaces the "return emptyLokiMatrix" for _id/_uid fields over 6h and eliminates
-	// the O(log-volume) full-range scan that made 2d+ fields slow.
+	// Hybrid path (uses /hits internally) runs for ALL ranges, not just > 6h.
+	//
+	// Why all ranges: Grafana's Loki datasource splits metric queries at the 24h
+	// boundary (oneDayMs in querySplitting.ts) and Drilldown follows the same path
+	// for >24h panels. A 25h request becomes a 24h chunk + a ~1h leftover chunk;
+	// 7d becomes 7 × 24h chunks. Each chunk is a separate sub-request to the proxy.
+	//
+	// If the long chunk uses /hits top-N (20 values active across 24h) and the
+	// short leftover falls through to stats_query_range (up to 500 values active
+	// in 1h, mostly different from the 24h top-N), Grafana's mergeFrames unions
+	// the two series sets. The 500 leftover-only series have data ONLY in the
+	// rightmost 1h window — producing a tall spike at the right edge with the
+	// 24h distribution dwarfed underneath. Lowering the hybrid threshold to 0 so
+	// every chunk uses /hits keeps the series set bounded to top-20 per chunk
+	// regardless of duration, dramatically reducing the chunk-2-only series count
+	// and the resulting spike.
 	{
 		startNs, sok := parseLokiTimeToUnixNano(startRaw)
 		endNs, eok := parseLokiTimeToUnixNano(endRaw)
-		if sok && eok && endNs-startNs > int64(drilldownHybridThreshold) {
+		if sok && eok && endNs > startNs {
 			p.proxyStatsQueryRangeDrilldownHybrid(w, r, logsqlQuery, cleanBase, field, effectiveStepRaw, startNs, endNs, drillCacheKey, origGroupBy)
 			return
 		}
@@ -1292,7 +1331,6 @@ const hitsWindowSampleThreshold = 6 * time.Hour
 // stacking spreads across the chart visually.
 const hitsWindowCount = 8
 
-
 // proxyStatsQueryRangeDrilldownHits handles a Drilldown single-field histogram
 // using VL's /select/logsql/hits endpoint. Unlike the stats+merge pipeline,
 // /hits natively returns top-N series with REAL per-bucket counts PLUS a
@@ -1455,6 +1493,33 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 	stepForHits := stepRaw
 	if _, err := strconv.ParseFloat(stepRaw, 64); err == nil {
 		stepForHits = stepRaw + "s"
+	}
+
+	// Suppress one-bucket leftover chunks emitted by Grafana's querySplitting.
+	// At any range > 24h, Grafana's Loki datasource (`querySplitting.ts`) splits
+	// metric queries into 24h chunks plus a tiny residual chunk whose range can
+	// be < step. The residual produces axisLen=1 — all top-N values land at the
+	// single rightmost timestamp. mergeFrames then glues that one-point block
+	// onto chunk-1's distributed series as a tall spike at the right edge.
+	// Return an empty matrix for these (the chart loses ~1 step on the right
+	// but no longer shows a recent-data spike that dwarfs the rest).
+	//
+	// Gated on isGrafanaSourcedRequest — querySplitting fires for ANY Grafana
+	// client (Explore, Drilldown, dashboard panels) not just Drilldown, and
+	// Explore at 24h+ shows the same spike from the same residual chunk.
+	if isGrafanaSourcedRequest(r) {
+		if sNs, sok := parseLokiTimeToUnixNano(startRaw); sok {
+			if eNs, eok := parseLokiTimeToUnixNano(endRaw); eok {
+				if stepDur, stepOK := parsePositiveStepDuration(stepForHits); stepOK && stepDur > 0 {
+					if eNs-sNs <= 2*stepDur.Nanoseconds() {
+						w.Header().Set("Content-Type", "application/json")
+						w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
+						_, _ = w.Write(emptyLokiMatrix)
+						return true
+					}
+				}
+			}
+		}
 	}
 
 	// For long ranges, sample windows in parallel so the top-N spans the

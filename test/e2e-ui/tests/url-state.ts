@@ -1,7 +1,7 @@
 export const EXPLORE_URL = "/explore";
 export const DRILLDOWN_URL = "/a/grafana-lokiexplore-app/explore";
 
-type DrilldownView = "logs" | "fields";
+type DrilldownView = "logs" | "fields" | "labels";
 
 function baseDrilldownState(datasourceUid: string): Record<string, string> {
   return {

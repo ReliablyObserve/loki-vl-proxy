@@ -1875,6 +1875,11 @@ func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAn
 			t.Fatalf("parse form: %v", err)
 		}
 		switch r.URL.Path {
+		case "/select/logsql/hits", "/select/logsql/field_values":
+			// Drilldown stats compat routes through /hits first; respond empty
+			// so the proxy falls back to stats_query_range — the path under test.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"hits":[]}`))
 		case "/select/logsql/stats_query_range":
 			statsQuery = r.Form.Get("query")
 			if strings.Contains(statsQuery, `service_name:!"" "service.name":!""`) {

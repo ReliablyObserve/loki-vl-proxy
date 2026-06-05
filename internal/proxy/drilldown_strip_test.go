@@ -136,11 +136,14 @@ func TestLimitLokiMatrixSeries(t *testing.T) {
 	})
 }
 
-// TestProxyStatsQueryRange_DrilldownHeaderGate verifies that Drilldown-specific
-// optimizations (500-series cap via | limit, two-phase fallback) are gated behind
-// the X-Query-Tags header. Explore and direct API clients with the same query pattern
-// must go through the direct path and receive unfiltered results.
-func TestProxyStatsQueryRange_DrilldownHeaderGate(t *testing.T) {
+// TestProxyStatsQueryRange_DrilldownPathAlwaysOn verifies that the Drilldown
+// /hits routing applies regardless of source tag. The previous header gate
+// kept Explore on proxyStatsQueryRangeDirect, which hits the 16 MB stats
+// response cap and returns an empty matrix at 24h+ for high-cardinality
+// fields. Routing both sources through the Drilldown path (which uses VL
+// /hits + sampled windows internally) fixes the empty-matrix symptom while
+// returning the same shape Drilldown already consumes.
+func TestProxyStatsQueryRange_DrilldownPathAlwaysOn(t *testing.T) {
 	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedQuery = r.FormValue("query")
@@ -149,41 +152,36 @@ func TestProxyStatsQueryRange_DrilldownHeaderGate(t *testing.T) {
 	}))
 	defer vlBackend.Close()
 
-	p := newTestProxy(t, vlBackend.URL)
-	effectiveQuery := `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`
-
-	form := url.Values{}
-	form.Set("query", `sum by (trace_id) (count_over_time({env="production"}|trace_id!=""`+` [1m]))`)
-	form.Set("start", "1700000000")
-	form.Set("end", "1700003600")
-	form.Set("step", "60s")
-
-	t.Run("without_header_uses_direct_path_no_limit", func(t *testing.T) {
+	// Use a distinct orgID per subtest to avoid the Drilldown response cache
+	// returning a hit on the second call (the cache key is content + orgID).
+	run := func(t *testing.T, orgID, queryLabel, header string) {
+		t.Helper()
 		receivedQuery = ""
+		p := newTestProxy(t, vlBackend.URL)
+		effectiveQuery := fmt.Sprintf(`env:=%q | filter trace_id:!"" | stats by (trace_id) count()`, queryLabel)
+		form := url.Values{}
+		form.Set("query", fmt.Sprintf(`sum by (trace_id) (count_over_time({env=%q}|trace_id!=""`+` [1m]))`, queryLabel))
+		form.Set("start", "1700000000")
+		form.Set("end", "1700003600")
+		form.Set("step", "60s")
 		req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
-		req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
-		req.Header.Set("X-Scope-OrgID", "default")
-		// No X-Query-Tags — simulates Explore or direct API client
-
-		p.proxyStatsQueryRange(httptest.NewRecorder(), req, effectiveQuery)
-
-		if strings.Contains(receivedQuery, "| limit") {
-			t.Errorf("direct path (no header) must not apply series limit; VL received: %s", receivedQuery)
+		req = req.WithContext(context.WithValue(req.Context(), orgIDKey, orgID))
+		req.Header.Set("X-Scope-OrgID", orgID)
+		if header != "" {
+			req.Header.Set("X-Query-Tags", header)
 		}
+		p.proxyStatsQueryRange(httptest.NewRecorder(), req, effectiveQuery)
+		if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
+			t.Errorf("must route through Drilldown path (header=%q); VL received: %s", header, receivedQuery)
+		}
+	}
+
+	t.Run("without_header_routes_to_drilldown_path", func(t *testing.T) {
+		run(t, "explore-tenant", "production", "")
 	})
 
-	t.Run("with_drilldown_header_uses_drilldown_path_with_limit", func(t *testing.T) {
-		receivedQuery = ""
-		req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
-		req = req.WithContext(context.WithValue(req.Context(), orgIDKey, "default"))
-		req.Header.Set("X-Scope-OrgID", "default")
-		req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
-
-		p.proxyStatsQueryRange(httptest.NewRecorder(), req, effectiveQuery)
-
-		if !strings.Contains(receivedQuery, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
-			t.Errorf("Drilldown path must add VL-side | limit %d; VL received: %s", maxDrilldownSeries, receivedQuery)
-		}
+	t.Run("with_drilldown_header_routes_to_drilldown_path", func(t *testing.T) {
+		run(t, "drilldown-tenant", "staging", "Source=grafana-lokiexplore-app")
 	})
 }
 
@@ -246,23 +244,34 @@ func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	}
 }
 
-// TestProxyStatsQueryRangeDrilldown_EagerTwoPhaseForKnownHCField verifies that
-// trace_id (and other *_id fields) skip the direct VL attempt entirely and go
-// straight to the two-phase path. This is the primary CPU/memory optimization:
-// no wasted 32 MB read-and-reject for known high-cardinality fields.
-func TestProxyStatsQueryRangeDrilldown_EagerTwoPhaseForKnownHCField(t *testing.T) {
-	var receivedQueries []string
+// TestProxyStatsQueryRangeDrilldown_HitsFirstForHCField verifies that high-card
+// fields like trace_id route through /select/logsql/hits as the primary path
+// regardless of range. /hits computes top-N natively and returns a shared axis,
+// so Grafana's mergeFrames stitches chunked responses (24h split) without the
+// 500-series spike that previously hit chunk-2-only series at the right edge.
+// Two-phase remains as fallback when /hits fails (legacy VL, parse error, etc.).
+func TestProxyStatsQueryRangeDrilldown_HitsFirstForHCField(t *testing.T) {
+	var hitsHits, statsHits int
+	var hitsQuery string
 	var mu sync.Mutex
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		receivedQueries = append(receivedQueries, r.FormValue("query"))
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		// Return 3 trace_id values from Phase 1 (single-bucket query)
-		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
-			`{"metric":{"trace_id":"abc"},"values":[[1700001800,"3"]]},`+
-			`{"metric":{"trace_id":"def"},"values":[[1700001800,"2"]]},`+
-			`{"metric":{"trace_id":"ghi"},"values":[[1700001800,"1"]]}]}}`)
+		switch r.URL.Path {
+		case "/select/logsql/hits":
+			hitsHits++
+			hitsQuery = r.FormValue("query")
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"hits":[`+
+				`{"fields":{"trace_id":"abc"},"timestamps":["2023-11-14T22:13:20Z","2023-11-14T22:14:20Z"],"values":[3,2],"total":5},`+
+				`{"fields":{"trace_id":"def"},"timestamps":["2023-11-14T22:13:20Z","2023-11-14T22:14:20Z"],"values":[2,1],"total":3},`+
+				`{"fields":{"trace_id":"ghi"},"timestamps":["2023-11-14T22:14:20Z"],"values":[1],"total":1}]}`)
+		default:
+			statsHits++
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
+		}
 	}))
 	defer vlBackend.Close()
 
@@ -271,8 +280,8 @@ func TestProxyStatsQueryRangeDrilldown_EagerTwoPhaseForKnownHCField(t *testing.T
 	effectiveQuery := `env:="production" | filter trace_id:!"" | stats by (trace_id) count()`
 	form := url.Values{}
 	form.Set("query", `sum by (trace_id) (count_over_time({env="production"}|trace_id!=""`+` [1m]))`)
-	form.Set("start", "1700000000000000000")
-	form.Set("end", "1700003600000000000")
+	form.Set("start", "1700000000")
+	form.Set("end", "1700003600")
 	form.Set("step", "60s")
 
 	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+form.Encode(), nil)
@@ -283,40 +292,24 @@ func TestProxyStatsQueryRangeDrilldown_EagerTwoPhaseForKnownHCField(t *testing.T
 	p.proxyStatsQueryRangeDrilldown(w, req, effectiveQuery, `env:="production"`, "trace_id")
 
 	mu.Lock()
-	nCalls := len(receivedQueries)
-	q0 := ""
-	q1 := ""
-	if nCalls > 0 {
-		q0 = receivedQueries[0]
-	}
-	if nCalls > 1 {
-		q1 = receivedQueries[1]
-	}
+	gotHits, gotStats := hitsHits, statsHits
+	gotHitsQuery := hitsQuery
 	mu.Unlock()
 
-	t.Logf("VL received %d calls: q0=%s | q1=%s", nCalls, q0, q1)
+	t.Logf("VL calls: /hits=%d stats=%d hitsQuery=%q", gotHits, gotStats, gotHitsQuery)
 
-	// Eager two-phase must issue exactly 2 VL calls (Phase 1 + Phase 2), NOT 1.
-	// If only 1 call was made, the direct path was used — that's a regression.
-	if nCalls != 2 {
-		t.Errorf("expected 2 VL calls (two-phase), got %d — direct path used for trace_id?", nCalls)
+	// Primary path: /hits must be tried (and succeed for HC fields).
+	if gotHits == 0 {
+		t.Errorf("expected /select/logsql/hits to be called for HC field trace_id, got 0 hits")
 	}
-	// Phase 1: single-bucket call with the entire range as step, must have | limit 500
-	if !strings.Contains(q0, fmt.Sprintf("| limit %d", maxDrilldownSeries)) {
-		t.Errorf("Phase 1 query must have | limit %d: %s", maxDrilldownSeries, q0)
+	// When /hits succeeds, no fallback to legacy stats_query_range is needed.
+	if gotStats > 0 {
+		t.Errorf("expected zero stats_query_range fallback calls when /hits succeeds, got %d", gotStats)
 	}
-	// Phase 2: filtered range with field:in(...) — NOT | limit (already bounded by Phase 1)
-	if !strings.Contains(q1, `trace_id:in(`) {
-		t.Errorf("Phase 2 query must filter via trace_id:in(...): %s", q1)
-	}
-	// Phase 2 must NOT have the direct | limit suffix — Phase 1 already bounded the values
-	if strings.Contains(q1, "| limit") {
-		t.Errorf("Phase 2 query must not add a second | limit: %s", q1)
-	}
-	// Response must include all 3 series the VL backend returned
+	// Response must surface the series from /hits (per-value rendering).
 	body := w.Body.String()
 	if strings.Count(body, `"trace_id"`) < 3 {
-		t.Errorf("response must include 3 trace_id series, body: %s", body)
+		t.Errorf("response must include 3 trace_id series from /hits, body: %s", body)
 	}
 }
 
@@ -1090,11 +1083,11 @@ func TestProxyStatsQueryRangeDrilldownParserDirect_ZerofillsMissingBuckets(t *te
 	// The response MUST contain step-aligned zero buckets that VL did not return.
 	// VL returned vlTS1 and vlTS2; the rest must be zero-filled at step=60s.
 	missingZeroBuckets := []int64{
-		baseTS,           // first bucket
-		baseTS + 60,      // 2nd bucket
-		vlTS1 + 60,       // bucket right after VL's first data point
-		vlTS2 + 60,       // bucket right after VL's second data point
-		endSec - 60,      // last bucket before endSec
+		baseTS,      // first bucket
+		baseTS + 60, // 2nd bucket
+		vlTS1 + 60,  // bucket right after VL's first data point
+		vlTS2 + 60,  // bucket right after VL's second data point
+		endSec - 60, // last bucket before endSec
 	}
 	for _, ts := range missingZeroBuckets {
 		zeroEntry := []byte(fmt.Sprintf(`[%d,"0"]`, ts))

@@ -55,6 +55,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing the quoted form (`"k8s.pod.name":!""`) the translator emits for OTel attributes;
   (3) `extractStreamSelectorOnly` only recognised Loki-bracketed selectors (`{namespace="prod"}`)
   and skipped VL-native form (`namespace:="prod"`) produced by the translator.
+- Explore now returns data for `sum by (X) (count_over_time(...))` queries at 24h+ time
+  ranges. Previously the Drilldown `/hits` fast paths were gated behind the
+  `X-Query-Tags: Source=grafana-lokiexplore-app` header, so Explore-source requests with
+  the same query shape fell through to `stats_query_range`, hit the 16 MB response cap on
+  high-cardinality fields (`pod`, `trace_id`, `*_id`), and returned an empty matrix. The
+  source-tag gate is removed; any caller issuing the Drilldown-compatible query shape now
+  benefits from the same top-N + sampled-windows path.
+- Right-edge spike on Drilldown / Explore / dashboard panel field histograms above 24h is
+  eliminated. Grafana's Loki datasource splits metric range queries at the 24h boundary
+  (`oneDayMs` in `querySplitting.ts`) and merges chunk responses via `mergeFrames`. The
+  proxy previously routed the 24h chunk through `/hits` (top-20 series) but the small
+  leftover chunk (<6h) through `stats_query_range` with `| limit 500`, returning a totally
+  different and much larger series set. `mergeFrames` unioned both, so the 500 chunk-2-only
+  series rendered as a tall spike at the right edge of the chart, dwarfing the 24h chunk's
+  distributed data. Three coordinated fixes:
+  (1) the hybrid `/hits` path now runs for every range, not just `> drilldownHybridThreshold`,
+  so each Grafana chunk returns the same top-N shape;
+  (2) `proxyStatsQueryRangeDrilldownHits` detects the 1-bucket leftover chunk Grafana emits
+  for ranges that aren't exact multiples of the 24h aligned step (chunk range ≤ 2 × step)
+  and returns an empty matrix instead of a 16-series block of values all landing on the
+  rightmost timestamp — that block was the source of the right-edge spike under
+  `mergeFrames`;
+  (3) suppression applies to ANY Grafana client (Drilldown via `X-Query-Tags`, Explore /
+  dashboard panels via `User-Agent: Grafana/X.Y.Z` or any `X-Grafana-*` header), because
+  `querySplitting` fires unconditionally for Loki-datasource metric queries regardless of
+  which Grafana app issued them.
+  Verified against the live stack with a Grafana-faithful chunking simulator: an
+  exactly-24h split-into-2-chunks query produces 16 series evenly distributed across
+  12 × 2h bins (`1 1 2 2 2 0 2 1 1 1 1 2`) and 7d into 8 chunks produces 112 series across
+  14 × 12h bins (`10 8 9 7 8 7 8 8 8 8 8 8 8 8`) — no spike at the right edge in either.
+
+### Locked / Hardened
+
+- All 2026-06 Drilldown quality fixes are pinned by named `TestLock_*` regression tests in
+  `internal/proxy/drilldown_regression_lock_test.go` (12 lock cases, 56 subtests). Each
+  test maps to a single invariant — routing source-agnosticism, `/hits`-for-all-ranges,
+  leftover-chunk suppression, step normalisation, remainder-bucket drop, shared timestamp
+  axis, VL-native selector extraction, quoted-dotted-field detection, source-detection
+  helper, no-double-call stats fallback, `maxStatsQueryRangeBytes` bound, and
+  `drilldownHitsFieldsLimit` bound. A future PR that weakens any of these fails CI with a
+  named lock and a "do not regress" comment pointing back at the original incident.
+- `test/e2e-compat/drilldown_chunked_merge_lock_test.go` adds two end-to-end locks that
+  run against the live VL stack: `TestE2ELock_DrilldownChunkedMerge_NoRightEdgeSpike`
+  embeds a port of Grafana's `mergeFrames + closestIdx + splice` algorithm and asserts the
+  merged frame has no right-edge spike for 24h / 25h / 2d / 7d ranges with both
+  Drilldown-source and Grafana-dashboard sources;
+  `TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed` asserts the proxy actually
+  emits an empty matrix (header `X-Proxy-Drilldown-Path: hits-leftover-suppressed` or
+  cached equivalent) for the leftover chunk Grafana sends at the trailing edge of a
+  24h-aligned split. Total: 14 e2e lock subtests.
+- `docs/compatibility-drilldown.md` documents the Long-Range Histograms contract and the
+  "Do Not Regress" checklist that maps each invariant to its lock test.
 
 ## [1.54.0] - 2026-05-30
 

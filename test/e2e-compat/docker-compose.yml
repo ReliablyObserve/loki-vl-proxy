@@ -17,6 +17,11 @@ services:
   loki:
     image: ${LOKI_IMAGE:-grafana/loki:3.7.1}
     container_name: e2e-loki
+    # Loki image runs as uid 10001; named volume defaults to root-owned and
+    # Loki crashes with "mkdir /tmp/loki/rules: permission denied". Run as root
+    # in e2e so the persistent volume is writable. (Production would use an
+    # init container to chown the volume.)
+    user: "0:0"
     ports:
       - "13101:3100"
     # Bench peak: 1,798 MB (heavy c=100). +30% headroom = 2,337 MB → 2.4g.
