@@ -94,6 +94,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Updated in `go.mod`, `bench/go.mod`, `Dockerfile`, all `.github/workflows/`,
   `docs/getting-started.md`, `docs/benchmarks.md`.
 
+### Tests
+
+- E2E label-values flakes on hosted GHA runners (`additional_label_values`,
+  `label_values_honor_limit`, `label_filters_apply_to_resource_values`,
+  `multi_tenant_resources_respect___tenant_id___filters`) fixed by calling
+  VictoriaLogs' documented `POST /internal/force_flush` from `ensureDataIngested`.
+  VL keeps recent ingest in in-memory buffers and only materializes the column
+  index (which backs `/select/logsql/field_values`) on flush; without
+  `force_flush`, hosted runners returned empty `label_values` for 10–30 s after
+  push and flaked the entire `TestDrilldown_GrafanaResourceContracts` suite.
+  Also adds `-inmemoryDataFlushInterval=1s` to VL in `docker-compose.yml` as
+  defense-in-depth for any test path not flush-aware.
+  Source: https://docs.victoriametrics.com/victorialogs/#forced-flush
+- `parsed_only_fields_refresh_after_new_logs_arrive` polling deadline raised
+  20 s → 30 s → 60 s → 120 s across iterations to absorb hosted GHA runner
+  variance. 120 s exceeds the 90 s `detected_fields` TTL so even when the
+  background refresh stalls the next poll is a hard cache-miss → fresh fetch.
+
+### Benchmark
+
+- `bench/drilldown-vs-loki.sh` now sends `X-Query-Tags: Source=grafana-lokiexplore-app`
+  on every Loki direct call, matching what Grafana Drilldown actually emits.
+  Loki's `pkg/querier/queryrange/limits.go::seriesLimiter.Do` detects this via
+  `IsLogsDrilldownRequest()` and converts max-series-exceeded errors from
+  HTTP 500 `too_many_series` into HTTP 200 with partial results + warning
+  header — the correct user-visible behavior. Without the header the bench
+  misrepresented Loki's actual behavior for real Drilldown traffic.
+- `docs/benchmarks.md` gains a new "Drilldown / Explore — real Grafana queries
+  vs Loki direct" section with measured numbers for `sum by (pod)`, `trace_id`,
+  `service_version`, and `/detected_fields` at 1 h–7 d ranges, plus per-container
+  resource consumption (Loki peaked at 15.8 cores / 7.9 GiB before erroring;
+  proxy + VL together used ~5 cores / 1.6 GiB while serving all queries).
+
 ### Locked / Hardened
 
 - All 2026-06 Drilldown quality fixes are pinned by named `TestLock_*` regression tests in

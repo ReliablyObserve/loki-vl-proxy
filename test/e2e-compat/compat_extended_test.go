@@ -29,14 +29,48 @@ func ensureDataIngested(t *testing.T) {
 		waitForReady(t, lokiURL+"/ready", 30*time.Second)
 		ingestionAnchor = time.Now().Add(-3 * time.Minute)
 		ingestRichTestData(t)
+		// VL keeps recent ingest in in-memory buffers; column-index materialization
+		// (which backs /select/logsql/field_values, the proxy's label_values path)
+		// only happens when those buffers are flushed into "searchable data
+		// blocks". /internal/force_flush is the documented test-harness hook for
+		// triggering that conversion immediately. Without it, hosted GHA runners
+		// can return empty label_values for 10–30 s post-push, which flakes
+		// `additional_label_values`, `label_values_honor_limit`, and the
+		// resource-label-filter subtests.
+		// Source: https://docs.victoriametrics.com/victorialogs/#forced-flush
+		forceVLFlush(t)
 		waitForLokiMetricData(t)
-		// Wait for VL-backed label_values to come back too — on slow CI runners
-		// the proxy can return empty for label/cluster/values for ~10–30 s after
-		// the push finishes because VL's column index lags behind ingestion.
-		// Tests that query label_values immediately after ensureDataIngested
-		// were flaking on hosted GHA runners without this poll.
+		// Belt-and-braces: poll until the proxy actually surfaces the values. The
+		// force_flush makes data searchable in VL but the proxy still has its own
+		// label cache; this loop tolerates that one extra hop.
 		waitForProxyLabelValues(t, "cluster", "us-east-1")
 	})
+}
+
+// forceVLFlush triggers VictoriaLogs' /internal/force_flush endpoint, converting
+// the in-memory ingest buffers into searchable data blocks. This is the
+// documented test-harness hook for the "I just ingested data, query it now"
+// flow (https://docs.victoriametrics.com/victorialogs/#forced-flush). Without
+// it, /select/logsql/field_values (which the proxy uses for label_values) can
+// return empty for 10–30 s after ingestion on slow CI runners.
+// Failures are logged, not fatal — downstream tests surface the real assertion
+// failure if VL is genuinely broken.
+func forceVLFlush(t *testing.T) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, vlURL+"/internal/force_flush", nil)
+	if err != nil {
+		t.Logf("warning: forceVLFlush new-request: %v", err)
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("warning: forceVLFlush call failed: %v (test will fall back to polling)", err)
+		return
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		t.Logf("warning: forceVLFlush returned HTTP %d (test will fall back to polling)", resp.StatusCode)
+	}
 }
 
 // waitForProxyLabelValues polls /loki/api/v1/label/<name>/values on the proxy

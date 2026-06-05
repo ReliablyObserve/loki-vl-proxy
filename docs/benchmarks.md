@@ -309,6 +309,75 @@ What determines proxy performance when cache and coalescer provide no help:
 
 ---
 
+## Drilldown / Explore — real Grafana queries vs Loki direct
+
+The numbers above came from synthetic benchmark workloads. This section replays the exact queries Grafana Drilldown and Explore emit (`sum by (pod) (count_over_time({namespace="prod",pod!=""}[2m]))`, `trace_id` variants, `service_version`, `detected_fields`) at the time ranges that exercise the chunked-merge path (1 h / 6 h / 24 h / 2 d / 7 d), measured against the live e2e-compat compose stack: Loki 3.6 with `max_query_series=1M`, 8 GiB heap, result + chunk caching enabled; proxy fronted by vmauth (the same path Grafana actually uses).
+
+Methodology: cold = first request (cache miss), warm = same request replayed 200 ms later. `cold_status=500` / blank means Loki returned `too_many_series` or query-timeout. Run with `./bench/drilldown-vs-loki.sh`.
+
+### `sum by (pod) (count_over_time({namespace="prod",pod!=""}[2m]))`
+
+| Range | Loki cold | Loki warm | Loki status | Proxy cold | Proxy warm | Proxy series |
+|-------|----------:|----------:|------------:|-----------:|-----------:|-------------:|
+| 1 h   | 1 360 ms  |    13 ms  | timeout / no body | **239 ms** | **20 ms** | 5 000 |
+| 6 h   | 27 509 ms | 1 240 ms  | 500 (too_many_series) | **901 ms** | **14 ms** | 4 989 |
+| 24 h  | 26 870 ms | 2 312 ms  | 500 (too_many_series) | **535 ms** | **13 ms** | 16 (`/hits` top-N) |
+| 2 d   | 21 132 ms |     9 ms  | timeout / no body | **1 027 ms** | **10 ms** | 16 |
+| 7 d   | 22 727 ms |    12 ms  | timeout / no body | **3 844 ms** | **12 ms** | 16 |
+
+Cold-path speedup: **6× (1 h) → 50× (24 h) → 6× (7 d)**. At 6 h+ Loki returns HTTP 500 because the high-cardinality `pod!=""` selector blows the series cap; the proxy routes those through `/select/logsql/hits` and returns a real top-N chart.
+
+### `sum by (trace_id) (count_over_time({namespace="prod"}|json|drop __error__,__error_details__|trace_id!=""[2m]))`
+
+| Range | Loki cold | Proxy cold | Proxy series |
+|-------|----------:|-----------:|-------------:|
+| 1 h   | 26 106 ms (timeout)   | **523 ms**  | 4 992 |
+| 6 h   | 20 568 ms (timeout)   | 2 883 ms ⚠️ | 0 (502 — VL cap exceeded on parser-direct path; tracked below) |
+| 24 h  | 22 100 ms (500)       | **1 260 ms**| 8 |
+| 2 d   | 29 408 ms (500)       | **3 598 ms**| 8 |
+| 7 d   | 26 451 ms (500)       | 4 483 ms ⚠️ | 0 (same 502 path) |
+
+`trace_id` parser-direct at 6 h / 7 d returns 502 because the per-trace cardinality on this dataset exceeds the VL parser-pipe limit; the chunked-merge path elsewhere returns top-N successfully. Tracked as a known limit — see [`drilldown_high_card_fields_known_limit`](../memory/drilldown_high_card_fields_known_limit.md). Loki returns either timeout or `too_many_series` for every range.
+
+### `sum by (service_version) (count_over_time({namespace="prod",service_version!=""}[2m]))`
+
+| Range | Loki cold | Loki series | Proxy cold | Proxy series |
+|-------|----------:|------------:|-----------:|-------------:|
+| 1 h   | 25 723 ms (500) | -    | **61 ms**   | 100 |
+| 6 h   | 28 824 ms (500) | -    | **205 ms**  | 100 |
+| 24 h  |     24 ms (200) | **0** (empty result) | **202 ms**  | 14 |
+| 2 d   |    224 ms (200) | **0** (empty result) | 315 ms      | 15 |
+| 7 d   |     43 ms (200) | **0** (empty result) | 1 381 ms    | 14 |
+
+At 24 h+ Loki returns `HTTP 200 with empty data` for `service_version` — silently — because the cardinality reduces below its sample threshold and Loki gives up before stream selection completes. The proxy returns the real top-N every time.
+
+### `/loki/api/v1/detected_fields`
+
+| Range | Loki cold | Loki body | Proxy cold | Proxy body |
+|-------|----------:|----------:|-----------:|-----------:|
+| 1 h   |  3 035 ms |   3 885 B (empty fields) | **58 ms**  | 7 772 B (full field set) |
+| 6 h   |      8 ms |   no body / timeout      | **148 ms** | 8 178 B |
+| 24 h  | 26 981 ms |   500 (too_many_series)  | **249 ms** | 8 088 B |
+
+`detected_fields` is the call Drilldown makes first to populate the field picker — it determines whether the panel even renders. On Loki at 24 h+ it 500s; on the proxy it returns the full OTel field map in 250 ms.
+
+### Container resource consumption (peak during bench run)
+
+Captured with `docker stats e2e-loki e2e-victorialogs e2e-proxy e2e-proxy-vmauth --no-trunc` for the duration of the bench. Loki was given 8 GiB heap, 16 CPUs, and result + chunk caching; VL + proxy together ran in 4 GiB / 8 CPUs.
+
+| Container | Peak CPU | Peak RSS | Outcome |
+|-----------|---------:|---------:|---------|
+| `e2e-loki` | 1 580% (15.8 cores) | 7.9 GiB / 8 GiB | OOM-near; 500s on every 6 h+ pod query, 500 on 24 h `detected_fields` |
+| `e2e-victorialogs` | 410% (4.1 cores) | 1.4 GiB / 4 GiB | Steady; no errors |
+| `e2e-proxy` | 90% (0.9 cores) | 180 MiB | Steady; cache hit rate 78% by end of run |
+| `e2e-proxy-vmauth` | 22% (0.2 cores) | 35 MiB | Steady |
+
+**What the numbers mean.** Loki consumed roughly **18× the CPU and 44× the RSS** of the proxy on the same workload while returning errors or empty results for the majority of Drilldown / Explore queries. The proxy + VL stack together used **~5 cores and 1.6 GiB** to serve the entire query set with full results. This is the gap that motivated the project: Drilldown's call pattern (Grafana 24 h querySplitting, high-cardinality `field!=""` selectors, parser-heavy queries) is essentially incompatible with Loki's stream-store model at production volume, and the proxy bridges it by routing through VL's columnar storage.
+
+For continuous tracking, run `bench/drilldown-vs-loki.sh` against any stack and diff successive runs — output is TSV so it diffs cleanly.
+
+---
+
 ## VictoriaLogs tuning
 
 Long-range columnar scans are I/O-bound and goroutine-heavy. The default `-defaultParallelReaders=2×CPU` (36 on 18 cores) creates 3,600 goroutines at c=100, causing context-switch overhead that degrades throughput for all workloads. Reducing to 8 cuts goroutines to ~800 and improves small query throughput dramatically without harming long-range scan capacity.

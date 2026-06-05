@@ -94,6 +94,13 @@ services:
       - "-defaultParallelReaders=8"
       # Cap file-system concurrency (default 256 = 16×CPU, but 64 better fits 18 cores).
       - "-fs.maxConcurrency=64"
+      # Flush in-memory ingest buffers to disk every 1 s (default 5 s). E2E tests
+      # additionally call POST /internal/force_flush right after ingest for hard
+      # determinism, but a tighter periodic flush keeps any non-flush-aware test
+      # paths queryable within a second or two. Cost: slightly more frequent
+      # small-part creation; merge cadence absorbs it without operator effort.
+      # Source: https://docs.victoriametrics.com/victorialogs/#forced-flush
+      - "-inmemoryDataFlushInterval=1s"
     volumes:
       - vl-data:/vlogs
     healthcheck:
