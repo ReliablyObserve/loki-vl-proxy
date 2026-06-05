@@ -790,6 +790,23 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 				translated = "| unpack_logfmt | filter " + translated
 				afterParser = true
 			}
+			// Bare label filter NOT after a parser AND NOT detected_level: usually
+			// composes as implicit-AND alongside the stream-selector filter (e.g.
+			// `app:="api" status:="200"`). BUT if the immediately preceding stage
+			// is a PIPE STAGE (`| format`, `| line_format`, `| label_format`,
+			// `| drop`, `| keep`, `| decolorize`, `| extract`, etc.) then implicit
+			// AND is invalid — VL parses `| format "..." status:="200"` as a
+			// continuation of the format rename target and errors with
+			// `unexpected token after [format ...]: "status"; expecting '|' or ')'`.
+			// Wrap the bare filter with `| filter ` in that case so it composes
+			// as its own pipe stage. We detect "preceding stage is a pipe stage"
+			// by looking at the last accepted `parts` entry: if it starts with
+			// `|`, prepend `| filter` to the current bare filter.
+			if !afterParser && !strings.HasPrefix(translated, "|") && isFieldFilter(translated) {
+				if len(parts) > 0 && strings.HasPrefix(strings.TrimSpace(parts[len(parts)-1]), "|") {
+					translated = "| filter " + translated
+				}
+			}
 			if _, baseKey, ok := canonicalLabelFilterStage(stage, labelFn); ok {
 				if idx, exists := labelFilterLatest[baseKey]; exists {
 					// Latest action wins for the same field/value filter identity.
@@ -968,6 +985,23 @@ func isNoopPatternExpression(expr string) bool {
 }
 
 // translateLabelFilter handles label comparison filters.
+// translateLabelFilter converts a single LogQL pipeline-stage label filter to
+// a LogsQL filter expression. Returns the BARE filter expression (e.g.
+// `level:="error"` or `(a AND b)`) without a leading `| ` because the
+// caller (translatePipelineStage) decides between two wrappings:
+//   - After a parser (json / logfmt / pattern): wrap as `| filter <expr>`
+//     for VL idiomatic clarity (the parser introduces fields and `| filter`
+//     makes the "filter on extracted fields" intent explicit).
+//   - As a standalone pipeline stage with no parser before it: wrap as
+//     just `| <expr>` (plain filter pipe).
+//
+// The standalone-stage path is what was missing before: when a stage like
+// `| line_format "..."` is followed by `| level="error"`, translateLabelFilter
+// returned `level:="error"` and the assembly layer concatenated it directly
+// to the format stage producing `| format "..." level:="error"` — invalid
+// LogsQL (VL: `unexpected token after [format ...]: "level"; expecting '|' or ')'`).
+// The fix lives in translatePipelineStage's assembly logic (the `wrap with
+// "| "` branch added alongside the `wrap with "| filter "` branch), not here.
 func translateLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.Capabilities) string {
 	if chained, ok := translateLogicalLabelFilterChain(stage, labelFn, caps); ok {
 		return chained
@@ -981,7 +1015,7 @@ func translateLabelFilter(stage string, labelFn LabelTranslateFunc, caps logsql.
 		return translated
 	}
 
-	// Unknown stage — pass through as-is with pipe
+	// Unknown stage — pass through as-is with pipe (already a complete stage).
 	return "| " + stage
 }
 
