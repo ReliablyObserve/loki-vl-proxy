@@ -86,6 +86,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   12 × 2h bins (`1 1 2 2 2 0 2 1 1 1 1 2`) and 7d into 8 chunks produces 112 series across
   14 × 12h bins (`10 8 9 7 8 7 8 8 8 8 8 8 8 8`) — no spike at the right edge in either.
 
+### Security
+
+- Bump Go toolchain from 1.26.3 to 1.26.4 to resolve govulncheck vulnerabilities
+  GO-2026-5037 (inefficient candidate hostname parsing in crypto/x509) reachable
+  via `proxy.Proxy.ValidateBackendVersionCompatibility` and `logsql.JSONValuesTopK.String`.
+  Updated in `go.mod`, `bench/go.mod`, `Dockerfile`, all `.github/workflows/`,
+  `docs/getting-started.md`, `docs/benchmarks.md`.
+
 ### Locked / Hardened
 
 - All 2026-06 Drilldown quality fixes are pinned by named `TestLock_*` regression tests in
