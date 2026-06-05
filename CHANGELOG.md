@@ -44,6 +44,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   within the existing 20 s freshness window: reverted inner-cache time-bucketing in
   `detectedFieldsCacheKey`/`detectedLabelsCacheKey` so refresh calls get a cache miss and
   fetch live data from VL instead of serving the previously cached result.
+- Drilldown Fields panels for high-cardinality fields at 24h+ ranges now render as
+  top-N + remainder histograms instead of empty charts or 100k+ unique series. Route
+  both label queries (`pod`, `k8s_pod_name`) and parser-stage field queries (`trace_id`,
+  `span_id`, `request_id`, `session_id`, `ip`, etc.) through VL's `/select/logsql/hits`
+  endpoint, which computes top-N values and an aggregate `__other__` series in a single
+  call. Three issues that prevented `/hits` from being reachable: (1) the proxy passed
+  Grafana's bare-integer step (`120`) directly to VL, which requires a duration suffix
+  (`120s`); (2) the regex matching field existence filters required unquoted field names,
+  missing the quoted form (`"k8s.pod.name":!""`) the translator emits for OTel attributes;
+  (3) `extractStreamSelectorOnly` only recognised Loki-bracketed selectors (`{namespace="prod"}`)
+  and skipped VL-native form (`namespace:="prod"`) produced by the translator.
 
 ## [1.54.0] - 2026-05-30
 

@@ -90,8 +90,8 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	if cleanBase, field, ok := detectDrilldownSingleField(effectiveQuery); ok && isGrafanaDrilldownRequest(r) {
 		p.proxyStatsQueryRangeDrilldown(out, r, effectiveQuery, cleanBase, field)
 	} else if isGrafanaDrilldownRequest(r) {
-		if _, _, ok := detectDrilldownSingleFieldWithParser(effectiveQuery); ok {
-			p.proxyStatsQueryRangeDrilldownParserDirect(out, r, effectiveQuery)
+		if cleanBase, field, ok := detectDrilldownSingleFieldWithParser(effectiveQuery); ok {
+			p.proxyStatsQueryRangeDrilldownParserDirect(out, r, effectiveQuery, cleanBase, field)
 		} else {
 			p.proxyStatsQueryRangeDirect(out, r, effectiveQuery)
 		}
@@ -1138,9 +1138,15 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 //
 // Applies the same step coarsening, 5-minute response caching, trim-and-translate,
 // and proxy-side series cap as the direct subpath within proxyStatsQueryRangeDrilldown.
+//
+// cleanBase and field come from detectDrilldownSingleFieldWithParser and are used
+// to drive the /hits fast path. cleanBase still has parser stages (e.g. "{...} | json
+// | logfmt"); /hits with ignore_pipes=1 strips them and queries VL's column index
+// directly — VL automatically indexes parsed JSON fields, so this works for
+// trace_id, span_id, request_id, etc., without needing the parser to run server-side.
 func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 	w http.ResponseWriter, r *http.Request,
-	logsqlQuery string,
+	logsqlQuery, cleanBase, field string,
 ) {
 	drillCacheKey := p.drilldownStatsCacheKey(r)
 	if cached, _, ok := p.cache.GetWithTTL(drillCacheKey); ok {
@@ -1157,6 +1163,37 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 	if d, ok := parsePositiveStepDuration(stepRaw); ok {
 		if coarsened := coarsenDrilldownStep(startRaw, endRaw, d); coarsened != d {
 			effectiveStepRaw = strconv.FormatInt(int64(coarsened.Seconds()), 10) + "s"
+		}
+	}
+
+	// /select/logsql/hits fast path — same logic as the hybrid path. /hits gives
+	// us top-N values + remainder bucket in one call, with native per-bucket
+	// counts. For high-cardinality FIELD queries (trace_id, span_id, request_id,
+	// session_id, etc.) this dramatically improves chart shape because the
+	// remainder series spans the full window. Without /hits, the legacy
+	// stats+merge pipeline below produces a sparse chart dominated by unique
+	// values that each appear in only one or two buckets.
+	//
+	// Pass CLIENT step (stepRaw) — NOT effectiveStepRaw which has been coarsened.
+	// /hits scales internally; coarsening would produce a sparse axis with visible
+	// empty spaces between buckets.
+	if cleanBase != "" && field != "" {
+		lokiField := field
+		if len(origGroupBy) == 1 {
+			lokiField = origGroupBy[0]
+		} else if lt := p.labelTranslator; lt != nil && !lt.IsPassthrough() {
+			lokiField = lt.ToLoki(field)
+		}
+		// /hits accepts only stream selector + field — strip parser/drop/bare
+		// filter pipes that VL's query parser rejects before ignore_pipes=1
+		// can run. The parsed JSON field is already indexed as a VL column,
+		// so we don't need `| json` to query it.
+		hitsQuery := extractStreamSelectorOnly(cleanBase)
+		if hitsQuery != "" {
+			if p.proxyStatsQueryRangeDrilldownHits(w, r, hitsQuery, field, lokiField, startRaw, endRaw, stepRaw, drillCacheKey) {
+				return
+			}
+			w.Header().Set("X-Proxy-Drilldown-Hits-Fallback", "1")
 		}
 	}
 
@@ -1278,7 +1315,14 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 	params.Set("fields_limit", strconv.Itoa(drilldownHitsFieldsLimit))
 	params.Set("start", startRaw)
 	params.Set("end", endRaw)
-	params.Set("step", stepRaw)
+	// VL /hits requires step with a duration suffix (e.g. "120s"). Grafana
+	// sends bare integers ("120") to /loki/api/v1/query_range; appending "s"
+	// when the string parses cleanly as a number gives VL a valid duration.
+	stepForHits := stepRaw
+	if _, err := strconv.ParseFloat(stepRaw, 64); err == nil {
+		stepForHits = stepRaw + "s"
+	}
+	params.Set("step", stepForHits)
 	// ignore_pipes=1 strips any pipe stages from the source query so /hits
 	// runs against the raw selector. The proxy has already extracted cleanBase
 	// from the full LogQL; we don't need VL to re-apply any pipes.
@@ -1399,7 +1443,26 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	// across the whole window (instead of a few concentrated tall spikes).
 	// Falls through to the legacy stats+merge path on any failure (404 on older
 	// VL, parse error, empty response, etc.).
-	if p.proxyStatsQueryRangeDrilldownHits(w, r, cleanBase, field, lokiField, startRaw, endRaw, effectiveStepRaw, drillCacheKey) {
+	//
+	// Pass the CLIENT step (r.FormValue("step")) — NOT effectiveStepRaw which
+	// has been coarsened to maxDrilldownStatsBuckets. /hits handles native step
+	// efficiently because it computes top-N internally per bucket; passing the
+	// coarsened step would produce a sparse axis (e.g. 96 timestamps at 15min
+	// instead of 720 at 120s for 24h), which Grafana renders as a chart with
+	// visible empty spaces between coarse buckets.
+	clientStep := r.FormValue("step")
+	if clientStep == "" {
+		clientStep = effectiveStepRaw
+	}
+	// /hits accepts only the stream selector — strip any trailing pipes
+	// defensively. For the hybrid path cleanBase is usually already pipe-free
+	// (detectDrilldownSingleField rejects parser stages), but extracting the
+	// selector explicitly keeps the call path uniform with parser-direct.
+	hitsQuery := extractStreamSelectorOnly(cleanBase)
+	if hitsQuery == "" {
+		hitsQuery = cleanBase
+	}
+	if p.proxyStatsQueryRangeDrilldownHits(w, r, hitsQuery, field, lokiField, startRaw, endRaw, clientStep, drillCacheKey) {
 		return
 	}
 	// Mark response so callers / load tests know the fallback fired.

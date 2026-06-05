@@ -50,6 +50,20 @@ func TestExtractCommonBase(t *testing.T) {
 			wantOK:    true,
 		},
 		{
+			// Quoted dotted field — translator quotes OTel attributes like k8s.pod.name
+			// because VL requires quoting for identifiers with dots.
+			query:     `{app="foo"} | unpack_json | filter "k8s.pod.name":!""`,
+			wantBase:  `{app="foo"}`,
+			wantField: "k8s.pod.name",
+			wantOK:    true,
+		},
+		{
+			query:     `{app="foo"} | unpack_json | filter "service.name":!""`,
+			wantBase:  `{app="foo"}`,
+			wantField: "service.name",
+			wantOK:    true,
+		},
+		{
 			query:  `{app="foo"}`,
 			wantOK: false,
 		},
@@ -72,6 +86,64 @@ func TestExtractCommonBase(t *testing.T) {
 			}
 			if field != tc.wantField {
 				t.Errorf("field=%q want %q", field, tc.wantField)
+			}
+		})
+	}
+}
+
+func TestExtractStreamSelectorOnly(t *testing.T) {
+	tests := []struct {
+		query string
+		want  string
+	}{
+		// Loki-bracketed form: trims at first pipe
+		{`{namespace="prod"}`, `{namespace="prod"}`},
+		{`{namespace="prod"} | json`, `{namespace="prod"}`},
+		{`{namespace="prod"} | json | logfmt | drop a,b`, `{namespace="prod"}`},
+		// VL-native bare form: still trims at first pipe
+		{`namespace:="prod"`, `namespace:="prod"`},
+		{`namespace:="prod" | unpack_json`, `namespace:="prod"`},
+		{`namespace:="prod" | unpack_json | filter trace_id:!""`, `namespace:="prod"`},
+		// Multi-label selectors preserved intact
+		{`{namespace="prod", app="api"} | json`, `{namespace="prod", app="api"}`},
+		// Whitespace handling
+		{`  {namespace="prod"}  |  json  `, `{namespace="prod"}`},
+		{``, ``},
+	}
+	for _, tc := range tests {
+		t.Run(tc.query, func(t *testing.T) {
+			got := extractStreamSelectorOnly(tc.query)
+			if got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFieldHasExistenceFilter_QuotedDottedField(t *testing.T) {
+	// Regression: the translator quotes OTel attributes ("k8s.pod.name",
+	// "service.name") because VL requires quoting for identifiers with dots.
+	// Pre-fix, fieldHasExistenceFilter only checked the unquoted form, causing
+	// the parser-direct fast path (and /hits routing) to be skipped for these
+	// fields — Drilldown rendered 100k+ raw series instead of the top-N
+	// histogram. See proxyStatsQueryRangeDrilldownParserDirect.
+	tests := []struct {
+		base  string
+		field string
+		want  bool
+	}{
+		{`namespace:="prod" | unpack_json | filter "k8s.pod.name":!""`, "k8s.pod.name", true},
+		{`namespace:="prod" | unpack_json | filter "service.name":!""`, "service.name", true},
+		{`namespace:="prod" | unpack_json | filter trace_id:!""`, "trace_id", true},
+		// Quoted field present but different from requested
+		{`namespace:="prod" | unpack_json | filter "k8s.pod.name":!""`, "trace_id", false},
+		// Stream-selector form (already worked, regression guard)
+		{`{namespace="prod", trace_id!=""}`, "trace_id", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.field, func(t *testing.T) {
+			if got := fieldHasExistenceFilter(tc.base, tc.field); got != tc.want {
+				t.Errorf("got %v, want %v\n  base:  %s\n  field: %s", got, tc.want, tc.base, tc.field)
 			}
 		})
 	}

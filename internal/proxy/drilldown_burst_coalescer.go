@@ -15,9 +15,11 @@ import (
 
 var (
 	// drilldownFieldFilterRE matches field-not-empty existence filters in a base query.
-	// Two formats: Loki-style "| filter field != \"\"" and VL-style "| filter field:!\"\"".
-	// The VL format (field:!"") is what the translator generates from Loki's field!="".
-	drilldownFieldFilterRE = regexp.MustCompile(`\|\s*filter\s+([\w.]+)(?:\s*!=\s*""|:!"")`)
+	// Three formats: Loki-style "| filter field != \"\"" and VL-style with either
+	// unquoted "| filter field:!\"\"" or quoted "| filter \"field.with.dots\":!\"\"".
+	// The translator quotes dotted/OTel field names ("k8s.pod.name", "service.name")
+	// because VL requires quoting for identifiers with special characters.
+	drilldownFieldFilterRE = regexp.MustCompile(`\|\s*filter\s+(?:"([^"]+)"|([\w.]+))(?:\s*!=\s*""|:!"")`)
 	// drilldownParserPipeRE matches parser-stage pipes to strip before building
 	// fused conditional-stats queries. VL's field:* existence check works on
 	// pre-indexed columns WITHOUT | json / | logfmt. Including them returns empty.
@@ -27,6 +29,34 @@ var (
 	// need __error__ cleanup before a count() if aggregation).
 	drilldownDeletePipeRE = regexp.MustCompile(`\|\s*delete\b[^|]*`)
 )
+
+// extractStreamSelectorOnly returns the leading filter expression of a VL
+// LogsQL query, stripping any pipe stages (parser, drop, filter, etc.) that
+// follow. Used to feed VL's /select/logsql/hits endpoint, which accepts only
+// a filter expression — pipe chains fail parse-time validation (VL rejects
+// unknown pipe forms like `| trace_id!=""` before ignore_pipes=1 strips them).
+//
+// Handles both forms the proxy's translator produces:
+//   - Bracketed Loki-style: `{namespace="prod"} | json | trace_id!=""`
+//     → `{namespace="prod"}`
+//   - Bare VL-native:        `namespace:="prod" | unpack_json | trace_id:!""`
+//     → `namespace:="prod"`
+//
+// Returns "" only when the query has no recognisable selector (extremely rare;
+// would imply a malformed translator output).
+func extractStreamSelectorOnly(query string) string {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return ""
+	}
+	// Find the first pipe stage boundary. Everything before it is the filter
+	// expression (which VL accepts as a `query` parameter without pipes).
+	if idx := strings.Index(q, "|"); idx > 0 {
+		return strings.TrimSpace(q[:idx])
+	}
+	// No pipes — the whole query is the selector.
+	return q
+}
 
 // allFiltersAreExistenceChecks returns true when every | filter clause in the
 // VL base query is a pure field-not-empty existence check — Loki: field!="" or
@@ -44,19 +74,28 @@ func allFiltersAreExistenceChecks(vlQuery string) bool {
 // (field:!"" or field!="") in baseQuery — either as a | filter pipe stage or
 // directly in the stream selector (stream-label existence checks are written
 // without the | filter prefix, e.g. env:="production" level:!"").
+//
+// Also matches the quoted form ("field.with.dots":!""), which the translator
+// generates for OTel attributes and other identifiers containing characters
+// that need quoting in VL LogsQL.
 func fieldHasExistenceFilter(baseQuery, field string) bool {
 	// Check common prefixes: space before field (stream selector or after filter keyword)
 	// and comma (multi-label stream selectors). Use string operations to avoid per-call
 	// regexp compilation; field names are already validated as [\w.]+ by the parser.
+	quoted := `"` + field + `"`
 	for _, pre := range []string{" ", ","} {
 		if strings.Contains(baseQuery, pre+field+`:!""`) ||
-			strings.Contains(baseQuery, pre+field+`!=""`) {
+			strings.Contains(baseQuery, pre+field+`!=""`) ||
+			strings.Contains(baseQuery, pre+quoted+`:!""`) ||
+			strings.Contains(baseQuery, pre+quoted+`!=""`) {
 			return true
 		}
 	}
 	// Check at the very start of the query (stream selector starts at position 0).
 	return strings.HasPrefix(baseQuery, field+`:!""`) ||
-		strings.HasPrefix(baseQuery, field+`!=""`)
+		strings.HasPrefix(baseQuery, field+`!=""`) ||
+		strings.HasPrefix(baseQuery, quoted+`:!""`) ||
+		strings.HasPrefix(baseQuery, quoted+`!=""`)
 }
 
 // detectDrilldownSingleFieldWithParser is like detectDrilldownSingleField but
@@ -133,12 +172,24 @@ func detectDrilldownSingleField(effectiveQuery string) (cleanBase, field string,
 // extractCommonBase strips the per-field filter and parser-stage pipes from a
 // Drilldown Fields baseQuery, returning the pure stream selector and field name.
 // Returns ("", "", false) if baseQuery does not match the Drilldown presence pattern.
+//
+// The regex captures the field name in group 1 (when quoted) OR group 2 (when
+// unquoted) — exactly one of the two alternatives matches per filter clause.
 func extractCommonBase(baseQuery string) (base, field string, ok bool) {
 	m := drilldownFieldFilterRE.FindStringSubmatchIndex(baseQuery)
 	if m == nil {
 		return "", "", false
 	}
-	field = baseQuery[m[2]:m[3]]
+	// Group 1 (m[2]:m[3]) is the quoted form, group 2 (m[4]:m[5]) is unquoted.
+	// Exactly one matches; the other has index -1.
+	switch {
+	case m[2] >= 0:
+		field = baseQuery[m[2]:m[3]]
+	case m[4] >= 0:
+		field = baseQuery[m[4]:m[5]]
+	default:
+		return "", "", false
+	}
 	prefix := baseQuery[:m[0]]
 	prefix = drilldownParserPipeRE.ReplaceAllString(prefix, "")
 	base = strings.TrimSpace(prefix)
