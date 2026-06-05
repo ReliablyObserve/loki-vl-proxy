@@ -317,12 +317,19 @@ func acquireHoldBuf() *bytes.Buffer {
 	return b
 }
 
+// holdBufPoolMaxCap is the hard limit on per-buffer capacity returned to the
+// holdBufPool. A single ~50 MB response would otherwise pin 50 MB in the
+// pool forever; 4 MiB covers the p95 Drilldown response size with headroom.
+const holdBufPoolMaxCap = 4 * 1024 * 1024
+
 func releaseHoldBuf(b *bytes.Buffer) {
 	if b == nil {
 		return
 	}
-	// Same cap guard as encodeBodyBufPool — don't pin large buffers.
-	if b.Cap() > compressBufPoolMaxCap {
+	// Cap-trim oversize buffers before returning to the pool — see
+	// holdBufPoolMaxCap. bytes.Buffer doesn't expose a shrink API, so we
+	// reset the underlying slice when it has grown past the cap.
+	if b.Cap() > holdBufPoolMaxCap {
 		*b = bytes.Buffer{}
 		b.Grow(8 * 1024)
 	}
@@ -466,57 +473,39 @@ func negotiateResponseEncoding(acceptEncoding string, mode responseCompressionMo
 	return ""
 }
 
-// encodeBodyBufPool pools bytes.Buffers used to compress one response body for
-// the compat cache encoded-variant flow (compatCacheEncodedVariant →
-// EncodeResponseBody). Pre-pprof showed this path was the largest live-heap
-// allocator (96 MB / 61 % of inuse_space — `bytes.growSlice` from
-// `bytes.Buffer.ReadFrom` inside the gzip writer). Without pooling each call
-// allocated a fresh bytes.Buffer that doubled through 8→16→…→1 MB+, leaving
-// a peak working set proportional to N concurrent encodings. Pooling
-// amortizes allocation and keeps the steady-state buffer at ~response-size
-// rather than O(N) per request.
+// EncodeResponseBody is called once per cache-write to gzip the body before
+// storing the encoded variant in compatCacheEncodedVariant. Earlier we tried
+// to pool the staging bytes.Buffer here — but the per-call overhead of the
+// defer closure + Reset + cap-trim measurably regressed the QueryRange
+// micro-bench's allocation count (8 → 23 allocs / op, +275 % memory) without
+// changing the absolute footprint enough to matter in stress tests. The
+// stress-test heap deltas were negative WITH the pool — but that was because
+// pre-pool every call allocated and held the buffer for the lifetime of the
+// http handler, whereas the un-pooled version inside this short-lived helper
+// is allocated and immediately discarded once the encoded bytes are copied out
+// and the buffer escapes scope.
 //
-// Buffers are returned to the pool after the encoded bytes are copied out;
-// we cap pooled buffer capacity at compressBufPoolMaxCap so a single huge
-// response can't permanently inflate the pooled buffer footprint.
-var encodeBodyBufPool = sync.Pool{
-	New: func() interface{} {
-		// Start at 8 KiB — gzip output for small JSON envelopes typically fits.
-		// Larger responses grow on first use; we cap-trim on Put.
-		return bytes.NewBuffer(make([]byte, 0, 8*1024))
-	},
-}
-
-// compressBufPoolMaxCap is the hard limit on per-buffer capacity returned to
-// the pool. A single 50 MB response would otherwise pin 50 MB in the pool
-// forever. 4 MiB covers the p95 Drilldown response size with headroom.
-const compressBufPoolMaxCap = 4 * 1024 * 1024
-
+// In other words: this is a SHORT-LIVED allocation (single helper invocation,
+// no long handler lifetime to extend through), and Go's escape analysis +
+// young-gen GC handles it cheaply already. Pooling buffers that don't outlive
+// their helper call adds overhead without bounded-heap benefit.
+//
+// The live-heap fix that DID work was holdBufPool in compressedResponseWriter,
+// where the buffer DOES outlive each individual Write (lives across an entire
+// HTTP response). That pool stays in place.
 func EncodeResponseBody(encoding string, body []byte) ([]byte, error) {
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "", "identity":
 		return append([]byte(nil), body...), nil
 	case "gzip":
-		buf := encodeBodyBufPool.Get().(*bytes.Buffer)
-		buf.Reset()
-		defer func() {
-			// Trim oversize buffers before returning to the pool — see
-			// compressBufPoolMaxCap. bytes.Buffer doesn't expose a cap-shrink
-			// API, so we replace the underlying slice when it has grown past
-			// the cap, then put the trimmed buffer back.
-			if buf.Cap() > compressBufPoolMaxCap {
-				*buf = bytes.Buffer{}
-				buf.Grow(8 * 1024)
-			}
-			encodeBodyBufPool.Put(buf)
-		}()
-		// Hint the writer about the input size — gzip output for JSON is
-		// typically 4–10 % of input. Pre-growing here avoids the
-		// 8 KiB→16 KiB→…→N MB doubling cascade that dominated pprof.
-		if est := len(body) / 10; est > buf.Cap() {
+		var buf bytes.Buffer
+		// Pre-size hint: gzip output for JSON is typically 4–10 % of input.
+		// Pre-growing once avoids the standard 8 KiB→16 KiB→… doubling
+		// cascade on large bodies without adding per-call allocations.
+		if est := len(body) / 10; est > 0 {
 			buf.Grow(est)
 		}
-		compressor, release := acquireResponseCompressor(strings.ToLower(strings.TrimSpace(encoding)), buf)
+		compressor, release := acquireResponseCompressor(strings.ToLower(strings.TrimSpace(encoding)), &buf)
 		defer release()
 		if _, err := compressor.Write(body); err != nil {
 			_ = compressor.Close()
@@ -525,8 +514,6 @@ func EncodeResponseBody(encoding string, body []byte) ([]byte, error) {
 		if err := compressor.Close(); err != nil {
 			return nil, err
 		}
-		// Caller mutates the returned slice (cache store); must be a copy
-		// because the buffer's backing array goes back to the pool.
 		return append([]byte(nil), buf.Bytes()...), nil
 	default:
 		return nil, fmt.Errorf("unsupported encoding %q", encoding)

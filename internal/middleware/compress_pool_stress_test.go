@@ -11,14 +11,19 @@ import (
 	"testing"
 )
 
-// Stress + regression coverage for the bytes.Buffer pools added in this PR:
-//   - encodeBodyBufPool (EncodeResponseBody)
-//   - holdBufPool       (compressedResponseWriter.buf during the wait-for-minBytes phase)
+// Stress + regression coverage for the bytes.Buffer pool added in this PR:
+//   - holdBufPool (compressedResponseWriter.buf during the wait-for-minBytes
+//     phase, lazy-acquired on first Write)
 //
-// These tests pin the heap behaviour we expect after the pool refactor so a
-// future change that re-introduces per-request bytes.Buffer allocation in
-// either path will fail loudly with a heap-growth assertion, not silently
-// regress the bench.
+// Note: an earlier iteration also pooled the bytes.Buffer inside
+// EncodeResponseBody but the per-call overhead measurably regressed the
+// QueryRange micro-bench (8 → 23 allocs/op) without matching live-heap wins,
+// so that pool was removed. The EncodeResponseBody tests below still drive
+// that helper through the same workload — heap deltas remain bounded because
+// the un-pooled bytes.Buffer is short-lived and young-gen GC reclaims it
+// cheaply. The tests stay as a contract guard: if anyone re-introduces an
+// unbounded staging buffer in either path, these will fail with a heap-growth
+// assertion (not silently regress the bench).
 
 // readHeapAllocMB returns current heap-alloc in MiB after a deterministic
 // 2-pass GC. Two cycles are required because the first sweep can leave
