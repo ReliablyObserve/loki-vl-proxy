@@ -34,11 +34,21 @@ var (
 	// hostProcRoot is the filesystem root for host-scope /proc reads
 	// (the files listed in hostProcFiles). Defaults to "/proc". The chart
 	// sets this to "/host/proc" when systemMetrics.hostProc.enabled is true.
+	// Concurrency: must be set before the first SystemMetrics.WritePrometheus
+	// invocation (i.e. during startup wiring); not safe to mutate concurrently
+	// with metric reads.
 	hostProcRoot = "/proc"
 	// selfProcRoot is the filesystem root for self/container-scope /proc
 	// reads (self/*, net/dev). Always reads from the container's own /proc;
 	// the kernel resolves /self per-caller and the container has its own netns.
+	// Concurrency: must be set before the first SystemMetrics.WritePrometheus
+	// invocation; not safe to mutate concurrently with metric reads (tests
+	// swap this only while no collector is running).
 	selfProcRoot = "/proc"
+	// cgroupRoot is the filesystem root for cgroup v2 reads used by
+	// container-scope memory/CPU pressure helpers. Concurrency: must be set
+	// before the first SystemMetrics.WritePrometheus invocation; not safe to
+	// mutate concurrently with metric reads.
 	cgroupRoot   = "/sys/fs/cgroup"
 	procReadFile = os.ReadFile
 	procReadDir  = os.ReadDir
@@ -113,6 +123,8 @@ func SetProcRoot(root string) {
 // SetHostProcRoot overrides the filesystem root used for host-scope /proc
 // reads (the files listed in hostProcFiles). Defaults to "/proc"; the chart
 // sets this to "/host/proc" when systemMetrics.hostProc.enabled is true.
+// Concurrency: must be called before the first SystemMetrics.WritePrometheus
+// invocation; not safe to mutate concurrently with metric reads.
 func SetHostProcRoot(root string) {
 	root = strings.TrimSpace(root)
 	if root == "" {

@@ -597,6 +597,13 @@ func run(
 		return err
 	}
 
+	// Track which flags the operator explicitly passed on the command line so
+	// we can distinguish "left at default" from "explicitly set to the same
+	// value as the default" — needed by resolveHostProcRoot to honor an
+	// explicit --host-proc-root=/proc over the legacy --proc-root fallback.
+	explicitFlags := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { explicitFlags[f.Name] = true })
+
 	resolvedResponseCompression, err := resolveResponseCompression(*responseCompression, *enableGzip)
 	if err != nil {
 		return err
@@ -664,15 +671,14 @@ func run(
 		runtime.SetMutexProfileFraction(5)
 		runtime.SetBlockProfileRate(1000)
 	}
-	// Wire host-scope /proc root. When --host-proc-root is explicitly set, use
-	// it verbatim. Back-compat: if it's still the default "/proc" and the
-	// legacy --proc-root flag was set to something else (e.g. /host/proc), use
-	// the legacy value so existing chart configs that only pass --proc-root
-	// keep working.
-	resolvedHostProcRoot := envCfg.hostProcRoot
-	if resolvedHostProcRoot == "/proc" && envCfg.procRoot != "" && envCfg.procRoot != "/proc" {
-		resolvedHostProcRoot = envCfg.procRoot
-	}
+	// Wire host-scope /proc root. When the operator explicitly passes
+	// --host-proc-root on the command line (tracked via fs.Visit above), its
+	// value wins verbatim — including an explicit --host-proc-root=/proc that
+	// must override any legacy --proc-root=/host/proc. Otherwise, if the
+	// legacy --proc-root flag was set to a non-default value (e.g.
+	// /host/proc), use it as a back-compat seed so existing chart configs
+	// that only pass --proc-root keep working.
+	resolvedHostProcRoot := resolveHostProcRoot(envCfg.hostProcRoot, envCfg.procRoot, explicitFlags["host-proc-root"])
 	metrics.SetHostProcRoot(resolvedHostProcRoot)
 	logSystemMetricsStartup(logger)
 
@@ -1242,6 +1248,27 @@ func parseForwardHeaders(csv string, includeAuthorization bool) []string {
 		return nil
 	}
 	return out
+}
+
+// resolveHostProcRoot picks the effective host-scope /proc root from the
+// host-proc-root flag value, the legacy proc-root flag value, and whether the
+// operator explicitly passed --host-proc-root on the command line.
+//
+// Precedence:
+//  1. If --host-proc-root was explicitly set (any value, including "/proc"),
+//     that value wins verbatim.
+//  2. Otherwise, if the legacy --proc-root flag was set to a non-default
+//     value (anything other than "/proc"), use it for back-compat with
+//     existing chart configs that only pass --proc-root.
+//  3. Otherwise return the default --host-proc-root value ("/proc").
+func resolveHostProcRoot(hostProcRoot, procRoot string, hostProcRootExplicit bool) string {
+	if hostProcRootExplicit {
+		return hostProcRoot
+	}
+	if procRoot != "" && procRoot != "/proc" {
+		return procRoot
+	}
+	return hostProcRoot
 }
 
 //nolint:gocyclo // applies ~40 distinct environment-variable overrides onto the config struct; the long if-chain is the simplest correct shape.

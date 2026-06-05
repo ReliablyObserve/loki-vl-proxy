@@ -857,6 +857,78 @@ func TestApplyEnvOverrides_ProcRoot(t *testing.T) {
 	}
 }
 
+func TestApplyEnvOverrides_HostProcRoot(t *testing.T) {
+	// Default hostProcRoot ("/proc") + HOST_PROC_ROOT env set -> env wins.
+	cfg := envConfig{hostProcRoot: "/proc"}
+	env := map[string]string{"HOST_PROC_ROOT": "/host/proc"}
+	got := applyEnvOverrides(cfg, func(key string) string { return env[key] })
+	if got.hostProcRoot != "/host/proc" {
+		t.Fatalf("expected HOST_PROC_ROOT override when default hostProcRoot is used, got %+v", got)
+	}
+
+	// Explicit --host-proc-root flag value (non-default) wins over HOST_PROC_ROOT env.
+	cfg.hostProcRoot = "/custom/proc"
+	got = applyEnvOverrides(cfg, func(key string) string { return env[key] })
+	if got.hostProcRoot != "/custom/proc" {
+		t.Fatalf("expected explicit hostProcRoot to win over HOST_PROC_ROOT env var, got %+v", got)
+	}
+
+	// Env unset + default flag -> stays "/proc".
+	cfg.hostProcRoot = "/proc"
+	got = applyEnvOverrides(cfg, func(key string) string { return "" })
+	if got.hostProcRoot != "/proc" {
+		t.Fatalf("expected default hostProcRoot to remain /proc when env unset, got %+v", got)
+	}
+}
+
+func TestResolveHostProcRoot(t *testing.T) {
+	cases := []struct {
+		name                 string
+		procRoot             string
+		hostProcRoot         string
+		hostProcRootExplicit bool
+		want                 string
+	}{
+		{
+			name:                 "both defaults",
+			procRoot:             "/proc",
+			hostProcRoot:         "/proc",
+			hostProcRootExplicit: false,
+			want:                 "/proc",
+		},
+		{
+			name:                 "legacy proc-root seeds host root when host-proc-root unset",
+			procRoot:             "/host/proc",
+			hostProcRoot:         "/proc",
+			hostProcRootExplicit: false,
+			want:                 "/host/proc",
+		},
+		{
+			name:                 "explicit host-proc-root wins over default proc-root",
+			procRoot:             "/proc",
+			hostProcRoot:         "/host/proc",
+			hostProcRootExplicit: true,
+			want:                 "/host/proc",
+		},
+		{
+			name:                 "explicit host-proc-root=/proc wins over legacy proc-root",
+			procRoot:             "/host/proc",
+			hostProcRoot:         "/proc",
+			hostProcRootExplicit: true,
+			want:                 "/proc",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveHostProcRoot(tc.hostProcRoot, tc.procRoot, tc.hostProcRootExplicit)
+			if got != tc.want {
+				t.Fatalf("resolveHostProcRoot(host=%q, proc=%q, explicit=%v) = %q; want %q",
+					tc.hostProcRoot, tc.procRoot, tc.hostProcRootExplicit, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestReloadDynamicConfig(t *testing.T) {
 	buf := &bytes.Buffer{}
 	logger := slog.New(slog.NewJSONHandler(buf, nil))
