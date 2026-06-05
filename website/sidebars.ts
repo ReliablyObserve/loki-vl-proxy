@@ -38,6 +38,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'cost-and-comparison',
         'cost-model',
+        'honest-tldr',
         'benchmarks',
         'performance',
         'scaling',
