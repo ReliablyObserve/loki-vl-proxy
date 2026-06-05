@@ -555,6 +555,11 @@ func writeJSONEscaped(b *bytes.Buffer, s string) {
 // For stats-covered series the stats bars already cover the histogram window; this
 // function additionally prefixes averaged stubs from startSec to the first stats
 // timestamp so the full range appears populated.
+// field_values entries) into one zero-filled axis with stub prefixes for
+// values missing from the stats window. Each branch maps to a real merge case
+// (no-stats, stats-only, fv-only, fv-with-stats-prefix, …) documented inline.
+//
+//nolint:gocyclo // Merges two heterogeneous response shapes (stats matrix +
 func mergeDrilldownWithFieldValues(statsBody []byte, lokiField string, entries []drilldownFVEntry, endSec, fullRangeNs, histStepNs int64) []byte {
 	v, err := fj.ParseBytes(statsBody)
 	if err != nil || v == nil {
@@ -1474,6 +1479,14 @@ func (p *Proxy) gatherWindowedHits(
 	return merged, anyOK
 }
 
+// leftover-chunk suppression, windowed vs single-shot /hits selection,
+// remainder-bucket detection, shared-axis materialisation) — each branch is
+// load-bearing and individually documented above. Splitting further would
+// shuffle named state between helpers without reducing essential complexity.
+// Adjustments to this function are pinned by TestLock_* in
+// drilldown_regression_lock_test.go.
+//
+//nolint:gocyclo // Coordinates multiple inputs (cache, step normalisation,
 func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 	w http.ResponseWriter, r *http.Request,
 	cleanBase, field, lokiField string,
@@ -1680,6 +1693,12 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 // and return a pure field_values synthesis.
 //
 // X-Proxy-Drilldown-Path response header signals which path was taken for debugging.
+//
+// adaptive window) with merge logic and HC-field bypass — every branch maps to
+// a distinct dispatch decision and tightening would split related state across
+// helpers. Behaviour pinned by TestLock_* in drilldown_regression_lock_test.go.
+//
+//nolint:gocyclo // Two-tier strategy (fast field_values + slow stats with
 func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 	w http.ResponseWriter, r *http.Request,
 	logsqlQuery, cleanBase, field, effectiveStepRaw string,

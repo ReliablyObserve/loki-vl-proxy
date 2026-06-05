@@ -1536,6 +1536,12 @@ type detectNativeResult struct {
 	err    error
 }
 
+// source paths (line scan, JSON/logfmt parse, type inference, sentinel
+// stripping). Each branch handles a distinct parser-output edge case
+// (numeric vs string vs hybrid values; missing/extra parsers; capped scan).
+// Extracting would force shared mutable state through extra arguments.
+//
+//nolint:gocyclo // Scans + aggregates parsed-field samples across multiple
 func (p *Proxy) detectFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, error) {
 	if lineLimit > maxDetectedScanLines {
 		lineLimit = maxDetectedScanLines
