@@ -207,3 +207,37 @@ func TestBackendVersionStrict_HealthyBackendPasses(t *testing.T) {
 		t.Fatalf("expected strict mode to pass for healthy in-min backend, got: %v", err)
 	}
 }
+
+// TestBackendVersionStrict_OverridesAllowUnsupported asserts that strict mode
+// takes precedence over --backend-allow-unsupported-version. This guards the
+// single most security-relevant line in the strict-mode change
+// (backend.go: `if p.backendAllowUnsupportedVersion && !p.backendVersionStrict`):
+// a future refactor flipping the boolean precedence would silently regress
+// strict mode into a permissive no-op when both flags are set.
+func TestBackendVersionStrict_OverridesAllowUnsupported(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Server", "VictoriaLogs/v0.1.0")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer backend.Close()
+
+	p, err := New(Config{
+		BackendURL:                     backend.URL,
+		Cache:                          cache.New(60*time.Second, 1000),
+		BackendMinVersion:              "v1.30.0",
+		BackendVersionCheckTimeout:     time.Second,
+		BackendVersionStrict:           true,
+		BackendAllowUnsupportedVersion: true,
+	})
+	if err != nil {
+		t.Fatalf("new proxy: %v", err)
+	}
+	err = p.ValidateBackendVersionCompatibility(context.Background())
+	if err == nil {
+		t.Fatalf("expected strict mode to override allow-unsupported and return error, got nil")
+	}
+	if !strings.Contains(err.Error(), "(strict mode)") {
+		t.Fatalf("expected error to mention %q, got: %v", "(strict mode)", err)
+	}
+}

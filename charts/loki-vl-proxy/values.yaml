@@ -264,7 +264,7 @@ extraArgs:
   # backend-min-version: "v1.30.0"              # startup minimum supported VictoriaLogs version
   # backend-allow-unsupported-version: "false"  # allow older backend at your own risk
   # backend-version-check-timeout: "5s"         # startup backend version check timeout
-  # backend-version-strict: "false"             # when true, /health failure, non-2xx, or missing/sub-min backend semver fails startup (default false: warn only)
+  # backend-version-strict: "false"             # when true, /health failure, non-2xx, or missing/sub-min backend semver fails startup (default false: warn only); overrides --backend-allow-unsupported-version
   # backend-tls-skip-verify: "false"
   # deployment-environment: ""                  # OTel deployment.environment.name
   # otel-service-name: "loki-vl-proxy"
