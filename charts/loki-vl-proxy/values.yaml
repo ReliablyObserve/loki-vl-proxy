@@ -156,6 +156,7 @@ extraArgs:
   # log-buffered: "true"            # write logs in the background for better performance under load
   # log-stats-interval: "10s"       # how often to print a request statistics summary
   # log-rate-threshold: "10"        # above this req/s, replace per-request logs with periodic summaries
+  # debug-log-raw-queries: "false"  # when true, debug logs include raw LogQL/LogsQL and backend params verbatim (default false: redacted to sha256+len)
 
   # --- HTTP server hardening ---
   http-read-timeout: "30s"
@@ -255,6 +256,7 @@ extraArgs:
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
+  # metadata-default-lookback: "12h"            # default time window for /labels, /label/{name}/values, and /series when the client omits start/end; 0 disables (unbounded scan)
   # warmup-max-jitter: "10s"                   # max random delay before label cache warmup starts; spread across fleet to prevent thundering herd on restart (recommended: 5–15s for ≥3 instances)
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
   # compat-cache-max-percent: "10"              # Tier0 share of L1 cache budget (max 50)

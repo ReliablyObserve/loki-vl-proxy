@@ -346,6 +346,11 @@ type Config struct {
 	// backend query params in debug-level logs. Intended for local development
 	// only. Default is false (redacted).
 	DebugLogRawQueries bool
+
+	// MetadataDefaultLookback is the default time window applied to /labels,
+	// /label/{name}/values, and /series when the client omits both start and
+	// end. 0 disables (unbounded scan, prior behavior).
+	MetadataDefaultLookback time.Duration
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -552,6 +557,7 @@ type Proxy struct {
 	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
 	debugLogRawQueries                    bool          // when true, debug logs include raw LogQL/LogsQL and backend params
+	metadataDefaultLookback               time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
 	// handler is the decomposed view of this Proxy's deps + config + state.
 	// Populated alongside the existing fields during the Task 9 migration.
 	handler *Handler
@@ -1120,6 +1126,7 @@ func New(cfg Config) (*Proxy, error) {
 		cacheTTLLabels:                        labelCacheTTL,
 		cacheTTLLabelValues:                   labelCacheTTL,
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
+		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 	}
 	if cfg.DrilldownFieldBatchWindowMs > 0 {
 		maxFields := cfg.DrilldownFieldBatchMaxFields

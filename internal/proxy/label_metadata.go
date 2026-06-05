@@ -127,6 +127,17 @@ func (p *Proxy) metadataQueryParams(ctx context.Context, candidate, start, end, 
 		return nil, err
 	}
 	params.Set("query", translated)
+	// When the client omits both start and end, inject a default lookback window
+	// of now-metadataDefaultLookback..now so /labels, /label/{name}/values, and
+	// /series do not trigger a full-retention VL scan. Setting
+	// --metadata-default-lookback=0 disables the injection (restores prior
+	// unbounded-scan behavior). Clients that supply either bound win — the
+	// proxy never silently rewrites a client-supplied start/end.
+	if strings.TrimSpace(start) == "" && strings.TrimSpace(end) == "" && p.metadataDefaultLookback > 0 {
+		now := time.Now()
+		start = fmt.Sprintf("%d", now.Add(-p.metadataDefaultLookback).UnixNano())
+		end = fmt.Sprintf("%d", now.UnixNano())
+	}
 	if strings.TrimSpace(start) != "" {
 		params.Set("start", start)
 	}
