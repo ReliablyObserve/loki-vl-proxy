@@ -1283,11 +1283,14 @@ const drilldownHitsFieldsLimit = 20
 const hitsWindowSampleThreshold = 6 * time.Hour
 
 // hitsWindowCount is the number of sub-windows the range is split into when
-// the windowed sampling kicks in. 4 windows × 5 values per window = 20 series
-// total, evenly distributed across the timeline. Higher counts add latency
-// (each window is a separate VL call, even when parallelised) without
-// proportionally improving the visual.
-const hitsWindowCount = 4
+// the windowed sampling kicks in. 8 windows × 2-3 values per window = 16-24
+// series total. Higher count is intentional: VL's /hits picks values from the
+// most recent activity within each window — coarser windows (e.g. 4 × 5)
+// produce 5 values all clustered at the recent edge of each 6h slice, which
+// Grafana's stacked bar chart renders as 4 tall stacks instead of 20
+// distributed bars. Finer windows produce more distinct time slots, so
+// stacking spreads across the chart visually.
+const hitsWindowCount = 8
 
 
 // proxyStatsQueryRangeDrilldownHits handles a Drilldown single-field histogram
