@@ -1501,19 +1501,43 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 
 	// Per-value rendering: emit one Loki series per top-N value. Drop the
 	// remainder bucket (VL's fields:{} catchall) — including it dominates the
-	// Y-axis and hides individual values for high-cardinality fields. This
-	// matches Loki Drilldown's behaviour: for ephemeral-value fields (trace_id
-	// with random IDs, pods with random suffixes) the chart shows scattered
-	// dots, which is a faithful representation of the underlying data.
-	// Pre-size buffer: ~50 bytes per (timestamp, value) pair across all hits.
-	estPairs := 0
-	for _, h := range hits.Hits {
-		estPairs += len(h.Timestamps)
+	// Y-axis and hides individual values for high-cardinality fields.
+	//
+	// IMPORTANT: build a SHARED timestamp axis covering the full client range
+	// at step boundaries, and emit every series across that full axis (zero-
+	// filled where the series has no data). Without this, windowed sampling
+	// produces series with timestamp arrays limited to their 3h sub-window —
+	// Grafana's Loki datasource normalises by series and inconsistent
+	// timestamp arrays cause stacked bar charts to render all activity at one
+	// cluster instead of distributed across the timeline. The chart looked
+	// like a single spike at the latest part of the chart.
+	axisStartNs, axisSOK := parseLokiTimeToUnixNano(startRaw)
+	axisEndNs, axisEOK := parseLokiTimeToUnixNano(endRaw)
+	stepDur, stepOK := parsePositiveStepDuration(stepForHits)
+	if !axisSOK || !axisEOK || !stepOK || stepDur <= 0 {
+		return false
 	}
-	var buf bytes.Buffer
-	buf.Grow(64 + estPairs*50)
-	buf.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
-	first := true
+	startSec := axisStartNs / int64(time.Second)
+	endSec := axisEndNs / int64(time.Second)
+	stepSec := int64(stepDur / time.Second)
+	if stepSec <= 0 {
+		stepSec = 1
+	}
+	// Align startSec down to step boundary so all series share the same axis.
+	if rem := startSec % stepSec; rem != 0 {
+		startSec -= rem
+	}
+	axisLen := int((endSec-startSec)/stepSec) + 1
+	if axisLen <= 0 || axisLen > 100000 {
+		return false // sanity guard: 24h@1s would be 86k, plenty of headroom
+	}
+
+	// Build per-hit value lookup keyed by timestamp seconds.
+	type hitMap struct {
+		label  string
+		values map[int64]int
+	}
+	hitMaps := make([]hitMap, 0, len(hits.Hits))
 	for _, h := range hits.Hits {
 		if h.Total == 0 {
 			continue
@@ -1522,33 +1546,46 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 		if labelValue == "" {
 			continue
 		}
-		if !first {
-			buf.WriteByte(',')
-		}
-		first = false
-		buf.WriteString(`{"metric":{"`)
-		writeJSONEscaped(&buf, lokiField)
-		buf.WriteString(`":"`)
-		writeJSONEscaped(&buf, labelValue)
-		buf.WriteString(`"},"values":[`)
+		vm := make(map[int64]int, len(h.Timestamps))
 		n := len(h.Timestamps)
 		if len(h.Values) < n {
 			n = len(h.Values)
 		}
-		firstPt := true
 		for i := 0; i < n; i++ {
 			t, terr := time.Parse(time.RFC3339, string(h.Timestamps[i]))
 			if terr != nil {
 				continue
 			}
-			if !firstPt {
+			// Align timestamp to axis step boundary.
+			tsAligned := t.Unix() - (t.Unix() % stepSec)
+			vm[tsAligned] = h.Values[i]
+		}
+		hitMaps = append(hitMaps, hitMap{label: labelValue, values: vm})
+	}
+
+	var buf bytes.Buffer
+	buf.Grow(64 + len(hitMaps)*axisLen*30)
+	buf.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
+	for hi, hm := range hitMaps {
+		if hi > 0 {
+			buf.WriteByte(',')
+		}
+		buf.WriteString(`{"metric":{"`)
+		writeJSONEscaped(&buf, lokiField)
+		buf.WriteString(`":"`)
+		writeJSONEscaped(&buf, hm.label)
+		buf.WriteString(`"},"values":[`)
+		first := true
+		for i := 0; i < axisLen; i++ {
+			ts := startSec + int64(i)*stepSec
+			if !first {
 				buf.WriteByte(',')
 			}
-			firstPt = false
+			first = false
 			buf.WriteByte('[')
-			buf.WriteString(strconv.FormatInt(t.Unix(), 10))
+			buf.WriteString(strconv.FormatInt(ts, 10))
 			buf.WriteString(`,"`)
-			buf.WriteString(strconv.Itoa(h.Values[i]))
+			buf.WriteString(strconv.Itoa(hm.values[ts]))
 			buf.WriteString(`"]`)
 		}
 		buf.WriteString(`]}`)
