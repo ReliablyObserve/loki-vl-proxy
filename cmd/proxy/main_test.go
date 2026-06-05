@@ -1552,6 +1552,55 @@ func TestValidateAdminExposure(t *testing.T) {
 	}
 }
 
+func TestValidatePeerAuth(t *testing.T) {
+	t.Run("discovery_without_token_fails", func(t *testing.T) {
+		err := validatePeerAuth("static", "10.0.0.1:3100", "", false)
+		if err == nil {
+			t.Fatalf("expected error when discovery set and token empty without insecure flag")
+		}
+		if !strings.Contains(err.Error(), "peer-auth-token") {
+			t.Fatalf("error should name the missing flag, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "peer-insecure-ip-allowlist") {
+			t.Fatalf("error should mention the opt-out flag, got %v", err)
+		}
+	})
+
+	t.Run("discovery_without_token_insecure_flag_passes", func(t *testing.T) {
+		if err := validatePeerAuth("static", "10.0.0.1:3100", "", true); err != nil {
+			t.Fatalf("unexpected error with insecure flag set: %v", err)
+		}
+	})
+
+	t.Run("token_present_passes", func(t *testing.T) {
+		if err := validatePeerAuth("static", "10.0.0.1:3100", "secret", false); err != nil {
+			t.Fatalf("unexpected error with token set: %v", err)
+		}
+	})
+
+	t.Run("discovery_disabled_passes", func(t *testing.T) {
+		if err := validatePeerAuth("", "", "", false); err != nil {
+			t.Fatalf("unexpected error with discovery disabled: %v", err)
+		}
+		// Also passes if discovery is empty even when peers list is empty AND
+		// insecure flag is somehow set — the validator should ignore the
+		// insecure flag when there is nothing to validate.
+		if err := validatePeerAuth("", "", "secret", true); err != nil {
+			t.Fatalf("unexpected error with discovery disabled (all-set inputs): %v", err)
+		}
+	})
+
+	t.Run("static_peers_without_discovery_still_validated", func(t *testing.T) {
+		// Even if --peer-discovery is left empty, presence of --peer-static is
+		// enough to count as "peer cache configured" — protects against
+		// half-configured CLI invocations slipping past the validator.
+		err := validatePeerAuth("", "10.0.0.1:3100", "", false)
+		if err == nil {
+			t.Fatalf("expected error when peers configured without token even if discovery flag empty")
+		}
+	})
+}
+
 func TestBuildHTTPServer_WithTLSClientCA(t *testing.T) {
 	caPath := writeTestCA(t)
 	srv, err := buildHTTPServer(serverRuntimeOptions{

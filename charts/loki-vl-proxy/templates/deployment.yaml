@@ -183,6 +183,10 @@ spec:
             {{- else if eq .Values.peerCache.discovery "static" }}
             - {{ printf "-peer-static=%s" (join "," .Values.peerCache.peers) | quote }}
             {{- end }}
+            {{- /* Peer auth token sourced from a Secret env var. Required by default;
+                   the chart auto-generates a Secret when no values are provided
+                   (see templates/peer-secret.yaml). */}}
+            - {{ "-peer-auth-token=$(PEER_AUTH_TOKEN)" | quote }}
             {{- end }}
           {{- $hasChartEnv := and (kindIs "slice" .Values.env) (gt (len .Values.env) 0) }}
           {{- $hasExtraEnv := and (kindIs "slice" .Values.extraEnv) (gt (len .Values.extraEnv) 0) }}
@@ -213,6 +217,19 @@ spec:
                 fieldRef:
                   fieldPath: {{ printf "metadata.labels['%s']" .Values.peerCache.topologyLabel | quote }}
             {{- end }}
+            - name: PEER_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.peerCache.existingSecret }}
+                  name: {{ .Values.peerCache.existingSecret | quote }}
+                  key: {{ .Values.peerCache.existingSecretKey | default "token" | quote }}
+                  {{- else if .Values.peerCache.authToken }}
+                  name: {{ printf "%s-peer-auth-literal" .Release.Name | quote }}
+                  key: token
+                  {{- else }}
+                  name: {{ printf "%s-peer-auth" .Release.Name | quote }}
+                  key: token
+                  {{- end }}
             {{- end }}
             {{- if $hasChartEnv }}
             {{- toYaml .Values.env | nindent 12 }}

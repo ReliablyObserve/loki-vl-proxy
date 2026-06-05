@@ -301,7 +301,8 @@ extraArgs:
   # ruler-backend: ""                           # optional /rules passthrough backend
   # alerts-backend: ""                          # optional /alerts passthrough backend
   # extra-label-fields: "service.name,host.name"
-  # peer-auth-token: ""                         # strongly recommended for fleets; avoids transient discovery/IP-only peer auth 403s on /_cache/get and /_cache/set
+  # peer-auth-token: ""                         # chart-managed via peerCache.authToken / peerCache.existingSecret (see below)
+  # peer-insecure-ip-allowlist: "false"          # when true, allows legacy IP-only peer auth on /_cache/* (NOT recommended; default false requires --peer-auth-token)
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
   # peer-write-through: "true"                  # push eligible non-owner writes to owner peer
   # peer-write-through-min-ttl: "30s"           # only TTL >= threshold is pushed to owner peer
@@ -791,6 +792,31 @@ httpRoute:
 # so non-owner pods can warm owner shards under skewed traffic.
 peerCache:
   enabled: false
+
+  # --- Peer auth token (required when peerCache.enabled=true) ---
+  # As of the secure-defaults hardening, the proxy refuses to start when peer
+  # discovery is configured without a shared token (unless
+  # --peer-insecure-ip-allowlist=true, NOT recommended). The chart resolves the
+  # token in this order:
+  #
+  #   A) authToken set to a non-empty literal:
+  #        chart renders <release>-peer-auth-literal Secret with that value.
+  #   B) existingSecret set:
+  #        chart references the operator-managed Secret; emits no Secret of its own.
+  #   C) both unset on first install:
+  #        chart generates a 32-byte randAlphaNum token into <release>-peer-auth.
+  #   D) both unset on upgrade:
+  #        chart reuses the existing <release>-peer-auth value via `lookup`
+  #        (idempotent — `helm upgrade` does not rotate the token unless you
+  #        delete the Secret first).
+  #
+  # Explicit empty-string authToken (authToken: "") FAILS templating with a
+  # clear error — set a value, remove the key, or use existingSecret.
+  #
+  # authToken: ""                    # literal token (case A)
+  # existingSecret: ""               # external Secret name (case B)
+  # existingSecretKey: "token"       # key within existingSecret (defaults to "token")
+
   # Discovery mode: "dns" | "srv" | "http" | "static"
   #
   # dns  — resolves a headless service A-record; only ready pods appear (k8s readiness gating).

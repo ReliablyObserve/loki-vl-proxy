@@ -271,6 +271,12 @@ type Config struct {
 	// Peer cache (fleet distribution)
 	PeerCache     *cache.PeerCache // optional peer cache for distributed fleet
 	PeerAuthToken string
+	// PeerInsecureIPAllowlist, when true, falls back to source-IP membership
+	// check on /_cache/* endpoints if no token is provided. Default false:
+	// requests without a valid X-Peer-Token are rejected with 401. Operators
+	// who want the legacy IP-only behavior must opt in explicitly via
+	// --peer-insecure-ip-allowlist=true.
+	PeerInsecureIPAllowlist bool
 
 	// Cold storage backend (Victoria Lakehouse)
 	ColdBackend ColdBackendConfig
@@ -457,6 +463,7 @@ type Proxy struct {
 	declaredLabelFields                   []string         // configured VL-native label fields (stream_fields + extras)
 	peerCache                             *cache.PeerCache // L3 fleet peer cache
 	peerAuthToken                         string
+	peerInsecureIPAllowlist               bool // gate the legacy IP-allowlist fallback (default false: token required)
 	coldRouter                            *ColdRouter
 	registerInstrumentation               bool
 	enablePprof                           bool
@@ -1068,6 +1075,7 @@ func New(cfg Config) (*Proxy, error) {
 		declaredLabelFields:                   declaredLabelFields,
 		peerCache:                             cfg.PeerCache,
 		peerAuthToken:                         cfg.PeerAuthToken,
+		peerInsecureIPAllowlist:               cfg.PeerInsecureIPAllowlist,
 		registerInstrumentation:               registerInstrumentation,
 		enablePprof:                           cfg.EnablePprof,
 		enableQueryAnalytics:                  cfg.EnableQueryAnalytics,

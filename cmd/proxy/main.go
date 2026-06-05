@@ -209,6 +209,7 @@ type proxyRuntimeConfig struct {
 	statsQueryRangeInterQueryDelayMs    int
 	debugLogRawQueries                  bool
 	metadataDefaultLookback             time.Duration
+	peerInsecureIPAllowlist             bool
 }
 
 type otlpRuntimeConfig struct {
@@ -579,6 +580,7 @@ func run(
 	peerStatic := fs.String("peer-static", "", `Static peer list for "static" discovery (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
 	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
+	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
 	peerWriteThroughMinTTL := fs.Duration("peer-write-through-min-ttl", 30*time.Second, "Minimum TTL eligible for peer owner write-through pushes")
 	peerHotReadAheadEnabled := fs.Bool("peer-hot-read-ahead-enabled", false, "Enable bounded hot read-ahead from peer hot index to prewarm local shadows")
@@ -653,6 +655,9 @@ func run(
 	}
 
 	if err := validateAdminExposure(envCfg.listenAddr, *registerInstrumentation, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
+		return err
+	}
+	if err := validatePeerAuth(*peerDiscovery, *peerStatic, *peerAuthToken, *peerInsecureIPAllowlist); err != nil {
 		return err
 	}
 
@@ -815,6 +820,7 @@ func run(
 			peerStatic:                          *peerStatic,
 			peerTimeout:                         *peerTimeout,
 			peerAuthToken:                       *peerAuthToken,
+			peerInsecureIPAllowlist:             *peerInsecureIPAllowlist,
 			peerWriteThrough:                    *peerWriteThrough,
 			peerWriteThroughMinTTL:              *peerWriteThroughMinTTL,
 			peerHotReadAheadEnabled:             *peerHotReadAheadEnabled,
@@ -1151,6 +1157,34 @@ func normalizeFrontendCompressionSetting(mode string) (string, error) {
 	default:
 		return "", fmt.Errorf("%q (must be auto, gzip, or none)", mode)
 	}
+}
+
+// validatePeerAuth refuses to start when the peer cache is configured but no
+// shared --peer-auth-token is set, unless the operator has explicitly opted
+// into the legacy IP-allowlist-only behavior with
+// --peer-insecure-ip-allowlist=true.
+//
+// Peer cache is considered "configured" when either --peer-discovery or
+// --peer-static is non-empty — a half-configured CLI invocation
+// (e.g. --peer-static set without --peer-discovery) still counts so it cannot
+// slip past the validator with the IP-allowlist fallback silently engaged.
+//
+// The error message names both the required flag and the explicit opt-out so
+// operators can choose without grepping docs.
+func validatePeerAuth(discovery, peers, token string, insecureAllowlist bool) error {
+	enabled := strings.TrimSpace(discovery) != "" || strings.TrimSpace(peers) != ""
+	if !enabled {
+		return nil
+	}
+	if strings.TrimSpace(token) != "" {
+		return nil
+	}
+	if insecureAllowlist {
+		return nil
+	}
+	return fmt.Errorf("peer cache is configured (discovery=%q, peers=%q) but --peer-auth-token is empty. "+
+		"Set --peer-auth-token to a shared secret, or pass --peer-insecure-ip-allowlist=true to keep the legacy IP-only behavior",
+		discovery, peers)
 }
 
 func validateAdminExposure(listenAddr string, registerInstrumentation, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
@@ -1819,6 +1853,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		PatternsPeerWarmTimeout:            cfg.patternsPeerWarmTimeout,
 		PeerCache:                          peerCache,
 		PeerAuthToken:                      cfg.peerAuthToken,
+		PeerInsecureIPAllowlist:            cfg.peerInsecureIPAllowlist,
 		ColdBackend: proxy.ColdBackendConfig{
 			URL:             cfg.coldBackendURL,
 			Boundary:        cfg.coldBackendBoundary,
