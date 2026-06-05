@@ -177,7 +177,65 @@
       "fieldConfig": {"defaults": {"unit": "s", "decimals": 4}}
     },
 
-    {"type": "row", "title": "Proxy — throughput (bytes & network)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 57}, "id": 104, "collapsed": false, "panels": []},
+    {"type": "row", "title": "Proxy — heap deep-dive (why is heap growing?)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 56}, "id": 108, "collapsed": false, "panels": []},
+
+    {
+      "title": "Proxy: heap alloc (live objects)  vs  heap sys (OS reservation)  vs  RSS", "type": "timeseries", "id": 80,
+      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 57},
+      "targets": [
+        {"expr": "go_memstats_heap_alloc_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "heap_alloc (live MiB)", "refId": "A"},
+        {"expr": "go_memstats_heap_inuse_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "heap_inuse MiB", "refId": "B"},
+        {"expr": "go_memstats_heap_idle_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "heap_idle MiB (returnable)", "refId": "C"},
+        {"expr": "go_memstats_heap_released_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "heap_released MiB", "refId": "D"},
+        {"expr": "go_memstats_sys_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "sys MiB (acquired from OS)", "refId": "E"},
+        {"expr": "process_resident_memory_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "RSS MiB", "refId": "F"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "decmbytes"}},
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
+    },
+    {
+      "title": "Proxy: heap objects (live count)", "type": "timeseries", "id": 81,
+      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 57},
+      "targets": [{"expr": "go_memstats_heap_objects{component=\"proxy\"}", "legendFormat": "live heap objects", "refId": "A"}],
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
+    },
+    {
+      "title": "Proxy: allocation rate (mallocs/s, frees/s) — should be roughly balanced post-GC", "type": "timeseries", "id": 82,
+      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
+      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 65},
+      "targets": [
+        {"expr": "rate(go_memstats_mallocs_total{component=\"proxy\"}[1m])", "legendFormat": "mallocs/s", "refId": "A"},
+        {"expr": "rate(go_memstats_frees_total{component=\"proxy\"}[1m])", "legendFormat": "frees/s", "refId": "B"}
+      ],
+      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
+    },
+    {
+      "title": "Proxy: GC pressure (cycles/s, pause time/s, next-GC target)", "type": "timeseries", "id": 83,
+      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
+      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 65},
+      "targets": [
+        {"expr": "rate(go_gc_duration_seconds_count{component=\"proxy\"}[1m])", "legendFormat": "GC cycles/s", "refId": "A"},
+        {"expr": "rate(go_gc_duration_seconds_sum{component=\"proxy\"}[1m]) * 1000", "legendFormat": "GC pause ms/s", "refId": "B"},
+        {"expr": "go_memstats_next_gc_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "next GC at MiB", "refId": "C"}
+      ]
+    },
+    {
+      "title": "Proxy: stack + other runtime memory (typically small)", "type": "timeseries", "id": 84,
+      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 71},
+      "targets": [
+        {"expr": "go_memstats_stack_inuse_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "stack MiB", "refId": "A"},
+        {"expr": "go_memstats_mspan_inuse_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "mspan MiB", "refId": "B"},
+        {"expr": "go_memstats_mcache_inuse_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "mcache MiB", "refId": "C"},
+        {"expr": "go_memstats_buck_hash_sys_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "profiling buckets MiB", "refId": "D"},
+        {"expr": "go_memstats_gc_sys_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "GC metadata MiB", "refId": "E"},
+        {"expr": "go_memstats_other_sys_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "other_sys MiB", "refId": "F"}
+      ]
+    },
+
+    {"type": "row", "title": "Proxy — throughput (bytes & network)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 77}, "id": 104, "collapsed": false, "panels": []},
 
     {
       "title": "Proxy: process network throughput", "type": "timeseries", "id": 40,

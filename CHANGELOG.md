@@ -127,16 +127,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resource consumption (Loki peaked at 15.8 cores / 7.9 GiB before erroring;
   proxy + VL together used ~5 cores / 1.6 GiB while serving all queries).
 
+### Observability / infra
+
+- `test/e2e-compat` now scrapes proxy / vmauth / Loki / VictoriaLogs `/metrics` into the
+  existing VictoriaMetrics instance every 5 s via `vm-scrape.yml` (single-node VM
+  `-promscrape.config`, no extra vmagent needed). VM port exposed on host as `18428`.
+  Only the bench-hit proxy variant (`loki-vl-proxy-vmauth`) is scraped — the other
+  variants share the `loki_vl_proxy_*` metric names and would double-count without
+  per-variant labels.
+- Grafana ships a provisioned `Bench: Drilldown vs Loki — resources, traffic, cache,
+  latency` dashboard (`test/e2e-compat/dashboards/bench-resources.json`, 36 panels
+  across 8 rows): component resources (CPU / RSS / Go heap / goroutines / GC / FDs);
+  proxy client traffic; proxy cache behaviour; proxy latency distribution
+  (P50 / P95 / P99 + backend + internal-op); proxy heap deep-dive (heap_alloc /
+  heap_inuse / heap_idle / heap_released / sys / RSS together, plus mallocs vs frees
+  rate and GC pressure); proxy throughput; VL backend; Loki backend; vmauth gateway.
+  Grafana datasource catalogue gains a VictoriaMetrics Prometheus datasource for
+  these queries.
+- `test/e2e-compat` Loki container bumped 8 GiB → 12 GiB with `GOMEMLIMIT=10GiB` +
+  `GOGC=80`. 8 GiB OOM-looped continuously (Loki idle alone consumed 7.6 GiB of stored
+  bigParts), making every "Loki vs proxy" bench number unfair because Loki was
+  crashing instead of running. The new budget lets Loki actually serve queries; the
+  fair-bench numbers in README and `docs/benchmarks.md` come from this configuration.
+
+### Performance (heap-pool follow-up, commit 2340928)
+
+- `EncodeResponseBody` now uses a pooled `bytes.Buffer` (`encodeBodyBufPool`) with a
+  4 MiB cap-trim on Put. Pre-pool, pprof showed 96 MB / 61 % of live heap in
+  `bytes.growSlice` from the compat-cache encoded-variant path
+  (`compatCacheMiddleware → CompressionHandlerWithOptions → bytes.Buffer.ReadFrom`).
+  Each call now reuses a pre-grown buffer; the cap-trim ensures one 50 MB response
+  can't permanently inflate the pool footprint.
+- `compressedResponseWriter.buf` switched from a value `bytes.Buffer` (allocated per
+  request) to a pooled `*bytes.Buffer` (`holdBufPool`) with explicit acquire / release
+  lifecycle: `startCompression` and `startBypass` drain-and-release; `finish` has a
+  safety-net deferred release; `Write` re-acquires if a stray write arrives after
+  release. Caps the per-request hold-buffer cost under concurrent Drilldown traffic.
+- `buildHitsRangeMetricMatrix` pre-sizes the per-series `values` slice to
+  `(end-start)/step` instead of starting at cap 16. Pre-fix the 17 280-bucket cascade
+  for a 24 h / 5 s step query allocated through ~10 doublings per series, attributing
+  1.31 GB of cumulative allocations to this single line. One allocation per series
+  now. Safety cap of 32 768 buckets guards against pathological step inputs.
+- Stress + heap-bounded regression tests added: `TestEncodeResponseBody_PoolKeepsHeapBounded`
+  (1 000 sequential 288 KiB encodes, asserts heap delta < 32 MiB),
+  `TestEncodeResponseBody_PoolStableUnderConcurrency` (32×100 parallel, < 128 MiB),
+  `TestEncodeResponseBody_LargeResponseDoesNotPinPool` (8 MiB then 1 000 × 4 KiB,
+  verifies cap-trim), `TestCompressedResponseWriter_HoldBufPoolReleased` (release
+  lifecycle smoke), `TestCompressedResponseWriter_HeapStableUnderRepeatedRequests`
+  (1 000 handler calls, < 32 MiB), `TestBuildHitsRangeMetricMatrix_PreSizedValuesSlice`,
+  `TestBuildHitsRangeMetricMatrix_HeapBoundedAcrossManyCalls` (< 16 MiB),
+  `TestLock_BuildHitsRangeMetricMatrix_PreSizeConstantsExist`. All measured with
+  signed `int64(after) - int64(before)` heap deltas — pre-fix this measured 300+ MiB,
+  post-fix is consistently negative (pool freed memory mid-test).
+
+### Fixed (Loki API parity, commit 8b9ff26)
+
+- VL upstream 4xx / 5xx responses no longer leak through to Grafana clients on the
+  Drilldown / metric stats path. Loki itself converts max-series-exceeded errors to
+  `HTTP 200 + warnings:[...]` partial-results for Drilldown traffic
+  (`pkg/querier/queryrange/limits.go::seriesLimiter.Do` gated on
+  `IsLogsDrilldownRequest` → `X-Query-Tags: Source=grafana-lokiexplore-app`); the
+  proxy now mirrors that for VL legitimately failing on shapes like
+  `|json|trace_id!=""` at long ranges (parser-pipe row-scan limit). New helper
+  `writeDrilldownPartialFromUpstream` emits a Loki-shape body with `warnings: [...]`
+  (the field Grafana's Loki datasource and Drilldown plugin both parse from the
+  body, verified against upstream source), `Warning` HTTP header, `Cache-Control:
+  no-store`, and stamps the suppressed VL status/message in
+  `X-Proxy-Upstream-Status` / `X-Proxy-Upstream-Error` for operator visibility.
+  Non-Grafana clients (curl, internal tooling) still see the real upstream error.
+  Locked by `TestLock_VLErrorsConvertedToPartialResults` (5 subtests: 502 / 503 / 500
+  Grafana-sourced → 200 + Warning; 502 / 500 non-Grafana → pass-through).
+
 ### Locked / Hardened
 
 - All 2026-06 Drilldown quality fixes are pinned by named `TestLock_*` regression tests in
-  `internal/proxy/drilldown_regression_lock_test.go` (12 lock cases, 56 subtests). Each
-  test maps to a single invariant — routing source-agnosticism, `/hits`-for-all-ranges,
-  leftover-chunk suppression, step normalisation, remainder-bucket drop, shared timestamp
-  axis, VL-native selector extraction, quoted-dotted-field detection, source-detection
-  helper, no-double-call stats fallback, `maxStatsQueryRangeBytes` bound, and
-  `drilldownHitsFieldsLimit` bound. A future PR that weakens any of these fails CI with a
-  named lock and a "do not regress" comment pointing back at the original incident.
+  `internal/proxy/drilldown_regression_lock_test.go` (now 14 lock cases including the
+  new `TestLock_VLErrorsConvertedToPartialResults` and
+  `TestLock_BuildHitsRangeMetricMatrix_PreSizeConstantsExist`). Each test maps to a single
+  invariant — routing source-agnosticism, `/hits`-for-all-ranges, leftover-chunk
+  suppression, step normalisation, remainder-bucket drop, shared timestamp axis,
+  VL-native selector extraction, quoted-dotted-field detection, source-detection helper,
+  no-double-call stats fallback, `maxStatsQueryRangeBytes` bound, `drilldownHitsFieldsLimit`
+  bound, VL error conversion contract, and matrix pre-size safety cap. A future PR that
+  weakens any of these fails CI with a named lock and a "do not regress" comment pointing
+  back at the original incident.
+- `TestE2ELock_ProxyHeapBoundedUnderDrilldownLoad` (e2e) drives 30 concurrent workers ×
+  60 s of Drilldown stats traffic against the live proxy and asserts
+  `go_memstats_heap_inuse_bytes < 500 MiB` and `process_resident_memory_bytes < 800 MiB`
+  scraped from the proxy's own `/metrics`. Pre-fix the same workload measured 1.4 GiB
+  RSS peak; this test fails loudly if any of the three pool optimizations above are
+  removed in a future PR.
 - `test/e2e-compat/drilldown_chunked_merge_lock_test.go` adds two end-to-end locks that
   run against the live VL stack: `TestE2ELock_DrilldownChunkedMerge_NoRightEdgeSpike`
   embeds a port of Grafana's `mergeFrames + closestIdx + splice` algorithm and asserts the
