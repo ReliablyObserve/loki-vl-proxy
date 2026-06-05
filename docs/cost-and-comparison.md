@@ -471,6 +471,100 @@ Related docs:
 | Migration from Loki to VictoriaLogs | Grafana can keep the native Loki datasource while the backend changes behind the proxy. |
 | Multi-replica read fleets | Peer cache lets one warm pod reduce repeated backend fetches across the fleet. |
 | High-cardinality scale (avoiding label explosion) | VictoriaLogs all-fields indexing does not create stream explosion from high-cardinality label values, avoiding the Loki chunk fragmentation and index bloat that drives large compute requirements at scale. |
+| Drilldown Fields view on parser-heavy queries | See [the case study below](#case-study-drilldown-fields-view-at-scale-loki-cannot-serve-proxy-can) — Loki returns HTTP 500/502 for the 24h `\|json \|logfmt` query Grafana Drilldown actually sends, even after generous memory/series-cap tuning; proxy serves it from VictoriaLogs indexed columns in a few hundred milliseconds. |
+
+## Case Study: Drilldown Fields View at Scale (Loki Cannot Serve, Proxy Can)
+
+This is a concrete, measured comparison from the project's own e2e setup on
+2026-06-04, captured because it surfaces a behaviour Loki users frequently
+hit in production with no clear signal in the UI: **the Loki side of a
+side-by-side comparison can look "cleaner" simply because Loki is failing
+silently while the proxy renders real data**.
+
+### Workload
+
+- Selector: `{namespace="prod"}` (multi-service, single namespace)
+- Time range: `24h`
+- Log volume in the window: ~3.3M entries across 11 services
+- Drilldown query shape per panel:
+  `sum by (X) (count_over_time({namespace="prod"} | json X="..." | drop __error__, __error_details__ | X!="" [120s]))`
+- `pod` is unique per request (real Kubernetes pod identifiers rotate),
+  producing ~700k unique pod values across 24h.
+
+### Loki side (after generous tuning)
+
+Loki was given every fair-fight advantage:
+
+- `mem_limit: 8g` (up from 4g default)
+- `max_query_series: 1000000` (up from 100k default)
+- `creation_grace_period: 48h` (up from 10m default)
+- Persistent volume for chunks (was ephemeral)
+- 30h of backfilled data replayed from the same source as the proxy backend
+
+Result for the namespace=prod Drilldown Fields view at 24h:
+
+- `POST /api/ds/query` → **HTTP 500/502** for both panel queries
+- Grafana Drilldown UI renders: **0 field panels** ("Fields 0" badge)
+- Loki distributor ingested 4.5M lines successfully — the query path is
+  where it falls over
+- Failure mode: per-line `| json` + `| logfmt` parsing across 651k log
+  lines × 700k+ streams times out or trips the series cap; query frontend
+  returns 500 with `"empty ring"` or `EOF` errors
+
+This is consistent with Loki's own documented posture: high-cardinality
+labels should be avoided and parser-heavy queries over wide ranges are
+expensive. Once a real workload trips both at once, Loki's Drilldown
+experience for that selector silently collapses to "no panels".
+
+### Proxy side (default config, no tuning)
+
+Same selector, same range, same panel queries:
+
+- All `POST /api/ds/query` → **HTTP 200**
+- Grafana Drilldown UI renders: **42 field panels** with real histograms
+- Low-cardinality panels (duration_ms with 87 distinct values, path with
+  21, method with 3, status with 11) render as dense stacked bars
+- High-cardinality panels (trace_id with 100 capped, span_id, request_id)
+  render the same sparse-but-present chart Loki would render in the
+  hypothetical world where Loki could actually serve the query
+
+Mechanism: VictoriaLogs stores parsed JSON keys as indexed columns. The
+proxy's `stats_query_range` and `/select/logsql/hits` calls operate on
+those columns directly without per-line text parsing, and the data model
+does not multiply streams by per-request label values. The 24h panel
+queries return in a few hundred milliseconds each.
+
+### Why the comparison initially looked the other way around
+
+User reports of "proxy fields not loading correctly while Loki works fine"
+turned out to be the opposite — Loki was returning errors that Grafana's
+Drilldown plugin surfaces as "no panels rendered", which is visually
+indistinguishable from "this view has no data" and is more restful-looking
+than the proxy's 42 panels (some of which are intentionally sparse for
+unique-per-request fields). The proxy was rendering real data; Loki was
+emitting 500s.
+
+The lesson for fair evaluation:
+
+1. Check that Loki actually returns HTTP 200 for the queries before
+   judging the proxy.
+2. Check Loki's `loki_distributor_lines_received_total` AND
+   `loki_ingester_memory_streams` — high stream counts (>500k) are the
+   most common reason Drilldown queries fail silently.
+3. Compare results, not panel-render counts: 0 panels rendered does not
+   mean "everything is fine".
+
+### Numbers from the run
+
+| Signal | Loki direct (tuned) | Proxy / VictoriaLogs |
+|---|---|---|
+| Backfilled lines accepted | 4.5M | (already had 7d retained) |
+| Unique streams created (24h) | 807,384 | N/A (VL uses single `_stream` column) |
+| `max_query_series` set | 1,000,000 (bumped from 100k) | N/A |
+| `POST /api/ds/query` status at 24h | **500 / 502** | **200** |
+| Drilldown field panels rendered | **0** | **42** |
+| 24h `sum(count_over_time({namespace="prod"}[5m]))` | 35 buckets / 651k entries (sparse) | 185 buckets / 3.3M entries |
+| Memory pressure during query | 89% of 8g (7.2GB) | unchanged (~3GB) |
 
 ## Where The Argument Is Weaker
 

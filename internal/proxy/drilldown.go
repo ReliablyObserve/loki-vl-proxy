@@ -23,7 +23,16 @@ import (
 )
 
 const unknownServiceName = "unknown_service"
-const detectedFieldsSampleLimit = 500
+
+// detectedFieldsSampleLimit caps the number of distinct VALUES sampled per
+// detected field during scan. Matches Loki's default (LIMIT 100) so the
+// "cardinality" Grafana Drilldown shows is identical across backends and so
+// high-cardinality fields (trace_id, span_id, *_id, *_uid) report the same
+// capped 100 instead of 500. Drilldown's plugin uses this number to decide
+// when to render a chart vs a placeholder, so divergence here made the proxy
+// produce blank-looking field-card charts for ID-style fields where Loki
+// would render the same placeholder.
+const detectedFieldsSampleLimit = 100
 
 // detectedFieldsScannerLineBytes is the maximum NDJSON line length the streaming
 // scanner will accept. VL log entries rarely exceed a few KB; 2 MB is a safe cap
@@ -101,6 +110,7 @@ type detectedFieldSummary struct {
 	values      map[string]struct{}
 	jsonPath    []string
 	cardinality int
+	nativeHits  int64 // hits from VL field_names index; 0 for scan-found fields
 }
 
 type detectedLabelSummary struct {
@@ -453,13 +463,19 @@ func (p *Proxy) serviceNameValues(ctx context.Context, query, start, end string)
 	}
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" | sort by (_time desc)")
+	// No | sort pipe: the /streams endpoint uses column-index lookups to enumerate
+	// unique stream label sets. Adding | sort by (_time desc) forces VL to load and
+	// sort ALL matching log entries before grouping into streams — an O(N_logs) heap
+	// sort that OOMs on wide time windows. Stream order is irrelevant for service
+	// name detection; we only need to know which streams exist in the window.
+	params.Set("query", logsqlQuery)
 	if start != "" {
 		params.Set("start", start)
 	}
 	if end != "" {
 		params.Set("end", end)
 	}
+	params = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 
 	resp, err := p.vlGet(ctx, "/select/logsql/streams", params)
 	if err != nil {
@@ -507,6 +523,12 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 	if err != nil {
 		return nil, err
 	}
+	// Cap time range for stream_field_values calls. metadataQueryParams passes the raw
+	// user range (e.g. 12h) which causes O(data-volume) scans on VL. Capping to 1h matches
+	// the cap already applied to stream_field_names/field_names calls and brings cold
+	// stream_field_values latency from 5-8s to <400ms. fetchAllFieldNamesCached applies
+	// its own internal 1h cap, so double-capping is harmless.
+	params = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 	appendFieldValues := func(fieldValues []string) {
 		for _, value := range fieldValues {
 			value = strings.TrimSpace(value)
@@ -524,7 +546,8 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 	// Phase 1: use field_names (fast, ~0.25s) instead of stream_field_names (~2-4s).
 	// field_names returns a superset of all field names including stream-indexed labels,
 	// so it covers both plain labels (app, service_name) and dotted OTel fields (service.name).
-	// stream_field_values is used for the value fetch so stream-indexed labels return correctly.
+	// On VL v1.50+ use field_values (20x faster than stream_field_values at any range).
+	// On older backends use stream_field_values so stream-indexed labels return correctly.
 	// Phase 2 (field_values fallback) only runs when Phase 1 is unavailable — avoiding the
 	// redundant second field_names call that the old two-phase design required.
 	phase1Succeeded := false
@@ -537,19 +560,46 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 			for _, field := range allFields {
 				available[field] = struct{}{}
 			}
+			// Collect matching fields first, then fetch their values in parallel.
+			// Sequential fetches caused N×RTT latency (5-10 calls at ~200ms each = 1-2s).
+			candidates := make([]string, 0, 8)
 			for _, field := range serviceNameSourceFields {
-				if _, ok := available[field]; !ok {
+				if _, ok := available[field]; ok {
+					candidates = append(candidates, field)
+				}
+			}
+			// VL v1.50+: field_values is identical to stream_field_values for stream fields
+			// but ~20x faster (37ms vs 700ms at 1h). Use it when available.
+			fieldValuesEndpoint := "/select/logsql/stream_field_values"
+			if p.supportsColumnIndexedFields() {
+				fieldValuesEndpoint = "/select/logsql/field_values"
+			}
+			type fieldResult struct {
+				values []string
+				err    error
+			}
+			results := make([]fieldResult, len(candidates))
+			var wg sync.WaitGroup
+			sem := make(chan struct{}, 4) // limit parallelism to 4 concurrent VL calls
+			for i, field := range candidates {
+				wg.Add(1)
+				go func(i int, field string) {
+					defer wg.Done()
+					sem <- struct{}{}
+					defer func() { <-sem }()
+					queryParams := cloneURLValues(params)
+					queryParams.Set("field", field)
+					fv, fErr := p.fetchVLFieldValues(ctx, fieldValuesEndpoint, queryParams)
+					results[i] = fieldResult{values: fv, err: fErr}
+				}(i, field)
+			}
+			wg.Wait()
+			for _, r := range results {
+				if r.err != nil {
+					lastErr = r.err
 					continue
 				}
-				queryParams := cloneURLValues(params)
-				queryParams.Set("field", field)
-				// stream_field_values covers both stream-indexed labels and column fields.
-				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/stream_field_values", queryParams)
-				if fieldErr != nil {
-					lastErr = fieldErr
-					continue
-				}
-				appendFieldValues(fieldValues)
+				appendFieldValues(r.values)
 			}
 		} else if !shouldFallbackToGenericMetadata(err) {
 			lastErr = err
@@ -567,18 +617,40 @@ func (p *Proxy) serviceNameValuesFromNativeFields(ctx context.Context, query, st
 			for _, field := range fieldNames {
 				available[field] = struct{}{}
 			}
+			candidates2 := make([]string, 0, 8)
 			for _, field := range serviceNameSourceFields {
-				if _, ok := available[field]; !ok {
+				if _, ok := available[field]; ok {
+					candidates2 = append(candidates2, field)
+				}
+			}
+			results2 := make([]struct {
+				values []string
+				err    error
+			}, len(candidates2))
+			var wg2 sync.WaitGroup
+			sem2 := make(chan struct{}, 4)
+			for i, field := range candidates2 {
+				wg2.Add(1)
+				go func(i int, field string) {
+					defer wg2.Done()
+					sem2 <- struct{}{}
+					defer func() { <-sem2 }()
+					queryParams := cloneURLValues(params)
+					queryParams.Set("field", field)
+					fv, fErr := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
+					results2[i] = struct {
+						values []string
+						err    error
+					}{values: fv, err: fErr}
+				}(i, field)
+			}
+			wg2.Wait()
+			for _, r := range results2 {
+				if r.err != nil {
+					lastErr = r.err
 					continue
 				}
-				queryParams := cloneURLValues(params)
-				queryParams.Set("field", field)
-				fieldValues, fieldErr := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
-				if fieldErr != nil {
-					lastErr = fieldErr
-					continue
-				}
-				appendFieldValues(fieldValues)
+				appendFieldValues(r.values)
 			}
 		} else if lastErr == nil {
 			lastErr = err
@@ -1320,12 +1392,16 @@ func stripFieldDetectionStages(query string) string {
 
 // labelFilterHasComparison reports whether a LabelFilterStage.Raw string contains a
 // field-comparison operator (=, !=, =~, !~, >=, <=, >, <).
-var labelFilterCompareRE = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
+var (
+	labelFilterCompareRE      = regexp.MustCompile(`[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
+	hasFieldComparisonRE      = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`)
+	stripFieldComparisonStgRE = regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)\s*[^|]+`)
+)
 
 func hasFieldComparisonStages(query string) bool {
 	lq, err := logqlpkg.ParseLogQuery(query)
 	if err != nil {
-		return regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)`).MatchString(query)
+		return hasFieldComparisonRE.MatchString(query)
 	}
 	for _, stage := range lq.Pipeline {
 		lfs, ok := stage.(*logqlpkg.LabelFilterStage)
@@ -1343,8 +1419,7 @@ func stripFieldComparisonStages(query string) string {
 	}
 	lq, err := logqlpkg.ParseLogQuery(query)
 	if err != nil {
-		fieldComparisonStage := regexp.MustCompile(`\|\s*[A-Za-z_][A-Za-z0-9_.-]*\s*(?:=~|!~|!=|=|>=|<=|>|<)\s*[^|]+`)
-		result := fieldComparisonStage.ReplaceAllString(query, " ")
+		result := stripFieldComparisonStgRE.ReplaceAllString(query, " ")
 		for strings.Contains(result, "  ") {
 			result = strings.ReplaceAll(result, "  ", " ")
 		}
@@ -1461,6 +1536,12 @@ type detectNativeResult struct {
 	err    error
 }
 
+// source paths (line scan, JSON/logfmt parse, type inference, sentinel
+// stripping). Each branch handles a distinct parser-output edge case
+// (numeric vs string vs hybrid values; missing/extra parsers; capped scan).
+// Extracting would force shared mutable state through extra arguments.
+//
+//nolint:gocyclo // Scans + aggregates parsed-field samples across multiple
 func (p *Proxy) detectFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, error) {
 	if lineLimit > maxDetectedScanLines {
 		lineLimit = maxDetectedScanLines
@@ -1491,8 +1572,9 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	var lastErr error
 	var hadScanFailure bool
 	var (
-		scanFieldList   []map[string]interface{}
-		scanFieldValues map[string][]string
+		scanFieldList    []map[string]interface{}
+		scanFieldValues  map[string][]string
+		scanStreamLabels map[string]string
 	)
 
 	for _, candidate := range candidates {
@@ -1543,7 +1625,7 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 			return nil, nil, fmt.Errorf("%s", msg)
 		}
 		// Stream the NDJSON response line-by-line without buffering the full body.
-		scanFieldList, scanFieldValues, _ = p.detectFieldSummariesStream(resp.Body)
+		scanFieldList, scanFieldValues, scanStreamLabels = p.detectFieldSummariesStream(resp.Body)
 		_ = resp.Body.Close()
 		break
 	}
@@ -1568,24 +1650,15 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 	}
 
 	if len(scanFieldList) > 0 {
-		// When the log-line scan produced results, use them as-is.
-		// The scan's outer obj.Visit already captures native VL metadata fields
-		// (OTel service.name, trace_id, etc.) for entries whose _msg is not JSON,
-		// and the _msg JSON parsing pass finds all JSON fields with parser="json".
-		// Merging the native field_names index here would flood the response:
-		// VL auto-indexes every JSON key across the entire time range, so the index
-		// may contain thousands of field names accumulated from rare log variants
-		// that the 500-line scan sample correctly excludes.
+		// Merge scan results with native index fields that passed the hit threshold in
+		// fetchNativeFieldNamesForCandidate (hits ≥ minNativeFieldHits, top-N by hits).
+		// The hit filter prevents VL's accumulated one-off JSON keys from flooding the
+		// response — only fields with meaningful presence (e.g. trace_id, session_id)
+		// get promoted. service.name / service_name are handled separately below so the
+		// querySelectsServiceName guard is applied correctly.
 		//
-		// Exception: selectively promote service.name / service_name when the native
-		// label index shows service.name exists but the scan window missed it. OTel
-		// streams may be older than the 500-line window; the native index covers the
-		// full time range and is the authoritative source for stream label existence.
-		// Selectively promote service.name / service_name when the native label index
-		// shows service.name exists but the 500-line scan window missed it.
-		//
-		// Guard: skip when the query already selects on service_name or service.name —
-		// those are stream label selectors and must be suppressed from detected_fields
+		// Guard: skip service.name / service_name from the general merge when the query
+		// already selects on them — stream label selectors must not reappear as fields
 		// (e.g. {service_name="api-gateway"} must not expose service_name as a field).
 		querySelectsServiceName := strings.Contains(query, "service_name") || strings.Contains(query, "service.name")
 		if nativeFields != nil && !querySelectsServiceName {
@@ -1612,7 +1685,34 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 				}
 			}
 		}
-		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, nil)
+		// Build a filtered native map that excludes service.name/service_name (handled
+		// above) so the general merge does not bypass the querySelectsServiceName guard.
+		// Also apply the minNativeFieldHits threshold here (scan-success path only):
+		// native fields with low hit counts are noise from VL's accumulated field index
+		// and must not inflate the response when the log-line scan has results.
+		// Fields with nativeHits==0 are VL non-indexed fields (valid, not noise) and pass.
+		var nativeSparse map[string]*detectedFieldSummary
+		if nativeFields != nil {
+			nativeSparse = make(map[string]*detectedFieldSummary, len(nativeFields))
+			for k, v := range nativeFields {
+				if k == "service.name" || k == "service_name" {
+					continue
+				}
+				if v.nativeHits > 0 && v.nativeHits < minNativeFieldHits {
+					continue
+				}
+				// Suppress plain stream labels (e.g. container, env, pod, version, level)
+				// that VL's field_names index returns alongside JSON body fields.
+				// Stream labels belong in detected_labels, not detected_fields.
+				// We only apply this filter when the scan returned a stream label set;
+				// OTel dotted/dashed labels (service.name) are handled by the guard above.
+				if len(scanStreamLabels) > 0 && !shouldExposeStructuredField(k, scanStreamLabels, p.labelTranslator) {
+					continue
+				}
+				nativeSparse[k] = v
+			}
+		}
+		fieldList, fieldValues := mergeNativeDetectedFields(scanFieldList, scanFieldValues, nativeSparse)
 		p.setCachedDetectedFields(ctx, query, start, end, lineLimit, fieldList, fieldValues)
 		return fieldList, fieldValues, nil
 	}
@@ -1940,12 +2040,14 @@ func (p *Proxy) detectFieldSummariesStream(r io.Reader) ([]map[string]interface{
 		if len(msgBytes) == 0 {
 			continue
 		}
+		// Skip logfmt parsing when _msg is JSON — we already extracted fields
+		// via the fastjson pass above and a logfmt scan would misparse JSON tokens.
+		if msgBytes[0] == '{' {
+			continue
+		}
 		msg := string(msgBytes)
 
 		for key, value := range parseLogfmtFields(msg) {
-			if key == "msg" {
-				continue
-			}
 			if key == "level" {
 				addDetectedField(fields, "detected_level", "", "string", nil, value)
 				continue
@@ -2194,7 +2296,7 @@ func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string
 		return nil, err
 	}
 	out := make(map[string]*detectedFieldSummary, len(fieldNames))
-	for _, field := range fieldNames {
+	for field, hits := range fieldNames {
 		for _, exposure := range p.metadataFieldExposures(field) {
 			if shouldSuppressDetectedField(exposure.name) {
 				continue
@@ -2204,6 +2306,7 @@ func (p *Proxy) detectNativeFields(ctx context.Context, query, start, end string
 				typ:         "string",
 				values:      map[string]struct{}{},
 				cardinality: 1,
+				nativeHits:  hits,
 			}
 		}
 	}
@@ -2264,7 +2367,22 @@ func mergeNativeDetectedFields(scanned []map[string]interface{}, scannedValues m
 	return out, outValues
 }
 
-func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate, start, end string) ([]string, error) {
+// minNativeFieldHits is the minimum hit count a field must have in VL's column index
+// to be promoted into detected_fields when the log-line scan missed it.
+// Fields appearing fewer than 10 times are treated as ephemeral noise and excluded.
+// This threshold prevents the VL field_names index (which accumulates every JSON key
+// ever seen, including one-off debug keys) from flooding the detected_fields response.
+// The test fixture uses hits=5 for artificial extra fields — they are intentionally
+// below this threshold and will not be promoted (regression guard preserved).
+const minNativeFieldHits = 10
+
+// maxNativeFieldsToPromote caps the number of native-index fields added to the
+// detected_fields response above what the log-line scan found. In environments
+// with highly diverse log schemas the VL column index may contain many entries;
+// promoting only the top-N by hit count keeps the field list manageable.
+const maxNativeFieldsToPromote = 50
+
+func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate, start, end string) (map[string]int64, error) {
 	logsqlQuery, err := p.translateQuery(candidate)
 	if err != nil {
 		return nil, err
@@ -2277,7 +2395,12 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 	if end != "" {
 		params.Set("end", end)
 	}
-	params = capMetadataTimeRange(params, metadataMaxFieldNamesWindow)
+	// Use the full requested time range (no 5-min cap): field_names uses VL's column
+	// index and is fast even on multi-day ranges. A wider window yields meaningful
+	// hit counts so sparse fields (trace_id, session_id, span_id, etc.) accumulate
+	// enough hits to pass the minNativeFieldHits threshold even when they don't appear
+	// in the most-recent N log lines that the log-scan samples. Cap at 7d for safety.
+	params = capMetadataStartOnly(params, 7*24*time.Hour)
 	body, err := p.vlGetCoalesced(ctx, p.nativeCoalescerKey("native_fields", ctx, params), "/select/logsql/field_names", params)
 	if err != nil {
 		return nil, err
@@ -2286,14 +2409,24 @@ func (p *Proxy) fetchNativeFieldNamesForCandidate(ctx context.Context, candidate
 	if err := stdjson.Unmarshal(body, &resp); err != nil {
 		return nil, err
 	}
-	out := make([]string, 0, len(resp.Values))
-	for _, item := range resp.Values {
-		out = append(out, item.Value)
+	// Sort by hits descending so the most consistently-present fields are promoted first.
+	sort.Slice(resp.Values, func(i, j int) bool {
+		return resp.Values[i].Hits > resp.Values[j].Hits
+	})
+	// Return all fields (up to maxNativeFieldsToPromote) with their hit counts.
+	// Callers that merge with scan results apply minNativeFieldHits; callers that use
+	// native fields as a fallback (scan-empty, field resolution) use all fields.
+	out := make(map[string]int64, min(len(resp.Values), maxNativeFieldsToPromote))
+	for i, item := range resp.Values {
+		if i >= maxNativeFieldsToPromote {
+			break
+		}
+		out[item.Value] = item.Hits
 	}
 	return out, nil
 }
 
-func (p *Proxy) fetchNativeFieldNames(ctx context.Context, query, start, end string) ([]string, error) {
+func (p *Proxy) fetchNativeFieldNames(ctx context.Context, query, start, end string) (map[string]int64, error) {
 	var lastErr error
 	for _, candidate := range fieldDetectionQueryCandidates(query) {
 		fields, err := p.fetchNativeFieldNamesForCandidate(ctx, candidate, start, end)
@@ -2483,13 +2616,16 @@ func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, en
 	var lastErr error
 	queryCandidates := fieldDetectionQueryCandidates(query)
 	for i, candidate := range queryCandidates {
-		fieldNames, err := p.fetchNativeFieldNamesForCandidate(ctx, candidate, start, end)
+		fieldNamesMap, err := p.fetchNativeFieldNamesForCandidate(ctx, candidate, start, end)
 		if err != nil {
 			lastErr = err
 			continue
 		}
-		fieldCandidates := make([]string, 0, len(fieldNames))
-		fieldCandidates = append(fieldCandidates, fieldNames...)
+		fieldCandidates := make([]string, 0, len(fieldNamesMap))
+		for name := range fieldNamesMap {
+			fieldCandidates = append(fieldCandidates, name)
+		}
+		sort.Strings(fieldCandidates)
 		resolution := p.labelTranslator.ResolveMetadataCandidates(fieldName, fieldCandidates, p.metadataFieldMode)
 		if len(resolution.candidates) == 1 {
 			return resolution.candidates[0], true, nil
@@ -2506,6 +2642,14 @@ func (p *Proxy) resolveNativeDetectedField(ctx context.Context, query, start, en
 }
 
 func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string) (map[string]*detectedLabelSummary, error) {
+	// VL v1.50+: stream label values are in the column index.
+	// Replace O(stream-scan) streams call (~1s) with stream_field_names (~300ms)
+	// + parallel field_values (~40ms each) for a ~3x speedup on detected_labels.
+	if p.supportsColumnIndexedFields() {
+		if summaries, err := p.detectNativeLabelsViaFieldValues(ctx, query, start, end); err == nil {
+			return summaries, nil
+		}
+	}
 	parsed, err := p.fetchNativeStreams(ctx, query, start, end)
 	if err != nil {
 		return nil, err
@@ -2533,6 +2677,81 @@ func (p *Proxy) detectNativeLabels(ctx context.Context, query, start, end string
 	return summaries, nil
 }
 
+// detectNativeLabelsViaFieldValues fetches stream label names via stream_field_names
+// then their values in parallel via field_values. Returns only stream labels (not all
+// indexed fields) to match Loki's detected_labels semantics.
+func (p *Proxy) detectNativeLabelsViaFieldValues(ctx context.Context, query, start, end string) (map[string]*detectedLabelSummary, error) {
+	var labelNames []string
+	var baseParams url.Values
+	for _, candidate := range fieldDetectionQueryCandidates(query) {
+		logsqlQuery, err := p.translateQuery(candidate)
+		if err != nil {
+			continue
+		}
+		params := url.Values{}
+		params.Set("query", logsqlQuery)
+		if start != "" {
+			params.Set("start", start)
+		}
+		if end != "" {
+			params.Set("end", end)
+		}
+		names, err := p.fetchStreamFieldNamesCached(ctx, params)
+		if err != nil || len(names) == 0 {
+			continue
+		}
+		labelNames = names
+		baseParams = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
+		break
+	}
+	if len(labelNames) == 0 {
+		return nil, fmt.Errorf("no stream label names found")
+	}
+
+	type labelResult struct {
+		lokiLabel string
+		values    []string
+	}
+	resultsCh := make(chan labelResult, len(labelNames))
+
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for _, name := range labelNames {
+		lokiLabel := p.labelTranslator.ToLoki(name)
+		if lokiLabel == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(vlName, lokiName string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			queryParams := cloneURLValues(baseParams)
+			queryParams.Set("field", vlName)
+			vals, err := p.fetchVLFieldValues(ctx, "/select/logsql/field_values", queryParams)
+			if err != nil || len(vals) == 0 {
+				return
+			}
+			resultsCh <- labelResult{lokiLabel: lokiName, values: vals}
+		}(name, lokiLabel)
+	}
+	wg.Wait()
+	close(resultsCh)
+
+	summaries := make(map[string]*detectedLabelSummary, len(labelNames))
+	for r := range resultsCh {
+		summary := &detectedLabelSummary{
+			label:  r.lokiLabel,
+			values: make(map[string]struct{}, len(r.values)),
+		}
+		for _, v := range r.values {
+			summary.values[v] = struct{}{}
+		}
+		summaries[r.lokiLabel] = summary
+	}
+	return summaries, nil
+}
+
 func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string) (*vlStreamsResponse, error) {
 	var lastErr error
 	for _, candidate := range fieldDetectionQueryCandidates(query) {
@@ -2542,13 +2761,17 @@ func (p *Proxy) fetchNativeStreams(ctx context.Context, query, start, end string
 			continue
 		}
 		params := url.Values{}
-		params.Set("query", logsqlQuery+" | sort by (_time desc)")
+		// No | sort pipe: the /streams endpoint uses column-index lookups. Adding
+		// | sort by (_time desc) forces VL to sort all matching log entries before
+		// grouping into streams — an O(N_logs) heap sort that OOMs at wide ranges.
+		params.Set("query", logsqlQuery)
 		if start != "" {
 			params.Set("start", start)
 		}
 		if end != "" {
 			params.Set("end", end)
 		}
+		params = capMetadataStartOnly(params, metadataMaxFieldNamesWindow)
 		body, err := p.vlGetCoalesced(ctx, p.nativeCoalescerKey("native_streams", ctx, params), "/select/logsql/streams", params)
 		if err != nil {
 			lastErr = err
@@ -2677,8 +2900,18 @@ func (p *Proxy) detectedLabelsCacheKey(ctx context.Context, query, start, end st
 	return key
 }
 
+// detectedFieldsRefreshKey is a context key set by refreshDetectedFieldsCacheAsync
+// to bypass the inner detected-fields cache (getCachedDetectedFields). Without this
+// bypass, background refresh re-uses the stale cached result from the original request
+// (same raw start/end params) and never queries VL for fresh data.
+type detectedFieldsRefreshKey struct{}
+
 func (p *Proxy) getCachedDetectedFields(ctx context.Context, query, start, end string, lineLimit int) ([]map[string]interface{}, map[string][]string, bool) {
 	if p.cache == nil {
+		return nil, nil, false
+	}
+	// Background refresh must bypass the inner cache so it fetches fresh data from VL.
+	if ctx.Value(detectedFieldsRefreshKey{}) != nil {
 		return nil, nil, false
 	}
 	raw, ok := p.cache.Get(p.detectedFieldsCacheKey(ctx, query, start, end, lineLimit))

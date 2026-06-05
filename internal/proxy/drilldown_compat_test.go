@@ -523,22 +523,15 @@ func TestDrilldown_IndexVolume_UsesDrilldownFieldByFallbackForTargetLabels(t *te
 }
 
 func TestDrilldown_IndexVolumeRange_InfersPrimaryTargetLabelWithoutUnknownService(t *testing.T) {
-	var receivedField string
+	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		receivedField = r.URL.Query().Get("field")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hints": map[string]interface{}{},
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"cluster": "us-east-1"},
-					"timestamps": []string{"2026-04-04T17:18:49Z"},
-					"values":     []int{12},
-				},
-			},
-		})
+		_ = r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"cluster":"us-east-1"},"values":[[1746057600,"12"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -547,8 +540,8 @@ func TestDrilldown_IndexVolumeRange_InfersPrimaryTargetLabelWithoutUnknownServic
 	r := httptest.NewRequest("GET", "/loki/api/v1/index/volume_range?query=%7Bcluster%3D~%60.%2B%60%7D&start=1&end=2&step=60", nil)
 	p.handleVolumeRange(w, r)
 
-	if receivedField != "cluster" {
-		t.Fatalf("expected inferred volume_range field=cluster, got %q", receivedField)
+	if !strings.Contains(receivedQuery, "cluster") {
+		t.Fatalf("expected inferred volume_range query to contain cluster, got %q", receivedQuery)
 	}
 
 	var resp map[string]interface{}
@@ -565,22 +558,15 @@ func TestDrilldown_IndexVolumeRange_InfersPrimaryTargetLabelWithoutUnknownServic
 }
 
 func TestDrilldown_IndexVolumeRange_UsesDrilldownFieldByFallbackForTargetLabels(t *testing.T) {
-	var receivedField string
+	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
-		receivedField = r.URL.Query().Get("field")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hints": map[string]interface{}{},
-			"hits": []map[string]interface{}{
-				{
-					"fields":     map[string]string{"method": "POST"},
-					"timestamps": []string{"2026-04-04T17:18:49Z"},
-					"values":     []int{6},
-				},
-			},
-		})
+		_ = r.ParseForm()
+		receivedQuery = r.FormValue("query")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"method":"POST"},"values":[[1746057600,"6"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 
@@ -593,8 +579,8 @@ func TestDrilldown_IndexVolumeRange_UsesDrilldownFieldByFallbackForTargetLabels(
 	)
 	p.handleVolumeRange(w, r)
 
-	if receivedField != "method" {
-		t.Fatalf("expected drilldown fieldBy fallback to drive volume_range target label mapping, got %q", receivedField)
+	if !strings.Contains(receivedQuery, "method") {
+		t.Fatalf("expected drilldown fieldBy fallback to drive volume_range target label mapping in query, got %q", receivedQuery)
 	}
 
 	var resp map[string]interface{}
@@ -1465,8 +1451,8 @@ func TestDrilldown_DetectedFieldValues_ReturnStructuredMetadataValues(t *testing
 
 func TestDrilldown_DetectedFieldValues_ServiceNameUsesFastPath(t *testing.T) {
 	var (
-		sawFieldNames   bool
-		sawFieldValues  bool
+		sawFieldNames  bool
+		sawFieldValues bool
 	)
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -1889,6 +1875,11 @@ func TestDrilldown_LabelCardMetricQuery_ServiceNameNonEmptyFilterUsesSyntheticAn
 			t.Fatalf("parse form: %v", err)
 		}
 		switch r.URL.Path {
+		case "/select/logsql/hits", "/select/logsql/field_values":
+			// Drilldown stats compat routes through /hits first; respond empty
+			// so the proxy falls back to stats_query_range — the path under test.
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"hits":[]}`))
 		case "/select/logsql/stats_query_range":
 			statsQuery = r.Form.Get("query")
 			if strings.Contains(statsQuery, `service_name:!"" "service.name":!""`) {

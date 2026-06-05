@@ -349,12 +349,17 @@ func (lt *LabelTranslator) ResolveMetadataCandidates(fieldName string, available
 }
 
 // TranslateLabelsMap translates all keys in a labels map (response direction).
+// Always returns a new map — callers may mutate the result (e.g. ensureSyntheticServiceName)
+// and the input may be a cached map from parseStreamLabels.
 func (lt *LabelTranslator) TranslateLabelsMap(labels map[string]string) map[string]string {
 	lt.learnFieldAliasesFromMap(labels)
-	if lt.style == LabelStylePassthrough && len(lt.vlToLoki) == 0 {
-		return labels
-	}
 	result := make(map[string]string, len(labels))
+	if lt.style == LabelStylePassthrough && len(lt.vlToLoki) == 0 {
+		for k, v := range labels {
+			result[k] = v
+		}
+		return result
+	}
 	for k, v := range labels {
 		lokiKey := lt.ToLoki(k)
 		// Coalesce: prefer non-empty when multiple source fields map to the same
@@ -364,6 +369,25 @@ func (lt *LabelTranslator) TranslateLabelsMap(labels map[string]string) map[stri
 		}
 	}
 	return result
+}
+
+// TranslateLabelsMapInto translates all keys in src and writes the result into dst.
+// dst must be empty (caller's responsibility). It is filled in-place so the caller
+// can pool the backing map and avoid per-call allocation.
+func (lt *LabelTranslator) TranslateLabelsMapInto(src, dst map[string]string) {
+	lt.learnFieldAliasesFromMap(src)
+	if lt.style == LabelStylePassthrough && len(lt.vlToLoki) == 0 {
+		for k, v := range src {
+			dst[k] = v
+		}
+		return
+	}
+	for k, v := range src {
+		lokiKey := lt.ToLoki(k)
+		if v != "" || dst[lokiKey] == "" {
+			dst[lokiKey] = v
+		}
+	}
 }
 
 // TranslateLabelsList translates a list of label names (response direction).
@@ -448,15 +472,54 @@ func (lt *LabelTranslator) metadataFieldExposures(vlField string, mode MetadataF
 	return result
 }
 
+// isValidLabelName reports whether name can be returned unchanged from SanitizeLabelName.
+// Checks: ASCII only, [a-zA-Z_][a-zA-Z0-9_]*, no consecutive underscores, no trailing underscore.
+// Precondition: name is not empty (SanitizeLabelName guards against empty input).
+func isValidLabelName(name string) bool {
+	c0 := name[0]
+	if c0 >= '0' && c0 <= '9' {
+		return false // would need "key_" prefix
+	}
+	prevUnderscore := false
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c >= utf8.RuneSelf {
+			return false // multi-byte: fall through to slow path
+		}
+		valid := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'
+		if !valid {
+			return false
+		}
+		if c == '_' {
+			if prevUnderscore {
+				return false // consecutive underscores would be collapsed
+			}
+			prevUnderscore = true
+		} else {
+			prevUnderscore = false
+		}
+	}
+	if prevUnderscore {
+		return false // trailing underscore would be trimmed
+	}
+	return true
+}
+
 // SanitizeLabelName converts a field name to a valid Prometheus/Loki label name.
 // Rules: replace [^a-zA-Z0-9_] with _, collapse consecutive underscores, trim
 // trailing underscores, prefix "key_" if the result starts with a digit.
-// Single-pass O(n) scan — avoids regex allocation and the O(n²) double-underscore
+// Fast-path: if name is already valid, returns the input unchanged (zero allocation).
+// Slow-path: single-pass O(n) scan — avoids regex allocation and the O(n²) double-underscore
 // collapse loop of the previous implementation.
 func SanitizeLabelName(name string) string {
 	if name == "" {
 		return "key_empty"
 	}
+	// Fast-path: if name is already a valid Prometheus label, return as-is.
+	if isValidLabelName(name) {
+		return name
+	}
+	// Slow path: sanitize invalid names
 	b := make([]byte, 0, len(name))
 	prevUnderscore := false
 	for i := 0; i < len(name); {

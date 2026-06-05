@@ -308,6 +308,39 @@ type Config struct {
 	// DefaultMaxQueryLength is the default maximum allowed query time range enforced
 	// for all tenants unless overridden by per-tenant limits. 0 means unlimited.
 	DefaultMaxQueryLength time.Duration
+	// MaxStatsQuerySeries caps the number of series returned by stats_query_range
+	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
+	// max_query_series behaviour. 0 means use the built-in default (5000).
+	MaxStatsQuerySeries int
+	// StatsQueryRangeConcurrency limits the number of concurrent
+	// stats_query_range calls the proxy makes to VL. Each Drilldown Fields
+	// page load fires ~30 such calls simultaneously; without a cap they all
+	// hit VL at once, causing a CPU storm. 0 means use the built-in default (4).
+	StatsQueryRangeConcurrency int
+	// DrilldownBurstWindowMs is the time window in milliseconds during which
+	// concurrent per-field count_over_time queries from Grafana Drilldown Fields
+	// are coalesced into a single fused VL conditional-stats call.
+	// 0 disables the burst coalescer. Default when enabled: 50.
+	DrilldownBurstWindowMs int
+	// DrilldownBurstMaxFields caps the number of fields per coalesced VL call.
+	// Excess fields form a second call. Default: 30.
+	DrilldownBurstMaxFields int
+	// DrilldownFieldBatchWindowMs is the accumulation window in milliseconds for
+	// the multi-field stats batcher. Concurrent per-field stats_query_range calls
+	// arriving within this window are folded into one multi-field VL query whose
+	// result is marginalized back into per-field responses. 0 disables batching.
+	// Default when enabled: 25.
+	DrilldownFieldBatchWindowMs int
+	// DrilldownFieldBatchMaxFields caps fields per batched VL call. When the batch
+	// window closes with more than this many fields, the excess form a second batch.
+	// Default: 6.
+	DrilldownFieldBatchMaxFields int
+	// StatsQueryRangeInterQueryDelayMs is the minimum pause in milliseconds between
+	// consecutive VL stats_query_range calls on the individual (non-batched) path.
+	// After each call the semaphore slot is held for this duration before release,
+	// spreading the query burst over time and giving VL CPU headroom. 0 disables.
+	// Default: 200.
+	StatsQueryRangeInterQueryDelayMs int
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -345,23 +378,9 @@ const (
 	patternsCacheRetention = 100 * 365 * 24 * time.Hour
 )
 
-// cacheTTLFor returns the effective cache TTL for the given endpoint key.
-// "labels" and "label_values" respect per-Proxy configuration (Config.LabelCacheTTL);
-// all other keys use the package-level CacheTTLs defaults.
-func (p *Proxy) cacheTTLFor(endpoint string) time.Duration {
-	switch endpoint {
-	case "labels":
-		return p.cacheTTLLabels
-	case "label_values":
-		return p.cacheTTLLabelValues
-	default:
-		return CacheTTLs[endpoint]
-	}
-}
-
 // CacheTTLs defines per-endpoint cache TTLs. "labels" and "label_values" default
-// to 5 minutes; use Proxy.cacheTTLFor() instead of reading this map directly for
-// those two keys, as they can be overridden per-Proxy via Config.LabelCacheTTL.
+// to 5 minutes but can be overridden per-Proxy via Config.LabelCacheTTL;
+// read p.cacheTTLLabels / p.cacheTTLLabelValues directly for those two keys.
 var CacheTTLs = map[string]time.Duration{
 	"labels":                5 * time.Minute,
 	"label_values":          5 * time.Minute,
@@ -428,7 +447,13 @@ type Proxy struct {
 	enableQueryAnalytics                  bool
 	adminAuthToken                        string
 	metricsConcurrencyLimiter             chan struct{}
-	rangeMetricRowLimit                   int // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
+	rangeMetricRowLimit                   int           // max rows fetched per collectRangeMetricSamples call (0=1_000_000)
+	maxStatsQuerySeries                   int           // max series returned by collectRangeMetricHits (0=5000)
+	statsQueryRangeSem                    chan struct{} // limits concurrent VL stats_query_range calls (nil=unlimited)
+	statsQueryRangeInterQueryDelay        time.Duration // min pause between consecutive individual VL stats calls
+	drilldownCoalescer                    *DrilldownBurstCoalescer
+	drilldownFieldBatcher                 *drilldownFieldBatcher
+	drilldownCardCache                    *drilldownCardinalityCache
 	tailAllowedOrigins                    map[string]struct{}
 	tailMode                              TailMode
 	metricsTrustProxyHeaders              bool
@@ -502,6 +527,7 @@ type Proxy struct {
 	backendSupportsStreamMetadata         bool
 	backendSupportsDensePatternWindowing  bool
 	backendSupportsMetadataSubstring      bool
+	backendSupportsColumnFieldValues      bool
 	backendVersionLogged                  bool
 	labelValuesIndexWarmReady             atomic.Bool
 	labelValuesIndexPersistStarted        atomic.Bool
@@ -996,6 +1022,11 @@ func New(cfg Config) (*Proxy, error) {
 		forwardTenantHeader:                   cfg.ForwardTenantHeader,
 		maxLines:                              maxLines,
 		rangeMetricRowLimit:                   cfg.RangeMetricRowLimit,
+		maxStatsQuerySeries:                   cfg.MaxStatsQuerySeries,
+		statsQueryRangeSem:                    makeStatsQueryRangeSem(cfg.StatsQueryRangeConcurrency),
+		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
+		drilldownCoalescer:                    makeDrilldownBurstCoalescer(cfg.DrilldownBurstWindowMs, cfg.DrilldownBurstMaxFields),
+		drilldownCardCache:                    newDrilldownCardinalityCache(),
 		forwardHeaders:                        cfg.ForwardHeaders,
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
@@ -1082,6 +1113,13 @@ func New(cfg Config) (*Proxy, error) {
 		coldRouter:                            coldRouter,
 		cacheTTLLabels:                        labelCacheTTL,
 		cacheTTLLabelValues:                   labelCacheTTL,
+	}
+	if cfg.DrilldownFieldBatchWindowMs > 0 {
+		maxFields := cfg.DrilldownFieldBatchMaxFields
+		if maxFields <= 0 {
+			maxFields = 6
+		}
+		p.drilldownFieldBatcher = newDrilldownFieldBatcher(p, time.Duration(cfg.DrilldownFieldBatchWindowMs)*time.Millisecond, maxFields)
 	}
 	if cfg.LogRequestSampleRate > 1 {
 		p.logSampleN = uint64(cfg.LogRequestSampleRate)
@@ -1256,6 +1294,27 @@ func New(cfg Config) (*Proxy, error) {
 // computeBackendLoopback returns true when u's host is a loopback address or
 // the hostname "localhost". The result is computed once at startup and cached in
 // Proxy.backendLoopback so that applyBackendHeaders never parses URLs per-request.
+func makeStatsQueryRangeSem(concurrency int) chan struct{} {
+	const defaultConcurrency = 4
+	if concurrency <= 0 {
+		concurrency = defaultConcurrency
+	}
+	sem := make(chan struct{}, concurrency)
+	for range concurrency {
+		sem <- struct{}{}
+	}
+	return sem
+}
+
+// makeDrilldownBurstCoalescer creates a DrilldownBurstCoalescer if windowMs > 0.
+// Returns nil when windowMs == 0 (disabled); callers must nil-check before use.
+func makeDrilldownBurstCoalescer(windowMs, maxFields int) *DrilldownBurstCoalescer {
+	if windowMs == 0 {
+		return nil
+	}
+	return newDrilldownBurstCoalescer(windowMs, maxFields)
+}
+
 func computeBackendLoopback(u *url.URL) bool {
 	if u == nil {
 		return false
@@ -1898,12 +1957,12 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write(cacheOut)
 		}
 		if cacheable && sc.code == http.StatusOK {
-			p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), cacheOut...), CacheTTLs["query_range"])
+			p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), cacheOut...), 5*time.Minute)
 		}
 	} else if cacheTap != nil {
 		if cacheable && sc.code == http.StatusOK {
 			if body := cacheTap.CapturedBody(); len(body) > 0 {
-				p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), body...), CacheTTLs["query_range"])
+				p.setLocalReadCacheWithTTL(cacheKey, append([]byte(nil), body...), 5*time.Minute)
 			}
 		}
 		cacheTap.Release()
@@ -1914,24 +1973,63 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	p.queryTracker.Record("query_range", logqlQuery, elapsed, sc.code >= 400)
 }
 
-func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
-	rawQuery := r.URL.RawQuery
-	if rawQuery == "" {
-		var b strings.Builder
-		b.Grow(len(logqlQuery) + 64)
-		b.WriteString("query=")
-		b.WriteString(url.QueryEscape(logqlQuery))
-		for _, key := range []string{"start", "end", "step", "limit", "direction"} {
-			if value := r.FormValue(key); value != "" {
-				b.WriteByte('&')
-				b.WriteString(key)
-				b.WriteByte('=')
-				b.WriteString(url.QueryEscape(value))
-			}
-		}
-		rawQuery = b.String()
+// queryRangeBucket returns the cache-key bucket size for a query_range request.
+// Bucket = max(5 min, step), capped at 1 hour so very large steps don't produce
+// multi-day cache entries that hold stale data too long.
+func queryRangeBucket(r *http.Request) time.Duration {
+	const (
+		minBucket = 5 * time.Minute
+		maxBucket = time.Hour
+	)
+	stepRaw := r.FormValue("step")
+	if stepRaw == "" {
+		return minBucket
 	}
-	key := "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + rawQuery + ":" + p.tupleModeCacheKey(r)
+	d, ok := parsePositiveStepDuration(stepRaw)
+	if !ok || d <= minBucket {
+		return minBucket
+	}
+	if d > maxBucket {
+		return maxBucket
+	}
+	return d
+}
+
+func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
+	// Build a stable key by bucketing both `start` and `end` to the step granularity.
+	// Grafana's sliding time window ("from=now-2d&to=now") resolves to absolute
+	// nanosecond timestamps that advance every second, so both start and end change on
+	// every panel refresh. Bucketing only `end` (the previous behaviour) still produced
+	// a unique key on each tick because the raw `start` value was included verbatim.
+	//
+	// With both endpoints bucketed to max(5min, step), the cache key is stable for the
+	// full bucket duration. A 2-day window with step=1h now produces one VL call per
+	// field per hour instead of one per 10 seconds (~360x fewer upstream calls).
+	bucket := queryRangeBucket(r)
+	startBucketed := bucketTimestampString(r.FormValue("start"), bucket)
+	endBucketed := bucketTimestampString(r.FormValue("end"), bucket)
+
+	var b strings.Builder
+	b.Grow(len(logqlQuery) + 128)
+	b.WriteString("query=")
+	b.WriteString(url.QueryEscape(logqlQuery))
+	for _, key := range []string{"step", "limit", "direction"} {
+		if value := r.FormValue(key); value != "" {
+			b.WriteByte('&')
+			b.WriteString(key)
+			b.WriteByte('=')
+			b.WriteString(url.QueryEscape(value))
+		}
+	}
+	if startBucketed != "" {
+		b.WriteString("&start=")
+		b.WriteString(url.QueryEscape(startBucketed))
+	}
+	if endBucketed != "" {
+		b.WriteString("&end=")
+		b.WriteString(url.QueryEscape(endBucketed))
+	}
+	key := "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + b.String() + ":" + p.tupleModeCacheKey(r)
 	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		key += ":auth:" + fp
 	}

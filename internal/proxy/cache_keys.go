@@ -146,6 +146,28 @@ func bucketMetadataTime(startNs, endNs int64) (bucketedStartNs, bucketedEndNs in
 	return bucketedStartNs, bucketedEndNs
 }
 
+// fieldNamesCacheBucket is the granularity used to bucket raw timestamps in
+// detected_fields / detected_labels cache keys. A 5-minute bucket matches
+// Grafana's browser-level time rounding so repeated reloads within the same
+// window produce identical cache keys.
+const fieldNamesCacheBucket = 5 * time.Minute
+
+// bucketTimestampString rounds the raw Loki timestamp string ts down to the
+// nearest bucket boundary and returns it as a decimal nanosecond string.
+// ts may be a Unix nanosecond integer or an RFC3339Nano string. Returns ts
+// unchanged if it cannot be parsed.
+func bucketTimestampString(ts string, bucket time.Duration) string {
+	if ts == "" || bucket <= 0 {
+		return ts
+	}
+	ns, ok := parseLokiTimeToUnixNano(ts)
+	if !ok {
+		return ts
+	}
+	b := bucket.Nanoseconds()
+	return strconv.FormatInt((ns/b)*b, 10)
+}
+
 func normalizeReadCacheParams(endpoint string, params url.Values) {
 	if params == nil {
 		return
@@ -296,6 +318,9 @@ func (p *Proxy) refreshDetectedFieldsCacheAsync(orgID, cacheKey, query, start, e
 			if savedReq != nil {
 				ctx = context.WithValue(ctx, origRequestKey, savedReq)
 			}
+			// Bypass inner detected-fields cache so this goroutine fetches fresh data
+			// from VL rather than re-using the stale result from the original request.
+			ctx = context.WithValue(ctx, detectedFieldsRefreshKey{}, true)
 			fields, _, detectErr := p.detectFields(ctx, query, start, end, lineLimit)
 			if detectErr != nil {
 				return nil, detectErr

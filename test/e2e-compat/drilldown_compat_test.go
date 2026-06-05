@@ -1141,7 +1141,19 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 			{Msg: `{"stable":"yes","method":"GET","new_field":"fresh"}`, Level: "info"},
 		}, streamFields)
 
-		deadline := time.Now().Add(20 * time.Second)
+		// Deadline covers two refresh strategies: (a) background refresh fires at
+		// 18 s elapsed (CacheTTLs["detected_fields"] × 80 % = 72 s remaining), then
+		// the next poll picks up the fresh response; (b) on very slow hosted CI
+		// runners the background goroutine can take 60+ s to actually update the
+		// outer cache, so we keep polling until the 90 s TTL window expires and
+		// the next read is a hard cache miss → fresh fetch.
+		//
+		// 120 s = 90 s TTL + 30 s slack for slow CI runners. Earlier values
+		// flaked: 20 s (original) sat at the refresh trigger; 30 s timed out
+		// when the refresh+update path took 33 s; 60 s timed out at 63 s on a
+		// 12.4.2-matrix runner. 120 s gives confident headroom without
+		// stretching individual subtest time beyond reason.
+		deadline := time.Now().Add(120 * time.Second)
 		for {
 			fieldsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_fields?"+buildParams().Encode())
 			seen = map[string]bool{}

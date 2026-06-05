@@ -244,16 +244,24 @@ func semverAtLeast(semver string, major, minor, patch int) bool {
 	return pt >= patch
 }
 
-func deriveBackendCapabilities(semver string) (profile string, supportsStreamMetadata bool, supportsDensePatternWindowing bool, supportsMetadataSubstring bool) {
+type backendCapabilities struct {
+	profile                   string
+	supportsStreamMetadata    bool
+	supportsDensePatternWin   bool
+	supportsMetadataSubstring bool
+	supportsColumnFieldValues bool // v1.50+: stream fields stored in column index; field_values == stream_field_values but 20x faster
+}
+
+func deriveBackendCapabilities(semver string) backendCapabilities {
 	switch {
 	case semverAtLeast(semver, 1, 50, 0):
-		return "vl-v1.50-plus", true, true, true
+		return backendCapabilities{"vl-v1.50-plus", true, true, true, true}
 	case semverAtLeast(semver, 1, 49, 0):
-		return "vl-v1.49-plus", true, false, true
+		return backendCapabilities{"vl-v1.49-plus", true, false, true, false}
 	case semverAtLeast(semver, 1, 30, 0):
-		return "vl-v1.30-plus", true, false, false
+		return backendCapabilities{"vl-v1.30-plus", true, false, false, false}
 	default:
-		return "legacy-pre-v1.30", false, false, false
+		return backendCapabilities{"legacy-pre-v1.30", false, false, false, false}
 	}
 }
 
@@ -267,13 +275,14 @@ func (p *Proxy) storeBackendVersion(raw, semver string) {
 	if p.backendVersionSemver != "" {
 		return
 	}
-	profile, supportsStreamMetadata, supportsDensePatternWindowing, supportsMetadataSubstring := deriveBackendCapabilities(semver)
+	caps := deriveBackendCapabilities(semver)
 	p.backendVersionRaw = raw
 	p.backendVersionSemver = semver
-	p.backendCapabilityProfile = profile
-	p.backendSupportsStreamMetadata = supportsStreamMetadata
-	p.backendSupportsDensePatternWindowing = supportsDensePatternWindowing
-	p.backendSupportsMetadataSubstring = supportsMetadataSubstring
+	p.backendCapabilityProfile = caps.profile
+	p.backendSupportsStreamMetadata = caps.supportsStreamMetadata
+	p.backendSupportsDensePatternWindowing = caps.supportsDensePatternWin
+	p.backendSupportsMetadataSubstring = caps.supportsMetadataSubstring
+	p.backendSupportsColumnFieldValues = caps.supportsColumnFieldValues
 	if !p.backendVersionLogged {
 		p.backendVersionLogged = true
 		p.log.Info(
@@ -284,6 +293,7 @@ func (p *Proxy) storeBackendVersion(raw, semver string) {
 			"metadata.stream_endpoints", p.backendSupportsStreamMetadata,
 			"metadata.substring_filter", p.backendSupportsMetadataSubstring,
 			"patterns.dense_windowing", p.backendSupportsDensePatternWindowing,
+			"field_values.column_index", p.backendSupportsColumnFieldValues,
 		)
 	}
 }
@@ -328,6 +338,15 @@ func (p *Proxy) supportsMetadataSubstringFilter() bool {
 	return p.backendSupportsMetadataSubstring
 }
 
+// supportsColumnIndexedFields returns true on VL v1.50+ where stream fields are
+// stored in the column index. On these backends field_values is equivalent to
+// stream_field_values but ~20x faster, so we prefer it for label value lookups.
+func (p *Proxy) supportsColumnIndexedFields() bool {
+	p.backendVersionMu.RLock()
+	defer p.backendVersionMu.RUnlock()
+	return p.backendSupportsColumnFieldValues
+}
+
 func (p *Proxy) backendVersionState() (raw, semver, profile string) {
 	p.backendVersionMu.RLock()
 	defer p.backendVersionMu.RUnlock()
@@ -354,8 +373,9 @@ func (p *Proxy) storeBackendCapabilityProbe(source string, supportsStreamMetadat
 	}
 	p.backendSupportsStreamMetadata = supportsStreamMetadata
 	p.backendSupportsMetadataSubstring = supportsMetadataSubstring
-	// Keep dense-windowing conservative without explicit semver evidence.
+	// Keep dense-windowing and column-field-values conservative without explicit semver evidence.
 	p.backendSupportsDensePatternWindowing = false
+	p.backendSupportsColumnFieldValues = false
 	if !p.backendVersionLogged {
 		p.backendVersionLogged = true
 		p.log.Info(

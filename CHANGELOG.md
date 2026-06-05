@@ -7,13 +7,272 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- Reduce proxy allocations by ~75%: stream VL NDJSON response instead of buffering
+  with `io.ReadAll`, pool `TranslateLabelsMap` result maps via `sync.Pool`, pre-size
+  `strings.Builder` in serialization paths, fast-path `SanitizeLabelName` for already-valid
+  names, skip `compatCacheCapture` for non-cacheable requests, and pool keys slice +
+  eliminate redundant map copy in `handleSeries`.
+- Drilldown field queries: batch concurrent per-field `stats_query_range` calls into a
+  single multi-field VL call, coarsen step to cap bucket count, skip high-cardinality ID
+  fields for wide ranges, and gate fan-out with a semaphore to avoid thundering-herd.
+- Background label refresh: fix `fieldMetaCacheKey` drift so the singleflight key is
+  stable across Grafana auto-refresh ticks; eliminate 5–10 s `stream_field_names` scans
+  for 6h/12h/24h windows by capping the metadata range to 15 minutes.
+- `volume_range`: use `stats_query_range` for single-label queries to avoid the hits
+  endpoint's unbounded response for high-cardinality labels (e.g. `pod`).
+- `query_range` and `query` compat cache TTL set to 5 minutes (fixed) instead of
+  `max(5min, step)`: eliminates visible right-edge chart gaps when step=1h (Drilldown 2d/7d
+  field histograms) while still reducing VL calls 30× vs the original 10 s TTL.
+- `labels` and `label_values` compat cache keys now bucket `start`/`end` to the same 5-min
+  granularity as `detected_*` endpoints so repeated Grafana auto-refreshes within the
+  same window produce stable keys and serve responses from the compat cache.
+- Scale `detected_fields`, `labels`, `label_values`, and `detected_labels` inner cache
+  TTLs proportionally to the requested time range (1h cap for 7d+ windows): historical
+  Drilldown pages stop re-fetching metadata on every sub-minute cache miss.
+- `field_names` (native VL column index) scan window widened from 5 min to 7 days so
+  sparse fields (`trace_id`, `session_id`, `span_id`, `job_id`, `tx_id`) accumulate
+  sufficient index hits to be promoted into `detected_fields` for long time ranges.
+
+### Fixed
+
+- `volume_range` for multi-tenant `__tenant_id__` target label now returns data: skip the
+  `stats_query_range` fast path for synthetic `__`-prefixed labels that VL cannot group by
+  natively and fall through to the hits endpoint which handles them correctly.
+- `detected_fields` background cache refresh now picks up newly ingested parsed fields
+  within the existing 20 s freshness window: reverted inner-cache time-bucketing in
+  `detectedFieldsCacheKey`/`detectedLabelsCacheKey` so refresh calls get a cache miss and
+  fetch live data from VL instead of serving the previously cached result.
+- Drilldown Fields panels for high-cardinality fields at 24h+ ranges now render as
+  top-N + remainder histograms instead of empty charts or 100k+ unique series. Route
+  both label queries (`pod`, `k8s_pod_name`) and parser-stage field queries (`trace_id`,
+  `span_id`, `request_id`, `session_id`, `ip`, etc.) through VL's `/select/logsql/hits`
+  endpoint, which computes top-N values and an aggregate `__other__` series in a single
+  call. Three issues that prevented `/hits` from being reachable: (1) the proxy passed
+  Grafana's bare-integer step (`120`) directly to VL, which requires a duration suffix
+  (`120s`); (2) the regex matching field existence filters required unquoted field names,
+  missing the quoted form (`"k8s.pod.name":!""`) the translator emits for OTel attributes;
+  (3) `extractStreamSelectorOnly` only recognised Loki-bracketed selectors (`{namespace="prod"}`)
+  and skipped VL-native form (`namespace:="prod"`) produced by the translator.
+- Explore now returns data for `sum by (X) (count_over_time(...))` queries at 24h+ time
+  ranges. Previously the Drilldown `/hits` fast paths were gated behind the
+  `X-Query-Tags: Source=grafana-lokiexplore-app` header, so Explore-source requests with
+  the same query shape fell through to `stats_query_range`, hit the 16 MB response cap on
+  high-cardinality fields (`pod`, `trace_id`, `*_id`), and returned an empty matrix. The
+  source-tag gate is removed; any caller issuing the Drilldown-compatible query shape now
+  benefits from the same top-N + sampled-windows path.
+- Right-edge spike on Drilldown / Explore / dashboard panel field histograms above 24h is
+  eliminated. Grafana's Loki datasource splits metric range queries at the 24h boundary
+  (`oneDayMs` in `querySplitting.ts`) and merges chunk responses via `mergeFrames`. The
+  proxy previously routed the 24h chunk through `/hits` (top-20 series) but the small
+  leftover chunk (<6h) through `stats_query_range` with `| limit 500`, returning a totally
+  different and much larger series set. `mergeFrames` unioned both, so the 500 chunk-2-only
+  series rendered as a tall spike at the right edge of the chart, dwarfing the 24h chunk's
+  distributed data. Three coordinated fixes:
+  (1) the hybrid `/hits` path now runs for every range, not just `> drilldownHybridThreshold`,
+  so each Grafana chunk returns the same top-N shape;
+  (2) `proxyStatsQueryRangeDrilldownHits` detects the 1-bucket leftover chunk Grafana emits
+  for ranges that aren't exact multiples of the 24h aligned step (chunk range ≤ 2 × step)
+  and returns an empty matrix instead of a 16-series block of values all landing on the
+  rightmost timestamp — that block was the source of the right-edge spike under
+  `mergeFrames`;
+  (3) suppression applies to ANY Grafana client (Drilldown via `X-Query-Tags`, Explore /
+  dashboard panels via `User-Agent: Grafana/X.Y.Z` or any `X-Grafana-*` header), because
+  `querySplitting` fires unconditionally for Loki-datasource metric queries regardless of
+  which Grafana app issued them.
+  Verified against the live stack with a Grafana-faithful chunking simulator: an
+  exactly-24h split-into-2-chunks query produces 16 series evenly distributed across
+  12 × 2h bins (`1 1 2 2 2 0 2 1 1 1 1 2`) and 7d into 8 chunks produces 112 series across
+  14 × 12h bins (`10 8 9 7 8 7 8 8 8 8 8 8 8 8`) — no spike at the right edge in either.
+
+### Security
+
+- Bump Go toolchain from 1.26.3 to 1.26.4 to resolve govulncheck vulnerabilities
+  GO-2026-5037 (inefficient candidate hostname parsing in crypto/x509) reachable
+  via `proxy.Proxy.ValidateBackendVersionCompatibility` and `logsql.JSONValuesTopK.String`.
+  Updated in `go.mod`, `bench/go.mod`, `Dockerfile`, all `.github/workflows/`,
+  `docs/getting-started.md`, `docs/benchmarks.md`.
+
+### Tests
+
+- E2E label-values flakes on hosted GHA runners (`additional_label_values`,
+  `label_values_honor_limit`, `label_filters_apply_to_resource_values`,
+  `multi_tenant_resources_respect___tenant_id___filters`) fixed by calling
+  VictoriaLogs' documented `POST /internal/force_flush` from `ensureDataIngested`.
+  VL keeps recent ingest in in-memory buffers and only materializes the column
+  index (which backs `/select/logsql/field_values`) on flush; without
+  `force_flush`, hosted runners returned empty `label_values` for 10–30 s after
+  push and flaked the entire `TestDrilldown_GrafanaResourceContracts` suite.
+  Also adds `-inmemoryDataFlushInterval=1s` to VL in `docker-compose.yml` as
+  defense-in-depth for any test path not flush-aware.
+  Source: https://docs.victoriametrics.com/victorialogs/#forced-flush
+- `parsed_only_fields_refresh_after_new_logs_arrive` polling deadline raised
+  20 s → 30 s → 60 s → 120 s across iterations to absorb hosted GHA runner
+  variance. 120 s exceeds the 90 s `detected_fields` TTL so even when the
+  background refresh stalls the next poll is a hard cache-miss → fresh fetch.
+
+### Benchmark
+
+- `bench/drilldown-vs-loki.sh` now sends `X-Query-Tags: Source=grafana-lokiexplore-app`
+  on every Loki direct call, matching what Grafana Drilldown actually emits.
+  Loki's `pkg/querier/queryrange/limits.go::seriesLimiter.Do` detects this via
+  `IsLogsDrilldownRequest()` and converts max-series-exceeded errors from
+  HTTP 500 `too_many_series` into HTTP 200 with partial results + warning
+  header — the correct user-visible behavior. Without the header the bench
+  misrepresented Loki's actual behavior for real Drilldown traffic.
+- `docs/benchmarks.md` gains a new "Drilldown / Explore — real Grafana queries
+  vs Loki direct" section with measured numbers for `sum by (pod)`, `trace_id`,
+  `service_version`, and `/detected_fields` at 1 h–7 d ranges, plus per-container
+  resource consumption (Loki peaked at 15.8 cores / 7.9 GiB before erroring;
+  proxy + VL together used ~5 cores / 1.6 GiB while serving all queries).
+
+### Observability / infra
+
+- `test/e2e-compat` now scrapes proxy / vmauth / Loki / VictoriaLogs `/metrics` into the
+  existing VictoriaMetrics instance every 5 s via `vm-scrape.yml` (single-node VM
+  `-promscrape.config`, no extra vmagent needed). VM port exposed on host as `18428`.
+  Only the bench-hit proxy variant (`loki-vl-proxy-vmauth`) is scraped — the other
+  variants share the `loki_vl_proxy_*` metric names and would double-count without
+  per-variant labels.
+- Grafana ships a provisioned `Bench: Drilldown vs Loki — resources, traffic, cache,
+  latency` dashboard (`test/e2e-compat/dashboards/bench-resources.json`, 36 panels
+  across 8 rows): component resources (CPU / RSS / Go heap / goroutines / GC / FDs);
+  proxy client traffic; proxy cache behaviour; proxy latency distribution
+  (P50 / P95 / P99 + backend + internal-op); proxy heap deep-dive (heap_alloc /
+  heap_inuse / heap_idle / heap_released / sys / RSS together, plus mallocs vs frees
+  rate and GC pressure); proxy throughput; VL backend; Loki backend; vmauth gateway.
+  Grafana datasource catalogue gains a VictoriaMetrics Prometheus datasource for
+  these queries.
+- `test/e2e-compat` Loki container bumped 8 GiB → 12 GiB with `GOMEMLIMIT=10GiB` +
+  `GOGC=80`. 8 GiB OOM-looped continuously (Loki idle alone consumed 7.6 GiB of stored
+  bigParts), making every "Loki vs proxy" bench number unfair because Loki was
+  crashing instead of running. The new budget lets Loki actually serve queries; the
+  fair-bench numbers in README and `docs/benchmarks.md` come from this configuration.
+
+### Performance (heap-pool follow-up, commit 2340928)
+
+- `EncodeResponseBody` now uses a pooled `bytes.Buffer` (`encodeBodyBufPool`) with a
+  4 MiB cap-trim on Put. Pre-pool, pprof showed 96 MB / 61 % of live heap in
+  `bytes.growSlice` from the compat-cache encoded-variant path
+  (`compatCacheMiddleware → CompressionHandlerWithOptions → bytes.Buffer.ReadFrom`).
+  Each call now reuses a pre-grown buffer; the cap-trim ensures one 50 MB response
+  can't permanently inflate the pool footprint.
+- `compressedResponseWriter.buf` switched from a value `bytes.Buffer` (allocated per
+  request) to a pooled `*bytes.Buffer` (`holdBufPool`) with explicit acquire / release
+  lifecycle: `startCompression` and `startBypass` drain-and-release; `finish` has a
+  safety-net deferred release; `Write` re-acquires if a stray write arrives after
+  release. Caps the per-request hold-buffer cost under concurrent Drilldown traffic.
+- `buildHitsRangeMetricMatrix` pre-sizes the per-series `values` slice to
+  `(end-start)/step` instead of starting at cap 16. Pre-fix the 17 280-bucket cascade
+  for a 24 h / 5 s step query allocated through ~10 doublings per series, attributing
+  1.31 GB of cumulative allocations to this single line. One allocation per series
+  now. Safety cap of 32 768 buckets guards against pathological step inputs.
+- Stress + heap-bounded regression tests added: `TestEncodeResponseBody_PoolKeepsHeapBounded`
+  (1 000 sequential 288 KiB encodes, asserts heap delta < 32 MiB),
+  `TestEncodeResponseBody_PoolStableUnderConcurrency` (32×100 parallel, < 128 MiB),
+  `TestEncodeResponseBody_LargeResponseDoesNotPinPool` (8 MiB then 1 000 × 4 KiB,
+  verifies cap-trim), `TestCompressedResponseWriter_HoldBufPoolReleased` (release
+  lifecycle smoke), `TestCompressedResponseWriter_HeapStableUnderRepeatedRequests`
+  (1 000 handler calls, < 32 MiB), `TestBuildHitsRangeMetricMatrix_PreSizedValuesSlice`,
+  `TestBuildHitsRangeMetricMatrix_HeapBoundedAcrossManyCalls` (< 16 MiB),
+  `TestLock_BuildHitsRangeMetricMatrix_PreSizeConstantsExist`. All measured with
+  signed `int64(after) - int64(before)` heap deltas — pre-fix this measured 300+ MiB,
+  post-fix is consistently negative (pool freed memory mid-test).
+
+### Fixed (Loki API parity, commit 8b9ff26)
+
+- VL upstream 4xx / 5xx responses no longer leak through to Grafana clients on the
+  Drilldown / metric stats path. Loki itself converts max-series-exceeded errors to
+  `HTTP 200 + warnings:[...]` partial-results for Drilldown traffic
+  (`pkg/querier/queryrange/limits.go::seriesLimiter.Do` gated on
+  `IsLogsDrilldownRequest` → `X-Query-Tags: Source=grafana-lokiexplore-app`); the
+  proxy now mirrors that for VL legitimately failing on shapes like
+  `|json|trace_id!=""` at long ranges (parser-pipe row-scan limit). New helper
+  `writeDrilldownPartialFromUpstream` emits a Loki-shape body with `warnings: [...]`
+  (the field Grafana's Loki datasource and Drilldown plugin both parse from the
+  body, verified against upstream source), `Warning` HTTP header, `Cache-Control:
+  no-store`, and stamps the suppressed VL status/message in
+  `X-Proxy-Upstream-Status` / `X-Proxy-Upstream-Error` for operator visibility.
+  Non-Grafana clients (curl, internal tooling) still see the real upstream error.
+  Locked by `TestLock_VLErrorsConvertedToPartialResults` (5 subtests: 502 / 503 / 500
+  Grafana-sourced → 200 + Warning; 502 / 500 non-Grafana → pass-through).
+
+### Locked / Hardened
+
+- All 2026-06 Drilldown quality fixes are pinned by named `TestLock_*` regression tests in
+  `internal/proxy/drilldown_regression_lock_test.go` (now 14 lock cases including the
+  new `TestLock_VLErrorsConvertedToPartialResults` and
+  `TestLock_BuildHitsRangeMetricMatrix_PreSizeConstantsExist`). Each test maps to a single
+  invariant — routing source-agnosticism, `/hits`-for-all-ranges, leftover-chunk
+  suppression, step normalisation, remainder-bucket drop, shared timestamp axis,
+  VL-native selector extraction, quoted-dotted-field detection, source-detection helper,
+  no-double-call stats fallback, `maxStatsQueryRangeBytes` bound, `drilldownHitsFieldsLimit`
+  bound, VL error conversion contract, and matrix pre-size safety cap. A future PR that
+  weakens any of these fails CI with a named lock and a "do not regress" comment pointing
+  back at the original incident.
+- `TestE2ELock_ProxyHeapBoundedUnderDrilldownLoad` (e2e) drives 30 concurrent workers ×
+  60 s of Drilldown stats traffic against the live proxy and asserts
+  `go_memstats_heap_inuse_bytes < 500 MiB` and `process_resident_memory_bytes < 800 MiB`
+  scraped from the proxy's own `/metrics`. Pre-fix the same workload measured 1.4 GiB
+  RSS peak; this test fails loudly if any of the three pool optimizations above are
+  removed in a future PR.
+- `test/e2e-compat/drilldown_chunked_merge_lock_test.go` adds two end-to-end locks that
+  run against the live VL stack: `TestE2ELock_DrilldownChunkedMerge_NoRightEdgeSpike`
+  embeds a port of Grafana's `mergeFrames + closestIdx + splice` algorithm and asserts the
+  merged frame has no right-edge spike for 24h / 25h / 2d / 7d ranges with both
+  Drilldown-source and Grafana-dashboard sources;
+  `TestE2ELock_DrilldownChunkedMerge_LeftoverChunkSuppressed` asserts the proxy actually
+  emits an empty matrix (header `X-Proxy-Drilldown-Path: hits-leftover-suppressed` or
+  cached equivalent) for the leftover chunk Grafana sends at the trailing edge of a
+  24h-aligned split. Total: 14 e2e lock subtests.
+- `docs/compatibility-drilldown.md` documents the Long-Range Histograms contract and the
+  "Do Not Regress" checklist that maps each invariant to its lock test.
+
 ## [1.54.0] - 2026-05-30
 
 ### Added
+- E2E quality matrix test (`TestDrilldown_QualityMatrix`): seeds 1 200
+  controlled log entries and measures bucket density, total count, and proxy
+  latency for 5 field types × 7 time ranges. Reports metrics via `t.Logf`;
+  never blocks CI except for hard regressions (empty `level` result, proxy 5xx).
+- E2E Loki comparison test (`TestDrilldown_LokiCompare_FieldQuality`): seeds
+  identical logs into both Loki and VL, then asserts that the proxy response
+  matches Loki within ±15% count and ≥90% non-zero bucket coverage for
+  low-cardinality fields.
+- Architecture doc `docs/proxy/drilldown-quality.md` covering path selection,
+  cardinality tiers, zero-fill implementation, and Loki parity methodology.
 - `-translate-otel-attributes` flag (default: `true`, env `TRANSLATE_OTEL_ATTRIBUTES`). Gates the built-in `knownUnderscoreToDot` OTel semantic convention rewrite in the `ToVL()` query-direction translator. Set to `false` when VictoriaLogs stores OTel attributes with underscores (e.g., Vector / Promtail / Fluent-bit via `/insert/elasticsearch/_bulk`); custom `-field-mapping` rules and runtime-learned aliases keep working in both modes. Resolves empty results for multi-label queries containing known OTel names like `k8s_container_name` against underscore-storage backends.
 
 ### Fixed
+- Drilldown field histograms now show a continuous line at quiet time periods
+  instead of disconnected spikes. VictoriaLogs `stats_query_range` omits
+  zero-count buckets; the proxy now fills them with `"0"` to match Loki's
+  behaviour (`zerofillStatsMatrix` applied in both the short-range batcher
+  and the long-range hybrid path).
 - When `-translate-otel-attributes=false`, the `ToVL()` query-direction translator no longer rewrites entries in `knownUnderscoreToDot` to dotted form. `ResolveLabelCandidates` and the `resolveTargetLabelFields` fallback are gated on the same flag, so the dotted form is no longer added as a candidate or fallback when OTel translation is disabled. Previously the rewrite/fallback always fired when `-label-style=underscores` was active.
+- Drilldown hybrid path (ranges >6h) no longer emits duplicate `detected_level` series alongside `level` series: the hybrid stats query now groups by only the requested field (e.g. `level`), bypassing the underscore-fallback expansion (`addUnderscorefallbackByLabels`) that was incorrectly applied to the hybrid's narrow-window stats_query_range. Previously, both `level` and `detected_level` groupings were sent to VL and the result was merged, causing Grafana to display phantom "Value" series for the unrecognised `detected_level` metric key.
+- Drilldown hybrid path no longer passes results through `trimAndTranslateStatsQRFJ`, which was renaming `level` → `detected_level` (via `ensureDetectedLevel`) in stats metric keys. Grafana Drilldown reads the metric key by the exact field name it requested; renaming it broke the sparkline display for the `level` field on 12h+ ranges. VL's internal `__name__` column marker (`"__name__":"_c"`) is now stripped by the lightweight `stripVLStatsNameKey` regex before the response is returned.
+- Drilldown hybrid path: field_values stubs (for values seen in the full range but absent from the recent stats window) now report a per-bucket-equivalent count (`totalHits × histStep / fullRange`) instead of the raw total. Previously the stub's inflated total count dominated the histogram y-axis, making recently-inactive field values appear far more frequent than active ones.
+- Drilldown hybrid path now scans the full requested range for its `stats_query_range` tier instead of only a recent adaptive window (`rangeNs/8`). The adaptive-window approach caused different time ranges (12h, 24h, 2d) to render visually identical flat-bar patterns and created a visible two-range gap (uniform stubs followed by a histogram burst at the right edge). VL column-index stats queries are fast enough (<1s for 7d) that the partial-window optimisation was unnecessary. `adaptiveHistogramWindow` and `drilldownHybridMaxWindow` are removed.
+
+### Changed
+- Drilldown field-histogram series cap (500 series, two-phase fallback) is now gated behind the `X-Query-Tags: Source=grafana-lokiexplore-app` header that Grafana Logs Drilldown sets on every `query_range` request via `supportingQueryType`. Previously, the cap applied to any client whose query matched the Drilldown pattern, silently truncating results for Explore and direct API users. Requests without the header go through `proxyStatsQueryRangeDirect` and receive unfiltered results.
+
+### Performance
+- Drilldown hybrid path (ranges >12 h) issues one `field_values` + one
+  `stats_query_range` per field request, covering the full requested range
+  at ≤30 coarsened buckets. Different time ranges now produce different
+  histograms (the previous adaptive window made 12 h and 48 h look identical).
+- **Hybrid drilldown path for wide ranges (>12h)**: `proxyStatsQueryRangeDrilldownHybrid` uses a two-tier approach for time ranges above 12h. Tier 1: `field_values` over the full range (~30ms, O(column-index)) discovers all unique values and their total hit counts. Tier 2: `stats_query_range` over the full requested range at a coarsened step (≤30 buckets) provides accurate per-bucket histogram bars. The two results are merged: values present in stats keep their real per-bucket distribution; values present only in `field_values` (beyond the top-500 limit) get evenly-distributed stub bars across the full range. High-cardinality fields (`trace_id`, `span_id`, `*_id`, `*_uid`) skip Tier 2 entirely and return a pure `field_values` synthesis (~30ms regardless of range). Reports the chosen path in `X-Proxy-Drilldown-Path` response header (`hybrid/fv+full-range-stats`, `field_values_hc`, `field_values_stats_err`, `empty`). Before this change, the proxy returned an empty matrix for all fields on 12h+ ranges (the two-phase fallback ran but was capped to 500 series per bucket, making it effectively useless for wide ranges).
+- **Drilldown field batching**: `drilldownFieldBatcher` coalesces concurrent per-field `stats_query_range` calls (Grafana Logs Drilldown fires one request per visible field simultaneously) into a single multi-field VL query `by(f1,f2,...,fN) count() as _c`, then marginalizes the combined result back into individual per-field Loki matrix responses inside the proxy. One VL scan replaces N scans, cutting VL CPU proportionally to the number of visible fields (typically 4–8). High-cardinality fields (`trace_id`, `span_id`, UUID-like names) bypass batching and route through the existing two-phase path. Configurable via `-drilldown-field-batch-window-ms` (collection window, default 25ms) and `-drilldown-field-batch-max-fields` (trigger threshold, default 6 fields). Concurrent batch VL calls are limited to 2 (independent semaphore).
+- **Drilldown step coarsening**: `proxyStatsQueryRangeDrilldown` caps the effective bucket count to 200 by snapping the client-supplied `step` up to the nearest "nice" interval (2m, 5m, 10m, 15m, 30m, 1h, 3h, 6h, 12h) when the raw step would produce more buckets. For a 12h Drilldown with step=60s this cuts from 720 to 144 buckets per field query — a 5× reduction in VL data scanned. `drilldownStatsCacheTTL` raised from 60s to 5min and the cache key now uses the coarsened step, so Grafana panel-width drift (which changes step by a few seconds per resize) no longer causes cache misses.
+- **Drilldown response cache (60s)**: `proxyStatsQueryRangeDrilldown` now caches the translated Loki matrix response for 60 seconds (keyed on orgID + LogQL + time range, with both `start` and `end` bucketed to 5-min to absorb Grafana's sliding window). The cache is checked before acquiring the concurrency semaphore so re-renders (Grafana ticks, filter interactions, second tab) are served with zero VL calls and consume no semaphore slot. On first load the semaphore still limits concurrent VL calls to 4; any re-render within 60s costs nothing. Bucketing both timestamps is essential: Grafana's "last N h" panel drifts `start` by ~30s on every refresh tick, producing a unique cache key each time if only `end` is bucketed.
+- Eager two-phase for high-cardinality Drilldown fields: `proxyStatsQueryRangeDrilldown` now skips the direct-path VL attempt entirely when overflow is predictable before any byte is read — eliminating the read-and-reject cycle (up to 32 MB wasted read + VL scan CPU spike) for two cases: (1) known UUID/snowflake field names (`trace_id`, `span_id`, `*_id`, `*_uuid`, `*_token`, `*_hash`, `*_key`) detected by `isLikelyHighCardinalityField`; (2) any field previously observed to overflow, tracked in `drilldownCardinalityCache` (5-min TTL per `{orgID, base, field}`) so Grafana re-renders (filter/time-range changes) skip the direct attempt without another wasted round-trip. Eager two-phase is intentionally NOT triggered by query duration alone: two-phase Phase 1 scans all logs across the full time range (equivalent to K bucket-scans), making it more expensive than the direct path for fields with ≤500 unique values.
+- Fix `warmLabelWindows` full-range VL scans: the keep-warm loop (`startLabelCacheKeepWarmLoop`) fires every 3.75min and calls `warmLabelWindows` for 4 time presets (1h/6h/24h/7d) across every proxy instance. Previously `warmLabelWindows` set `labelFullRangeFetchKey{}` to route to `field_names`, but that flag also bypasses `capMetadataStartOnly` (the 1h cap). So the 24h and 7d warmup queries scanned the full range (~700ms and ~1.5s per call). With 9 proxy instances in the e2e stack: 9×4 = 36 concurrent heavy VL queries every 3.75 minutes, spiking VL to full CPU (18 cores). Fix: remove `labelFullRangeFetchKey{}` from `warmLabelWindows`; the synchronous path's 1h cap applies, reducing each warmup call to ~20–30ms. The `refreshLabelsCacheAsync` background goroutines (triggered by actual user requests) still query the full historical range when users request wide windows.
+- Fix `fieldMetaCacheKey` start-timestamp drift: `fetchStreamFieldNamesCached`, `fetchAllFieldNamesCached`, and `fetchPreferredLabelNamesCached` all use `fieldMetaCacheKey` to compute their cache key. The key bucketed `end` to 30s but left `start` raw. For Grafana's sliding "last N h" window both endpoints drift by the same real-time delta on every auto-refresh tick, so the cache key changed on every request — 219 `field_names` calls in 17 minutes instead of ~20. Now buckets both `start` and `end` to 30s. Same fix applied to the `refreshLabelsCacheAsync` singleflight key which had the same one-sided bucketing.
+- Remove `| sort by (_time desc)` from `/select/logsql/streams` calls in `serviceNameValues` and `fetchNativeStreams`: the streams endpoint uses column-index lookups to enumerate unique stream label sets, but the sort pipe forced VL to load and heap-sort all matching log entries before grouping into streams — an O(N_logs) operation that OOM-ed on 12h+ ranges (`cannot calculate [sort by (_time desc)], since it requires more than 819MB of memory`). Stream discovery does not depend on log-entry ordering; the sort was unnecessary.
+- Fix "no data" for high-cardinality Drilldown fields (`trace_id`, `span_id`, `session_id`, `duration_ms`) over 12h+ time ranges: VictoriaLogs applies `| limit` **per time bucket** (not globally). A 12h/60s query with `| limit 500` still produces 720 × 500 = 360,000 unique series (~32.8 MB) for short-lived UUID fields, which exceeded the 32 MB response cap. `proxyStatsQueryRangeDrilldown` now falls back to a **two-phase approach** when the direct-path response exceeds `maxDrilldownResponseBytes`: Phase 1 issues a single-bucket `stats_query_range` (step = entire range), making VL's per-bucket `| limit N` equivalent to a global top-N limit (~40 KB response); Phase 2 issues a standard range query with `field:in("uuid1","uuid2",...)` restricted to the Phase 1 values, bounding the response to ≤500 unique series (~80 KB) regardless of field cardinality. Step is never modified — changing the step breaks Grafana's timestamp alignment and causes "no data" for all fields. Matches Loki's `max_query_series` default (500).
 
 ## [1.53.0] - 2026-05-28
 
@@ -23,21 +282,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AST-to-AST translation layer in `internal/logql/translate.go`: typed `LogQuery → logsql.Query` mapper covers stream selector matchers (eq/neq/re/nre), line filters, parsers (json/logfmt/regexp/pattern), bare drop/keep, and simple `line_format` templates; unsupported nodes fall through via `errFallthrough` sentinel to the existing string translator, leaving metric/range/vector paths unchanged
 - `TranslateOptions{LabelFn, StreamFields, Caps}` plumbing in the AST translator for future label-alias and capability-gated translation
 
+### Performance
+- Cap time range on `/select/logsql/streams` calls in `serviceNameValues` and `fetchNativeStreams` (used by `detected_labels`) to `metadataMaxFieldNamesWindow` (1h): wide Grafana windows (6h/12h/24h) were sending the full user range to the streams endpoint — an O(data-volume) scan taking 3–5s per call. Now capped at the most recent 1h, matching the existing cap on `fetchStreamFieldNamesCached`.
+- Replace `stream_field_names` with `field_names` in service-name detection path (`serviceNameValuesFromNativeFields`): cold request drops from ~5s (4× stream_field_names at 1.25s each) to ~235ms (field_names 29ms + stream_field_values per field). Cache hits drop to ~12ms after the first request within a 30s window.
+- Replace `stream_field_names` with `field_names` for background label refresh (`refreshLabelsCacheAsync`): the full-range path (triggered on wide Grafana windows: 6h/12h/24h) was sending the full user-requested range to `stream_field_names` — an O(data-volume) scan taking 5–10s. Now uses `field_names` (O(index), ~30ms at any range) for the background path, keeping `stream_field_names` (1h-capped) for the synchronous labels endpoint where strict Loki label-only semantics apply.
+- Fix cache key drift in `fetchPreferredLabelNamesCached` and service-name detection: Grafana's sliding time window causes the `end` timestamp to drift a few seconds per request, producing a unique cache key on every click and defeating the 30s TTL cache. Now uses `fieldMetaCacheKey` with 30s end-timestamp bucketing so all requests within the same window share one cache entry.
+
 ### Changed
 - `Proxy` struct decomposed into `Deps` (external dependencies), `HandlerConfig` (immutable flag-derived config, 83 fields), and `State` (mutable runtime state with pointer-typed mutexes/atomics); `Handler{Deps, Cfg, State}` type defined and wired in `New()` with live pointer sharing so Handler and Proxy see the same lock and map instances
 - `RegisterRoutes` dispatches via named `routeHandler` method instead of anonymous closure
 - Helm `values.yaml` updated with commented-out `default-max-query-length` entry
 
-## [1.52.0] - 2026-05-27
-
 ### Performance
-- Lock-free circuit breaker fast path: closed-state `Allow()` and `RecordSuccess()` use `atomic.Int32` instead of acquiring a mutex, eliminating lock contention on the happy path
-- Lock-free metrics histograms: `observe()` and scrape handler use atomic CAS loops instead of a shared RWMutex, removing the #1 mutex hotspot from `/metrics` scrapes under load
-- Sharded rate limiter: per-tenant token buckets use `sync.Map` with per-bucket mutexes instead of a single global lock, eliminating convoy effects at high tenant counts
-- `hash/maphash` query fingerprinting replaces `crypto/sha256` in the query tracker (~30x faster hashing)
-- Pre-sized body read buffer in `readBodyLimited` avoids repeated slice growth for push payloads up to 128KB
-- Async buffered logger (`--log-buffered`): log records are written by a dedicated goroutine via an 8192-slot channel, removing the slog output mutex from the request hot path (was 52% of all mutex contention at c=100)
-- Adaptive request log sampling (`--log-rate-threshold`, `--log-stats-interval`): above the configured rate, per-request OK logs are replaced with periodic statistics summaries (total, errors, latency, cache rate); errors are always logged. Below the threshold, every request is logged for debugging convenience.
+- `SanitizeLabelName` fast-path skips allocation for already-valid label names; dead-code branch removed and covered by tests
+- `strings.Builder` in hot response serialisation paths pre-sized with `Grow` to avoid append chain-realloc
+- `compatCacheCaptureWriter` struct pooled via `sync.Pool` to cut per-request allocation on non-cacheable paths
+- Window-range cache serialisation replaced `encoding/gob` with `encoding/json`, halving round-trip CPU and removing reflect overhead
+- `TranslateLabelsMap` gains `TranslateLabelsMapInto` variant for caller-controlled result-map pooling; original wrapper unchanged
+- `handleSeries` pools the per-stream keys slice via `sync.Pool`, eliminating one alloc per log stream on the hot ingest path
+- Coalescer body buffer pooled via `sync.Pool` (`readBodyPooled`); replaces per-request `io.ReadAll` allocation with a reused 64 KB buffer
+- Use `field_values` instead of `stream_field_values` for label value lookups on VL v1.50+: on v1.50+ stream fields are indexed in the column store so both endpoints return identical data, but `field_values` is ~20x faster (300ms vs 6s at 12h range for `label/service_name/values`). Older backends (v1.30–v1.49) keep `stream_field_values` with the existing 6h cap.
+- Fix `query_range` cache key drift: Grafana's sliding `now-12h to now` window increments `end` by a few seconds on every panel refresh, causing every `stats_query_range` fan-out call to cache-miss and hammer VictoriaLogs with 20+ concurrent 2–22s metric queries. `queryRangeCacheKey` now buckets `end` to the step granularity (minimum 5 minutes) so consecutive Grafana refresh ticks (every 60s) share one cache entry and VL is queried at most once per 5-minute bucket — reducing steady-state VL CPU by ~5x for the Drilldown Fields page.
+- Add `-stats-query-range-concurrency` flag (default 4) to cap the number of concurrent `stats_query_range` calls to VictoriaLogs. Grafana's Drilldown Fields page fires ~30 of these in parallel; without a cap they all land on VL simultaneously, peaking CPU at 30× per-query cost. With a cap of 4, at most 4 VL scans run at once — peak CPU drops ~7× and VL remains responsive. Configurable via Helm `stats-query-range-concurrency`. The proxy queues excess calls and serves them as slots free; client-cancelled requests abandon their slot cleanly via `ctx.Done()`.
+- Fix `compatCacheKey` end-time bucketing for `query_range` and `query` endpoints: the compat cache key used `r.URL.RawQuery` verbatim, so Grafana's sliding `now-12h to now` window (drifting `end` by a few seconds on every refresh) produced a unique key on every panel refresh — bypassing the compat cache entirely. The key now buckets `end` to the same 5-minute granularity as `queryRangeCacheKey`. On the second and subsequent Drilldown Fields page refreshes within a 5-minute window, all ~30 parallel field queries are now served from the compat cache (~0ms) instead of re-hitting VL (1.5–7.6s each).
+- Cap `stats_query_range` series in `collectRangeMetricHits` to `max-stats-query-series` (default 5000, configurable via `-max-stats-query-series` flag and Helm): high-cardinality `by()` clauses (e.g. 670k unique pod names over 12h) cause VL to return 50+ MB of data that the proxy previously parsed and re-serialized in full, taking 30+ seconds. Capping to 5000 series (matching Loki's `max_query_series` default) reduces Drilldown Fields response time from 32s to ~3.7s (VL 1.4s + proxy 2.3s) with a 700 KB response instead of 95 MB.
+- Replace `streams` scan with `stream_field_names` + parallel `field_values` in `detectNativeLabels` on VL v1.50+: `detected_labels` (used by Drilldown's Labels/Fields panels) dropped from ~1400ms to ~620ms cold (2.3x) by replacing the O(stream-scan) `/select/logsql/streams` call with a cached `stream_field_names` call (~300ms) and 15 parallel `field_values` lookups (~60ms each, column index). Warm path is 3-13ms (served from the existing `detected_labels` cache).
+- Use `field_values` instead of `stream_field_values` in `serviceNameValuesFromNativeFields` fan-out on VL v1.50+: 16 parallel field-values calls that used `stream_field_values` (700ms each at 1h) now use `field_values` (37ms each). For the `label/service_name/values` cold path this drops from ~24s to ~160ms.
+- **Drilldown burst coalescer**: groups concurrent per-field `count_over_time` queries from Grafana Drilldown Fields into a single fused VL `count() if (field:*)` conditional-stats call, reducing ~30 VL round-trips to 1 per refresh; `| json` / `| logfmt` pipes are stripped before the fused query so VL's pre-indexed columns answer field-presence checks without full log parsing; configurable via `--drilldown-burst-window-ms` (default 50ms) and `--drilldown-burst-max-fields` (default 30)
 
 ## [1.51.0] - 2026-05-27
 

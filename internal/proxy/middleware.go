@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
@@ -316,7 +317,66 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	if !p.shouldUseCompatCache(endpoint, r) {
 		return "", false
 	}
-	key := "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + r.URL.RawQuery
+	// Bucket both `start` and `end` to a stable granularity. Grafana's sliding
+	// "now-12h to now" window drifts both by a few seconds on every panel refresh,
+	// producing a unique cache key every time even when the logical query is identical.
+	// query_range/query: 5-minute bucket (or step, whichever is larger).
+	// detected_*: 30-second bucket matching fieldNamesCacheBucket used internally.
+	rawQuery := r.URL.RawQuery
+	switch endpoint {
+	case "query_range", "query":
+		endRaw := r.FormValue("end")
+		startRaw := r.FormValue("start")
+		if endRaw != "" || startRaw != "" {
+			stepRaw := r.FormValue("step")
+			bucket := 5 * time.Minute
+			if stepRaw != "" {
+				if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
+					bucket = d
+				}
+			}
+			q := r.URL.Query()
+			changed := false
+			if endRaw != "" {
+				if endB := bucketTimestampString(endRaw, bucket); endB != endRaw {
+					q.Set("end", endB)
+					changed = true
+				}
+			}
+			if startRaw != "" {
+				if startB := bucketTimestampString(startRaw, bucket); startB != startRaw {
+					q.Set("start", startB)
+					changed = true
+				}
+			}
+			if changed {
+				rawQuery = q.Encode()
+			}
+		}
+	case "labels", "label_values", "detected_fields", "detected_field_values", "detected_labels":
+		endRaw := r.FormValue("end")
+		startRaw := r.FormValue("start")
+		if endRaw != "" || startRaw != "" {
+			q := r.URL.Query()
+			changed := false
+			if endRaw != "" {
+				if endB := bucketTimestampString(endRaw, fieldNamesCacheBucket); endB != endRaw {
+					q.Set("end", endB)
+					changed = true
+				}
+			}
+			if startRaw != "" {
+				if startB := bucketTimestampString(startRaw, fieldNamesCacheBucket); startB != startRaw {
+					q.Set("start", startB)
+					changed = true
+				}
+			}
+			if changed {
+				rawQuery = q.Encode()
+			}
+		}
+	}
+	key := "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + rawQuery
 	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		key += ":auth:" + fp
 	}
@@ -361,6 +421,10 @@ func compatCacheResponseAllowed(rec *httptest.ResponseRecorder) bool {
 	return contentType == "" || strings.Contains(contentType, "application/json")
 }
 
+var compatCacheCapturePool = sync.Pool{
+	New: func() interface{} { return &compatCacheCaptureWriter{} },
+}
+
 type compatCacheCaptureWriter struct {
 	http.ResponseWriter
 	body       []byte
@@ -372,10 +436,14 @@ type compatCacheCaptureWriter struct {
 }
 
 func newCompatCacheCaptureWriter(w http.ResponseWriter, limit int) *compatCacheCaptureWriter {
-	cw := &compatCacheCaptureWriter{
-		ResponseWriter: w,
-		limit:          limit,
-	}
+	cw := compatCacheCapturePool.Get().(*compatCacheCaptureWriter)
+	cw.ResponseWriter = w
+	cw.code = 0
+	cw.flushed = false
+	cw.limit = limit
+	cw.overflowed = false
+	cw.body = nil
+	cw.bufHolder = nil
 	if limit <= 0 {
 		// limit=0 means the cache is disabled or has no capacity — mark overflowed
 		// immediately so capture() is a no-op and no memory is allocated.
@@ -446,6 +514,8 @@ func (w *compatCacheCaptureWriter) Release() {
 	releaseCompatCaptureBuf(w.body, w.bufHolder)
 	w.body = nil
 	w.bufHolder = nil
+	w.ResponseWriter = nil // avoid retaining reference to the underlying writer
+	compatCacheCapturePool.Put(w)
 }
 
 func acquireCompatCaptureBuf(limit int) ([]byte, *pooledCompatCaptureBuf) {
@@ -510,6 +580,13 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			return
 		}
 		ttl := CacheTTLs[endpoint]
+		// For query_range (and query), use a fixed 5-minute TTL so the cache entry
+		// outlives the bucket used to generate the key (max(5min, step)) while keeping
+		// staleness imperceptible: on a 2-day chart a 5-min gap is 0.17% of width.
+		// Using step (up to 1h) as TTL caused visible empty spaces at the chart right edge.
+		if endpoint == "query_range" || endpoint == "query" {
+			ttl = 5 * time.Minute
+		}
 		if ttl <= 0 {
 			setCacheResult(r.Context(), "bypass")
 			next(w, r)

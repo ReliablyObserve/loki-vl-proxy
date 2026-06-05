@@ -29,8 +29,71 @@ func ensureDataIngested(t *testing.T) {
 		waitForReady(t, lokiURL+"/ready", 30*time.Second)
 		ingestionAnchor = time.Now().Add(-3 * time.Minute)
 		ingestRichTestData(t)
+		// VL keeps recent ingest in in-memory buffers; column-index materialization
+		// (which backs /select/logsql/field_values, the proxy's label_values path)
+		// only happens when those buffers are flushed into "searchable data
+		// blocks". /internal/force_flush is the documented test-harness hook for
+		// triggering that conversion immediately. Without it, hosted GHA runners
+		// can return empty label_values for 10–30 s post-push, which flakes
+		// `additional_label_values`, `label_values_honor_limit`, and the
+		// resource-label-filter subtests.
+		// Source: https://docs.victoriametrics.com/victorialogs/#forced-flush
+		forceVLFlush(t)
 		waitForLokiMetricData(t)
+		// Belt-and-braces: poll until the proxy actually surfaces the values. The
+		// force_flush makes data searchable in VL but the proxy still has its own
+		// label cache; this loop tolerates that one extra hop.
+		waitForProxyLabelValues(t, "cluster", "us-east-1")
 	})
+}
+
+// forceVLFlush triggers VictoriaLogs' /internal/force_flush endpoint, converting
+// the in-memory ingest buffers into searchable data blocks. This is the
+// documented test-harness hook for the "I just ingested data, query it now"
+// flow (https://docs.victoriametrics.com/victorialogs/#forced-flush). Without
+// it, /select/logsql/field_values (which the proxy uses for label_values) can
+// return empty for 10–30 s after ingestion on slow CI runners.
+// Failures are logged, not fatal — downstream tests surface the real assertion
+// failure if VL is genuinely broken.
+func forceVLFlush(t *testing.T) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, vlURL+"/internal/force_flush", nil)
+	if err != nil {
+		t.Logf("warning: forceVLFlush new-request: %v", err)
+		return
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Logf("warning: forceVLFlush call failed: %v (test will fall back to polling)", err)
+		return
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		t.Logf("warning: forceVLFlush returned HTTP %d (test will fall back to polling)", resp.StatusCode)
+	}
+}
+
+// waitForProxyLabelValues polls /loki/api/v1/label/<name>/values on the proxy
+// until expectedValue appears or 90 s elapses. Mirrors waitForLokiMetricData
+// but checks the VL-backed proxy path — VL's column index can take 10–30 s to
+// catch up after a push on slow CI runners. Returns silently on success or
+// timeout (timeout logs a warning, downstream tests then surface the real
+// expectation failure).
+func waitForProxyLabelValues(t *testing.T, label, expectedValue string) {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) {
+		status, _, resp := doJSONGET(t, proxyURL+"/loki/api/v1/label/"+label+"/values", nil)
+		if status == http.StatusOK {
+			for _, v := range extractStringArray(resp, "data") {
+				if v == expectedValue {
+					return
+				}
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Logf("warning: proxy label_values for %s did not include %q after 90 s — label-values tests may flake", label, expectedValue)
 }
 
 // waitForLokiMetricData polls until Loki returns non-empty metric results for

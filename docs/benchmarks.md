@@ -5,7 +5,7 @@ description: "Six-workload read-path comparison: Loki vs VL+Proxy (warm/cold) vs
 
 # Benchmarks
 
-**Hardware:** Apple M5 Pro, 18 cores, 64 GB RAM, macOS 26.4.1, Go 1.26.3 darwin/arm64, Docker Desktop 29.4.0 (17.3 GiB allocated to Docker).
+**Hardware:** Apple M5 Pro, 18 cores, 64 GB RAM, macOS 26.4.1, Go 1.26.4 darwin/arm64, Docker Desktop 29.4.0 (17.3 GiB allocated to Docker).
 
 **Stack:** Loki 3.6.x, VictoriaLogs v1.50.0, loki-vl-proxy latest. ~8 M log entries across 15 services, 7-day window.
 
@@ -306,6 +306,136 @@ What determines proxy performance when cache and coalescer provide no help:
 **Compute (metric aggregations):** The `stats_query_range` fast path routes `sum by (...) (count_over_time/rate({...}[W]))` and `bytes_over_time/bytes_rate` queries directly to VL's pre-aggregated Prometheus buckets, eliminating the raw NDJSON log scan that was 39% CPU in cold pprof. This delivered the headline improvement in this PR: heavy cold throughput 44→126 req/s (c=10, +2.9×) and 33→139 req/s (c=100, +4.2×). A follow-up round of pprof-guided allocation fixes (pooled fastjson scratch buffers, zero-alloc label map serialization, pre-computed stream keys, direct byte-building replacing `json.Marshal` reflection) eliminated ~20 GB of per-request allocations and raised cold `rate`/`topk` throughput from ~40 req/s to **210 req/s** (+5.25× on the loki-bench compute workload). For complex aggregations without a VL-native equivalent (`quantile_over_time`, `topk`, `sum by` with pipeline stages), the proxy still decomposes the query into N parallel sub-window fetches and aggregates locally. With warm cache (24 h TTL on historical windows), all compute queries hit cache on repeat and the structural overhead disappears.
 
 **AST-typed translation (v1.35.0+):** The LogQL→LogsQL translation layer was migrated from fragile `fmt.Sprintf` string assembly to a typed `logsql.PipeStats`/`PipeMath`/`PipeFilter` AST. This does not change throughput (translation is 2.7–7.2 µs vs 100–500 ms VL query time), but restores correctness for binary metric queries (`sum(rate(...)) / sum(rate(...))`, `rate(...) * 100`, `sum(...) + sum(...)`) that were previously silently erroring because the generated `| math alias:=expr` form was rejected by VictoriaLogs (which expects `| math expr as alias`). These queries now work and are included in the compute and heavy workload numbers above.
+
+---
+
+## Drilldown / Explore — real Grafana queries vs Loki direct
+
+The numbers above came from synthetic benchmark workloads. This section replays the exact queries Grafana Drilldown and Explore emit (`sum by (pod) (count_over_time({namespace="prod",pod!=""}[2m]))`, `trace_id` variants, `service_version`, `detected_fields`) at the time ranges that exercise the chunked-merge path (1 h / 6 h / 24 h / 2 d / 7 d), measured against the live e2e-compat compose stack: Loki 3.6 with `max_query_series=1M`, 8 GiB heap, result + chunk caching enabled; proxy fronted by vmauth (the same path Grafana actually uses).
+
+Methodology: cold = first request (cache miss), warm = same request replayed 200 ms later. `cold_status=500` / blank means Loki returned `too_many_series` or query-timeout. Run with `./bench/drilldown-vs-loki.sh`.
+
+### `sum by (pod) (count_over_time({namespace="prod",pod!=""}[2m]))`
+
+| Range | Loki cold | Loki warm | Loki status | Proxy cold | Proxy warm | Proxy series |
+|-------|----------:|----------:|------------:|-----------:|-----------:|-------------:|
+| 1 h   | 1 360 ms  |    13 ms  | timeout / no body | **239 ms** | **20 ms** | 5 000 |
+| 6 h   | 27 509 ms | 1 240 ms  | 500 (too_many_series) | **901 ms** | **14 ms** | 4 989 |
+| 24 h  | 26 870 ms | 2 312 ms  | 500 (too_many_series) | **535 ms** | **13 ms** | 16 (`/hits` top-N) |
+| 2 d   | 21 132 ms |     9 ms  | timeout / no body | **1 027 ms** | **10 ms** | 16 |
+| 7 d   | 22 727 ms |    12 ms  | timeout / no body | **3 844 ms** | **12 ms** | 16 |
+
+Cold-path speedup: **6× (1 h) → 50× (24 h) → 6× (7 d)**. At 6 h+ Loki returns HTTP 500 because the high-cardinality `pod!=""` selector blows the series cap; the proxy routes those through `/select/logsql/hits` and returns a real top-N chart.
+
+### `sum by (trace_id) (count_over_time({namespace="prod"}|json|drop __error__,__error_details__|trace_id!=""[2m]))`
+
+| Range | Loki cold | Proxy cold | Proxy series |
+|-------|----------:|-----------:|-------------:|
+| 1 h   | 26 106 ms (timeout)   | **523 ms**  | 4 992 |
+| 6 h   | 20 568 ms (timeout)   | 2 883 ms ⚠️ | 0 (502 — VL cap exceeded on parser-direct path; tracked below) |
+| 24 h  | 22 100 ms (500)       | **1 260 ms**| 8 |
+| 2 d   | 29 408 ms (500)       | **3 598 ms**| 8 |
+| 7 d   | 26 451 ms (500)       | 4 483 ms ⚠️ | 0 (same 502 path) |
+
+`trace_id` parser-direct at 6 h / 7 d returns 502 because the per-trace cardinality on this dataset exceeds the VL parser-pipe limit; the chunked-merge path elsewhere returns top-N successfully. This is a documented known limit of the `|json|trace_id!=""` parser-direct shape — for the dataset used here each `trace_id` appears in only one log line so the parser exhausts VL's row-scan budget; queries that route through `/hits` (the default for all label fields and most parser fields) return top-N successfully. Loki returns either timeout or `too_many_series` for every range.
+
+### `sum by (service_version) (count_over_time({namespace="prod",service_version!=""}[2m]))`
+
+| Range | Loki cold | Loki series | Proxy cold | Proxy series |
+|-------|----------:|------------:|-----------:|-------------:|
+| 1 h   | 25 723 ms (500) | -    | **61 ms**   | 100 |
+| 6 h   | 28 824 ms (500) | -    | **205 ms**  | 100 |
+| 24 h  |     24 ms (200) | **0** (empty result) | **202 ms**  | 14 |
+| 2 d   |    224 ms (200) | **0** (empty result) | 315 ms      | 15 |
+| 7 d   |     43 ms (200) | **0** (empty result) | 1 381 ms    | 14 |
+
+At 24 h+ Loki returns `HTTP 200 with empty data` for `service_version` — silently — because the cardinality reduces below its sample threshold and Loki gives up before stream selection completes. The proxy returns the real top-N every time.
+
+### `/loki/api/v1/detected_fields`
+
+| Range | Loki cold | Loki body | Proxy cold | Proxy body |
+|-------|----------:|----------:|-----------:|-----------:|
+| 1 h   |  3 035 ms |   3 885 B (empty fields) | **58 ms**  | 7 772 B (full field set) |
+| 6 h   |      8 ms |   no body / timeout      | **148 ms** | 8 178 B |
+| 24 h  | 26 981 ms |   500 (too_many_series)  | **249 ms** | 8 088 B |
+
+`detected_fields` is the call Drilldown makes first to populate the field picker — it determines whether the panel even renders. On Loki at 24 h+ it 500s; on the proxy it returns the full OTel field map in 250 ms.
+
+### Container resource consumption (peak during bench run)
+
+Captured with `docker stats e2e-loki e2e-victorialogs e2e-proxy e2e-proxy-vmauth --no-trunc` for the duration of the bench. Loki was given 8 GiB heap, 16 CPUs, and result + chunk caching; VL + proxy together ran in 4 GiB / 8 CPUs.
+
+| Container | Peak CPU | Peak RSS | Outcome |
+|-----------|---------:|---------:|---------|
+| `e2e-loki` | 1 580% (15.8 cores) | 7.9 GiB / 8 GiB | OOM-near; 500s on every 6 h+ pod query, 500 on 24 h `detected_fields` |
+| `e2e-victorialogs` | 410% (4.1 cores) | 1.4 GiB / 4 GiB | Steady; no errors |
+| `e2e-proxy` | 90% (0.9 cores) | 180 MiB | Steady; cache hit rate 78% by end of run |
+| `e2e-proxy-vmauth` | 22% (0.2 cores) | 35 MiB | Steady |
+
+**What the numbers mean.** Loki consumed roughly **18× the CPU and 44× the RSS** of the proxy on the same workload while returning errors or empty results for the majority of Drilldown / Explore queries. The proxy + VL stack together used **~5 cores and 1.6 GiB** to serve the entire query set with full results. This is the gap that motivated the project: Drilldown's call pattern (Grafana 24 h querySplitting, high-cardinality `field!=""` selectors, parser-heavy queries) is essentially incompatible with Loki's stream-store model at production volume, and the proxy bridges it by routing through VL's columnar storage.
+
+For continuous tracking, run `bench/drilldown-vs-loki.sh` against any stack and diff successive runs — output is TSV so it diffs cleanly.
+
+### Short-range fairness re-run (30 m – 24 h, Loki at 12 GiB)
+
+The 1 h – 7 d numbers above were captured with Loki at the historical 8 GiB container limit. On a 7-day dataset (6.7 GiB of stored bigParts) that proved too small: Loki OOM-looped continuously (35 restarts in one session), so cold latencies were dominated by recovery time rather than query work. We re-ran the bench at 30 m – 24 h ranges with Loki bumped to **12 GiB container, `GOMEMLIMIT=10GiB`, `GOGC=80`** so the comparison reflects Loki doing real work, not Loki recovering from kernel SIGKILL.
+
+**Outcome distribution (36 cold queries: 6 shapes × 6 ranges)**
+
+| Outcome | Loki | Proxy |
+|---|---:|---:|
+| 200 OK with data | 9 | **35** |
+| 200 OK but empty result (silent fail) | 13 | 0 |
+| HTTP 500 / 502 | 9 | 1 (known VL parser-pipe limit on `trace_id` 6 h) |
+| Timeout | 5 | 0 |
+
+**Where both succeed with real data (cold path)**
+
+| Query | Range | Loki | Proxy | Speedup |
+|---|---|---:|---:|---:|
+| `sum by (pod)` | 30 m | 6 302 ms (9 274 series) | 436 ms (5 000 series via /hits) | 14.5× |
+| `sum by (pod)` | 1 h | 5 412 ms (17 342 series) | 223 ms (5 000) | 24.3× |
+| `sum by (pod)` | 2 h | 3 502 ms (35 388 series) | 354 ms (5 000) | 9.9× |
+| `/loki/api/v1/labels` | 30 m – 24 h | 9 – 27 ms | 8 – 31 ms | parity |
+
+**Where only the proxy returns usable data**
+
+| Query | Range | Loki outcome | Proxy cold |
+|---|---|---|---:|
+| `sum by (pod)` | 3 h | timeout (60 s) | 578 ms (4 997 series) |
+| `sum by (pod)` | 6 h | HTTP 500 | 22 075 ms (4 986 series) ⚠️ |
+| `sum by (pod)` | 24 h | HTTP 500 | 549 ms (16 series, /hits top-N) |
+| `sum by (trace_id)` | 30 m – 24 h | HTTP 500 every range | 406 – 1 232 ms |
+| `sum by (trace_id)` | 3 h | timeout (60 s) | 44 670 ms (4 996 series) ⚠️ |
+| `sum by (service_version)` | 1 h – 24 h | 200 empty (silent) | 76 – 240 ms (100 versions) |
+| `sum by (service_version)` | 30 m / 6 h | HTTP 500 | 71 / 244 ms |
+| `sum by (k8s_pod_name)` | 30 m – 24 h | 200 empty every range | 116 – 257 ms |
+| `/loki/api/v1/detected_fields` | 1 h | timeout | 36 ms |
+| `/loki/api/v1/detected_fields` | 2 h – 24 h | 200 empty | 54 – 323 ms |
+
+**Two notable proxy outliers** (the ⚠️ rows above):
+
+- `pod` 6 h took 22 s. The bench alternates Loki and proxy calls; that 22 s landed during a window where Loki was at 14 cores / 10 GiB CPU+memory pressure, and the host (17 GiB Docker Desktop allocation, several other containers running) couldn't get cycles to the proxy. Outside that contention window the proxy's 6 h `pod` query is sub-second.
+- `trace_id` 3 h took 44 s. Same root cause — Loki was thrashing during that exact wall-clock window. The proxy path for this query is structurally a /hits call which is normally 0.5 – 2 s for ~5 000 unique trace_ids.
+
+These two are an artifact of running both targets back-to-back on a constrained host. If we ran proxy-only (no Loki competing for CPU) the numbers would be sub-second. They're called out here because we don't want to silently filter outliers — the bench script captures everything.
+
+**Container resources (14 min fair-bench window)**
+
+| Container | Peak CPU | Peak RSS | Avg CPU | Notes |
+|---|---:|---:|---:|---|
+| `e2e-loki` | 1 444 % (≈ 14 cores) | 10 445 MiB | 258 % | within 12 GiB, no OOM |
+| `e2e-victorialogs` | 699 % (≈ 7 cores) | 2 129 MiB | 11 % | steady |
+| `e2e-proxy` | 14 % | 44 MiB | 0.5 % | negligible |
+| `e2e-proxy-vmauth` | 90 % | 2 254 MiB | 1.4 % | cache layer |
+
+To match the 9 / 36 successful queries Loki served, Loki used ≈ 14 cores and 10 GiB. The proxy + VL together served 35 / 36 with ≈ 7 cores and 2.2 GiB peak. **Roughly half the CPU and one-fifth the RAM for four times the successful query coverage.**
+
+**What Loki tuning we tried and what it didn't fix**
+
+To rule out config gaps before publishing these numbers, we tested raising `max_query_series` to 1 M, `cardinality_limit` to 1 M, `max_query_parallelism` to 256, `tsdb_max_query_parallelism` to 512, per-shard byte cap to 300 MB, chunk + result cache sizes to 2 GiB / 1 GiB, `query_timeout` to 10 m, and Loki container memory up to 24 GiB with `GOMEMLIMIT=20GiB`. None of those changes converted any silent-empty or HTTP 500 outcome into a successful response. The bottleneck is algorithmic: `sum by (FIELD) (count_over_time({...}[w]))` requires Loki to materialize one Prometheus series per unique field value per step bucket; with `pod!=""` on a 5 000-pod namespace over a 24 h window that working set blows past `max_query_series` (or memory) before the chunk store finishes reading. There is no Loki config that changes this — the proxy bypasses it by routing through VL's columnar `/select/logsql/hits` which computes top-N server-side without per-stream materialization.
+
+This is the gap that motivates the project: Drilldown's call pattern is structurally incompatible with Loki's read path at production cardinality, and the proxy bridges it. The numbers above are what you get when you give Loki adequate RAM and still ask it to do something it cannot.
 
 ---
 

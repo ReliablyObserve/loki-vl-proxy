@@ -1619,6 +1619,7 @@ type vlHitsResponse struct {
 		Fields     map[string]string `json:"fields"`
 		Timestamps []vlTimestamp     `json:"timestamps"`
 		Values     []int             `json:"values"`
+		Total      int               `json:"total"`
 	} `json:"hits"`
 }
 

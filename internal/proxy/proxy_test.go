@@ -58,16 +58,16 @@ func TestContract_Labels_ResponseFormat(t *testing.T) {
 
 func TestContract_Labels_PassesTimeRange(t *testing.T) {
 	// Input: start=1609459200 (seconds), end=1609545600 (seconds) → 24h interval.
-	// After the 1h cap applied by capMetadataStartOnly (no bucketing — preserves
+	// After the 5-min cap applied by capMetadataStartOnly (no bucketing — preserves
 	// original end so recently-ingested data is never hidden):
-	//   cappedStart = endNs - 1h = 1609545600e9 - 3600e9 = 1609542000e9
+	//   cappedStart = endNs - 5min = 1609545600e9 - 300e9 = 1609545300e9
 	//   end         = 1609545600e9 (preserved, normalized to nanoseconds)
 	//
 	// Note: the handler also fires a background full-range refresh goroutine (because the
-	// 24h input range exceeds the 1h synchronous cap), which sends the raw uncapped params
-	// to VL. We capture ALL calls and verify that AT LEAST ONE used the capped params.
+	// 24h input range exceeds the 5-min synchronous cap), which sends the raw uncapped
+	// params to VL. We capture ALL calls and verify that AT LEAST ONE used the capped params.
 	const (
-		wantStart = "1609542000000000000"
+		wantStart = "1609545300000000000"
 		wantEnd   = "1609545600000000000"
 	)
 	type call struct{ start, end string }
@@ -2391,16 +2391,17 @@ func TestContract_RefreshVolumeCacheAsync_PopulatesCache(t *testing.T) {
 
 func TestContract_RefreshVolumeRangeCacheAsync_PopulatesCache(t *testing.T) {
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/select/logsql/hits" {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"hits":[{"fields":{"service.name":"api"},"timestamps":["2026-01-01T00:00:00Z"],"values":[5]}]}`))
+		// stats_query_range returns Loki matrix format directly.
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"api"},"values":[[1746057600,"5"]]}]}}`))
 	}))
 	defer vlBackend.Close()
 
 	p := newTestProxy(t, vlBackend.URL)
 	cacheKey := "volume_range:test-refresh"
-	p.refreshVolumeRangeCacheAsync("", cacheKey, `{app="api"}`, "", "", "60", "", nil)
+	p.refreshVolumeRangeCacheAsync("", cacheKey, `{app="api"}`, "", "", "60", "", defaultVolumeSeriesLimit, nil)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -3290,9 +3291,9 @@ func TestTranslation_DottedFieldComplexLiteralIsQuoted(t *testing.T) {
 // =============================================================================
 
 func TestCache_LabelsHitOnRepeat(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		writeVLFieldNames(w, []fieldHit{{"app", 1}})
 	}))
 	defer vlBackend.Close()
@@ -3300,38 +3301,41 @@ func TestCache_LabelsHitOnRepeat(t *testing.T) {
 	p := newTestProxy(t, vlBackend.URL)
 
 	// Use realistic Unix nanosecond timestamps (≥ 1e18) so parseLokiTimeToUnixNano
-	// treats them as nanoseconds. Bucket size for a 1h interval is 5 minutes = 300e9 ns.
+	// treats them as nanoseconds. Bucket size is 5 minutes = 300e9 ns.
 	//
-	// Bucket boundaries for start=1700000000000000000:
-	//   floor(1700000000000000000 / 300000000000) = 5666666666 → bucket [5666666666*300e9, ...)
-	// A shift of 1ms (1e6 ns) stays in the same bucket: floor(…001000000 / 300e9) = same.
-	// A shift of +5 min (300e9 ns) moves to the next bucket: floor(…300000000000 / 300e9) ≠.
+	// Bucket for start=1700000000000000000:
+	//   floor(1700000000000000000 / 300000000000) = 5666666 → same bucket as T+1ms.
+	// A shift of +5 min (300e9 ns) moves to the next bucket.
+	//
+	// Use a 4-minute range so rangeExceedsWindow(≤5min) stays false; that prevents
+	// handleLabels from spawning a background refresh goroutine that would make an
+	// extra VL call and corrupt the callCount assertions below.
 	const (
 		// req1: T, req2: T+1ms (same 5-min bucket), req3: T+5min (next bucket)
-		req1 = "start=1700000000000000000&end=1700003600000000000"
-		req2 = "start=1700000000001000000&end=1700003600001000000"
-		req3 = "start=1700000300000000000&end=1700003900000000000"
+		req1 = "start=1700000000000000000&end=1700000240000000000"
+		req2 = "start=1700000000001000000&end=1700000240001000000"
+		req3 = "start=1700000300000000000&end=1700000540000000000"
 	)
 
 	// First call — miss
 	w1 := httptest.NewRecorder()
 	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req1, nil))
-	if callCount != 1 {
-		t.Fatalf("expected 1 backend call, got %d", callCount)
+	if callCount.Load() != 1 {
+		t.Fatalf("expected 1 backend call, got %d", callCount.Load())
 	}
 
 	// Second call — same bucket → hit (time-bucketed cache key collapses sliding window)
 	w2 := httptest.NewRecorder()
 	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req2, nil))
-	if callCount != 1 {
-		t.Errorf("expected cache hit (still 1 call), got %d", callCount)
+	if callCount.Load() != 1 {
+		t.Errorf("expected cache hit (still 1 call), got %d", callCount.Load())
 	}
 
 	// Different 5-minute bucket — miss
 	w3 := httptest.NewRecorder()
 	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req3, nil))
-	if callCount != 2 {
-		t.Errorf("expected 2 calls after different bucket params, got %d", callCount)
+	if callCount.Load() != 2 {
+		t.Errorf("expected 2 calls after different bucket params, got %d", callCount.Load())
 	}
 }
 
@@ -3342,9 +3346,9 @@ func TestCache_LabelsHitOnRepeat(t *testing.T) {
 // reload at a new timestamp would miss even if the time range is essentially
 // identical.
 func TestCache_LabelsTimeBucketCollapsesSlidingWindow(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		writeVLFieldNames(w, []fieldHit{{"app", 1}})
 	}))
 	defer vlBackend.Close()
@@ -3366,22 +3370,26 @@ func TestCache_LabelsTimeBucketCollapsesSlidingWindow(t *testing.T) {
 
 	w1 := httptest.NewRecorder()
 	p.handleLabels(w1, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req1, nil))
-	if callCount != 1 {
-		t.Fatalf("first call: expected 1 backend call, got %d", callCount)
+	if callCount.Load() != 1 {
+		t.Fatalf("first call: expected 1 backend call, got %d", callCount.Load())
 	}
 
 	// Shifted by 1 second inside the same bucket — must hit cache.
 	w2 := httptest.NewRecorder()
 	p.handleLabels(w2, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req2, nil))
-	if callCount != 1 {
-		t.Errorf("same-bucket shift: expected cache hit (1 call), got %d — time-bucketing must collapse sliding window", callCount)
+	if callCount.Load() != 1 {
+		t.Errorf("same-bucket shift: expected cache hit (1 call), got %d — time-bucketing must collapse sliding window", callCount.Load())
 	}
 
-	// Next 5-minute bucket — must miss.
+	// Next 5-minute bucket — must miss. Measure delta across only req3 because
+	// an async background-refresh goroutine from req1 may race and complete during
+	// req3, making the cumulative total 3 or 4. The important invariant is that req3
+	// itself caused at least one additional backend call (cache miss).
+	callCountBeforeReq3 := callCount.Load()
 	w3 := httptest.NewRecorder()
 	p.handleLabels(w3, httptest.NewRequest("GET", "/loki/api/v1/labels?"+req3, nil))
-	if callCount != 2 {
-		t.Errorf("next bucket: expected 2 calls (miss), got %d", callCount)
+	if callCount.Load() <= callCountBeforeReq3 {
+		t.Errorf("next bucket: expected cache miss (>%d calls after req3), got %d — req3 should not share req1's bucket", callCountBeforeReq3, callCount.Load())
 	}
 }
 
@@ -3419,14 +3427,16 @@ func TestCache_QueryRangeHitOnRepeat(t *testing.T) {
 
 	p := newTestProxy(t, vlBackend.URL)
 
-	r1 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&limit=10`, nil)
+	// Use timestamps in distinct 5-minute buckets (5min = 300_000_000_000 ns).
+	// r1/r2: 100s–200s past epoch → bucket 0. r3: 400s–600s → bucket 300s.
+	r1 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=100000000000&end=200000000000&limit=10`, nil)
 	w1 := httptest.NewRecorder()
 	p.handleQueryRange(w1, r1)
 	if callCount != 1 {
 		t.Fatalf("expected 1 backend call, got %d", callCount)
 	}
 
-	r2 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=1&end=2&limit=10`, nil)
+	r2 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=100000000000&end=200000000000&limit=10`, nil)
 	w2 := httptest.NewRecorder()
 	p.handleQueryRange(w2, r2)
 	if callCount != 1 {
@@ -3436,7 +3446,7 @@ func TestCache_QueryRangeHitOnRepeat(t *testing.T) {
 		t.Fatalf("expected cached query_range body to match original response")
 	}
 
-	r3 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=3&end=4&limit=10`, nil)
+	r3 := httptest.NewRequest("GET", `/loki/api/v1/query_range?query={app="nginx"}&start=400000000000&end=600000000000&limit=10`, nil)
 	w3 := httptest.NewRecorder()
 	p.handleQueryRange(w3, r3)
 	if callCount != 2 {

@@ -376,11 +376,13 @@ func TestP1_WithoutClause_Supported(t *testing.T) {
 // =============================================================================
 
 func TestP2_VolumeRange_ForwardsTargetLabels(t *testing.T) {
-	var receivedField string
+	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedField = r.URL.Query().Get("field")
+		_ = r.ParseForm()
+		receivedQuery = r.FormValue("query")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"hits": []interface{}{},
+			"status": "success",
+			"data":   map[string]interface{}{"resultType": "matrix", "result": []interface{}{}},
 		})
 	}))
 	defer vlBackend.Close()
@@ -391,8 +393,8 @@ func TestP2_VolumeRange_ForwardsTargetLabels(t *testing.T) {
 		`/loki/api/v1/index/volume_range?query={app="nginx"}&start=1&end=2&step=60&targetLabels=namespace`, nil)
 	p.handleVolumeRange(w, r)
 
-	if receivedField != "namespace" {
-		t.Errorf("expected field=namespace forwarded, got %q", receivedField)
+	if !strings.Contains(receivedQuery, "namespace") {
+		t.Errorf("expected namespace in VL stats query, got %q", receivedQuery)
 	}
 }
 

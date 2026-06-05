@@ -1,0 +1,51 @@
+# Drilldown vs Loki — measured 2026-06-05T13:56:45Z
+# Loki=http://localhost:13101 Proxy=http://localhost:13109
+target	query	range	cold_ms	warm_ms	cold_status	cold_size	cold_series	warm_status	warm_series
+loki	pod	30m	22626	7754	500	10	-1		-1
+proxy	pod	30m	219	191	200	5112534	5000	200	5000
+loki	pod	1h	27974	6284	500	10	-1		-1
+proxy	pod	1h	205	20	200	2272272	4994	200	4994
+loki	pod	2h	27382	5873	500	10	-1		-1
+proxy	pod	2h	317	18	200	1292785	4994	200	4994
+loki	pod	3h	29825	1529	500	10	-1		-1
+proxy	pod	3h	479	12	200	958416	4998	200	4998
+loki	trace_id	30m	28377	8679	500	10	-1		-1
+proxy	trace_id	30m	304	314	200	5096751	4993	200	4993
+loki	trace_id	1h	28358	5984	500	10	-1		-1
+proxy	trace_id	1h	470	20	200	2306722	4994	200	4994
+loki	trace_id	2h	26901	5637	500	10	-1		-1
+proxy	trace_id	2h	811	13	200	1330576	4986	200	4986
+loki	trace_id	3h	27387	5499	500	10	-1		-1
+proxy	trace_id	3h	1328	16	200	1002946	4995	200	4995
+loki	service_version	30m	26489	4867	500	10	-1	200	0
+proxy	service_version	30m	67	16	200	1376668	100	200	100
+loki	service_version	1h	15	9	200	3614	0	200	0
+proxy	service_version	1h	57	16	200	1125369	100	200	100
+loki	service_version	2h	19	14	200	3609	0	200	0
+proxy	service_version	2h	89	13	200	1152454	100	200	100
+loki	service_version	3h	14	9	200	3644	0	200	0
+proxy	service_version	3h	131	14	200	1159779	100	200	100
+loki	detected_fields	30m	4562	11		0	-1		-1
+proxy	detected_fields	30m	58	12	200	7620	-1	200	-1
+loki	detected_fields	1h	28126	60012	500	10	-1		-1
+proxy	detected_fields	1h	38394	515	200	7538	-1	200	-1
+loki	detected_fields	2h	41866	10		0	-1		-1
+proxy	detected_fields	2h	95	11	200	8016	-1	200	-1
+loki	detected_fields	3h	29285	7117	500	10	-1	200	0
+proxy	detected_fields	3h	215	21	200	8730	-1	200	-1
+loki	labels	30m	39	44	200	246	-1	200	-1
+proxy	labels	30m	34	17	200	172	-1	200	-1
+loki	labels	1h	20	31	200	246	-1	200	-1
+proxy	labels	1h	40	14	200	172	-1	200	-1
+loki	labels	2h	31	18	200	246	-1	200	-1
+proxy	labels	2h	17	22	200	172	-1	200	-1
+loki	labels	3h	71	36	200	246	-1	200	-1
+proxy	labels	3h	38	15	200	172	-1	200	-1
+loki	k8s_pod_name	30m	313	32	200	3615	0	200	0
+proxy	k8s_pod_name	30m	160	200	200	3595890	3440	200	3440
+loki	k8s_pod_name	1h	2272	11		0	-1		-1
+proxy	k8s_pod_name	1h	151	20	200	2314214	4994	200	4994
+loki	k8s_pod_name	2h	28277	3974	500	10	-1	200	0
+proxy	k8s_pod_name	2h	142	13	200	1330756	4995	200	4995
+loki	k8s_pod_name	3h	13	13	200	3626	0	200	0
+proxy	k8s_pod_name	3h	203	18	200	997484	4993	200	4993

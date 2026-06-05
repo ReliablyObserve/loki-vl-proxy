@@ -1,0 +1,388 @@
+package proxy
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"sort"
+	"strconv"
+	"sync"
+	"time"
+
+	fj "github.com/valyala/fastjson"
+)
+
+const maxBatchBuckets = 120 // skip batching when n_buckets > this; must be ≥ maxDrilldownStatsBucketsShort
+
+type fieldBatchEntry struct {
+	lokiField      string   // Loki-side field name (used in output metric key)
+	primaryVLField string   // raw VL field name for raw-body metric lookup
+	vlFields       []string // all VL by() fields contributed by this entry
+	resultCh       chan []byte
+}
+
+type fieldBatch struct {
+	batcher   *drilldownFieldBatcher
+	key       string
+	orgID     string
+	cleanBase string
+	startRaw  string
+	endRaw    string
+	stepRaw   string
+
+	mu       sync.Mutex
+	entries  []fieldBatchEntry
+	launched bool
+	timer    *time.Timer
+}
+
+type drilldownFieldBatcher struct {
+	proxy     *Proxy
+	window    time.Duration
+	maxFields int
+
+	mu      sync.Mutex
+	pending map[string]*fieldBatch
+
+	sem chan struct{}
+}
+
+func newDrilldownFieldBatcher(p *Proxy, windowDur time.Duration, maxFields int) *drilldownFieldBatcher {
+	if windowDur <= 0 || maxFields <= 0 {
+		return nil
+	}
+	sem := make(chan struct{}, 2)
+	sem <- struct{}{}
+	sem <- struct{}{}
+	return &drilldownFieldBatcher{
+		proxy:     p,
+		window:    windowDur,
+		maxFields: maxFields,
+		pending:   make(map[string]*fieldBatch),
+		sem:       sem,
+	}
+}
+
+func fieldBatchKey(orgID, cleanBase, startRaw, endRaw, stepRaw string) string {
+	startBucketed := bucketTimestampString(startRaw, 30*time.Second)
+	endBucketed := bucketTimestampString(endRaw, 30*time.Second)
+	return orgID + "\x00" + cleanBase + "\x00" + startBucketed + "\x00" + endBucketed + "\x00" + stepRaw
+}
+
+func bucketCount(startRaw, endRaw, stepRaw string) int {
+	startNs, startOk := parseLokiTimeToUnixNano(startRaw)
+	endNs, endOk := parseLokiTimeToUnixNano(endRaw)
+	stepDur, ok := parsePositiveStepDuration(stepRaw)
+	if !ok || !startOk || !endOk || stepDur <= 0 || startNs <= 0 || endNs <= startNs {
+		return 0
+	}
+	rangeNs := endNs - startNs
+	stepNs := stepDur.Nanoseconds()
+	n := int(rangeNs / stepNs)
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
+func (b *drilldownFieldBatcher) submit(ctx context.Context, orgID, cleanBase, lokiField, primaryVLField string, vlFields []string, startRaw, endRaw, stepRaw string) []byte {
+	if n := bucketCount(startRaw, endRaw, stepRaw); n > maxBatchBuckets {
+		return nil
+	}
+	// Always exclude high-cardinality *_id fields from the combined batch query.
+	// Including trace_id / span_id in a multi-field stats by() multiplies the
+	// result combination space by millions of unique ID values at any range,
+	// slowing every other field in the same batch. They fall through to the
+	// individual semaphore-controlled path; for ranges > 6h the handler guard
+	// returns empty immediately without issuing a VL query.
+	if isHighCardinalityFieldName(lokiField) {
+		return nil
+	}
+	key := fieldBatchKey(orgID, cleanBase, startRaw, endRaw, stepRaw)
+
+	b.mu.Lock()
+	batch, ok := b.pending[key]
+	if !ok {
+		batch = &fieldBatch{
+			batcher:   b,
+			key:       key,
+			orgID:     orgID,
+			cleanBase: cleanBase,
+			startRaw:  startRaw,
+			endRaw:    endRaw,
+			stepRaw:   stepRaw,
+		}
+		batch.timer = time.AfterFunc(b.window, batch.fire)
+		b.pending[key] = batch
+	}
+	b.mu.Unlock()
+
+	batch.mu.Lock()
+	if batch.launched {
+		batch.mu.Unlock()
+		return nil
+	}
+	resultCh := make(chan []byte, 1)
+	batch.entries = append(batch.entries, fieldBatchEntry{
+		lokiField:      lokiField,
+		primaryVLField: primaryVLField,
+		vlFields:       vlFields,
+		resultCh:       resultCh,
+	})
+	shouldFire := len(batch.entries) >= b.maxFields
+	batch.mu.Unlock()
+
+	if shouldFire {
+		batch.timer.Stop()
+		go batch.fire()
+	}
+
+	select {
+	case body := <-resultCh:
+		return body
+	case <-ctx.Done():
+		return nil
+	}
+}
+
+func (batch *fieldBatch) fire() {
+	b := batch.batcher
+
+	b.mu.Lock()
+	delete(b.pending, batch.key)
+	b.mu.Unlock()
+
+	batch.mu.Lock()
+	if batch.launched {
+		batch.mu.Unlock()
+		return
+	}
+	batch.launched = true
+	entries := make([]fieldBatchEntry, len(batch.entries))
+	copy(entries, batch.entries)
+	batch.mu.Unlock()
+
+	distribute := func(results map[string][]byte) {
+		for _, e := range entries {
+			e.resultCh <- results[e.lokiField]
+		}
+	}
+
+	if len(entries) == 0 {
+		return
+	}
+
+	ctx30s, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Parse the query time bounds once; all per-field goroutines share them.
+	batchStartNs, startOK := parseLokiTimeToUnixNano(batch.startRaw)
+	batchEndNs, endOK := parseLokiTimeToUnixNano(batch.endRaw)
+	batchStepDur, stepOK := parsePositiveStepDuration(batch.stepRaw)
+	doZerofill := startOK && endOK && stepOK && batchStepDur > 0 && batchEndNs > batchStartNs
+	batchStartSec := batchStartNs / int64(time.Second)
+	batchEndSec := batchEndNs / int64(time.Second)
+	batchStepSec := int64(batchStepDur / time.Second)
+
+	// Issue one per-field stats_query_range per entry in parallel, instead of a
+	// single cross-product stats by (f1, f2, ...) query. The cross-product approach
+	// truncates at limit 2000 combinations — any high-cardinality field (e.g.
+	// duration_ms with 500+ values) paired with other fields in the same batch
+	// causes the rare value combinations to be cut off, making common values appear
+	// to dominate every field chart. Per-field queries avoid the cross-product
+	// entirely and give each field an accurate per-value breakdown.
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	results := make(map[string][]byte, len(entries))
+
+	for _, e := range entries {
+		e := e
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			// Acquire batch semaphore to limit concurrent VL calls.
+			select {
+			case <-b.sem:
+			case <-ctx30s.Done():
+				return
+			}
+			defer func() { b.sem <- struct{}{} }()
+
+			perFieldQuery := batch.cleanBase +
+				" | " + quoteLogsQLIdent(e.primaryVLField) + ":*" +
+				" | stats by (" + quoteLogsQLIdent(e.primaryVLField) + ") count() as _c" +
+				" | sort by (_c desc)" +
+				" | limit " + strconv.Itoa(maxDrilldownSeries)
+
+			params := buildStatsQueryRangeParams(perFieldQuery, batch.startRaw, batch.endRaw, batch.stepRaw)
+			resp, err := b.proxy.vlPost(ctx30s, "/select/logsql/stats_query_range", params)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode >= http.StatusBadRequest {
+				return
+			}
+
+			rawBody, err := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+			if err != nil {
+				return
+			}
+
+			rawBody = stripVLStatsNameKey(rawBody)
+			if e.primaryVLField != e.lokiField {
+				rawBody = renameStatsBodyMetricKey(rawBody, e.primaryVLField, e.lokiField)
+			}
+			rawBody = limitLokiMatrixSeries(rawBody, maxDrilldownSeries)
+			if doZerofill {
+				rawBody = zerofillStatsMatrix(rawBody, batchStartSec, batchEndSec, batchStepSec)
+			}
+
+			mu.Lock()
+			results[e.lokiField] = rawBody
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+
+	distribute(results)
+}
+
+func marginalizeBatchResult(translated []byte, entries []fieldBatchEntry) map[string][]byte {
+	var p fj.Parser
+	v, err := p.ParseBytes(translated)
+	if err != nil {
+		return nil
+	}
+
+	resultArr := v.GetArray("data", "result")
+	if len(resultArr) == 0 {
+		return nil
+	}
+
+	// lokiField → fieldValue → unixSec → accumulated count
+	type marginals = map[string]map[int64]int64
+	fieldMarginals := make(map[string]marginals)
+
+	// vlField → lokiField: raw VL body uses VL field names (e.g. "level"), output uses Loki names.
+	vlToLoki := make(map[string]string, len(entries))
+	for _, e := range entries {
+		vlToLoki[e.primaryVLField] = e.lokiField
+		if fieldMarginals[e.lokiField] == nil {
+			fieldMarginals[e.lokiField] = make(marginals)
+		}
+	}
+
+	// Collect all timestamps for alignment.
+	tsSet := make(map[int64]bool)
+
+	for _, item := range resultArr {
+		metric := item.GetObject("metric")
+		values := item.GetArray("values")
+		if metric == nil || len(values) == 0 {
+			continue
+		}
+
+		// Build a label map from this metric object once.
+		labelMap := make(map[string]string)
+		metric.Visit(func(k []byte, val *fj.Value) {
+			labelMap[string(k)] = string(val.GetStringBytes())
+		})
+
+		for vlField, lokiField := range vlToLoki {
+			fieldValue, ok := labelMap[vlField]
+			if !ok {
+				continue
+			}
+			if fieldMarginals[lokiField][fieldValue] == nil {
+				fieldMarginals[lokiField][fieldValue] = make(map[int64]int64)
+			}
+			for _, pair := range values {
+				arr := pair.GetArray()
+				if len(arr) < 2 {
+					continue
+				}
+				ts := arr[0].GetInt64()
+				countStr := string(arr[1].GetStringBytes())
+				cnt, _ := strconv.ParseInt(countStr, 10, 64)
+				fieldMarginals[lokiField][fieldValue][ts] += cnt
+				tsSet[ts] = true
+			}
+		}
+	}
+
+	// Sorted global timestamp list.
+	allTS := make([]int64, 0, len(tsSet))
+	for ts := range tsSet {
+		allTS = append(allTS, ts)
+	}
+	sort.Slice(allTS, func(i, j int) bool { return allTS[i] < allTS[j] })
+
+	results := make(map[string][]byte, len(entries))
+	for _, e := range entries {
+		perValue := fieldMarginals[e.lokiField]
+		if perValue == nil {
+			continue
+		}
+
+		// Rank field values by total count descending.
+		type valCount struct {
+			val   string
+			total int64
+		}
+		ranked := make([]valCount, 0, len(perValue))
+		for val, tsCounts := range perValue {
+			var total int64
+			for _, c := range tsCounts {
+				total += c
+			}
+			ranked = append(ranked, valCount{val, total})
+		}
+		sort.Slice(ranked, func(i, j int) bool {
+			if ranked[i].total != ranked[j].total {
+				return ranked[i].total > ranked[j].total
+			}
+			return ranked[i].val < ranked[j].val
+		})
+
+		var buf []byte
+		buf = append(buf, `{"status":"success","data":{"resultType":"matrix","result":[`...)
+
+		for si, vc := range ranked {
+			if si > 0 {
+				buf = append(buf, ',')
+			}
+			buf = append(buf, `{"metric":{`...)
+			buf = appendJSONQuoted(buf, e.lokiField)
+			buf = append(buf, ':')
+			buf = appendJSONQuoted(buf, vc.val)
+			buf = append(buf, `},"values":[`...)
+
+			tsCounts := perValue[vc.val]
+			for ti, ts := range allTS {
+				if ti > 0 {
+					buf = append(buf, ',')
+				}
+				cnt := tsCounts[ts]
+				buf = append(buf, '[')
+				buf = strconv.AppendInt(buf, ts, 10)
+				buf = append(buf, ',')
+				buf = appendJSONQuoted(buf, strconv.FormatInt(cnt, 10))
+				buf = append(buf, ']')
+			}
+			buf = append(buf, `]}`...)
+		}
+
+		buf = append(buf, `]}}`...)
+		results[e.lokiField] = buf
+	}
+
+	return results
+}
+
+func appendJSONQuoted(buf []byte, s string) []byte {
+	b, _ := json.Marshal(s)
+	return append(buf, b...)
+}

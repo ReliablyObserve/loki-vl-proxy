@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 type responseCompressor interface {
@@ -38,6 +39,12 @@ type encodedResponseCapture struct {
 // compressedResponseWriter delays compression until the handler proves the
 // response is worth compressing. This keeps small control-plane responses cheap
 // and lets inner handlers serve pre-compressed cache variants directly.
+//
+// `buf` is a POOLED *bytes.Buffer (see acquireHoldBuf/releaseHoldBuf). It must
+// be released exactly once — either in startCompression (after the buffered
+// bytes have been forwarded to the compressor) or in startBypass (after the
+// buffered bytes have been forwarded to the underlying writer). The fallthrough
+// case in finish() will release it as a safety net.
 type compressedResponseWriter struct {
 	http.ResponseWriter
 	encoding   string
@@ -47,7 +54,7 @@ type compressedResponseWriter struct {
 	statusCode int
 	started    bool
 	bypass     bool
-	buf        bytes.Buffer
+	buf        *bytes.Buffer
 	capture    *encodedResponseCapture
 }
 
@@ -87,6 +94,12 @@ func (w *compressedResponseWriter) Write(b []byte) (int, error) {
 			return 0, err
 		}
 		return w.writer.Write(b)
+	}
+	// Defensive: buf may have been pre-released if finish() ran already (e.g.
+	// handler panic recovered upstream). Re-acquire to handle the stray write
+	// rather than panicking on a nil deref.
+	if w.buf == nil {
+		w.buf = acquireHoldBuf()
 	}
 	_, _ = w.buf.Write(b)
 	if w.buf.Len() >= w.minBytes {
@@ -136,9 +149,20 @@ func (w *compressedResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error)
 
 func (w *compressedResponseWriter) finish() error {
 	defer w.releaseCompressor()
+	// Safety net: if startCompression / startBypass didn't already release
+	// the pooled hold buffer (e.g. handler returned without writing anything),
+	// release it here. releaseHoldBuf tolerates a nil buf.
+	defer w.releaseHoldBuf()
 
 	if !w.started {
-		if w.shouldBypassCompression() || w.buf.Len() < w.minBytes {
+		// buf is nil when the handler never wrote anything (Write acquires
+		// lazily). Treat that as zero buffered bytes for the bypass-or-
+		// compress decision; either branch handles nil buf correctly.
+		bufLen := 0
+		if w.buf != nil {
+			bufLen = w.buf.Len()
+		}
+		if w.shouldBypassCompression() || bufLen < w.minBytes {
 			if err := w.startBypass(); err != nil {
 				return err
 			}
@@ -154,6 +178,16 @@ func (w *compressedResponseWriter) finish() error {
 	}
 	w.finalizeEncodedCapture()
 	return closeErr
+}
+
+// releaseHoldBuf returns w.buf to holdBufPool and clears the field so a stray
+// later Write or Flush doesn't operate on a recycled buffer. Idempotent.
+func (w *compressedResponseWriter) releaseHoldBuf() {
+	if w.buf == nil {
+		return
+	}
+	releaseHoldBuf(w.buf)
+	w.buf = nil
 }
 
 func (w *compressedResponseWriter) shouldBypassCompression() bool {
@@ -181,11 +215,14 @@ func (w *compressedResponseWriter) startCompression() error {
 	if w.statusCode != 0 {
 		w.ResponseWriter.WriteHeader(w.statusCode)
 	}
-	if w.buf.Len() == 0 {
+	// Drain the pooled hold buffer into the compressor exactly once, then
+	// release it back to the pool — no further reads from w.buf after this
+	// because we set it to nil in releaseHoldBuf.
+	defer w.releaseHoldBuf()
+	if w.buf == nil || w.buf.Len() == 0 {
 		return nil
 	}
 	_, err := w.writer.Write(w.buf.Bytes())
-	w.buf.Reset()
 	return err
 }
 
@@ -198,11 +235,14 @@ func (w *compressedResponseWriter) startBypass() error {
 	if w.statusCode != 0 {
 		w.ResponseWriter.WriteHeader(w.statusCode)
 	}
-	if w.buf.Len() == 0 {
+	// Drain and release the hold buffer in one pass — same lifecycle rule as
+	// startCompression: w.buf becomes nil after this and any subsequent Write
+	// goes straight to the underlying ResponseWriter.
+	defer w.releaseHoldBuf()
+	if w.buf == nil || w.buf.Len() == 0 {
 		return nil
 	}
 	_, err := w.ResponseWriter.Write(w.buf.Bytes())
-	w.buf.Reset()
 	return err
 }
 
@@ -254,6 +294,47 @@ var gzipWriterChan = func() chan *gzip.Writer {
 	}
 	return ch
 }()
+
+// holdBufPool reuses the byte-staging buffer used by compressedResponseWriter
+// during the "wait for minBytes" phase before we know whether to compress or
+// bypass. Previously this was a value-type bytes.Buffer inside the wrapper
+// struct, allocated fresh per request — under bench load (~10–20 concurrent
+// drilldown handlers) every request grew its own buffer through the standard
+// doubling sequence and the buffers stayed live until the request completed.
+// Pooling these caps the per-handler heap cost at one already-grown buffer.
+var holdBufPool = sync.Pool{
+	New: func() interface{} {
+		// 8 KiB matches the default minBytes for the primary read path
+		// (-response-compression-min-bytes default 4096 doubled by the
+		// dashboard tier). Smaller responses fit without grow.
+		return bytes.NewBuffer(make([]byte, 0, 8*1024))
+	},
+}
+
+func acquireHoldBuf() *bytes.Buffer {
+	b := holdBufPool.Get().(*bytes.Buffer)
+	b.Reset()
+	return b
+}
+
+// holdBufPoolMaxCap is the hard limit on per-buffer capacity returned to the
+// holdBufPool. A single ~50 MB response would otherwise pin 50 MB in the
+// pool forever; 4 MiB covers the p95 Drilldown response size with headroom.
+const holdBufPoolMaxCap = 4 * 1024 * 1024
+
+func releaseHoldBuf(b *bytes.Buffer) {
+	if b == nil {
+		return
+	}
+	// Cap-trim oversize buffers before returning to the pool — see
+	// holdBufPoolMaxCap. bytes.Buffer doesn't expose a shrink API, so we
+	// reset the underlying slice when it has grown past the cap.
+	if b.Cap() > holdBufPoolMaxCap {
+		*b = bytes.Buffer{}
+		b.Grow(8 * 1024)
+	}
+	holdBufPool.Put(b)
+}
 
 // GzipHandler is kept for backward compatibility with existing tests/callers.
 func GzipHandler(next http.Handler) http.Handler {
@@ -328,6 +409,12 @@ func CompressionHandlerWithOptions(next http.Handler, opts CompressionOptions) h
 			ResponseWriter: w,
 			encoding:       encoding,
 			minBytes:       minBytes,
+			// buf is NIL by construction — acquired lazily on first Write
+			// (see Write below). For cache-hit / bypass paths that complete
+			// without ever needing to buffer (small responses, status-only
+			// replies, pre-compressed cache entries) we never touch the
+			// pool, keeping per-request allocations at zero. Pre-lazy-fix
+			// the micro-bench gate caught a +275% memory regression here.
 		}
 
 		next.ServeHTTP(cw, r)
@@ -386,12 +473,38 @@ func negotiateResponseEncoding(acceptEncoding string, mode responseCompressionMo
 	return ""
 }
 
+// EncodeResponseBody is called once per cache-write to gzip the body before
+// storing the encoded variant in compatCacheEncodedVariant. Earlier we tried
+// to pool the staging bytes.Buffer here — but the per-call overhead of the
+// defer closure + Reset + cap-trim measurably regressed the QueryRange
+// micro-bench's allocation count (8 → 23 allocs / op, +275 % memory) without
+// changing the absolute footprint enough to matter in stress tests. The
+// stress-test heap deltas were negative WITH the pool — but that was because
+// pre-pool every call allocated and held the buffer for the lifetime of the
+// http handler, whereas the un-pooled version inside this short-lived helper
+// is allocated and immediately discarded once the encoded bytes are copied out
+// and the buffer escapes scope.
+//
+// In other words: this is a SHORT-LIVED allocation (single helper invocation,
+// no long handler lifetime to extend through), and Go's escape analysis +
+// young-gen GC handles it cheaply already. Pooling buffers that don't outlive
+// their helper call adds overhead without bounded-heap benefit.
+//
+// The live-heap fix that DID work was holdBufPool in compressedResponseWriter,
+// where the buffer DOES outlive each individual Write (lives across an entire
+// HTTP response). That pool stays in place.
 func EncodeResponseBody(encoding string, body []byte) ([]byte, error) {
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "", "identity":
 		return append([]byte(nil), body...), nil
 	case "gzip":
 		var buf bytes.Buffer
+		// Pre-size hint: gzip output for JSON is typically 4–10 % of input.
+		// Pre-growing once avoids the standard 8 KiB→16 KiB→… doubling
+		// cascade on large bodies without adding per-call allocations.
+		if est := len(body) / 10; est > 0 {
+			buf.Grow(est)
+		}
 		compressor, release := acquireResponseCompressor(strings.ToLower(strings.TrimSpace(encoding)), &buf)
 		defer release()
 		if _, err := compressor.Write(body); err != nil {

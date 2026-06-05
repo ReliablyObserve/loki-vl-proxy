@@ -181,10 +181,17 @@ def gen_api_gateway(n: int) -> list[str]:
         entry  = {
             "service": {"name": "api-gateway"},
             "method": method, "path": path, "status": status,
-            "duration_ms": dur, "trace_id": rand_id(12),
-            "user_id": rand_user(), "level": level,
-            "region": random.choice(["us-east-1", "us-west-2", "eu-west-1"]),
-            "version": random.choice(["v1", "v2"]),
+            "duration_ms": dur,
+            # Tracing context — realistic API gateway populates these per request.
+            "trace_id":   rand_trace_id(),
+            "span_id":    rand_span_id(),
+            "request_id": rand_id(16),
+            # Client context.
+            "ip":         rand_ip(),
+            "user_id":    rand_user(),
+            "level":      level,
+            "region":     random.choice(["us-east-1", "us-west-2", "eu-west-1"]),
+            "version":    random.choice(["v1", "v2"]),
         }
         if status >= 400:
             err = random.choice([

@@ -589,23 +589,42 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	// shouldUseManualRangeMetricCompat returning true. Skip the stats_query_range
 	// fast path for them: VL's tumbling-bucket stats would diverge from LogQL's
 	// sliding-window semantics when combined with | json / | logfmt exclusion.
-	if statsAggFunc != "" && !queryUsesParserStages(spec.BaseQuery) {
-		hasStreamSentinel := false
-		for _, g := range spec.GroupBy {
-			if g == "_stream" {
-				hasStreamSentinel = true
-				break
+	// Drilldown burst coalescer: groups ~30 per-field field-presence count_over_time
+	// queries into a single fused VL conditional-stats call. Detects byExplicit
+	// aggregate-all queries with a | filter field != "" pattern.
+	// extractCommonBase strips | json / | logfmt + the field filter so VL uses its
+	// pre-indexed column index (| json before count() if returns empty in VL).
+	if p.drilldownCoalescer != nil && statsAggFunc == "count() as c" && spec.ByExplicit && len(spec.GroupBy) == 0 {
+		if base, field, ok := extractCommonBase(spec.BaseQuery); ok {
+			orgID := r.Header.Get("X-Scope-OrgID")
+			bKey := burstKey{
+				orgID:    orgID,
+				base:     base,
+				startSec: startTS.Add(-origSpec.Window).Unix(),
+				endSec:   endTS.Unix(),
+				stepNs:   int64(step),
 			}
-		}
-		if !hasStreamSentinel && (len(spec.GroupBy) > 0 || spec.ByExplicit) {
-			if series, hitsErr := p.collectRangeMetricHits(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); hitsErr == nil {
+			fireFn := p.fusedFieldHits(orgID, base, startTS.Add(-origSpec.Window), endTS, step)
+			if series, coalErr := p.drilldownCoalescer.Submit(r.Context(), bKey, field, fireFn); coalErr == nil {
 				result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(result) // nosemgrep
 				return true
 			}
-			// Fall through to raw log path on error.
+			// Fall through on error — coalescer failure is non-fatal.
 		}
+	}
+	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
+		result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(result) // nosemgrep
+		return true
+	}
+	if series, ok := p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
+		result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(result) // nosemgrep
+		return true
 	}
 
 	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), endTS)
@@ -645,6 +664,57 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
+}
+
+// collectStatsFastPathHits handles count_over_time / rate / bytes_* queries that have no
+// parser stages and an explicit groupBy — served from VL's stats_query_range endpoint.
+// Returns nil, false when the fast path is not applicable or VL returns an error.
+func (p *Proxy) collectStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, bool) {
+	if statsAggFunc == "" || queryUsesParserStages(spec.BaseQuery) {
+		return nil, false
+	}
+	for _, g := range spec.GroupBy {
+		if g == "_stream" {
+			return nil, false
+		}
+	}
+	if len(spec.GroupBy) == 0 && !spec.ByExplicit {
+		return nil, false
+	}
+	series, err := p.collectRangeMetricHits(ctx, spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	if err != nil {
+		return nil, false
+	}
+	return series, true
+}
+
+// collectParserStageStatsFastPathHits handles parser-stage GroupBy count queries
+// (e.g. Drilldown field histograms with | json | delete __error__) by stripping
+// the parser stages and retrying via stats_query_range against VL's column index.
+// Safe only when all remaining filters after stripping are field-existence checks.
+// Returns nil, false when inapplicable, on error, or when VL returns 0 series
+// (non-indexed JSON fields still need parser stages to evaluate correctly).
+func (p *Proxy) collectParserStageStatsFastPathHits(ctx context.Context, spec statsCompatSpec, statsAggFunc string, windowStart, end time.Time, step time.Duration) (map[string]manualSeriesSamples, bool) {
+	if statsAggFunc == "" || !queryUsesParserStages(spec.BaseQuery) || len(spec.GroupBy) == 0 {
+		return nil, false
+	}
+	if !strings.Contains(spec.BaseQuery, "| delete __error__") {
+		return nil, false
+	}
+	for _, g := range spec.GroupBy {
+		if g == "_stream" {
+			return nil, false
+		}
+	}
+	strippedBase := strings.TrimSpace(drilldownParserPipeRE.ReplaceAllString(spec.BaseQuery, ""))
+	if strippedBase == spec.BaseQuery || !allFiltersAreExistenceChecks(strippedBase) {
+		return nil, false
+	}
+	series, err := p.collectRangeMetricHits(ctx, strippedBase, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, statsAggFunc, windowStart, end, step)
+	if err != nil || len(series) == 0 {
+		return nil, false
+	}
+	return series, true
 }
 
 func (p *Proxy) resolveManualMetricField(spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string) (string, float64, error) {
@@ -714,6 +784,18 @@ func (p *Proxy) collectRangeMetricHits(
 	params.Set("end", strconv.FormatInt(end.Unix(), 10))
 	params.Set("step", strconv.FormatFloat(hitStep.Seconds(), 'f', 0, 64)+"s")
 
+	// Acquire concurrency slot. The Drilldown Fields page fires ~30 of these
+	// in parallel; without a cap all 30 hit VL simultaneously, causing a CPU storm.
+	// Block until a slot is free or the request is cancelled.
+	if sem := p.statsQueryRangeSem; sem != nil {
+		select {
+		case <-sem:
+			defer func() { sem <- struct{}{} }()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
 	resp, err := p.vlPost(ctx, "/select/logsql/stats_query_range", params)
 	if err != nil {
 		return nil, err
@@ -752,6 +834,16 @@ func (p *Proxy) collectRangeMetricHits(
 	}
 
 	results := v.GetArray("data", "result")
+	// Cap to maxStatsQuerySeries (default 5000) to match Loki's max_query_series limit.
+	// High-cardinality by() clauses (e.g. 670k unique pods) produce tens of MB of VL
+	// response that take 30+ seconds to parse and serialize without a series cap.
+	maxSeries := p.maxStatsQuerySeries
+	if maxSeries <= 0 {
+		maxSeries = 5000
+	}
+	if len(results) > maxSeries {
+		results = results[:maxSeries]
+	}
 	seriesMap := make(map[string]manualSeriesSamples, len(results))
 	for _, res := range results {
 		metricObj := res.GetObject("metric")
@@ -994,6 +1086,7 @@ func (p *Proxy) buildMetricSeriesEntry(streamStr, levelStr string, groupBy []str
 // pre-built label map.
 func (p *Proxy) buildParsedGroupByCacheKey(streamStr, levelStr string, v *fj.Value, groupBy []string) string {
 	var b strings.Builder
+	b.Grow(len(streamStr) + 2 + len(levelStr) + len(groupBy)*32)
 	b.WriteString(streamStr)
 	b.WriteByte('|')
 	b.WriteString(levelStr)
@@ -1308,6 +1401,12 @@ func buildManualRangeMetricMatrix(functionName string, quantile float64, series 
 // hit counts returned by collectRangeMetricHits. Each sample is a bucket count;
 // the window is applied by summing all buckets whose start falls in [T-window, T)
 // for each step point T. Supports count_over_time (sum) and rate (sum/window_s).
+//
+// Pre-sizes the per-series `values` slice to the expected step count rather
+// than the previous starting cap of 16. For a 24 h / 5 s step range that's
+// 17 280 points per series; the 16 → 17 280 doubling cascade was a hot spot
+// in pprof's cumulative allocation profile (1.31 GB total). Pre-sizing
+// eliminates the cascade — one allocation per series instead of ten.
 func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) []byte {
 	if end.Before(start) {
 		return marshalManualMetricResponse("matrix", []map[string]interface{}{})
@@ -1320,6 +1419,22 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+
+	// Estimate the number of step buckets the loop will iterate over so we
+	// can pre-grow per-series `values` slices. Caps protect against absurd
+	// inputs (step=0 or negative duration). Most series won't hit `expected`
+	// (zero-buckets are skipped) — but doubling from 16 is more expensive
+	// than over-allocating once at the expected upper bound.
+	expectedBuckets := 16
+	if step > 0 && !end.Before(start) {
+		expectedBuckets = int(end.Sub(start)/step) + 1
+		if expectedBuckets < 16 {
+			expectedBuckets = 16
+		}
+		if expectedBuckets > 32768 { // safety cap — no Drilldown query exceeds this
+			expectedBuckets = 32768
+		}
+	}
 
 	perSeries := make(map[string]map[string]interface{}, len(series))
 
@@ -1349,7 +1464,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			if dst == nil {
 				dst = map[string]interface{}{
 					"metric": seriesEntry.Metric,
-					"values": make([][]interface{}, 0, 16),
+					"values": make([][]interface{}, 0, expectedBuckets),
 				}
 				perSeries[key] = dst
 			}

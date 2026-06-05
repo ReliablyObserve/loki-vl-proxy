@@ -107,3 +107,20 @@ datasources:
     access: proxy
     url: http://victorialogs:9428
     isDefault: false
+
+  # 4. VictoriaMetrics — the e2e stack's metrics store. Scrapes proxy / vmauth /
+  # loki / victorialogs /metrics every 5 s (see vm-scrape.yml). Use this
+  # datasource for resource panels (CPU, RSS, goroutines, GC), per-endpoint
+  # latency histograms (loki_vl_proxy_*_duration_seconds), cache hit rates,
+  # and during-bench resource comparisons. Treated as a Prometheus datasource —
+  # VM speaks PromQL natively.
+  - name: VictoriaMetrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    isDefault: false
+    jsonData:
+      httpMethod: POST
+      prometheusType: Prometheus
+      timeInterval: 5s
+

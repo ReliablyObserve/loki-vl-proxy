@@ -1,0 +1,355 @@
+goroutine 43302 [running]:
+runtime/pprof.writeGoroutineStacks({0x755d60, 0x7c7e4271e000})
+	/usr/local/go/src/runtime/pprof/pprof.go:819 +0x6c
+runtime/pprof.writeGoroutine({0x755d60?, 0x7c7e4271e000?}, 0x7c7e4271c160?)
+	/usr/local/go/src/runtime/pprof/pprof.go:782 +0x2c
+runtime/pprof.(*Profile).WriteTo(0xc82e60?, {0x755d60?, 0x7c7e4271e000?}, 0xc?)
+	/usr/local/go/src/runtime/pprof/pprof.go:408 +0x144
+net/http/pprof.handler.ServeHTTP({0x7c7e36b72251, 0x9}, {0x75a968, 0x7c7e4271e000}, 0x7c7e427c0280)
+	/usr/local/go/src/net/http/pprof/pprof.go:273 +0x414
+net/http/pprof.Index({0x75a968, 0x7c7e4271e000}, 0x7c7e427c0280)
+	/usr/local/go/src/net/http/pprof/pprof.go:397 +0xa4
+net/http.HandlerFunc.ServeHTTP(0xc96f60?, {0x75a968?, 0x7c7e4271e000?}, 0x51508c?)
+	/usr/local/go/src/net/http/server.go:2286 +0x38
+net/http.(*ServeMux).ServeHTTP(0x7c7e351e712f?, {0x75a968, 0x7c7e4271e000}, 0x7c7e427c0280)
+	/usr/local/go/src/net/http/server.go:2828 +0x190
+github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).RegisterRoutes.(*Proxy).adminMiddleware.func6({0x75a968?, 0x7c7e4271e000?}, 0x7c7e427c0280?)
+	/app/internal/proxy/middleware.go:237 +0x118
+net/http.HandlerFunc.ServeHTTP(0x7c7e332a0e40?, {0x75a968?, 0x7c7e4271e000?}, 0x575dbc?)
+	/usr/local/go/src/net/http/server.go:2286 +0x38
+net/http.(*ServeMux).ServeHTTP(0x75a968?, {0x75a968, 0x7c7e4271e000}, 0x7c7e427c0280)
+	/usr/local/go/src/net/http/server.go:2828 +0x190
+main.wrapHandler.maxBodyHandler.func1({0x75a968?, 0x7c7e4271e000?}, 0x7c7e427c0280?)
+	/app/cmd/proxy/main.go:1072 +0x9c
+net/http.HandlerFunc.ServeHTTP(0x7c7e427c0280?, {0x75a968?, 0x7c7e4271e000?}, 0x19?)
+	/usr/local/go/src/net/http/server.go:2286 +0x38
+github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.CompressionHandlerWithOptions.func1({0x75a968, 0x7c7e4271e000}, 0x7c7e427c0280)
+	/app/internal/middleware/compress.go:323 +0x11c
+net/http.HandlerFunc.ServeHTTP(0x7c7e34d7f800?, {0x75a968?, 0x7c7e4271e000?}, 0x6bdbc0?)
+	/usr/local/go/src/net/http/server.go:2286 +0x38
+main.wrapHandler.(*httpConnRotator).Wrap.func2({0x75a968, 0x7c7e4271e000}, 0x7c7e427c0280)
+	/app/cmd/proxy/http_conn_rotation.go:75 +0x118
+net/http.HandlerFunc.ServeHTTP(0x7c7e353d2a48?, {0x75a968?, 0x7c7e4271e000?}, 0x70702f?)
+	/usr/local/go/src/net/http/server.go:2286 +0x38
+main.wrapHandler.(*Metrics).WrapHandler.func3({0x75a968, 0x7c7e4271e000}, 0x7c7e427c0280)
+	/app/internal/metrics/metrics.go:956 +0x88
+net/http.HandlerFunc.ServeHTTP(0x7c7e3b8e2180?, {0x75a968?, 0x7c7e4271e000?}, 0x74d3f8?)
+	/usr/local/go/src/net/http/server.go:2286 +0x38
+main.wrapHandler.withSecurityHeaders.SecurityHeadersMiddleware.func4({0x75a968, 0x7c7e4271e000}, 0x7c7e427c0280)
+	/app/internal/proxy/middleware_security.go:32 +0x1c0
+net/http.HandlerFunc.ServeHTTP(0x0?, {0x75a968?, 0x7c7e4271e000?}, 0x7c7e353d2b50?)
+	/usr/local/go/src/net/http/server.go:2286 +0x38
+net/http.serverHandler.ServeHTTP({0x7c7e4271a000?}, {0x75a968?, 0x7c7e4271e000?}, 0x1?)
+	/usr/local/go/src/net/http/server.go:3311 +0xb0
+net/http.(*conn).serve(0x7c7e3b354d80, {0x75b3d8, 0x7c7e3b8e2090})
+	/usr/local/go/src/net/http/server.go:2073 +0x51c
+created by net/http.(*Server).Serve in goroutine 65
+	/usr/local/go/src/net/http/server.go:3464 +0x37c
+
+goroutine 1 [chan receive, 267 minutes]:
+main.handleShutdown(0x75b3a0?, {0x75a788, 0x7c7e3375eb00}, 0x6fc23ac00, 0x7c7e332ab490)
+	/app/cmd/proxy/main.go:1047 +0x40
+main.run({0x7c7e332a00d0, 0xb, 0xb}, 0x74bce8, {0x755348, 0x7c7e33280040}, 0x74bcf0, 0x74bcc8, 0x74bcb8, 0x74bcd0, ...)
+	/app/cmd/proxy/main.go:874 +0x3394
+main.runMain({0x7c7e332a00d0?, 0x7c7e332821e0?, 0x7c7e34d67f28?}, 0x60a80?, {0x755348?, 0x7c7e33280040?}, {0x755348, 0x7c7e33280048}, 0x0?, 0x74bce0, ...)
+	/app/cmd/proxy/main.go:345 +0x48
+main.main()
+	/app/cmd/proxy/main.go:317 +0xa4
+
+goroutine 33 [select]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/observability.(*AsyncHandler).drain(0x7c7e34d7e780)
+	/app/internal/observability/async_handler.go:49 +0x10c
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/observability.NewAsyncHandler in goroutine 1
+	/app/internal/observability/async_handler.go:40 +0x124
+
+goroutine 34 [select]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).cleanup(0x7c7e33406120)
+	/app/internal/cache/cache.go:628 +0xa8
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.NewWithMaxBytes in goroutine 1
+	/app/internal/cache/cache.go:170 +0x190
+
+goroutine 35 [select]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).runPromoter(0x7c7e33406120)
+	/app/internal/cache/cache.go:189 +0x88
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.NewWithMaxBytes in goroutine 1
+	/app/internal/cache/cache.go:171 +0x1d0
+
+goroutine 36 [select]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).cleanup(0x7c7e33406360)
+	/app/internal/cache/cache.go:628 +0xa8
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.NewWithMaxBytes in goroutine 1
+	/app/internal/cache/cache.go:170 +0x190
+
+goroutine 37 [select]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).runPromoter(0x7c7e33406360)
+	/app/internal/cache/cache.go:189 +0x88
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.NewWithMaxBytes in goroutine 1
+	/app/internal/cache/cache.go:171 +0x1d0
+
+goroutine 38 [select, 4 minutes]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.(*RateLimiter).cleanupStaleClients(0x7c7e34d4f000)
+	/app/internal/middleware/ratelimiter.go:173 +0xd0
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware.NewRateLimiter in goroutine 1
+	/app/internal/middleware/ratelimiter.go:59 +0xdc
+
+goroutine 39 [select]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).cleanup(0x7c7e334067e0)
+	/app/internal/cache/cache.go:628 +0xa8
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.NewWithMaxBytes in goroutine 1
+	/app/internal/cache/cache.go:170 +0x190
+
+goroutine 40 [select]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).runPromoter(0x7c7e334067e0)
+	/app/internal/cache/cache.go:189 +0x88
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.NewWithMaxBytes in goroutine 1
+	/app/internal/cache/cache.go:171 +0x1d0
+
+goroutine 41 [select]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).cleanup(0x7c7e33406900)
+	/app/internal/cache/cache.go:628 +0xa8
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.NewWithMaxBytes in goroutine 1
+	/app/internal/cache/cache.go:170 +0x190
+
+goroutine 42 [select, 2 minutes]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.(*Cache).runPromoter(0x7c7e33406900)
+	/app/internal/cache/cache.go:189 +0x88
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/cache.NewWithMaxBytes in goroutine 1
+	/app/internal/cache/cache.go:171 +0x1d0
+
+goroutine 48 [select, 2 minutes]:
+github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).startLabelCacheKeepWarmLoop.func1()
+	/app/internal/proxy/label_metadata.go:1069 +0xe4
+created by github.com/ReliablyObserve/Loki-VL-proxy/internal/proxy.(*Proxy).startLabelCacheKeepWarmLoop in goroutine 1
+	/app/internal/proxy/label_metadata.go:1065 +0xb8
+
+goroutine 50 [syscall, 267 minutes]:
+os/signal.signal_recv()
+	/usr/local/go/src/runtime/sigqueue.go:152 +0x114
+os/signal.loop()
+	/usr/local/go/src/os/signal/signal_unix.go:23 +0x1c
+created by os/signal.Notify.func1.1 in goroutine 1
+	/usr/local/go/src/os/signal/signal.go:152 +0x28
+
+goroutine 32 [chan receive, 267 minutes]:
+main.watchReloadSignals(0x7c7e34d778f0, {0x757530, 0x7c7e35160008}, 0x74bce8, {0x0, 0x0}, 0x7c7e332ab490)
+	/app/cmd/proxy/main.go:1060 +0xa0
+created by main.run in goroutine 1
+	/app/cmd/proxy/main.go:864 +0x31b0
+
+goroutine 65 [IO wait]:
+internal/poll.runtime_pollWait(0xffff76c93800, 0x72)
+	/usr/local/go/src/runtime/netpoll.go:351 +0xa0
+internal/poll.(*pollDesc).wait(0x7c7e3519a000?, 0x34734?, 0x0)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:84 +0x28
+internal/poll.(*pollDesc).waitRead(...)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Accept(0x7c7e3519a000)
+	/usr/local/go/src/internal/poll/fd_unix.go:613 +0x214
+net.(*netFD).accept(0x7c7e3519a000)
+	/usr/local/go/src/net/fd_unix.go:150 +0x28
+net.(*TCPListener).accept(0x7c7e35190080)
+	/usr/local/go/src/net/tcpsock_posix.go:159 +0x24
+net.(*TCPListener).Accept(0x7c7e35190080)
+	/usr/local/go/src/net/tcpsock.go:387 +0x2c
+net/http.(*Server).Serve(0x7c7e3375eb00, {0x75a7b8, 0x7c7e35190080})
+	/usr/local/go/src/net/http/server.go:3434 +0x244
+net/http.(*Server).ListenAndServe(0x7c7e3375eb00)
+	/usr/local/go/src/net/http/server.go:3360 +0x80
+main.runServerLoop({0x75a788, 0x7c7e3375eb00}, {{0xffffdd1ede23, 0x5}, {0xffffdd1ede32, 0x12}, {0x0, 0x0}, {0x0, 0x0}}, ...)
+	/app/cmd/proxy/main.go:1868 +0x46c
+created by main.run in goroutine 1
+	/app/cmd/proxy/main.go:868 +0x3360
+
+goroutine 43254 [select]:
+net/http.(*persistConn).writeLoop(0x7c7e41c98b40)
+	/usr/local/go/src/net/http/transport.go:2652 +0x98
+created by net/http.(*Transport).dialConn in goroutine 43252
+	/usr/local/go/src/net/http/transport.go:1995 +0x10e4
+
+goroutine 43218 [IO wait]:
+internal/poll.runtime_pollWait(0xffff76bb5400, 0x72)
+	/usr/local/go/src/runtime/netpoll.go:351 +0xa0
+internal/poll.(*pollDesc).wait(0x7c7e396b6480?, 0x7c7e353de000?, 0x0)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:84 +0x28
+internal/poll.(*pollDesc).waitRead(...)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x7c7e396b6480, {0x7c7e353de000, 0x10000, 0x10000})
+	/usr/local/go/src/internal/poll/fd_unix.go:165 +0x234
+net.(*netFD).Read(0x7c7e396b6480, {0x7c7e353de000?, 0xf?, 0x8?})
+	/usr/local/go/src/net/fd_posix.go:68 +0x28
+net.(*conn).Read(0x7c7e3a4d2068, {0x7c7e353de000?, 0x7c7e34fe0cf0?, 0x0?})
+	/usr/local/go/src/net/net.go:196 +0x34
+net/http.(*persistConn).Read(0x7c7e35c1fa40, {0x7c7e353de000?, 0x755368?, 0xc7e470?})
+	/usr/local/go/src/net/http/transport.go:2174 +0x48
+bufio.(*Reader).fill(0x7c7e3aeb40c0)
+	/usr/local/go/src/bufio/bufio.go:113 +0xe0
+bufio.(*Reader).Peek(0x7c7e3aeb40c0, 0x1)
+	/usr/local/go/src/bufio/bufio.go:152 +0x58
+net/http.(*persistConn).readLoop(0x7c7e35c1fa40)
+	/usr/local/go/src/net/http/transport.go:2330 +0x110
+created by net/http.(*Transport).dialConn in goroutine 43197
+	/usr/local/go/src/net/http/transport.go:1994 +0x109c
+
+goroutine 43253 [IO wait]:
+internal/poll.runtime_pollWait(0xffff76bdfa00, 0x72)
+	/usr/local/go/src/runtime/netpoll.go:351 +0xa0
+internal/poll.(*pollDesc).wait(0x7c7e35222200?, 0x7c7e3a4a8000?, 0x0)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:84 +0x28
+internal/poll.(*pollDesc).waitRead(...)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x7c7e35222200, {0x7c7e3a4a8000, 0x10000, 0x10000})
+	/usr/local/go/src/internal/poll/fd_unix.go:165 +0x234
+net.(*netFD).Read(0x7c7e35222200, {0x7c7e3a4a8000?, 0xf?, 0x8?})
+	/usr/local/go/src/net/fd_posix.go:68 +0x28
+net.(*conn).Read(0x7c7e350e2020, {0x7c7e3a4a8000?, 0x7c7e34fe0cf0?, 0x0?})
+	/usr/local/go/src/net/net.go:196 +0x34
+net/http.(*persistConn).Read(0x7c7e41c98b40, {0x7c7e3a4a8000?, 0x755368?, 0xc7e470?})
+	/usr/local/go/src/net/http/transport.go:2174 +0x48
+bufio.(*Reader).fill(0x7c7e36c5c000)
+	/usr/local/go/src/bufio/bufio.go:113 +0xe0
+bufio.(*Reader).Peek(0x7c7e36c5c000, 0x1)
+	/usr/local/go/src/bufio/bufio.go:152 +0x58
+net/http.(*persistConn).readLoop(0x7c7e41c98b40)
+	/usr/local/go/src/net/http/transport.go:2330 +0x110
+created by net/http.(*Transport).dialConn in goroutine 43252
+	/usr/local/go/src/net/http/transport.go:1994 +0x109c
+
+goroutine 43208 [IO wait]:
+internal/poll.runtime_pollWait(0xffff76ebf400, 0x72)
+	/usr/local/go/src/runtime/netpoll.go:351 +0xa0
+internal/poll.(*pollDesc).wait(0x7c7e396b6400?, 0x7c7e3549a000?, 0x0)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:84 +0x28
+internal/poll.(*pollDesc).waitRead(...)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x7c7e396b6400, {0x7c7e3549a000, 0x10000, 0x10000})
+	/usr/local/go/src/internal/poll/fd_unix.go:165 +0x234
+net.(*netFD).Read(0x7c7e396b6400, {0x7c7e3549a000?, 0xf?, 0x18?})
+	/usr/local/go/src/net/fd_posix.go:68 +0x28
+net.(*conn).Read(0x7c7e337640c0, {0x7c7e3549a000?, 0x7c7e34fe0cf0?, 0x0?})
+	/usr/local/go/src/net/net.go:196 +0x34
+net/http.(*persistConn).Read(0x7c7e3981ac80, {0x7c7e3549a000?, 0x755368?, 0xc7e470?})
+	/usr/local/go/src/net/http/transport.go:2174 +0x48
+bufio.(*Reader).fill(0x7c7e35014540)
+	/usr/local/go/src/bufio/bufio.go:113 +0xe0
+bufio.(*Reader).Peek(0x7c7e35014540, 0x1)
+	/usr/local/go/src/bufio/bufio.go:152 +0x58
+net/http.(*persistConn).readLoop(0x7c7e3981ac80)
+	/usr/local/go/src/net/http/transport.go:2330 +0x110
+created by net/http.(*Transport).dialConn in goroutine 43183
+	/usr/local/go/src/net/http/transport.go:1994 +0x109c
+
+goroutine 42987 [IO wait]:
+internal/poll.runtime_pollWait(0xffff76b14a00, 0x72)
+	/usr/local/go/src/runtime/netpoll.go:351 +0xa0
+internal/poll.(*pollDesc).wait(0x7c7e3ca15100?, 0x7c7e3bf37000?, 0x0)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:84 +0x28
+internal/poll.(*pollDesc).waitRead(...)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x7c7e3ca15100, {0x7c7e3bf37000, 0x1000, 0x1000})
+	/usr/local/go/src/internal/poll/fd_unix.go:165 +0x234
+net.(*netFD).Read(0x7c7e3ca15100, {0x7c7e3bf37000?, 0x7c7e3509daa8?, 0x2a134c?})
+	/usr/local/go/src/net/fd_posix.go:68 +0x28
+net.(*conn).Read(0x7c7e3b0824e0, {0x7c7e3bf37000?, 0xffff76b14a00?, 0x1bf08eaf83?})
+	/usr/local/go/src/net/net.go:196 +0x34
+net/http.(*connReader).Read(0x7c7e36bebc40, {0x7c7e3bf37000, 0x1000, 0x1000})
+	/usr/local/go/src/net/http/server.go:812 +0x22c
+bufio.(*Reader).fill(0x7c7e35fd8000)
+	/usr/local/go/src/bufio/bufio.go:113 +0xe0
+bufio.(*Reader).Peek(0x7c7e35fd8000, 0x4)
+	/usr/local/go/src/bufio/bufio.go:152 +0x58
+net/http.(*conn).serve(0x7c7e332b59e0, {0x75b3d8, 0x7c7e41d5ce10})
+	/usr/local/go/src/net/http/server.go:2109 +0x648
+created by net/http.(*Server).Serve in goroutine 65
+	/usr/local/go/src/net/http/server.go:3464 +0x37c
+
+goroutine 40144 [IO wait]:
+internal/poll.runtime_pollWait(0xffff76b15000, 0x72)
+	/usr/local/go/src/runtime/netpoll.go:351 +0xa0
+internal/poll.(*pollDesc).wait(0x7c7e3519a280?, 0x7c7e3539a000?, 0x0)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:84 +0x28
+internal/poll.(*pollDesc).waitRead(...)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x7c7e3519a280, {0x7c7e3539a000, 0x10000, 0x10000})
+	/usr/local/go/src/internal/poll/fd_unix.go:165 +0x234
+net.(*netFD).Read(0x7c7e3519a280, {0x7c7e3539a000?, 0xf?, 0x8?})
+	/usr/local/go/src/net/fd_posix.go:68 +0x28
+net.(*conn).Read(0x7c7e3a4d2060, {0x7c7e3539a000?, 0x7c7e34fe0cf0?, 0x0?})
+	/usr/local/go/src/net/net.go:196 +0x34
+net/http.(*persistConn).Read(0x7c7e35c1f540, {0x7c7e3539a000?, 0x755368?, 0xc7e470?})
+	/usr/local/go/src/net/http/transport.go:2174 +0x48
+bufio.(*Reader).fill(0x7c7e3aeb4060)
+	/usr/local/go/src/bufio/bufio.go:113 +0xe0
+bufio.(*Reader).Peek(0x7c7e3aeb4060, 0x1)
+	/usr/local/go/src/bufio/bufio.go:152 +0x58
+net/http.(*persistConn).readLoop(0x7c7e35c1f540)
+	/usr/local/go/src/net/http/transport.go:2330 +0x110
+created by net/http.(*Transport).dialConn in goroutine 43196
+	/usr/local/go/src/net/http/transport.go:1994 +0x109c
+
+goroutine 43217 [select]:
+net/http.(*persistConn).writeLoop(0x7c7e35c1f540)
+	/usr/local/go/src/net/http/transport.go:2652 +0x98
+created by net/http.(*Transport).dialConn in goroutine 43196
+	/usr/local/go/src/net/http/transport.go:1995 +0x10e4
+
+goroutine 43219 [select]:
+net/http.(*persistConn).writeLoop(0x7c7e35c1fa40)
+	/usr/local/go/src/net/http/transport.go:2652 +0x98
+created by net/http.(*Transport).dialConn in goroutine 43197
+	/usr/local/go/src/net/http/transport.go:1995 +0x10e4
+
+goroutine 43209 [select]:
+net/http.(*persistConn).writeLoop(0x7c7e3981ac80)
+	/usr/local/go/src/net/http/transport.go:2652 +0x98
+created by net/http.(*Transport).dialConn in goroutine 43183
+	/usr/local/go/src/net/http/transport.go:1995 +0x10e4
+
+goroutine 43303 [runnable]:
+syscall.Syscall(0x3f, 0x8, 0x7c7e4271a021, 0x1)
+	/usr/local/go/src/syscall/syscall_linux.go:74 +0x20
+syscall.read(0x7c7e350e1580?, {0x7c7e4271a021?, 0x7c7e3a0c2600?, 0x7c7e3ba5c5b0?})
+	/usr/local/go/src/syscall/zsyscall_linux_arm64.go:736 +0x40
+syscall.Read(...)
+	/usr/local/go/src/syscall/syscall_unix.go:183
+internal/poll.ignoringEINTRIO(...)
+	/usr/local/go/src/internal/poll/fd_unix.go:738
+internal/poll.(*FD).Read(0x7c7e350e1580, {0x7c7e4271a021, 0x1, 0x1})
+	/usr/local/go/src/internal/poll/fd_unix.go:161 +0x1a0
+net.(*netFD).Read(0x7c7e350e1580, {0x7c7e4271a021?, 0x7c7e3a0c2758?, 0x7c7e4259c554?})
+	/usr/local/go/src/net/fd_posix.go:68 +0x28
+net.(*conn).Read(0x7c7e350e2320, {0x7c7e4271a021?, 0x0?, 0x9da14?})
+	/usr/local/go/src/net/net.go:196 +0x34
+net/http.(*connReader).backgroundRead(0x7c7e4271a000)
+	/usr/local/go/src/net/http/server.go:702 +0x38
+created by net/http.(*connReader).startBackgroundRead in goroutine 43302
+	/usr/local/go/src/net/http/server.go:698 +0xb8
+
+goroutine 43204 [IO wait]:
+internal/poll.runtime_pollWait(0xffff76bdfc00, 0x72)
+	/usr/local/go/src/runtime/netpoll.go:351 +0xa0
+internal/poll.(*pollDesc).wait(0x7c7e34d4e800?, 0x7c7e3534e000?, 0x0)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:84 +0x28
+internal/poll.(*pollDesc).waitRead(...)
+	/usr/local/go/src/internal/poll/fd_poll_runtime.go:89
+internal/poll.(*FD).Read(0x7c7e34d4e800, {0x7c7e3534e000, 0x10000, 0x10000})
+	/usr/local/go/src/internal/poll/fd_unix.go:165 +0x234
+net.(*netFD).Read(0x7c7e34d4e800, {0x7c7e3534e000?, 0xf?, 0x8?})
+	/usr/local/go/src/net/fd_posix.go:68 +0x28
+net.(*conn).Read(0x7c7e337640b0, {0x7c7e3534e000?, 0x7c7e34fe0cf0?, 0x0?})
+	/usr/local/go/src/net/net.go:196 +0x34
+net/http.(*persistConn).Read(0x7c7e437d4780, {0x7c7e3534e000?, 0x755368?, 0xc7e470?})
+	/usr/local/go/src/net/http/transport.go:2174 +0x48
+bufio.(*Reader).fill(0x7c7e35014360)
+	/usr/local/go/src/bufio/bufio.go:113 +0xe0
+bufio.(*Reader).Peek(0x7c7e35014360, 0x1)
+	/usr/local/go/src/bufio/bufio.go:152 +0x58
+net/http.(*persistConn).readLoop(0x7c7e437d4780)
+	/usr/local/go/src/net/http/transport.go:2330 +0x110
+created by net/http.(*Transport).dialConn in goroutine 43199
+	/usr/local/go/src/net/http/transport.go:1994 +0x109c
+
+goroutine 43205 [select]:
+net/http.(*persistConn).writeLoop(0x7c7e437d4780)
+	/usr/local/go/src/net/http/transport.go:2652 +0x98
+created by net/http.(*Transport).dialConn in goroutine 43199
+	/usr/local/go/src/net/http/transport.go:1995 +0x10e4

@@ -1,0 +1,75 @@
+# Drilldown vs Loki — measured 2026-06-05T14:16:43Z
+# Loki=http://localhost:13101 Proxy=http://localhost:13109
+target	query	range	cold_ms	warm_ms	cold_status	cold_size	cold_series	warm_status	warm_series
+loki	pod	30m	6302	726	200	9216227	9274	200	9274
+proxy	pod	30m	436	300	200	5123010	4995	200	4995
+loki	pod	1h	5412	115	200	7726707	17342	200	17342
+proxy	pod	1h	223	21	200	2261265	4987	200	4987
+loki	pod	2h	3502	173	200	9125717	35388	200	35388
+proxy	pod	2h	354	21	200	1291271	4994	200	4994
+loki	pod	3h	12441	11		0	-1		-1
+proxy	pod	3h	578	20	200	956552	4997	200	4997
+loki	pod	6h	32135	60011	500	10	-1		-1
+proxy	pod	6h	22075	39	200	616912	4986	200	4986
+loki	pod	24h	27196	19010	500	10	-1		-1
+proxy	pod	24h	549	9	200	197077	16	200	16
+loki	trace_id	30m	27954	11792	500	10	-1		-1
+proxy	trace_id	30m	406	305	200	5095060	5000	200	5000
+loki	trace_id	1h	26384	12109	500	10	-1		-1
+proxy	trace_id	1h	418	21	200	2302377	4994	200	4994
+loki	trace_id	2h	27179	60020	500	10	-1		-1
+proxy	trace_id	2h	1080	213	200	1331243	4995	200	4995
+loki	trace_id	3h	60015	60011		0	-1		-1
+proxy	trace_id	3h	44670	12	200	1006674	4996	200	4996
+loki	trace_id	6h	28714	6166	500	10	-1		-1
+proxy	trace_id	6h	2840	2817	502	399	0	502	0
+loki	trace_id	24h	23540	4267	500	10	-1		-1
+proxy	trace_id	24h	1232	12	200	86343	7	200	7
+loki	service_version	30m	27553	4767	500	10	-1	200	0
+proxy	service_version	30m	71	27	200	1291371	100	200	100
+loki	service_version	1h	27	31	200	3628	0	200	0
+proxy	service_version	1h	76	29	200	1058253	100	200	100
+loki	service_version	2h	40	29	200	3631	0	200	0
+proxy	service_version	2h	182	146	200	1114629	100	200	100
+loki	service_version	3h	9257	8		0	-1		-1
+proxy	service_version	3h	127	17	200	1134548	100	200	100
+loki	service_version	6h	27031	4389	500	10	-1	200	0
+proxy	service_version	6h	244	30	200	1138997	100	200	100
+loki	service_version	24h	45	46	200	3647	0	200	0
+proxy	service_version	24h	240	18	200	197737	16	200	16
+loki	detected_fields	30m	60011	36888		0	-1		-1
+proxy	detected_fields	30m	35	12	200	7756	-1	200	-1
+loki	detected_fields	1h	11	27977		0	-1	500	-1
+proxy	detected_fields	1h	36	9	200	7704	-1	200	-1
+loki	detected_fields	2h	3621	2790	200	3984	0	200	0
+proxy	detected_fields	2h	54	20	200	8180	-1	200	-1
+loki	detected_fields	3h	2611	2911	200	3993	0	200	0
+proxy	detected_fields	3h	126	11	200	7960	-1	200	-1
+loki	detected_fields	6h	2745	2602	200	3875	0	200	0
+proxy	detected_fields	6h	167	12	200	8896	-1	200	-1
+loki	detected_fields	24h	3294	2801	200	3917	0	200	0
+proxy	detected_fields	24h	323	13	200	8804	-1	200	-1
+loki	labels	30m	26	11	200	246	-1	200	-1
+proxy	labels	30m	28	13	200	172	-1	200	-1
+loki	labels	1h	10	16	200	246	-1	200	-1
+proxy	labels	1h	25	13	200	172	-1	200	-1
+loki	labels	2h	9	18	200	246	-1	200	-1
+proxy	labels	2h	8	11	200	172	-1	200	-1
+loki	labels	3h	10	15	200	246	-1	200	-1
+proxy	labels	3h	25	14	200	172	-1	200	-1
+loki	labels	6h	9	17	200	246	-1	200	-1
+proxy	labels	6h	31	9	200	172	-1	200	-1
+loki	labels	24h	27	14	200	246	-1	200	-1
+proxy	labels	24h	8	8	200	172	-1	200	-1
+loki	k8s_pod_name	30m	27	10	200	3605	0	200	0
+proxy	k8s_pod_name	30m	116	116	200	2994106	2956	200	2956
+loki	k8s_pod_name	1h	13	13	200	3616	0	200	0
+proxy	k8s_pod_name	1h	136	20	200	2305596	4989	200	4989
+loki	k8s_pod_name	2h	11	13	200	3631	0	200	0
+proxy	k8s_pod_name	2h	133	16	200	1329363	4990	200	4990
+loki	k8s_pod_name	3h	11	12	200	3626	0	200	0
+proxy	k8s_pod_name	3h	157	15	200	997756	4993	200	4993
+loki	k8s_pod_name	6h	12	13	200	3629	0	200	0
+proxy	k8s_pod_name	6h	257	14	200	663210	4994	200	4994
+loki	k8s_pod_name	24h	22	9	200	3658	0	200	0
+proxy	k8s_pod_name	24h	207	9	200	197222	16	200	16

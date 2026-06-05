@@ -291,16 +291,17 @@ func TestLabelSurface_VolumeTargetLabelsResolveCustomAlias(t *testing.T) {
 }
 
 func TestLabelSurface_VolumeRangeTargetLabelsResolveCustomAlias(t *testing.T) {
-	var requestedField string
+	var receivedQuery string
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/stream_field_names":
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(`{"values":[{"value":"host.id","hits":2}]}`))
-		case "/select/logsql/hits":
-			requestedField = r.URL.Query().Get("field")
+		case "/select/logsql/stats_query_range":
+			_ = r.ParseForm()
+			receivedQuery = r.FormValue("query")
 			w.Header().Set("Content-Type", "application/json")
-			w.Write([]byte(`{"hits":[{"fields":{"host.id":"i-host-1"},"timestamps":["2026-04-04T17:18:49Z"],"values":[3]}]}`))
+			w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"host.id":"i-host-1"},"values":[[1746057600,"3"]]}]}}`))
 		default:
 			t.Fatalf("unexpected backend path %s", r.URL.Path)
 		}
@@ -328,8 +329,8 @@ func TestLabelSurface_VolumeRangeTargetLabelsResolveCustomAlias(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/loki/api/v1/index/volume_range?"+params.Encode(), nil)
 	p.handleVolumeRange(w, r)
 
-	if requestedField != "host.id" {
-		t.Fatalf("expected volume_range targetLabels alias host_id to resolve to host.id, got %q", requestedField)
+	if !strings.Contains(receivedQuery, "host.id") {
+		t.Fatalf("expected volume_range targetLabels alias host_id to resolve to host.id in VL query, got %q", receivedQuery)
 	}
 }
 

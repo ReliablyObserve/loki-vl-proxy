@@ -198,6 +198,13 @@ type proxyRuntimeConfig struct {
 	coldBackendManifestRefresh          time.Duration
 	coldBackendTimeout                  time.Duration
 	defaultMaxQueryLength               time.Duration
+	maxStatsQuerySeries                 int
+	statsQueryRangeConcurrency          int
+	drilldownBurstWindowMs              int
+	drilldownBurstMaxFields             int
+	drilldownFieldBatchWindowMs         int
+	drilldownFieldBatchMaxFields        int
+	statsQueryRangeInterQueryDelayMs    int
 }
 
 type otlpRuntimeConfig struct {
@@ -482,6 +489,24 @@ func run(
 	recentTailRefreshWindow := fs.Duration("recent-tail-refresh-window", 2*time.Minute, "How close request end must be to now to enable near-now cache freshness bypass")
 	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 15*time.Second, "Maximum acceptable cache age for near-now requests before cache bypass")
 	defaultMaxQueryLength := fs.Duration("default-max-query-length", 0, "Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default)")
+	maxStatsQuerySeries := fs.Int("max-stats-query-series", 0, "Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). Matches Loki's max_query_series (0 = built-in default of 5000).")
+	statsQueryRangeConcurrency := fs.Int("stats-query-range-concurrency", 0, "Maximum concurrent stats_query_range calls to VictoriaLogs. Drilldown Fields fires ~30 in parallel; capping prevents CPU storms. 0 = built-in default of 4.")
+	drilldownBurstWindowMs := fs.Int("drilldown-burst-window-ms", 50,
+		"time window in ms for coalescing concurrent Drilldown Fields per-field count queries "+
+			"into a single fused VL conditional-stats call (0 disables the coalescer)")
+	drilldownBurstMaxFields := fs.Int("drilldown-burst-max-fields", 30,
+		"maximum fields per coalesced VL burst call; fields beyond this cap form a second call")
+	drilldownFieldBatchWindowMs := fs.Int("drilldown-field-batch-window-ms", 100,
+		"accumulation window in ms for the multi-field stats batcher: concurrent per-field "+
+			"stats_query_range calls within this window are folded into one multi-field VL query "+
+			"and the result marginalized back into per-field Loki matrix responses "+
+			"(0 disables batching)")
+	drilldownFieldBatchMaxFields := fs.Int("drilldown-field-batch-max-fields", 6,
+		"maximum fields per batched VL call; excess fields form additional batches or fall back to individual calls")
+	statsQueryRangeInterQueryDelayMs := fs.Int("stats-query-range-inter-query-delay-ms", 200,
+		"minimum pause in ms between consecutive individual VL stats_query_range calls: "+
+			"the semaphore slot is held for this duration after each call completes, "+
+			"spreading the drilldown burst over time and reducing VL CPU spikes (0 disables)")
 
 	// Go runtime tuning
 	goMemLimitBytes := fs.Int64("go-mem-limit", 0, "Explicit GOMEMLIMIT in bytes. Overrides -go-mem-limit-percent. 0 = use percentage or GOMEMLIMIT env var.")
@@ -786,6 +811,13 @@ func run(
 			coldBackendManifestRefresh:          *coldBackendManifestRefresh,
 			coldBackendTimeout:                  *coldBackendTimeout,
 			defaultMaxQueryLength:               *defaultMaxQueryLength,
+			maxStatsQuerySeries:                 *maxStatsQuerySeries,
+			statsQueryRangeConcurrency:          *statsQueryRangeConcurrency,
+			drilldownBurstWindowMs:              *drilldownBurstWindowMs,
+			drilldownBurstMaxFields:             *drilldownBurstMaxFields,
+			drilldownFieldBatchWindowMs:         *drilldownFieldBatchWindowMs,
+			drilldownFieldBatchMaxFields:        *drilldownFieldBatchMaxFields,
+			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1743,7 +1775,14 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 			ManifestRefresh: cfg.coldBackendManifestRefresh,
 			Timeout:         cfg.coldBackendTimeout,
 		},
-		DefaultMaxQueryLength: cfg.defaultMaxQueryLength,
+		DefaultMaxQueryLength:            cfg.defaultMaxQueryLength,
+		MaxStatsQuerySeries:              cfg.maxStatsQuerySeries,
+		StatsQueryRangeConcurrency:       cfg.statsQueryRangeConcurrency,
+		DrilldownBurstWindowMs:           cfg.drilldownBurstWindowMs,
+		DrilldownBurstMaxFields:          cfg.drilldownBurstMaxFields,
+		DrilldownFieldBatchWindowMs:      cfg.drilldownFieldBatchWindowMs,
+		DrilldownFieldBatchMaxFields:     cfg.drilldownFieldBatchMaxFields,
+		StatsQueryRangeInterQueryDelayMs: cfg.statsQueryRangeInterQueryDelayMs,
 	}, nil
 }
 

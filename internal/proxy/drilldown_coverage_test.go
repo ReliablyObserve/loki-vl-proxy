@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bytes"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/cache"
+	fj "github.com/valyala/fastjson"
 )
 
 func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
@@ -48,6 +50,54 @@ func TestDrilldownHelpers_AdditionalCoverage(t *testing.T) {
 		}
 		if !shouldExposeStructuredField("custom", map[string]string{}, lt) {
 			t.Fatal("expected unknown structured field to be exposed")
+		}
+
+		// Regression guard: detectedFieldsSampleLimit must match Loki's default
+		// LIMIT for detected_fields/detected_labels. The Grafana Drilldown plugin
+		// uses the cardinality number to decide chart vs placeholder rendering;
+		// if the proxy reports cardinality=500 while Loki reports cardinality=100,
+		// users see different UI behaviour across backends. Concretely, high-card
+		// fields (trace_id, span_id, *_id) end up with blank chart panels on the
+		// proxy and a sparkline placeholder on Loki. Setting both to 100 keeps
+		// the behaviour identical. If anyone bumps this to chase higher cardinality
+		// without coordinating a Loki-side change, this test will fail.
+		const lokiDetectedFieldsDefaultLimit = 100
+		if detectedFieldsSampleLimit != lokiDetectedFieldsDefaultLimit {
+			t.Errorf("detectedFieldsSampleLimit must match Loki's default LIMIT (%d) for parity in Drilldown UI rendering; got %d. See https://github.com/grafana/loki/blob/main/pkg/querier/queryrange/detected_fields.go for upstream default.",
+				lokiDetectedFieldsDefaultLimit, detectedFieldsSampleLimit)
+		}
+
+		// Regression guard: stream labels returned by VL's field_names index
+		// (container, env, pod, level, version) must NOT pass shouldExposeStructuredField
+		// when the scanned stream-label set contains them. This is the contract
+		// the nativeSparse merge in detectFields relies on; removing the filter
+		// from the merge would silently re-leak stream labels into detected_fields.
+		// See drilldown.go: nativeSparse building applies shouldExposeStructuredField.
+		streamLabels := map[string]string{
+			"container":    "api",
+			"env":          "production",
+			"pod":          "api-gateway-abc",
+			"level":        "info",
+			"version":      "v2",
+			"namespace":    "prod",
+			"app":          "api-gateway",
+			"cluster":      "us-east-1",
+			"service_name": "api-gateway",
+		}
+		for streamLabel := range streamLabels {
+			if shouldExposeStructuredField(streamLabel, streamLabels, lt) {
+				t.Errorf("stream label %q must NOT be exposed as a detected field (it belongs in detected_labels). The nativeSparse merge in detectFields relies on this filter to prevent VL field_names from leaking stream labels into the fields list.", streamLabel)
+			}
+		}
+		// JSON body fields that just happen to share a name with a stream label
+		// also stay suppressed — Loki's convention is to drop the conflict (we
+		// previously verified `level_extracted` is NOT emitted either).
+		// Real JSON body fields (without a stream-label collision) must still pass.
+		if !shouldExposeStructuredField("method", streamLabels, lt) {
+			t.Error("genuine JSON body field 'method' must be exposed even when stream labels are present")
+		}
+		if !shouldExposeStructuredField("duration_ms", streamLabels, lt) {
+			t.Error("genuine JSON body field 'duration_ms' must be exposed even when stream labels are present")
 		}
 
 		fields := map[string]*detectedFieldSummary{}
@@ -289,5 +339,159 @@ func TestUnifyDetectedType_TraceIDScenario(t *testing.T) {
 	}
 	if current != "string" {
 		t.Errorf("accumulated type = %q, want %q — hex trace_id field must resolve to string", current, "string")
+	}
+}
+
+// TestExpandDrilldownStep verifies proxy-side step expansion converts sparse coarse
+// VL buckets into dense fine-resolution sub-buckets for Grafana's bar-chart view.
+func TestExpandDrilldownStep(t *testing.T) {
+	// A 2-bucket coarse response at 3600s step (3600 / 300 = 12 sub-buckets each).
+	coarseBody := `{"status":"success","data":{"resultType":"matrix","result":[` +
+		`{"metric":{"level":"error"},"values":[[1748000000,"120"],[1748003600,"240"]]}` +
+		`]}}`
+
+	t.Run("expands 2 coarse buckets into 24 fine buckets replicating coarse value", func(t *testing.T) {
+		got := expandDrilldownStep([]byte(coarseBody), "300s", "3600s", "1748007200")
+		v, err := fj.ParseBytes(got)
+		if err != nil {
+			t.Fatalf("parse expanded body: %v", err)
+		}
+		results := v.GetArray("data", "result")
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result series, got %d", len(results))
+		}
+		values := results[0].GetArray("values")
+		if len(values) != 24 {
+			t.Fatalf("expected 24 fine buckets (2 coarse × 12), got %d", len(values))
+		}
+		// Regression guard: integer values must NOT carry decimal places. Loki returns
+		// count_over_time results as integer strings ("120"), and the proxy MUST match
+		// to keep wire output identical across backends. Reverting to '%f' with precision 2
+		// would re-introduce "120.00" — this assertion catches that.
+		if bytes.Contains(got, []byte(`.00"`)) {
+			t.Errorf("response contains %q which means an integer count was formatted with 2 decimal places (was strconv.FormatFloat(_, 'f', 2, 64)). Must use precision -1 to match Loki's integer-string output. Body: %s",
+				`.00"`, string(got))
+		}
+
+		// First sub-bucket: ts=1748000000, value=120 (full coarse value replicated, not divided by 12).
+		// Replication preserves relative bar heights across series and makes sparse fields visible.
+		// Value format is integer-string ("120" not "120.00") to match Loki's count_over_time output
+		// for whole counts; fractional values from rate-style aggregations still render correctly.
+		first := values[0].GetArray()
+		if len(first) < 2 {
+			t.Fatal("expected [ts, val] pair")
+		}
+		if first[0].GetInt64() != 1748000000 {
+			t.Errorf("first ts = %d, want 1748000000", first[0].GetInt64())
+		}
+		if string(first[1].GetStringBytes()) != "120" {
+			t.Errorf("first val = %q, want %q", string(first[1].GetStringBytes()), "120")
+		}
+		// 13th sub-bucket: ts=1748003600 (start of 2nd coarse bucket), value=240.
+		thirteenth := values[12].GetArray()
+		if thirteenth[0].GetInt64() != 1748003600 {
+			t.Errorf("13th ts = %d, want 1748003600", thirteenth[0].GetInt64())
+		}
+		if string(thirteenth[1].GetStringBytes()) != "240" {
+			t.Errorf("13th val = %q, want %q", string(thirteenth[1].GetStringBytes()), "240")
+		}
+	})
+
+	t.Run("no-op when fine step equals coarse step", func(t *testing.T) {
+		got := expandDrilldownStep([]byte(coarseBody), "3600s", "3600s", "1748007200")
+		if string(got) != coarseBody {
+			t.Errorf("expected body unchanged when steps are equal")
+		}
+	})
+
+	t.Run("no-op when fine step exceeds coarse step", func(t *testing.T) {
+		got := expandDrilldownStep([]byte(coarseBody), "7200s", "3600s", "1748007200")
+		if string(got) != coarseBody {
+			t.Errorf("expected body unchanged when fine step > coarse step")
+		}
+	})
+
+	t.Run("truncates sub-buckets at end boundary", func(t *testing.T) {
+		// End is 1748001200: only 4 sub-buckets of 2nd coarse bucket fit within
+		// coarse bucket 1 (1748000000..1748003599): ts 1748000000,300,600,900 → 4 sub-buckets.
+		// Then coarse bucket 2 at 1748003600 > end=1748001200 → trimmed.
+		// Actually end=1748001200 means: bucket 1 sub-buckets: 1748000000,300,600,900,1200 → 5 fit
+		// (1748001200 == end so it's included). Bucket 2 at 1748003600 > end → all 0 sub-buckets.
+		got := expandDrilldownStep([]byte(coarseBody), "300s", "3600s", "1748001200")
+		v, err := fj.ParseBytes(got)
+		if err != nil {
+			t.Fatalf("parse truncated body: %v", err)
+		}
+		values := v.GetArray("data", "result")[0].GetArray("values")
+		// 1748000000,300,600,900,1200 = 5 sub-buckets from first coarse; second coarse
+		// starts at 1748003600 > 1748001200, so all 12 sub-buckets are truncated.
+		if len(values) != 5 {
+			t.Errorf("expected 5 sub-buckets before end, got %d", len(values))
+		}
+	})
+
+	t.Run("empty result passes through unchanged", func(t *testing.T) {
+		empty := `{"status":"success","data":{"resultType":"matrix","result":[]}}`
+		got := expandDrilldownStep([]byte(empty), "300s", "3600s", "1748007200")
+		if string(got) != empty {
+			t.Errorf("expected empty result unchanged")
+		}
+	})
+
+	t.Run("no-op when factor exceeds maxDrilldownExpansionFactor", func(t *testing.T) {
+		// 7-day range: fineStep=20s, coarseStep=6h=21600s → factor=1080 > 120.
+		// Expanding would divide counts by 1080, making bars invisible. Return as-is.
+		got := expandDrilldownStep([]byte(coarseBody), "20s", "21600s", "1748604800")
+		if string(got) != coarseBody {
+			t.Errorf("expected body unchanged when expansion factor > %d", maxDrilldownExpansionFactor)
+		}
+	})
+
+	t.Run("factor exactly at threshold expands", func(t *testing.T) {
+		// factor=120 (coarseStep=3600s / fineStep=30s) is ≤ threshold → expand.
+		got := expandDrilldownStep([]byte(coarseBody), "30s", "3600s", "1748007200")
+		v, err := fj.ParseBytes(got)
+		if err != nil {
+			t.Fatalf("parse body: %v", err)
+		}
+		values := v.GetArray("data", "result")[0].GetArray("values")
+		// 2 coarse buckets × 120 = 240 fine buckets.
+		if len(values) != 240 {
+			t.Errorf("expected 240 fine buckets at threshold factor, got %d", len(values))
+		}
+	})
+
+	t.Run("multiple series expanded independently", func(t *testing.T) {
+		multi := `{"status":"success","data":{"resultType":"matrix","result":[` +
+			`{"metric":{"level":"error"},"values":[[1748000000,"120"]]}` +
+			`,{"metric":{"level":"warn"},"values":[[1748000000,"60"]]}` +
+			`]}}`
+		got := expandDrilldownStep([]byte(multi), "300s", "3600s", "1748003600")
+		v, _ := fj.ParseBytes(got)
+		results := v.GetArray("data", "result")
+		if len(results) != 2 {
+			t.Fatalf("expected 2 series, got %d", len(results))
+		}
+		// Each coarse bucket should expand to 12 sub-buckets.
+		for i, res := range results {
+			if n := len(res.GetArray("values")); n != 12 {
+				t.Errorf("series %d: expected 12 sub-buckets, got %d", i, n)
+			}
+		}
+	})
+}
+
+func TestIsHighCardinalityFieldName(t *testing.T) {
+	high := []string{"trace_id", "span_id", "request_id", "correlation_id", "parent_id", "user_uid"}
+	for _, f := range high {
+		if !isHighCardinalityFieldName(f) {
+			t.Errorf("expected %q to be high-cardinality", f)
+		}
+	}
+	low := []string{"level", "status_code", "service_name", "duration_ms", "method", "detected_level"}
+	for _, f := range low {
+		if isHighCardinalityFieldName(f) {
+			t.Errorf("expected %q NOT to be high-cardinality", f)
+		}
 	}
 }

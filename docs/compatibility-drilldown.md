@@ -68,6 +68,118 @@ Because of that, version-specific behavior should be gated by:
 2. Grafana runtime family (`12.x`, `13.x`),
 3. compatibility matrix contract version bands (`1.0.x`, `2.0.x`), validated in CI.
 
+## Field Histogram Series Cap
+
+Grafana Logs Drilldown renders per-field histograms by sending `sum by (field) (count_over_time({...}|json|drop __error__,__error_details__|field!="" [...]))` queries to `query_range`. For high-cardinality fields (`trace_id`, `span_id`, `session_id`) over long time ranges, an unfiltered VL response can reach 50 MB+ (300k+ unique values). The proxy currently bounds this through two complementary mechanisms:
+
+1. **Primary path — `/select/logsql/hits` top-N** (introduced 2026-06): every
+   stats-compat shape routes through VL's `/hits` endpoint, which natively
+   computes top-`drilldownHitsFieldsLimit` (20) field values per request and
+   returns a remainder bucket. The proxy emits one Loki series per top-N value
+   (the remainder is dropped). Cap is enforced server-side by VL — proxy never
+   reads the full unbounded result.
+2. **Legacy stats fallback** (only when `/hits` fails — older VL versions,
+   parse errors, or unique-value numeric fields where every value lands in the
+   remainder bucket): proxy appends `as _c | sort by (_c desc) | limit 500` to
+   the VL stats query, pushing the 500-series cap into VL per time bucket.
+   Two-phase fallback (single-bucket Phase 1 + filtered Phase 2) handles the
+   high-cardinality cases that overflow the direct path.
+
+**As of 2026-06 the routing is source-agnostic** — Explore, Drilldown, dashboard
+panels, and direct API clients all reach the `/hits` fast path. The historical
+`X-Query-Tags: Source=grafana-lokiexplore-app` gate was removed because Explore
+was hitting the unbounded direct stats path and OOMing at 24h+ for
+high-cardinality fields. The Long-Range Histograms section below documents the
+related leftover-chunk suppression that depends on Grafana-client detection.
+
+## Long-Range Histograms And Grafana querySplitting
+
+For ranges ≥ 24h, Grafana's Loki datasource splits every metric range query into
+24h chunks before sending them to the proxy. The split logic lives in
+`public/app/plugins/datasource/loki/metricTimeSplitting.ts -> splitTimeRange()` and
+fires for any client built on the Loki datasource — Drilldown, Explore, and
+dashboard panels. The proxy must produce a chunk response shape that Grafana's
+in-browser `mergeFrames + closestIdx + splice` algorithm
+(`public/app/plugins/datasource/loki/mergeResponses.ts`) can glue back into a
+coherent timeline. This section pins the contract.
+
+### What Grafana sends
+
+`splitTimeRange(start, end, step, oneDayMs)` produces:
+
+1. `floor(range / aligned_day)` chunks of `aligned_day - step` length (aligned to step boundary).
+2. One residual chunk of `(range mod aligned_day)` length, which is often **smaller than `step`** (e.g. for an exactly-24h request the residual is 0–120 s wide when step is 120 s; for 25 h it is ~1 h).
+
+Chunks are dispatched **newest-first** because `runSplitGroupedQueries` recurses with `partition[totalRequests - 1]` first.
+
+### What the proxy must return per chunk
+
+Each chunk sub-request must produce a Loki matrix with:
+
+- A single shared timestamp axis whose first and last buckets fall on step
+  boundaries inside the chunk's `start..end` window.
+- ≤ `drilldownHitsFieldsLimit` (currently 20) named series, with all top-N values
+  spread across the chunk's full axis. **One-bucket series, where every top-N
+  value lands on the same timestamp, will be stacked by `mergeFrames` into a tall
+  right-edge spike** — the 2026-06 incident root cause.
+
+### How the proxy enforces this
+
+- `proxyStatsQueryRangeDrilldown` routes every count_over_time stats-compat
+  query through the `/hits` path regardless of range (the historical 6h
+  "hybrid threshold" is gone). Mixing `/hits` with `stats_query_range | limit
+  500` across chunks produced disjoint series sets that mergeFrames unioned into
+  a 500-series block at the chunk boundary.
+- `proxyStatsQueryRangeDrilldownHits` returns an **empty Loki matrix** (with
+  response header `X-Proxy-Drilldown-Path: hits-leftover-suppressed`) when
+  `isGrafanaSourcedRequest(r)` is true AND `end - start ≤ 2 × step`. The
+  residual leftover from `splitTimeRange` falls into this bucket and the chart
+  loses ≤ 1 step of width on the right edge instead of showing a spike.
+- `isGrafanaSourcedRequest` detects ANY Grafana client: `X-Query-Tags:
+  Source=grafana-…` (Drilldown / Explore), `User-Agent: Grafana/X.Y.Z`
+  (dashboard panels), and any `X-Grafana-*` header (backend-routed Explore).
+  The suppression therefore covers every Grafana surface, not only Drilldown.
+- The bare-integer step Grafana sends (e.g. `step=120`) is normalised to a VL
+  duration (`120s`) before reaching `/hits`. Without the suffix VL's parser
+  rejects the request and the entire `/hits` fast path silently falls back to
+  legacy stats.
+
+### Acceptable irreducible bump (25h–47h cases)
+
+For ranges like 25h the proxy cannot safely suppress the 1h leftover chunk
+because users genuinely query 1h ranges in Drilldown / Explore. The merged
+frame can therefore show a modest right-edge bump (≤ 65% of nonzero buckets
+fall into the rightmost bin) from the leftover chunk's chunk-only top-N.
+This is the price of preserving short-range queries; e2e thresholds reflect
+the trade-off and document it explicitly.
+
+### Do Not Regress
+
+The following invariants are pinned by `internal/proxy/drilldown_regression_lock_test.go`
+and `test/e2e-compat/drilldown_chunked_merge_lock_test.go`. Each is named
+`TestLock_*` / `TestE2ELock_*` and breaking any of them fails CI:
+
+1. Routing is source-agnostic for stats-compat shapes — Explore, Drilldown,
+   dashboard panels, and raw API clients all reach the `/hits` fast paths.
+2. `/hits` runs for every range (no hybrid threshold gate).
+3. Leftover chunks (`end - start ≤ 2 × step`) from ANY Grafana source are
+   suppressed and the response carries `X-Proxy-Drilldown-Path: hits-leftover-suppressed`.
+4. Step normalisation appends `s` to bare-integer Grafana steps.
+5. The `/hits` remainder bucket (`fields:{}`) is dropped before emission.
+6. Every emitted series shares the same timestamp axis (the chart cannot
+   render distributed bars otherwise).
+7. `extractStreamSelectorOnly` handles both Loki-bracketed (`{namespace="prod"}`)
+   and VL-native (`namespace:="prod"`) selectors.
+8. `fieldHasExistenceFilter` matches both unquoted (`pod:!""`) and quoted
+   (`"k8s.pod.name":!""`) forms.
+9. Stats fallback (`stats_query_range`) only fires when `/hits` actually fails
+   — never as a parallel call that overwrites a successful `/hits` result.
+10. `maxStatsQueryRangeBytes` and `drilldownHitsFieldsLimit` stay within their
+    pinned windows (see the lock tests for the exact bounds).
+11. Grafana mergeFrames simulation on the live VL stack must produce a merged
+    frame whose rightmost bin holds < 65 % of nonzero timestamps for 24h, 25h,
+    2d, and 7d ranges, for both Drilldown and dashboard sources.
+
 ## Drilldown Capability Profiles
 
 | Drilldown version family | Capability profile | Proxy handling focus |

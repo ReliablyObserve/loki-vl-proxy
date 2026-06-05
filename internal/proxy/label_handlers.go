@@ -23,12 +23,13 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := p.canonicalReadCacheKey("labels", orgID, r)
 
+	labelsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabels)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("labels", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
-		if p.shouldRefreshLabelsInBackground(remaining, p.cacheTTLLabels) {
+		if p.shouldRefreshLabelsInBackground(remaining, labelsTTL) {
 			search := strings.TrimSpace(r.FormValue("search"))
 			if search == "" {
 				search = strings.TrimSpace(r.FormValue("q"))
@@ -67,7 +68,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 	labels = appendSyntheticLabels(labels)
 
 	result := lokiLabelsResponse(labels)
-	p.mergeLabelsIntoCache("labels", cacheKey, labels, p.cacheTTLLabels)
+	p.mergeLabelsIntoCache("labels", cacheKey, labels, labelsTTL)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("labels", http.StatusOK, time.Since(start))
@@ -121,12 +122,13 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		limit = maxLimitValue
 	}
 
+	labelValuesTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), p.cacheTTLLabelValues)
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("label_values", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
-		if p.shouldRefreshLabelsInBackground(remaining, p.cacheTTLLabelValues) {
+		if p.shouldRefreshLabelsInBackground(remaining, labelValuesTTL) {
 			p.refreshLabelValuesCacheAsync(
 				orgID,
 				cacheKey,
@@ -147,7 +149,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	if p.labelValuesBrowseMode(rawQuery) {
 		if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, search, offset, limit); ok {
 			result := lokiLabelsResponse(indexedValues)
-			p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, p.cacheTTLLabelValues)
+			p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(result)
 			p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -172,7 +174,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result := lokiLabelsResponse(values)
-		p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, p.cacheTTLLabelValues)
+		p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -199,7 +201,7 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := lokiLabelsResponse(values)
-	p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, p.cacheTTLLabelValues)
+	p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -264,20 +266,24 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 
 	if err == nil {
 		arr := fjRoot.GetArray("values")
+		// Pre-grow: 32 (header+footer) + ~80 bytes per stream (labels JSON).
+		if need := 32 + len(arr)*80; sb.Cap() < need {
+			sb.Grow(need)
+		}
+		// Get a pooled keys slice (outside the loop to reuse across all stream entries)
+		kp := seriesKeysPool.Get().(*[]string)
+		keys := (*kp)[:0]
 		for _, item := range arr {
 			streamStr := string(item.GetStringBytes("value"))
 			stream := parseStreamLabels(streamStr)
 			if len(stream) == 0 {
 				continue
 			}
-			labels := make(map[string]string, len(stream))
-			for k, val := range stream {
-				labels[k] = val
-			}
-			labels = p.labelTranslator.TranslateLabelsMap(labels)
+			labels := p.labelTranslator.TranslateLabelsMap(stream)
 			ensureSyntheticServiceName(labels)
 
-			keys := make([]string, 0, len(labels))
+			// Reuse the keys slice (reset length, keep capacity)
+			keys = keys[:0]
 			for k := range labels {
 				keys = append(keys, k)
 			}
@@ -298,6 +304,9 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 			}
 			sb.WriteByte('}')
 		}
+		// Save potentially-grown slice back to pool (after the loop)
+		*kp = keys
+		seriesKeysPool.Put(kp)
 	}
 	sb.WriteString(`]}`)
 	result := sb.String()
@@ -474,12 +483,13 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
 	cacheKey := p.canonicalReadCacheKey("detected_fields", orgID, r)
+	detectedFieldsTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_fields"])
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_fields", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
-		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["detected_fields"]) {
+		if p.shouldRefreshLabelsInBackground(remaining, detectedFieldsTTL) {
 			p.refreshDetectedFieldsCacheAsync(orgID, cacheKey, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), parseDetectedLineLimit(r), p.snapshotForwardedAuth(r))
 		}
 		return
@@ -521,7 +531,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 		// Echoing the requested line_limit causes "Fields 5,951" etc. to appear.
 		"limit": 1000,
 	}
-	p.setEndpointJSONCacheWithTTL("detected_fields", cacheKey, CacheTTLs["detected_fields"], payload)
+	p.setEndpointJSONCacheWithTTL("detected_fields", cacheKey, detectedFieldsTTL, payload)
 	p.writeJSON(w, payload)
 	p.metrics.RecordRequest("detected_fields", http.StatusOK, time.Since(start))
 }
@@ -553,12 +563,13 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 
 	lineLimit := parseDetectedLineLimit(r)
 	cacheKey := p.canonicalReadCacheKey("detected_field_values", orgID, r, fieldName)
+	detectedFieldValuesTTL := metadataWindowTTL(r.FormValue("start"), r.FormValue("end"), CacheTTLs["detected_field_values"])
 	if cached, remaining, _, ok := p.endpointReadCacheEntry("detected_field_values", cacheKey); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(cached)
 		p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 		p.metrics.RecordCacheHit()
-		if p.shouldRefreshLabelsInBackground(remaining, CacheTTLs["detected_field_values"]) {
+		if p.shouldRefreshLabelsInBackground(remaining, detectedFieldValuesTTL) {
 			p.refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName, r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit, p.snapshotForwardedAuth(r))
 		}
 		return
@@ -573,7 +584,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 				"values": values,
 				"limit":  lineLimit,
 			}
-			p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, CacheTTLs["detected_field_values"], payload)
+			p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, detectedFieldValuesTTL, payload)
 			p.writeJSON(w, payload)
 			p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 			return
@@ -597,7 +608,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		"values": values,
 		"limit":  lineLimit,
 	}
-	p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, CacheTTLs["detected_field_values"], payload)
+	p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, detectedFieldValuesTTL, payload)
 	p.writeJSON(w, payload)
 	p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 }
