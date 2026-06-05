@@ -337,7 +337,7 @@ Cold-path speedup: **6× (1 h) → 50× (24 h) → 6× (7 d)**. At 6 h+ Loki ret
 | 2 d   | 29 408 ms (500)       | **3 598 ms**| 8 |
 | 7 d   | 26 451 ms (500)       | 4 483 ms ⚠️ | 0 (same 502 path) |
 
-`trace_id` parser-direct at 6 h / 7 d returns 502 because the per-trace cardinality on this dataset exceeds the VL parser-pipe limit; the chunked-merge path elsewhere returns top-N successfully. Tracked as a known limit — see [`drilldown_high_card_fields_known_limit`](../memory/drilldown_high_card_fields_known_limit.md). Loki returns either timeout or `too_many_series` for every range.
+`trace_id` parser-direct at 6 h / 7 d returns 502 because the per-trace cardinality on this dataset exceeds the VL parser-pipe limit; the chunked-merge path elsewhere returns top-N successfully. This is a documented known limit of the `|json|trace_id!=""` parser-direct shape — for the dataset used here each `trace_id` appears in only one log line so the parser exhausts VL's row-scan budget; queries that route through `/hits` (the default for all label fields and most parser fields) return top-N successfully. Loki returns either timeout or `too_many_series` for every range.
 
 ### `sum by (service_version) (count_over_time({namespace="prod",service_version!=""}[2m]))`
 

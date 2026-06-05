@@ -65,8 +65,13 @@ query_for() {
 
 step_for_range() {
   case "$1" in
+    30m)  echo "2s"   ;;
     1h)   echo "5s"   ;;
+    2h)   echo "10s"  ;;
+    3h)   echo "15s"  ;;
+    4h)   echo "20s"  ;;
     6h)   echo "30s"  ;;
+    12h)  echo "60s"  ;;
     24h)  echo "120s" ;;
     2d)   echo "240s" ;;
     7d)   echo "600s" ;;
@@ -76,8 +81,13 @@ step_for_range() {
 
 range_seconds() {
   case "$1" in
+    30m) echo 1800    ;;
     1h)  echo 3600    ;;
+    2h)  echo 7200    ;;
+    3h)  echo 10800   ;;
+    4h)  echo 14400   ;;
     6h)  echo 21600   ;;
+    12h) echo 43200   ;;
     24h) echo 86400   ;;
     2d)  echo 172800  ;;
     7d)  echo 604800  ;;
