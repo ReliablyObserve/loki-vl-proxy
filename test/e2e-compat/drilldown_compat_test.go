@@ -1143,10 +1143,10 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 
 		// Deadline = stale-cache refresh threshold (≈ 80 % of CacheTTLs["detected_fields"]
 		// = 72 s) − cache age when polling starts, plus headroom for refresh fetch +
-		// CI scheduling jitter. 30 s is the minimum reliable cushion above the
-		// refresh trigger; 20 s sat right at the threshold and flaked on busy
-		// hosted runners.
-		deadline := time.Now().Add(30 * time.Second)
+		// CI scheduling jitter. 60 s gives ~40 s above the 18 s refresh trigger;
+		// 30 s flaked on hosted GHA runners where I/O + container scheduling
+		// pushed the refresh-to-cache-update path past 33 s.
+		deadline := time.Now().Add(60 * time.Second)
 		for {
 			fieldsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_fields?"+buildParams().Encode())
 			seen = map[string]bool{}
