@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+
+- README `One-glance comparison` + `Honest TLDR` + `Proxy heap behaviour` +
+  `What this is and isn't` sections (~105 lines) trimmed to a single ~20-line
+  `One-glance comparison` summary with the headline outcome / latency / CPU
+  / RSS numbers + a link to the new `docs/honest-tldr.md`. The long-form
+  per-query breakdown, methodology, heap-pool deep-dive, and tuning history
+  moved verbatim to the docs page so they're discoverable from the
+  Docusaurus sidebar (under "Cost & Comparison") and still findable from
+  GitHub via the README link.
+
 ## [1.55.0] - 2026-06-05
 
 ### Performance
