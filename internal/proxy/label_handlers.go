@@ -229,15 +229,10 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	params.Set("query", query)
 	startRaw := r.FormValue("start")
 	endRaw := r.FormValue("end")
-	// Mirror the default-lookback guard from metadataQueryParams: /series builds
-	// its params inline (not through the shared helper), so apply the same
-	// now-metadataDefaultLookback..now injection when the client omits both
-	// bounds. Keeps /labels, /label/{name}/values, and /series in lockstep.
-	if strings.TrimSpace(startRaw) == "" && strings.TrimSpace(endRaw) == "" && p.metadataDefaultLookback > 0 {
-		now := time.Now()
-		startRaw = fmt.Sprintf("%d", now.Add(-p.metadataDefaultLookback).UnixNano())
-		endRaw = fmt.Sprintf("%d", now.UnixNano())
-	}
+	// Apply the default-lookback guard via the shared helper so /series stays
+	// in lockstep with /labels and /label/{name}/values. See
+	// applyDefaultMetadataLookback for semantics.
+	startRaw, endRaw = applyDefaultMetadataLookback(startRaw, endRaw, p.metadataDefaultLookback)
 	if startRaw != "" {
 		params.Set("start", startRaw)
 	}
