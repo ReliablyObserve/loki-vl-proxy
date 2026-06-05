@@ -155,7 +155,14 @@ func (w *compressedResponseWriter) finish() error {
 	defer w.releaseHoldBuf()
 
 	if !w.started {
-		if w.shouldBypassCompression() || w.buf.Len() < w.minBytes {
+		// buf is nil when the handler never wrote anything (Write acquires
+		// lazily). Treat that as zero buffered bytes for the bypass-or-
+		// compress decision; either branch handles nil buf correctly.
+		bufLen := 0
+		if w.buf != nil {
+			bufLen = w.buf.Len()
+		}
+		if w.shouldBypassCompression() || bufLen < w.minBytes {
 			if err := w.startBypass(); err != nil {
 				return err
 			}
@@ -395,10 +402,12 @@ func CompressionHandlerWithOptions(next http.Handler, opts CompressionOptions) h
 			ResponseWriter: w,
 			encoding:       encoding,
 			minBytes:       minBytes,
-			// Acquire a pooled hold buffer for the "wait for minBytes" phase.
-			// finish() always releases via releaseHoldBuf (defense in depth)
-			// even if startCompression / startBypass have already returned it.
-			buf: acquireHoldBuf(),
+			// buf is NIL by construction — acquired lazily on first Write
+			// (see Write below). For cache-hit / bypass paths that complete
+			// without ever needing to buffer (small responses, status-only
+			// replies, pre-compressed cache entries) we never touch the
+			// pool, keeping per-request allocations at zero. Pre-lazy-fix
+			// the micro-bench gate caught a +275% memory regression here.
 		}
 
 		next.ServeHTTP(cw, r)
