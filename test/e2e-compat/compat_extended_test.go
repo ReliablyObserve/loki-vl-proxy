@@ -30,7 +30,36 @@ func ensureDataIngested(t *testing.T) {
 		ingestionAnchor = time.Now().Add(-3 * time.Minute)
 		ingestRichTestData(t)
 		waitForLokiMetricData(t)
+		// Wait for VL-backed label_values to come back too — on slow CI runners
+		// the proxy can return empty for label/cluster/values for ~10–30 s after
+		// the push finishes because VL's column index lags behind ingestion.
+		// Tests that query label_values immediately after ensureDataIngested
+		// were flaking on hosted GHA runners without this poll.
+		waitForProxyLabelValues(t, "cluster", "us-east-1")
 	})
+}
+
+// waitForProxyLabelValues polls /loki/api/v1/label/<name>/values on the proxy
+// until expectedValue appears or 90 s elapses. Mirrors waitForLokiMetricData
+// but checks the VL-backed proxy path — VL's column index can take 10–30 s to
+// catch up after a push on slow CI runners. Returns silently on success or
+// timeout (timeout logs a warning, downstream tests then surface the real
+// expectation failure).
+func waitForProxyLabelValues(t *testing.T, label, expectedValue string) {
+	t.Helper()
+	deadline := time.Now().Add(90 * time.Second)
+	for time.Now().Before(deadline) {
+		status, _, resp := doJSONGET(t, proxyURL+"/loki/api/v1/label/"+label+"/values", nil)
+		if status == http.StatusOK {
+			for _, v := range extractStringArray(resp, "data") {
+				if v == expectedValue {
+					return
+				}
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Logf("warning: proxy label_values for %s did not include %q after 90 s — label-values tests may flake", label, expectedValue)
 }
 
 // waitForLokiMetricData polls until Loki returns non-empty metric results for
