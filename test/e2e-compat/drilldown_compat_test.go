@@ -1141,7 +1141,12 @@ func TestDrilldown_GrafanaResourceContracts(t *testing.T) {
 			{Msg: `{"stable":"yes","method":"GET","new_field":"fresh"}`, Level: "info"},
 		}, streamFields)
 
-		deadline := time.Now().Add(20 * time.Second)
+		// Deadline = stale-cache refresh threshold (≈ 80 % of CacheTTLs["detected_fields"]
+		// = 72 s) − cache age when polling starts, plus headroom for refresh fetch +
+		// CI scheduling jitter. 30 s is the minimum reliable cushion above the
+		// refresh trigger; 20 s sat right at the threshold and flaked on busy
+		// hosted runners.
+		deadline := time.Now().Add(30 * time.Second)
 		for {
 			fieldsResp := getJSON(t, grafanaURL+"/api/datasources/uid/"+dsUID+"/resources/detected_fields?"+buildParams().Encode())
 			seen = map[string]bool{}

@@ -20,8 +20,11 @@ import (
 // is appended so the per-bucket cardinality is bounded.
 func TestProxyStatsQueryRange_ParserDirectPath(t *testing.T) {
 	var receivedQuery string
+	var receivedMu sync.Mutex
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMu.Lock()
 		receivedQuery = r.FormValue("query")
+		receivedMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 	}))
@@ -145,8 +148,11 @@ func TestLimitLokiMatrixSeries(t *testing.T) {
 // returning the same shape Drilldown already consumes.
 func TestProxyStatsQueryRange_DrilldownPathAlwaysOn(t *testing.T) {
 	var receivedQuery string
+	var receivedMu sync.Mutex
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMu.Lock()
 		receivedQuery = r.FormValue("query")
+		receivedMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 	}))
@@ -191,9 +197,12 @@ func TestProxyStatsQueryRange_DrilldownPathAlwaysOn(t *testing.T) {
 // Uses status_code — not a known high-cardinality field, short range (60 buckets).
 func TestProxyStatsQueryRangeDrilldown_ReturnsPerValueSeries(t *testing.T) {
 	var receivedQuery, receivedStep string
+	var receivedMu sync.Mutex
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMu.Lock()
 		receivedQuery = r.FormValue("query")
 		receivedStep = r.FormValue("step")
+		receivedMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[`+
 			`{"metric":{"status_code":"200"},"values":[[1700000060,"3"]]},`+
@@ -376,8 +385,11 @@ func TestAppendDrilldownSeriesLimit(t *testing.T) {
 // due to | delete overhead + stats by high-cardinality grouping.
 func TestProxyStatsQueryRange_StripsDeleteAlone(t *testing.T) {
 	var receivedQuery string
+	var receivedMu sync.Mutex
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedMu.Lock()
 		receivedQuery = r.FormValue("query")
+		receivedMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 	}))
@@ -990,9 +1002,12 @@ func TestProxyStatsQueryRange_DrilldownDetectionForTranslatedQueries(t *testing.
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var receivedQuery, receivedStep string
+			var receivedMu sync.Mutex
 			vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedMu.Lock()
 				receivedQuery = r.FormValue("query")
 				receivedStep = r.FormValue("step")
+				receivedMu.Unlock()
 				w.Header().Set("Content-Type", "application/json")
 				fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 			}))
