@@ -74,7 +74,7 @@ jobs:
           docker run --rm \
             -v "$PWD:/repo" \
             -w /repo \
-            aquasec/trivy:0.70.0 \
+            aquasec/trivy:0.71.0 \
             fs . \
             --ignorefile .trivyignore.yaml \
             --scanners vuln,misconfig,secret \
