@@ -90,6 +90,7 @@ type proxyRuntimeConfig struct {
 	backendMinVersion                   string
 	backendAllowUnsupportedVersion      bool
 	backendVersionCheckTimeout          time.Duration
+	backendVersionStrict                bool
 	backendBasicAuth                    string
 	backendCompression                  string
 	clientResponseCompression           string
@@ -453,6 +454,7 @@ func run(
 	backendMinVersion := fs.String("backend-min-version", "v1.30.0", "Minimum VictoriaLogs version considered fully supported at startup")
 	backendAllowUnsupportedVersion := fs.Bool("backend-allow-unsupported-version", false, "Allow startup with backend versions lower than -backend-min-version (at your own risk)")
 	backendVersionCheckTimeout := fs.Duration("backend-version-check-timeout", 5*time.Second, "Timeout for startup backend version compatibility check")
+	backendVersionStrict := fs.Bool("backend-version-strict", false, "When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only).")
 	backendBasicAuth := fs.String("backend-basic-auth", "", "Basic auth for VL backend (user:password)")
 	backendCompression := fs.String("backend-compression", "auto", "Backend HTTP compression preference: auto, gzip, zstd, none")
 	backendTLSSkip := fs.Bool("backend-tls-skip-verify", false, "Skip TLS verification for VL backend")
@@ -707,6 +709,7 @@ func run(
 			backendMinVersion:                   *backendMinVersion,
 			backendAllowUnsupportedVersion:      *backendAllowUnsupportedVersion,
 			backendVersionCheckTimeout:          *backendVersionCheckTimeout,
+			backendVersionStrict:                *backendVersionStrict,
 			backendBasicAuth:                    *backendBasicAuth,
 			backendCompression:                  resolvedBackendCompression,
 			clientResponseCompression:           resolvedResponseCompression,
@@ -1695,6 +1698,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendMinVersion:                  cfg.backendMinVersion,
 		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,
+		BackendVersionStrict:               cfg.backendVersionStrict,
 		BackendBasicAuth:                   cfg.backendBasicAuth,
 		BackendCompression:                 cfg.backendCompression,
 		ClientResponseCompression:          cfg.clientResponseCompression,

@@ -160,6 +160,11 @@ type Config struct {
 	BackendAllowUnsupportedVersion bool
 	// BackendVersionCheckTimeout bounds startup backend version checks.
 	BackendVersionCheckTimeout time.Duration
+	// BackendVersionStrict, when true, promotes /health unreachability, non-2xx
+	// responses, and missing/sub-min backend semver to a hard startup error
+	// from ValidateBackendVersionCompatibility. Default false preserves the
+	// historical soft (warn-and-continue) behavior.
+	BackendVersionStrict bool
 	DerivedFields              []DerivedField // derived fields for trace/link extraction
 	StreamResponse             bool           // stream responses via chunked transfer (default: false)
 	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
@@ -439,6 +444,7 @@ type Proxy struct {
 	backendMinVersion                     string
 	backendAllowUnsupportedVersion        bool
 	backendVersionCheckTimeout            time.Duration
+	backendVersionStrict                  bool
 	derivedFields                         []DerivedField
 	streamResponse                        bool
 	emitStructuredMetadata                bool
@@ -1049,6 +1055,7 @@ func New(cfg Config) (*Proxy, error) {
 		backendMinVersion:                     backendMinVersion,
 		backendAllowUnsupportedVersion:        cfg.BackendAllowUnsupportedVersion,
 		backendVersionCheckTimeout:            backendVersionCheckTimeout,
+		backendVersionStrict:                  cfg.BackendVersionStrict,
 		derivedFields:                         cfg.DerivedFields,
 		streamResponse:                        cfg.StreamResponse,
 		emitStructuredMetadata:                cfg.EmitStructuredMetadata,

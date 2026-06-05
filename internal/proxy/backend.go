@@ -471,6 +471,9 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 			"error", err,
 			"minimum_supported_version", p.backendMinVersion,
 		)
+		if p.backendVersionStrict {
+			return fmt.Errorf("backend version check failed (strict mode): /health probe unreachable: %w", err)
+		}
 		return nil
 	}
 	_, _ = io.Copy(io.Discard, resp.Body)
@@ -482,6 +485,9 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 			"http.response.status_code", resp.StatusCode,
 			"minimum_supported_version", p.backendMinVersion,
 		)
+		if p.backendVersionStrict {
+			return fmt.Errorf("backend version check failed (strict mode): /health returned non-success status %d", resp.StatusCode)
+		}
 		return nil
 	}
 
@@ -502,6 +508,9 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 			"backend.capability_profile", profile,
 			"minimum_supported_version", p.backendMinVersion,
 		)
+		if p.backendVersionStrict {
+			return fmt.Errorf("backend version check failed (strict mode): explicit backend semver unavailable (inferred profile %q); minimum required %s", profile, p.backendMinVersion)
+		}
 		return nil
 	}
 	if semver == "" {
@@ -510,10 +519,13 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 			"reason", "backend did not expose version in response headers or /metrics payload",
 			"minimum_supported_version", p.backendMinVersion,
 		)
+		if p.backendVersionStrict {
+			return fmt.Errorf("backend version check failed (strict mode): backend did not expose version in response headers or /metrics payload; minimum required %s", p.backendMinVersion)
+		}
 		return nil
 	}
 	if !semverAtLeastSemver(semver, p.backendMinVersion) {
-		if p.backendAllowUnsupportedVersion {
+		if p.backendAllowUnsupportedVersion && !p.backendVersionStrict {
 			p.log.Warn(
 				"unsupported backend version allowed by override",
 				"backend.version.raw", raw,
@@ -523,6 +535,14 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 				"flag", "backend-allow-unsupported-version",
 			)
 			return nil
+		}
+		if p.backendVersionStrict {
+			return fmt.Errorf(
+				"backend version check failed (strict mode): detected backend version %s (%s) is below minimum supported %s",
+				semver,
+				raw,
+				p.backendMinVersion,
+			)
 		}
 		return fmt.Errorf(
 			"detected backend version %s (%s) is below minimum supported %s; compatibility may be incomplete. Set -backend-allow-unsupported-version=true to bypass at your own risk",
