@@ -341,6 +341,11 @@ type Config struct {
 	// spreading the query burst over time and giving VL CPU headroom. 0 disables.
 	// Default: 200.
 	StatsQueryRangeInterQueryDelayMs int
+
+	// DebugLogRawQueries, when true, disables redaction of LogQL/LogsQL and
+	// backend query params in debug-level logs. Intended for local development
+	// only. Default is false (redacted).
+	DebugLogRawQueries bool
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -546,6 +551,7 @@ type Proxy struct {
 	requestSampler                        *observability.RequestSampler
 	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
+	debugLogRawQueries                    bool          // when true, debug logs include raw LogQL/LogsQL and backend params
 	// handler is the decomposed view of this Proxy's deps + config + state.
 	// Populated alongside the existing fields during the Task 9 migration.
 	handler *Handler
@@ -1113,6 +1119,7 @@ func New(cfg Config) (*Proxy, error) {
 		coldRouter:                            coldRouter,
 		cacheTTLLabels:                        labelCacheTTL,
 		cacheTTLLabelValues:                   labelCacheTTL,
+		debugLogRawQueries:                    cfg.DebugLogRawQueries,
 	}
 	if cfg.DrilldownFieldBatchWindowMs > 0 {
 		maxFields := cfg.DrilldownFieldBatchMaxFields
@@ -1771,7 +1778,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		p.metrics.RecordCacheMiss()
 	}
-	p.log.Debug("query_range request", "logql", logqlQuery)
+	p.log.Debug("query_range request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 
 	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser, bare-parser
 	// paths, post-agg paths) so that the tenant context and forwarded auth headers
@@ -1881,7 +1888,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
-	p.log.Debug("translated query", "logsql", logsqlQuery, "without", withoutLabels)
+	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
 
 	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
 	var (
@@ -2046,7 +2053,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p.log.Debug("query request", "logql", logqlQuery)
+	p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 
 	if body, ok := evaluateConstantInstantVectorQuery(logqlQuery, r.FormValue("time")); ok {
 		w.Header().Set("Content-Type", "application/json")

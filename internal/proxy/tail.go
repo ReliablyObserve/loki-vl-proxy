@@ -81,13 +81,13 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	defer pingTicker.Stop()
 
 	if p.tailMode == TailModeSynthetic {
-		p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery, "native", false, "fallback", "forced synthetic tail mode")
+		p.log.Debug("tail connected", "logql", redactQuery(logqlQuery, p.debugLogRawQueries), "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "native", false, "fallback", "forced synthetic tail mode")
 		p.streamSyntheticTail(wsCtx, conn, logsqlQuery, r.FormValue("start"))
 		return
 	}
 
 	resp, nativeTail, fallbackReason := p.openNativeTailStream(wsCtx, logsqlQuery)
-	p.log.Debug("tail connected", "logql", logqlQuery, "logsql", logsqlQuery, "native", nativeTail, "fallback", fallbackReason)
+	p.log.Debug("tail connected", "logql", redactQuery(logqlQuery, p.debugLogRawQueries), "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "native", nativeTail, "fallback", fallbackReason)
 	if !nativeTail {
 		if p.tailMode == TailModeNative {
 			_ = p.writeTailControl(conn, websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, fallbackReason))

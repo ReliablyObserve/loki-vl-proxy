@@ -563,7 +563,7 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	u.Path = path
 	u.RawQuery = params.Encode()
 
-	p.log.Debug("VL request", "method", "GET", "url", u.String())
+	p.log.Debug("VL request", "method", "GET", "url", u.Path, "params", redactQuery(params.Encode(), p.debugLogRawQueries))
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
@@ -617,7 +617,7 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	}
 	u := *p.backend
 	u.Path = path
-	p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", params.Encode())
+	p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", redactQuery(params.Encode(), p.debugLogRawQueries))
 	req, err := http.NewRequestWithContext(ctx, "POST", u.String(), strings.NewReader(params.Encode()))
 	if err != nil {
 		return nil, err

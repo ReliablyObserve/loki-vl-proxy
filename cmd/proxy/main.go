@@ -205,6 +205,7 @@ type proxyRuntimeConfig struct {
 	drilldownFieldBatchWindowMs         int
 	drilldownFieldBatchMaxFields        int
 	statsQueryRangeInterQueryDelayMs    int
+	debugLogRawQueries                  bool
 }
 
 type otlpRuntimeConfig struct {
@@ -371,6 +372,7 @@ func run(
 	logBuffered := fs.Bool("log-buffered", true, "Write logs in the background to avoid slowing down requests under high load")
 	logStatsInterval := fs.Duration("log-stats-interval", 10*time.Second, "How often to print a request statistics summary (total, errors, latency, cache rate)")
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
+	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
 
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
@@ -818,6 +820,7 @@ func run(
 			drilldownFieldBatchWindowMs:         *drilldownFieldBatchWindowMs,
 			drilldownFieldBatchMaxFields:        *drilldownFieldBatchMaxFields,
 			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
+			debugLogRawQueries:                  *debugLogRawQueries,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -1783,6 +1786,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DrilldownFieldBatchWindowMs:      cfg.drilldownFieldBatchWindowMs,
 		DrilldownFieldBatchMaxFields:     cfg.drilldownFieldBatchMaxFields,
 		StatsQueryRangeInterQueryDelayMs: cfg.statsQueryRangeInterQueryDelayMs,
+		DebugLogRawQueries:               cfg.debugLogRawQueries,
 	}, nil
 }
 
