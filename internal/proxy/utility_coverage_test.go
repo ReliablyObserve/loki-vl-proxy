@@ -348,8 +348,15 @@ func TestPeerCacheMiddleware(t *testing.T) {
 		if w.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401 in default-deny mode, got %d body=%q", w.Code, w.Body.String())
 		}
-		if !strings.Contains(w.Body.String(), "peer-auth-token") {
-			t.Fatalf("error body should name the required flag, got %q", w.Body.String())
+		// Body is JSON-encoded; assert the unified terse error message is the
+		// exact value of the "error" field, and that the verbose flag-name
+		// hint has been removed (it lives in the structured log line instead).
+		body := w.Body.String()
+		if !strings.Contains(body, `"error":"peer authentication required"`) {
+			t.Fatalf("error body should be unified terse message, got %q", body)
+		}
+		if strings.Contains(body, "peer-auth-token") {
+			t.Fatalf("error body should not leak flag names to the wire, got %q", body)
 		}
 	})
 

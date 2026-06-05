@@ -301,7 +301,7 @@ extraArgs:
   # ruler-backend: ""                           # optional /rules passthrough backend
   # alerts-backend: ""                          # optional /alerts passthrough backend
   # extra-label-fields: "service.name,host.name"
-  # peer-auth-token: ""                         # chart-managed via peerCache.authToken / peerCache.existingSecret (see below)
+  # peer-auth-token: ""                         # DO NOT SET HERE — chart manages this flag from a Secret when peerCache.enabled=true; setting it here renders a duplicate -peer-auth-token CLI arg and the Go flag package will fatal at startup. Use peerCache.authToken or peerCache.existingSecret instead (see below). Rendering will fail with a clear error if this entry is uncommented while peerCache.enabled=true.
   # peer-insecure-ip-allowlist: "false"          # when true, allows legacy IP-only peer auth on /_cache/* (NOT recommended; default false requires --peer-auth-token)
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
   # peer-write-through: "true"                  # push eligible non-owner writes to owner peer
@@ -812,6 +812,22 @@ peerCache:
   #
   # Explicit empty-string authToken (authToken: "") FAILS templating with a
   # clear error — set a value, remove the key, or use existingSecret.
+  #
+  # CAVEAT — GitOps and restricted RBAC workflows:
+  # Case D relies on Helm's `lookup` to read the existing Secret from the live
+  # cluster. Two scenarios silently break this:
+  #   1) GitOps `helm template > rendered.yaml` (Argo CD, Flux render-then-apply,
+  #      offline rendering): no live cluster context, `lookup` returns empty,
+  #      and a fresh random token is rendered on every cycle — the fleet
+  #      thrashes (peers reject each other after each sync).
+  #   2) Install/upgrade under restricted RBAC: if the install SA cannot list
+  #      Secrets in the release namespace, `lookup` returns empty (same outcome
+  #      as no Secret existing) — every upgrade rotates the token.
+  # For both, do NOT rely on chart-generated random tokens. Pin the token
+  # explicitly via case A (authToken set to a literal, encrypted via
+  # sealed-secrets / SOPS / external-secrets / git-crypt) or case B
+  # (existingSecret referencing an externally-managed Secret outside the chart's
+  # render output). Both are idempotent across renders and RBAC boundaries.
   #
   # authToken: ""                    # literal token (case A)
   # existingSecret: ""               # external Secret name (case B)

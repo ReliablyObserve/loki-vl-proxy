@@ -1513,8 +1513,9 @@ func TestLogProxyStartup_EmitsBuildInfoAndPeerCacheAuthHint(t *testing.T) {
 		`"revision":"abc123"`,
 		`"build_time":"2026-04-17T15:00:00Z"`,
 		`"go_version":"` + runtime.Version() + `"`,
-		`"msg":"peer cache shared token not configured"`,
+		`"msg":"running in insecure IP-allowlist mode (--peer-insecure-ip-allowlist=true)"`,
 		`"auth_mode":"peer_membership_only"`,
+		`"hint":"set --peer-auth-token (shared across the fleet) and remove --peer-insecure-ip-allowlist to harden"`,
 	} {
 		if !strings.Contains(out, needle) {
 			t.Fatalf("expected startup log to contain %q, got %s", needle, out)

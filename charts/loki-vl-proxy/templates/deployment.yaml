@@ -1,3 +1,14 @@
+{{- /*
+  Guard: when peerCache.enabled=true the chart injects
+  -peer-auth-token=$(PEER_AUTH_TOKEN) automatically (sourced from the chart's
+  Secret or peerCache.existingSecret). The Go flag package fatals on duplicate
+  flag registration, so refuse to render if the operator also set
+  extraArgs.peer-auth-token. Token management belongs to peerCache.authToken /
+  peerCache.existingSecret.
+*/ -}}
+{{- if and .Values.peerCache.enabled (hasKey .Values.extraArgs "peer-auth-token") }}
+{{- fail "extraArgs.peer-auth-token cannot be combined with peerCache.enabled=true; chart manages the flag via peerCache.authToken / peerCache.existingSecret. Remove the extraArgs entry." }}
+{{- end }}
 apiVersion: apps/v1
 kind: {{ include "loki-vl-proxy.workloadKind" . }}
 metadata:

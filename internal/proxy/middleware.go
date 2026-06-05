@@ -274,7 +274,7 @@ func (p *Proxy) peerCacheMiddleware(next http.Handler) http.Handler {
 		// fallback is only engaged when the operator explicitly opted in via
 		// --peer-insecure-ip-allowlist=true.
 		if !p.peerInsecureIPAllowlist {
-			p.writeError(w, http.StatusUnauthorized, "peer cache requires --peer-auth-token; legacy IP-allowlist mode requires --peer-insecure-ip-allowlist=true")
+			p.writeError(w, http.StatusUnauthorized, "peer authentication required")
 			return
 		}
 

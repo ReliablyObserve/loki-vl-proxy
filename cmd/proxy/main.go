@@ -2092,10 +2092,14 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 		c.SetL3(proxyCfg.PeerCache)
 		logger.Info("peer cache enabled", "self", peerSelf, "discovery", peerDiscovery)
 		if strings.TrimSpace(proxyCfg.PeerAuthToken) == "" {
+			// Reaching this branch implies the startup validator allowed the
+			// missing-token configuration, which it only does when the operator
+			// has explicitly set --peer-insecure-ip-allowlist=true. Surface that
+			// fact and tell them how to harden.
 			logger.Warn(
-				"peer cache shared token not configured",
+				"running in insecure IP-allowlist mode (--peer-insecure-ip-allowlist=true)",
 				"auth_mode", "peer_membership_only",
-				"hint", "set -peer-auth-token fleet-wide to avoid transient startup/discovery 403s on peer cache endpoints",
+				"hint", "set --peer-auth-token (shared across the fleet) and remove --peer-insecure-ip-allowlist to harden",
 			)
 		} else {
 			logger.Info("peer cache shared token enabled", "auth_mode", "shared_token")
