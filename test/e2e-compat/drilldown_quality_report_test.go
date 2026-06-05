@@ -155,6 +155,15 @@ func seedDrilldownQualityData(t *testing.T, svc string) {
 	if resp.StatusCode/100 != 2 {
 		t.Fatalf("VL seed push returned status=%d", resp.StatusCode)
 	}
+	// VL keeps recent ingest in in-memory buffers; without /internal/force_flush
+	// the subsequent stats_query_range against `level` returns 0 series until
+	// the next periodic flush (5 s default; 1 s in our compose). On hosted GHA
+	// runners this race causes `HARD FAIL field=level range=*` even though
+	// the data is committed — verified locally: same query returns 5 levels
+	// after flush, 0 series without it. force_flush is the documented
+	// test-harness hook for this exact case.
+	// https://docs.victoriametrics.com/victorialogs/#forced-flush
+	forceVLFlush(t)
 	t.Logf("seeded %s with 1200 entries over 2h", svc)
 }
 

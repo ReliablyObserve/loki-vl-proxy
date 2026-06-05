@@ -219,6 +219,12 @@ func seedDrilldownCompareData(t *testing.T, svc string) {
 	}
 	_, _ = io.Copy(io.Discard, resp2.Body)
 	resp2.Body.Close()
+	// VL ingest-visibility race — see drilldown_quality_report_test.go for the
+	// full rationale. Without this flush the Loki-compare test queries level
+	// field-values before VL has flushed, returning 0 series and reporting
+	// "proxy returned fewer series than Loki" — false positive caused by
+	// timing, not by a real proxy regression.
+	forceVLFlush(t)
 	t.Logf("VL seed: status=%d", resp2.StatusCode)
 }
 
