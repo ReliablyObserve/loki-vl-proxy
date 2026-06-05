@@ -1272,6 +1272,23 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 // total and Grafana noticeably lags.
 const drilldownHitsFieldsLimit = 20
 
+// hitsWindowSampleThreshold: time range above which the proxy splits the
+// /hits call into multiple windowed queries. VL's /hits picks top-N by
+// frequency across the whole range; for high-cardinality fields where every
+// value appears once, the top-N ends up clustered at whichever times VL
+// happened to scan (typically recent), producing a chart with all activity
+// "grouped at the latest part". Splitting the range and querying per-window
+// guarantees values are sampled from each time window — chart shows
+// distributed activity across the full range.
+const hitsWindowSampleThreshold = 6 * time.Hour
+
+// hitsWindowCount is the number of sub-windows the range is split into when
+// the windowed sampling kicks in. 4 windows × 5 values per window = 20 series
+// total, evenly distributed across the timeline. Higher counts add latency
+// (each window is a separate VL call, even when parallelised) without
+// proportionally improving the visual.
+const hitsWindowCount = 4
+
 
 // proxyStatsQueryRangeDrilldownHits handles a Drilldown single-field histogram
 // using VL's /select/logsql/hits endpoint. Unlike the stats+merge pipeline,
@@ -1295,6 +1312,127 @@ const drilldownHitsFieldsLimit = 20
 // Y-axis for high-cardinality fields, hiding individual top-N values. Loki
 // Drilldown doesn't emit a catchall; matching that behaviour keeps the chart
 // readable.
+// queryHits runs a single VL /select/logsql/hits call and returns the parsed
+// response. Returns ok=false (with no error) when the call fails, returns
+// HTTP ≥400, or the body overflows the response cap — callers fall back to
+// the legacy stats+merge pipeline in those cases.
+//
+// stepRaw must already be a valid VL duration (e.g. "120s"); bare integer
+// formats from Grafana ("120") need normalisation by the caller.
+func (p *Proxy) queryHits(
+	ctx context.Context,
+	cleanBase, field string,
+	startRaw, endRaw, stepRaw string,
+	fieldsLimit int,
+) (vlHitsResponse, bool) {
+	params := url.Values{}
+	params.Set("query", cleanBase)
+	params.Set("field", field)
+	params.Set("fields_limit", strconv.Itoa(fieldsLimit))
+	params.Set("start", startRaw)
+	params.Set("end", endRaw)
+	params.Set("step", stepRaw)
+	// ignore_pipes=1 strips any pipe stages from the source query so /hits
+	// runs against the raw selector. The proxy has already extracted cleanBase
+	// from the full LogQL; we don't need VL to re-apply any pipes.
+	params.Set("ignore_pipes", "1")
+
+	resp, err := p.vlPost(ctx, "/select/logsql/hits", params)
+	if err != nil {
+		return vlHitsResponse{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return vlHitsResponse{}, false
+	}
+	body, err := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
+	if err != nil {
+		return vlHitsResponse{}, false
+	}
+	return parseHits(body), true
+}
+
+// gatherWindowedHits splits [startSec,endSec) into hitsWindowCount equal sub-
+// windows, runs queryHits in parallel for each window with fields_limit=
+// drilldownHitsFieldsLimit/hitsWindowCount, and returns the merged hits.
+//
+// Why: VL /hits picks top-N by frequency across the whole range. For
+// high-cardinality fields where every value appears once, "top" is broken by
+// scan order — typically the most recent values. The full-range chart then
+// shows all selected values clustered at the latest time. Per-window
+// sampling guarantees each window contributes its own top-K, so the merged
+// set spans the timeline visually.
+//
+// Field values are deduplicated by value string: if the same value appears
+// in two windows, its timestamps+values arrays are concatenated.
+func (p *Proxy) gatherWindowedHits(
+	ctx context.Context,
+	cleanBase, field string,
+	startSec, endSec int64,
+	stepRaw string,
+) (vlHitsResponse, bool) {
+	perWindow := drilldownHitsFieldsLimit / hitsWindowCount
+	if perWindow < 1 {
+		perWindow = 1
+	}
+	windowDur := (endSec - startSec) / hitsWindowCount
+
+	type windowResult struct {
+		hits vlHitsResponse
+		ok   bool
+	}
+	results := make([]windowResult, hitsWindowCount)
+	var wg sync.WaitGroup
+	for i := 0; i < hitsWindowCount; i++ {
+		i := i
+		wStart := startSec + int64(i)*windowDur
+		wEnd := wStart + windowDur
+		if i == hitsWindowCount-1 {
+			wEnd = endSec // absorb rounding remainder into last window
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h, ok := p.queryHits(ctx, cleanBase, field,
+				strconv.FormatInt(wStart, 10),
+				strconv.FormatInt(wEnd, 10),
+				stepRaw, perWindow)
+			results[i] = windowResult{hits: h, ok: ok}
+		}()
+	}
+	wg.Wait()
+
+	merged := vlHitsResponse{}
+	// Use index map so first-seen order is preserved (windows iterate oldest→newest,
+	// so older values appear first in the legend — looks chronological).
+	idx := make(map[string]int)
+	anyOK := false
+	for _, res := range results {
+		if !res.ok {
+			continue
+		}
+		anyOK = true
+		for _, h := range res.hits.Hits {
+			fv := h.Fields[field]
+			if fv == "" {
+				// Drop remainder buckets — see proxyStatsQueryRangeDrilldownHits.
+				continue
+			}
+			if pos, exists := idx[fv]; exists {
+				existing := merged.Hits[pos]
+				existing.Timestamps = append(existing.Timestamps, h.Timestamps...)
+				existing.Values = append(existing.Values, h.Values...)
+				existing.Total += h.Total
+				merged.Hits[pos] = existing
+			} else {
+				idx[fv] = len(merged.Hits)
+				merged.Hits = append(merged.Hits, h)
+			}
+		}
+	}
+	return merged, anyOK
+}
+
 func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 	w http.ResponseWriter, r *http.Request,
 	cleanBase, field, lokiField string,
@@ -1308,40 +1446,36 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 		return true
 	}
 
-	params := url.Values{}
-	params.Set("query", cleanBase)
-	params.Set("field", field)
-	params.Set("fields_limit", strconv.Itoa(drilldownHitsFieldsLimit))
-	params.Set("start", startRaw)
-	params.Set("end", endRaw)
 	// VL /hits requires step with a duration suffix (e.g. "120s"). Grafana
-	// sends bare integers ("120") to /loki/api/v1/query_range; appending "s"
-	// when the string parses cleanly as a number gives VL a valid duration.
+	// sends bare integers ("120") to /loki/api/v1/query_range; append "s"
+	// when the string parses cleanly as a number.
 	stepForHits := stepRaw
 	if _, err := strconv.ParseFloat(stepRaw, 64); err == nil {
 		stepForHits = stepRaw + "s"
 	}
-	params.Set("step", stepForHits)
-	// ignore_pipes=1 strips any pipe stages from the source query so /hits
-	// runs against the raw selector. The proxy has already extracted cleanBase
-	// from the full LogQL; we don't need VL to re-apply any pipes.
-	params.Set("ignore_pipes", "1")
 
-	resp, err := p.vlPost(r.Context(), "/select/logsql/hits", params)
-	if err != nil {
-		return false // caller falls back to stats+merge pipeline
+	// For long ranges, sample windows in parallel so the top-N spans the
+	// timeline instead of clustering at recent times (VL's natural bias).
+	startNs, sOK := parseLokiTimeToUnixNano(startRaw)
+	endNs, eOK := parseLokiTimeToUnixNano(endRaw)
+	useWindowed := sOK && eOK && time.Duration(endNs-startNs) >= hitsWindowSampleThreshold
+
+	var hits vlHitsResponse
+	var ok bool
+	if useWindowed {
+		hits, ok = p.gatherWindowedHits(r.Context(), cleanBase, field,
+			startNs/int64(time.Second), endNs/int64(time.Second), stepForHits)
+		if ok {
+			w.Header().Set("X-Proxy-Drilldown-Hits-Sampling", "windowed")
+		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 400 {
+	if !useWindowed || !ok {
+		hits, ok = p.queryHits(r.Context(), cleanBase, field,
+			startRaw, endRaw, stepForHits, drilldownHitsFieldsLimit)
+	}
+	if !ok {
 		return false
 	}
-
-	body, err := readBodyLimited(resp.Body, maxDrilldownResponseBytes)
-	if err != nil {
-		return false
-	}
-
-	hits := parseHits(body)
 	if len(hits.Hits) == 0 {
 		return false
 	}
@@ -1368,8 +1502,13 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 	// matches Loki Drilldown's behaviour: for ephemeral-value fields (trace_id
 	// with random IDs, pods with random suffixes) the chart shows scattered
 	// dots, which is a faithful representation of the underlying data.
+	// Pre-size buffer: ~50 bytes per (timestamp, value) pair across all hits.
+	estPairs := 0
+	for _, h := range hits.Hits {
+		estPairs += len(h.Timestamps)
+	}
 	var buf bytes.Buffer
-	buf.Grow(len(body))
+	buf.Grow(64 + estPairs*50)
 	buf.WriteString(`{"status":"success","data":{"resultType":"matrix","result":[`)
 	first := true
 	for _, h := range hits.Hits {
