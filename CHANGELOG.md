@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- `scripts/ci/check_quality_gate.py` gains a per-benchmark `abs` threshold
+  override table for the 7 micro-benches affected by the 1.55.0
+  `holdBufPool` + `buildHitsRangeMetricMatrix` pre-size paths (QueryRange
+  and Labels cache-hit / cache-bypass memory, allocs, ns). The pool's
+  per-call overhead (~15 allocs / ~528 B / ~700 ns) is fixed regardless of
+  response size — at micro-bench scale (192 B baseline) it shows as +275 %
+  memory / +187 % allocations, but at production scale (MB responses,
+  concurrent handlers) it amortizes to noise while the bounded-heap win
+  is decisive (proven by `TestE2ELock_ProxyHeapBoundedUnderDrilldownLoad`
+  and the `*_HeapStableUnder*` stress tests — all green with NEGATIVE
+  heap deltas). Only the `abs` (per-call tolerance) is raised; `min_base`
+  (noise floor) stays at default so a 25× regression still fails.
+  Locked by `PoolOverheadOverrideTests` in
+  `scripts/ci/tests/test_check_quality_gate.py`.
+
 ## [1.55.0] - 2026-06-05
 
 ### Performance
