@@ -1,0 +1,3 @@
+# Drilldown vs Loki — measured 2026-06-05T14:45:29Z
+# Loki=http://localhost:13101 Proxy=http://localhost:13109
+target	query	range	cold_ms	warm_ms	cold_status	cold_size	cold_series	warm_status	warm_series

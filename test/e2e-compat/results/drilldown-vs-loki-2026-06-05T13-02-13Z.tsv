@@ -1,0 +1,53 @@
+# Drilldown vs Loki — measured 2026-06-05T13:02:14Z
+# Loki=http://localhost:13101 Proxy=http://localhost:13109
+target	query	range	cold_ms	warm_ms	cold_status	cold_size	cold_series	warm_status	warm_series
+loki	pod	1h	1360	13		0	-1		-1
+proxy	pod	1h	239	20	200	2277100	5000	200	5000
+loki	pod	6h	27509	1240	500	10	-1		-1
+proxy	pod	6h	901	14	200	617028	4989	200	4989
+loki	pod	24h	26870	2312	500	10	-1		-1
+proxy	pod	24h	535	13	200	197070	16	200	16
+loki	pod	2d	21132	9		0	-1		-1
+proxy	pod	2d	1027	10	200	197077	16	200	16
+loki	pod	7d	22727	12		0	-1		-1
+proxy	pod	7d	3844	12	200	275406	16	200	16
+loki	trace_id	1h	26106	11		0	-1		-1
+proxy	trace_id	1h	523	17	200	2301075	4992	200	4992
+loki	trace_id	6h	20568	8		0	-1		-1
+proxy	trace_id	6h	2883	2916	502	399	0	502	0
+loki	trace_id	24h	22100	9134	500	10	-1		-1
+proxy	trace_id	24h	1260	10	200	98570	8	200	8
+loki	trace_id	2d	29408	20774	500	10	-1		-1
+proxy	trace_id	2d	3598	12	200	98650	8	200	8
+loki	trace_id	7d	26451	14863	500	10	-1		-1
+proxy	trace_id	7d	4483	218	502	207	0	502	0
+loki	service_version	1h	25723	9061	500	10	-1		-1
+proxy	service_version	1h	61	16	200	1177290	100	200	100
+loki	service_version	6h	28824	4565	500	10	-1	200	0
+proxy	service_version	6h	205	12	200	1157764	100	200	100
+loki	service_version	24h	24	12	200	3640	0	200	0
+proxy	service_version	24h	202	10	200	173143	14	200	14
+loki	service_version	2d	224	12	200	3658	0	200	0
+proxy	service_version	2d	315	9	200	185584	15	200	15
+loki	service_version	7d	43	9	200	3658	0	200	0
+proxy	service_version	7d	1381	21	200	242892	14	200	14
+loki	detected_fields	1h	3035	4879	200	3885	0		0
+proxy	detected_fields	1h	58	10	200	7772	-1	200	-1
+loki	detected_fields	6h	8	9		0	-1		-1
+proxy	detected_fields	6h	148	10	200	8178	-1	200	-1
+loki	detected_fields	24h	26981	7429	500	10	-1	200	0
+proxy	detected_fields	24h	249	10	200	8088	-1	200	-1
+loki	detected_fields	2d	3885	11		0	-1		-1
+proxy	detected_fields	2d	444	13	200	8106	-1	200	-1
+loki	detected_fields	7d	28701	5596	500	10	-1	200	0
+proxy	detected_fields	7d	1584	8	200	7588	-1	200	-1
+loki	labels	1h	25	12	200	246	-1	200	-1
+proxy	labels	1h	29	19	200	172	-1	200	-1
+loki	labels	6h	12	13	200	246	-1	200	-1
+proxy	labels	6h	40	13	200	172	-1	200	-1
+loki	labels	24h	39	10	200	246	-1	200	-1
+proxy	labels	24h	26	7	200	172	-1	200	-1
+loki	labels	2d	534	8		0	-1		-1
+proxy	labels	2d	30	9	200	172	-1	200	-1
+loki	labels	7d	27160	7809	500	10	-1	200	-1
+proxy	labels	7d	30	10	200	172	-1	200	-1

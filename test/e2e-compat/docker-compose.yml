@@ -24,12 +24,21 @@ services:
     user: "0:0"
     ports:
       - "13101:3100"
-    # Bench peak: 1,798 MB (heavy c=100). +30% headroom = 2,337 MB → 2.4g.
-    # Bumped to 8g on 2026-06-04 because 4g caused Loki to error/OOM at 12h+
-    # range queries on the namespace=prod e2e dataset (45 fields × 100 cardinality
-    # × 720 buckets exceeded the previous cap). 8g gives Loki enough headroom to
-    # actually serve 24h–48h queries for fair side-by-side comparison with the proxy.
-    mem_limit: 8192m
+    # Bumped 8g → 12g on 2026-06-05 — 8 GiB was OOM-killing Loki at idle once
+    # the 7-day dataset had accumulated 6.7 GiB of bigParts + indexed streams,
+    # which made every bench query land on a Loki that was either OOM-recovering
+    # or actively crashing. That produced misleadingly bad numbers in earlier
+    # runs (0/24 successes at 30m-3h). 12 GiB gives Loki enough idle headroom
+    # (~5 GB working set + 7 GB query buffer) to actually serve the workload
+    # for a fair comparison. Docker Desktop host cap on the dev box is ~17 GB
+    # so we can't go higher without starving VL + the proxy variants.
+    mem_limit: 12g
+    # GOMEMLIMIT keeps Go GC ahead of the cgroup OOM-killer so Loki shrinks
+    # its heap before getting SIGKILL'd. GOGC=80 trades a few percent CPU for
+    # ~15% lower peak heap; necessary on the constrained host budget.
+    environment:
+      - GOMEMLIMIT=10GiB
+      - GOGC=80
     restart: unless-stopped
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
@@ -133,11 +142,20 @@ services:
   victoriametrics:
     image: ${VICTORIAMETRICS_IMAGE:-victoriametrics/victoria-metrics:v1.119.0}
     container_name: e2e-victoriametrics
+    # Expose to host so the bench script + ad-hoc curl can query process_cpu /
+    # RSS time-series for the bench window. Single-node VM with -promscrape.config
+    # scrapes /metrics from proxy, vmauth, loki, victorialogs every 5s — no
+    # separate vmagent needed.
+    ports:
+      - "18428:8428"
     command:
       - "-storageDataPath=/vm-data"
       - "-httpListenAddr=:8428"
+      - "-promscrape.config=/etc/vm/scrape.yml"
+      - "-promscrape.config.strictParse=false"
     volumes:
       - vm-data:/vm-data
+      - ./vm-scrape.yml:/etc/vm/scrape.yml:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8428/health"]
       interval: 3s
