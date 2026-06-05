@@ -150,8 +150,8 @@ spec:
             {{- if not (hasKey .Values.extraArgs "server.metrics-max-concurrency") }}
             - {{ printf "-server.metrics-max-concurrency=%v" (default 1 (get $observabilityServer "metricsMaxConcurrency")) | quote }}
             {{- end }}
-            {{- if and $hostProcEnabled (not (hasKey .Values.extraArgs "proc-root")) }}
-            - {{ printf "-proc-root=%s" $hostProcMountPath | quote }}
+            {{- if and $hostProcEnabled (not (hasKey .Values.extraArgs "host-proc-root")) }}
+            - {{ printf "-host-proc-root=%s" $hostProcMountPath | quote }}
             {{- end }}
             {{- if and .Values.persistence.enabled (not (hasKey .Values.extraArgs "disk-cache-path")) }}
             - {{ printf "-disk-cache-path=%s" (include "loki-vl-proxy.diskCachePath" .) | quote }}
@@ -281,9 +281,11 @@ spec:
               mountPath: {{ .Values.persistence.mountPath }}
             {{- end }}
             {{- if $hostProcEnabled }}
-            - name: host-proc
-              mountPath: {{ $hostProcMountPath }}
+            {{- range $i, $path := list "stat" "meminfo" "pressure/cpu" "pressure/memory" "pressure/io" }}
+            - name: {{ printf "host-proc-%d" $i }}
+              mountPath: {{ printf "%s/%s" $hostProcMountPath $path }}
               readOnly: true
+            {{- end }}
             {{- end }}
             {{- if $customPatternsFileEnabled }}
             - name: custom-patterns
@@ -305,10 +307,12 @@ spec:
             claimName: {{ include "loki-vl-proxy.persistenceClaimName" . }}
         {{- end }}
         {{- if $hostProcEnabled }}
-        - name: host-proc
+        {{- range $i, $path := list "stat" "meminfo" "pressure/cpu" "pressure/memory" "pressure/io" }}
+        - name: {{ printf "host-proc-%d" $i }}
           hostPath:
-            path: /proc
-            type: Directory
+            path: {{ printf "/proc/%s" $path }}
+            type: File
+        {{- end }}
         {{- end }}
         {{- if $customPatternsFileEnabled }}
         - name: custom-patterns

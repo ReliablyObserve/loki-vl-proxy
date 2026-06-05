@@ -241,8 +241,10 @@ extraArgs:
   # patterns-autodetect-from-queries: "false"         # warm /patterns from successful query/query_range responses
   # Sizing hint: plan roughly ~96 bytes RAM/value and ~60% of RAM footprint on disk snapshot.
   # For persisted patterns/label-values snapshots, prefer StatefulSet + PVC.
-  # System metrics scope override (chart auto-injects when systemMetrics.hostProc.enabled=true):
-  # proc-root: "/host/proc"
+  # System metrics scope (the chart auto-injects host-proc-root=/host/proc when
+  # systemMetrics.hostProc.enabled=true; uncomment here only to override):
+  # host-proc-root: "/host/proc"          # filesystem root for host-scope reads (stat, meminfo, pressure/*)
+  # proc-root: "/proc"                    # filesystem root for self/container-scope reads (self/*, net/dev)
   #
   # Go runtime tuning (see also goMemLimitPercent/goMemLimit Helm values):
   # go-mem-limit: "0"                          # explicit GOMEMLIMIT in bytes (overrides go-mem-limit-percent)
@@ -746,10 +748,23 @@ extraVolumes: []
 extraVolumeMounts: []
 
 # --- System metrics (/proc) ---
-# When enabled, mount host /proc read-only and point the proxy at that mount
-# so CPU/memory/disk/network/PSI metrics reflect node-level context.
-# Enabled by default to keep system-resource panels/alerts functional out of the box.
-# Disable only if your platform policy disallows hostPath mounts.
+# When enabled, the chart mounts FIVE specific host /proc files (not the full
+# /proc directory) read-only and passes --host-proc-root=<mountPath> so the
+# proxy reads host CPU, memory, and PSI counters from them:
+#   /proc/stat              -> {mountPath}/stat              (host CPU)
+#   /proc/meminfo           -> {mountPath}/meminfo           (host memory)
+#   /proc/pressure/cpu      -> {mountPath}/pressure/cpu      (PSI cpu)
+#   /proc/pressure/memory   -> {mountPath}/pressure/memory   (PSI memory)
+#   /proc/pressure/io       -> {mountPath}/pressure/io       (PSI io)
+# Each mount is a hostPath of type: File, scoped to a single counter file.
+# Per-process information for other workloads on the host is NOT reachable.
+# Self/container-scope metrics (self/{status,io,stat,fd}, net/dev) come from
+# the container's own /proc and need no hostPath.
+#
+# Enabled by default so system-resource panels/alerts work out of the box.
+# Disable on restricted PSA clusters that forbid hostPath mounts; doing so
+# drops the host_cpu_*, host_memory_*, and process_pressure_* metric families
+# but leaves process_*, runtime_*, and network counters intact.
 systemMetrics:
   hostProc:
     enabled: true

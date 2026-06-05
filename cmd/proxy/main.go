@@ -44,6 +44,7 @@ type envConfig struct {
 	rulerBackendURL   string
 	alertsBackendURL  string
 	procRoot          string
+	hostProcRoot      string
 	tenantMapJSON     string
 	tenantMapFile     string
 	tenantLimitsAllow string
@@ -416,7 +417,8 @@ func run(
 	otelServiceNamespace := fs.String("otel-service-namespace", "", "OpenTelemetry service.namespace for logs and OTLP metrics")
 	otelServiceInstanceID := fs.String("otel-service-instance-id", "", "OpenTelemetry service.instance.id for logs and OTLP metrics")
 	deploymentEnvironment := fs.String("deployment-environment", "", "OpenTelemetry deployment.environment.name for logs and OTLP metrics")
-	procRoot := fs.String("proc-root", "/proc", "Proc filesystem root for system metrics (/proc for container scope, /host/proc for host scope)")
+	procRoot := fs.String("proc-root", "/proc", "Filesystem root for self/container-scope /proc reads (self/status, self/io, self/stat, self/fd, net/dev). Back-compat: if --host-proc-root is left at its default, this value also seeds the host-scope root.")
+	hostProcRoot := fs.String("host-proc-root", "/proc", "Filesystem root for host-scope /proc reads (stat, meminfo, pressure/{cpu,memory,io}). Set to /host/proc when running with the chart's surgical hostPath mounts. Defaults to /proc.")
 
 	// HTTP server hardening
 	readTimeout := fs.Duration("http-read-timeout", 30*time.Second, "HTTP server read timeout")
@@ -613,6 +615,7 @@ func run(
 		rulerBackendURL:   *rulerBackendURL,
 		alertsBackendURL:  *alertsBackendURL,
 		procRoot:          *procRoot,
+		hostProcRoot:      *hostProcRoot,
 		tenantMapJSON:     *tenantMapJSON,
 		tenantMapFile:     *tenantMapFile,
 		tenantLimitsAllow: *tenantLimitsAllowPublish,
@@ -661,7 +664,16 @@ func run(
 		runtime.SetMutexProfileFraction(5)
 		runtime.SetBlockProfileRate(1000)
 	}
-	metrics.SetProcRoot(envCfg.procRoot)
+	// Wire host-scope /proc root. When --host-proc-root is explicitly set, use
+	// it verbatim. Back-compat: if it's still the default "/proc" and the
+	// legacy --proc-root flag was set to something else (e.g. /host/proc), use
+	// the legacy value so existing chart configs that only pass --proc-root
+	// keep working.
+	resolvedHostProcRoot := envCfg.hostProcRoot
+	if resolvedHostProcRoot == "/proc" && envCfg.procRoot != "" && envCfg.procRoot != "/proc" {
+		resolvedHostProcRoot = envCfg.procRoot
+	}
+	metrics.SetHostProcRoot(resolvedHostProcRoot)
 	logSystemMetricsStartup(logger)
 
 	fatal := func(msg string, args ...any) {
@@ -1248,6 +1260,9 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	}
 	if v := getenv("PROC_ROOT"); v != "" && cfg.procRoot == "/proc" {
 		cfg.procRoot = v
+	}
+	if v := getenv("HOST_PROC_ROOT"); v != "" && cfg.hostProcRoot == "/proc" {
+		cfg.hostProcRoot = v
 	}
 	if v := getenv("TENANT_MAP"); v != "" && cfg.tenantMapJSON == "" {
 		cfg.tenantMapJSON = v
