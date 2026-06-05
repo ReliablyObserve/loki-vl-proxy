@@ -148,6 +148,50 @@ func sanitizeLimit(limitStr string) string {
 	return limitStr
 }
 
+// writeDrilldownPartialFromUpstream converts an upstream VL 4xx/5xx error into
+// a Loki-compatible "200 OK with partial results + warning header" reply. This
+// mirrors what Loki itself does for Drilldown / Logs Explore traffic — see
+// pkg/querier/queryrange/limits.go::seriesLimiter.Do() upstream, which calls
+// IsLogsDrilldownRequest() and converts max-series-exceeded errors from
+// HTTP 500 ("too_many_series") into HTTP 200 with `Warning` header +
+// remaining metadata so the panel renders an empty chart instead of erroring.
+//
+// Use this from any path that talks to VL on behalf of Grafana/Drilldown
+// traffic and would otherwise return a raw VL error. Non-Grafana / API
+// clients (curl, internal tooling) still see the real error via writeError —
+// we only swallow upstream failures for graceful-degradation paths.
+//
+// vlStatus is the upstream code we suppressed (visible in
+// `X-Proxy-Upstream-Status` for debugging). vlMsg goes into the `Warning`
+// header so operators tailing logs see what VL actually said.
+func (p *Proxy) writeDrilldownPartialFromUpstream(w http.ResponseWriter, vlStatus int, vlMsg string) {
+	if p.log != nil && p.log.Enabled(context.Background(), slog.LevelWarn) {
+		p.log.Log(context.Background(), slog.LevelWarn,
+			"converting VL upstream error to Drilldown partial-results reply",
+			"vl_status", vlStatus, "vl_msg", vlMsg)
+	}
+	// Loki uses the Warning header to surface partial-results semantics back to
+	// Grafana; the Drilldown plugin reads it and renders a warning badge on the
+	// panel. Header value must be RFC 7234 quoted-string compatible.
+	w.Header().Set("Warning", `199 - "maximum query bounds exceeded; returning partial results"`)
+	w.Header().Set("X-Proxy-Upstream-Status", strconv.Itoa(vlStatus))
+	if vlMsg != "" {
+		// First-line only; some VL errors include multi-line stack-trace style
+		// detail which would break the header serialization.
+		if i := strings.IndexByte(vlMsg, '\n'); i >= 0 {
+			vlMsg = vlMsg[:i]
+		}
+		// Trim to a sane length so we don't blow request-header limits.
+		if len(vlMsg) > 200 {
+			vlMsg = vlMsg[:200]
+		}
+		w.Header().Set("X-Proxy-Upstream-Error", vlMsg)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+}
+
 func (p *Proxy) writeError(w http.ResponseWriter, code int, msg string) {
 	level := slog.LevelInfo
 	switch {

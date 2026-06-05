@@ -1007,3 +1007,129 @@ func TestLock_DrilldownHitsFieldsLimit(t *testing.T) {
 		t.Errorf("drilldownHitsFieldsLimit=%d (> 100) — chunked-merge spike risk", drilldownHitsFieldsLimit)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Lock 14: VL upstream errors never leak through to Grafana clients.
+// ---------------------------------------------------------------------------
+
+// TestLock_VLErrorsConvertedToPartialResults pins the contract that VL 4xx/5xx
+// responses for Drilldown / Grafana-sourced stats queries are converted to
+// HTTP 200 + Warning header + empty Loki matrix — mirroring Loki's own
+// IsLogsDrilldownRequest carve-out (pkg/querier/queryrange/limits.go::
+// seriesLimiter.Do upstream). The plugin must see a graceful empty chart
+// with a warning badge, not a hard error toast.
+//
+// Why this matters: VL's parser-pipe row-scan limit (and several other VL
+// query bounds) legitimately fires for high-cardinality Drilldown queries
+// like `sum by (trace_id) (count_over_time({namespace="prod"}|json|trace_id!=""[2m]))`
+// at 6h+ ranges. Loki returns 200 + partial-results for the same scenario;
+// the proxy MUST match that behavior or it changes what Grafana renders
+// (error vs warning) for byte-identical user input.
+//
+// Non-Grafana clients (curl, internal scripts) still see real errors so they
+// can react meaningfully — only `X-Query-Tags: Source=grafana-lokiexplore-app`
+// or `User-Agent: Grafana/*` or `X-Grafana-*` triggers the partial-results
+// path. This mirrors the Loki source behavior.
+func TestLock_VLErrorsConvertedToPartialResults(t *testing.T) {
+	cases := []struct {
+		name                string
+		vlStatus            int
+		vlBody              string
+		grafanaSourced      bool
+		expectStatus        int
+		expectWarningHeader bool
+		expectUpstreamHdr   bool
+	}{
+		{
+			name:                "Grafana_VL_502_parserpipe_overflow",
+			vlStatus:            http.StatusBadGateway,
+			vlBody:              `{"error":"too many rows scanned by | stats by (trace_id)"}`,
+			grafanaSourced:      true,
+			expectStatus:        http.StatusOK,
+			expectWarningHeader: true,
+			expectUpstreamHdr:   true,
+		},
+		{
+			name:                "Grafana_VL_503_queue_saturated",
+			vlStatus:            http.StatusServiceUnavailable,
+			vlBody:              `{"error":"too many concurrent queries"}`,
+			grafanaSourced:      true,
+			expectStatus:        http.StatusOK,
+			expectWarningHeader: true,
+			expectUpstreamHdr:   true,
+		},
+		{
+			name:                "Grafana_VL_500_internal",
+			vlStatus:            http.StatusInternalServerError,
+			vlBody:              `{"error":"out of memory"}`,
+			grafanaSourced:      true,
+			expectStatus:        http.StatusOK,
+			expectWarningHeader: true,
+			expectUpstreamHdr:   true,
+		},
+		{
+			name:                "NonGrafana_VL_502_passes_through",
+			vlStatus:            http.StatusBadGateway,
+			vlBody:              `{"error":"too many rows scanned"}`,
+			grafanaSourced:      false,
+			expectStatus:        http.StatusBadGateway, // real error visible
+			expectWarningHeader: false,
+			expectUpstreamHdr:   false,
+		},
+		{
+			name:                "NonGrafana_VL_500_passes_through",
+			vlStatus:            http.StatusInternalServerError,
+			vlBody:              `{"error":"oom"}`,
+			grafanaSourced:      false,
+			expectStatus:        http.StatusInternalServerError,
+			expectWarningHeader: false,
+			expectUpstreamHdr:   false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			vlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.vlStatus)
+				_, _ = w.Write([]byte(tc.vlBody))
+			}))
+			defer vlSrv.Close()
+
+			p := newTestProxy(t, vlSrv.URL)
+
+			req := httptest.NewRequest("POST", "/loki/api/v1/query_range",
+				strings.NewReader(`query=sum(count_over_time({app="x"}[1m]))&start=1700000000000000000&end=1700001000000000000&step=60s`))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if tc.grafanaSourced {
+				req.Header.Set("X-Query-Tags", "Source=grafana-lokiexplore-app")
+			}
+			req.Header.Set("X-Scope-OrgID", "test-"+tc.name)
+			_ = req.ParseForm()
+
+			w := httptest.NewRecorder()
+			p.proxyStatsQueryRangeDirect(w, req, `app:="x" | stats count() as v`)
+
+			if w.Code != tc.expectStatus {
+				t.Errorf("status: got %d, want %d (body=%q)", w.Code, tc.expectStatus, w.Body.String())
+			}
+			if tc.expectWarningHeader {
+				if got := w.Header().Get("Warning"); got == "" {
+					t.Errorf("expected Warning header, got none")
+				}
+				if got := w.Header().Get("X-Proxy-Upstream-Status"); got != strconv.Itoa(tc.vlStatus) {
+					t.Errorf("X-Proxy-Upstream-Status: got %q, want %q", got, strconv.Itoa(tc.vlStatus))
+				}
+			} else {
+				if got := w.Header().Get("Warning"); got != "" {
+					t.Errorf("unexpected Warning header: %q", got)
+				}
+			}
+			if tc.expectStatus == http.StatusOK {
+				if !strings.Contains(w.Body.String(), `"status":"success"`) {
+					t.Errorf("expected Loki success envelope, got: %s", w.Body.String())
+				}
+			}
+		})
+	}
+}

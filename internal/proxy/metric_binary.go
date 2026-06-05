@@ -136,6 +136,14 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	// when many concurrent field queries each produce a large stats response.
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 	if err != nil {
+		// Grafana-sourced traffic gets the same partial-results carve-out
+		// Loki applies (IsLogsDrilldownRequest in pkg/querier/queryrange/limits.go).
+		// Non-Grafana clients (curl, scripts, /ready probes) still see the
+		// upstream status so they can react meaningfully.
+		if isGrafanaSourcedRequest(r) {
+			p.writeDrilldownPartialFromUpstream(w, statusFromUpstreamErr(err), err.Error())
+			return false
+		}
 		p.writeError(w, statusFromUpstreamErr(err), err.Error())
 		return false
 	}
@@ -143,6 +151,10 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 
 	if resp.StatusCode >= 400 {
 		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		if isGrafanaSourcedRequest(r) {
+			p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, extractVLErrorMsg(errBody))
+			return false
+		}
 		p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
 		return false
 	}
@@ -1123,14 +1135,15 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 		params := buildStatsQueryRangeParams(limitedQuery, startRaw, endRaw, effectiveStepRaw)
 		resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 		if err != nil {
-			p.writeError(w, statusFromUpstreamErr(err), err.Error())
+			// Drilldown contract — partial-results 200 instead of raw VL error.
+			p.writeDrilldownPartialFromUpstream(w, statusFromUpstreamErr(err), err.Error())
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode >= 400 {
 			errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-			p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
+			p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, extractVLErrorMsg(errBody))
 			return
 		}
 
@@ -1261,14 +1274,23 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 	params := buildStatsQueryRangeParams(limitedQuery, startRaw, endRaw, effectiveStepRaw)
 	resp, err := p.vlPost(r.Context(), "/select/logsql/stats_query_range", params)
 	if err != nil {
-		p.writeError(w, statusFromUpstreamErr(err), err.Error())
+		// Drilldown contract: never leak raw upstream transport errors to the
+		// plugin — Loki itself converts these to partial-results 200s. Same
+		// behavior here keeps the panel rendering an empty chart + warning
+		// badge instead of a hard error toast.
+		p.writeDrilldownPartialFromUpstream(w, statusFromUpstreamErr(err), err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
+		// Mirror Loki's IsLogsDrilldownRequest carve-out — for parser-direct
+		// stats queries that overflow VL's row-scan budget (502 with
+		// per-bucket limit exceeded; 503 from VL queue saturation), return a
+		// Loki-compatible 200 + Warning header instead of the raw VL status.
+		// See pkg/querier/queryrange/limits.go::seriesLimiter.Do upstream.
+		p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, extractVLErrorMsg(errBody))
 		return
 	}
 
