@@ -225,9 +225,11 @@ services:
       - "-label-values-index-startup-peer-warm-timeout=2s"
       # Disable rate limiting so benchmark clients (single IP) are not throttled.
       - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       # pprof for benchmark profiling (CPU/heap/alloc capture during bench runs).
       - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=bench-pprof-token"
       # Explicit defaults — underscores+translated+emit=true for full Loki OTel compatibility
       - "-label-style=underscores"
@@ -275,7 +277,11 @@ services:
       - "-patterns-persist-interval=5s"
       - "-patterns-startup-stale-threshold=30s"
       - "-patterns-startup-peer-warm-timeout=2s"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
       - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -308,7 +314,11 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
       - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       vmauth:
@@ -353,8 +363,10 @@ services:
       # Disable rate limiting and concurrency cap so benchmark clients (single IP)
       # are not throttled — matches the main proxy benchmark configuration.
       - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
       - "-max-concurrent=0"
       - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -387,7 +399,11 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=native"
       - "-emit-structured-metadata=true"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
       - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -420,7 +436,11 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
       - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -453,7 +473,11 @@ services:
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=false"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
       - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -486,7 +510,11 @@ services:
       - "-label-style=underscores"
       - "-tail.mode=synthetic"
       - "-tail.allowed-origins=http://grafana:3000,http://127.0.0.1:3002,http://localhost:3002"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
       - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
@@ -518,7 +546,11 @@ services:
       - "-label-style=underscores"
       - "-tail.mode=native"
       - "-tail.allowed-origins=http://grafana:3000,http://127.0.0.1:3002,http://localhost:3002"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
       - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       victorialogs:
