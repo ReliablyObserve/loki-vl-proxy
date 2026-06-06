@@ -49,9 +49,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `buildCIDRRegex`, `buildIPRangeRegex`, `buildIPv6CIDRRegex`) plus
     `ParseKeepConditions` — all 0 % before; translator package
     coverage jumps from 83.4 % to 88.2 %.
+  - `internal/proxy` more pure helpers: `stripOuterLabelReplace`,
+    `inferUnwrapConv`, `formatMetricSampleValue`, `metricWindowValue`,
+    `patternLevelFromEntry`, `parsePatternStepSeconds`,
+    `extractLevelFromMsg`.
+  - `internal/cache/peer.go` request-body encoding/response-writing:
+    `acceptsPeerEncoding`, `encodePeerRequestBody` (identity/zstd/gzip
+    roundtrips + unsupported error path),
+    `writePeerEncodedResponse` (zstd / gzip-fallback /
+    no-supported-encoding branches), `peerPreferredSetEncoding`
+    (cache package coverage 82.6 % → 84.5 %).
 
-  Total: ~1700 lines of new test code, lifts aggregate Go coverage on
-  `main` from 83.5 % to 84.7 % (+1.2 pp). Race-detector clean.
+  Total: ~2200 lines of new test code, lifts aggregate Go coverage on
+  `main` from 83.5 % to 84.8 % (+1.3 pp). Race-detector clean.
 
 ## [1.55.2] - 2026-06-06
 
