@@ -41,9 +41,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `populationVariance`, `applyConstantBinaryOp`,
     `applyMatrixStddevAgg`, `applyInstantStddevAgg` — pure JSON-byte
     transformations and math helpers).
+  - `internal/proxy/metric_binary.go` + `stream_processing.go`
+    (`parseFloat64Bytes`, `abs64`, `extractStatsGroupByFields`,
+    `applyDropConditions`, `applyKeepConditions`).
+  - `internal/translator/translator.go` ip() helpers
+    (`extractIPFilterArg`, `ipLineFilterToRegex`,
+    `buildCIDRRegex`, `buildIPRangeRegex`, `buildIPv6CIDRRegex`) plus
+    `ParseKeepConditions` — all 0 % before; translator package
+    coverage jumps from 83.4 % to 88.2 %.
 
-  Total: ~1200 lines of new test code, lifts aggregate Go coverage on
-  `main` from 83.5 % to 84.3 % (+0.8 pp). Race-detector clean.
+  Total: ~1700 lines of new test code, lifts aggregate Go coverage on
+  `main` from 83.5 % to 84.7 % (+1.2 pp). Race-detector clean.
 
 ## [1.55.2] - 2026-06-06
 
