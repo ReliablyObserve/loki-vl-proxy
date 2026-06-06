@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.55.3] - 2026-06-06
+
 ### CI
 
 - `test/e2e-compat`: warm the proxy's filtered label_values cache
