@@ -783,9 +783,21 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 
 ## Observability and Admin Surfaces
 
+> **BREAKING in v1.56.0** — admin/debug endpoints and `/metrics` no longer share the main proxy listener by default.
+>
+> - `-server.register-instrumentation` now defaults to **`false`** (was `true`). The main proxy listener stops serving `/metrics` unless instrumentation is explicitly re-enabled.
+> - Admin and debug endpoints (`/admin/*`, `/debug/pprof/*`, `/debug/queries`) move to a dedicated loopback listener on `127.0.0.1:3101` (configurable via `--admin-listen`) unless `-server.admin-auth-token` is set, in which case they stay on the main listener for back-compat.
+> - `/metrics` can be hosted on a dedicated port via `--metrics-listen=:9091`; the Helm chart sets this by default and points the ServiceMonitor at it.
+>
+> **Binary users who scrape `:3100/metrics` today** must, after upgrade, either:
+> - set `-server.register-instrumentation=true` to keep `/metrics` on the main listener (legacy behavior), OR
+> - set `-server.register-instrumentation=true -metrics-listen=:9091` for a dedicated metrics port (recommended).
+
 | Flag | Env | Default | Description |
 |---|---|---|---|
-| `-server.register-instrumentation` | — | `true` | Register `/metrics` and related instrumentation handlers |
+| `-server.register-instrumentation` | — | `false` | Register `/metrics` and related instrumentation handlers. **BREAKING in v1.56.0** — default changed from `true` to `false` so the main listener no longer exposes `/metrics` unless opted in. Pair with `--metrics-listen` to host `/metrics` on a dedicated port. |
+| `--admin-listen` | — | `127.0.0.1:3101` | Address of the dedicated admin/debug listener used when `-server.admin-auth-token` is empty. Bound to loopback by default so admin surfaces (`/admin/*`, `/debug/pprof/*`, `/debug/queries`) are unreachable from off-host. Set `-server.admin-auth-token` to keep these surfaces on the main listener instead. |
+| `--metrics-listen` | — | — | Address of the dedicated `/metrics` listener (e.g. `:9091`). When set together with `-server.register-instrumentation=true`, `/metrics` moves off the main proxy listener so scrape traffic never competes with queries. Empty disables the dedicated listener. |
 | `-server.enable-pprof` | — | `false` | Expose `/debug/pprof/*` |
 | `-server.enable-query-analytics` | — | `false` | Expose `/debug/queries` |
 | `-server.admin-auth-token` | — | — | Bearer token accepted on admin/debug endpoints |

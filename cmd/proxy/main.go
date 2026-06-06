@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -938,15 +939,27 @@ func run(
 		}()
 	}
 	handleShutdownFn(runtime.shutdownCh, runtime.server, 30*time.Second, logger)
-	// Shut down aux listeners with the same 30s budget. Done sequentially so a
-	// hung admin/metrics handler can't starve the main shutdown.
+	// Shut down aux listeners in parallel with a per-aux 30s budget. handleShutdown
+	// already returned synchronously above, so a hung aux handler cannot starve
+	// main shutdown; what we need to bound is *total* aux shutdown time so the
+	// process exits within Kubernetes' default terminationGracePeriodSeconds=30
+	// rather than N*30s for N aux servers.
+	var auxWG sync.WaitGroup
 	for _, aux := range runtime.auxServers {
-		shutCtx, cancelShut := context.WithTimeout(context.Background(), 30*time.Second)
-		if err := aux.srv.Shutdown(shutCtx); err != nil {
-			logger.Error("aux server shutdown error", "role", aux.role, "address", aux.addr, "error", err)
-		}
-		cancelShut()
+		aux := aux
+		auxWG.Add(1)
+		go func() {
+			defer auxWG.Done()
+			shutCtx, cancelShut := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelShut()
+			if err := aux.srv.Shutdown(shutCtx); err != nil {
+				logger.Error("aux server shutdown error", "role", aux.role, "address", aux.addr, "error", err)
+			} else {
+				logger.Info("aux listener stopped", "role", aux.role, "address", aux.addr)
+			}
+		}()
 	}
+	auxWG.Wait()
 	if err := runtime.proxy.Shutdown(context.Background()); err != nil {
 		logger.Error("proxy shutdown hook failed", "error", err)
 	}

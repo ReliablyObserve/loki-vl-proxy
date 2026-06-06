@@ -2264,3 +2264,132 @@ func TestValidateAdminExposure_NonLoopbackAdminListenerWithoutTokenFails(t *test
 		t.Fatalf("wildcard listen with pprof without token must fail")
 	}
 }
+
+// TestBuildRuntime_AuxListenerTopology asserts that the splitAdmin / splitMetrics
+// decision inside buildRuntime materialises the expected set of auxiliary
+// listeners across the four operationally meaningful configurations:
+//
+//	| adminAuthToken | metricsListen | registerInstrumentation | aux servers   |
+//	|----------------|---------------|-------------------------|---------------|
+//	| ""             | ""            | false                   | admin only    |
+//	| ""             | ":9091"       | true                    | admin+metrics |
+//	| "secret"       | ":9091"       | true                    | metrics only  |
+//	| "secret"       | ""            | true                    | none (mono)   |
+//
+// The first column models what the operator sets on the CLI; resolveAdminTarget
+// is invoked exactly as run() invokes it so we exercise the same plumbing that
+// production startup uses. We assert on the roles (not the addresses) because
+// the role string is what shutdown logs and metrics labels key on.
+func TestBuildRuntime_AuxListenerTopology(t *testing.T) {
+	const (
+		mainAddr  = ":0"
+		adminAddr = "127.0.0.1:3101"
+	)
+
+	cases := []struct {
+		name                    string
+		adminAuthToken          string
+		metricsListen           string
+		registerInstrumentation bool
+		wantRoles               []string
+	}{
+		{
+			name:                    "default_secure_no_token_no_metrics_listener",
+			adminAuthToken:          "",
+			metricsListen:           "",
+			registerInstrumentation: false,
+			wantRoles:               []string{"admin"},
+		},
+		{
+			name:                    "no_token_with_dedicated_metrics_listener",
+			adminAuthToken:          "",
+			metricsListen:           ":0",
+			registerInstrumentation: true,
+			wantRoles:               []string{"admin", "metrics"},
+		},
+		{
+			name:                    "token_set_with_dedicated_metrics_listener",
+			adminAuthToken:          "secret",
+			metricsListen:           ":0",
+			registerInstrumentation: true,
+			wantRoles:               []string{"metrics"},
+		},
+		{
+			name:                    "token_set_monolithic_listener",
+			adminAuthToken:          "secret",
+			metricsListen:           "",
+			registerInstrumentation: true,
+			wantRoles:               nil,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+			fake := &fakeOTLPPusher{}
+
+			// Mirror run()'s resolution so the test exercises the same
+			// plumbing that production startup uses.
+			adminTarget := resolveAdminTarget(mainAddr, adminAddr, tc.adminAuthToken)
+
+			rt, err := buildRuntime(runtimeOptions{
+				cacheTTL:              10 * time.Second,
+				cacheMax:              50,
+				cacheMaxBytes:         defaultCacheMaxBytes,
+				compatCacheEnabled:    true,
+				compatCacheMaxPercent: defaultCompatCachePercent,
+				proxyCfg: proxyRuntimeConfig{
+					backendURL:               "http://example.com",
+					logLevel:                 "info",
+					registerInstrumentation:  boolPtr(tc.registerInstrumentation),
+					adminAuthToken:           tc.adminAuthToken,
+					labelStyle:               "passthrough",
+					metadataFieldMode:        "hybrid",
+					metricsMaxTenants:        10,
+					metricsMaxClients:        10,
+					metricsTrustProxyHeaders: false,
+				},
+				otlpCfg: otlpRuntimeConfig{
+					endpoint:    "http://collector:4318/v1/metrics",
+					interval:    5 * time.Second,
+					compression: "gzip",
+					serviceName: "proxy",
+				},
+				maxBodyBytes:        1024,
+				responseCompression: "auto",
+				serverOpts: serverRuntimeOptions{
+					listenAddr:     mainAddr,
+					readTimeout:    time.Second,
+					writeTimeout:   2 * time.Second,
+					idleTimeout:    3 * time.Second,
+					maxHeaderBytes: 4096,
+				},
+				adminListenAddr:   adminTarget,
+				metricsListenAddr: tc.metricsListen,
+			}, logger, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
+				return fake
+			})
+			if err != nil {
+				t.Fatalf("unexpected buildRuntime error: %v", err)
+			}
+			defer rt.cacheCleanup()
+			defer rt.stopOTLP()
+
+			gotRoles := make([]string, 0, len(rt.auxServers))
+			for _, aux := range rt.auxServers {
+				gotRoles = append(gotRoles, aux.role)
+			}
+			if len(gotRoles) != len(tc.wantRoles) {
+				t.Fatalf("aux server count mismatch: want %v (%d), got %v (%d)",
+					tc.wantRoles, len(tc.wantRoles), gotRoles, len(gotRoles))
+			}
+			for i, want := range tc.wantRoles {
+				if gotRoles[i] != want {
+					t.Fatalf("aux server[%d] role mismatch: want %q, got %q (full got=%v)",
+						i, want, gotRoles[i], gotRoles)
+				}
+			}
+		})
+	}
+}

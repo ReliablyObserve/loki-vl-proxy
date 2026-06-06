@@ -264,6 +264,7 @@ spec:
             - name: http
               containerPort: 3100
               protocol: TCP
+            {{- if .Values.service.metrics.enabled }}
             # Dedicated Prometheus metrics listener (matches extraArgs.metrics-listen
             # default ":9091"). The Service exposes this targetPort under the
             # `metrics` name; ServiceMonitor scrapes it instead of the proxy port
@@ -271,9 +272,15 @@ spec:
             # admin listener (default 127.0.0.1:3101) is intentionally NOT
             # listed here — it binds to loopback and must not be reachable from
             # outside the pod.
+            #
+            # Gated by service.metrics.enabled so operators who disable the
+            # metrics listener on the binary side (extraArgs.metrics-listen=""
+            # or extraArgs.server.register-instrumentation=false) don't end up
+            # with a stale named containerPort the Service can't reach.
             - name: metrics
               containerPort: 9091
               protocol: TCP
+            {{- end }}
           {{- if .Values.probe.liveness.enabled }}
           livenessProbe:
             httpGet:
