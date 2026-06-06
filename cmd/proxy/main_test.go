@@ -1602,6 +1602,42 @@ func TestValidatePeerAuth(t *testing.T) {
 	})
 }
 
+// TestValidateMetricsListen regression-guards the contract that --metrics-listen
+// can only be set when -server.register-instrumentation=true. Without that gate
+// the dedicated metrics aux listener boots a port that only serves 404s for
+// /metrics, silently mis-leading operators (and any ServiceMonitor pointed at
+// it). The validator runs alongside validatePeerAuth / validateAdminExposure in
+// run() so the failure mode is a clean startup error, not a half-running proxy.
+func TestValidateMetricsListen(t *testing.T) {
+	t.Run("EmptyOK", func(t *testing.T) {
+		if err := validateMetricsListen("", false); err != nil {
+			t.Fatalf("unexpected error with both flags unset: %v", err)
+		}
+		if err := validateMetricsListen("   ", false); err != nil {
+			t.Fatalf("whitespace-only --metrics-listen should also be treated as unset, got %v", err)
+		}
+	})
+
+	t.Run("SetWithInstrumentationOK", func(t *testing.T) {
+		if err := validateMetricsListen(":9091", true); err != nil {
+			t.Fatalf("unexpected error with --metrics-listen set and instrumentation enabled: %v", err)
+		}
+	})
+
+	t.Run("SetWithoutInstrumentationFails", func(t *testing.T) {
+		err := validateMetricsListen(":9091", false)
+		if err == nil {
+			t.Fatalf("expected error when --metrics-listen set without register-instrumentation")
+		}
+		if !strings.Contains(err.Error(), "metrics-listen") {
+			t.Fatalf("error should name --metrics-listen, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "register-instrumentation") {
+			t.Fatalf("error should name -server.register-instrumentation, got %v", err)
+		}
+	})
+}
+
 func TestBuildHTTPServer_WithTLSClientCA(t *testing.T) {
 	caPath := writeTestCA(t)
 	srv, err := buildHTTPServer(serverRuntimeOptions{
@@ -2321,6 +2357,19 @@ func TestBuildRuntime_AuxListenerTopology(t *testing.T) {
 			registerInstrumentation: true,
 			wantRoles:               nil,
 		},
+		{
+			// Regression guard for the validator contract: --metrics-listen set
+			// while -server.register-instrumentation=false MUST NOT bring up a
+			// metrics aux listener (a dead port serving only 404s). Production
+			// flow is gated by validateMetricsListen well before buildRuntime,
+			// but buildRuntime mirrors the contract so any future caller that
+			// bypasses the validator still cannot wire a dead listener.
+			name:                    "metrics_listen_without_instrumentation_no_aux",
+			adminAuthToken:          "secret",
+			metricsListen:           ":0",
+			registerInstrumentation: false,
+			wantRoles:               nil,
+		},
 	}
 
 	for _, tc := range cases {
@@ -2365,8 +2414,9 @@ func TestBuildRuntime_AuxListenerTopology(t *testing.T) {
 					idleTimeout:    3 * time.Second,
 					maxHeaderBytes: 4096,
 				},
-				adminListenAddr:   adminTarget,
-				metricsListenAddr: tc.metricsListen,
+				adminListenAddr:         adminTarget,
+				metricsListenAddr:       tc.metricsListen,
+				registerInstrumentation: tc.registerInstrumentation,
 			}, logger, func(chan<- os.Signal, ...os.Signal) {}, func(metrics.OTLPConfig, *metrics.Metrics) otlpMetricsPusher {
 				return fake
 			})

@@ -304,10 +304,15 @@ type runtimeOptions struct {
 	// adminListenAddr, when non-empty AND distinct from serverOpts.listenAddr,
 	// requests a dedicated admin/debug listener (see resolveAdminTarget).
 	adminListenAddr string
-	// metricsListenAddr, when non-empty AND registerInstrumentation is true,
-	// requests a dedicated /metrics listener so the main proxy port carries
-	// no observability surface.
-	metricsListenAddr string
+	// metricsListenAddr, when non-empty, requests a dedicated /metrics
+	// listener so the main proxy port carries no observability surface.
+	// The combination metricsListenAddr != "" AND registerInstrumentation
+	// == false is rejected at startup by validateMetricsListen — a metrics
+	// listener with instrumentation disabled would bind a dead port that
+	// only serves 404s. buildRuntime mirrors that contract: it only spawns
+	// the aux listener when BOTH flags agree.
+	metricsListenAddr        string
+	registerInstrumentation  bool
 }
 
 type runtimeState struct {
@@ -683,6 +688,9 @@ func run(
 	if err := validatePeerAuth(*peerDiscovery, *peerStatic, *peerAuthToken, *peerInsecureIPAllowlist); err != nil {
 		return err
 	}
+	if err := validateMetricsListen(*metricsListen, *registerInstrumentation); err != nil {
+		return err
+	}
 
 	logResult := buildLogger(logWriter, loggerConfig{
 		level:                 *logLevel,
@@ -907,8 +915,9 @@ func run(
 				overloadMaxAge: *httpConnOverloadMaxAge,
 			},
 		},
-		adminListenAddr:   adminTarget,
-		metricsListenAddr: *metricsListen,
+		adminListenAddr:         adminTarget,
+		metricsListenAddr:       *metricsListen,
+		registerInstrumentation: *registerInstrumentation,
 	}, logger, notify, newPusher)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runtime: %w", err)
@@ -1083,7 +1092,7 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	adminAddr := opts.adminListenAddr
 	metricsAddr := strings.TrimSpace(opts.metricsListenAddr)
 	splitAdmin := adminAddr != "" && adminAddr != mainAddr
-	splitMetrics := metricsAddr != ""
+	splitMetrics := metricsAddr != "" && opts.registerInstrumentation
 
 	mux := http.NewServeMux()
 	if !splitAdmin && !splitMetrics {
@@ -1300,6 +1309,25 @@ func validatePeerAuth(discovery, peers, token string, insecureAllowlist bool) er
 	return fmt.Errorf("peer cache is configured (discovery=%q, peers=%q) but --peer-auth-token is empty. "+
 		"Set --peer-auth-token to a shared secret, or pass --peer-insecure-ip-allowlist=true to keep the legacy IP-only behavior",
 		discovery, peers)
+}
+
+// validateMetricsListen refuses startup when --metrics-listen is set but
+// -server.register-instrumentation=false. The dedicated metrics listener
+// only serves the /metrics handler, which is itself gated by the
+// register-instrumentation flag — booting it without instrumentation would
+// bind a port that only returns 404s, silently mis-leading operators (and
+// any ServiceMonitor / Prometheus scrape pointed at it).
+//
+// Mirrors validatePeerAuth/validateAdminExposure: clear error naming both
+// flags so operators can choose without grepping docs.
+func validateMetricsListen(metricsListen string, registerInstrumentation bool) error {
+	if strings.TrimSpace(metricsListen) == "" {
+		return nil
+	}
+	if !registerInstrumentation {
+		return fmt.Errorf("--metrics-listen=%q requires -server.register-instrumentation=true; remove --metrics-listen or enable instrumentation", metricsListen)
+	}
+	return nil
 }
 
 // resolveAdminTarget picks the listener address that hosts admin/debug
