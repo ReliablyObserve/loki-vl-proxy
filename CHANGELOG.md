@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.55.2] - 2026-06-06
+
 ### CI
 
 - `scripts/ci/check_quality_gate.py` gains a per-benchmark `abs` threshold
