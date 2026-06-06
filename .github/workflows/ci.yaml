@@ -135,10 +135,13 @@ jobs:
         run: go test ./internal/proxy -run '^$' -fuzz=FuzzParseLegacyRulesPath -fuzztime=20s
 
       - name: Fuzz smoke (extract log patterns)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzExtractLogPatterns -fuzztime=12s
+        # Anchored regex: FuzzExtractLogPatternsFromWindowEntries shares the
+        # FuzzExtractLogPatterns prefix, so an unanchored match selects both
+        # and Go's fuzz runner refuses (multi-match error).
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatterns$' -fuzztime=12s
 
       - name: Fuzz smoke (extract log patterns from window entries)
-        run: go test ./internal/proxy -run '^$' -fuzz=FuzzExtractLogPatternsFromWindowEntries -fuzztime=12s
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatternsFromWindowEntries$' -fuzztime=12s
 
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
