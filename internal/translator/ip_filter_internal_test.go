@@ -17,9 +17,9 @@ func TestExtractIPFilterArg(t *testing.T) {
 		{`ip("2001:db8::/32")`, "2001:db8::/32", true},
 		{`  ip( "10.0.0.0" )`, "10.0.0.0", true},
 		{`notip("10.0.0.0")`, "", false},
-		{`ip(10.0.0.0)`, "", false},           // missing quotes
-		{`ip("unclosed`, "", false},            // missing closing quote
-		{`ip("")`, "", true},                   // empty arg is valid
+		{`ip(10.0.0.0)`, "", false}, // missing quotes
+		{`ip("unclosed`, "", false}, // missing closing quote
+		{`ip("")`, "", true},        // empty arg is valid
 	}
 	for _, tc := range tests {
 		t.Run(tc.in, func(t *testing.T) {

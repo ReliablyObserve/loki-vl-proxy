@@ -43,18 +43,18 @@ func TestPopulationVariance_IsStddevSquared(t *testing.T) {
 
 func TestApplyConstantBinaryOp_AllOps(t *testing.T) {
 	tests := []struct {
-		op       string
-		l, r     float64
-		want     float64
-		wantOK   bool
+		op     string
+		l, r   float64
+		want   float64
+		wantOK bool
 	}{
 		{"+", 3, 4, 7, true},
 		{"-", 10, 4, 6, true},
 		{"*", 6, 7, 42, true},
 		{"/", 10, 4, 2.5, true},
-		{"/", 10, 0, 0, false},     // div-by-zero
-		{"%", 10, 4, 0, false},     // unsupported op
-		{"", 1, 1, 0, false},       // empty op
+		{"/", 10, 0, 0, false}, // div-by-zero
+		{"%", 10, 4, 0, false}, // unsupported op
+		{"", 1, 1, 0, false},   // empty op
 	}
 	for _, tc := range tests {
 		got, ok := applyConstantBinaryOp(tc.l, tc.r, tc.op)

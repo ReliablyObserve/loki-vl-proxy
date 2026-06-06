@@ -79,11 +79,11 @@ func TestFormatMetricSampleValue(t *testing.T) {
 
 func TestMetricWindowValue(t *testing.T) {
 	tests := []struct {
-		name      string
-		fn        string
-		total     float64
-		window    time.Duration
-		want      float64
+		name   string
+		fn     string
+		total  float64
+		window time.Duration
+		want   float64
 	}{
 		{"rate_5m_300_events", "rate", 300, 5 * time.Minute, 1.0},
 		{"rate_zero_window_safe", "rate", 100, 0, 0},

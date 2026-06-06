@@ -3,7 +3,6 @@ package translator
 import (
 	"math"
 	"testing"
-
 )
 
 func TestParseGroupMarker(t *testing.T) {
@@ -39,8 +38,8 @@ func TestDurationSeconds(t *testing.T) {
 		{"100ns", 1e-7},
 		{"1h30m", 5400},
 		{"2h30m45s", 2*3600 + 30*60 + 45},
-		{"3d", 3 * 86400},          // 'd' supported via fallback regex
-		{"1w", 7 * 86400},          // 'w' supported via fallback regex
+		{"3d", 3 * 86400}, // 'd' supported via fallback regex
+		{"1w", 7 * 86400}, // 'w' supported via fallback regex
 		{"garbage", 0},
 		{"  5s  ", 5},
 	}
@@ -62,15 +61,15 @@ func TestLooksLikeBareLabelMatcher(t *testing.T) {
 		{`app="api-gateway"`, true},
 		{`level!="info"`, true},
 		{`app=~"^api"`, true},
-		{`app=`, false},               // no quoted value
-		{"app=api-gateway", false},    // unquoted
-		{`{app="x"}`, false},          // wrapped in braces, not bare
-		{`("app=x")`, false},          // starts with `(`
-		{`123app="x"`, true},          // starts with digit, still an identifier
-		{`  app="x"  `, true},         // whitespace tolerance
-		{`http.method="GET"`, true},   // dotted name allowed
-		{`http_method="GET"`, true},   // underscore allowed
-		{`http-method="GET"`, true},   // dash allowed
+		{`app=`, false},             // no quoted value
+		{"app=api-gateway", false},  // unquoted
+		{`{app="x"}`, false},        // wrapped in braces, not bare
+		{`("app=x")`, false},        // starts with `(`
+		{`123app="x"`, true},        // starts with digit, still an identifier
+		{`  app="x"  `, true},       // whitespace tolerance
+		{`http.method="GET"`, true}, // dotted name allowed
+		{`http_method="GET"`, true}, // underscore allowed
+		{`http-method="GET"`, true}, // dash allowed
 	}
 	for _, tc := range tests {
 		got := looksLikeBareLabelMatcher(tc.in)
