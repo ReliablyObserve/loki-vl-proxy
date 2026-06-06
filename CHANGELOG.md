@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `internal/observability/request_sampler.go`: data race on `errorBucket.count`.
+  The busy-mode collapse decision (`return b.count == 1`) read `b.count`
+  AFTER releasing `errBucketMu`, so a concurrent `ShouldLog` call could
+  mutate it between unlock and the read. Detected by the `-race` build
+  when running the new `request_sampler_test.go::TestRequestSampler_ConcurrentShouldLogIsRaceFree`.
+  Fix captures `count := b.count` while the lock is held and returns
+  the captured value.
+
+### Tests
+
+- Add unit tests covering previously-zero-coverage code in:
+  - `internal/observability/async_handler.go` (`NewAsyncHandler`,
+    `Handle`, `Stop` drain + idempotence, `WithAttrs`/`WithGroup`,
+    end-to-end through `slog`, dropped-record counter).
+  - `internal/observability/request_sampler.go` (quiet vs busy mode,
+    error collapse, digest gating, counter reset, concurrent safety —
+    the race in `Fixed` above was caught by this test).
+  - `internal/memlimit/memlimit.go` (`Apply` with explicit/env-var/
+    invalid-percent/no-cgroup branches; cgroup v1+v2 file readers;
+    `applyGCPercent` env + explicit paths).
+  - `internal/cache/cache.go` and `internal/cache/peer.go` (the
+    `NewDisabled` constructor + `GossipHaveKey`, `SetPeerAZ`,
+    `HasPeerHost` helpers — all 0 % before).
+  - `internal/logsql/ast.go` (every `Pipe`, `FilterExpr`, and
+    `StatsFunc` `String()` formatter that the existing baseline
+    missed: 33 pipe stages, 4 stats funcs, 10 filter nodes; plus the
+    package-internal marker-method invocations).
+  - `internal/logql/ast.go` (same marker-method coverage pattern).
+  - `internal/proxy/metric_agg.go` (`populationStddev`,
+    `populationVariance`, `applyConstantBinaryOp`,
+    `applyMatrixStddevAgg`, `applyInstantStddevAgg` — pure JSON-byte
+    transformations and math helpers).
+
+  Total: ~1200 lines of new test code, lifts aggregate Go coverage on
+  `main` from 83.5 % to 84.3 % (+0.8 pp). Race-detector clean.
+
 ## [1.55.2] - 2026-06-06
 
 ### CI
