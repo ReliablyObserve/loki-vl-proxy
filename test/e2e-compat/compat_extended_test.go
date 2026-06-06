@@ -53,6 +53,20 @@ func ensureDataIngested(t *testing.T) {
 		// labels_resource_supports_additional_tabs subtest, both of which
 		// don't call waitForProxyLabels themselves) sees a populated /labels.
 		waitForProxyLabelsContain(t, "cluster", 90*time.Second)
+		// /label/<X>/values WITH a stream-selector query parameter goes through
+		// yet another proxy cache (different from the unfiltered one warmed
+		// above by waitForProxyLabelValues and different from the /labels
+		// index warmed by waitForProxyLabelsContain). Drilldown's resource
+		// API (`.../resources/label/<X>/values?query={service_name=...}`)
+		// flows through this filtered path. Without an explicit warm-up the
+		// CI run sees an empty `{"data":[]}` from the proxy for ~30–60 s
+		// even though the unfiltered cache and /labels list are already hot,
+		// which flakes additional_label_values, label_values_honor_limit,
+		// label_filters_apply_to_resource_values,
+		// multi_tenant_resources_respect___tenant_id___filters and
+		// TestDrilldown_RuntimeFamilyContracts.
+		waitForProxyFilteredLabelValues(t, "cluster", `{service_name="api-gateway"}`, "us-east-1", 60*time.Second)
+		waitForProxyFilteredLabelValues(t, "namespace", `{service_name="api-gateway",cluster="us-east-1"}`, "prod", 60*time.Second)
 	})
 }
 
@@ -103,6 +117,46 @@ func waitForProxyLabelValues(t *testing.T, label, expectedValue string) {
 		time.Sleep(500 * time.Millisecond)
 	}
 	t.Logf("warning: proxy label_values for %s did not include %q after 90 s — label-values tests may flake", label, expectedValue)
+}
+
+// waitForProxyFilteredLabelValues polls /loki/api/v1/label/<name>/values WITH
+// a query=<stream-selector> parameter until expectedValue appears, or the
+// timeout elapses. The proxy keeps a separate cache for filtered label_values
+// (one keyed by name+selector) from the unfiltered cache warmed above by
+// waitForProxyLabelValues, and from the labels-LIST cache warmed by
+// waitForProxyLabelsContain. On hosted CI runners the filtered cache can
+// stay empty for 30–60 s after the unfiltered one is already hot — that's
+// what flakes the Grafana resource subtests
+// (additional_label_values, label_values_honor_limit,
+// label_filters_apply_to_resource_values,
+// multi_tenant_resources_respect___tenant_id___filters, and
+// TestDrilldown_RuntimeFamilyContracts), all of which hit the Grafana
+// `/resources/label/<X>/values?query={...}` resource that the proxy serves
+// from this exact filtered code path.
+//
+// Returns silently on success or timeout (timeout logs a warning, downstream
+// assertions then surface the real expectation failure with their original
+// message).
+func waitForProxyFilteredLabelValues(t *testing.T, label, streamSelector, expectedValue string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		now := time.Now()
+		params := url.Values{}
+		params.Set("query", streamSelector)
+		params.Set("start", fmt.Sprintf("%d", now.Add(-1*time.Hour).UnixNano()))
+		params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+		status, _, resp := doJSONGET(t, proxyURL+"/loki/api/v1/label/"+label+"/values?"+params.Encode(), nil)
+		if status == http.StatusOK {
+			for _, v := range extractStringArray(resp, "data") {
+				if v == expectedValue {
+					return
+				}
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Logf("warning: proxy filtered label_values for %s/%s did not include %q after %s — drilldown resource tests may flake", label, streamSelector, expectedValue, timeout)
 }
 
 // waitForProxyLabelsContain polls /loki/api/v1/labels until expectedLabel

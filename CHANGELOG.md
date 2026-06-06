@@ -26,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Peer-cache `X-Peer-Token` comparison upgraded from a plain `!=` check to `crypto/subtle.ConstantTimeCompare`, closing a timing-side-channel on the shared peer token. Defense-in-depth alongside the new "token required by default" startup gate.
 - Chart no longer mounts the host's entire `/proc` directory. Five specific system-wide counter files are mounted individually (`/proc/{stat,meminfo,pressure/cpu,pressure/memory,pressure/io}`). Per-process info for other workloads on the host is no longer reachable from the proxy container.
 
+### CI
+
+- `test/e2e-compat`: warm the proxy's filtered label_values cache
+  (`/loki/api/v1/label/<X>/values?query={...}`) in `ensureDataIngested`
+  before the drilldown tests run. The proxy keeps THREE separate label
+  caches — unfiltered values, the `/labels` LIST, and filtered values —
+  and only the first two were being warmed. On hosted CI runners the
+  filtered cache stayed empty for 30–60 s after the unfiltered cache was
+  already hot, which flaked five Grafana resource subtests with
+  `data:[]` responses (`additional_label_values`,
+  `label_values_honor_limit`, `label_filters_apply_to_resource_values`,
+  `multi_tenant_resources_respect___tenant_id___filters`, and
+  `TestDrilldown_RuntimeFamilyContracts`). New `waitForProxyFilteredLabelValues`
+  helper polls the filtered endpoint with a 60 s timeout for the two
+  stream selectors the failing subtests exercise; total setup budget
+  stays well under the 300 s test-suite timeout.
+
 ### Notes
 
 - Finding #8 from the v1.55.0 review (size of `cmd/proxy/main.go` and `internal/proxy/proxy.go`) is tracked under the existing proxy architecture refactor plan and is intentionally out of scope here.
