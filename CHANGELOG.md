@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed. Surface the project site (`reliablyobserve.github.io/Loki-VL-proxy`)
   as a prominent callout above the TLDR.
 
+## [1.55.3] - 2026-06-06
+
 ### CI
 
 - `test/e2e-compat`: warm the proxy's filtered label_values cache
