@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+
+- README architecture: collapse the 145-line `Detailed Architecture` mermaid
+  (10 subsystems × 30+ nodes) into a single `How It Works` diagram with five
+  boxes (client → Loki API surface → Smart layer → translator → VictoriaLogs).
+  The Smart layer lists the five capabilities that actually distinguish the
+  proxy (disk-backed label cache + keep-warm, progressive backfill,
+  time-bucketed keys, fleet jitter + peer-first warmup, circuit breaker /
+  rate limits / tenant isolation). Operator-grade per-box detail moves to
+  `docs/architecture.md`. README shrinks from 586 to 437 lines and the
+  redundant `High-Level Flow` diagram (which duplicated the same shape) is
+  removed. Surface the project site (`reliablyobserve.github.io/Loki-VL-proxy`)
+  as a prominent callout above the TLDR.
+
 ### CI
 
 - `test/e2e-compat`: warm the proxy's filtered label_values cache
