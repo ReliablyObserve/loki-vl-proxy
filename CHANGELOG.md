@@ -26,6 +26,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Peer-cache `X-Peer-Token` comparison upgraded from a plain `!=` check to `crypto/subtle.ConstantTimeCompare`, closing a timing-side-channel on the shared peer token. Defense-in-depth alongside the new "token required by default" startup gate.
 - Chart no longer mounts the host's entire `/proc` directory. Five specific system-wide counter files are mounted individually (`/proc/{stat,meminfo,pressure/cpu,pressure/memory,pressure/io}`). Per-process info for other workloads on the host is no longer reachable from the proxy container.
 
+### Fixed
+
+- `internal/observability/request_sampler.go`: data race on `errorBucket.count`.
+  The busy-mode collapse decision (`return b.count == 1`) read `b.count`
+  AFTER releasing `errBucketMu`, so a concurrent `ShouldLog` call could
+  mutate it between unlock and the read. Detected by the `-race` build
+  when running the new `request_sampler_test.go::TestRequestSampler_ConcurrentShouldLogIsRaceFree`.
+  Fix captures `count := b.count` while the lock is held and returns
+  the captured value.
+
+### Tests
+
+- Add unit tests covering previously-zero-coverage code in:
+  - `internal/observability/async_handler.go` (`NewAsyncHandler`,
+    `Handle`, `Stop` drain + idempotence, `WithAttrs`/`WithGroup`,
+    end-to-end through `slog`, dropped-record counter).
+  - `internal/observability/request_sampler.go` (quiet vs busy mode,
+    error collapse, digest gating, counter reset, concurrent safety —
+    the race in `Fixed` above was caught by this test).
+  - `internal/memlimit/memlimit.go` (`Apply` with explicit/env-var/
+    invalid-percent/no-cgroup branches; cgroup v1+v2 file readers;
+    `applyGCPercent` env + explicit paths).
+  - `internal/cache/cache.go` and `internal/cache/peer.go` (the
+    `NewDisabled` constructor + `GossipHaveKey`, `SetPeerAZ`,
+    `HasPeerHost` helpers — all 0 % before).
+  - `internal/logsql/ast.go` (every `Pipe`, `FilterExpr`, and
+    `StatsFunc` `String()` formatter that the existing baseline
+    missed: 33 pipe stages, 4 stats funcs, 10 filter nodes; plus the
+    package-internal marker-method invocations).
+  - `internal/logql/ast.go` (same marker-method coverage pattern).
+  - `internal/proxy/metric_agg.go` (`populationStddev`,
+    `populationVariance`, `applyConstantBinaryOp`,
+    `applyMatrixStddevAgg`, `applyInstantStddevAgg` — pure JSON-byte
+    transformations and math helpers).
+  - `internal/proxy/metric_binary.go` + `stream_processing.go`
+    (`parseFloat64Bytes`, `abs64`, `extractStatsGroupByFields`,
+    `applyDropConditions`, `applyKeepConditions`).
+  - `internal/translator/translator.go` ip() helpers
+    (`extractIPFilterArg`, `ipLineFilterToRegex`,
+    `buildCIDRRegex`, `buildIPRangeRegex`, `buildIPv6CIDRRegex`) plus
+    `ParseKeepConditions` — all 0 % before; translator package
+    coverage jumps from 83.4 % to 88.2 %.
+  - `internal/proxy` more pure helpers: `stripOuterLabelReplace`,
+    `inferUnwrapConv`, `formatMetricSampleValue`, `metricWindowValue`,
+    `patternLevelFromEntry`, `parsePatternStepSeconds`,
+    `extractLevelFromMsg`.
+  - `internal/cache/peer.go` request-body encoding/response-writing:
+    `acceptsPeerEncoding`, `encodePeerRequestBody` (identity/zstd/gzip
+    roundtrips + unsupported error path),
+    `writePeerEncodedResponse` (zstd / gzip-fallback /
+    no-supported-encoding branches), `peerPreferredSetEncoding`
+    (cache package coverage 82.6 % → 84.5 %).
+
+  Total: ~2200 lines of new test code, lifts aggregate Go coverage on
+  `main` from 83.5 % to 84.8 % (+1.3 pp). Race-detector clean.
+
+### Docs
+
+- README architecture: collapse the 145-line `Detailed Architecture` mermaid
+  (10 subsystems × 30+ nodes) into a single `How It Works` diagram with five
+  boxes (client → Loki API surface → Smart layer → translator → VictoriaLogs).
+  The Smart layer lists the five capabilities that actually distinguish the
+  proxy (disk-backed label cache + keep-warm, progressive backfill,
+  time-bucketed keys, fleet jitter + peer-first warmup, circuit breaker /
+  rate limits / tenant isolation). Operator-grade per-box detail moves to
+  `docs/architecture.md`. README shrinks from 586 to 437 lines and the
+  redundant `High-Level Flow` diagram (which duplicated the same shape) is
+  removed. Surface the project site (`reliablyobserve.github.io/Loki-VL-proxy`)
+  as a prominent callout above the TLDR.
+
+### Notes
+
+- Finding #8 from the v1.55.0 review (size of `cmd/proxy/main.go` and `internal/proxy/proxy.go`) is tracked under the existing proxy architecture refactor plan and is intentionally out of scope here.
+- One INFO-level access-log line in `internal/proxy/query_translation.go:158` still emits a truncated 200-char `loki.query` field for operator audit. This is intentional audit telemetry (not debug output) and is out of scope for this hardening series; tracked as a follow-up for the audit-log redesign.
+- Integration test scenario 3 for `--metadata-default-lookback` exercises `/series` rather than `/labels` because `/labels` independently caps its synchronous backend window to 5 minutes (`metadataMaxFieldNamesWindow`), which would mask the lookback default in the assertion. The lookback default still applies to `/labels` via the background refresh path — only the synchronous test surface differs.
+
+## [1.55.3] - 2026-06-06
+
 ### CI
 
 - `test/e2e-compat`: warm the proxy's filtered label_values cache
@@ -42,12 +120,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helper polls the filtered endpoint with a 60 s timeout for the two
   stream selectors the failing subtests exercise; total setup budget
   stays well under the 300 s test-suite timeout.
-
-### Notes
-
-- Finding #8 from the v1.55.0 review (size of `cmd/proxy/main.go` and `internal/proxy/proxy.go`) is tracked under the existing proxy architecture refactor plan and is intentionally out of scope here.
-- One INFO-level access-log line in `internal/proxy/query_translation.go:158` still emits a truncated 200-char `loki.query` field for operator audit. This is intentional audit telemetry (not debug output) and is out of scope for this hardening series; tracked as a follow-up for the audit-log redesign.
-- Integration test scenario 3 for `--metadata-default-lookback` exercises `/series` rather than `/labels` because `/labels` independently caps its synchronous backend window to 5 minutes (`metadataMaxFieldNamesWindow`), which would mask the lookback default in the assertion. The lookback default still applies to `/labels` via the background refresh path — only the synchronous test surface differs.
 
 ## [1.55.2] - 2026-06-06
 

@@ -25,6 +25,8 @@
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
 
+📖 **Project site:** [reliablyobserve.github.io/Loki-VL-proxy](https://reliablyobserve.github.io/Loki-VL-proxy/) — full docs, benchmarks, runbooks, comparison matrix.
+
 <details>
 <summary><strong>How it works (TLDR)</strong></summary>
 
@@ -43,8 +45,6 @@ Both parsers are hand-written recursive descent. The LogQL side handles the full
 - **Drop-in Loki API.** Point your existing Grafana Loki datasource at the proxy. Zero plugin changes, zero query rewrites.
 - **Measured resource difference.** At 310 GiB/day ingest: VL + proxy runs on **1.4 cores and 6.1 GiB RAM**. Loki's published minimum for that ingest class: 38 cores, 59 GiB. That gap is real — not a benchmark artifact.
 - **Proxy intelligence built in.** Disk-backed label cache with keep-warm loop, progressive full-range background fetch, time-bucketed keys, adaptive parallelism, circuit breaker, rate limits, tenant isolation. Fleet restart safety: jitter + peer-first warmup keeps rolling restarts from thundering VL. One ~14 MB static binary.
-
-Project site: `https://reliablyobserve.github.io/Loki-VL-proxy/`
 
 ---
 
@@ -269,189 +269,40 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 
 ---
 
-## High-Level Flow
+## How It Works
 
 ```mermaid
 flowchart LR
-    A[Clients<br/>Grafana Explore / Drilldown<br/>MCP / LLM / API tools]
+    G["Grafana / API tools<br/><sub>unchanged Loki HTTP datasource</sub>"]
 
-    subgraph PROXY["Loki-VL-proxy"]
+    subgraph Proxy["Loki-VL-proxy &nbsp;·&nbsp; one ~14 MB Go binary"]
         direction TB
-        MW["Middleware<br/>security, tenants,<br/>rate limit, circuit breaker"]
-        TR["Translation<br/>LogQL AST → LogsQL"]
-        CACHE["4-tier cache<br/>Tier0 + L1 mem + L2 disk + L3 peer"]
-        SHAPE["Response shaping<br/>streams, stats, patterns,<br/>windowing, labels"]
+        API["Loki API surface<br/><sub>query · labels · series · tail<br/>detected_fields · patterns · volume</sub>"]
+        SMART["<b>Smart layer</b> — the strange stuff that makes this work<br/><sub>• disk-backed label cache + 90 s keep-warm loop<br/>• progressive 1 h → 7 d background backfill<br/>• time-bucketed cache keys (collapse refresh drift)<br/>• fleet jitter + peer-first warmup (≤8 VL hits on 30-pod restart)<br/>• circuit breaker · rate limits · per-tenant isolation</sub>"]
+        XLATE["LogQL → LogsQL translator<br/><sub>typed AST, version-gated, hot-reload labels</sub>"]
     end
 
-    subgraph UP["Upstream"]
-        VL["VictoriaLogs<br/>hot backend"]
-        VMA["vmalert<br/>rules / alerts"]
-        LH[("Lakehouse<br/>cold backend")]
-    end
+    VL[("VictoriaLogs")]
+    VMA[/"vmalert · alerts/rules<br/>(optional bridge)"/]
 
-    A --> MW --> TR --> CACHE --> VL
-    TR --> VMA
-    CACHE -.-> LH
-    VL --> SHAPE --> A
-
-    classDef client fill:#1f2937,stroke:#60a5fa,color:#f3f4f6,stroke-width:2px;
-    classDef proxy fill:#172554,stroke:#22d3ee,color:#f8fafc,stroke-width:2px;
-    classDef upstream fill:#052e16,stroke:#34d399,color:#ecfeff,stroke-width:2px;
-    classDef cold fill:#1c1917,stroke:#a8a29e,color:#f5f5f4,stroke-width:1px,stroke-dasharray:4 4;
-    class A client;
-    class MW,TR,CACHE,SHAPE proxy;
-    class VL,VMA upstream;
-    class LH cold;
-```
-
-## Detailed Architecture
-
-```mermaid
-flowchart TD
-    subgraph Clients["Clients"]
-        G["Grafana<br/>Explore / Drilldown / Dashboards"]
-        M["MCP / LLM / API Tools"]
-        C["CLI / SDK Consumers"]
-    end
-
-    subgraph Ingress["Loki API Surface"]
-        API["HTTP + WebSocket routes<br/>query, query_range, labels, series,<br/>detected_fields, patterns, volume,<br/>tail, rules, alerts, delete"]
-        SEC["Security headers<br/>auth forwarding, token redaction"]
-    end
-
-    subgraph Middleware["Protection Layer"]
-        TENANT["Tenant validation<br/>X-Scope-OrgID mapping + isolation"]
-        RL["Rate limiter<br/>per-client token bucket + global semaphore"]
-        CB["Circuit breaker<br/>sliding window, 3-state"]
-        COAL["Request coalescer<br/>singleflight dedup"]
-    end
-
-    subgraph Cache["Cache Tiers"]
-        T0["Tier0 edge cache<br/>safe GET short-circuit"]
-        L1C["L1 memory<br/>sync.Map + atomic counters"]
-        L2C["L2 disk (bbolt)<br/>gzip, survives restarts"]
-        L3C["L3 peer cache<br/>hash ring, zstd, write-through"]
-    end
-
-    subgraph Translation["Query Translation"]
-        PARSE["LogQL parser<br/>typed recursive-descent AST"]
-        XLATE["Translator<br/>LogQL AST → LogsQL builder"]
-        CAPS["VL capabilities<br/>version-gated features"]
-        LABEL["Label translator<br/>OTel dotted ↔ underscore<br/>hot-reload via SIGHUP"]
-    end
-
-    subgraph Execution["Execution Paths"]
-        WINDOW["Windowed query_range<br/>1h splits, adaptive parallelism<br/>EWMA backpressure, prefilter"]
-        METRIC["Metric queries<br/>stats_query_range, binary ops<br/>vector matching, topK"]
-        STREAM["Stream processing<br/>VL → Loki streams, drop/keep<br/>structured metadata, 2/3-tuple"]
-        PATTERN["Patterns mining<br/>Drain clustering, cross-window merge<br/>snapshot persist (disk + peer)"]
-        DRILLDOWN["Drilldown support<br/>detected labels, field values<br/>service_name synthesis"]
-        VOLUME["Volume / index stats<br/>hits estimation"]
-    end
-
-    subgraph Tail["Tail Path"]
-        WS["WebSocket /tail<br/>origin allowlist"]
-        NATIVE["Native VL tail"]
-        SYNTH["Synthetic polling"]
-    end
-
-    subgraph Alerts["Rules + Alerts"]
-        RULER["Read bridge<br/>Loki / Prometheus format"]
-        LIMITS["Tenant limits publish<br/>drilldown-limits"]
-    end
-
-    subgraph Backends["Upstream Systems"]
-        VL["VictoriaLogs<br/>hot backend"]
-        LH[("Victoria Lakehouse<br/>cold backend")]
-        VMA["vmalert<br/>rules / alerts"]
-        VM["VictoriaMetrics<br/>recording-rule sink"]
-    end
-
-    subgraph Observability["Observability"]
-        PROM["100+ Prometheus metrics<br/>per-endpoint, per-tenant, per-client"]
-        OTLP["OTLP metrics push"]
-        QT["Query tracker<br/>top-N by freq/latency"]
-        LOG["Structured JSON logs<br/>semconv, request sampling"]
-    end
-
-    subgraph Admin["Infrastructure"]
-        HEALTH["Health / ready / alive probes<br/>VL health + CB state check"]
-        BUILD["buildinfo version gate"]
-        PPROF["pprof + query analytics"]
-        CFLUSH["Admin cache flush"]
-        PEER["Peer endpoints<br/>/_cache/* (get/set/hot/has/peers)"]
-        CONN["Connection rotation<br/>max-age, jitter, overload"]
-    end
-
-    G --> API
-    M --> API
-    C --> API
-
-    API --> SEC --> TENANT --> RL
-    RL --> T0
-    T0 -->|hit| G
-    T0 -->|miss| COAL
-
-    COAL --> PARSE --> XLATE --> CAPS
-    XLATE --> LABEL
-    CAPS --> L1C
-    L1C -->|miss| L2C -->|miss| L3C -->|miss| CB --> VL
-    L3C -. cold range .-> LH
-
-    VL --> STREAM
-    VL --> WINDOW
-    VL --> METRIC
-    LH -. cold results .-> STREAM
-
-    STREAM --> T0
-    WINDOW --> T0
-    METRIC --> T0
-    PATTERN --> T0
-    DRILLDOWN --> T0
-    VOLUME --> T0
-
-    RL --> WS --> NATIVE --> VL
-    WS --> SYNTH --> VL
-
-    RL --> RULER --> VMA
-    VMA -. recording writes .-> VM
-    LIMITS --> G
-
-    PROM --> OTLP
-    CB --> PROM
-    STREAM --> QT
-    API --> LOG
-
-    HEALTH --> VL
-    HEALTH --> CB
-    PEER --> L3C
+    G -->|"Loki API, zero changes"| API
+    API --> SMART --> XLATE --> VL
+    SMART -. "rules surface" .-> VMA
 
     classDef client fill:#1f2937,stroke:#93c5fd,color:#f3f4f6,stroke-width:2px;
-    classDef api fill:#0f172a,stroke:#22d3ee,color:#f8fafc,stroke-width:2px;
-    classDef mw fill:#1e1b4b,stroke:#a78bfa,color:#f5f3ff,stroke-width:2px;
-    classDef cache fill:#3f1d2e,stroke:#f472b6,color:#fdf2f8,stroke-width:2px;
-    classDef trans fill:#172554,stroke:#38bdf8,color:#f0f9ff,stroke-width:2px;
-    classDef exec fill:#172554,stroke:#818cf8,color:#eef2ff,stroke-width:2px;
-    classDef tail fill:#0f3460,stroke:#90e0ef,color:#fff,stroke-width:2px;
-    classDef alert fill:#1b4332,stroke:#52b788,color:#fff,stroke-width:2px;
-    classDef upstream fill:#052e16,stroke:#34d399,color:#ecfdf5,stroke-width:2px;
-    classDef cold fill:#1c1917,stroke:#a8a29e,color:#f5f5f4,stroke-width:1px,stroke-dasharray:4 4;
-    classDef obs fill:#422006,stroke:#f59e0b,color:#fffbeb,stroke-width:2px;
-    classDef infra fill:#1c1917,stroke:#78716c,color:#f5f5f4,stroke-width:1px;
+    classDef proxy fill:#172554,stroke:#38bdf8,color:#f0f9ff,stroke-width:2px;
+    classDef smart fill:#3f1d2e,stroke:#f472b6,color:#fdf2f8,stroke-width:2px;
+    classDef backend fill:#052e16,stroke:#34d399,color:#ecfdf5,stroke-width:2px;
+    classDef opt fill:#1c1917,stroke:#a8a29e,color:#f5f5f4,stroke-width:1px,stroke-dasharray:4 4;
 
-    class G,M,C client;
-    class API,SEC api;
-    class TENANT,RL,CB,COAL mw;
-    class T0,L1C,L2C,L3C cache;
-    class PARSE,XLATE,CAPS,LABEL trans;
-    class WINDOW,METRIC,STREAM,PATTERN,DRILLDOWN,VOLUME exec;
-    class WS,NATIVE,SYNTH tail;
-    class RULER,LIMITS alert;
-    class VL,VMA,VM upstream;
-    class LH cold;
-    class PROM,OTLP,QT,LOG obs;
-    class HEALTH,BUILD,PPROF,CFLUSH,PEER,CONN infra;
+    class G client;
+    class API,XLATE proxy;
+    class SMART smart;
+    class VL backend;
+    class VMA opt;
 ```
+
+**What this picture says:** Grafana keeps talking Loki. The proxy translates LogQL to LogsQL on the way down, and the **Smart layer** is where the work happens — every entry in that pink box is what lets a 14 MB binary serve cold Drilldown queries that the official Loki layout can't run at all on 12 GiB RAM. The full per-box exploded view (10 subsystems, every handler, every cache tier, every backend) lives in [`docs/architecture.md`](docs/architecture.md) for operators and contributors.
 
 ---
 
