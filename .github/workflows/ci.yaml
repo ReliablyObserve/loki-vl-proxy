@@ -137,6 +137,9 @@ jobs:
       - name: Fuzz smoke (extract log patterns)
         run: go test ./internal/proxy -run '^$' -fuzz=FuzzExtractLogPatterns -fuzztime=12s
 
+      - name: Fuzz smoke (extract log patterns from window entries)
+        run: go test ./internal/proxy -run '^$' -fuzz=FuzzExtractLogPatternsFromWindowEntries -fuzztime=12s
+
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
         run: go test ./internal/translator -run '^$' -fuzz=FuzzTranslateLogQL -fuzztime=12s
@@ -172,6 +175,39 @@ jobs:
       # --- internal/rulesmigrate ---
       - name: Fuzz smoke (rules migrate convert)
         run: go test ./internal/rulesmigrate -run '^$' -fuzz=FuzzConvertWithOptions -fuzztime=12s
+
+  race-stress:
+    # Dedicated race-detector gate for concurrency hot paths. Catches issues
+    # like the v1.55.1 production race in extractLogPatternsFromWindowEntries
+    # (postprocess.go:390 read vs stream_processing.go:319 write) that the
+    # default unit-test pass missed because no test exercised the windowed +
+    # derivedFields + autodetect combination.
+    runs-on: ubuntu-latest
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.4"
+          cache: true
+
+      - name: Race-detector tests on concurrency-critical packages
+        run: |
+          set -euo pipefail
+          go test -race -count=1 -timeout=8m \
+            ./internal/proxy/... \
+            ./internal/cache/... \
+            ./internal/middleware/... \
+            ./internal/observability/...
+
+      - name: Concurrent regression tests (verbose, race)
+        # Targeted re-run of the tests that specifically reproduce known races
+        # so a failure points straight at the affected helper without grep.
+        run: |
+          go test -race -count=1 -v -timeout=2m \
+            -run '^Test(SnapshotEntriesForPatterns_|RequestSampler_ConcurrentShouldLogIsRaceFree|AsyncHandler_)' \
+            ./internal/proxy/ ./internal/observability/
 
   tuple-smoke:
     runs-on: ubuntu-latest
