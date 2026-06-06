@@ -2225,3 +2225,42 @@ func writeTestCA(t *testing.T) string {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+func TestResolveAdminTarget_TokenSetUsesMainListener(t *testing.T) {
+	got := resolveAdminTarget(":3100", "127.0.0.1:3101", "secret-token")
+	if got != ":3100" {
+		t.Fatalf("with token set, admin should ride main listener (:3100), got %q", got)
+	}
+}
+
+func TestResolveAdminTarget_NoTokenUsesAdminListener(t *testing.T) {
+	got := resolveAdminTarget(":3100", "127.0.0.1:3101", "")
+	if got != "127.0.0.1:3101" {
+		t.Fatalf("with no token, admin should ride loopback listener, got %q", got)
+	}
+}
+
+func TestResolveAdminTarget_TokenWhitespaceTreatedAsEmpty(t *testing.T) {
+	got := resolveAdminTarget(":3100", "127.0.0.1:3101", "   ")
+	if got != "127.0.0.1:3101" {
+		t.Fatalf("whitespace token should be treated as empty, got %q", got)
+	}
+}
+
+func TestValidateAdminExposure_LoopbackAdminListenerWithoutTokenOK(t *testing.T) {
+	if err := validateAdminExposure("127.0.0.1:3101", true, false, false, ""); err != nil {
+		t.Fatalf("loopback admin listener without token should be allowed, got %v", err)
+	}
+	if err := validateAdminExposure("[::1]:3101", true, true, true, ""); err != nil {
+		t.Fatalf("IPv6 loopback admin listener without token should be allowed, got %v", err)
+	}
+}
+
+func TestValidateAdminExposure_NonLoopbackAdminListenerWithoutTokenFails(t *testing.T) {
+	if err := validateAdminExposure("0.0.0.0:3101", true, false, false, ""); err == nil {
+		t.Fatalf("non-loopback admin listener without token must fail")
+	}
+	if err := validateAdminExposure(":3101", false, true, false, ""); err == nil {
+		t.Fatalf("wildcard listen with pprof without token must fail")
+	}
+}

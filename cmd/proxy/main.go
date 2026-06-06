@@ -300,6 +300,13 @@ type runtimeOptions struct {
 	responseCompression         string
 	responseCompressionMinBytes int
 	serverOpts                  serverRuntimeOptions
+	// adminListenAddr, when non-empty AND distinct from serverOpts.listenAddr,
+	// requests a dedicated admin/debug listener (see resolveAdminTarget).
+	adminListenAddr string
+	// metricsListenAddr, when non-empty AND registerInstrumentation is true,
+	// requests a dedicated /metrics listener so the main proxy port carries
+	// no observability surface.
+	metricsListenAddr string
 }
 
 type runtimeState struct {
@@ -309,6 +316,18 @@ type runtimeState struct {
 	stopOTLP     func()
 	reloadCh     chan os.Signal
 	shutdownCh   chan os.Signal
+	// auxServers are auxiliary HTTP servers (loopback admin, dedicated
+	// metrics) started alongside the main server. They share the shutdown
+	// channel: handleShutdown stops them as part of the main shutdown flow.
+	auxServers []auxListener
+}
+
+// auxListener wraps a secondary http.Server with its bound address and a
+// human-readable role string for startup/shutdown logs.
+type auxListener struct {
+	role string // "admin" | "metrics"
+	addr string
+	srv  *http.Server
 }
 
 const (
@@ -368,6 +387,8 @@ func run(
 
 	// Server flags
 	listenAddr := fs.String("listen", ":3100", "Address to listen on (Loki-compatible frontend)")
+	adminListen := fs.String("admin-listen", "127.0.0.1:3101", "Address for admin/debug endpoints (/admin/*, /debug/*) when --server.admin-auth-token is empty. Loopback by default so the binary boots safely with no flags. Ignored when --server.admin-auth-token is set — admin endpoints then ride the main --listen address.")
+	metricsListen := fs.String("metrics-listen", "", "Optional dedicated address for the /metrics endpoint. When empty AND --server.register-instrumentation=true, /metrics is served on --listen (back-compat). When non-empty AND --server.register-instrumentation=true, /metrics is served on this dedicated listener.")
 	backendURL := fs.String("backend", "http://localhost:9428", "VictoriaLogs backend URL")
 	rulerBackendURL := fs.String("ruler-backend", "", "Optional alert/ruler backend URL for /rules passthrough (for example vmalert)")
 	alertsBackendURL := fs.String("alerts-backend", "", "Optional alert backend URL for /alerts passthrough (defaults to -ruler-backend when unset)")
@@ -525,7 +546,7 @@ func run(
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
 	requireTenantHeader := fs.Bool("require-tenant-header", false, "Reject requests missing X-Scope-OrgID with HTTP 401. Independent of -auth.enabled; use when you want tenant enforcement without full auth.")
-	registerInstrumentation := fs.Bool("server.register-instrumentation", true, "Register instrumentation handlers such as /metrics")
+	registerInstrumentation := fs.Bool("server.register-instrumentation", false, "Register instrumentation handlers such as /metrics. Default false (BREAKING in v1.56.0; was true). Set true and optionally pair with --metrics-listen for a dedicated scrape port. The Helm chart sets this to true automatically so ServiceMonitor scrapes keep working without operator action.")
 	enablePprof := fs.Bool("server.enable-pprof", false, "Expose /debug/pprof/* handlers")
 	enableQueryAnalytics := fs.Bool("server.enable-query-analytics", false, "Expose /debug/queries query analytics")
 	adminAuthToken := fs.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set")
@@ -654,7 +675,8 @@ func run(
 		*tenantLabel = v
 	}
 
-	if err := validateAdminExposure(envCfg.listenAddr, *registerInstrumentation, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
+	adminTarget := resolveAdminTarget(envCfg.listenAddr, *adminListen, *adminAuthToken)
+	if err := validateAdminExposure(adminTarget, *registerInstrumentation, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
 		return err
 	}
 	if err := validatePeerAuth(*peerDiscovery, *peerStatic, *peerAuthToken, *peerInsecureIPAllowlist); err != nil {
@@ -884,6 +906,8 @@ func run(
 				overloadMaxAge: *httpConnOverloadMaxAge,
 			},
 		},
+		adminListenAddr:   adminTarget,
+		metricsListenAddr: *metricsListen,
 	}, logger, notify, newPusher)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runtime: %w", err)
@@ -904,7 +928,25 @@ func run(
 		tlsCertFile: *tlsCertFile,
 		tlsKeyFile:  *tlsKeyFile,
 	}, logger, fatal)
+	for _, aux := range runtime.auxServers {
+		aux := aux
+		logger.Info("aux listener starting", "role", aux.role, "address", aux.addr)
+		go func() {
+			if err := aux.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fatal("aux server failed", "role", aux.role, "address", aux.addr, "error", err)
+			}
+		}()
+	}
 	handleShutdownFn(runtime.shutdownCh, runtime.server, 30*time.Second, logger)
+	// Shut down aux listeners with the same 30s budget. Done sequentially so a
+	// hung admin/metrics handler can't starve the main shutdown.
+	for _, aux := range runtime.auxServers {
+		shutCtx, cancelShut := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := aux.srv.Shutdown(shutCtx); err != nil {
+			logger.Error("aux server shutdown error", "role", aux.role, "address", aux.addr, "error", err)
+		}
+		cancelShut()
+	}
 	if err := runtime.proxy.Shutdown(context.Background()); err != nil {
 		logger.Error("proxy shutdown hook failed", "error", err)
 	}
@@ -1020,8 +1062,35 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 
 	stopOTLP := startOTLPMetricsPusher(opts.otlpCfg, p.GetMetrics(), logger, newPusher)
 
+	// Decide listener topology. The default (no flags) gives us a dedicated
+	// loopback admin listener on opts.adminListenAddr; operators with an admin
+	// token keep everything on the main listener (back-compat). Metrics moves
+	// to its own listener when opts.metricsListenAddr is set.
+	mainAddr := opts.serverOpts.listenAddr
+	adminAddr := opts.adminListenAddr
+	metricsAddr := strings.TrimSpace(opts.metricsListenAddr)
+	splitAdmin := adminAddr != "" && adminAddr != mainAddr
+	splitMetrics := metricsAddr != ""
+
 	mux := http.NewServeMux()
-	p.RegisterRoutes(mux)
+	if !splitAdmin && !splitMetrics {
+		// Monolithic — single listener serves everything (current behavior).
+		p.RegisterRoutes(mux)
+	} else {
+		// Multi-listener — main listener gets proxy + peer-cache routes only.
+		// Admin and metrics route registration moves to the aux muxes below.
+		p.RegisterProxyRoutes(mux)
+		if !splitMetrics {
+			// Back-compat: keep /metrics on main listener when no dedicated
+			// metrics port is requested but instrumentation is enabled.
+			p.RegisterMetricsRoute(mux)
+		}
+		if !splitAdmin {
+			// Token-protected admin endpoints stay on the main listener.
+			p.RegisterAdminRoutes(mux)
+		}
+	}
+
 	serverOpts := opts.serverOpts
 	rotator := newHTTPConnRotator(serverOpts.connRotation, p.GetMetrics(), p.DownstreamConnectionPressure)
 	serverOpts.connContext = nil
@@ -1038,6 +1107,38 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	}
 	srv.ConnState = p.GetMetrics().ConnStateHook()
 
+	// Build any auxiliary listeners requested by the topology decision above.
+	// Each aux server uses the same hardening timeouts as the main listener
+	// (read/write/idle/header) but DOES NOT inherit TLS or connection-rotation
+	// hooks — admin and metrics are plaintext loopback / cluster-internal
+	// endpoints, not user-facing TLS surfaces.
+	var auxServers []auxListener
+	buildAux := func(addr, role string, h http.Handler) auxListener {
+		return auxListener{
+			role: role,
+			addr: addr,
+			srv: &http.Server{
+				Addr:              addr,
+				Handler:           h,
+				ReadTimeout:       opts.serverOpts.readTimeout,
+				ReadHeaderTimeout: opts.serverOpts.readHeaderTimeout,
+				WriteTimeout:      opts.serverOpts.writeTimeout,
+				IdleTimeout:       opts.serverOpts.idleTimeout,
+				MaxHeaderBytes:    opts.serverOpts.maxHeaderBytes,
+			},
+		}
+	}
+	if splitAdmin {
+		adminMux := http.NewServeMux()
+		p.RegisterAdminRoutes(adminMux)
+		auxServers = append(auxServers, buildAux(adminAddr, "admin", adminMux))
+	}
+	if splitMetrics {
+		metricsMux := http.NewServeMux()
+		p.RegisterMetricsRoute(metricsMux)
+		auxServers = append(auxServers, buildAux(metricsAddr, "metrics", metricsMux))
+	}
+
 	reloadCh, shutdownCh := buildSignalChannels(notify)
 	return &runtimeState{
 		proxy:  p,
@@ -1049,6 +1150,7 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 		stopOTLP:   stopOTLP,
 		reloadCh:   reloadCh,
 		shutdownCh: shutdownCh,
+		auxServers: auxServers,
 	}, nil
 }
 
@@ -1187,7 +1289,26 @@ func validatePeerAuth(discovery, peers, token string, insecureAllowlist bool) er
 		discovery, peers)
 }
 
-func validateAdminExposure(listenAddr string, registerInstrumentation, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
+// resolveAdminTarget picks the listener address that hosts admin/debug
+// endpoints. When -server.admin-auth-token is non-empty (trimmed), admin
+// endpoints ride the main proxy listener — operators who set a token already
+// accept the prior public-exposure semantics. When the token is empty, admin
+// endpoints move to the dedicated --admin-listen address (loopback by default)
+// so the binary boots safely with no flags and admin surfaces are unreachable
+// from off-host.
+func resolveAdminTarget(mainListen, adminListen, adminAuthToken string) string {
+	if strings.TrimSpace(adminAuthToken) != "" {
+		return mainListen
+	}
+	return adminListen
+}
+
+// validateAdminExposure refuses startup when admin/debug endpoints are about
+// to be wired onto a non-loopback address with no -server.admin-auth-token.
+// adminTarget is the address that will actually host the admin/debug surfaces
+// (resolved by resolveAdminTarget) — main listener if a token is set, dedicated
+// --admin-listen address otherwise.
+func validateAdminExposure(adminTarget string, registerInstrumentation, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
 	if strings.TrimSpace(adminAuthToken) != "" {
 		return nil
 	}
@@ -1196,10 +1317,10 @@ func validateAdminExposure(listenAddr string, registerInstrumentation, enablePpr
 	if !registerInstrumentation && !enablePprof && !enableQueryAnalytics {
 		return nil
 	}
-	if isLoopbackListenAddr(listenAddr) {
+	if isLoopbackListenAddr(adminTarget) {
 		return nil
 	}
-	return fmt.Errorf("server.admin-auth-token is required when admin/debug endpoints are enabled on non-loopback listen addresses")
+	return fmt.Errorf("server.admin-auth-token is required when admin/debug endpoints are enabled on non-loopback address %q", adminTarget)
 }
 
 func isLoopbackListenAddr(listenAddr string) bool {

@@ -1556,7 +1556,27 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 					p.compatCacheMiddleware(endpoint, route, h)))))
 }
 
+// RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
+// supplied mux. Use this when running a single HTTP listener; for split-listener
+// deployments (loopback admin / dedicated metrics port) call the more granular
+// RegisterProxyRoutes / RegisterAdminRoutes / RegisterMetricsRoute helpers
+// instead.
 func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
+	p.RegisterProxyRoutes(mux)
+	if p.registerInstrumentation {
+		p.RegisterMetricsRoute(mux)
+		p.RegisterAdminRoutes(mux)
+	} else if p.enableQueryAnalytics {
+		// /debug/queries is admin-tier but gated independently of
+		// registerInstrumentation; expose it on the same mux for back-compat.
+		p.RegisterAdminRoutes(mux)
+	}
+}
+
+// RegisterProxyRoutes registers Loki-compatible proxy routes, health endpoints,
+// and the internal peer-cache endpoints. It deliberately omits /metrics,
+// /admin/*, and /debug/* so callers can host those on dedicated listeners.
+func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 	rlNoTenant := func(endpoint, route string, h http.HandlerFunc) http.Handler {
 		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h)))
 	}
@@ -1613,24 +1633,9 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/ready", p.handleReady)
 	mux.HandleFunc("/loki/api/v1/status/buildinfo", p.handleBuildInfo)
 
-	if p.registerInstrumentation {
-		// Prometheus metrics endpoint — security headers plus bounded scrape concurrency.
-		mux.Handle("/metrics", securityHeaders(http.HandlerFunc(p.handleMetrics)))
-		if p.enablePprof {
-			mux.Handle("/debug/pprof/cmdline", p.adminMiddleware(http.NotFoundHandler()))
-			mux.Handle("/debug/pprof/", p.adminMiddleware(http.DefaultServeMux))
-		}
-		// Cache flush — POST /admin/cache/flush clears all in-memory cache entries.
-		// Useful for benchmarking (ensures each run starts cold) and debugging.
-		// Protected by the admin auth token.
-		mux.Handle("/admin/cache/flush", p.adminMiddleware(http.HandlerFunc(p.handleCacheFlush)))
-	}
-
-	if p.enableQueryAnalytics {
-		mux.Handle("/debug/queries", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.queryTracker.Handler))))
-	}
-
-	// Peer cache endpoint — internal, for sharded fleet cache
+	// Peer cache endpoint — internal, for sharded fleet cache. Stays on the
+	// main proxy listener because peer-to-peer traffic must be reachable from
+	// other proxy pods, not constrained to the loopback admin listener.
 	if p.peerCache != nil {
 		peerCacheHandler := securityHeaders(p.peerCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			p.peerCache.ServeHTTP(w, r, p.cache)
@@ -1640,6 +1645,40 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 		mux.Handle("/_cache/hot", peerCacheHandler)
 		mux.Handle("/_cache/has", peerCacheHandler)
 		mux.Handle("/_cache/peers", peerCacheHandler)
+	}
+}
+
+// RegisterMetricsRoute registers only the Prometheus /metrics endpoint. Use
+// with a dedicated metrics listener (--metrics-listen) when you want scrapers
+// to hit a separate port from proxy traffic.
+//
+// No-op when registerInstrumentation is false on the Proxy config.
+func (p *Proxy) RegisterMetricsRoute(mux *http.ServeMux) {
+	if !p.registerInstrumentation {
+		return
+	}
+	// Prometheus metrics endpoint — security headers plus bounded scrape concurrency.
+	mux.Handle("/metrics", securityHeaders(http.HandlerFunc(p.handleMetrics)))
+}
+
+// RegisterAdminRoutes registers /admin/*, /debug/pprof/*, and /debug/queries
+// routes. Intended for a dedicated admin listener (--admin-listen) when no
+// -server.admin-auth-token is configured, so the binary boots safely with
+// admin surfaces only reachable from loopback. Honors registerInstrumentation
+// (cache flush + pprof) and enableQueryAnalytics independently.
+func (p *Proxy) RegisterAdminRoutes(mux *http.ServeMux) {
+	if p.registerInstrumentation {
+		if p.enablePprof {
+			mux.Handle("/debug/pprof/cmdline", p.adminMiddleware(http.NotFoundHandler()))
+			mux.Handle("/debug/pprof/", p.adminMiddleware(http.DefaultServeMux))
+		}
+		// Cache flush — POST /admin/cache/flush clears all in-memory cache entries.
+		// Useful for benchmarking (ensures each run starts cold) and debugging.
+		// Protected by the admin auth token.
+		mux.Handle("/admin/cache/flush", p.adminMiddleware(http.HandlerFunc(p.handleCacheFlush)))
+	}
+	if p.enableQueryAnalytics {
+		mux.Handle("/debug/queries", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.queryTracker.Handler))))
 	}
 }
 

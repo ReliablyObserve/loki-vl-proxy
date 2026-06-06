@@ -299,7 +299,16 @@ extraArgs:
   # metrics.trust-proxy-headers: "false"
   # metrics.export-sensitive-labels: "false"    # include tenant/client labels in all Prometheus metrics
   # server.metrics-max-concurrency: "0"         # bound concurrent /metrics scrapes (0=unlimited)
-  # server.register-instrumentation: "true"     # expose /metrics
+  # --- /metrics + admin/debug listener topology (v1.56.0 BREAKING) ---
+  # Binary defaults flipped: server.register-instrumentation is now false in the
+  # raw binary and admin/debug routes move to a loopback --admin-listen so a
+  # plain `loki-vl-proxy -backend=...` invocation boots cleanly. The chart
+  # restores Prometheus-friendly behavior by explicitly enabling the metrics
+  # surface on a dedicated port so ServiceMonitor / Prometheus scrapes keep
+  # working without any operator action.
+  server.register-instrumentation: "true"     # chart-default: expose /metrics so ServiceMonitor keeps scraping
+  metrics-listen: ":9091"                      # dedicated metrics listener (Service exposes targetPort: metrics)
+  admin-listen: "127.0.0.1:3101"               # loopback-only admin/debug listener; never published via Service. Set --server.admin-auth-token to move admin onto the main port.
   # server.enable-pprof: "false"
   # server.enable-query-analytics: "false"
   # server.admin-auth-token: ""                 # bearer token for admin/debug endpoints
@@ -541,6 +550,13 @@ service:
   # - PreferSameNode
   # - PreferClose (deprecated alias for PreferSameZone)
   trafficDistribution: ""
+  # Optional dedicated /metrics ServicePort. Enabled by default so the
+  # extraArgs.metrics-listen=":9091" port is reachable by ServiceMonitor /
+  # Prometheus. Disable if you scrape via pod IP or run Prometheus on the
+  # same node.
+  metrics:
+    enabled: true
+    port: 9091
 
 # Headless peer-discovery service used by StatefulSet / peerCache DNS mode.
 peerService:
