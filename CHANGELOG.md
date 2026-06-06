@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING CHANGES
+
+- **Binary admin endpoints now bind to loopback by default.** Previously `-server.register-instrumentation=true` and `-server.admin-auth-token=""` caused immediate startup failure. Now admin/debug routes are served on a dedicated `--admin-listen` (default `127.0.0.1:3101`) when no token is set; main `--listen` serves proxy traffic only. To restore the previous behavior, set `-server.admin-auth-token` to a value of your choice. Affected: operators running the binary without a token who relied on `:3100/admin/*` being reachable from outside the host.
+- **`/metrics` is no longer served by default.** `-server.register-instrumentation` default flips from `true` to `false`. New `--metrics-listen` flag (default `""`) supports a dedicated listener. The chart now sets `register-instrumentation=true` and `metrics-listen=:9091` so ServiceMonitor / Prometheus scrapes keep working without operator action. Binary users who scrape `:3100/metrics` today must add `-server.register-instrumentation=true` (and optionally `--metrics-listen=:9091` for a dedicated port).
+- **Peer cache requires a shared token by default.** When `--peer-discovery` is set and `--peer-auth-token` is empty, the proxy now refuses to start. To restore the previous IP-allowlist-only behavior, pass `--peer-insecure-ip-allowlist=true`. The Helm chart auto-generates a token Secret on first install if `peerCache.authToken` is unset, so chart users see no operational change.
+- **Chart now enforces conservative request limits by default.** `extraArgs.max-concurrent` defaults from `0` (unlimited) to `64`. `extraArgs.rate-limit-per-second` from `0` to `50`, `extraArgs.rate-limit-burst` from `0` to `100`. To restore unlimited behavior, set all three back to `0` in your values file.
+
+### Added
+
+- `--metadata-default-lookback=12h` flag bounds `/labels`, `/label/{name}/values`, and `/series` requests when the client omits `start`/`end`. `0` disables (prior behavior).
+- `--backend-version-strict=false` flag promotes the existing soft version check to a hard startup failure when set.
+- `--host-proc-root` flag for the proxy binary, allowing host-scope and self-scope `/proc` reads to use different roots.
+
+### Security
+
+- Debug logs no longer include raw LogQL/LogsQL or backend query params by default. Each query is logged as `sha256:<8hex>+len=<n>`. To restore raw debug output, pass `--debug-log-raw-queries=true`.
+- Peer-cache `X-Peer-Token` comparison upgraded from a plain `!=` check to `crypto/subtle.ConstantTimeCompare`, closing a timing-side-channel on the shared peer token. Defense-in-depth alongside the new "token required by default" startup gate.
+- Chart no longer mounts the host's entire `/proc` directory. Five specific system-wide counter files are mounted individually (`/proc/{stat,meminfo,pressure/cpu,pressure/memory,pressure/io}`). Per-process info for other workloads on the host is no longer reachable from the proxy container.
+
+### Notes
+
+- Finding #8 from the v1.55.0 review (size of `cmd/proxy/main.go` and `internal/proxy/proxy.go`) is tracked under the existing proxy architecture refactor plan and is intentionally out of scope here.
+- One INFO-level access-log line in `internal/proxy/query_translation.go:158` still emits a truncated 200-char `loki.query` field for operator audit. This is intentional audit telemetry (not debug output) and is out of scope for this hardening series; tracked as a follow-up for the audit-log redesign.
+- Integration test scenario 3 for `--metadata-default-lookback` exercises `/series` rather than `/labels` because `/labels` independently caps its synchronous backend window to 5 minutes (`metadataMaxFieldNamesWindow`), which would mask the lookback default in the assertion. The lookback default still applies to `/labels` via the background refresh path — only the synchronous test surface differs.
+
 ## [1.55.2] - 2026-06-06
 
 ### CI
