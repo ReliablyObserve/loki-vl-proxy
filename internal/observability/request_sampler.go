@@ -124,6 +124,7 @@ func (s *RequestSampler) ShouldLog(info RequestInfo) bool {
 		b.count++
 		b.lastQuery = info.Query
 		b.lastMs = info.LatencyMs
+		count := b.count
 		s.errBucketMu.Unlock()
 
 		// In quiet mode, log every error individually.
@@ -131,7 +132,7 @@ func (s *RequestSampler) ShouldLog(info RequestInfo) bool {
 			return true
 		}
 		// In busy mode, log the first error of each code, then collapse.
-		return b.count == 1
+		return count == 1
 	}
 
 	// OK traffic.
