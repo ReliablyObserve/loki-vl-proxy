@@ -14,6 +14,9 @@ All flags follow VictoriaMetrics naming conventions (`-flagName=value`).
 | `-listen` | `LISTEN_ADDR` | `:3100` | Listen address |
 | `-backend` | `VL_BACKEND_URL` | `http://localhost:9428` | VictoriaLogs backend URL |
 | `-proc-root` | `PROC_ROOT` | `/proc` | Proc filesystem root used for CPU/memory/disk/network/PSI metrics (`/proc` for container scope, `/host/proc` for host scope) |
+| `-host-proc-root` | `HOST_PROC_ROOT` | `/proc` | Separate proc filesystem root used for host-scope reads (`stat`, `meminfo`, `pressure/{cpu,memory,io}`). Set to `/host/proc` when the chart mounts the five individual host `/proc` files at that path; keeps self-scope reads on `/proc` while host-scope reads pull from the dedicated mount. Falls back to `-proc-root` when unset. |
+| `-backend-version-strict` | — | `false` | Promote the existing soft backend version check to a hard startup failure. When `true`, a `/health` failure, non-`2xx` response, or sub-minimum semver causes the proxy to exit during startup instead of logging a warning. Mirrors the upstream `vmselect` strict-version pattern. |
+| `-metadata-default-lookback` | — | `12h` | Default lookback bound applied to `/labels`, `/label/{name}/values`, and `/series` when the client omits both `start` and `end`. Bounds the backend time window so an unbounded Grafana label-discovery query cannot fan out across all retention. `0` disables (prior unbounded behavior). |
 | `-ruler-backend` | `RULER_BACKEND_URL` | — | Optional rules backend for legacy Loki YAML rules routes and Prometheus-style `/prometheus/api/v1/rules` passthrough |
 | `-alerts-backend` | `ALERTS_BACKEND_URL` | — | Optional alerts backend for Loki and Prometheus-style alerts endpoints (defaults to `-ruler-backend`) |
 | `-log-level` | — | `info` | Log level: debug, info, warn, error |
@@ -806,6 +809,7 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 | `-metrics.max-clients` | — | `256` | Max unique client labels retained in `/metrics` before using `__overflow__` |
 | `-metrics.export-sensitive-labels` | — | `false` | Export per-tenant and per-client identity metrics on `/metrics` and OTLP |
 | `-metrics.trust-proxy-headers` | — | `false` | Trust user/proxy headers (`X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User`, `X-Auth-Request-User`, `X-Forwarded-*`) for client metrics/log attribution and backend context forwarding |
+| `-debug-log-raw-queries` | — | `false` | Include raw LogQL/LogsQL strings and backend query params in `debug`-level logs. By default each query is logged as `sha256:<8hex>+len=<n>` to keep PII out of operator log pipelines. Set to `true` only for ad-hoc investigation; INFO-level access logs are unaffected. |
 
 ## Peer Cache
 
@@ -819,7 +823,8 @@ Shape per-client and global traffic at Grafana, ingress, or an outer proxy layer
 | `-peer-http-url` | — | — | URL returning a JSON peer list when `-peer-discovery=http`. Supported formats: simple array, `{"peers":[...]}`, Prometheus HTTP SD, Consul catalog. The URL is polled every `DiscoveryInterval`. |
 | `-peer-static` | — | — | Comma-separated peer list used when `-peer-discovery=static` (e.g., `10.0.0.1:3100,10.0.0.2:3100`) |
 | `-peer-timeout` | — | `2s` | Timeout applied to peer-cache owner fetches (`/_cache/get`) before falling back locally |
-| `-peer-auth-token` | — | — | Shared token used on `/_cache/get` and `/_cache/set` peer-cache requests. Strongly recommended for fleets so peer auth does not depend only on transient discovery/IP membership during startup. |
+| `-peer-auth-token` | — | — | Shared token used on `/_cache/get` and `/_cache/set` peer-cache requests. Strongly recommended for fleets so peer auth does not depend only on transient discovery/IP membership during startup. **Required by default in v1.56.0** — the proxy refuses to start when peer cache is configured (via `-peer-discovery` or `-peer-static`) and this token is empty, unless `-peer-insecure-ip-allowlist=true` is set. |
+| `-peer-insecure-ip-allowlist` | — | `false` | Explicit opt-in for the legacy IP-allowlist-only peer auth (membership in the discovered peer set is the only check). When `true`, the proxy boots with `-peer-auth-token=""` and falls back to source-IP membership for `/_cache/get` and `/_cache/set`. **BREAKING in v1.56.0** — without this flag, a configured peer cache with an empty token now fails startup. |
 | `-peer-write-through` | — | `true` | Push eligible non-owner cache writes to the owner peer (`/_cache/set`) to keep owner shards warm under skewed traffic |
 | `-peer-write-through-min-ttl` | — | `30s` | Minimum TTL required to push a write-through copy to the owner peer |
 | `-peer-hot-read-ahead-enabled` | — | `false` | Enable bounded periodic hot-read-ahead prefetch from peer hot indexes |
@@ -871,6 +876,18 @@ A bounded peer hot-read-ahead mode is implemented and can be enabled with:
 
 It keeps traffic bounded via key/byte/concurrency caps, jitter, tenant fairness, and error backoff.
 See [Fleet Cache Architecture](fleet-cache.md#hot-read-ahead-bounded).
+
+### Peer Cache Token Management
+
+The chart auto-generates a Secret named `<release>-peer-auth` on first install when `peerCache.enabled=true` and `peerCache.authToken` is unset. The Secret holds a single key `peer-auth-token` populated with a random value (`randAlphaNum 48`), wired into the proxy Deployment as the `-peer-auth-token` flag via env-from-secret. This satisfies the v1.56.0 "token required by default" startup gate without operator action.
+
+To rotate or replace the token:
+
+- **Rotate (chart-managed)** — delete the Secret and `helm upgrade` will regenerate it: `kubectl delete secret <release>-peer-auth && helm upgrade <release> charts/loki-vl-proxy`. All pods must restart to pick up the new value, so do this in a maintenance window or under a `RollingUpdate` strategy.
+- **Externally manage** — set `peerCache.authToken` to a value (or `peerCache.existingSecret` pointing at your own Secret) in the values file. The chart will skip auto-generation. Useful for GitOps flows that source secrets from Vault / External Secrets Operator.
+- **Disable peer cache** — set `peerCache.enabled=false`; no Secret is created and the token gate is skipped because no peer cache is configured.
+
+To restore the pre-v1.56.0 IP-allowlist-only behavior without a token, pass `-peer-insecure-ip-allowlist=true` via `extraArgs`. This is **not recommended**: peer auth then depends only on source-IP membership in the discovered peer set, which is brittle under discovery flap and pod IP churn.
 
 The owner hot-index endpoint (`/_cache/hot`) is internal peer-cache surface area and should not be exposed publicly.
 

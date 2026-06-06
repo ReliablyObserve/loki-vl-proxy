@@ -22,3 +22,26 @@ client can drive expensive fanout into VictoriaLogs), set all three back to
 
 See docs/tuning.md for guidance on appropriate values for your workload
 (Grafana replica count, p99 backend latency, backend headroom).
+
+----
+
+Admin / debug endpoints moved to loopback:
+  /admin/*, /debug/pprof/*, /debug/queries now bind to 127.0.0.1:3101 inside
+  the pod and are NOT exposed via the Service. Reach them with
+  `kubectl exec` or `kubectl port-forward` rather than the cluster Service.
+
+----
+
+Metrics moved to a dedicated port:
+  /metrics is now served on Service port `metrics` (:9091), not on the main
+  Loki port (:3100). The chart's ServiceMonitor already targets the new
+  port. If you scrape via your own Prometheus or a separately-managed
+  ServiceMonitor, update its `port` from `http` to `metrics`.
+
+----
+
+Peer cache shared token is required by default:
+  The chart auto-generated Secret `{{ .Release.Name }}-peer-auth` holding a
+  random token used for peer-to-peer cache auth. To rotate, replace, or
+  externally manage this Secret, see
+  docs/configuration.md#peer-cache-token-management.
