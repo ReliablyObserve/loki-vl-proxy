@@ -39,6 +39,7 @@ services:
       - "-peer-self=proxy-a:3100"
       - "-peer-discovery=http"
       - "-peer-http-url=http://sd-server/peers"
+      - "-peer-auth-token=e2e-test-token"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       sd-server:
@@ -58,6 +59,7 @@ services:
       - "-peer-self=proxy-b:3100"
       - "-peer-discovery=http"
       - "-peer-http-url=http://sd-server/peers"
+      - "-peer-auth-token=e2e-test-token"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       sd-server:
@@ -77,6 +79,7 @@ services:
       - "-peer-self=proxy-c:3100"
       - "-peer-discovery=http"
       - "-peer-http-url=http://sd-server/peers"
+      - "-peer-auth-token=e2e-test-token"
       - "-server.admin-auth-token=e2e-test-token"
     depends_on:
       sd-server:

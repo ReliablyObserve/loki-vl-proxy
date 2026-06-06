@@ -45,6 +45,7 @@ services:
       - "-peer-self=proxy-a:3100"
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
+      - "-peer-auth-token=e2e-test-token"
       - "-server.admin-auth-token=e2e-test-token"
     tmpfs:
       - /cache
@@ -79,6 +80,7 @@ services:
       - "-peer-self=proxy-b:3100"
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
+      - "-peer-auth-token=e2e-test-token"
       - "-server.admin-auth-token=e2e-test-token"
     tmpfs:
       - /cache
@@ -113,6 +115,7 @@ services:
       - "-peer-self=proxy-c:3100"
       - "-peer-discovery=static"
       - "-peer-static=proxy-a:3100,proxy-b:3100,proxy-c:3100"
+      - "-peer-auth-token=e2e-test-token"
       - "-server.admin-auth-token=e2e-test-token"
     tmpfs:
       - /cache
