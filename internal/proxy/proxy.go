@@ -165,8 +165,8 @@ type Config struct {
 	// from ValidateBackendVersionCompatibility. Default false preserves the
 	// historical soft (warn-and-continue) behavior.
 	BackendVersionStrict bool
-	DerivedFields              []DerivedField // derived fields for trace/link extraction
-	StreamResponse             bool           // stream responses via chunked transfer (default: false)
+	DerivedFields        []DerivedField // derived fields for trace/link extraction
+	StreamResponse       bool           // stream responses via chunked transfer (default: false)
 	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
 	// Disabled by default for conservative datasource compatibility.
 	EmitStructuredMetadata bool

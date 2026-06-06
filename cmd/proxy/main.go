@@ -311,8 +311,8 @@ type runtimeOptions struct {
 	// listener with instrumentation disabled would bind a dead port that
 	// only serves 404s. buildRuntime mirrors that contract: it only spawns
 	// the aux listener when BOTH flags agree.
-	metricsListenAddr        string
-	registerInstrumentation  bool
+	metricsListenAddr       string
+	registerInstrumentation bool
 }
 
 type runtimeState struct {
