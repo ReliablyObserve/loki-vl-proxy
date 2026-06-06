@@ -63,6 +63,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Total: ~2200 lines of new test code, lifts aggregate Go coverage on
   `main` from 83.5 % to 84.8 % (+1.3 pp). Race-detector clean.
 
+### CI
+
+- `test/e2e-compat`: warm the proxy's filtered label_values cache
+  (`/loki/api/v1/label/<X>/values?query={...}`) in `ensureDataIngested`
+  before the drilldown tests run. The proxy keeps THREE separate label
+  caches — unfiltered values, the `/labels` LIST, and filtered values —
+  and only the first two were being warmed. On hosted CI runners the
+  filtered cache stayed empty for 30–60 s after the unfiltered cache was
+  already hot, which flaked five Grafana resource subtests with
+  `data:[]` responses (`additional_label_values`,
+  `label_values_honor_limit`, `label_filters_apply_to_resource_values`,
+  `multi_tenant_resources_respect___tenant_id___filters`, and
+  `TestDrilldown_RuntimeFamilyContracts`). New `waitForProxyFilteredLabelValues`
+  helper polls the filtered endpoint with a 60 s timeout for the two
+  stream selectors the failing subtests exercise; total setup budget
+  stays well under the 300 s test-suite timeout.
+
 ## [1.55.2] - 2026-06-06
 
 ### CI
