@@ -44,6 +44,15 @@ func ensureDataIngested(t *testing.T) {
 		// force_flush makes data searchable in VL but the proxy still has its own
 		// label cache; this loop tolerates that one extra hop.
 		waitForProxyLabelValues(t, "cluster", "us-east-1")
+		// Proxy's /labels (label LIST) endpoint has its own cache, populated by
+		// a different VL-side index than label_values. On hosted CI runners
+		// "cluster" can take 30–90 s to appear after ingestion. The per-test
+		// waitForProxyLabels (drilldown_compat_test.go:277) has a 30 s window
+		// that's too short under CI load — wait here so EVERY drilldown test
+		// (including TestDrilldown_RuntimeFamilyContracts and the
+		// labels_resource_supports_additional_tabs subtest, both of which
+		// don't call waitForProxyLabels themselves) sees a populated /labels.
+		waitForProxyLabelsContain(t, "cluster", 90*time.Second)
 	})
 }
 
@@ -94,6 +103,38 @@ func waitForProxyLabelValues(t *testing.T, label, expectedValue string) {
 		time.Sleep(500 * time.Millisecond)
 	}
 	t.Logf("warning: proxy label_values for %s did not include %q after 90 s — label-values tests may flake", label, expectedValue)
+}
+
+// waitForProxyLabelsContain polls /loki/api/v1/labels until expectedLabel
+// appears in the data array, or the timeout elapses. The proxy's labels-LIST
+// cache is separate from the per-label values cache and takes longer to
+// populate on hosted CI runners (30 s is not enough on a cold runner —
+// 60–90 s is typical). Used by ensureDataIngested as a setup-once gate so
+// every drilldown test sees a populated /labels.
+//
+// Returns silently on success or timeout (timeout logs a warning, downstream
+// assertions then surface the real expectation failure with their original
+// message).
+func waitForProxyLabelsContain(t *testing.T, expectedLabel string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		now := time.Now()
+		params := url.Values{}
+		params.Set("query", `{app="api-gateway"}`)
+		params.Set("start", fmt.Sprintf("%d", now.Add(-10*time.Minute).UnixNano()))
+		params.Set("end", fmt.Sprintf("%d", now.UnixNano()))
+		status, _, resp := doJSONGET(t, proxyURL+"/loki/api/v1/labels?"+params.Encode(), nil)
+		if status == http.StatusOK {
+			for _, v := range extractStringArray(resp, "data") {
+				if v == expectedLabel {
+					return
+				}
+			}
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	t.Logf("warning: proxy /labels did not include %q after %s — drilldown labels tests may flake", expectedLabel, timeout)
 }
 
 // waitForLokiMetricData polls until Loki returns non-empty metric results for
