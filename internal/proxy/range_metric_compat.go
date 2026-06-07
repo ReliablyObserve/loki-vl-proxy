@@ -1192,7 +1192,14 @@ func addGroupByParsedLabelsFJ(metricLabels map[string]string, v *fj.Value, group
 }
 
 func queryUsesParserStages(baseQuery string) bool {
-	if strings.Contains(baseQuery, "| unpack_") {
+	// `| unpack_logfmt` exposes pre-parsed fields without transforming the
+	// log line — VL's stats_query_range handles it natively in tens of ms.
+	// Excluding it from the "parser stages" check lets queries with a
+	// `detected_level="..."` filter (which the translator rewrites to
+	// `... | unpack_logfmt | filter level:="..."`) reach the stats fast
+	// path instead of falling back to a 5–16s client-side log scan that
+	// returned 143k unaggregated series for high-cardinality groupBy.
+	if strings.Contains(baseQuery, "| unpack_json") {
 		return true
 	}
 	if strings.Contains(baseQuery, "| extract ") {

@@ -279,6 +279,40 @@ func TestDetectedFieldsCache_SkipsEmptyResults(t *testing.T) {
 	}
 }
 
+// Regression guard for the detected_level filter aggregation bug.
+//
+// Before the fix: a LogQL query with `| detected_level="error"` got
+// translated to `... | unpack_logfmt | filter level:="..."`. The
+// queryUsesParserStages check then flagged it as a parser-stage query
+// and skipped the stats fast path, forcing a 5–16s client-side log
+// scan that returned 143k unaggregated series for high-cardinality
+// `by (pod)` groupBy. VL's stats_query_range handles `| unpack_logfmt`
+// natively in tens of ms; the fix excludes it from the parser-stages
+// gate so the fast path is reachable.
+func TestQueryUsesParserStages_AllowsUnpackLogfmt(t *testing.T) {
+	cases := []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{"plain stream selector", `{env="production"}`, false},
+		{"label filter only", `{env="production"} | service_name="api"`, false},
+		{"unpack_logfmt (detected_level path)", `{env="production"} | unpack_logfmt | filter level:="error"`, false},
+		{"unpack_json (transforms input shape)", `{env="production"} | unpack_json`, true},
+		{"extract regexp", `{env="production"} | extract_regexp "(?P<code>\\d+)"`, true},
+		{"extract pattern", `{env="production"} | extract "code=<code>"`, true},
+		{"unpack_logfmt+extract is still parser-stage", `{env="production"} | unpack_logfmt | extract "x=<y>"`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := queryUsesParserStages(tc.query)
+			if got != tc.want {
+				t.Fatalf("queryUsesParserStages(%q) = %v, want %v", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
 // Regression guards for the drilldown scan timeout helper.
 func TestWithDrilldownScanTimeout(t *testing.T) {
 	t.Run("disabled when timeout is zero", func(t *testing.T) {
