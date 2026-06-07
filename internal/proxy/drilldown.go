@@ -1585,7 +1585,13 @@ func (p *Proxy) detectFields(ctx context.Context, query, start, end string, line
 		}
 
 		params := url.Values{}
-		params.Set("query", logsqlQuery+" | sort by (_time desc)")
+		// Detection only needs a sample of any matching lines for field
+		// extraction — order is irrelevant. The previous explicit
+		// `| sort by (_time desc)` forced VL to scan and order every matching
+		// line before returning the top N, which on heavy parser-filter
+		// queries (e.g. `| logfmt | level="error"`) blew past 10s.
+		// Without the sort VL can early-exit once it has N matches.
+		params.Set("query", logsqlQuery)
 		params.Set("limit", strconv.Itoa(scanLimit))
 		if start != "" {
 			params.Set("start", formatVLTimestamp(start))
