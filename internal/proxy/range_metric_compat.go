@@ -1457,9 +1457,17 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 					sum += s.value
 				}
 			}
-			if sum == 0 {
-				continue
-			}
+			// Always emit a datapoint per step bucket — zero-filling missing
+			// values. Previously we skipped sum==0 to save bytes, but for
+			// sparse series (high-cardinality fields like trace_id where each
+			// value appears at only a few timestamps) the result was a series
+			// with 3 datapoints clustered together. Drilldown rendered that as
+			// "one spike at the beginning" because the chart x-axis got
+			// collapsed to the sparse data extent instead of the full request
+			// range. Continuous datapoints render correctly. Cost is bounded
+			// by topk(N) at the caller — Drilldown's high-card panels cap at
+			// 10-50 series so worst case is ~288 buckets × 50 series ≈ 14k
+			// datapoints per response (~200 KB).
 			var value float64
 			if manualFunc == "rate" {
 				value = sum / windowSec
