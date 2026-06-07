@@ -14,6 +14,15 @@
 #          same key; reports peer-b's L3 hit count.
 #   long   Long-range windowed reuse — 7d /query_range, then 7d-1h overlap,
 #          reports loki_vl_proxy_cache_window_hits_total delta.
+#   lb     Drive LB_RUNS (default 30) requests through the vmauth-ring LB on
+#          port 13200. vmauth round-robins across proxy-0/1/2; reports the
+#          full cache cascade per proxy so you can see L0/L1/L2/L3 reuse and
+#          peer write-through under realistic distributed traffic.
+#   load   High-rate concurrent load through the LB. LOAD_TOTAL (default 600)
+#          requests fanned across LOAD_PARALLEL (default 50) workers, rotating
+#          through LOAD_FAN_KEYS (default app,job,service_name,namespace,level)
+#          to fill the caches with several distinct keys. Demonstrates cache
+#          fill / propagation / peer write-through under sustained pressure.
 #   all    Run l1, then l2, then l3, then long sequentially.
 #
 # Why label-values for L1/L2/L3 and query_range only for long-range?
@@ -37,6 +46,14 @@ set -euo pipefail
 PROXY_MAIN_URL="${PROXY_MAIN_URL:-http://localhost:13100}"
 PROXY_PEER_A_URL="${PROXY_PEER_A_URL:-http://localhost:13150}"
 PROXY_PEER_B_URL="${PROXY_PEER_B_URL:-http://localhost:13151}"
+PROXY_LB_URL="${PROXY_LB_URL:-http://localhost:13200}"
+LB_RUNS="${LB_RUNS:-30}"
+LB_CONCURRENCY="${LB_CONCURRENCY:-1}"
+# High-rate mode defaults: 600 requests at 50 in-flight concurrency
+# (~hundreds of req/s on a laptop). Tune with LOAD_TOTAL / LOAD_PARALLEL.
+LOAD_TOTAL="${LOAD_TOTAL:-600}"
+LOAD_PARALLEL="${LOAD_PARALLEL:-50}"
+LOAD_FAN_KEYS="${LOAD_FAN_KEYS:-app,job,service_name,namespace,level}"
 QUERY="${QUERY:-{job=~\".+\"}}"
 COLD_WARM_RUNS="${COLD_WARM_RUNS:-6}"
 COMPOSE_DIR="${COMPOSE_DIR:-test/e2e-compat}"
@@ -271,12 +288,100 @@ bench_long_range_window() {
   echo "             second call reuses overlapping chunks — L1 hits dominate."
 }
 
+bench_lb_round_robin() {
+  echo "=== LB round-robin — ${LB_RUNS} requests through vmauth-ring (${PROXY_LB_URL}) ==="
+  echo "vmauth round-robins across proxy-0/1/2; same cache key on each call."
+  local before_p0 before_p1 before_p2
+  before_p0=$(snapshot_full_cache "$PROXY_MAIN_URL")
+  before_p1=$(snapshot_full_cache "$PROXY_PEER_A_URL")
+  before_p2=$(snapshot_full_cache "$PROXY_PEER_B_URL")
+  local i
+  local total_ms=0 cold_runs=0 warm_runs=0
+  for ((i = 1; i <= LB_RUNS; i++)); do
+    local t0 t1 dur_ms
+    t0=$(($(date +%s%N) / 1000000))
+    "${CURL_BIN[@]}" -fsS -G "${PROXY_LB_URL}/loki/api/v1/label/${BENCH_LABEL_NAME}/values" \
+      --data-urlencode "start=${BENCH_START_NS}" \
+      --data-urlencode "end=${BENCH_END_NS}" >/dev/null
+    t1=$(($(date +%s%N) / 1000000))
+    dur_ms=$(( t1 - t0 ))
+    total_ms=$((total_ms + dur_ms))
+    if (( dur_ms > 50 )); then cold_runs=$((cold_runs+1)); else warm_runs=$((warm_runs+1)); fi
+  done
+  local avg_ms=$(( total_ms / LB_RUNS ))
+  printf '  %d runs, avg %d ms (heuristic: %d cold >50ms, %d warm)\n' \
+    "$LB_RUNS" "$avg_ms" "$cold_runs" "$warm_runs"
+  local after_p0 after_p1 after_p2
+  after_p0=$(snapshot_full_cache "$PROXY_MAIN_URL")
+  after_p1=$(snapshot_full_cache "$PROXY_PEER_A_URL")
+  after_p2=$(snapshot_full_cache "$PROXY_PEER_B_URL")
+  echo ""
+  echo "--- proxy-0 (loki-vl-proxy) ---"
+  print_full_cascade_delta "$before_p0" "$after_p0"
+  echo ""
+  echo "--- proxy-1 (loki-vl-proxy-peer-a) ---"
+  print_full_cascade_delta "$before_p1" "$after_p1"
+  echo ""
+  echo "--- proxy-2 (loki-vl-proxy-peer-b) ---"
+  print_full_cascade_delta "$before_p2" "$after_p2"
+  echo ""
+  echo "Expectation: ~${LB_RUNS}/3 requests per proxy. First call on each is cold;"
+  echo "             subsequent calls hit response cache. Peer write-through pushes the"
+  echo "             warm entry to the owner proxy so other peers can L3-fetch on miss."
+}
+
+bench_high_rate_load() {
+  echo "=== High-rate load — ${LOAD_TOTAL} requests at parallelism ${LOAD_PARALLEL} through LB ${PROXY_LB_URL} ==="
+  echo "Fanning across keys: ${LOAD_FAN_KEYS}"
+  local before_p0 before_p1 before_p2
+  before_p0=$(snapshot_full_cache "$PROXY_MAIN_URL")
+  before_p1=$(snapshot_full_cache "$PROXY_PEER_A_URL")
+  before_p2=$(snapshot_full_cache "$PROXY_PEER_B_URL")
+  local wall_start wall_end
+  wall_start=$(date +%s.%N)
+  # Generate the request list: rotate through keys so we exercise multiple
+  # cache entries. Pipe to xargs -P for in-flight parallelism.
+  local IFS=','; read -ra _KEYS <<<"$LOAD_FAN_KEYS"; unset IFS
+  local n_keys="${#_KEYS[@]}"
+  local i
+  for ((i = 0; i < LOAD_TOTAL; i++)); do
+    printf '%s\n' "${_KEYS[$(( i % n_keys ))]}"
+  done | xargs -P "$LOAD_PARALLEL" -I{} \
+    "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/label/{}/values" \
+      --data-urlencode "start=${BENCH_START_NS}" \
+      --data-urlencode "end=${BENCH_END_NS}"
+  wall_end=$(date +%s.%N)
+  local wall_s
+  wall_s=$(awk "BEGIN{printf \"%.2f\", $wall_end - $wall_start}")
+  local rps
+  rps=$(awk "BEGIN{printf \"%.0f\", $LOAD_TOTAL / ($wall_end - $wall_start)}")
+  printf '\nFinished %d requests in %ss (~%s req/s sustained)\n\n' "$LOAD_TOTAL" "$wall_s" "$rps"
+  local after_p0 after_p1 after_p2
+  after_p0=$(snapshot_full_cache "$PROXY_MAIN_URL")
+  after_p1=$(snapshot_full_cache "$PROXY_PEER_A_URL")
+  after_p2=$(snapshot_full_cache "$PROXY_PEER_B_URL")
+  echo "--- proxy-0 (loki-vl-proxy) ---"
+  print_full_cascade_delta "$before_p0" "$after_p0"
+  echo ""
+  echo "--- proxy-1 (loki-vl-proxy-peer-a) ---"
+  print_full_cascade_delta "$before_p1" "$after_p1"
+  echo ""
+  echo "--- proxy-2 (loki-vl-proxy-peer-b) ---"
+  print_full_cascade_delta "$before_p2" "$after_p2"
+  echo ""
+  echo "Expectation: response cache hits dominate (warm fast path);"
+  echo "             L3 hits prove cross-peer fetches under contention;"
+  echo "             peer write-through pushes warm entries to owner peers."
+}
+
 mode="${1:-all}"
 case "$mode" in
   l1) bench_l1_cold_vs_warm ;;
   l2) bench_l2_promotion ;;
   l3) bench_l3_cross_peer ;;
   long) bench_long_range_window ;;
+  lb) bench_lb_round_robin ;;
+  load) bench_high_rate_load ;;
   all)
     bench_l1_cold_vs_warm
     echo
@@ -285,9 +390,13 @@ case "$mode" in
     bench_l3_cross_peer
     echo
     bench_long_range_window
+    echo
+    bench_lb_round_robin
+    echo
+    bench_high_rate_load
     ;;
   *)
-    echo "usage: $0 [l1|l2|l3|long|all]" >&2
+    echo "usage: $0 [l1|l2|l3|long|lb|load|all]" >&2
     exit 2
     ;;
 esac
