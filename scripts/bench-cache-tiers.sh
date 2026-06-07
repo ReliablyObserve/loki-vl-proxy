@@ -18,11 +18,13 @@
 #          port 13200. vmauth round-robins across proxy-0/1/2; reports the
 #          full cache cascade per proxy so you can see L0/L1/L2/L3 reuse and
 #          peer write-through under realistic distributed traffic.
-#   load   High-rate concurrent load through the LB. LOAD_TOTAL (default 600)
-#          requests fanned across LOAD_PARALLEL (default 50) workers, rotating
-#          through LOAD_FAN_KEYS (default app,job,service_name,namespace,level)
-#          to fill the caches with several distinct keys. Demonstrates cache
-#          fill / propagation / peer write-through under sustained pressure.
+#   load   High-rate concurrent load through the LB. By default fires
+#          LOAD_TOTAL (600) requests at LOAD_PARALLEL (50) workers; set
+#          SUSTAINED_SECONDS=N to drive traffic continuously for N seconds
+#          instead (recommended: 90+ to populate rate()[1m] dashboard
+#          panels with a visible steady plateau). Rotates through
+#          LOAD_FAN_KEYS (default app,job,service_name,namespace,level) so
+#          multiple distinct cache keys are exercised at once.
 #   all    Run l1, then l2, then l3, then long sequentially.
 #
 # Why label-values for L1/L2/L3 and query_range only for long-range?
@@ -54,6 +56,48 @@ LB_CONCURRENCY="${LB_CONCURRENCY:-1}"
 LOAD_TOTAL="${LOAD_TOTAL:-600}"
 LOAD_PARALLEL="${LOAD_PARALLEL:-50}"
 LOAD_FAN_KEYS="${LOAD_FAN_KEYS:-app,job,service_name,namespace,level}"
+# Mix of real log-query LogQL strings the load mode rotates through so
+# the dashboard sees actual query traffic (not just metadata calls).
+# These exercise stream selectors, line filters, and parsers — the full
+# query_range translation + windowed-cache path that Drilldown/Explore hit.
+LOAD_QUERIES_DEFAULT='{job=~".+"}
+{service_name=~".+"} |= "GET"
+{service_name=~".+"} |= "POST"
+{job=~".+"} | json | level="info"
+{job=~".+"} | json | duration > 100
+sum by (service_name) (rate({job=~".+"}[1m]))
+sum by (level) (rate({service_name=~".+"}[5m]))
+count_over_time({job=~".+"}[1m])'
+LOAD_QUERIES="${LOAD_QUERIES:-$LOAD_QUERIES_DEFAULT}"
+LOAD_WINDOW_SECONDS="${LOAD_WINDOW_SECONDS:-3600}"
+LOAD_STEP="${LOAD_STEP:-15s}"
+
+# Endpoint mix for the load mode. Each call type exercises a different
+# cache path in the proxy. Weights below control relative frequency; the
+# mix is normalised so sums need not be 1. Set MIX_<KIND>=0 to disable.
+MIX_QUERY_RANGE="${MIX_QUERY_RANGE:-40}"
+MIX_QUERY="${MIX_QUERY:-15}"
+MIX_LABELS="${MIX_LABELS:-10}"
+MIX_LABEL_VALUES="${MIX_LABEL_VALUES:-10}"
+MIX_SERIES="${MIX_SERIES:-5}"
+MIX_DETECTED_LABELS="${MIX_DETECTED_LABELS:-5}"
+MIX_DETECTED_FIELDS="${MIX_DETECTED_FIELDS:-5}"
+MIX_INDEX_STATS="${MIX_INDEX_STATS:-5}"
+MIX_INDEX_VOLUME="${MIX_INDEX_VOLUME:-5}"
+# Sustained mode: drive traffic for SUSTAINED_SECONDS instead of a fixed
+# request count. Dashboard rate() panels use [1m] / [5m] windows so a
+# sub-minute burst won't register meaningfully — set to >= 90 to see a
+# steady plateau in Grafana.
+SUSTAINED_SECONDS="${SUSTAINED_SECONDS:-0}"
+# pprof capture during the load mode. Set CAPTURE_PPROF=1 to fetch CPU
+# (duration=PPROF_CPU_SECONDS), heap, allocs, goroutine, mutex, block
+# profiles from all 3 ring proxies into PPROF_DIR for offline analysis
+# with `go tool pprof <file>`. Requires the proxies to have
+# -server.enable-pprof + -server.admin-auth-token (the compose stack does).
+CAPTURE_PPROF="${CAPTURE_PPROF:-0}"
+PPROF_DIR="${PPROF_DIR:-test/e2e-compat/profiles/$(date +%Y%m%dT%H%M%S)}"
+PPROF_CPU_SECONDS="${PPROF_CPU_SECONDS:-30}"
+PPROF_AUTH_TOKEN="${PPROF_AUTH_TOKEN:-bench-pprof-token}"
 QUERY="${QUERY:-{job=~\".+\"}}"
 COLD_WARM_RUNS="${COLD_WARM_RUNS:-6}"
 COMPOSE_DIR="${COMPOSE_DIR:-test/e2e-compat}"
@@ -330,32 +374,211 @@ bench_lb_round_robin() {
   echo "             warm entry to the owner proxy so other peers can L3-fetch on miss."
 }
 
+capture_pprof_one() {
+  local proxy_url="$1" instance_label="$2" outdir="$3"
+  mkdir -p "$outdir"
+  # CPU profile runs in the background during the load test; the others are
+  # instantaneous snapshots taken at the END.
+  local prof
+  for prof in heap allocs goroutine mutex block threadcreate; do
+    "${CURL_BIN[@]}" -fsS -H "X-Admin-Token: ${PPROF_AUTH_TOKEN}" \
+      "${proxy_url}/debug/pprof/${prof}" -o "${outdir}/${instance_label}-${prof}.pprof" 2>/dev/null \
+      && printf '  %s %-12s saved %s\n' "$instance_label" "$prof" "${outdir}/${instance_label}-${prof}.pprof" \
+      || printf '  %s %-12s FAILED\n' "$instance_label" "$prof"
+  done
+}
+
+capture_pprof_cpu_background() {
+  local proxy_url="$1" instance_label="$2" outdir="$3" seconds="$4"
+  mkdir -p "$outdir"
+  # Returns immediately; the curl runs in the background for `seconds`
+  # while the load test drives traffic. The CPU profile reflects what the
+  # proxy actually spent CPU on during the load window.
+  ("${CURL_BIN[@]}" -fsS -H "X-Admin-Token: ${PPROF_AUTH_TOKEN}" \
+    "${proxy_url}/debug/pprof/profile?seconds=${seconds}" \
+    -o "${outdir}/${instance_label}-cpu-${seconds}s.pprof" >/dev/null 2>&1 \
+    && printf '  %s cpu-%ds      saved %s\n' "$instance_label" "$seconds" "${outdir}/${instance_label}-cpu-${seconds}s.pprof" \
+    || printf '  %s cpu-%ds      FAILED\n' "$instance_label" "$seconds") &
+}
+
 bench_high_rate_load() {
-  echo "=== High-rate load — ${LOAD_TOTAL} requests at parallelism ${LOAD_PARALLEL} through LB ${PROXY_LB_URL} ==="
-  echo "Fanning across keys: ${LOAD_FAN_KEYS}"
+  local mode_desc
+  if (( SUSTAINED_SECONDS > 0 )); then
+    mode_desc="sustained for ${SUSTAINED_SECONDS}s"
+  else
+    mode_desc="${LOAD_TOTAL} requests"
+  fi
+  echo "=== High-rate load — ${mode_desc} at parallelism ${LOAD_PARALLEL} through LB ${PROXY_LB_URL} ==="
+  # Materialise the LogQL query list once.
+  local qlist
+  qlist=$(mktemp -t bench-cache-queries-XXXXXX)
+  printf '%s\n' "$LOAD_QUERIES" > "$qlist"
+  local n_queries
+  n_queries=$(wc -l <"$qlist" | tr -d ' ')
+  echo "LogQL: rotating ${n_queries} queries; window=${LOAD_WINDOW_SECONDS}s step=${LOAD_STEP}"
+  # Build the weighted endpoint kind list — kinds repeated MIX_KIND times.
+  local kinds_list
+  kinds_list=$(mktemp -t bench-cache-kinds-XXXXXX)
+  trap 'rm -f "$qlist" "$kinds_list"' RETURN
+  local k w
+  for k in query_range query labels label_values series detected_labels detected_fields index_stats index_volume; do
+    local var="MIX_$(echo "$k" | tr a-z A-Z)"
+    w="${!var}"
+    for ((i = 0; i < w; i++)); do echo "$k"; done
+  done > "$kinds_list"
+  local n_kinds
+  n_kinds=$(wc -l <"$kinds_list" | tr -d ' ')
+  echo "Endpoint mix: $(awk -F: '{print $0}' "$kinds_list" | sort | uniq -c | awk '{printf "%s=%s ", $2, $1}')"
   local before_p0 before_p1 before_p2
   before_p0=$(snapshot_full_cache "$PROXY_MAIN_URL")
   before_p1=$(snapshot_full_cache "$PROXY_PEER_A_URL")
   before_p2=$(snapshot_full_cache "$PROXY_PEER_B_URL")
+  # Start a CPU profile capture against each proxy in parallel — it runs
+  # for the duration of the load window (or PPROF_CPU_SECONDS, whichever
+  # is smaller). Heap / allocs / goroutine snapshots are taken at the end.
+  if [[ "$CAPTURE_PPROF" == "1" ]]; then
+    local cpu_secs=$PPROF_CPU_SECONDS
+    if (( SUSTAINED_SECONDS > 0 )) && (( SUSTAINED_SECONDS < cpu_secs )); then
+      cpu_secs=$SUSTAINED_SECONDS
+    fi
+    echo "Starting CPU pprof capture (${cpu_secs}s) on all 3 proxies into ${PPROF_DIR}..."
+    capture_pprof_cpu_background "$PROXY_MAIN_URL"   proxy-0 "$PPROF_DIR" "$cpu_secs"
+    capture_pprof_cpu_background "$PROXY_PEER_A_URL" proxy-1 "$PPROF_DIR" "$cpu_secs"
+    capture_pprof_cpu_background "$PROXY_PEER_B_URL" proxy-2 "$PPROF_DIR" "$cpu_secs"
+  fi
   local wall_start wall_end
   wall_start=$(date +%s.%N)
-  # Generate the request list: rotate through keys so we exercise multiple
-  # cache entries. Pipe to xargs -P for in-flight parallelism.
-  local IFS=','; read -ra _KEYS <<<"$LOAD_FAN_KEYS"; unset IFS
-  local n_keys="${#_KEYS[@]}"
-  local i
-  for ((i = 0; i < LOAD_TOTAL; i++)); do
-    printf '%s\n' "${_KEYS[$(( i % n_keys ))]}"
-  done | xargs -P "$LOAD_PARALLEL" -I{} \
-    "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/label/{}/values" \
-      --data-urlencode "start=${BENCH_START_NS}" \
-      --data-urlencode "end=${BENCH_END_NS}"
+  local total_sent=0
+  local round_size=$(( LOAD_PARALLEL ))
+  # Single-call fire helper — fire_one <kind> <query> picks the right
+  # endpoint based on kind and issues one curl.
+  fire_one() {
+    local kind="$1" query="$2"
+    local end_ns start_ns end_s start_s lname
+    end_ns=$(($(date +%s) * 1000000000))
+    start_ns=$(( end_ns - LOAD_WINDOW_SECONDS * 1000000000 ))
+    end_s=$(date +%s)
+    start_s=$(( end_s - LOAD_WINDOW_SECONDS ))
+    # Pick a label name from a small rotation for label-scoped endpoints.
+    lname=$(awk -v r="$RANDOM" 'BEGIN{
+      n=split("app job service_name namespace level pod container", a, " ");
+      print a[(r % n) + 1]
+    }')
+    case "$kind" in
+      query_range)
+        "${CURL_BIN[@]}" -s -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/query_range" \
+          --data-urlencode "query=${query}" --data-urlencode "start=${start_ns}" \
+          --data-urlencode "end=${end_ns}" --data-urlencode "step=${LOAD_STEP}" \
+          --data-urlencode "limit=100"
+        ;;
+      query)
+        "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/query" \
+          --data-urlencode "query=${query}" --data-urlencode "time=${end_ns}" \
+          --data-urlencode "limit=100"
+        ;;
+      labels)
+        "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/labels" \
+          --data-urlencode "start=${start_ns}" --data-urlencode "end=${end_ns}"
+        ;;
+      label_values)
+        "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/label/${lname}/values" \
+          --data-urlencode "start=${start_ns}" --data-urlencode "end=${end_ns}"
+        ;;
+      series)
+        "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/series" \
+          --data-urlencode "match[]={job=~\".+\"}" \
+          --data-urlencode "start=${start_ns}" --data-urlencode "end=${end_ns}"
+        ;;
+      detected_labels)
+        "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/detected_labels" \
+          --data-urlencode "query={job=~\".+\"}" \
+          --data-urlencode "start=${start_ns}" --data-urlencode "end=${end_ns}"
+        ;;
+      detected_fields)
+        "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/detected_fields" \
+          --data-urlencode "query={job=~\".+\"}" \
+          --data-urlencode "start=${start_ns}" --data-urlencode "end=${end_ns}"
+        ;;
+      index_stats)
+        "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/index/stats" \
+          --data-urlencode "query={job=~\".+\"}" \
+          --data-urlencode "start=${start_ns}" --data-urlencode "end=${end_ns}"
+        ;;
+      index_volume)
+        "${CURL_BIN[@]}" -fsS -o /dev/null -G "${PROXY_LB_URL}/loki/api/v1/index/volume" \
+          --data-urlencode "query={job=~\".+\"}" \
+          --data-urlencode "start=${start_ns}" --data-urlencode "end=${end_ns}"
+        ;;
+    esac
+  }
+  # Cache the lists into bash arrays once for fast lookup per round.
+  mapfile -t _KINDS < "$kinds_list"
+  mapfile -t _QUERIES < "$qlist"
+  local _kinds_n="${#_KINDS[@]}" _queries_n="${#_QUERIES[@]}"
+  fire_round() {
+    # Spawn round_size curls in background with LOAD_PARALLEL in-flight
+    # cap (semaphore via /dev/fd lock).
+    local i kind q pid_count=0
+    for ((i = 0; i < round_size; i++)); do
+      kind="${_KINDS[$(( RANDOM % _kinds_n ))]}"
+      q="${_QUERIES[$(( RANDOM % _queries_n ))]}"
+      fire_one "$kind" "$q" &
+      pid_count=$((pid_count + 1))
+      if (( pid_count >= LOAD_PARALLEL )); then
+        # Wait for any one of the running jobs to free a slot.
+        wait -n 2>/dev/null || wait
+        pid_count=$((pid_count - 1))
+      fi
+    done
+    wait
+  }
+  if (( SUSTAINED_SECONDS > 0 )); then
+    local deadline
+    deadline=$(awk "BEGIN{printf \"%.3f\", $wall_start + $SUSTAINED_SECONDS}")
+    local progress_t=$wall_start
+    while :; do
+      local now
+      now=$(date +%s.%N)
+      if awk "BEGIN{exit !($now >= $deadline)}"; then break; fi
+      fire_round
+      total_sent=$((total_sent + round_size))
+      local pnow elapsed
+      pnow=$(date +%s.%N)
+      if awk "BEGIN{exit !($pnow - $progress_t >= 10)}"; then
+        elapsed=$(awk "BEGIN{printf \"%.0f\", $pnow - $wall_start}")
+        local rps_so_far
+        rps_so_far=$(awk "BEGIN{printf \"%.0f\", $total_sent / ($pnow - $wall_start)}")
+        printf '  [%3ds] sent %d reqs (~%s req/s)\n' "$elapsed" "$total_sent" "$rps_so_far"
+        progress_t=$pnow
+      fi
+    done
+  else
+    # Fixed-count mode: fire rounds of round_size until LOAD_TOTAL reached.
+    while (( total_sent < LOAD_TOTAL )); do
+      fire_round
+      total_sent=$((total_sent + round_size))
+    done
+  fi
   wall_end=$(date +%s.%N)
-  local wall_s
+  local wall_s rps
   wall_s=$(awk "BEGIN{printf \"%.2f\", $wall_end - $wall_start}")
-  local rps
-  rps=$(awk "BEGIN{printf \"%.0f\", $LOAD_TOTAL / ($wall_end - $wall_start)}")
-  printf '\nFinished %d requests in %ss (~%s req/s sustained)\n\n' "$LOAD_TOTAL" "$wall_s" "$rps"
+  rps=$(awk "BEGIN{printf \"%.0f\", $total_sent / ($wall_end - $wall_start)}")
+  printf '\nFinished %d mixed-endpoint calls in %ss (~%s req/s average)\n\n' "$total_sent" "$wall_s" "$rps"
+  if [[ "$CAPTURE_PPROF" == "1" ]]; then
+    echo "Waiting for CPU pprof captures to flush..."
+    wait
+    echo "Capturing instantaneous heap/allocs/goroutine/mutex/block/threadcreate on all 3 proxies:"
+    capture_pprof_one "$PROXY_MAIN_URL"   proxy-0 "$PPROF_DIR"
+    capture_pprof_one "$PROXY_PEER_A_URL" proxy-1 "$PPROF_DIR"
+    capture_pprof_one "$PROXY_PEER_B_URL" proxy-2 "$PPROF_DIR"
+    echo ""
+    echo "pprof files in ${PPROF_DIR}:"
+    ls -lh "$PPROF_DIR" 2>/dev/null | tail -n +2
+    echo ""
+    echo "Inspect with e.g.:"
+    echo "  go tool pprof -http=:8888 ${PPROF_DIR}/proxy-0-cpu-${PPROF_CPU_SECONDS}s.pprof"
+    echo "  go tool pprof -top ${PPROF_DIR}/proxy-0-heap.pprof"
+  fi
   local after_p0 after_p1 after_p2
   after_p0=$(snapshot_full_cache "$PROXY_MAIN_URL")
   after_p1=$(snapshot_full_cache "$PROXY_PEER_A_URL")
