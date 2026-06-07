@@ -2199,8 +2199,7 @@ func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string) 
 	if p2Err != nil {
 		return nil
 	}
-	var keepFn func(int64) bool
-	keepFn = func(tsNs int64) bool { return tsNs <= endNs }
+	keepFn := func(tsNs int64) bool { return tsNs <= endNs }
 	p2Body = p.trimAndTranslateStatsQRFJ(ctx, p2Body, keepFn, r.FormValue("query"))
 	p2Body = limitLokiMatrixSeries(p2Body, p.resolvedMaxStatsQuerySeries())
 	return wrapAsLokiResponse(p2Body, "matrix")

@@ -408,10 +408,10 @@ const (
 // to 5 minutes but can be overridden per-Proxy via Config.LabelCacheTTL;
 // read p.cacheTTLLabels / p.cacheTTLLabelValues directly for those two keys.
 var CacheTTLs = map[string]time.Duration{
-	"labels":                5 * time.Minute,
-	"label_values":          5 * time.Minute,
-	"label_inventory":       5 * time.Minute,
-	"series":                30 * time.Second,
+	"labels":          5 * time.Minute,
+	"label_values":    5 * time.Minute,
+	"label_inventory": 5 * time.Minute,
+	"series":          30 * time.Second,
 	// Drilldown TTLs bumped from 90s → 5m because (a) the underlying VL
 	// scan for these endpoints can take seconds even with the
 	// drilldown-scan-timeout cap, so re-running it every 90s burns CPU,
@@ -592,7 +592,7 @@ type Proxy struct {
 	// On timeout the proxy returns an empty result, which (thanks to the
 	// empty-cache guard) is not persisted — the next request retries with
 	// a fresh budget.
-	drilldownScanTimeout                  time.Duration
+	drilldownScanTimeout time.Duration
 	// handler is the decomposed view of this Proxy's deps + config + state.
 	// Populated alongside the existing fields during the Task 9 migration.
 	handler *Handler
