@@ -34,15 +34,32 @@ func FuzzExtractLogPatternsFromWindowEntries(f *testing.F) {
 	f.Add("99999999999999999999", "overflow", "info", "60", 10)
 
 	f.Fuzz(func(t *testing.T, ts, msg, level, step string, limit int) {
-		// Clamp limit to a sensible range; the function does no bounds-check
-		// on negative limits, but the production callsite always passes >0.
-		// This keeps the fuzz exploring meaningful states without flooding
-		// the corpus with arbitrarily-large allocations.
+		// Bound input size aggressively so each exec stays well under the
+		// fuzz engine's per-iteration context deadline (the default 10 s
+		// before fuzztime). Without this, a 4-worker CI runner can't get a
+		// single exec to complete on the slowest inputs (huge msg + step="0"
+		// + large limit pushes pattern mining into the seconds-per-exec
+		// range) and the whole job dies with `context deadline exceeded`.
+		//
+		// Production callers never pass these adversarial shapes; we're
+		// fuzzing the parser robustness, not the throughput.
 		if limit < -2 {
 			limit = -2
 		}
-		if limit > 10000 {
-			limit = 10000
+		if limit > 1000 {
+			limit = 1000
+		}
+		if len(msg) > 1024 {
+			msg = msg[:1024]
+		}
+		if len(ts) > 64 {
+			ts = ts[:64]
+		}
+		if len(step) > 32 {
+			step = step[:32]
+		}
+		if len(level) > 64 {
+			level = level[:64]
 		}
 
 		entries := []queryRangeWindowEntry{

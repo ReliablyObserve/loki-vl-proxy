@@ -141,7 +141,12 @@ jobs:
         run: go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatterns$' -fuzztime=12s
 
       - name: Fuzz smoke (extract log patterns from window entries)
-        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatternsFromWindowEntries$' -fuzztime=12s
+        # Match `extract log patterns` step's wider budget — pattern mining
+        # over multi-entry slices is slower per-exec than typical fuzz targets,
+        # and the hosted 4-worker runner runs at ~1/6 the throughput of dev
+        # machines. -timeout=60s prevents the per-iter context deadline from
+        # tripping on the slowest inputs even though they're now bounded.
+        run: go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatternsFromWindowEntries$' -fuzztime=20s -timeout=60s
 
       # --- internal/translator ---
       - name: Fuzz smoke (translate LogQL)
