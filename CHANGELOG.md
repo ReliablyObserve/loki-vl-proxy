@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.57.0] - 2026-06-07
+
 ### Added
 
 - **L0 hot-key index now surfaces as a cache tier in metrics.** New `tier="l0"` label on `loki_vl_proxy_cache_tier_requests_total`, `loki_vl_proxy_cache_tier_hits_total`, `loki_vl_proxy_cache_tier_misses_total`, and `loki_vl_proxy_cache_objects`. L0 is the bounded per-key hotness sidecar that drives peer hot-key read-ahead — it is NOT a lookup tier in the L1→L2→L3 chain. A "hit" means the key was already in the hot index (was hot before this request); a "miss" is the first observation of that key. `cache_objects{tier="l0"}` reports the current bounded population of the hot index. Both OTLP push and Prometheus `/metrics` paths emit the new series.
