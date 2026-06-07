@@ -516,20 +516,23 @@ func (m *Metrics) preRegisterZeroSeries() {
 }
 
 func writeCacheTierMetrics(sb *strings.Builder, stats cache.StatsSnapshot) {
-	sb.WriteString("# HELP loki_vl_proxy_cache_tier_requests_total Cache tier lookup attempts by tier.\n")
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_requests_total Cache tier lookup attempts by tier. tier=l0 is the hot-key index sidecar (not a lookup tier — counts every cache request that touched it).\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_requests_total counter\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l0", stats.L0.Requests)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l1_memory", stats.L1.Requests)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l2_disk", stats.L2.Requests)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_requests_total{tier=%q} %d\n", "l3_peer", stats.L3.Requests)
 
-	sb.WriteString("# HELP loki_vl_proxy_cache_tier_hits_total Cache hits by tier.\n")
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_hits_total Cache hits by tier. tier=l0 = cache requests where the key was already in the hot-key index (was hot before this request).\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_hits_total counter\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l0", stats.L0.Hits)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l1_memory", stats.L1.Hits)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l2_disk", stats.L2.Hits)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_hits_total{tier=%q} %d\n", "l3_peer", stats.L3.Hits)
 
-	sb.WriteString("# HELP loki_vl_proxy_cache_tier_misses_total Cache misses by tier.\n")
+	sb.WriteString("# HELP loki_vl_proxy_cache_tier_misses_total Cache misses by tier. tier=l0 = cache requests for keys not yet in the hot index (first observation of that key).\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_tier_misses_total counter\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l0", stats.L0.Misses)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l1_memory", stats.L1.Misses)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l2_disk", stats.L2.Misses)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_tier_misses_total{tier=%q} %d\n", "l3_peer", stats.L3.Misses)
@@ -544,8 +547,9 @@ func writeCacheTierMetrics(sb *strings.Builder, stats cache.StatsSnapshot) {
 	sb.WriteString("# TYPE loki_vl_proxy_cache_backend_fallthrough_total counter\n")
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_backend_fallthrough_total %d\n", stats.BackendFallthrough)
 
-	sb.WriteString("# HELP loki_vl_proxy_cache_objects Current object count by cache tier.\n")
+	sb.WriteString("# HELP loki_vl_proxy_cache_objects Current object count by cache tier. tier=l0 = current bounded population of the hot-key index.\n")
 	sb.WriteString("# TYPE loki_vl_proxy_cache_objects gauge\n")
+	fmt.Fprintf(sb, "loki_vl_proxy_cache_objects{tier=%q} %d\n", "l0", stats.HotEntries)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_objects{tier=%q} %d\n", "l1_memory", stats.Entries)
 	fmt.Fprintf(sb, "loki_vl_proxy_cache_objects{tier=%q} %d\n", "l2_disk", stats.DiskEntries)
 

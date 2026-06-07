@@ -1,5 +1,7 @@
 {
-  "annotations": {"list": []},
+  "annotations": {
+    "list": []
+  },
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -7,399 +9,2228 @@
   "links": [],
   "liveNow": false,
   "panels": [
-
-    {"type": "row", "title": "Component resources (CPU / RSS / Go runtime)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}, "id": 100, "collapsed": false, "panels": []},
-
     {
-      "title": "CPU usage (cores)", "type": "timeseries", "id": 1,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 7, "w": 8, "x": 0, "y": 1},
-      "targets": [{"expr": "rate(process_cpu_seconds_total[1m])", "legendFormat": "{{component}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "none", "decimals": 2, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10}}},
-      "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
+      "type": "row",
+      "title": "Component resources (CPU / RSS / Go runtime)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "collapsed": false,
+      "panels": []
     },
     {
-      "title": "Resident memory (MiB)", "type": "timeseries", "id": 2,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 7, "w": 8, "x": 8, "y": 1},
-      "targets": [{"expr": "process_resident_memory_bytes / (1024*1024)", "legendFormat": "{{component}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "decmbytes", "decimals": 0, "custom": {"drawStyle": "line", "lineWidth": 2, "fillOpacity": 10}}},
-      "options": {"tooltip": {"mode": "multi", "sort": "desc"}, "legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
-    },
-    {
-      "title": "Go heap in-use (MiB)", "type": "timeseries", "id": 3,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 7, "w": 8, "x": 16, "y": 1},
-      "targets": [{"expr": "go_memstats_heap_inuse_bytes / (1024*1024)", "legendFormat": "{{component}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "decmbytes", "decimals": 0}},
-      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
-    },
-    {
-      "title": "Goroutines", "type": "timeseries", "id": 4,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8},
-      "targets": [{"expr": "go_goroutines", "legendFormat": "{{component}}", "refId": "A"}],
-      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
-    },
-    {
-      "title": "GC pause rate (ms/s)", "type": "timeseries", "id": 5,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
-      "targets": [{"expr": "rate(go_gc_duration_seconds_sum[1m]) * 1000", "legendFormat": "{{component}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "ms", "decimals": 1}}
-    },
-    {
-      "title": "Open FDs", "type": "timeseries", "id": 6,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8},
-      "targets": [{"expr": "process_open_fds", "legendFormat": "{{component}}", "refId": "A"}]
-    },
-
-    {"type": "row", "title": "Proxy — client traffic", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14}, "id": 101, "collapsed": false, "panels": []},
-
-    {
-      "title": "Proxy: request rate by endpoint (downstream client → proxy)", "type": "timeseries", "id": 10,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 15},
-      "targets": [{"expr": "sum by (endpoint) (rate(loki_vl_proxy_requests_total{direction=\"downstream\"}[1m])) > 0", "legendFormat": "{{endpoint}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "reqps"}},
-      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
-    },
-    {
-      "title": "Proxy: response status mix", "type": "timeseries", "id": 11,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 15},
-      "targets": [{"expr": "sum by (status) (rate(loki_vl_proxy_requests_total{direction=\"downstream\"}[1m])) > 0", "legendFormat": "HTTP {{status}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"stacking": {"mode": "normal"}}}},
-      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
-    },
-    {
-      "title": "Proxy: active requests in-flight", "type": "timeseries", "id": 12,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 23},
-      "targets": [{"expr": "loki_vl_proxy_active_requests", "legendFormat": "{{endpoint}}", "refId": "A"}]
-    },
-    {
-      "title": "Proxy: upstream calls per request (P50 / P95)", "type": "timeseries", "id": 13,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 23},
+      "title": "CPU usage (cores)",
+      "type": "timeseries",
+      "id": 1,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
       "targets": [
-        {"expr": "histogram_quantile(0.50, sum by (le) (rate(loki_vl_proxy_upstream_calls_per_request_bucket[1m])))", "legendFormat": "P50", "refId": "A"},
-        {"expr": "histogram_quantile(0.95, sum by (le) (rate(loki_vl_proxy_upstream_calls_per_request_bucket[1m])))", "legendFormat": "P95", "refId": "B"}
-      ]
-    },
-    {
-      "title": "Proxy: success rate (200 / total)", "type": "stat", "id": 14,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 23},
-      "targets": [{"expr": "sum(rate(loki_vl_proxy_requests_total{direction=\"downstream\",status=\"200\"}[5m])) / sum(rate(loki_vl_proxy_requests_total{direction=\"downstream\"}[5m]))", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"value": null, "color": "red"}, {"value": 0.9, "color": "yellow"}, {"value": 0.99, "color": "green"}]}}}
-    },
-
-    {"type": "row", "title": "Proxy — cache behaviour", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 29}, "id": 102, "collapsed": false, "panels": []},
-
-    {
-      "title": "Proxy: cache hit ratio (L1 memory, 5 min)", "type": "stat", "id": 20,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 30},
-      "targets": [{"expr": "sum(rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}[5m])) / sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}[5m]))", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "percentunit", "decimals": 1, "thresholds": {"mode": "absolute", "steps": [{"value": null, "color": "red"}, {"value": 0.4, "color": "yellow"}, {"value": 0.7, "color": "green"}]}}}
-    },
-    {
-      "title": "Proxy: cache size (L1 objects / bytes)", "type": "timeseries", "id": 21,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 9, "x": 6, "y": 30},
-      "targets": [
-        {"expr": "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}", "legendFormat": "objects", "refId": "A"},
-        {"expr": "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}", "legendFormat": "bytes", "refId": "B"}
-      ]
-    },
-    {
-      "title": "Proxy: hits / misses by endpoint", "type": "timeseries", "id": 22,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 9, "x": 15, "y": 30},
-      "targets": [
-        {"expr": "sum by (endpoint) (rate(loki_vl_proxy_cache_hits_by_endpoint[1m])) > 0", "legendFormat": "hit {{endpoint}}", "refId": "A"},
-        {"expr": "sum by (endpoint) (rate(loki_vl_proxy_cache_misses_by_endpoint[1m])) > 0", "legendFormat": "miss {{endpoint}}", "refId": "B"}
+        {
+          "expr": "rate(process_cpu_seconds_total[1m])",
+          "legendFormat": "{{component}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
       ],
-      "fieldConfig": {"defaults": {"unit": "reqps"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
     },
     {
-      "title": "Proxy: coalesced upstream calls (saved)", "type": "timeseries", "id": 23,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 36},
+      "title": "Resident memory (MiB)",
+      "type": "timeseries",
+      "id": 2,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
       "targets": [
-        {"expr": "rate(loki_vl_proxy_coalesced_total[1m])", "legendFormat": "coalesced total", "refId": "A"},
-        {"expr": "rate(loki_vl_proxy_coalesced_saved_total[1m])", "legendFormat": "saved VL calls", "refId": "B"}
-      ]
-    },
-    {
-      "title": "Proxy: stale-hit refresh + L1 fallthrough", "type": "timeseries", "id": 24,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 36},
-      "targets": [
-        {"expr": "rate(loki_vl_proxy_cache_tier_stale_hits_total[1m])", "legendFormat": "stale-hit refresh", "refId": "A"},
-        {"expr": "rate(loki_vl_proxy_cache_backend_fallthrough_total[1m])", "legendFormat": "L1→VL fallthrough", "refId": "B"}
-      ]
-    },
-    {
-      "title": "Proxy: per-window cache hits (long-range)", "type": "timeseries", "id": 25,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 36},
-      "targets": [{"expr": "rate(loki_vl_proxy_window_cache_hit_total[1m])", "legendFormat": "window cache hits", "refId": "A"}]
-    },
-
-    {"type": "row", "title": "Proxy — latency distribution", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 42}, "id": 103, "collapsed": false, "panels": []},
-
-    {
-      "title": "Proxy: downstream P50 / P95 / P99 by endpoint", "type": "timeseries", "id": 30,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 43},
-      "targets": [
-        {"expr": "histogram_quantile(0.50, sum by (le, endpoint) (rate(loki_vl_proxy_request_duration_seconds_bucket[1m])))", "legendFormat": "P50 {{endpoint}}", "refId": "A"},
-        {"expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(loki_vl_proxy_request_duration_seconds_bucket[1m])))", "legendFormat": "P95 {{endpoint}}", "refId": "B"},
-        {"expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(loki_vl_proxy_request_duration_seconds_bucket[1m])))", "legendFormat": "P99 {{endpoint}}", "refId": "C"}
+        {
+          "expr": "process_resident_memory_bytes / (1024*1024)",
+          "legendFormat": "{{component}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
       ],
-      "fieldConfig": {"defaults": {"unit": "s", "decimals": 3}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        }
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
     },
     {
-      "title": "Proxy: upstream (VL) backend P95 by endpoint", "type": "timeseries", "id": 31,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 43},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(loki_vl_proxy_backend_duration_seconds_bucket[1m])))", "legendFormat": "{{endpoint}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "s", "decimals": 3}}
-    },
-    {
-      "title": "Proxy: translate / internal-op P95", "type": "timeseries", "id": 32,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 51},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, operation) (rate(loki_vl_proxy_internal_operation_duration_seconds_bucket[1m])))", "legendFormat": "{{operation}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "s", "decimals": 4}}
-    },
-
-    {"type": "row", "title": "Proxy — heap deep-dive (why is heap growing?)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 56}, "id": 108, "collapsed": false, "panels": []},
-
-    {
-      "title": "Proxy: heap alloc (live objects)  vs  heap sys (OS reservation)  vs  RSS", "type": "timeseries", "id": 80,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 57},
+      "title": "Go heap in-use (MiB)",
+      "type": "timeseries",
+      "id": 3,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
       "targets": [
-        {"expr": "go_memstats_heap_alloc_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "heap_alloc (live MiB)", "refId": "A"},
-        {"expr": "go_memstats_heap_inuse_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "heap_inuse MiB", "refId": "B"},
-        {"expr": "go_memstats_heap_idle_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "heap_idle MiB (returnable)", "refId": "C"},
-        {"expr": "go_memstats_heap_released_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "heap_released MiB", "refId": "D"},
-        {"expr": "go_memstats_sys_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "sys MiB (acquired from OS)", "refId": "E"},
-        {"expr": "process_resident_memory_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "RSS MiB", "refId": "F"}
+        {
+          "expr": "go_memstats_heap_inuse_bytes / (1024*1024)",
+          "legendFormat": "{{component}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
       ],
-      "fieldConfig": {"defaults": {"unit": "decmbytes"}},
-      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 0
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
     },
     {
-      "title": "Proxy: heap objects (live count)", "type": "timeseries", "id": 81,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 57},
-      "targets": [{"expr": "go_memstats_heap_objects{component=\"proxy\"}", "legendFormat": "live heap objects", "refId": "A"}],
-      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
-    },
-    {
-      "title": "Proxy: allocation rate (mallocs/s, frees/s) — should be roughly balanced post-GC", "type": "timeseries", "id": 82,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 65},
+      "title": "Goroutines",
+      "type": "timeseries",
+      "id": 4,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
       "targets": [
-        {"expr": "rate(go_memstats_mallocs_total{component=\"proxy\"}[1m])", "legendFormat": "mallocs/s", "refId": "A"},
-        {"expr": "rate(go_memstats_frees_total{component=\"proxy\"}[1m])", "legendFormat": "frees/s", "refId": "B"}
+        {
+          "expr": "go_goroutines",
+          "legendFormat": "{{component}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
       ],
-      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
     },
     {
-      "title": "Proxy: GC pressure (cycles/s, pause time/s, next-GC target)", "type": "timeseries", "id": 83,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 65},
+      "title": "GC pause rate (ms/s)",
+      "type": "timeseries",
+      "id": 5,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
       "targets": [
-        {"expr": "rate(go_gc_duration_seconds_count{component=\"proxy\"}[1m])", "legendFormat": "GC cycles/s", "refId": "A"},
-        {"expr": "rate(go_gc_duration_seconds_sum{component=\"proxy\"}[1m]) * 1000", "legendFormat": "GC pause ms/s", "refId": "B"},
-        {"expr": "go_memstats_next_gc_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "next GC at MiB", "refId": "C"}
-      ]
-    },
-    {
-      "title": "Proxy: stack + other runtime memory (typically small)", "type": "timeseries", "id": 84,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 71},
-      "targets": [
-        {"expr": "go_memstats_stack_inuse_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "stack MiB", "refId": "A"},
-        {"expr": "go_memstats_mspan_inuse_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "mspan MiB", "refId": "B"},
-        {"expr": "go_memstats_mcache_inuse_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "mcache MiB", "refId": "C"},
-        {"expr": "go_memstats_buck_hash_sys_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "profiling buckets MiB", "refId": "D"},
-        {"expr": "go_memstats_gc_sys_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "GC metadata MiB", "refId": "E"},
-        {"expr": "go_memstats_other_sys_bytes{component=\"proxy\"}/(1024*1024)", "legendFormat": "other_sys MiB", "refId": "F"}
-      ]
-    },
-
-    {"type": "row", "title": "Proxy — throughput (bytes & network)", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 77}, "id": 104, "collapsed": false, "panels": []},
-
-    {
-      "title": "Proxy: process network throughput", "type": "timeseries", "id": 40,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 58},
-      "targets": [
-        {"expr": "rate(loki_vl_proxy_process_network_receive_bytes_total[1m])", "legendFormat": "rx", "refId": "A"},
-        {"expr": "rate(loki_vl_proxy_process_network_transmit_bytes_total[1m])", "legendFormat": "tx", "refId": "B"}
+        {
+          "expr": "rate(go_gc_duration_seconds_sum[1m]) * 1000",
+          "legendFormat": "{{component}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
       ],
-      "fieldConfig": {"defaults": {"unit": "Bps"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "decimals": 1
+        }
+      }
     },
     {
-      "title": "Proxy: disk read / written", "type": "timeseries", "id": 41,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 58},
+      "title": "Open FDs",
+      "type": "timeseries",
+      "id": 6,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
       "targets": [
-        {"expr": "rate(loki_vl_proxy_process_disk_read_bytes_total[1m])", "legendFormat": "read", "refId": "A"},
-        {"expr": "rate(loki_vl_proxy_process_disk_written_bytes_total[1m])", "legendFormat": "written", "refId": "B"}
+        {
+          "expr": "process_open_fds",
+          "legendFormat": "{{component}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
       ],
-      "fieldConfig": {"defaults": {"unit": "Bps"}}
-    },
-
-    {"type": "row", "title": "VictoriaLogs backend", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 65}, "id": 105, "collapsed": false, "panels": []},
-
-    {
-      "title": "VL: request rate by path", "type": "timeseries", "id": 50,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 66},
-      "targets": [{"expr": "sum by (path) (rate(vl_http_requests_total[1m])) > 0", "legendFormat": "{{path}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "reqps"}},
-      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
     },
     {
-      "title": "VL: HTTP request duration (P99 summary) by path", "type": "timeseries", "id": 51,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 66},
-      "targets": [{"expr": "vl_http_request_duration_seconds{quantile=\"0.99\"} > 0", "legendFormat": "{{path}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "s"}}
+      "type": "row",
+      "title": "Proxy — client traffic",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 101,
+      "collapsed": false,
+      "panels": []
     },
     {
-      "title": "VL: concurrent selects (running / capacity)", "type": "timeseries", "id": 52,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 73},
+      "title": "Proxy: request rate by endpoint (downstream client → proxy)",
+      "type": "timeseries",
+      "id": 10,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
       "targets": [
-        {"expr": "vl_concurrent_select_current", "legendFormat": "running", "refId": "A"},
-        {"expr": "vl_concurrent_select_capacity", "legendFormat": "capacity", "refId": "B"},
-        {"expr": "rate(vl_concurrent_select_limit_reached_total[1m])", "legendFormat": "limit reached/s", "refId": "C"}
-      ]
-    },
-    {
-      "title": "VL: storage rows / data on disk", "type": "timeseries", "id": 53,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 73},
-      "targets": [
-        {"expr": "vl_indexdb_rows", "legendFormat": "indexdb rows", "refId": "A"},
-        {"expr": "vl_data_size_bytes / (1024*1024*1024)", "legendFormat": "data GB", "refId": "B"},
-        {"expr": "vl_compressed_data_size_bytes / (1024*1024*1024)", "legendFormat": "compressed GB", "refId": "C"}
-      ]
-    },
-    {
-      "title": "VL: ingest + merge throughput", "type": "timeseries", "id": 54,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 73},
-      "targets": [
-        {"expr": "rate(vl_rows_ingested_total[1m])", "legendFormat": "rows ingested/s", "refId": "A"},
-        {"expr": "rate(vl_bytes_ingested_total[1m])", "legendFormat": "bytes ingested/s", "refId": "B"},
-        {"expr": "rate(vl_rows_merged_total[1m])", "legendFormat": "rows merged/s", "refId": "C"}
-      ]
-    },
-
-    {"type": "row", "title": "Loki backend — traffic, cache, ingester", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 79}, "id": 106, "collapsed": false, "panels": []},
-
-    {
-      "title": "Loki: request rate by status_code", "type": "timeseries", "id": 60,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 80},
-      "targets": [{"expr": "sum by (status_code) (rate(loki_request_duration_seconds_count[1m])) > 0", "legendFormat": "HTTP {{status_code}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "reqps", "custom": {"stacking": {"mode": "normal"}}}},
-      "options": {"legend": {"displayMode": "table", "placement": "right", "calcs": ["mean", "max"]}}
-    },
-    {
-      "title": "Loki: request P95 latency by route", "type": "timeseries", "id": 61,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 80},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, route) (rate(loki_request_duration_seconds_bucket[1m])))", "legendFormat": "{{route}}", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "s"}}
-    },
-    {
-      "title": "Loki: embedded cache — hit / miss / eviction", "type": "timeseries", "id": 62,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 87},
-      "targets": [
-        {"expr": "sum(loki_embeddedcache_entries)", "legendFormat": "entries (total)", "refId": "A"},
-        {"expr": "rate(loki_embeddedcache_added_new_total[1m])", "legendFormat": "added/s", "refId": "B"},
-        {"expr": "rate(loki_embeddedcache_evicted_total[1m])", "legendFormat": "evicted/s", "refId": "C"}
-      ]
-    },
-    {
-      "title": "Loki: embedded cache memory", "type": "timeseries", "id": 63,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 87},
-      "targets": [{"expr": "sum by (cache) (loki_embeddedcache_memory_bytes) / (1024*1024)", "legendFormat": "{{cache}} MiB", "refId": "A"}],
-      "fieldConfig": {"defaults": {"unit": "decmbytes"}}
-    },
-    {
-      "title": "Loki: chunk store I/O", "type": "timeseries", "id": 64,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 87},
-      "targets": [
-        {"expr": "rate(loki_chunk_store_fetched_chunks_total[1m])", "legendFormat": "fetched/s", "refId": "A"},
-        {"expr": "rate(loki_chunk_store_stored_chunks_total[1m])", "legendFormat": "stored/s", "refId": "B"},
-        {"expr": "rate(loki_chunk_store_deduped_chunks_total[1m])", "legendFormat": "deduped/s", "refId": "C"}
-      ]
-    },
-    {
-      "title": "Loki: chunks per query (P95)", "type": "timeseries", "id": 65,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 93},
-      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(loki_chunk_store_chunks_per_query_bucket[1m])))", "legendFormat": "P95 chunks/query", "refId": "A"}]
-    },
-    {
-      "title": "Loki: ingester chunk pressure", "type": "timeseries", "id": 66,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 93},
-      "targets": [
-        {"expr": "rate(loki_ingester_chunks_created_total[1m])", "legendFormat": "created/s", "refId": "A"},
-        {"expr": "rate(loki_ingester_chunks_flush_requests_total[1m])", "legendFormat": "flushed/s", "refId": "B"},
-        {"expr": "rate(loki_ingester_chunks_flush_failures_total[1m])", "legendFormat": "flush failures/s", "refId": "C"}
-      ]
-    },
-
-    {"type": "row", "title": "vmauth gateway", "gridPos": {"h": 1, "w": 24, "x": 0, "y": 99}, "id": 107, "collapsed": false, "panels": []},
-
-    {
-      "title": "vmauth: bytes through backend conns", "type": "timeseries", "id": 70,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 100},
-      "targets": [
-        {"expr": "rate(vmauth_backend_conn_bytes_read_total[1m])", "legendFormat": "read", "refId": "A"},
-        {"expr": "rate(vmauth_backend_conn_bytes_written_total[1m])", "legendFormat": "written", "refId": "B"}
+        {
+          "expr": "sum by (endpoint) (rate(loki_vl_proxy_requests_total{direction=\"downstream\"}[1m])) > 0",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
       ],
-      "fieldConfig": {"defaults": {"unit": "Bps"}}
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
     },
     {
-      "title": "vmauth: concurrent requests + limit hits", "type": "timeseries", "id": 71,
-      "datasource": {"type": "prometheus", "uid": "P4169E866C3094E38"},
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 100},
+      "title": "Proxy: response status mix",
+      "type": "timeseries",
+      "id": 11,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 15
+      },
       "targets": [
-        {"expr": "vmauth_concurrent_requests_current", "legendFormat": "current", "refId": "A"},
-        {"expr": "vmauth_concurrent_requests_capacity", "legendFormat": "capacity", "refId": "B"},
-        {"expr": "rate(vmauth_concurrent_requests_limit_reached_total[1m])", "legendFormat": "limit reached/s", "refId": "C"},
-        {"expr": "rate(vmauth_http_request_errors_total[1m])", "legendFormat": "errors/s", "refId": "D"}
-      ]
+        {
+          "expr": "sum by (status) (rate(loki_vl_proxy_requests_total{direction=\"downstream\"}[1m])) > 0",
+          "legendFormat": "HTTP {{status}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Proxy: active requests in-flight",
+      "type": "timeseries",
+      "id": 12,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "expr": "loki_vl_proxy_active_requests",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Proxy: upstream calls per request (P50 / P95)",
+      "type": "timeseries",
+      "id": 13,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 23
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(loki_vl_proxy_upstream_calls_per_request_bucket[1m])))",
+          "legendFormat": "P50",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(loki_vl_proxy_upstream_calls_per_request_bucket[1m])))",
+          "legendFormat": "P95",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Proxy: success rate (200 / total)",
+      "type": "stat",
+      "id": 14,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 23
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(loki_vl_proxy_requests_total{direction=\"downstream\",status=\"200\"}[5m])) / sum(rate(loki_vl_proxy_requests_total{direction=\"downstream\"}[5m]))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0.9,
+                "color": "yellow"
+              },
+              {
+                "value": 0.99,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Proxy — cache behaviour",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "id": 102,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Proxy: cache hit ratio (L1 memory, 5 min)",
+      "type": "stat",
+      "id": 20,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 6,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}[5m])) / sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}[5m]))",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0.4,
+                "color": "yellow"
+              },
+              {
+                "value": 0.7,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Proxy: cache size (L1 objects / bytes)",
+      "type": "timeseries",
+      "id": 21,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 6,
+        "y": 30
+      },
+      "targets": [
+        {
+          "expr": "loki_vl_proxy_cache_objects{tier=\"l1_memory\"}",
+          "legendFormat": "objects",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "loki_vl_proxy_cache_bytes{tier=\"l1_memory\"}",
+          "legendFormat": "bytes",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "title": "Proxy: hits / misses by endpoint",
+      "type": "timeseries",
+      "id": 22,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 15,
+        "y": 30
+      },
+      "targets": [
+        {
+          "expr": "sum by (endpoint) (rate(loki_vl_proxy_cache_hits_by_endpoint[1m])) > 0",
+          "legendFormat": "hit {{endpoint}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum by (endpoint) (rate(loki_vl_proxy_cache_misses_by_endpoint[1m])) > 0",
+          "legendFormat": "miss {{endpoint}}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      }
+    },
+    {
+      "title": "Proxy: coalesced upstream calls (saved)",
+      "type": "timeseries",
+      "id": 23,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 36
+      },
+      "targets": [
+        {
+          "expr": "rate(loki_vl_proxy_coalesced_total[1m])",
+          "legendFormat": "coalesced total",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_vl_proxy_coalesced_saved_total[1m])",
+          "legendFormat": "saved VL calls",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Proxy: stale-hit refresh + L1 fallthrough",
+      "type": "timeseries",
+      "id": 24,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 36
+      },
+      "targets": [
+        {
+          "expr": "rate(loki_vl_proxy_cache_tier_stale_hits_total[1m])",
+          "legendFormat": "stale-hit refresh",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_vl_proxy_cache_backend_fallthrough_total[1m])",
+          "legendFormat": "L1→VL fallthrough",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Proxy: per-window cache hits (long-range)",
+      "type": "timeseries",
+      "id": 25,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 36
+      },
+      "targets": [
+        {
+          "expr": "rate(loki_vl_proxy_window_cache_hit_total[1m])",
+          "legendFormat": "window cache hits",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Proxy — latency distribution",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
+      "id": 103,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Proxy: downstream P50 / P95 / P99 by endpoint",
+      "type": "timeseries",
+      "id": 30,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, endpoint) (rate(loki_vl_proxy_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "P50 {{endpoint}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(loki_vl_proxy_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "P95 {{endpoint}}",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, endpoint) (rate(loki_vl_proxy_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "P99 {{endpoint}}",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3
+        }
+      }
+    },
+    {
+      "title": "Proxy: upstream (VL) backend P95 by endpoint",
+      "type": "timeseries",
+      "id": 31,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 43
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, endpoint) (rate(loki_vl_proxy_backend_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{endpoint}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3
+        }
+      }
+    },
+    {
+      "title": "Proxy: cache hit ratio by tier (L0 hot-index / L1 mem / L2 disk / L3 peer)",
+      "type": "stat",
+      "id": 155,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l0\"}[5m])) / clamp_min(sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}[5m])), 1)",
+          "legendFormat": "L0 hot-index",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}[5m])) / clamp_min(sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}[5m])), 1)",
+          "legendFormat": "L1 memory",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l2_disk\"}[5m])) / clamp_min(sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}[5m])), 1)",
+          "legendFormat": "L2 disk",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}[5m])) / clamp_min(sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}[5m])), 1)",
+          "legendFormat": "L3 peer",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0.4,
+                "color": "yellow"
+              },
+              {
+                "value": 0.7,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Proxy: cache requests/sec by tier",
+      "type": "stat",
+      "id": 167,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 46
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l0\"}[1m]))",
+          "legendFormat": "L0 hot-index",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}[1m]))",
+          "legendFormat": "L1 memory",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l2_disk\"}[1m]))",
+          "legendFormat": "L2 disk",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}[1m]))",
+          "legendFormat": "L3 peer",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0.4,
+                "color": "yellow"
+              },
+              {
+                "value": 0.7,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Proxy: cache size by tier — bytes resident",
+      "type": "stat",
+      "id": 163,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 54
+      },
+      "targets": [
+        {
+          "expr": "sum(loki_vl_proxy_cache_bytes{tier=\"l1_memory\"})",
+          "legendFormat": "L1 memory",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(loki_vl_proxy_cache_bytes{tier=\"l2_disk\"})",
+          "legendFormat": "L2 disk",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(loki_vl_proxy_cache_bytes{tier=\"l3_peer\"})",
+          "legendFormat": "L3 peer",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0.4,
+                "color": "yellow"
+              },
+              {
+                "value": 0.7,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Proxy: cache objects by tier (L0 = hot-index population)",
+      "type": "stat",
+      "id": 175,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 54
+      },
+      "targets": [
+        {
+          "expr": "sum(loki_vl_proxy_cache_objects{tier=\"l0\"})",
+          "legendFormat": "L0 hot-index",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(loki_vl_proxy_cache_objects{tier=\"l1_memory\"})",
+          "legendFormat": "L1 memory",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(loki_vl_proxy_cache_objects{tier=\"l2_disk\"})",
+          "legendFormat": "L2 disk",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "sum(loki_vl_proxy_cache_objects{tier=\"l3_peer\"})",
+          "legendFormat": "L3 peer",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0.4,
+                "color": "yellow"
+              },
+              {
+                "value": 0.7,
+                "color": "green"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Proxy: translate / internal-op P95",
+      "type": "timeseries",
+      "id": 32,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 67
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, operation) (rate(loki_vl_proxy_internal_operation_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{operation}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 4
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Proxy — heap deep-dive (why is heap growing?)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 72
+      },
+      "id": 108,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Proxy: heap alloc (live objects)  vs  heap sys (OS reservation)  vs  RSS",
+      "type": "timeseries",
+      "id": 80,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 73
+      },
+      "targets": [
+        {
+          "expr": "go_memstats_heap_alloc_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "heap_alloc (live MiB)",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_heap_inuse_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "heap_inuse MiB",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_heap_idle_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "heap_idle MiB (returnable)",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_heap_released_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "heap_released MiB",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_sys_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "sys MiB (acquired from OS)",
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "process_resident_memory_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "RSS MiB",
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Proxy: heap objects (live count)",
+      "type": "timeseries",
+      "id": 81,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 73
+      },
+      "targets": [
+        {
+          "expr": "go_memstats_heap_objects{component=\"proxy\"}",
+          "legendFormat": "live heap objects",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Proxy: process network throughput",
+      "type": "timeseries",
+      "id": 40,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 74
+      },
+      "targets": [
+        {
+          "expr": "rate(loki_vl_proxy_process_network_receive_bytes_total[1m])",
+          "legendFormat": "rx",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_vl_proxy_process_network_transmit_bytes_total[1m])",
+          "legendFormat": "tx",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "binBps"
+        }
+      }
+    },
+    {
+      "title": "Proxy: disk read / written",
+      "type": "timeseries",
+      "id": 41,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 74
+      },
+      "targets": [
+        {
+          "expr": "rate(loki_vl_proxy_process_disk_read_bytes_total[1m])",
+          "legendFormat": "read",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_vl_proxy_process_disk_written_bytes_total[1m])",
+          "legendFormat": "written",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "binBps"
+        }
+      }
+    },
+    {
+      "title": "Proxy: allocation rate (mallocs/s, frees/s) — should be roughly balanced post-GC",
+      "type": "timeseries",
+      "id": 82,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 81
+      },
+      "targets": [
+        {
+          "expr": "rate(go_memstats_mallocs_total{component=\"proxy\"}[1m])",
+          "legendFormat": "mallocs/s",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(go_memstats_frees_total{component=\"proxy\"}[1m])",
+          "legendFormat": "frees/s",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "VictoriaLogs backend",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 81
+      },
+      "id": 105,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Proxy: GC pressure (cycles/s, pause time/s, next-GC target)",
+      "type": "timeseries",
+      "id": 83,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 81
+      },
+      "targets": [
+        {
+          "expr": "rate(go_gc_duration_seconds_count{component=\"proxy\"}[1m])",
+          "legendFormat": "GC cycles/s",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(go_gc_duration_seconds_sum{component=\"proxy\"}[1m]) * 1000",
+          "legendFormat": "GC pause ms/s",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_next_gc_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "next GC at MiB",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "VL: request rate by path",
+      "type": "timeseries",
+      "id": 50,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 82
+      },
+      "targets": [
+        {
+          "expr": "sum by (path) (rate(vl_http_requests_total[1m])) > 0",
+          "legendFormat": "{{path}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "VL: HTTP request duration (P99 summary) by path",
+      "type": "timeseries",
+      "id": 51,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 82
+      },
+      "targets": [
+        {
+          "expr": "vl_http_request_duration_seconds{quantile=\"0.99\"} > 0",
+          "legendFormat": "{{path}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Proxy: stack + other runtime memory (typically small)",
+      "type": "timeseries",
+      "id": 84,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 87
+      },
+      "targets": [
+        {
+          "expr": "go_memstats_stack_inuse_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "stack MiB",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_mspan_inuse_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "mspan MiB",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_mcache_inuse_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "mcache MiB",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_buck_hash_sys_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "profiling buckets MiB",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_gc_sys_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "GC metadata MiB",
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "go_memstats_other_sys_bytes{component=\"proxy\"}/(1024*1024)",
+          "legendFormat": "other_sys MiB",
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "title": "VL: concurrent selects (running / capacity)",
+      "type": "timeseries",
+      "id": 52,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 89
+      },
+      "targets": [
+        {
+          "expr": "vl_concurrent_select_current",
+          "legendFormat": "running",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "vl_concurrent_select_capacity",
+          "legendFormat": "capacity",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(vl_concurrent_select_limit_reached_total[1m])",
+          "legendFormat": "limit reached/s",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "VL: storage rows / data on disk",
+      "type": "timeseries",
+      "id": 53,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 89
+      },
+      "targets": [
+        {
+          "expr": "vl_indexdb_rows",
+          "legendFormat": "indexdb rows",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "vl_data_size_bytes / (1024*1024*1024)",
+          "legendFormat": "data GB",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "vl_compressed_data_size_bytes / (1024*1024*1024)",
+          "legendFormat": "compressed GB",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "title": "VL: ingest + merge throughput",
+      "type": "timeseries",
+      "id": 54,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 89
+      },
+      "targets": [
+        {
+          "expr": "rate(vl_rows_ingested_total[1m])",
+          "legendFormat": "rows ingested/s",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(vl_bytes_ingested_total[1m])",
+          "legendFormat": "bytes ingested/s",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(vl_rows_merged_total[1m])",
+          "legendFormat": "rows merged/s",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "binBps"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Proxy — throughput (bytes & network)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 93
+      },
+      "id": 104,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "row",
+      "title": "Loki backend — traffic, cache, ingester",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 95
+      },
+      "id": 106,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Loki: request rate by status_code",
+      "type": "timeseries",
+      "id": 60,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 96
+      },
+      "targets": [
+        {
+          "expr": "sum by (status_code) (rate(loki_request_duration_seconds_count[1m])) > 0",
+          "legendFormat": "HTTP {{status_code}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "mean",
+            "max"
+          ]
+        }
+      }
+    },
+    {
+      "title": "Loki: request P95 latency by route",
+      "type": "timeseries",
+      "id": 61,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 96
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(loki_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "{{route}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "title": "Loki: embedded cache — hit / miss / eviction",
+      "type": "timeseries",
+      "id": 62,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 103
+      },
+      "targets": [
+        {
+          "expr": "sum(loki_embeddedcache_entries)",
+          "legendFormat": "entries (total)",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_embeddedcache_added_new_total[1m])",
+          "legendFormat": "added/s",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_embeddedcache_evicted_total[1m])",
+          "legendFormat": "evicted/s",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Loki: embedded cache memory",
+      "type": "timeseries",
+      "id": 63,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 103
+      },
+      "targets": [
+        {
+          "expr": "sum by (cache) (loki_embeddedcache_memory_bytes) / (1024*1024)",
+          "legendFormat": "{{cache}} MiB",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "title": "Loki: chunk store I/O",
+      "type": "timeseries",
+      "id": 64,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 103
+      },
+      "targets": [
+        {
+          "expr": "rate(loki_chunk_store_fetched_chunks_total[1m])",
+          "legendFormat": "fetched/s",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_chunk_store_stored_chunks_total[1m])",
+          "legendFormat": "stored/s",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_chunk_store_deduped_chunks_total[1m])",
+          "legendFormat": "deduped/s",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "binBps"
+        }
+      }
+    },
+    {
+      "title": "Loki: chunks per query (P95)",
+      "type": "timeseries",
+      "id": 65,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 109
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(loki_chunk_store_chunks_per_query_bucket[1m])))",
+          "legendFormat": "P95 chunks/query",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "title": "Loki: ingester chunk pressure",
+      "type": "timeseries",
+      "id": 66,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 109
+      },
+      "targets": [
+        {
+          "expr": "rate(loki_ingester_chunks_created_total[1m])",
+          "legendFormat": "created/s",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_ingester_chunks_flush_requests_total[1m])",
+          "legendFormat": "flushed/s",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(loki_ingester_chunks_flush_failures_total[1m])",
+          "legendFormat": "flush failures/s",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "vmauth gateway",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 115
+      },
+      "id": 107,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "vmauth: bytes through backend conns",
+      "type": "timeseries",
+      "id": 70,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 116
+      },
+      "targets": [
+        {
+          "expr": "rate(vmauth_backend_conn_bytes_read_total[1m])",
+          "legendFormat": "read",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(vmauth_backend_conn_bytes_written_total[1m])",
+          "legendFormat": "written",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "binBps"
+        }
+      }
+    },
+    {
+      "title": "vmauth: concurrent requests + limit hits",
+      "type": "timeseries",
+      "id": 71,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "P4169E866C3094E38"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 116
+      },
+      "targets": [
+        {
+          "expr": "vmauth_concurrent_requests_current",
+          "legendFormat": "current",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "vmauth_concurrent_requests_capacity",
+          "legendFormat": "capacity",
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(vmauth_concurrent_requests_limit_reached_total[1m])",
+          "legendFormat": "limit reached/s",
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        },
+        {
+          "expr": "rate(vmauth_http_request_errors_total[1m])",
+          "legendFormat": "errors/s",
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "P4169E866C3094E38"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      }
     }
   ],
   "refresh": "5s",
   "schemaVersion": 39,
-  "tags": ["bench", "drilldown-vs-loki"],
-  "templating": {"list": []},
-  "time": {"from": "now-30m", "to": "now"},
+  "tags": [
+    "bench",
+    "drilldown-vs-loki"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "Bench: Drilldown vs Loki — resources, traffic, cache, latency",
   "uid": "bench-resources",
-  "version": 2,
+  "version": 4,
   "weekStart": ""
 }

@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **L0 hot-key index now surfaces as a cache tier in metrics.** New `tier="l0"` label on `loki_vl_proxy_cache_tier_requests_total`, `loki_vl_proxy_cache_tier_hits_total`, `loki_vl_proxy_cache_tier_misses_total`, and `loki_vl_proxy_cache_objects`. L0 is the bounded per-key hotness sidecar that drives peer hot-key read-ahead — it is NOT a lookup tier in the L1→L2→L3 chain. A "hit" means the key was already in the hot index (was hot before this request); a "miss" is the first observation of that key. `cache_objects{tier="l0"}` reports the current bounded population of the hot index. Both OTLP push and Prometheus `/metrics` paths emit the new series.
+- **e2e-compat compose now exercises all four cache tiers end-to-end.** The main `e2e-proxy` is configured with `-disk-cache-path` (L2 bbolt on a named volume that survives `docker compose restart`) and joins a 3-node static peer ring (`-peer-discovery=static`) together with two new sibling services `loki-vl-proxy-peer-a` and `loki-vl-proxy-peer-b` exposed on host ports `13150` and `13151`. vmagent scrapes all three with distinct `instance=` labels so dashboards can disaggregate per-proxy cache stats.
+- `scripts/bench-cache-tiers.sh` — measures each tier against the compose stack: `l1` (cold-vs-warm hit ratio), `l2` (L1→L2 promotion across `docker compose restart`), `l3` (cross-peer fetch from peer-a → peer-b), `long` (7d → 7d-1h windowed cache reuse). Prints before/after counter deltas per tier so the expected promotion path is verifiable.
+- L0 series now appear alongside L1/L2/L3 in the bench-resources dashboard's hit-ratio, requests/sec, and objects panels.
 - `--metadata-default-lookback=12h` flag bounds `/labels`, `/label/{name}/values`, and `/series` requests when the client omits `start`/`end`. `0` disables (prior behavior).
 - `--backend-version-strict=false` flag promotes the existing soft version check to a hard startup failure when set.
 - `--host-proc-root` flag for the proxy binary, allowing host-scope and self-scope `/proc` reads to use different roots.
