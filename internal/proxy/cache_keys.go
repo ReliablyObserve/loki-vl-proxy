@@ -428,15 +428,42 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 		values  []string
 		errVals error
 	)
-	if nativeField, ok, resolveErr := p.resolveNativeDetectedField(scanCtx, query, start, end, fieldName); resolveErr == nil && ok {
-		values, errVals = p.fetchNativeFieldValues(scanCtx, query, start, end, nativeField, lineLimit)
-		if errVals == nil && len(values) == 0 {
-			// Keep Drilldown UX non-empty for synthetic/derived labels when native values are empty.
-			values = nil
+	// Direct field_values fast path FIRST: skip the slow field_names
+	// enumeration. VL's /select/logsql/field_values has a column index for
+	// JSON-extracted fields (trace_id, duration_ms, *_id, etc.) that returns
+	// values in 25–400 ms even with a parser filter present. Calling it
+	// directly with the literal requested field name avoids the
+	// resolveNativeDetectedField → fetchNativeFieldNamesForCandidate path,
+	// which issues `/select/logsql/field_names` with the filter — and that
+	// times out at 3 s when VL has to evaluate the filter to enumerate
+	// fields. The empty-cache guard ensures we don't persist this empty
+	// response so a fresh request retries; if VL truly has values they show
+	// up here directly.
+	if scanCtx.Err() == nil {
+		direct, directErr := p.fetchNativeFieldValues(scanCtx, query, start, end, fieldName, lineLimit)
+		if directErr == nil && len(direct) > 0 {
+			values = direct
 		}
-		if isContextDeadlineErr(errVals) {
-			p.observeInternalOperation(ctx, "drilldown_scan_timeout", "detected_field_values_native", 0)
+		if isContextDeadlineErr(directErr) {
+			p.observeInternalOperation(ctx, "drilldown_scan_timeout", "detected_field_values_direct", 0)
 			return []string{}, nil
+		}
+	}
+	// Fallback to the resolver+native path only when direct lookup failed.
+	// resolveNativeDetectedField translates label aliases (Loki name → VL
+	// name, e.g. detected_level → level) so this catches the case where the
+	// caller used a Loki-style name that needs translation before VL can
+	// answer.
+	if values == nil {
+		if nativeField, ok, resolveErr := p.resolveNativeDetectedField(scanCtx, query, start, end, fieldName); resolveErr == nil && ok && nativeField != fieldName {
+			values, errVals = p.fetchNativeFieldValues(scanCtx, query, start, end, nativeField, lineLimit)
+			if errVals == nil && len(values) == 0 {
+				values = nil
+			}
+			if isContextDeadlineErr(errVals) {
+				p.observeInternalOperation(ctx, "drilldown_scan_timeout", "detected_field_values_native", 0)
+				return []string{}, nil
+			}
 		}
 	}
 	if values == nil && errVals == nil {
