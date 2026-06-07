@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Eliminate the production data race in pattern auto-detection.
+  `extractLogPatternsFromWindowEntriesWithStats` (postprocess.go:390) read
+  `entry.Stream["detected_level"]` from a goroutine spawned at
+  `query_range_windowing.go:235` while the main thread's `applyDerivedFields`
+  (stream_processing.go:319) wrote into the SAME underlying map. Root cause:
+  `applyStreamLabelMutations` returns `desc.translatedLabels` as an alias when
+  no drop/keep change applies, so multiple entries from the same `_stream`
+  within a window — plus the autodetect goroutine — shared one map with the
+  derivedFields writer. Manifested in production as
+  `fatal error: concurrent map read and map write` under Grafana log-volume
+  histogram panels that fan out 3+ concurrent windowed sub-queries.
+  Fix: `snapshotEntriesForPatterns` builds a fresh per-entry Stream map with
+  only the two keys the autodetect path reads (`detected_level`, `level`)
+  before spawning the goroutine. Cheap — no full descriptor-map clone — and
+  breaks the alias completely. Race-detector verified by new
+  `TestSnapshotEntriesForPatterns_RaceFreeUnderConcurrentMutation`.
+
+### CI
+
+- Add a dedicated `race-stress` PR-gating job that runs
+  `go test -race -count=1 -timeout=8m` across `internal/{proxy,cache,middleware,observability}`,
+  plus a targeted verbose re-run of the concurrent-regression tests
+  (`TestSnapshotEntriesForPatterns_*`, `TestRequestSampler_ConcurrentShouldLogIsRaceFree`,
+  `TestAsyncHandler_*`). Catches concurrency bugs at PR time instead of in
+  production — the v1.55.1 race only surfaced under
+  log-volume-histogram + derivedFields + autodetect, none of which the
+  default unit-test pass exercised together.
+- Add `FuzzExtractLogPatternsFromWindowEntries` to the fuzz-smoke matrix
+  (`-fuzztime=12s` per PR). Targets the exact production crash site with
+  adversarial timestamps, multibyte messages, control characters, and
+  extreme limits.
+
 ## [1.56.0] - 2026-06-06
 
 ### Fixed
