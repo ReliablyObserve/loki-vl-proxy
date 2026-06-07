@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Peer-cache `X-Peer-Token` comparison upgraded from a plain `!=` check to `crypto/subtle.ConstantTimeCompare`, closing a timing-side-channel on the shared peer token. Defense-in-depth alongside the new "token required by default" startup gate.
 - Chart no longer mounts the host's entire `/proc` directory. Five specific system-wide counter files are mounted individually (`/proc/{stat,meminfo,pressure/cpu,pressure/memory,pressure/io}`). Per-process info for other workloads on the host is no longer reachable from the proxy container.
 
+### Fixed
+
+- **High-cardinality Drilldown label/field panels (pod, `*_id`) now render correctly and fast at 24h+.** A `detected_level` filter combined with a `by(field)` aggregation on a churning, high-cardinality field (pod names, `trace_id`, `span_id`) previously returned ~142k uncapped single-point series at short ranges (flooding Grafana) or an empty matrix at 24h+ (the VictoriaLogs stats response exceeded the 16 MB body cap), and the panel rendered as a single right-edge spike. Three root causes were addressed: (1) the `detected_level` filter is now evaluated against VictoriaLogs' column-indexed `level` field instead of forcing a `| unpack_logfmt` re-parse of every line — ~64× faster (24h pod query 26s → ~0.6s; level-filtered field breakdowns now match the unfiltered baseline); (2) single-field `count() by(field)` over ranges ≥ 2h routes to the window-sampled `/select/logsql/hits` path so the returned series span the whole timeline instead of clustering the busiest short-lived values into a few buckets; (3) Grafana's 24h+ querySplitting residual chunk (a tiny trailing range ≤ 2× step that `mergeFrames` glued onto the main series as a spike) is now suppressed on every stats path, not just the `/hits` path. Low-cardinality panels and non-Grafana callers are unaffected.
+
 ## [1.56.1] - 2026-06-07
 
 ### Fixed
