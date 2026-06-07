@@ -95,6 +95,40 @@ snapshot_tier_counters() {
   printf '%s %s %s\n' "$req" "$hit" "$miss"
 }
 
+# Snapshot the full cache cascade for one proxy. Captures every layer the
+# bench needs to demonstrate reuse: top-level response cache → L0 hot
+# index → L1 memory → L2 disk → L3 peer → backend fallthrough.
+snapshot_full_cache() {
+  local proxy_url="$1"
+  local top_hit top_miss bf
+  top_hit=$(read_metric "$proxy_url" loki_vl_proxy_cache_hits_total "")
+  top_miss=$(read_metric "$proxy_url" loki_vl_proxy_cache_misses_total "")
+  bf=$(read_metric "$proxy_url" loki_vl_proxy_cache_backend_fallthrough_total "")
+  local l0 l1 l2 l3
+  l0=$(snapshot_tier_counters "$proxy_url" l0)
+  l1=$(snapshot_tier_counters "$proxy_url" l1_memory)
+  l2=$(snapshot_tier_counters "$proxy_url" l2_disk)
+  l3=$(snapshot_tier_counters "$proxy_url" l3_peer)
+  printf '%s|%s|%s|%s|%s|%s|%s\n' "$top_hit" "$top_miss" "$bf" "$l0" "$l1" "$l2" "$l3"
+}
+
+# Print the cascade as a labelled delta table. Demonstrates the full
+# L0 → L1 → L2 → L3 → backend reuse story.
+print_full_cascade_delta() {
+  local before="$1" after="$2"
+  local t0_th t0_tm t0_bf t0_l0 t0_l1 t0_l2 t0_l3
+  local t1_th t1_tm t1_bf t1_l0 t1_l1 t1_l2 t1_l3
+  IFS='|' read -r t0_th t0_tm t0_bf t0_l0 t0_l1 t0_l2 t0_l3 <<<"$before"
+  IFS='|' read -r t1_th t1_tm t1_bf t1_l0 t1_l1 t1_l2 t1_l3 <<<"$after"
+  printf '  %-20s hits+%-3d  miss+%-3d  fallthrough+%d\n' \
+    "Response cache" \
+    "$((t1_th - t0_th))" "$((t1_tm - t0_tm))" "$((t1_bf - t0_bf))"
+  diff_tier "$t0_l0" "$t1_l0" "L0 hot-index"
+  diff_tier "$t0_l1" "$t1_l1" "L1 memory"
+  diff_tier "$t0_l2" "$t1_l2" "L2 disk"
+  diff_tier "$t0_l3" "$t1_l3" "L3 peer"
+}
+
 run_query_range() {
   local proxy_url="$1"
   local end_ns start_ns
@@ -148,12 +182,9 @@ diff_tier() {
 
 bench_l1_cold_vs_warm() {
   echo "=== L1 cold-vs-warm — ${COLD_WARM_RUNS} sequential runs against ${PROXY_MAIN_URL} ==="
-  echo "Query: ${QUERY}"
-  local before_l0 before_l1 before_l2 before_l3
-  before_l0=$(snapshot_tier_counters "$PROXY_MAIN_URL" l0)
-  before_l1=$(snapshot_tier_counters "$PROXY_MAIN_URL" l1_memory)
-  before_l2=$(snapshot_tier_counters "$PROXY_MAIN_URL" l2_disk)
-  before_l3=$(snapshot_tier_counters "$PROXY_MAIN_URL" l3_peer)
+  echo "Query: /label/${BENCH_LABEL_NAME}/values  (cache key stable via fixed start/end)"
+  local before after
+  before=$(snapshot_full_cache "$PROXY_MAIN_URL")
   local i
   for ((i = 1; i <= COLD_WARM_RUNS; i++)); do
     local t0 t1 dur_ms
@@ -163,31 +194,24 @@ bench_l1_cold_vs_warm() {
     dur_ms=$(( t1 - t0 ))
     printf '  run %d: %d ms\n' "$i" "$dur_ms"
   done
-  local after_l0 after_l1 after_l2 after_l3
-  after_l0=$(snapshot_tier_counters "$PROXY_MAIN_URL" l0)
-  after_l1=$(snapshot_tier_counters "$PROXY_MAIN_URL" l1_memory)
-  after_l2=$(snapshot_tier_counters "$PROXY_MAIN_URL" l2_disk)
-  after_l3=$(snapshot_tier_counters "$PROXY_MAIN_URL" l3_peer)
-  diff_tier "$before_l0" "$after_l0" L0
-  diff_tier "$before_l1" "$after_l1" L1
-  diff_tier "$before_l2" "$after_l2" L2
-  diff_tier "$before_l3" "$after_l3" L3
-  echo "Expectation: first run misses L1 (req+1 miss+1); subsequent runs hit L1 (hit+${COLD_WARM_RUNS}-1 ish)."
+  after=$(snapshot_full_cache "$PROXY_MAIN_URL")
+  echo "Cache cascade deltas:"
+  print_full_cascade_delta "$before" "$after"
+  echo "Expectation: response-cache hits ≈ ${COLD_WARM_RUNS}-1 (warm fast path); L1 req+1 miss+1 on cold drop-through."
 }
 
 bench_l2_promotion() {
-  echo "=== L2 promotion across restart — warm, restart ${MAIN_SERVICE}, re-query ==="
+  echo "=== L2 promotion across restart — warm, flush, restart ${MAIN_SERVICE}, re-query ==="
   echo "Warming with one query against ${PROXY_MAIN_URL}..."
-  run_query_range "$PROXY_MAIN_URL"
-  local warm_l1 warm_l2
-  warm_l1=$(snapshot_tier_counters "$PROXY_MAIN_URL" l1_memory)
-  warm_l2=$(snapshot_tier_counters "$PROXY_MAIN_URL" l2_disk)
+  run_label_values "$PROXY_MAIN_URL"
+  # Sleep > disk-cache-flush-interval (default 5s) so the in-memory write
+  # buffer actually lands on bbolt before we kill L1 with a restart.
+  echo "Sleeping 7s so the disk-cache flush interval (5s) fires..."
+  sleep 7
   echo "Restarting ${MAIN_SERVICE} (preserves named volume, drops L1 memory)..."
   ( cd "$COMPOSE_DIR" && docker compose restart "$MAIN_SERVICE" ) >/dev/null
   local retries=20
-  until curl -fsS "${PROXY_MAIN_URL}/-/ready" >/dev/null 2>&1 \
-        || curl -fsS "${PROXY_MAIN_URL}/healthz" >/dev/null 2>&1 \
-        || curl -fsS "${PROXY_MAIN_URL}/metrics" >/dev/null 2>&1; do
+  until "${CURL_BIN[@]}" -fsS "${PROXY_MAIN_URL}/metrics" >/dev/null 2>&1; do
     retries=$((retries - 1))
     if (( retries <= 0 )); then
       echo "main proxy did not come back after restart" >&2
@@ -195,48 +219,56 @@ bench_l2_promotion() {
     fi
     sleep 1
   done
-  local before_l1 before_l2
-  before_l1=$(snapshot_tier_counters "$PROXY_MAIN_URL" l1_memory)
-  before_l2=$(snapshot_tier_counters "$PROXY_MAIN_URL" l2_disk)
-  echo "Re-running the same query — L1 cold, L2 disk should hit..."
-  run_query_range "$PROXY_MAIN_URL"
-  local after_l1 after_l2
-  after_l1=$(snapshot_tier_counters "$PROXY_MAIN_URL" l1_memory)
-  after_l2=$(snapshot_tier_counters "$PROXY_MAIN_URL" l2_disk)
-  diff_tier "$before_l1" "$after_l1" L1
-  diff_tier "$before_l2" "$after_l2" L2
-  echo "Expectation: L1 req+1 miss+1, L2 req+1 hit+1 (entry persisted on disk across restart)."
+  local before after
+  before=$(snapshot_full_cache "$PROXY_MAIN_URL")
+  echo "Re-running the same query — L1 cold (memory was wiped); L2 disk should hit:"
+  run_label_values "$PROXY_MAIN_URL"
+  after=$(snapshot_full_cache "$PROXY_MAIN_URL")
+  echo "Cache cascade deltas after restart:"
+  print_full_cascade_delta "$before" "$after"
+  echo "Expectation: L1 req+1 miss+1 (memory wiped), L2 req+1 hit+1 (bbolt survived restart)."
 }
 
 bench_l3_cross_peer() {
-  echo "=== L3 cross-peer — warm peer-a, query peer-b ==="
-  echo "Warming peer-a (${PROXY_PEER_A_URL})..."
+  echo "=== L3 cross-peer — warm peer-a (twice), query peer-b ==="
+  echo "Warming peer-a (${PROXY_PEER_A_URL}) — two calls so the L0 hot-index advertises the key:"
   run_label_values "$PROXY_PEER_A_URL"
-  local before_l3
-  before_l3=$(snapshot_tier_counters "$PROXY_PEER_B_URL" l3_peer)
-  echo "Querying peer-b (${PROXY_PEER_B_URL}) for same key..."
+  run_label_values "$PROXY_PEER_A_URL"
+  # Sleep so peer-a's hot-index advertisement propagates and peer-b's hot
+  # read-ahead has a chance to pull. Without this, peer-b races the warmup
+  # write and the consistent-hash ring may not have settled.
+  echo "Sleeping 3s for peer ring / hot-index propagation..."
+  sleep 3
+  local before after
+  before=$(snapshot_full_cache "$PROXY_PEER_B_URL")
+  echo "Querying peer-b (${PROXY_PEER_B_URL}) for same key — should fetch from peer-a, not VL:"
   run_label_values "$PROXY_PEER_B_URL"
-  local after_l3
-  after_l3=$(snapshot_tier_counters "$PROXY_PEER_B_URL" l3_peer)
-  diff_tier "$before_l3" "$after_l3" "L3@peer-b"
-  echo "Expectation: peer-b L3 req+1 hit+1 (fetched from peer-a instead of VL backend)."
+  after=$(snapshot_full_cache "$PROXY_PEER_B_URL")
+  echo "Cache cascade deltas on peer-b:"
+  print_full_cascade_delta "$before" "$after"
+  echo "Expectation: peer-b L3 req+1 hit+1; backend fallthrough unchanged (peer served it)."
 }
 
 bench_long_range_window() {
   echo "=== Long-range windowed reuse — 7d full, then 7d-1h overlap ==="
-  local before_window_hits before_window_bytes
-  before_window_hits=$(read_metric "$PROXY_MAIN_URL" loki_vl_proxy_cache_window_hits_total "")
-  before_window_bytes=$(read_metric "$PROXY_MAIN_URL" loki_vl_proxy_cache_window_hits_bytes_total "")
-  echo "First call: 7d window..."
+  echo "First call: 7d window (cold — fills unified cache with chunked sub-windows)..."
+  local before_first after_first
+  before_first=$(snapshot_full_cache "$PROXY_MAIN_URL")
   run_query_range_window "$PROXY_MAIN_URL" 168 60s
-  echo "Second call: overlapping 7d window shifted by 1h..."
+  after_first=$(snapshot_full_cache "$PROXY_MAIN_URL")
+  echo "Cache cascade deltas — first 7d call (mostly misses):"
+  print_full_cascade_delta "$before_first" "$after_first"
+  echo ""
+  echo "Second call: 7d window shifted by 1h (overlapping 6d23h with first call)..."
+  local before_second after_second
+  before_second=$(snapshot_full_cache "$PROXY_MAIN_URL")
   run_query_range_window "$PROXY_MAIN_URL" 167 60s
-  local after_window_hits after_window_bytes
-  after_window_hits=$(read_metric "$PROXY_MAIN_URL" loki_vl_proxy_cache_window_hits_total "")
-  after_window_bytes=$(read_metric "$PROXY_MAIN_URL" loki_vl_proxy_cache_window_hits_bytes_total "")
-  printf '  window_hits delta:  %d\n' "$((after_window_hits - before_window_hits))"
-  printf '  window_bytes delta: %d\n' "$((after_window_bytes - before_window_bytes))"
-  echo "Expectation: second call reuses overlapping 6d23h of the window cache; window_hits goes up."
+  after_second=$(snapshot_full_cache "$PROXY_MAIN_URL")
+  echo "Cache cascade deltas — second overlapping call (mostly hits):"
+  print_full_cascade_delta "$before_second" "$after_second"
+  echo ""
+  echo "Expectation: first call drives L1 misses (chunks not yet cached);"
+  echo "             second call reuses overlapping chunks — L1 hits dominate."
 }
 
 mode="${1:-all}"
