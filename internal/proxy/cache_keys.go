@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -407,20 +408,36 @@ func (p *Proxy) refreshDetectedFieldValuesCacheAsync(orgID, cacheKey, fieldName,
 }
 
 func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query, start, end string, lineLimit int, relaxOnEmpty bool) ([]string, error) {
+	// Bound the ENTIRE resolve under a single budget. VL has no internal
+	// timeout, and even the "native" paths can take 10s+ when a parser filter
+	// in the query forces full-line evaluation. Single Drilldown panel must
+	// never block past drilldownScanTimeout (default 5s) — on budget
+	// exhaustion we return empty and rely on the empty-cache guard so the
+	// next request retries with a fresh budget.
+	scanCtx, scanCancel := p.withDrilldownScanTimeout(ctx)
+	defer scanCancel()
 	var (
 		values  []string
 		errVals error
 	)
-	if nativeField, ok, resolveErr := p.resolveNativeDetectedField(ctx, query, start, end, fieldName); resolveErr == nil && ok {
-		values, errVals = p.fetchNativeFieldValues(ctx, query, start, end, nativeField, lineLimit)
+	if nativeField, ok, resolveErr := p.resolveNativeDetectedField(scanCtx, query, start, end, fieldName); resolveErr == nil && ok {
+		values, errVals = p.fetchNativeFieldValues(scanCtx, query, start, end, nativeField, lineLimit)
 		if errVals == nil && len(values) == 0 {
 			// Keep Drilldown UX non-empty for synthetic/derived labels when native values are empty.
 			values = nil
 		}
+		if isContextDeadlineErr(errVals) {
+			p.observeInternalOperation(ctx, "drilldown_scan_timeout", "detected_field_values_native", 0)
+			return []string{}, nil
+		}
 	}
 	if values == nil && errVals == nil {
-		_, fieldValues, detectErr := p.detectFields(ctx, query, start, end, lineLimit)
+		_, fieldValues, detectErr := p.detectFields(scanCtx, query, start, end, lineLimit)
 		if detectErr != nil {
+			if isContextDeadlineErr(detectErr) {
+				p.observeInternalOperation(ctx, "drilldown_scan_timeout", "detected_field_values_detect_fields", 0)
+				return []string{}, nil
+			}
 			return nil, detectErr
 		}
 		values = fieldValues[fieldName]
@@ -428,13 +445,13 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 			values = fieldValues["detected_level"]
 		}
 	}
-	if len(values) == 0 {
-		values = p.detectedLabelValuesForField(ctx, fieldName, query, start, end, lineLimit)
+	if len(values) == 0 && scanCtx.Err() == nil {
+		values = p.detectedLabelValuesForField(scanCtx, fieldName, query, start, end, lineLimit)
 	}
 	if errVals != nil {
 		return nil, errVals
 	}
-	if relaxOnEmpty && len(values) == 0 {
+	if relaxOnEmpty && len(values) == 0 && scanCtx.Err() == nil {
 		if relaxed := relaxedFieldDetectionQuery(query); relaxed != "" && relaxed != query {
 			p.observeInternalOperation(ctx, "discovery_fallback", "detected_field_values_relaxed_after_empty", 0)
 			return p.resolveDetectedFieldValues(ctx, fieldName, relaxed, start, end, lineLimit, false)
@@ -443,11 +460,35 @@ func (p *Proxy) resolveDetectedFieldValues(ctx context.Context, fieldName, query
 	// Last resort: field is inside JSON or logfmt _msg (not VL-indexed) and was
 	// not found by scan or relaxed-query. Only reached when no relaxed query is
 	// available (relaxOnEmpty=false or query already relaxed).
-	if len(values) == 0 {
-		values, _ = p.fetchUnpackedFieldValues(ctx, query, start, end, fieldName, lineLimit)
+	if len(values) == 0 && scanCtx.Err() == nil {
+		unpacked, _ := p.fetchUnpackedFieldValues(scanCtx, query, start, end, fieldName, lineLimit)
+		values = unpacked
+	}
+	if scanCtx.Err() != nil && len(values) == 0 {
+		p.observeInternalOperation(ctx, "drilldown_scan_timeout", "detected_field_values_overall", 0)
 	}
 	if values == nil {
 		values = []string{}
 	}
 	return values, nil
+}
+
+// withDrilldownScanTimeout returns a context bounded by drilldownScanTimeout
+// (or the original context if 0 / unset / already deadlined sooner).
+func (p *Proxy) withDrilldownScanTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if p == nil || p.drilldownScanTimeout <= 0 {
+		return ctx, func() {}
+	}
+	deadline, ok := ctx.Deadline()
+	if ok && time.Until(deadline) <= p.drilldownScanTimeout {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, p.drilldownScanTimeout)
+}
+
+func isContextDeadlineErr(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled)
 }

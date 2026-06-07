@@ -362,6 +362,11 @@ type Config struct {
 	// /label/{name}/values, and /series when the client omits both start and
 	// end. 0 disables (unbounded scan, prior behavior).
 	MetadataDefaultLookback time.Duration
+
+	// DrilldownScanTimeout caps the time a single detected_fields /
+	// detected_field_values request will spend in the slow log-scan
+	// fallback path (parser pipeline + high-cardinality field). 0 disables.
+	DrilldownScanTimeout time.Duration
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -571,6 +576,15 @@ type Proxy struct {
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
 	debugLogRawQueries                    bool          // when true, debug logs include raw LogQL/LogsQL and backend params
 	metadataDefaultLookback               time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
+	// drilldownScanTimeout caps the time a single detected_fields /
+	// detected_field_values request will spend scanning logs with a parser
+	// filter. VL has no internal timeout, so without this cap a Drilldown
+	// request fanned across 20+ panels can each block for 15s+ on slow
+	// combos (parser pipeline + high-cardinality field), freezing the UI.
+	// On timeout the proxy returns an empty result, which (thanks to the
+	// empty-cache guard) is not persisted — the next request retries with
+	// a fresh budget.
+	drilldownScanTimeout                  time.Duration
 	// handler is the decomposed view of this Proxy's deps + config + state.
 	// Populated alongside the existing fields during the Task 9 migration.
 	handler *Handler
@@ -1142,6 +1156,7 @@ func New(cfg Config) (*Proxy, error) {
 		cacheTTLLabelValues:                   labelCacheTTL,
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
+		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
 	}
 	if cfg.DrilldownFieldBatchWindowMs > 0 {
 		maxFields := cfg.DrilldownFieldBatchMaxFields

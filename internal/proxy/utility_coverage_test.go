@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -275,6 +276,71 @@ func TestDetectedFieldsCache_SkipsEmptyResults(t *testing.T) {
 		[]map[string]interface{}{{"label": "x"}}, nil)
 	if _, _, ok := p.getCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50); !ok {
 		t.Fatalf("non-empty detected_fields response must be cached")
+	}
+}
+
+// Regression guards for the drilldown scan timeout helper.
+func TestWithDrilldownScanTimeout(t *testing.T) {
+	t.Run("disabled when timeout is zero", func(t *testing.T) {
+		p := &Proxy{drilldownScanTimeout: 0}
+		ctx, cancel := p.withDrilldownScanTimeout(context.Background())
+		defer cancel()
+		if _, ok := ctx.Deadline(); ok {
+			t.Fatalf("expected no deadline when drilldownScanTimeout is 0")
+		}
+	})
+
+	t.Run("applies budget when timeout is set", func(t *testing.T) {
+		p := &Proxy{drilldownScanTimeout: 100 * time.Millisecond}
+		ctx, cancel := p.withDrilldownScanTimeout(context.Background())
+		defer cancel()
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatalf("expected deadline to be set")
+		}
+		if remaining := time.Until(deadline); remaining > 100*time.Millisecond {
+			t.Fatalf("expected remaining ≤ 100ms, got %v", remaining)
+		}
+	})
+
+	t.Run("preserves shorter inherited deadline", func(t *testing.T) {
+		p := &Proxy{drilldownScanTimeout: 1 * time.Second}
+		// Parent already has a 50ms deadline — must not extend it to 1s.
+		parent, parentCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer parentCancel()
+		ctx, cancel := p.withDrilldownScanTimeout(parent)
+		defer cancel()
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatalf("expected deadline to be inherited from parent")
+		}
+		if remaining := time.Until(deadline); remaining > 60*time.Millisecond {
+			t.Fatalf("expected ≤ ~50ms from parent, got %v (must not extend)", remaining)
+		}
+	})
+
+	t.Run("nil proxy returns input context unchanged", func(t *testing.T) {
+		var p *Proxy
+		ctx, cancel := p.withDrilldownScanTimeout(context.Background())
+		defer cancel()
+		if _, ok := ctx.Deadline(); ok {
+			t.Fatalf("expected no deadline on nil-proxy passthrough")
+		}
+	})
+}
+
+func TestIsContextDeadlineErr(t *testing.T) {
+	if isContextDeadlineErr(nil) {
+		t.Fatal("nil should not be a deadline error")
+	}
+	if !isContextDeadlineErr(context.DeadlineExceeded) {
+		t.Fatal("context.DeadlineExceeded must be recognised")
+	}
+	if !isContextDeadlineErr(context.Canceled) {
+		t.Fatal("context.Canceled must be recognised")
+	}
+	if isContextDeadlineErr(fmt.Errorf("not a context error")) {
+		t.Fatal("unrelated errors must not be flagged")
 	}
 }
 

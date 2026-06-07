@@ -210,6 +210,7 @@ type proxyRuntimeConfig struct {
 	statsQueryRangeInterQueryDelayMs    int
 	debugLogRawQueries                  bool
 	metadataDefaultLookback             time.Duration
+	drilldownScanTimeout                time.Duration
 	peerInsecureIPAllowlist             bool
 }
 
@@ -405,6 +406,7 @@ func run(
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
 	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
 	metadataDefaultLookback := fs.Duration("metadata-default-lookback", 12*time.Hour, "Default time window for /labels, /label/{name}/values, and /series when the client omits start/end. 0 disables (unbounded scan).")
+	drilldownScanTimeout := fs.Duration("drilldown-scan-timeout", 5*time.Second, "Per-request timeout for the detected_fields / detected_field_values log scan path. Caps the time a single Drilldown panel can spend scanning logs with a parser filter. 0 disables the cap (use VL's natural response time).")
 
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
@@ -882,6 +884,7 @@ func run(
 			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
 			debugLogRawQueries:                  *debugLogRawQueries,
 			metadataDefaultLookback:             *metadataDefaultLookback,
+			drilldownScanTimeout:                *drilldownScanTimeout,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -2034,6 +2037,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		StatsQueryRangeInterQueryDelayMs: cfg.statsQueryRangeInterQueryDelayMs,
 		DebugLogRawQueries:               cfg.debugLogRawQueries,
 		MetadataDefaultLookback:          cfg.metadataDefaultLookback,
+		DrilldownScanTimeout:             cfg.drilldownScanTimeout,
 	}, nil
 }
 

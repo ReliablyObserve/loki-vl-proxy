@@ -263,6 +263,7 @@ services:
       - "-disk-cache-path=/cache/proxy-l2.bolt"
       - "-disk-cache-max-bytes=536870912"
       - "-disk-cache-min-ttl=1s"
+      - "-drilldown-scan-timeout=3s"
       # L3 peer cache (static discovery, 3-node ring with self + 2 peers).
       - "-peer-discovery=static"
       - "-peer-self=loki-vl-proxy:3100"
@@ -328,6 +329,7 @@ services:
       - "-disk-cache-path=/cache/proxy-l2.bolt"
       - "-disk-cache-max-bytes=536870912"
       - "-disk-cache-min-ttl=1s"
+      - "-drilldown-scan-timeout=3s"
       - "-peer-discovery=static"
       - "-peer-self=loki-vl-proxy-peer-a:3100"
       - "-peer-self-az=zone-a"
@@ -387,6 +389,7 @@ services:
       - "-disk-cache-path=/cache/proxy-l2.bolt"
       - "-disk-cache-max-bytes=536870912"
       - "-disk-cache-min-ttl=1s"
+      - "-drilldown-scan-timeout=3s"
       - "-peer-discovery=static"
       - "-peer-self=loki-vl-proxy-peer-b:3100"
       - "-peer-self-az=zone-b"
