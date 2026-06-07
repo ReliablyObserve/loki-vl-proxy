@@ -350,7 +350,15 @@ func waitForLongRangeVolumeMatrixCoverage(t *testing.T, expr string, start, end 
 		lastResult []interface{}
 		lastErr    error
 	)
-	deadline := time.Now().Add(45 * time.Second)
+	// 48 h range × 5 m step = 577 expected buckets. On cold hosted CI runners
+	// VL's column-index materialization for a fresh 4000-batch seed can take
+	// well over 45 s before the single full-range scan returns a dense
+	// matrix; the Grafana-style chunked variant of this test passes at the
+	// shorter window because each chunk completes against an already-warm
+	// index. Bump the deadline so this test is bounded by VL's materialization
+	// pace, not by an arbitrary wall-clock guess. 120 s leaves headroom and
+	// still fails fast if VL is genuinely broken.
+	deadline := time.Now().Add(120 * time.Second)
 	poll := 200 * time.Millisecond
 	maxPoll := 2 * time.Second
 	for {
