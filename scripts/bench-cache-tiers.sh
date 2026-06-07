@@ -27,6 +27,9 @@
 #          multiple distinct cache keys are exercised at once.
 #   all    Run l1, then l2, then l3, then long sequentially.
 #
+# For a Drilldown endpoint × filter timing matrix (different concern —
+# query performance, not cache tier behaviour), use bench/drilldown-filter-matrix.sh.
+#
 # Why label-values for L1/L2/L3 and query_range only for long-range?
 # The unified per-key cache (loki_vl_proxy_cache_tier_*) wraps label/series
 # lookups. /query_range goes through a separate windowed cache

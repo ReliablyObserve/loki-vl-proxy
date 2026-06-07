@@ -623,7 +623,11 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		"values": values,
 		"limit":  lineLimit,
 	}
-	p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, detectedFieldValuesTTL, payload)
+	// Skip caching empty value lists — see setCachedDetectedFields rationale.
+	// Drilldown otherwise shows "No values" for the full TTL even after data appears.
+	if len(values) > 0 {
+		p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, detectedFieldValuesTTL, payload)
+	}
 	p.writeJSON(w, payload)
 	p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 }
