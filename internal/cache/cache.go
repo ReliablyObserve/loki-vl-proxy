@@ -865,7 +865,7 @@ func (c *Cache) Stats() StatsSnapshot {
 			Misses:    c.l3Stats.misses.Load(),
 			StaleHits: c.l3Stats.staleHits.Load(),
 		},
-		HotEntries: hotEntries,
+		HotEntries:         hotEntries,
 		BackendFallthrough: c.backendFallthrough.Load(),
 		Entries:            entries,
 		Bytes:              bytes,
