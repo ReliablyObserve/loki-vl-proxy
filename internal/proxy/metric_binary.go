@@ -161,9 +161,28 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 
 	body, bodyErr := readBodyLimited(resp.Body, maxStatsQueryRangeBytes)
 	if bodyErr != nil {
-		// Response exceeds the per-request cap — return empty matrix rather than OOMing.
-		// This protects against high-cardinality by() clauses (e.g. by(float_field)) on
-		// broad stream selectors producing tens of megabytes per concurrent field query.
+		// Response exceeds the 16 MB per-request cap. Before giving up with an
+		// empty matrix, try a global top-N two-phase for single-field count
+		// aggregations: VL's instant single-bucket `| sort by (count) | limit N`
+		// returns just the busiest N field values (~21 KB), and a range query
+		// bounded to those values then fits comfortably. This rescues the
+		// labels-drilldown "pod" panel —
+		//   sum(count_over_time({env="production",pod!=""}
+		//       | detected_level="error" or detected_level="info" [w])) by (pod)
+		// — whose raw per-pod stats response is ~48 MB at 24h (each churning pod
+		// appears once). Without this it rendered an empty chart ("nothing").
+		// The level value-filter disqualifies it from the detectDrilldownSingleField
+		// fast paths (those require pure existence filters), so it lands here.
+		if spec, ok := parseStatsCompatSpec(logsqlQuery); ok && spec.Func == "count" && len(spec.GroupBy) == 1 {
+			field := spec.GroupBy[0]
+			phase1Query := spec.BaseQuery + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
+			if out := p.drilldownTwoPhase(r, phase1Query, spec.BaseQuery, field, r.FormValue("step")); len(out) > 0 {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write(out)
+				return true
+			}
+		}
+		// Fallback: empty matrix rather than OOMing on an unbounded response.
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(emptyLokiMatrix)
 		return true
@@ -176,8 +195,20 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
 	}
 	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
+	// Cap to the busiest maxStatsQuerySeries (default 500, top-N by total count).
+	// This is the path taken by `sum by (pod|trace_id|*_id) (count_over_time(
+	// {...} | detected_level="error" [w]))` from the Drilldown labels page —
+	// the level filter is NOT the `| field!=""` existence pattern, so the query
+	// misses the Drilldown single-field fast paths (which already cap) and lands
+	// here. Without the cap VL's per-pod stats response is ~146k single-point
+	// series at 24h (each churning pod appears once), which squeaks under the
+	// 16 MB body cap and floods Grafana with unrenderable scattered spikes.
+	// limitLokiMatrixSeries ranks by total count so the busiest pods survive,
+	// not VL's alphabetical first-N (the count==1 noise floor).
+	// See memory [[drilldown-high-card-fields-known-limit]].
+	out := limitLokiMatrixSeries(wrapAsLokiResponse(body, "matrix"), p.resolvedMaxStatsQuerySeries())
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
+	_, _ = w.Write(out)
 	return false
 }
 

@@ -261,7 +261,7 @@ func TestCompatHelpers_BuildManualRangeResponses(t *testing.T) {
 			} `json:"result"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(buildManualRangeMetricMatrix("count_over_time", 0, series, start, end, step, window), &matrixResp); err != nil {
+	if err := json.Unmarshal(buildManualRangeMetricMatrix("count_over_time", 0, series, start, end, step, window, 0), &matrixResp); err != nil {
 		t.Fatalf("decode matrix response: %v", err)
 	}
 	if matrixResp.Status != "success" || matrixResp.Data.ResultType != "matrix" {
@@ -296,7 +296,7 @@ func TestCompatHelpers_BuildManualRangeResponses(t *testing.T) {
 			Result []json.RawMessage `json:"result"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(buildManualRangeMetricMatrix("sum", 0, series, end, start, step, window), &emptyMatrix); err != nil {
+	if err := json.Unmarshal(buildManualRangeMetricMatrix("sum", 0, series, end, start, step, window, 0), &emptyMatrix); err != nil {
 		t.Fatalf("decode empty matrix response: %v", err)
 	}
 	if len(emptyMatrix.Data.Result) != 0 {
