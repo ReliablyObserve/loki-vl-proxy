@@ -89,7 +89,7 @@
       },
       "targets": [
         {
-          "expr": "process_resident_memory_bytes / (1024*1024)",
+          "expr": "process_resident_memory_bytes",
           "legendFormat": "{{component}}",
           "refId": "A",
           "datasource": {
@@ -140,7 +140,7 @@
       },
       "targets": [
         {
-          "expr": "go_memstats_heap_inuse_bytes / (1024*1024)",
+          "expr": "go_memstats_heap_inuse_bytes",
           "legendFormat": "{{component}}",
           "refId": "A",
           "datasource": {
@@ -1822,7 +1822,7 @@
           }
         },
         {
-          "expr": "vl_data_size_bytes / (1024*1024*1024)",
+          "expr": "vl_data_size_bytes",
           "legendFormat": "data GB",
           "refId": "B",
           "datasource": {
@@ -1831,7 +1831,7 @@
           }
         },
         {
-          "expr": "vl_compressed_data_size_bytes / (1024*1024*1024)",
+          "expr": "vl_compressed_data_size_bytes",
           "legendFormat": "compressed GB",
           "refId": "C",
           "datasource": {
@@ -2063,7 +2063,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (cache) (loki_embeddedcache_memory_bytes) / (1024*1024)",
+          "expr": "sum by (cache) (loki_embeddedcache_memory_bytes)",
           "legendFormat": "{{cache}} MiB",
           "refId": "A",
           "datasource": {
