@@ -149,7 +149,12 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	if p.labelValuesBrowseMode(rawQuery) {
 		if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, search, offset, limit); ok {
 			result := lokiLabelsResponse(indexedValues)
-			p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+			// Never cache empty results — caching an empty list freezes
+			// Drilldown/Explore label selectors on "No data" for the full
+			// TTL even after backend data appears.
+			if len(indexedValues) > 0 {
+				p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(result)
 			p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -174,7 +179,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result := lokiLabelsResponse(values)
-		p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+		if len(values) > 0 {
+			p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -201,7 +208,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := lokiLabelsResponse(values)
-	p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+	if len(values) > 0 {
+		p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))

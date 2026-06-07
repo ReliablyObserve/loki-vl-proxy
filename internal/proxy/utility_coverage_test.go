@@ -245,6 +245,67 @@ func TestDetectedFieldsCache_NoCacheConfigured(t *testing.T) {
 	p.setCachedDetectedFields(ctx, "*", "1", "2", 10, nil, nil)
 }
 
+// Regression guard: empty detected_fields responses must NOT be cached.
+// Caching an empty result freezes Drilldown on "No data" for the full TTL
+// even after data ingests — observed when the log generator was offline
+// during a query and the proxy then served the empty response repeatedly.
+func TestDetectedFieldsCache_SkipsEmptyResults(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	ctx := context.WithValue(context.Background(), orgIDKey, "tenant-empty")
+	cases := []struct {
+		name   string
+		fields []map[string]interface{}
+		values map[string][]string
+	}{
+		{"both nil", nil, nil},
+		{"both empty", []map[string]interface{}{}, map[string][]string{}},
+		{"empty fields nil values", []map[string]interface{}{}, nil},
+		{"nil fields empty values", nil, map[string][]string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p.setCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50, tc.fields, tc.values)
+			if _, _, ok := p.getCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50); ok {
+				t.Fatalf("empty detected_fields response must NOT be cached (got cache hit)")
+			}
+		})
+	}
+	// Sanity: non-empty result IS cached.
+	p.setCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50,
+		[]map[string]interface{}{{"label": "x"}}, nil)
+	if _, _, ok := p.getCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50); !ok {
+		t.Fatalf("non-empty detected_fields response must be cached")
+	}
+}
+
+// Regression guard for the parallel detected_labels cache write path.
+func TestDetectedLabelsCache_SkipsEmptyResults(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	ctx := context.WithValue(context.Background(), orgIDKey, "tenant-empty")
+	cases := []struct {
+		name      string
+		labels    []map[string]interface{}
+		summaries map[string]*detectedLabelSummary
+	}{
+		{"both nil", nil, nil},
+		{"both empty", []map[string]interface{}{}, map[string]*detectedLabelSummary{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p.setCachedDetectedLabels(ctx, `{app="api"}`, "1", "2", 50, tc.labels, tc.summaries)
+			if _, _, ok := p.getCachedDetectedLabels(ctx, `{app="api"}`, "1", "2", 50); ok {
+				t.Fatalf("empty detected_labels response must NOT be cached (got cache hit)")
+			}
+		})
+	}
+	// Sanity: non-empty result IS cached.
+	p.setCachedDetectedLabels(ctx, `{app="api"}`, "1", "2", 50,
+		[]map[string]interface{}{{"label": "x"}}, nil)
+	if _, _, ok := p.getCachedDetectedLabels(ctx, `{app="api"}`, "1", "2", 50); !ok {
+		t.Fatalf("non-empty detected_labels response must be cached")
+	}
+}
+
 func TestWriteEmptyLegacyRules(t *testing.T) {
 	p := newTestProxy(t, "http://unused")
 	w := httptest.NewRecorder()

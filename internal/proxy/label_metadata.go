@@ -570,8 +570,15 @@ func (p *Proxy) fetchPreferredLabelNamesCached(ctx context.Context, params url.V
 	if err != nil {
 		return nil, err
 	}
-	if encoded, err := json.Marshal(labels); err == nil {
-		p.cache.SetLocalAndDiskWithTTL(cacheKey, encoded, CacheTTLs["label_inventory"])
+	// Skip caching empty label-name responses. VL legitimately returns an
+	// empty list during ingestion startup, transient backend hiccups, or
+	// when the query window pre-dates any data; caching that response
+	// blanks out Drilldown/Explore label selectors for the full TTL even
+	// after data appears.
+	if len(labels) > 0 {
+		if encoded, err := json.Marshal(labels); err == nil {
+			p.cache.SetLocalAndDiskWithTTL(cacheKey, encoded, CacheTTLs["label_inventory"])
+		}
 	}
 	return labels, nil
 }
@@ -800,7 +807,11 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 					values = indexedValues
 				}
 			}
-			p.setEndpointReadCacheWithTTL("label_values", cacheKey, lokiLabelsResponse(values), CacheTTLs["label_values"])
+			// Skip caching empty values — background refresh would otherwise
+			// overwrite a stale-but-non-empty entry with an empty one.
+			if len(values) > 0 {
+				p.setEndpointReadCacheWithTTL("label_values", cacheKey, lokiLabelsResponse(values), CacheTTLs["label_values"])
+			}
 			return nil, nil
 		})
 		if err != nil {

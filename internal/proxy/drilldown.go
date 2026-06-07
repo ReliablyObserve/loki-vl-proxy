@@ -2929,6 +2929,13 @@ func (p *Proxy) setCachedDetectedFields(ctx context.Context, query, start, end s
 	if p.cache == nil {
 		return
 	}
+	// Never cache an empty result. VL may legitimately return no data when
+	// ingestion is just starting, when the time window pre-dates any logs,
+	// or during a transient backend hiccup; caching that response makes
+	// Drilldown show "No data" for the whole TTL even after data arrives.
+	if len(fields) == 0 && len(values) == 0 {
+		return
+	}
 	body, err := stdjson.Marshal(detectedFieldsCachePayload{Fields: fields, Values: values})
 	if err != nil {
 		return
@@ -2961,6 +2968,12 @@ func (p *Proxy) getCachedDetectedLabels(ctx context.Context, query, start, end s
 
 func (p *Proxy) setCachedDetectedLabels(ctx context.Context, query, start, end string, lineLimit int, labels []map[string]interface{}, summaries map[string]*detectedLabelSummary) {
 	if p.cache == nil {
+		return
+	}
+	// Same negative-cache guard as setCachedDetectedFields: an empty
+	// labels/summaries response shouldn't be persisted, or Drilldown will
+	// keep showing "No data" for the full 30s TTL even after data ingests.
+	if len(labels) == 0 && len(summaries) == 0 {
 		return
 	}
 	values := make(map[string][]string, len(summaries))
