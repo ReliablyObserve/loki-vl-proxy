@@ -2102,9 +2102,17 @@ func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string) 
 		topValues = topValues[:maxDrilldownPhase2Values]
 	}
 
-	// Phase 2: the ORIGINAL query (parser preserved) bounded to the top values.
+	// Phase 2: per-step counts for the selected values, bounded by field:in(...).
+	// Use the SAME unpack-stripped base as Phase 1 (column-indexed `level` filter,
+	// no | unpack_logfmt). This is safe precisely because Phase 1 already returned
+	// values for this field WITHOUT unpack — so the field is a stream label / column
+	// field, and grouping by it needs no parser. Result: Phase 2 is also ~0.4s
+	// instead of the ~15s the unpack variant takes, so a Drilldown labels page that
+	// fans out ~15 of these concurrently no longer overloads VL. Column-level counts
+	// run ~2x Loki's detected_level (a data-density quirk affecting both VL variants)
+	// but are actually CLOSER to Loki than the unpack variant — verified live.
 	inFilter := buildVLInFilter(field, topValues)
-	p2Query := spec.BaseQuery + " | filter " + inFilter + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
+	p2Query := p1Base + " | filter " + inFilter + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
 	p2Query = p.addUnderscorefallbackByLabels(p2Query, parseOriginalByLabels(r.FormValue("query")))
 	p2Params := buildStatsQueryRangeParams(p2Query, start, end, r.FormValue("step"))
 	resp2, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p2Params)
