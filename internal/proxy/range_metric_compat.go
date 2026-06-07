@@ -633,7 +633,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		return true
 	}
 
-	result := buildManualRangeMetricMatrix(manualFunc, quantile, series, startTS, endTS, step, origSpec.Window)
+	result := buildManualRangeMetricMatrix(manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.resolvedMaxStatsQuerySeries())
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
@@ -834,16 +834,19 @@ func (p *Proxy) collectRangeMetricHits(
 	}
 
 	results := v.GetArray("data", "result")
-	// Cap to maxStatsQuerySeries (default 5000) to match Loki's max_query_series limit.
-	// High-cardinality by() clauses (e.g. 670k unique pods) produce tens of MB of VL
-	// response that take 30+ seconds to parse and serialize without a series cap.
-	maxSeries := p.maxStatsQuerySeries
-	if maxSeries <= 0 {
-		maxSeries = 5000
-	}
-	if len(results) > maxSeries {
-		results = results[:maxSeries]
-	}
+	// Cap to maxStatsQuerySeries to bound response size for high-cardinality
+	// by() clauses (e.g. churn-heavy pod names, *_id fields where each value
+	// appears 1-2× in the window). Default 500 matches maxDrilldownSeries
+	// (the cap the Drilldown-specific paths use) and aligns with Loki's
+	// default max_query_series for the same purpose. The previous default
+	// of 5000 returned 10× more sparse series than Drilldown can render
+	// (the plugin's "Show all N" badge is literally the returned series
+	// count) and made charts look like scattered single-point spikes
+	// instead of meaningful top-N curves. See memory
+	// [[drilldown-high-card-fields-known-limit]] for the deep investigation.
+	// Keep the busiest maxSeries by total count (not the alphabetically-first
+	// maxSeries VL returns) so the chart shows signal, not the noise floor.
+	results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
 	seriesMap := make(map[string]manualSeriesSamples, len(results))
 	for _, res := range results {
 		metricObj := res.GetObject("metric")
@@ -1192,7 +1195,14 @@ func addGroupByParsedLabelsFJ(metricLabels map[string]string, v *fj.Value, group
 }
 
 func queryUsesParserStages(baseQuery string) bool {
-	if strings.Contains(baseQuery, "| unpack_") {
+	// `| unpack_logfmt` exposes pre-parsed fields without transforming the
+	// log line — VL's stats_query_range handles it natively in tens of ms.
+	// Excluding it from the "parser stages" check lets queries with a
+	// `detected_level="..."` filter (which the translator rewrites to
+	// `... | unpack_logfmt | filter level:="..."`) reach the stats fast
+	// path instead of falling back to a 5–16s client-side log scan that
+	// returned 143k unaggregated series for high-cardinality groupBy.
+	if strings.Contains(baseQuery, "| unpack_json") {
 		return true
 	}
 	if strings.Contains(baseQuery, "| extract ") {
@@ -1351,7 +1361,102 @@ func parseFloatValue(raw interface{}) (float64, bool) {
 	}
 }
 
-func buildManualRangeMetricMatrix(functionName string, quantile float64, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) []byte {
+// resolvedMaxStatsQuerySeries returns the per-request series cap for metric
+// stats queries: the configured -max-stats-query-series, or the built-in
+// default of 500 (matches maxDrilldownSeries and Loki's stock max_query_series).
+func (p *Proxy) resolvedMaxStatsQuerySeries() int {
+	if p != nil && p.maxStatsQuerySeries > 0 {
+		return p.maxStatsQuerySeries
+	}
+	return 500
+}
+
+// capStatsResultsByTotalCount keeps only the maxSeries VL stats results with the
+// highest summed bucket value, dropping the long tail. VL's stats_query_range
+// returns results in LABEL (alphabetical) order, so a plain results[:maxSeries]
+// slice keeps the alphabetically-first series — which for high-cardinality
+// fields (churn-heavy pod names, *_id) is the NOISE FLOOR: ~344/500 pods with
+// count==1 and only a handful with a meaningful count. Ranking by total count
+// instead keeps the BUSIEST series, so the Drilldown chart shows the real
+// signal (continuous lines for the top contributors) rather than scattered
+// single-point spikes. For count_over_time the per-bucket values are counts and
+// for bytes_* they are byte sums, so total value is the genuine busy-ness
+// metric; rate ranks identically (rate = count/window is monotonic in count).
+// Returns the input unchanged when it already fits or maxSeries<=0. Ties on
+// total break on the metric JSON (ascending) for determinism.
+// See memory [[drilldown-high-card-fields-known-limit]].
+func capStatsResultsByTotalCount(results []*fj.Value, maxSeries int) []*fj.Value {
+	if maxSeries <= 0 || len(results) <= maxSeries {
+		return results
+	}
+	type scored struct {
+		idx   int
+		total float64
+		key   string
+	}
+	ranked := make([]scored, len(results))
+	for i, res := range results {
+		var total float64
+		for _, pair := range res.GetArray("values") {
+			arr := pair.GetArray()
+			if len(arr) < 2 {
+				continue
+			}
+			if val, err := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64); err == nil {
+				total += val
+			}
+		}
+		ranked[i] = scored{idx: i, total: total, key: res.Get("metric").String()}
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].total != ranked[j].total {
+			return ranked[i].total > ranked[j].total
+		}
+		return ranked[i].key < ranked[j].key
+	})
+	out := make([]*fj.Value, maxSeries)
+	for i := 0; i < maxSeries; i++ {
+		out[i] = results[ranked[i].idx]
+	}
+	return out
+}
+
+// capSeriesByTotalCount is the map-based analogue of capStatsResultsByTotalCount
+// for paths that have already assembled a manualSeriesSamples map (e.g. the raw
+// log-scan path via collectRangeMetricSamples → buildManualRangeMetricMatrix).
+// Keeps the maxSeries series with the highest total sample value. Returns the
+// input unchanged when it already fits or maxSeries<=0.
+func capSeriesByTotalCount(series map[string]manualSeriesSamples, maxSeries int) map[string]manualSeriesSamples {
+	if maxSeries <= 0 || len(series) <= maxSeries {
+		return series
+	}
+	type scored struct {
+		key   string
+		total float64
+	}
+	ranked := make([]scored, 0, len(series))
+	for key, s := range series {
+		var total float64
+		for _, smp := range s.Samples {
+			total += smp.value
+		}
+		ranked = append(ranked, scored{key: key, total: total})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].total != ranked[j].total {
+			return ranked[i].total > ranked[j].total
+		}
+		return ranked[i].key < ranked[j].key
+	})
+	capped := make(map[string]manualSeriesSamples, maxSeries)
+	for i := 0; i < maxSeries; i++ {
+		capped[ranked[i].key] = series[ranked[i].key]
+	}
+	return capped
+}
+
+func buildManualRangeMetricMatrix(functionName string, quantile float64, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxSeries int) []byte {
+	series = capSeriesByTotalCount(series, maxSeries)
 	if end.Before(start) {
 		return marshalManualMetricResponse("matrix", []map[string]interface{}{})
 	}
@@ -1450,9 +1555,17 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 					sum += s.value
 				}
 			}
-			if sum == 0 {
-				continue
-			}
+			// Always emit a datapoint per step bucket — zero-filling missing
+			// values. Previously we skipped sum==0 to save bytes, but for
+			// sparse series (high-cardinality fields like trace_id where each
+			// value appears at only a few timestamps) the result was a series
+			// with 3 datapoints clustered together. Drilldown rendered that as
+			// "one spike at the beginning" because the chart x-axis got
+			// collapsed to the sparse data extent instead of the full request
+			// range. Continuous datapoints render correctly. Cost is bounded
+			// by topk(N) at the caller — Drilldown's high-card panels cap at
+			// 10-50 series so worst case is ~288 buckets × 50 series ≈ 14k
+			// datapoints per response (~200 KB).
 			var value float64
 			if manualFunc == "rate" {
 				value = sum / windowSec

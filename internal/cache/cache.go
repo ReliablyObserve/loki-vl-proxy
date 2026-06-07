@@ -30,6 +30,16 @@ type TierStatsSnapshot struct {
 }
 
 type StatsSnapshot struct {
+	// L0 is the lightweight per-key hotness index used by peer hot-key
+	// read-ahead. It is NOT a cache tier in the lookup chain (L1 → L2 →
+	// L3 → backend) — `Requests` counts how many cache lookups (across
+	// any tier) touched the hot index, `Hits` counts the lookups where
+	// the key was already present in the hot map (i.e. was hot), and
+	// `Objects` reports the current bounded hot-key population.
+	// Surfaced as `loki_vl_proxy_cache_tier_*` series with `tier="l0"`
+	// so dashboards can show hotness coverage alongside the real cache
+	// tiers without inventing a parallel metric family.
+	L0                 TierStatsSnapshot
 	L1                 TierStatsSnapshot
 	L2                 TierStatsSnapshot
 	L3                 TierStatsSnapshot
@@ -38,6 +48,9 @@ type StatsSnapshot struct {
 	Bytes              int
 	DiskEntries        int
 	DiskBytes          int64
+	// HotEntries is the current bounded population of the L0 hot-key
+	// index. Equivalent of `loki_vl_proxy_cache_objects{tier="l0"}`.
+	HotEntries int
 }
 
 // Cache is an in-memory TTL cache with per-key TTL override, max entries, and max bytes.
@@ -77,6 +90,7 @@ type Cache struct {
 	Misses    atomic.Int64
 	Evictions atomic.Int64
 
+	l0Stats            tierStats // hot-index hit/miss/request counters; NOT a lookup tier
 	l1Stats            tierStats
 	l2Stats            tierStats
 	l3Stats            tierStats
@@ -648,7 +662,17 @@ func (c *Cache) cleanup() {
 }
 
 func (c *Cache) recordHotLocked(key string) {
-	hs := c.hot[key]
+	// L0 hot-index counters: every recordHotLocked call is a "request"; a
+	// hit is when the key was already present (score > 0), a miss when this
+	// is the first observation. Surfaced as cache_tier_*{tier="l0"} so
+	// dashboards can show hotness coverage alongside L1/L2/L3.
+	c.l0Stats.requests.Add(1)
+	hs, existed := c.hot[key]
+	if existed {
+		c.l0Stats.hits.Add(1)
+	} else {
+		c.l0Stats.misses.Add(1)
+	}
 	hs.score++
 	hs.lastAccess = time.Now().UnixNano()
 	if hs.tenant == "" {
@@ -814,7 +838,15 @@ func (c *Cache) Stats() StatsSnapshot {
 	if c.l2 != nil {
 		diskEntries, diskBytes = c.l2.Size()
 	}
+	c.mu.RLock()
+	hotEntries := len(c.hot)
+	c.mu.RUnlock()
 	return StatsSnapshot{
+		L0: TierStatsSnapshot{
+			Requests: c.l0Stats.requests.Load(),
+			Hits:     c.l0Stats.hits.Load(),
+			Misses:   c.l0Stats.misses.Load(),
+		},
 		L1: TierStatsSnapshot{
 			Requests:  c.l1Stats.requests.Load(),
 			Hits:      c.l1Stats.hits.Load(),
@@ -833,6 +865,7 @@ func (c *Cache) Stats() StatsSnapshot {
 			Misses:    c.l3Stats.misses.Load(),
 			StaleHits: c.l3Stats.staleHits.Load(),
 		},
+		HotEntries:         hotEntries,
 		BackendFallthrough: c.backendFallthrough.Load(),
 		Entries:            entries,
 		Bytes:              bytes,

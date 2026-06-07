@@ -149,7 +149,12 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	if p.labelValuesBrowseMode(rawQuery) {
 		if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, search, offset, limit); ok {
 			result := lokiLabelsResponse(indexedValues)
-			p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+			// Never cache empty results — caching an empty list freezes
+			// Drilldown/Explore label selectors on "No data" for the full
+			// TTL even after backend data appears.
+			if len(indexedValues) > 0 {
+				p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Write(result)
 			p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -174,7 +179,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		result := lokiLabelsResponse(values)
-		p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+		if len(values) > 0 {
+			p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)
 		p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -201,7 +208,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result := lokiLabelsResponse(values)
-	p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+	if len(values) > 0 {
+		p.setEndpointReadCacheWithTTL("label_values", cacheKey, result, labelValuesTTL)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
 	p.metrics.RecordRequest("label_values", http.StatusOK, time.Since(start))
@@ -505,15 +514,25 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	r = withOrgID(r)
 	lineLimit := parseDetectedLineLimit(r)
 	query := r.FormValue("query")
-	fields, _, err := p.detectFields(r.Context(), query, r.FormValue("start"), r.FormValue("end"), lineLimit)
+	// Bound the slow log-scan path so a single Drilldown panel never blocks
+	// past drilldownScanTimeout. On timeout we return an empty fields list
+	// — Drilldown shows "no fields" rather than spinning forever, and the
+	// empty-cache guard prevents the empty result from sticking.
+	scanCtx, scanCancel := p.withDrilldownScanTimeout(r.Context())
+	defer scanCancel()
+	fields, _, err := p.detectFields(scanCtx, query, r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
-		if p.serveStaleReadCacheOnError(w, "detected_fields", cacheKey, start, err) {
+		if isContextDeadlineErr(err) {
+			p.observeInternalOperation(r.Context(), "drilldown_scan_timeout", "detected_fields_handler", 0)
+			fields = nil
+		} else if p.serveStaleReadCacheOnError(w, "detected_fields", cacheKey, start, err) {
+			return
+		} else {
+			status := statusFromUpstreamErr(err)
+			p.writeError(w, status, err.Error())
+			p.metrics.RecordRequest("detected_fields", status, time.Since(start))
 			return
 		}
-		status := statusFromUpstreamErr(err)
-		p.writeError(w, status, err.Error())
-		p.metrics.RecordRequest("detected_fields", status, time.Since(start))
-		return
 	}
 	// When the strict query (full LogQL including parser stages and field filters)
 	// returns zero fields, fall back to a native-only index lookup on the bare stream
@@ -614,7 +633,11 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		"values": values,
 		"limit":  lineLimit,
 	}
-	p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, detectedFieldValuesTTL, payload)
+	// Skip caching empty value lists — see setCachedDetectedFields rationale.
+	// Drilldown otherwise shows "No values" for the full TTL even after data appears.
+	if len(values) > 0 {
+		p.setEndpointJSONCacheWithTTL("detected_field_values", cacheKey, detectedFieldValuesTTL, payload)
+	}
 	p.writeJSON(w, payload)
 	p.metrics.RecordRequest("detected_field_values", http.StatusOK, time.Since(start))
 }

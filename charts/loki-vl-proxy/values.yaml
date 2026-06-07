@@ -116,6 +116,7 @@ extraArgs:
   # drilldown-burst-max-fields: "30"
   # drilldown-field-batch-window-ms: "100"               # window for coalescing per-field stats batch calls (ms); 0 disables batching
   # drilldown-field-batch-max-fields: "6"                # max fields per batched stats call; limits fused query width
+  # drilldown-scan-timeout: "5s"                         # per-request timeout for the detected_fields / detected_field_values log-scan path; 0 disables the cap
   # stats-query-range-inter-query-delay-ms: "200"        # inter-query delay between sequential stats_query_range VL calls (ms); reduces CPU pressure
 
   # --- Indexed label-values browse cache ---

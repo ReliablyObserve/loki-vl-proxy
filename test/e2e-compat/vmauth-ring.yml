@@ -1,0 +1,21 @@
+# vmauth load balancer for the 3-node loki-vl-proxy peer ring.
+# Round-robins requests across proxy-0 / proxy-1 / proxy-2 so the bench
+# script can exercise cache distribution: same key issued repeatedly via
+# the LB lands on different proxies in turn, which lets us observe
+#   - L0 hot-index advertisement between peers
+#   - L3 cross-peer fetches when the request lands on a proxy that
+#     doesn't yet have the key in L1 but a sibling does
+#   - peer write-through behaviour
+unauthorized_user:
+  url_prefix:
+    - http://loki-vl-proxy:3100
+    - http://loki-vl-proxy-peer-a:3100
+    - http://loki-vl-proxy-peer-b:3100
+  # vmauth supports two policies: `least_loaded` (default, picks backend
+  # with fewest in-flight requests — effectively round-robin under uniform
+  # load) and `first_available` (active-passive failover). We want spread.
+  load_balancing_policy: least_loaded
+  retry_status_codes:
+    - 502
+    - 503
+    - 504

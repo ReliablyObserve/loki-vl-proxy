@@ -138,6 +138,35 @@ services:
       retries: 10
       start_period: 5s
 
+  # vmauth round-robin LB across the 3-node loki-vl-proxy peer ring.
+  # Exposed on host port 13200 so bench-cache-tiers.sh `lb` mode can drive
+  # the same query repeatedly through it — each call lands on a different
+  # proxy, exercising L0 hot-index advertisement, L3 cross-peer fetches,
+  # and peer write-through behaviour under realistic distributed traffic.
+  vmauth-ring:
+    image: ${VMAUTH_IMAGE:-victoriametrics/vmauth:v1.138.0}
+    container_name: e2e-vmauth-ring
+    ports:
+      - "13200:8427"
+    command:
+      - "-auth.config=/etc/vmauth/auth.yml"
+      - "-httpListenAddr=:8427"
+    volumes:
+      - ./vmauth-ring.yml:/etc/vmauth/auth.yml:ro
+    depends_on:
+      loki-vl-proxy:
+        condition: service_healthy
+      loki-vl-proxy-peer-a:
+        condition: service_healthy
+      loki-vl-proxy-peer-b:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8427/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
   # VictoriaMetrics TSDB for vmalert recording-rule remote write
   victoriametrics:
     image: ${VICTORIAMETRICS_IMAGE:-victoriametrics/victoria-metrics:v1.119.0}
@@ -198,10 +227,16 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy
+    user: root
     ports:
       - "13100:3100"
-    tmpfs:
-      - /cache:mode=1777
+    volumes:
+      # Named volume so L2 disk cache survives container restarts (used by
+      # scripts/bench-cache-tiers.sh "L2 promotion across restart" measurement).
+      # user: root above is needed so the bbolt file at /cache/proxy-l2.bolt can
+      # be created on the root-owned named volume (same pattern as the
+      # patterns-autodetect variant).
+      - e2e-proxy-cache:/cache
     environment:
       # Soft GC pressure limit: without this, Go's GC only triggers at 2× live
       # heap, allowing RSS to balloon to 4+ GB under sustained long_range load
@@ -223,6 +258,19 @@ services:
       - "-label-values-index-persist-interval=5s"
       - "-label-values-index-startup-stale-threshold=30s"
       - "-label-values-index-startup-peer-warm-timeout=2s"
+      # L2 disk cache (bbolt) — enables across-restart cache reuse so bench
+      # script can measure L1 -> L2 promotion after `docker compose restart`.
+      - "-disk-cache-path=/cache/proxy-l2.bolt"
+      - "-disk-cache-max-bytes=536870912"
+      - "-disk-cache-min-ttl=1s"
+      - "-drilldown-scan-timeout=3s"
+      # L3 peer cache (static discovery, 3-node ring with self + 2 peers).
+      - "-peer-discovery=static"
+      - "-peer-self=loki-vl-proxy:3100"
+      - "-peer-self-az=zone-a"
+      - "-peer-static=loki-vl-proxy:3100,loki-vl-proxy-peer-a:3100,loki-vl-proxy-peer-b:3100"
+      - "-peer-auth-token=e2e-peer-shared-token"
+      - "-peer-hot-read-ahead-enabled=true"
       # Disable rate limiting so benchmark clients (single IP) are not throttled.
       - "-rate-limit-per-second=0"
       - "-rate-limit-burst=0"
@@ -233,6 +281,128 @@ services:
       - "-server.register-instrumentation=true"
       - "-server.admin-auth-token=bench-pprof-token"
       # Explicit defaults — underscores+translated+emit=true for full Loki OTel compatibility
+      - "-label-style=underscores"
+      - "-metadata-field-mode=translated"
+      - "-emit-structured-metadata=true"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      vmalert:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  # L3 peer #1 — shares cache writes with main proxy + peer-b via static ring.
+  # Bench script "L3 cross-peer" test warms a key on peer-a then queries peer-b
+  # to verify the second peer fetches from the first instead of going to VL.
+  loki-vl-proxy-peer-a:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-peer-a
+    user: root
+    ports:
+      - "13150:3100"
+    volumes:
+      - e2e-proxy-peer-a-cache:/cache
+    environment:
+      - GOMEMLIMIT=2GiB
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
+      - "-log-level=info"
+      - "-cache-ttl=5s"
+      - "-label-values-indexed-cache=true"
+      - "-label-values-hot-limit=200"
+      - "-label-values-index-max-entries=50000"
+      - "-label-values-index-persist-path=/cache/label-values-index.json"
+      - "-label-values-index-persist-interval=5s"
+      - "-label-values-index-startup-stale-threshold=30s"
+      - "-label-values-index-startup-peer-warm-timeout=2s"
+      - "-disk-cache-path=/cache/proxy-l2.bolt"
+      - "-disk-cache-max-bytes=536870912"
+      - "-disk-cache-min-ttl=1s"
+      - "-drilldown-scan-timeout=3s"
+      - "-peer-discovery=static"
+      - "-peer-self=loki-vl-proxy-peer-a:3100"
+      - "-peer-self-az=zone-a"
+      - "-peer-static=loki-vl-proxy:3100,loki-vl-proxy-peer-a:3100,loki-vl-proxy-peer-b:3100"
+      - "-peer-auth-token=e2e-peer-shared-token"
+      - "-peer-hot-read-ahead-enabled=true"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
+      - "-metadata-default-lookback=0"
+      - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
+      - "-server.admin-auth-token=bench-pprof-token"
+      - "-label-style=underscores"
+      - "-metadata-field-mode=translated"
+      - "-emit-structured-metadata=true"
+    depends_on:
+      victorialogs:
+        condition: service_healthy
+      vmalert:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+      start_period: 5s
+
+  # L3 peer #2 — second member of the static peer ring.
+  loki-vl-proxy-peer-b:
+    image: ${PROXY_IMAGE:-loki-vl-proxy:e2e-local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: e2e-proxy-peer-b
+    user: root
+    ports:
+      - "13151:3100"
+    volumes:
+      - e2e-proxy-peer-b-cache:/cache
+    environment:
+      - GOMEMLIMIT=2GiB
+    command:
+      - "-listen=:3100"
+      - "-backend=http://victorialogs:9428"
+      - "-ruler-backend=http://vmalert:8880"
+      - "-alerts-backend=http://vmalert:8880"
+      - "-log-level=info"
+      - "-cache-ttl=5s"
+      - "-label-values-indexed-cache=true"
+      - "-label-values-hot-limit=200"
+      - "-label-values-index-max-entries=50000"
+      - "-label-values-index-persist-path=/cache/label-values-index.json"
+      - "-label-values-index-persist-interval=5s"
+      - "-label-values-index-startup-stale-threshold=30s"
+      - "-label-values-index-startup-peer-warm-timeout=2s"
+      - "-disk-cache-path=/cache/proxy-l2.bolt"
+      - "-disk-cache-max-bytes=536870912"
+      - "-disk-cache-min-ttl=1s"
+      - "-drilldown-scan-timeout=3s"
+      - "-peer-discovery=static"
+      - "-peer-self=loki-vl-proxy-peer-b:3100"
+      - "-peer-self-az=zone-b"
+      - "-peer-static=loki-vl-proxy:3100,loki-vl-proxy-peer-a:3100,loki-vl-proxy-peer-b:3100"
+      - "-peer-auth-token=e2e-peer-shared-token"
+      - "-peer-hot-read-ahead-enabled=true"
+      - "-rate-limit-per-second=0"
+      - "-rate-limit-burst=0"
+      - "-max-concurrent=0"
+      - "-metadata-default-lookback=0"
+      - "-server.enable-pprof"
+      - "-server.register-instrumentation=true"
+      - "-server.admin-auth-token=bench-pprof-token"
       - "-label-style=underscores"
       - "-metadata-field-mode=translated"
       - "-emit-structured-metadata=true"
@@ -651,3 +821,8 @@ volumes:
   vm-data:
   patterns-cache:
   e2e-loki-data:  # Loki chunks (BoltDB-shipper + filesystem) — persist across container restarts
+  # Per-proxy named volumes so L2 disk cache (bbolt) survives `docker compose restart`.
+  # Each proxy gets its own volume — sharing would break bbolt single-writer locks.
+  e2e-proxy-cache:
+  e2e-proxy-peer-a-cache:
+  e2e-proxy-peer-b-cache:

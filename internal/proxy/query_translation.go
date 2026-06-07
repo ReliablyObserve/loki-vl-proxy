@@ -1320,6 +1320,16 @@ func (p *Proxy) fetchBareParserCountBytesViaStats(
 	}
 
 	results := v.GetArray("data", "result")
+	// Cap to the busiest maxStatsQuerySeries by total count to bound response
+	// size for high-cardinality by() clauses (churn-heavy pod names, *_id where
+	// each value appears 1-2× in the window). Mirrors the identical top-N clamp
+	// in collectRangeMetricHits — the sibling stats path. Ranking by count
+	// (not VL's alphabetical order) keeps the signal, not the noise floor.
+	// Without this the detected_level="error" labels-page query returned ~142k
+	// sparse single-point series at 24h, which Drilldown cannot render.
+	// Default 500 matches maxDrilldownSeries and Loki's default max_query_series.
+	// See memory [[drilldown-high-card-fields-known-limit]].
+	results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
 	seriesMap := make(map[string]manualSeriesSamples, len(results))
 	streamLabelCache := make(map[string]map[string]string, len(results))
 
@@ -2118,7 +2128,8 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 				startT := time.Unix(0, startNanos)
 				endT := time.Unix(0, endNanos)
 				stepD := time.Duration(stepNanos)
-				result := buildManualRangeMetricMatrix(statsAggFn, 0, statsSeries, startT, endT, stepD, spec.rangeWindow)
+				// statsSeries already capped to top-N in fetchBareParserCountBytesViaStats; pass 0 to avoid double-capping.
+				result := buildManualRangeMetricMatrix(statsAggFn, 0, statsSeries, startT, endT, stepD, spec.rangeWindow, 0)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
 				elapsed := time.Since(start)
@@ -2186,7 +2197,8 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	startT := time.Unix(0, startNanos)
 	endT := time.Unix(0, endNanos)
 	stepD := time.Duration(stepNanos)
-	result := buildManualRangeMetricMatrix(aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow)
+	// Unwrap stats path is not capped upstream; bound it here at the matrix boundary.
+	result := buildManualRangeMetricMatrix(aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow, p.resolvedMaxStatsQuerySeries())
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
 	elapsed := time.Since(start)

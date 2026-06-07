@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **L0 hot-key index now surfaces as a cache tier in metrics.** New `tier="l0"` label on `loki_vl_proxy_cache_tier_requests_total`, `loki_vl_proxy_cache_tier_hits_total`, `loki_vl_proxy_cache_tier_misses_total`, and `loki_vl_proxy_cache_objects`. L0 is the bounded per-key hotness sidecar that drives peer hot-key read-ahead — it is NOT a lookup tier in the L1→L2→L3 chain. A "hit" means the key was already in the hot index (was hot before this request); a "miss" is the first observation of that key. `cache_objects{tier="l0"}` reports the current bounded population of the hot index. Both OTLP push and Prometheus `/metrics` paths emit the new series.
+- **e2e-compat compose now exercises all four cache tiers end-to-end.** The main `e2e-proxy` is configured with `-disk-cache-path` (L2 bbolt on a named volume that survives `docker compose restart`) and joins a 3-node static peer ring (`-peer-discovery=static`) together with two new sibling services `loki-vl-proxy-peer-a` and `loki-vl-proxy-peer-b` exposed on host ports `13150` and `13151`. vmagent scrapes all three with distinct `instance=` labels so dashboards can disaggregate per-proxy cache stats.
+- `scripts/bench-cache-tiers.sh` — measures each tier against the compose stack: `l1` (cold-vs-warm hit ratio), `l2` (L1→L2 promotion across `docker compose restart`), `l3` (cross-peer fetch from peer-a → peer-b), `long` (7d → 7d-1h windowed cache reuse). Prints before/after counter deltas per tier so the expected promotion path is verifiable.
+- L0 series now appear alongside L1/L2/L3 in the bench-resources dashboard's hit-ratio, requests/sec, and objects panels.
+
+### Fixed
+
+- **High-cardinality Drilldown label/field panels (pod, `*_id`) now render correctly and fast at 24h+.** A `detected_level` filter combined with a `by(field)` aggregation on a churning, high-cardinality field (pod names, `trace_id`, `span_id`) previously returned ~142k uncapped single-point series at short ranges (flooding Grafana) or an empty matrix at 24h+ (the VictoriaLogs stats response exceeded the 16 MB body cap), and the panel rendered as a single right-edge spike. Three root causes were addressed: (1) the `detected_level` filter is now evaluated against VictoriaLogs' column-indexed `level` field instead of forcing a `| unpack_logfmt` re-parse of every line — ~64× faster (24h pod query 26s → ~0.6s; level-filtered field breakdowns now match the unfiltered baseline); (2) single-field `count() by(field)` over ranges ≥ 2h routes to the window-sampled `/select/logsql/hits` path so the returned series span the whole timeline instead of clustering the busiest short-lived values into a few buckets; (3) Grafana's 24h+ querySplitting residual chunk (a tiny trailing range ≤ 2× step that `mergeFrames` glued onto the main series as a spike) is now suppressed on every stats path, not just the `/hits` path. Low-cardinality panels and non-Grafana callers are unaffected.
+
 ## [1.56.2] - 2026-06-07
 
 ### BREAKING CHANGES
@@ -566,7 +577,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Regression tests for VL error format compliance (`TestVLError_OOMBodyIsRewritten`, `TestExtractVLErrorMsg`) and long-range metric query routing (`TestLongRange_CountOverTimeUsesStats`, `TestLongRange_BytesOverTimeUsesStats`)
 
 ## [1.42.0] - 2026-05-24
-
 
 ### Performance
 - Remove redundant proxy-side Go CIDR filtering (`ipFilterStreams`) — VL now handles `ip()` filters natively
@@ -1274,7 +1284,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - docs(website): add two new SEO pages — Kubernetes deployment guide with Helm install snippet and resource sizing table; OTel Collector config guide with field mapping table, translation modes, and detected_fields in Grafana Explore/Drilldown.
 
 ## [1.18.0] - 2026-04-26
-
 
 ### Added
 

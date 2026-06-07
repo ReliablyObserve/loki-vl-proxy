@@ -1,12 +1,40 @@
 scrape_configs:
-  # Only scrape the proxy variant the bench actually drives traffic through
+  # 3-node static peer ring scraped with proxy-{0,1,2} instance labels so the
+  # dashboard's per-instance panels (cache tier, peer comms, read-ahead)
+  # can disaggregate cleanly. vmauth-fronted variant keeps its own label since
+  # it's a different topology (vmauth → VL, not part of the peer ring).
+  - job_name: loki-vl-proxy
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - loki-vl-proxy:3100
+        labels:
+          component: proxy
+          instance: proxy-0
+  - job_name: loki-vl-proxy-peer-a
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - loki-vl-proxy-peer-a:3100
+        labels:
+          component: proxy
+          instance: proxy-1
+  - job_name: loki-vl-proxy-peer-b
+    scrape_interval: 5s
+    scrape_timeout: 4s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - loki-vl-proxy-peer-b:3100
+        labels:
+          component: proxy
+          instance: proxy-2
+  # vmauth-fronted variant — primary bench traffic target
   # (PROXY_URL=http://localhost:13109 → e2e-proxy-vmauth → vmauth → VL).
-  # The other proxy variants (e2e-proxy main, -underscore, -patterns-autodetect,
-  # etc.) expose the same loki_vl_proxy_* metric names; scraping them too would
-  # double-count traffic with no way to disambiguate by label inside the
-  # process-emitted series. Keep just the bench-hit one labelled `component: proxy`
-  # so dashboard panels showing component-grouped CPU/RSS/cache/latency reflect
-  # exactly what's under test.
   - job_name: loki-vl-proxy-vmauth
     scrape_interval: 5s
     scrape_timeout: 4s
@@ -16,6 +44,7 @@ scrape_configs:
           - loki-vl-proxy-vmauth:3100
         labels:
           component: proxy
+          instance: proxy-vmauth
   - job_name: vmauth
     scrape_interval: 5s
     scrape_timeout: 4s

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -243,6 +244,166 @@ func TestDetectedFieldsCache_NoCacheConfigured(t *testing.T) {
 		t.Fatalf("expected miss without cache, got %#v %#v %v", gotFields, gotValues, ok)
 	}
 	p.setCachedDetectedFields(ctx, "*", "1", "2", 10, nil, nil)
+}
+
+// Regression guard: empty detected_fields responses must NOT be cached.
+// Caching an empty result freezes Drilldown on "No data" for the full TTL
+// even after data ingests — observed when the log generator was offline
+// during a query and the proxy then served the empty response repeatedly.
+func TestDetectedFieldsCache_SkipsEmptyResults(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	ctx := context.WithValue(context.Background(), orgIDKey, "tenant-empty")
+	cases := []struct {
+		name   string
+		fields []map[string]interface{}
+		values map[string][]string
+	}{
+		{"both nil", nil, nil},
+		{"both empty", []map[string]interface{}{}, map[string][]string{}},
+		{"empty fields nil values", []map[string]interface{}{}, nil},
+		{"nil fields empty values", nil, map[string][]string{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p.setCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50, tc.fields, tc.values)
+			if _, _, ok := p.getCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50); ok {
+				t.Fatalf("empty detected_fields response must NOT be cached (got cache hit)")
+			}
+		})
+	}
+	// Sanity: non-empty result IS cached.
+	p.setCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50,
+		[]map[string]interface{}{{"label": "x"}}, nil)
+	if _, _, ok := p.getCachedDetectedFields(ctx, `{app="api"}`, "1", "2", 50); !ok {
+		t.Fatalf("non-empty detected_fields response must be cached")
+	}
+}
+
+// Regression guard for the detected_level filter aggregation bug.
+//
+// Before the fix: a LogQL query with `| detected_level="error"` got
+// translated to `... | unpack_logfmt | filter level:="..."`. The
+// queryUsesParserStages check then flagged it as a parser-stage query
+// and skipped the stats fast path, forcing a 5–16s client-side log
+// scan that returned 143k unaggregated series for high-cardinality
+// `by (pod)` groupBy. VL's stats_query_range handles `| unpack_logfmt`
+// natively in tens of ms; the fix excludes it from the parser-stages
+// gate so the fast path is reachable.
+func TestQueryUsesParserStages_AllowsUnpackLogfmt(t *testing.T) {
+	cases := []struct {
+		name  string
+		query string
+		want  bool
+	}{
+		{"plain stream selector", `{env="production"}`, false},
+		{"label filter only", `{env="production"} | service_name="api"`, false},
+		{"unpack_logfmt (detected_level path)", `{env="production"} | unpack_logfmt | filter level:="error"`, false},
+		{"unpack_json (transforms input shape)", `{env="production"} | unpack_json`, true},
+		{"extract regexp", `{env="production"} | extract_regexp "(?P<code>\\d+)"`, true},
+		{"extract pattern", `{env="production"} | extract "code=<code>"`, true},
+		{"unpack_logfmt+extract is still parser-stage", `{env="production"} | unpack_logfmt | extract "x=<y>"`, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := queryUsesParserStages(tc.query)
+			if got != tc.want {
+				t.Fatalf("queryUsesParserStages(%q) = %v, want %v", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
+// Regression guards for the drilldown scan timeout helper.
+func TestWithDrilldownScanTimeout(t *testing.T) {
+	t.Run("disabled when timeout is zero", func(t *testing.T) {
+		p := &Proxy{drilldownScanTimeout: 0}
+		ctx, cancel := p.withDrilldownScanTimeout(context.Background())
+		defer cancel()
+		if _, ok := ctx.Deadline(); ok {
+			t.Fatalf("expected no deadline when drilldownScanTimeout is 0")
+		}
+	})
+
+	t.Run("applies budget when timeout is set", func(t *testing.T) {
+		p := &Proxy{drilldownScanTimeout: 100 * time.Millisecond}
+		ctx, cancel := p.withDrilldownScanTimeout(context.Background())
+		defer cancel()
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatalf("expected deadline to be set")
+		}
+		if remaining := time.Until(deadline); remaining > 100*time.Millisecond {
+			t.Fatalf("expected remaining ≤ 100ms, got %v", remaining)
+		}
+	})
+
+	t.Run("preserves shorter inherited deadline", func(t *testing.T) {
+		p := &Proxy{drilldownScanTimeout: 1 * time.Second}
+		// Parent already has a 50ms deadline — must not extend it to 1s.
+		parent, parentCancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+		defer parentCancel()
+		ctx, cancel := p.withDrilldownScanTimeout(parent)
+		defer cancel()
+		deadline, ok := ctx.Deadline()
+		if !ok {
+			t.Fatalf("expected deadline to be inherited from parent")
+		}
+		if remaining := time.Until(deadline); remaining > 60*time.Millisecond {
+			t.Fatalf("expected ≤ ~50ms from parent, got %v (must not extend)", remaining)
+		}
+	})
+
+	t.Run("nil proxy returns input context unchanged", func(t *testing.T) {
+		var p *Proxy
+		ctx, cancel := p.withDrilldownScanTimeout(context.Background())
+		defer cancel()
+		if _, ok := ctx.Deadline(); ok {
+			t.Fatalf("expected no deadline on nil-proxy passthrough")
+		}
+	})
+}
+
+func TestIsContextDeadlineErr(t *testing.T) {
+	if isContextDeadlineErr(nil) {
+		t.Fatal("nil should not be a deadline error")
+	}
+	if !isContextDeadlineErr(context.DeadlineExceeded) {
+		t.Fatal("context.DeadlineExceeded must be recognised")
+	}
+	if !isContextDeadlineErr(context.Canceled) {
+		t.Fatal("context.Canceled must be recognised")
+	}
+	if isContextDeadlineErr(fmt.Errorf("not a context error")) {
+		t.Fatal("unrelated errors must not be flagged")
+	}
+}
+
+// Regression guard for the parallel detected_labels cache write path.
+func TestDetectedLabelsCache_SkipsEmptyResults(t *testing.T) {
+	p := newTestProxy(t, "http://unused")
+	ctx := context.WithValue(context.Background(), orgIDKey, "tenant-empty")
+	cases := []struct {
+		name      string
+		labels    []map[string]interface{}
+		summaries map[string]*detectedLabelSummary
+	}{
+		{"both nil", nil, nil},
+		{"both empty", []map[string]interface{}{}, map[string]*detectedLabelSummary{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p.setCachedDetectedLabels(ctx, `{app="api"}`, "1", "2", 50, tc.labels, tc.summaries)
+			if _, _, ok := p.getCachedDetectedLabels(ctx, `{app="api"}`, "1", "2", 50); ok {
+				t.Fatalf("empty detected_labels response must NOT be cached (got cache hit)")
+			}
+		})
+	}
+	// Sanity: non-empty result IS cached.
+	p.setCachedDetectedLabels(ctx, `{app="api"}`, "1", "2", 50,
+		[]map[string]interface{}{{"label": "x"}}, nil)
+	if _, _, ok := p.getCachedDetectedLabels(ctx, `{app="api"}`, "1", "2", 50); !ok {
+		t.Fatalf("non-empty detected_labels response must be cached")
+	}
 }
 
 func TestWriteEmptyLegacyRules(t *testing.T) {

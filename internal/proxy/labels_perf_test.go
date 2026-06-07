@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -270,26 +271,20 @@ func TestPerf_Labels_WarmupCoverage(t *testing.T) {
 	mux := http.NewServeMux()
 	p.RegisterRoutes(mux)
 
-	p.warmMetadataCacheOnStartup()
-
-	// All 4 windows cap to the same 1h VL call; streamFieldNamesCache deduplication
-	// means only 1 backend call is made. Poll for ≥1 (not ≥4).
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		if backendCalls.Load() >= 1 {
-			break
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
+	// Warm SYNCHRONOUSLY. warmMetadataCacheOnStartup() wraps warmLabelWindows in
+	// a goroutine (plus a backend-reachability wait); polling for its completion
+	// with a fixed sleep flaked under -race on a loaded CI runner — two of the
+	// four windows' in-memory cache writes lagged past the 25 ms slack, so the
+	// post-warmup assertion saw 2 cache misses. Calling warmLabelWindows directly
+	// makes the warmup deterministic (all four windows are populated on return).
+	// The args mirror the startup wrapper's constants (warmupStaleThreshold=30s,
+	// startupWarmupTTL=warmupTTL).
+	p.warmLabelWindows(context.Background(), 30*time.Second, warmupTTL)
 
 	warmupCallCount := backendCalls.Load()
 	if warmupCallCount == 0 {
 		t.Fatalf("warmup made 0 backend calls, want ≥1")
 	}
-
-	// Allow 25 ms for the warmup goroutine to finish the remaining sequential
-	// mergeLabelsIntoCache writes (no I/O — just in-memory map writes).
-	time.Sleep(25 * time.Millisecond)
 
 	// Post-warmup: requests for the same window must be cache hits.
 	// Allow ≤1 extra backend call for 5-min bucket-boundary drift between

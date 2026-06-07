@@ -84,18 +84,60 @@ func TestBucketMetadataTime_49hInterval_6hBuckets(t *testing.T) {
 	}
 }
 
-func TestBucketMetadataTime_BucketedStartNotExceedsOriginal(t *testing.T) {
+func TestBucketMetadataTime_BucketedStartFloorsAndEndCeilings(t *testing.T) {
 	t.Parallel()
-	// Bucketing must always floor timestamps — never round up.
+	// Bucketed start always floors (≤ original) so cache hits on sliding
+	// windows. Bucketed end always ceilings (≥ original) so the recent
+	// window is never excluded — a 12h query at 14:53 must reach VL with
+	// end=15:00, not end=14:00 (which would drop the last 53 minutes of
+	// data and produce "No data" for the most recent hour).
 	end := int64(1_779_700_000_000_000_000) // arbitrary recent ns timestamp
 	start := end - int64(30*time.Minute)
 	bs, be := bucketMetadataTime(start, end)
 	if bs > start {
-		t.Errorf("bucketed start %d > original start %d (rounded up)", bs, start)
+		t.Errorf("bucketed start %d > original start %d (start must floor)", bs, start)
 	}
-	if be > end {
-		t.Errorf("bucketed end %d > original end %d (rounded up)", be, end)
+	if be < end {
+		t.Errorf("bucketed end %d < original end %d (end must ceiling)", be, end)
 	}
+}
+
+func TestBucketMetadataTime_12hWindowKeepsRecentData(t *testing.T) {
+	t.Parallel()
+	// Regression for the 12h "No data" report. With a 12h interval the
+	// bucket is 1h. The user observed that 6h and 24h panels worked but
+	// 12h showed empty because end was floored to the previous hour,
+	// dropping up to 59 minutes of recent data. The fix rounds end UP
+	// so end_bucketed >= original_end.
+	const ns1h = int64(time.Hour)
+	// "now" at 14:53 (53 minutes into an hour) — the worst-case input.
+	end := int64(time.Date(2026, 6, 7, 14, 53, 0, 0, time.UTC).UnixNano())
+	start := end - int64(12*time.Hour)
+	bs, be := bucketMetadataTime(start, end)
+	if be < end {
+		t.Fatalf("12h window: end %d < original %d — would drop the recent %dm of data",
+			be, end, (end-be)/int64(time.Minute))
+	}
+	if be-end >= ns1h {
+		t.Fatalf("12h window: end ceilinged too far (%dm beyond now)", (be-end)/int64(time.Minute))
+	}
+	if start-bs >= ns1h {
+		t.Fatalf("12h window: start floored too far (%dm before original)", (start-bs)/int64(time.Minute))
+	}
+}
+
+func TestBucketMetadataTime_ExactlyAlignedEnd_NoChange(t *testing.T) {
+	t.Parallel()
+	// When end is already bucket-aligned, ceiling round-up should be a
+	// no-op (not advance by a full bucket).
+	const ns1h = int64(time.Hour)
+	end := int64(time.Date(2026, 6, 7, 14, 0, 0, 0, time.UTC).UnixNano())
+	start := end - int64(12*time.Hour)
+	_, be := bucketMetadataTime(start, end)
+	if be != end {
+		t.Fatalf("aligned end: expected unchanged %d, got %d", end, be)
+	}
+	_ = ns1h
 }
 
 // ── capMetadataStartOnly ──────────────────────────────────────────────────────

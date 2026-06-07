@@ -362,6 +362,11 @@ type Config struct {
 	// /label/{name}/values, and /series when the client omits both start and
 	// end. 0 disables (unbounded scan, prior behavior).
 	MetadataDefaultLookback time.Duration
+
+	// DrilldownScanTimeout caps the time a single detected_fields /
+	// detected_field_values request will spend in the slow log-scan
+	// fallback path (parser pipeline + high-cardinality field). 0 disables.
+	DrilldownScanTimeout time.Duration
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -403,10 +408,17 @@ const (
 // to 5 minutes but can be overridden per-Proxy via Config.LabelCacheTTL;
 // read p.cacheTTLLabels / p.cacheTTLLabelValues directly for those two keys.
 var CacheTTLs = map[string]time.Duration{
-	"labels":                5 * time.Minute,
-	"label_values":          5 * time.Minute,
-	"label_inventory":       5 * time.Minute,
-	"series":                30 * time.Second,
+	"labels":          5 * time.Minute,
+	"label_values":    5 * time.Minute,
+	"label_inventory": 5 * time.Minute,
+	"series":          30 * time.Second,
+	// Drilldown field/label inventory TTL. Kept at 90s to honor the
+	// freshness contract asserted by TestDrilldown_GrafanaResourceContracts/
+	// parsed_only_fields_refresh_after_new_logs_arrive (new fields must surface
+	// within ~120s of ingest). A longer TTL (tried 5m) starves that refresh —
+	// background refresh fires at half-TTL, so 5m delays a new field to ~2.5m,
+	// past the contract window. The real Drilldown speedups on this branch come
+	// from the column-indexed level filter + window-sampled /hits, not this TTL.
 	"detected_fields":       90 * time.Second,
 	"detected_field_values": 90 * time.Second,
 	"detected_labels":       90 * time.Second,
@@ -571,6 +583,15 @@ type Proxy struct {
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
 	debugLogRawQueries                    bool          // when true, debug logs include raw LogQL/LogsQL and backend params
 	metadataDefaultLookback               time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
+	// drilldownScanTimeout caps the time a single detected_fields /
+	// detected_field_values request will spend scanning logs with a parser
+	// filter. VL has no internal timeout, so without this cap a Drilldown
+	// request fanned across 20+ panels can each block for 15s+ on slow
+	// combos (parser pipeline + high-cardinality field), freezing the UI.
+	// On timeout the proxy returns an empty result, which (thanks to the
+	// empty-cache guard) is not persisted — the next request retries with
+	// a fresh budget.
+	drilldownScanTimeout time.Duration
 	// handler is the decomposed view of this Proxy's deps + config + state.
 	// Populated alongside the existing fields during the Task 9 migration.
 	handler *Handler
@@ -1142,6 +1163,7 @@ func New(cfg Config) (*Proxy, error) {
 		cacheTTLLabelValues:                   labelCacheTTL,
 		debugLogRawQueries:                    cfg.DebugLogRawQueries,
 		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
+		drilldownScanTimeout:                  cfg.DrilldownScanTimeout,
 	}
 	if cfg.DrilldownFieldBatchWindowMs > 0 {
 		maxFields := cfg.DrilldownFieldBatchMaxFields

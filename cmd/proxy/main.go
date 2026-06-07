@@ -210,6 +210,7 @@ type proxyRuntimeConfig struct {
 	statsQueryRangeInterQueryDelayMs    int
 	debugLogRawQueries                  bool
 	metadataDefaultLookback             time.Duration
+	drilldownScanTimeout                time.Duration
 	peerInsecureIPAllowlist             bool
 }
 
@@ -405,6 +406,7 @@ func run(
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
 	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
 	metadataDefaultLookback := fs.Duration("metadata-default-lookback", 12*time.Hour, "Default time window for /labels, /label/{name}/values, and /series when the client omits start/end. 0 disables (unbounded scan).")
+	drilldownScanTimeout := fs.Duration("drilldown-scan-timeout", 5*time.Second, "Per-request timeout for the detected_fields / detected_field_values log scan path. Caps the time a single Drilldown panel can spend scanning logs with a parser filter. 0 disables the cap (use VL's natural response time).")
 
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
@@ -525,7 +527,7 @@ func run(
 	recentTailRefreshWindow := fs.Duration("recent-tail-refresh-window", 2*time.Minute, "How close request end must be to now to enable near-now cache freshness bypass")
 	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 15*time.Second, "Maximum acceptable cache age for near-now requests before cache bypass")
 	defaultMaxQueryLength := fs.Duration("default-max-query-length", 0, "Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default)")
-	maxStatsQuerySeries := fs.Int("max-stats-query-series", 0, "Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). Matches Loki's max_query_series (0 = built-in default of 5000).")
+	maxStatsQuerySeries := fs.Int("max-stats-query-series", 0, "Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). 0 = built-in default of 500, matching the Drilldown maxDrilldownSeries cap and the documented known-limit for high-cardinality fields (trace_id, *_id, churn-heavy pod naming) where each value appears only 1-2× in the window. The previous 5000 default returned 10× more sparse series than Drilldown can render and 10× more bytes for the same UX, while leaving the door open to VL OOMs on real workloads with 100k+ cardinality.")
 	statsQueryRangeConcurrency := fs.Int("stats-query-range-concurrency", 0, "Maximum concurrent stats_query_range calls to VictoriaLogs. Drilldown Fields fires ~30 in parallel; capping prevents CPU storms. 0 = built-in default of 4.")
 	drilldownBurstWindowMs := fs.Int("drilldown-burst-window-ms", 50,
 		"time window in ms for coalescing concurrent Drilldown Fields per-field count queries "+
@@ -882,6 +884,7 @@ func run(
 			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
 			debugLogRawQueries:                  *debugLogRawQueries,
 			metadataDefaultLookback:             *metadataDefaultLookback,
+			drilldownScanTimeout:                *drilldownScanTimeout,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -2034,6 +2037,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		StatsQueryRangeInterQueryDelayMs: cfg.statsQueryRangeInterQueryDelayMs,
 		DebugLogRawQueries:               cfg.debugLogRawQueries,
 		MetadataDefaultLookback:          cfg.metadataDefaultLookback,
+		DrilldownScanTimeout:             cfg.drilldownScanTimeout,
 	}, nil
 }
 

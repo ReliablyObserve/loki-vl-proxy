@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -31,16 +32,19 @@ func newBehaviorProxy(t *testing.T, vlURL string, labelTTL time.Duration) (*Prox
 }
 
 // fieldNamesServer returns a VL /select/logsql/stream_field_names server that
-// responds with the given labels on every call. The call counter is updated atomically.
-func fieldNamesServer(t *testing.T, labels []string) (*httptest.Server, *int) {
+// responds with the given labels on every call. The call counter is updated
+// atomically — the handler runs on the httptest server's goroutine while the
+// test reads the count from the test goroutine (and a background cache refresh
+// may issue an extra request), so a plain int would race under -race.
+func fieldNamesServer(t *testing.T, labels []string) (*httptest.Server, *atomic.Int64) {
 	t.Helper()
-	calls := new(int)
+	calls := new(atomic.Int64)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		*calls++
+		calls.Add(1)
 		hits := make([]fieldHit, len(labels))
 		for i, l := range labels {
 			hits[i] = fieldHit{l, 1}
@@ -347,10 +351,10 @@ func TestHandleLabels_SecondRequestIsCacheHit(t *testing.T) {
 	_, mux := newBehaviorProxy(t, srv.URL, 5*time.Minute)
 
 	_ = getLabels(t, mux, time.Hour)
-	callsAfterFirst := *calls
+	callsAfterFirst := calls.Load()
 
 	_ = getLabels(t, mux, time.Hour)
-	callsAfterSecond := *calls
+	callsAfterSecond := calls.Load()
 
 	if callsAfterSecond != callsAfterFirst {
 		t.Errorf("second request triggered %d extra VL call(s), expected 0 (cache hit)", callsAfterSecond-callsAfterFirst)

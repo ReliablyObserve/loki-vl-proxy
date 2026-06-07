@@ -23,6 +23,33 @@ import (
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	// Suppress Grafana's 24h+ querySplitting RESIDUAL chunk. At ranges past the
+	// day boundary, the Loki datasource (querySplitting.ts) emits the bulk range
+	// PLUS a tiny trailing chunk whose span is <= ~2 steps (e.g. an 8-second
+	// [now-8s, now] chunk with a 2-minute step). That residual produces a single
+	// right-edge bucket; mergeFrames/closestIdx then glues it onto the distributed
+	// main chunk as a tall spike at the right edge — most visible on high-card
+	// panels (pod, *_id) whose main chunk is sparse, while dense low-card panels
+	// hide it. The /hits drilldown path already suppresses this, but the residual
+	// can route to ANY stats path (compat, direct, windowed-hits — the latter only
+	// engages at >= 2h). Hoisting the suppression here covers every path. Gated on
+	// isGrafanaSourcedRequest so non-Grafana clients still get exact small-range
+	// results. See [[grafana-loki-querysplitting-24h]].
+	if isGrafanaSourcedRequest(r) {
+		if sNs, sok := parseLokiTimeToUnixNano(r.FormValue("start")); sok {
+			if eNs, eok := parseLokiTimeToUnixNano(r.FormValue("end")); eok {
+				if stepDur, stepOK := parsePositiveStepDuration(r.FormValue("step")); stepOK && stepDur > 0 && eNs-sNs <= 2*stepDur.Nanoseconds() {
+					w.Header().Set("Content-Type", "application/json")
+					// Same marker the /hits path uses — TestLock_LeftoverChunkSuppressed
+					// pins this exact value; both routes suppress the same residual.
+					w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
+					_, _ = w.Write(emptyLokiMatrix)
+					return
+				}
+			}
+		}
+	}
+
 	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
 	topK, topKDesc, hasTopK := parseTopKWrapper(originalLogql)
@@ -119,6 +146,26 @@ const maxStatsQueryRangeBytes = 16 << 20 // 16 MB
 var emptyLokiMatrix = []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 
 func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) (capExceeded bool) {
+	// High-cardinality single-field count by(field) over a wide range (e.g. the
+	// Drilldown labels-overview pod panel: sum(count_over_time({...,pod!=""} |
+	// detected_level=... [2m])) by (pod)). VL's unbounded stats response is 40MB+
+	// / 25s+ and the bounded global top-N leaves the stacked overview chart sparse
+	// (the busiest churning pods are short-lived and cluster in a few time buckets
+	// — top-200 covered only ~117 of ~585 active buckets vs Loki's dense chart).
+	// Route to the window-sampled /hits path, which samples each time window's
+	// top-K so the merged set spans the whole timeline (dense, time-distributed)
+	// AND suppresses Grafana's 24h residual-chunk right-edge spike. Falls through
+	// to the bounded two-phase, then the direct fetch, when not applicable.
+	// See memory [[drilldown-high-card-fields-known-limit]].
+	if p.tryHighCardCountByWindowedHits(w, r, logsqlQuery) {
+		return true
+	}
+	if out := p.tryHighCardCountByTwoPhase(r, logsqlQuery); out != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(out)
+		return true
+	}
+
 	// For the underscore proxy, expand dotted by() labels (e.g. "service.name") to
 	// also include their underscore equivalents (e.g. "service_name"). Loki-push data
 	// stores these as stream labels under the underscore name; OTel data uses the dotted
@@ -161,9 +208,28 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 
 	body, bodyErr := readBodyLimited(resp.Body, maxStatsQueryRangeBytes)
 	if bodyErr != nil {
-		// Response exceeds the per-request cap — return empty matrix rather than OOMing.
-		// This protects against high-cardinality by() clauses (e.g. by(float_field)) on
-		// broad stream selectors producing tens of megabytes per concurrent field query.
+		// Response exceeds the 16 MB per-request cap. Before giving up with an
+		// empty matrix, try a global top-N two-phase for single-field count
+		// aggregations: VL's instant single-bucket `| sort by (count) | limit N`
+		// returns just the busiest N field values (~21 KB), and a range query
+		// bounded to those values then fits comfortably. This rescues the
+		// labels-drilldown "pod" panel —
+		//   sum(count_over_time({env="production",pod!=""}
+		//       | detected_level="error" or detected_level="info" [w])) by (pod)
+		// — whose raw per-pod stats response is ~48 MB at 24h (each churning pod
+		// appears once). Without this it rendered an empty chart ("nothing").
+		// The level value-filter disqualifies it from the detectDrilldownSingleField
+		// fast paths (those require pure existence filters), so it lands here.
+		if spec, ok := parseStatsCompatSpec(logsqlQuery); ok && spec.Func == "count" && len(spec.GroupBy) == 1 {
+			field := spec.GroupBy[0]
+			phase1Query := spec.BaseQuery + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
+			if out := p.drilldownTwoPhase(r, phase1Query, spec.BaseQuery, field, r.FormValue("step")); len(out) > 0 {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write(out)
+				return true
+			}
+		}
+		// Fallback: empty matrix rather than OOMing on an unbounded response.
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(emptyLokiMatrix)
 		return true
@@ -176,8 +242,20 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 		keepFn = func(tsNs int64) bool { return tsNs <= endNs }
 	}
 	body = p.trimAndTranslateStatsQRFJ(r.Context(), body, keepFn, r.FormValue("query"))
+	// Cap to the busiest maxStatsQuerySeries (default 500, top-N by total count).
+	// This is the path taken by `sum by (pod|trace_id|*_id) (count_over_time(
+	// {...} | detected_level="error" [w]))` from the Drilldown labels page —
+	// the level filter is NOT the `| field!=""` existence pattern, so the query
+	// misses the Drilldown single-field fast paths (which already cap) and lands
+	// here. Without the cap VL's per-pod stats response is ~146k single-point
+	// series at 24h (each churning pod appears once), which squeaks under the
+	// 16 MB body cap and floods Grafana with unrenderable scattered spikes.
+	// limitLokiMatrixSeries ranks by total count so the busiest pods survive,
+	// not VL's alphabetical first-N (the count==1 noise floor).
+	// See memory [[drilldown-high-card-fields-known-limit]].
+	out := limitLokiMatrixSeries(wrapAsLokiResponse(body, "matrix"), p.resolvedMaxStatsQuerySeries())
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(wrapAsLokiResponse(body, "matrix"))
+	_, _ = w.Write(out)
 	return false
 }
 
@@ -1964,6 +2042,169 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 // it instead of the raw Grafana step to cap bucket count and reduce VL CPU.
 //
 // Returns the translated Loki matrix response, or nil on any VL error.
+// stripUnpackStagesForTopN removes `| unpack_logfmt` / `| unpack_json` pipes from
+// a translated LogsQL base so Phase-1 top-N SELECTION can use VL's auto-detected,
+// column-indexed fields (notably `level`) instead of re-parsing every log line.
+// Measured 404ms vs 26s for `... | filter level:="error" | stats by (pod)` over
+// 24h. Safe for selecting stream-label group keys (pod, namespace, …) whose
+// values exist without a parser. When the grouped field is itself parser-derived
+// (json/logfmt body field), the stripped query yields no rows and the caller
+// falls through to the slower exact path. Whitespace left by the removed pipe is
+// harmless to VL.
+func stripUnpackStagesForTopN(base string) string {
+	b := strings.ReplaceAll(base, "| unpack_logfmt", "")
+	b = strings.ReplaceAll(b, "| unpack_json", "")
+	return strings.TrimSpace(b)
+}
+
+// tryHighCardCountByTwoPhase handles single-field `count() by (field)` query_range
+// requests that would otherwise force VL to aggregate every value of a
+// high-cardinality field over a wide window — e.g. the Drilldown pod label panel:
+//
+//	sum(count_over_time({env="production",pod!=""}
+//	    | detected_level="error" or detected_level="info" [2m])) by (pod)
+//
+// At 24h that is ~142k churning-pod series / ~48MB / ~26s in VL, which overflows
+// the 16MB direct-path cap and is cancelled by Grafana (HTTP 499 → blank chart).
+//
+// Two phases:
+//   - Phase 1 (selection, fast): a single-bucket global top-N with `| unpack_*`
+//     stripped so VL uses its column index — ~0.4s — returns the busiest
+//     maxDrilldownSeries field values.
+//   - Phase 2 (values, correct): the ORIGINAL query (parser preserved for exact
+//     detected_level semantics) restricted to those values via `field:in(...)`,
+//     so VL only aggregates ≤maxDrilldownPhase2Values series — fast and accurate.
+//
+// Returns nil when inapplicable (not a single-field count, range below the
+// gate, Phase 1 empty because the field is parser-derived, or any VL error) so
+// the caller falls through to the unchanged direct path.
+// tryHighCardCountByWindowedHits routes a single-field count by(field) query over
+// a wide range to the window-sampled /hits path (proxyStatsQueryRangeDrilldownHits
+// → gatherWindowedHits). VL /hits picks top-N by frequency, but per-window sampling
+// guarantees each time window contributes its own top-K, so the merged set spans
+// the whole timeline — fixing the sparse/one-spike overview chart that the bounded
+// global top-N produced for churning short-lived values (pod, *_id). The /hits path
+// also suppresses Grafana's 24h querySplitting residual-chunk right-edge spike.
+//
+// The level value-filter (detected_level → `| filter level:=...`) is preserved:
+// VL /hits accepts a column-indexed filter pipe (verified), and stripUnpackStagesForTopN
+// drops only the redundant `| unpack_logfmt`. Returns true iff it wrote a response;
+// false (without writing a body) so the caller falls through to the two-phase/direct.
+func (p *Proxy) tryHighCardCountByWindowedHits(w http.ResponseWriter, r *http.Request, logsqlQuery string) bool {
+	spec, ok := parseStatsCompatSpec(logsqlQuery)
+	if !ok || spec.Func != "count" || len(spec.GroupBy) != 1 {
+		return false
+	}
+	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
+	startNs, ok1 := parseLokiTimeToUnixNano(startRaw)
+	endNs, ok2 := parseLokiTimeToUnixNano(endRaw)
+	if !ok1 || !ok2 || endNs <= startNs {
+		return false
+	}
+	// Small ranges fit the direct path and are fast; only intervene on wide ranges
+	// where the coverage gap (and the 25s/40MB unbounded stats) actually bites.
+	if endNs-startNs < int64(2*time.Hour) {
+		return false
+	}
+	field := spec.GroupBy[0]
+	// /hits accepts a column-indexed `| filter level:=...` pipe but not the
+	// `| unpack_logfmt` parser stage; strip only the unpack so VL uses its column
+	// index. If the grouped field is parser-derived, /hits returns nothing and the
+	// caller falls through.
+	hitsQuery := stripUnpackStagesForTopN(spec.BaseQuery)
+	lokiField := field
+	if og := parseOriginalByLabels(r.FormValue("query")); len(og) == 1 {
+		lokiField = og[0]
+	}
+	drillCacheKey := p.drilldownStatsCacheKey(r)
+	return p.proxyStatsQueryRangeDrilldownHits(w, r, hitsQuery, field, lokiField, startRaw, endRaw, stepRaw, drillCacheKey)
+}
+
+func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string) []byte {
+	spec, ok := parseStatsCompatSpec(logsqlQuery)
+	if !ok || spec.Func != "count" || len(spec.GroupBy) != 1 {
+		return nil
+	}
+	start, end := r.FormValue("start"), r.FormValue("end")
+	startNs, ok1 := parseLokiTimeToUnixNano(start)
+	endNs, ok2 := parseLokiTimeToUnixNano(end)
+	if !ok1 || !ok2 || endNs <= startNs {
+		return nil
+	}
+	// Gate: small ranges fit comfortably in the direct path (already capped to
+	// maxStatsQuerySeries) and are fast; only intervene where the unbounded VL
+	// response risks the 16MB overflow / multi-second compute.
+	if endNs-startNs < int64(2*time.Hour) {
+		return nil
+	}
+	field := spec.GroupBy[0]
+	ctx := r.Context()
+	rangeSec := (endNs - startNs) / int64(time.Second)
+	if rangeSec < 1 {
+		rangeSec = 1
+	}
+
+	// Phase 1: fast single-bucket global top-N (unpack stripped → column index).
+	p1Base := stripUnpackStagesForTopN(spec.BaseQuery)
+	p1Query := p1Base + " | stats by (" + quoteLogsQLIdent(field) + ") count() as _c | sort by (_c desc) | limit " + strconv.Itoa(maxDrilldownSeries)
+	p1Params := url.Values{}
+	p1Params.Set("query", p1Query)
+	p1Params.Set("start", nanosToVLTimestamp(startNs))
+	p1Params.Set("end", nanosToVLTimestamp(endNs))
+	p1Params.Set("step", strconv.FormatInt(rangeSec, 10)+"s")
+	resp1, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p1Params)
+	if err != nil {
+		return nil
+	}
+	defer resp1.Body.Close()
+	if resp1.StatusCode >= 400 {
+		return nil
+	}
+	p1Body, p1Err := readBodyLimited(resp1.Body, 4<<20)
+	if p1Err != nil {
+		return nil
+	}
+	topValues := drilldownTopValuesFromMatrix(p1Body, field)
+	if len(topValues) == 0 {
+		// Field is parser-derived (json/logfmt body field) or genuinely empty:
+		// fall through to the exact direct path.
+		return nil
+	}
+	if len(topValues) > maxDrilldownPhase2Values {
+		topValues = topValues[:maxDrilldownPhase2Values]
+	}
+
+	// Phase 2: per-step counts for the selected values, bounded by field:in(...).
+	// Use the SAME unpack-stripped base as Phase 1 (column-indexed `level` filter,
+	// no | unpack_logfmt). This is safe precisely because Phase 1 already returned
+	// values for this field WITHOUT unpack — so the field is a stream label / column
+	// field, and grouping by it needs no parser. Result: Phase 2 is also ~0.4s
+	// instead of the ~15s the unpack variant takes, so a Drilldown labels page that
+	// fans out ~15 of these concurrently no longer overloads VL. Column-level counts
+	// run ~2x Loki's detected_level (a data-density quirk affecting both VL variants)
+	// but are actually CLOSER to Loki than the unpack variant — verified live.
+	inFilter := buildVLInFilter(field, topValues)
+	p2Query := p1Base + " | filter " + inFilter + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
+	p2Query = p.addUnderscorefallbackByLabels(p2Query, parseOriginalByLabels(r.FormValue("query")))
+	p2Params := buildStatsQueryRangeParams(p2Query, start, end, r.FormValue("step"))
+	resp2, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p2Params)
+	if err != nil {
+		return nil
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode >= 400 {
+		return nil
+	}
+	p2Body, p2Err := readBodyLimited(resp2.Body, maxDrilldownResponseBytes)
+	if p2Err != nil {
+		return nil
+	}
+	keepFn := func(tsNs int64) bool { return tsNs <= endNs }
+	p2Body = p.trimAndTranslateStatsQRFJ(ctx, p2Body, keepFn, r.FormValue("query"))
+	p2Body = limitLokiMatrixSeries(p2Body, p.resolvedMaxStatsQuerySeries())
+	return wrapAsLokiResponse(p2Body, "matrix")
+}
+
 func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, field, effectiveStep string) []byte {
 	ctx := r.Context()
 	start, end := r.FormValue("start"), r.FormValue("end")
