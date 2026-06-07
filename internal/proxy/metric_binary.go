@@ -119,6 +119,23 @@ const maxStatsQueryRangeBytes = 16 << 20 // 16 MB
 var emptyLokiMatrix = []byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`)
 
 func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Request, logsqlQuery string) (capExceeded bool) {
+	// High-cardinality short-circuit: for single-field count `by(field)` queries
+	// over a wide range, VL's unbounded stats response can be 40MB+ and take 25s+
+	// to compute (e.g. by(pod) over 24h with churning pod names → 142k series).
+	// The full fetch then blows the 16MB body cap and we two-phase anyway — but
+	// only AFTER paying the 25s. Grafana cancels at ~20-30s (HTTP 499) and the
+	// panel renders blank. Skip the doomed fetch entirely: go straight to the
+	// bounded global-top-N two-phase. Low-cardinality count by() queries also
+	// route here safely (Phase 1 returns few values, Phase 2 is cheap). Falls
+	// through to the direct fetch only when two-phase is inapplicable/empty.
+	// Gated to large ranges so fast small-range queries keep the single-request
+	// direct path. See memory [[drilldown-high-card-fields-known-limit]].
+	if out := p.tryHighCardCountByTwoPhase(r, logsqlQuery); out != nil {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(out)
+		return true
+	}
+
 	// For the underscore proxy, expand dotted by() labels (e.g. "service.name") to
 	// also include their underscore equivalents (e.g. "service_name"). Loki-push data
 	// stores these as stream labels under the underscore name; OTel data uses the dotted
@@ -1995,6 +2012,120 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHybrid(
 // it instead of the raw Grafana step to cap bucket count and reduce VL CPU.
 //
 // Returns the translated Loki matrix response, or nil on any VL error.
+// stripUnpackStagesForTopN removes `| unpack_logfmt` / `| unpack_json` pipes from
+// a translated LogsQL base so Phase-1 top-N SELECTION can use VL's auto-detected,
+// column-indexed fields (notably `level`) instead of re-parsing every log line.
+// Measured 404ms vs 26s for `... | filter level:="error" | stats by (pod)` over
+// 24h. Safe for selecting stream-label group keys (pod, namespace, …) whose
+// values exist without a parser. When the grouped field is itself parser-derived
+// (json/logfmt body field), the stripped query yields no rows and the caller
+// falls through to the slower exact path. Whitespace left by the removed pipe is
+// harmless to VL.
+func stripUnpackStagesForTopN(base string) string {
+	b := strings.ReplaceAll(base, "| unpack_logfmt", "")
+	b = strings.ReplaceAll(b, "| unpack_json", "")
+	return strings.TrimSpace(b)
+}
+
+// tryHighCardCountByTwoPhase handles single-field `count() by (field)` query_range
+// requests that would otherwise force VL to aggregate every value of a
+// high-cardinality field over a wide window — e.g. the Drilldown pod label panel:
+//
+//	sum(count_over_time({env="production",pod!=""}
+//	    | detected_level="error" or detected_level="info" [2m])) by (pod)
+//
+// At 24h that is ~142k churning-pod series / ~48MB / ~26s in VL, which overflows
+// the 16MB direct-path cap and is cancelled by Grafana (HTTP 499 → blank chart).
+//
+// Two phases:
+//   - Phase 1 (selection, fast): a single-bucket global top-N with `| unpack_*`
+//     stripped so VL uses its column index — ~0.4s — returns the busiest
+//     maxDrilldownSeries field values.
+//   - Phase 2 (values, correct): the ORIGINAL query (parser preserved for exact
+//     detected_level semantics) restricted to those values via `field:in(...)`,
+//     so VL only aggregates ≤maxDrilldownPhase2Values series — fast and accurate.
+//
+// Returns nil when inapplicable (not a single-field count, range below the
+// gate, Phase 1 empty because the field is parser-derived, or any VL error) so
+// the caller falls through to the unchanged direct path.
+func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string) []byte {
+	spec, ok := parseStatsCompatSpec(logsqlQuery)
+	if !ok || spec.Func != "count" || len(spec.GroupBy) != 1 {
+		return nil
+	}
+	start, end := r.FormValue("start"), r.FormValue("end")
+	startNs, ok1 := parseLokiTimeToUnixNano(start)
+	endNs, ok2 := parseLokiTimeToUnixNano(end)
+	if !ok1 || !ok2 || endNs <= startNs {
+		return nil
+	}
+	// Gate: small ranges fit comfortably in the direct path (already capped to
+	// maxStatsQuerySeries) and are fast; only intervene where the unbounded VL
+	// response risks the 16MB overflow / multi-second compute.
+	if endNs-startNs < int64(2*time.Hour) {
+		return nil
+	}
+	field := spec.GroupBy[0]
+	ctx := r.Context()
+	rangeSec := (endNs - startNs) / int64(time.Second)
+	if rangeSec < 1 {
+		rangeSec = 1
+	}
+
+	// Phase 1: fast single-bucket global top-N (unpack stripped → column index).
+	p1Base := stripUnpackStagesForTopN(spec.BaseQuery)
+	p1Query := p1Base + " | stats by (" + quoteLogsQLIdent(field) + ") count() as _c | sort by (_c desc) | limit " + strconv.Itoa(maxDrilldownSeries)
+	p1Params := url.Values{}
+	p1Params.Set("query", p1Query)
+	p1Params.Set("start", nanosToVLTimestamp(startNs))
+	p1Params.Set("end", nanosToVLTimestamp(endNs))
+	p1Params.Set("step", strconv.FormatInt(rangeSec, 10)+"s")
+	resp1, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p1Params)
+	if err != nil {
+		return nil
+	}
+	defer resp1.Body.Close()
+	if resp1.StatusCode >= 400 {
+		return nil
+	}
+	p1Body, p1Err := readBodyLimited(resp1.Body, 4<<20)
+	if p1Err != nil {
+		return nil
+	}
+	topValues := drilldownTopValuesFromMatrix(p1Body, field)
+	if len(topValues) == 0 {
+		// Field is parser-derived (json/logfmt body field) or genuinely empty:
+		// fall through to the exact direct path.
+		return nil
+	}
+	if len(topValues) > maxDrilldownPhase2Values {
+		topValues = topValues[:maxDrilldownPhase2Values]
+	}
+
+	// Phase 2: the ORIGINAL query (parser preserved) bounded to the top values.
+	inFilter := buildVLInFilter(field, topValues)
+	p2Query := spec.BaseQuery + " | filter " + inFilter + " | stats by (" + quoteLogsQLIdent(field) + ") count()"
+	p2Query = p.addUnderscorefallbackByLabels(p2Query, parseOriginalByLabels(r.FormValue("query")))
+	p2Params := buildStatsQueryRangeParams(p2Query, start, end, r.FormValue("step"))
+	resp2, err := p.vlPost(ctx, "/select/logsql/stats_query_range", p2Params)
+	if err != nil {
+		return nil
+	}
+	defer resp2.Body.Close()
+	if resp2.StatusCode >= 400 {
+		return nil
+	}
+	p2Body, p2Err := readBodyLimited(resp2.Body, maxDrilldownResponseBytes)
+	if p2Err != nil {
+		return nil
+	}
+	var keepFn func(int64) bool
+	keepFn = func(tsNs int64) bool { return tsNs <= endNs }
+	p2Body = p.trimAndTranslateStatsQRFJ(ctx, p2Body, keepFn, r.FormValue("query"))
+	p2Body = limitLokiMatrixSeries(p2Body, p.resolvedMaxStatsQuerySeries())
+	return wrapAsLokiResponse(p2Body, "matrix")
+}
+
 func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, field, effectiveStep string) []byte {
 	ctx := r.Context()
 	start, end := r.FormValue("start"), r.FormValue("end")
