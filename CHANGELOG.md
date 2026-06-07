@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.56.2] - 2026-06-07
+
 ### BREAKING CHANGES
 
 - **Binary admin endpoints now bind to loopback by default.** Previously `-server.register-instrumentation=true` and `-server.admin-auth-token=""` caused immediate startup failure. Now admin/debug routes are served on a dedicated `--admin-listen` (default `127.0.0.1:3101`) when no token is set; main `--listen` serves proxy traffic only. To restore the previous behavior, set `-server.admin-auth-token` to a value of your choice. Affected: operators running the binary without a token who relied on `:3100/admin/*` being reachable from outside the host.
