@@ -1,3 +1,14 @@
+{{- /*
+  Guard: when peerCache.enabled=true the chart injects
+  -peer-auth-token=$(PEER_AUTH_TOKEN) automatically (sourced from the chart's
+  Secret or peerCache.existingSecret). The Go flag package fatals on duplicate
+  flag registration, so refuse to render if the operator also set
+  extraArgs.peer-auth-token. Token management belongs to peerCache.authToken /
+  peerCache.existingSecret.
+*/ -}}
+{{- if and .Values.peerCache.enabled (hasKey .Values.extraArgs "peer-auth-token") }}
+{{- fail "extraArgs.peer-auth-token cannot be combined with peerCache.enabled=true; chart manages the flag via peerCache.authToken / peerCache.existingSecret. Remove the extraArgs entry." }}
+{{- end }}
 apiVersion: apps/v1
 kind: {{ include "loki-vl-proxy.workloadKind" . }}
 metadata:
@@ -150,8 +161,8 @@ spec:
             {{- if not (hasKey .Values.extraArgs "server.metrics-max-concurrency") }}
             - {{ printf "-server.metrics-max-concurrency=%v" (default 1 (get $observabilityServer "metricsMaxConcurrency")) | quote }}
             {{- end }}
-            {{- if and $hostProcEnabled (not (hasKey .Values.extraArgs "proc-root")) }}
-            - {{ printf "-proc-root=%s" $hostProcMountPath | quote }}
+            {{- if and $hostProcEnabled (not (hasKey .Values.extraArgs "host-proc-root")) }}
+            - {{ printf "-host-proc-root=%s" $hostProcMountPath | quote }}
             {{- end }}
             {{- if and .Values.persistence.enabled (not (hasKey .Values.extraArgs "disk-cache-path")) }}
             - {{ printf "-disk-cache-path=%s" (include "loki-vl-proxy.diskCachePath" .) | quote }}
@@ -183,6 +194,10 @@ spec:
             {{- else if eq .Values.peerCache.discovery "static" }}
             - {{ printf "-peer-static=%s" (join "," .Values.peerCache.peers) | quote }}
             {{- end }}
+            {{- /* Peer auth token sourced from a Secret env var. Required by default;
+                   the chart auto-generates a Secret when no values are provided
+                   (see templates/peer-secret.yaml). */}}
+            - {{ "-peer-auth-token=$(PEER_AUTH_TOKEN)" | quote }}
             {{- end }}
           {{- $hasChartEnv := and (kindIs "slice" .Values.env) (gt (len .Values.env) 0) }}
           {{- $hasExtraEnv := and (kindIs "slice" .Values.extraEnv) (gt (len .Values.extraEnv) 0) }}
@@ -213,6 +228,19 @@ spec:
                 fieldRef:
                   fieldPath: {{ printf "metadata.labels['%s']" .Values.peerCache.topologyLabel | quote }}
             {{- end }}
+            - name: PEER_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.peerCache.existingSecret }}
+                  name: {{ .Values.peerCache.existingSecret | quote }}
+                  key: {{ .Values.peerCache.existingSecretKey | default "token" | quote }}
+                  {{- else if .Values.peerCache.authToken }}
+                  name: {{ printf "%s-peer-auth-literal" .Release.Name | quote }}
+                  key: token
+                  {{- else }}
+                  name: {{ printf "%s-peer-auth" .Release.Name | quote }}
+                  key: token
+                  {{- end }}
             {{- end }}
             {{- if $hasChartEnv }}
             {{- toYaml .Values.env | nindent 12 }}
@@ -236,6 +264,23 @@ spec:
             - name: http
               containerPort: 3100
               protocol: TCP
+            {{- if .Values.service.metrics.enabled }}
+            # Dedicated Prometheus metrics listener (matches extraArgs.metrics-listen
+            # default ":9091"). The Service exposes this targetPort under the
+            # `metrics` name; ServiceMonitor scrapes it instead of the proxy port
+            # so a noisy /metrics scrape never competes with query traffic. The
+            # admin listener (default 127.0.0.1:3101) is intentionally NOT
+            # listed here — it binds to loopback and must not be reachable from
+            # outside the pod.
+            #
+            # Gated by service.metrics.enabled so operators who disable the
+            # metrics listener on the binary side (extraArgs.metrics-listen=""
+            # or extraArgs.server.register-instrumentation=false) don't end up
+            # with a stale named containerPort the Service can't reach.
+            - name: metrics
+              containerPort: 9091
+              protocol: TCP
+            {{- end }}
           {{- if .Values.probe.liveness.enabled }}
           livenessProbe:
             httpGet:
@@ -281,9 +326,11 @@ spec:
               mountPath: {{ .Values.persistence.mountPath }}
             {{- end }}
             {{- if $hostProcEnabled }}
-            - name: host-proc
-              mountPath: {{ $hostProcMountPath }}
+            {{- range $i, $path := list "stat" "meminfo" "pressure/cpu" "pressure/memory" "pressure/io" }}
+            - name: {{ printf "host-proc-%d" $i }}
+              mountPath: {{ printf "%s/%s" $hostProcMountPath $path }}
               readOnly: true
+            {{- end }}
             {{- end }}
             {{- if $customPatternsFileEnabled }}
             - name: custom-patterns
@@ -305,10 +352,12 @@ spec:
             claimName: {{ include "loki-vl-proxy.persistenceClaimName" . }}
         {{- end }}
         {{- if $hostProcEnabled }}
-        - name: host-proc
+        {{- range $i, $path := list "stat" "meminfo" "pressure/cpu" "pressure/memory" "pressure/io" }}
+        - name: {{ printf "host-proc-%d" $i }}
           hostPath:
-            path: /proc
-            type: Directory
+            path: {{ printf "/proc/%s" $path }}
+            type: File
+        {{- end }}
         {{- end }}
         {{- if $customPatternsFileEnabled }}
         - name: custom-patterns

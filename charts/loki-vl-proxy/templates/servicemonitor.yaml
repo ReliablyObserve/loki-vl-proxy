@@ -23,7 +23,13 @@ spec:
     matchLabels:
       {{- include "loki-vl-proxy.selectorLabels" . | nindent 6 }}
   endpoints:
-    - port: http
+    {{- /*
+        v1.56.0+: /metrics is served on the dedicated `metrics` port
+        (extraArgs.metrics-listen) when service.metrics.enabled is true. Older
+        deployments that kept /metrics on the main `http` port (no metrics-listen
+        set, server.register-instrumentation=true) still scrape the proxy port.
+    */}}
+    - port: {{ if .Values.service.metrics.enabled }}metrics{{ else }}http{{ end }}
       path: /metrics
       {{- with .Values.serviceMonitor.interval }}
       interval: {{ . }}

@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -44,6 +45,7 @@ type envConfig struct {
 	rulerBackendURL   string
 	alertsBackendURL  string
 	procRoot          string
+	hostProcRoot      string
 	tenantMapJSON     string
 	tenantMapFile     string
 	tenantLimitsAllow string
@@ -90,6 +92,7 @@ type proxyRuntimeConfig struct {
 	backendMinVersion                   string
 	backendAllowUnsupportedVersion      bool
 	backendVersionCheckTimeout          time.Duration
+	backendVersionStrict                bool
 	backendBasicAuth                    string
 	backendCompression                  string
 	clientResponseCompression           string
@@ -205,6 +208,9 @@ type proxyRuntimeConfig struct {
 	drilldownFieldBatchWindowMs         int
 	drilldownFieldBatchMaxFields        int
 	statsQueryRangeInterQueryDelayMs    int
+	debugLogRawQueries                  bool
+	metadataDefaultLookback             time.Duration
+	peerInsecureIPAllowlist             bool
 }
 
 type otlpRuntimeConfig struct {
@@ -295,6 +301,18 @@ type runtimeOptions struct {
 	responseCompression         string
 	responseCompressionMinBytes int
 	serverOpts                  serverRuntimeOptions
+	// adminListenAddr, when non-empty AND distinct from serverOpts.listenAddr,
+	// requests a dedicated admin/debug listener (see resolveAdminTarget).
+	adminListenAddr string
+	// metricsListenAddr, when non-empty, requests a dedicated /metrics
+	// listener so the main proxy port carries no observability surface.
+	// The combination metricsListenAddr != "" AND registerInstrumentation
+	// == false is rejected at startup by validateMetricsListen — a metrics
+	// listener with instrumentation disabled would bind a dead port that
+	// only serves 404s. buildRuntime mirrors that contract: it only spawns
+	// the aux listener when BOTH flags agree.
+	metricsListenAddr       string
+	registerInstrumentation bool
 }
 
 type runtimeState struct {
@@ -304,6 +322,18 @@ type runtimeState struct {
 	stopOTLP     func()
 	reloadCh     chan os.Signal
 	shutdownCh   chan os.Signal
+	// auxServers are auxiliary HTTP servers (loopback admin, dedicated
+	// metrics) started alongside the main server. They share the shutdown
+	// channel: handleShutdown stops them as part of the main shutdown flow.
+	auxServers []auxListener
+}
+
+// auxListener wraps a secondary http.Server with its bound address and a
+// human-readable role string for startup/shutdown logs.
+type auxListener struct {
+	role string // "admin" | "metrics"
+	addr string
+	srv  *http.Server
 }
 
 const (
@@ -363,6 +393,8 @@ func run(
 
 	// Server flags
 	listenAddr := fs.String("listen", ":3100", "Address to listen on (Loki-compatible frontend)")
+	adminListen := fs.String("admin-listen", "127.0.0.1:3101", "Address for admin/debug endpoints (/admin/*, /debug/*) when --server.admin-auth-token is empty. Loopback by default so the binary boots safely with no flags. Ignored when --server.admin-auth-token is set — admin endpoints then ride the main --listen address.")
+	metricsListen := fs.String("metrics-listen", "", "Optional dedicated address for the /metrics endpoint. When empty AND --server.register-instrumentation=true, /metrics is served on --listen (back-compat). When non-empty AND --server.register-instrumentation=true, /metrics is served on this dedicated listener.")
 	backendURL := fs.String("backend", "http://localhost:9428", "VictoriaLogs backend URL")
 	rulerBackendURL := fs.String("ruler-backend", "", "Optional alert/ruler backend URL for /rules passthrough (for example vmalert)")
 	alertsBackendURL := fs.String("alerts-backend", "", "Optional alert backend URL for /alerts passthrough (defaults to -ruler-backend when unset)")
@@ -371,6 +403,8 @@ func run(
 	logBuffered := fs.Bool("log-buffered", true, "Write logs in the background to avoid slowing down requests under high load")
 	logStatsInterval := fs.Duration("log-stats-interval", 10*time.Second, "How often to print a request statistics summary (total, errors, latency, cache rate)")
 	logRateThreshold := fs.Int("log-rate-threshold", 10, "When traffic exceeds this rate (req/s), replace per-request logs with periodic summaries. Errors are always logged.")
+	debugLogRawQueries := fs.Bool("debug-log-raw-queries", false, "When true, debug logs include raw LogQL/LogsQL and backend params verbatim. Default false (redacted to sha256+len).")
+	metadataDefaultLookback := fs.Duration("metadata-default-lookback", 12*time.Hour, "Default time window for /labels, /label/{name}/values, and /series when the client omits start/end. 0 disables (unbounded scan).")
 
 	// Cache flags
 	cacheTTL := fs.Duration("cache-ttl", 60*time.Second, "Cache TTL for label/metadata queries")
@@ -411,7 +445,8 @@ func run(
 	otelServiceNamespace := fs.String("otel-service-namespace", "", "OpenTelemetry service.namespace for logs and OTLP metrics")
 	otelServiceInstanceID := fs.String("otel-service-instance-id", "", "OpenTelemetry service.instance.id for logs and OTLP metrics")
 	deploymentEnvironment := fs.String("deployment-environment", "", "OpenTelemetry deployment.environment.name for logs and OTLP metrics")
-	procRoot := fs.String("proc-root", "/proc", "Proc filesystem root for system metrics (/proc for container scope, /host/proc for host scope)")
+	procRoot := fs.String("proc-root", "/proc", "Filesystem root for self/container-scope /proc reads (self/status, self/io, self/stat, self/fd, net/dev). Back-compat: if --host-proc-root is left at its default, this value also seeds the host-scope root.")
+	hostProcRoot := fs.String("host-proc-root", "/proc", "Filesystem root for host-scope /proc reads (stat, meminfo, pressure/{cpu,memory,io}). Set to /host/proc when running with the chart's surgical hostPath mounts. Defaults to /proc.")
 
 	// HTTP server hardening
 	readTimeout := fs.Duration("http-read-timeout", 30*time.Second, "HTTP server read timeout")
@@ -447,8 +482,9 @@ func run(
 	cbOpenDuration := fs.Duration("cb-open-duration", 10*time.Second, "Circuit breaker: how long to stay open before allowing probe requests")
 	cbWindowDuration := fs.Duration("cb-window-duration", 30*time.Second, "Circuit breaker: sliding window for failure counting; failures older than this are discarded")
 	backendMinVersion := fs.String("backend-min-version", "v1.30.0", "Minimum VictoriaLogs version considered fully supported at startup")
-	backendAllowUnsupportedVersion := fs.Bool("backend-allow-unsupported-version", false, "Allow startup with backend versions lower than -backend-min-version (at your own risk)")
+	backendAllowUnsupportedVersion := fs.Bool("backend-allow-unsupported-version", false, "Allow startup with backend versions lower than -backend-min-version (at your own risk). Ignored when --backend-version-strict=true.")
 	backendVersionCheckTimeout := fs.Duration("backend-version-check-timeout", 5*time.Second, "Timeout for startup backend version compatibility check")
+	backendVersionStrict := fs.Bool("backend-version-strict", false, "When true, /health failure, non-2xx response, or missing/sub-min backend semver causes startup to fail. Default false (warn only). Overrides --backend-allow-unsupported-version when both are set.")
 	backendBasicAuth := fs.String("backend-basic-auth", "", "Basic auth for VL backend (user:password)")
 	backendCompression := fs.String("backend-compression", "auto", "Backend HTTP compression preference: auto, gzip, zstd, none")
 	backendTLSSkip := fs.Bool("backend-tls-skip-verify", false, "Skip TLS verification for VL backend")
@@ -516,7 +552,7 @@ func run(
 	// Loki-style auth / instrumentation controls
 	authEnabled := fs.Bool("auth.enabled", false, "Require X-Scope-OrgID on query requests. When false, requests without a tenant header use the backend default tenant.")
 	requireTenantHeader := fs.Bool("require-tenant-header", false, "Reject requests missing X-Scope-OrgID with HTTP 401. Independent of -auth.enabled; use when you want tenant enforcement without full auth.")
-	registerInstrumentation := fs.Bool("server.register-instrumentation", true, "Register instrumentation handlers such as /metrics")
+	registerInstrumentation := fs.Bool("server.register-instrumentation", false, "Register instrumentation handlers such as /metrics. Default false (BREAKING in v1.56.0; was true). Set true and optionally pair with --metrics-listen for a dedicated scrape port. The Helm chart sets this to true automatically so ServiceMonitor scrapes keep working without operator action.")
 	enablePprof := fs.Bool("server.enable-pprof", false, "Expose /debug/pprof/* handlers")
 	enableQueryAnalytics := fs.Bool("server.enable-query-analytics", false, "Expose /debug/queries query analytics")
 	adminAuthToken := fs.String("server.admin-auth-token", "", "Bearer token required for admin/debug endpoints when set")
@@ -571,6 +607,7 @@ func run(
 	peerStatic := fs.String("peer-static", "", `Static peer list for "static" discovery (e.g., "10.0.0.1:3100,10.0.0.2:3100")`)
 	peerTimeout := fs.Duration("peer-timeout", 2*time.Second, "Timeout for peer-cache fetch requests to owner peers")
 	peerAuthToken := fs.String("peer-auth-token", "", "Shared token required on /_cache/get and /_cache/set peer-cache requests when set")
+	peerInsecureIPAllowlist := fs.Bool("peer-insecure-ip-allowlist", false, "When true, allow peer cache requests based on source IP membership alone (legacy behavior). Default false: a shared --peer-auth-token is required when peer discovery is configured.")
 	peerWriteThrough := fs.Bool("peer-write-through", true, "Push cache writes from non-owner peers to owner peers for warmer distributed cache under skewed traffic")
 	peerWriteThroughMinTTL := fs.Duration("peer-write-through-min-ttl", 30*time.Second, "Minimum TTL eligible for peer owner write-through pushes")
 	peerHotReadAheadEnabled := fs.Bool("peer-hot-read-ahead-enabled", false, "Enable bounded hot read-ahead from peer hot index to prewarm local shadows")
@@ -588,6 +625,13 @@ func run(
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+
+	// Track which flags the operator explicitly passed on the command line so
+	// we can distinguish "left at default" from "explicitly set to the same
+	// value as the default" — needed by resolveHostProcRoot to honor an
+	// explicit --host-proc-root=/proc over the legacy --proc-root fallback.
+	explicitFlags := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { explicitFlags[f.Name] = true })
 
 	resolvedResponseCompression, err := resolveResponseCompression(*responseCompression, *enableGzip)
 	if err != nil {
@@ -607,6 +651,7 @@ func run(
 		rulerBackendURL:   *rulerBackendURL,
 		alertsBackendURL:  *alertsBackendURL,
 		procRoot:          *procRoot,
+		hostProcRoot:      *hostProcRoot,
 		tenantMapJSON:     *tenantMapJSON,
 		tenantMapFile:     *tenantMapFile,
 		tenantLimitsAllow: *tenantLimitsAllowPublish,
@@ -636,7 +681,14 @@ func run(
 		*tenantLabel = v
 	}
 
-	if err := validateAdminExposure(envCfg.listenAddr, *registerInstrumentation, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
+	adminTarget := resolveAdminTarget(envCfg.listenAddr, *adminListen, *adminAuthToken)
+	if err := validateAdminExposure(adminTarget, *registerInstrumentation, *enablePprof, *enableQueryAnalytics, *adminAuthToken); err != nil {
+		return err
+	}
+	if err := validatePeerAuth(*peerDiscovery, *peerStatic, *peerAuthToken, *peerInsecureIPAllowlist); err != nil {
+		return err
+	}
+	if err := validateMetricsListen(*metricsListen, *registerInstrumentation); err != nil {
 		return err
 	}
 
@@ -655,7 +707,15 @@ func run(
 		runtime.SetMutexProfileFraction(5)
 		runtime.SetBlockProfileRate(1000)
 	}
-	metrics.SetProcRoot(envCfg.procRoot)
+	// Wire host-scope /proc root. When the operator explicitly passes
+	// --host-proc-root on the command line (tracked via fs.Visit above), its
+	// value wins verbatim — including an explicit --host-proc-root=/proc that
+	// must override any legacy --proc-root=/host/proc. Otherwise, if the
+	// legacy --proc-root flag was set to a non-default value (e.g.
+	// /host/proc), use it as a back-compat seed so existing chart configs
+	// that only pass --proc-root keep working.
+	resolvedHostProcRoot := resolveHostProcRoot(envCfg.hostProcRoot, envCfg.procRoot, explicitFlags["host-proc-root"])
+	metrics.SetHostProcRoot(resolvedHostProcRoot)
 	logSystemMetricsStartup(logger)
 
 	fatal := func(msg string, args ...any) {
@@ -703,6 +763,7 @@ func run(
 			backendMinVersion:                   *backendMinVersion,
 			backendAllowUnsupportedVersion:      *backendAllowUnsupportedVersion,
 			backendVersionCheckTimeout:          *backendVersionCheckTimeout,
+			backendVersionStrict:                *backendVersionStrict,
 			backendBasicAuth:                    *backendBasicAuth,
 			backendCompression:                  resolvedBackendCompression,
 			clientResponseCompression:           resolvedResponseCompression,
@@ -790,6 +851,7 @@ func run(
 			peerStatic:                          *peerStatic,
 			peerTimeout:                         *peerTimeout,
 			peerAuthToken:                       *peerAuthToken,
+			peerInsecureIPAllowlist:             *peerInsecureIPAllowlist,
 			peerWriteThrough:                    *peerWriteThrough,
 			peerWriteThroughMinTTL:              *peerWriteThroughMinTTL,
 			peerHotReadAheadEnabled:             *peerHotReadAheadEnabled,
@@ -818,6 +880,8 @@ func run(
 			drilldownFieldBatchWindowMs:         *drilldownFieldBatchWindowMs,
 			drilldownFieldBatchMaxFields:        *drilldownFieldBatchMaxFields,
 			statsQueryRangeInterQueryDelayMs:    *statsQueryRangeInterQueryDelayMs,
+			debugLogRawQueries:                  *debugLogRawQueries,
+			metadataDefaultLookback:             *metadataDefaultLookback,
 		},
 		otlpCfg: otlpRuntimeConfig{
 			endpoint:              envCfg.otlpEndpoint,
@@ -851,6 +915,9 @@ func run(
 				overloadMaxAge: *httpConnOverloadMaxAge,
 			},
 		},
+		adminListenAddr:         adminTarget,
+		metricsListenAddr:       *metricsListen,
+		registerInstrumentation: *registerInstrumentation,
 	}, logger, notify, newPusher)
 	if err != nil {
 		return fmt.Errorf("failed to initialize runtime: %w", err)
@@ -871,7 +938,37 @@ func run(
 		tlsCertFile: *tlsCertFile,
 		tlsKeyFile:  *tlsKeyFile,
 	}, logger, fatal)
+	for _, aux := range runtime.auxServers {
+		aux := aux
+		logger.Info("aux listener starting", "role", aux.role, "address", aux.addr)
+		go func() {
+			if err := aux.srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				fatal("aux server failed", "role", aux.role, "address", aux.addr, "error", err)
+			}
+		}()
+	}
 	handleShutdownFn(runtime.shutdownCh, runtime.server, 30*time.Second, logger)
+	// Shut down aux listeners in parallel with a per-aux 30s budget. handleShutdown
+	// already returned synchronously above, so a hung aux handler cannot starve
+	// main shutdown; what we need to bound is *total* aux shutdown time so the
+	// process exits within Kubernetes' default terminationGracePeriodSeconds=30
+	// rather than N*30s for N aux servers.
+	var auxWG sync.WaitGroup
+	for _, aux := range runtime.auxServers {
+		aux := aux
+		auxWG.Add(1)
+		go func() {
+			defer auxWG.Done()
+			shutCtx, cancelShut := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelShut()
+			if err := aux.srv.Shutdown(shutCtx); err != nil {
+				logger.Error("aux server shutdown error", "role", aux.role, "address", aux.addr, "error", err)
+			} else {
+				logger.Info("aux listener stopped", "role", aux.role, "address", aux.addr)
+			}
+		}()
+	}
+	auxWG.Wait()
 	if err := runtime.proxy.Shutdown(context.Background()); err != nil {
 		logger.Error("proxy shutdown hook failed", "error", err)
 	}
@@ -987,8 +1084,35 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 
 	stopOTLP := startOTLPMetricsPusher(opts.otlpCfg, p.GetMetrics(), logger, newPusher)
 
+	// Decide listener topology. The default (no flags) gives us a dedicated
+	// loopback admin listener on opts.adminListenAddr; operators with an admin
+	// token keep everything on the main listener (back-compat). Metrics moves
+	// to its own listener when opts.metricsListenAddr is set.
+	mainAddr := opts.serverOpts.listenAddr
+	adminAddr := opts.adminListenAddr
+	metricsAddr := strings.TrimSpace(opts.metricsListenAddr)
+	splitAdmin := adminAddr != "" && adminAddr != mainAddr
+	splitMetrics := metricsAddr != "" && opts.registerInstrumentation
+
 	mux := http.NewServeMux()
-	p.RegisterRoutes(mux)
+	if !splitAdmin && !splitMetrics {
+		// Monolithic — single listener serves everything (current behavior).
+		p.RegisterRoutes(mux)
+	} else {
+		// Multi-listener — main listener gets proxy + peer-cache routes only.
+		// Admin and metrics route registration moves to the aux muxes below.
+		p.RegisterProxyRoutes(mux)
+		if !splitMetrics {
+			// Back-compat: keep /metrics on main listener when no dedicated
+			// metrics port is requested but instrumentation is enabled.
+			p.RegisterMetricsRoute(mux)
+		}
+		if !splitAdmin {
+			// Token-protected admin endpoints stay on the main listener.
+			p.RegisterAdminRoutes(mux)
+		}
+	}
+
 	serverOpts := opts.serverOpts
 	rotator := newHTTPConnRotator(serverOpts.connRotation, p.GetMetrics(), p.DownstreamConnectionPressure)
 	serverOpts.connContext = nil
@@ -1005,6 +1129,38 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 	}
 	srv.ConnState = p.GetMetrics().ConnStateHook()
 
+	// Build any auxiliary listeners requested by the topology decision above.
+	// Each aux server uses the same hardening timeouts as the main listener
+	// (read/write/idle/header) but DOES NOT inherit TLS or connection-rotation
+	// hooks — admin and metrics are plaintext loopback / cluster-internal
+	// endpoints, not user-facing TLS surfaces.
+	var auxServers []auxListener
+	buildAux := func(addr, role string, h http.Handler) auxListener {
+		return auxListener{
+			role: role,
+			addr: addr,
+			srv: &http.Server{
+				Addr:              addr,
+				Handler:           h,
+				ReadTimeout:       opts.serverOpts.readTimeout,
+				ReadHeaderTimeout: opts.serverOpts.readHeaderTimeout,
+				WriteTimeout:      opts.serverOpts.writeTimeout,
+				IdleTimeout:       opts.serverOpts.idleTimeout,
+				MaxHeaderBytes:    opts.serverOpts.maxHeaderBytes,
+			},
+		}
+	}
+	if splitAdmin {
+		adminMux := http.NewServeMux()
+		p.RegisterAdminRoutes(adminMux)
+		auxServers = append(auxServers, buildAux(adminAddr, "admin", adminMux))
+	}
+	if splitMetrics {
+		metricsMux := http.NewServeMux()
+		p.RegisterMetricsRoute(metricsMux)
+		auxServers = append(auxServers, buildAux(metricsAddr, "metrics", metricsMux))
+	}
+
 	reloadCh, shutdownCh := buildSignalChannels(notify)
 	return &runtimeState{
 		proxy:  p,
@@ -1016,6 +1172,7 @@ func buildRuntime(opts runtimeOptions, logger *slog.Logger, notify signalNotifie
 		stopOTLP:   stopOTLP,
 		reloadCh:   reloadCh,
 		shutdownCh: shutdownCh,
+		auxServers: auxServers,
 	}, nil
 }
 
@@ -1126,7 +1283,73 @@ func normalizeFrontendCompressionSetting(mode string) (string, error) {
 	}
 }
 
-func validateAdminExposure(listenAddr string, registerInstrumentation, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
+// validatePeerAuth refuses to start when the peer cache is configured but no
+// shared --peer-auth-token is set, unless the operator has explicitly opted
+// into the legacy IP-allowlist-only behavior with
+// --peer-insecure-ip-allowlist=true.
+//
+// Peer cache is considered "configured" when either --peer-discovery or
+// --peer-static is non-empty — a half-configured CLI invocation
+// (e.g. --peer-static set without --peer-discovery) still counts so it cannot
+// slip past the validator with the IP-allowlist fallback silently engaged.
+//
+// The error message names both the required flag and the explicit opt-out so
+// operators can choose without grepping docs.
+func validatePeerAuth(discovery, peers, token string, insecureAllowlist bool) error {
+	enabled := strings.TrimSpace(discovery) != "" || strings.TrimSpace(peers) != ""
+	if !enabled {
+		return nil
+	}
+	if strings.TrimSpace(token) != "" {
+		return nil
+	}
+	if insecureAllowlist {
+		return nil
+	}
+	return fmt.Errorf("peer cache is configured (discovery=%q, peers=%q) but --peer-auth-token is empty. "+
+		"Set --peer-auth-token to a shared secret, or pass --peer-insecure-ip-allowlist=true to keep the legacy IP-only behavior",
+		discovery, peers)
+}
+
+// validateMetricsListen refuses startup when --metrics-listen is set but
+// -server.register-instrumentation=false. The dedicated metrics listener
+// only serves the /metrics handler, which is itself gated by the
+// register-instrumentation flag — booting it without instrumentation would
+// bind a port that only returns 404s, silently mis-leading operators (and
+// any ServiceMonitor / Prometheus scrape pointed at it).
+//
+// Mirrors validatePeerAuth/validateAdminExposure: clear error naming both
+// flags so operators can choose without grepping docs.
+func validateMetricsListen(metricsListen string, registerInstrumentation bool) error {
+	if strings.TrimSpace(metricsListen) == "" {
+		return nil
+	}
+	if !registerInstrumentation {
+		return fmt.Errorf("--metrics-listen=%q requires -server.register-instrumentation=true; remove --metrics-listen or enable instrumentation", metricsListen)
+	}
+	return nil
+}
+
+// resolveAdminTarget picks the listener address that hosts admin/debug
+// endpoints. When -server.admin-auth-token is non-empty (trimmed), admin
+// endpoints ride the main proxy listener — operators who set a token already
+// accept the prior public-exposure semantics. When the token is empty, admin
+// endpoints move to the dedicated --admin-listen address (loopback by default)
+// so the binary boots safely with no flags and admin surfaces are unreachable
+// from off-host.
+func resolveAdminTarget(mainListen, adminListen, adminAuthToken string) string {
+	if strings.TrimSpace(adminAuthToken) != "" {
+		return mainListen
+	}
+	return adminListen
+}
+
+// validateAdminExposure refuses startup when admin/debug endpoints are about
+// to be wired onto a non-loopback address with no -server.admin-auth-token.
+// adminTarget is the address that will actually host the admin/debug surfaces
+// (resolved by resolveAdminTarget) — main listener if a token is set, dedicated
+// --admin-listen address otherwise.
+func validateAdminExposure(adminTarget string, registerInstrumentation, enablePprof, enableQueryAnalytics bool, adminAuthToken string) error {
 	if strings.TrimSpace(adminAuthToken) != "" {
 		return nil
 	}
@@ -1135,10 +1358,10 @@ func validateAdminExposure(listenAddr string, registerInstrumentation, enablePpr
 	if !registerInstrumentation && !enablePprof && !enableQueryAnalytics {
 		return nil
 	}
-	if isLoopbackListenAddr(listenAddr) {
+	if isLoopbackListenAddr(adminTarget) {
 		return nil
 	}
-	return fmt.Errorf("server.admin-auth-token is required when admin/debug endpoints are enabled on non-loopback listen addresses")
+	return fmt.Errorf("server.admin-auth-token is required when admin/debug endpoints are enabled on non-loopback address %q", adminTarget)
 }
 
 func isLoopbackListenAddr(listenAddr string) bool {
@@ -1223,6 +1446,27 @@ func parseForwardHeaders(csv string, includeAuthorization bool) []string {
 	return out
 }
 
+// resolveHostProcRoot picks the effective host-scope /proc root from the
+// host-proc-root flag value, the legacy proc-root flag value, and whether the
+// operator explicitly passed --host-proc-root on the command line.
+//
+// Precedence:
+//  1. If --host-proc-root was explicitly set (any value, including "/proc"),
+//     that value wins verbatim.
+//  2. Otherwise, if the legacy --proc-root flag was set to a non-default
+//     value (anything other than "/proc"), use it for back-compat with
+//     existing chart configs that only pass --proc-root.
+//  3. Otherwise return the default --host-proc-root value ("/proc").
+func resolveHostProcRoot(hostProcRoot, procRoot string, hostProcRootExplicit bool) string {
+	if hostProcRootExplicit {
+		return hostProcRoot
+	}
+	if procRoot != "" && procRoot != "/proc" {
+		return procRoot
+	}
+	return hostProcRoot
+}
+
 //nolint:gocyclo // applies ~40 distinct environment-variable overrides onto the config struct; the long if-chain is the simplest correct shape.
 func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	if v := getenv("LISTEN_ADDR"); v != "" {
@@ -1239,6 +1483,9 @@ func applyEnvOverrides(cfg envConfig, getenv func(string) string) envConfig {
 	}
 	if v := getenv("PROC_ROOT"); v != "" && cfg.procRoot == "/proc" {
 		cfg.procRoot = v
+	}
+	if v := getenv("HOST_PROC_ROOT"); v != "" && cfg.hostProcRoot == "/proc" {
+		cfg.hostProcRoot = v
 	}
 	if v := getenv("TENANT_MAP"); v != "" && cfg.tenantMapJSON == "" {
 		cfg.tenantMapJSON = v
@@ -1689,6 +1936,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		BackendMinVersion:                  cfg.backendMinVersion,
 		BackendAllowUnsupportedVersion:     cfg.backendAllowUnsupportedVersion,
 		BackendVersionCheckTimeout:         cfg.backendVersionCheckTimeout,
+		BackendVersionStrict:               cfg.backendVersionStrict,
 		BackendBasicAuth:                   cfg.backendBasicAuth,
 		BackendCompression:                 cfg.backendCompression,
 		ClientResponseCompression:          cfg.clientResponseCompression,
@@ -1767,6 +2015,7 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		PatternsPeerWarmTimeout:            cfg.patternsPeerWarmTimeout,
 		PeerCache:                          peerCache,
 		PeerAuthToken:                      cfg.peerAuthToken,
+		PeerInsecureIPAllowlist:            cfg.peerInsecureIPAllowlist,
 		ColdBackend: proxy.ColdBackendConfig{
 			URL:             cfg.coldBackendURL,
 			Boundary:        cfg.coldBackendBoundary,
@@ -1783,6 +2032,8 @@ func buildProxyConfig(cfg proxyRuntimeConfig) (proxy.Config, error) {
 		DrilldownFieldBatchWindowMs:      cfg.drilldownFieldBatchWindowMs,
 		DrilldownFieldBatchMaxFields:     cfg.drilldownFieldBatchMaxFields,
 		StatsQueryRangeInterQueryDelayMs: cfg.statsQueryRangeInterQueryDelayMs,
+		DebugLogRawQueries:               cfg.debugLogRawQueries,
+		MetadataDefaultLookback:          cfg.metadataDefaultLookback,
 	}, nil
 }
 
@@ -2003,10 +2254,14 @@ func logProxyStartup(logger *slog.Logger, proxyCfg proxy.Config, peerSelf, peerD
 		c.SetL3(proxyCfg.PeerCache)
 		logger.Info("peer cache enabled", "self", peerSelf, "discovery", peerDiscovery)
 		if strings.TrimSpace(proxyCfg.PeerAuthToken) == "" {
+			// Reaching this branch implies the startup validator allowed the
+			// missing-token configuration, which it only does when the operator
+			// has explicitly set --peer-insecure-ip-allowlist=true. Surface that
+			// fact and tell them how to harden.
 			logger.Warn(
-				"peer cache shared token not configured",
+				"running in insecure IP-allowlist mode (--peer-insecure-ip-allowlist=true)",
 				"auth_mode", "peer_membership_only",
-				"hint", "set -peer-auth-token fleet-wide to avoid transient startup/discovery 403s on peer cache endpoints",
+				"hint", "set --peer-auth-token (shared across the fleet) and remove --peer-insecure-ip-allowlist to harden",
 			)
 		} else {
 			logger.Info("peer cache shared token enabled", "auth_mode", "shared_token")

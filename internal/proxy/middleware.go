@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -255,11 +256,25 @@ func (p *Proxy) isKnownPeerHost(host string) bool {
 func (p *Proxy) peerCacheMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if p.peerAuthToken != "" {
-			if r.Header.Get("X-Peer-Token") != p.peerAuthToken {
+			// Constant-time compare to avoid timing-distinguishing the token
+			// prefix. Reject any header that differs in length or content.
+			got := r.Header.Get("X-Peer-Token")
+			if subtle.ConstantTimeEq(int32(len(got)), int32(len(p.peerAuthToken))) != 1 ||
+				subtle.ConstantTimeCompare([]byte(got), []byte(p.peerAuthToken)) != 1 {
 				p.writeError(w, http.StatusUnauthorized, "peer authentication required")
 				return
 			}
 			next.ServeHTTP(w, r)
+			return
+		}
+
+		// No shared token configured. By default (peerInsecureIPAllowlist=false)
+		// we refuse the request — the startup validator should have prevented
+		// this configuration in the first place. The legacy IP-membership
+		// fallback is only engaged when the operator explicitly opted in via
+		// --peer-insecure-ip-allowlist=true.
+		if !p.peerInsecureIPAllowlist {
+			p.writeError(w, http.StatusUnauthorized, "peer authentication required")
 			return
 		}
 

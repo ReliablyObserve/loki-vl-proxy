@@ -19,5 +19,11 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    {{- if .Values.service.metrics.enabled }}
+    - port: {{ .Values.service.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+    {{- end }}
   selector:
     {{- include "loki-vl-proxy.selectorLabels" . | nindent 4 }}

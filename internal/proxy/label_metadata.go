@@ -120,6 +120,30 @@ func appendUniqueStrings(dst []string, values ...string) []string {
 	return dst
 }
 
+// applyDefaultMetadataLookback injects a now-lookback..now window when the client
+// supplies neither start nor end, leaving any client-supplied bound untouched.
+// Used by both metadataQueryParams (/labels, /label/{name}/values) and handleSeries
+// (/series) so the default-lookback guard cannot drift between the two surfaces.
+//
+// Semantics:
+//   - both blank + lookback > 0 → inject (now-lookback, now)
+//   - either bound supplied     → return as-is (client wins, no half-injection)
+//   - lookback == 0             → return as-is (disables the guard, restores
+//     prior unbounded-scan behavior; opt-out for operators who want full retention)
+//
+// The lookback==0 escape hatch is a deliberate operator override surfaced via
+// the --metadata-default-lookback=0 flag.
+func applyDefaultMetadataLookback(start, end string, lookback time.Duration) (string, string) {
+	if lookback <= 0 {
+		return start, end
+	}
+	if strings.TrimSpace(start) != "" || strings.TrimSpace(end) != "" {
+		return start, end
+	}
+	now := time.Now()
+	return fmt.Sprintf("%d", now.Add(-lookback).UnixNano()), fmt.Sprintf("%d", now.UnixNano())
+}
+
 func (p *Proxy) metadataQueryParams(ctx context.Context, candidate, start, end, limit, search string) (url.Values, error) {
 	params := url.Values{}
 	translated, err := p.translateQueryWithContext(ctx, candidate)
@@ -127,6 +151,11 @@ func (p *Proxy) metadataQueryParams(ctx context.Context, candidate, start, end, 
 		return nil, err
 	}
 	params.Set("query", translated)
+	// Inject a default-lookback window when the client omits both bounds, so
+	// /labels and /label/{name}/values do not trigger a full-retention VL scan.
+	// Shared with handleSeries (/series) via applyDefaultMetadataLookback to
+	// keep all three metadata surfaces in lockstep.
+	start, end = applyDefaultMetadataLookback(start, end, p.metadataDefaultLookback)
 	if strings.TrimSpace(start) != "" {
 		params.Set("start", start)
 	}

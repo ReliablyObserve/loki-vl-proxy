@@ -272,6 +272,9 @@ func TestPeerCacheMiddleware(t *testing.T) {
 		defer pc.Close()
 		p := newTestProxy(t, "http://unused")
 		p.peerCache = pc
+		// Legacy IP-allowlist fallback is opt-in as of the secure-defaults
+		// hardening — operator must pass --peer-insecure-ip-allowlist=true.
+		p.peerInsecureIPAllowlist = true
 
 		var called bool
 		handler := p.peerCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -299,6 +302,8 @@ func TestPeerCacheMiddleware(t *testing.T) {
 		defer pc.Close()
 		p := newTestProxy(t, "http://unused")
 		p.peerCache = pc
+		// Same opt-in needed to exercise the IP-allowlist fallback path.
+		p.peerInsecureIPAllowlist = true
 		handler := p.peerCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Fatal("unexpected next handler call")
 		}))
@@ -310,6 +315,48 @@ func TestPeerCacheMiddleware(t *testing.T) {
 
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("expected 403, got %d", w.Code)
+		}
+	})
+
+	t.Run("default_rejects_unauthenticated_without_insecure_flag", func(t *testing.T) {
+		// Regression guard for finding #2: with no shared token and the
+		// insecure flag at its default (false), every peer-cache request must
+		// be rejected with 401, even when the remote address is a known peer.
+		// The startup validator should prevent this configuration; this test
+		// asserts the middleware is defense-in-depth.
+		pc := cache.NewPeerCache(cache.PeerConfig{
+			SelfAddr:      "10.0.0.1:3100",
+			DiscoveryType: "static",
+			StaticPeers:   "10.0.0.2:3100",
+			Timeout:       50 * time.Millisecond,
+		})
+		defer pc.Close()
+		p := newTestProxy(t, "http://unused")
+		p.peerCache = pc
+		// peerAuthToken empty, peerInsecureIPAllowlist=false → reject
+		handler := p.peerCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("unexpected next handler call: middleware must reject in default-deny mode")
+		}))
+		// Use an address that IS in the peer list to prove the rejection is
+		// not just IP filtering — token requirement supersedes IP membership.
+		req := httptest.NewRequest(http.MethodGet, "/_cache/get?key=x", nil)
+		req.RemoteAddr = "10.0.0.2:1234"
+		w := httptest.NewRecorder()
+
+		handler.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401 in default-deny mode, got %d body=%q", w.Code, w.Body.String())
+		}
+		// Body is JSON-encoded; assert the unified terse error message is the
+		// exact value of the "error" field, and that the verbose flag-name
+		// hint has been removed (it lives in the structured log line instead).
+		body := w.Body.String()
+		if !strings.Contains(body, `"error":"peer authentication required"`) {
+			t.Fatalf("error body should be unified terse message, got %q", body)
+		}
+		if strings.Contains(body, "peer-auth-token") {
+			t.Fatalf("error body should not leak flag names to the wire, got %q", body)
 		}
 	})
 

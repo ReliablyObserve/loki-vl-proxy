@@ -55,12 +55,19 @@ extraArgs:
   backend: "http://victorialogs:9428"
 
   # --- Concurrency & rate limiting ---
-  # Disabled by default; the proxy sits behind Kubernetes resource limits
-  # and VictoriaLogs has its own rate limiting. Enabling these at proxy level
-  # adds a surprise throttle — set only if you intentionally want per-client caps.
-  max-concurrent: "0"           # 0 = unlimited (binary default: 100)
-  rate-limit-per-second: "0"    # 0 = unlimited (binary default: 50 req/s per client)
-  rate-limit-burst: "0"         # 0 = unlimited (binary default: 100)
+  # BREAKING (v1.56.0): the chart now enforces conservative request limits by
+  # default. Previously all three knobs defaulted to "0" (unlimited / disabled),
+  # which let a single noisy client drive expensive fanout into VictoriaLogs.
+  # The new defaults align with the binary's rate-limit defaults (50/100);
+  # max-concurrent is set to 64 (tighter than the binary's 100) to leave
+  # backend headroom for a small Grafana fleet. See docs/tuning.md for
+  # guidance on sizing for your workload.
+  #
+  # 0 = unlimited (NOT recommended — a single noisy client can drive expensive
+  # fanout). To restore the prior unlimited behavior, set all three back to "0".
+  max-concurrent: "64"          # per-replica in-flight ceiling; 0 = unlimited (NOT recommended)
+  rate-limit-per-second: "50"   # per-client token bucket refill (req/s); 0 = disabled
+  rate-limit-burst: "100"       # per-client burst size; 0 = disabled
 
   # --- Cache ---
   cache-ttl: "60s"
@@ -156,6 +163,7 @@ extraArgs:
   # log-buffered: "true"            # write logs in the background for better performance under load
   # log-stats-interval: "10s"       # how often to print a request statistics summary
   # log-rate-threshold: "10"        # above this req/s, replace per-request logs with periodic summaries
+  # debug-log-raw-queries: "false"  # when true, debug logs include raw LogQL/LogsQL and backend params verbatim (default false: redacted to sha256+len)
 
   # --- HTTP server hardening ---
   http-read-timeout: "30s"
@@ -240,8 +248,10 @@ extraArgs:
   # patterns-autodetect-from-queries: "false"         # warm /patterns from successful query/query_range responses
   # Sizing hint: plan roughly ~96 bytes RAM/value and ~60% of RAM footprint on disk snapshot.
   # For persisted patterns/label-values snapshots, prefer StatefulSet + PVC.
-  # System metrics scope override (chart auto-injects when systemMetrics.hostProc.enabled=true):
-  # proc-root: "/host/proc"
+  # System metrics scope (the chart auto-injects host-proc-root=/host/proc when
+  # systemMetrics.hostProc.enabled=true; uncomment here only to override):
+  # host-proc-root: "/host/proc"          # filesystem root for host-scope reads (stat, meminfo, pressure/*)
+  # proc-root: "/proc"                    # filesystem root for self/container-scope reads (self/*, net/dev)
   #
   # Go runtime tuning (see also goMemLimitPercent/goMemLimit Helm values):
   # go-mem-limit: "0"                          # explicit GOMEMLIMIT in bytes (overrides go-mem-limit-percent)
@@ -255,6 +265,7 @@ extraArgs:
   # Full optional flag catalog (commented defaults from runtime):
   # cache-max-bytes: "268435456"                # 256Mi L1 max bytes
   # labels-cache-ttl: "5m"                     # TTL for /labels and /label/{name}/values cache entries; keep-warm interval is derived automatically
+  # metadata-default-lookback: "12h"            # default time window for /labels, /label/{name}/values, and /series when the client omits start/end; 0 disables (unbounded scan)
   # warmup-max-jitter: "10s"                   # max random delay before label cache warmup starts; spread across fleet to prevent thundering herd on restart (recommended: 5–15s for ≥3 instances)
   # compat-cache-enabled: "true"                # enable Tier0 compatibility-edge cache
   # compat-cache-max-percent: "10"              # Tier0 share of L1 cache budget (max 50)
@@ -262,6 +273,7 @@ extraArgs:
   # backend-min-version: "v1.30.0"              # startup minimum supported VictoriaLogs version
   # backend-allow-unsupported-version: "false"  # allow older backend at your own risk
   # backend-version-check-timeout: "5s"         # startup backend version check timeout
+  # backend-version-strict: "false"             # when true, /health failure, non-2xx, or missing/sub-min backend semver fails startup (default false: warn only); overrides --backend-allow-unsupported-version
   # backend-tls-skip-verify: "false"
   # deployment-environment: ""                  # OTel deployment.environment.name
   # otel-service-name: "loki-vl-proxy"
@@ -287,7 +299,16 @@ extraArgs:
   # metrics.trust-proxy-headers: "false"
   # metrics.export-sensitive-labels: "false"    # include tenant/client labels in all Prometheus metrics
   # server.metrics-max-concurrency: "0"         # bound concurrent /metrics scrapes (0=unlimited)
-  # server.register-instrumentation: "true"     # expose /metrics
+  # --- /metrics + admin/debug listener topology (v1.56.0 BREAKING) ---
+  # Binary defaults flipped: server.register-instrumentation is now false in the
+  # raw binary and admin/debug routes move to a loopback --admin-listen so a
+  # plain `loki-vl-proxy -backend=...` invocation boots cleanly. The chart
+  # restores Prometheus-friendly behavior by explicitly enabling the metrics
+  # surface on a dedicated port so ServiceMonitor / Prometheus scrapes keep
+  # working without any operator action.
+  server.register-instrumentation: "true"     # chart-default: expose /metrics so ServiceMonitor keeps scraping
+  metrics-listen: ":9091"                      # dedicated metrics listener (Service exposes targetPort: metrics)
+  admin-listen: "127.0.0.1:3101"               # loopback-only admin/debug listener; never published via Service. Set --server.admin-auth-token to move admin onto the main port.
   # server.enable-pprof: "false"
   # server.enable-query-analytics: "false"
   # server.admin-auth-token: ""                 # bearer token for admin/debug endpoints
@@ -296,7 +317,8 @@ extraArgs:
   # ruler-backend: ""                           # optional /rules passthrough backend
   # alerts-backend: ""                          # optional /alerts passthrough backend
   # extra-label-fields: "service.name,host.name"
-  # peer-auth-token: ""                         # strongly recommended for fleets; avoids transient discovery/IP-only peer auth 403s on /_cache/get and /_cache/set
+  # peer-auth-token: ""                         # DO NOT SET HERE — chart manages this flag from a Secret when peerCache.enabled=true; setting it here renders a duplicate -peer-auth-token CLI arg and the Go flag package will fatal at startup. Use peerCache.authToken or peerCache.existingSecret instead (see below). Rendering will fail with a clear error if this entry is uncommented while peerCache.enabled=true.
+  # peer-insecure-ip-allowlist: "false"          # when true, allows legacy IP-only peer auth on /_cache/* (NOT recommended; default false requires --peer-auth-token)
   # peer-timeout: "2s"                          # timeout for peer-cache fetches to owner peers
   # peer-write-through: "true"                  # push eligible non-owner writes to owner peer
   # peer-write-through-min-ttl: "30s"           # only TTL >= threshold is pushed to owner peer
@@ -528,6 +550,13 @@ service:
   # - PreferSameNode
   # - PreferClose (deprecated alias for PreferSameZone)
   trafficDistribution: ""
+  # Optional dedicated /metrics ServicePort. Enabled by default so the
+  # extraArgs.metrics-listen=":9091" port is reachable by ServiceMonitor /
+  # Prometheus. Disable if you scrape via pod IP or run Prometheus on the
+  # same node.
+  metrics:
+    enabled: true
+    port: 9091
 
 # Headless peer-discovery service used by StatefulSet / peerCache DNS mode.
 peerService:
@@ -743,10 +772,23 @@ extraVolumes: []
 extraVolumeMounts: []
 
 # --- System metrics (/proc) ---
-# When enabled, mount host /proc read-only and point the proxy at that mount
-# so CPU/memory/disk/network/PSI metrics reflect node-level context.
-# Enabled by default to keep system-resource panels/alerts functional out of the box.
-# Disable only if your platform policy disallows hostPath mounts.
+# When enabled, the chart mounts FIVE specific host /proc files (not the full
+# /proc directory) read-only and passes --host-proc-root=<mountPath> so the
+# proxy reads host CPU, memory, and PSI counters from them:
+#   /proc/stat              -> {mountPath}/stat              (host CPU)
+#   /proc/meminfo           -> {mountPath}/meminfo           (host memory)
+#   /proc/pressure/cpu      -> {mountPath}/pressure/cpu      (PSI cpu)
+#   /proc/pressure/memory   -> {mountPath}/pressure/memory   (PSI memory)
+#   /proc/pressure/io       -> {mountPath}/pressure/io       (PSI io)
+# Each mount is a hostPath of type: File, scoped to a single counter file.
+# Per-process information for other workloads on the host is NOT reachable.
+# Self/container-scope metrics (self/{status,io,stat,fd}, net/dev) come from
+# the container's own /proc and need no hostPath.
+#
+# Enabled by default so system-resource panels/alerts work out of the box.
+# Disable on restricted PSA clusters that forbid hostPath mounts; doing so
+# drops the host_cpu_*, host_memory_*, and process_pressure_* metric families
+# but leaves process_*, runtime_*, and network counters intact.
 systemMetrics:
   hostProc:
     enabled: true
@@ -773,6 +815,47 @@ httpRoute:
 # so non-owner pods can warm owner shards under skewed traffic.
 peerCache:
   enabled: false
+
+  # --- Peer auth token (required when peerCache.enabled=true) ---
+  # As of the secure-defaults hardening, the proxy refuses to start when peer
+  # discovery is configured without a shared token (unless
+  # --peer-insecure-ip-allowlist=true, NOT recommended). The chart resolves the
+  # token in this order:
+  #
+  #   A) authToken set to a non-empty literal:
+  #        chart renders <release>-peer-auth-literal Secret with that value.
+  #   B) existingSecret set:
+  #        chart references the operator-managed Secret; emits no Secret of its own.
+  #   C) both unset on first install:
+  #        chart generates a 32-byte randAlphaNum token into <release>-peer-auth.
+  #   D) both unset on upgrade:
+  #        chart reuses the existing <release>-peer-auth value via `lookup`
+  #        (idempotent — `helm upgrade` does not rotate the token unless you
+  #        delete the Secret first).
+  #
+  # Explicit empty-string authToken (authToken: "") FAILS templating with a
+  # clear error — set a value, remove the key, or use existingSecret.
+  #
+  # CAVEAT — GitOps and restricted RBAC workflows:
+  # Case D relies on Helm's `lookup` to read the existing Secret from the live
+  # cluster. Two scenarios silently break this:
+  #   1) GitOps `helm template > rendered.yaml` (Argo CD, Flux render-then-apply,
+  #      offline rendering): no live cluster context, `lookup` returns empty,
+  #      and a fresh random token is rendered on every cycle — the fleet
+  #      thrashes (peers reject each other after each sync).
+  #   2) Install/upgrade under restricted RBAC: if the install SA cannot list
+  #      Secrets in the release namespace, `lookup` returns empty (same outcome
+  #      as no Secret existing) — every upgrade rotates the token.
+  # For both, do NOT rely on chart-generated random tokens. Pin the token
+  # explicitly via case A (authToken set to a literal, encrypted via
+  # sealed-secrets / SOPS / external-secrets / git-crypt) or case B
+  # (existingSecret referencing an externally-managed Secret outside the chart's
+  # render output). Both are idempotent across renders and RBAC boundaries.
+  #
+  # authToken: ""                    # literal token (case A)
+  # existingSecret: ""               # external Secret name (case B)
+  # existingSecretKey: "token"       # key within existingSecret (defaults to "token")
+
   # Discovery mode: "dns" | "srv" | "http" | "static"
   #
   # dns  — resolves a headless service A-record; only ready pods appear (k8s readiness gating).

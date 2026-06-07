@@ -31,13 +31,50 @@ type processCPUStat struct {
 }
 
 var (
-	procRoot     = "/proc"
+	// hostProcRoot is the filesystem root for host-scope /proc reads
+	// (the files listed in hostProcFiles). Defaults to "/proc". The chart
+	// sets this to "/host/proc" when systemMetrics.hostProc.enabled is true.
+	// Concurrency: must be set before the first SystemMetrics.WritePrometheus
+	// invocation (i.e. during startup wiring); not safe to mutate concurrently
+	// with metric reads.
+	hostProcRoot = "/proc"
+	// selfProcRoot is the filesystem root for self/container-scope /proc
+	// reads (self/*, net/dev). Always reads from the container's own /proc;
+	// the kernel resolves /self per-caller and the container has its own netns.
+	// Concurrency: must be set before the first SystemMetrics.WritePrometheus
+	// invocation; not safe to mutate concurrently with metric reads (tests
+	// swap this only while no collector is running).
 	selfProcRoot = "/proc"
+	// cgroupRoot is the filesystem root for cgroup v2 reads used by
+	// container-scope memory/CPU pressure helpers. Concurrency: must be set
+	// before the first SystemMetrics.WritePrometheus invocation; not safe to
+	// mutate concurrently with metric reads.
 	cgroupRoot   = "/sys/fs/cgroup"
 	procReadFile = os.ReadFile
 	procReadDir  = os.ReadDir
 	systemGOOS   = runtime.GOOS
 )
+
+// hostProcFiles lists every host-scope /proc path the system metrics collector
+// reads. Two roles:
+//  1. The Helm chart mounts exactly these files (and only these) when
+//     systemMetrics.hostProc.enabled is true, shrinking the hostPath surface
+//     from the full /proc directory down to 5 files. See
+//     charts/loki-vl-proxy/templates/deployment.yaml.
+//  2. system_test.go scans this file for procPath(...) calls and fails if any
+//     new host-scope path is added without updating this list — the chart
+//     mounts would then silently miss the new file.
+//
+// Self/container-scope reads use selfProcPath(...) and do NOT need entries
+// here — they read from the calling process's /proc (kernel resolves /self
+// per-caller and the container has its own netns for /net).
+var hostProcFiles = []string{
+	"stat",
+	"meminfo",
+	"pressure/cpu",
+	"pressure/memory",
+	"pressure/io",
+}
 
 // SystemStartupCheck describes startup-time availability of /proc-backed metric families.
 type SystemStartupCheck struct {
@@ -75,19 +112,37 @@ func (c SystemStartupCheck) IssueList() []string {
 	return out
 }
 
-// SetProcRoot overrides the root used for /proc-backed system metrics.
+// SetProcRoot overrides the root used for host-scope /proc-backed system metrics.
+// Retained for back-compat: callers that still pass a single combined
+// --proc-root flag (which historically switched both roots) hit this entry
+// point. New callers should prefer SetHostProcRoot.
 func SetProcRoot(root string) {
-	root = strings.TrimSpace(root)
-	if root == "" {
-		procRoot = "/proc"
-		return
-	}
-	procRoot = filepath.Clean(root)
+	SetHostProcRoot(root)
 }
 
-// ProcRoot returns the configured /proc root path.
+// SetHostProcRoot overrides the filesystem root used for host-scope /proc
+// reads (the files listed in hostProcFiles). Defaults to "/proc"; the chart
+// sets this to "/host/proc" when systemMetrics.hostProc.enabled is true.
+// Concurrency: must be called before the first SystemMetrics.WritePrometheus
+// invocation; not safe to mutate concurrently with metric reads.
+func SetHostProcRoot(root string) {
+	root = strings.TrimSpace(root)
+	if root == "" {
+		hostProcRoot = "/proc"
+		return
+	}
+	hostProcRoot = filepath.Clean(root)
+}
+
+// ProcRoot returns the configured host-scope /proc root path. Retained for
+// back-compat with callers that log a single proc_root field.
 func ProcRoot() string {
-	return procRoot
+	return hostProcRoot
+}
+
+// HostProcRoot returns the configured host-scope /proc root path.
+func HostProcRoot() string {
+	return hostProcRoot
 }
 
 func detectProcScope(root string) string {
@@ -109,8 +164,8 @@ func detectProcScope(root string) string {
 func InspectSystemStartup() SystemStartupCheck {
 	check := SystemStartupCheck{
 		GOOS:         systemGOOS,
-		ProcRoot:     procRoot,
-		Scope:        detectProcScope(procRoot),
+		ProcRoot:     hostProcRoot,
+		Scope:        detectProcScope(hostProcRoot),
 		Availability: map[string]bool{},
 		Issues:       map[string]string{},
 	}
@@ -127,14 +182,14 @@ func InspectSystemStartup() SystemStartupCheck {
 		check.Availability["cpu"] = true
 	}
 
-	if data, err := procReadFile(selfProcPath("meminfo")); err != nil {
+	if data, err := procReadFile(procPath("meminfo")); err != nil {
 		check.Availability["memory"] = false
-		check.Issues["memory"] = fmt.Sprintf("failed to read %s: %v", selfProcPath("meminfo"), err)
+		check.Issues["memory"] = fmt.Sprintf("failed to read %s: %v", procPath("meminfo"), err)
 	} else {
 		memTotal, _, _ := parseMemInfoData(string(data))
 		if memTotal <= 0 {
 			check.Availability["memory"] = false
-			check.Issues["memory"] = fmt.Sprintf("parsed MemTotal=0 from %s", selfProcPath("meminfo"))
+			check.Issues["memory"] = fmt.Sprintf("parsed MemTotal=0 from %s", procPath("meminfo"))
 		} else {
 			check.Availability["memory"] = true
 		}
@@ -202,8 +257,11 @@ func InspectSystemStartup() SystemStartupCheck {
 	return check
 }
 
+// procPath joins parts onto hostProcRoot for host-scope reads. Every call
+// site of this function must correspond to an entry in hostProcFiles — the
+// exhaustiveness test in system_test.go enforces this.
 func procPath(parts ...string) string {
-	all := append([]string{procRoot}, parts...)
+	all := append([]string{hostProcRoot}, parts...)
 	return filepath.Join(all...)
 }
 
@@ -423,7 +481,7 @@ func (sm *SystemMetrics) WritePrometheus(sb *strings.Builder) {
 // --- /proc readers ---
 
 func readCPUStat() (cpuStat, error) {
-	data, err := procReadFile(selfProcPath("stat"))
+	data, err := procReadFile(procPath("stat"))
 	if err != nil {
 		return cpuStat{}, err
 	}
@@ -453,7 +511,7 @@ func parseCPUStatData(data string) (cpuStat, error) {
 }
 
 func readMemInfo() (total, avail, free int64) {
-	data, err := procReadFile(selfProcPath("meminfo"))
+	data, err := procReadFile(procPath("meminfo"))
 	if err != nil {
 		return 0, 0, 0
 	}

@@ -26,7 +26,7 @@ func (p *Proxy) coldRouteForRequest(r *http.Request) RouteDecision {
 
 func (p *Proxy) proxyLogQueryWithCold(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
 	decision := p.coldRouteForRequest(r)
-	p.log.Debug("cold routing decision", "decision", decision, "query", logsqlQuery)
+	p.log.Debug("cold routing decision", "decision", decision, "query", redactQuery(logsqlQuery, p.debugLogRawQueries))
 
 	switch decision {
 	case RouteColdOnly:

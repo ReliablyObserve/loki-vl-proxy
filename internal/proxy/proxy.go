@@ -160,8 +160,13 @@ type Config struct {
 	BackendAllowUnsupportedVersion bool
 	// BackendVersionCheckTimeout bounds startup backend version checks.
 	BackendVersionCheckTimeout time.Duration
-	DerivedFields              []DerivedField // derived fields for trace/link extraction
-	StreamResponse             bool           // stream responses via chunked transfer (default: false)
+	// BackendVersionStrict, when true, promotes /health unreachability, non-2xx
+	// responses, and missing/sub-min backend semver to a hard startup error
+	// from ValidateBackendVersionCompatibility. Default false preserves the
+	// historical soft (warn-and-continue) behavior.
+	BackendVersionStrict bool
+	DerivedFields        []DerivedField // derived fields for trace/link extraction
+	StreamResponse       bool           // stream responses via chunked transfer (default: false)
 	// EmitStructuredMetadata enables Loki 3-tuple stream values [ts, line, metadata].
 	// Disabled by default for conservative datasource compatibility.
 	EmitStructuredMetadata bool
@@ -266,6 +271,12 @@ type Config struct {
 	// Peer cache (fleet distribution)
 	PeerCache     *cache.PeerCache // optional peer cache for distributed fleet
 	PeerAuthToken string
+	// PeerInsecureIPAllowlist, when true, falls back to source-IP membership
+	// check on /_cache/* endpoints if no token is provided. Default false:
+	// requests without a valid X-Peer-Token are rejected with 401. Operators
+	// who want the legacy IP-only behavior must opt in explicitly via
+	// --peer-insecure-ip-allowlist=true.
+	PeerInsecureIPAllowlist bool
 
 	// Cold storage backend (Victoria Lakehouse)
 	ColdBackend ColdBackendConfig
@@ -341,6 +352,16 @@ type Config struct {
 	// spreading the query burst over time and giving VL CPU headroom. 0 disables.
 	// Default: 200.
 	StatsQueryRangeInterQueryDelayMs int
+
+	// DebugLogRawQueries, when true, disables redaction of LogQL/LogsQL and
+	// backend query params in debug-level logs. Intended for local development
+	// only. Default is false (redacted).
+	DebugLogRawQueries bool
+
+	// MetadataDefaultLookback is the default time window applied to /labels,
+	// /label/{name}/values, and /series when the client omits both start and
+	// end. 0 disables (unbounded scan, prior behavior).
+	MetadataDefaultLookback time.Duration
 }
 
 // DerivedField extracts a value from log lines and creates a link (e.g., to a trace backend).
@@ -429,6 +450,7 @@ type Proxy struct {
 	backendMinVersion                     string
 	backendAllowUnsupportedVersion        bool
 	backendVersionCheckTimeout            time.Duration
+	backendVersionStrict                  bool
 	derivedFields                         []DerivedField
 	streamResponse                        bool
 	emitStructuredMetadata                bool
@@ -441,6 +463,7 @@ type Proxy struct {
 	declaredLabelFields                   []string         // configured VL-native label fields (stream_fields + extras)
 	peerCache                             *cache.PeerCache // L3 fleet peer cache
 	peerAuthToken                         string
+	peerInsecureIPAllowlist               bool // gate the legacy IP-allowlist fallback (default false: token required)
 	coldRouter                            *ColdRouter
 	registerInstrumentation               bool
 	enablePprof                           bool
@@ -546,6 +569,8 @@ type Proxy struct {
 	requestSampler                        *observability.RequestSampler
 	cacheTTLLabels                        time.Duration // per-instance TTL for labels endpoint (from Config.LabelCacheTTL)
 	cacheTTLLabelValues                   time.Duration // per-instance TTL for label_values endpoint
+	debugLogRawQueries                    bool          // when true, debug logs include raw LogQL/LogsQL and backend params
+	metadataDefaultLookback               time.Duration // default lookback for /labels, /label/{name}/values, /series when client omits start+end; 0 disables
 	// handler is the decomposed view of this Proxy's deps + config + state.
 	// Populated alongside the existing fields during the Task 9 migration.
 	handler *Handler
@@ -1037,6 +1062,7 @@ func New(cfg Config) (*Proxy, error) {
 		backendMinVersion:                     backendMinVersion,
 		backendAllowUnsupportedVersion:        cfg.BackendAllowUnsupportedVersion,
 		backendVersionCheckTimeout:            backendVersionCheckTimeout,
+		backendVersionStrict:                  cfg.BackendVersionStrict,
 		derivedFields:                         cfg.DerivedFields,
 		streamResponse:                        cfg.StreamResponse,
 		emitStructuredMetadata:                cfg.EmitStructuredMetadata,
@@ -1049,6 +1075,7 @@ func New(cfg Config) (*Proxy, error) {
 		declaredLabelFields:                   declaredLabelFields,
 		peerCache:                             cfg.PeerCache,
 		peerAuthToken:                         cfg.PeerAuthToken,
+		peerInsecureIPAllowlist:               cfg.PeerInsecureIPAllowlist,
 		registerInstrumentation:               registerInstrumentation,
 		enablePprof:                           cfg.EnablePprof,
 		enableQueryAnalytics:                  cfg.EnableQueryAnalytics,
@@ -1113,6 +1140,8 @@ func New(cfg Config) (*Proxy, error) {
 		coldRouter:                            coldRouter,
 		cacheTTLLabels:                        labelCacheTTL,
 		cacheTTLLabelValues:                   labelCacheTTL,
+		debugLogRawQueries:                    cfg.DebugLogRawQueries,
+		metadataDefaultLookback:               cfg.MetadataDefaultLookback,
 	}
 	if cfg.DrilldownFieldBatchWindowMs > 0 {
 		maxFields := cfg.DrilldownFieldBatchMaxFields
@@ -1527,7 +1556,27 @@ func (p *Proxy) routeHandler(endpoint, route string, h http.HandlerFunc) http.Ha
 					p.compatCacheMiddleware(endpoint, route, h)))))
 }
 
+// RegisterRoutes wires every proxy, admin, debug, and metrics route onto the
+// supplied mux. Use this when running a single HTTP listener; for split-listener
+// deployments (loopback admin / dedicated metrics port) call the more granular
+// RegisterProxyRoutes / RegisterAdminRoutes / RegisterMetricsRoute helpers
+// instead.
 func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
+	p.RegisterProxyRoutes(mux)
+	if p.registerInstrumentation {
+		p.RegisterMetricsRoute(mux)
+		p.RegisterAdminRoutes(mux)
+	} else if p.enableQueryAnalytics {
+		// /debug/queries is admin-tier but gated independently of
+		// registerInstrumentation; expose it on the same mux for back-compat.
+		p.RegisterAdminRoutes(mux)
+	}
+}
+
+// RegisterProxyRoutes registers Loki-compatible proxy routes, health endpoints,
+// and the internal peer-cache endpoints. It deliberately omits /metrics,
+// /admin/*, and /debug/* so callers can host those on dedicated listeners.
+func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 	rlNoTenant := func(endpoint, route string, h http.HandlerFunc) http.Handler {
 		return securityHeaders(p.limiter.Middleware(p.requestLogger(endpoint, route, h)))
 	}
@@ -1584,24 +1633,9 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/ready", p.handleReady)
 	mux.HandleFunc("/loki/api/v1/status/buildinfo", p.handleBuildInfo)
 
-	if p.registerInstrumentation {
-		// Prometheus metrics endpoint — security headers plus bounded scrape concurrency.
-		mux.Handle("/metrics", securityHeaders(http.HandlerFunc(p.handleMetrics)))
-		if p.enablePprof {
-			mux.Handle("/debug/pprof/cmdline", p.adminMiddleware(http.NotFoundHandler()))
-			mux.Handle("/debug/pprof/", p.adminMiddleware(http.DefaultServeMux))
-		}
-		// Cache flush — POST /admin/cache/flush clears all in-memory cache entries.
-		// Useful for benchmarking (ensures each run starts cold) and debugging.
-		// Protected by the admin auth token.
-		mux.Handle("/admin/cache/flush", p.adminMiddleware(http.HandlerFunc(p.handleCacheFlush)))
-	}
-
-	if p.enableQueryAnalytics {
-		mux.Handle("/debug/queries", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.queryTracker.Handler))))
-	}
-
-	// Peer cache endpoint — internal, for sharded fleet cache
+	// Peer cache endpoint — internal, for sharded fleet cache. Stays on the
+	// main proxy listener because peer-to-peer traffic must be reachable from
+	// other proxy pods, not constrained to the loopback admin listener.
 	if p.peerCache != nil {
 		peerCacheHandler := securityHeaders(p.peerCacheMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			p.peerCache.ServeHTTP(w, r, p.cache)
@@ -1611,6 +1645,40 @@ func (p *Proxy) RegisterRoutes(mux *http.ServeMux) {
 		mux.Handle("/_cache/hot", peerCacheHandler)
 		mux.Handle("/_cache/has", peerCacheHandler)
 		mux.Handle("/_cache/peers", peerCacheHandler)
+	}
+}
+
+// RegisterMetricsRoute registers only the Prometheus /metrics endpoint. Use
+// with a dedicated metrics listener (--metrics-listen) when you want scrapers
+// to hit a separate port from proxy traffic.
+//
+// No-op when registerInstrumentation is false on the Proxy config.
+func (p *Proxy) RegisterMetricsRoute(mux *http.ServeMux) {
+	if !p.registerInstrumentation {
+		return
+	}
+	// Prometheus metrics endpoint — security headers plus bounded scrape concurrency.
+	mux.Handle("/metrics", securityHeaders(http.HandlerFunc(p.handleMetrics)))
+}
+
+// RegisterAdminRoutes registers /admin/*, /debug/pprof/*, and /debug/queries
+// routes. Intended for a dedicated admin listener (--admin-listen) when no
+// -server.admin-auth-token is configured, so the binary boots safely with
+// admin surfaces only reachable from loopback. Honors registerInstrumentation
+// (cache flush + pprof) and enableQueryAnalytics independently.
+func (p *Proxy) RegisterAdminRoutes(mux *http.ServeMux) {
+	if p.registerInstrumentation {
+		if p.enablePprof {
+			mux.Handle("/debug/pprof/cmdline", p.adminMiddleware(http.NotFoundHandler()))
+			mux.Handle("/debug/pprof/", p.adminMiddleware(http.DefaultServeMux))
+		}
+		// Cache flush — POST /admin/cache/flush clears all in-memory cache entries.
+		// Useful for benchmarking (ensures each run starts cold) and debugging.
+		// Protected by the admin auth token.
+		mux.Handle("/admin/cache/flush", p.adminMiddleware(http.HandlerFunc(p.handleCacheFlush)))
+	}
+	if p.enableQueryAnalytics {
+		mux.Handle("/debug/queries", securityHeaders(p.adminMiddleware(http.HandlerFunc(p.queryTracker.Handler))))
 	}
 }
 
@@ -1771,7 +1839,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		}
 		p.metrics.RecordCacheMiss()
 	}
-	p.log.Debug("query_range request", "logql", logqlQuery)
+	p.log.Debug("query_range request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 
 	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser, bare-parser
 	// paths, post-agg paths) so that the tenant context and forwarded auth headers
@@ -1881,7 +1949,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		p.metrics.RecordRequest("query_range", http.StatusBadRequest, time.Since(start))
 		return
 	}
-	p.log.Debug("translated query", "logsql", logsqlQuery, "without", withoutLabels)
+	p.log.Debug("translated query", "logsql", redactQuery(logsqlQuery, p.debugLogRawQueries), "without", withoutLabels)
 
 	needsCapture := len(withoutLabels) > 0 || isGroupQuery || len(labelReplaceSpecs) > 0 || labelJoinSpec != nil
 	var (
@@ -2046,7 +2114,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	p.log.Debug("query request", "logql", logqlQuery)
+	p.log.Debug("query request", "logql", redactQuery(logqlQuery, p.debugLogRawQueries))
 
 	if body, ok := evaluateConstantInstantVectorQuery(logqlQuery, r.FormValue("time")); ok {
 		w.Header().Set("Content-Type", "application/json")

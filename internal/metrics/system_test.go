@@ -3,7 +3,9 @@ package metrics
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -29,20 +31,20 @@ func setSyntheticProcEnv(t *testing.T, root string) {
 	t.Helper()
 	lockProcEnvTest(t)
 
-	oldRoot := procRoot
+	oldRoot := hostProcRoot
 	oldSelfRoot := selfProcRoot
 	oldCgroupRoot := cgroupRoot
 	oldReadFile := procReadFile
 	oldReadDir := procReadDir
 	oldGOOS := systemGOOS
-	procRoot = root
+	hostProcRoot = root
 	selfProcRoot = root
 	cgroupRoot = filepath.Join(root, "sys", "fs", "cgroup")
 	procReadFile = os.ReadFile
 	procReadDir = os.ReadDir
 	systemGOOS = "linux"
 	t.Cleanup(func() {
-		procRoot = oldRoot
+		hostProcRoot = oldRoot
 		selfProcRoot = oldSelfRoot
 		cgroupRoot = oldCgroupRoot
 		procReadFile = oldReadFile
@@ -54,8 +56,8 @@ func setSyntheticProcEnv(t *testing.T, root string) {
 func TestSetProcRoot(t *testing.T) {
 	lockProcEnvTest(t)
 
-	oldRoot := procRoot
-	t.Cleanup(func() { procRoot = oldRoot })
+	oldRoot := hostProcRoot
+	t.Cleanup(func() { hostProcRoot = oldRoot })
 
 	SetProcRoot("/host/proc/../proc")
 	if got := ProcRoot(); got != "/host/proc" {
@@ -65,6 +67,11 @@ func TestSetProcRoot(t *testing.T) {
 	SetProcRoot("   ")
 	if got := ProcRoot(); got != "/proc" {
 		t.Fatalf("expected default proc root, got %q", got)
+	}
+
+	SetHostProcRoot("/host/proc")
+	if got := HostProcRoot(); got != "/host/proc" {
+		t.Fatalf("expected SetHostProcRoot to update host root, got %q", got)
 	}
 }
 
@@ -92,12 +99,12 @@ func TestInspectSystemStartup_NonLinux(t *testing.T) {
 	lockProcEnvTest(t)
 
 	oldGOOS := systemGOOS
-	oldRoot := procRoot
+	oldRoot := hostProcRoot
 	systemGOOS = "darwin"
-	procRoot = "/proc"
+	hostProcRoot = "/proc"
 	t.Cleanup(func() {
 		systemGOOS = oldGOOS
-		procRoot = oldRoot
+		hostProcRoot = oldRoot
 	})
 
 	check := InspectSystemStartup()
@@ -574,5 +581,62 @@ func TestProcReaders_DoNotReturnNegativeValues(t *testing.T) {
 	}
 	if _, err := readCPUStat(); err != nil {
 		t.Fatalf("expected cpu stat to be readable on linux, got %v", err)
+	}
+}
+
+// TestHostProcFiles_ExhaustiveVsSource asserts that every procPath(...) call
+// site in system.go is covered by the hostProcFiles slice. Prevents future
+// metric additions from silently breaking under the surgical chart mount in
+// charts/loki-vl-proxy/templates/deployment.yaml.
+func TestHostProcFiles_ExhaustiveVsSource(t *testing.T) {
+	src, err := os.ReadFile("system.go")
+	if err != nil {
+		t.Fatalf("read system.go: %v", err)
+	}
+	// Match procPath("a", "b", ...) — host-scope reads. Skip the function
+	// declaration line ("func procPath(parts ...string)").
+	re := regexp.MustCompile(`procPath\(("[^"]*"(?:\s*,\s*"[^"]*")*)\)`)
+	matches := re.FindAllStringSubmatch(string(src), -1)
+	if len(matches) == 0 {
+		t.Fatalf("no procPath(\"...\") call sites found in system.go — regex or source layout changed")
+	}
+	seen := map[string]bool{}
+	for _, m := range matches {
+		parts := []string{}
+		for _, raw := range strings.Split(m[1], ",") {
+			raw = strings.TrimSpace(raw)
+			raw = strings.Trim(raw, `"`)
+			if raw == "" {
+				continue
+			}
+			parts = append(parts, raw)
+		}
+		seen[strings.Join(parts, "/")] = true
+	}
+	declared := map[string]bool{}
+	for _, f := range hostProcFiles {
+		declared[f] = true
+	}
+	var missing []string
+	for k := range seen {
+		// pressure/{cpu,memory,io} is read as procPath("pressure", resource)
+		// from a loop — that single call site expands to three slice entries.
+		// Allow it via a prefix match for "pressure".
+		if k == "pressure" {
+			if !declared["pressure/cpu"] || !declared["pressure/memory"] || !declared["pressure/io"] {
+				missing = append(missing, "pressure/{cpu,memory,io}")
+			}
+			continue
+		}
+		if !declared[k] {
+			missing = append(missing, k)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Fatalf("procPath() call sites not covered by hostProcFiles: %v\n"+
+			"Add them to hostProcFiles in system.go AND to the chart's hostProc volumeMounts in "+
+			"charts/loki-vl-proxy/templates/deployment.yaml.",
+			missing)
 	}
 }

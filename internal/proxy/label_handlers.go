@@ -227,11 +227,17 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 
 	params := url.Values{}
 	params.Set("query", query)
-	if s := r.FormValue("start"); s != "" {
-		params.Set("start", s)
+	startRaw := r.FormValue("start")
+	endRaw := r.FormValue("end")
+	// Apply the default-lookback guard via the shared helper so /series stays
+	// in lockstep with /labels and /label/{name}/values. See
+	// applyDefaultMetadataLookback for semantics.
+	startRaw, endRaw = applyDefaultMetadataLookback(startRaw, endRaw, p.metadataDefaultLookback)
+	if startRaw != "" {
+		params.Set("start", startRaw)
 	}
-	if e := r.FormValue("end"); e != "" {
-		params.Set("end", e)
+	if endRaw != "" {
+		params.Set("end", endRaw)
 	}
 
 	coalKey := p.nativeCoalescerKey("series", r.Context(), params)
