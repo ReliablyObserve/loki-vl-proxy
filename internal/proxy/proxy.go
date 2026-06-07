@@ -1667,6 +1667,9 @@ func (p *Proxy) RegisterProxyRoutes(mux *http.ServeMux) {
 		mux.Handle("/_cache/hot", peerCacheHandler)
 		mux.Handle("/_cache/has", peerCacheHandler)
 		mux.Handle("/_cache/peers", peerCacheHandler)
+		// Peer-side cache purge (fanout target of /admin/cache/flush?peers=1).
+		// Same shared-token gate; purges this node's caches only (no re-fanout).
+		mux.Handle("/_cache/purge", securityHeaders(p.peerCacheMiddleware(http.HandlerFunc(p.handlePeerCachePurge))))
 	}
 }
 
@@ -1704,21 +1707,132 @@ func (p *Proxy) RegisterAdminRoutes(mux *http.ServeMux) {
 	}
 }
 
-func (p *Proxy) handleCacheFlush(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", "POST")
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+// purgeLocalCaches clears this instance's cache tiers: L0 hot-key index,
+// L1 in-memory, and L2 on-disk (the disk store is backed by p.cache). Shared by
+// the admin flush endpoint and the peer-side purge endpoint.
+func (p *Proxy) purgeLocalCaches() {
 	if p.cache != nil {
 		p.cache.PurgeAll()
 	}
 	if p.compatCache != nil {
 		p.compatCache.PurgeAll()
 	}
+}
+
+func (p *Proxy) handleCacheFlush(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	p.purgeLocalCaches()
+
+	resp := map[string]any{
+		"status": "ok",
+		"local":  "purged (L0 hot index + L1 memory + L2 disk)",
+	}
+	// Ring-wide fanout: POST /admin/cache/flush?peers=1 (or bare ?peers) also
+	// purges every peer in the L3 ring, authenticated with the shared
+	// X-Peer-Token (the same auth the peer cache uses for get/set/has). The
+	// operator clears the whole fleet by hitting one admin-token-protected
+	// instance. Peers purge LOCAL only — they never re-fan-out — so there is no
+	// broadcast storm. Without ?peers, behavior is unchanged (local only). Down
+	// peers are reported, not fatal.
+	if q := r.URL.Query(); q.Has("peers") && !isFalsyFlag(q.Get("peers")) {
+		resp["peers"] = p.purgePeerCaches(r.Context())
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok","message":"cache flushed (L0 hot index + L1 memory + L2 disk)"}`))
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// isFalsyFlag reports whether a query-param value explicitly disables a flag
+// (0/false/no/off, case-insensitive). A bare `?peers` (empty value) is truthy.
+func isFalsyFlag(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "0", "false", "no", "off":
+		return true
+	default:
+		return false
+	}
+}
+
+// purgePeerCaches fans out a cache purge to every peer in the ring concurrently
+// and returns a per-peer result map (addr -> "purged" or "error: ..."). A peer
+// being unreachable must not block clearing the rest of the ring, so failures
+// are collected, not propagated.
+func (p *Proxy) purgePeerCaches(ctx context.Context) map[string]string {
+	results := map[string]string{}
+	if p.peerCache == nil {
+		results["_note"] = "peer cache disabled; purged local instance only"
+		return results
+	}
+	peers := p.peerCache.Peers()
+	self := p.peerCache.SelfAddr()
+
+	type peerResult struct{ addr, status string }
+	ch := make(chan peerResult, len(peers))
+	dispatched := 0
+	for _, peerAddr := range peers {
+		addr := strings.TrimSpace(peerAddr)
+		if addr == "" || addr == self {
+			continue // already purged locally; skip the redundant self round-trip
+		}
+		dispatched++
+		go func(a string) {
+			pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			ch <- peerResult{addr: a, status: p.purgeOnePeer(pctx, a)}
+		}(addr)
+	}
+	if dispatched == 0 {
+		results["_note"] = "no peers configured; purged local instance only"
+		return results
+	}
+	for i := 0; i < dispatched; i++ {
+		pr := <-ch
+		results[pr.addr] = pr.status
+	}
+	return results
+}
+
+// purgeOnePeer POSTs a token-authenticated purge to a single peer's
+// /_cache/purge endpoint and returns a short status string.
+func (p *Proxy) purgeOnePeer(ctx context.Context, addr string) string {
+	endpoint := fmt.Sprintf("http://%s/_cache/purge", addr)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, nil)
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	if p.peerAuthToken != "" {
+		req.Header.Set("X-Peer-Token", p.peerAuthToken)
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "error: " + err.Error()
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode == http.StatusOK {
+		return "purged"
+	}
+	return fmt.Sprintf("error: HTTP %d", resp.StatusCode)
+}
+
+// handlePeerCachePurge is the peer-side endpoint hit by purgePeerCaches. Gated by
+// peerCacheMiddleware (shared X-Peer-Token), it purges THIS node's caches only —
+// it never fans out, preventing recursion across the ring.
+func (p *Proxy) handlePeerCachePurge(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	p.purgeLocalCaches()
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok","message":"peer cache purged (L0 hot index + L1 memory + L2 disk)"}`))
 }
 
 func (p *Proxy) handleMetrics(w http.ResponseWriter, r *http.Request) {

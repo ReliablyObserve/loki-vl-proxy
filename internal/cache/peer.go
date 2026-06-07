@@ -1170,6 +1170,13 @@ func (pc *PeerCache) Peers() []string {
 	return result
 }
 
+// SelfAddr returns this instance's configured address (ip:port). Static peer
+// lists usually include self (so every node ships the same config), so callers
+// fanning out to Peers() can skip the self entry to avoid a redundant round-trip.
+func (pc *PeerCache) SelfAddr() string {
+	return pc.selfAddr
+}
+
 // HasPeerHost reports whether host (without port) is a known peer.
 func (pc *PeerCache) HasPeerHost(host string) bool {
 	pc.mu.RLock()
