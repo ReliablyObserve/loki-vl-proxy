@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.56.1] - 2026-06-07
+
 ### Fixed
 
 - Eliminate the production data race in pattern auto-detection.
