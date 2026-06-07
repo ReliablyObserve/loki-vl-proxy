@@ -834,12 +834,19 @@ func (p *Proxy) collectRangeMetricHits(
 	}
 
 	results := v.GetArray("data", "result")
-	// Cap to maxStatsQuerySeries (default 5000) to match Loki's max_query_series limit.
-	// High-cardinality by() clauses (e.g. 670k unique pods) produce tens of MB of VL
-	// response that take 30+ seconds to parse and serialize without a series cap.
+	// Cap to maxStatsQuerySeries to bound response size for high-cardinality
+	// by() clauses (e.g. churn-heavy pod names, *_id fields where each value
+	// appears 1-2× in the window). Default 500 matches maxDrilldownSeries
+	// (the cap the Drilldown-specific paths use) and aligns with Loki's
+	// default max_query_series for the same purpose. The previous default
+	// of 5000 returned 10× more sparse series than Drilldown can render
+	// (the plugin's "Show all N" badge is literally the returned series
+	// count) and made charts look like scattered single-point spikes
+	// instead of meaningful top-N curves. See memory
+	// [[drilldown-high-card-fields-known-limit]] for the deep investigation.
 	maxSeries := p.maxStatsQuerySeries
 	if maxSeries <= 0 {
-		maxSeries = 5000
+		maxSeries = 500
 	}
 	if len(results) > maxSeries {
 		results = results[:maxSeries]

@@ -527,7 +527,7 @@ func run(
 	recentTailRefreshWindow := fs.Duration("recent-tail-refresh-window", 2*time.Minute, "How close request end must be to now to enable near-now cache freshness bypass")
 	recentTailRefreshMaxStaleness := fs.Duration("recent-tail-refresh-max-staleness", 15*time.Second, "Maximum acceptable cache age for near-now requests before cache bypass")
 	defaultMaxQueryLength := fs.Duration("default-max-query-length", 0, "Default maximum query time range enforced for all tenants unless overridden by per-tenant limits (0 = unlimited, matches Loki default)")
-	maxStatsQuerySeries := fs.Int("max-stats-query-series", 0, "Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). Matches Loki's max_query_series (0 = built-in default of 5000).")
+	maxStatsQuerySeries := fs.Int("max-stats-query-series", 0, "Maximum number of series returned by stats metric queries (count_over_time, rate, bytes_rate). 0 = built-in default of 500, matching the Drilldown maxDrilldownSeries cap and the documented known-limit for high-cardinality fields (trace_id, *_id, churn-heavy pod naming) where each value appears only 1-2× in the window. The previous 5000 default returned 10× more sparse series than Drilldown can render and 10× more bytes for the same UX, while leaving the door open to VL OOMs on real workloads with 100k+ cardinality.")
 	statsQueryRangeConcurrency := fs.Int("stats-query-range-concurrency", 0, "Maximum concurrent stats_query_range calls to VictoriaLogs. Drilldown Fields fires ~30 in parallel; capping prevents CPU storms. 0 = built-in default of 4.")
 	drilldownBurstWindowMs := fs.Int("drilldown-burst-window-ms", 50,
 		"time window in ms for coalescing concurrent Drilldown Fields per-field count queries "+
