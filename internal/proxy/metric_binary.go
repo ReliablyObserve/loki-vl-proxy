@@ -224,16 +224,6 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	// not VL's alphabetical first-N (the count==1 noise floor).
 	// See memory [[drilldown-high-card-fields-known-limit]].
 	out := limitLokiMatrixSeries(wrapAsLokiResponse(body, "matrix"), p.resolvedMaxStatsQuerySeries())
-	// Zero-fill to a dense step-aligned grid so Grafana's >24h querySplitting
-	// merge (closestIdx) aligns chunk axes 1:1 instead of collapsing sparse
-	// values onto the right edge. See [[zerofill-axis-alignment]].
-	if stepDur, ok := parsePositiveStepDuration(r.FormValue("step")); ok && stepDur > 0 {
-		if sNs, sok := parseLokiTimeToUnixNano(r.FormValue("start")); sok {
-			if eNs, eok := parseLokiTimeToUnixNano(r.FormValue("end")); eok {
-				out = zerofillStatsMatrix(out, sNs/int64(time.Second), eNs/int64(time.Second), int64(stepDur/time.Second))
-			}
-		}
-	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(out)
 	return false
@@ -2140,20 +2130,8 @@ func (p *Proxy) tryHighCardCountByTwoPhase(r *http.Request, logsqlQuery string) 
 	var keepFn func(int64) bool
 	keepFn = func(tsNs int64) bool { return tsNs <= endNs }
 	p2Body = p.trimAndTranslateStatsQRFJ(ctx, p2Body, keepFn, r.FormValue("query"))
-	out := limitLokiMatrixSeries(wrapAsLokiResponse(p2Body, "matrix"), p.resolvedMaxStatsQuerySeries())
-	// Zero-fill every step bucket. VL stats_query_range omits zero-count buckets,
-	// so each churning-pod series has just 1-2 points. At ranges > 24h Grafana's
-	// Loki datasource SPLITS the metric query at the day boundary and merges the
-	// chunks with closestIdx — a sparse axis collapses every chunk's values onto
-	// the right edge, so the main stacked graph rendered as one spike (the per-pod
-	// breakdown grid, one panel per pod, was unaffected — hence "only main graph").
-	// A dense, step-aligned grid makes the chunk axes line up 1:1. <=24h is a
-	// single chunk so it always looked fine. See memory [[zerofill-axis-alignment]]
-	// and [[grafana-loki-querysplitting-24h]].
-	if stepDur, ok := parsePositiveStepDuration(r.FormValue("step")); ok && stepDur > 0 {
-		out = zerofillStatsMatrix(out, startNs/int64(time.Second), endNs/int64(time.Second), int64(stepDur/time.Second))
-	}
-	return out
+	p2Body = limitLokiMatrixSeries(p2Body, p.resolvedMaxStatsQuerySeries())
+	return wrapAsLokiResponse(p2Body, "matrix")
 }
 
 func (p *Proxy) drilldownTwoPhase(r *http.Request, effectiveQuery, cleanBase, field, effectiveStep string) []byte {
