@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Ring-wide cache purge.** `POST /admin/cache/flush?peers=1` (or bare `?peers`) now purges the local instance's caches (L0 hot index + L1 memory + L2 disk) AND fans the purge out to every peer in the L3 ring, authenticated with the shared `X-Peer-Token` — the same auth the peer cache already uses for get/set/has. An operator clears the entire fleet's caches by hitting one admin-token-protected instance instead of curling each pod. The fanout is concurrent (5s per-peer timeout); an unreachable peer is reported in the JSON response (`"peers": {"addr": "error: …"}`), not fatal. A new peer-side endpoint `POST /_cache/purge` (gated by the peer-token middleware, served on the main listener like the other `/_cache/*` routes) receives the purge and clears that node's caches only — peers never re-fan-out, so there is no broadcast storm. Without `?peers` the endpoint is unchanged (local-only).
+
 ## [1.57.0] - 2026-06-07
 
 ### Added
