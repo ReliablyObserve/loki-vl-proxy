@@ -143,7 +143,15 @@ func bucketMetadataTime(startNs, endNs int64) (bucketedStartNs, bucketedEndNs in
 		bucket = ns6h
 	}
 	bucketedStartNs = (startNs / bucket) * bucket
-	bucketedEndNs = (endNs / bucket) * bucket
+	// Round end UP, not down. Rounding both ends down loses the most recent
+	// (bucket-1) of data — for a 12h window with a 1h bucket that's up to
+	// 59 minutes of recent logs the user expected to see. Drilldown panels
+	// then render "No data" while a sibling 6h or 24h tab works because the
+	// 6h bucket size is 5m (small loss) and 24h still covers older data
+	// outside the gap. Rounding end UP guarantees the recent window is
+	// always covered; VL caps any "future" end to wall-clock now so we
+	// never fetch beyond the present.
+	bucketedEndNs = ((endNs + bucket - 1) / bucket) * bucket
 	return bucketedStartNs, bucketedEndNs
 }
 
