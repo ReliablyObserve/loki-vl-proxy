@@ -71,6 +71,38 @@ type queryRangeWindowCacheEntry struct {
 	Entries []queryRangeWindowEntry
 }
 
+// snapshotEntriesForPatterns returns a shallow copy of entries with a 2-key
+// Stream map containing only the fields the pattern autodetect goroutine
+// reads (detected_level, level). This breaks the alias between the goroutine
+// and the main thread's applyDerivedFields writer, eliminating the
+// "concurrent map read and map write" race seen in production
+// (postprocess.go:390 vs stream_processing.go:319). Cheap: two map lookups
+// plus a 2-key map alloc per entry, no full deep copy of the descriptor
+// cache's translatedLabels map.
+func snapshotEntriesForPatterns(entries []queryRangeWindowEntry) []queryRangeWindowEntry {
+	if len(entries) == 0 {
+		return nil
+	}
+	out := make([]queryRangeWindowEntry, len(entries))
+	for i, e := range entries {
+		// extractLogPatternsFromWindowEntriesWithStats only reads detected_level
+		// and falls back to level — see postprocess.go.
+		stream := make(map[string]string, 2)
+		if v := e.Stream["detected_level"]; v != "" {
+			stream["detected_level"] = v
+		}
+		if v := e.Stream["level"]; v != "" {
+			stream["level"] = v
+		}
+		out[i] = queryRangeWindowEntry{
+			Stream: stream,
+			Ts:     e.Ts,
+			Msg:    e.Msg,
+		}
+	}
+	return out
+}
+
 //nolint:gocyclo // splits range into windows then drives per-window fetch, merge, dedup and limit short-circuiting; branching is inherent to windowed log queries.
 func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, logsqlQuery string) bool {
 	if !p.queryRangeWindowing || p.streamResponse {
@@ -229,9 +261,15 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 	}
 
 	mergeStart := time.Now()
-	// Pattern autodetect reads entries but does not write them; groupQueryRangeWindowEntries
-	// also only reads entries, so both can run concurrently. Offload to a goroutine
-	// to keep it off the request's critical path.
+	// applyStreamLabelMutations returns desc.translatedLabels as an alias when
+	// no drop/keep change applies, so multiple entries from the same _stream
+	// share one map (the descriptor cache's). The main thread then calls
+	// applyDerivedFields which WRITES into that map via streamStringMap. If we
+	// hand `collected` to the autodetect goroutine, its read of
+	// entry.Stream["detected_level"] races with that write. Snapshot the
+	// per-entry fields the goroutine needs (level + ts + msg) before
+	// spawning — cheap, avoids a full map clone, eliminates the race.
+	patternSnapshot := snapshotEntriesForPatterns(collected)
 	go p.maybeAutodetectPatternsFromWindowEntries(
 		r.Header.Get("X-Scope-OrgID"),
 		p.fingerprintFromCtx(r.Context(), r),
@@ -239,7 +277,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		r.FormValue("start"),
 		r.FormValue("end"),
 		r.FormValue("step"),
-		collected,
+		patternSnapshot,
 	)
 	streams := groupQueryRangeWindowEntries(collected, r.FormValue("direction"), emitStructuredMetadata, categorizedLabels)
 	p.metrics.RecordQueryRangeWindowMergeDuration(time.Since(mergeStart))
