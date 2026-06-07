@@ -412,17 +412,16 @@ var CacheTTLs = map[string]time.Duration{
 	"label_values":    5 * time.Minute,
 	"label_inventory": 5 * time.Minute,
 	"series":          30 * time.Second,
-	// Drilldown TTLs bumped from 90s → 5m because (a) the underlying VL
-	// scan for these endpoints can take seconds even with the
-	// drilldown-scan-timeout cap, so re-running it every 90s burns CPU,
-	// and (b) field/label inventories are stable on the scale of minutes
-	// — only meaningful new fields/labels emerge when a tenant deploys
-	// a code change, not every 90s. Background refresh still fires before
-	// expiry so users get fresh data on hot keys without paying the cold
-	// cost.
-	"detected_fields":       5 * time.Minute,
-	"detected_field_values": 5 * time.Minute,
-	"detected_labels":       5 * time.Minute,
+	// Drilldown field/label inventory TTL. Kept at 90s to honor the
+	// freshness contract asserted by TestDrilldown_GrafanaResourceContracts/
+	// parsed_only_fields_refresh_after_new_logs_arrive (new fields must surface
+	// within ~120s of ingest). A longer TTL (tried 5m) starves that refresh —
+	// background refresh fires at half-TTL, so 5m delays a new field to ~2.5m,
+	// past the contract window. The real Drilldown speedups on this branch come
+	// from the column-indexed level filter + window-sampled /hits, not this TTL.
+	"detected_fields":       90 * time.Second,
+	"detected_field_values": 90 * time.Second,
+	"detected_labels":       90 * time.Second,
 	"patterns":              patternsCacheRetention,
 	"query_range":           10 * time.Second,
 	"query":                 10 * time.Second,
