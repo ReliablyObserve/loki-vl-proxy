@@ -23,6 +23,33 @@ import (
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
+	// Suppress Grafana's 24h+ querySplitting RESIDUAL chunk. At ranges past the
+	// day boundary, the Loki datasource (querySplitting.ts) emits the bulk range
+	// PLUS a tiny trailing chunk whose span is <= ~2 steps (e.g. an 8-second
+	// [now-8s, now] chunk with a 2-minute step). That residual produces a single
+	// right-edge bucket; mergeFrames/closestIdx then glues it onto the distributed
+	// main chunk as a tall spike at the right edge — most visible on high-card
+	// panels (pod, *_id) whose main chunk is sparse, while dense low-card panels
+	// hide it. The /hits drilldown path already suppresses this, but the residual
+	// can route to ANY stats path (compat, direct, windowed-hits — the latter only
+	// engages at >= 2h). Hoisting the suppression here covers every path. Gated on
+	// isGrafanaSourcedRequest so non-Grafana clients still get exact small-range
+	// results. See [[grafana-loki-querysplitting-24h]].
+	if isGrafanaSourcedRequest(r) {
+		if sNs, sok := parseLokiTimeToUnixNano(r.FormValue("start")); sok {
+			if eNs, eok := parseLokiTimeToUnixNano(r.FormValue("end")); eok {
+				if stepDur, stepOK := parsePositiveStepDuration(r.FormValue("step")); stepOK && stepDur > 0 && eNs-sNs <= 2*stepDur.Nanoseconds() {
+					w.Header().Set("Content-Type", "application/json")
+					// Same marker the /hits path uses — TestLock_LeftoverChunkSuppressed
+					// pins this exact value; both routes suppress the same residual.
+					w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
+					_, _ = w.Write(emptyLokiMatrix)
+					return
+				}
+			}
+		}
+	}
+
 	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
 	topK, topKDesc, hasTopK := parseTopKWrapper(originalLogql)
