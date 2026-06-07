@@ -5,15 +5,22 @@
 # print before/after counter deltas per tier.
 #
 # Modes:
-#   l1     Cold-vs-warm — same query N times against main proxy; reports
-#          first-call miss vs subsequent hit ratio.
-#   l2     L2 promotion across restart — warm a query, `docker compose restart`
-#          the main proxy, re-run; reports L2 disk hit on second call.
+#   l1     Cold-vs-warm — same /label/{name}/values call N times against main
+#          proxy. Hits the unified per-key cache (L0 hot-index, L1 memory).
+#   l2     L2 promotion across restart — warm a /label/{name}/values call,
+#          `docker compose restart` the main proxy, re-run; reports L2 disk
+#          hit on second call (L1 in-memory is gone after restart).
 #   l3     L3 cross-peer — warm a key on peer-a, then query peer-b for the
 #          same key; reports peer-b's L3 hit count.
-#   long   Long-range windowed reuse — 7d query, then 7d-1h overlap, reports
-#          window cache reuse via cache_window_hits_total / bytes.
+#   long   Long-range windowed reuse — 7d /query_range, then 7d-1h overlap,
+#          reports loki_vl_proxy_cache_window_hits_total delta.
 #   all    Run l1, then l2, then l3, then long sequentially.
+#
+# Why label-values for L1/L2/L3 and query_range only for long-range?
+# The unified per-key cache (loki_vl_proxy_cache_tier_*) wraps label/series
+# lookups. /query_range goes through a separate windowed cache
+# (loki_vl_proxy_cache_window_*). The L1/L2/L3 modes exercise the per-key
+# cache because that's what the tier counters track.
 #
 # Required: jq, docker, curl
 # Optional env overrides:
@@ -42,9 +49,29 @@ for tool in jq curl docker; do
   fi
 done
 
+# Optional: if the local shell wraps curl with a token-counting proxy (e.g. RTK)
+# that truncates large output, run curl through `rtk proxy` to bypass the wrapper.
+# Set BENCH_CURL_BIN to override (e.g. "curl" to force direct invocation).
+if [[ -n "${BENCH_CURL_BIN:-}" ]]; then
+  # shellcheck disable=SC2206
+  CURL_BIN=( ${BENCH_CURL_BIN} )
+elif command -v rtk >/dev/null 2>&1; then
+  CURL_BIN=( rtk proxy curl )
+else
+  CURL_BIN=( curl )
+fi
+
 now_ns() {
   printf '%s\n' "$(($(date +%s) * 1000000000))"
 }
+
+# Fixed window for unified-cache tests so the cache key (start/end-derived) is
+# stable across repeated calls — otherwise each call gets a fresh key and
+# always misses. The long-range window test uses its own fresh `now` because
+# it tests overlap, not key stability.
+BENCH_END_NS=$(now_ns)
+BENCH_START_NS=$(( BENCH_END_NS - 3600 * 1000000000 ))
+BENCH_LABEL_NAME="${BENCH_LABEL_NAME:-job}"
 
 # Read a single Prometheus counter/gauge from /metrics. Returns 0 if absent.
 read_metric() {
@@ -55,7 +82,7 @@ read_metric() {
   else
     pattern="^${metric} "
   fi
-  curl -fsS "${proxy_url}/metrics" 2>/dev/null \
+  "${CURL_BIN[@]}" -fsS "${proxy_url}/metrics" 2>/dev/null \
     | awk -v pat="$pattern" '$0 ~ pat { print $NF; found=1; exit } END { if (!found) print 0 }'
 }
 
@@ -73,12 +100,23 @@ run_query_range() {
   local end_ns start_ns
   end_ns=$(now_ns)
   start_ns=$(( end_ns - 3600 * 1000000000 ))
-  curl -fsS -G "${proxy_url}/loki/api/v1/query_range" \
+  "${CURL_BIN[@]}" -fsS -G "${proxy_url}/loki/api/v1/query_range" \
     --data-urlencode "query=${QUERY}" \
     --data-urlencode "start=${start_ns}" \
     --data-urlencode "end=${end_ns}" \
     --data-urlencode "step=15s" \
     --data-urlencode "limit=100" \
+    >/dev/null
+}
+
+# Stable request that hits the unified per-key cache (L0 hot-index update +
+# L1 in-memory + L2 disk + L3 peer chain). Uses fixed BENCH_START_NS /
+# BENCH_END_NS so repeated calls share a cache key.
+run_label_values() {
+  local proxy_url="$1"
+  "${CURL_BIN[@]}" -fsS -G "${proxy_url}/loki/api/v1/label/${BENCH_LABEL_NAME}/values" \
+    --data-urlencode "start=${BENCH_START_NS}" \
+    --data-urlencode "end=${BENCH_END_NS}" \
     >/dev/null
 }
 
@@ -88,7 +126,7 @@ run_query_range_window() {
   local end_ns start_ns
   end_ns=$(now_ns)
   start_ns=$(( end_ns - hours * 3600 * 1000000000 ))
-  curl -fsS -G "${proxy_url}/loki/api/v1/query_range" \
+  "${CURL_BIN[@]}" -fsS -G "${proxy_url}/loki/api/v1/query_range" \
     --data-urlencode 'query=sum(rate({job=~".+"}[5m]))' \
     --data-urlencode "start=${start_ns}" \
     --data-urlencode "end=${end_ns}" \
@@ -120,7 +158,7 @@ bench_l1_cold_vs_warm() {
   for ((i = 1; i <= COLD_WARM_RUNS; i++)); do
     local t0 t1 dur_ms
     t0=$(($(date +%s%N) / 1000000))
-    run_query_range "$PROXY_MAIN_URL"
+    run_label_values "$PROXY_MAIN_URL"
     t1=$(($(date +%s%N) / 1000000))
     dur_ms=$(( t1 - t0 ))
     printf '  run %d: %d ms\n' "$i" "$dur_ms"
@@ -173,11 +211,11 @@ bench_l2_promotion() {
 bench_l3_cross_peer() {
   echo "=== L3 cross-peer — warm peer-a, query peer-b ==="
   echo "Warming peer-a (${PROXY_PEER_A_URL})..."
-  run_query_range "$PROXY_PEER_A_URL"
+  run_label_values "$PROXY_PEER_A_URL"
   local before_l3
   before_l3=$(snapshot_tier_counters "$PROXY_PEER_B_URL" l3_peer)
   echo "Querying peer-b (${PROXY_PEER_B_URL}) for same key..."
-  run_query_range "$PROXY_PEER_B_URL"
+  run_label_values "$PROXY_PEER_B_URL"
   local after_l3
   after_l3=$(snapshot_tier_counters "$PROXY_PEER_B_URL" l3_peer)
   diff_tier "$before_l3" "$after_l3" "L3@peer-b"

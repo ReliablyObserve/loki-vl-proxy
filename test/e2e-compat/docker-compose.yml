@@ -198,11 +198,15 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy
+    user: root
     ports:
       - "13100:3100"
     volumes:
       # Named volume so L2 disk cache survives container restarts (used by
       # scripts/bench-cache-tiers.sh "L2 promotion across restart" measurement).
+      # user: root above is needed so the bbolt file at /cache/proxy-l2.bolt can
+      # be created on the root-owned named volume (same pattern as the
+      # patterns-autodetect variant).
       - e2e-proxy-cache:/cache
     environment:
       # Soft GC pressure limit: without this, Go's GC only triggers at 2× live
@@ -217,7 +221,7 @@ services:
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
-      - "-cache-ttl=60s"
+      - "-cache-ttl=5s"
       - "-label-values-indexed-cache=true"
       - "-label-values-hot-limit=200"
       - "-label-values-index-max-entries=50000"
@@ -271,6 +275,7 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-peer-a
+    user: root
     ports:
       - "13150:3100"
     volumes:
@@ -283,7 +288,7 @@ services:
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
-      - "-cache-ttl=60s"
+      - "-cache-ttl=5s"
       - "-label-values-indexed-cache=true"
       - "-label-values-hot-limit=200"
       - "-label-values-index-max-entries=50000"
@@ -329,6 +334,7 @@ services:
       context: ../..
       dockerfile: Dockerfile
     container_name: e2e-proxy-peer-b
+    user: root
     ports:
       - "13151:3100"
     volumes:
@@ -341,7 +347,7 @@ services:
       - "-ruler-backend=http://vmalert:8880"
       - "-alerts-backend=http://vmalert:8880"
       - "-log-level=info"
-      - "-cache-ttl=60s"
+      - "-cache-ttl=5s"
       - "-label-values-indexed-cache=true"
       - "-label-values-hot-limit=200"
       - "-label-values-index-max-entries=50000"

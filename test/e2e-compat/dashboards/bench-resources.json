@@ -1165,12 +1165,117 @@
     },
     {
       "type": "row",
+      "title": "Proxy — peer cache communication (3-node ring: proxy-0/1/2)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 72 },
+      "id": 200,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "title": "Peer ring topology — discovered peers vs cluster members vs L0 hot keys",
+      "type": "stat",
+      "id": 201,
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 73 },
+      "targets": [
+        { "expr": "max by (instance) (loki_vl_proxy_peer_cache_peers)", "legendFormat": "{{instance}} peers", "refId": "A", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } },
+        { "expr": "max by (instance) (loki_vl_proxy_peer_cache_cluster_members)", "legendFormat": "{{instance}} cluster", "refId": "B", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } },
+        { "expr": "max by (instance) (loki_vl_proxy_cache_objects{tier=\"l0\"})", "legendFormat": "{{instance}} hot-keys", "refId": "C", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0 } }
+    },
+    {
+      "title": "Per-instance cache hit ratio by tier (proxy-0 / proxy-1 / proxy-2 × L0/L1/L2/L3)",
+      "type": "timeseries",
+      "id": 202,
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 73 },
+      "targets": [
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l1_memory\"}[1m])) / clamp_min(sum by (instance) (rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l1_memory\"}[1m])), 0.001)", "legendFormat": "{{instance}} L1", "refId": "A", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } },
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_cache_tier_hits_total{tier=\"l3_peer\"}[1m])) / clamp_min(sum by (instance) (rate(loki_vl_proxy_cache_tier_requests_total{tier=\"l3_peer\"}[1m])), 0.001)", "legendFormat": "{{instance}} L3", "refId": "B", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "min": 0, "max": 1 } }
+    },
+    {
+      "title": "Peer cache: cross-peer fetches (hits = served from a peer; misses = went to backend)",
+      "type": "timeseries",
+      "id": 203,
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 81 },
+      "targets": [
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_hits_total[1m]))", "legendFormat": "{{instance}} hits/s", "refId": "A", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } },
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_misses_total[1m]))", "legendFormat": "{{instance}} miss/s", "refId": "B", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 } }
+    },
+    {
+      "title": "Peer write-through: cache pushes from non-owner peers to owner peer",
+      "type": "timeseries",
+      "id": 204,
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 81 },
+      "targets": [
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_write_through_pushes_total[1m]))", "legendFormat": "{{instance}} pushes/s", "refId": "A", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } },
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_write_through_errors_total[1m]))", "legendFormat": "{{instance}} push errors/s", "refId": "B", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 } }
+    },
+    {
+      "title": "Peer read-ahead: hot-key prefetch from peers (prewarms local cache from hot peer keys)",
+      "type": "timeseries",
+      "id": 205,
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 89 },
+      "targets": [
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_read_ahead_prefetches_total[1m]))", "legendFormat": "{{instance}} prefetches/s", "refId": "A", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } },
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_read_ahead_budget_drops_total[1m]))", "legendFormat": "{{instance}} budget drops/s", "refId": "B", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } },
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total[1m]))", "legendFormat": "{{instance}} tenant skips/s", "refId": "C", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 } }
+    },
+    {
+      "title": "Peer read-ahead bytes prefetched (network volume warming the local L1)",
+      "type": "timeseries",
+      "id": 206,
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 89 },
+      "targets": [
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_read_ahead_prefetch_bytes_total[1m]))", "legendFormat": "{{instance}} prefetch B/s", "refId": "A", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "binBps", "decimals": 1 } }
+    },
+    {
+      "title": "Peer hot-index requests + errors (the L0-driven peer-to-peer key advertisement layer)",
+      "type": "timeseries",
+      "id": 207,
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 97 },
+      "targets": [
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_hot_index_requests_total[1m]))", "legendFormat": "{{instance}} req/s", "refId": "A", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } },
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_hot_index_errors_total[1m]))", "legendFormat": "{{instance}} errors/s", "refId": "B", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 } }
+    },
+    {
+      "title": "Peer cache errors by reason (transport / timeout / decode / token / etc.)",
+      "type": "timeseries",
+      "id": 208,
+      "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 97 },
+      "targets": [
+        { "expr": "sum by (instance, reason) (rate(loki_vl_proxy_peer_cache_error_reason_total[1m]))", "legendFormat": "{{instance}} {{reason}}", "refId": "A", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } },
+        { "expr": "sum by (instance) (rate(loki_vl_proxy_peer_cache_errors_total[1m]))", "legendFormat": "{{instance}} total/s", "refId": "B", "datasource": { "type": "prometheus", "uid": "P4169E866C3094E38" } }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps", "decimals": 2 } }
+    },
+    {
+      "type": "row",
       "title": "Proxy — heap deep-dive (why is heap growing?)",
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 72
+        "y": 105
       },
       "id": 108,
       "collapsed": false,
@@ -1192,7 +1297,7 @@
       },
       "targets": [
         {
-          "expr": "go_memstats_heap_alloc_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_heap_alloc_bytes{component=\"proxy\"}",
           "legendFormat": "heap_alloc (live MiB)",
           "refId": "A",
           "datasource": {
@@ -1201,7 +1306,7 @@
           }
         },
         {
-          "expr": "go_memstats_heap_inuse_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_heap_inuse_bytes{component=\"proxy\"}",
           "legendFormat": "heap_inuse MiB",
           "refId": "B",
           "datasource": {
@@ -1210,7 +1315,7 @@
           }
         },
         {
-          "expr": "go_memstats_heap_idle_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_heap_idle_bytes{component=\"proxy\"}",
           "legendFormat": "heap_idle MiB (returnable)",
           "refId": "C",
           "datasource": {
@@ -1219,7 +1324,7 @@
           }
         },
         {
-          "expr": "go_memstats_heap_released_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_heap_released_bytes{component=\"proxy\"}",
           "legendFormat": "heap_released MiB",
           "refId": "D",
           "datasource": {
@@ -1228,7 +1333,7 @@
           }
         },
         {
-          "expr": "go_memstats_sys_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_sys_bytes{component=\"proxy\"}",
           "legendFormat": "sys MiB (acquired from OS)",
           "refId": "E",
           "datasource": {
@@ -1237,7 +1342,7 @@
           }
         },
         {
-          "expr": "process_resident_memory_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "process_resident_memory_bytes{component=\"proxy\"}",
           "legendFormat": "RSS MiB",
           "refId": "F",
           "datasource": {
@@ -1480,7 +1585,7 @@
           }
         },
         {
-          "expr": "go_memstats_next_gc_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_next_gc_bytes{component=\"proxy\"}",
           "legendFormat": "next GC at MiB",
           "refId": "C",
           "datasource": {
@@ -1583,7 +1688,7 @@
       },
       "targets": [
         {
-          "expr": "go_memstats_stack_inuse_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_stack_inuse_bytes{component=\"proxy\"}",
           "legendFormat": "stack MiB",
           "refId": "A",
           "datasource": {
@@ -1592,7 +1697,7 @@
           }
         },
         {
-          "expr": "go_memstats_mspan_inuse_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_mspan_inuse_bytes{component=\"proxy\"}",
           "legendFormat": "mspan MiB",
           "refId": "B",
           "datasource": {
@@ -1601,7 +1706,7 @@
           }
         },
         {
-          "expr": "go_memstats_mcache_inuse_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_mcache_inuse_bytes{component=\"proxy\"}",
           "legendFormat": "mcache MiB",
           "refId": "C",
           "datasource": {
@@ -1610,7 +1715,7 @@
           }
         },
         {
-          "expr": "go_memstats_buck_hash_sys_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_buck_hash_sys_bytes{component=\"proxy\"}",
           "legendFormat": "profiling buckets MiB",
           "refId": "D",
           "datasource": {
@@ -1619,7 +1724,7 @@
           }
         },
         {
-          "expr": "go_memstats_gc_sys_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_gc_sys_bytes{component=\"proxy\"}",
           "legendFormat": "GC metadata MiB",
           "refId": "E",
           "datasource": {
@@ -1628,7 +1733,7 @@
           }
         },
         {
-          "expr": "go_memstats_other_sys_bytes{component=\"proxy\"}/(1024*1024)",
+          "expr": "go_memstats_other_sys_bytes{component=\"proxy\"}",
           "legendFormat": "other_sys MiB",
           "refId": "F",
           "datasource": {
