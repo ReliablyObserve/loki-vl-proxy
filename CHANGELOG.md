@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.59.0] - 2026-06-08
+
 ### Fixed
 
 - **Drilldown high-cardinality charts no longer cluster all data at one edge at 24h+.** Grafana's querySplitting emits a tiny trailing residual chunk (range < step); for a `count() by(field)` metric query that residual is a single-bucket, multi-series frame, and Grafana's `mergeFrames`/`closestIdx` collapses all N single-point series onto ONE edge of the merged chart — a right-edge spike, or a left-edge "all data at the beginning" cluster on the pod label / `*_id` field panels. The residual is now suppressed at the `query_range` entry (where the request URL still carries start/end/step and the original query still parses as a metric expression — downstream, `withOrgID`/`injectAuthFingerprint` reset `r.Form` and rewrite the URL, so deeper guards see an empty range), scoped to metric (matrix) expressions so log queries are never blanked. (Supersedes the 1.58.1 "axis-trim, blanking removed" change, which regressed this.)
