@@ -139,6 +139,58 @@ func TestPurgePeerCaches_ConcurrencyCapped(t *testing.T) {
 	}
 }
 
+// TestResidualBlankedThroughHandleQueryRange drives the REAL query_range entry
+// (handleQueryRange) for a Grafana sub-step metric residual and asserts it is
+// blanked there — before routing — regardless of which downstream path would
+// otherwise serve it. This is the deterministic in-process guard for the
+// Drilldown high-cardinality "all data clusters at one edge" regression.
+func TestResidualBlankedThroughHandleQueryRange(t *testing.T) {
+	backend := newRecorderBackend()
+	// Catch-all already returns an empty matrix; make the stats/hits paths return
+	// a MULTI-series matrix so that, WITHOUT the entry suppression, the response
+	// would carry data (the residual poison).
+	served := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"pod":"a"},"values":[["1700000000","3"]]},{"metric":{"pod":"b"},"values":[["1700000000","5"]]}]}}`))
+	}
+	backend.on("/select/logsql/stats_query_range", served)
+	backend.on("/select/logsql/hits", served)
+	vl := backend.server()
+	defer vl.Close()
+	p := newTestProxy(t, vl.URL)
+
+	cases := []struct {
+		name         string
+		query        string
+		startSec     int64
+		endSec       int64
+		step         string
+		source       string
+		wantSuppress bool
+	}{
+		{"pod_label_residual", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000, 1700000060, "120", "drilldown", true},
+		{"pod_residual_nanos", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000000000000, 1700000090000000000, "167s", "drilldown", true},
+		{"field_residual", `sum by (request_id) (count_over_time({namespace="prod"} | request_id!="" [2m]))`, 1700000000, 1700000060, "120", "drilldown", true},
+		{"explore_ua_residual", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000, 1700000060, "120", "grafana-ua", true},
+		{"full_step_not_residual", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000, 1700000240, "120", "drilldown", false},
+		{"non_grafana_not_residual", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000, 1700000060, "120", "", false},
+		{"log_query_never_blanked", `{namespace="prod"}`, 1700000000, 1700000060, "120", "drilldown", false},
+	}
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := drilldownRequest(t, tc.query, tc.startSec, tc.endSec, tc.step, tc.source)
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r) // full middleware chain, like a live request
+			gotSuppressed := w.Header().Get("X-Proxy-Drilldown-Path") == "hits-leftover-suppressed"
+			if gotSuppressed != tc.wantSuppress {
+				t.Errorf("%s: suppressed=%v want %v (code=%d body=%s)", tc.name, gotSuppressed, tc.wantSuppress, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 // TestRedactBackendError covers finding 1 (round 2): VictoriaLogs error bodies
 // can echo the LogQL/LogsQL query (selectors, filter values), which would leak
 // into error logs/responses when handlers pass the raw body to writeError /
