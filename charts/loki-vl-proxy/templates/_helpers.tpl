@@ -214,3 +214,40 @@ The computed value is emitted as bytes.
 {{- end -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+loki-vl-proxy.metricsPort — the effective port /metrics is served on, derived
+from extraArgs.metrics-listen (the binary's dedicated metrics listener), e.g.
+":9091" or "0.0.0.0:9091" → 9091. Falls back to .Values.service.metrics.port.
+Deriving the deployment containerPort (and, through the named port, the Service
+targetPort and ServiceMonitor target) from one source keeps them in lock-step
+with where the proxy actually listens — see loki-vl-proxy.validateMetrics.
+*/}}
+{{- define "loki-vl-proxy.metricsPort" -}}
+{{- $listen := "" -}}
+{{- with .Values.extraArgs -}}{{- $listen = (index . "metrics-listen" | toString) -}}{{- end -}}
+{{- if and $listen (contains ":" $listen) -}}
+{{- splitList ":" $listen | last -}}
+{{- else -}}
+{{- .Values.service.metrics.port -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+loki-vl-proxy.validateMetrics — fail-fast on a metrics config that renders
+cleanly but is internally inconsistent: the Service/ServiceMonitor would target
+a metrics port the binary never serves, or the binary would refuse to start
+(cmd/proxy/main.go validateMetricsListen). Invoked from the deployment.
+*/}}
+{{- define "loki-vl-proxy.validateMetrics" -}}
+{{- if .Values.service.metrics.enabled -}}
+{{- $listen := "" -}}{{- with .Values.extraArgs -}}{{- $listen = (index . "metrics-listen" | toString) -}}{{- end -}}
+{{- $reg := "" -}}{{- with .Values.extraArgs -}}{{- $reg = (index . "server.register-instrumentation" | toString) -}}{{- end -}}
+{{- if not (trim $listen) -}}
+{{- fail "service.metrics.enabled=true requires extraArgs.metrics-listen (e.g. \":9091\") so /metrics is served on the dedicated metrics port the Service and ServiceMonitor target; set it, or disable service.metrics." -}}
+{{- end -}}
+{{- if eq $reg "false" -}}
+{{- fail "service.metrics.enabled=true requires extraArgs.\"server.register-instrumentation\"=true; otherwise the metrics listener only returns 404 and the proxy fails to start (validateMetricsListen)." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

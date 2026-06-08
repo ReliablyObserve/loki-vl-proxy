@@ -27,6 +27,27 @@ spec:
       ports:
         - port: 3100
           protocol: TCP
+    {{- if .Values.serviceMonitor.enabled }}
+    {{- /*
+      Allow Prometheus to scrape the dedicated metrics port. Without this,
+      enabling serviceMonitor under the default NetworkPolicy (which otherwise
+      only opens the proxy port 3100) silently times out the /metrics scrape on
+      the metrics port. Restrict the source with networkPolicy.monitoringFrom
+      (a list of NetworkPolicyPeer); when empty the port is open to all sources
+      since /metrics is non-sensitive read-only counters.
+    */}}
+    {{- if .Values.networkPolicy.monitoringFrom }}
+    - from:
+        {{- toYaml .Values.networkPolicy.monitoringFrom | nindent 8 }}
+      ports:
+        - port: {{ include "loki-vl-proxy.metricsPort" . | int }}
+          protocol: TCP
+    {{- else }}
+    - ports:
+        - port: {{ include "loki-vl-proxy.metricsPort" . | int }}
+          protocol: TCP
+    {{- end }}
+    {{- end }}
   {{- with .Values.networkPolicy.egress }}
   egress:
     {{- toYaml . | nindent 4 }}
