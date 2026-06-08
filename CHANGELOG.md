@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.58.1] - 2026-06-08
+
 ### Security
 
 - **Upstream transport errors no longer leak query parameters.** Go's `http.Client` surfaces dial / TLS / timeout failures as a `*url.Error` whose message embeds the full backend URL — including the LogQL/LogsQL query — so those errors could leak query content (potentially sensitive log selectors) into error logs and handler error responses, even though the debug *request* log already redacts the query. Transport errors are now passed through `sanitizeUpstreamError`, which redacts the URL query while preserving the underlying cause (status mapping and the circuit breaker still classify correctly). No-op under `-debug-log-raw-queries=true`.
