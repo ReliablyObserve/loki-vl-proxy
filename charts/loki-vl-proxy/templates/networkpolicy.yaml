@@ -31,14 +31,26 @@ spec:
     {{- /*
       Allow Prometheus to scrape the dedicated metrics port. Without this,
       enabling serviceMonitor under the default NetworkPolicy (which otherwise
-      only opens the proxy port 3100) silently times out the /metrics scrape on
-      the metrics port. Restrict the source with networkPolicy.monitoringFrom
-      (a list of NetworkPolicyPeer); when empty the port is open to all sources
-      since /metrics is non-sensitive read-only counters.
+      only opens the proxy port 3100) silently times out the /metrics scrape.
+      Scope the source one of two ways:
+        1. networkPolicy.monitoringNamespace (convenience) — a namespace name,
+           rendered as a namespaceSelector on kubernetes.io/metadata.name.
+        2. networkPolicy.monitoringFrom (explicit) — a list of NetworkPolicyPeer.
+      monitoringFrom wins if both are set. When BOTH are empty the port is open
+      to all sources (zero-config default) — /metrics is non-sensitive read-only
+      counters, but scoping it with one of the above is recommended.
     */}}
     {{- if .Values.networkPolicy.monitoringFrom }}
     - from:
         {{- toYaml .Values.networkPolicy.monitoringFrom | nindent 8 }}
+      ports:
+        - port: {{ include "loki-vl-proxy.metricsPort" . | int }}
+          protocol: TCP
+    {{- else if .Values.networkPolicy.monitoringNamespace }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.monitoringNamespace | quote }}
       ports:
         - port: {{ include "loki-vl-proxy.metricsPort" . | int }}
           protocol: TCP

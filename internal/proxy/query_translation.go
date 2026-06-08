@@ -1776,7 +1776,7 @@ func (p *Proxy) proxyAbsentOverTimeQuery(w http.ResponseWriter, r *http.Request,
 
 	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if resp.StatusCode >= http.StatusBadRequest {
-		p.writeError(w, resp.StatusCode, string(body))
+		p.writeError(w, resp.StatusCode, p.redactBackendError(body))
 		p.metrics.RecordRequest("query", resp.StatusCode, time.Since(start))
 		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
 		return

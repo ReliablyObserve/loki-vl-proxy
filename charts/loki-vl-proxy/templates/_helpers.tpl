@@ -249,5 +249,12 @@ a metrics port the binary never serves, or the binary would refuse to start
 {{- if eq $reg "false" -}}
 {{- fail "service.metrics.enabled=true requires extraArgs.\"server.register-instrumentation\"=true; otherwise the metrics listener only returns 404 and the proxy fails to start (validateMetricsListen)." -}}
 {{- end -}}
+{{- /* Reject a loopback-bound metrics listener: it renders cleanly (the port is
+       extracted fine) but binds 127.x/localhost/::1, unreachable from the pod IP
+       the Service/ServiceMonitor target — scrapes silently time out. */ -}}
+{{- $host := regexReplaceAll ":[0-9]+$" $listen "" | trimPrefix "[" | trimSuffix "]" -}}
+{{- if or (eq $host "localhost") (eq $host "::1") (hasPrefix "127." $host) -}}
+{{- fail (printf "service.metrics.enabled=true with extraArgs.metrics-listen=%q binds /metrics to loopback (%s), unreachable from the pod network — Service/ServiceMonitor scrapes will fail. Use \":9091\", \"0.0.0.0:9091\", or disable service.metrics." $listen $host) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}

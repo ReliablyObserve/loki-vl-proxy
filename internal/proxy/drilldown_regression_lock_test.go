@@ -278,41 +278,39 @@ func TestLock_HitsRunsForAllRanges(t *testing.T) {
 // All four Grafana source signals must trigger suppression. Non-Grafana
 // requests with the same shape must NOT trigger suppression — a raw API
 // client querying 1m of data legitimately wants whatever VL has.
-func TestLock_LeftoverChunkSuppressed(t *testing.T) {
-	// step=120 → suppression fires ONLY for a sub-step residual (range < step,
-	// i.e. < 120s). A range of one full step or more is a legitimate >=1-bucket
-	// query and must NOT be blanked.
+func TestLock_LeftoverChunkNotBlanked(t *testing.T) {
+	// Round-2 fix: the Grafana 24h+ querySplitting residual is handled by
+	// per-chunk axis trimming, NOT by blanking Grafana-sourced sub-step requests.
+	// The earlier suppression had false-positives — it returned an empty matrix
+	// for legitimate short-range / coarse-step Grafana dashboard queries. Guard:
+	// NO request (residual-sized or normal, Drilldown or Explore or raw) is ever
+	// served the blanked empty matrix with X-Proxy-Drilldown-Path=hits-leftover-suppressed.
 	cases := []struct {
-		name         string
-		startSec     int64
-		endSec       int64
-		stepRaw      string
-		source       string
-		wantSuppress bool
+		name     string
+		startSec int64
+		endSec   int64
+		stepRaw  string
+		source   string
 	}{
-		// Grafana sources, sub-step residual (range < step) → SUPPRESS.
-		{"drilldown_60s_step120", 1700000000, 1700000060, "120", "drilldown", true},
-		{"drilldown_119s_step120", 1700000000, 1700000119, "120", "drilldown", true},
-		{"explore_via_ua_60s", 1700000000, 1700000060, "120", "grafana-ua", true},
-		{"explore_via_hdr_60s", 1700000000, 1700000060, "120", "grafana-hdr", true},
-		// Grafana source, range >= step (legitimate >=1-bucket query) → do NOT suppress.
-		{"drilldown_120s_step120", 1700000000, 1700000120, "120", "drilldown", false},
-		{"drilldown_240s_step120", 1700000000, 1700000240, "120", "drilldown", false},
-		{"drilldown_300s_step120", 1700000000, 1700000300, "120", "drilldown", false},
-		{"drilldown_1h_step120", 1700000000, 1700003600, "120", "drilldown", false},
-		// Non-Grafana caller with sub-step range → do NOT suppress.
-		{"raw_caller_60s_step120", 1700000000, 1700000060, "120", "", false},
+		{"drilldown_60s_step120", 1700000000, 1700000060, "120", "drilldown"},
+		{"drilldown_119s_step120", 1700000000, 1700000119, "120", "drilldown"},
+		{"explore_via_ua_60s", 1700000000, 1700000060, "120", "grafana-ua"},
+		{"explore_via_hdr_60s", 1700000000, 1700000060, "120", "grafana-hdr"},
+		{"drilldown_240s_step120", 1700000000, 1700000240, "120", "drilldown"},
+		{"drilldown_1h_step120", 1700000000, 1700003600, "120", "drilldown"},
+		{"raw_caller_60s_step120", 1700000000, 1700000060, "120", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			backend := newRecorderBackend()
-			// /hits returns non-empty so we can distinguish "served" from "suppressed".
-			backend.on("/select/logsql/hits", func(w http.ResponseWriter, r *http.Request) {
+			served := func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write([]byte(hitsResponse("pod", map[string][][2]any{
 					"a": {{"2023-11-14T22:13:20Z", 3}},
 				})))
-			})
+			}
+			backend.on("/select/logsql/hits", served)
+			backend.on("/select/logsql/stats_query_range", served)
 			vl := backend.server()
 			defer vl.Close()
 			p := newTestProxy(t, vl.URL)
@@ -324,24 +322,8 @@ func TestLock_LeftoverChunkSuppressed(t *testing.T) {
 			p.proxyStatsQueryRange(w, r,
 				`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
 
-			gotHitsCalls := backend.callsFor("/select/logsql/hits")
-			gotSuppressed := w.Header().Get("X-Proxy-Drilldown-Path") == "hits-leftover-suppressed"
-
-			if tc.wantSuppress {
-				if gotHitsCalls != 0 {
-					t.Errorf("suppress=true expected zero /hits calls, got %d", gotHitsCalls)
-				}
-				if !gotSuppressed {
-					t.Errorf("suppress=true expected X-Proxy-Drilldown-Path=hits-leftover-suppressed, got headers: %v", w.Header())
-				}
-				body := w.Body.String()
-				if !strings.Contains(body, `"result":[]`) {
-					t.Errorf("suppress=true expected empty matrix, got body: %s", body)
-				}
-			} else {
-				if gotSuppressed {
-					t.Errorf("suppress=false but X-Proxy-Drilldown-Path=hits-leftover-suppressed was set (false positive on a normal-sized request)")
-				}
+			if w.Header().Get("X-Proxy-Drilldown-Path") == "hits-leftover-suppressed" {
+				t.Errorf("residual blanking must be gone — got hits-leftover-suppressed for %s (false-positive blanking of a sub-step query)", tc.name)
 			}
 		})
 	}
