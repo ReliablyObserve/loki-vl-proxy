@@ -585,6 +585,23 @@ func patternsPayloadEmpty(body []byte) bool {
 	return len(resp.Data) == 0
 }
 
+// compatCacheShouldBypassForFreshness reports whether a compat-cache hit for a
+// NEAR-NOW request should be re-fetched instead of served, so live-tail Explore
+// and now-relative dashboards pick up new data on refresh. The compat cache holds
+// query_range for 5min (for chart stability), and the hit path has no freshness
+// check of its own; without this, near-now refreshes would serve up-to-5-min-stale
+// data (the reported "refresh doesn't add new logs"). Gated by recent-tail-refresh;
+// historical (not-near-now) queries keep the full cache for stability.
+func (p *Proxy) compatCacheShouldBypassForFreshness(r *http.Request, ttl, remaining time.Duration) bool {
+	if p == nil || !p.recentTailRefreshEnabled || ttl <= 0 || remaining <= 0 {
+		return false
+	}
+	if !p.requestEndsNearNow(r) {
+		return false
+	}
+	return ttl-remaining >= p.recentTailRefreshMaxStaleness
+}
+
 func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -607,7 +624,7 @@ func (p *Proxy) compatCacheMiddleware(endpoint, route string, next http.HandlerF
 			next(w, r)
 			return
 		}
-		if cached, remainingTTL, ok := p.compatCache.GetWithTTL(cacheKey); ok {
+		if cached, remainingTTL, ok := p.compatCache.GetWithTTL(cacheKey); ok && !p.compatCacheShouldBypassForFreshness(r, ttl, remainingTTL) {
 			setCacheResult(r.Context(), "hit")
 			w.Header().Set("Content-Type", "application/json")
 			body := cached
