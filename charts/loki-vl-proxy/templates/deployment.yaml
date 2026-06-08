@@ -9,6 +9,7 @@
 {{- if and .Values.peerCache.enabled (hasKey .Values.extraArgs "peer-auth-token") }}
 {{- fail "extraArgs.peer-auth-token cannot be combined with peerCache.enabled=true; chart manages the flag via peerCache.authToken / peerCache.existingSecret. Remove the extraArgs entry." }}
 {{- end }}
+{{- include "loki-vl-proxy.validateMetrics" . }}
 apiVersion: apps/v1
 kind: {{ include "loki-vl-proxy.workloadKind" . }}
 metadata:
@@ -278,7 +279,7 @@ spec:
             # or extraArgs.server.register-instrumentation=false) don't end up
             # with a stale named containerPort the Service can't reach.
             - name: metrics
-              containerPort: 9091
+              containerPort: {{ include "loki-vl-proxy.metricsPort" . | int }}
               protocol: TCP
             {{- end }}
           {{- if .Values.probe.liveness.enabled }}

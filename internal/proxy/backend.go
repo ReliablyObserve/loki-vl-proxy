@@ -595,6 +595,7 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	duration := time.Since(start)
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
+		err = p.sanitizeUpstreamError(err)
 		mappedStatus := statusFromUpstreamErr(err)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodGet, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		if shouldRecordBreakerFailure(err) {
@@ -612,6 +613,30 @@ func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) 
 	// Any completed HTTP response proves backend reachability; keep breaker for transport failures only.
 	p.breaker.RecordSuccess()
 	return resp, nil
+}
+
+// sanitizeUpstreamError redacts query parameters from a transport error before
+// it is logged or returned to a handler. Go's http.Client surfaces dial / TLS /
+// timeout failures as a *url.Error whose Error() embeds the full request URL —
+// including the LogQL / LogsQL query in RawQuery — so without this the query
+// content (which may carry sensitive log selectors) leaks into error logs and
+// handler error responses, even though the debug request log already redacts it.
+// The wrapped underlying error is preserved so statusFromUpstreamErr and breaker
+// classification still see the real cause. No-op under -debug-log-raw-queries.
+func (p *Proxy) sanitizeUpstreamError(err error) error {
+	if err == nil || p.debugLogRawQueries {
+		return err
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		redactedURL := ue.URL
+		if u, perr := url.Parse(ue.URL); perr == nil && u.RawQuery != "" {
+			u.RawQuery = "redacted"
+			redactedURL = u.String()
+		}
+		return &url.Error{Op: ue.Op, URL: redactedURL, Err: ue.Err}
+	}
+	return err
 }
 
 func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*http.Response, error) {
@@ -650,6 +675,7 @@ func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) 
 	duration := time.Since(start)
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
+		err = p.sanitizeUpstreamError(err)
 		mappedStatus := statusFromUpstreamErr(err)
 		p.recordUpstreamObservation(ctx, "vl", http.MethodPost, path, u.Hostname(), serverPort, mappedStatus, duration, err)
 		return nil, err

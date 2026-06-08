@@ -35,19 +35,13 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 	// engages at >= 2h). Hoisting the suppression here covers every path. Gated on
 	// isGrafanaSourcedRequest so non-Grafana clients still get exact small-range
 	// results. See [[grafana-loki-querysplitting-24h]].
-	if isGrafanaSourcedRequest(r) {
-		if sNs, sok := parseLokiTimeToUnixNano(r.FormValue("start")); sok {
-			if eNs, eok := parseLokiTimeToUnixNano(r.FormValue("end")); eok {
-				if stepDur, stepOK := parsePositiveStepDuration(r.FormValue("step")); stepOK && stepDur > 0 && eNs-sNs <= 2*stepDur.Nanoseconds() {
-					w.Header().Set("Content-Type", "application/json")
-					// Same marker the /hits path uses — TestLock_LeftoverChunkSuppressed
-					// pins this exact value; both routes suppress the same residual.
-					w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
-					_, _ = w.Write(emptyLokiMatrix)
-					return
-				}
-			}
-		}
+	if isQuerySplitLeftoverChunk(r, r.FormValue("start"), r.FormValue("end"), r.FormValue("step")) {
+		w.Header().Set("Content-Type", "application/json")
+		// Same marker the /hits path uses — TestLock_LeftoverChunkSuppressed
+		// pins this exact value; both routes suppress the same residual.
+		w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
+		_, _ = w.Write(emptyLokiMatrix)
+		return
 	}
 
 	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -316,6 +310,30 @@ func isGrafanaDrilldownRequest(r *http.Request) bool {
 // the leftover-chunk suppression for legitimate small queries — so the gates
 // in callers also bound the suppression to range ≤ 2 × step, which is too
 // small to plausibly be a real user query at chunked-merge step sizes.
+// isQuerySplitLeftoverChunk reports whether (startRaw,endRaw,stepRaw) describe the
+// tiny trailing RESIDUAL chunk Grafana's querySplitting emits past the 24h day
+// boundary: a Grafana-sourced request whose range is SHORTER THAN ONE STEP, so it
+// yields a single right-edge bucket that mergeFrames glues onto the main chunk as
+// a spike. The detector is `range < step` (strictly sub-step): a legitimate query
+// spans at least one full step (>=1 bucket), so this no longer blanks normal
+// Explore/dashboard queries with a short range or a coarse step — the earlier
+// `<= 2*step` form did, silently returning empty for real 1-2 bucket queries.
+func isQuerySplitLeftoverChunk(r *http.Request, startRaw, endRaw, stepRaw string) bool {
+	if !isGrafanaSourcedRequest(r) {
+		return false
+	}
+	sNs, sok := parseLokiTimeToUnixNano(startRaw)
+	eNs, eok := parseLokiTimeToUnixNano(endRaw)
+	if !sok || !eok || eNs <= sNs {
+		return false
+	}
+	stepDur, stepOK := parsePositiveStepDuration(stepRaw)
+	if !stepOK || stepDur <= 0 {
+		return false
+	}
+	return eNs-sNs < stepDur.Nanoseconds()
+}
+
 func isGrafanaSourcedRequest(r *http.Request) bool {
 	if isGrafanaDrilldownRequest(r) {
 		return true
@@ -1620,19 +1638,11 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 	// Gated on isGrafanaSourcedRequest — querySplitting fires for ANY Grafana
 	// client (Explore, Drilldown, dashboard panels) not just Drilldown, and
 	// Explore at 24h+ shows the same spike from the same residual chunk.
-	if isGrafanaSourcedRequest(r) {
-		if sNs, sok := parseLokiTimeToUnixNano(startRaw); sok {
-			if eNs, eok := parseLokiTimeToUnixNano(endRaw); eok {
-				if stepDur, stepOK := parsePositiveStepDuration(stepForHits); stepOK && stepDur > 0 {
-					if eNs-sNs <= 2*stepDur.Nanoseconds() {
-						w.Header().Set("Content-Type", "application/json")
-						w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
-						_, _ = w.Write(emptyLokiMatrix)
-						return true
-					}
-				}
-			}
-		}
+	if isQuerySplitLeftoverChunk(r, startRaw, endRaw, stepForHits) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
+		_, _ = w.Write(emptyLokiMatrix)
+		return true
 	}
 
 	// For long ranges, sample windows in parallel so the top-N spans the
@@ -2091,6 +2101,17 @@ func stripUnpackStagesForTopN(base string) string {
 // drops only the redundant `| unpack_logfmt`. Returns true iff it wrote a response;
 // false (without writing a body) so the caller falls through to the two-phase/direct.
 func (p *Proxy) tryHighCardCountByWindowedHits(w http.ResponseWriter, r *http.Request, logsqlQuery string) bool {
+	// Scope to Grafana-sourced requests. The windowed-/hits path returns
+	// per-window-sampled top-N series rather than exact stats_query_range results
+	// — that's the right trade-off for rendering a Grafana chart (Explore /
+	// Drilldown), where the full unbounded response is 40MB+/25s and would be
+	// cancelled, but it is the WRONG default for a direct API client that expects
+	// exact aggregation. Non-Grafana callers fall through to the exact direct path
+	// (bounded to maxStatsQuerySeries top-N-by-count, like Loki's max_query_series,
+	// with the two-phase fallback only on a 16MB overflow).
+	if !isGrafanaSourcedRequest(r) {
+		return false
+	}
 	spec, ok := parseStatsCompatSpec(logsqlQuery)
 	if !ok || spec.Func != "count" || len(spec.GroupBy) != 1 {
 		return false

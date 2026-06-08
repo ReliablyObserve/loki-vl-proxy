@@ -279,7 +279,9 @@ func TestLock_HitsRunsForAllRanges(t *testing.T) {
 // requests with the same shape must NOT trigger suppression — a raw API
 // client querying 1m of data legitimately wants whatever VL has.
 func TestLock_LeftoverChunkSuppressed(t *testing.T) {
-	// step=120 → suppression fires for range ≤ 240s.
+	// step=120 → suppression fires ONLY for a sub-step residual (range < step,
+	// i.e. < 120s). A range of one full step or more is a legitimate >=1-bucket
+	// query and must NOT be blanked.
 	cases := []struct {
 		name         string
 		startSec     int64
@@ -288,15 +290,17 @@ func TestLock_LeftoverChunkSuppressed(t *testing.T) {
 		source       string
 		wantSuppress bool
 	}{
-		// Grafana sources, leftover-sized → SUPPRESS.
+		// Grafana sources, sub-step residual (range < step) → SUPPRESS.
 		{"drilldown_60s_step120", 1700000000, 1700000060, "120", "drilldown", true},
-		{"drilldown_240s_step120", 1700000000, 1700000240, "120", "drilldown", true},
+		{"drilldown_119s_step120", 1700000000, 1700000119, "120", "drilldown", true},
 		{"explore_via_ua_60s", 1700000000, 1700000060, "120", "grafana-ua", true},
 		{"explore_via_hdr_60s", 1700000000, 1700000060, "120", "grafana-hdr", true},
-		// Grafana source but range > 2*step → do NOT suppress.
+		// Grafana source, range >= step (legitimate >=1-bucket query) → do NOT suppress.
+		{"drilldown_120s_step120", 1700000000, 1700000120, "120", "drilldown", false},
+		{"drilldown_240s_step120", 1700000000, 1700000240, "120", "drilldown", false},
 		{"drilldown_300s_step120", 1700000000, 1700000300, "120", "drilldown", false},
 		{"drilldown_1h_step120", 1700000000, 1700003600, "120", "drilldown", false},
-		// Non-Grafana caller with leftover-sized range → do NOT suppress.
+		// Non-Grafana caller with sub-step range → do NOT suppress.
 		{"raw_caller_60s_step120", 1700000000, 1700000060, "120", "", false},
 	}
 	for _, tc := range cases {

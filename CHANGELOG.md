@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Upstream transport errors no longer leak query parameters.** Go's `http.Client` surfaces dial / TLS / timeout failures as a `*url.Error` whose message embeds the full backend URL — including the LogQL/LogsQL query — so those errors could leak query content (potentially sensitive log selectors) into error logs and handler error responses, even though the debug *request* log already redacts the query. Transport errors are now passed through `sanitizeUpstreamError`, which redacts the URL query while preserving the underlying cause (status mapping and the circuit breaker still classify correctly). No-op under `-debug-log-raw-queries=true`.
+
+### Fixed
+
+- **Grafana querySplitting residual suppression no longer blanks legitimate short-range queries.** The 24h+ split residual-chunk suppression triggered for any Grafana-sourced request with `range <= 2*step`, which could silently return an empty matrix for normal Explore/dashboard queries with a short range or a coarse step. It is now scoped to a true sub-step residual (`range < step`, i.e. less than one full bucket); a query spanning at least one step is served normally.
+- **High-cardinality `count() by(field)` window-sampling is now scoped to Grafana requests.** The window-sampled `/select/logsql/hits` path returns per-window-sampled top-N series rather than exact `stats_query_range` results — correct for rendering a Grafana chart, but the wrong default for a direct API client. It is now gated on `isGrafanaSourcedRequest`; non-Grafana callers get the exact direct path (bounded to `max-stats-query-series` top-N-by-count, like Loki's `max_query_series`).
+- **Helm: metrics listener, Service, and ServiceMonitor can no longer render contradictory configs.** The deployment's metrics `containerPort` is now derived from `extraArgs.metrics-listen` (so the named Service/ServiceMonitor target always matches where `/metrics` actually serves), and the chart fails fast when `service.metrics.enabled=true` is combined with an empty `metrics-listen` or `server.register-instrumentation=false` (configs that previously rendered cleanly then failed startup or scraped a dead port).
+- **Helm: default NetworkPolicy now allows ServiceMonitor metrics scraping.** When `serviceMonitor.enabled=true`, the NetworkPolicy automatically opens the metrics port (derived from `metrics-listen`) for Prometheus — previously it only opened the proxy port 3100, so enabling the ServiceMonitor under the default NetworkPolicy silently timed out the `/metrics` scrape. Restrict the scrape source via the new `networkPolicy.monitoringFrom`.
+
 ## [1.58.0] - 2026-06-07
 
 ### Added
