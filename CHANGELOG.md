@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Drilldown high-cardinality charts no longer cluster all data at one edge at 24h+.** Grafana's querySplitting emits a tiny trailing residual chunk (range < step); for a `count() by(field)` metric query that residual is a single-bucket, multi-series frame, and Grafana's `mergeFrames`/`closestIdx` collapses all N single-point series onto ONE edge of the merged chart — a right-edge spike, or a left-edge "all data at the beginning" cluster on the pod label / `*_id` field panels. The residual is now suppressed at the `query_range` entry (where the request URL still carries start/end/step and the original query still parses as a metric expression — downstream, `withOrgID`/`injectAuthFingerprint` reset `r.Form` and rewrite the URL, so deeper guards see an empty range), scoped to metric (matrix) expressions so log queries are never blanked.
+- **Live-tail Explore now picks up new logs on refresh.** Near-now `query_range` requests are meant to bypass the response cache and re-fetch the latest backend data (`-recent-tail-refresh-enabled`), but the bypass could never fire: the default `-recent-tail-refresh-max-staleness` (15s) was larger than the `query_range` cache TTL (10s), so the entry always expired before it became "stale enough" to bypass. Refreshes within the TTL served cached logs (no new data), unlike the VictoriaLogs datasource which has no such cache. `shouldBypassRecentTailCache` now clamps the effective max-staleness to mid-TTL when it exceeds the endpoint TTL, so near-now refreshes go fresh well within one TTL.
+
 ### Security
 
 - **Upstream transport errors no longer leak query parameters.** Go's `http.Client` surfaces dial / TLS / timeout failures as a `*url.Error` whose message embeds the full backend URL — including the LogQL/LogsQL query — so those errors could leak query content (potentially sensitive log selectors) into error logs and handler error responses, even though the debug *request* log already redacts the query. Transport errors are now passed through `sanitizeUpstreamError`, which redacts the URL query while preserving the underlying cause (status mapping and the circuit breaker still classify correctly). No-op under `-debug-log-raw-queries=true`.

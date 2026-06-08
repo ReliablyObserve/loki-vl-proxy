@@ -695,8 +695,18 @@ func (p *Proxy) shouldBypassRecentTailCache(endpoint string, remaining time.Dura
 	if ttl <= 0 || remaining <= 0 {
 		return false
 	}
+	// The near-now freshness bypass must be able to fire BEFORE the cache entry
+	// expires, otherwise it never triggers and live-tail Explore refreshes serve
+	// stale data for the full TTL (the entry just expires and re-fetches on its
+	// own schedule, ignoring this feature). If the configured max-staleness is
+	// >= the endpoint TTL (e.g. query_range TTL 10s vs default max-staleness 15s),
+	// clamp it to mid-TTL so near-now requests go fresh well within one TTL.
+	maxStaleness := p.recentTailRefreshMaxStaleness
+	if maxStaleness >= ttl {
+		maxStaleness = ttl / 2
+	}
 	cacheAge := ttl - remaining
-	if cacheAge < p.recentTailRefreshMaxStaleness {
+	if cacheAge < maxStaleness {
 		return false
 	}
 	return p.requestEndsNearNow(r)
