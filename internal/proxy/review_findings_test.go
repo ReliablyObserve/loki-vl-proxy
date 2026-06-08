@@ -84,10 +84,10 @@ func TestColdRouter_StopTerminatesLoop(t *testing.T) {
 	// Idempotent: a second Stop must not panic (double close guard).
 	cr.Stop(context.Background())
 
-	// Stop without Start must not block (started guard).
+	// Stop without Start must not block (started guard returns before any wait).
 	cr2, _ := NewColdRouter(ColdBackendConfig{Enabled: true, URL: "http://127.0.0.1:1"}, logger)
 	stopped := make(chan struct{})
-	go func() { cr2.Stop(nil); close(stopped) }()
+	go func() { cr2.Stop(context.Background()); close(stopped) }()
 	select {
 	case <-stopped:
 	case <-time.After(2 * time.Second):
