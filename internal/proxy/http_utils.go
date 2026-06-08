@@ -332,6 +332,39 @@ func extractVLErrorMsg(body []byte) string {
 	return strings.TrimSpace(string(body))
 }
 
+// Compiled once; used by redactBackendError to strip query-like content from a
+// VictoriaLogs error message before it is logged or returned.
+var (
+	// {namespace="prod", pod=~"api.*"} — any brace block in an extracted error
+	// message is a LogQL/LogsQL stream selector echo.
+	reErrSelector = regexp.MustCompile(`\{[^{}]*\}`)
+	// Long quoted literals — line-filter values, field values, an echoed query.
+	// Short quotes (e.g. unknown field "id") are left readable.
+	reErrQuoted = regexp.MustCompile(`"[^"]{12,}"`)
+	// Long hex/id runs (request ids, hashes).
+	reErrLongHex = regexp.MustCompile(`\b[0-9a-fA-F]{16,}\b`)
+)
+
+// redactBackendError extracts a VictoriaLogs error message and strips query-like
+// content so the LogQL/LogsQL query (which may carry sensitive log selectors or
+// filter values) can't leak into error logs or handler error responses. This is
+// the application-level analogue of sanitizeUpstreamError, which only covers
+// transport *url.Error. No-op under -debug-log-raw-queries.
+func (p *Proxy) redactBackendError(body []byte) string {
+	msg := extractVLErrorMsg(body)
+	if msg == "" || p.debugLogRawQueries {
+		return msg
+	}
+	msg = RedactSecrets(msg)
+	msg = reErrSelector.ReplaceAllString(msg, "{…}")
+	msg = reErrQuoted.ReplaceAllString(msg, `"…"`)
+	msg = reErrLongHex.ReplaceAllString(msg, "…")
+	if len(msg) > 500 {
+		msg = msg[:500] + "…"
+	}
+	return msg
+}
+
 // lokiErrorType returns the Loki/Prometheus-style errorType for an HTTP status code.
 // Matches the exact errorType strings from Loki's Prometheus API handler:
 // vendor/github.com/prometheus/prometheus/web/api/v1/api.go

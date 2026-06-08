@@ -29,6 +29,7 @@ import (
 	mw "github.com/ReliablyObserve/Loki-VL-proxy/internal/middleware"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/observability"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -1521,6 +1522,9 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 	if p.peerCache != nil {
 		p.peerCache.Close()
 	}
+	if p.coldRouter != nil {
+		p.coldRouter.Stop(ctx)
+	}
 	p.stopPatternsPersistenceLoop(ctx)
 	p.stopLabelValuesIndexPersistenceLoop(ctx)
 	if err := p.persistPatternsNow("shutdown"); err != nil {
@@ -1771,7 +1775,13 @@ func (p *Proxy) purgePeerCaches(ctx context.Context) map[string]string {
 	peers := p.peerCache.Peers()
 	self := p.peerCache.SelfAddr()
 
+	// Cap concurrent peer purges so a large discovered ring doesn't burst one
+	// HTTP request to every peer at once. errgroup.SetLimit bounds the number of
+	// in-flight goroutines; results are collected over a buffered channel (a peer
+	// being unreachable is reported, never fatal).
 	type peerResult struct{ addr, status string }
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(peerPurgeMaxConcurrency)
 	ch := make(chan peerResult, len(peers))
 	dispatched := 0
 	for _, peerAddr := range peers {
@@ -1780,22 +1790,27 @@ func (p *Proxy) purgePeerCaches(ctx context.Context) map[string]string {
 			continue // already purged locally; skip the redundant self round-trip
 		}
 		dispatched++
-		go func(a string) {
-			pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		g.Go(func() error {
+			pctx, cancel := context.WithTimeout(gctx, 5*time.Second)
 			defer cancel()
-			ch <- peerResult{addr: a, status: p.purgeOnePeer(pctx, a)}
-		}(addr)
+			ch <- peerResult{addr: addr, status: p.purgeOnePeer(pctx, addr)}
+			return nil
+		})
 	}
 	if dispatched == 0 {
 		results["_note"] = "no peers configured; purged local instance only"
 		return results
 	}
-	for i := 0; i < dispatched; i++ {
-		pr := <-ch
+	go func() { _ = g.Wait(); close(ch) }()
+	for pr := range ch {
 		results[pr.addr] = pr.status
 	}
 	return results
 }
+
+// peerPurgeMaxConcurrency bounds the cache-purge fanout so a large peer ring
+// cannot make one admin purge open a request to every peer simultaneously.
+const peerPurgeMaxConcurrency = 16
 
 // purgeOnePeer POSTs a token-authenticated purge to a single peer's
 // /_cache/purge endpoint and returns a short status string.
@@ -1949,6 +1964,30 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
+	// for METRIC (matrix) range queries. This MUST run here, at the entry, while
+	// r.URL still carries start/end/step and the ORIGINAL logqlQuery still parses as
+	// a metric expression: downstream, withOrgID/injectAuthFingerprint reset r.Form
+	// and the URL/query are rewritten for VL, so the deeper stats/hits guards see an
+	// empty range and silently no-op. A sub-step (range < step) by() residual yields
+	// a single-bucket, multi-series frame that Grafana's mergeFrames collapses onto
+	// ONE edge of the merged chart (a right-edge spike, or a left-edge "all data at
+	// the beginning" cluster). Scoped to metric exprs via the AST so a log query
+	// (streams, not a matrix) is never blanked.
+	if isQuerySplitResidual(r) {
+		if parsed, perr := logqlpkg.Parse(logqlQuery); perr == nil {
+			switch parsed.(type) {
+			case *logqlpkg.RangeAggregation, *logqlpkg.VectorAggregation, *logqlpkg.BinOpExpr, *logqlpkg.OpaqueMetricExpr, *logqlpkg.LiteralExpr:
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
+				_, _ = w.Write(emptyLokiMatrix)
+				p.metrics.RecordRequest("query_range", http.StatusOK, time.Since(start))
+				return
+			}
+		}
+	}
+
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	tupleMode := tupleModeForRequest(categorizedLabels, emitStructuredMetadata)
@@ -2156,7 +2195,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 		if sc.code != http.StatusOK {
 			// Rewrite VL error body to Loki-compliant format (Loki's errorType field
 			// uses strings like "execution", "timeout", etc.; VL may use "unavailable").
-			p.writeError(w, sc.code, extractVLErrorMsg(cacheOut))
+			p.writeError(w, sc.code, p.redactBackendError(cacheOut))
 		} else {
 			_, _ = w.Write(cacheOut)
 		}

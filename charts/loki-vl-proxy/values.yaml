@@ -689,10 +689,16 @@ networkPolicy:
           protocol: TCP
   # When serviceMonitor.enabled=true the chart automatically opens the metrics
   # port (derived from extraArgs.metrics-listen) for Prometheus scraping —
-  # otherwise the scrape would time out under this NetworkPolicy. Restrict the
-  # scrape source here (a list of NetworkPolicyPeer, e.g. a namespaceSelector for
-  # your monitoring namespace); leave empty to allow the metrics port from any
-  # source (it serves only non-sensitive read-only counters).
+  # otherwise the scrape would time out under this NetworkPolicy.
+  #
+  # SECURITY: scope the scrape source to your Prometheus, one of two ways:
+  #   1. monitoringNamespace (convenience) — just the namespace name; rendered as
+  #      a namespaceSelector on kubernetes.io/metadata.name. e.g. "monitoring".
+  #   2. monitoringFrom (explicit) — a list of NetworkPolicyPeer for full control.
+  # monitoringFrom takes precedence if both are set. If BOTH are left empty the
+  # metrics port is opened to ALL sources (zero-config default) — /metrics is
+  # non-sensitive read-only counters, but scoping it is recommended in production.
+  monitoringNamespace: ""  # e.g. "monitoring" or "prometheus"
   monitoringFrom: []
   #  - namespaceSelector:
   #      matchLabels:

@@ -1515,7 +1515,7 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	// Propagate VL response
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		p.writeError(w, resp.StatusCode, string(body))
+		p.writeError(w, resp.StatusCode, p.redactBackendError(body))
 		p.metrics.RecordRequest("delete", resp.StatusCode, time.Since(start))
 		return
 	}

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,6 +39,10 @@ type ColdRouter struct {
 	overlap         time.Duration
 	manifestRefresh time.Duration
 	logger          *slog.Logger
+
+	started atomic.Bool   // set when Start launches the loop
+	stopCh  chan struct{} // closed by Stop() to terminate refreshLoop
+	doneCh  chan struct{} // closed by the loop goroutine on exit
 
 	mu       sync.RWMutex
 	manifest *ManifestRange
@@ -81,13 +86,44 @@ func NewColdRouter(cfg ColdBackendConfig, logger *slog.Logger) (*ColdRouter, err
 		overlap:         overlap,
 		manifestRefresh: refresh,
 		logger:          logger.With("component", "cold-router"),
+		stopCh:          make(chan struct{}),
+		doneCh:          make(chan struct{}),
 	}
 
 	return cr, nil
 }
 
 func (cr *ColdRouter) Start(ctx context.Context) {
-	go cr.refreshLoop(ctx)
+	cr.started.Store(true)
+	go func() {
+		defer close(cr.doneCh)
+		cr.refreshLoop(ctx)
+	}()
+}
+
+// Stop terminates the refresh loop and waits for it to exit (bounded by ctx if
+// non-nil). Idempotent: safe to call more than once and safe if Start was never
+// called. Wired into Proxy.Shutdown so the goroutine + manifest HTTP client do
+// not leak across proxy lifecycles (tests, embedding, rolling restarts).
+func (cr *ColdRouter) Stop(ctx context.Context) {
+	select {
+	case <-cr.stopCh:
+	default:
+		close(cr.stopCh)
+	}
+	// Only wait for the loop to drain if it was actually started; otherwise
+	// doneCh is never closed and the wait would block forever.
+	if !cr.started.Load() || cr.doneCh == nil {
+		return
+	}
+	if ctx == nil {
+		<-cr.doneCh
+		return
+	}
+	select {
+	case <-cr.doneCh:
+	case <-ctx.Done():
+	}
 }
 
 func (cr *ColdRouter) refreshLoop(ctx context.Context) {
@@ -98,6 +134,8 @@ func (cr *ColdRouter) refreshLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-cr.stopCh:
 			return
 		case <-ticker.C:
 			cr.refreshManifest(ctx)

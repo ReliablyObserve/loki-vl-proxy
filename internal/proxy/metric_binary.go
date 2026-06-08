@@ -23,22 +23,17 @@ import (
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
-	// Suppress Grafana's 24h+ querySplitting RESIDUAL chunk. At ranges past the
-	// day boundary, the Loki datasource (querySplitting.ts) emits the bulk range
-	// PLUS a tiny trailing chunk whose span is <= ~2 steps (e.g. an 8-second
-	// [now-8s, now] chunk with a 2-minute step). That residual produces a single
-	// right-edge bucket; mergeFrames/closestIdx then glues it onto the distributed
-	// main chunk as a tall spike at the right edge — most visible on high-card
-	// panels (pod, *_id) whose main chunk is sparse, while dense low-card panels
-	// hide it. The /hits drilldown path already suppresses this, but the residual
-	// can route to ANY stats path (compat, direct, windowed-hits — the latter only
-	// engages at >= 2h). Hoisting the suppression here covers every path. Gated on
-	// isGrafanaSourcedRequest so non-Grafana clients still get exact small-range
-	// results. See [[grafana-loki-querysplitting-24h]].
-	if isQuerySplitLeftoverChunk(r, r.FormValue("start"), r.FormValue("end"), r.FormValue("step")) {
+	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual).
+	// proxyStatsQueryRange is the entry for every drilldown high-cardinality metric
+	// query — pod LABEL and *_id FIELD alike — so this single guard covers them all.
+	// A sub-step (range < step) by() residual yields a single-bucket, multi-series
+	// frame that Grafana's mergeFrames collapses onto ONE edge of the merged chart
+	// (a right-edge spike, or a left-edge "all data at the beginning" cluster). Axis
+	// trimming can't fix it (the bucket is legitimately within [start,end]); only
+	// suppression does. Safe here because this entry only serves metric (matrix)
+	// stats queries, so a log query is never blanked.
+	if isQuerySplitResidual(r) {
 		w.Header().Set("Content-Type", "application/json")
-		// Same marker the /hits path uses — TestLock_LeftoverChunkSuppressed
-		// pins this exact value; both routes suppress the same residual.
 		w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
 		_, _ = w.Write(emptyLokiMatrix)
 		return
@@ -193,10 +188,10 @@ func (p *Proxy) proxyStatsQueryRangeDirect(w http.ResponseWriter, r *http.Reques
 	if resp.StatusCode >= 400 {
 		errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 		if isGrafanaSourcedRequest(r) {
-			p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, extractVLErrorMsg(errBody))
+			p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, p.redactBackendError(errBody))
 			return false
 		}
-		p.writeError(w, resp.StatusCode, extractVLErrorMsg(errBody))
+		p.writeError(w, resp.StatusCode, p.redactBackendError(errBody))
 		return false
 	}
 
@@ -305,20 +300,43 @@ func isGrafanaDrilldownRequest(r *http.Request) bool {
 //   - X-Grafana-* header present (org id, user id, request id — sent by the
 //     Grafana backend on dashboard/explore queries).
 //
-// Returning a false negative is acceptable (raw curl/scripts query is served
-// normally). Returning a false positive on a non-Grafana client could trigger
-// the leftover-chunk suppression for legitimate small queries — so the gates
-// in callers also bound the suppression to range ≤ 2 × step, which is too
-// small to plausibly be a real user query at chunked-merge step sizes.
-// isQuerySplitLeftoverChunk reports whether (startRaw,endRaw,stepRaw) describe the
-// tiny trailing RESIDUAL chunk Grafana's querySplitting emits past the 24h day
-// boundary: a Grafana-sourced request whose range is SHORTER THAN ONE STEP, so it
-// yields a single right-edge bucket that mergeFrames glues onto the main chunk as
-// a spike. The detector is `range < step` (strictly sub-step): a legitimate query
-// spans at least one full step (>=1 bucket), so this no longer blanks normal
-// Explore/dashboard queries with a short range or a coarse step — the earlier
-// `<= 2*step` form did, silently returning empty for real 1-2 bucket queries.
-func isQuerySplitLeftoverChunk(r *http.Request, startRaw, endRaw, stepRaw string) bool {
+// Returning a false negative is acceptable (a raw curl/scripts query is served
+// normally); a false positive on a non-Grafana client is harmless now that the
+// windowed-/hits gate also requires Drilldown or a high-cardinality field, and
+// the querySplitting residual is handled by per-chunk axis trimming rather than
+// by blanking Grafana-sourced sub-step requests.
+// isQuerySplitResidual reports whether r is the tiny trailing RESIDUAL chunk of
+// Grafana's 24h+ querySplitting: a Grafana-sourced request whose span is shorter
+// than one step. For a metric (matrix) query such a chunk yields a single-bucket,
+// multi-series response that Grafana's mergeFrames/closestIdx collapses onto ONE
+// edge of the merged chart — a right-edge spike, or (when the residual is the
+// oldest chunk) a left-edge "all data groups at the beginning" cluster. It must be
+// suppressed on every metric path; the caller is responsible for confirming the
+// query is a metric (matrix) query so a log query is never blanked. A real metric
+// query never spans < one step except as this residual — Grafana aligns standalone
+// ranges to the step. See [[grafana-loki-querysplitting-24h]].
+func isQuerySplitResidual(r *http.Request) bool {
+	// Read start/end/step from the URL query directly. r.FormValue depends on
+	// r.Form, which upstream handlers may have parsed before r.URL was rewritten
+	// for downstream VL calls — leaving an empty cached r.Form that makes the
+	// residual check silently no-op. r.URL.Query() reparses RawQuery deterministically;
+	// fall back to r.FormValue only if a value is missing there (e.g. POST form).
+	q := r.URL.Query()
+	get := func(k string) string {
+		if v := q.Get(k); v != "" {
+			return v
+		}
+		return r.FormValue(k)
+	}
+	return isQuerySplitResidualParams(r, get("start"), get("end"), get("step"))
+}
+
+// isQuerySplitResidualParams is isQuerySplitResidual with explicit start/end/step.
+// Deep handlers (the /hits leaf) must pass their captured raw values: by the time
+// a request reaches them the proxy may have rewritten r.URL for downstream VL
+// calls, so r.FormValue("start"/"end"/"step") can be empty. Only the Grafana-source
+// check reads r (it uses headers, which persist).
+func isQuerySplitResidualParams(r *http.Request, startRaw, endRaw, stepRaw string) bool {
 	if !isGrafanaSourcedRequest(r) {
 		return false
 	}
@@ -327,11 +345,11 @@ func isQuerySplitLeftoverChunk(r *http.Request, startRaw, endRaw, stepRaw string
 	if !sok || !eok || eNs <= sNs {
 		return false
 	}
-	stepDur, stepOK := parsePositiveStepDuration(stepRaw)
-	if !stepOK || stepDur <= 0 {
+	stepD, stepOK := parsePositiveStepDuration(stepRaw)
+	if !stepOK || stepD <= 0 {
 		return false
 	}
-	return eNs-sNs < stepDur.Nanoseconds()
+	return eNs-sNs < stepD.Nanoseconds()
 }
 
 func isGrafanaSourcedRequest(r *http.Request) bool {
@@ -1239,7 +1257,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldown(w http.ResponseWriter, r *http.Req
 
 		if resp.StatusCode >= 400 {
 			errBody, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-			p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, extractVLErrorMsg(errBody))
+			p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, p.redactBackendError(errBody))
 			return
 		}
 
@@ -1386,7 +1404,7 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownParserDirect(
 		// per-bucket limit exceeded; 503 from VL queue saturation), return a
 		// Loki-compatible 200 + Warning header instead of the raw VL status.
 		// See pkg/querier/queryrange/limits.go::seriesLimiter.Do upstream.
-		p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, extractVLErrorMsg(errBody))
+		p.writeDrilldownPartialFromUpstream(w, resp.StatusCode, p.redactBackendError(errBody))
 		return
 	}
 
@@ -1626,19 +1644,21 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 		stepForHits = stepRaw + "s"
 	}
 
-	// Suppress one-bucket leftover chunks emitted by Grafana's querySplitting.
-	// At any range > 24h, Grafana's Loki datasource (`querySplitting.ts`) splits
-	// metric queries into 24h chunks plus a tiny residual chunk whose range can
-	// be < step. The residual produces axisLen=1 — all top-N values land at the
-	// single rightmost timestamp. mergeFrames then glues that one-point block
-	// onto chunk-1's distributed series as a tall spike at the right edge.
-	// Return an empty matrix for these (the chart loses ~1 step on the right
-	// but no longer shows a recent-data spike that dwarfs the rest).
-	//
-	// Gated on isGrafanaSourcedRequest — querySplitting fires for ANY Grafana
-	// client (Explore, Drilldown, dashboard panels) not just Drilldown, and
-	// Explore at 24h+ shows the same spike from the same residual chunk.
-	if isQuerySplitLeftoverChunk(r, startRaw, endRaw, stepForHits) {
+	// Suppress the Grafana querySplitting RESIDUAL chunk. EVERY high-cardinality
+	// drilldown metric query — pod LABEL (stream-selector pod!="") and *_id FIELD
+	// (| field!="") alike — converges here at the /hits leaf (this is the only
+	// producer of the top-N per-value matrix), so this is the reliable single guard
+	// for the residual that the upstream routing's pre-translation AST check cannot
+	// catch (the translated drilldown query no longer parses as a metric expr). A
+	// sub-step (range < step) residual yields a single-bucket frame with N>1 series;
+	// Grafana's mergeFrames collapses all N single-point series onto ONE edge of the
+	// merged chart — a right-edge spike, or (when the residual is the oldest chunk) a
+	// left-edge "all data groups at the beginning" cluster. Axis trimming can't fix
+	// it (the bucket is legitimately within [start,end]); only suppression does.
+	// See [[grafana-loki-querysplitting-24h]]. Use the PASSED start/end/step (not
+	// r.FormValue, which may be stale here after URL rewrites — that empty-read was
+	// the bug that let the residual through and clustered the chart).
+	if isQuerySplitResidualParams(r, startRaw, endRaw, stepForHits) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
 		_, _ = w.Write(emptyLokiMatrix)
@@ -1711,6 +1731,11 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 	if stepSec <= 0 {
 		stepSec = 1
 	}
+	// Requested window bounds (un-aligned) — used to trim the emitted axis so no
+	// bucket falls outside [start,end] of this chunk (see the per-chunk trim in
+	// the values loop below).
+	reqStartSec := startSec
+	reqEndSec := endSec
 	// Align startSec down to step boundary so all series share the same axis.
 	if rem := startSec % stepSec; rem != 0 {
 		startSec -= rem
@@ -1766,6 +1791,17 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 		first := true
 		for i := 0; i < axisLen; i++ {
 			ts := startSec + int64(i)*stepSec
+			// Honor the requested [start,end] window per chunk. startSec was
+			// aligned DOWN to a step boundary, so the leading bucket(s) can
+			// precede the requested start — and emitting an out-of-window bucket
+			// is exactly what makes Grafana's 24h-chunked mergeFrames/closestIdx
+			// collapse a querySplitting residual onto the main chunk's right edge
+			// as a spike. Trimming to [reqStartSec,reqEndSec] (like the direct
+			// stats path) makes every chunk self-correcting, so no residual
+			// blanking is needed. See [[grafana-loki-querysplitting-24h]].
+			if ts < reqStartSec || ts > reqEndSec {
+				continue
+			}
 			if !first {
 				buf.WriteByte(',')
 			}
@@ -2101,19 +2137,22 @@ func stripUnpackStagesForTopN(base string) string {
 // drops only the redundant `| unpack_logfmt`. Returns true iff it wrote a response;
 // false (without writing a body) so the caller falls through to the two-phase/direct.
 func (p *Proxy) tryHighCardCountByWindowedHits(w http.ResponseWriter, r *http.Request, logsqlQuery string) bool {
-	// Scope to Grafana-sourced requests. The windowed-/hits path returns
-	// per-window-sampled top-N series rather than exact stats_query_range results
-	// — that's the right trade-off for rendering a Grafana chart (Explore /
-	// Drilldown), where the full unbounded response is 40MB+/25s and would be
-	// cancelled, but it is the WRONG default for a direct API client that expects
-	// exact aggregation. Non-Grafana callers fall through to the exact direct path
-	// (bounded to maxStatsQuerySeries top-N-by-count, like Loki's max_query_series,
-	// with the two-phase fallback only on a 16MB overflow).
-	if !isGrafanaSourcedRequest(r) {
-		return false
-	}
+	// The windowed-/hits path returns per-window-sampled top-N series rather than
+	// exact stats_query_range results. That visualization-optimized trade-off is
+	// right for Drilldown (visual exploration, any field) and for high-cardinality
+	// fields (trace_id, *_id, *_token — where the full unbounded response is
+	// 40MB+/25s and would be cancelled), but it is the WRONG default for a normal
+	// Grafana dashboard panel over a low-cardinality field (e.g. count by(status)),
+	// which expects exact aggregation. Scope to Drilldown OR a high-card field;
+	// everything else (normal dashboards, Explore low-card, non-Grafana API
+	// clients) falls through to the exact direct path (bounded to
+	// maxStatsQuerySeries top-N-by-count, like Loki's max_query_series, with the
+	// two-phase fallback only on a 16MB overflow).
 	spec, ok := parseStatsCompatSpec(logsqlQuery)
 	if !ok || spec.Func != "count" || len(spec.GroupBy) != 1 {
+		return false
+	}
+	if !isGrafanaDrilldownRequest(r) && !isLikelyHighCardinalityField(spec.GroupBy[0]) {
 		return false
 	}
 	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")
@@ -3263,7 +3302,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 
 	// Propagate VL error status
 	if status >= 400 {
-		p.writeError(w, status, string(body))
+		p.writeError(w, status, p.redactBackendError(body))
 		return
 	}
 
