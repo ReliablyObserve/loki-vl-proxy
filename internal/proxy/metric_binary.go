@@ -23,15 +23,21 @@ import (
 // --- Stats query proxying ---
 
 func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, logsqlQuery string) {
-	// NOTE: Grafana's 24h+ querySplitting emits a tiny trailing RESIDUAL chunk
-	// (range can be < step) alongside the bulk range. Earlier code BLANKED that
-	// residual here to avoid a right-edge mergeFrames spike, but the heuristic
-	// (Grafana-sourced AND range < step) also blanked legitimate short-range /
-	// coarse-step Grafana queries. The durable fix is per-chunk axis trimming —
-	// each stats path now honors its own [start,end] (direct: trimStatsQueryRange*;
-	// windowed /hits: the reqStart/reqEnd trim) — so the residual contributes only
-	// its real (small) data and no spike forms, with no false-positive blanking.
-	// See [[grafana-loki-querysplitting-24h]].
+	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual).
+	// proxyStatsQueryRange is the entry for every drilldown high-cardinality metric
+	// query — pod LABEL and *_id FIELD alike — so this single guard covers them all.
+	// A sub-step (range < step) by() residual yields a single-bucket, multi-series
+	// frame that Grafana's mergeFrames collapses onto ONE edge of the merged chart
+	// (a right-edge spike, or a left-edge "all data at the beginning" cluster). Axis
+	// trimming can't fix it (the bucket is legitimately within [start,end]); only
+	// suppression does. Safe here because this entry only serves metric (matrix)
+	// stats queries, so a log query is never blanked.
+	if isQuerySplitResidual(r) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
+		_, _ = w.Write(emptyLokiMatrix)
+		return
+	}
 
 	originalLogql := resolveGrafanaRangeTemplateTokens(r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
@@ -299,6 +305,53 @@ func isGrafanaDrilldownRequest(r *http.Request) bool {
 // windowed-/hits gate also requires Drilldown or a high-cardinality field, and
 // the querySplitting residual is handled by per-chunk axis trimming rather than
 // by blanking Grafana-sourced sub-step requests.
+// isQuerySplitResidual reports whether r is the tiny trailing RESIDUAL chunk of
+// Grafana's 24h+ querySplitting: a Grafana-sourced request whose span is shorter
+// than one step. For a metric (matrix) query such a chunk yields a single-bucket,
+// multi-series response that Grafana's mergeFrames/closestIdx collapses onto ONE
+// edge of the merged chart — a right-edge spike, or (when the residual is the
+// oldest chunk) a left-edge "all data groups at the beginning" cluster. It must be
+// suppressed on every metric path; the caller is responsible for confirming the
+// query is a metric (matrix) query so a log query is never blanked. A real metric
+// query never spans < one step except as this residual — Grafana aligns standalone
+// ranges to the step. See [[grafana-loki-querysplitting-24h]].
+func isQuerySplitResidual(r *http.Request) bool {
+	// Read start/end/step from the URL query directly. r.FormValue depends on
+	// r.Form, which upstream handlers may have parsed before r.URL was rewritten
+	// for downstream VL calls — leaving an empty cached r.Form that makes the
+	// residual check silently no-op. r.URL.Query() reparses RawQuery deterministically;
+	// fall back to r.FormValue only if a value is missing there (e.g. POST form).
+	q := r.URL.Query()
+	get := func(k string) string {
+		if v := q.Get(k); v != "" {
+			return v
+		}
+		return r.FormValue(k)
+	}
+	return isQuerySplitResidualParams(r, get("start"), get("end"), get("step"))
+}
+
+// isQuerySplitResidualParams is isQuerySplitResidual with explicit start/end/step.
+// Deep handlers (the /hits leaf) must pass their captured raw values: by the time
+// a request reaches them the proxy may have rewritten r.URL for downstream VL
+// calls, so r.FormValue("start"/"end"/"step") can be empty. Only the Grafana-source
+// check reads r (it uses headers, which persist).
+func isQuerySplitResidualParams(r *http.Request, startRaw, endRaw, stepRaw string) bool {
+	if !isGrafanaSourcedRequest(r) {
+		return false
+	}
+	sNs, sok := parseLokiTimeToUnixNano(startRaw)
+	eNs, eok := parseLokiTimeToUnixNano(endRaw)
+	if !sok || !eok || eNs <= sNs {
+		return false
+	}
+	stepD, stepOK := parsePositiveStepDuration(stepRaw)
+	if !stepOK || stepD <= 0 {
+		return false
+	}
+	return eNs-sNs < stepD.Nanoseconds()
+}
+
 func isGrafanaSourcedRequest(r *http.Request) bool {
 	if isGrafanaDrilldownRequest(r) {
 		return true
@@ -1591,15 +1644,26 @@ func (p *Proxy) proxyStatsQueryRangeDrilldownHits(
 		stepForHits = stepRaw + "s"
 	}
 
-	// Suppress one-bucket leftover chunks emitted by Grafana's querySplitting.
-	// NOTE: Grafana's Loki datasource (`querySplitting.ts`) splits metric ranges
-	// > 24h into 24h chunks plus a tiny residual chunk whose range can be < step.
-	// Earlier code BLANKED that residual to avoid a right-edge mergeFrames spike,
-	// but blanking had false-positives (it also blanked legitimate short-range /
-	// coarse-step Grafana queries). The durable fix is the per-chunk axis trim in
-	// the values loop below — every chunk now honors its own [start,end], so the
-	// residual contributes only its real (small) data and no spike forms. No
-	// suppression gate needed. See [[grafana-loki-querysplitting-24h]].
+	// Suppress the Grafana querySplitting RESIDUAL chunk. EVERY high-cardinality
+	// drilldown metric query — pod LABEL (stream-selector pod!="") and *_id FIELD
+	// (| field!="") alike — converges here at the /hits leaf (this is the only
+	// producer of the top-N per-value matrix), so this is the reliable single guard
+	// for the residual that the upstream routing's pre-translation AST check cannot
+	// catch (the translated drilldown query no longer parses as a metric expr). A
+	// sub-step (range < step) residual yields a single-bucket frame with N>1 series;
+	// Grafana's mergeFrames collapses all N single-point series onto ONE edge of the
+	// merged chart — a right-edge spike, or (when the residual is the oldest chunk) a
+	// left-edge "all data groups at the beginning" cluster. Axis trimming can't fix
+	// it (the bucket is legitimately within [start,end]); only suppression does.
+	// See [[grafana-loki-querysplitting-24h]]. Use the PASSED start/end/step (not
+	// r.FormValue, which may be stale here after URL rewrites — that empty-read was
+	// the bug that let the residual through and clustered the chart).
+	if isQuerySplitResidualParams(r, startRaw, endRaw, stepForHits) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
+		_, _ = w.Write(emptyLokiMatrix)
+		return true
+	}
 
 	// For long ranges, sample windows in parallel so the top-N spans the
 	// timeline instead of clustering at recent times (VL's natural bias).

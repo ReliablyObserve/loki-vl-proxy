@@ -278,27 +278,35 @@ func TestLock_HitsRunsForAllRanges(t *testing.T) {
 // All four Grafana source signals must trigger suppression. Non-Grafana
 // requests with the same shape must NOT trigger suppression — a raw API
 // client querying 1m of data legitimately wants whatever VL has.
-func TestLock_LeftoverChunkNotBlanked(t *testing.T) {
-	// Round-2 fix: the Grafana 24h+ querySplitting residual is handled by
-	// per-chunk axis trimming, NOT by blanking Grafana-sourced sub-step requests.
-	// The earlier suppression had false-positives — it returned an empty matrix
-	// for legitimate short-range / coarse-step Grafana dashboard queries. Guard:
-	// NO request (residual-sized or normal, Drilldown or Explore or raw) is ever
-	// served the blanked empty matrix with X-Proxy-Drilldown-Path=hits-leftover-suppressed.
+func TestLock_LeftoverChunkSuppressedInHits(t *testing.T) {
+	// The Grafana 24h+ querySplitting residual is a sub-step chunk (range < step)
+	// that yields a single-bucket /hits frame; Grafana's mergeFrames collapses its
+	// N single-point series onto one edge of the merged chart (a right-edge spike
+	// or a left-edge "all data at the beginning" cluster). The /hits path suppresses
+	// it (X-Proxy-Drilldown-Path=hits-leftover-suppressed). Scope: ONLY Grafana
+	// sub-step requests reaching the high-card /hits path — a non-Grafana caller and
+	// any range >= one full step are served normally. (The proxy-wide dispatch-level
+	// blanking that over-blanked low-card dashboards stays removed; those take the
+	// exact stats path, not /hits — see TestWindowedHits_GatedToDrilldownOrHighCard.)
 	cases := []struct {
-		name     string
-		startSec int64
-		endSec   int64
-		stepRaw  string
-		source   string
+		name         string
+		startSec     int64
+		endSec       int64
+		stepRaw      string
+		source       string
+		wantSuppress bool
 	}{
-		{"drilldown_60s_step120", 1700000000, 1700000060, "120", "drilldown"},
-		{"drilldown_119s_step120", 1700000000, 1700000119, "120", "drilldown"},
-		{"explore_via_ua_60s", 1700000000, 1700000060, "120", "grafana-ua"},
-		{"explore_via_hdr_60s", 1700000000, 1700000060, "120", "grafana-hdr"},
-		{"drilldown_240s_step120", 1700000000, 1700000240, "120", "drilldown"},
-		{"drilldown_1h_step120", 1700000000, 1700003600, "120", "drilldown"},
-		{"raw_caller_60s_step120", 1700000000, 1700000060, "120", ""},
+		// Grafana, sub-step residual (range < step) → SUPPRESS.
+		{"drilldown_60s_step120", 1700000000, 1700000060, "120", "drilldown", true},
+		{"drilldown_119s_step120", 1700000000, 1700000119, "120", "drilldown", true},
+		{"explore_via_ua_60s", 1700000000, 1700000060, "120", "grafana-ua", true},
+		{"explore_via_hdr_60s", 1700000000, 1700000060, "120", "grafana-hdr", true},
+		// Grafana, range >= step (legitimate >=1-bucket query) → do NOT suppress.
+		{"drilldown_120s_step120", 1700000000, 1700000120, "120", "drilldown", false},
+		{"drilldown_240s_step120", 1700000000, 1700000240, "120", "drilldown", false},
+		{"drilldown_1h_step120", 1700000000, 1700003600, "120", "drilldown", false},
+		// Non-Grafana caller with sub-step range → do NOT suppress.
+		{"raw_caller_60s_step120", 1700000000, 1700000060, "120", "", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -322,8 +330,12 @@ func TestLock_LeftoverChunkNotBlanked(t *testing.T) {
 			p.proxyStatsQueryRange(w, r,
 				`namespace:="prod" | filter pod:!"" | stats by (pod) count()`)
 
-			if w.Header().Get("X-Proxy-Drilldown-Path") == "hits-leftover-suppressed" {
-				t.Errorf("residual blanking must be gone — got hits-leftover-suppressed for %s (false-positive blanking of a sub-step query)", tc.name)
+			gotSuppressed := w.Header().Get("X-Proxy-Drilldown-Path") == "hits-leftover-suppressed"
+			if gotSuppressed != tc.wantSuppress {
+				t.Errorf("%s: suppressed=%v, want %v (body=%s)", tc.name, gotSuppressed, tc.wantSuppress, w.Body.String())
+			}
+			if tc.wantSuppress && !strings.Contains(w.Body.String(), `"result":[]`) {
+				t.Errorf("%s: suppressed but body is not an empty matrix: %s", tc.name, w.Body.String())
 			}
 		})
 	}

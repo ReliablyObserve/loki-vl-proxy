@@ -1964,6 +1964,30 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	// Suppress the Grafana querySplitting RESIDUAL chunk (see isQuerySplitResidual)
+	// for METRIC (matrix) range queries. This MUST run here, at the entry, while
+	// r.URL still carries start/end/step and the ORIGINAL logqlQuery still parses as
+	// a metric expression: downstream, withOrgID/injectAuthFingerprint reset r.Form
+	// and the URL/query are rewritten for VL, so the deeper stats/hits guards see an
+	// empty range and silently no-op. A sub-step (range < step) by() residual yields
+	// a single-bucket, multi-series frame that Grafana's mergeFrames collapses onto
+	// ONE edge of the merged chart (a right-edge spike, or a left-edge "all data at
+	// the beginning" cluster). Scoped to metric exprs via the AST so a log query
+	// (streams, not a matrix) is never blanked.
+	if isQuerySplitResidual(r) {
+		if parsed, perr := logqlpkg.Parse(logqlQuery); perr == nil {
+			switch parsed.(type) {
+			case *logqlpkg.RangeAggregation, *logqlpkg.VectorAggregation, *logqlpkg.BinOpExpr, *logqlpkg.OpaqueMetricExpr, *logqlpkg.LiteralExpr:
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("X-Proxy-Drilldown-Path", "hits-leftover-suppressed")
+				_, _ = w.Write(emptyLokiMatrix)
+				p.metrics.RecordRequest("query_range", http.StatusOK, time.Since(start))
+				return
+			}
+		}
+	}
+
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	tupleMode := tupleModeForRequest(categorizedLabels, emitStructuredMetadata)
