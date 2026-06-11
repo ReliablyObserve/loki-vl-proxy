@@ -3,7 +3,7 @@
 Check internal/logsql AST coverage against VictoriaLogs upstream.
 
 Fetches the lib/logstorage file listing from GitHub and diffs against
-docs/vl-ast-coverage.json to identify new upstream constructs not yet
+scripts/vl-ast-coverage.json to identify new upstream constructs not yet
 implemented in the proxy.
 
 Usage:
@@ -23,7 +23,7 @@ from pathlib import Path
 # Hardcoded HTTPS endpoint — no user-controlled URL component.
 VL_API_HOST = "api.github.com"
 VL_API_PATH = "/repos/VictoriaMetrics/VictoriaLogs/contents/lib/logstorage"
-REGISTRY_PATH = Path(__file__).parent.parent / "docs" / "vl-ast-coverage.json"
+REGISTRY_PATH = Path(__file__).parent / "vl-ast-coverage.json"
 
 CATEGORY_PATTERNS = {
     "pipes":   re.compile(r"^pipe_(.+)\.go$"),
@@ -141,7 +141,7 @@ def main() -> None:
     print(f"\nTotal: {total} new upstream constructs.")
     print(
         "\nTo resolve: add AST node(s) to internal/logsql/ast.go, implement"
-        " String(), update docs/vl-ast-coverage.json, and add tests."
+        " String(), update scripts/vl-ast-coverage.json, and add tests."
     )
     sys.exit(1)
 

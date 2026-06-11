@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Relocated the CI-consumed VL AST coverage registry (`vl-ast-coverage.json`) from
+  `docs/` to `scripts/`, next to the checker script that reads it; the `docs/` tree
+  now carries only documentation pages.
+
 ## [1.59.0] - 2026-06-08
 
 ### Fixed
@@ -552,7 +557,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - GHCR badge workflow scrapes public GitHub package pages instead of Docker Hub API
-- Docs audit: api-reference.md adds missing health/cache/peer endpoints, observability.md fixes stale peer-cache metric names, compatibility-loki.md and roadmap.md updated to 555+ parity cases
+- Docs audit: api-reference.md adds missing health/cache/peer endpoints, observability.md fixes stale peer-cache metric names, compatibility-loki.md updated to 555+ parity cases
 
 ## [1.50.1] - 2026-05-26
 
@@ -914,7 +919,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- docs: comprehensive accuracy audit across 9 doc files — fix wrong flag defaults (`-cb-open-duration` 2s→10s, `goMemLimitPercent` 70→85, `GOGC` 100→200, Go requirement 1.26.2→1.26.3, Loki benchmark stack 3.4.x→3.6.x), correct "not exposed as flags" claim for `-rate-limit-per-second`/`-rate-limit-burst`/`-max-concurrent` in configuration.md + operations.md + scaling.md, add missing Cold Storage Backend section to configuration.md (`-cold-enabled`, `-cold-backend`, `-cold-boundary`, `-cold-overlap`, `-cold-manifest-refresh`, `-cold-timeout`; shipped in 1.28.0 with zero doc coverage), add Go Runtime Tuning flag section, extend compatibility-loki.md release notes from v1.17.1 through v1.31.2, refresh roadmap.md Completed section through v1.31.2, clarify buildinfo `2.9.0` is intentional.
+- docs: comprehensive accuracy audit across 9 doc files — fix wrong flag defaults (`-cb-open-duration` 2s→10s, `goMemLimitPercent` 70→85, `GOGC` 100→200, Go requirement 1.26.2→1.26.3, Loki benchmark stack 3.4.x→3.6.x), correct "not exposed as flags" claim for `-rate-limit-per-second`/`-rate-limit-burst`/`-max-concurrent` in configuration.md + operations.md + scaling.md, add missing Cold Storage Backend section to configuration.md (`-cold-enabled`, `-cold-backend`, `-cold-boundary`, `-cold-overlap`, `-cold-manifest-refresh`, `-cold-timeout`; shipped in 1.28.0 with zero doc coverage), add Go Runtime Tuning flag section, extend compatibility-loki.md release notes from v1.17.1 through v1.31.2, clarify buildinfo `2.9.0` is intentional.
 
 ## [1.31.3] - 2026-05-13
 
@@ -1408,12 +1413,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - e2e/otel: add comprehensive OTel test data covering 4 delivery mechanisms — Loki push with dotted labels, OTel attributes in message JSON, pre-translated underscore conventions.
 - e2e/ui-comprehensive: add 30+ comprehensive Playwright tests covering all Loki Explorer UI interactions (page load, query editor, field explorer, filters, time range picker, drilldown integration, edge cases).
 - e2e/ui-performance: add performance baseline tests measuring page load (<3s), query response (<5s), UI interactions (<500ms), label selector (<1s), and rapid filter changes (<5s).
-- e2e/browser-automation: research and document browser automation alternatives, evaluating Obscura (v0.1.0 early-stage) vs Playwright (production-ready).
 
 ### Documentation
 
 - docs: create standalone `performance-testing-guide.md` with comprehensive guide for running, interpreting, and tracking performance tests locally and in CI.
-- docs: create `browser-automation-alternatives.md` evaluating Obscura (Rust headless browser) as potential future Playwright replacement.
 - docs: update `testing.md` with performance testing section, CI shard documentation, and new test file inventory.
 
 ## [1.14.0] - 2026-04-24
@@ -2977,7 +2980,6 @@ Load: 7,036 subquery req/s at 50 concurrent (4 VL calls each). Stable memory (~4
   - `docs/api-reference.md` — endpoint table, delete safeguards, metrics
   - `docs/translation-reference.md` — LogQL to LogsQL mapping, supported/unsupported
   - `docs/testing.md` — test categories, running tests, fuzz testing
-  - `docs/roadmap.md` — completed and planned features
 - **Updated KNOWN_ISSUES.md** with v0.17.0 fixes
 
 ### Tests

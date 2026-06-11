@@ -52,6 +52,14 @@ go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
 - E2E test coverage
 - Documentation improvements
 
+## Documentation Policy
+
+`docs/` documents the project as it is: operational and user-facing guides, final
+architecture explained in full depth, compatibility/parity references, and the evidence
+that the project works and is reliable — benchmark results with the harnesses to rerun
+them, cost calculations, and testing guides. PRs should document final behavior, not
+the process that led to it.
+
 ## Reporting Issues
 
 Please include:

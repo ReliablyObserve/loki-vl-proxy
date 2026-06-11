@@ -1,6 +1,6 @@
 ---
 sidebar_label: Roadmap
-description: Planned features, known gaps, and the contribution priority list for loki-vl-proxy.
+description: Shipped milestones and committed, already-decided work for loki-vl-proxy.
 ---
 
 # Roadmap
@@ -99,12 +99,16 @@ description: Planned features, known gaps, and the contribution priority list fo
 - [x] allocation pool pass — gzip reader pool, gob buffer pool, aggregator scalar eliminations, patternJoinBuilderPool, logfmt single-pass scanning, series/stats buffer pooling (1.31.2)
 - [x] Parser-stage guard removal from fast path — `rate`/`count_over_time`/`bytes_rate`/`bytes_over_time` with `| json`/`| logfmt` use VL native stats for tumbling windows (1.31.2)
 
-## Planned (open)
+## Committed — decided and in progress
+
+Everything below is decided work with its direction already proven in the codebase —
+no exploratory items are listed here.
 
 - [ ] Tighten remaining merged-tenant Drilldown metadata accuracy for field and label cardinality surfaces
-- [x] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
 - [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests (ongoing — LogQL parity machine at 555+ cases)
+- [ ] Malformed drop/keep matcher → HTTP 400 error — validation exists in `ValidateDropKeepSyntax`, wiring it into the handler (currently silently skipped)
+- [ ] Migrate remaining string-based translation paths to the typed `logsql` AST builder — the backlog is tagged `TODO(ast-migration)` in code; `logql.Translate` is wired and its handler rollout follows the same path
+- [x] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
 - [x] `| keep field=value` stream label mutation — matcher form now applies to stream labels in addition to structured metadata and parsed fields (v1.50.1)
-- [ ] Malformed drop/keep matcher → HTTP 400 error — currently silently skipped, should return parse error (validation exists in `ValidateDropKeepSyntax` but not wired into handler)
 - [x] Parallel multi-tenant fanout — goroutine-per-tenant dispatch with `sync.WaitGroup` (v1.43.0)
 - [x] Streaming backward hot+cold merge — ring-buffer reverse with bounded memory (`maxRingSize=5000`) and early termination (v1.43.0)

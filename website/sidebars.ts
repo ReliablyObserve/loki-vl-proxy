@@ -112,7 +112,6 @@ const sidebars: SidebarsConfig = {
         'api-reference',
         'KNOWN_ISSUES',
         'rules-alerts-migration',
-        'browser-automation-alternatives',
         'release-info',
         'roadmap',
       ],

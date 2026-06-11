@@ -364,6 +364,5 @@ npx playwright install chromium
 ## References
 
 - **Test files**: `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts` and `performance-baseline.spec.ts`
-- **Documentation**: `docs/browser-automation-alternatives.md`
 - **Playwright docs**: https://playwright.dev/docs/intro
 - **Performance optimization**: See `docs/api-reference.md` for API-level performance metrics
