@@ -261,26 +261,34 @@ func walkDropKeepStages(logqlQuery string) dropKeepResult {
 			if item == "" {
 				continue
 			}
-			if strings.Contains(item, "=") {
-				field, op, val, ok := parseDropMatcher(item)
-				if !ok || field == "" {
-					continue
+			// Parse a matcher form (field OP value) for ANY supported operator —
+			// =, !=, =~, !~. parseDropMatcher must be tried first (mirroring
+			// splitDropSpec): the !~ operator is the only one with no '=', so
+			// gating on strings.Contains(item, "=") would misread a `field!~"re"`
+			// conditional drop/keep as a bare field name and silently lose it.
+			field, op, val, ok := parseDropMatcher(item)
+			if !ok || field == "" {
+				// Not a parseable matcher. A plain identifier (no operator) is a
+				// bare field; an item that still contains "=" is a malformed
+				// matcher (e.g. status!=~"5..") and is skipped — the upstream
+				// LogQL validator already rejects such queries with a parse error.
+				if !ok && !strings.Contains(item, "=") {
+					if isDrop {
+						res.dropBare = append(res.dropBare, item)
+					} else {
+						res.keepBare = append(res.keepBare, item)
+					}
 				}
-				dc, err := NewDropCondition(field, op, val)
-				if err != nil {
-					continue
-				}
-				if isDrop {
-					res.dropConds = append(res.dropConds, dc)
-				} else {
-					res.keepConds = append(res.keepConds, dc)
-				}
+				continue
+			}
+			dc, err := NewDropCondition(field, op, val)
+			if err != nil {
+				continue
+			}
+			if isDrop {
+				res.dropConds = append(res.dropConds, dc)
 			} else {
-				if isDrop {
-					res.dropBare = append(res.dropBare, item)
-				} else {
-					res.keepBare = append(res.keepBare, item)
-				}
+				res.keepConds = append(res.keepConds, dc)
 			}
 		}
 	}

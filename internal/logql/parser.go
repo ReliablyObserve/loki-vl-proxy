@@ -181,7 +181,10 @@ func (p *parser) parsePrimary() (Expr, error) {
 		p.advance()
 		if p.cur.Typ == TokLParen {
 			p.advance() // consume '('
-			endPos := p.consumeBalancedParens()
+			endPos, ok := p.consumeBalancedParens()
+			if !ok || endPos < startPos {
+				return nil, fmt.Errorf("logql: unterminated '(' after %q", name)
+			}
 			raw := strings.TrimSpace(p.input[startPos:endPos])
 			return &OpaqueMetricExpr{Raw: raw}, nil
 		}
@@ -672,11 +675,14 @@ func (p *parser) consumeExplicitFieldList() {
 }
 
 // consumeBalancedParens consumes tokens including nested parentheses until the
-// matching close paren (which is also consumed). Returns the byte position in
-// p.input immediately after the closing ')'. Used for opaque function calls.
-func (p *parser) consumeBalancedParens() int {
+// matching close paren (which is also consumed). It returns the byte position in
+// p.input immediately after the closing ')' and ok=true. If the parentheses
+// never balance — EOF is reached with the depth still positive — it returns
+// ok=false so the caller can emit a parse error instead of slicing p.input with
+// a stale endPos of 0 (which panics for any startPos > 0). Used for opaque
+// function calls.
+func (p *parser) consumeBalancedParens() (endPos int, ok bool) {
 	depth := 1
-	endPos := 0
 	for depth > 0 && p.cur.Typ != TokEOF {
 		switch p.cur.Typ {
 		case TokLParen:
@@ -689,7 +695,10 @@ func (p *parser) consumeBalancedParens() int {
 		}
 		p.advance()
 	}
-	return endPos
+	if depth != 0 {
+		return 0, false
+	}
+	return endPos, true
 }
 
 // consumeRestOfStage reads tokens until the next pipeline operator, range
