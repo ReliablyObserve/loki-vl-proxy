@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Hardened the review-gap fixes around backend error redaction, Drilldown metric routing, Helm freshness defaults, and metrics NetworkPolicy scoping so the defaults no longer leak backend parse details or surprise non-Grafana callers.
+
 ## [1.60.0] - 2026-06-11
 
 ### Changed
