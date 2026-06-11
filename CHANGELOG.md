@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Removed internal working documents (`docs/superpowers/`,
+  `docs/proxy/drilldown-quality.md`) from the repository. The `docs/` tree now
+  contains only user-facing and operational documentation.
+
 ## [1.59.0] - 2026-06-08
 
 ### Fixed
