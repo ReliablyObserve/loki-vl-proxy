@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.61.0] - 2026-06-11
+
 ### Fixed
 
 - `rules-migrate` now validates rule expressions with the typed LogQL AST validator
