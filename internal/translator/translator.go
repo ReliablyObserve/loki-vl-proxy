@@ -198,17 +198,18 @@ func NewDropCondition(field, op, value string) (DropCondition, error) {
 
 // dropKeepResult holds the parsed contents of all | drop and | keep pipeline stages.
 type dropKeepResult struct {
-	dropBare   []string
-	dropConds  []DropCondition
-	keepBare   []string
-	keepConds  []DropCondition
-	parseError error
+	dropBare  []string
+	dropConds []DropCondition
+	keepBare  []string
+	keepConds []DropCondition
 }
 
-// walkDropKeepStages is the single shared walker for all ParseDrop*/ParseKeep*/Validate*
-// functions. It scans the pipeline stages of logqlQuery and returns bare field names and
-// matcher conditions found in | drop and | keep stages. Parse errors are returned in
-// result.parseError so callers can choose to propagate or silently ignore them.
+// walkDropKeepStages is the single shared walker for all ParseDrop*/ParseKeep*
+// functions. It scans the pipeline stages of logqlQuery and returns bare field names
+// and matcher conditions found in | drop and | keep stages. Malformed matcher items
+// cannot reach this walker through the query handlers or rules-migrate: both validate
+// queries with the typed LogQL AST validator (logql.ValidateLogQL) first, which
+// rejects them with a Loki-style parse error.
 func walkDropKeepStages(logqlQuery string) dropKeepResult {
 	var res dropKeepResult
 	remaining := strings.TrimSpace(logqlQuery)
@@ -263,9 +264,6 @@ func walkDropKeepStages(logqlQuery string) dropKeepResult {
 			if strings.Contains(item, "=") {
 				field, op, val, ok := parseDropMatcher(item)
 				if !ok || field == "" {
-					if !ok {
-						res.parseError = fmt.Errorf("parse error at line 1, col 1: invalid drop/keep matcher %q: unsupported operator (!=~ is not a valid Loki operator)", item)
-					}
 					continue
 				}
 				dc, err := NewDropCondition(field, op, val)
@@ -325,13 +323,6 @@ func ParseBareKeepFields(logqlQuery string) []string {
 		return nil
 	}
 	return fields
-}
-
-// ValidateDropKeepSyntax returns a parse error if the query contains | drop or | keep
-// stages with malformed matcher items — items that look like matchers (contain "=")
-// but use unsupported operators. Callers should return HTTP 400.
-func ValidateDropKeepSyntax(logqlQuery string) error {
-	return walkDropKeepStages(logqlQuery).parseError
 }
 
 // splitDropSpec parses a drop spec into bare field names and matcher conditions.

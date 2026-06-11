@@ -90,6 +90,24 @@ groups:
 	}
 }
 
+func TestConvertRejectsMalformedDropKeepMatcher(t *testing.T) {
+	input := []byte(`
+groups:
+  - name: broken
+    rules:
+      - alert: BadDropMatcher
+        expr: 'sum(rate({app="api"} | drop level!=~"debug" [5m]))'
+`)
+
+	_, _, err := ConvertWithOptions(input, ConvertOptions{})
+	if err == nil {
+		t.Fatal("expected malformed drop/keep matcher to fail conversion")
+	}
+	if !strings.Contains(err.Error(), "parse error") {
+		t.Fatalf("expected parse error, got %v", err)
+	}
+}
+
 func TestConvertWithOptionsRejectsRiskyRulesByDefault(t *testing.T) {
 	input := []byte(`
 groups:
