@@ -251,23 +251,27 @@ func TestPeerCache_WriteThroughAndReadAheadBranches(t *testing.T) {
 		}
 
 		localCache.SetWithTTL(targetKey, []byte("payload"), 30*time.Second)
+		// Wait on the client-side WTPushes counter, which pushToOwner increments
+		// only AFTER the peer server has received the request and recorded `pushed`
+		// (peer.go). Polling the server-side `pushed` record alone races with that
+		// increment: the handler sets `pushed` and returns 204, but the client
+		// goroutine may not have reached WTPushes.Add(1) yet when the assertion runs
+		// — which flaked under loaded CI ("expected push count 1, got 0").
 		requireEventually(t, time.Second, func() bool {
-			mu.Lock()
-			defer mu.Unlock()
-			return pushed.key == targetKey
+			return pc.WTPushes.Load() == 1
 		})
 
 		mu.Lock()
 		got := pushed
 		mu.Unlock()
+		if got.key != targetKey {
+			t.Fatalf("unexpected pushed key %q, want %q", got.key, targetKey)
+		}
 		if string(got.body) != "payload" {
 			t.Fatalf("unexpected pushed body %q", string(got.body))
 		}
 		if got.ttl != "30000" {
 			t.Fatalf("unexpected pushed ttl %q", got.ttl)
-		}
-		if got := pc.WTPushes.Load(); got != 1 {
-			t.Fatalf("expected write-through push count 1, got %d", got)
 		}
 	})
 

@@ -901,16 +901,23 @@ func runChunkSim(t *testing.T, source string, chunks [][2]int64, step time.Durat
 }
 
 // TestLock_GrafanaMergedFrames_NoRightEdgeSpike is the headline regression
-// guard for the Drilldown right-edge spike. It runs the embedded Grafana
-// querySplitting + mergeFrames simulator for the four time ranges the user
-// reported broken (24h, 25h, 2d, 7d) for the Drilldown source tag, and asserts
-// the rightmost bin holds < 40% of all nonzero timestamps in the merged frame.
+// guard for the right-edge spike. It runs the embedded Grafana querySplitting +
+// mergeFrames simulator for the four time ranges the user reported broken (24h,
+// 25h, 2d, 7d) across ALL Grafana source tags — Drilldown, Explore via
+// User-Agent, and Explore/dashboard via header — and asserts the rightmost bin
+// holds < 40% of all nonzero timestamps in the merged frame.
+//
+// The non-Drilldown sources are kept on purpose even though residual suppression
+// is now scoped to Drilldown: they verify that per-chunk axis trimming alone
+// keeps Explore/dashboard metric ranges spike-free, so narrowing suppression to
+// Drilldown did not reintroduce the spike for the other sources.
 //
 // If a future PR regresses ANY of:
-//   - leftover-chunk suppression
+//   - leftover-chunk suppression (Drilldown)
+//   - per-chunk axis trimming (all sources)
 //   - /hits-for-all-ranges routing
 //   - shared timestamp axis
-//   - Drilldown source-tag routing
+//   - source-tag routing
 //
 // at least one of these subtests fails because the chunk-unique series
 // stack at the right edge again.
@@ -947,7 +954,7 @@ func TestLock_GrafanaMergedFrames_NoRightEdgeSpike(t *testing.T) {
 		{"2d", 48, 12},
 		{"7d", 168, 14},
 	}
-	sources := []string{"drilldown"}
+	sources := []string{"drilldown", "grafana-ua", "grafana-hdr"}
 
 	for _, source := range sources {
 		for _, rc := range rangeCases {
