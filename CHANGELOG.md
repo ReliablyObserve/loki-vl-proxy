@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.60.0] - 2026-06-11
+
 ### Changed
 - Relocated the CI-consumed VL AST coverage registry (`vl-ast-coverage.json`) from
   `docs/` to `scripts/`, next to the checker script that reads it; the `docs/` tree
