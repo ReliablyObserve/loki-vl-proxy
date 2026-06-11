@@ -3,7 +3,6 @@ package proxy
 import (
 	"context"
 	stdjson "encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"sort"
@@ -280,11 +279,7 @@ func (p *Proxy) computeVolumeResult(ctx context.Context, query, start, end, targ
 	defer resp.Body.Close()
 	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if resp.StatusCode >= http.StatusBadRequest {
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
-		}
-		return nil, fmt.Errorf("%s", msg)
+		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
 
 	return p.hitsToVolumeVector(body, targetLabels), nil
@@ -419,11 +414,7 @@ func (p *Proxy) computeVolumeRangeResult(ctx context.Context, query, start, end,
 	defer resp.Body.Close()
 	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if resp.StatusCode >= http.StatusBadRequest {
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
-		}
-		return nil, fmt.Errorf("%s", msg)
+		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
 
 	return p.hitsToVolumeMatrix(body, targetLabels, start, end, step, limit), nil
@@ -465,11 +456,7 @@ func (p *Proxy) computeVolumeRangeViaStats(ctx context.Context, logsqlQuery, tar
 		return nil, err
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
-		}
-		return nil, fmt.Errorf("%s", msg)
+		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
 	consolidated := consolidateSingleLabelStats(body, vlField, targetLabel, limit)
 	var result map[string]interface{}

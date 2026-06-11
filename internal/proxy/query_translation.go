@@ -1042,10 +1042,7 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	defer resp.Body.Close()
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
-		}
+		msg := p.redactedBackendErrorMessage(resp.StatusCode, body)
 		return nil, &vlAPIError{status: resp.StatusCode, body: msg}
 	}
 
@@ -1197,7 +1194,7 @@ func (p *Proxy) fetchBareParserMetricSeriesViaHits(
 	defer resp.Body.Close()
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, fmt.Errorf("hits: status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, p.redactedBackendStatusError("hits: status", resp.StatusCode, body)
 	}
 
 	body, err := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
@@ -1302,7 +1299,7 @@ func (p *Proxy) fetchBareParserCountBytesViaStats(
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, "", fmt.Errorf("stats_query_range %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, "", p.redactedBackendStatusError("stats_query_range", resp.StatusCode, body)
 	}
 
 	const maxBytes = 64 << 20
@@ -1425,7 +1422,7 @@ func (p *Proxy) fetchBareParserUnwrapViaStats(
 
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, fmt.Errorf("stats_query_range %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, p.redactedBackendStatusError("stats_query_range", resp.StatusCode, body)
 	}
 
 	const maxBytes = 64 << 20 // 64 MB

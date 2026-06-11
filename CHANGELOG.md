@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Helm: enabling the ServiceMonitor now requires an explicit metrics-scrape scope.**
+  With `serviceMonitor.enabled=true` and `networkPolicy.enabled=true`, the chart used to
+  render a NetworkPolicy that opened the `/metrics` port to **all** sources (zero-config
+  allow-all). It now **fails `helm template`/`helm upgrade`** unless one of
+  `networkPolicy.monitoringNamespace`, `networkPolicy.monitoringFrom`, or the new
+  `networkPolicy.monitoringAllowAll=true` is set. Affected: chart users with the
+  ServiceMonitor and NetworkPolicy both enabled and no scrape scope configured — their
+  next `helm upgrade` will error until they pick one. To restore the previous
+  open-to-all behavior, set `networkPolicy.monitoringAllowAll=true`; to scope it
+  (recommended), set `networkPolicy.monitoringNamespace` (a namespace name) or
+  `networkPolicy.monitoringFrom` (an explicit `NetworkPolicyPeer` list).
+
+### Security
+
+- **Backend error bodies are now redacted on every remaining client-visible error path.**
+  1.58.1 routed the main handlers through `redactBackendError`, but several deeper paths
+  still returned raw VictoriaLogs `4xx`/`5xx` bodies — derived-volume hits, the
+  `stats_query_range`/`/hits` fast paths, the metric-range and query-translation backends,
+  and the detected-fields/label backends — and a VL parse/error message can echo the
+  translated LogsQL query (stream selectors, filter values). All of these now go through
+  `redactedBackendErrorMessage`/`redactedBackendStatusError`, which extract VL's message
+  and strip query-like content. The redactor also now masks single-quoted and
+  backtick-quoted literals (≥12 chars), not just double-quoted, so quoted values in VL
+  errors can no longer leak. No-op under `-debug-log-raw-queries=true`.
+
+### Fixed
+
+- **Grafana Explore/dashboard metric ranges at 24h+ are no longer blanked by Drilldown
+  residual suppression.** The querySplitting residual-chunk suppression (empty matrix for
+  a sub-step trailing chunk) is now scoped to Drilldown-tagged traffic
+  (`isGrafanaDrilldownRequest`) instead of all Grafana-sourced requests
+  (`isGrafanaSourcedRequest`). Explore and dashboard panels rely on per-chunk axis
+  trimming alone, which keeps them spike-free without ever returning an empty chunk —
+  verified across all source tags in `TestLock_GrafanaMergedFrames_NoRightEdgeSpike`.
+- **Direct, non-Grafana high-cardinality `count() by(field)` queries now get exact stats.**
+  Window-sampled `/hits` (per-window top-N, right for Drilldown's visual exploration) was
+  applied to any high-cardinality field; it is now gated on Drilldown OR a Grafana-sourced
+  high-card field, so direct API clients and non-Grafana callers fall through to exact
+  `stats_query_range` aggregation (bounded by `max-stats-query-series`).
+- **Helm: corrected stale chart documentation** for the stats-series default and the
+  peer-auth token wiring so the values reference matches the shipped behavior.
+
+### Changed
+
+- **Helm: `recent-tail-refresh-max-staleness` default lowered from 15s to 2s** to match
+  the binary default, so live-tail Explore stays fresh out of the box on chart deployments
+  (the 15s chart value previously exceeded the inner cache TTL and never bypassed).
+
 ## [1.61.0] - 2026-06-11
 
 ### Fixed
@@ -31,6 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Found by the expanded drop/keep tests.
 
 ### Changed
+
 - Expanded test coverage for the LogQL parser, translator, and `rules-migrate`: added
   table-driven and fuzz tests for drop/keep matcher classification (all four operators,
   malformed-form skipping), rule-expression validation (valid translation + malformed

@@ -163,7 +163,7 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		if resp.StatusCode >= 400 {
 			body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 			resp.Body.Close()
-			return nil, fmt.Errorf("cold backend %d: %s", resp.StatusCode, body)
+			return nil, p.redactedBackendStatusError("cold backend", resp.StatusCode, body)
 		}
 		chunkBody, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()

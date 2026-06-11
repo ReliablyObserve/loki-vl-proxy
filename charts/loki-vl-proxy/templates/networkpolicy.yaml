@@ -36,9 +36,8 @@ spec:
         1. networkPolicy.monitoringNamespace (convenience) — a namespace name,
            rendered as a namespaceSelector on kubernetes.io/metadata.name.
         2. networkPolicy.monitoringFrom (explicit) — a list of NetworkPolicyPeer.
-      monitoringFrom wins if both are set. When BOTH are empty the port is open
-      to all sources (zero-config default) — /metrics is non-sensitive read-only
-      counters, but scoping it with one of the above is recommended.
+      monitoringFrom wins if both are set. To intentionally allow scrapes from
+      any source, set networkPolicy.monitoringAllowAll=true explicitly.
     */}}
     {{- if .Values.networkPolicy.monitoringFrom }}
     - from:
@@ -54,10 +53,12 @@ spec:
       ports:
         - port: {{ include "loki-vl-proxy.metricsPort" . | int }}
           protocol: TCP
-    {{- else }}
+    {{- else if .Values.networkPolicy.monitoringAllowAll }}
     - ports:
         - port: {{ include "loki-vl-proxy.metricsPort" . | int }}
           protocol: TCP
+    {{- else }}
+      {{- fail "serviceMonitor.enabled=true with networkPolicy.enabled=true requires networkPolicy.monitoringNamespace, networkPolicy.monitoringFrom, or explicit networkPolicy.monitoringAllowAll=true for the metrics scrape ingress rule." }}
     {{- end }}
     {{- end }}
   {{- with .Values.networkPolicy.egress }}

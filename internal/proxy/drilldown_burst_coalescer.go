@@ -378,7 +378,7 @@ func (p *Proxy) fusedFieldHits(
 
 		if resp.StatusCode >= 400 {
 			body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-			return nil, fmt.Errorf("fused stats_query_range %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+			return nil, p.redactedBackendStatusError("fused stats_query_range", resp.StatusCode, body)
 		}
 
 		const maxFusedResponseBytes = 64 << 20

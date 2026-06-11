@@ -392,11 +392,7 @@ func (p *Proxy) computeIndexStatsResult(ctx context.Context, query, start, end s
 	defer resp.Body.Close()
 	body, _ := readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
 	if resp.StatusCode >= http.StatusBadRequest {
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
-		}
-		return nil, fmt.Errorf("%s", msg)
+		return nil, p.redactedBackendStatusError("", resp.StatusCode, body)
 	}
 
 	entries := sumHitsValues(body)
