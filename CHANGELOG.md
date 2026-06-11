@@ -8,20 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+
 - `rules-migrate` now validates rule expressions with the typed LogQL AST validator
   before translation. Malformed LogQL — e.g. a `| drop level!=~"debug"` matcher, which
   the proxy's query handlers already reject with HTTP 400 — previously slipped through
   rule-file conversion with the broken stage silently skipped; it now fails conversion
   with the same Loki-style parse error.
 
+## [1.60.0] - 2026-06-11
+
 ### Changed
 - Relocated the CI-consumed VL AST coverage registry (`vl-ast-coverage.json`) from
   `docs/` to `scripts/`, next to the checker script that reads it; the `docs/` tree
   now carries only documentation pages.
-- Removed the unused `translator.ValidateDropKeepSyntax` helper: malformed drop/keep
-  matchers cannot reach the translator from any entry point now that both the query
-  handlers and `rules-migrate` validate via the LogQL AST first. Added regression
-  tests locking the HTTP 400 contract for `query` and `query_range`.
 
 ## [1.59.0] - 2026-06-08
 
