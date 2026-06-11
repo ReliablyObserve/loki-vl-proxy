@@ -334,10 +334,10 @@ func isQuerySplitResidual(r *http.Request) bool {
 // isQuerySplitResidualParams is isQuerySplitResidual with explicit start/end/step.
 // Deep handlers (the /hits leaf) must pass their captured raw values: by the time
 // a request reaches them the proxy may have rewritten r.URL for downstream VL
-// calls, so r.FormValue("start"/"end"/"step") can be empty. Only the Grafana-source
+// calls, so r.FormValue("start"/"end"/"step") can be empty. Only the Drilldown-source
 // check reads r (it uses headers, which persist).
 func isQuerySplitResidualParams(r *http.Request, startRaw, endRaw, stepRaw string) bool {
-	if !isGrafanaSourcedRequest(r) {
+	if !isGrafanaDrilldownRequest(r) {
 		return false
 	}
 	sNs, sok := parseLokiTimeToUnixNano(startRaw)
@@ -2130,7 +2130,7 @@ func stripUnpackStagesForTopN(base string) string {
 // guarantees each time window contributes its own top-K, so the merged set spans
 // the whole timeline — fixing the sparse/one-spike overview chart that the bounded
 // global top-N produced for churning short-lived values (pod, *_id). The /hits path
-// also suppresses Grafana's 24h querySplitting residual-chunk right-edge spike.
+// also suppresses Drilldown's 24h querySplitting residual-chunk right-edge spike.
 //
 // The level value-filter (detected_level → `| filter level:=...`) is preserved:
 // VL /hits accepts a column-indexed filter pipe (verified), and stripUnpackStagesForTopN
@@ -2139,20 +2139,20 @@ func stripUnpackStagesForTopN(base string) string {
 func (p *Proxy) tryHighCardCountByWindowedHits(w http.ResponseWriter, r *http.Request, logsqlQuery string) bool {
 	// The windowed-/hits path returns per-window-sampled top-N series rather than
 	// exact stats_query_range results. That visualization-optimized trade-off is
-	// right for Drilldown (visual exploration, any field) and for high-cardinality
-	// fields (trace_id, *_id, *_token — where the full unbounded response is
-	// 40MB+/25s and would be cancelled), but it is the WRONG default for a normal
-	// Grafana dashboard panel over a low-cardinality field (e.g. count by(status)),
-	// which expects exact aggregation. Scope to Drilldown OR a high-card field;
-	// everything else (normal dashboards, Explore low-card, non-Grafana API
-	// clients) falls through to the exact direct path (bounded to
+	// right for Drilldown (visual exploration, any field) and for Grafana-sourced
+	// high-cardinality fields (trace_id, *_id, *_token — where the full unbounded
+	// response is 40MB+/25s and would be cancelled), but it is the WRONG default
+	// for normal low-cardinality panels and direct API clients, which expect exact
+	// aggregation. Scope to Drilldown OR Grafana-sourced high-card fields;
+	// everything else (normal dashboards, Explore low-card, non-Grafana API clients)
+	// falls through to the exact direct path (bounded to
 	// maxStatsQuerySeries top-N-by-count, like Loki's max_query_series, with the
 	// two-phase fallback only on a 16MB overflow).
 	spec, ok := parseStatsCompatSpec(logsqlQuery)
 	if !ok || spec.Func != "count" || len(spec.GroupBy) != 1 {
 		return false
 	}
-	if !isGrafanaDrilldownRequest(r) && !isLikelyHighCardinalityField(spec.GroupBy[0]) {
+	if !isGrafanaDrilldownRequest(r) && (!isGrafanaSourcedRequest(r) || !isLikelyHighCardinalityField(spec.GroupBy[0])) {
 		return false
 	}
 	startRaw, endRaw, stepRaw := r.FormValue("start"), r.FormValue("end"), r.FormValue("step")

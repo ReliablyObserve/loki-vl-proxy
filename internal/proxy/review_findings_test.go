@@ -140,10 +140,9 @@ func TestPurgePeerCaches_ConcurrencyCapped(t *testing.T) {
 }
 
 // TestResidualBlankedThroughHandleQueryRange drives the REAL query_range entry
-// (handleQueryRange) for a Grafana sub-step metric residual and asserts it is
+// (handleQueryRange) for a Drilldown sub-step metric residual and asserts it is
 // blanked there — before routing — regardless of which downstream path would
-// otherwise serve it. This is the deterministic in-process guard for the
-// Drilldown high-cardinality "all data clusters at one edge" regression.
+// otherwise serve it. Plain Grafana Explore/dashboard traffic stays exact.
 func TestResidualBlankedThroughHandleQueryRange(t *testing.T) {
 	backend := newRecorderBackend()
 	// Catch-all already returns an empty matrix; make the stats/hits paths return
@@ -171,7 +170,7 @@ func TestResidualBlankedThroughHandleQueryRange(t *testing.T) {
 		{"pod_label_residual", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000, 1700000060, "120", "drilldown", true},
 		{"pod_residual_nanos", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000000000000, 1700000090000000000, "167s", "drilldown", true},
 		{"field_residual", `sum by (request_id) (count_over_time({namespace="prod"} | request_id!="" [2m]))`, 1700000000, 1700000060, "120", "drilldown", true},
-		{"explore_ua_residual", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000, 1700000060, "120", "grafana-ua", true},
+		{"grafana_ua_residual_not_blanked", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000, 1700000060, "120", "grafana-ua", false},
 		{"full_step_not_residual", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000, 1700000240, "120", "drilldown", false},
 		{"non_grafana_not_residual", `sum by (pod) (count_over_time({namespace="prod",pod!=""} [2m]))`, 1700000000, 1700000060, "120", "", false},
 		{"log_query_never_blanked", `{namespace="prod"}`, 1700000000, 1700000060, "120", "drilldown", false},
@@ -228,11 +227,59 @@ func TestRedactBackendError(t *testing.T) {
 	}
 }
 
+func TestRedactedBackendStatusError_RedactsQueryEcho(t *testing.T) {
+	p := &Proxy{}
+	body := []byte("{\"error\":\"cannot parse query {namespace=\\\"prod\\\",app=\\\"billing\\\"} |= `token=supersecretvalue`: unexpected token at offset deadbeefcafe1234\"}")
+
+	err := p.redactedBackendStatusError("stats_query_range", http.StatusInternalServerError, body)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	got := err.Error()
+	if !strings.Contains(got, "stats_query_range 500:") {
+		t.Fatalf("expected status prefix retained, got: %s", got)
+	}
+	for _, leak := range []string{"prod", "billing", "supersecretvalue", "deadbeefcafe1234"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("redacted status error still leaks %q: %s", leak, got)
+		}
+	}
+}
+
+func TestCollectRangeMetricSamples_RedactsBackendError(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/query" {
+			http.Error(w, "unexpected backend path: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"cannot parse query {namespace=\"prod\",app=\"billing\"} |= \"password=hunter2sekret\": unexpected token at offset deadbeefcafe1234"}`))
+	}))
+	defer backend.Close()
+	p := newTestProxy(t, backend.URL)
+
+	_, err := p.collectRangeMetricSamples(
+		context.Background(),
+		`{namespace="prod",app="billing"} |= "password=hunter2sekret"`,
+		nil, nil, false, "", "",
+		time.Unix(1700000000, 0),
+		time.Unix(1700000060, 0),
+	)
+	if err == nil {
+		t.Fatal("expected backend error")
+	}
+	got := err.Error()
+	for _, leak := range []string{"prod", "billing", "password=hunter2sekret", "deadbeefcafe1234"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("manual range metric backend error still leaks %q: %s", leak, got)
+		}
+	}
+}
+
 // TestWindowedHits_GatedToDrilldownOrHighCard covers finding 3 (round 2): the
 // window-sampled /hits rewrite (lossy per-window top-N sampling) must apply ONLY
-// to Drilldown requests OR high-cardinality fields. A normal Grafana dashboard
-// panel over a low-cardinality field, an Explore low-card query, and a direct API
-// client must all fall through to exact stats_query_range.
+// to Drilldown requests OR Grafana-sourced high-cardinality fields. Direct API
+// clients must stay exact even for high-cardinality groupings.
 func TestWindowedHits_GatedToDrilldownOrHighCard(t *testing.T) {
 	p := &Proxy{}
 	// 24h range so the >=2h gate would otherwise pass.
@@ -263,11 +310,14 @@ func TestWindowedHits_GatedToDrilldownOrHighCard(t *testing.T) {
 
 	// Non-Grafana, low-card → exact. (Also covers finding-3 round 1.)
 	rejects("non-grafana low-card", mk(false, false), lowCard)
+	// Non-Grafana, high-card → exact API semantics; no sampled /hits rewrite.
+	rejects("non-grafana high-card", mk(false, false), highCard)
 	// Grafana dashboard/Explore (UA only, NOT Drilldown), low-card → exact.
 	rejects("grafana dashboard low-card", mk(false, true), lowCard)
 
-	// The gate ITSELF admits Drilldown (any field) and high-card fields. We assert
-	// the gate predicates rather than the full path (which needs a backend).
+	// The gate ITSELF admits Drilldown (any field) and Grafana-sourced high-card
+	// fields. We assert the source/cardinality predicates rather than the full path
+	// (which needs a backend).
 	if !isGrafanaDrilldownRequest(mk(true, true)) {
 		t.Error("drilldown-tagged request must be recognized as Drilldown")
 	}
@@ -280,5 +330,4 @@ func TestWindowedHits_GatedToDrilldownOrHighCard(t *testing.T) {
 	if isLikelyHighCardinalityField("status") {
 		t.Error("status must NOT be treated as high-cardinality")
 	}
-	_ = highCard
 }

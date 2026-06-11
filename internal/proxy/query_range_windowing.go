@@ -455,10 +455,7 @@ func (p *Proxy) fetchQueryRangeWindow(
 		} else {
 			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 			_ = resp.Body.Close()
-			msg := strings.TrimSpace(string(errBody))
-			if msg == "" {
-				msg = fmt.Sprintf("VL backend returned %d", resp.StatusCode)
-			}
+			msg := p.redactedBackendErrorMessage(resp.StatusCode, errBody)
 			fetchErr = &queryRangeWindowHTTPError{status: resp.StatusCode, msg: msg}
 		}
 		lastFetchErr = fetchErr
@@ -588,10 +585,7 @@ func (p *Proxy) queryRangeWindowHitEstimate(
 			return hitEstimate, nil
 		}
 		if err == nil {
-			msg := strings.TrimSpace(string(body))
-			if msg == "" {
-				msg = fmt.Sprintf("VL backend returned %d", status)
-			}
+			msg := p.redactedBackendErrorMessage(status, body)
 			err = &queryRangeWindowHTTPError{status: status, msg: msg}
 		}
 		if attempt >= queryRangePrefilterAttempts || !shouldRetryQueryRangeWindow(err) {

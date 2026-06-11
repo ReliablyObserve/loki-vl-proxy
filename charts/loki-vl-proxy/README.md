@@ -25,6 +25,9 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
 | `persistence.size` | `10Gi` | PVC size for disk cache |
 | `peerCache.enabled` | `false` | Enable distributed cache sharing across replicas |
 | `serviceMonitor.enabled` | `false` | Create Prometheus Operator ServiceMonitor |
+| `networkPolicy.monitoringNamespace` | `""` | Namespace allowed to scrape the metrics port when ServiceMonitor is enabled |
+| `networkPolicy.monitoringFrom` | `[]` | Explicit NetworkPolicy peers allowed to scrape the metrics port |
+| `networkPolicy.monitoringAllowAll` | `false` | Explicitly allow all sources to scrape metrics when ServiceMonitor is enabled |
 | `resources.requests.cpu` | `100m` | CPU request |
 | `resources.requests.memory` | `128Mi` | Memory request |
 | `resources.limits.cpu` | `1000m` | CPU limit |

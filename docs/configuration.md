@@ -430,7 +430,7 @@ These flags control Loki-compatible `query_range` split/merge execution with per
 | `-query-range-background-warm-max-windows` | — | `24` | Cap background warm fanout after a partial response |
 | `-recent-tail-refresh-enabled` | — | `true` | Enable near-now stale-cache bypass for `query_range`, `index/volume`, and `index/volume_range` |
 | `-recent-tail-refresh-window` | — | `2m` | Treat requests ending within this window from `now` as near-now |
-| `-recent-tail-refresh-max-staleness` | — | `15s` | Maximum acceptable cache age for near-now requests before forcing a fresh backend fetch |
+| `-recent-tail-refresh-max-staleness` | — | `2s` | Maximum acceptable cache age for near-now requests before forcing a fresh backend fetch |
 
 ### Loki-Aligned Defaults
 

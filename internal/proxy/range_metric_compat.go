@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -804,7 +803,7 @@ func (p *Proxy) collectRangeMetricHits(
 
 	if resp.StatusCode >= 400 {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return nil, fmt.Errorf("stats_query_range backend %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, p.redactedBackendStatusError("stats_query_range backend", resp.StatusCode, body)
 	}
 
 	const maxStatsResponseBytes = 64 << 20 // 64 MB
@@ -924,8 +923,8 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("backend returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		return nil, p.redactedBackendStatusError("backend returned", resp.StatusCode, body)
 	}
 
 	// seriesCache caches per (_stream + "|" + level) within this request.

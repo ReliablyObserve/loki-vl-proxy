@@ -719,11 +719,7 @@ func (p *Proxy) vlGetCoalesced(ctx context.Context, key, path string, params url
 		return nil, err
 	}
 	if status >= http.StatusBadRequest {
-		msg := strings.TrimSpace(string(body))
-		if msg == "" {
-			msg = fmt.Sprintf("VL backend returned %d", status)
-		}
-		return nil, errors.New(msg)
+		return nil, p.redactedBackendStatusError("", status, body)
 	}
 	return body, nil
 }

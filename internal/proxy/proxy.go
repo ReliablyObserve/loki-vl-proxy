@@ -322,7 +322,7 @@ type Config struct {
 	DefaultMaxQueryLength time.Duration
 	// MaxStatsQuerySeries caps the number of series returned by stats_query_range
 	// (count_over_time, rate, bytes_rate with explicit by()). Matches Loki's
-	// max_query_series behaviour. 0 means use the built-in default (5000).
+	// max_query_series behaviour. 0 means use the built-in default (500).
 	MaxStatsQuerySeries int
 	// StatsQueryRangeConcurrency limits the number of concurrent
 	// stats_query_range calls the proxy makes to VL. Each Drilldown Fields

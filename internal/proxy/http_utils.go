@@ -340,7 +340,9 @@ var (
 	reErrSelector = regexp.MustCompile(`\{[^{}]*\}`)
 	// Long quoted literals — line-filter values, field values, an echoed query.
 	// Short quotes (e.g. unknown field "id") are left readable.
-	reErrQuoted = regexp.MustCompile(`"[^"]{12,}"`)
+	reErrQuoted         = regexp.MustCompile(`"[^"]{12,}"`)
+	reErrSingleQuoted   = regexp.MustCompile(`'[^']{12,}'`)
+	reErrBacktickQuoted = regexp.MustCompile("`[^`]{12,}`")
 	// Long hex/id runs (request ids, hashes).
 	reErrLongHex = regexp.MustCompile(`\b[0-9a-fA-F]{16,}\b`)
 )
@@ -358,11 +360,29 @@ func (p *Proxy) redactBackendError(body []byte) string {
 	msg = RedactSecrets(msg)
 	msg = reErrSelector.ReplaceAllString(msg, "{…}")
 	msg = reErrQuoted.ReplaceAllString(msg, `"…"`)
+	msg = reErrSingleQuoted.ReplaceAllString(msg, `'…'`)
+	msg = reErrBacktickQuoted.ReplaceAllString(msg, "`…`")
 	msg = reErrLongHex.ReplaceAllString(msg, "…")
 	if len(msg) > 500 {
 		msg = msg[:500] + "…"
 	}
 	return msg
+}
+
+func (p *Proxy) redactedBackendErrorMessage(status int, body []byte) string {
+	msg := p.redactBackendError(body)
+	if msg == "" {
+		return fmt.Sprintf("VL backend returned %d", status)
+	}
+	return msg
+}
+
+func (p *Proxy) redactedBackendStatusError(prefix string, status int, body []byte) error {
+	msg := p.redactedBackendErrorMessage(status, body)
+	if prefix == "" {
+		return errors.New(msg)
+	}
+	return fmt.Errorf("%s %d: %s", prefix, status, msg)
 }
 
 // lokiErrorType returns the Loki/Prometheus-style errorType for an HTTP status code.
