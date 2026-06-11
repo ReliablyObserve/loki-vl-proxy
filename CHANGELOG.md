@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.62.0] - 2026-06-11
+
 ### Breaking Changes
 
 - **Helm: enabling the ServiceMonitor now requires an explicit metrics-scrape scope.**
