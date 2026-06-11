@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Helm: enabling the ServiceMonitor now requires an explicit metrics-scrape scope.**
+  With `serviceMonitor.enabled=true` and `networkPolicy.enabled=true`, the chart used to
+  render a NetworkPolicy that opened the `/metrics` port to **all** sources (zero-config
+  allow-all). It now **fails `helm template`/`helm upgrade`** unless one of
+  `networkPolicy.monitoringNamespace`, `networkPolicy.monitoringFrom`, or the new
+  `networkPolicy.monitoringAllowAll=true` is set. Affected: chart users with the
+  ServiceMonitor and NetworkPolicy both enabled and no scrape scope configured — their
+  next `helm upgrade` will error until they pick one. To restore the previous
+  open-to-all behavior, set `networkPolicy.monitoringAllowAll=true`; to scope it
+  (recommended), set `networkPolicy.monitoringNamespace` (a namespace name) or
+  `networkPolicy.monitoringFrom` (an explicit `NetworkPolicyPeer` list).
+
 ### Security
 
 - **Backend error bodies are now redacted on every remaining client-visible error path.**
