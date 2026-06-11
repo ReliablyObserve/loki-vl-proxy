@@ -183,7 +183,7 @@ func (p *Proxy) preflightTailAccess(parent context.Context, logsqlQuery, startHi
 	}
 
 	body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-	msg := strings.TrimSpace(string(body))
+	msg := p.redactedBackendErrorMessage(resp.StatusCode, body)
 	if msg == "" {
 		msg = http.StatusText(resp.StatusCode)
 	}
@@ -245,7 +245,7 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 
 	body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
 	_ = resp.Body.Close()
-	msg := strings.TrimSpace(string(body))
+	msg := p.redactedBackendErrorMessage(resp.StatusCode, body)
 	if msg == "" {
 		msg = http.StatusText(resp.StatusCode)
 	}
@@ -289,7 +289,7 @@ func (p *Proxy) writeSyntheticTailBatch(ctx context.Context, conn tailConn, logs
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
-		return fmt.Errorf("synthetic tail query failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return fmt.Errorf("synthetic tail query failed: status=%d body=%s", resp.StatusCode, p.redactedBackendErrorMessage(resp.StatusCode, body))
 	}
 
 	scanner := bufio.NewScanner(resp.Body)

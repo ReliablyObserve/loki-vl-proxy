@@ -451,7 +451,7 @@ peerCache:
   selfAZ: "us-east-1a"
 ```
 
-When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart wire the discovery flags. Use `extraArgs.peer-auth-token` only when you need a shared secret for peer fetches.
+When you use the Helm chart, prefer `peerCache.enabled=true` and let the chart wire the discovery flags. Use `peerCache.authToken` or `peerCache.existingSecret` when you need to provide the shared secret yourself; `extraArgs.peer-auth-token` is intentionally rejected while `peerCache.enabled=true` because the chart owns that CLI flag.
 
 ## Performance Characteristics
 

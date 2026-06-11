@@ -260,12 +260,12 @@ func TestLock_HitsRunsForAllRanges(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Lock 3: Leftover-chunk suppression for ANY Grafana source.
+// Lock 3: Leftover-chunk suppression for Drilldown source.
 // ---------------------------------------------------------------------------
 
 // TestLock_LeftoverChunkSuppressed pins the rule:
 //
-//	end - start ≤ 2 × step AND any Grafana source signal → empty matrix
+//	end - start < step AND Drilldown source signal → empty matrix
 //
 // Why empty (not "best-effort distribute the few values"): the chunk is so
 // small that /hits can only produce a 1-bucket axis. Emitting the top-20
@@ -275,19 +275,16 @@ func TestLock_HitsRunsForAllRanges(t *testing.T) {
 // chart shows the 24h chunk's distributed series unaffected (losing ≤ 1 step
 // of width on the very right edge, which is invisible at typical render widths).
 //
-// All four Grafana source signals must trigger suppression. Non-Grafana
-// requests with the same shape must NOT trigger suppression — a raw API
-// client querying 1m of data legitimately wants whatever VL has.
+// Plain Grafana and non-Grafana requests with the same shape must NOT trigger
+// suppression — those callers legitimately want whatever VL has.
 func TestLock_LeftoverChunkSuppressedInHits(t *testing.T) {
 	// The Grafana 24h+ querySplitting residual is a sub-step chunk (range < step)
 	// that yields a single-bucket /hits frame; Grafana's mergeFrames collapses its
 	// N single-point series onto one edge of the merged chart (a right-edge spike
 	// or a left-edge "all data at the beginning" cluster). The /hits path suppresses
-	// it (X-Proxy-Drilldown-Path=hits-leftover-suppressed). Scope: ONLY Grafana
-	// sub-step requests reaching the high-card /hits path — a non-Grafana caller and
-	// any range >= one full step are served normally. (The proxy-wide dispatch-level
-	// blanking that over-blanked low-card dashboards stays removed; those take the
-	// exact stats path, not /hits — see TestWindowedHits_GatedToDrilldownOrHighCard.)
+	// it (X-Proxy-Drilldown-Path=hits-leftover-suppressed). Scope: ONLY Drilldown
+	// sub-step requests reaching the high-card /hits path — plain Grafana, a
+	// non-Grafana caller, and any range >= one full step are served normally.
 	cases := []struct {
 		name         string
 		startSec     int64
@@ -299,8 +296,8 @@ func TestLock_LeftoverChunkSuppressedInHits(t *testing.T) {
 		// Grafana, sub-step residual (range < step) → SUPPRESS.
 		{"drilldown_60s_step120", 1700000000, 1700000060, "120", "drilldown", true},
 		{"drilldown_119s_step120", 1700000000, 1700000119, "120", "drilldown", true},
-		{"explore_via_ua_60s", 1700000000, 1700000060, "120", "grafana-ua", true},
-		{"explore_via_hdr_60s", 1700000000, 1700000060, "120", "grafana-hdr", true},
+		{"grafana_ua_60s", 1700000000, 1700000060, "120", "grafana-ua", false},
+		{"grafana_hdr_60s", 1700000000, 1700000060, "120", "grafana-hdr", false},
 		// Grafana, range >= step (legitimate >=1-bucket query) → do NOT suppress.
 		{"drilldown_120s_step120", 1700000000, 1700000120, "120", "drilldown", false},
 		{"drilldown_240s_step120", 1700000000, 1700000240, "120", "drilldown", false},
@@ -562,8 +559,8 @@ func TestLock_FieldHasExistenceFilter_QuotedDotted(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestLock_IsGrafanaSourcedRequest pins which client signals count as
-// "Grafana source" for the leftover-chunk suppression. If any of these
-// stops being detected, Grafana clients lose the spike-suppression fix.
+// "Grafana source" for Grafana-only compatibility behavior such as
+// partial-results conversion and high-cardinality optimization.
 func TestLock_IsGrafanaSourcedRequest(t *testing.T) {
 	cases := []struct {
 		name string
@@ -904,17 +901,16 @@ func runChunkSim(t *testing.T, source string, chunks [][2]int64, step time.Durat
 }
 
 // TestLock_GrafanaMergedFrames_NoRightEdgeSpike is the headline regression
-// guard for the Drilldown / Explore right-edge spike. It runs the embedded
-// Grafana querySplitting + mergeFrames simulator for the four time ranges
-// the user reported broken (24h, 25h, 2d, 7d) for every Grafana source
-// signal, and asserts the rightmost bin holds < 40% of all nonzero
-// timestamps in the merged frame.
+// guard for the Drilldown right-edge spike. It runs the embedded Grafana
+// querySplitting + mergeFrames simulator for the four time ranges the user
+// reported broken (24h, 25h, 2d, 7d) for the Drilldown source tag, and asserts
+// the rightmost bin holds < 40% of all nonzero timestamps in the merged frame.
 //
 // If a future PR regresses ANY of:
 //   - leftover-chunk suppression
 //   - /hits-for-all-ranges routing
 //   - shared timestamp axis
-//   - source-tag-agnostic routing
+//   - Drilldown source-tag routing
 //
 // at least one of these subtests fails because the chunk-unique series
 // stack at the right edge again.
@@ -951,7 +947,7 @@ func TestLock_GrafanaMergedFrames_NoRightEdgeSpike(t *testing.T) {
 		{"2d", 48, 12},
 		{"7d", 168, 14},
 	}
-	sources := []string{"drilldown", "grafana-ua", "grafana-hdr"}
+	sources := []string{"drilldown"}
 
 	for _, source := range sources {
 		for _, rc := range rangeCases {
