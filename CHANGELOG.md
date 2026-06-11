@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `rules-migrate` now validates rule expressions with the typed LogQL AST validator
+  before translation. Malformed LogQL — e.g. a `| drop level!=~"debug"` matcher, which
+  the proxy's query handlers already reject with HTTP 400 — previously slipped through
+  rule-file conversion with the broken stage silently skipped; it now fails conversion
+  with the same Loki-style parse error.
+- **LogQL parser no longer panics on an unterminated opaque function call.** A query
+  such as `(A00000(` — an unknown/opaque metric function (`label_replace`, `label_join`,
+  …) whose argument parentheses never close — made `consumeBalancedParens` return offset
+  0, and the caller then sliced `input[start:0]` and panicked with "slice bounds out of
+  range". Because `ValidateLogQL` runs on every `query`/`query_range` request (and now in
+  `rules-migrate`), a crafted query could panic the parser; it now returns a Loki-style
+  parse error. Found by fuzzing.
+- **`| drop`/`| keep` matchers using the `!~` operator are no longer silently dropped.**
+  `!~` is the only drop/keep operator with no `=`, and the matcher-vs-bare-field classifier
+  in `walkDropKeepStages` gated on `strings.Contains(item, "=")`, so a `field!~"re"`
+  conditional drop/keep was misread as a bare field name and lost during proxy
+  post-processing. It is now parsed as a matcher condition like the other three operators.
+  Found by the expanded drop/keep tests.
+
+### Changed
+- Expanded test coverage for the LogQL parser, translator, and `rules-migrate`: added
+  table-driven and fuzz tests for drop/keep matcher classification (all four operators,
+  malformed-form skipping), rule-expression validation (valid translation + malformed
+  rejection, error identifies group/rule), and unterminated-paren parser robustness.
+- Hardened the flaky `TestPeerCache_WriteThroughAndReadAheadBranches` test: it now waits
+  on the client-side write-through counter (incremented after the peer records the push)
+  instead of racing the server-side record against the counter, which intermittently
+  failed under loaded CI.
+- Removed the unused `translator.ValidateDropKeepSyntax` helper: malformed drop/keep
+  matchers cannot reach the translator from any entry point now that both the query
+  handlers and `rules-migrate` validate via the LogQL AST first. Added regression
+  tests locking the HTTP 400 contract for `query` and `query_range`.
+
 ## [1.60.0] - 2026-06-11
 
 ### Changed

@@ -198,17 +198,18 @@ func NewDropCondition(field, op, value string) (DropCondition, error) {
 
 // dropKeepResult holds the parsed contents of all | drop and | keep pipeline stages.
 type dropKeepResult struct {
-	dropBare   []string
-	dropConds  []DropCondition
-	keepBare   []string
-	keepConds  []DropCondition
-	parseError error
+	dropBare  []string
+	dropConds []DropCondition
+	keepBare  []string
+	keepConds []DropCondition
 }
 
-// walkDropKeepStages is the single shared walker for all ParseDrop*/ParseKeep*/Validate*
-// functions. It scans the pipeline stages of logqlQuery and returns bare field names and
-// matcher conditions found in | drop and | keep stages. Parse errors are returned in
-// result.parseError so callers can choose to propagate or silently ignore them.
+// walkDropKeepStages is the single shared walker for all ParseDrop*/ParseKeep*
+// functions. It scans the pipeline stages of logqlQuery and returns bare field names
+// and matcher conditions found in | drop and | keep stages. Malformed matcher items
+// cannot reach this walker through the query handlers or rules-migrate: both validate
+// queries with the typed LogQL AST validator (logql.ValidateLogQL) first, which
+// rejects them with a Loki-style parse error.
 func walkDropKeepStages(logqlQuery string) dropKeepResult {
 	var res dropKeepResult
 	remaining := strings.TrimSpace(logqlQuery)
@@ -260,29 +261,34 @@ func walkDropKeepStages(logqlQuery string) dropKeepResult {
 			if item == "" {
 				continue
 			}
-			if strings.Contains(item, "=") {
-				field, op, val, ok := parseDropMatcher(item)
-				if !ok || field == "" {
-					if !ok {
-						res.parseError = fmt.Errorf("parse error at line 1, col 1: invalid drop/keep matcher %q: unsupported operator (!=~ is not a valid Loki operator)", item)
+			// Parse a matcher form (field OP value) for ANY supported operator —
+			// =, !=, =~, !~. parseDropMatcher must be tried first (mirroring
+			// splitDropSpec): the !~ operator is the only one with no '=', so
+			// gating on strings.Contains(item, "=") would misread a `field!~"re"`
+			// conditional drop/keep as a bare field name and silently lose it.
+			field, op, val, ok := parseDropMatcher(item)
+			if !ok || field == "" {
+				// Not a parseable matcher. A plain identifier (no operator) is a
+				// bare field; an item that still contains "=" is a malformed
+				// matcher (e.g. status!=~"5..") and is skipped — the upstream
+				// LogQL validator already rejects such queries with a parse error.
+				if !ok && !strings.Contains(item, "=") {
+					if isDrop {
+						res.dropBare = append(res.dropBare, item)
+					} else {
+						res.keepBare = append(res.keepBare, item)
 					}
-					continue
 				}
-				dc, err := NewDropCondition(field, op, val)
-				if err != nil {
-					continue
-				}
-				if isDrop {
-					res.dropConds = append(res.dropConds, dc)
-				} else {
-					res.keepConds = append(res.keepConds, dc)
-				}
+				continue
+			}
+			dc, err := NewDropCondition(field, op, val)
+			if err != nil {
+				continue
+			}
+			if isDrop {
+				res.dropConds = append(res.dropConds, dc)
 			} else {
-				if isDrop {
-					res.dropBare = append(res.dropBare, item)
-				} else {
-					res.keepBare = append(res.keepBare, item)
-				}
+				res.keepConds = append(res.keepConds, dc)
 			}
 		}
 	}
@@ -325,13 +331,6 @@ func ParseBareKeepFields(logqlQuery string) []string {
 		return nil
 	}
 	return fields
-}
-
-// ValidateDropKeepSyntax returns a parse error if the query contains | drop or | keep
-// stages with malformed matcher items — items that look like matchers (contain "=")
-// but use unsupported operators. Callers should return HTTP 400.
-func ValidateDropKeepSyntax(logqlQuery string) error {
-	return walkDropKeepStages(logqlQuery).parseError
 }
 
 // splitDropSpec parses a drop spec into bare field names and matcher conditions.
