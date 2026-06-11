@@ -302,10 +302,6 @@ npm run test:e2e:ui:performance > current-$(date +%Y-%m-%d).txt
 diff -u baseline-*.txt current-*.txt
 ```
 
-#### Browser Automation Alternatives
-
-See [docs/browser-automation-alternatives.md](./browser-automation-alternatives.md) for evaluation of alternatives like Obscura vs current Playwright setup.
-
 ## E2E Compatibility Matrix
 
 The repo now keeps two different matrix files in `test/e2e-compat`:

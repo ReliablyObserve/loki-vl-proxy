@@ -376,7 +376,7 @@ LogQL→LogsQL converter. Receives canonical LogQL (produced by `Expr.String()` 
 
 Typed errors in `internal/translator/errors.go` replace bare `fmt.Errorf` for two failure classes: `ParseError` (invalid LogQL input) and `UnsupportedError` (LogQL constructs with no LogsQL equivalent). Callers can type-assert to distinguish parse failures from unsupported-feature fallbacks.
 
-`internal/logql/translate.go` adds a second, typed translation path alongside the string-based translator: `Translate(expr Expr, opts TranslateOptions) (string, error)`. For `*LogQuery` nodes it performs a direct AST-to-AST mapping — stream selector → `logsql.FilterExpr`, pipeline stages → `[]logsql.Pipe` — without a `String()` roundtrip. Metric nodes (`*RangeAggregation`, `*VectorAggregation`, `*BinOpExpr`, `*OpaqueMetricExpr`) return an `errFallthrough` sentinel that routes to the existing string translator unchanged. `TranslateOptions` carries `LabelFn`, `StreamFields`, and `Caps`; the `Caps` field gates VL version-specific features. The proxy's main translation path (`translator.TranslateLogQLWithCapabilities`) is unchanged — `logql.Translate` is wired but not yet called by handlers; handler migration is planned for a follow-on PR.
+`internal/logql/translate.go` adds a second, typed translation path alongside the string-based translator: `Translate(expr Expr, opts TranslateOptions) (string, error)`. For `*LogQuery` nodes it performs a direct AST-to-AST mapping — stream selector → `logsql.FilterExpr`, pipeline stages → `[]logsql.Pipe` — without a `String()` roundtrip. Metric nodes (`*RangeAggregation`, `*VectorAggregation`, `*BinOpExpr`, `*OpaqueMetricExpr`) return an `errFallthrough` sentinel that routes to the existing string translator unchanged. `TranslateOptions` carries `LabelFn`, `StreamFields`, and `Caps`; the `Caps` field gates VL version-specific features. The proxy's main translation path (`translator.TranslateLogQLWithCapabilities`) is unchanged — `logql.Translate` is wired but not yet called by handlers.
 
 ### Translation Pipeline
 
@@ -414,7 +414,7 @@ flowchart LR
     PARSE --> AST_MET
 
     AST_LOG -->|"current path"| T1
-    AST_LOG -.->|"follow-on PR"| T3
+    AST_LOG -.->|"wired, not yet active"| T3
     AST_MET -->|"metric/stats"| T2
     AST_MET -->|"opaque fn"| RAW
 
@@ -435,7 +435,7 @@ flowchart LR
 ### Proxy (`internal/proxy/`)
 HTTP handlers for Loki-compatible read endpoints, split into domain-focused modules.
 
-The `Proxy` struct is being decomposed into three explicit types (migration in progress, follow-on PRs will move receivers):
+The `Proxy` struct is decomposed into three explicit types (migration in progress):
 
 - **`Deps`** (`deps.go`) — external dependencies: backend URLs, HTTP clients, caches, logger, metrics, rate limiter, circuit breaker.
 - **`HandlerConfig`** (`config.go`) — immutable startup configuration (83 flag-derived fields); pointer-shared across goroutines.

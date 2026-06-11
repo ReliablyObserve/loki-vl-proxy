@@ -7,7 +7,7 @@ on:
   pull_request:
     paths:
       - "internal/logsql/**"
-      - "docs/vl-ast-coverage.json"
+      - "scripts/vl-ast-coverage.json"
       - "scripts/check-vl-ast-coverage.py"
   workflow_dispatch:
 
