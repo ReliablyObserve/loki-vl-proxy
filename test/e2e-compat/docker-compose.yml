@@ -800,8 +800,8 @@ services:
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
       # Pin the Logs Drilldown plugin: an unpinned grafana-lokiexplore-app pulls
-      # whatever is latest at image-build time, which drifts the landing-page UI
-      # (e.g. the "Filter by labels" combobox role/name) out from under the
+      # whatever is latest at image-build time (now 2.1.1), which drifts the
+      # landing-page UI (e.g. the "Filter by labels" combobox) out from under the
       # Playwright selectors — deterministically breaking e2e-ui (drilldown-core)
       # and (drilldown-multitenant) in CI while a cached older plugin still passes
       # locally. Bump this pin deliberately alongside any selector updates.

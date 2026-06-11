@@ -1038,53 +1038,6 @@ func TestParseBareKeepFields(t *testing.T) {
 	}
 }
 
-func TestValidateDropKeepSyntax(t *testing.T) {
-	tests := []struct {
-		name    string
-		logql   string
-		wantErr bool
-	}{
-		{
-			name:    "valid drop matcher passes",
-			logql:   `{app="api"} | drop level="debug"`,
-			wantErr: false,
-		},
-		{
-			name:    "invalid !=~ operator rejected",
-			logql:   `{app="api"} | keep method="GET", status!=~"5.."`,
-			wantErr: true,
-		},
-		{
-			name:    "bare fields pass",
-			logql:   `{app="api"} | drop level, env`,
-			wantErr: false,
-		},
-		{
-			name:    "valid regex matcher passes",
-			logql:   `{app="api"} | drop status=~"5.."`,
-			wantErr: false,
-		},
-		{
-			name:    "valid negation matcher passes",
-			logql:   `{app="api"} | drop level!="debug"`,
-			wantErr: false,
-		},
-		{
-			name:    "no drop/keep stage passes",
-			logql:   `{app="api"} | json`,
-			wantErr: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateDropKeepSyntax(tt.logql)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("ValidateDropKeepSyntax(%q) error=%v, wantErr=%v", tt.logql, err, tt.wantErr)
-			}
-		})
-	}
-}
-
 // TestFieldFilterMigration verifies the logsql.FieldFilter-based translation
 // produces correct output for the cases required by the AST migration task.
 func TestFieldFilterMigration(t *testing.T) {

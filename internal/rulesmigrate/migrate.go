@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logql"
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
 	"gopkg.in/yaml.v3"
 )
@@ -104,6 +105,13 @@ func translateGroup(g Group, opts ConvertOptions) (Group, []Warning, error) {
 		ruleWarnings := analyzeRule(g.Name, r)
 		if len(ruleWarnings) > 0 && !opts.AllowRisky {
 			return Group{}, ruleWarnings, fmt.Errorf("rule %q in group %q requires manual review:\n%s", ruleName(r), g.Name, formatWarnings(ruleWarnings))
+		}
+		// Rule files do not pass through the proxy's query handlers, so malformed
+		// LogQL (e.g. a `| drop level!=~"x"` matcher) would otherwise be silently
+		// skipped during translation. Validate with the same typed AST validator
+		// the handlers use before translating.
+		if msg := logql.ValidateLogQL(r.Expr); msg != "" {
+			return Group{}, nil, fmt.Errorf("translate group %q rule %q: %s", g.Name, ruleName(r), msg)
 		}
 		translated, err := translator.TranslateLogQL(r.Expr)
 		if err != nil {

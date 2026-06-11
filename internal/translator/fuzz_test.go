@@ -204,6 +204,14 @@ func FuzzParseDropConditions(f *testing.F) {
 		// Quoted values with special chars
 		`{app="nginx"} | drop path="/api/v1/health"`,
 		`{app="nginx"} | drop msg=~"timeout.*exceeded"`,
+		// Malformed matcher forms — must be skipped without panicking, and must
+		// not corrupt the valid items sharing the stage.
+		`{app="nginx"} | drop bad!=~"x"`,
+		`{app="nginx"} | drop a, bad!=~"x", b`,
+		`{app="nginx"} | keep bad!=~"x", good="y"`,
+		`{app="nginx"} | drop level=`,
+		`{app="nginx"} | drop ="value"`,
+		`{app="nginx"} | drop weird===, a=b=c`,
 		// Empty / malformed
 		``,
 		`{app="nginx"}`,
