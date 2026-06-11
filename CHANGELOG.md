@@ -50,14 +50,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   applied to any high-cardinality field; it is now gated on Drilldown OR a Grafana-sourced
   high-card field, so direct API clients and non-Grafana callers fall through to exact
   `stats_query_range` aggregation (bounded by `max-stats-query-series`).
-- **Helm: enabling the ServiceMonitor no longer silently opens `/metrics` to all sources.**
-  With `serviceMonitor.enabled=true` and `networkPolicy.enabled=true`, the chart now
-  fails template rendering unless one of `networkPolicy.monitoringNamespace`,
-  `networkPolicy.monitoringFrom`, or the new explicit `networkPolicy.monitoringAllowAll=true`
-  is set — replacing the previous zero-config allow-all default for the metrics scrape
-  ingress rule.
 - **Helm: corrected stale chart documentation** for the stats-series default and the
   peer-auth token wiring so the values reference matches the shipped behavior.
+
+### Changed
+
+- **Helm: `recent-tail-refresh-max-staleness` default lowered from 15s to 2s** to match
+  the binary default, so live-tail Explore stays fresh out of the box on chart deployments
+  (the 15s chart value previously exceeded the inner cache TTL and never bypassed).
+
+## [1.61.0] - 2026-06-11
+
+### Fixed
+
 - `rules-migrate` now validates rule expressions with the typed LogQL AST validator
   before translation. Malformed LogQL — e.g. a `| drop level!=~"debug"` matcher, which
   the proxy's query handlers already reject with HTTP 400 — previously slipped through
@@ -78,9 +83,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Found by the expanded drop/keep tests.
 
 ### Changed
-- **Helm: `recent-tail-refresh-max-staleness` default lowered from 15s to 2s** to match
-  the binary default, so live-tail Explore stays fresh out of the box on chart deployments
-  (the 15s chart value previously exceeded the inner cache TTL and never bypassed).
+
 - Expanded test coverage for the LogQL parser, translator, and `rules-migrate`: added
   table-driven and fuzz tests for drop/keep matcher classification (all four operators,
   malformed-form skipping), rule-expression validation (valid translation + malformed
