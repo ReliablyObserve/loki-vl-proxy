@@ -799,7 +799,13 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_DISABLE_LOGIN_FORM=true
-      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.26.3,grafana-lokiexplore-app
+      # Pin the Logs Drilldown plugin: an unpinned grafana-lokiexplore-app pulls
+      # whatever is latest at image-build time, which drifts the landing-page UI
+      # (e.g. the "Filter by labels" combobox role/name) out from under the
+      # Playwright selectors — deterministically breaking e2e-ui (drilldown-core)
+      # and (drilldown-multitenant) in CI while a cached older plugin still passes
+      # locally. Bump this pin deliberately alongside any selector updates.
+      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.26.3,grafana-lokiexplore-app@2.0.4
       - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-lokiexplore-app
     volumes:
       - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
