@@ -107,7 +107,7 @@ no exploratory items are listed here.
 - [ ] Tighten remaining merged-tenant Drilldown metadata accuracy for field and label cardinality surfaces
 - [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests (ongoing — LogQL parity machine at 555+ cases)
 - [ ] Malformed drop/keep matcher → HTTP 400 error — validation exists in `ValidateDropKeepSyntax`, wiring it into the handler (currently silently skipped)
-- [ ] Migrate remaining string-based translation paths to the typed `logsql` AST builder — the backlog is tagged `TODO(ast-migration)` in code; `logql.Translate` is wired and its handler rollout follows the same path
+- [ ] Migrate remaining string-based translation paths to the typed `logsql` AST builder and roll `logql.Translate` into the proxy handlers — the typed translation path (`internal/logql/translate.go`) is implemented and tested; the handler call-site migration is the remaining step
 - [x] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
 - [x] `| keep field=value` stream label mutation — matcher form now applies to stream labels in addition to structured metadata and parsed fields (v1.50.1)
 - [x] Parallel multi-tenant fanout — goroutine-per-tenant dispatch with `sync.WaitGroup` (v1.43.0)
