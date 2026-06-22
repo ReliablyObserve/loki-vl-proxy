@@ -19,7 +19,7 @@ jobs:
     name: Check VL upstream AST coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Run VL AST coverage check
         env:

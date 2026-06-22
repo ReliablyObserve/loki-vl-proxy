@@ -28,7 +28,7 @@ jobs:
       next_version: ${{ steps.check.outputs.next_version }}
       latest_tag: ${{ steps.check.outputs.latest_tag }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -201,7 +201,7 @@ jobs:
       coverage_pct: ${{ steps.metrics.outputs.coverage_pct }}
       code_lines: ${{ steps.metrics.outputs.code_lines }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -257,7 +257,7 @@ jobs:
       HAS_RELEASE_PR_TOKEN: ${{ secrets.RELEASE_PR_TOKEN != '' }}
       HAS_GHCR_PACKAGE_ADMIN_TOKEN: ${{ secrets.GHCR_PACKAGE_ADMIN_TOKEN != '' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PR_TOKEN != '' && secrets.RELEASE_PR_TOKEN || github.token }}
@@ -430,7 +430,7 @@ jobs:
           echo "Ensured public visibility for ghcr.io/${OWNER_LC}/charts/loki-vl-proxy"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: ${{ steps.meta.outputs.tag }}
