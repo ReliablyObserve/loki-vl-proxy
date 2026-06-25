@@ -23,7 +23,7 @@ jobs:
     outputs:
       loki_versions: ${{ steps.matrix.outputs.loki_versions }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - id: matrix
         run: echo "loki_versions=$(jq -c '.stack.loki.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
 
@@ -37,7 +37,7 @@ jobs:
       GRAFANA_IMAGE: grafana/grafana:12.4.2
       PROXY_IMAGE: loki-vl-proxy:compat-loki
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26.4"
@@ -107,7 +107,7 @@ jobs:
       GRAFANA_IMAGE: grafana/grafana:12.4.2
       PROXY_IMAGE: loki-vl-proxy:compat-loki
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
           go-version: "1.26.4"
