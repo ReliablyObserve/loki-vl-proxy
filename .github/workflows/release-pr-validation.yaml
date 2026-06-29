@@ -69,7 +69,7 @@ jobs:
           grep -q "\"service.version\": \"${VERSION}\"" docs/observability.md
 
       - name: Helm lint
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@v5.0.1
 
       - name: Run Helm lint
         run: helm lint charts/loki-vl-proxy/

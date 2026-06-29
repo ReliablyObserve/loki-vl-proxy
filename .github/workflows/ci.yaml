@@ -800,7 +800,7 @@ jobs:
           cache: npm
           cache-dependency-path: test/e2e-ui/package-lock.json
 
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-ms-playwright-${{ hashFiles('test/e2e-ui/package-lock.json') }}
@@ -922,7 +922,7 @@ jobs:
           cache: true
 
       - name: Install Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@v5.0.1
 
       - name: Helm lint
         run: helm lint charts/loki-vl-proxy/
