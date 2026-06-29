@@ -211,7 +211,7 @@ jobs:
           cache: true
 
       - name: Install Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@v5.0.1
 
       - name: Verify unreleased changelog section exists
         run: |
@@ -268,7 +268,7 @@ jobs:
           cache: true
 
       - name: Install Helm
-        uses: azure/setup-helm@v5
+        uses: azure/setup-helm@v5.0.1
 
       - name: Extract release metadata
         id: meta

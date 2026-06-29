@@ -60,7 +60,7 @@ jobs:
 
       - name: Restore cached base quality snapshot
         id: base-quality-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .cache/pr-quality/base-quality.json
           key: ${{ runner.os }}-pr-quality-base-${{ github.event.pull_request.base.sha }}-perf-${{ steps.perf-scope.outputs.run_perf }}-schema-v3
