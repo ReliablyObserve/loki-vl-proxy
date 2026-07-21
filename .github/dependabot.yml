@@ -6,6 +6,9 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Let new releases bake before opening a PR (supply-chain hardening).
+    cooldown:
+      default-days: 7
     groups:
       actions-minor:
         patterns: ["*"]
@@ -19,6 +22,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     groups:
       go-minor:
         update-types: ["minor", "patch"]
@@ -32,6 +37,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
       - docker

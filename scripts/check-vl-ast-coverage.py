@@ -58,14 +58,13 @@ def fetch_file_list(token: str | None) -> list[str]:
     if token:
         headers["Authorization"] = f"Bearer {token}"
     try:
-        # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
-        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         # Semgrep flags HTTPSConnection because TLS verification semantics
         # changed across Python 3.x versions. This script only runs in CI
         # against api.github.com on the pinned 3.x container (Python ≥ 3.4.3
         # has TLS verification on by default — older than any Python we ship).
         # Connecting to a fixed, trusted host with default verification → safe.
-        conn = http.client.HTTPSConnection(VL_API_HOST, timeout=15)
+        # The suppression must sit on the match line itself for Semgrep to honor it.
+        conn = http.client.HTTPSConnection(VL_API_HOST, timeout=15)  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
         conn.request("GET", VL_API_PATH, headers=headers)
         resp = conn.getresponse()
         body = resp.read()
