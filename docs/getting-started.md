@@ -10,7 +10,7 @@ description: Install and run loki-vl-proxy in minutes — binary, Docker, or Hel
 
 - VictoriaLogs reachable from the proxy (`http://<host>:9428`)
 - Grafana using a Loki datasource
-- Go `1.26.4+` if running from source, or Docker for containerized runs
+- Go `1.26.5+` if running from source, or Docker for containerized runs
 
 :::tip Latest release
 Replace `<release>` throughout this page with the current version tag (no `v` prefix). The latest release is **`1.36.3`**. Check [GitHub Releases](https://github.com/ReliablyObserve/loki-vl-proxy/releases) for newer versions.

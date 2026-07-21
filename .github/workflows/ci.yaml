@@ -29,7 +29,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - name: Build
@@ -77,7 +77,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - name: Tuple contract gate (default 2-tuple + categorize-labels 3-tuple)
@@ -91,7 +91,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       # --- internal/proxy ---
@@ -192,7 +192,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - name: Race-detector tests on concurrency-critical packages
@@ -225,7 +225,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - uses: docker/setup-buildx-action@v4
@@ -273,7 +273,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - name: Run benchmarks
@@ -601,7 +601,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - name: gofmt -s (Go Report Card parity)
@@ -657,7 +657,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - uses: docker/setup-buildx-action@v4
@@ -734,7 +734,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - uses: docker/setup-buildx-action@v4
@@ -791,7 +791,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - uses: actions/setup-node@v7
@@ -872,7 +872,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - name: Stress tests (concurrency + race detector)
@@ -896,7 +896,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - name: Memory-leak tests (bounded heap growth + race detector)
@@ -918,7 +918,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26.4"
+          go-version: "1.26.5"
           cache: true
 
       - name: Install Helm
