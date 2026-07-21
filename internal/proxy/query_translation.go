@@ -223,8 +223,12 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 			logAttrs = append(logAttrs, "enduser.name", enduserName)
 		}
 		if authUser != "" {
+			// authUser is the Basic-Auth username, read from the Authorization
+			// header. It is credential material, so fingerprint it by default
+			// (raw only under -debug-log-raw-queries), mirroring how raw queries
+			// are redacted. Prevents clear-text logging of credentials.
 			logAttrs = append(logAttrs,
-				"auth.principal", authUser,
+				"auth.principal", redactQuery(authUser, p.debugLogRawQueries),
 				"auth.source", authSource,
 			)
 		}

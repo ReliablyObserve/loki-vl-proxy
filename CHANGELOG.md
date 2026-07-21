@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   vulnerabilities** (including newer transitive advisories in dompurify,
   fast-uri and svgo, cleared via lockfile patch bumps); the site build and
   typecheck pass. Docs-site only — no proxy runtime change.
+- **Basic-Auth principal is now fingerprinted in the request log.** The
+  `auth.principal` field in the structured request log carried the Basic-Auth
+  username verbatim — credential material read from the `Authorization` header
+  (flagged by CodeQL `go/clear-text-logging` in
+  `internal/proxy/query_translation.go`). It is now routed through the same
+  `redactQuery` fingerprint (`sha256:<8hex> len=<n>`) used for raw queries, and
+  is emitted verbatim only under `-debug-log-raw-queries=true`. The Basic-Auth
+  password was never logged. Trusted-proxy `enduser.*` audit fields are
+  unchanged.
 
 ## [1.62.0] - 2026-06-11
 
