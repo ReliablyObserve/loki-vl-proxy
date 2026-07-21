@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Go toolchain bumped to 1.26.5** across the Dockerfile builder image, `go.mod`
+  (`bench/go.mod`), and every CI `setup-go` pin, to pick up the patched standard
+  library for **CVE-2026-42505** (crypto/tls Encrypted Client Hello information
+  disclosure) and **CVE-2026-39822** (`os.Root` symlink-following directory
+  traversal). Rebuilding the `loki-vl-proxy` and `healthcheck` binaries against the
+  fixed stdlib clears both findings from the Trivy filesystem scan that was failing
+  the Security workflow on `main`. No behavioral change.
+
 ## [1.62.0] - 2026-06-11
 
 ### Breaking Changes
