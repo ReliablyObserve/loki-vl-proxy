@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **LogsQL `json_array_concat` pipe support (VictoriaLogs v1.51+).** Added the
+  `PipeJSONArrayConcat` AST node, parser, and round-trip `String()` to
+  `internal/logsql`, covering the `| json_array_concat [delimiter] [from <src>]
+  [as <result>]` grammar. This closes the `Check VL upstream AST coverage` gap
+  (VL added the pipe upstream) and lets the proxy parse/round-trip user LogsQL
+  that uses it.
+
 ### Security
 
 - **Closed the last two code-scanning findings.**

@@ -862,6 +862,8 @@ func (p *parser) parsePipe() (Pipe, error) {
 		return p.parsePipeHash()
 	case "join":
 		return p.parsePipeJoin()
+	case "json_array_concat":
+		return p.parsePipeJSONArrayConcat()
 	case "json_array_len":
 		return p.parsePipeJSONArrayLen()
 	case "len":
@@ -1408,6 +1410,36 @@ func (p *parser) parsePipeJSONArrayLen() (Pipe, error) {
 		return nil, fmt.Errorf("logsql: pipe json_array_len: %w", err)
 	}
 	return PipeJSONArrayLen{Field: field, Result: result}, nil
+}
+
+// parsePipeJSONArrayConcat parses: json_array_concat [delimiter] [from <src>] [as <result>]
+func (p *parser) parsePipeJSONArrayConcat() (Pipe, error) {
+	pipe := PipeJSONArrayConcat{}
+	if p.peek().Typ == TokString {
+		delim, err := p.expectString()
+		if err != nil {
+			return nil, fmt.Errorf("logsql: pipe json_array_concat: %w", err)
+		}
+		pipe.Delimiter = delim
+		pipe.HasDelimiter = true
+	}
+	if p.peek().Typ == TokIdent && p.peek().Val == "from" {
+		p.advance()
+		from, err := p.expectIdent()
+		if err != nil {
+			return nil, fmt.Errorf("logsql: pipe json_array_concat: %w", err)
+		}
+		pipe.From = from
+	}
+	if p.peek().Typ == TokIdent && p.peek().Val == "as" {
+		p.advance()
+		as, err := p.expectIdent()
+		if err != nil {
+			return nil, fmt.Errorf("logsql: pipe json_array_concat: %w", err)
+		}
+		pipe.As = as
+	}
+	return pipe, nil
 }
 
 // parsePipeLen parses: len(field) as result

@@ -209,6 +209,11 @@ func TestParseNewPipesV2(t *testing.T) {
 		{`* | join by (host, app) (error)`, `* | join by (host, app) (error)`},
 		// json_array_len
 		{`* | json_array_len(items) as cnt`, `* | json_array_len(items) as cnt`},
+		// json_array_concat
+		{`* | json_array_concat`, `* | json_array_concat`},
+		{`* | json_array_concat ","`, `* | json_array_concat ","`},
+		{`* | json_array_concat "," from tags as joined`, `* | json_array_concat "," from tags as joined`},
+		{`* | json_array_concat from tags`, `* | json_array_concat from tags`},
 		// len
 		{`* | len(_msg) as msglen`, `* | len(_msg) as msglen`},
 		// query_stats
