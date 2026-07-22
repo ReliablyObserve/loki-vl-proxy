@@ -23,6 +23,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   traversal). Rebuilding the `loki-vl-proxy` and `healthcheck` binaries against the
   fixed stdlib clears both findings from the Trivy filesystem scan that was failing
   the Security workflow on `main`. No behavioral change.
+- **Website (docs) npm dependencies patched — 9 Dependabot alerts cleared.**
+  Added `overrides` in `website/package.json` to force safe versions of the
+  vulnerable transitive packages: `js-yaml` (→4.3.0), `ws` (→8.21.x),
+  `shell-quote` (→1.10.0), `brace-expansion` (→1.1.16), `webpack-dev-server`
+  (→5.2.6), `http-proxy-middleware` (→2.0.10), `joi` (→17.13.4), `body-parser`
+  (→1.20.6), and `@babel/core` (→7.29.7). Because gray-matter pins js-yaml v3's
+  removed `safeLoad`, `website/docusaurus.config.ts` now supplies a js-yaml v4
+  `load` engine via `markdown.parseFrontMatter`. `npm audit` reports **0
+  vulnerabilities** (including newer transitive advisories in dompurify,
+  fast-uri and svgo, cleared via lockfile patch bumps); the site build and
+  typecheck pass. Docs-site only — no proxy runtime change.
 
 ## [1.62.0] - 2026-06-11
 

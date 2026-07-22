@@ -23,6 +23,36 @@ const config: Config = {
     hooks: {
       onBrokenMarkdownLinks: 'warn',
     },
+    // gray-matter (used by Docusaurus for front matter) depends on js-yaml v3,
+    // which has no non-vulnerable release. We force js-yaml v4 via package.json
+    // "overrides", but gray-matter's default engine calls the removed
+    // yaml.safeLoad(). Supplying a js-yaml v4 engine here keeps front matter
+    // parsing working while clearing the js-yaml advisory. See package.json.
+    parseFrontMatter: async ({fileContent}) => {
+      /* eslint-disable @typescript-eslint/no-explicit-any */
+      const gmMod: any = await import('gray-matter');
+      const matter: any =
+        typeof gmMod === 'function'
+          ? gmMod
+          : typeof gmMod.default === 'function'
+            ? gmMod.default
+            : gmMod.default?.default;
+      // Indirect specifier: js-yaml ships no type declarations, so importing
+      // the literal would trip TS7016 under noImplicitAny.
+      const yamlSpecifier: string = 'js-yaml';
+      const yamlMod: any = await import(yamlSpecifier);
+      const yaml = yamlMod.default ?? yamlMod;
+      const {data, content} = matter(fileContent, {
+        engines: {
+          yaml: (str: string) => yaml.load(str),
+        },
+      });
+      /* eslint-enable @typescript-eslint/no-explicit-any */
+      return {
+        frontMatter: structuredClone(data),
+        content: content.trim(),
+      };
+    },
   },
   themes: ['@docusaurus/theme-mermaid'],
   i18n: {
