@@ -344,12 +344,13 @@ func TestParseGrafanaRuntimeMajor(t *testing.T) {
 	}
 }
 
-func TestRequestLogger_RedactsBasicAuthPrincipal(t *testing.T) {
-	// The Basic-Auth username is credential material read from the Authorization
-	// header. By default it must be fingerprinted (never logged in clear text);
-	// under -debug-log-raw-queries it is emitted verbatim, mirroring how raw
-	// LogQL/LogsQL queries are handled. Regression guard for CodeQL
-	// go/clear-text-logging on internal/proxy/query_translation.go.
+func TestRequestLogger_DoesNotLogBasicAuthPrincipal(t *testing.T) {
+	// The Basic-Auth username/password are credential material read from the
+	// Authorization header. Neither the value nor anything derived from it may
+	// ever reach the request log — in ANY code path, including
+	// -debug-log-raw-queries. Only the auth *mechanism* (auth.source, a constant)
+	// is recorded. Regression guard for CodeQL go/clear-text-logging on
+	// internal/proxy/query_translation.go.
 	newReq := func() *http.Request {
 		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query=%7Bapp%3D%22x%22%7D", nil)
 		req.RemoteAddr = "10.0.0.10:1234"
@@ -357,45 +358,38 @@ func TestRequestLogger_RedactsBasicAuthPrincipal(t *testing.T) {
 		return req
 	}
 
-	// Default: redacted.
-	var buf bytes.Buffer
-	p := &Proxy{
-		log:     slog.New(slog.NewJSONHandler(&buf, nil)),
-		metrics: metrics.NewMetrics(),
-	}
-	h := p.requestLogger("query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	h.ServeHTTP(httptest.NewRecorder(), newReq())
-	payload := decodeLastJSONLogLine(t, &buf)
+	for _, tc := range []struct {
+		name    string
+		rawMode bool
+	}{
+		{"default", false},
+		{"debug-log-raw-queries", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			p := &Proxy{
+				log:                slog.New(slog.NewJSONHandler(&buf, nil)),
+				metrics:            metrics.NewMetrics(),
+				debugLogRawQueries: tc.rawMode,
+			}
+			h := p.requestLogger("query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			})
+			h.ServeHTTP(httptest.NewRecorder(), newReq())
+			payload := decodeLastJSONLogLine(t, &buf)
 
-	principal, _ := payload["auth.principal"].(string)
-	if principal == "svc-account" {
-		t.Fatalf("Basic-Auth username leaked in clear text into auth.principal: %q", principal)
-	}
-	if want := redactQuery("svc-account", false); principal != want {
-		t.Fatalf("auth.principal = %q, want fingerprint %q", principal, want)
-	}
-	if payload["auth.source"] != "basic_auth" {
-		t.Fatalf("auth.source = %#v, want basic_auth", payload["auth.source"])
-	}
-	if strings.Contains(buf.String(), "super-secret-password") {
-		t.Fatal("Basic-Auth password must never appear in the request log")
-	}
-
-	// Opt-in raw: verbatim.
-	var rawBuf bytes.Buffer
-	pRaw := &Proxy{
-		log:                slog.New(slog.NewJSONHandler(&rawBuf, nil)),
-		metrics:            metrics.NewMetrics(),
-		debugLogRawQueries: true,
-	}
-	hRaw := pRaw.requestLogger("query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	hRaw.ServeHTTP(httptest.NewRecorder(), newReq())
-	rawPayload := decodeLastJSONLogLine(t, &rawBuf)
-	if rawPayload["auth.principal"] != "svc-account" {
-		t.Fatalf("under -debug-log-raw-queries auth.principal = %#v, want verbatim svc-account", rawPayload["auth.principal"])
+			if _, ok := payload["auth.principal"]; ok {
+				t.Fatalf("auth.principal must not be logged, got %#v", payload["auth.principal"])
+			}
+			if payload["auth.source"] != "basic_auth" {
+				t.Fatalf("auth.source = %#v, want basic_auth", payload["auth.source"])
+			}
+			if strings.Contains(buf.String(), "svc-account") {
+				t.Fatal("Basic-Auth username must never appear in the request log")
+			}
+			if strings.Contains(buf.String(), "super-secret-password") {
+				t.Fatal("Basic-Auth password must never appear in the request log")
+			}
+		})
 	}
 }

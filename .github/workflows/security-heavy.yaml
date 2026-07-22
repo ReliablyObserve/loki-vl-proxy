@@ -92,6 +92,7 @@ jobs:
             --exclude-rule yaml.docker-compose.security.writable-filesystem-service.writable-filesystem-service \
             --exclude-rule yaml.docker-compose.security.no-new-privileges.no-new-privileges \
             --exclude-rule problem-based-packs.insecure-transport.go-stdlib.bypass-tls-verification.bypass-tls-verification \
+            --exclude-rule python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected \
             --sarif \
             --output semgrep.sarif \
             --error
@@ -115,9 +116,13 @@ jobs:
 
       - name: Longer fuzzing
         run: |
-          go test ./internal/proxy -run '^$' -fuzz=FuzzNormalizeMetadataPairsFromJSON -fuzztime=2m
-          go test ./internal/proxy -run '^$' -fuzz=FuzzMergeLokiQueryResponsesStructuredMetadataContract -fuzztime=2m
-          go test ./internal/proxy -run '^$' -fuzz=FuzzExtractLogPatterns -fuzztime=2m
+          # -fuzz takes a regex and refuses to run when it matches more than one
+          # target, so anchor each pattern. FuzzExtractLogPatterns would otherwise
+          # also match FuzzExtractLogPatternsFromWindowEntries.
+          go test ./internal/proxy -run '^$' -fuzz='^FuzzNormalizeMetadataPairsFromJSON$' -fuzztime=2m
+          go test ./internal/proxy -run '^$' -fuzz='^FuzzMergeLokiQueryResponsesStructuredMetadataContract$' -fuzztime=2m
+          go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatterns$' -fuzztime=2m
+          go test ./internal/proxy -run '^$' -fuzz='^FuzzExtractLogPatternsFromWindowEntries$' -fuzztime=2m
 
   dast:
     name: Heavy / dast

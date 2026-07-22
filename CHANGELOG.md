@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Closed the last two code-scanning findings.**
+  - **CodeQL `go/clear-text-logging`** (`internal/proxy/query_translation.go`): the
+    request log no longer emits `auth.principal` at all. The Basic-Auth username
+    (and anything derived from it) is credential material and is now kept out of
+    the log entirely, in every code path; only the auth *mechanism* (`auth.source`,
+    a constant) is recorded. Identity for audit is carried by the trusted-proxy
+    `enduser.*` fields.
+  - **Semgrep `httpsconnection-detected`** (`scripts/check-vl-ast-coverage.py`):
+    replaced `http.client.HTTPSConnection` with `urllib.request` using the default
+    verified TLS context and a fixed, non-user-controlled URL. The companion
+    `dynamic-urllib-use-detected` rule (a false positive for this constant URL) is
+    added to the Semgrep `--exclude-rule` allowlist in `security-heavy.yaml`.
+- **Fixed the `Security Heavy / fuzz` job.** `go test -fuzz=FuzzExtractLogPatterns`
+  refused to run because the unanchored pattern also matched the newer
+  `FuzzExtractLogPatternsFromWindowEntries` target (`-fuzz` must match exactly one).
+  All `-fuzz` patterns are now anchored (`^...$`), and the previously-uncovered
+  window-entries target is now fuzzed too.
+
 ## [1.63.0] - 2026-07-22
 
 ### Fixed
