@@ -899,6 +899,33 @@ func (p PipeJSONArrayLen) String() string {
 }
 func (p PipeJSONArrayLen) pipe() {}
 
+// PipeJSONArrayConcat joins the items of a JSON array field into a single
+// delimited string.
+// Syntax: | json_array_concat [delimiter] [from <src_field>] [as <result_field>]
+// All parts are optional; VictoriaLogs defaults the delimiter to "," and the
+// source/result fields to _msg when they are omitted.
+type PipeJSONArrayConcat struct {
+	Delimiter    string // join separator; only emitted when HasDelimiter is set
+	HasDelimiter bool   // distinguishes an explicit "" delimiter from an unset one
+	From         string // optional source field (default _msg)
+	As           string // optional result field
+}
+
+func (p PipeJSONArrayConcat) String() string {
+	s := "| json_array_concat"
+	if p.HasDelimiter {
+		s += ` "` + p.Delimiter + `"`
+	}
+	if p.From != "" {
+		s += " from " + p.From
+	}
+	if p.As != "" {
+		s += " as " + p.As
+	}
+	return s
+}
+func (p PipeJSONArrayConcat) pipe() {}
+
 // PipeLen returns the byte length of a field as a new field.
 // Syntax: | len(field) as result
 type PipeLen struct {
