@@ -224,13 +224,12 @@ func (p *Proxy) requestLogger(endpoint, route string, next http.HandlerFunc) htt
 		}
 		if authUser != "" {
 			// authUser is the Basic-Auth username, read from the Authorization
-			// header. It is credential material, so fingerprint it by default
-			// (raw only under -debug-log-raw-queries), mirroring how raw queries
-			// are redacted. Prevents clear-text logging of credentials.
-			logAttrs = append(logAttrs,
-				"auth.principal", redactQuery(authUser, p.debugLogRawQueries),
-				"auth.source", authSource,
-			)
+			// header — credential material. We never emit the value (or anything
+			// derived from it) to the log, only the auth *mechanism* (a constant
+			// like "basic_auth"). Identity for audit is carried by the
+			// trusted-proxy enduser.* fields instead. This keeps credential data
+			// out of logs entirely (CodeQL go/clear-text-logging).
+			logAttrs = append(logAttrs, "auth.source", authSource)
 		}
 		p.log.Log(reqCtx, logLevel, "request", logAttrs...)
 	})

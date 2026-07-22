@@ -14,10 +14,11 @@ Exit codes:
     1 — gaps found (new upstream constructs not in our registry)
     2 — API error (rate limit, network failure)
 """
-import http.client
 import json
 import re
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 # Hardcoded HTTPS endpoint — no user-controlled URL component.
@@ -57,28 +58,24 @@ def fetch_file_list(token: str | None) -> list[str]:
     }
     if token:
         headers["Authorization"] = f"Bearer {token}"
+    # Fixed, non-user-controlled HTTPS URL built from module constants. urllib
+    # uses the default TLS context (certificate verification on), so there is no
+    # HTTPSConnection verification pitfall. The URL is a compile-time constant,
+    # not attacker-influenced.
+    url = "https://" + VL_API_HOST + VL_API_PATH
+    request = urllib.request.Request(url, headers=headers, method="GET")
     try:
-        # Semgrep flags HTTPSConnection because TLS verification semantics
-        # changed across Python 3.x versions. This script only runs in CI
-        # against api.github.com on the pinned 3.x container (Python ≥ 3.4.3
-        # has TLS verification on by default — older than any Python we ship).
-        # Connecting to a fixed, trusted host with default verification → safe.
-        # The suppression must sit on the match line itself for Semgrep to honor it.
-        conn = http.client.HTTPSConnection(VL_API_HOST, timeout=15)  # nosemgrep: python.lang.security.audit.httpsconnection-detected.httpsconnection-detected
-        conn.request("GET", VL_API_PATH, headers=headers)
-        resp = conn.getresponse()
-        body = resp.read()
-        if resp.status != 200:
-            print(f"ERROR: GitHub API returned {resp.status}: {resp.reason}", file=sys.stderr)
-            if resp.status == 403:
-                print("Tip: set GITHUB_TOKEN env var to avoid rate limiting", file=sys.stderr)
-            sys.exit(2)
+        with urllib.request.urlopen(request, timeout=15) as resp:
+            body = resp.read()
         data = json.loads(body)
-    except OSError as e:
-        print(f"ERROR: Network failure: {e}", file=sys.stderr)
+    except urllib.error.HTTPError as e:
+        print(f"ERROR: GitHub API returned {e.code}: {e.reason}", file=sys.stderr)
+        if e.code == 403:
+            print("Tip: set GITHUB_TOKEN env var to avoid rate limiting", file=sys.stderr)
         sys.exit(2)
-    finally:
-        conn.close()
+    except urllib.error.URLError as e:
+        print(f"ERROR: Network failure: {e.reason}", file=sys.stderr)
+        sys.exit(2)
     return [entry["name"] for entry in data if entry["type"] == "file"]
 
 
