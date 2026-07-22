@@ -343,3 +343,59 @@ func TestParseGrafanaRuntimeMajor(t *testing.T) {
 		t.Fatalf("expected 0 for non-semver token, got %d", got)
 	}
 }
+
+func TestRequestLogger_RedactsBasicAuthPrincipal(t *testing.T) {
+	// The Basic-Auth username is credential material read from the Authorization
+	// header. By default it must be fingerprinted (never logged in clear text);
+	// under -debug-log-raw-queries it is emitted verbatim, mirroring how raw
+	// LogQL/LogsQL queries are handled. Regression guard for CodeQL
+	// go/clear-text-logging on internal/proxy/query_translation.go.
+	newReq := func() *http.Request {
+		req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?query=%7Bapp%3D%22x%22%7D", nil)
+		req.RemoteAddr = "10.0.0.10:1234"
+		req.SetBasicAuth("svc-account", "super-secret-password")
+		return req
+	}
+
+	// Default: redacted.
+	var buf bytes.Buffer
+	p := &Proxy{
+		log:     slog.New(slog.NewJSONHandler(&buf, nil)),
+		metrics: metrics.NewMetrics(),
+	}
+	h := p.requestLogger("query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	h.ServeHTTP(httptest.NewRecorder(), newReq())
+	payload := decodeLastJSONLogLine(t, &buf)
+
+	principal, _ := payload["auth.principal"].(string)
+	if principal == "svc-account" {
+		t.Fatalf("Basic-Auth username leaked in clear text into auth.principal: %q", principal)
+	}
+	if want := redactQuery("svc-account", false); principal != want {
+		t.Fatalf("auth.principal = %q, want fingerprint %q", principal, want)
+	}
+	if payload["auth.source"] != "basic_auth" {
+		t.Fatalf("auth.source = %#v, want basic_auth", payload["auth.source"])
+	}
+	if strings.Contains(buf.String(), "super-secret-password") {
+		t.Fatal("Basic-Auth password must never appear in the request log")
+	}
+
+	// Opt-in raw: verbatim.
+	var rawBuf bytes.Buffer
+	pRaw := &Proxy{
+		log:                slog.New(slog.NewJSONHandler(&rawBuf, nil)),
+		metrics:            metrics.NewMetrics(),
+		debugLogRawQueries: true,
+	}
+	hRaw := pRaw.requestLogger("query_range", "/loki/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	hRaw.ServeHTTP(httptest.NewRecorder(), newReq())
+	rawPayload := decodeLastJSONLogLine(t, &rawBuf)
+	if rawPayload["auth.principal"] != "svc-account" {
+		t.Fatalf("under -debug-log-raw-queries auth.principal = %#v, want verbatim svc-account", rawPayload["auth.principal"])
+	}
+}
