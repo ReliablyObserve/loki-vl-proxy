@@ -45,6 +45,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is emitted verbatim only under `-debug-log-raw-queries=true`. The Basic-Auth
   password was never logged. Trusted-proxy `enduser.*` audit fields are
   unchanged.
+- **All GitHub Actions are now pinned to commit SHAs** (with a `# vN` comment so
+  Dependabot keeps them current), clearing 143 Semgrep
+  `github-actions-mutable-action-tag` code-scanning findings across 18 workflows.
+- **Dependabot `cooldown` (7 days) added** to every update ecosystem
+  (github-actions, gomod, docker), so fresh releases bake before a PR is opened —
+  clears the `dependabot-missing-cooldown` findings.
+- **`scripts/check-vl-ast-coverage.py`**: moved the `nosemgrep` suppression onto
+  the `HTTPSConnection` match line (Semgrep only honors it on the match line or
+  the line directly above), clearing the `httpsconnection-detected` finding. The
+  connection is to a fixed, trusted host with default TLS verification.
 
 ## [1.62.0] - 2026-06-11
 

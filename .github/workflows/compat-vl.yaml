@@ -23,7 +23,7 @@ jobs:
     outputs:
       vl_versions: ${{ steps.matrix.outputs.vl_versions }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - id: matrix
         run: echo "vl_versions=$(jq -c '.stack.victorialogs.matrix_versions' test/e2e-compat/compatibility-matrix.json)" >> "$GITHUB_OUTPUT"
 
@@ -37,13 +37,13 @@ jobs:
       GRAFANA_IMAGE: grafana/grafana:12.4.2
       PROXY_IMAGE: loki-vl-proxy:compat-vl
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.26.5"
           cache: true
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7
         with:
           context: .
           file: ./Dockerfile
@@ -76,13 +76,13 @@ jobs:
       GRAFANA_IMAGE: grafana/grafana:12.4.2
       PROXY_IMAGE: loki-vl-proxy:compat-vl
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e  # v7
         with:
           go-version: "1.26.5"
           cache: true
-      - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7
         with:
           context: .
           file: ./Dockerfile
