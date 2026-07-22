@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dockerfile builder image tag corrected to `golang:1.26.5-alpine3.24`.** The
+  Go 1.26.5 bump referenced `golang:1.26.5-alpine3.22`, which does not exist on
+  Docker Hub (Alpine moved to 3.23/3.24 for the 1.26.5 line), breaking the
+  `docker` build and all e2e jobs on `main`. Verified the image builds.
+
 ### Security
 
 - **Go toolchain bumped to 1.26.5** across the Dockerfile builder image, `go.mod`
