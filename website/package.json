@@ -39,7 +39,7 @@
     "body-parser": "^1.20.6",
     "@babel/core": "^7.29.6",
     "shell-quote": "^1.9.0",
-    "brace-expansion": "^1.1.16"
+    "brace-expansion": "^1.1.18"
   },
   "browserslist": {
     "production": [
