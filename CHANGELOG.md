@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.66.0] - 2026-09-12
+
 ### Added
 
 - **e2e-ui regression locks for behaviour verified by hand this release:**
