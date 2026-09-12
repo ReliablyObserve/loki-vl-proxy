@@ -18,6 +18,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Go toolchain 1.26.5 → 1.27.1** across `go.mod`, `bench/go.mod`, the Docker
+  builder image (`golang:1.27.1-alpine3.24`) and every CI workflow. This closes
+  the five Go standard-library advisories that `govulncheck` reported as
+  reachable from the proxy (and that were failing the `test` job on every PR):
+  - GO-2026-6218 / CVE-2026-56860 — quadratic complexity in `net/url` `resolvePath`
+  - GO-2026-6090 / CVE-2026-56862 — unbounded post-handshake messages in `crypto/tls`
+  - GO-2026-6089 / CVE-2026-56853 — `ReadHeaderTimeout` not applied to the
+    unencrypted HTTP/2 check in `net/http`
+  - GO-2026-5972 / CVE-2026-33818 — no maximum recursion depth in `encoding/asn1`
+  - GO-2026-5026 / CVE-2026-39821 — ASCII-only Punycode labels accepted in
+    `golang.org/x/net/idna` (via `net/http`)
+
+  The same rebuild clears the sixteen Trivy image findings (the CVEs above plus
+  CVE-2026-46600, CVE-2026-56858 and CVE-2026-56859) reported against the
+  `stdlib` package inside `usr/local/bin/loki-vl-proxy` and
+  `usr/local/bin/healthcheck` in the published image. `govulncheck` and a Trivy
+  scan of the rebuilt image both report zero findings.
+- **Documentation website dependencies** (`website/`, not shipped in the proxy
+  binary or chart): Docusaurus 3.10.0 → 3.10.2 and a refresh of the transitive
+  tree that resolves 33 open Dependabot advisories — `postcss`, `fast-uri`,
+  `brace-expansion`, `js-yaml`, `nanoid`, `browserslist`, `svgo`, `mermaid`,
+  `dompurify`, `qs`, `@swc/html`, `baseline-browser-mapping`, `colord`, `joi`
+  and `postcss-selector-parser`. `mermaid` is pinned to the 11.x line via
+  `overrides` because 12.0.0 pulls in a vulnerable `chevrotain`/`lodash-es`
+  chain, and `qs` is overridden to `>=6.16.0`. `gray-matter` is now a declared
+  devDependency (Docusaurus 3.10.2 replaced it internally with
+  `@11ty/gray-matter`, so the site config could no longer rely on it
+  transitively). The two `image-size` advisories (GHSA-w3rx-r6r6-pgpr,
+  GHSA-5p2g-fcmc-qvqq) have no upstream fix; they only affect build-time
+  parsing of images that live in this repository, so they are accepted and
+  tracked as dismissed with that rationale.
+- `github.com/klauspost/compress` 1.19.0 → 1.19.1 (go-minor group).
+- **CodeQL `go/clear-text-logging` (request log, `internal/proxy/query_translation.go`):**
+  the 1.63.1 change removed the Basic-Auth principal from the log, but CodeQL
+  kept the finding open because the remaining flow is the trusted-proxy
+  end-user identity (`enduser.id` / `enduser.name`, sourced from
+  `X-Grafana-User`, `X-Forwarded-User`, `X-Webauth-User` and
+  `X-Auth-Request-User`, and only consulted when
+  `-metrics.trust-proxy-headers` is enabled). That value is the audit identity
+  of the caller, not credential material, and is flagged purely on the header
+  names. The alert is dismissed as a false positive with that rationale rather
+  than by removing identity from the audit log.
+
+### Changed
+
+- **CI: golangci-lint v2.11.4 → v2.13.2.** A lint binary built with Go 1.26
+  refuses a Go 1.27 `go.mod`, so the bump is required by the toolchain change.
+  The linter reports zero issues on the current tree.
+- **CI: gosec v2.22.7 → v2.29.0.** v2.22.7 cannot type-check Go 1.27
+  (`internal error: package "log/slog" without types`). Every Go-1.27-capable
+  gosec release also ships the newer taint-analysis rules; three of them are
+  excluded on review because their nine hits on this tree are not applicable
+  (G704 "SSRF" on the healthcheck's loopback `http://localhost:$HEALTH_PORT/ready`
+  call, G705 "XSS" on cached JSON bodies written with
+  `Content-Type: application/json`, G118 on the drilldown field batcher
+  goroutine that intentionally outlives a single request). The rationale is
+  recorded next to the exclusion list in `security-pr.yaml`.
+- **CI: pinned GitHub Actions SHAs bumped** (actions-minor group, 9 updates
+  across the workflow files).
+- **CI changelog gate:** paths under `website/` are now treated as
+  non-release paths. Dependabot bumps of the website lockfile and docs-site-only
+  PRs no longer fail the gate for lacking a CHANGELOG entry; proxy, chart, Go
+  module and Dockerfile changes still require one. Covered by two new unit
+  tests in `scripts/ci/tests/test_check_changelog_pr.py`.
+- **Dependabot: grouped npm updates for `website/`.** A new `npm` entry
+  (weekly, 7-day cooldown) groups minor/patch version updates into one PR and
+  security updates into another, instead of one PR per transitive package.
+
+## [1.63.1] - 2026-07-22
+
+### Security
+
 - **Closed the last two code-scanning findings.**
   - **CodeQL `go/clear-text-logging`** (`internal/proxy/query_translation.go`): the
     request log no longer emits `auth.principal` at all. The Basic-Auth username

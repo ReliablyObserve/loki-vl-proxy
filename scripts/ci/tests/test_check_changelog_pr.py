@@ -116,6 +116,22 @@ class CheckChangelogPRTests(unittest.TestCase):
             )
         )
 
+    def test_dependency_only_pr_website_lockfile(self):
+        self.assertTrue(
+            is_dependency_only_pr(
+                ["build(deps): bump postcss from 8.5.12 to 8.5.25 in /website"],
+                ["website/package.json", "website/package-lock.json"],
+            )
+        )
+
+    def test_website_only_changes_do_not_require_changelog(self):
+        self.assertFalse(
+            should_require_changelog(
+                ["docs(website): refresh landing page copy"],
+                ["website/src/pages/index.tsx", "website/package-lock.json"],
+            )
+        )
+
     def test_dependency_only_pr_rejects_mixed_commits(self):
         self.assertFalse(
             is_dependency_only_pr(

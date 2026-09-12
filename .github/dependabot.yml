@@ -42,3 +42,24 @@ updates:
     labels:
       - dependencies
       - docker
+
+  # Keep the documentation website (Docusaurus) dependencies up to date.
+  # Group everything into a single PR so transitive security bumps land
+  # together instead of one PR per package.
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      website-deps:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      website-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    labels:
+      - dependencies
+      - website

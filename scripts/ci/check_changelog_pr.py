@@ -47,6 +47,9 @@ IMPACTFUL_FILES = {
 NON_RELEASE_PATH_PREFIXES = (
     "docs/",
     "scripts/ci/tests/",
+    # The documentation website is published independently of the proxy
+    # binary/chart; its source and lockfile changes are not release-impacting.
+    "website/",
 )
 
 NON_RELEASE_FILES = {
