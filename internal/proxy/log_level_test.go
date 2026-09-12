@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,7 +31,11 @@ func TestNew_RespectsConfiguredLogLevelOverDefaultLogger(t *testing.T) {
 	}
 
 	p.log.Info("suppressed info log")
-	if buf.Len() != 0 {
+	// Other tests in this package run proxies whose background probes log
+	// through slog.Default(), which this test temporarily points at buf. Only
+	// this proxy's own message proves the configured level took precedence;
+	// asserting an empty buffer races with those goroutines and flakes.
+	if strings.Contains(buf.String(), "suppressed info log") {
 		t.Fatalf("expected info log to be suppressed, got %q", buf.String())
 	}
 }

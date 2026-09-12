@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `main` and on open PRs failed at the `Govulncheck` step. Reproduced locally
   with `GOOS=linux`; v1.8.0 completes and reports no vulnerabilities.
 
+### Fixed
+
+- **Flaky unit test `TestNew_RespectsConfiguredLogLevelOverDefaultLogger`.** The
+  test pointed `slog.Default()` at a buffer and asserted the buffer stayed empty,
+  but other tests in the package run proxies whose background backend probes log
+  through the default logger concurrently, so the buffer occasionally captured
+  their lines and the release validation job (`go test ./...` without `-race`)
+  failed. The test now asserts only that its own info message is suppressed.
+
 ## [1.64.0] - 2026-09-12
 
 ### Security
