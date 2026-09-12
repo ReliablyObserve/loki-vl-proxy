@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.64.0] - 2026-09-12
+
 ### Security
 
 - **Go toolchain 1.26.5 → 1.27.1** across `go.mod`, `bench/go.mod`, the Docker
