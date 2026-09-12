@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.65.0] - 2026-09-12
+
 ### Added
 
 - **LogsQL `json_array_concat` pipe support (VictoriaLogs v1.51+).** Added the
