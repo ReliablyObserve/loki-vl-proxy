@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **CI: govulncheck v1.1.4 → v1.8.0.** v1.1.4 bundles `golang.org/x/tools`
+  v0.29.0, whose SSA builder panics (`unexpected expr: *ast.KeyValueExpr`) when
+  it has to build a call graph for code type-checked as Go 1.27. The panic only
+  fires once the vulnerability database matches something in the Linux module
+  graph, which is why the first Go 1.27 run passed and every later run on
+  `main` and on open PRs failed at the `Govulncheck` step. Reproduced locally
+  with `GOOS=linux`; v1.8.0 completes and reports no vulnerabilities.
+
+## [1.64.0] - 2026-09-12
+
 ### Security
 
 - **Go toolchain 1.26.5 → 1.27.1** across `go.mod`, `bench/go.mod`, the Docker
