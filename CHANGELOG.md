@@ -7,14 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- **LogsQL `json_array_concat` pipe support (VictoriaLogs v1.51+).** Added the
-  `PipeJSONArrayConcat` AST node, parser, and round-trip `String()` to
-  `internal/logsql`, covering the `| json_array_concat [delimiter] [from <src>]
-  [as <result>]` grammar. This closes the `Check VL upstream AST coverage` gap
-  (VL added the pipe upstream) and lets the proxy parse/round-trip user LogsQL
-  that uses it.
+- **CI: govulncheck v1.1.4 → v1.8.0.** v1.1.4 bundles `golang.org/x/tools`
+  v0.29.0, whose SSA builder panics (`unexpected expr: *ast.KeyValueExpr`) when
+  it has to build a call graph for code type-checked as Go 1.27. The panic only
+  fires once the vulnerability database matches something in the Linux module
+  graph, which is why the first Go 1.27 run passed and every later run on
+  `main` and on open PRs failed at the `Govulncheck` step. Reproduced locally
+  with `GOOS=linux`; v1.8.0 completes and reports no vulnerabilities.
+
+## [1.64.0] - 2026-09-12
 
 ### Security
 
