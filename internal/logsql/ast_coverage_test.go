@@ -66,6 +66,8 @@ func TestPipeString_Extended(t *testing.T) {
 		{"hash", logsql.PipeHash{Fields: []string{"user_id"}, Result: "uid_hash"}, "| hash(user_id) as uid_hash"},
 		{"join", logsql.PipeJoin{By: []string{"id"}, Inner: `_msg:"x"`}, `| join by (id) (_msg:"x")`},
 		{"join_prefix", logsql.PipeJoin{By: []string{"id"}, Inner: "x", Prefix: "r_"}, "| join by (id) (x) prefix r_"},
+		{"json_array_concat_default", logsql.PipeJSONArrayConcat{}, "| json_array_concat"},
+		{"json_array_concat_full", logsql.PipeJSONArrayConcat{Delimiter: ",", HasDelimiter: true, From: "tags", As: "joined"}, `| json_array_concat "," from tags as joined`},
 		{"json_array_len", logsql.PipeJSONArrayLen{Field: "arr", Result: "len"}, "| json_array_len(arr) as len"},
 		{"len", logsql.PipeLen{Field: "_msg", Result: "msg_len"}, "| len(_msg) as msg_len"},
 		{"query_stats", logsql.PipeQueryStats{}, "| query_stats"},
