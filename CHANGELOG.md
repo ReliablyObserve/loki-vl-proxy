@@ -57,6 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI: golangci-lint v2.11.4 → v2.13.2.** A lint binary built with Go 1.26
   refuses a Go 1.27 `go.mod`, so the bump is required by the toolchain change.
   The linter reports zero issues on the current tree.
+- **CI: gosec v2.22.7 → v2.29.0.** v2.22.7 cannot type-check Go 1.27
+  (`internal error: package "log/slog" without types`). Every Go-1.27-capable
+  gosec release also ships the newer taint-analysis rules; three of them are
+  excluded on review because their nine hits on this tree are not applicable
+  (G704 "SSRF" on the healthcheck's loopback `http://localhost:$HEALTH_PORT/ready`
+  call, G705 "XSS" on cached JSON bodies written with
+  `Content-Type: application/json`, G118 on the drilldown field batcher
+  goroutine that intentionally outlives a single request). The rationale is
+  recorded next to the exclusion list in `security-pr.yaml`.
 - **CI: pinned GitHub Actions SHAs bumped** (actions-minor group, 9 updates
   across the workflow files).
 - **CI changelog gate:** paths under `website/` are now treated as
