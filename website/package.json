@@ -11,10 +11,10 @@
     "typecheck": "tsc"
   },
   "dependencies": {
-    "@docusaurus/core": "3.10.0",
-    "@docusaurus/faster": "3.10.0",
-    "@docusaurus/preset-classic": "3.10.0",
-    "@docusaurus/theme-mermaid": "3.10.0",
+    "@docusaurus/core": "3.10.2",
+    "@docusaurus/faster": "3.10.2",
+    "@docusaurus/preset-classic": "3.10.2",
+    "@docusaurus/theme-mermaid": "3.10.2",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
     "prism-react-renderer": "^2.3.0",
@@ -22,10 +22,11 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "3.10.0",
-    "@docusaurus/tsconfig": "3.10.0",
-    "@docusaurus/types": "3.10.0",
+    "@docusaurus/module-type-aliases": "3.10.2",
+    "@docusaurus/tsconfig": "3.10.2",
+    "@docusaurus/types": "3.10.2",
     "@types/react": "^19.0.0",
+    "gray-matter": "4.0.3",
     "typescript": "~6.0.2"
   },
   "overrides": {
@@ -39,7 +40,9 @@
     "body-parser": "^1.20.6",
     "@babel/core": "^7.29.6",
     "shell-quote": "^1.9.0",
-    "brace-expansion": "^1.1.16"
+    "brace-expansion": "^1.1.16",
+    "mermaid": "^11.16.1",
+    "qs": ">=6.16.0"
   },
   "browserslist": {
     "production": [
