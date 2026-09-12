@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Flaky unit test `TestHandleLabels_SecondRequestIsCacheHit` under the race
+  detector.** A cache miss on `/labels` serves the synchronous fetch capped to
+  five minutes and schedules a background full-range refresh for wider
+  ranges, so the test's one-hour first request always produces a second,
+  asynchronous backend call. The assertion that the second request adds no
+  backend calls sampled the counter while that refresh was still in flight and
+  attributed it to the second request (`race-stress` job, loaded runner). The
+  test now waits for the counter to settle after the first request, keeping
+  the cache-hit assertion exact.
+
 ## [1.66.0] - 2026-09-12
 
 ### Added
