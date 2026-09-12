@@ -7,6 +7,8 @@ import {
   openLogsDrilldown,
   resolveDatasourceUid,
   waitForGrafanaReady,
+  drilldownLabelFilter,
+  drilldownFieldFilter,
 } from "./helpers";
 import { buildServiceDrilldownUrl } from "./url-state";
 
@@ -16,17 +18,17 @@ const allowedDrilldownMtConsoleErrors = [
 
 async function waitForDrilldownLanding(page: Page) {
   await waitForGrafanaReady(page);
-  await expect(page.getByRole("combobox", { name: "Filter by labels" })).toBeVisible({
+  await expect(drilldownLabelFilter(page)).toBeVisible({
     timeout: 30_000,
   });
 }
 
 async function waitForDrilldownDetails(page: Page) {
   await waitForGrafanaReady(page);
-  await expect(page.getByRole("combobox", { name: "Filter by labels" })).toBeVisible({
+  await expect(drilldownLabelFilter(page)).toBeVisible({
     timeout: 30_000,
   });
-  await expect(page.getByRole("combobox", { name: "Filter by fields" })).toBeVisible({
+  await expect(drilldownFieldFilter(page)).toBeVisible({
     timeout: 30_000,
   });
   await expect(page.getByRole("tab", { name: /^Logs/i }).first()).toBeVisible({
@@ -475,7 +477,7 @@ test.describe("Grafana Logs Drilldown", () => {
     await waitForGrafanaReady(page);
 
     await expect(page.locator('[data-testid="data-testid Alert error"]')).toHaveCount(0);
-    await expect(page.getByRole("combobox", { name: "Filter by labels" })).toBeVisible({
+    await expect(drilldownLabelFilter(page)).toBeVisible({
       timeout: 20_000,
     });
 

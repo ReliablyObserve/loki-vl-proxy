@@ -12,7 +12,7 @@
  */
 
 import { test, expect, type Page } from "@playwright/test";
-import { PROXY_DS, LOKI_DS, resolveDatasourceUid } from "./helpers";
+import { waitForLokiMetricData, lokiIndexedStreamCount, PROXY_DS, LOKI_DS, resolveDatasourceUid } from "./helpers";
 
 // ---------------------------------------------------------------------------
 // Types & helpers
@@ -26,19 +26,29 @@ interface LokiResponse {
   };
 }
 
+// Exclude the live edge: the UI stack's log generator writes continuously and
+// the two backends are queried a few milliseconds apart, so a window ending at
+// "now" drifts by a line or two between them. Data older than a minute is
+// complete on both sides.
+const LIVE_EDGE_SEC = 60;
+const windowEnd = () => Math.floor(Date.now() / 1000) - LIVE_EDGE_SEC;
+
 async function queryRange(
   page: Page,
   dsUID: string,
   query: string,
-  opts: { step?: string; limit?: string } = {}
+  opts: { step?: string; limit?: string; windowSec?: number; endSec?: number } = {}
 ): Promise<{ statusCode: number; body: LokiResponse | null }> {
-  const now = Math.floor(Date.now() / 1000);
-  // 7-day window to cover any stack age (data is ingested once at stack start)
-  const start = now - 7 * 24 * 3600;
+  await ensureStackWarm(page);
+  // Callers comparing two responses pass one shared endSec: the generator
+  // creates ~2 streams/s, so two ends computed a second apart would differ.
+  const end = opts.endSec ?? windowEnd();
+  // 7-day window by default to cover any stack age (data is ingested once at stack start)
+  const start = end - (opts.windowSec ?? 7 * 24 * 3600);
   const params = new URLSearchParams({
     query,
     start: String(start),
-    end: String(now),
+    end: String(end),
     ...(opts.step ? { step: opts.step } : {}),
     limit: opts.limit ?? "500",
   });
@@ -49,6 +59,28 @@ async function queryRange(
 
   if (!resp.ok()) return { statusCode: resp.status(), body: null };
   return { statusCode: resp.status(), body: (await resp.json()) as LokiResponse };
+}
+
+// Instant query for a single scalar aggregate. Unlike query_range this is
+// not subject to `limit`, so it can compare volumes that exceed any line cap.
+async function instantScalar(
+  page: Page,
+  dsUID: string,
+  query: string,
+  timeSec?: number
+): Promise<number> {
+  await ensureStackWarm(page);
+  const time = timeSec ?? windowEnd();
+  const params = new URLSearchParams({ query, time: String(time) });
+  const resp = await page.request.get(
+    `/api/datasources/proxy/uid/${dsUID}/loki/api/v1/query?${params}`
+  );
+  expect(resp.status()).toBe(200);
+  const body = (await resp.json()) as LokiResponse;
+  expect(body.data?.resultType).toBe("vector");
+  const vec = body.data.result as Array<{ value: [number, string] }>;
+  expect(vec.length).toBe(1);
+  return Number(vec[0].value[1]);
 }
 
 function lineCount(body: LokiResponse | null): number {
@@ -79,9 +111,10 @@ async function assertLogParity(
   label: string
 ): Promise<void> {
   const { proxyUID, lokiUID } = await uids(page);
+  const endSec = windowEnd();
   const [proxy, loki] = await Promise.all([
-    queryRange(page, proxyUID, query),
-    queryRange(page, lokiUID, query),
+    queryRange(page, proxyUID, query, { endSec }),
+    queryRange(page, lokiUID, query, { endSec }),
   ]);
 
   expect(proxy.statusCode, `${label}: status code`).toBe(loki.statusCode);
@@ -95,16 +128,41 @@ async function assertLogParity(
   );
 }
 
+// Fresh-stack gate. The UI stack's generator starts with the stack, so for the
+// first minute there is nothing behind the live edge on either backend, and
+// Loki's range-metric path stays blank for a few minutes more (see
+// waitForLokiMetricData). Every query in this file goes through queryRange or
+// instantScalar, so gating them once per selector per worker keeps the suite
+// deterministic on the fresh stacks CI uses; the proxy itself needs no grace
+// period.
+const stackWarm = new Map<string, Promise<void>>();
+async function ensureStackWarm(page: Page, selector = '{app="api-gateway"}'): Promise<void> {
+  let p = stackWarm.get(selector);
+  if (!p) {
+    p = (async () => {
+      const { lokiUID } = await uids(page);
+      await waitForLokiMetricData(page, lokiUID, selector, {
+        endOffsetSec: LIVE_EDGE_SEC,
+      });
+    })();
+    stackWarm.set(selector, p);
+  }
+  await p;
+}
+
 // Assert exact parity for metric queries (series count must match).
 async function assertMetricParity(
   page: Page,
   query: string,
-  label: string
+  label: string,
+  selector = '{app="api-gateway"}'
 ): Promise<void> {
+  await ensureStackWarm(page, selector);
   const { proxyUID, lokiUID } = await uids(page);
+  const endSec = windowEnd();
   const [proxy, loki] = await Promise.all([
-    queryRange(page, proxyUID, query, { step: "60" }),
-    queryRange(page, lokiUID, query, { step: "60" }),
+    queryRange(page, proxyUID, query, { step: "60", endSec }),
+    queryRange(page, lokiUID, query, { step: "60", endSec }),
   ]);
 
   expect(proxy.statusCode, `${label}: status code`).toBe(loki.statusCode);
@@ -298,20 +356,59 @@ test.describe("@regression Pipeline stages — exact Loki parity", () => {
 // Metric query parity
 // ---------------------------------------------------------------------------
 
+// Metric parity is asserted on aggregated forms with bounded cardinality. Raw
+// per-stream series (e.g. `rate({app="api-gateway"}[5m])`) are legitimately
+// capped by the proxy at `-max-stats-query-series` (default 500, matching
+// Drilldown's own cap; see docs) while Loki returns every stream, so an exact
+// series-count comparison on high-cardinality selectors is not a parity signal.
+// The cap itself is locked by the dedicated test below.
+const PROXY_STATS_SERIES_CAP = 500;
+
 test.describe("@regression Metric queries — exact Loki parity", () => {
   test("rate @regression", async ({ page }) =>
     assertMetricParity(
       page,
-      `rate({app="api-gateway"}[5m])`,
+      `sum by (app) (rate({app="api-gateway"}[5m]))`,
       "rate"
     ));
 
   test("count_over_time @regression", async ({ page }) =>
     assertMetricParity(
       page,
-      `count_over_time({app="api-gateway"}[5m])`,
+      `sum by (namespace) (count_over_time({app="api-gateway"}[5m]))`,
       "count_over_time"
     ));
+
+  test("raw per-stream series honour the documented proxy cap @regression", async ({
+    page,
+  }) => {
+    const { proxyUID, lokiUID } = await uids(page);
+    // One series per stream. The reference is Loki's series index rather than
+    // its rate() output: the generator rotates pod names, and Loki's sharded
+    // range path only sees a stream once its head block is cut, so the newest
+    // streams are always missing there while the index (served from the
+    // ingesters) and the proxy both list them immediately.
+    const query = `rate({app="api-gateway"}[5m])`;
+    await ensureStackWarm(page);
+    const end = windowEnd();
+    const windowSec = 7 * 24 * 3600;
+    const [proxy, indexed] = await Promise.all([
+      queryRange(page, proxyUID, query, { step: "60", windowSec, endSec: end }),
+      lokiIndexedStreamCount(page, lokiUID, `{app="api-gateway"}`, end - windowSec, end),
+    ]);
+    expect(proxy.statusCode, "raw rate: status code").toBe(200);
+    const proxySeries = seriesCount(proxy.body);
+    expect(proxySeries, "raw rate: proxy never exceeds its series cap").toBeLessThanOrEqual(
+      PROXY_STATS_SERIES_CAP
+    );
+    if (indexed <= PROXY_STATS_SERIES_CAP) {
+      expect(proxySeries, "raw rate: one series per indexed stream below the cap").toBe(
+        indexed
+      );
+    } else {
+      expect(proxySeries, "raw rate: cap reached").toBe(PROXY_STATS_SERIES_CAP);
+    }
+  });
 
   test("sum by level count_over_time @regression", async ({ page }) =>
     assertMetricParity(
@@ -330,7 +427,7 @@ test.describe("@regression Metric queries — exact Loki parity", () => {
   test("rate with line filter |= @regression", async ({ page }) =>
     assertMetricParity(
       page,
-      `rate({app="api-gateway"} |= "error"[5m])`,
+      `sum by (level) (rate({app="api-gateway"} |= "error"[5m]))`,
       "rate + |="
     ));
 
@@ -344,14 +441,14 @@ test.describe("@regression Metric queries — exact Loki parity", () => {
   test("avg_over_time unwrap duration_ms @regression", async ({ page }) =>
     assertMetricParity(
       page,
-      `avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m])`,
+      `avg by (level) (avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]))`,
       "avg_over_time unwrap"
     ));
 
   test("sum_over_time unwrap status @regression", async ({ page }) =>
     assertMetricParity(
       page,
-      `sum_over_time({app="api-gateway"} | json | unwrap status [5m])`,
+      `sum by (level) (sum_over_time({app="api-gateway"} | json | unwrap status [5m]))`,
       "sum_over_time unwrap"
     ));
 
@@ -359,7 +456,8 @@ test.describe("@regression Metric queries — exact Loki parity", () => {
     assertMetricParity(
       page,
       `sum by (level) (rate({app="payment-service"}[5m]))`,
-      "sum payment-service"
+      "sum payment-service",
+      '{app="payment-service"}'
     ));
 });
 
@@ -453,18 +551,33 @@ test.describe("@regression Content verification", () => {
     page,
   }) => {
     const { proxyUID } = await uids(page);
-    const [all, filtered] = await Promise.all([
-      queryRange(page, proxyUID, `{app="api-gateway"}`),
-      queryRange(page, proxyUID, `{app="api-gateway"} != "health"`),
+    // Compare volumes with an instant aggregate rather than line counts: the
+    // UI stack's generator writes faster than any sane `limit`, so a capped
+    // pair of query_range responses would compare equal and hide the filter.
+    const at = windowEnd();
+    const [allN, filtN] = await Promise.all([
+      instantScalar(page, proxyUID, `sum(count_over_time({app="api-gateway"}[10m]))`, at),
+      instantScalar(
+        page,
+        proxyUID,
+        `sum(count_over_time({app="api-gateway"} != "health"[10m]))`,
+        at
+      ),
     ]);
-
-    const allN = lineCount(all.body);
-    const filtN = lineCount(filtered.body);
+    expect(allN).toBeGreaterThan(0);
     expect(filtN).toBeLessThan(allN);
 
+    const filtered = await queryRange(
+      page,
+      proxyUID,
+      `{app="api-gateway"} != "health"`,
+      { windowSec: 10 * 60 }
+    );
+    expect(filtered.statusCode).toBe(200);
     const streams = filtered.body?.data?.result as Array<{
       values: Array<[string, string]>;
     }>;
+    expect(lineCount(filtered.body)).toBeGreaterThan(0);
     for (const s of streams) {
       for (const [, line] of s.values) {
         expect(line.toLowerCase()).not.toContain("health");

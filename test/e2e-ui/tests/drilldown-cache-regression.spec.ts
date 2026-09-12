@@ -15,6 +15,7 @@ import {
   installGrafanaGuards,
   resolveDatasourceUid,
   waitForGrafanaReady,
+  drilldownLabelFilter,
 } from "./helpers";
 import { buildServiceDrilldownUrl } from "./url-state";
 
@@ -94,7 +95,7 @@ test.describe("Drilldown Fields — labels sidebar is populated @drilldown-cache
     test(`labels visible — ${label} range`, async ({ page }) => {
       await openFieldsView(page, PROXY_INTERACT_DS, TEST_SERVICE, from, to);
 
-      const filterByLabels = page.getByRole("combobox", { name: "Filter by labels" });
+      const filterByLabels = drilldownLabelFilter(page);
       await expect(filterByLabels).toBeVisible({ timeout: 30_000 });
 
       // Open the dropdown and verify at least one label option is available.
