@@ -82,15 +82,19 @@ Most non-browser assertions moved out of Playwright:
 
 ## CI Shards
 
-The GitHub Actions `e2e-ui` job runs as five shards:
+The GitHub Actions `e2e-ui` job runs as nine shards:
 
 | Shard | Command | Coverage |
 |------|---------|----------|
 | `datasource` | `npx playwright test tests/datasource.spec.ts` | datasource settings smoke |
-| `explore-core` | `npx playwright test --grep @explore-core` | one default Explore smoke |
+| `explore-core` | `npx playwright test --grep @explore-core` | default Explore smoke plus API-level proxy-vs-Loki metric parity (`explore-parity.spec.ts`) |
 | `explore-tail` | `npx playwright test --grep @explore-tail` | multi-tenant Explore exact/negative tenant filtering plus browser live-tail recovery |
-| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke, URL-state unit coverage, and single-tenant Logs Drilldown smoke |
+| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke, URL-state unit coverage, single-tenant Logs Drilldown smoke, and the Patterns-tab gate driven by `drilldown-limits` (`drilldown-limits-gate.spec.ts`) |
 | `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | multi-tenant Logs Drilldown landing/service/fields smoke plus filter persistence from URL state |
+| `explore-ops` | `npx playwright test --grep @explore-ops` | Loki operations parity in Explore: parsers, formatting, metric queries, line filters, aggregations |
+| `explore-mt` | `npx playwright test --grep @explore-mt` | multi-tenant Explore coverage |
+| `explore-regression` | `npx playwright test --grep @regression` | API-level proxy-vs-Loki parity register: log selectors, filters, parsers, pipelines, grouped metric queries, the series cap, content checks (`explore-regression.spec.ts`) |
+| `explore-comprehensive` | `npx playwright test --grep @comprehensive-ui` | Explore UI coverage: page load, editor, query execution, results panel, empty results, filters; timings recorded as annotations (`explore-comprehensive-ui.spec.ts`) |
 
 CI prefers the runner's existing Chrome/Chromium binary and only falls back to `npx playwright install chromium` if no system browser is present. That avoids repeated `apt` dependency downloads on normal GitHub-hosted runners while keeping a safe fallback path.
 

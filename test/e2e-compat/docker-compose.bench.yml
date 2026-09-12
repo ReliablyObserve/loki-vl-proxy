@@ -1,0 +1,27 @@
+# Benchmark-only VictoriaLogs tuning. Layer on top of the base stack:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d
+#
+# `command` is replaced (not merged) by compose overrides, so this repeats the
+# base flag list and adds the reader/fs concurrency caps used for the published
+# benchmark numbers (see docs/benchmarks.md). Those two flags require
+# VictoriaLogs >= v1.37.0; the base compose omits them so the compatibility
+# matrix can start older versions.
+services:
+  victorialogs:
+    command:
+      - "-storageDataPath=/vlogs"
+      - "-retentionPeriod=7d"
+      - "-httpListenAddr=:9428"
+      - "-search.maxConcurrentRequests=100"
+      - "-search.maxQueueDuration=60s"
+      - "-search.maxQueryDuration=60s"
+      - "-blockcache.missesBeforeCaching=1"
+      - "-internStringCacheExpireDuration=15m"
+      - "-memory.allowedPercent=80"
+      # Reduce parallel readers per query (default = 2×CPU = 36 on 18-core host).
+      # 8 readers × 100 concurrent = 800 goroutines, matching 18 cores.
+      - "-defaultParallelReaders=8"
+      # Cap file-system concurrency (default 256 = 16×CPU; 64 fits 18 cores).
+      - "-fs.maxConcurrency=64"
+      - "-inmemoryDataFlushInterval=1s"

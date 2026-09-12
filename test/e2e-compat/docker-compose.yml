@@ -95,14 +95,11 @@ services:
       # Allow VL to use up to 80% of host RAM for its in-process caches before
       # evicting. Higher than the default 60% is safe given the 5 g mem_limit cap.
       - "-memory.allowedPercent=80"
-      # Reduce parallel readers per query (default = 2×CPU = 36 on 18-core host).
-      # At c=100 with 36 readers each, that spawns 3600 goroutines fighting for
-      # disk I/O — local SSD has <0.1ms latency so many readers add contention,
-      # not parallelism. 8 readers × 100 concurrent = 800 goroutines, matching
-      # 18 cores without scheduler thrash.
-      - "-defaultParallelReaders=8"
-      # Cap file-system concurrency (default 256 = 16×CPU, but 64 better fits 18 cores).
-      - "-fs.maxConcurrency=64"
+      # NOTE: the benchmark-only reader/fs tuning (-defaultParallelReaders,
+      # -fs.maxConcurrency) lives in docker-compose.bench.yml. Those flags do not
+      # exist on VictoriaLogs < v1.34 / < v1.37 respectively, and an unknown flag
+      # makes the process exit at startup, which silently broke the weekly
+      # compatibility matrix for v1.30–v1.36.
       # Flush in-memory ingest buffers to disk every 1 s (default 5 s). E2E tests
       # additionally call POST /internal/force_flush right after ingest for hard
       # determinism, but a tighter periodic flush keeps any non-flush-aware test
@@ -113,7 +110,13 @@ services:
     volumes:
       - vl-data:/vlogs
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:9428/health"]
+      # VictoriaLogs images are scratch-based from v1.52.0 (no shell, no wget),
+      # so an HTTP probe cannot run inside the container. The binary's -version
+      # exit path is the only in-container probe that works on every version.
+      # Readiness of the HTTP listener is covered by scripts/ci/wait_e2e_stack.sh
+      # (host-side poll of /health on the published port) and by the proxies'
+      # own health checks, which fail until VictoriaLogs answers.
+      test: ["CMD", "/victoria-logs-prod", "-version"]
       interval: 3s
       timeout: 2s
       retries: 10
@@ -786,6 +789,11 @@ services:
       loki:
         condition: service_started
       victorialogs:
+        condition: service_healthy
+      # The VictoriaLogs probe only proves the binary runs; the proxy's /ready
+      # probes VL's /health, so this keeps the first batch from being pushed
+      # before VL accepts connections (a dual write is not atomic).
+      loki-vl-proxy:
         condition: service_healthy
     restart: unless-stopped
 

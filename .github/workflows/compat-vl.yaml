@@ -64,7 +64,9 @@ jobs:
         run: docker compose down -v
 
   vl-matrix:
-    if: github.event_name == 'schedule'
+    # Weekly, and on demand (workflow_dispatch) so a compose or matrix change can
+    # be validated across every supported VictoriaLogs version before it ships.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: vl-matrix-source
     runs-on: ubuntu-latest
     strategy:

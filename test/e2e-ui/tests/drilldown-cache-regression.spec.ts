@@ -15,6 +15,7 @@ import {
   installGrafanaGuards,
   resolveDatasourceUid,
   waitForGrafanaReady,
+  drilldownLabelFilter, drilldownFieldFilter,
 } from "./helpers";
 import { buildServiceDrilldownUrl } from "./url-state";
 
@@ -49,7 +50,7 @@ async function openFieldsView(
   await waitForGrafanaReady(page);
   // Fields tab is ready when "Filter by fields" combobox appears
   await expect(
-    page.getByRole("combobox", { name: "Filter by fields" })
+    drilldownFieldFilter(page)
   ).toBeVisible({ timeout: 45_000 });
 }
 
@@ -94,7 +95,7 @@ test.describe("Drilldown Fields — labels sidebar is populated @drilldown-cache
     test(`labels visible — ${label} range`, async ({ page }) => {
       await openFieldsView(page, PROXY_INTERACT_DS, TEST_SERVICE, from, to);
 
-      const filterByLabels = page.getByRole("combobox", { name: "Filter by labels" });
+      const filterByLabels = drilldownLabelFilter(page);
       await expect(filterByLabels).toBeVisible({ timeout: 30_000 });
 
       // Open the dropdown and verify at least one label option is available.
@@ -236,7 +237,7 @@ test.describe("Drilldown Fields — repeated loads served from cache @drilldown-
       await page.reload();
       await waitForGrafanaReady(page);
       await expect(
-        page.getByRole("combobox", { name: "Filter by fields" })
+        drilldownFieldFilter(page)
       ).toBeVisible({ timeout: 45_000 });
       await page.waitForTimeout(2_000);
 

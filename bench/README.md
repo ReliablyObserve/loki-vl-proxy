@@ -17,7 +17,9 @@ The easiest path is the e2e compose stack:
 
 ```bash
 cd test/e2e-compat
-docker compose up -d
+# docker-compose.bench.yml layers the VictoriaLogs reader/fs tuning used for the
+# published numbers on top of the version-agnostic base stack.
+docker compose -f docker-compose.yml -f docker-compose.bench.yml up -d
 # Wait ~30s for stack to be healthy and log generator to push data
 docker compose ps          # all green?
 docker logs e2e-log-gen    # data flowing?

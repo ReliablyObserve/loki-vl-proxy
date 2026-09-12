@@ -235,11 +235,14 @@ CI prefers the runner's existing Chrome/Chromium binary for these shards and fal
 | Shard | Command | Primary focus |
 |---|---|---|
 | `datasource` | `npx playwright test tests/datasource.spec.ts` | Grafana datasource settings smoke |
-| `explore-core` | `npx playwright test --grep @explore-core` | one default Explore browser smoke |
+| `explore-core` | `npx playwright test --grep @explore-core` | default Explore browser smoke plus API-level proxy-vs-Loki metric parity (`explore-parity.spec.ts`) |
 | `explore-tail` | `npx playwright test --grep @explore-tail` | browser-only multi-tenant (`__tenant_id__` exact and negative regex) plus live-tail recovery |
 | `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke and single-tenant Logs Drilldown smoke |
 | `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | multi-tenant Logs Drilldown landing/service/fields plus URL filter-reload persistence |
 | `explore-ops` | `npx playwright test --grep @explore-ops` | Loki operations parity: parsers (json, logfmt), formatting (line_format, label_format, keep/drop), metric queries (count_over_time, rate, unwrap), line filters (regex, negative), aggregations (topk) |
+| `explore-mt` | `npx playwright test --grep @explore-mt` | multi-tenant Explore coverage |
+| `explore-regression` | `npx playwright test --grep @regression` | API-level parity register (`explore-regression.spec.ts`): log selectors, line filters, parsers and pipelines compared line-for-line on an uncapped window; grouped metric queries compared by series set after Loki's range path has warmed; the `-max-stats-query-series` cap; content checks |
+| `explore-comprehensive` | `npx playwright test --grep @comprehensive-ui` | Explore UI coverage (`explore-comprehensive-ui.spec.ts`): page load, editor, query execution, results panel, empty results, filters; timings recorded as annotations |
 
 ## Performance Testing
 
@@ -248,17 +251,13 @@ CI prefers the runner's existing Chrome/Chromium binary for these shards and fal
 Two new test suites validate Loki Explorer and Logs Drilldown UI comprehensiveness and measure performance:
 
 #### Comprehensive UI Tests
-- **File**: `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts` (780+ lines)
-- **Tests**: 30+ test cases covering:
-  - Page load performance
-  - Query editor UI interactions
-  - Query execution with timing
-  - Field explorer and value selection
-  - Filters and label selector
-  - Time range picker interactions
-  - Logs drilldown integration
-  - Edge cases (large result sets, special characters, empty results, rapid changes)
-  - Performance metrics collection and reporting
+- **File**: `test/e2e-ui/tests/explore-comprehensive-ui.spec.ts`
+- **Tests**: 15 cases covering:
+  - Page load and query editor rendering
+  - Query execution (stream selector, line filters, json parser, `avg_over_time ... unwrap` metric)
+  - Results panel (logs and graph), empty results, label-filtered and time-range queries
+  - Every test asserts no Grafana error toasts, console errors or failed datasource requests
+  - Timings are recorded as Playwright annotations (`timing-ms`), not asserted
 
 #### Performance Baseline Tests
 - **File**: `test/e2e-ui/tests/performance-baseline.spec.ts` (180+ lines)
@@ -396,6 +395,7 @@ Moved out of Playwright:
 | Test | Purpose |
 |---|---|
 | `basic log query returns results without errors` | baseline Explore log query |
+| `sum by (level) rate returns the same series set on both datasources` | API-level proxy-vs-Loki metric parity through Grafana's datasource proxy (`explore-parity.spec.ts`) |
 
 Moved out of Playwright:
 `internal/proxy/proxy_test.go`, `internal/proxy/gaps_test.go`, and `test/e2e-compat/chaining_test.go` cover query translation, response shape, parser pipelines, line filters, direction handling, and metric-query parity faster than the browser can.
