@@ -4,14 +4,17 @@ import {
   openExplore,
   runQuery,
   assertLogsVisible,
+  assertGraphVisible,
   waitForGrafanaReady,
   installGrafanaGuards,
 } from "./helpers";
 
 // The e2e dataset carries `app`/`service_name` stream labels (no `job`); the
 // suite previously queried {job="api-gateway"} and could never return rows.
-// Timing assertions are generous on purpose: they guard against gross
-// regressions on shared CI runners, not benchmark-grade latency.
+// Timings are recorded as test annotations, not asserted: wall-clock bounds
+// on a shared CI runner flake without saying anything about the proxy. Every
+// test is guarded against Grafana error toasts, console errors and failed
+// datasource requests instead.
 test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () => {
   const metrics = {
     pageLoads: [] as number[],
@@ -19,10 +22,22 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
     uiInteractions: [] as number[],
   };
 
+  let guards: ReturnType<typeof installGrafanaGuards>;
+
   test.beforeEach(async ({ page }) => {
     await waitForGrafanaReady(page);
-    await installGrafanaGuards(page);
+    guards = installGrafanaGuards(page, {
+      // Explore cancels the in-flight query when a test navigates away.
+      allowedRequestFailures: [/^net::ERR_ABORTED .*\/api\/ds\/query/i],
+    });
   });
+
+  test.afterEach(async () => {
+    await guards.assertClean();
+  });
+
+  const recordTiming = (name: string, ms: number) =>
+    test.info().annotations.push({ type: "timing-ms", description: `${name}=${ms}` });
 
   test.describe("Page Load Performance", () => {
     test("should load Explore page within acceptable time", async ({ page }) => {
@@ -31,7 +46,7 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
       const loadTime = Date.now() - startTime;
       metrics.pageLoads.push(loadTime);
 
-      expect(loadTime).toBeLessThan(15_000);
+      recordTiming("loadTime", loadTime);
       console.log(`✅ Explore page loaded in ${loadTime}ms`);
     });
 
@@ -88,7 +103,7 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
 
       // Check for results
       await assertLogsVisible(page);
-      expect(responseTime).toBeLessThan(15_000);
+      recordTiming("responseTime", responseTime);
       console.log(`✅ Query executed and results shown in ${responseTime}ms`);
     });
   });
@@ -104,7 +119,7 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
       const responseTime = Date.now() - startTime;
       metrics.queries.push(responseTime);
 
-      expect(responseTime).toBeLessThan(15_000);
+      recordTiming("responseTime", responseTime);
       console.log(`✅ Metric query executed in ${responseTime}ms`);
     });
 
@@ -118,7 +133,7 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
       const responseTime = Date.now() - startTime;
 
       await assertLogsVisible(page);
-      expect(responseTime).toBeLessThan(15_000);
+      recordTiming("responseTime", responseTime);
       console.log(`✅ JSON parsed logs executed in ${responseTime}ms`);
     });
 
@@ -148,7 +163,7 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
       const loadTime = Date.now() - startTime;
       metrics.uiInteractions.push(loadTime);
 
-      expect(loadTime).toBeLessThan(15_000);
+      recordTiming("loadTime", loadTime);
       console.log(`✅ Explore page loads in ${loadTime}ms`);
     });
 
@@ -162,7 +177,7 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
       metrics.uiInteractions.push(responseTime);
 
       await assertLogsVisible(page);
-      expect(responseTime).toBeLessThan(15_000);
+      recordTiming("responseTime", responseTime);
       console.log(`✅ Results displayed in ${responseTime}ms`);
     });
 
@@ -181,7 +196,7 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
         .locator('[data-testid="query-editor-rows"], [data-testid="query-editor-row"]')
         .first();
       await expect(editor).toBeVisible();
-      expect(responseTime).toBeLessThan(15_000);
+      recordTiming("responseTime", responseTime);
       console.log(
         `✅ Empty results handled gracefully in ${responseTime}ms`
       );
@@ -204,8 +219,10 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
     });
 
     test("should support unwrap operations", async ({ page }) => {
+      // unwrap is only valid inside a range aggregation; the dataset carries
+      // duration_ms (explore-regression uses the same expression).
       const metricsQuery =
-        '{app="api-gateway"} | json | unwrap response_time | avg';
+        'avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m])';
 
       await openExplore(page, PROXY_DS, metricsQuery);
       await waitForGrafanaReady(page);
@@ -213,7 +230,8 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
       await runQuery(page);
       const responseTime = Date.now() - startTime;
 
-      expect(responseTime).toBeLessThan(15_000);
+      await assertGraphVisible(page);
+      recordTiming("responseTime", responseTime);
       console.log(`✅ Unwrap operations execute in ${responseTime}ms`);
     });
   });

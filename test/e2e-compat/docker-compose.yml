@@ -790,6 +790,11 @@ services:
         condition: service_started
       victorialogs:
         condition: service_healthy
+      # The VictoriaLogs probe only proves the binary runs; the proxy's /ready
+      # probes VL's /health, so this keeps the first batch from being pushed
+      # before VL accepts connections (a dual write is not atomic).
+      loki-vl-proxy:
+        condition: service_healthy
     restart: unless-stopped
 
   # Grafana with 3 datasources for manual side-by-side comparison

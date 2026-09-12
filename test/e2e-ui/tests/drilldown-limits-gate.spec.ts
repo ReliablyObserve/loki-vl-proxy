@@ -38,7 +38,14 @@ async function drilldownLimits(page: Page, datasource: string) {
 }
 
 async function openServicePage(page: Page, uid: string) {
+  // The plugin decides on the Patterns tab from this response; wait for it so
+  // "tab absent" means "gated", not "not fetched yet".
+  const limitsFetched = page.waitForResponse(
+    (r) => r.url().includes("/resources/drilldown-limits"),
+    { timeout: 30_000 }
+  );
   await page.goto(buildServiceDrilldownUrl(uid, "api-gateway", "logs"));
+  await limitsFetched;
   await waitForGrafanaReady(page);
   await expect(drilldownLabelFilter(page)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByRole("tab", { name: /^Logs/i }).first()).toBeVisible({
@@ -54,11 +61,13 @@ test.describe("Logs Drilldown — patterns tab follows drilldown-limits", () => 
       drilldownLimits(page, PROXY_DS),
       drilldownLimits(page, LOKI_DS),
     ]);
+    expect(loki.limits, "loki limits object").toBeDefined();
+    expect(proxy.limits, "proxy limits object").toBeDefined();
     for (const key of Object.keys(loki)) {
-      expect(proxy, `top-level key ${key}`).toHaveProperty(key);
+      expect(proxy, `top-level key ${key}`).toHaveProperty([key]);
     }
     for (const key of Object.keys(loki.limits)) {
-      expect(proxy.limits, `limits.${key}`).toHaveProperty(key);
+      expect(proxy.limits, `limits.${key}`).toHaveProperty([key]);
     }
     expect(typeof proxy.pattern_ingester_enabled).toBe("boolean");
   });

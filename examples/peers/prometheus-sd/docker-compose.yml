@@ -24,7 +24,9 @@ services:
       - vlogs-data:/vlogs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9428/health"]
+      # VictoriaLogs images are scratch-based from v1.52.0 (no shell, no wget);
+      # the binary's -version exit path is the probe that works on every version.
+      test: ["CMD", "/victoria-logs-prod", "-version"]
       interval: 10s
       timeout: 5s
       retries: 5

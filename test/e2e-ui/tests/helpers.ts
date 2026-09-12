@@ -76,11 +76,12 @@ export async function openLogsDrilldown(page: Page, datasource: string) {
 /**
  * Logs Drilldown "Filter by labels" / "Filter by fields" comboboxes.
  *
- * Drilldown <= 2.0.x exposes them with an accessible name, so
- * getByRole("combobox", { name }) resolves. Drilldown 2.5.x renders a
- * role="combobox" <input> whose only name source is its placeholder, which the
- * role query does not pick up. Matching both keeps the suite valid across the
- * pinned plugin and the latest release (verified on 2.0.4 and 2.5.2).
+ * Drilldown 2.0.x resolves getByRole("combobox", { name }) for them. On
+ * Drilldown 2.5.x the same role query times out while getByPlaceholder resolves
+ * the control (observed on 2.5.2: <input role="combobox" placeholder="Filter by
+ * labels"> with no aria-label; the computed accessible name differs from the
+ * placeholder there). Accepting either keeps the suite valid across the pinned
+ * plugin and the latest release (verified on 2.0.4 and 2.5.2).
  */
 export function drilldownLabelFilter(page: Page): Locator {
   return page
@@ -158,11 +159,11 @@ export async function assertLogsVisible(page: Page) {
  * Check that metric/stats results are visible in the Explore panel.
  */
 export async function assertGraphVisible(page: Page) {
-  // Grafana renders graphs in uPlot or canvas
-  const graph = page.locator(
-    'canvas, [data-testid="graph-container"], [class*="panel-content"]'
-  );
-  await expect(graph.first()).toBeVisible({ timeout: 10_000 });
+  // Grafana renders graphs on a uPlot canvas. The query editor (Monaco) also
+  // owns a hidden 0x0 canvas, so match visible canvases only; the panel wrapper
+  // classes are not evidence of a rendered graph.
+  const graph = page.locator('canvas:visible, [data-testid="graph-container"]');
+  await expect(graph.first()).toBeVisible({ timeout: 15_000 });
 }
 
 /**
@@ -411,24 +412,30 @@ export async function waitForLokiMetricData(
       start: String(start),
       end: String(end),
     });
-    const [rangeResp, seriesResp] = await Promise.all([
-      page.request.get(`${base}/query_range?${rangeParams}`),
-      page.request.get(`${base}/series?${seriesParams}`),
-    ]);
-    if (rangeResp.ok() && seriesResp.ok()) {
-      const range = (await rangeResp.json()) as {
-        data?: { result?: Array<{ metric: Record<string, string> }> };
-      };
-      const series = (await seriesResp.json()) as {
-        data?: Array<Record<string, string>>;
-      };
-      const visible = new Set((range.data?.result ?? []).map((r) => key(r.metric)));
-      const known = new Set((series.data ?? []).map(key));
-      const missing = [...known].filter((k) => !visible.has(k));
-      if (known.size > 0 && missing.length === 0) return;
-      last = `range path sees ${visible.size} of ${known.size} indexed ${groupBy.join("/")} groups`;
-    } else {
-      last = `HTTP ${rangeResp.status()} / ${seriesResp.status()}`;
+    // A refused connection or a non-JSON body while the stack settles is a
+    // reason to poll again, not to give up.
+    try {
+      const [rangeResp, seriesResp] = await Promise.all([
+        page.request.get(`${base}/query_range?${rangeParams}`),
+        page.request.get(`${base}/series?${seriesParams}`),
+      ]);
+      if (rangeResp.ok() && seriesResp.ok()) {
+        const range = (await rangeResp.json()) as {
+          data?: { result?: Array<{ metric: Record<string, string> }> };
+        };
+        const series = (await seriesResp.json()) as {
+          data?: Array<Record<string, string>>;
+        };
+        const visible = new Set((range.data?.result ?? []).map((r) => key(r.metric)));
+        const known = new Set((series.data ?? []).map(key));
+        const missing = [...known].filter((k) => !visible.has(k));
+        if (known.size > 0 && missing.length === 0) return;
+        last = `range path sees ${visible.size} of ${known.size} indexed ${groupBy.join("/")} groups`;
+      } else {
+        last = `HTTP ${rangeResp.status()} / ${seriesResp.status()}`;
+      }
+    } catch (err) {
+      last = String(err);
     }
     await page.waitForTimeout(2_000);
   }

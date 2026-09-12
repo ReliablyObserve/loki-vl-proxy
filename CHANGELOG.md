@@ -30,24 +30,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     at startup, and that had silently failed the weekly VL matrix for
     v1.30–v1.36 (`container e2e-victorialogs is unhealthy`). The benchmark
     docs and `bench/README.md` point at the override.
-  - `compatibility-matrix.json` gains v1.51.0 and v1.52.0.
+  - `compatibility-matrix.json` gains v1.51.0 and v1.52.0, and
+    `compat-vl.yaml` runs the full version matrix on `workflow_dispatch` as
+    well as on the weekly schedule, as the compatibility docs already promised.
+  - The same `wget` probe was used by the root `docker-compose.yml`, the
+    e2e-fleet and e2e-pipeline stacks and every `examples/` compose file; the
+    examples pin `victoria-logs:latest`, so the public quickstart could not
+    start its proxy once `latest` moved to v1.52.0. All of them now probe the
+    binary.
+  - The e2e log generator additionally waits for the main proxy to be healthy
+    (its `/ready` probes VictoriaLogs' `/health`), so the first batch is not
+    pushed before VictoriaLogs accepts connections; a dual write is not atomic
+    and a lost first batch would be a permanent delta in every window that
+    includes stack start.
 - **e2e-ui: Logs Drilldown 2.5.x selectors.** The landing-page and service-page
   "Filter by labels" / "Filter by fields" controls are now located through a
   version-tolerant helper (`drilldownLabelFilter` / `drilldownFieldFilter`):
-  Drilldown 2.5.x renders them as role=combobox inputs whose only accessible
-  name source is the placeholder, which `getByRole` does not resolve, so every
-  drilldown-core / drilldown-multitenant spec failed against the latest plugin
-  while the proxy itself rendered the pages correctly.
+  on Drilldown 2.5.x `getByRole("combobox", { name })` times out for them
+  while `getByPlaceholder` resolves the same input (observed on 2.5.2), so
+  every drilldown-core / drilldown-multitenant spec failed against the latest
+  plugin while the proxy itself rendered the pages correctly. The
+  `@drilldown-cache` suite uses the same helper.
 - **e2e-ui: `@regression` and `@comprehensive-ui` suites repaired and wired
   into CI** (new `explore-regression` and `explore-comprehensive` shards). They
   had never run in CI and had rotted: the comprehensive suite queried a `job`
   label the dataset does not carry, the regression suite compared windows
   ending at "now" (off-by-one drift while the log generator writes) and asserted
   exact raw per-stream series counts that the proxy legitimately caps at
-  `-max-stats-query-series` (500). Windows now exclude the live edge, metric
-  parity uses bounded aggregations, volume comparisons use instant
-  `count_over_time` aggregates instead of `limit`-capped line counts, and the
-  series cap is locked by its own test.
+  `-max-stats-query-series` (500), and compared `limit`-capped log responses
+  (500 lines against 500 lines, which proves nothing at the generator's
+  ~1,000 lines/min). Log parity now compares a two-minute window with a
+  5,000-line limit and fails if the window is empty or capped; metric parity
+  uses bounded aggregations; volume comparisons use instant `count_over_time`
+  aggregates; and the series cap is locked by its own test over a 15-minute
+  window under a "Proxy series cap" describe, since it documents a proxy
+  deviation rather than Loki parity. The comprehensive suite now asserts a
+  rendered graph for its (previously invalid) unwrap query, checks every test
+  for Grafana errors, and records timings as annotations instead of asserting
+  wall-clock bounds on shared runners.
 - **e2e-ui: proxy-vs-Loki metric comparisons account for Loki's fresh-stack
   behaviour.** On a freshly started stack Loki 3.x answers range metric
   queries with an empty 200 for the first minutes: the query-frontend's dynamic
@@ -57,13 +77,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   visible one at a time. Instant queries, log queries and the proxy return the
   data immediately, and because the UI generator rotates pod names the newest
   streams always lag on Loki's range path. CI runs the UI shards seconds after
-  readiness, so grouped comparisons failed with "Loki returned 0 series" and
-  raw per-stream counts could never match. The new `waitForLokiMetricData`
-  helper (the Playwright twin of the Go suite's helper) now gates grouped
-  comparisons until Loki's range path reports every level/namespace group its
-  own series index lists, and the per-stream series-cap test counts streams
-  against Loki's series index (`lokiIndexedStreamCount`), which is complete at
-  any age, instead of Loki's `rate()` output.
+  readiness, so grouped comparisons would have failed with "Loki returned 0
+  series" and raw per-stream counts could never match. The new
+  `waitForLokiMetricData` helper (modelled on the Go suite's helper of the same
+  name, but stricter: it waits for group completeness against Loki's series
+  index and fails instead of warning) gates grouped comparisons until Loki's
+  range path reports every level/namespace group its own series index lists,
+  tolerating transient request errors while polling; the per-stream series-cap
+  test counts streams against Loki's series index (`lokiIndexedStreamCount`),
+  which is complete at any age, instead of Loki's `rate()` output.
 
 ## [1.65.0] - 2026-09-12
 

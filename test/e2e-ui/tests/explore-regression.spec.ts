@@ -7,8 +7,8 @@
  *
  * Rules:
  *  - Working queries: EXACT parity required (proxy == Loki, strict)
- *  - Known proxy gaps: documented with test.fixme() — fail in CI once the
- *    proxy implementation is fixed (regression catch)
+ *  - Known proxy gaps: documented with test.fixme() and skipped; when the
+ *    proxy implements one, drop its fixme so the case is enforced from then on
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -43,7 +43,8 @@ async function queryRange(
   // Callers comparing two responses pass one shared endSec: the generator
   // creates ~2 streams/s, so two ends computed a second apart would differ.
   const end = opts.endSec ?? windowEnd();
-  // 7-day window by default to cover any stack age (data is ingested once at stack start)
+  // 7-day window by default so metric aggregations cover the whole stack age
+  // (the UI profile's generator writes continuously from stack start).
   const start = end - (opts.windowSec ?? 7 * 24 * 3600);
   const params = new URLSearchParams({
     query,
@@ -104,6 +105,13 @@ async function uids(page: Page) {
   return { proxyUID: _proxyUID, lokiUID: _lokiUID };
 }
 
+// Log parity compares a window short enough that neither backend hits `limit`
+// (the generator writes ~1,000 api-gateway lines a minute; a capped pair would
+// compare 500 with 500 and prove nothing). The log path has no fresh-stack lag
+// on Loki, unlike the range-metric path, so the comparison is exact.
+const LOG_PARITY_WINDOW_SEC = 120;
+const LOG_PARITY_LIMIT = 5000;
+
 // Assert exact parity between proxy and Loki for a log stream query.
 async function assertLogParity(
   page: Page,
@@ -111,10 +119,14 @@ async function assertLogParity(
   label: string
 ): Promise<void> {
   const { proxyUID, lokiUID } = await uids(page);
-  const endSec = windowEnd();
+  const opts = {
+    endSec: windowEnd(),
+    windowSec: LOG_PARITY_WINDOW_SEC,
+    limit: String(LOG_PARITY_LIMIT),
+  };
   const [proxy, loki] = await Promise.all([
-    queryRange(page, proxyUID, query, { endSec }),
-    queryRange(page, lokiUID, query, { endSec }),
+    queryRange(page, proxyUID, query, opts),
+    queryRange(page, lokiUID, query, opts),
   ]);
 
   expect(proxy.statusCode, `${label}: status code`).toBe(loki.statusCode);
@@ -123,9 +135,12 @@ async function assertLogParity(
   expect(proxy.body?.data?.resultType, `${label}: resultType`).toBe(
     loki.body?.data?.resultType
   );
-  expect(lineCount(proxy.body), `${label}: line count`).toBe(
-    lineCount(loki.body)
+  const lokiLines = lineCount(loki.body);
+  expect(lokiLines, `${label}: Loki lines within the window`).toBeGreaterThan(0);
+  expect(lokiLines, `${label}: window small enough that limit does not cap`).toBeLessThan(
+    LOG_PARITY_LIMIT
   );
+  expect(lineCount(proxy.body), `${label}: line count`).toBe(lokiLines);
 }
 
 // Fresh-stack gate. The UI stack's generator starts with the stack, so for the
@@ -144,7 +159,11 @@ async function ensureStackWarm(page: Page, selector = '{app="api-gateway"}'): Pr
       await waitForLokiMetricData(page, lokiUID, selector, {
         endOffsetSec: LIVE_EDGE_SEC,
       });
-    })();
+    })().catch((err) => {
+      // Do not memoise a failure: the next test polls again.
+      stackWarm.delete(selector);
+      throw err;
+    });
     stackWarm.set(selector, p);
   }
   await p;
@@ -245,7 +264,7 @@ test.describe("@regression Line filters — exact Loki parity", () => {
   test("not-contains then not-contains chain @regression", async ({ page }) =>
     assertLogParity(
       page,
-      `{app="api-gateway"} != "debug" != "trace"`,
+      `{app="api-gateway"} != "GET" != "POST"`,
       "double not-contains"
     ));
 });
@@ -364,21 +383,10 @@ test.describe("@regression Pipeline stages — exact Loki parity", () => {
 // The cap itself is locked by the dedicated test below.
 const PROXY_STATS_SERIES_CAP = 500;
 
-test.describe("@regression Metric queries — exact Loki parity", () => {
-  test("rate @regression", async ({ page }) =>
-    assertMetricParity(
-      page,
-      `sum by (app) (rate({app="api-gateway"}[5m]))`,
-      "rate"
-    ));
-
-  test("count_over_time @regression", async ({ page }) =>
-    assertMetricParity(
-      page,
-      `sum by (namespace) (count_over_time({app="api-gateway"}[5m]))`,
-      "count_over_time"
-    ));
-
+// Documented proxy deviation, not Loki parity: Loki (as configured for this
+// stack) returns every stream, the proxy caps raw per-stream stats series at
+// -max-stats-query-series like Drilldown's own cap.
+test.describe("@regression Proxy series cap", () => {
   test("raw per-stream series honour the documented proxy cap @regression", async ({
     page,
   }) => {
@@ -391,7 +399,10 @@ test.describe("@regression Metric queries — exact Loki parity", () => {
     const query = `rate({app="api-gateway"}[5m])`;
     await ensureStackWarm(page);
     const end = windowEnd();
-    const windowSec = 7 * 24 * 3600;
+    // 15 minutes is enough to reach the cap on a stack older than a few
+    // minutes and keeps both the proxy's zero-filled matrix and Loki's series
+    // listing bounded on a long-running stack.
+    const windowSec = 15 * 60;
     const [proxy, indexed] = await Promise.all([
       queryRange(page, proxyUID, query, { step: "60", windowSec, endSec: end }),
       lokiIndexedStreamCount(page, lokiUID, `{app="api-gateway"}`, end - windowSec, end),
@@ -409,6 +420,22 @@ test.describe("@regression Metric queries — exact Loki parity", () => {
       expect(proxySeries, "raw rate: cap reached").toBe(PROXY_STATS_SERIES_CAP);
     }
   });
+});
+
+test.describe("@regression Metric queries — exact Loki parity", () => {
+  test("rate @regression", async ({ page }) =>
+    assertMetricParity(
+      page,
+      `sum by (app) (rate({app="api-gateway"}[5m]))`,
+      "rate"
+    ));
+
+  test("count_over_time @regression", async ({ page }) =>
+    assertMetricParity(
+      page,
+      `sum by (namespace) (count_over_time({app="api-gateway"}[5m]))`,
+      "count_over_time"
+    ));
 
   test("sum by level count_over_time @regression", async ({ page }) =>
     assertMetricParity(

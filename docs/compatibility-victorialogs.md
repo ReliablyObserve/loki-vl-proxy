@@ -26,6 +26,8 @@ VictoriaLogs is intentionally broader than the Loki support window. We support `
 
 | VictoriaLogs version | Coverage path | Version-specific focus |
 |---|---|---|
+| `v1.52.0` | Scheduled and manual matrix | Scratch-based image (no shell): compose health probes must exec the binary |
+| `v1.51.0` | Scheduled and manual matrix | `json_array_concat` pipe |
 | `v1.50.0` | PR and main CI pinned runtime | Current pinned backend |
 | `v1.49.0` | Scheduled and manual matrix | Structured metadata shaping, volume endpoints |
 | `v1.48.0` | Scheduled and manual matrix | Structured metadata shaping, volume endpoints |
