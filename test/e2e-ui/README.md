@@ -1,13 +1,13 @@
 # Playwright Grafana UI E2E Tests
 
-Validates the Loki-VL-proxy through Grafana's UI: datasource settings smoke, Explore smoke, Logs Drilldown smoke, multi-tenant browser flow, and live-tail recovery.
+Validates the Loki-VL-proxy through Grafana's UI: datasource settings smoke, Explore smoke, Logs Drilldown smoke, multi-tenant browser flows, live-tail recovery, and API-level proxy-vs-Loki parity checks driven through Grafana.
 
 ## Prerequisites
 
 ```bash
-# Start the full e2e stack
+# Start the full e2e stack with the log generator profile (as CI does)
 cd ../e2e-compat
-docker-compose up -d --build
+docker compose --profile ui up -d --build
 ../../scripts/ci/wait_e2e_stack.sh 180
 ```
 
@@ -19,6 +19,23 @@ npm ci
 npx playwright install chromium
 npm test
 ```
+
+`npm test` runs every spec, including the ones that no CI shard selects.
+
+### Environment Variables
+
+| Variable | Default | Used by |
+|------|---------|----------|
+| `GRAFANA_URL` | `http://127.0.0.1:3002` | Playwright `baseURL` in `playwright.config.ts` and `capture-screenshots.mjs` |
+| `LOKI_URL` | `http://127.0.0.1:13101` | `security-hardening-visibility.spec.ts`, `drilldown-loki-vs-proxy-compare.spec.ts` |
+| `VL_URL` | `http://127.0.0.1:19428` | ingest helpers in `explore.spec.ts`, `logs-drilldown.spec.ts`, `security-hardening-visibility.spec.ts` |
+| `PROXY_NATIVE_METADATA_URL` | `http://127.0.0.1:13106` | `drilldown-loki-vs-proxy-compare.spec.ts` |
+| `PLAYWRIGHT_EXECUTABLE_PATH` | unset | use an installed Chrome/Chromium instead of the Playwright download |
+| `CI` | unset | when set: 1 worker, 1 retry, `forbidOnly` |
+| `WORKERS` | `4` | local worker count when `CI` is unset |
+| `HEADED` | unset | run the browser headed |
+
+CI also exports `PROXY_URL=http://127.0.0.1:13100`, but no spec reads it.
 
 ## Capture UI Screenshots
 
@@ -32,10 +49,13 @@ docker compose up -d --build
 cd ../e2e-ui
 npm ci
 npx playwright install chromium
+# The script defaults to ports 3100/9428; point it at the compose ports
+PROXY_QUERY_URL=http://127.0.0.1:13100 \
+VL_INSERT_URL='http://127.0.0.1:19428/insert/jsonline?_stream_fields=app,service_name,level,detected_level' \
 npm run capture:screenshots
 ```
 
-Default output path:
+Default output path (`SCREENSHOT_OUT_DIR`, default `../../docs/images/ui` relative to the working directory):
 
 - `docs/images/ui/explore-main.png`
 - `docs/images/ui/explore-details.png`
@@ -43,35 +63,63 @@ Default output path:
 - `docs/images/ui/drilldown-service.png`
 - `docs/images/ui/explore-tail-multitenant.png`
 
-Default screenshot time window is `now-5m` for high signal density. Override with:
+Script overrides:
+
+| Variable | Default |
+|------|---------|
+| `GRAFANA_URL` | `http://127.0.0.1:3002` |
+| `PROXY_QUERY_URL` | `http://127.0.0.1:3100` (compose proxy: `http://127.0.0.1:13100`) |
+| `VL_INSERT_URL` | `http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,service_name,level,detected_level` (compose VictoriaLogs: port `19428`) |
+| `SCREENSHOT_OUT_DIR` | `../../docs/images/ui` |
+| `SCREENSHOT_FROM` | `now-5m` |
+| `SCREENSHOT_TO` | `now` |
+| `PLAYWRIGHT_EXECUTABLE_PATH` | unset |
+
+For example, widen the time window:
 
 ```bash
-SCREENSHOT_FROM=now-15m SCREENSHOT_TO=now npm run capture:screenshots
+SCREENSHOT_FROM=now-15m SCREENSHOT_TO=now \
+PROXY_QUERY_URL=http://127.0.0.1:13100 \
+VL_INSERT_URL='http://127.0.0.1:19428/insert/jsonline?_stream_fields=app,service_name,level,detected_level' \
+npm run capture:screenshots
 ```
 
 The script seeds fresh logs and keeps writing background logs while capturing, so screenshots include live data in Explore range, Explore live tail, and Drilldown service views.
 
-If local Chromium cannot start on macOS, run the same suite inside Linux Playwright:
+If local Chromium cannot start on macOS, run the same suite inside Linux Playwright (from `test/e2e-ui`). Inside the container `127.0.0.1` is the container itself, so point every URL at the host:
 
 ```bash
 docker run --rm \
   -v "$(pwd):/work" \
   -w /work \
   -e GRAFANA_URL=http://host.docker.internal:3002 \
-  -e PROXY_URL=http://host.docker.internal:3100 \
+  -e LOKI_URL=http://host.docker.internal:13101 \
+  -e VL_URL=http://host.docker.internal:19428 \
+  -e PROXY_NATIVE_METADATA_URL=http://host.docker.internal:13106 \
   mcr.microsoft.com/playwright:v1.59.1-noble \
   /bin/bash -lc 'npm ci && npx playwright test --grep @drilldown-core'
 ```
 
 ## Test Suites
 
-| File | Coverage |
-|------|----------|
-| `datasource.spec.ts` | Grafana datasource Save & Test smoke |
-| `explore.spec.ts` | `@explore-core` default Explore smoke plus `@explore-tail` multi-tenant exact/negative `__tenant_id__` flows and live-tail browser flows |
-| `drilldown.spec.ts` | `@drilldown-core` Explore detail-panel smoke |
-| `logs-drilldown.spec.ts` | `@drilldown-core` Logs Drilldown landing/service smoke plus `@drilldown-mt` multi-tenant landing, service, fields-view, and URL reload filter persistence smoke |
-| `url-state.spec.ts` | pure URL/state builder tests for reloadable Explore and Drilldown URLs |
+| File | Tags | Coverage |
+|------|------|----------|
+| `datasource.spec.ts` | (selected by file path) | Grafana datasource Save & Test smoke |
+| `explore.spec.ts` | `@explore-core`, `@explore-tail` | default Explore smoke plus multi-tenant exact/negative `__tenant_id__` flows and live-tail browser flows |
+| `explore-parity.spec.ts` | `@explore-core` | API-level `sum by (level)` rate series-set parity between the proxy and Loki datasources |
+| `security-hardening-visibility.spec.ts` | `@explore-core` | exact windows and formatted rows stay visible for the proxy, interact proxy, and Loki datasources |
+| `url-state.spec.ts` | `@explore-core`, `@drilldown-core` | pure URL/state builder tests for reloadable Explore and Drilldown URLs |
+| `drilldown.spec.ts` | `@drilldown-core` | Explore detail-panel and label filter smoke |
+| `drilldown-limits-gate.spec.ts` | `@drilldown-core` | Patterns tab gate driven by `drilldown-limits` |
+| `logs-drilldown.spec.ts` | `@drilldown-core`, `@drilldown-mt` | Logs Drilldown landing/service/patterns smoke plus multi-tenant landing, service, fields, filter, missing-tenant, and URL reload persistence |
+| `drilldown-cache-regression.spec.ts` | `@drilldown-cache`; labels-sidebar group also `@drilldown-core` | Drilldown fields tab per time range: no errors, labels sidebar, no right-edge gap, repeated loads |
+| `explore-operations.spec.ts` | `@explore-ops` | Loki operations in Explore: parsers, formatting, metric queries, line filters, aggregations |
+| `explore-multitenant.spec.ts` | `@explore-mt` | multi-tenant Explore: datasource switching, valid/missing tenant, filter-for-value |
+| `explore-regression.spec.ts` | `@regression` | API-level proxy-vs-Loki parity register: selectors, filters, parsers, pipelines, metric queries, series cap, content checks |
+| `explore-comprehensive-ui.spec.ts` | `@comprehensive-ui` | Explore UI coverage with error guards; timings recorded as annotations |
+| `explore-click-interactions.spec.ts` | `@click-interactions` | log row expansion, content checks, filter buttons, complex queries, timing cases (no CI shard) |
+| `performance-baseline.spec.ts` | `@performance` | browser timing thresholds (no CI shard) |
+| `drilldown-loki-vs-proxy-compare.spec.ts` | `@compare` | direct Loki vs native-metadata proxy fields/labels comparison across time ranges (no CI shard) |
 
 Most non-browser assertions moved out of Playwright:
 - `test/e2e-compat/grafana_surface_test.go` covers datasource catalog, health, and proxy bootstrap/control-plane endpoints
@@ -87,18 +135,20 @@ The GitHub Actions `e2e-ui` job runs as nine shards:
 | Shard | Command | Coverage |
 |------|---------|----------|
 | `datasource` | `npx playwright test tests/datasource.spec.ts` | datasource settings smoke |
-| `explore-core` | `npx playwright test --grep @explore-core` | default Explore smoke plus API-level proxy-vs-Loki metric parity (`explore-parity.spec.ts`) |
+| `explore-core` | `npx playwright test --grep @explore-core` | default Explore smoke, API-level proxy-vs-Loki metric parity (`explore-parity.spec.ts`), security hardening visibility, Explore URL-state |
 | `explore-tail` | `npx playwright test --grep @explore-tail` | multi-tenant Explore exact/negative tenant filtering plus browser live-tail recovery |
-| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke, URL-state unit coverage, single-tenant Logs Drilldown smoke, and the Patterns-tab gate driven by `drilldown-limits` (`drilldown-limits-gate.spec.ts`) |
+| `drilldown-core` | `npx playwright test --grep @drilldown-core` | Explore detail-panel smoke, URL-state unit coverage, single-tenant Logs Drilldown smoke, the Patterns-tab gate driven by `drilldown-limits` (`drilldown-limits-gate.spec.ts`), and the Drilldown labels-sidebar cache regression |
 | `drilldown-multitenant` | `npx playwright test --grep @drilldown-mt` | multi-tenant Logs Drilldown landing/service/fields smoke plus filter persistence from URL state |
 | `explore-ops` | `npx playwright test --grep @explore-ops` | Loki operations parity in Explore: parsers, formatting, metric queries, line filters, aggregations |
 | `explore-mt` | `npx playwright test --grep @explore-mt` | multi-tenant Explore coverage |
 | `explore-regression` | `npx playwright test --grep @regression` | API-level proxy-vs-Loki parity register: log selectors, filters, parsers, pipelines, grouped metric queries, the series cap, content checks (`explore-regression.spec.ts`) |
 | `explore-comprehensive` | `npx playwright test --grep @comprehensive-ui` | Explore UI coverage: page load, editor, query execution, results panel, empty results, filters; timings recorded as annotations (`explore-comprehensive-ui.spec.ts`) |
 
-CI prefers the runner's existing Chrome/Chromium binary and only falls back to `npx playwright install chromium` if no system browser is present. That avoids repeated `apt` dependency downloads on normal GitHub-hosted runners while keeping a safe fallback path.
+`@click-interactions`, `@performance`, `@compare`, and the `@drilldown-cache` groups without `@drilldown-core` are not selected by any shard.
 
-The CI jobs also prebuild the proxy image once per job and then start the compose stack with `--no-build`, so the five browser shards keep their parallelism without redoing the proxy Docker build inside the same job.
+Each shard starts the stack with `docker compose --profile ui up -d --no-build`. CI prefers the runner's existing Chrome/Chromium binary and only falls back to `npx playwright install chromium` if no system browser is present. That avoids repeated `apt` dependency downloads on normal GitHub-hosted runners while keeping a safe fallback path.
+
+The CI jobs also prebuild the proxy image once per job and then start the compose stack with `--no-build`, so the nine browser shards keep their parallelism without redoing the proxy Docker build inside the same job.
 
 Run any shard locally with the same command CI uses:
 
@@ -108,6 +158,10 @@ npx playwright test --grep @explore-core
 npx playwright test --grep @explore-tail
 npx playwright test --grep @drilldown-core
 npx playwright test --grep @drilldown-mt
+npx playwright test --grep @explore-ops
+npx playwright test --grep @explore-mt
+npx playwright test --grep @regression
+npx playwright test --grep @comprehensive-ui
 ```
 
 ## Scenario Matrix

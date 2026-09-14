@@ -10,7 +10,10 @@
 # Usage:
 #   docker compose up -d
 #   curl http://localhost:8080/peers          (inspect the SD endpoint)
-#   curl http://localhost:3100/_cache/peers   (peer list seen by proxy-a)
+#   PEER_AUTH_TOKEN=<value of -peer-auth-token below>
+#   curl -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers   (peer list seen by proxy-a)
+#
+# The proxy is read-only: write logs to VictoriaLogs (no host port here; see README.md).
 
 services:
 

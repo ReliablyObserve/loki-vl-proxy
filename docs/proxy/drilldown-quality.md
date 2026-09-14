@@ -8,46 +8,65 @@ how quality is measured, and the strategies used to match Loki's behaviour.
 Grafana Logs Drilldown displays per-field histograms: for each detected
 field (e.g. `level`, `http_method`, `duration_ms`), it shows how many log
 lines matched each value over time. These charts are the main "fields panel"
-in the Drilldown view. The proxy translates Loki's `count_over_time` +
-`sum by (field)` LogQL into VictoriaLogs `stats_query_range`, merges the
-result with `field_values` data for coverage, and zero-fills missing time
-steps to match Loki's continuous-line behaviour.
+in the Drilldown view. The proxy answers Loki's `count_over_time` +
+`sum by (field)` LogQL with VictoriaLogs `/select/logsql/hits` top-N values
+first. When `/hits` cannot serve the query it falls back to
+`stats_query_range` merged with `field_values` data, and zero-fills missing
+time steps to match Loki's continuous-line behaviour.
 
 ## Path Selection
 
-The proxy selects one of three code paths based on the query range:
+Drilldown-shaped single-field count queries (an existence filter on the
+grouped field) are routed the same way for every client and every parseable
+range:
 
 ```
-request range ≤ 12 h  →  fieldBatcher (drilldown_field_batcher.go)
-                              Per-field parallel stats_query_range
-                              Up to 120 buckets (maxDrilldownStatsBucketsShort)
-                              Zero-filled by zerofillStatsMatrix
+proxyStatsQueryRangeDrilldown (metric_binary.go)
+  → proxyStatsQueryRangeDrilldownHybrid
+      1. proxyStatsQueryRangeDrilldownHits
+           /select/logsql/hits, top 20 values (drilldownHitsFieldsLimit)
+           range ≥ 6 h: 8 windows sampled in parallel (hitsWindowSampleThreshold,
+                        hitsWindowCount)
+           Drilldown-tagged residual chunk (end - start < step): empty matrix
+           remainder bucket dropped; shared timestamp axis
+      2. on /hits failure (X-Proxy-Drilldown-Hits-Fallback: 1)
+           field_values over the full range (limit 500)
+           + stats_query_range over the full range, | limit 500
+           step capped to ≤ 120 buckets (maxDrilldownStatsBuckets)
+           ≤ 30 buckets for likely high-cardinality fields
+           ≤ 50 distinct values: requested step, floor range / 1000 buckets
+           Zero-filled by zerofillStatsMatrix
+           Merged by mergeDrilldownWithFieldValues
 
-request range > 12 h  →  proxyStatsQueryRangeDrilldownHybrid (metric_binary.go)
-                              field_values (O(column-index), ~30 ms, any range)
-                              + stats_query_range at full range, ≤ 30 buckets
-                              Zero-filled by zerofillStatsMatrix
-                              Merged by mergeDrilldownWithFieldValues
+Parser-stage variant (| json / | logfmt before the filter)
+  → proxyStatsQueryRangeDrilldownParserDirect
+      /hits first, then stats_query_range with | limit 500
 ```
 
-The `X-Query-Tags: Source=grafana-lokiexplore-app` header (set by Grafana
-Logs Drilldown) gates both paths. Without it, requests fall through to the
-standard `proxyStatsQueryRangeDirect` path.
+The per-field batcher (`drilldown_field_batcher.go`) remains behind the hybrid
+path and only runs when `start`/`end` cannot be parsed.
+
+Non-Drilldown-shaped `count() by (field)` queries use
+`proxyStatsQueryRangeDirect`. They reach the window-sampled `/hits` path only
+for ranges of 2 h or more when the request is Drilldown-tagged, or comes from
+another Grafana client and groups by a likely high-cardinality field; otherwise
+they get `stats_query_range` capped to the busiest `-max-stats-query-series`
+(default 500) series.
 
 ## Cardinality Tiers
 
-The proxy classifies each field by name before issuing any VL query:
+On the stats fallback, the proxy classifies each field by name and by the distinct-value count returned by `field_values`:
 
-| Tier | Detection | Strategy | Examples |
+| Tier | Detection | Stats fallback strategy | Examples |
 |------|-----------|----------|---------|
-| **Ultra-high** | `isHighCardinalityFieldName` — suffix `_id`, `_uid` | `field_values` stubs only; no stats histogram | `trace_id`, `span_id`, `request_id` |
-| **High** | `isLikelyHighCardinalityField` — exact names or suffix `_token`, `_hash`, `_key`, `_uuid` | `field_values` stubs only; no stats histogram | `session_id`, `api_key` |
-| **All others** | none | Full stats histogram + `field_values` merge | `level`, `http_method`, `duration_ms` |
+| **High** | `isLikelyHighCardinalityField` (exact names such as `trace_id`, `session_id`, or suffix `_id`, `.id`, `_uuid`, `_token`, `_hash`, `_key`) or `isHighCardinalityFieldName` (`_id`, `_uid`) | `stats_query_range` with step floored to ≤ 30 buckets (`drilldownHighCardStatsBuckets`); `field_values` synthesis only as last resort | `trace_id`, `span_id`, `api_key` |
+| **Low** | ≤ 50 distinct values in `field_values` (`drilldownLowCardThreshold`) | requested step, floored to ≤ 1000 buckets (`drilldownLowCardStatsBuckets`) | `level`, `http_method` |
+| **All others** | none | step coarsened to ≤ 120 buckets + `field_values` merge | `duration_ms` |
 
-High-cardinality fields skip `stats_query_range` entirely because:
-- Millions of unique values × 30–120 buckets = VL CPU spike
-- The cross-product limit (2000 combinations) truncates real values
-- `field_values` already provides the correct total hit counts
+High-cardinality fields get a tighter bucket cap because VictoriaLogs' stats
+pipe materializes one entry per (bucket × distinct value) before the top-N
+limit applies. These tiers only apply when `/hits` fails; the `/hits` path
+itself returns the top 20 values.
 
 ## Zero-fill: Why and How
 
@@ -67,9 +86,10 @@ With zero-fill (`zerofillStatsMatrix` in `drilldown_quality.go`):
 - FV-only stub series (values in `field_values` but not in top-N stats)
   keep their averaged stub counts — they have no per-step data from VL
 
-`zerofillStatsMatrix` is applied in two places:
-1. `proxyStatsQueryRangeDrilldownHybrid` (long-range path, >12 h)
-2. `fieldBatch.fire()` goroutine (short-range batcher, ≤12 h)
+`zerofillStatsMatrix` is applied on the stats fallback paths:
+1. `proxyStatsQueryRangeDrilldownHybrid` (stats tier after a `/hits` failure)
+2. `proxyStatsQueryRangeDrilldownParserDirect` (parser-stage stats subpath)
+3. `fieldBatch.fire()` goroutine (per-field batcher)
 
 ## Loki Parity
 
@@ -126,13 +146,15 @@ measures the proxy at 7 ranges × 5 field types:
 | Symbol | File | Purpose |
 |--------|------|---------|
 | `zerofillStatsMatrix` | `internal/proxy/drilldown_quality.go` | Fill missing VL time steps with 0 |
-| `proxyStatsQueryRangeDrilldownHybrid` | `internal/proxy/metric_binary.go` | Long-range (>12 h) drilldown path |
-| `fieldBatch.fire` | `internal/proxy/drilldown_field_batcher.go` | Short-range parallel per-field stats |
+| `proxyStatsQueryRangeDrilldownHits` | `internal/proxy/metric_binary.go` | `/hits` top-N path, windowed sampling, residual suppression |
+| `proxyStatsQueryRangeDrilldownHybrid` | `internal/proxy/metric_binary.go` | Drilldown path for all parseable ranges: `/hits`, then stats + `field_values` |
+| `fieldBatch.fire` | `internal/proxy/drilldown_field_batcher.go` | Batched per-field stats (reached only without parseable `start`/`end`) |
 | `mergeDrilldownWithFieldValues` | `internal/proxy/metric_binary.go` | Merge stats histogram + FV stubs |
 | `synthesizeDrilldownMatrix` | `internal/proxy/metric_binary.go` | FV-only stub matrix (no stats) |
 | `isHighCardinalityFieldName` | `internal/proxy/metric_binary.go` | `_id`/`_uid` suffix detection |
 | `isLikelyHighCardinalityField` | `internal/proxy/metric_binary.go` | Broad HC name detection |
-| `coarsenDrilldownStep` | `internal/proxy/metric_binary.go` | Cap bucket count to ≤30/120 |
-| `drilldownHybridThreshold` | `internal/proxy/metric_binary.go` | 12 h path split point |
+| `coarsenDrilldownStep` | `internal/proxy/metric_binary.go` | Cap bucket count to ≤ 120 |
+| `highCardStepFloor` | `internal/proxy/metric_binary.go` | Cap high-cardinality fallback to ≤ 30 buckets |
+| `isQuerySplitResidual` | `internal/proxy/metric_binary.go` | Drilldown-tagged sub-step residual chunk detection |
 | `TestDrilldown_QualityMatrix` | `test/e2e-compat/drilldown_quality_report_test.go` | Quality measurement (non-blocking) |
 | `TestDrilldown_LokiCompare_FieldQuality` | `test/e2e-compat/drilldown_loki_compare_test.go` | Loki parity assertions |

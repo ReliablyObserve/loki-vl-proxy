@@ -12,11 +12,19 @@ This guide covers manual validation of the five reliability fixes using the loca
 ```bash
 cd test/e2e-compat
 docker compose up -d --build
-# Wait for healthy state
-docker compose ps
+# Wait for every service to answer its readiness endpoint
+../../scripts/ci/wait_e2e_stack.sh 180
 ```
 
-The proxy is reachable at `http://localhost:3100` (proxy) and `http://localhost:9428` (VictoriaLogs direct).
+Endpoints used below:
+
+- `http://localhost:13100` — main proxy (compose service `loki-vl-proxy`, container `e2e-proxy`)
+- `http://localhost:13103` — synthetic-tail proxy (compose service `loki-vl-proxy-tail`, container `e2e-proxy-tail`)
+- `http://localhost:19428` — VictoriaLogs direct (compose service `victorialogs`)
+
+`docker compose` subcommands take the service name; `docker stats` takes the container name.
+
+The main proxy already runs with the L2 disk cache (`-disk-cache-path=/cache/proxy-l2.bolt`, `-disk-cache-max-bytes=536870912`, `-disk-cache-min-ttl=1s`), `-cache-ttl=5s`, and an L3 static peer ring with `loki-vl-proxy-peer-a` (port 13150) and `loki-vl-proxy-peer-b` (port 13151). Requests use `X-Scope-OrgID: 0`; tenant IDs that are neither numeric, a default-tenant alias, nor mapped with `-tenant-map` are rejected with `403 unknown tenant`.
 
 ---
 
@@ -27,44 +35,46 @@ The proxy is reachable at `http://localhost:3100` (proxy) and `http://localhost:
 ### Test: Overwrite accounting does not shrink write budget
 
 ```bash
-# Hit the proxy 50 times with the same query (forces compat-cache overwrites)
+# Hit the proxy 50 times with the same query (repeated writes of the same cache key)
 for i in $(seq 1 50); do
-  curl -s "http://localhost:3100/loki/api/v1/labels" \
-    -H "X-Scope-OrgID: tenant1" > /dev/null
+  curl -s "http://localhost:13100/loki/api/v1/labels" \
+    -H "X-Scope-OrgID: 0" > /dev/null
 done
 
-# Scrape metrics — cache evictions should be 0 for repeated same-key writes
-curl -s http://localhost:3100/metrics | grep "loki_vl_proxy_cache_"
+# Scrape the cache tier metrics
+curl -s http://localhost:13100/metrics | grep -E "loki_vl_proxy_cache_(bytes|objects|tier_[a-z_]+)\{tier=\"l2_disk\"\}"
 ```
 
-**Expected:** `loki_vl_proxy_cache_evictions_total` does not climb with each overwrite cycle. If the disk cache is configured (`-l2-path`), `loki_vl_proxy_l2_evictions_total` stays at 0 for this working set.
+**Expected:** `loki_vl_proxy_cache_bytes{tier="l2_disk"}` and `loki_vl_proxy_cache_objects{tier="l2_disk"}` stay flat across repeated runs of the loop instead of growing with every overwrite of the same key.
 
 ### Test: Expired entries release space for fresh writes
 
-This requires the disk cache to be configured. In the compose override add `-l2-path=/tmp/testcache.db -l2-max-bytes=1048576` to the proxy command, then:
+Use a small cap for this test. Temporarily change `-disk-cache-max-bytes=536870912` to `-disk-cache-max-bytes=1048576` and add `-labels-cache-ttl=5s` in the `loki-vl-proxy` service of `test/e2e-compat/docker-compose.yml` (do not commit the change), then:
 
 ```bash
-# Restart proxy with small disk cache
-docker compose restart e2e-proxy
+# Recreate the main proxy with the small disk cache
+docker compose up -d --force-recreate loki-vl-proxy
+../../scripts/ci/wait_e2e_stack.sh 180
 
-# Write some queries that will be cached (they expire after the cache TTL)
-for q in "nginx" "api" "auth" "frontend" "batch"; do
-  curl -s "http://localhost:3100/loki/api/v1/query_range" \
-    -H "X-Scope-OrgID: tenant1" \
-    --data-urlencode "query={app=\"$q\"}" \
-    --data-urlencode "start=1" \
-    --data-urlencode "end=2" \
-    --data-urlencode "step=1s" > /dev/null
+# Write several cacheable metadata responses (label values TTL is -labels-cache-ttl=5s;
+# -cache-ttl does not apply to label endpoints)
+for label in app level env service_name namespace; do
+  curl -s "http://localhost:13100/loki/api/v1/label/${label}/values" \
+    -H "X-Scope-OrgID: 0" > /dev/null
 done
 
-# Wait for cache TTL to expire (default query_range TTL is 30s)
-sleep 35
+# Wait for the entries to expire
+sleep 10
 
-# Confirm metrics show disk cache admitted entries, not all evictions
-curl -s http://localhost:3100/metrics | grep -E "l2_(hits|misses|evictions|writes)"
+# Write a fresh batch, then confirm the disk tier still admits entries
+for label in app level env service_name namespace; do
+  curl -s "http://localhost:13100/loki/api/v1/label/${label}/values" \
+    -H "X-Scope-OrgID: 0" > /dev/null
+done
+curl -s http://localhost:13100/metrics | grep -E "loki_vl_proxy_cache_(bytes|objects)\{tier=\"l2_disk\"\}"
 ```
 
-**Expected:** After expiry, new writes are admitted without evictions caused by dead space from expired entries.
+**Expected:** After expiry, new writes are admitted: `loki_vl_proxy_cache_objects{tier="l2_disk"}` is non-zero and `loki_vl_proxy_cache_bytes{tier="l2_disk"}` stays below the 1 MiB cap instead of the tier refusing writes because of dead space from expired entries. Revert the compose change and recreate `loki-vl-proxy` when done.
 
 ---
 
@@ -76,10 +86,13 @@ curl -s http://localhost:3100/metrics | grep -E "l2_(hits|misses|evictions|write
 
 ```bash
 # Trigger a graceful shutdown and observe the process exit cleanly
-docker compose stop e2e-proxy
+docker compose stop loki-vl-proxy
 
 # Check logs for clean shutdown message (no goroutine leak warnings)
-docker compose logs e2e-proxy | tail -20
+docker compose logs loki-vl-proxy | tail -20
+
+# Start it again for the next tests
+docker compose start loki-vl-proxy
 ```
 
 **Expected:** Logs show orderly shutdown — persistence flush, no panics, exit 0.
@@ -88,9 +101,9 @@ docker compose logs e2e-proxy | tail -20
 
 ```bash
 for i in 1 2 3; do
-  docker compose restart e2e-proxy
-  sleep 2
-  curl -sf http://localhost:3100/ready && echo "restart $i OK"
+  docker compose restart loki-vl-proxy
+  sleep 5
+  curl -sf http://localhost:13100/ready && echo "restart $i OK"
 done
 ```
 
@@ -106,10 +119,10 @@ done
 
 ```bash
 # Basic correctness check
-curl -s http://localhost:3100/metrics | head -20
+curl -s http://localhost:13100/metrics | head -20
 
-# Confirm Content-Type is set by the Prometheus handler (not the old recorder path)
-curl -sI http://localhost:3100/metrics | grep -i content-type
+# Confirm Content-Type is set by the metrics handler
+curl -s -D - -o /dev/null http://localhost:13100/metrics | grep -i content-type
 ```
 
 **Expected:** `Content-Type: text/plain; version=0.0.4; charset=utf-8` (Prometheus exposition format).
@@ -117,24 +130,23 @@ curl -sI http://localhost:3100/metrics | grep -i content-type
 ### Test: Concurrent scrapes are handled correctly
 
 ```bash
-# Fire 5 concurrent scrapes
+# Fire 5 concurrent scrapes and print each status code
 for i in $(seq 1 5); do
-  curl -s http://localhost:3100/metrics | wc -l &
+  curl -s -o /dev/null -w "%{http_code}\n" http://localhost:13100/metrics &
 done
 wait
 ```
 
-**Expected:** All 5 complete with similar line counts. The concurrency limiter allows one in-flight scrape; the others return 429 immediately (no deadlock or incomplete responses).
+**Expected:** Every request completes. `-server.metrics-max-concurrency` defaults to 1, so a scrape that overlaps an in-flight one returns `429` with `Retry-After: 1` immediately; the others return `200` with the full exposition (no deadlock or truncated responses).
 
 ### Test: Peer cache metrics present when peer cache configured
 
 ```bash
-# The e2e-compat stack does not have peer cache by default.
-# If running the fleet stack (test/e2e-fleet):
-curl -s http://localhost:3100/metrics | grep "loki_vl_proxy_peer_cache_"
+# The main compose proxy is a member of a 3-node static peer ring
+curl -s http://localhost:13100/metrics | grep "loki_vl_proxy_peer_cache_"
 ```
 
-**Expected (fleet stack only):** `loki_vl_proxy_peer_cache_hits_total`, `loki_vl_proxy_peer_cache_misses_total`, etc. are present in the output. Before the fix, peer metrics were appended to the recorder buffer and would be silently lost if the buffer copy path was broken.
+**Expected:** `loki_vl_proxy_peer_cache_hits_total`, `loki_vl_proxy_peer_cache_misses_total`, `loki_vl_proxy_peer_cache_peers`, etc. are present in the output. Before the fix, peer metrics were appended to the recorder buffer and would be silently lost if the buffer copy path was broken.
 
 ---
 
@@ -142,47 +154,54 @@ curl -s http://localhost:3100/metrics | grep "loki_vl_proxy_peer_cache_"
 
 **What changed:** `syntheticTailSeen.Add` uses `copy`+reslice instead of `append([]string(nil), ...)`, eliminating a per-overflow heap allocation in the synthetic tail hot path.
 
+`/loki/api/v1/tail` is a WebSocket endpoint, so plain `curl` cannot hold a tail session. The commands below use [`websocat`](https://github.com/vi/websocat) against the synthetic-tail proxy.
+
 ### Test: Tail endpoint works under sustained load
 
 ```bash
-# Open a tail session and verify it stays alive
-curl -s -N --max-time 30 \
-  "http://localhost:3100/loki/api/v1/tail?query={app%3D\"nginx\"}" &
+# Open a tail session in the background
+websocat -H "X-Scope-OrgID: 0" \
+  "ws://localhost:13103/loki/api/v1/tail?query=%7Bapp%3D%22nginx%22%7D" > /tmp/tail-frames.jsonl &
 TAIL_PID=$!
 
-# Inject log entries to trigger tail emissions
+# Inject log entries directly into VictoriaLogs to trigger tail emissions
 for i in $(seq 1 200); do
-  curl -s -X POST http://localhost:9428/insert/loki/api/v1/push \
+  curl -s -X POST http://localhost:19428/insert/loki/api/v1/push \
     -H "Content-Type: application/json" \
     -d "{\"streams\":[{\"stream\":{\"app\":\"nginx\"},\"values\":[[\"$(date +%s)000000000\",\"line $i\"]]}]}" \
     > /dev/null
   sleep 0.05
 done
 
-wait $TAIL_PID
-echo "tail session completed"
+# Give the synthetic tail a few polls to catch up, then close the session
+sleep 5
+kill $TAIL_PID
+wc -l /tmp/tail-frames.jsonl
 ```
 
-**Expected:** Tail session receives entries without memory growth visible in `docker stats e2e-proxy`. The dedup window evicts old entries without allocating on each overflow.
+**Expected:** The tail session receives frames without memory growth visible in `docker stats e2e-proxy-tail`. The dedup window evicts old entries without allocating on each overflow.
 
 ### Test: Memory stays flat during sustained synthetic tail
 
 ```bash
-# Record baseline RSS
-BEFORE=$(docker stats --no-stream e2e-proxy --format "{{.MemUsage}}" | awk '{print $1}')
+# Record baseline memory
+BEFORE=$(docker stats --no-stream e2e-proxy-tail --format "{{.MemUsage}}" | awk '{print $1}')
 
-# Run 500 iterations through the tail path (triggers many dedup overflows)
+# Open 500 short tail sessions (triggers many dedup overflows)
 for i in $(seq 1 500); do
-  curl -s --max-time 1 \
-    "http://localhost:3100/loki/api/v1/tail?query={app%3D\"nginx\"}" \
-    > /dev/null 2>&1 || true
+  websocat -H "X-Scope-OrgID: 0" \
+    "ws://localhost:13103/loki/api/v1/tail?query=%7Bapp%3D%22nginx%22%7D" \
+    > /dev/null 2>&1 &
+  WS_PID=$!
+  sleep 0.1
+  kill "$WS_PID" 2>/dev/null || true
 done
 
-AFTER=$(docker stats --no-stream e2e-proxy --format "{{.MemUsage}}" | awk '{print $1}')
-echo "RSS before: $BEFORE  after: $AFTER"
+AFTER=$(docker stats --no-stream e2e-proxy-tail --format "{{.MemUsage}}" | awk '{print $1}')
+echo "memory before: $BEFORE  after: $AFTER"
 ```
 
-**Expected:** RSS stays flat or grows only marginally (≤5%). Sustained growth would indicate the allocation-per-overflow regression is back.
+**Expected:** Memory stays flat or grows only marginally (≤5%). Sustained growth would indicate the allocation-per-overflow regression is back.
 
 ---
 
@@ -193,15 +212,16 @@ echo "RSS before: $BEFORE  after: $AFTER"
 ### Test: Security headers present on all endpoints
 
 ```bash
-# Check multiple endpoint types
+# Check multiple endpoint types (GET requests, headers only)
 for path in \
   "/loki/api/v1/labels" \
-  "/loki/api/v1/query_range?query={app%3D%22nginx%22}&start=1&end=2&step=1" \
-  "/loki/api/v1/query?query={app%3D%22nginx%22}&time=1" \
+  "/loki/api/v1/query_range?query=%7Bapp%3D%22nginx%22%7D&start=1&end=2&step=1" \
+  "/loki/api/v1/query?query=%7Bapp%3D%22nginx%22%7D&time=1" \
   "/ready" \
   "/metrics"; do
   echo "--- $path"
-  curl -sI "http://localhost:3100$path" | grep -iE "x-content-type|x-frame|cross-origin|cache-control|pragma|expires"
+  curl -s -D - -o /dev/null -H "X-Scope-OrgID: 0" "http://localhost:13100$path" \
+    | grep -iE "x-content-type|x-frame|cross-origin|cache-control|pragma|expires"
 done
 ```
 
@@ -220,11 +240,12 @@ Expires: 0
 
 ```bash
 # Query VL directly first to see what headers it returns
-curl -sI "http://localhost:9428/select/logsql/query?query=*&start=1&end=2" | \
+curl -s -D - -o /dev/null "http://localhost:19428/select/logsql/query?query=*&start=1&end=2" | \
   grep -iE "cache-control|x-frame|content-type"
 
 # Query the proxy for the same range — proxy headers must win
-curl -sI "http://localhost:3100/loki/api/v1/query_range?query={app%3D%22nginx%22}&start=1&end=2&step=1" | \
+curl -s -D - -o /dev/null -H "X-Scope-OrgID: 0" \
+  "http://localhost:13100/loki/api/v1/query_range?query=%7Bapp%3D%22nginx%22%7D&start=1&end=2&step=1" | \
   grep -iE "cache-control|x-frame|content-type"
 ```
 

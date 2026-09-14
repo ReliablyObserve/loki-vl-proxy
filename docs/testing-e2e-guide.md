@@ -10,22 +10,26 @@ Practical reference for the Loki-VL-proxy end-to-end test suite.
 ## Quick Start
 
 ```bash
-# 1. Build the proxy image
+# 1. Build the proxy image and start the stack (from the repository root)
 cd test/e2e-compat
 docker compose up -d --build
 
 # 2. Wait for all services to be ready (timeout 180s)
 ../../scripts/ci/wait_e2e_stack.sh 180
 
-# 3. Run Go e2e tests
-go test -v -tags=e2e -timeout=180s ./test/e2e-compat/
+# 3. Run Go e2e tests from the repository root
+cd ../..
+go test -v -tags=e2e -timeout=300s -count=1 -run '^TestSetup_IngestLogs$|^TestCompat_' ./test/e2e-compat/
 
-# 4. Run Playwright UI tests
-cd ../e2e-ui
+# 4. Run Playwright UI tests: restart the stack with the log generator profile first
+(cd test/e2e-compat && docker compose down -v && docker compose --profile ui up -d --build && ../../scripts/ci/wait_e2e_stack.sh 180)
+cd test/e2e-ui
 npm ci
 npx playwright install chromium
 npm test
 ```
+
+CI runs each Go test group on its own fresh stack (see [E2E Compat Groups](#e2e-compat-groups-ciyaml)). Running several groups on one stack re-ingests fixtures, so run `docker compose down -v` before switching groups. Keep the `ui` profile off for Go parity runs: the continuous log generator changes cardinality during comparisons.
 
 ## Stack Architecture
 
@@ -33,14 +37,18 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 
 | Service | Host Port | Purpose |
 |---------|-----------|---------|
-| Loki 3.7.1 | :3101 | Reference implementation (ground truth) |
-| VictoriaLogs v1.50.0 | :9428 | Backend for the proxy |
-| vmauth v1.138.0 | (internal) | Auth proxy in front of VictoriaLogs |
-| VictoriaMetrics v1.119.0 | (internal) | TSDB for vmalert recording-rule remote write |
-| vmalert v1.138.0 | :8880 | Alert/rule backend |
-| 10 proxy variants | :3100-:3110 | See [Proxy Variants](#proxy-variants) |
-| Grafana 12.4.2 | :3002 | UI with all datasources provisioned |
-| tail-ingress (nginx) | :3104 | Nginx reverse proxy for tail WebSocket tests |
+| `loki` (Loki 3.7.1) | 13101 | Reference implementation (ground truth) |
+| `victorialogs` (VictoriaLogs v1.50.0) | 19428 | Backend for the proxy |
+| `vmauth` (vmauth v1.138.0) | (internal) | Auth proxy in front of VictoriaLogs for `loki-vl-proxy-vmauth` |
+| `vmauth-ring` (vmauth v1.138.0) | 13200 | Round-robin load balancer across the three peer-ring proxies |
+| `victoriametrics` (VictoriaMetrics v1.119.0) | 18428 | vmalert remote-write target and scrape store for proxy/Loki/VictoriaLogs metrics |
+| `vmalert` (vmalert v1.138.0) | 18880 | Alert/rule backend |
+| 11 proxy variants | 13100, 13102-13103, 13105-13110, 13150-13151 | See [Proxy Variants](#proxy-variants) |
+| `tail-ingress` (nginx 1.27) | 13104 | Nginx reverse proxy for tail WebSocket tests |
+| `grafana` (Grafana 13.0.1) | 3002 | UI with all datasources provisioned |
+| `log-generator` (profile `ui`) | (none) | Continuous dual-write of multi-service logs to Loki and VictoriaLogs |
+
+Grafana preinstalls `victoriametrics-logs-datasource@0.26.3` and `grafana-lokiexplore-app@2.0.4`.
 
 ## Dual-Write Pattern
 
@@ -51,23 +59,27 @@ The compose stack at `test/e2e-compat/docker-compose.yml` runs:
 
 This ensures both backends have byte-identical log content. Tests then query Loki (ground truth) and the proxy (translating layer), comparing responses.
 
+The Go tests read their endpoints from environment variables with compose defaults: `LOKI_URL` (`http://localhost:13101`), `PROXY_URL` (`http://localhost:13100`), `PROXY_VMAUTH_URL` (`http://localhost:13109`), `TAIL_PROXY_URL` (`http://localhost:13103`), `TAIL_INGRESS_URL` (`http://localhost:13104`), `TAIL_NATIVE_URL` (`http://localhost:13105`), and `VL_URL` (`http://localhost:19428`).
+
 ## Adding a Go E2E Test
 
 1. **Add test data** (if needed) -- add a new `pushStream()` call in `testdata.go` inside `ingestRichTestData()` with appropriate labels and log lines.
 
 2. **Create test function** in `test/e2e-compat/` with `//go:build e2e` tag. Call `ingestRichTestData(t)` to seed data.
 
-3. **Query both endpoints** -- hit `lokiURL` (:3101) and `proxyURL` (:3100) with the same LogQL query using `queryRange()`.
+3. **Query both endpoints** -- hit `lokiURL` (:13101) and `proxyURL` (:13100) with the same LogQL query, for example with `queryRange()`.
 
 4. **Compare responses** -- assert line counts, result types, or use existing comparison helpers.
 
 5. **Run**: `go test -v -tags=e2e -run '^TestMyFeature_Something$' ./test/e2e-compat/`
 
+6. **Wire it into CI** -- add the test name to one of the group patterns in `.github/workflows/ci.yaml`; tests that match no pattern do not run in CI.
+
 ## Adding a Playwright Test
 
-1. **Create spec** in `test/e2e-ui/tests/`. Tag each test with a shard name in the title (e.g., `@explore-core`).
+1. **Create spec** in `test/e2e-ui/tests/`. Tag each test (or its `test.describe` title) with a shard tag (e.g., `@explore-core`).
 
-2. **Tag with shard** -- use an existing tag (`@explore-core`, `@explore-tail`, `@drilldown-core`, `@drilldown-mt`, `@explore-ops`) or create a new one.
+2. **Tag with shard** -- use an existing tag (`@explore-core`, `@explore-tail`, `@drilldown-core`, `@drilldown-mt`, `@explore-ops`, `@explore-mt`, `@regression`, `@comprehensive-ui`) or create a new one.
 
 3. **Add shard to CI** -- if new tag, add to `matrix.shard` in `.github/workflows/ci.yaml` under `e2e-ui`: `{name: "my-shard", command: "--grep @my-shard"}`.
 
@@ -85,34 +97,39 @@ This ensures both backends have byte-identical log content. Tests then query Lok
 
 | Port | Service | Label Style | Metadata Mode | Purpose |
 |------|---------|-------------|---------------|---------|
-| 3100 | loki-vl-proxy | default | default | Primary proxy, indexed label-values cache |
-| 3102 | loki-vl-proxy-underscore | underscores | hybrid | OTel dot-to-underscore, structured metadata |
-| 3103 | loki-vl-proxy-tail | underscores | default | Synthetic tail mode, browser origin allowlist |
-| 3104 | tail-ingress (nginx) | -- | -- | Reverse proxy in front of tail for WebSocket tests |
-| 3105 | loki-vl-proxy-tail-native | underscores | default | Native VL tail mode |
-| 3106 | loki-vl-proxy-native-metadata | underscores | native | Native metadata field mode |
-| 3107 | loki-vl-proxy-translated-metadata | underscores | translated | Translated-only metadata aliases |
-| 3108 | loki-vl-proxy-no-metadata | underscores | translated | Structured metadata emission disabled |
-| 3109 | loki-vl-proxy-vmauth | underscores | translated | Backend routed through vmauth |
-| 3110 | loki-vl-proxy-patterns-autodetect | default | default | Patterns autodetect from queries |
+| 13100 | loki-vl-proxy | underscores | translated | Primary proxy: indexed label-values cache, L2 disk cache, L3 static peer ring with peer-a/peer-b |
+| 13102 | loki-vl-proxy-underscore | underscores | hybrid | OTel dot-to-underscore, structured metadata; backs the Grafana `Loki (via VL proxy)` datasources |
+| 13103 | loki-vl-proxy-tail | underscores | translated (default) | Synthetic tail mode, browser origin allowlist |
+| 13105 | loki-vl-proxy-tail-native | underscores | translated (default) | Native VL tail mode |
+| 13106 | loki-vl-proxy-native-metadata | underscores | native | Native metadata field mode |
+| 13107 | loki-vl-proxy-translated-metadata | underscores | translated | Translated-only metadata aliases |
+| 13108 | loki-vl-proxy-no-metadata | underscores | translated | Structured metadata emission disabled |
+| 13109 | loki-vl-proxy-vmauth | underscores | translated | Backend routed through vmauth |
+| 13110 | loki-vl-proxy-patterns-autodetect | underscores | hybrid | Patterns autodetect from queries; Grafana default datasource |
+| 13150 | loki-vl-proxy-peer-a | underscores | translated | L3 peer ring member (zone-a) |
+| 13151 | loki-vl-proxy-peer-b | underscores | translated | L3 peer ring member (zone-b) |
+
+`tail-ingress` (nginx, port 13104) sits in front of `loki-vl-proxy-tail` for WebSocket ingress tests.
 
 ## CI Integration
 
 ### E2E Compat Groups (ci.yaml)
 
-5 parallel groups under `e2e-compat-group`:
+5 parallel groups under `e2e-compat-group`, each on a fresh stack; the `e2e-compat` job aggregates them:
 
 | Group | Coverage |
 |-------|----------|
-| `core` | TestCompat, TestExtended, TestChaining, TestAlerting, Explore HTTP contracts, Loki functions, datasource catalog |
-| `drilldown` | TestDrilldown, index stats/volume, track scores |
-| `otel-edge` | OTel labels, structured metadata, underscore proxy, label dedup/translation edge cases |
+| `core` | `TestCompat_*`, `TestExtended_*`, `TestChaining_*`, `TestAlertingCompat_*`, Explore HTTP contracts, `TestLokiFunctions_*`, datasource catalog, pinned matrix vs compose |
+| `drilldown` | `TestDrilldown_*`, Drilldown cluster/level filter features, Loki/Drilldown/VL track scores |
+| `otel-edge` | OTel labels, structured metadata, underscore proxy, label dedup/translation, `TestEdge_*`, `TestComplex_*` |
 | `tail-multitenancy` | Multitenancy, tail modes, security headers, metrics, gzip, derived fields, concurrent/edge queries |
-| `semantics` | Query semantics matrix, operations inventory, range metric compatibility, Grafana clickout |
+| `semantics` | Query semantics matrix, operations inventory, `TestLogQL_Exhaustive_*`, `TestPipeline_*`, range metric compatibility, Grafana clickout, missing ops |
+
+Some `test/e2e-compat` tests match no group pattern (for example `TestOperationsMatrix_*` and `TestPerf_*`); see [Testing](testing.md#e2e-compatibility-matrix) for the list.
 
 ### Playwright Shards (ci.yaml)
 
-6 parallel shards under `e2e-ui`:
+9 parallel shards under `e2e-ui`, each starting the stack with `docker compose --profile ui up -d --no-build`:
 
 | Shard | Command |
 |-------|---------|
@@ -122,27 +139,30 @@ This ensures both backends have byte-identical log content. Tests then query Lok
 | `drilldown-core` | `--grep @drilldown-core` |
 | `drilldown-multitenant` | `--grep @drilldown-mt` |
 | `explore-ops` | `--grep @explore-ops` |
+| `explore-mt` | `--grep @explore-mt` |
+| `explore-regression` | `--grep @regression` |
+| `explore-comprehensive` | `--grep @comprehensive-ui` |
 
-### Weekly Loki Matrix (compat-loki.yaml)
+### Compatibility Workflows
 
-Runs on schedule (`cron: 15 3 * * 1`) against multiple Loki versions from `test/e2e-compat/compatibility-matrix.json`. Enforces 100% Loki compatibility score.
+`compat-loki.yaml`, `compat-drilldown.yaml` and `compat-vl.yaml` run pinned score jobs (`loki-pinned`, `drilldown-pinned-runtime`, `vl-pinned`) on pull requests and pushes, and weekly matrices over the versions in `test/e2e-compat/compatibility-matrix.json`. The Loki matrix (`cron: 15 3 * * 1`) enforces a 100% Loki compatibility score.
 
 ## Debugging
 
-**Grafana UI** -- open http://localhost:3002 (anonymous admin, no login). Three datasources are provisioned: Loki (direct), Proxy, and VictoriaLogs.
+**Grafana UI** -- open http://localhost:3002 (anonymous admin, no login). Eleven datasources are provisioned from `test/e2e-compat/grafana-datasources.yaml`: `Loki (direct)`, eight proxy-backed Loki datasources (`Loki (via VL proxy)`, multi-tenant, native metadata, live tail, ingress tail, live tail native, patterns autodetect, vmauth), `VictoriaLogs (direct)`, and `VictoriaMetrics`.
 
-**Docker logs**:
+**Docker logs** (compose service names):
 ```bash
 cd test/e2e-compat
-docker compose logs proxy              # main proxy
-docker compose logs proxy-underscore   # underscore variant
-docker compose logs loki               # reference Loki
-docker compose logs -f victorialogs    # follow VL logs
+docker compose logs loki-vl-proxy              # main proxy
+docker compose logs loki-vl-proxy-underscore   # underscore variant
+docker compose logs loki                       # reference Loki
+docker compose logs -f victorialogs            # follow VL logs
 ```
 
 **Re-run a single test**:
 ```bash
-go test -v -tags=e2e -run '^TestCompat_QueryRange$' ./test/e2e-compat/
+go test -v -tags=e2e -count=1 -run '^TestCompat_QueryRange_LogQuery$' ./test/e2e-compat/
 ```
 
 **Playwright debug**:
@@ -155,9 +175,9 @@ npm run report         # view HTML report after run
 
 **Stack health check**:
 ```bash
-curl -s http://127.0.0.1:3100/ready    # proxy
-curl -s http://127.0.0.1:3101/ready    # loki
-curl -s http://127.0.0.1:9428/health   # victorialogs
+curl -s http://127.0.0.1:13100/ready      # proxy
+curl -s http://127.0.0.1:13101/ready      # loki
+curl -s http://127.0.0.1:19428/health     # victorialogs
 curl -s http://127.0.0.1:3002/api/health  # grafana
 ```
 
@@ -169,7 +189,7 @@ Set environment variables before `docker compose up` to override image versions:
 |----------|---------|
 | `LOKI_IMAGE` | `grafana/loki:3.7.1` |
 | `VICTORIALOGS_IMAGE` | `victoriametrics/victoria-logs:v1.50.0` |
-| `GRAFANA_IMAGE` | `grafana/grafana:12.4.2` |
+| `GRAFANA_IMAGE` | `grafana/grafana:13.0.1` |
 | `PROXY_IMAGE` | `loki-vl-proxy:e2e-local` |
 | `VMAUTH_IMAGE` | `victoriametrics/vmauth:v1.138.0` |
 | `VMALERT_IMAGE` | `victoriametrics/vmalert:v1.138.0` |
@@ -178,3 +198,5 @@ Set environment variables before `docker compose up` to override image versions:
 ```bash
 LOKI_IMAGE=grafana/loki:3.6.0 docker compose up -d --build
 ```
+
+`TestPinnedCompatibilityMatrixMatchesCompose` compares the Loki, VictoriaLogs and Grafana image defaults written in `docker-compose.yml` with `compatibility-matrix.json`; runtime overrides do not change what it checks.

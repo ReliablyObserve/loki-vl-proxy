@@ -47,8 +47,9 @@ Do not mix its test ingestion endpoints with another running stack.
 The focused PRs #520–524 were closed as superseded by
 [integration PR #525](https://github.com/ReliablyObserve/loki-vl-proxy/pull/525),
 merged as `5b8cdbf`. Release metadata PR #527 materialized v1.67.0 at `ee0d526`.
-Run all five review rows against that release. The compatibility follow-up #526
-has separate regression coverage; do not report its tests as part of v1.67.0.
+Run the six rows #520–#525 against that release. The compatibility follow-up #526
+shipped in v1.68.0 (release metadata PR #528); report its checks against v1.68.0,
+not v1.67.0.
 
 | Phase / review | Change and compatibility impact | Manual check and expected result |
 | --- | --- | --- |
@@ -95,11 +96,11 @@ limitations. Keep a failed check open with its evidence and reproduction until
 it is resolved. The review stack can be used before merge, but label its results
 as testing the proposed revision.
 
-The isolated #526 stack uses Grafana `http://127.0.0.1:14002`, proxy port `33100`,
-Loki `33101`, and VictoriaLogs `49428`. Its Compose project is `loki-parity-clean`;
-the existing #525 review stack at port `4002` is separate. For Go exhaustive
-parity, recreate only the isolated project's volumes and run without its UI
-generator. Unique-fixture tests may be repeated without shared-data duplication.
+The commands above use the default Compose ports: Grafana `3002`, proxy `13100`,
+Loki `13101`, native-metadata proxy `13106` and VictoriaLogs `19428`. When a
+stack is published on other ports, set `GRAFANA_URL`, `PROXY_URL`, `LOKI_URL` and
+`VL_URL` to its endpoints. For Go exhaustive parity, use a separate Compose
+project, recreate only its volumes and run without the UI generator. Unique-fixture tests may be repeated without shared-data duplication.
 See [the compatibility findings](real-window-compatibility-gaps.md) for the
 measured baseline, corrections and remaining limits. Do not interpret a passing
 browser chart or the old exhaustive status check as full LogQL parity.
@@ -131,8 +132,8 @@ browser chart or the old exhaustive status check as full LogQL parity.
 - Confirm backend failures and query-limit errors are visible errors rather than
   successful empty charts. Use only the disposable E2E services for fault injection.
 
-Record pass/fail and a screenshot or query/response for each discrepancy. Keep
-delete disabled: the existing optional adapter is not verified against VL's
-asynchronous deletion API. Known compatibility gaps and migration behavior are
+Record pass/fail and a screenshot or query/response for each discrepancy. Do not
+test or rely on delete: the `/loki/api/v1/delete` handler targets a path that
+VictoriaLogs rejects and does not implement VL's asynchronous deletion API. Known compatibility gaps and migration behavior are
 listed in the [validation record](security-hardening-validation.md) and
 [migration guide](security-hardening-migration.md).

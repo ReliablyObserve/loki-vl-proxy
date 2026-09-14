@@ -47,15 +47,14 @@ description: Shipped milestones and committed, already-decided work for loki-vl-
 - [x] Playwright UI e2e tests
 - [x] `/tail` browser and ops coverage (origin policy, native fallback, ingress recovery, upstream `401`/`403`/`5xx` parity)
 - [x] Multi-tenant Explore and Logs Drilldown coverage for `__tenant_id__`, labels, series, and detected field/label browser/resource surfaces
-- [x] Delete API endpoint with safeguards (confirmation, tenant scoping, audit logging)
 - [x] `without()` clause detection and clear error message
 - [x] `IsScalar` supports negative and scientific notation
 - [x] Circuit breaker half-open metrics fix
 - [x] Tenant map reload race condition fix
-- [x] `group()` outer aggregation — inner metric translated normally, proxy normalises all values to `1` (v1.21.0)
-- [x] `label_replace()` — proxy post-processing via marker suffix; Prometheus no-match semantics (v1.21.0)
-- [x] `label_join()` — proxy post-processing via marker suffix; missing src labels skipped (v1.21.0)
-- [x] `count_values()` — returns descriptive error (not translatable to VL; VL has no group-by-value primitive) (v1.21.0)
+- [x] `group()` outer aggregation — inner metric translated normally, proxy normalises all values to `1` (v1.21.x)
+- [x] `label_replace()` — proxy post-processing via marker suffix; Prometheus no-match semantics (v1.21.x)
+- [x] `label_join()` — proxy post-processing via marker suffix; missing src labels skipped (v1.21.x)
+- [x] `count_values()` — returns descriptive error (not translatable to VL; VL has no group-by-value primitive) (v1.21.x)
 - [x] Circuit breaker sliding-window failure counting — 30s window replaces consecutive-failure model; sporadic slow-query resets no longer open the breaker (v1.18.0)
 - [x] Bare label matcher error — `app="value"` (missing braces) returns HTTP 400 with descriptive Loki-style parse error instead of silently emitting malformed VL syntax (v1.20.0)
 - [x] `detected_level` inference from `_msg` content — proxy infers level from JSON/logfmt log body when not present in stream labels; Drilldown volume API gains automatic parser unpacking (v1.20.0)
@@ -72,32 +71,48 @@ description: Shipped milestones and committed, already-decided work for loki-vl-
 - [x] Coverage and quality-gate reinforcement for runtime, middleware, cache, and proxy-path tests
 - [x] Tier0 compatibility-edge cache with bounded memory budget, safe GET-only guardrails, and reload invalidation
 - [x] Fleet shadow-copy validation for 3-peer cache reuse plus Tier0/fleet micro-benchmarks
-- [x] Named tenant routing enhancements — YAML/JSON tenant map file with mtime-polling hot-reload and SIGHUP; label-based tenant isolation (`-tenant-label` injects `{field="orgID"}` into VL queries); `-forward-tenant-header` passthrough for Lakehouse; uint32 validation at load time; LogsQL injection prevention via backslash-before-quote escaping (v1.31.x)
-- [x] Exhaustive LogQL parity machine — 316 parse/translation cases covering stream selectors, line filters, parsers, metric queries, binary ops, subqueries, offset modifier, unwrap unit conversion, field-specific parsers, named regexp groups, vector matching, complex pipelines, and edge cases; LogQL syntax validator for Loki error parity; comprehensive pipeline parity tests; all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved (v3.7.1)
-- [x] `| drop field=value` matcher semantics — proxy applies conditional field removal via `ParseDropConditions` + `applyDropConditions` post-processing; the value predicate is now respected (previously the field was always dropped regardless of value) (v3.7.1)
-- [x] structuredMetadata vs parsedFields classification — proxy correctly classifies fields by comparing against `_msg` JSON content, preventing structured metadata from being misclassified as parsedFields (v3.7.1)
-- [x] Non-OTel structured metadata e2e tests — push tests for plain structured metadata (non-OTel) added to log-generator; default `label-style` changed to `underscores` and `metadata-field-mode` to `translated` (v3.7.1)
+- [x] Named tenant routing enhancements — YAML/JSON tenant map file with mtime-polling hot-reload and SIGHUP; label-based tenant isolation (`-tenant-label` injects `{field="orgID"}` into VL queries); `-forward-tenant-header` passthrough for Lakehouse; uint32 validation at load time; LogsQL injection prevention via backslash-before-quote escaping (v1.35.0)
+- [x] Exhaustive LogQL parity machine — Loki-vs-proxy cases covering stream selectors, line filters, parsers, metric queries, binary ops, subqueries, offset modifier, unwrap unit conversion, field-specific parsers, named regexp groups, vector matching, complex pipelines, and edge cases; LogQL syntax validator for Loki error parity (v1.36.0). Pass counts reported before v1.68.0 compared against an empty Loki window because of a timestamp defect in the test helper; current measured results are in [Real-window compatibility findings](real-window-compatibility-gaps.md)
+- [x] `| drop field=value` matcher semantics — proxy applies conditional field removal via `ParseDropConditions` + `applyDropConditions` post-processing; the value predicate is now respected (previously the field was always dropped regardless of value) (v1.36.1)
+- [x] structuredMetadata vs parsedFields classification — proxy correctly classifies fields by comparing against `_msg` JSON content, preventing structured metadata from being misclassified as parsedFields (v1.36.0)
+- [x] Non-OTel structured metadata e2e tests — push tests for plain structured metadata (non-OTel) added to log-generator; default `label-style` changed to `underscores` and `metadata-field-mode` to `translated` (v1.36.0)
 - [x] Config examples folder (`examples/`) — runnable env files, tenant map YAML, Docker Compose stack, Grafana datasource provisioning, systemd unit, Kubernetes ConfigMap with full annotated flag/env reference
 
 ## Recently Shipped
 
-- [x] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching (0.22.0)
-- [x] `@` timestamp modifier (0.19.0)
+- [x] Populated-query parity corrections — Loki-consistent IP line-filter validation, implicit many-to-one rejection, quantile grouping, regexp capture names, tumbling-bucket timestamps, step-aligned binary joins, `unwrap duration()`/`bytes()` on bare parsers, second-precision scalar timestamps, and bounded raw metric collection; measured findings replace the earlier 100% compatibility claim (1.68.0)
+- [x] Security hardening and bounded execution — tenant-scoped cache and coalescer keys, global-tenant wildcard denial in label-routing mode, 4 KiB tail client messages, subquery/`line_format`/binary evaluation budgets, per-timestamp `topk`/`bottomk`, and exact final-response cache keys (1.67.0)
+- [x] Backend error redaction on client-visible error paths and transport errors (1.58.1, completed in 1.62.0)
+- [x] `rules-migrate` validates rule expressions with the typed LogQL AST validator before translation; malformed drop/keep matchers return HTTP 400 on `query`/`query_range` (1.61.0)
+- [x] Live-tail Explore freshness bypass for near-now cached `query_range`/`query` responses (1.59.0)
+- [x] Ring-wide cache purge — `POST /admin/cache/flush?peers=1` fans out to every peer via the token-protected `/_cache/purge` (1.58.0)
+- [x] L0 hot-key index exposed as a cache tier (`tier="l0"`) in cache metrics (1.57.0)
+- [x] Secure-by-default runtime — loopback admin listener, `/metrics` off by default with optional `-metrics-listen`, required `-peer-auth-token` for peer cache, redacted debug query logging, surgical chart `/proc` mounts (1.56.2)
+- [x] Drilldown long-range histograms through VictoriaLogs `/hits` with top-N series, and Loki-style partial results (`warnings`) for Grafana-sourced stats failures (1.55.0)
+- [x] `-translate-otel-attributes` flag gating the OTel underscore-to-dot query rewrite (1.54.0)
+- [x] `-default-max-query-length`, `-max-stats-query-series` and `-stats-query-range-concurrency` limits (1.53.0)
+- [x] Peer cache `srv` and `http` discovery modes, `/_cache/has` and `/_cache/peers` endpoints, and peer-first label warmup with `-warmup-max-jitter` (1.50.0)
+- [x] `| keep field=value` stream label mutation — matcher form now applies to stream labels in addition to structured metadata and parsed fields (1.51.0)
+- [x] Parallel multi-tenant fanout — goroutine-per-tenant dispatch with `sync.WaitGroup` (1.37.1)
+- [x] Bounded backward hot+cold merge — ring-buffer reverse with bounded memory (`maxRingSize=5000`) (1.37.1)
+- [x] Browser-level multi-tenant Explore and Drilldown regression scenarios for UI combinations whose API parity was already covered
+- [x] `on()`/`ignoring()`/`group_left()`/`group_right()` vector matching (0.24.0)
+- [x] `@` timestamp modifier (0.20.0)
 - [x] `unwrap duration()/bytes()` unit conversion (0.21.0)
 - [x] Subquery syntax `rate(...)[1h:5m]` — proxy-side evaluation (0.23.0)
 - [x] LRU cache eviction (0.21.0)
 - [x] Peer cache Phase 1 implementation (DNS discovery + peer fetch) (0.24.0)
-- [x] System metrics in /metrics (CPU, memory, IO, network via /proc) (0.19.0)
+- [x] System metrics in /metrics (CPU, memory, IO, network via /proc) (0.20.0)
 - [x] Native VL stream selector optimization for known `_stream_fields` (0.23.0)
 - [x] PR quality report workflow with coverage, compatibility, and performance delta comments (0.26.0)
-- [x] Add bounded peer hot-read-ahead (top-N hot keys with per-interval key/byte/concurrency budgets, jitter, and tenant fairness) to improve non-owner local hit rates without causing peer traffic storms (1.0.25)
-- [x] Add regression/perf suite for collapse forwarding and hot-read-ahead interactions (owner/non-owner paths, coalescing efficiency, backend offload delta) (1.0.25)
+- [x] Add bounded peer hot-read-ahead (top-N hot keys with per-interval key/byte/concurrency budgets, jitter, and tenant fairness) to improve non-owner local hit rates without causing peer traffic storms (1.1.0)
+- [x] Add regression/perf suite for collapse forwarding and hot-read-ahead interactions (owner/non-owner paths, coalescing efficiency, backend offload delta) (1.1.0)
 - [x] Promote compose-backed e2e fleet cache smoke coverage into required GitHub Actions for pull requests and post-merge `main` runs (0.27.7)
-- [x] fastjson + streaming rewrite of stats hot path — eliminate per-entry heap allocations in `collectRangeMetricSamples` and stats response assembly (1.30.0–1.31.2)
-- [x] `stats_query_range` fast path for grouped and ungrouped metric queries — `sum by (...)` count/rate/bytes queries bypass raw log scan; heavy workload throughput 4× vs cold proxy baseline (1.30.0)
+- [x] fastjson + streaming rewrite of stats hot path — eliminate per-entry heap allocations in `collectRangeMetricSamples` and stats response assembly (1.31.0–1.31.3)
+- [x] `stats_query_range` fast path for grouped and ungrouped metric queries — `sum by (...)` count/rate/bytes queries bypass raw log scan; heavy workload throughput 4× vs cold proxy baseline (1.31.3)
 - [x] Cold storage backend routing — split queries across hot VL and cold Victoria Lakehouse by configurable time boundary (1.28.0)
-- [x] allocation pool pass — gzip reader pool, gob buffer pool, aggregator scalar eliminations, patternJoinBuilderPool, logfmt single-pass scanning, series/stats buffer pooling (1.31.2)
-- [x] Parser-stage guard removal from fast path — `rate`/`count_over_time`/`bytes_rate`/`bytes_over_time` with `| json`/`| logfmt` use VL native stats for tumbling windows (1.31.2)
+- [x] allocation pool pass — gzip reader pool, gob buffer pool, aggregator scalar eliminations, patternJoinBuilderPool, logfmt single-pass scanning, series/stats buffer pooling (1.31.2–1.31.3)
+- [x] Parser-stage guard removal from fast path — `rate`/`count_over_time`/`bytes_rate`/`bytes_over_time` with `| json`/`| logfmt` use VL native stats for tumbling windows (1.39.0)
 
 ## Committed — decided and in progress
 
@@ -105,10 +120,5 @@ Everything below is decided work with its direction already proven in the codeba
 no exploratory items are listed here.
 
 - [ ] Tighten remaining merged-tenant Drilldown metadata accuracy for field and label cardinality surfaces
-- [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests (ongoing — LogQL parity machine at 555+ cases)
-- [x] Malformed drop/keep matcher → HTTP 400 error — enforced by the typed LogQL AST validator in the `query`/`query_range` handlers (regression-locked), and `rules-migrate` now runs the same validator so malformed rule expressions fail conversion instead of silently skipping the broken stage
+- [ ] Convert more upstream Loki, Logs Drilldown, and VictoriaLogs edge cases into regression tests (ongoing; measured gaps are tracked in [Real-window compatibility findings](real-window-compatibility-gaps.md))
 - [ ] Migrate remaining string-based translation paths to the typed `logsql` AST builder and roll `logql.Translate` into the proxy handlers — the typed translation path (`internal/logql/translate.go`) is implemented and tested; the handler call-site migration is the remaining step
-- [x] Expand browser-level multi-tenant Explore and Drilldown scenarios where API parity already exists but UI combinations still need live regression coverage
-- [x] `| keep field=value` stream label mutation — matcher form now applies to stream labels in addition to structured metadata and parsed fields (v1.50.1)
-- [x] Parallel multi-tenant fanout — goroutine-per-tenant dispatch with `sync.WaitGroup` (v1.43.0)
-- [x] Streaming backward hot+cold merge — ring-buffer reverse with bounded memory (`maxRingSize=5000`) and early termination (v1.43.0)

@@ -19,16 +19,17 @@
 1. Confirm proxy health:
    - `curl -fsS http://<proxy>:3100/ready`
 2. Confirm metrics endpoint includes system families:
-   - `curl -fsS http://<proxy>:3100/metrics | rg "loki_vl_proxy_process_memory_usage_ratio|loki_vl_proxy_process_cpu_usage_ratio|loki_vl_proxy_process_pressure_|loki_vl_proxy_process_disk_(read|write)_operations_total"`
+   - `curl -fsS http://<proxy>:9091/metrics | rg "loki_vl_proxy_process_memory_usage_ratio|loki_vl_proxy_process_cpu_usage_ratio|loki_vl_proxy_process_pressure_|loki_vl_proxy_process_disk_(read|write)_operations_total"`
+   - `9091` is the chart's dedicated metrics listener (`extraArgs.metrics-listen`). A binary started without `-metrics-listen` serves `/metrics` on its `-listen` port, and only when `-server.register-instrumentation=true`.
 3. Inspect startup diagnostics in proxy logs for system-metrics check output.
 4. Check dashboard section `Operational Resources` for memory, CPU, PSI, disk IOPS/throughput, and network trends.
 
 ## Kubernetes-Specific Checks
 
-1. Ensure pod `/proc` scope is used for container-level visibility. If host `/proc` is mounted, metrics reflect host scope:
-   - `systemMetrics.hostProc.enabled: true`
-   - chart auto-sets `-proc-root=/host/proc`
-2. Verify container has read access to mounted proc path.
+1. Confirm which scope each family reports. Host-scope reads (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) use `-host-proc-root`; self/container-scope reads (`self/*`, `net/dev`) use `-proc-root` (default `/proc`):
+   - `systemMetrics.hostProc.enabled: true` (chart default)
+   - the chart mounts only the five host files `/proc/stat`, `/proc/meminfo`, `/proc/pressure/cpu`, `/proc/pressure/memory` and `/proc/pressure/io` (read-only `hostPath` of type `File`) under `systemMetrics.hostProc.mountPath` (default `/host/proc`) and auto-sets `-host-proc-root=/host/proc`
+2. Verify the container has read access to the mounted files; PSI files are absent on kernels without `/proc/pressure/*`.
 3. If scraping is disabled (`server.register-instrumentation=false`), ensure OTLP pipeline is healthy and metrics are queryable in your backend.
 
 ## Mitigation

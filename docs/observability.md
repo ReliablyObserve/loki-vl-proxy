@@ -36,9 +36,11 @@ The proxy also now keeps more expensive metadata paths deliberately warmer than 
 | Endpoint | Purpose |
 |---|---|
 | `GET /ready` | Readiness probe (checks backend `/health` and circuit-breaker state) |
-| `GET /metrics` | Prometheus text exposition (`-server.register-instrumentation`, bounded by `-server.metrics-max-concurrency`) |
+| `GET /metrics` | Prometheus text exposition. Off by default in the binary (`-server.register-instrumentation=false`); when enabled it is served on `-listen`, or on `-metrics-listen` when set. The Helm chart enables it on a dedicated `:9091` listener. Bounded by `-server.metrics-max-concurrency` |
 | `GET /debug/queries` | Query analytics endpoint (disabled by default, `-server.enable-query-analytics`) |
 | `GET /debug/pprof/` | Go pprof profiling endpoints (disabled by default, `-server.enable-pprof`) |
+
+Admin and debug routes (`/admin/*`, `/debug/*`) are served on the loopback `-admin-listen` address (default `127.0.0.1:3101`) unless `-server.admin-auth-token` is set, in which case they move to the main listener and require the token.
 
 ## Logs
 
@@ -142,7 +144,7 @@ normal traffic.
 | `enduser.id` | stable trusted user/client identity when available |
 | `enduser.name` | display/login user name from trusted user headers when available |
 | `enduser.source` | trusted header source for end-user attribution (`grafana_user`, `forwarded_user`, etc.) |
-| `auth.*` | datasource/auth principal context (separate from `enduser.id`) |
+| `auth.source` | datasource auth mechanism when the request carries Basic-Auth credentials (the principal itself is never logged; separate from `enduser.id`) |
 | `cache.result` | compatibility cache result (`hit`, `miss`, `bypass`) |
 | `proxy.*` | proxy-facing convenience fields such as total request duration and measured proxy overhead |
 | `upstream.*` | backend call count, status, and latency |
@@ -166,13 +168,15 @@ These aggregate map keys are intentionally bounded by route templates and hardco
 
 #### Prometheus Scrape
 
+`/metrics` is not served unless `-server.register-instrumentation=true`. The Helm chart sets it and serves `/metrics` on a dedicated metrics listener (`extraArgs.metrics-listen: ":9091"`, exposed as the `metrics` Service port). A binary without `-metrics-listen` serves `/metrics` on its `-listen` port.
+
 ```yaml
 scrape_configs:
   - job_name: loki-vl-proxy
     scrape_interval: 15s
     static_configs:
       - targets:
-          - loki-vl-proxy:3100
+          - loki-vl-proxy:9091
 ```
 
 #### OTLP Push
@@ -241,12 +245,12 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_cache_misses_total` | counter | none | `Low` | global cache misses |
 | `loki_vl_proxy_cache_hits_by_endpoint` | counter | `system`, `direction`, `endpoint`, `route` | `Low` | cache hits per normalized route |
 | `loki_vl_proxy_cache_misses_by_endpoint` | counter | `system`, `direction`, `endpoint`, `route` | `Low` | cache misses per normalized route |
-| `loki_vl_proxy_cache_tier_hits_total` | counter | `tier` | `Low` | cache hits per tier (`l1_memory`, `l2_disk`, `l3_peer`) |
-| `loki_vl_proxy_cache_tier_misses_total` | counter | `tier` | `Low` | cache misses per tier (`l1_memory`, `l2_disk`, `l3_peer`) |
-| `loki_vl_proxy_cache_tier_requests_total` | counter | `tier` | `Low` | total lookup attempts per tier (`l1_memory`, `l2_disk`, `l3_peer`) |
+| `loki_vl_proxy_cache_tier_hits_total` | counter | `tier` | `Low` | cache hits per tier (`l0`, `l1_memory`, `l2_disk`, `l3_peer`) |
+| `loki_vl_proxy_cache_tier_misses_total` | counter | `tier` | `Low` | cache misses per tier (`l0`, `l1_memory`, `l2_disk`, `l3_peer`) |
+| `loki_vl_proxy_cache_tier_requests_total` | counter | `tier` | `Low` | total lookup attempts per tier (`l0`, `l1_memory`, `l2_disk`, `l3_peer`) |
 | `loki_vl_proxy_cache_tier_stale_hits_total` | counter | `tier` | `Low` | responses served from an expired TTL entry per tier (`l1_memory`, `l2_disk`, `l3_peer`) |
 | `loki_vl_proxy_cache_bytes` | gauge | `tier` | `Low` | stored bytes per cache tier (`l1_memory`, `l2_disk`) |
-| `loki_vl_proxy_cache_objects` | gauge | `tier` | `Low` | object count per cache tier (`l1_memory`, `l2_disk`) |
+| `loki_vl_proxy_cache_objects` | gauge | `tier` | `Low` | object count per cache tier (`l0`, `l1_memory`, `l2_disk`) |
 | `loki_vl_proxy_cache_backend_fallthrough_total` | counter | none | `Low` | requests that missed every cache tier and fell through to the backend |
 | `loki_vl_proxy_translations_total` | counter | none | `Low` | successful LogQL to LogsQL translations |
 | `loki_vl_proxy_translation_errors_total` | counter | none | `Low` | failed translations |
@@ -261,6 +265,8 @@ All rows below are exposed through Prometheus scrape and OTLP push unless noted 
 | `loki_vl_proxy_http_connections` | gauge | `state` | `Low` | current downstream HTTP server connections by state |
 | `loki_vl_proxy_http_connection_transitions_total` | counter | `state` | `Low` | downstream HTTP server connection state transitions |
 | `loki_vl_proxy_http_connection_rotations_total` | counter | `reason` | `Low` | downstream HTTP/1.x connection rotations triggered by the proxy |
+
+`tier="l0"` is the hot-key index that sits alongside the lookup tiers, not a lookup tier itself: `requests` counts every cache request that touched it, `hits` counts requests whose key was already hot, `misses` counts first observations of a key, and `cache_objects{tier="l0"}` is the current bounded index population.
 
 Operational notes for these hot paths:
 
@@ -333,23 +339,26 @@ These metrics track the proxy-side pattern cache and snapshot lifecycle.
 
 ### Peer Cache Metrics
 
-Peer cache statistics are exposed as a JSON object via `PeerCache.Stats()` (used internally and by `/_cache/peers`), not as Prometheus metrics on `/metrics`. The counters available are:
+When the peer cache is enabled, `/metrics` appends these fleet-cache families (Prometheus scrape only). They mirror the counters in `PeerCache.Stats()`:
 
-| JSON Key | Description |
-|---|---|
-| `peers` | Remote peers currently in the fleet-cache ring |
-| `peer_hits` | Successful peer-cache fetches |
-| `peer_misses` | Peer-cache lookups that missed on the owner |
-| `peer_errors` | Peer-cache fetch errors |
-| `peer_error_reasons` | Low-cardinality error reason breakdown (map) |
-| `wt_pushes` | Successful owner write-through pushes |
-| `wt_errors` | Owner write-through push errors |
-| `ra_hot_requests` | Peer hot-index requests |
-| `ra_hot_errors` | Peer hot-index request errors |
-| `ra_prefetches` | Successful hot read-ahead prefetches |
-| `ra_prefetch_bytes` | Bytes prefetched by hot read-ahead |
-| `ra_budget_drops` | Read-ahead candidates dropped by budget or size filters |
-| `ra_tenant_skips` | Read-ahead candidates skipped by tenant fairness |
+| Metric | Type | Labels | Cardinality | Description |
+|---|---|---|---|---|
+| `loki_vl_proxy_peer_cache_peers` | gauge | none | `Low` | remote peers currently in the fleet-cache ring, excluding self |
+| `loki_vl_proxy_peer_cache_cluster_members` | gauge | none | `Low` | total ring members, including this instance |
+| `loki_vl_proxy_peer_cache_hits_total` | counter | none | `Low` | successful peer-cache fetches |
+| `loki_vl_proxy_peer_cache_misses_total` | counter | none | `Low` | peer-cache lookups that missed on the owner |
+| `loki_vl_proxy_peer_cache_errors_total` | counter | none | `Low` | peer-cache fetch errors |
+| `loki_vl_proxy_peer_cache_error_reason_total` | counter | `reason` | `Low` | peer-cache fetch errors by reason (emitted once any error has been recorded) |
+| `loki_vl_proxy_peer_cache_write_through_pushes_total` | counter | none | `Low` | successful owner write-through pushes |
+| `loki_vl_proxy_peer_cache_write_through_errors_total` | counter | none | `Low` | owner write-through push errors |
+| `loki_vl_proxy_peer_cache_hot_index_requests_total` | counter | none | `Low` | peer hot-index requests |
+| `loki_vl_proxy_peer_cache_hot_index_errors_total` | counter | none | `Low` | peer hot-index request errors |
+| `loki_vl_proxy_peer_cache_read_ahead_prefetches_total` | counter | none | `Low` | successful hot read-ahead prefetches |
+| `loki_vl_proxy_peer_cache_read_ahead_prefetch_bytes_total` | counter | none | `Low` | bytes prefetched by hot read-ahead |
+| `loki_vl_proxy_peer_cache_read_ahead_budget_drops_total` | counter | none | `Low` | read-ahead candidates dropped by budget or size filters |
+| `loki_vl_proxy_peer_cache_read_ahead_tenant_skips_total` | counter | none | `Low` | read-ahead candidates skipped by tenant fairness |
+
+Cross-tier peer lookups are also visible as `loki_vl_proxy_cache_tier_*{tier="l3_peer"}`. `GET /_cache/peers` returns the current ring membership as JSON (see [Fleet Cache](fleet-cache.md)).
 
 ### Tenant and Client Metrics
 
@@ -399,7 +408,6 @@ At log level, the same request can also carry:
 - `enduser.id`
 - `enduser.name`
 - `enduser.source`
-- `auth.principal`
 - `auth.source`
 - `loki.tenant.id`
 - `http.route`
@@ -413,7 +421,7 @@ flatten structured JSON bodies into discoverable `message.*` fields.
 That separation matters:
 
 - `enduser.*` answers "which Grafana user or trusted client triggered this?"
-- `auth.*` answers "which datasource or auth principal was used on the request path?"
+- `auth.source` answers "which datasource auth mechanism was used on the request path?" (for example `basic_auth`; the Basic-Auth username is credential material and is never logged)
 - `loki.tenant.id` answers "which tenant boundary did the request execute in?"
 
 This is what makes offender analysis practical on the read path instead of only
@@ -427,8 +435,8 @@ The same proxy layer also improves trust separation between components.
 |---|---|---|
 | Grafana or client -> proxy | `-auth.enabled`, `-tls-client-ca-file`, `-tls-require-client-cert`, trusted user headers with `-metrics.trust-proxy-headers` | Lets the proxy require tenant context, optionally require client certs, and attribute read traffic to the actual Grafana user or trusted upstream identity when sensitive metrics export is explicitly enabled. |
 | Proxy -> VictoriaLogs | `-backend-basic-auth`, `-forward-authorization`, `-forward-headers` | Lets the lower layer keep its own auth boundary while the proxy preserves full Loki-client compatibility on the northbound side. |
-| Proxy -> peer cache | `-peer-auth-token` | Prevents peer-cache reuse from becoming an unauthenticated east-west path when the fleet spans a broader network boundary. |
-| Operator -> admin/debug endpoints | `-server.admin-auth-token` | Protects admin and troubleshooting surfaces without weakening the main read path. Non-loopback listeners now require this token before `/debug/queries` or `/debug/pprof` can be enabled. |
+| Proxy -> peer cache | `-peer-auth-token` | Prevents peer-cache reuse from becoming an unauthenticated east-west path. Required whenever peer discovery is configured; the proxy refuses to start without it unless `-peer-insecure-ip-allowlist=true` restores the legacy IP-only check. |
+| Operator -> admin/debug endpoints | `-server.admin-auth-token`, `-admin-listen` | Protects admin and troubleshooting surfaces without weakening the main read path. Without a token, `/admin/*` and `/debug/*` live on the loopback `-admin-listen` address (default `127.0.0.1:3101`); when instrumentation, pprof or query analytics is enabled, the proxy refuses to start if those routes would be exposed on a non-loopback address without the token. |
 
 When trusted proxy headers are enabled, the proxy also forwards derived context
 headers to VictoriaLogs:
@@ -450,6 +458,7 @@ Grouped family rows below mean every concrete metric name in that family shares 
 |---|---|---|---|
 | `loki_vl_proxy_go_memstats_*`, `loki_vl_proxy_go_goroutines`, `loki_vl_proxy_go_gc_cycles_total`, `loki_vl_proxy_go_gc_duration_seconds` | none | `Low` | Go runtime health |
 | `loki_vl_proxy_process_resident_memory_bytes`, `loki_vl_proxy_process_open_fds` | none | `Low` | process resource usage |
+| `loki_vl_proxy_process_cpu_seconds_total` | none | `Low` | total user and system CPU time of the proxy process, in seconds |
 | `loki_vl_proxy_process_cpu_usage_ratio` | `mode` | `Low` | CPU pressure split by `user`, `system`, `iowait` |
 | `loki_vl_proxy_process_memory_*` | none | `Low` | total, free, available, usage ratio |
 | `loki_vl_proxy_process_disk_*_bytes_total` | none | `Low` | disk I/O byte counters |
@@ -463,7 +472,7 @@ Kubernetes notes:
 - These runtime/system metrics are read from `/proc` and do not require Kubernetes RBAC permissions.
 - PSI metrics (`process_pressure_*`) depend on kernel support and may be absent on nodes without `/proc/pressure/*`.
 - On startup, the proxy logs a system-metrics readiness check with missing families and remediation hints instead of failing silently.
-- If you mount host `/proc` (`-proc-root=/host/proc`), these metrics will reflect host scope; keep default pod `/proc` for pod/container scope.
+- Host-scope reads (`stat`, `meminfo`, `pressure/{cpu,memory,io}`) use `-host-proc-root`; self/container-scope reads (`self/*`, `net/dev`) use `-proc-root` (both default to `/proc`). With `systemMetrics.hostProc.enabled=true` (default) the chart mounts only those five host files read-only under `/host/proc` and sets `-host-proc-root=/host/proc`; it never mounts the whole host `/proc`.
 - For per-pod attribution in OTLP backends, set `OTEL_SERVICE_INSTANCE_ID` from pod name and `OTEL_SERVICE_NAMESPACE` from pod namespace (the upstream chart now injects these by default).
 - CI includes a metric-name guard so new app metrics must stay under the `loki_vl_proxy_*` prefix unless explicitly allowlisted for compatibility.
 
@@ -560,7 +569,7 @@ When enabled, the proxy prefers:
 3. trusted forwarded client IP (`X-Forwarded-For`)
 4. remote IP
 
-Datasource/basic-auth credentials are reported separately under `auth.*` and are not used as end-user identity.
+Datasource/basic-auth credentials are not used as end-user identity; request logs record only the auth mechanism as `auth.source`.
 Only enable trusted proxy headers when the proxy sits behind a trusted auth proxy or Grafana instance.
 
 ## Integration Examples
@@ -575,7 +584,7 @@ receivers:
         - job_name: loki-vl-proxy
           scrape_interval: 15s
           static_configs:
-            - targets: ["loki-vl-proxy:3100"]
+            - targets: ["loki-vl-proxy:9091"]  # chart metrics port; use the -listen port if -metrics-listen is unset
 
 processors:
   batch: {}
@@ -697,11 +706,12 @@ Recommended setup:
 Transport checklist:
 
 - Scrape mode:
-  - `-server.register-instrumentation=true`
-  - Helm `serviceMonitor.enabled=true`
+  - `-server.register-instrumentation=true` (binary default is `false`; the chart sets `true`)
+  - Helm: `serviceMonitor.enabled=true`, scraping the `metrics` Service port (`extraArgs.metrics-listen`, default `:9091`)
+  - Helm with the default `networkPolicy.enabled=true`: also set `networkPolicy.monitoringNamespace` (or `networkPolicy.monitoringFrom`, or an explicit `networkPolicy.monitoringAllowAll=true`), otherwise templating fails
 - OTLP push mode:
   - `-otlp-endpoint` configured
-  - `-server.register-instrumentation=false` (optional, recommended when you want push-only)
+  - push-only (optional): `-server.register-instrumentation=false`; with the chart also set `service.metrics.enabled=false` and clear `extraArgs.metrics-listen`, because the chart and the binary both refuse a metrics listener without instrumentation
 
 Quick validation in Grafana Explore against the selected datasource:
 
@@ -721,7 +731,8 @@ High-signal alert ideas:
 
 The packaged alert set and incident procedures live in:
 
-- [`alerting/loki-vl-proxy-prometheusrule.yaml`](../alerting/loki-vl-proxy-prometheusrule.yaml)
+- [`alerting/loki-vl-proxy-prometheusrule.yaml`](../alerting/loki-vl-proxy-prometheusrule.yaml) — 15 alerts rendered by the Helm chart as a `PrometheusRule` (`prometheusRule.enabled=true`), each with a `runbook_url`
+- [`alerting/loki-vl-proxy-alerting-rules.yaml`](../alerting/loki-vl-proxy-alerting-rules.yaml) — 16 alerts as a plain rule-group file for Prometheus, vmalert or Grafana alerting (thresholds to adjust; no runbook links, and the per-tenant alerts need `-metrics.export-sensitive-labels=true`)
 - [`docs/runbooks/alerts.md`](runbooks/alerts.md)
 
 ## Notes

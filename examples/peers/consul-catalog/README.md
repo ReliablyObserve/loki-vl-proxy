@@ -2,10 +2,9 @@
 
 Three proxy instances register themselves in Consul and discover peers via the
 Consul catalog API.  The `-peer-discovery=http` mode queries
-`/v1/health/service/loki-vl-proxy?passing=true`, which returns only instances
-whose health check is currently passing.  This provides automatic readiness
-gating — a proxy that has not yet started or is failing its `/ready` check is
-never included in the peer list.
+`/v1/catalog/service/loki-vl-proxy`. Catalog results are not filtered by
+health; `DeregisterCriticalServiceAfter` in `consul-register.sh` removes
+instances whose `/ready` check stays critical for 60s.
 
 ## When to use
 
@@ -20,10 +19,10 @@ never included in the peer list.
 proxy-a, proxy-b, proxy-c
     │  (each polls)
     ▼
-Consul API: GET /v1/health/service/loki-vl-proxy?passing=true
+Consul API: GET /v1/catalog/service/loki-vl-proxy
     │
     └── returns JSON with Address/Port for each passing instance
-         (used by -peer-discovery=http to build the peer list)
+         (top-level ServiceAddress/ServicePort, used by -peer-discovery=http)
 ```
 
 ## Quick start
@@ -44,13 +43,27 @@ curl -s "http://localhost:8500/v1/health/service/loki-vl-proxy?passing=true" \
   | jq '[.[] | {id: .Service.ID, addr: .Service.Address, port: .Service.Port}]'
 ```
 
-Check peer membership from a proxy:
+Check peer membership from a proxy (the `/_cache/*` endpoints require the shared
+peer token in the `X-Peer-Token` header):
 
 ```bash
-curl -s http://localhost:3100/_cache/peers | jq .
-curl -s http://localhost:3101/_cache/peers | jq .
-curl -s http://localhost:3102/_cache/peers | jq .
+export PEER_AUTH_TOKEN=fleet-secret   # same value as -peer-auth-token in docker-compose.yml
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers | jq .
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3101/_cache/peers | jq .
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3102/_cache/peers | jq .
 ```
+
+> **Response shape note.** `-peer-discovery=http` accepts a JSON string array,
+> `{"peers": [...]}`, a Prometheus HTTP SD target-group list, or a Consul
+> **catalog** list whose entries carry top-level `ServiceAddress` (or `Address`)
+> and `ServicePort` fields — the shape returned by
+> `/v1/catalog/service/loki-vl-proxy`, which this compose file uses. The
+> `/v1/health/service/...` endpoint nests the address and port under `Service`
+> (`.Service.Address`, `.Service.Port`, as the `jq` query above shows), which the
+> proxy does not parse: each poll logs `peer discovery failed` with an
+> `unrecognised HTTP peer list format` error and the peer list is not updated.
+> Catalog results are not filtered by health; `DeregisterCriticalServiceAfter`
+> in `consul-register.sh` removes instances that stay critical for 60s.
 
 ## How to add or remove a proxy
 

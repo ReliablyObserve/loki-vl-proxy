@@ -83,7 +83,7 @@ Nested JSON objects (for example a field whose value is itself a JSON object suc
 
 `label_replace()` and `label_join()` metric transformations, the `group()` aggregation, and `count_values()` now produce output that matches Loki's label semantics. Stream result ordering for log queries is aligned with Loki's timestamp-descending default.
 
-`count_values()` returns HTTP 400 with message: *"count_values is not supported: it groups by metric values which VictoriaLogs cannot compute; use count() grouped by an existing label instead"*
+`count_values()` returns HTTP 400 with message: *"count_values is not translatable to LogsQL"*
 
 ### v1.29.x — __error__ Opt-In and Cold Storage Routing
 
@@ -101,7 +101,7 @@ The `__error__` / `| drop __error__` mechanism for opting parser-stage metric qu
 
 `rate`, `bytes_rate`, `count_over_time`, and `bytes_over_time` queries containing `| json` or `| logfmt` parser stages now use VL native `stats_query_range` for tumbling windows (`range == step`). These queries were previously forced onto the raw log-fetch slow path regardless of window type.
 
-### v3.7.1 — drop Matcher Semantics, Structured Metadata Classification, Parity Expansion
+### v1.36.x — drop Matcher Semantics, Structured Metadata Classification
 
 `| drop field=value` (matcher form) now correctly implements conditional semantics: VL `| delete` is issued for the field, and the proxy post-processes each log entry to restore the field value when it does not match the predicate. Previously the value predicate was ignored and the field was always removed.
 
@@ -109,7 +109,17 @@ The `__error__` / `| drop __error__` mechanism for opting parser-stage metric qu
 
 The `-emit-structured-metadata` flag (default: `true`) controls whether log entries are returned as Loki 3-tuples `[timestamp, line, {metadata}]` or 2-tuples `[timestamp, line]`. Grafana Loki datasource requires 3-tuple format; only disable if your client cannot handle structured metadata.
 
-The LogQL exhaustive parity machine covers 555+ cases, with all 14 previously tracked `proxy_bug` and `proxy_strict` KnownGaps resolved. Default `label-style` is now `underscores` and `metadata-field-mode` is now `translated`.
+Default `label-style` is now `underscores` and `metadata-field-mode` is now `translated`.
+
+### v1.68.0 — Populated-Window Corrections
+
+The exhaustive parity helper previously sent millisecond integers that Loki interprets as nanoseconds, so earlier pass counts did not compare populated data. The corrected results, fixes and remaining limits are recorded in [Real-window compatibility findings](real-window-compatibility-gaps.md); they do not establish full LogQL parity.
+
+- Implicit many-to-one vector matching (several series matching one series without `group_left`/`group_right`) is rejected with HTTP 500 and Loki's `multiple matches for labels` error, checked independently at each timestamp.
+- Invalid `ip()` line-filter arguments and operators other than `|=`/`!=` return parse errors.
+- `unwrap duration(...)` and `unwrap bytes(...)` on the bare parser metric path convert unit strings such as `15ms` and `1024B`; previously every sample was dropped and no series was returned.
+- Grouped `quantile_over_time` keeps its grouping, binary operators preserve precedence and `bool` semantics, and vector-vector operands are joined on a step-aligned grid.
+- Scalar timestamps are encoded in seconds and sample values use Loki's fixed-point rendering.
 
 ## Edge Cases Covered
 
@@ -127,8 +137,9 @@ The LogQL exhaustive parity machine covers 555+ cases, with all 14 previously tr
 - `service_name` alias in detected_fields for hybrid OTel/non-OTel datasets (v1.30.0)
 - bare parser-stage metric label scoping (v1.31.0)
 - parser-stage tumbling-window fast path via VL native stats (v1.31.2)
-- `| drop field=value` matcher-form conditional semantics via proxy post-processing (v3.7.1)
-- structuredMetadata vs parsedFields classification fix using `_msg` JSON content comparison (v3.7.1)
+- `| drop field=value` matcher-form conditional semantics via proxy post-processing (v1.36.1)
+- structuredMetadata vs parsedFields classification fix using `_msg` JSON content comparison (v1.36.0)
+- implicit many-to-one binary matching rejection and bare-parser `unwrap duration()`/`bytes()` conversion (v1.68.0)
 
 ## Query Families In The Loki Semantics Matrix
 

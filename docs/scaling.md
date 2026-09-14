@@ -252,21 +252,39 @@ When window latency exceeds `-query-range-latency-target`, the proxy scales down
 
 ### Peer Cache Discovery
 
-Two discovery modes control how peers find each other:
+Four discovery modes control how peers find each other. All of them need the same `-peer-auth-token` on every peer: the proxy refuses to start with peer discovery configured and no token, unless `-peer-insecure-ip-allowlist=true` restores the legacy IP-only check. With `peerCache.enabled=true` the Helm chart wires the discovery flags and the token Secret automatically.
 
 **DNS discovery (recommended for HPA):**
 ```bash
 -peer-discovery=dns
 -peer-dns=loki-vl-proxy-headless.default.svc.cluster.local
+-peer-auth-token=shared-secret
 ```
-The proxy resolves the headless service DNS to get peer IPs. New replicas auto-join as they come up. Works correctly with HPA scale-out.
+The proxy resolves the headless service DNS to get peer IPs and reaches each peer on the fixed port `3100`. New replicas auto-join as they come up. Works correctly with HPA scale-out.
+
+**SRV discovery (port from the record):**
+```bash
+-peer-discovery=srv
+-peer-srv=_loki-vl-proxy._tcp.loki-vl-proxy-headless.default.svc.cluster.local
+-peer-auth-token=shared-secret
+```
+
+**HTTP discovery (Consul, Prometheus HTTP SD, custom registries):**
+```bash
+-peer-discovery=http
+-peer-http-url=http://consul:8500/v1/catalog/service/loki-vl-proxy
+-peer-auth-token=shared-secret
+```
 
 **Static discovery (for fixed fleets):**
 ```bash
 -peer-discovery=static
 -peer-static=10.0.0.1:3100,10.0.0.2:3100,10.0.0.3:3100
+-peer-auth-token=shared-secret
 ```
 Peers are hardcoded. Simpler but requires restart on topology changes.
+
+`dns`, `srv` and `http` refresh the ring every 15 s. `GET /_cache/peers` (with `X-Peer-Token`) shows the current ring, and `POST /admin/cache/flush?peers=1` purges caches fleet-wide. See [Fleet Cache](fleet-cache.md) for response formats, the chart's token Secret handling and the ring-wide flush.
 
 ## Monitoring Metrics
 

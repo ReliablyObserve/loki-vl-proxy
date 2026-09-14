@@ -19,6 +19,9 @@ const sidebars: SidebarsConfig = {
         'architecture',
         'translation-modes',
         'translation-reference',
+        'logql-parser',
+        'logsql-architecture',
+        'proxy/drilldown-quality',
       ],
     },
 
@@ -27,7 +30,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Configuration',
       collapsed: true,
-      items: ['configuration'],
+      items: ['configuration', 'tuning'],
     },
 
     // ── Cost & Comparison ─────────────────────────────────────────────
@@ -57,6 +60,8 @@ const sidebars: SidebarsConfig = {
         'compatibility-grafana-datasource',
         'compatibility-drilldown',
         'otel-compatibility',
+        'real-window-compatibility-gaps',
+        'logging-for-compatibility',
       ],
     },
 
@@ -68,6 +73,9 @@ const sidebars: SidebarsConfig = {
       items: [
         'operations',
         'security',
+        'security-hardening-migration',
+        'security-hardening-validation',
+        'security-hardening-manual-acceptance',
         'patterns',
       ],
     },
@@ -100,6 +108,7 @@ const sidebars: SidebarsConfig = {
         'testing',
         'testing-e2e-guide',
         'performance-testing-guide',
+        'manual-testing-reliability',
       ],
     },
 

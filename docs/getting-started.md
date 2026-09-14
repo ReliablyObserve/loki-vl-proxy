@@ -13,7 +13,7 @@ description: Install and run loki-vl-proxy in minutes — binary, Docker, or Hel
 - Go `1.27.1+` if running from source, or Docker for containerized runs
 
 :::tip Latest release
-Replace `<release>` throughout this page with the current version tag (no `v` prefix). The latest release is **`1.36.3`**. Check [GitHub Releases](https://github.com/ReliablyObserve/loki-vl-proxy/releases) for newer versions.
+Replace `<release>` throughout this page with the current version tag (no `v` prefix), as listed on [GitHub Releases](https://github.com/ReliablyObserve/loki-vl-proxy/releases).
 :::
 
 ## Quick Local Run
@@ -35,7 +35,7 @@ Use this as your starting point when running the binary directly (no Docker, no 
   -listen=:3100 \                         # Grafana points its Loki datasource here
   -backend=http://127.0.0.1:9428 \        # VictoriaLogs HTTP API
 
-  # ── Maximum Loki compatibility ─────────────────────────────────────────────
+  # ── Maximum Loki compatibility (these are the binary defaults) ────────────
   # Translate OTel dotted labels (service.name → service_name) in every response.
   # Grafana label filters, variable queries, and LogQL all use underscores.
   -label-style=underscores \
@@ -75,17 +75,16 @@ Use this as your starting point when running the binary directly (no Docker, no 
 # /etc/loki-vl-proxy/loki-vl-proxy.env
 VL_BACKEND_URL=http://127.0.0.1:9428
 LISTEN_ADDR=:3100
-LABEL_STYLE=underscores
-METADATA_FIELD_MODE=translated
 # TENANT_MAP='{"team-alpha":{"account_id":"1","project_id":"1"}}'
 ```
 
 ```bash
 source /etc/loki-vl-proxy/loki-vl-proxy.env
-./loki-vl-proxy -emit-structured-metadata=true -patterns-enabled=true
+./loki-vl-proxy -label-style=underscores -metadata-field-mode=translated \
+  -emit-structured-metadata=true -patterns-enabled=true
 ```
 
-(`-emit-structured-metadata` and `-patterns-enabled` have no env-variable form; pass them as flags.)
+(`-label-style`, `-metadata-field-mode`, `-emit-structured-metadata` and `-patterns-enabled` are set as flags; the `LABEL_STYLE` and `METADATA_FIELD_MODE` environment variables do not override the current defaults.)
 
 **systemd unit** (production Linux hosts):
 
@@ -99,6 +98,8 @@ After=network.target
 User=loki-vl-proxy
 EnvironmentFile=/etc/loki-vl-proxy/loki-vl-proxy.env
 ExecStart=/usr/local/bin/loki-vl-proxy \
+  -label-style=underscores \
+  -metadata-field-mode=translated \
   -emit-structured-metadata=true \
   -patterns-enabled=true
 Restart=on-failure
@@ -138,7 +139,7 @@ See [Configuration Reference](configuration.md) for the full flag list and [Tran
 ## Run With Docker
 
 ```bash
-docker run --rm -p 3100:3100 ghcr.io/reliablyobserve/loki-vl-proxy:1.36.3 \
+docker run --rm -p 3100:3100 ghcr.io/reliablyobserve/loki-vl-proxy:<release> \
   -backend=http://host.docker.internal:9428
 ```
 
@@ -188,12 +189,16 @@ helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-v
   --set peerCache.enabled=true \
   --set extraArgs.backend=http://victorialogs:9428
 
-# 4) OTLP metrics push to in-cluster collector
+# 4) OTLP metrics push to in-cluster collector (scrape endpoint disabled)
+#    Turning off instrumentation also requires removing the dedicated metrics
+#    listener and its Service port, otherwise the chart refuses to render.
 helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \
   --version <release> \
   --set extraArgs.backend=http://victorialogs:9428 \
   --set-string extraArgs.otlp-endpoint=http://otel-collector.monitoring.svc.cluster.local:4318/v1/metrics \
-  --set-string extraArgs.server\\.register-instrumentation=false
+  --set-string extraArgs.server\\.register-instrumentation=false \
+  --set-string extraArgs.metrics-listen= \
+  --set service.metrics.enabled=false
 
 # 5) Indexed label-values browse cache (hotset + paging/search)
 helm upgrade --install loki-vl-proxy oci://ghcr.io/reliablyobserve/charts/loki-vl-proxy \

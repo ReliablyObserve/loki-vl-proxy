@@ -16,11 +16,12 @@ proxy restart needed.
 ## Quick start
 
 ```bash
+export PEER_AUTH_TOKEN=fleet-secret   # same value as -peer-auth-token in docker-compose.yml
 docker compose up -d
 # Inspect the SD endpoint
 curl -s http://localhost:8080/peers | jq .
-# Check peer membership
-curl -s http://localhost:3100/_cache/peers | jq .
+# Check peer membership (the /_cache/* endpoints require the shared peer token)
+curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" http://localhost:3100/_cache/peers | jq .
 ```
 
 ## How to test
@@ -30,18 +31,23 @@ Verify each proxy sees all peers:
 ```bash
 for port in 3100 3101 3102; do
   echo "=== proxy on :${port} ==="
-  curl -s "http://localhost:${port}/_cache/peers" | jq .
+  curl -s -H "X-Peer-Token: ${PEER_AUTH_TOKEN}" "http://localhost:${port}/_cache/peers" | jq .
 done
 ```
 
-Send a log line through proxy-a and read it back through proxy-c (exercises the
-peer cache):
+The proxy is read-only (`/loki/api/v1/push` returns `405`), so write a log line
+straight to VictoriaLogs, then read it through proxy-a and again through proxy-c
+(exercises the peer cache). VictoriaLogs has no published host port in this
+example, so push from a throwaway container on the compose network
+(`prometheus-sd_default` when started from this directory):
 
 ```bash
-curl -s -XPOST http://localhost:3100/loki/api/v1/push \
+docker run --rm --network prometheus-sd_default curlimages/curl:latest \
+  -s -XPOST http://victorialogs:9428/insert/loki/api/v1/push \
   -H "Content-Type: application/json" \
   -d '{"streams":[{"stream":{"app":"demo"},"values":[["'"$(date +%s)000000000"'","hello"]]}]}'
 
+curl -s "http://localhost:3100/loki/api/v1/query_range?query=%7Bapp%3D%22demo%22%7D" | jq .
 curl -s "http://localhost:3102/loki/api/v1/query_range?query=%7Bapp%3D%22demo%22%7D" | jq .
 ```
 

@@ -15,6 +15,8 @@ The exhaustive helper sent millisecond integers to Loki, which interprets intege
 
 A fresh Compose project with Loki 3.7.7, VictoriaLogs 1.50.0 and a pre-release build of these corrections, without the UI generator, produced **283/284 query checks** and **64/70 error checks**. The query failure was implicit many-to-one matching. The six error failures were four invalid IP cases and a duplicated parser-error case.
 
+The default `test/e2e-compat/docker-compose.yml` pins Loki 3.7.1 and VictoriaLogs v1.50.0. Loki 3.7.7 comes from the `docker-compose.review.yml` override (or `LOKI_IMAGE`), so results from the default stack are measured against a different Loki patch release.
+
 The earlier 255/284 query result came from a long-running UI generator stack with repeated ingestion. Its reference timeouts and empty-result findings were not isolated reproductions. A later deterministic test reproduced the regexp capture/filter failure after the stored-field inventory was warmed: a query-created `http_method` capture was incorrectly rewritten to a stored `http.method` field. Query-local capture names now remain independent of that inventory.
 
 The exhaustive checks compare status, result type and non-emptiness. Strict quantile canaries demonstrated wrong grouping and values even when those checks passed. They are insufficient proof of labels, samples or timestamps.
@@ -56,6 +58,15 @@ Sources: [Loki parser](https://github.com/grafana/loki/blob/v3.7.7/pkg/logql/log
 ## Resource and operational findings
 
 Raw metric collectors request one extra row and reject overflow rather than returning a successful partial calculation. A final LogsQL limit pipe avoids VictoriaLogs' implicit timestamp sort from the HTTP `limit` argument; complete samples are sorted locally. See the [VictoriaLogs query contract](https://docs.victoriametrics.com/victorialogs/querying/#querying-logs).
+
+| Guard | Setting | Client-visible result |
+| --- | --- | --- |
+| Raw rows per manual metric call | `-manual-range-metric-row-limit` (default 1,000,000) | HTTP 502, `errorType` `unavailable`, `manual range metric row limit exceeded` |
+| Raw metric series during collection | `-max-stats-query-series` (default 500) | HTTP 502, `maximum metric series exceeded` |
+| Manual result matrix series | `-max-stats-query-series` | HTTP 503, `manual metric series limit exceeded` |
+| Native `stats_query_range` series | `-max-stats-query-series` | Busiest series kept; remaining series dropped without an error |
+
+Raw and ordered-parser metric paths therefore fail at the series limit, while native stats paths return at most that many series.
 
 Binary evaluation limits nesting to 64 and child evaluations to 1,024. It shares budgets across children: 256 MiB of captured response data, two million decoded arrays, one million constructed output samples and 64 MiB of label-processing work. Individual encoded results are capped at 64 MiB. These are conservative work limits: repeated labels and nested intermediate results consume budget, so a valid large expression can now fail explicitly.
 
