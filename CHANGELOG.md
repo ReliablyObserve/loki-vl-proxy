@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Return an empty vector for instant queries whose ungrouped outer aggregation
+  has no input samples, matching Loki. Queries such as `sum(rate(...))`,
+  `sum(bytes_rate(...))`, `sum(count_over_time(...))`,
+  `sum(bytes_over_time(...))`, `sum by () (...)`, `avg`/`max`/`min`/`count`/
+  `stddev`/`stdvar` over log range functions, scalar binary expressions
+  (`sum(count_over_time(...)) / 60`), comparisons (`== 0`), `topk`/`bottomk`/
+  `sort` and `label_replace` wrappers, and nested `sum(sum by (x) (...))`
+  previously answered a window without matching lines (including a window
+  whose lines are all removed by a line filter) with a single `0`, `NaN` or
+  empty-string sample, because VictoriaLogs emits one row for an ungrouped
+  `stats` pipe even over zero rows. The proxy now adds a row count
+  (`count() as __lvp_n`) to an ungrouped final `stats` pipe, drops the result
+  when that count is zero and strips the count from the response, so genuine
+  zero values backed by samples are still returned. `stddev`/`stdvar` evaluated
+  by the proxy over an empty inner vector now also return an empty vector
+  instead of `0` at timestamp `0`. Grouped aggregations and bare range
+  functions already returned an empty vector; the range query path is
+  unchanged.
+
 ## [1.69.1] - 2026-09-14
 
 ### Fixed

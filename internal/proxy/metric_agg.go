@@ -611,6 +611,10 @@ func applyInstantStddevAgg(body []byte, funcName string) []byte {
 		}
 	}
 
+	if len(vals) == 0 {
+		// Loki aggregates an empty input vector into an empty vector.
+		return []byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`)
+	}
 	var agg float64
 	if funcName == "stdvar" {
 		agg = populationVariance(vals)
