@@ -205,13 +205,17 @@ func matchBinaryMetricResultsContext(ctx context.Context, left, right []byte, op
 			key := binaryLabelKey(sample.labels)
 			s := series[key]
 			if s == nil {
+				// Labels are encoded once per series, so charge them once.
+				if err := checkBinaryOutputLabels(ctx, sample.labels); err != nil {
+					return err
+				}
 				s = &binaryMatchedSeries{labels: sample.labels}
 				series[key] = s
 			}
 			if n := len(s.points); n > 0 && s.points[n-1][0] == ts {
 				return vectorMatchError("multiple matches for labels: grouping labels must ensure unique matches")
 			}
-			s.points = append(s.points, []any{ts, strconv.FormatFloat(sample.value, 'g', -1, 64)})
+			s.points = append(s.points, []any{ts, strconv.FormatFloat(sample.value, 'f', -1, 64)})
 			return nil
 		}
 		if err := matchBinaryEvaluation(ctx, lhs[ts], rhs[ts], op, vm, returnBool, appendSample); err != nil {
@@ -257,16 +261,17 @@ func matchBinaryScalarContext(ctx context.Context, body []byte, scalar float64, 
 			if !returnBool && (op == "==" || op == "!=" || op == ">" || op == "<" || op == ">=" || op == "<=") {
 				value = sample.value
 			}
-			if err := checkBinaryOutputLabels(ctx, sample.labels); err != nil {
-				return nil, err
-			}
 			key := binaryLabelKey(sample.labels)
 			s := series[key]
 			if s == nil {
+				// Labels are encoded once per series, so charge them once.
+				if err := checkBinaryOutputLabels(ctx, sample.labels); err != nil {
+					return nil, err
+				}
 				s = &binaryMatchedSeries{labels: sample.labels}
 				series[key] = s
 			}
-			s.points = append(s.points, []any{ts, strconv.FormatFloat(value, 'g', -1, 64)})
+			s.points = append(s.points, []any{ts, strconv.FormatFloat(value, 'f', -1, 64)})
 		}
 	}
 	return encodeBinarySeriesContext(ctx, series, resultType, maxBufferedBackendBodyBytes)
@@ -297,9 +302,6 @@ func matchBinaryEvaluation(ctx context.Context, lhs, rhs []binarySample, op stri
 			continue
 		}
 		labels := binaryResultLabels(sample.labels, match.labels, vm)
-		if err := checkBinaryOutputLabels(ctx, labels); err != nil {
-			return err
-		}
 		outputKey := binaryLabelKey(labels)
 		if outputLabels[outputKey] {
 			return vectorMatchError("multiple matches for labels: grouping labels must ensure unique matches")
@@ -321,12 +323,6 @@ func matchBinaryEvaluation(ctx context.Context, lhs, rhs []binarySample, op stri
 }
 
 func matchBinarySet(ctx context.Context, lhs, rhs []binarySample, op string, vm *translator.VectorMatchInfo, emit func(binarySample) error) error {
-	boundedEmit := func(sample binarySample) error {
-		if err := checkBinaryOutputLabels(ctx, sample.labels); err != nil {
-			return err
-		}
-		return emit(sample)
-	}
 	leftKeys, rightKeys := make(map[string]bool), make(map[string]bool)
 	for _, sample := range rhs {
 		if err := ctx.Err(); err != nil {
@@ -341,7 +337,7 @@ func matchBinarySet(ctx context.Context, lhs, rhs []binarySample, op string, vm 
 		key := binaryLabelKey(binaryMatchingLabels(sample.labels, vm))
 		leftKeys[key] = true
 		if op == "or" || (op == "and" && rightKeys[key]) || (op == "unless" && !rightKeys[key]) {
-			if err := boundedEmit(sample); err != nil {
+			if err := emit(sample); err != nil {
 				return err
 			}
 		}
@@ -352,7 +348,7 @@ func matchBinarySet(ctx context.Context, lhs, rhs []binarySample, op string, vm 
 				return err
 			}
 			if !leftKeys[binaryLabelKey(binaryMatchingLabels(sample.labels, vm))] {
-				if err := boundedEmit(sample); err != nil {
+				if err := emit(sample); err != nil {
 					return err
 				}
 			}

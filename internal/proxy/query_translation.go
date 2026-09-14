@@ -2025,9 +2025,9 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 	if err != nil || !isStatsQuery(logsqlQuery) {
 		return false
 	}
-	// Shift start back by the range window so VL includes the extra initial bucket
-	// that covers the data Loki uses for the first rate() evaluation point at T0
-	// (Loki reads [T0-window, T0]; VL tumbling window without shift gives [T0, T0+step)).
+	// Range == step: Loki's sample at T covers (T-W, T] while VL's bucket
+	// labelled T covers [T, T+W). Fetch from start-W and relabel every bucket to
+	// its Loki evaluation timestamp (relabelTumblingStatsQueryRange).
 	origStartNs, hasStart := parseLokiTimeToUnixNano(r.FormValue("start"))
 	var effectiveR *http.Request
 	if hasStart && spec.rangeWindow > 0 {
@@ -2044,7 +2044,8 @@ func (p *Proxy) proxyBareParserMetricViaStats(w http.ResponseWriter, r *http.Req
 
 	body := buf.body
 	if hasStart && spec.rangeWindow > 0 {
-		body = trimStatsQueryRangeResponseFromStart(body, origStartNs)
+		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
+		body = relabelTumblingStatsQueryRange(body, origStartNs, endNs, spec.rangeWindow.Nanoseconds())
 	}
 
 	code := buf.code

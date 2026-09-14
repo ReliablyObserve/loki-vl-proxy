@@ -229,6 +229,9 @@ func TestBinaryScalarSubtreesAndIEEEValues(t *testing.T) {
 	p := newTestProxy(t, "http://127.0.0.1:1")
 	for _, tc := range []struct{ query, want string }{
 		{"1 + 2 * 3", "7"}, {"2 ^ 3 ^ 2", "512"}, {"1 / 0", "+Inf"}, {"0 / 0", "NaN"}, {"1 < bool 2", "1"}, {"1 > 2", "0"},
+		// Loki renders sample values with model.SampleValue.String ('f', -1):
+		// never exponent notation for large or small magnitudes.
+		{"1234 * 1000", "1234000"}, {"1 / 60000", "0.000016666666666666667"},
 	} {
 		for _, resultType := range []string{"vector", "matrix"} {
 			t.Run(tc.query+"/"+resultType, func(t *testing.T) {
@@ -250,7 +253,7 @@ func TestBinaryScalarSubtreesAndIEEEValues(t *testing.T) {
 				}
 				if resultType == "vector" {
 					var point []any
-					if response.Data.ResultType != "scalar" || json.Unmarshal(response.Data.Result, &point) != nil || !reflect.DeepEqual(point, []any{float64(1700000000000), tc.want}) {
+					if response.Data.ResultType != "scalar" || json.Unmarshal(response.Data.Result, &point) != nil || !reflect.DeepEqual(point, []any{float64(1700000000), tc.want}) {
 						t.Fatalf("scalar response %s", w.Body)
 					}
 				} else {
@@ -261,5 +264,44 @@ func TestBinaryScalarSubtreesAndIEEEValues(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// on(app) group_left matches many left series against one right series and
+// keeps each left series' labels (Loki resultMetric for CardManyToOne). The
+// implicit one-to-one form of the same data must still be rejected.
+func TestOnGroupLeftMatchesManyLeftSeriesBySubset(t *testing.T) {
+	left := binaryTestBody([]map[string]string{{"app": "a", "id": "1"}, {"app": "a", "id": "2"}}, [][]any{{1700000040, "4"}}, [][]any{{1700000040, "6"}})
+	right := binaryTestBody([]map[string]string{{"app": "a", "team": "x"}}, [][]any{{1700000040, "2"}})
+	ctx := binaryEvaluationContext(context.Background())
+	vm := &translator.VectorMatchInfo{On: []string{"app"}, MatchOn: true, GroupSide: "group_left", GroupLeft: []string{"team"}}
+	body, err := matchBinaryMetricResultsContext(ctx, left, right, "/", "matrix", vm, false)
+	if err != nil {
+		t.Fatalf("group_left subset match rejected: %v", err)
+	}
+	var response struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatalf("decode %s: %v", body, err)
+	}
+	got := map[string]string{}
+	for _, series := range response.Data.Result {
+		if series.Metric["team"] != "x" || len(series.Values) != 1 {
+			t.Fatalf("group_left must copy team from the one side: %s", body)
+		}
+		got[series.Metric["id"]] = series.Values[0][1].(string)
+	}
+	if len(got) != 2 || got["1"] != "2" || got["2"] != "3" {
+		t.Fatalf("want id 1 -> 2 and id 2 -> 3, got %v from %s", got, body)
+	}
+	oneToOne := &translator.VectorMatchInfo{On: []string{"app"}, MatchOn: true}
+	if _, err := matchBinaryMetricResultsContext(binaryEvaluationContext(context.Background()), left, right, "/", "matrix", oneToOne, false); err == nil {
+		t.Fatal("implicit many-to-one on(app) must be rejected like Loki")
 	}
 }

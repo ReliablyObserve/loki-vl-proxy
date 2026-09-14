@@ -44,19 +44,20 @@ func binaryConstantVectorResponse(r *http.Request, value float64, resultType str
 	if err := checkBinaryOutputSample(ctx); err != nil {
 		return nil, err
 	}
-	points := [][]any{{float64(ts) / 1e9, strconv.FormatFloat(value, 'g', -1, 64)}}
+	points := [][]any{{float64(ts) / 1e9, strconv.FormatFloat(value, 'f', -1, 64)}}
 	return encodeBinarySeriesContext(ctx, map[string]*binaryMatchedSeries{"{}": {labels: map[string]string{}, points: points}}, "vector", maxBufferedBackendBodyBytes)
 }
 
 func binaryConstantResponse(r *http.Request, value float64, resultType string) ([]byte, error) {
-	encoded := strconv.FormatFloat(value, 'g', -1, 64)
+	encoded := strconv.FormatFloat(value, 'f', -1, 64)
 	if resultType != "matrix" {
 		ts, ok := parseLokiTimeToUnixNano(r.FormValue("time"))
 		if !ok {
 			return nil, fmt.Errorf("invalid scalar evaluation time")
 		}
-		// Loki's scalar instant result uses its model.Time millisecond value.
-		return json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": "scalar", "result": []any{ts / 1e6, encoded}}})
+		// Loki encodes a scalar with model.Time(ms).String(): seconds with
+		// millisecond precision, the same unit as vector and matrix samples.
+		return json.Marshal(map[string]any{"status": "success", "data": map[string]any{"resultType": "scalar", "result": []any{float64(ts/1e6) / 1e3, encoded}}})
 	}
 	start, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
 	end, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))

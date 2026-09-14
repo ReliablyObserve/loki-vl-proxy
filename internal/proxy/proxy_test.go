@@ -549,11 +549,12 @@ func TestContract_QueryRange_MatrixFormat_SlidingRateUsesManualLogFetch(t *testi
 	}
 }
 
-func TestContract_QueryRange_MatrixFormat_TumblingRateExtendsEndAndTrimsExtraPoint(t *testing.T) {
+func TestContract_QueryRange_MatrixFormat_TumblingRateRelabelsBucketsToLokiTimes(t *testing.T) {
 	// Tumbling rate: range == step (60s == 60s). The proxy routes this to native
-	// VL stats_query_range, extends end by one step to cover the last bucket, then
-	// trims the extra trailing point from the response.
-	var receivedEnd string
+	// VL stats_query_range. VL labels each bucket by its start ([T, T+60s)) while
+	// Loki's sample at T covers (T-60s, T], so the proxy fetches from start-60s
+	// and relabels each bucket forward by one window, keeping [start, end].
+	var receivedStart, receivedEnd string
 
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/select/logsql/stats_query_range" {
@@ -564,6 +565,7 @@ func TestContract_QueryRange_MatrixFormat_TumblingRateExtendsEndAndTrimsExtraPoi
 		if err := r.ParseForm(); err != nil {
 			t.Fatalf("parse form: %v", err)
 		}
+		receivedStart = r.FormValue("start")
 		receivedEnd = r.FormValue("end")
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -572,10 +574,12 @@ func TestContract_QueryRange_MatrixFormat_TumblingRateExtendsEndAndTrimsExtraPoi
 				"result": []map[string]interface{}{
 					{
 						"metric": map[string]string{"app": "nginx"},
+						// Buckets VL returns for the shifted fetch [start-60s, end+60s].
 						"values": [][]interface{}{
-							{1705312200, "1"},
-							{1705312260, "2"},
-							{1705312320, "3"},
+							{1705312140, "1"},
+							{1705312200, "2"},
+							{1705312260, "3"},
+							{1705312320, "4"},
 						},
 					},
 				},
@@ -588,6 +592,9 @@ func TestContract_QueryRange_MatrixFormat_TumblingRateExtendsEndAndTrimsExtraPoi
 	resp := doGet(t, vlBackend.URL, "/loki/api/v1/query_range?query=rate(%7Bapp%3D%22nginx%22%7D%5B60s%5D)&start=1705312200&end=1705312260&step=60")
 	assertLokiSuccess(t, resp)
 
+	if expectedStart := strconv.FormatInt(1705312200-60, 10); receivedStart != expectedStart {
+		t.Fatalf("expected backend start shifted back one window %q, got %q", expectedStart, receivedStart)
+	}
 	expectedEnd := strconv.FormatInt(1705312260+60, 10)
 	if receivedEnd != expectedEnd {
 		t.Fatalf("expected compensated backend end %q, got %q", expectedEnd, receivedEnd)
@@ -609,19 +616,16 @@ func TestContract_QueryRange_MatrixFormat_TumblingRateExtendsEndAndTrimsExtraPoi
 	if !ok {
 		t.Fatalf("expected values array, got %#v", series["values"])
 	}
-	if len(values) != 2 {
-		t.Fatalf("expected proxy to trim extra backend point, got %#v", values)
+	// Loki at 200 covers (140, 200] = VL bucket 140; Loki at 260 = VL bucket 200.
+	want := [][2]interface{}{{float64(1705312200), "1"}, {float64(1705312260), "2"}}
+	if len(values) != len(want) {
+		t.Fatalf("expected %d relabelled points, got %#v", len(want), values)
 	}
-	lastPair, ok := values[len(values)-1].([]interface{})
-	if !ok {
-		t.Fatalf("expected [ts,value] pair, got %#v", values[len(values)-1])
-	}
-	lastTS, ok := lastPair[0].(float64)
-	if !ok {
-		t.Fatalf("expected numeric timestamp, got %T", lastPair[0])
-	}
-	if int64(lastTS) != 1705312260 {
-		t.Fatalf("expected last timestamp to stay at requested end, got %v", lastPair)
+	for i, point := range values {
+		pair, ok := point.([]interface{})
+		if !ok || len(pair) != 2 || pair[0] != want[i][0] || pair[1] != want[i][1] {
+			t.Fatalf("point %d: want %v, got %#v", i, want[i], point)
+		}
 	}
 }
 

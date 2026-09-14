@@ -85,7 +85,7 @@ func TestBinaryGroupingRepairPreflightAndBoundedRewrite(t *testing.T) {
 	}
 	ctx := binaryEvaluationContext(context.Background())
 	ctx.Value(binaryEvaluationKey{}).(binaryEvaluationState).budget.arrays = 0
-	if _, _, err := restoreBinaryOperandGrouping(ctx, []byte(`[[[`), expr); err == nil || !strings.Contains(err.Error(), "sample/series budget") {
+	if _, _, err := restoreBinaryOperandGrouping(ctx, []byte(`[[[`), expr, "vector"); err == nil || !strings.Contains(err.Error(), "sample/series budget") {
 		t.Fatalf("repair decoded before preflight: %v", err)
 	}
 	ctx = binaryEvaluationContext(context.Background())
@@ -95,13 +95,13 @@ func TestBinaryGroupingRepairPreflightAndBoundedRewrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := newTestProxy(t, "http://127.0.0.1:1")
-	p.restoreBinaryOperandResponse(w, expr)
+	p.restoreBinaryOperandResponse(w, expr, "vector")
 	if w.status != http.StatusBadRequest {
 		t.Fatalf("expanded repair bypassed writer cap: %d %s", w.status, w.body.String())
 	}
 	ctx = binaryEvaluationContext(context.Background())
 	both := []byte(`{"data":{"result":[{"metric":{"level":"warn","detected_level":"error"},"value":[1,"2"]}]}}`)
-	repaired, _, err := restoreBinaryOperandGrouping(ctx, both, expr)
+	repaired, _, err := restoreBinaryOperandGrouping(ctx, both, expr, "vector")
 	if err != nil || !strings.Contains(string(repaired), `"level":"warn"`) || !strings.Contains(string(repaired), `"detected_level":"error"`) {
 		t.Fatalf("existing distinct grouping values changed: %s %v", repaired, err)
 	}
@@ -125,7 +125,7 @@ func TestBinaryGroupingRepairKeepsJSONResponseContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := newTestProxy(t, "http://127.0.0.1:1")
-	p.restoreBinaryOperandResponse(w, expr)
+	p.restoreBinaryOperandResponse(w, expr, "vector")
 	if w.status != http.StatusOK || w.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("rewritten metric must remain JSON: status=%d headers=%v", w.status, w.Header())
 	}
@@ -139,5 +139,74 @@ func TestBinaryGroupingRepairKeepsJSONResponseContract(t *testing.T) {
 	}
 	if len(response.Data.Result) != 1 || response.Data.Result[0].Metric["level"] != payload {
 		t.Fatalf("label value must remain inert JSON data: %s", w.body.String())
+	}
+}
+
+// Output labels are serialized once per series, so a long range over a single
+// series must not exhaust the label budget one timestamp at a time.
+func TestBinaryLabelBudgetChargedPerSeries(t *testing.T) {
+	points := make([][]any, 0, 200)
+	for i := 0; i < 200; i++ {
+		points = append(points, []any{1700000000 + i*60, "1"})
+	}
+	body := binaryTestBody([]map[string]string{{"app": strings.Repeat("a", 40)}}, points)
+	ctx := binaryEvaluationContext(context.Background())
+	// Enough for the series' labels a few times over, far less than 200 copies.
+	ctx.Value(binaryEvaluationKey{}).(binaryEvaluationState).budget.outputLabels = 200
+	result, err := matchBinaryMetricResultsContext(ctx, body, body, "+", "matrix", nil, false)
+	if err != nil {
+		t.Fatalf("single-series range exhausted the label budget per sample: %v", err)
+	}
+	if !strings.Contains(string(result), `"values":[[`) {
+		t.Fatalf("expected populated matrix, got %s", result)
+	}
+}
+
+// A by(level) range operand must keep Loki's level key: the stats path emits
+// detected_level, and without the repair on(level) joined on an empty value and
+// dropped the label from the result (instant queries were already repaired).
+func TestBinaryGroupingRepairAppliesToRangeOperands(t *testing.T) {
+	levelOnly, err := logqlpkg.Parse(`sum by(level)(count_over_time({app="a"}[1m]))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := binaryEvaluationContext(context.Background())
+	matrix := []byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"detected_level":"info"},"values":[[1700000040,"6"],[1700000100,"7"]]}]}}`)
+	repaired, changed, err := restoreBinaryOperandGrouping(ctx, matrix, levelOnly, "matrix")
+	if err != nil || !changed || !strings.Contains(string(repaired), `"level":"info"`) || !strings.Contains(string(repaired), `[1700000100,"7"]`) {
+		t.Fatalf("range operand not repaired: %s %v", repaired, err)
+	}
+
+	both, err := logqlpkg.Parse(`sum by(level,detected_level)(count_over_time({app="a"}[1m]))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two input series with identical labels must stay two series with all points.
+	duplicate := []byte(`{"data":{"result":[` +
+		`{"metric":{"detected_level":"warn"},"values":[[1700000040,"1"],[1700000100,"2"]]},` +
+		`{"metric":{"detected_level":"warn"},"values":[[1700000040,"3"]]}]}}`)
+	repaired, _, err = restoreBinaryOperandGrouping(ctx, duplicate, both, "matrix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Data struct {
+			ResultType string `json:"resultType"`
+			Result     []struct {
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(repaired, &response); err != nil {
+		t.Fatalf("decode %s: %v", repaired, err)
+	}
+	if response.Data.ResultType != "matrix" || len(response.Data.Result) != 2 || len(response.Data.Result[0].Values) != 2 || len(response.Data.Result[1].Values) != 1 {
+		t.Fatalf("series identity or points changed: %s", repaired)
+	}
+	for _, series := range response.Data.Result {
+		if series.Metric["level"] != "warn" || series.Metric["detected_level"] != "warn" {
+			t.Fatalf("level not filled from detected_level: %s", repaired)
+		}
 	}
 }

@@ -1248,22 +1248,14 @@ func (p *Proxy) extractManualSampleValueFJ(v *fj.Value, field, unwrapConv string
 		return 0, false
 	}
 
-	switch unwrapConv {
-	case "duration":
-		s, ok := stringifyFJValue(raw)
-		if !ok {
-			return 0, false
-		}
-		return parseDuration(s)
-	case "bytes":
-		s, ok := stringifyFJValue(raw)
-		if !ok {
-			return 0, false
-		}
-		return parseBytes(s)
-	default:
+	if unwrapConv == "" {
 		return parseFloatValueFJ(raw)
 	}
+	s, ok := stringifyFJValue(raw)
+	if !ok {
+		return 0, false
+	}
+	return convertUnwrapValue(s, unwrapConv)
 }
 
 // lookupFJField returns the first non-nil field from v matching any key in keys.
@@ -1636,7 +1628,7 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 				perSeries[key] = dst
 			}
 
-			dst.points = append(dst.points, []any{float64(t.Unix()), strconv.FormatFloat(value, 'g', -1, 64)})
+			dst.points = append(dst.points, []any{float64(t.Unix()), strconv.FormatFloat(value, 'f', -1, 64)})
 		}
 	}
 
@@ -1793,7 +1785,7 @@ func buildManualRangeMetricVectorContext(ctx context.Context, functionName strin
 		if err := checkBinaryOutputLabels(ctx, seriesEntry.Metric); err != nil {
 			return nil, err
 		}
-		results[key] = &binaryMatchedSeries{labels: seriesEntry.Metric, points: [][]any{{float64(evalTime.Unix()), strconv.FormatFloat(value, 'g', -1, 64)}}}
+		results[key] = &binaryMatchedSeries{labels: seriesEntry.Metric, points: [][]any{{float64(evalTime.Unix()), strconv.FormatFloat(value, 'f', -1, 64)}}}
 	}
 
 	return encodeBinarySeriesContext(ctx, results, "vector", maxBufferedBackendBodyBytes)

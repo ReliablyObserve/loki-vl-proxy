@@ -50,6 +50,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loading state as an empty result; run this regression in the core UI CI shard.
 - Correct exhaustive compatibility timestamps to address real Loki data;
   expose previously hidden runtime and result-parity gaps for follow-up fixes.
+- Map tumbling range aggregations (range equal to step) served from
+  VictoriaLogs `stats_query_range` buckets onto Loki's evaluation timestamps.
+  VictoriaLogs labels a bucket by its start and covers `[T, T+step)`, while
+  Loki's sample at `T` covers `(T-range, T]`. The native path previously
+  shifted the fetch back one range and then trimmed exactly the bucket Loki's
+  first sample needs, so every point showed the following window and a
+  single-window series came back empty. Buckets are now relabelled forward by
+  one range and kept within `[start, end]`. This covers `rate` and
+  `bytes_rate` in any aggregation, ungrouped `sum(count_over_time(...))` and
+  `sum(bytes_over_time(...))` (including JSON pipelines the ordered evaluator
+  proves equivalent), and every function on the bare parser path; exact values
+  and timestamps are verified against Loki. Grouped `count_over_time` and
+  `bytes_over_time` keep the Drilldown hits and hybrid routing, which still
+  reports bucket-start labels.
+- Evaluate both operands of a vector-vector binary range expression on the
+  step-aligned grid, as Loki's query frontend does when
+  `align_queries_with_step` is enabled (it is off by default; against a
+  default Loki, results with an unaligned start differ by less than one step). Operands with different ranges take different
+  execution paths, so with an unaligned start
+  `sum(rate({env="production"}[5m])) - sum(rate({env="production"}[1m]))`
+  had no common timestamps and returned no series where Loki returned one.
+- Convert `unwrap duration(...)` and `unwrap bytes(...)` values on the bare
+  parser metric path. Unit strings such as `15ms` or `1024B` were parsed as
+  plain floats, every sample was dropped and the query returned no series. All
+  raw-sample paths now share one conversion helper.
+- Keep Loki's `level` key on range operands grouped `by (level)`; the stats
+  path emits `detected_level`, so `on(level)` joined on an empty value and lost
+  the label on range queries while instant queries were already repaired.
+- Emit scalar timestamps in seconds (Loki encodes `model.Time` as seconds, not
+  milliseconds) and render sample values in Loki's fixed-point form
+  (`1234000`, `0.000016666666666666667`) instead of exponent notation. Extreme
+  magnitudes expand to exact fixed-point digits exactly as Loki renders them;
+  total response size stays bounded by the encoder's byte cap.
+- Charge the binary output label budget once per output series instead of once
+  per sample, so long single-series ranges no longer fail with "output label
+  budget exceeded" for results far below the encoded size limit.
 
 ## [1.67.0] - 2026-09-14
 

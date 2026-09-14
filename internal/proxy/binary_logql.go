@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -127,14 +128,14 @@ func (p *Proxy) evaluateBinaryLogQLOperand(r *http.Request, expr logqlpkg.Expr, 
 		p.handleQuery(w, child)
 	}
 	p.finishBinaryOperandResponse(w)
-	if w.status < 400 && resultType != "matrix" {
-		p.restoreBinaryOperandResponse(w, expr)
+	if w.status < 400 {
+		p.restoreBinaryOperandResponse(w, expr, resultType)
 	}
 	return w
 }
 
-func (p *Proxy) restoreBinaryOperandResponse(w *binaryOperandResponse, expr logqlpkg.Expr) {
-	body, changed, err := restoreBinaryOperandGrouping(w.ctx, w.body.Bytes(), expr)
+func (p *Proxy) restoreBinaryOperandResponse(w *binaryOperandResponse, expr logqlpkg.Expr, resultType string) {
+	body, changed, err := restoreBinaryOperandGrouping(w.ctx, w.body.Bytes(), expr, resultType)
 	if err != nil {
 		w.err = err
 	} else if changed {
@@ -157,8 +158,10 @@ func (p *Proxy) finishBinaryOperandResponse(w *binaryOperandResponse) {
 }
 
 // Stats compatibility exposes VL level as detected_level. An explicitly
-// requested by(level) operand must retain its LogQL key for matching.
-func restoreBinaryOperandGrouping(ctx context.Context, body []byte, expr logqlpkg.Expr) ([]byte, bool, error) {
+// requested by(level) operand must retain its LogQL key for matching, on range
+// and instant queries alike (a range operand without it joined on an empty
+// level and lost the label from the result).
+func restoreBinaryOperandGrouping(ctx context.Context, body []byte, expr logqlpkg.Expr, resultType string) ([]byte, bool, error) {
 	aggregation, ok := expr.(*logqlpkg.VectorAggregation)
 	if !ok || aggregation.Grouping == nil || aggregation.Grouping.Without {
 		return body, false, nil
@@ -177,29 +180,46 @@ func restoreBinaryOperandGrouping(ctx context.Context, body []byte, expr logqlpk
 	if err := checkBinaryDecodeBudget(ctx, body); err != nil {
 		return nil, false, err
 	}
-	points, err := binarySamplesByTime(ctx, body)
-	if err != nil {
+	var response struct {
+		Data struct {
+			Result []struct {
+				Metric map[string]string `json:"metric"`
+				Value  []any             `json:"value"`
+				Values [][]any           `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, false, err
 	}
-	series := make(map[string]*binaryMatchedSeries)
-	for stamp, samples := range points {
-		for _, sample := range samples {
-			if _, exists := sample.labels["level"]; !exists {
-				if value, ok := sample.labels["detected_level"]; ok {
-					sample.labels["level"] = value
-				}
+	// Keep every input series distinct (keyed by position) so the cardinality
+	// validator still sees duplicates; only fill in a missing level.
+	series := make(map[string]*binaryMatchedSeries, len(response.Data.Result))
+	for index, item := range response.Data.Result {
+		labels := item.Metric
+		if labels == nil {
+			labels = map[string]string{}
+		}
+		if _, exists := labels["level"]; !exists {
+			if value, ok := labels["detected_level"]; ok {
+				labels["level"] = value
 			}
+		}
+		if err := checkBinaryOutputLabels(ctx, labels); err != nil {
+			return nil, false, err
+		}
+		points := item.Values
+		if len(item.Value) == 2 {
+			points = append(points, item.Value)
+		}
+		for range points {
 			if err := checkBinaryOutputSample(ctx); err != nil {
 				return nil, false, err
 			}
-			if err := checkBinaryOutputLabels(ctx, sample.labels); err != nil {
-				return nil, false, err
-			}
-			// Preserve duplicate input series for the cardinality validator.
-			series[strconv.Itoa(len(series))] = &binaryMatchedSeries{labels: sample.labels, points: [][]any{{stamp, strconv.FormatFloat(sample.value, 'g', -1, 64)}}}
 		}
+		series[fmt.Sprintf("%09d", index)] = &binaryMatchedSeries{labels: labels, points: points}
 	}
-	encoded, err := encodeBinarySeriesContext(ctx, series, "vector", maxBufferedBackendBodyBytes)
+	encoded, err := encodeBinarySeriesContext(ctx, series, resultType, maxBufferedBackendBodyBytes)
 	return encoded, true, err
 }
 
@@ -212,10 +232,14 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 		params.Set("time", now)
 		r.URL.RawQuery = params.Encode()
 	}
-	// Share the total work budget across siblings as well as nested children.
-	r = r.WithContext(binaryEvaluationContext(r.Context()))
 	leftValue, leftScalar := binaryScalarValue(expr.Left, 0)
 	rightValue, rightScalar := binaryScalarValue(expr.Right, 0)
+	if resultType == "matrix" && !leftScalar && !rightScalar {
+		// Only a join of two vector operands needs a shared axis.
+		r = alignBinaryRangeRequest(r)
+	}
+	// Share the total work budget across siblings as well as nested children.
+	r = r.WithContext(binaryEvaluationContext(r.Context()))
 	if (leftScalar || rightScalar) && (expr.Op == "and" || expr.Op == "or" || expr.Op == "unless") {
 		p.writeError(w, http.StatusBadRequest, "unexpected literal for logical/set binary operation")
 		return
@@ -260,6 +284,39 @@ func (p *Proxy) proxyBinaryLogQL(w http.ResponseWriter, r *http.Request, expr *l
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result)
+}
+
+// alignBinaryRangeRequest moves start and end down to multiples of step before
+// the operands are evaluated. Operands with different range windows take
+// different execution paths: sliding windows are evaluated at start+k*step,
+// tumbling windows come from VictoriaLogs buckets on the epoch-aligned grid.
+// Sharing one aligned axis lets the join match samples, and mirrors Loki's
+// query frontend with align_queries_with_step. Requests without a parseable
+// start, end or step are returned unchanged.
+func alignBinaryRangeRequest(r *http.Request) *http.Request {
+	start, startOK := parseLokiTimeToUnixNano(r.FormValue("start"))
+	end, endOK := parseLokiTimeToUnixNano(r.FormValue("end"))
+	step, stepOK := parsePositiveStepDuration(r.FormValue("step"))
+	if !startOK || !endOK || !stepOK || end < start {
+		return r
+	}
+	stepNs := int64(step)
+	alignedStart, alignedEnd := start-start%stepNs, end-end%stepNs
+	if alignedStart == start && alignedEnd == end {
+		return r
+	}
+	aligned := cloneMetricQueryRequest(r, r.FormValue("query"))
+	params := aligned.URL.Query()
+	for key, value := range map[string]int64{"start": alignedStart, "end": alignedEnd} {
+		encoded := strconv.FormatInt(value, 10)
+		aligned.Form.Set(key, encoded)
+		if aligned.Method == http.MethodPost {
+			aligned.PostForm.Set(key, encoded)
+		}
+		params.Set(key, encoded)
+	}
+	aligned.URL.RawQuery = params.Encode()
+	return aligned
 }
 
 func validateBinaryVectorCardinality(ctx context.Context, left, right []byte, op string, vm *translator.VectorMatchInfo, leftScalar, rightScalar bool) error {

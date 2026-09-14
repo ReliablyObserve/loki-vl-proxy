@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -102,5 +103,36 @@ func TestBoundedBareParserMetricOutput(t *testing.T) {
 	}
 	if err := checkManualMetricRead(t.Context(), &io.LimitedReader{N: 0}); err == nil {
 		t.Fatal("exhausted input byte budget accepted")
+	}
+}
+
+// Loki's unwrap duration()/bytes() accept unit strings; the raw parser path
+// must convert them instead of dropping the sample (regression: every
+// duration()/bytes() unwrap over a bare parser returned no series while Loki
+// returned the converted values).
+func TestBareParserRawSampleWeightAppliesUnwrapConversion(t *testing.T) {
+	cases := []struct {
+		name  string
+		conv  string
+		value interface{}
+		want  float64
+		ok    bool
+	}{
+		{"duration ms", "duration", "15ms", 0.015, true},
+		{"duration compound", "duration", "2m30s", 150, true},
+		{"bytes unit", "bytes", "1024B", 1024, true},
+		{"bytes kib", "bytes", "1.5KiB", 1536, true},
+		{"plain float", "", "12.5", 12.5, true},
+		{"plain float rejects unit", "", "15ms", 0, false},
+		{"duration rejects garbage", "duration", "soon", 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			spec := bareParserMetricCompatSpec{funcName: "sum_over_time", unwrapField: "v", unwrapConv: tc.conv}
+			got, ok := bareParserRawSampleWeight(map[string]interface{}{"v": tc.value}, spec)
+			if ok != tc.ok || (ok && math.Abs(got-tc.want) > 1e-9) {
+				t.Fatalf("weight(%v, %q) = %v, %v; want %v, %v", tc.value, tc.conv, got, ok, tc.want, tc.ok)
+			}
+		})
 	}
 }

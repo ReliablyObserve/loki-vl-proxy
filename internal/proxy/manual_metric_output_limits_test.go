@@ -89,8 +89,11 @@ func TestManualMetricOutputExtremeFloatsStayBoundedAndExact(t *testing.T) {
 		}
 		encoded := response.Data.Result[0].Value[1].(string)
 		got, err := strconv.ParseFloat(encoded, 64)
-		if err != nil || got != value || len(encoded) > 32 {
-			t.Fatalf("float changed or expanded: %g => %s => %g (%v)", value, encoded, got, err)
+		// Loki renders values with model.SampleValue.String (FormatFloat 'f', -1):
+		// extreme magnitudes expand to fixed-point digits but stay exact. Total
+		// response size is bounded by the encoder's byte cap, not per value.
+		if err != nil || got != value || encoded != strconv.FormatFloat(value, 'f', -1, 64) {
+			t.Fatalf("float changed or not in Loki's form: %g => %s => %g (%v)", value, encoded, got, err)
 		}
 	}
 }

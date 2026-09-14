@@ -50,6 +50,22 @@ func parseDuration(s string) (float64, bool) {
 	return total, true
 }
 
+// convertUnwrapValue applies the LogQL unwrap conversion function to a raw
+// field value: duration() and bytes() parse Loki-style units, an absent
+// conversion parses a plain number. Shared by every raw-sample path so all of
+// them accept the same inputs as Loki.
+func convertUnwrapValue(value, conv string) (float64, bool) {
+	switch conv {
+	case "duration":
+		return parseDuration(value)
+	case "bytes":
+		return parseBytes(value)
+	default:
+		f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		return f, err == nil
+	}
+}
+
 // parseBytes converts a Loki-style byte string to bytes.
 // Supports: B, KB, KiB, MB, MiB, GB, GiB, TB, TiB
 // Examples: "1.5KiB" → 1536, "100MB" → 100000000

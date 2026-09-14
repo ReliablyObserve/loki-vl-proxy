@@ -50,9 +50,6 @@ func sumWithoutMetricName(ctx context.Context, body []byte) ([]byte, error) {
 				return nil, err
 			}
 			delete(point.labels, "__name__")
-			if err := checkBinaryOutputLabels(ctx, point.labels); err != nil {
-				return nil, err
-			}
 			key := binaryLabelKey(point.labels)
 			// Loki hashes the input label set before Builder.Reset removes
 			// empty values from the returned labels. Preserve that distinction.
@@ -63,9 +60,12 @@ func sumWithoutMetricName(ctx context.Context, body []byte) ([]byte, error) {
 			}
 			if existing := result[key]; existing != nil {
 				value := parsePointValue(existing.points[0][1]) + point.value
-				existing.points[0][1] = strconv.FormatFloat(value, 'g', -1, 64)
+				existing.points[0][1] = strconv.FormatFloat(value, 'f', -1, 64)
 			} else {
-				result[key] = &binaryMatchedSeries{labels: point.labels, points: [][]any{{timestamp, strconv.FormatFloat(point.value, 'g', -1, 64)}}}
+				if err := checkBinaryOutputLabels(ctx, point.labels); err != nil {
+					return nil, err
+				}
+				result[key] = &binaryMatchedSeries{labels: point.labels, points: [][]any{{timestamp, strconv.FormatFloat(point.value, 'f', -1, 64)}}}
 			}
 		}
 	}

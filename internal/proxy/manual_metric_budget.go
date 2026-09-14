@@ -37,8 +37,10 @@ func bareParserRawSampleWeight(entry map[string]interface{}, spec bareParserMetr
 		if !ok {
 			return 0, false
 		}
-		parsed, err := strconv.ParseFloat(value, 64)
-		return parsed, err == nil
+		// unwrap duration(f) / bytes(f) carry unit strings such as "15ms" or
+		// "1024B"; a plain float parse would drop every sample and return no
+		// series where Loki returns the converted values.
+		return convertUnwrapValue(value, spec.unwrapConv)
 	}
 	if spec.funcName == "bytes_over_time" || spec.funcName == "bytes_rate" {
 		msg, _ := stringifyEntryValue(entry["_msg"])
@@ -78,7 +80,7 @@ func buildBoundedBareParserMetric(ctx context.Context, series []bareParserMetric
 					return nil, err
 				}
 				value := bareParserMetricWindowValue(spec.funcName, entry.samples[left:right], spec)
-				out.points = append(out.points, []any{float64(evaluation) / float64(time.Second), strconv.FormatFloat(value, 'g', -1, 64)})
+				out.points = append(out.points, []any{float64(evaluation) / float64(time.Second), strconv.FormatFloat(value, 'f', -1, 64)})
 			}
 			if end-evaluation < step {
 				break
