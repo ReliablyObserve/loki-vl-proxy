@@ -39,7 +39,7 @@ func (p *Proxy) handleLabels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.metrics.RecordCacheMiss()
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 
 	search := strings.TrimSpace(r.FormValue("search"))
 	if search == "" {
@@ -144,10 +144,10 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p.metrics.RecordCacheMiss()
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 
 	if p.labelValuesBrowseMode(rawQuery) {
-		if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, search, offset, limit); ok {
+		if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); ok {
 			result := lokiLabelsResponse(indexedValues)
 			// Never cache empty results — caching an empty list freezes
 			// Drilldown/Explore label selectors on "No data" for the full
@@ -170,9 +170,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 			p.metrics.RecordRequest("label_values", status, time.Since(start))
 			return
 		}
-		p.updateLabelValuesIndex(orgID, labelName, values)
+		p.updateLabelValuesIndex(p.scopedIndexOrg(r, orgID), labelName, values)
 		if p.labelValuesBrowseMode(rawQuery) {
-			if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, search, offset, limit); ok {
+			if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); ok {
 				values = indexedValues
 			} else {
 				values = selectLabelValuesWindow(values, search, offset, limit)
@@ -196,9 +196,9 @@ func (p *Proxy) handleLabelValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p.updateLabelValuesIndex(orgID, labelName, values)
+	p.updateLabelValuesIndex(p.scopedIndexOrg(r, orgID), labelName, values)
 	if p.labelValuesBrowseMode(rawQuery) {
-		if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, search, offset, limit); ok {
+		if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(r, orgID), labelName, search, offset, limit); ok {
 			values = indexedValues
 		} else {
 			values = selectLabelValuesWindow(values, search, offset, limit)
@@ -224,7 +224,7 @@ func (p *Proxy) handleSeries(w http.ResponseWriter, r *http.Request) {
 	if p.handleMultiTenantFanout(w, r, "series") {
 		return
 	}
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	matchQueries := r.Form["match[]"]
 	query := "*"
 	if len(matchQueries) > 0 {
@@ -350,7 +350,7 @@ func (p *Proxy) handleIndexStats(w http.ResponseWriter, r *http.Request) {
 	}
 	p.metrics.RecordCacheMiss()
 
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	result, err := p.computeIndexStatsResult(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"))
 	if err != nil {
 		if p.serveStaleReadCacheOnError(w, "index_stats", cacheKey, start, err) {
@@ -507,7 +507,7 @@ func (p *Proxy) handleDetectedFields(w http.ResponseWriter, r *http.Request) {
 	}
 	p.metrics.RecordCacheMiss()
 
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	lineLimit := parseDetectedLineLimit(r)
 	query := r.FormValue("query")
 	// Bound the slow log-scan path so a single Drilldown panel never blocks
@@ -566,7 +566,7 @@ func (p *Proxy) handleDetectedFieldValues(w http.ResponseWriter, r *http.Request
 		return
 	}
 	orgID := r.Header.Get("X-Scope-OrgID")
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	// Extract field name from URL: /loki/api/v1/detected_field/{name}/values
 	path := r.URL.Path
 	parts := strings.Split(path, "/")

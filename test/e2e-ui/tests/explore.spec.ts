@@ -82,7 +82,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
       level: "info",
     });
     const pushResp = await page.request.post(
-      "http://127.0.0.1:19428/insert/jsonline?_stream_fields=app,env,level",
+      `${process.env.VL_URL || "http://127.0.0.1:19428"}/insert/jsonline?_stream_fields=app,env,level`,
       {
         headers: { "Content-Type": "application/stream+json" },
         data: `${payload}\n`,
@@ -95,6 +95,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
         timeout: 15_000,
       })
       .toBeTruthy();
+    await expect(page.getByRole("row").filter({ hasText: msg }).first()).toBeVisible({ timeout: 20_000 });
     await guards.assertClean();
   });
 
@@ -121,7 +122,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
     await clickLiveStream(page);
 
     const pushResp = await page.request.post(
-      "http://127.0.0.1:19428/insert/jsonline?_stream_fields=app,env,level",
+      `${process.env.VL_URL || "http://127.0.0.1:19428"}/insert/jsonline?_stream_fields=app,env,level`,
       {
         headers: { "Content-Type": "application/stream+json" },
         data: `${JSON.stringify({
@@ -140,6 +141,7 @@ test.describe("Grafana Explore — Proxy Datasource", () => {
         timeout: 15_000,
       })
       .toBeGreaterThan(0);
+    await expect(page.getByRole("row").filter({ hasText: ingressMsg }).first()).toBeVisible({ timeout: 20_000 });
     await recoveryGuards.assertClean();
   });
 });

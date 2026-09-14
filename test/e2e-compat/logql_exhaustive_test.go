@@ -110,8 +110,9 @@ func TestLogQL_Exhaustive_ErrorParity(t *testing.T) {
 		// ── avg aggregation on a bare log stream ──
 		{"avg_on_log_stream", `avg({app="api-gateway",env="production"})`, "metric_on_log"},
 
-		// ── line_format with unclosed Go template action ─────────────────────
-		{"line_format_unclosed_brace", `{app="api-gateway"} | line_format "{{.method"`, "proxy_strict_fixed"},
+		// Malformed line_format is covered by TestHardeningLive_ExactWindowsAndFormattingMatchLoki
+		// with explicit seeded data and nanosecond timestamps. This legacy helper's
+		// millisecond integers do not address the same range on Loki and the proxy.
 
 		// ── Invalid <> operator in label filter ───────────────────────────────
 		{"invalid_operator_diamond", `{app="api-gateway"} | json | status <> 200`, "proxy_strict_fixed"},

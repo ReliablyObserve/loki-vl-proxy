@@ -234,7 +234,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
@@ -305,7 +305,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 }
 
 // handleRangeMetricPostAggregation handles topk/bottomk/sort at /query_range by
-// fetching the full matrix from VL and then trimming to the requested K series.
+// fetching the full matrix from VL and ranking at each evaluation timestamp.
 func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
 	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
 	if err != nil {
@@ -316,7 +316,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 
 	// proxyStatsQueryRange reads r.FormValue("query") as originalLogql for the stats
 	// compat layer. If the outer sort/topk wrapper is still in r.Form, parseOriginalRangeMetricSpec
@@ -330,7 +330,26 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
-	p.proxyStatsQueryRange(sc, innerR, translatedInner)
+	// Ranking needs the complete trailing window at each evaluation point.
+	// Native VL buckets are timestamped at their left edge; ranking those
+	// directly can select the next window's winner and omit the first point.
+	// The manual range adapter still uses VL pre-aggregation when available.
+	handled := false
+	if postAgg.name == "topk" || postAgg.name == "bottomk" {
+		spec, ok := parseStatsCompatSpec(translatedInner)
+		orig, hasOrig := parseOriginalRangeMetricSpec(postAgg.inner)
+		if ok && hasOrig && orig.Window > 0 {
+			fn := normalizeManualMetricFunction(spec, orig)
+			switch fn {
+			case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
+				spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
+				handled = p.proxyManualRangeMetricRangeWithFill(sc, innerR, spec, orig, fn, false)
+			}
+		}
+	}
+	if !handled {
+		p.proxyStatsQueryRange(sc, innerR, translatedInner)
+	}
 
 	if len(withoutLabels) > 0 {
 		bw.body = applyWithoutGrouping(bw.body, withoutLabels)
@@ -438,8 +457,11 @@ func applyMatrixStddevAgg(body []byte, funcName string) []byte {
 }
 
 // applyMatrixSortTopkAgg applies topk/bottomk/sort to a matrix (query_range) result.
-// It ranks series by their last value and trims to the requested K.
+// topk/bottomk use per-step selection; sort orders series by their last value.
 func applyMatrixSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
+	if postAgg.name == "topk" || postAgg.name == "bottomk" {
+		return applyTopKToMatrix(body, postAgg.k, postAgg.name == "topk")
+	}
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -488,19 +510,8 @@ func applyMatrixSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
 		}
 	})
 
-	// sort/sort_desc return all series reordered; only topk/bottomk trim to k.
+	// sort/sort_desc return all series reordered.
 	resultCount := len(ranks)
-	if (postAgg.name == "topk" || postAgg.name == "bottomk") && postAgg.k > 0 {
-		// Ensure topk size is safe: bounded by min(requested, max constant, available)
-		const maxTopK = 10000
-		safeSize := postAgg.k
-		if safeSize > maxTopK {
-			safeSize = maxTopK
-		}
-		if safeSize < resultCount {
-			resultCount = safeSize
-		}
-	}
 
 	// Pre-allocate with safe maximum size to avoid CodeQL taint analysis issues
 	// with user-provided allocation sizes. Use a fixed-size allocation and populate

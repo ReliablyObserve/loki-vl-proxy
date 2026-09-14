@@ -197,6 +197,7 @@ func extractCommonBase(baseQuery string) (base, field string, ok bool) {
 }
 
 type burstKey struct {
+	scope    string
 	orgID    string
 	base     string
 	startSec int64
@@ -210,6 +211,7 @@ type fieldResult struct {
 }
 
 type burstGroup struct {
+	ctx    context.Context
 	fields []string
 	chans  []chan fieldResult
 }
@@ -256,6 +258,7 @@ func (c *DrilldownBurstCoalescer) Submit(
 	}
 	if g == nil {
 		g = &burstGroup{
+			ctx:    context.WithoutCancel(ctx),
 			fields: []string{field},
 			chans:  []chan fieldResult{ch},
 		}
@@ -287,7 +290,7 @@ func (c *DrilldownBurstCoalescer) fire(
 	}
 	c.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(g.ctx, 30*time.Second)
 	defer cancel()
 
 	results, err := fireFn(ctx, g.fields)

@@ -1565,14 +1565,14 @@ func TestCopyBackendHeaders_SecurityHeadersPreserved(t *testing.T) {
 	}
 }
 
-// TestForwardedAuthFingerprint_EmptyWithoutConfig ensures no fingerprint is
+// TestForwardedAuthFingerprint_ScopeWithoutForwarding ensures no fingerprint is
 // computed when no header/cookie forwarding is configured.
-func TestForwardedAuthFingerprint_EmptyWithoutConfig(t *testing.T) {
+func TestForwardedAuthFingerprint_ScopeWithoutForwarding(t *testing.T) {
 	p := &Proxy{}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Bearer secret")
-	if fp := p.forwardedAuthFingerprint(r); fp != "" {
-		t.Errorf("expected empty fingerprint with no forwarding configured, got %q", fp)
+	if fp := p.forwardedAuthFingerprint(r); fp == "" {
+		t.Errorf("expected scope fingerprint even without credential forwarding, got %q", fp)
 	}
 }
 
@@ -1825,8 +1825,8 @@ func TestSnapshotForwardedAuth_CapturesHeaders(t *testing.T) {
 		p := &Proxy{}
 		r := httptest.NewRequest("GET", "/", nil)
 		r.Header.Set("Authorization", "Bearer secret")
-		if snap := p.snapshotForwardedAuth(r); snap != nil {
-			t.Error("expected nil snapshot when no forwarding configured")
+		if snap := p.snapshotForwardedAuth(r); snap == nil || snap.Header.Get("Authorization") != "" {
+			t.Error("expected routing snapshot without unconfigured credentials")
 		}
 	})
 
@@ -2465,7 +2465,7 @@ func TestApplyMatrixPostAggregation(t *testing.T) {
 		t.Errorf("bottomk(1): expected low, got %v", resp.Data.Result)
 	}
 
-	// topk(3): all 3, ordered high→mid→low
+	// topk(3): all 3. Loki does not promise rank ordering for range results.
 	result = applyMatrixPostAggregation(body, instantMetricPostAgg{name: "topk", k: 3})
 	if err := json.Unmarshal(result, &resp); err != nil {
 		t.Fatalf("topk(3) unmarshal: %v", err)
@@ -2473,8 +2473,12 @@ func TestApplyMatrixPostAggregation(t *testing.T) {
 	if len(resp.Data.Result) != 3 {
 		t.Errorf("topk(3): expected 3, got %d", len(resp.Data.Result))
 	}
-	if resp.Data.Result[0].Metric["svc"] != "high" || resp.Data.Result[2].Metric["svc"] != "low" {
-		t.Errorf("topk(3): wrong order %v", resp.Data.Result)
+	seen := map[interface{}]bool{}
+	for _, series := range resp.Data.Result {
+		seen[series.Metric["svc"]] = true
+	}
+	if !seen["high"] || !seen["mid"] || !seen["low"] {
+		t.Errorf("topk(3): missing series %v", resp.Data.Result)
 	}
 
 	// passthrough on invalid body

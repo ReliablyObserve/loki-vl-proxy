@@ -274,6 +274,9 @@ func TestConvertGoTemplate(t *testing.T) {
 		{`"{{.status}}"`, `"<status>"`},
 		{`"{{.method}} {{.path}}"`, `"<method> <path>"`},
 		{`"plain text"`, `"plain text"`},
+		{"`{{.status}}`", `"<status>"`},
+		{`"quoted \"{{.status}}\""`, `"quoted \"<status>\""`},
+		{`"{{printf \"%s\" .status}}"`, `"{{printf \"%s\" .status}}"`},
 	}
 
 	for _, tt := range tests {

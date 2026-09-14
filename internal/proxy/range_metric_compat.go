@@ -546,6 +546,12 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 }
 
 func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string) bool {
+	return p.proxyManualRangeMetricRangeWithFill(w, r, spec, origSpec, manualFunc, true)
+}
+
+// Ranking must preserve absent evaluations: chart zero-fill would turn an
+// absent series into a candidate that can win topk/bottomk before it has data.
+func (p *Proxy) proxyManualRangeMetricRangeWithFill(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string, fillMissing bool) bool {
 	startTS, err := parseTimestamp(r.FormValue("start"))
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, "invalid start timestamp: "+err.Error())
@@ -583,6 +589,11 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		statsAggFunc = "count() as c"
 	case "__bytes__":
 		statsAggFunc = "sum_len(_msg) as c"
+		if !fillMissing {
+			// Retain empty log lines without scanning raw logs: byte sum zero
+			// alone cannot distinguish an absent bucket from a present empty line.
+			statsAggFunc += ", count() as __sample_count"
+		}
 	}
 	// Sliding-window parser-stage queries (range > step) reach this path via
 	// shouldUseManualRangeMetricCompat returning true. Skip the stats_query_range
@@ -597,6 +608,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		if base, field, ok := extractCommonBase(spec.BaseQuery); ok {
 			orgID := r.Header.Get("X-Scope-OrgID")
 			bKey := burstKey{
+				scope:    p.contextScopeFingerprint(r.Context()),
 				orgID:    orgID,
 				base:     base,
 				startSec: startTS.Add(-origSpec.Window).Unix(),
@@ -605,7 +617,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			}
 			fireFn := p.fusedFieldHits(orgID, base, startTS.Add(-origSpec.Window), endTS, step)
 			if series, coalErr := p.drilldownCoalescer.Submit(r.Context(), bKey, field, fireFn); coalErr == nil {
-				result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+				result := buildHitsRangeMetricMatrixWithFill(manualFunc, series, startTS, endTS, step, origSpec.Window, fillMissing)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(result) // nosemgrep
 				return true
@@ -614,13 +626,13 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
-		result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+		result := buildHitsRangeMetricMatrixWithFill(manualFunc, series, startTS, endTS, step, origSpec.Window, fillMissing)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(result) // nosemgrep
 		return true
 	}
 	if series, ok := p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
-		result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+		result := buildHitsRangeMetricMatrixWithFill(manualFunc, series, startTS, endTS, step, origSpec.Window, fillMissing)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(result) // nosemgrep
 		return true
@@ -845,7 +857,10 @@ func (p *Proxy) collectRangeMetricHits(
 	// [[drilldown-high-card-fields-known-limit]] for the deep investigation.
 	// Keep the busiest maxSeries by total count (not the alphabetically-first
 	// maxSeries VL returns) so the chart shows signal, not the noise floor.
-	results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
+	withPresence := strings.Contains(statsAggFunc, ", count() as __sample_count")
+	if !withPresence {
+		results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
+	}
 	seriesMap := make(map[string]manualSeriesSamples, len(results))
 	for _, res := range results {
 		metricObj := res.GetObject("metric")
@@ -862,6 +877,13 @@ func (p *Proxy) collectRangeMetricHits(
 			metric[lokiKey] = string(mv.GetStringBytes())
 		})
 		seriesKey := canonicalLabelsKey(metric)
+		if withPresence && string(res.GetStringBytes("metric", "__name__")) == "__sample_count" {
+			entry := seriesMap[seriesKey]
+			entry.Metric = metric
+			addPresentBuckets(&entry, res.GetArray("values"))
+			seriesMap[seriesKey] = entry
+			continue
+		}
 
 		values := res.GetArray("values")
 		samples := make([]rangeMetricSample, 0, len(values))
@@ -890,7 +912,28 @@ func (p *Proxy) collectRangeMetricHits(
 			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
 		}
 	}
+	if withPresence {
+		// Cap complete logical series, retaining both byte values and presence.
+		seriesMap = capSeriesByTotalCount(seriesMap, p.resolvedMaxStatsQuerySeries())
+	}
 	return seriesMap, nil
+}
+
+func addPresentBuckets(entry *manualSeriesSamples, values []*fj.Value) {
+	if entry.PresentBuckets == nil {
+		entry.PresentBuckets = make(map[int64]struct{})
+	}
+	for _, pair := range values {
+		arr := pair.GetArray()
+		if len(arr) < 2 {
+			continue
+		}
+		ts, tsErr := arr[0].Int64()
+		count, countErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
+		if tsErr == nil && countErr == nil && count > 0 {
+			entry.PresentBuckets[ts*int64(time.Second)] = struct{}{}
+		}
+	}
 }
 
 // metricSeriesCacheEntry holds the pre-computed labels and key for a metric series.
@@ -1278,6 +1321,9 @@ func addExcludedField(excluded map[string]struct{}, key string) {
 type manualSeriesSamples struct {
 	Metric  map[string]string
 	Samples []rangeMetricSample
+	// PresentBuckets distinguishes real zero-byte lines from absent buckets.
+	// Allocated only for byte ranking; raw log samples retain their compact shape.
+	PresentBuckets map[int64]struct{}
 }
 
 func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
@@ -1512,6 +1558,10 @@ func buildManualRangeMetricMatrix(functionName string, quantile float64, series 
 // in pprof's cumulative allocation profile (1.31 GB total). Pre-sizing
 // eliminates the cascade — one allocation per series instead of ten.
 func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) []byte {
+	return buildHitsRangeMetricMatrixWithFill(manualFunc, series, start, end, step, window, true)
+}
+
+func buildHitsRangeMetricMatrixWithFill(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, fillMissing bool) []byte {
 	if end.Before(start) {
 		return marshalManualMetricResponse("matrix", []map[string]interface{}{})
 	}
@@ -1554,7 +1604,21 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 					sum += s.value
 				}
 			}
-			// Always emit a datapoint per step bucket — zero-filling missing
+			present := sum != 0
+			if !present && !fillMissing {
+				for ts := range seriesEntry.PresentBuckets {
+					if ts >= windowStartNS && ts < tNS {
+						present = true
+						break
+					}
+				}
+			}
+			// Count/rate ranking excludes zero-filled absent windows. Byte
+			// ranking also retains real zero-byte lines using the count buckets.
+			if !fillMissing && !present {
+				continue
+			}
+			// Chart mode emits a datapoint per step bucket — zero-filling missing
 			// values. Previously we skipped sum==0 to save bytes, but for
 			// sparse series (high-cardinality fields like trace_id where each
 			// value appears at only a few timestamps) the result was a series
@@ -1566,7 +1630,7 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 			// 10-50 series so worst case is ~288 buckets × 50 series ≈ 14k
 			// datapoints per response (~200 KB).
 			var value float64
-			if manualFunc == "rate" {
+			if manualFunc == "rate" || manualFunc == "bytes_rate" {
 				value = sum / windowSec
 			} else {
 				value = sum

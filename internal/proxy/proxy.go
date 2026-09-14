@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -436,6 +437,7 @@ type Proxy struct {
 	rulerBackend                          *url.URL
 	alertsBackend                         *url.URL
 	client                                *http.Client
+	backendBudget                         chan struct{}
 	tailClient                            *http.Client
 	cache                                 *cache.Cache
 	compatCache                           *cache.Cache
@@ -445,6 +447,7 @@ type Proxy struct {
 	coalescer                             *mw.Coalescer
 	limiter                               *mw.RateLimiter
 	breaker                               *mw.CircuitBreaker
+	routingNamespace                      string       // immutable digest, replaced under configMu on reload
 	configMu                              sync.RWMutex // protects tenantMap and labelTranslator
 	tenantMap                             map[string]TenantMapping
 	tenantLabel                           string
@@ -601,10 +604,11 @@ type Proxy struct {
 const maxReadCacheKeyMemoEntries = 16384
 
 type canonicalReadCacheMemoKey struct {
-	endpoint string
-	orgID    string
-	extra    string
-	rawQuery string
+	endpoint  string
+	orgID     string
+	extra     string
+	rawQuery  string
+	authScope string
 }
 
 var defaultTenantLimitsAllowPublish = []string{
@@ -842,7 +846,7 @@ func New(cfg Config) (*Proxy, error) {
 		maxLines = 1000
 	}
 
-	backendHeaders := cfg.BackendHeaders
+	backendHeaders := maps.Clone(cfg.BackendHeaders)
 	if backendHeaders == nil {
 		backendHeaders = make(map[string]string)
 	}
@@ -1060,8 +1064,9 @@ func New(cfg Config) (*Proxy, error) {
 		queryTracker:                          metrics.NewQueryTracker(10000),
 		coalescer:                             newCoalescer(cfg.CoalescerDisabled),
 		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
+		backendBudget:                         newBackendBudget(maxConcurrent),
 		breaker:                               mw.NewCircuitBreaker(cbFail, 3, cbOpen, cbWindow),
-		tenantMap:                             cfg.TenantMap,
+		tenantMap:                             maps.Clone(cfg.TenantMap),
 		tenantLabel:                           cfg.TenantLabel,
 		authEnabled:                           cfg.AuthEnabled,
 		requireTenantHeader:                   cfg.RequireTenantHeader,
@@ -1074,7 +1079,7 @@ func New(cfg Config) (*Proxy, error) {
 		statsQueryRangeInterQueryDelay:        time.Duration(cfg.StatsQueryRangeInterQueryDelayMs) * time.Millisecond,
 		drilldownCoalescer:                    makeDrilldownBurstCoalescer(cfg.DrilldownBurstWindowMs, cfg.DrilldownBurstMaxFields),
 		drilldownCardCache:                    newDrilldownCardinalityCache(),
-		forwardHeaders:                        cfg.ForwardHeaders,
+		forwardHeaders:                        append([]string(nil), cfg.ForwardHeaders...),
 		forwardCookies:                        forwardCookies,
 		backendHeaders:                        backendHeaders,
 		backendCompression:                    normalizeBackendCompression(cfg.BackendCompression),
@@ -1340,6 +1345,7 @@ func New(cfg Config) (*Proxy, error) {
 		},
 	}
 
+	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
 	return p, nil
 }
 
@@ -1536,7 +1542,8 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 // ReloadTenantMap hot-reloads tenant mappings (called on SIGHUP).
 func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
 	p.configMu.Lock()
-	p.tenantMap = m
+	p.tenantMap = maps.Clone(m)
+	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
 	if p.compatCache != nil {
 		p.compatCache.InvalidatePrefix("")
 	}
@@ -1553,6 +1560,7 @@ func (p *Proxy) ReloadFieldMappings(mappings []FieldMapping) {
 	prevTranslateOTel := p.labelTranslator.translateOTel
 	p.labelTranslator = NewLabelTranslator(p.labelTranslator.style, mappings)
 	p.labelTranslator.SetTranslateOTel(prevTranslateOTel)
+	p.routingNamespace = p.buildRoutingNamespace(requestRouting{tenants: p.tenantMap, label: p.tenantLabel, translator: p.labelTranslator})
 	if p.translationCache != nil {
 		p.translationCache.InvalidatePrefix("")
 	}
@@ -2019,7 +2027,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser, bare-parser
 	// paths, post-agg paths) so that the tenant context and forwarded auth headers
 	// are available for all upstream requests made on this request's behalf.
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	r = p.injectAuthFingerprint(r)
 
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -2216,67 +2224,31 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	p.queryTracker.Record("query_range", logqlQuery, elapsed, sc.code >= 400)
 }
 
-// queryRangeBucket returns the cache-key bucket size for a query_range request.
-// Bucket = max(5 min, step), capped at 1 hour so very large steps don't produce
-// multi-day cache entries that hold stale data too long.
-func queryRangeBucket(r *http.Request) time.Duration {
-	const (
-		minBucket = 5 * time.Minute
-		maxBucket = time.Hour
-	)
-	stepRaw := r.FormValue("step")
-	if stepRaw == "" {
-		return minBucket
+func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
+
+	var key strings.Builder
+	key.Grow(len(logqlQuery) + 256)
+	key.WriteString("query_range:v3:")
+	writePart := func(value string) {
+		var digits [20]byte
+		key.Write(strconv.AppendInt(digits[:0], int64(len(value)), 10))
+		key.WriteByte(':')
+		key.WriteString(value)
 	}
-	d, ok := parsePositiveStepDuration(stepRaw)
-	if !ok || d <= minBucket {
-		return minBucket
+	writePart(logqlQuery)
+	for _, name := range []string{"start", "end", "step", "limit", "direction", "interval", "since", "time"} {
+		writePart(r.FormValue(name))
 	}
-	if d > maxBucket {
-		return maxBucket
-	}
-	return d
+	writePart(p.responseProfileCacheKey(r))
+	writePart(p.fingerprintFromCtx(r.Context(), r))
+	return key.String()
 }
 
-func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
-	// Build a stable key by bucketing both `start` and `end` to the step granularity.
-	// Grafana's sliding time window ("from=now-2d&to=now") resolves to absolute
-	// nanosecond timestamps that advance every second, so both start and end change on
-	// every panel refresh. Bucketing only `end` (the previous behaviour) still produced
-	// a unique key on each tick because the raw `start` value was included verbatim.
-	//
-	// With both endpoints bucketed to max(5min, step), the cache key is stable for the
-	// full bucket duration. A 2-day window with step=1h now produces one VL call per
-	// field per hour instead of one per 10 seconds (~360x fewer upstream calls).
-	bucket := queryRangeBucket(r)
-	startBucketed := bucketTimestampString(r.FormValue("start"), bucket)
-	endBucketed := bucketTimestampString(r.FormValue("end"), bucket)
-
-	var b strings.Builder
-	b.Grow(len(logqlQuery) + 128)
-	b.WriteString("query=")
-	b.WriteString(url.QueryEscape(logqlQuery))
-	for _, key := range []string{"step", "limit", "direction"} {
-		if value := r.FormValue(key); value != "" {
-			b.WriteByte('&')
-			b.WriteString(key)
-			b.WriteByte('=')
-			b.WriteString(url.QueryEscape(value))
-		}
-	}
-	if startBucketed != "" {
-		b.WriteString("&start=")
-		b.WriteString(url.QueryEscape(startBucketed))
-	}
-	if endBucketed != "" {
-		b.WriteString("&end=")
-		b.WriteString(url.QueryEscape(endBucketed))
-	}
-	key := "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + b.String() + ":" + p.tupleModeCacheKey(r)
-	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
-		key += ":auth:" + fp
-	}
-	return key
+// responseProfileCacheKey covers negotiated tuple shape and the Grafana profile
+// used by query dispatch. Content compression varies independently.
+func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
+	profile := detectGrafanaClientProfile(r, "", r.URL.Path)
+	return strings.Join([]string{p.tupleModeCacheKey(r), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
 }
 
 // handleQuery translates Loki instant queries.
@@ -2305,7 +2277,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser and all
 	// early-return compat paths) so that tenant context is set for upstream requests.
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	r = p.injectAuthFingerprint(r)
 
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))

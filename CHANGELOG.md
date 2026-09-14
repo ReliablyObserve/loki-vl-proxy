@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep hot/cold cross-boundary queries progressing with a backend concurrency
+  limit of one. Each merge worker consumes and closes its bounded response
+  before joining; oversized or incomplete responses fail instead of producing
+  partial results.
+
+- Preserve backtick and escaped-quote line formatting through real response
+  tuples, including categorized metadata, and apply formatting limits before
+  streaming. Add live tenant/cache/Loki parity and visible Grafana regressions.
+- Evaluate range-query topk/bottomk at each timestamp so changing winners stay
+  visible, with signed-value ranking and losing samples removed.
+
+- Patch malformed ICNS/JXL/HEIF image parsing in the documentation build with
+  integrity-checked bounds checks and isolated regression tests; constrain build
+  time and token permissions. Registry npm audit metadata remains unchanged
+  until an upstream patched image-size release is available.
+
+- Bound subquery evaluation, formatting and actual backend fanout; surface
+  failed subqueries instead of successful empty results. Reject oversized
+  coalesced responses and reclaim unread expired disk entries. See the security
+  hardening migration guide for the new resource limits and rejection behavior.
+
+- Keep exact Loki query time bounds and negotiated response profiles in final
+  cache keys, preventing cross-window and 2-tuple/3-tuple response collisions.
+  Correct the cold-miss performance benchmark to verify real backend misses.
+
+- Preserve tenant routing and forwarded identity across cache hits, tenant-map
+  reloads, cold reads, coalesced Drilldown queries, and background refreshes.
+  Scope persisted/shared cache keys and label indexes accordingly; enforce
+  label tenancy with VictoriaLogs extra stream filters without modifying query
+  pipelines. Existing cache entries become cold during upgrade.
+
+- Enforce global-tenant wildcard denial in label-routing mode, bound tail client
+  messages to 4 KiB while preserving WebSocket controls, and execute all intended
+  hardening suites in the dedicated security lane. See the security hardening
+  migration guide for the explicit wildcard opt-in behavior.
+
 ## [1.66.1] - 2026-09-12
 
 ### Fixed

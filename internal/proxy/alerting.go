@@ -34,7 +34,7 @@ func (p *Proxy) handleReady(w http.ResponseWriter, r *http.Request) {
 	// once enough consecutive probes pass. A second explicit Allow() call here
 	// would consume an extra probe slot without recording a success, permanently
 	// deadlocking the breaker in half-open state when halfOpenProbes ≥ successThreshold.
-	readyReq := withOrgID(r)
+	readyReq := p.withRequestScope(r)
 	resp, err := p.vlGet(readyReq.Context(), "/health", nil)
 	if err != nil {
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -137,7 +137,7 @@ func (p *Proxy) handleBuildInfo(w http.ResponseWriter, r *http.Request) {
 // --- Backend request helpers ---
 
 func (p *Proxy) proxyAlertingRead(w http.ResponseWriter, r *http.Request, backend *url.URL, path string) {
-	resp, err := p.alertingBackendGet(withOrgID(r), backend, path)
+	resp, err := p.alertingBackendGet(p.withRequestScope(r), backend, path)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -189,7 +189,7 @@ func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, 
 	p.forwardTenantHeaders(req)
 	p.applyAlertingBackendHeaders(req)
 	start := time.Now()
-	resp, err := p.client.Do(req)
+	resp, err := p.doBackendRequest(req, p.client)
 	duration := time.Since(start)
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {
@@ -302,7 +302,7 @@ func (p *Proxy) handleLegacyRules(w http.ResponseWriter, r *http.Request) {
 		params["rule_group[]"] = []string{group}
 	}
 
-	resp, err := p.alertingBackendGetWithParams(withOrgID(r), p.rulerBackend, "/api/v1/rules", params)
+	resp, err := p.alertingBackendGetWithParams(p.withRequestScope(r), p.rulerBackend, "/api/v1/rules", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return

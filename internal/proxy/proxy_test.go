@@ -2328,7 +2328,7 @@ func TestContract_Patterns_CachedPayloadStillPrependsCustomPatterns(t *testing.T
 		t.Fatalf("failed to create proxy: %v", err)
 	}
 
-	cacheKey := p.patternsAutodetectCacheKey("", "", `{app="web"}`, "1", "2", "1m")
+	cacheKey := p.patternsAutodetectCacheKey("", p.forwardedAuthFingerprint(httptest.NewRequest("GET", "/", nil)), `{app="web"}`, "1", "2", "1m")
 	payload, err := json.Marshal(patternsResponse{
 		Status: "success",
 		Data: []patternResultEntry{

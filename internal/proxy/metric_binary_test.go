@@ -153,8 +153,10 @@ func TestQueryRange_TopKFiltersToKSeries(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	params := url.Values{}
 	params.Set("query", `topk(2, sum by (app) (rate({app=~".*"}[5m])))`)
-	params.Set("start", "1700000000")
-	params.Set("end", "1700001800")
+	// One populated evaluation window: no all-zero buckets with tied winners.
+	// Changing winners across steps are covered by TestTopK_RangeWinnersChangeAtEachStep.
+	params.Set("start", "1700000600")
+	params.Set("end", "1700000600")
 	params.Set("step", "300")
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
 	rec := httptest.NewRecorder()
@@ -201,8 +203,8 @@ func TestQueryRange_BottomKFiltersToKSeries(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	params := url.Values{}
 	params.Set("query", `bottomk(1, sum by (app) (count_over_time({app=~".*"}[5m])))`)
-	params.Set("start", "1700000000")
-	params.Set("end", "1700001800")
+	params.Set("start", "1700000600")
+	params.Set("end", "1700000600")
 	params.Set("step", "300")
 	req := httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil)
 	rec := httptest.NewRecorder()

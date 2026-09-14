@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 // =============================================================================
 
 type benchmarkResponseWriter struct {
+	status int
 	header http.Header
 }
 
@@ -34,12 +36,20 @@ func (w *benchmarkResponseWriter) Header() http.Header {
 }
 
 func (w *benchmarkResponseWriter) Write(p []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
 	return len(p), nil
 }
 
-func (w *benchmarkResponseWriter) WriteHeader(statusCode int) {}
+func (w *benchmarkResponseWriter) WriteHeader(statusCode int) {
+	if w.status == 0 {
+		w.status = statusCode
+	}
+}
 
 func (w *benchmarkResponseWriter) reset() {
+	w.status = 0
 	for k := range w.header {
 		delete(w.header, k)
 	}
@@ -336,28 +346,42 @@ func BenchmarkProxy_Series_NoCompatCache(b *testing.B) {
 
 func BenchmarkProxy_QueryRange_ColdMiss_DelayedBackend(b *testing.B) {
 	responseBody := buildBenchmarkNDJSONLines(300)
-	mux, _ := newCompatBenchmarkProxy(b, func(w http.ResponseWriter, r *http.Request) {
+	var calls atomic.Int64
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
 		time.Sleep(2 * time.Millisecond)
 		_, _ = w.Write(responseBody)
-	}, false)
-
-	urls := make([]string, 128)
-	for i := range urls {
-		urls[i] = fmt.Sprintf(`/loki/api/v1/query_range?query={app="api"}&start=%d&end=%d&step=30s&limit=300`, i+1, i+301)
+	}))
+	defer backend.Close()
+	p, err := New(Config{BackendURL: backend.URL, Cache: cache.NewDisabled(), CoalescerDisabled: true, LogLevel: "error"})
+	if err != nil {
+		b.Fatal(err)
 	}
-	requests := make([]*http.Request, len(urls))
-	for i, rawURL := range urls {
-		requests[i] = benchmarkRequest(rawURL)
-		requests[i].Header.Set("X-Scope-OrgID", "team-a")
+	b.Cleanup(func() { _ = p.Shutdown(context.Background()) })
+	mux := http.NewServeMux()
+	p.RegisterRoutes(mux)
+	r := benchmarkRequest(`/loki/api/v1/query_range?query={app="api"}&start=1767225600&end=1767225900&limit=300`)
+	// Validate actual content once, outside timing; then count every upstream miss.
+	sample := httptest.NewRecorder()
+	mux.ServeHTTP(sample, r)
+	var body struct {
+		Data struct{ Result []struct{ Values [][]string } }
 	}
-	var idx atomic.Uint64
-
+	if sample.Code != http.StatusOK || json.Unmarshal(sample.Body.Bytes(), &body) != nil || len(body.Data.Result) != 1 || len(body.Data.Result[0].Values) != 300 {
+		b.Fatalf("invalid cold response: %d %s", sample.Code, sample.Body)
+	}
+	calls.Store(0)
 	b.ResetTimer()
 	for b.Loop() {
 		w := newBenchmarkResponseWriter()
-		r := requests[int(idx.Add(1)-1)%len(requests)]
-		w.reset()
 		mux.ServeHTTP(w, r)
+		if w.status != http.StatusOK {
+			b.Fatalf("cold request failed: %d", w.status)
+		}
+	}
+	b.StopTimer()
+	if got := calls.Load(); got != int64(b.N) {
+		b.Fatalf("cold benchmark made %d upstream calls for %d operations", got, b.N)
 	}
 }
 

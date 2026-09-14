@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,104 +24,26 @@ func serveProxy(p *Proxy, w http.ResponseWriter, r *http.Request) {
 // Unit tests for injectTenantLabelFilter
 // ---------------------------------------------------------------------------
 
-func TestInjectTenantLabelFilter_InjectsIntoQueryParam(t *testing.T) {
-	params := url.Values{}
-	params.Set("query", `{app="api-gateway"}`)
-	params.Set("start", "2026-01-01T00:00:00Z")
-
-	result := injectTenantLabelFilter(params, "org_id", "production")
-
-	got := result.Get("query")
-	want := `{app="api-gateway"} {org_id="production"}`
-	if got != want {
-		t.Fatalf("query param after injection:\n  got:  %q\n  want: %q", got, want)
-	}
-	// Original must be unmodified
-	if params.Get("query") != `{app="api-gateway"}` {
-		t.Fatal("injectTenantLabelFilter must not mutate the original params")
-	}
-}
-
-func TestInjectTenantLabelFilter_InjectsIntoQParam(t *testing.T) {
-	params := url.Values{}
-	params.Set("q", `{service_name="svc"}`)
-	params.Set("step", "60")
-
-	result := injectTenantLabelFilter(params, "account_id", "42")
-
-	got := result.Get("q")
-	want := `{service_name="svc"} {account_id="42"}`
-	if got != want {
-		t.Fatalf("q param after injection:\n  got:  %q\n  want: %q", got, want)
-	}
-}
-
-func TestInjectTenantLabelFilter_NoopWhenNoQueryParam(t *testing.T) {
-	params := url.Values{}
-	params.Set("start", "2026-01-01T00:00:00Z")
-
-	result := injectTenantLabelFilter(params, "org_id", "production")
-
-	if result.Get("start") != "2026-01-01T00:00:00Z" {
-		t.Fatal("non-query params must be preserved unchanged")
-	}
-	if result.Get("query") != "" || result.Get("q") != "" {
-		t.Fatal("no query/q param must be added when none existed")
-	}
-}
-
-func TestInjectTenantLabelFilter_EscapesDoubleQuotesInOrgID(t *testing.T) {
-	params := url.Values{}
-	params.Set("query", `{app="x"}`)
-
-	result := injectTenantLabelFilter(params, "org", `tenant"with"quotes`)
-
-	got := result.Get("query")
-	want := `{app="x"} {org="tenant\"with\"quotes"}`
-	if got != want {
-		t.Fatalf("double-quote escaping:\n  got:  %q\n  want: %q", got, want)
-	}
-}
-
-func TestInjectTenantLabelFilter_EscapesBackslashInOrgID(t *testing.T) {
-	params := url.Values{}
-	params.Set("query", `{app="x"}`)
-
-	result := injectTenantLabelFilter(params, "org", `tenant\path`)
-
-	got := result.Get("query")
-	want := `{app="x"} {org="tenant\\path"}`
-	if got != want {
-		t.Fatalf("backslash escaping:\n  got:  %q\n  want: %q", got, want)
-	}
-}
-
-func TestInjectTenantLabelFilter_EscapesBackslashThenDoubleQuote(t *testing.T) {
-	params := url.Values{}
-	params.Set("query", `{app="x"}`)
-
-	// backslash-then-doublequote: the backslash must be doubled first
-	result := injectTenantLabelFilter(params, "org", `tenant\"`)
-
-	got := result.Get("query")
-	want := `{app="x"} {org="tenant\\\""}`
-	if got != want {
-		t.Fatalf("combined backslash+quote escaping:\n  got:  %q\n  want: %q", got, want)
-	}
-}
-
-func TestInjectTenantLabelFilter_QueryParamTakesPriorityOverQParam(t *testing.T) {
-	params := url.Values{}
-	params.Set("query", `{app="a"}`)
-	params.Set("q", `{app="b"}`)
-
-	result := injectTenantLabelFilter(params, "org_id", "x")
-
-	if result.Get("query") != `{app="a"} {org_id="x"}` {
-		t.Fatalf("expected injection into query, got %q", result.Get("query"))
-	}
-	if result.Get("q") != `{app="b"}` {
-		t.Fatalf("expected q param unchanged, got %q", result.Get("q"))
+func TestInjectTenantLabelFilter_ServerConstraintPreservesQuery(t *testing.T) {
+	for _, org := range []string{"production", "42", `tenant"with"quotes`, `tenant\path`, `tenant\"`} {
+		for _, queryKey := range []string{"query", "q", ""} {
+			params := url.Values{"start": {"2026-01-01T00:00:00Z"}, "extra_stream_filters": {`{"org":"attacker"}`}}
+			if queryKey != "" {
+				params.Set(queryKey, `* | sort by (_time desc)`)
+			}
+			before := params.Encode()
+			result := injectTenantLabelFilter(params, "org", org)
+			var filter map[string]string
+			if err := json.Unmarshal([]byte(result.Get("extra_stream_filters")), &filter); err != nil {
+				t.Fatal(err)
+			}
+			if filter["org"] != org {
+				t.Fatalf("constraint: %v", filter)
+			}
+			if result.Get(queryKey) != params.Get(queryKey) || before != params.Encode() {
+				t.Fatal("query or original parameters mutated")
+			}
+		}
 	}
 }
 
@@ -164,9 +87,9 @@ func TestTenantLabelRouting_InjectsLabelFilterIntoVLQuery(t *testing.T) {
 	var receivedQuery string
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
-		receivedQuery = r.FormValue("query")
+		receivedQuery = r.FormValue("extra_stream_filters")
 		if receivedQuery == "" {
-			receivedQuery = r.URL.Query().Get("query")
+			receivedQuery = r.URL.Query().Get("extra_stream_filters")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"streams","result":[],"stats":{}}}`)
@@ -186,7 +109,7 @@ func TestTenantLabelRouting_InjectsLabelFilterIntoVLQuery(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(receivedQuery, `{org_id="production"}`) {
+	if !strings.Contains(receivedQuery, `{"org_id":"production"}`) {
 		t.Fatalf("expected VL query to contain {org_id=\"production\"}, got: %q", receivedQuery)
 	}
 }
@@ -194,7 +117,7 @@ func TestTenantLabelRouting_InjectsLabelFilterIntoVLQuery(t *testing.T) {
 func TestTenantLabelRouting_TailInjectsLabelFilter(t *testing.T) {
 	var receivedQuery string
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		receivedQuery = r.URL.Query().Get("query")
+		receivedQuery = r.URL.Query().Get("extra_stream_filters")
 		// Respond with a streaming body that closes immediately so openNativeTailStream
 		// gets a non-200 from a minimal handler — we only care about the URL it called.
 		w.WriteHeader(http.StatusOK)
@@ -213,7 +136,7 @@ func TestTenantLabelRouting_TailInjectsLabelFilter(t *testing.T) {
 		_ = resp.Body.Close()
 	}
 
-	if !strings.Contains(receivedQuery, `org_id="production"`) {
+	if !strings.Contains(receivedQuery, `"org_id":"production"`) {
 		t.Fatalf("expected tail VL query to contain tenant label filter, got: %q", receivedQuery)
 	}
 }
@@ -222,9 +145,9 @@ func TestTenantLabelRouting_DefaultAliasSkipsLabelFilter(t *testing.T) {
 	var receivedQuery string
 	vl := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
-		receivedQuery = r.FormValue("query")
+		receivedQuery = r.FormValue("extra_stream_filters")
 		if receivedQuery == "" {
-			receivedQuery = r.URL.Query().Get("query")
+			receivedQuery = r.URL.Query().Get("extra_stream_filters")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"status":"success","data":{"resultType":"streams","result":[],"stats":{}}}`)

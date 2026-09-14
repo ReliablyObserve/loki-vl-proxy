@@ -716,15 +716,14 @@ func (p *Proxy) shouldBypassRecentTailCache(endpoint string, remaining time.Dura
 // a minimal synthetic request that is safe to use from background goroutines after the
 // original request has been closed. Returns nil when no forwarding is configured.
 func (p *Proxy) snapshotForwardedAuth(r *http.Request) *http.Request {
-	if r == nil || (len(p.forwardHeaders) == 0 && len(p.forwardCookies) == 0) {
+	if r == nil {
 		return nil
 	}
-	snap := &http.Request{Header: make(http.Header)}
-	for _, hdr := range p.forwardHeaders {
-		if val := r.Header.Get(hdr); val != "" {
-			snap.Header.Set(hdr, val)
-		}
-	}
+	// Preserve routing even with no forwarded credentials, so a reload cannot
+	// redirect background work whose cache key was captured before the reload.
+	ctx := context.WithValue(context.Background(), requestRoutingKey{}, p.routingForContext(r.Context()))
+	snap := (&http.Request{Header: p.forwardedIdentityHeaders(r)}).WithContext(ctx)
+	snap.Header.Set("X-Scope-OrgID", r.Header.Get("X-Scope-OrgID"))
 	for _, cookie := range r.Cookies() {
 		if p.forwardCookies["*"] || p.forwardCookies[cookie.Name] {
 			snap.AddCookie(cookie)
@@ -811,9 +810,9 @@ func (p *Proxy) refreshLabelValuesCacheAsync(orgID, cacheKey, labelName, rawQuer
 				return nil, fetchErr
 			}
 
-			p.updateLabelValuesIndex(orgID, labelName, values)
+			p.updateLabelValuesIndex(p.scopedIndexOrg(savedReq, orgID), labelName, values)
 			if p.labelValuesBrowseMode(rawQuery) {
-				if indexedValues, ok := p.selectLabelValuesFromIndex(orgID, labelName, "", 0, p.defaultLabelValuesLimit(limit)); ok {
+				if indexedValues, ok := p.selectLabelValuesFromIndex(p.scopedIndexOrg(savedReq, orgID), labelName, "", 0, p.defaultLabelValuesLimit(limit)); ok {
 					values = indexedValues
 				}
 			}

@@ -105,7 +105,9 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 	categorizedLabels := requestWantsCategorizedLabels(r)
 	emitStructuredMetadata := p.shouldEmitStructuredMetadata(r)
 	p.metrics.RecordTupleMode(tupleModeForRequest(categorizedLabels, emitStructuredMetadata))
-	if p.streamResponse {
+	// Formatting must run through the bounded template evaluator before writing
+	// a response. The streaming path otherwise skips Go template functions.
+	if p.streamResponse && !lineFormatTemplateRE.MatchString(r.FormValue("query")) {
 		p.streamLogQuery(w, resp, r.FormValue("query"), categorizedLabels, emitStructuredMetadata)
 		return
 	}
@@ -146,7 +148,10 @@ func (p *Proxy) proxyLogQuery(w http.ResponseWriter, r *http.Request, logsqlQuer
 		decolorizeStreams(streams)
 	}
 	if tmpl := extractLineFormatTemplate(logqlQuery); tmpl != "" {
-		applyLineFormatTemplate(streams, tmpl)
+		if err := applyLineFormatTemplateWithContext(r.Context(), streams, tmpl); err != nil {
+			p.writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	writeLokiStreamQueryResponse(w, streams, categorizedLabels)

@@ -110,7 +110,7 @@ func (p *Proxy) handlePatterns(w http.ResponseWriter, r *http.Request) {
 	if p.handleMultiTenantFanout(w, r, "patterns") {
 		return
 	}
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	orgID := r.Header.Get("X-Scope-OrgID")
 	query := patternScopeQuery(r.FormValue("query"))
 	startParam := strings.TrimSpace(firstNonEmpty(r.FormValue("start"), r.FormValue("from")))
@@ -1358,7 +1358,7 @@ func (p *Proxy) handleDetectedLabels(w http.ResponseWriter, r *http.Request) {
 	}
 	p.metrics.RecordCacheMiss()
 
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	lineLimit := parseDetectedLineLimit(r)
 	detectedLabels, _, err := p.detectLabels(r.Context(), r.FormValue("query"), r.FormValue("start"), r.FormValue("end"), lineLimit)
 	if err != nil {
@@ -1485,7 +1485,7 @@ func (p *Proxy) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Safeguard 5: Tenant scoping
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	tenant := r.Header.Get("X-Scope-OrgID")
 
 	// Audit log BEFORE executing delete

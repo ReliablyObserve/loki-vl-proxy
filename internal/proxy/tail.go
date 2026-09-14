@@ -40,7 +40,7 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 
 	tailCtx, tailCancel := context.WithCancel(r.Context())
 	defer tailCancel()
@@ -62,6 +62,9 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = conn.Close() }()
+	// Tail is server-to-client data. Preserve control frames and tolerate small
+	// legacy client messages, but never allocate an arbitrary client payload.
+	conn.SetReadLimit(4096)
 	p.metrics.RecordRequest("tail", http.StatusOK, time.Since(start))
 
 	// Start a read loop to detect client disconnect (WebSocket protocol requires it).
@@ -71,7 +74,11 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer tailCancel()
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			_, reader, err := conn.NextReader()
+			if err != nil {
+				return
+			}
+			if _, err := io.Copy(io.Discard, reader); err != nil {
 				return
 			}
 		}
@@ -208,22 +215,8 @@ func (p *Proxy) openNativeTailStream(parent context.Context, logsqlQuery string)
 	// VL sends headers well within the 5s budget.  VL expects a duration string
 	// (e.g. "0s"), not a bare integer.
 
-	// Inject tenant label filter: this function builds its VL URL by hand and does
-	// not go through vlGetInner/vlPostInner, so the filter must be applied here.
-	if p.tenantLabel != "" {
-		if orgID := getOrgID(parent); orgID != "" && !isDefaultTenantAlias(orgID) && orgID != "*" {
-			p.configMu.RLock()
-			_, hasMapped := p.tenantMap[orgID]
-			p.configMu.RUnlock()
-			if !hasMapped {
-				injected := injectTenantLabelFilter(url.Values{"query": {logsqlQuery}}, p.tenantLabel, orgID)
-				logsqlQuery = injected.Get("query")
-			}
-		}
-	}
-
-	vlURL := fmt.Sprintf("%s/select/logsql/tail?query=%s&offset=0s",
-		p.backend.String(), url.QueryEscape(logsqlQuery))
+	params := p.scopedTenantParams(parent, url.Values{"query": {logsqlQuery}, "offset": {"0s"}})
+	vlURL := p.backend.String() + "/select/logsql/tail?" + params.Encode()
 	req, err := http.NewRequestWithContext(parent, "GET", vlURL, nil)
 	if err != nil {
 		return nil, false, "failed to create native tail request"

@@ -156,7 +156,7 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		chunkParams.Set("end", strconv.FormatInt(chunkEnd, 10))
 		chunkParams.Set("limit", strconv.Itoa(chunkLimit))
 
-		resp, err := p.coldRouter.ColdPost(ctx, "/select/logsql/query", chunkParams)
+		resp, err := p.coldPost(ctx, "/select/logsql/query", chunkParams)
 		if err != nil {
 			return nil, err
 		}
@@ -223,7 +223,7 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 
 	// Forward direction: single fetch with original limit (Lakehouse returns oldest-first naturally).
 	params := p.buildColdQueryParams(r, logsqlQuery)
-	resp, err := p.coldRouter.ColdPost(r.Context(), "/select/logsql/query", params)
+	resp, err := p.coldPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, "cold backend error: "+err.Error())
 		return
@@ -266,6 +266,9 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	go func() {
 		defer wg.Done()
 		hotResp, hotErr = p.vlPost(r.Context(), "/select/logsql/query", hotParams)
+		if hotErr == nil {
+			hotErr = bufferMergeResponse(hotResp, maxBufferedBackendBodyBytes)
+		}
 	}()
 	go func() {
 		defer wg.Done()
@@ -295,8 +298,11 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 			coldResp.Header.Set("Content-Type", "application/x-ndjson")
 			return
 		}
-		coldResp, coldErr = p.coldRouter.ColdPost(r.Context(), "/select/logsql/query",
+		coldResp, coldErr = p.coldPost(r.Context(), "/select/logsql/query",
 			p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs))
+		if coldErr == nil {
+			coldErr = bufferMergeResponse(coldResp, maxBufferedBackendBodyBytes)
+		}
 	}()
 	wg.Wait()
 
@@ -379,6 +385,26 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 	p.processLogQueryResponse(w, r, syntheticResp)
 }
 
+// A backend permit covers its body lifetime. Consume and close each response
+// inside its worker: waiting for both headers while retaining either permit
+// deadlocks a shared budget of one (or a saturated larger budget).
+func bufferMergeResponse(resp *http.Response, limit int64) error {
+	body := resp.Body
+	defer body.Close()
+	// Error bodies remain bounded diagnostics and retain the upstream status.
+	if resp.StatusCode >= http.StatusBadRequest {
+		data, _ := readBodyLimited(body, maxUpstreamErrorBodyBytes)
+		resp.Body = io.NopCloser(bytes.NewReader(data))
+		return nil
+	}
+	data, err := readBodyLimited(body, limit)
+	if err != nil {
+		return fmt.Errorf("failed to buffer merge response: %w", err)
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(data))
+	return nil
+}
+
 // processLogQueryResponse converts a VL NDJSON response into a Loki-format JSON response.
 // Shared between hot, cold, and merged code paths.
 func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, resp *http.Response) {
@@ -429,7 +455,10 @@ func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, 
 		decolorizeStreams(streams)
 	}
 	if tmpl := extractLineFormatTemplate(logqlQuery); tmpl != "" {
-		applyLineFormatTemplate(streams, tmpl)
+		if err := applyLineFormatTemplateWithContext(r.Context(), streams, tmpl); err != nil {
+			p.writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	p.writeJSON(w, map[string]interface{}{

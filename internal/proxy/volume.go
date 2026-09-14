@@ -199,7 +199,7 @@ func (p *Proxy) handleVolume(w http.ResponseWriter, r *http.Request) {
 	if p.handleMultiTenantFanout(w, r, "volume") {
 		return
 	}
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	orgID := r.Header.Get("X-Scope-OrgID")
 	query := r.FormValue("query")
 	startParam := strings.TrimSpace(firstNonEmpty(r.FormValue("start"), r.FormValue("from")))
@@ -317,7 +317,7 @@ func (p *Proxy) handleVolumeRange(w http.ResponseWriter, r *http.Request) {
 	if p.handleMultiTenantFanout(w, r, "volume_range") {
 		return
 	}
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	orgID := r.Header.Get("X-Scope-OrgID")
 	query := r.FormValue("query")
 	startParam := strings.TrimSpace(firstNonEmpty(r.FormValue("start"), r.FormValue("from")))

@@ -27,12 +27,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       pages_site_exists: ${{ steps.pages_site.outputs.exists || 'false' }}
     permissions:
       contents: read
-      pages: write
-      id-token: write
+      pages: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
@@ -51,6 +51,10 @@ jobs:
       - name: Build website
         working-directory: website
         run: npm run build
+
+      - name: Test image parser hardening
+        working-directory: website
+        run: npm run test:security
 
       - name: Detect Pages site
         if: github.event_name != 'pull_request'
@@ -88,6 +92,7 @@ jobs:
     if: github.event_name != 'pull_request' && needs.build.outputs.pages_site_exists == 'true'
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pages: write
       id-token: write

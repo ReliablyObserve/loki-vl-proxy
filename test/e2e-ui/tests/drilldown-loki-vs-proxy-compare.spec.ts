@@ -13,8 +13,8 @@
 import { test, expect, type APIRequestContext } from "@playwright/test";
 import * as fs from "fs";
 
-const LOKI_BASE = "http://127.0.0.1:13101";
-const PROXY_BASE = "http://127.0.0.1:13106";
+const LOKI_BASE = process.env.LOKI_URL || "http://127.0.0.1:13101";
+const PROXY_BASE = process.env.PROXY_NATIVE_METADATA_URL || "http://127.0.0.1:13106";
 const SERVICE = "api-gateway";
 const STREAM_SELECTOR = `{service_name="${SERVICE}"}`;
 

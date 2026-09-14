@@ -67,9 +67,9 @@ func TestOPT5_FingerprintFromCtx_FallbackWithoutInject(t *testing.T) {
 	}
 }
 
-// TestOPT5_FingerprintEmpty_NoForwardConfig verifies fingerprint is "" when no
+// TestOPT5_FingerprintScope_NoForwardConfig verifies fingerprint is "" when no
 // forwarding is configured (the fast early-return path in forwardedAuthFingerprint).
-func TestOPT5_FingerprintEmpty_NoForwardConfig(t *testing.T) {
+func TestOPT5_FingerprintScope_NoForwardConfig(t *testing.T) {
 	p, _ := New(Config{
 		BackendURL: "http://unused",
 		Cache:      cache.New(30*time.Second, 100),
@@ -79,8 +79,8 @@ func TestOPT5_FingerprintEmpty_NoForwardConfig(t *testing.T) {
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("X-Auth-Token", "tok-abc")
 	r2 := p.injectAuthFingerprint(r)
-	if got := p.fingerprintFromCtx(r2.Context(), r2); got != "" {
-		t.Errorf("expected empty fingerprint with no forwarding config, got %q", got)
+	if got := p.fingerprintFromCtx(r2.Context(), r2); got == "" {
+		t.Errorf("expected routing scope fingerprint with no forwarding config, got %q", got)
 	}
 }
 

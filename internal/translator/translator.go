@@ -1505,9 +1505,11 @@ func splitLabelFormatAssignments(s string) []string {
 // convertGoTemplate converts Go template syntax {{.label}} to LogsQL <label> syntax.
 // Handles dotted field names like {{.service.name}} → <service.name>.
 func convertGoTemplate(tmpl string) string {
-	tmpl = strings.Trim(tmpl, "\"")
+	if unquoted, err := strconv.Unquote(strings.TrimSpace(tmpl)); err == nil {
+		tmpl = unquoted
+	}
 	result := goTemplateRE.ReplaceAllString(tmpl, "<$1>")
-	return `"` + result + `"`
+	return strconv.Quote(result)
 }
 
 // splitFuncFirstArg splits the first argument from a parenthesised function arg list,

@@ -451,6 +451,7 @@ func TestQueryRangeWindow_FetchStoresCacheLocallyWhenPeerWriteThroughEnabled(t *
 		t.Fatalf("create proxy: %v", err)
 	}
 
+	cacheKey = p.queryRangeWindowCacheKey(req, `{app="api"}`, "100", window, false, false)
 	if _, err := p.fetchQueryRangeWindow(context.Background(), req, `{app="api"}`, "100", 100, window, false, false); err != nil {
 		t.Fatalf("fetchQueryRangeWindow returned error: %v", err)
 	}
@@ -523,6 +524,7 @@ func TestQueryRangeWindowHitEstimate_CachesLocallyWhenPeerWriteThroughEnabled(t 
 		t.Fatalf("create proxy: %v", err)
 	}
 
+	cacheKey = p.queryRangeWindowHasHitsCacheKey(req, `{app="api"}`, window)
 	got, err := p.queryRangeWindowHitEstimate(context.Background(), req, `{app="api"}`, window)
 	if err != nil {
 		t.Fatalf("queryRangeWindowHitEstimate returned error: %v", err)
