@@ -9,6 +9,13 @@ import (
 func TestTopK_RangeWinnersChangeAtEachStep(t *testing.T) {
 	input := []byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"app":"a"},"values":[[1,"10"],[2,"-9"]]},{"metric":{"app":"b"},"values":[[1,"-5"],[2,"-1"]]},{"metric":{"app":"c"},"values":[[1,"NaN"],[2,"NaN"]]}]}}`)
 	for _, descending := range []bool{true, false} {
+		name := "bottomk"
+		if descending {
+			name = "topk"
+		}
+		if got := applyMatrixPostAggregation(input, instantMetricPostAgg{name: name, k: 1}); string(got) != string(applyTopKToMatrix(input, 1, descending)) {
+			t.Fatal("query_range post-aggregation bypasses per-step ranking")
+		}
 		var response struct {
 			Data struct {
 				Result []struct {

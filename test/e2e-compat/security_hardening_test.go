@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -40,6 +41,74 @@ func hardeningRequest(t *testing.T, method, target, body string, headers map[str
 		t.Fatal(err)
 	}
 	return resp.StatusCode, data
+}
+
+func TestHardeningLive_TopKChangingWinners(t *testing.T) {
+	service := fmt.Sprintf("hardening-rank-%d", time.Now().UnixNano())
+	stamp := time.Now().Add(-5 * time.Minute).Truncate(time.Minute)
+	for step := 0; step < 2; step++ {
+		for level := 0; level < 2; level++ {
+			count := 1
+			if level == step {
+				count = 9
+			}
+			for i := 0; i < count; i++ {
+				ts := stamp.Add(time.Duration(step*60-30)*time.Second + time.Duration(i)*time.Millisecond)
+				labels := map[string]string{"service_name": service, "rank": strconv.Itoa(level)}
+				row, _ := json.Marshal(map[string]string{"_time": ts.UTC().Format(time.RFC3339Nano), "_msg": "rank-marker", "service_name": service, "rank": labels["rank"]})
+				status, body := hardeningRequest(t, "POST", vlURL+"/insert/jsonline?_stream_fields=service_name,rank", string(row)+"\n", map[string]string{"Content-Type": "application/stream+json"})
+				if status != 200 {
+					t.Fatalf("VL ingest: %d %s", status, body)
+				}
+				payload, _ := json.Marshal(map[string]any{"streams": []any{map[string]any{"stream": labels, "values": [][]string{{strconv.FormatInt(ts.UnixNano(), 10), "rank-marker"}}}}})
+				status, body = hardeningRequest(t, "POST", lokiURL+"/loki/api/v1/push", string(payload), map[string]string{"Content-Type": "application/json"})
+				if status != 204 {
+					t.Fatalf("Loki ingest: %d %s", status, body)
+				}
+			}
+		}
+	}
+	status, body := hardeningRequest(t, "POST", vlURL+"/internal/force_flush", "", nil)
+	if status != 200 {
+		t.Fatalf("flush: %d %s", status, body)
+	}
+	for _, op := range []string{"topk", "bottomk"} {
+		q := url.Values{"query": {op + `(1, sum by (rank) (rate({service_name="` + service + `"}[1m])))`}, "start": {strconv.FormatInt(stamp.Unix(), 10)}, "end": {strconv.FormatInt(stamp.Add(time.Minute).Unix(), 10)}, "step": {"60"}}
+		want := map[int64]string{stamp.Unix(): "0", stamp.Add(time.Minute).Unix(): "1"}
+		if op == "bottomk" {
+			want = map[int64]string{stamp.Unix(): "1", stamp.Add(time.Minute).Unix(): "0"}
+		}
+		for _, base := range []string{lokiURL, proxyURL} {
+			status, body := hardeningRequest(t, "GET", base+"/loki/api/v1/query_range?"+q.Encode(), "", nil)
+			if status != 200 {
+				t.Fatalf("%s %s: %d %s", base, op, status, body)
+			}
+			var response struct {
+				Data struct {
+					Result []struct {
+						Metric map[string]string
+						Values [][]any
+					}
+				}
+			}
+			if err := json.Unmarshal(body, &response); err != nil {
+				t.Fatal(err)
+			}
+			got := map[int64]string{}
+			for _, series := range response.Data.Result {
+				for _, point := range series.Values {
+					ts := int64(point[0].(float64))
+					if _, exists := got[ts]; exists {
+						t.Fatalf("multiple winners at %d: %s", ts, body)
+					}
+					got[ts] = series.Metric["rank"]
+				}
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("%s %s winners: got=%v want=%v body=%s", base, op, got, want, body)
+			}
+		}
+	}
 }
 
 func hardeningIngest(t *testing.T, service, org, account, marker string, timestamp time.Time) {

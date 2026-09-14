@@ -2465,7 +2465,7 @@ func TestApplyMatrixPostAggregation(t *testing.T) {
 		t.Errorf("bottomk(1): expected low, got %v", resp.Data.Result)
 	}
 
-	// topk(3): all 3, ordered high→mid→low
+	// topk(3): all 3. Loki does not promise rank ordering for range results.
 	result = applyMatrixPostAggregation(body, instantMetricPostAgg{name: "topk", k: 3})
 	if err := json.Unmarshal(result, &resp); err != nil {
 		t.Fatalf("topk(3) unmarshal: %v", err)
@@ -2473,8 +2473,12 @@ func TestApplyMatrixPostAggregation(t *testing.T) {
 	if len(resp.Data.Result) != 3 {
 		t.Errorf("topk(3): expected 3, got %d", len(resp.Data.Result))
 	}
-	if resp.Data.Result[0].Metric["svc"] != "high" || resp.Data.Result[2].Metric["svc"] != "low" {
-		t.Errorf("topk(3): wrong order %v", resp.Data.Result)
+	seen := map[interface{}]bool{}
+	for _, series := range resp.Data.Result {
+		seen[series.Metric["svc"]] = true
+	}
+	if !seen["high"] || !seen["mid"] || !seen["low"] {
+		t.Errorf("topk(3): missing series %v", resp.Data.Result)
 	}
 
 	// passthrough on invalid body

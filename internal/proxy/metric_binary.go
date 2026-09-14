@@ -3903,6 +3903,9 @@ func applyTopKToMatrix(body []byte, k int, descending bool) []byte {
 	if err != nil {
 		return body
 	}
+	if string(v.GetStringBytes("status")) != "success" || string(v.GetStringBytes("data", "resultType")) != "matrix" {
+		return body
+	}
 	result := v.GetArray("data", "result")
 	if len(result) <= k {
 		return body

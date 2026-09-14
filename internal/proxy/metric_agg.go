@@ -305,7 +305,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 }
 
 // handleRangeMetricPostAggregation handles topk/bottomk/sort at /query_range by
-// fetching the full matrix from VL and then trimming to the requested K series.
+// fetching the full matrix from VL and ranking at each evaluation timestamp.
 func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.Request, start time.Time, originalQuery string, postAgg instantMetricPostAgg) {
 	translatedInner, err := p.translateQueryWithContext(r.Context(), postAgg.inner)
 	if err != nil {
@@ -438,8 +438,11 @@ func applyMatrixStddevAgg(body []byte, funcName string) []byte {
 }
 
 // applyMatrixSortTopkAgg applies topk/bottomk/sort to a matrix (query_range) result.
-// It ranks series by their last value and trims to the requested K.
+// topk/bottomk use per-step selection; sort orders series by their last value.
 func applyMatrixSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
+	if postAgg.name == "topk" || postAgg.name == "bottomk" {
+		return applyTopKToMatrix(body, postAgg.k, postAgg.name == "topk")
+	}
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -488,19 +491,8 @@ func applyMatrixSortTopkAgg(body []byte, postAgg instantMetricPostAgg) []byte {
 		}
 	})
 
-	// sort/sort_desc return all series reordered; only topk/bottomk trim to k.
+	// sort/sort_desc return all series reordered.
 	resultCount := len(ranks)
-	if (postAgg.name == "topk" || postAgg.name == "bottomk") && postAgg.k > 0 {
-		// Ensure topk size is safe: bounded by min(requested, max constant, available)
-		const maxTopK = 10000
-		safeSize := postAgg.k
-		if safeSize > maxTopK {
-			safeSize = maxTopK
-		}
-		if safeSize < resultCount {
-			resultCount = safeSize
-		}
-	}
 
 	// Pre-allocate with safe maximum size to avoid CodeQL taint analysis issues
 	// with user-provided allocation sizes. Use a fixed-size allocation and populate

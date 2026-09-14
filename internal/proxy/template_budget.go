@@ -199,7 +199,7 @@ func instrumentTemplateBudget(tmpl *template.Template, ctx context.Context) erro
 		return nil
 	}
 	for _, part := range tmpl.Templates() {
-		if err := walk(part.Tree.Root, 0); err != nil {
+		if err := walk(part.Root, 0); err != nil {
 			return err
 		}
 	}

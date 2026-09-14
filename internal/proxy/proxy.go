@@ -2219,28 +2219,6 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	p.queryTracker.Record("query_range", logqlQuery, elapsed, sc.code >= 400)
 }
 
-// queryRangeBucket returns the cache-key bucket size for a query_range request.
-// Bucket = max(5 min, step), capped at 1 hour so very large steps don't produce
-// multi-day cache entries that hold stale data too long.
-func queryRangeBucket(r *http.Request) time.Duration {
-	const (
-		minBucket = 5 * time.Minute
-		maxBucket = time.Hour
-	)
-	stepRaw := r.FormValue("step")
-	if stepRaw == "" {
-		return minBucket
-	}
-	d, ok := parsePositiveStepDuration(stepRaw)
-	if !ok || d <= minBucket {
-		return minBucket
-	}
-	if d > maxBucket {
-		return maxBucket
-	}
-	return d
-}
-
 func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
 	params := url.Values{"query": {logqlQuery}}
 	for _, key := range []string{"start", "end", "step", "limit", "direction", "interval", "since", "time"} {
