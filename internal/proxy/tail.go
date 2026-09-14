@@ -62,6 +62,9 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = conn.Close() }()
+	// Tail is server-to-client data. Preserve control frames and tolerate small
+	// legacy client messages, but never allocate an arbitrary client payload.
+	conn.SetReadLimit(4096)
 	p.metrics.RecordRequest("tail", http.StatusOK, time.Since(start))
 
 	// Start a read loop to detect client disconnect (WebSocket protocol requires it).
@@ -71,7 +74,11 @@ func (p *Proxy) handleTail(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer tailCancel()
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			_, reader, err := conn.NextReader()
+			if err != nil {
+				return
+			}
+			if _, err := io.Copy(io.Discard, reader); err != nil {
 				return
 			}
 		}

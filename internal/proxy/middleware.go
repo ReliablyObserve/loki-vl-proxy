@@ -114,6 +114,14 @@ func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
 	if ok {
 		return nil
 	}
+	// Explicit mappings take precedence, but label routing must not turn an
+	// unmapped wildcard into an implicit authorization to query every tenant.
+	if orgID == "*" {
+		if p.globalTenantAllowed() {
+			return nil
+		}
+		return &requestPolicyError{status: http.StatusForbidden, msg: `global tenant bypass ("*") is disabled`}
+	}
 
 	// In label-based routing mode any org ID is accepted: isolation is enforced
 	// by injecting a LogsQL label filter into the query, not via AccountID headers.
@@ -130,15 +138,6 @@ func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
 
 	if isDefaultTenantAlias(orgID) {
 		return nil
-	}
-	if orgID == "*" {
-		if p.globalTenantAllowed() {
-			return nil
-		}
-		return &requestPolicyError{
-			status: http.StatusForbidden,
-			msg:    `global tenant bypass ("*") is disabled`,
-		}
 	}
 	if _, err := strconv.Atoi(orgID); err == nil {
 		return nil

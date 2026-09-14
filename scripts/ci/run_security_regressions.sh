@@ -2,7 +2,7 @@
 set -euo pipefail
 
 go test ./internal/proxy \
-  -run '^(TestHardening_|TestTenantScoping_|TestTailHardening_(RejectsBrowserOriginsByDefault|AllowsConfiguredOrigin)|TestPeerCacheMiddleware|TestEnsureWritableSnapshotPath_CreatesTargetFile|TestNew_FailsFastOnUnwritable(PatternsPersistPath|LabelValuesPersistPath))$' \
+  -run '^(TestHardening_.*|TestTenantScoping_.*|TestTailHardening_.*|TestPeerCacheMiddleware|TestEnsureWritableSnapshotPath_CreatesTargetFile|TestNew_FailsFastOnUnwritable(PatternsPersistPath|LabelValuesPersistPath))$' \
   -count=1
 
 go test -v -tags=e2e -timeout="${E2E_SECURITY_TIMEOUT:-150s}" -count=1 \

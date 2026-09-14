@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Enforce global-tenant wildcard denial in label-routing mode, bound tail client
+  messages to 4 KiB while preserving WebSocket controls, and execute all intended
+  hardening suites in the dedicated security lane. See the security hardening
+  migration guide for the explicit wildcard opt-in behavior.
+
 ## [1.66.1] - 2026-09-12
 
 ### Fixed
