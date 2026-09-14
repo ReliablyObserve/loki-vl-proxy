@@ -866,10 +866,11 @@ func exhaustiveQueryWithRange(t *testing.T, baseURL, query string, window time.D
 	now := time.Now()
 	params := url.Values{}
 	params.Set("query", query)
-	// Use millisecond timestamps — Loki 3.7.1 hangs on nanosecond-precision
-	// timestamps for unwrap metric queries (query engine bug with large nanos).
-	params.Set("start", fmt.Sprintf("%d", now.Add(-window).UnixMilli()))
-	params.Set("end", fmt.Sprintf("%d", now.UnixMilli()))
+	// Loki interprets integer timestamps as nanoseconds, not milliseconds.
+	// RFC3339 avoids unit ambiguity and exercises the actual ingested window;
+	// millisecond integers accidentally queried 1970 and hid execution errors.
+	params.Set("start", now.Add(-window).UTC().Format(time.RFC3339Nano))
+	params.Set("end", now.UTC().Format(time.RFC3339Nano))
 	params.Set("limit", "10")
 	params.Set("step", fmt.Sprintf("%d", stepSec))
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Correct exhaustive compatibility timestamps to address real Loki data;
+  expose previously hidden runtime and result-parity gaps for follow-up fixes.
+
 ## [1.67.0] - 2026-09-14
 
 ### Fixed
