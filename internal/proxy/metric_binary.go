@@ -3293,6 +3293,7 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 		return
 	}
 
+	logsqlQuery, guarded := withEmptyInputGuard(logsqlQuery)
 	params := url.Values{}
 	params.Set("query", logsqlQuery)
 	evalTime := r.FormValue("time")
@@ -3329,6 +3330,9 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 		return
 	}
 
+	if guarded {
+		body = dropEmptyInputGuard(body)
+	}
 	body = p.translateStatsResponseLabelsWithContext(r.Context(), body, r.FormValue("query"))
 	body = wrapAsLokiResponse(body, "vector")
 	if topK, topKDesc, hasTopK := parseTopKWrapper(r.FormValue("query")); hasTopK {
@@ -3336,6 +3340,79 @@ func (p *Proxy) proxyStatsQuery(w http.ResponseWriter, r *http.Request, logsqlQu
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
+}
+
+// emptyInputGuardAlias names the row count appended to an ungrouped final stats
+// pipe. VictoriaLogs answers such a pipe with one row even when no rows reach it
+// (count()=0, sum()=NaN, max()=""), while Loki aggregates an empty input vector
+// into an empty vector, so the count is the only reliable empty-input signal.
+const emptyInputGuardAlias = "__lvp_n"
+
+var (
+	statsGroupByRE      = regexp.MustCompile(`^by\s*\(`)
+	statsEmptyGroupByRE = regexp.MustCompile(`^by\s*\(\s*\)`)
+)
+
+// withEmptyInputGuard appends count() as __lvp_n to the final stats pipe when
+// that pipe is the last one and groups by nothing. It reports whether it did.
+func withEmptyInputGuard(query string) (string, bool) {
+	idx := strings.LastIndex(query, "| stats ")
+	if idx < 0 {
+		return query, false
+	}
+	tail := strings.TrimSpace(query[idx+len("| stats "):])
+	if tail == "" || strings.Contains(tail, "|") || (statsGroupByRE.MatchString(tail) && !statsEmptyGroupByRE.MatchString(tail)) {
+		return query, false
+	}
+	return strings.TrimRight(query, " \t\r\n") + ", count() as " + emptyInputGuardAlias, true
+}
+
+// dropEmptyInputGuard removes the guard row from a stats_query response and
+// clears the result when the guard counted no input rows. Responses without a
+// guard row are returned unchanged.
+func dropEmptyInputGuard(body []byte) []byte {
+	var resp map[string]json.RawMessage
+	var data map[string]json.RawMessage
+	var result []json.RawMessage
+	if json.Unmarshal(body, &resp) != nil || json.Unmarshal(resp["data"], &data) != nil || json.Unmarshal(data["result"], &result) != nil {
+		return body
+	}
+	kept := make([]json.RawMessage, 0, len(result))
+	guarded, empty := false, false
+	for _, raw := range result {
+		var sample struct {
+			Metric map[string]string `json:"metric"`
+			Value  []json.RawMessage `json:"value"`
+		}
+		if json.Unmarshal(raw, &sample) != nil || len(sample.Metric) != 1 || sample.Metric["__name__"] != emptyInputGuardAlias {
+			kept = append(kept, raw)
+			continue
+		}
+		guarded = true
+		var count string
+		if len(sample.Value) == 2 && json.Unmarshal(sample.Value[1], &count) == nil {
+			n, err := strconv.ParseFloat(count, 64)
+			empty = err == nil && n == 0
+		}
+	}
+	if !guarded {
+		return body
+	}
+	if empty {
+		kept = kept[:0]
+	}
+	encoded, err := json.Marshal(kept)
+	if err != nil {
+		return body
+	}
+	data["result"] = encoded
+	if resp["data"], err = json.Marshal(data); err != nil {
+		return body
+	}
+	if out, err := json.Marshal(resp); err == nil {
+		return out
+	}
+	return body
 }
 
 // proxyBinaryMetricQueryRangeVM evaluates with vector matching (on/ignoring/group_left/group_right).
