@@ -41,6 +41,9 @@ keys, including persisted and peer entries. Expect a temporary increase in
 backend reads while caches warm. Old entries may occupy storage until expiry or
 reclamation; they are not accepted into the new namespace. Mixed-version fleets
 cannot share these entries, and old replicas retain the old security behavior.
+The configuration namespace is computed at startup/reload instead of hashing
+configuration on every read. Any tenant-map change invalidates the namespace
+for all tenants; already admitted requests retain their original namespace.
 
 Label tenancy now uses VictoriaLogs' `extra_stream_filters` parameter instead of
 appending text after query pipelines. The configured tenant field must be a
