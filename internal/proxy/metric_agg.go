@@ -343,7 +343,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 			switch fn {
 			case "rate", "bytes_rate", "count_over_time", "bytes_over_time":
 				spec.OrigGroupBy = parseOriginalByLabels(postAgg.inner)
-				handled = p.proxyManualRangeMetricRange(sc, innerR, spec, orig, fn)
+				handled = p.proxyManualRangeMetricRangeWithFill(sc, innerR, spec, orig, fn, false)
 			}
 		}
 	}

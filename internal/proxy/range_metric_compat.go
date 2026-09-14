@@ -546,6 +546,12 @@ func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsS
 }
 
 func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string) bool {
+	return p.proxyManualRangeMetricRangeWithFill(w, r, spec, origSpec, manualFunc, true)
+}
+
+// Ranking must preserve absent evaluations: chart zero-fill would turn an
+// absent series into a candidate that can win topk/bottomk before it has data.
+func (p *Proxy) proxyManualRangeMetricRangeWithFill(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string, fillMissing bool) bool {
 	startTS, err := parseTimestamp(r.FormValue("start"))
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, "invalid start timestamp: "+err.Error())
@@ -582,7 +588,11 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 	case "__count__":
 		statsAggFunc = "count() as c"
 	case "__bytes__":
-		statsAggFunc = "sum_len(_msg) as c"
+		// An empty log line has a valid zero byte count. Raw samples retain
+		// presence when ranking; a zero-filled byte sum cannot distinguish it.
+		if fillMissing {
+			statsAggFunc = "sum_len(_msg) as c"
+		}
 	}
 	// Sliding-window parser-stage queries (range > step) reach this path via
 	// shouldUseManualRangeMetricCompat returning true. Skip the stats_query_range
@@ -606,7 +616,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 			}
 			fireFn := p.fusedFieldHits(orgID, base, startTS.Add(-origSpec.Window), endTS, step)
 			if series, coalErr := p.drilldownCoalescer.Submit(r.Context(), bKey, field, fireFn); coalErr == nil {
-				result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+				result := buildHitsRangeMetricMatrixWithFill(manualFunc, series, startTS, endTS, step, origSpec.Window, fillMissing)
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(result) // nosemgrep
 				return true
@@ -615,13 +625,13 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		}
 	}
 	if series, ok := p.collectStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
-		result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+		result := buildHitsRangeMetricMatrixWithFill(manualFunc, series, startTS, endTS, step, origSpec.Window, fillMissing)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(result) // nosemgrep
 		return true
 	}
 	if series, ok := p.collectParserStageStatsFastPathHits(r.Context(), spec, statsAggFunc, startTS.Add(-origSpec.Window), endTS, step); ok {
-		result := buildHitsRangeMetricMatrix(manualFunc, series, startTS, endTS, step, origSpec.Window)
+		result := buildHitsRangeMetricMatrixWithFill(manualFunc, series, startTS, endTS, step, origSpec.Window, fillMissing)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(result) // nosemgrep
 		return true
@@ -1513,6 +1523,10 @@ func buildManualRangeMetricMatrix(functionName string, quantile float64, series 
 // in pprof's cumulative allocation profile (1.31 GB total). Pre-sizing
 // eliminates the cascade — one allocation per series instead of ten.
 func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration) []byte {
+	return buildHitsRangeMetricMatrixWithFill(manualFunc, series, start, end, step, window, true)
+}
+
+func buildHitsRangeMetricMatrixWithFill(manualFunc string, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, fillMissing bool) []byte {
 	if end.Before(start) {
 		return marshalManualMetricResponse("matrix", []map[string]interface{}{})
 	}
@@ -1555,7 +1569,12 @@ func buildHitsRangeMetricMatrix(manualFunc string, series map[string]manualSerie
 					sum += s.value
 				}
 			}
-			// Always emit a datapoint per step bucket — zero-filling missing
+			// Count/rate ranking excludes empty windows, including zeros emitted
+			// by VL itself. Byte ranking uses raw samples to retain real zeros.
+			if !fillMissing && sum == 0 {
+				continue
+			}
+			// Chart mode emits a datapoint per step bucket — zero-filling missing
 			// values. Previously we skipped sum==0 to save bytes, but for
 			// sparse series (high-cardinality fields like trace_id where each
 			// value appears at only a few timestamps) the result was a series

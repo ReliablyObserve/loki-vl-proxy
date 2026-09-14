@@ -1,0 +1,9 @@
+# Current stable review baseline, verified against upstream on 2026-09-14.
+# Use alongside docker-compose.yml; explicit versions make review reproducible.
+services:
+  loki:
+    image: grafana/loki:3.7.7
+  grafana:
+    image: grafana/grafana:13.2.1
+    environment:
+      - GF_PLUGINS_PREINSTALL=victoriametrics-logs-datasource@0.26.3,grafana-lokiexplore-app@2.5.2

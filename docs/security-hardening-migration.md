@@ -114,6 +114,11 @@ following [Prometheus range semantics](https://prometheus.io/blog/2021/02/18/int
 A range can therefore return more than `k` distinct series as winners change;
 each series contains only its winning samples. Dashboards relying on the old
 whole-range cap will display additional legitimate series.
+Ranking excludes absent windows instead of admitting chart-fill zeros as
+candidates. Regular Drilldown chart filling retains its existing time-axis
+behavior. Byte-based ranking uses raw samples because an actual empty log line
+has a valid zero byte count; this path can read more backend data than count/rate
+ranking, which continues to use pre-aggregated buckets.
 
 ## Remaining delete API gap
 

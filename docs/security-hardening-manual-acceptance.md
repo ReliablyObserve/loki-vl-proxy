@@ -13,15 +13,23 @@ with the results. Automated checks on a proposed branch do not replace this pass
 
 From a clean checkout of the merged `main`, rebuild the E2E images and recreate
 the stack with its UI profile. Preserve volumes; no data reset is required.
+The review override pins Loki 3.7.7, Grafana 13.2.1 and Logs Drilldown 2.5.2,
+the current stable review baseline verified on September 14, 2026. The original
+Compose defaults remain available for testing the older compatibility baseline.
 
 ```sh
 git rev-parse HEAD
-docker compose -f test/e2e-compat/docker-compose.yml --profile ui build \
+export COMPOSE_FILE=test/e2e-compat/docker-compose.yml:test/e2e-compat/docker-compose.review.yml
+docker compose --profile ui pull loki grafana
+docker compose --profile ui build \
   --build-arg REVISION="$(git rev-parse HEAD)"
-docker compose -f test/e2e-compat/docker-compose.yml --profile ui up -d --no-build
-docker compose -f test/e2e-compat/docker-compose.yml --profile ui ps
-docker compose -f test/e2e-compat/docker-compose.yml logs loki-vl-proxy \
+docker compose --profile ui up -d --no-build
+docker compose --profile ui ps
+docker compose logs loki-vl-proxy \
   | grep 'proxy build info'
+curl -fsS http://127.0.0.1:3002/api/health
+curl -fsS http://127.0.0.1:3002/api/plugins/grafana-lokiexplore-app/settings
+curl -fsS http://127.0.0.1:13101/loki/api/v1/status/buildinfo
 ```
 
 The startup log's `revision` must match the checked-out commit. The Loki-compatible

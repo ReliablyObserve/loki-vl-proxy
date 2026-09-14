@@ -72,9 +72,10 @@ func TestHardeningLive_TopKChangingWinners(t *testing.T) {
 	if status != 200 {
 		t.Fatalf("flush: %d %s", status, body)
 	}
-	for _, fn := range []string{"rate", "count_over_time"} {
+	for _, fn := range []string{"rate", "count_over_time", "bytes_rate", "bytes_over_time"} {
 		for _, op := range []string{"topk", "bottomk"} {
-			q := url.Values{"query": {op + `(1, sum by (rank) (` + fn + `({service_name="` + service + `"}[1m])))`}, "start": {strconv.FormatInt(stamp.Unix(), 10)}, "end": {strconv.FormatInt(stamp.Add(time.Minute).Unix(), 10)}, "step": {"60"}}
+			// Empty leading/trailing windows must not create zero-valued winners.
+			q := url.Values{"query": {op + `(1, sum by (rank) (` + fn + `({service_name="` + service + `"}[1m])))`}, "start": {strconv.FormatInt(stamp.Add(-2*time.Minute).Unix(), 10)}, "end": {strconv.FormatInt(stamp.Add(3*time.Minute).Unix(), 10)}, "step": {"60"}}
 			want := map[int64]string{stamp.Unix(): "0", stamp.Add(time.Minute).Unix(): "1"}
 			if op == "bottomk" {
 				want = map[int64]string{stamp.Unix(): "1", stamp.Add(time.Minute).Unix(): "0"}
