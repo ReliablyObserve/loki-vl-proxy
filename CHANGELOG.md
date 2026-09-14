@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Patch malformed ICNS/JXL/HEIF image parsing in the documentation build with
+  integrity-checked bounds checks and isolated regression tests; constrain build
+  time and token permissions. Registry npm audit metadata remains unchanged
+  until an upstream patched image-size release is available.
+
 - Bound subquery evaluation, formatting and actual backend fanout; surface
   failed subqueries instead of successful empty results. Reject oversized
   coalesced responses and reclaim unread expired disk entries. See the security
