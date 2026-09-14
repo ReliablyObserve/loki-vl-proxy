@@ -96,12 +96,20 @@ legacy assertions. The new strict tests do not turn those gaps into guarantees.
 A separate correction of the legacy exhaustive helper exposed a serious test
 limitation: it sends millisecond integers, which Loki treats as nanoseconds,
 and therefore often compares an empty epoch window with current proxy data.
-The corrected real-window run found invalid-IP and metric parser-error
-mismatches, missing grouped quantile/regexp-capture results, an aggregate-rate
-fallback error and several reference-Loki timeouts. These are open compatibility
-blockers in the separate real-window review draft; the legacy suite's green
-status is not evidence that these behaviors work. The malformed-template
-hardening regression now uses seeded data and correct timestamps directly.
+An isolated run without the UI generator confirmed invalid-IP and parser-error
+mismatches and invalid binary matching. Strict value checks also exposed
+quantile errors and a warmed-field-mapping regexp capture defect. Earlier
+reference timeouts and aggregate resource failures on a long-running generator
+stack are not isolated reproductions. These compatibility issues are tracked
+in the separate real-window draft; the legacy suite's green status is not
+execution-parity evidence. The malformed-template hardening regression uses
+seeded data and correct timestamps directly.
+
+The pre-merge review additionally reproduced a hot/cold merge stall with one
+backend permit: 502 at a 250 ms request deadline. Consuming bounded response
+bodies inside their workers restored a successful two-backend response. The
+new forward/backward and body-failure regressions and the full uncached race
+suite pass with this correction.
 
 Before broad shared production rollout, run the full supported-version matrix,
 a representative concurrent/tenant workload soak, backend outage and disk-full

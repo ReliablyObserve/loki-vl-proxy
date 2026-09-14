@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep hot/cold cross-boundary queries progressing with a backend concurrency
+  limit of one. Each merge worker consumes and closes its bounded response
+  before joining; oversized or incomplete responses fail instead of producing
+  partial results.
+
 - Preserve backtick and escaped-quote line formatting through real response
   tuples, including categorized metadata, and apply formatting limits before
   streaming. Add live tenant/cache/Loki parity and visible Grafana regressions.

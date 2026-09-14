@@ -30,6 +30,12 @@ and [Gorilla message read limit](https://pkg.go.dev/github.com/gorilla/websocket
 
 ## Tenant scope across caches and backends
 
+Hot/cold merge workers consume their responses before waiting for each other,
+so a shared backend concurrency limit of one remains usable. Successful hot
+and forward-cold responses are buffered up to 64 MiB each; overflow or read
+failure returns an error. Backend permits remain held until each response is
+consumed or closed.
+
 Tenant routing is snapshotted at admission and retained for child queries and
 background work. Cache and coalescer identities now include the resolved tenant
 mapping, backend identity, configured field mappings, and forwarded identity.
