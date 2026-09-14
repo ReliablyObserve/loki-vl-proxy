@@ -1565,14 +1565,14 @@ func TestCopyBackendHeaders_SecurityHeadersPreserved(t *testing.T) {
 	}
 }
 
-// TestForwardedAuthFingerprint_EmptyWithoutConfig ensures no fingerprint is
+// TestForwardedAuthFingerprint_ScopeWithoutForwarding ensures no fingerprint is
 // computed when no header/cookie forwarding is configured.
-func TestForwardedAuthFingerprint_EmptyWithoutConfig(t *testing.T) {
+func TestForwardedAuthFingerprint_ScopeWithoutForwarding(t *testing.T) {
 	p := &Proxy{}
 	r := httptest.NewRequest("GET", "/", nil)
 	r.Header.Set("Authorization", "Bearer secret")
-	if fp := p.forwardedAuthFingerprint(r); fp != "" {
-		t.Errorf("expected empty fingerprint with no forwarding configured, got %q", fp)
+	if fp := p.forwardedAuthFingerprint(r); fp == "" {
+		t.Errorf("expected scope fingerprint even without credential forwarding, got %q", fp)
 	}
 }
 
@@ -1825,8 +1825,8 @@ func TestSnapshotForwardedAuth_CapturesHeaders(t *testing.T) {
 		p := &Proxy{}
 		r := httptest.NewRequest("GET", "/", nil)
 		r.Header.Set("Authorization", "Bearer secret")
-		if snap := p.snapshotForwardedAuth(r); snap != nil {
-			t.Error("expected nil snapshot when no forwarding configured")
+		if snap := p.snapshotForwardedAuth(r); snap == nil || snap.Header.Get("Authorization") != "" {
+			t.Error("expected routing snapshot without unconfigured credentials")
 		}
 	})
 

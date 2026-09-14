@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve tenant routing and forwarded identity across cache hits, tenant-map
+  reloads, cold reads, coalesced Drilldown queries, and background refreshes.
+  Scope persisted/shared cache keys and label indexes accordingly; enforce
+  label tenancy with VictoriaLogs extra stream filters without modifying query
+  pipelines. Existing cache entries become cold during upgrade.
+
 - Enforce global-tenant wildcard denial in label-routing mode, bound tail client
   messages to 4 KiB while preserving WebSocket controls, and execute all intended
   hardening suites in the dedicated security lane. See the security hardening

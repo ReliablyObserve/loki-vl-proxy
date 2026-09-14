@@ -597,6 +597,7 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 		if base, field, ok := extractCommonBase(spec.BaseQuery); ok {
 			orgID := r.Header.Get("X-Scope-OrgID")
 			bKey := burstKey{
+				scope:    p.contextScopeFingerprint(r.Context()),
 				orgID:    orgID,
 				base:     base,
 				startSec: startTS.Add(-origSpec.Window).Unix(),

@@ -568,17 +568,7 @@ func (p *Proxy) ValidateBackendVersionCompatibility(ctx context.Context) error {
 // Callers must either hold a breaker.Allow() token or use DoWithGuard (which
 // enforces the guard before fn is called).
 func (p *Proxy) vlGetInner(ctx context.Context, path string, params url.Values) (*http.Response, error) {
-	// Inject tenant label filter when configured and orgID is a non-default single tenant.
-	if p.tenantLabel != "" {
-		if orgID := getOrgID(ctx); orgID != "" && !isDefaultTenantAlias(orgID) && orgID != "*" {
-			p.configMu.RLock()
-			_, hasMapped := p.tenantMap[orgID]
-			p.configMu.RUnlock()
-			if !hasMapped {
-				params = injectTenantLabelFilter(params, p.tenantLabel, orgID)
-			}
-		}
-	}
+	params = p.scopedTenantParams(ctx, params)
 	u := *p.backend
 	u.Path = path
 	u.RawQuery = params.Encode()
@@ -650,16 +640,7 @@ func (p *Proxy) vlGet(ctx context.Context, path string, params url.Values) (*htt
 // decodes compression. It does NOT interact with the circuit breaker — callers are
 // responsible for Allow() checks and RecordFailure/RecordSuccess calls.
 func (p *Proxy) vlPostHTTP(ctx context.Context, path string, params url.Values) (*http.Response, error) {
-	if p.tenantLabel != "" {
-		if orgID := getOrgID(ctx); orgID != "" && !isDefaultTenantAlias(orgID) && orgID != "*" {
-			p.configMu.RLock()
-			_, hasMapped := p.tenantMap[orgID]
-			p.configMu.RUnlock()
-			if !hasMapped {
-				params = injectTenantLabelFilter(params, p.tenantLabel, orgID)
-			}
-		}
-	}
+	params = p.scopedTenantParams(ctx, params)
 	u := *p.backend
 	u.Path = path
 	p.log.Debug("VL request", "method", "POST", "url", u.String(), "params", redactQuery(params.Encode(), p.debugLogRawQueries))
@@ -728,6 +709,7 @@ func (p *Proxy) vlGetCoalesced(ctx context.Context, key, path string, params url
 // When the circuit breaker is open and a request for the same key is already
 // in-flight, this call joins the in-flight rather than failing immediately.
 func (p *Proxy) vlGetCoalescedWithStatus(ctx context.Context, key, path string, params url.Values) (int, []byte, error) {
+	key += ":scope:" + p.contextScopeFingerprint(ctx)
 	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
 		return p.vlGetInner(ctx, path, params)
 	})
@@ -742,6 +724,7 @@ func (p *Proxy) vlGetCoalescedWithStatus(ctx context.Context, key, path string, 
 
 // vlPostCoalesced wraps vlPostInner with request coalescing and a CB guard.
 func (p *Proxy) vlPostCoalesced(ctx context.Context, key, path string, params url.Values) (int, []byte, error) {
+	key += ":scope:" + p.contextScopeFingerprint(ctx)
 	status, _, body, err := p.coalescer.DoWithGuard(key, p.breaker.Allow, func() (*http.Response, error) {
 		return p.vlPostInner(ctx, path, params)
 	})

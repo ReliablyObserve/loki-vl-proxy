@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -1061,7 +1062,7 @@ func New(cfg Config) (*Proxy, error) {
 		coalescer:                             newCoalescer(cfg.CoalescerDisabled),
 		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
 		breaker:                               mw.NewCircuitBreaker(cbFail, 3, cbOpen, cbWindow),
-		tenantMap:                             cfg.TenantMap,
+		tenantMap:                             maps.Clone(cfg.TenantMap),
 		tenantLabel:                           cfg.TenantLabel,
 		authEnabled:                           cfg.AuthEnabled,
 		requireTenantHeader:                   cfg.RequireTenantHeader,
@@ -1536,7 +1537,7 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 // ReloadTenantMap hot-reloads tenant mappings (called on SIGHUP).
 func (p *Proxy) ReloadTenantMap(m map[string]TenantMapping) {
 	p.configMu.Lock()
-	p.tenantMap = m
+	p.tenantMap = maps.Clone(m)
 	if p.compatCache != nil {
 		p.compatCache.InvalidatePrefix("")
 	}
@@ -2019,7 +2020,7 @@ func (p *Proxy) handleQueryRange(w http.ResponseWriter, r *http.Request) {
 	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser, bare-parser
 	// paths, post-agg paths) so that the tenant context and forwarded auth headers
 	// are available for all upstream requests made on this request's behalf.
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	r = p.injectAuthFingerprint(r)
 
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
@@ -2305,7 +2306,7 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	// withOrgID must precede any vlGet/vlPost call (preferWorkingParser and all
 	// early-return compat paths) so that tenant context is set for upstream requests.
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 	r = p.injectAuthFingerprint(r)
 
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))

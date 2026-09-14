@@ -234,7 +234,7 @@ func (p *Proxy) handleInstantMetricPostAggregation(w http.ResponseWriter, r *htt
 	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 
 	bw := &bufferedResponseWriter{header: make(http.Header)}
 	sc := &statusCapture{ResponseWriter: bw, code: 200}
@@ -316,7 +316,7 @@ func (p *Proxy) handleRangeMetricPostAggregation(w http.ResponseWriter, r *http.
 	translatedInner, withoutLabels := translator.ParseWithoutMarker(translatedInner)
 	translatedInner = preserveMetricStreamIdentity(postAgg.inner, translatedInner, withoutLabels)
 
-	r = withOrgID(r)
+	r = p.withRequestScope(r)
 
 	// proxyStatsQueryRange reads r.FormValue("query") as originalLogql for the stats
 	// compat layer. If the outer sort/topk wrapper is still in r.Form, parseOriginalRangeMetricSpec

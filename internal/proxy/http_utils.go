@@ -752,25 +752,8 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 			vlReq.Header[hdrVLAuthUser] = []string{authUser}
 			vlReq.Header[hdrVLAuthSource] = []string{authSource}
 		}
-		if p.metricsTrustProxyHeaders {
-			for _, headerName := range trustedIdentityHeaders {
-				if value := strings.TrimSpace(origReq.Header.Get(headerName)); value != "" {
-					vlReq.Header.Set(headerName, value)
-				}
-			}
-			for _, headerName := range trustedProxyForwardHeaders {
-				if value := strings.TrimSpace(origReq.Header.Get(headerName)); value != "" {
-					vlReq.Header.Set(headerName, value)
-				}
-			}
-		}
-		// Forward configured client headers from the original request
-		if len(p.forwardHeaders) > 0 {
-			for _, hdr := range p.forwardHeaders {
-				if val := origReq.Header.Get(hdr); val != "" {
-					vlReq.Header.Set(hdr, val)
-				}
-			}
+		for name, values := range p.forwardedIdentityHeaders(origReq) {
+			vlReq.Header[name] = values
 		}
 		for _, cookie := range origReq.Cookies() {
 			if p.forwardCookies["*"] || p.forwardCookies[cookie.Name] {
@@ -785,32 +768,17 @@ func (p *Proxy) applyBackendHeaders(vlReq *http.Request) {
 // and cookies). Returns "" when no forwarding is configured, so callers can
 // skip the extra allocation when the cache namespace is already user-agnostic.
 func (p *Proxy) forwardedAuthFingerprint(r *http.Request) string {
-	if len(p.forwardHeaders) == 0 && len(p.forwardCookies) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, hdr := range p.forwardHeaders {
-		if val := r.Header.Get(hdr); val != "" {
-			b.WriteString(hdr)
-			b.WriteByte('=')
-			b.WriteString(val)
-			b.WriteByte(';')
-		}
-	}
+	identity := p.forwardedIdentityHeaders(r)
+	cookies := make([][2]string, 0)
 	for _, cookie := range r.Cookies() {
 		if p.forwardCookies["*"] || p.forwardCookies[cookie.Name] {
-			b.WriteString("cookie:")
-			b.WriteString(cookie.Name)
-			b.WriteByte('=')
-			b.WriteString(cookie.Value)
-			b.WriteByte(';')
+			cookies = append(cookies, [2]string{cookie.Name, cookie.Value})
 		}
 	}
-	if b.Len() == 0 {
-		return ""
-	}
-	sum := sha256.Sum256([]byte(b.String()))
-	return hex.EncodeToString(sum[:])[:16]
+	// JSON encoding is unambiguous even when header values contain delimiters.
+	data, _ := json.Marshal([]any{p.scopeFingerprint(r.Context(), r.Header.Get("X-Scope-OrgID")), identity, cookies})
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 // injectAuthFingerprint precomputes the forwardedAuthFingerprint for r and

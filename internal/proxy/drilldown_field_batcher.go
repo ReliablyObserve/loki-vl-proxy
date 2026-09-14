@@ -22,6 +22,7 @@ type fieldBatchEntry struct {
 }
 
 type fieldBatch struct {
+	ctx       context.Context
 	batcher   *drilldownFieldBatcher
 	key       string
 	orgID     string
@@ -99,12 +100,16 @@ func (b *drilldownFieldBatcher) submit(ctx context.Context, orgID, cleanBase, lo
 		return nil
 	}
 	key := fieldBatchKey(orgID, cleanBase, startRaw, endRaw, stepRaw)
+	if original, ok := ctx.Value(origRequestKey).(*http.Request); ok {
+		key += ":scope:" + b.proxy.fingerprintFromCtx(ctx, original)
+	}
 
 	b.mu.Lock()
 	batch, ok := b.pending[key]
 	if !ok {
 		batch = &fieldBatch{
 			batcher:   b,
+			ctx:       context.WithoutCancel(ctx),
 			key:       key,
 			orgID:     orgID,
 			cleanBase: cleanBase,
@@ -172,7 +177,7 @@ func (batch *fieldBatch) fire() {
 		return
 	}
 
-	ctx30s, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx30s, cancel := context.WithTimeout(batch.ctx, 30*time.Second)
 	defer cancel()
 
 	// Parse the query time bounds once; all per-field goroutines share them.

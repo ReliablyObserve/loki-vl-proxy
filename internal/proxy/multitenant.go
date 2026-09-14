@@ -975,7 +975,7 @@ func (p *Proxy) multiTenantDetectedFieldsResponse(r *http.Request, tenantIDs []s
 		subReq := r.Clone(r.Context())
 		subReq.Header = r.Header.Clone()
 		subReq.Header.Set("X-Scope-OrgID", tenantID)
-		subReq = withOrgID(subReq)
+		subReq = p.withRequestScope(subReq)
 
 		fields, fieldValues, err := p.detectFields(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
 		if err != nil {
@@ -1075,7 +1075,7 @@ func (p *Proxy) multiTenantDetectedLabelsResponse(r *http.Request, tenantIDs []s
 		subReq := r.Clone(r.Context())
 		subReq.Header = r.Header.Clone()
 		subReq.Header.Set("X-Scope-OrgID", tenantID)
-		subReq = withOrgID(subReq)
+		subReq = p.withRequestScope(subReq)
 
 		_, summaries, err := p.detectLabels(subReq.Context(), subReq.FormValue("query"), subReq.FormValue("start"), subReq.FormValue("end"), lineLimit)
 		if err != nil {
@@ -1241,78 +1241,26 @@ func numberToInt(v interface{}) (int, bool) {
 // Reads orgID from the request context (set by withOrgID).
 // tenantMap is protected by configMu (written by ReloadTenantMap on SIGHUP).
 func (p *Proxy) forwardTenantHeaders(req *http.Request) {
+	p.setResolvedTenantHeaders(req, false)
 	orgID := getOrgID(req.Context())
-	if orgID == "" {
-		// No tenant header → default VL tenant (0:0), serves all data
-		return
-	}
-
-	// Check tenant map first for string→int mapping (read-lock for SIGHUP safety)
-	p.configMu.RLock()
-	tm := p.tenantMap
-	p.configMu.RUnlock()
-
-	if tm != nil {
-		if mapping, ok := tm[orgID]; ok {
-			req.Header.Set("AccountID", mapping.AccountID)
-			req.Header.Set("ProjectID", mapping.ProjectID)
-			return
-		}
-	}
-
-	// If tenantLabel routing is active, tenant isolation is done via query-level
-	// label filter injection — not via AccountID/ProjectID headers.
-	// Skip header-based routing for non-explicitly-mapped tenants.
-	if p.tenantLabel != "" {
-		return
-	}
-
-	// Default-tenant aliases keep Loki single-tenant compatibility while still
-	// targeting VictoriaLogs' built-in 0:0 tenant.
-	if isDefaultTenantAlias(orgID) {
-		return
-	}
-
-	// Wildcard bypass is proxy-specific and remains opt-in.
-	if orgID == "*" {
-		if p.globalTenantAllowed() {
-			return
-		}
-		return
-	}
-
-	// Try numeric passthrough: "42" → AccountID: 42
-	if _, err := strconv.Atoi(orgID); err == nil {
-		req.Header.Set("AccountID", orgID)
-		req.Header.Set("ProjectID", "0")
-	}
-
-	// Forward the per-tenant X-Scope-OrgID to upstream.
-	// VictoriaLogs ignores it; Victoria Lakehouse uses it for native tenant routing.
-	// Uses orgID from context (per-tenant value set for this fanout sub-request).
-	if p.forwardTenantHeader && orgID != "" {
+	routing := p.routingForContext(req.Context())
+	_, mapped := routing.tenants[orgID]
+	// Preserve the established hot-backend forwarding contract. Cold dispatch
+	// explicitly carries both routing representations for its separate backend.
+	if p.forwardTenantHeader && !mapped && routing.label == "" && orgID != "" && !isDefaultTenantAlias(orgID) && orgID != "*" {
 		req.Header.Set("X-Scope-OrgID", orgID)
 	}
 }
 
-// injectTenantLabelFilter appends a LogsQL stream-selector filter to the "query"
-// or "q" param, scoping VL queries to logs with label=orgID.
-// Returns a shallow clone of params with the injection applied (original unchanged).
+// injectTenantLabelFilter uses a server-enforced constraint, including nested
+// queries. Clone parameters so concurrent fanout never mutates shared values.
 func injectTenantLabelFilter(params url.Values, label, orgID string) url.Values {
-	result := make(url.Values, len(params))
-	for k, vs := range params {
-		result[k] = append([]string(nil), vs...)
+	result := make(url.Values, len(params)+1)
+	for k, values := range params {
+		result[k] = append([]string(nil), values...)
 	}
-	// Escape backslash first, then double-quote, to produce valid LogsQL string literals.
-	escaped := strings.ReplaceAll(orgID, `\`, `\\`)
-	escaped = strings.ReplaceAll(escaped, `"`, `\"`)
-	filter := ` {` + label + `="` + escaped + `"}`
-	for _, key := range []string{"query", "q"} {
-		if q := result.Get(key); q != "" {
-			result.Set(key, q+filter)
-			return result
-		}
-	}
+	filter, _ := json.Marshal(map[string]string{label: orgID})
+	result.Set("extra_stream_filters", string(filter))
 	return result
 }
 

@@ -97,20 +97,22 @@ func (p *Proxy) validateTenantHeader(r *http.Request) error {
 					msg:    `wildcard "*" is not supported inside multi-tenant X-Scope-OrgID values`,
 				}
 			}
-			if err := p.validateSingleTenantOrgID(tenantID); err != nil {
+			if err := p.validateSingleTenantOrgIDWithRouting(tenantID, p.routingForContext(r.Context())); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	return p.validateSingleTenantOrgID(orgID)
+	return p.validateSingleTenantOrgIDWithRouting(orgID, p.routingForContext(r.Context()))
 }
 
 func (p *Proxy) validateSingleTenantOrgID(orgID string) error {
-	p.configMu.RLock()
-	_, ok := p.tenantMap[orgID]
-	tenantLabel := p.tenantLabel
-	p.configMu.RUnlock()
+	return p.validateSingleTenantOrgIDWithRouting(orgID, p.routingForContext(context.Background()))
+}
+
+func (p *Proxy) validateSingleTenantOrgIDWithRouting(orgID string, routing requestRouting) error {
+	_, ok := routing.tenants[orgID]
+	tenantLabel := routing.label
 	if ok {
 		return nil
 	}
@@ -207,6 +209,7 @@ func (p *Proxy) globalTenantAllowed() bool {
 
 func (p *Proxy) tenantMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r = p.withRequestScope(r)
 		if err := p.validateTenantHeader(r); err != nil {
 			if rpe, ok := err.(*requestPolicyError); ok {
 				p.writeError(w, rpe.status, rpe.msg)

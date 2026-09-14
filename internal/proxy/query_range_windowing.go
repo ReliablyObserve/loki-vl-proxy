@@ -226,7 +226,7 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 				p.metrics.RecordQueryRangeWindowPartialResponse()
 				w.Header().Set("X-Loki-VL-Partial-Response", "true")
 				if p.queryRangeBackgroundWarm {
-					p.warmQueryRangeWindowsAsync(r.Clone(context.Background()), logsqlQuery, queryLimit, windows[i:], categorizedLabels, emitStructuredMetadata)
+					p.warmQueryRangeWindowsAsync(r.Clone(context.WithoutCancel(r.Context())), logsqlQuery, queryLimit, windows[i:], categorizedLabels, emitStructuredMetadata)
 				}
 				p.log.Warn("query_range returning partial response after retryable batch failure",
 					"error", err,
@@ -315,7 +315,7 @@ func (p *Proxy) warmQueryRangeWindowsAsync(
 	}
 	toWarm := append([]queryRangeWindow(nil), windows[:maxWarm]...)
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 		defer cancel()
 		for _, window := range toWarm {
 			select {

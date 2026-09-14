@@ -156,7 +156,7 @@ func (p *Proxy) coldBackwardChunkedFetch(ctx context.Context, baseParams url.Val
 		chunkParams.Set("end", strconv.FormatInt(chunkEnd, 10))
 		chunkParams.Set("limit", strconv.Itoa(chunkLimit))
 
-		resp, err := p.coldRouter.ColdPost(ctx, "/select/logsql/query", chunkParams)
+		resp, err := p.coldPost(ctx, "/select/logsql/query", chunkParams)
 		if err != nil {
 			return nil, err
 		}
@@ -223,7 +223,7 @@ func (p *Proxy) proxyLogQueryCold(w http.ResponseWriter, r *http.Request, logsql
 
 	// Forward direction: single fetch with original limit (Lakehouse returns oldest-first naturally).
 	params := p.buildColdQueryParams(r, logsqlQuery)
-	resp, err := p.coldRouter.ColdPost(r.Context(), "/select/logsql/query", params)
+	resp, err := p.coldPost(r.Context(), "/select/logsql/query", params)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, "cold backend error: "+err.Error())
 		return
@@ -295,7 +295,7 @@ func (p *Proxy) proxyLogQueryBoth(w http.ResponseWriter, r *http.Request, logsql
 			coldResp.Header.Set("Content-Type", "application/x-ndjson")
 			return
 		}
-		coldResp, coldErr = p.coldRouter.ColdPost(r.Context(), "/select/logsql/query",
+		coldResp, coldErr = p.coldPost(r.Context(), "/select/logsql/query",
 			p.buildColdQueryParamsForRange(r, logsqlQuery, startNs, coldEndNs))
 	}()
 	wg.Wait()

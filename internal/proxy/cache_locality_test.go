@@ -72,6 +72,7 @@ func TestQueryRangeCache_StoresFullResponsesLocallyWhenPeerWriteThroughEnabled(t
 		t.Fatalf("create proxy: %v", err)
 	}
 
+	cacheKey = p.queryRangeCacheKey(req, `{app="api"}`)
 	w := httptest.NewRecorder()
 	p.handleQueryRange(w, req)
 	if w.Code != http.StatusOK {
@@ -118,6 +119,7 @@ func TestLabelsCache_StoresResponsesInLocalDiskCacheWhenPeerWriteThroughEnabled(
 		t.Fatalf("create proxy: %v", err)
 	}
 
+	cacheKey = p.canonicalReadCacheKey("labels", "", req)
 	w := httptest.NewRecorder()
 	p.handleLabels(w, req)
 	if w.Code != http.StatusOK {
