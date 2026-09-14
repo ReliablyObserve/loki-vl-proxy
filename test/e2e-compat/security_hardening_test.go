@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -80,6 +81,16 @@ func TestHardeningLive_TopKChangingWinners(t *testing.T) {
 			if op == "bottomk" {
 				want = map[int64]string{stamp.Unix(): "1", stamp.Add(time.Minute).Unix(): "0"}
 			}
+			wantValue := 9.0
+			if op == "bottomk" {
+				wantValue = 1
+			}
+			if strings.HasPrefix(fn, "bytes_") {
+				wantValue *= float64(len("rank-marker"))
+			}
+			if fn == "rate" || fn == "bytes_rate" {
+				wantValue /= 60
+			}
 			for _, base := range []string{lokiURL, proxyURL} {
 				status, body := hardeningRequest(t, "GET", base+"/loki/api/v1/query_range?"+q.Encode(), "", nil)
 				if status != 200 {
@@ -100,6 +111,10 @@ func TestHardeningLive_TopKChangingWinners(t *testing.T) {
 				for _, series := range response.Data.Result {
 					for _, point := range series.Values {
 						ts := int64(point[0].(float64))
+						value, err := strconv.ParseFloat(fmt.Sprint(point[1]), 64)
+						if err != nil || math.Abs(value-wantValue) > 1e-9 {
+							t.Fatalf("%s %s %s value at %d: got=%v want=%v", base, op, fn, ts, point[1], wantValue)
+						}
 						if _, exists := got[ts]; exists {
 							t.Fatalf("multiple winners at %d: %s", ts, body)
 						}

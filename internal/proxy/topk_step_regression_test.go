@@ -2,7 +2,12 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -41,6 +46,57 @@ func TestTopK_RangeWinnersChangeAtEachStep(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("descending=%v got=%v want=%v", descending, got, want)
+		}
+	}
+}
+
+func TestTopK_BytesRankingKeepsRealZeroAndUsesStats(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/select/logsql/stats_query_range" {
+			http.NotFound(w, r)
+			return
+		}
+		if !strings.Contains(r.FormValue("query"), "count() as __sample_count") {
+			t.Error("byte ranking did not request presence counts")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// Presence may arrive before the byte metric; zero-filled buckets are
+		// not evidence of input, while an actual empty line must remain eligible.
+		fmt.Fprint(w, `{"status":"success","data":{"resultType":"matrix","result":[
+{"metric":{"__name__":"__sample_count","app":"empty"},"values":[[1700000000,"0"],[1700000300,"1"],[1700000600,"0"]]},
+{"metric":{"__name__":"c","app":"empty"},"values":[[1700000000,"0"],[1700000300,"0"],[1700000600,"0"]]},
+{"metric":{"__name__":"c","app":"full"},"values":[[1700000000,"0"],[1700000300,"6000"],[1700000600,"0"]]},
+{"metric":{"__name__":"__sample_count","app":"full"},"values":[[1700000000,"0"],[1700000300,"1"],[1700000600,"0"]]}
+]}}`)
+	}))
+	defer backend.Close()
+	p := newGapTestProxy(t, backend.URL)
+	p.maxStatsQuerySeries = 2 // two logical series, four upstream metrics
+	for _, tc := range []struct{ op, app, value string }{{"topk", "full", "20"}, {"bottomk", "empty", "0"}} {
+		q := url.Values{"query": {tc.op + `(1, sum by(app)(bytes_rate({app=~".+"}[5m])))`}, "start": {"1700000000"}, "end": {"1700000900"}, "step": {"300"}}
+		r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+q.Encode(), nil)
+		w := httptest.NewRecorder()
+		p.handleQueryRange(w, r)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d %s", tc.op, w.Code, w.Body)
+		}
+		var response struct {
+			Data struct {
+				Result []struct {
+					Metric map[string]string
+					Values [][]any
+				}
+			}
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		if len(response.Data.Result) != 1 {
+			t.Fatalf("%s unexpected series: %s", tc.op, w.Body)
+		}
+		got := response.Data.Result[0]
+		if got.Metric["app"] != tc.app || len(got.Values) != 1 || got.Values[0][0] != float64(1700000600) || got.Values[0][1] != tc.value {
+			t.Fatalf("%s wrong values/presence: %s", tc.op, w.Body)
 		}
 	}
 }

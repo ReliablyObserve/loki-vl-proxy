@@ -588,10 +588,11 @@ func (p *Proxy) proxyManualRangeMetricRangeWithFill(w http.ResponseWriter, r *ht
 	case "__count__":
 		statsAggFunc = "count() as c"
 	case "__bytes__":
-		// An empty log line has a valid zero byte count. Raw samples retain
-		// presence when ranking; a zero-filled byte sum cannot distinguish it.
-		if fillMissing {
-			statsAggFunc = "sum_len(_msg) as c"
+		statsAggFunc = "sum_len(_msg) as c"
+		if !fillMissing {
+			// Retain empty log lines without scanning raw logs: byte sum zero
+			// alone cannot distinguish an absent bucket from a present empty line.
+			statsAggFunc += ", count() as __sample_count"
 		}
 	}
 	// Sliding-window parser-stage queries (range > step) reach this path via
@@ -856,7 +857,10 @@ func (p *Proxy) collectRangeMetricHits(
 	// [[drilldown-high-card-fields-known-limit]] for the deep investigation.
 	// Keep the busiest maxSeries by total count (not the alphabetically-first
 	// maxSeries VL returns) so the chart shows signal, not the noise floor.
-	results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
+	withPresence := strings.Contains(statsAggFunc, ", count() as __sample_count")
+	if !withPresence {
+		results = capStatsResultsByTotalCount(results, p.resolvedMaxStatsQuerySeries())
+	}
 	seriesMap := make(map[string]manualSeriesSamples, len(results))
 	for _, res := range results {
 		metricObj := res.GetObject("metric")
@@ -873,6 +877,26 @@ func (p *Proxy) collectRangeMetricHits(
 			metric[lokiKey] = string(mv.GetStringBytes())
 		})
 		seriesKey := canonicalLabelsKey(metric)
+		if withPresence && string(res.GetStringBytes("metric", "__name__")) == "__sample_count" {
+			entry := seriesMap[seriesKey]
+			entry.Metric = metric
+			if entry.PresentBuckets == nil {
+				entry.PresentBuckets = make(map[int64]struct{})
+			}
+			for _, pair := range res.GetArray("values") {
+				arr := pair.GetArray()
+				if len(arr) < 2 {
+					continue
+				}
+				ts, tsErr := arr[0].Int64()
+				count, countErr := strconv.ParseFloat(string(arr[1].GetStringBytes()), 64)
+				if tsErr == nil && countErr == nil && count > 0 {
+					entry.PresentBuckets[ts*int64(time.Second)] = struct{}{}
+				}
+			}
+			seriesMap[seriesKey] = entry
+			continue
+		}
 
 		values := res.GetArray("values")
 		samples := make([]rangeMetricSample, 0, len(values))
@@ -900,6 +924,10 @@ func (p *Proxy) collectRangeMetricHits(
 		} else {
 			seriesMap[seriesKey] = manualSeriesSamples{Metric: metric, Samples: samples}
 		}
+	}
+	if withPresence {
+		// Cap complete logical series, retaining both byte values and presence.
+		seriesMap = capSeriesByTotalCount(seriesMap, p.resolvedMaxStatsQuerySeries())
 	}
 	return seriesMap, nil
 }
@@ -1289,6 +1317,9 @@ func addExcludedField(excluded map[string]struct{}, key string) {
 type manualSeriesSamples struct {
 	Metric  map[string]string
 	Samples []rangeMetricSample
+	// PresentBuckets distinguishes real zero-byte lines from absent buckets.
+	// Allocated only for byte ranking; raw log samples retain their compact shape.
+	PresentBuckets map[int64]struct{}
 }
 
 func buildManualMetricLabels(streamLabels map[string]string, groupBy []string, byExplicit bool) map[string]string {
@@ -1569,9 +1600,18 @@ func buildHitsRangeMetricMatrixWithFill(manualFunc string, series map[string]man
 					sum += s.value
 				}
 			}
-			// Count/rate ranking excludes empty windows, including zeros emitted
-			// by VL itself. Byte ranking uses raw samples to retain real zeros.
-			if !fillMissing && sum == 0 {
+			present := sum != 0
+			if !present && !fillMissing {
+				for ts := range seriesEntry.PresentBuckets {
+					if ts >= windowStartNS && ts < tNS {
+						present = true
+						break
+					}
+				}
+			}
+			// Count/rate ranking excludes zero-filled absent windows. Byte
+			// ranking also retains real zero-byte lines using the count buckets.
+			if !fillMissing && !present {
 				continue
 			}
 			// Chart mode emits a datapoint per step bucket — zero-filling missing
@@ -1586,7 +1626,7 @@ func buildHitsRangeMetricMatrixWithFill(manualFunc string, series map[string]man
 			// 10-50 series so worst case is ~288 buckets × 50 series ≈ 14k
 			// datapoints per response (~200 KB).
 			var value float64
-			if manualFunc == "rate" {
+			if manualFunc == "rate" || manualFunc == "bytes_rate" {
 				value = sum / windowSec
 			} else {
 				value = sum
