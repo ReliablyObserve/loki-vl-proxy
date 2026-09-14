@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.69.1] - 2026-09-14
+
 ### Fixed
 
 - Return per-second values for single-label grouped `rate` over long ranges.
