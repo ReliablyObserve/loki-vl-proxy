@@ -1,7 +1,7 @@
 package logql
 
 import (
-	"strings"
+	"strconv"
 	"unicode"
 	"unicode/utf8"
 )
@@ -354,36 +354,24 @@ func (s *scanner) next() Token {
 }
 
 func (s *scanner) scanQuotedString() Token {
+	start := s.pos
 	s.read() // consume opening "
-	var b strings.Builder
-	for {
+	for s.pos < len(s.src) {
 		r := s.read()
-		if r == 0 {
-			break
-		}
 		if r == '\\' {
-			r2 := s.read()
-			switch r2 {
-			case 'n':
-				b.WriteByte('\n')
-			case 't':
-				b.WriteByte('\t')
-			case '"':
-				b.WriteByte('"')
-			case '\\':
-				b.WriteByte('\\')
-			default:
-				b.WriteRune('\\')
-				b.WriteRune(r2)
-			}
+			s.read() // an escaped quote cannot close the literal
 			continue
 		}
 		if r == '"' {
-			break
+			literal := s.src[start:s.pos]
+			value, err := strconv.Unquote(literal)
+			if err != nil || !utf8.ValidString(literal) {
+				return Token{Typ: TokError, Val: "invalid quoted string"}
+			}
+			return Token{Typ: TokString, Val: value}
 		}
-		b.WriteRune(r)
 	}
-	return Token{Typ: TokString, Val: b.String()}
+	return Token{Typ: TokError, Val: "unterminated quoted string"}
 }
 
 func (s *scanner) scanRawString() Token {

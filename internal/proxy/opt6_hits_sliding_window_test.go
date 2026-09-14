@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -163,42 +164,30 @@ func TestOPT6_BuildSlidingWindowSums_MultiStream(t *testing.T) {
 	}
 }
 
-func TestOPT6_SlidingWindowGate_UsesHitsEndpoint(t *testing.T) {
-	hitsCalled := false
-	queryCalled := false
-
+func TestOPT6_DeclaredStreamFieldsDoNotHideJSONParserErrors(t *testing.T) {
+	var hitsCalled, queryCalled bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/select/logsql/hits":
 			hitsCalled = true
-			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{"hits":[]}`)
 		case "/select/logsql/query":
 			queryCalled = true
-			http.Error(w, "should not reach slow path", 500)
+			fmt.Fprintln(w, `{"_time":"2025-05-01T12:14:20Z","_msg":"not JSON","_stream":"{app=\"worker\",namespace=\"prod\"}"}`)
 		default:
-			http.Error(w, "unexpected: "+r.URL.Path, 404)
+			http.NotFound(w, r)
 		}
 	}))
 	defer srv.Close()
-
-	// With StreamFields set, declaredLabelFields is populated → hits gate activates.
 	p := newOpt6Proxy(t, srv.URL, []string{"app", "namespace"})
-
-	req := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+url.Values{
-		"query": {`rate({namespace="prod"} | json [5m])`},
-		"start": {"1746100000000000000"},
-		"end":   {"1746103600000000000"}, // 1h window
-		"step":  {"60000000000"},         // 1m step in nanoseconds → sliding: 5m > 1m
-	}.Encode(), nil)
-	w := httptest.NewRecorder()
-	p.handleQueryRange(w, req)
-
-	if queryCalled {
-		t.Error("slow full-fetch path was used — hits gate did not activate")
+	params := url.Values{"query": {`rate({namespace="prod"}|json[5m])`}, "start": {"2025-05-01T12:15:00Z"}, "end": {"2025-05-01T12:16:00Z"}, "step": {"60"}}
+	rec := httptest.NewRecorder()
+	p.handleQueryRange(rec, httptest.NewRequest(http.MethodGet, "/loki/api/v1/query_range?"+params.Encode(), nil))
+	if rec.Code != 400 || !strings.Contains(rec.Body.String(), "JSONParserErr") {
+		t.Fatalf("parser error lost: %d %s", rec.Code, rec.Body)
 	}
-	if !hitsCalled {
-		t.Error("hits endpoint was NOT called — sliding window optimisation is inactive")
+	if !queryCalled || hitsCalled {
+		t.Fatalf("parser state bypassed: raw=%v hits=%v", queryCalled, hitsCalled)
 	}
 }
 

@@ -191,13 +191,12 @@ func TestExtractVLErrorMsg(t *testing.T) {
 }
 
 // =============================================================================
-// Long-range metric query routing — must use stats_query_range, never 1M fetch
+// Long-range sums with unused JSON parsing retain native stats_query_range
 // =============================================================================
 
-// TestLongRange_CountOverTimeUsesStats verifies that count_over_time with a
-// parser stage and range==step routes to VL stats_query_range, not the 1M-limit
-// raw log fetch. Before the fix, long-range queries (e.g. 24h) exhausted memory.
-func TestLongRange_CountOverTimeUsesStats(t *testing.T) {
+// A label-free sum may skip JSON under Loki's parser hints. Keep wide queries
+// on native stats when this optimization is semantically valid.
+func TestLongRange_SummedCountWithUnusedJSONUsesStats(t *testing.T) {
 	var statsQueryCalled, logQueryCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -207,7 +206,7 @@ func TestLongRange_CountOverTimeUsesStats(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 		case "/select/logsql/query":
 			logQueryCalled = true
-			if r.FormValue("limit") == "1000000" {
+			if r.FormValue("limit") == "1000000" || r.FormValue("limit") == "1000001" || strings.HasSuffix(r.FormValue("query"), " | limit 1000001") {
 				t.Error("1M-limit raw log fetch must not be used for long-range count_over_time with range==step; use stats_query_range")
 			}
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -226,13 +225,16 @@ func TestLongRange_CountOverTimeUsesStats(t *testing.T) {
 	base := time.Unix(1700000000, 0)
 	step := 15 * 60 // 15m step
 	params := url.Values{}
-	params.Set("query", `count_over_time({service_name="api-gateway"} | json [15m])`) // range=step=15m
+	params.Set("query", `sum(count_over_time({service_name="api-gateway"} | json [15m]))`) // range=step=15m
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(24*time.Hour).Unix(), 10))
 	params.Set("step", strconv.Itoa(step))
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+params.Encode(), nil)
 	mux.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected response: %d %s", w.Code, w.Body)
+	}
 
 	if logQueryCalled {
 		t.Error("1M-limit log query was called — this causes OOM for long-range queries; stats_query_range should be used")
@@ -242,9 +244,9 @@ func TestLongRange_CountOverTimeUsesStats(t *testing.T) {
 	}
 }
 
-// TestLongRange_BytesOverTimeUsesStats verifies bytes_over_time routes to stats
-// for both tumbling-window (range==step) and sliding-window (range>step) cases.
-func TestLongRange_BytesOverTimeUsesStats(t *testing.T) {
+// Summed byte queries with unused JSON must retain native stats aggregation
+// for both tumbling and sliding windows.
+func TestLongRange_SummedBytesWithUnusedJSONUsesStats(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		rangeW   string
@@ -263,7 +265,7 @@ func TestLongRange_BytesOverTimeUsesStats(t *testing.T) {
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
 				case "/select/logsql/query":
-					if r.FormValue("limit") == "1000000" {
+					if r.FormValue("limit") == "1000000" || r.FormValue("limit") == "1000001" || strings.HasSuffix(r.FormValue("query"), " | limit 1000001") {
 						t.Errorf("1M-limit log fetch must not be used for bytes_over_time; use stats_query_range (%s)", tc.name)
 					}
 					w.Header().Set("Content-Type", "application/x-ndjson")
@@ -280,13 +282,16 @@ func TestLongRange_BytesOverTimeUsesStats(t *testing.T) {
 
 			base := time.Unix(1700000000, 0)
 			params := url.Values{}
-			params.Set("query", fmt.Sprintf(`bytes_over_time({service_name="api-gateway"} | json [%s])`, tc.rangeW))
+			params.Set("query", fmt.Sprintf(`sum(bytes_over_time({service_name="api-gateway"} | json [%s]))`, tc.rangeW))
 			params.Set("start", strconv.FormatInt(base.Unix(), 10))
 			params.Set("end", strconv.FormatInt(base.Add(24*time.Hour).Unix(), 10))
 			params.Set("step", strconv.Itoa(tc.step))
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest("GET", "/loki/api/v1/query_range?"+params.Encode(), nil)
 			mux.ServeHTTP(w, r)
+			if w.Code != http.StatusOK {
+				t.Fatalf("unexpected response: %d %s", w.Code, w.Body)
+			}
 
 			if !statsQueryCalled {
 				t.Errorf("stats_query_range was not called for bytes_over_time (%s) — long-range query would OOM with raw log fetch", tc.name)

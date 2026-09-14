@@ -386,7 +386,7 @@ func splitDropItems(s string) []string {
 			cur.Reset()
 			continue
 		}
-		cur.WriteRune(c)
+		cur.WriteByte(s[i])
 	}
 	if cur.Len() > 0 {
 		items = append(items, cur.String())
@@ -635,6 +635,13 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 	// referencing the alias name can be rewritten to use the original JSON field name.
 	// VL's unpack_json always uses original field names; aliases are not preserved.
 	jsonAliases := make(map[string]string)
+	captureLabels := make(map[string]bool)
+	pipelineLabelFn := func(label string) string {
+		if captureLabels[label] || labelFn == nil {
+			return label
+		}
+		return labelFn(label)
+	}
 
 	// 2. Process pipeline stages: | operator ...
 	// LogQL line filters: |= "text", != "text", |~ "regexp", !~ "regexp"
@@ -661,8 +668,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			arg, rest, ok := extractIPFilterArg(remaining)
 			remaining = rest
 			if ok {
-				// Loki accepts any string in ip() at parse time; ipLineFilterToRegex
-				// falls back to regexp.QuoteMeta for unrecognised patterns.
+				// The request validator rejects invalid IP patterns before translation.
 				parts = append(parts, "~"+strconv.Quote(ipLineFilterToRegex(arg)))
 			}
 			continue
@@ -677,19 +683,27 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			continue
 		}
 
-		if strings.HasPrefix(remaining, "|= ") || strings.HasPrefix(remaining, "|=\"") {
+		if strings.HasPrefix(remaining, "|=") {
 			// Substring match: |= "text" → ~"text"
 			remaining = strings.TrimSpace(remaining[2:])
 			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "~"+val)
+			literal, err := strconv.Unquote(val)
+			if err != nil {
+				return "", fmt.Errorf("invalid line filter: %w", err)
+			}
+			parts = append(parts, "~"+strconv.Quote(regexp.QuoteMeta(literal)))
 			remaining = rest
 			continue
 		}
-		if strings.HasPrefix(remaining, "!= ") || strings.HasPrefix(remaining, "!=\"") {
+		if strings.HasPrefix(remaining, "!=") {
 			// Negative substring: != "text" → NOT ~"text"
 			remaining = strings.TrimSpace(remaining[2:])
 			val, rest := extractQuotedValue(remaining)
-			parts = append(parts, "NOT ~"+val)
+			literal, err := strconv.Unquote(val)
+			if err != nil {
+				return "", fmt.Errorf("invalid line filter: %w", err)
+			}
+			parts = append(parts, "NOT ~"+strconv.Quote(regexp.QuoteMeta(literal)))
 			remaining = rest
 			continue
 		}
@@ -753,6 +767,11 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 		// Determine the pipeline stage type
 		stage, rest := extractPipelineStage(remaining)
 		remaining = rest
+		for _, label := range regexpCaptureLabels(stage) {
+			if label != "" {
+				captureLabels[label] = true
+			}
+		}
 
 		// Populate json alias map when the stage uses alias="field" syntax.
 		if strings.HasPrefix(stage, "json ") {
@@ -766,7 +785,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 			stage = rewriteJSONAliasedFilter(stage, jsonAliases)
 		}
 
-		translated := translatePipelineStage(stage, labelFn, caps)
+		translated := translatePipelineStage(stage, pipelineLabelFn, caps)
 		if strings.HasPrefix(translated, errUnknownParser) {
 			parserName := strings.TrimPrefix(translated, errUnknownParser)
 			return "", fmt.Errorf("unknown pipeline stage %q — not a valid LogQL parser or label filter", parserName)
@@ -806,7 +825,7 @@ func translateLogQuery(logql string, labelFn LabelTranslateFunc, caps logsql.Cap
 					translated = "| filter " + translated
 				}
 			}
-			if _, baseKey, ok := canonicalLabelFilterStage(stage, labelFn); ok {
+			if _, baseKey, ok := canonicalLabelFilterStage(stage, pipelineLabelFn); ok {
 				if idx, exists := labelFilterLatest[baseKey]; exists {
 					// Latest action wins for the same field/value filter identity.
 					parts[idx] = translated
@@ -1183,9 +1202,9 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				}
 			}
 
-			value = strings.Trim(value, "\"`")
-
 			// ip() CIDR filter: label = ip("cidr") or label != ip("cidr")
+			// Detect calls before decoding a quoted exact value which may itself
+			// contain the literal text ip("...").
 			if strings.HasPrefix(value, `ip("`) && strings.HasSuffix(value, `")`) {
 				cidr := value[4 : len(value)-2]
 				filter := logsql.NewBuilder(caps).BestIPv4Range(label, cidr)
@@ -1195,6 +1214,8 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				}
 				return filter.String(), true
 			}
+
+			value = streamMatcherValue(value, entry.entry.isRe || entry.entry.isComp)
 
 			// VL requires quoting for dotted field names (e.g. "service.name"):
 			// quote the label before passing it to FieldFilter so the output is
@@ -1469,7 +1490,7 @@ func translateLabelFormat(expr string) string {
 		// convertGoTemplate returns a quoted string like "<label>"; strip the
 		// outer quotes before passing to PipeFormat, which re-applies %q quoting.
 		converted := convertGoTemplate(template)
-		unquoted := strings.Trim(converted, `"`)
+		unquoted, _ := strconv.Unquote(converted)
 		pipes = append(pipes, logsql.PipeFormat{Template: unquoted, ResultField: labelName}.String())
 	}
 	if len(pipes) == 0 {
@@ -1480,26 +1501,7 @@ func translateLabelFormat(expr string) string {
 
 // splitLabelFormatAssignments splits "a=X, b=Y" respecting quoted values.
 func splitLabelFormatAssignments(s string) []string {
-	var result []string
-	inQuote := false
-	start := 0
-	for i, c := range s {
-		if c == '"' {
-			inQuote = !inQuote
-		}
-		if c == ',' && !inQuote {
-			part := strings.TrimSpace(s[start:i])
-			if part != "" {
-				result = append(result, part)
-			}
-			start = i + 1
-		}
-	}
-	part := strings.TrimSpace(s[start:])
-	if part != "" {
-		result = append(result, part)
-	}
-	return result
+	return splitDropItems(s)
 }
 
 // convertGoTemplate converts Go template syntax {{.label}} to LogsQL <label> syntax.
@@ -2083,6 +2085,8 @@ func IsScalar(s string) bool {
 
 // VectorMatchInfo holds vector matching modifiers for binary expressions.
 type VectorMatchInfo struct {
+	MatchOn    bool     // preserves an explicit empty on() modifier
+	GroupSide  string   // preserves group_left()/group_right() without extra labels
 	On         []string // on(labels) — match on these labels only
 	Ignoring   []string // ignoring(labels) — match ignoring these labels
 	GroupLeft  []string // group_left(extra_labels) — one-to-many, left side is "many"
@@ -2123,12 +2127,15 @@ func ParseBinaryMetricExprFull(s string) (op, left, right string, vm *VectorMatc
 			labels := splitLabels(parts[1])
 			switch modifier {
 			case "on":
+				vm.MatchOn = true
 				vm.On = labels
 			case "ignoring":
 				vm.Ignoring = labels
 			case "group_left":
+				vm.GroupSide = "group_left"
 				vm.GroupLeft = labels
 			case "group_right":
+				vm.GroupSide = "group_right"
 				vm.GroupRight = labels
 			}
 		}
@@ -2383,7 +2390,8 @@ func tryTranslateQuantileOverTime(innerExpr, outerAgg, byLabels string, labelFn 
 	}
 
 	statsExpr := "quantile(" + phi + ", " + unwrapField + ")"
-	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, false, "")
+	rangeByLabels, rangeByExplicit := extractRangeByClause(strings.TrimSpace(rest[end+1:]))
+	innerBy := unwrapInnerGrouping(query, byLabels, outerAgg, labelFn, rangeByExplicit, rangeByLabels)
 
 	if outerAgg != "" && byLabels == "" {
 		innerAliased := buildStatsQuery(logsqlQuery, statsExpr, innerBy, "__lvp_inner")
@@ -2533,9 +2541,14 @@ func extractPipelineStage(s string) (stage, rest string) {
 func extractQuotedValue(s string) (string, string) {
 	s = strings.TrimSpace(s)
 	if strings.HasPrefix(s, "\"") {
-		// Find the closing quote, skipping escaped quotes (\")
+		// Skip escape pairs so a quote after an even number of backslashes closes
+		// the literal, while a quote after an odd number remains part of it.
 		for i := 1; i < len(s); i++ {
-			if s[i] == '"' && (i == 1 || s[i-1] != '\\') {
+			if s[i] == '\\' {
+				i++
+				continue
+			}
+			if s[i] == '"' {
 				return s[:i+1], strings.TrimSpace(s[i+1:])
 			}
 		}
@@ -2637,7 +2650,12 @@ func splitStreamMatchers(s string) []string {
 	var matchers []string
 	var quote rune
 	start := 0
-	for i, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := rune(s[i])
+		if c == '\\' && quote == '"' && i+1 < len(s) {
+			i++
+			continue
+		}
 		if (c == '"' || c == '`') && (quote == 0 || quote == c) {
 			if quote == 0 {
 				quote = c
@@ -2718,7 +2736,7 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 				label = `"` + label + `"`
 			}
 
-			value = strings.Trim(value, "\"`")
+			value = streamMatcherValue(value, op.isRe)
 
 			if value == "" && !op.isRe {
 				// detected_level="" in the stream selector means "no level detected":
@@ -2791,8 +2809,23 @@ var syntheticServiceNameFields = []string{
 	"k8s_job_name",
 }
 
+func streamMatcherValue(value string, isRegex bool) string {
+	value = strings.TrimSpace(value)
+	if !isRegex {
+		// Loki's raw literals retain carriage returns; strconv.Unquote applies
+		// Go source's CR removal rule to backquoted strings instead.
+		if len(value) >= 2 && value[0] == '`' && value[len(value)-1] == '`' {
+			return value[1 : len(value)-1]
+		}
+		if decoded, err := strconv.Unquote(value); err == nil {
+			return decoded
+		}
+	}
+	return strings.Trim(value, "\"`")
+}
+
 func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
-	value = strings.TrimSpace(strings.Trim(value, "\"`"))
+	value = streamMatcherValue(value, isRegex)
 	parts := make([]string, 0, len(syntheticServiceNameFields))
 	for _, field := range syntheticServiceNameFields {
 		// Quote dotted field names so VL can parse them.

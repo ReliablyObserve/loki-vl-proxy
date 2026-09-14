@@ -23,7 +23,11 @@ function baseDrilldownState(datasourceUid: string): Record<string, string> {
   };
 }
 
-export function buildExploreUrl(datasourceUid: string, expr = ""): string {
+export function buildExploreUrl(
+  datasourceUid: string,
+  expr = "",
+  range = { from: "now-7d", to: "now" }
+): string {
   const paneState = {
     A: {
       datasource: datasourceUid,
@@ -40,10 +44,7 @@ export function buildExploreUrl(datasourceUid: string, expr = ""): string {
           direction: "backward",
         },
       ],
-      range: {
-        from: "now-7d",
-        to: "now",
-      },
+      range,
       compact: false,
     },
   };

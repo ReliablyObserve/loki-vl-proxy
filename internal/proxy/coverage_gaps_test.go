@@ -1948,7 +1948,11 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 		{"sum_by_rate", `sum by (level) (rate({app="x"} | json [1m]))`, true},
 		{"topk_rate", `topk(3, rate({app="x"}[1m]))`, true},
 		{"sum_by_bytes_rate", `sum by (l) (bytes_rate({app="x"}[1m]))`, true},
-		{"count_over_time", `count_over_time({app="x"}[1m])`, false}, // not rate-like
+		{"count_over_time", `count_over_time({app="x"}[1m])`, false}, // per-stream: left to the hits/hybrid paths
+		{"sum_count_over_time", `sum(count_over_time({app="x"}[1m]))`, true},
+		{"sum_bytes_over_time", `sum(bytes_over_time({app="x"}[1m]))`, true},
+		{"sum_by_count_over_time", `sum by (pod) (count_over_time({app="x"}[1m]))`, false}, // Drilldown field histogram
+		{"sum_count_unwrap", `sum(sum_over_time({app="x"} | unwrap v [1m]))`, false},
 		{"rate_counter", `rate_counter({app="x"} | unwrap f [1m])`, false},
 		{"rate_sum", `rate_sum({app="x"} | count() by (l) [1m])`, false},
 		{"wrong_step", `rate({app="x"}[5m])`, false}, // window(5m) != step(1m)
@@ -1965,14 +1969,16 @@ func TestStatsRateRangeEqualsStepShift_Detection(t *testing.T) {
 }
 
 // =============================================================================
-// Coverage gap: trimStatsQueryRangeResponseFromStart
+// Coverage gap: relabelTumblingStatsQueryRange
 // =============================================================================
 
-func TestTrimStatsQueryRangeResponseFromStart(t *testing.T) {
-	// Timestamps: 100s, 200s, 300s in nanoseconds.
-	const t100 = int64(100 * 1e9)
-	const t200 = int64(200 * 1e9)
-	const t300 = int64(300 * 1e9)
+// VictoriaLogs labels a stats_query_range bucket by its start: the bucket at T
+// covers [T, T+step) (verified against VictoriaLogs v1.50.0, where the bucket
+// labelled 11:12:00 contains a row written at 11:12:30). Loki's sample at T for
+// a range W == step covers (T-W, T]. The relabel moves each bucket forward by W
+// and keeps only points inside [start, end].
+func TestRelabelTumblingStatsQueryRange(t *testing.T) {
+	const window = int64(100 * 1e9)
 
 	makeBody := func(points [][2]interface{}) []byte {
 		series := map[string]interface{}{
@@ -1988,54 +1994,61 @@ func TestTrimStatsQueryRangeResponseFromStart(t *testing.T) {
 		})
 		return body
 	}
+	points := func(out []byte) [][]interface{} {
+		t.Helper()
+		var resp struct {
+			Status string `json:"status"`
+			Data   struct {
+				Result []struct {
+					Values [][]interface{} `json:"values"`
+				} `json:"result"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(out, &resp); err != nil {
+			t.Fatalf("unmarshal %s: %v", out, err)
+		}
+		if resp.Status != "success" {
+			t.Fatalf("status lost: %s", out)
+		}
+		return resp.Data.Result[0].Values
+	}
 
+	// Fetched from start-W = 100s: buckets labelled 100s, 200s, 300s.
 	body := makeBody([][2]interface{}{
-		{float64(100), "1.0"},
-		{float64(200), "2.0"},
-		{float64(300), "3.0"},
+		{float64(100), "1"},
+		{float64(200), "2"},
+		{float64(300), "3"},
 	})
 
-	t.Run("trims_points_before_start", func(t *testing.T) {
-		out := trimStatsQueryRangeResponseFromStart(body, t200)
-		var resp map[string]interface{}
-		if err := json.Unmarshal(out, &resp); err != nil {
-			t.Fatalf("unmarshal: %v", err)
-		}
-		if resp["status"] != "success" {
-			t.Errorf("status lost: %v", resp["status"])
-		}
-		result := resp["data"].(map[string]interface{})["result"].([]interface{})
-		vals := result[0].(map[string]interface{})["values"].([]interface{})
-		if len(vals) != 2 {
-			t.Errorf("expected 2 points after trim, got %d", len(vals))
+	t.Run("moves_each_bucket_to_its_loki_evaluation_time", func(t *testing.T) {
+		// start=200s end=300s: Loki's 200s sample is VL's 100s bucket.
+		got := points(relabelTumblingStatsQueryRange(body, 200*1e9, 300*1e9, window))
+		if len(got) != 2 || got[0][0] != float64(200) || got[0][1] != "1" || got[1][0] != float64(300) || got[1][1] != "2" {
+			t.Fatalf("want [[200,1],[300,2]], got %v", got)
 		}
 	})
 
-	t.Run("no_trim_when_all_at_or_after_start", func(t *testing.T) {
-		out := trimStatsQueryRangeResponseFromStart(body, t100)
-		if string(out) != string(body) {
-			t.Errorf("body should be unchanged when all points are >= start")
+	t.Run("drops_bucket_that_would_land_after_end", func(t *testing.T) {
+		// VL's 300s bucket covers [300s, 400s): Loki evaluates it at 400s > end.
+		got := points(relabelTumblingStatsQueryRange(body, 200*1e9, 350*1e9, window))
+		if len(got) != 2 {
+			t.Fatalf("want 2 points up to end, got %v", got)
 		}
 	})
 
-	t.Run("all_trimmed_when_start_after_last_point", func(t *testing.T) {
-		out := trimStatsQueryRangeResponseFromStart(body, t300+1)
-		var resp map[string]interface{}
-		if err := json.Unmarshal(out, &resp); err != nil {
-			t.Fatalf("unmarshal: %v", err)
-		}
-		result := resp["data"].(map[string]interface{})["result"].([]interface{})
-		vals := result[0].(map[string]interface{})["values"].([]interface{})
-		if len(vals) != 0 {
-			t.Errorf("expected 0 points, got %d", len(vals))
+	t.Run("unaligned_start_drops_partial_leading_bucket", func(t *testing.T) {
+		// start=250s: the shifted fetch began at 150s, so the 100s bucket is
+		// partial; relabelled to 200s it precedes start and is removed.
+		got := points(relabelTumblingStatsQueryRange(body, 250*1e9, 0, window))
+		if len(got) != 2 || got[0][0] != float64(300) || got[0][1] != "2" {
+			t.Fatalf("want first point [300,2], got %v", got)
 		}
 	})
 
 	t.Run("invalid_json_passthrough", func(t *testing.T) {
 		bad := []byte("not-json")
-		out := trimStatsQueryRangeResponseFromStart(bad, t200)
-		if string(out) != "not-json" {
-			t.Errorf("expected passthrough for invalid JSON")
+		if out := relabelTumblingStatsQueryRange(bad, 200*1e9, 0, window); string(out) != "not-json" {
+			t.Errorf("expected passthrough for invalid JSON, got %s", out)
 		}
 	})
 }
@@ -2089,15 +2102,12 @@ func TestNormalizeManualMetricFunction(t *testing.T) {
 }
 
 // =============================================================================
-// Coverage gap: proxyBareParserMetricViaStats (the rate|json tumbling-window fast path)
+// Unused JSON parser aggregation retains the native stats path
 // =============================================================================
 
-func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
-	// rate({...} | json | drop __error__,__error_details__ [5m]) with step==range
-	// (tumbling window) must use native VL stats_query_range. Loki groups these by
-	// stream labels only (not parsed fields), and VL native stats matches that behaviour.
-	// Explicit __error__ handling is required for the fast path; without it the slow
-	// path is taken so that parse failures are excluded from counts.
+func TestUnusedJSONParser_SummedRateTumblingUsesStats(t *testing.T) {
+	// sum without grouping or label predicates gives Loki NoLabels parser hints.
+	// JSON cannot affect the count, so preserve the native tumbling-window path.
 	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/stats_query_range" {
@@ -2123,9 +2133,9 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 	p := newGapTestProxy(t, vlBackend.URL)
 	base := time.Unix(1700000000, 0)
 	// step=300 == range=[5m] → rangeEqualsStep=true → tumbling-window fast path
-	// Query must include explicit __error__ handling to qualify for the fast path.
+	// Aggregation discards all labels, so Loki can skip this unused parser.
 	params := url.Values{}
-	params.Set("query", `rate({app="api-gateway"} | json | drop __error__, __error_details__ [5m])`)
+	params.Set("query", `sum(rate({app="api-gateway"} | json | drop __error__, __error_details__ [5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
 	params.Set("step", "300")
@@ -2137,7 +2147,7 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 	if !statsCalled {
-		t.Fatal("expected proxyBareParserMetricViaStats to call stats_query_range (tumbling-window fast path)")
+		t.Fatal("expected unused parser aggregation to call stats_query_range")
 	}
 	var resp map[string]interface{}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -2148,11 +2158,9 @@ func TestProxyBareParserMetricViaStats_FastPath(t *testing.T) {
 	}
 }
 
-func TestProxyBareParserMetricViaStats_SlidingWindowUsesStatsPath(t *testing.T) {
-	// rate({...} | json [5m]) with step=60 is a sliding window (range != step).
-	// After the long-range memory fix, the sliding-window stats path routes these
-	// to stats_query_range (per-step counts with client-side sliding aggregation)
-	// instead of the 1M-limit raw log fetch. Avoids OOM on long time ranges.
+func TestUnusedJSONParser_SummedRateSlidingUsesStats(t *testing.T) {
+	// A label-free sum may elide JSON under Loki's parser hints. Keep its
+	// sliding-window aggregation on the bounded native stats path.
 	var statsCalled bool
 	vlBackend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/select/logsql/stats_query_range" {
@@ -2163,7 +2171,7 @@ func TestProxyBareParserMetricViaStats_SlidingWindowUsesStatsPath(t *testing.T) 
 		}
 		if r.URL.Path == "/select/logsql/query" {
 			// Slow-path 1M-limit fetch must NOT be called for sliding-window rate without post-parser filter.
-			if r.FormValue("limit") == "1000000" {
+			if r.FormValue("limit") == "1000000" || r.FormValue("limit") == "1000001" || strings.HasSuffix(r.FormValue("query"), " | limit 1000001") {
 				t.Error("unexpected 1M-limit slow-path /select/logsql/query call for sliding-window rate (stats path should be used)")
 			}
 			w.Header().Set("Content-Type", "application/x-ndjson")
@@ -2181,7 +2189,7 @@ func TestProxyBareParserMetricViaStats_SlidingWindowUsesStatsPath(t *testing.T) 
 	base := time.Unix(1700000000, 0)
 	// step=60 != range=[5m]=300 → sliding window → stats fast path (not 1M log fetch).
 	params := url.Values{}
-	params.Set("query", `rate({app="api-gateway"} | json [5m])`)
+	params.Set("query", `sum(rate({app="api-gateway"} | json [5m]))`)
 	params.Set("start", strconv.FormatInt(base.Unix(), 10))
 	params.Set("end", strconv.FormatInt(base.Add(30*time.Minute).Unix(), 10))
 	params.Set("step", "60")

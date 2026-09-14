@@ -7,6 +7,86 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Bound exact raw metric collection and rendering, including bare-parser unwrap
+  queries that bypassed the existing manual evaluator. Enforce configured raw
+  row and series limits, 64 MiB input/output limits and one million output
+  samples, with cancellation and explicit errors instead of truncation or
+  oversized successful responses. Valid queries exceeding these limits can now
+  fail; narrow their selector/range or reduce grouping cardinality.
+- Bound nested binary evaluation across child requests and output construction:
+  64 levels, 1,024 child evaluations, 256 MiB captured child responses, two
+  million decoded arrays, one million constructed samples and 64 MiB of label
+  work. Encode each result within 64 MiB before allocating escaped strings.
+
+### Fixed
+
+- Reject malformed IP line-filter arguments and implicit many-to-one metric
+  matches consistently with Loki. Preserve empty grouping modifiers and check
+  cardinality at each evaluation, without conflating disjoint streams.
+- Preserve binary operator precedence, parentheses, comparison filtering versus
+  `bool`, extraction aliases and grouped output labels. Evaluate operands through
+  the existing scoped handlers so range joins use trailing windows and retain
+  parser errors; preserve undefined arithmetic as Loki-compatible values.
+- Preserve escaped selector/pipeline literals, IP calls versus quoted text,
+  templates and explicit empty grouping when executing parsed child queries.
+- Escape literal substring filters before regex translation and preserve
+  query-created regexp capture names independently of stored-field mappings.
+- Preserve quantile grouping and use interpolated values over exact trailing
+  windows, including samples at the evaluation timestamp. Ungrouped additive
+  sums aggregate all streams instead of leaking intermediate backend groups.
+- Execute supported JSON count/rate/byte metric pipelines in order, preserving
+  parser errors, drop/keep behavior, extraction hints and metadata collisions.
+  Retain native aggregation when parsing cannot affect its result. Explicit
+  extraction, mixed parsers and unwrap remain on their existing execution paths.
+- Reject raw metric scans beyond the configured row limit instead of computing
+  successful partial results; check cancellation during sample collection and
+  between metric evaluations. Oversized requests now fail explicitly.
+- Stream capped raw metric input without VictoriaLogs' implicit timestamp sort;
+  sort complete samples locally before evaluating windows. Replace the obsolete
+  100% LogQL compatibility claim with measured findings and documented limits.
+- Wait for visible Drilldown label options instead of treating its asynchronous
+  loading state as an empty result; run this regression in the core UI CI shard.
+- Correct exhaustive compatibility timestamps to address real Loki data;
+  expose previously hidden runtime and result-parity gaps for follow-up fixes.
+- Map tumbling range aggregations (range equal to step) served from
+  VictoriaLogs `stats_query_range` buckets onto Loki's evaluation timestamps.
+  VictoriaLogs labels a bucket by its start and covers `[T, T+step)`, while
+  Loki's sample at `T` covers `(T-range, T]`. The native path previously
+  shifted the fetch back one range and then trimmed exactly the bucket Loki's
+  first sample needs, so every point showed the following window and a
+  single-window series came back empty. Buckets are now relabelled forward by
+  one range and kept within `[start, end]`. This covers `rate` and
+  `bytes_rate` in any aggregation, ungrouped `sum(count_over_time(...))` and
+  `sum(bytes_over_time(...))` (including JSON pipelines the ordered evaluator
+  proves equivalent), and every function on the bare parser path; exact values
+  and timestamps are verified against Loki. Grouped `count_over_time` and
+  `bytes_over_time` keep the Drilldown hits and hybrid routing, which still
+  reports bucket-start labels.
+- Evaluate both operands of a vector-vector binary range expression on the
+  step-aligned grid, as Loki's query frontend does when
+  `align_queries_with_step` is enabled (it is off by default; against a
+  default Loki, results with an unaligned start differ by less than one step). Operands with different ranges take different
+  execution paths, so with an unaligned start
+  `sum(rate({env="production"}[5m])) - sum(rate({env="production"}[1m]))`
+  had no common timestamps and returned no series where Loki returned one.
+- Convert `unwrap duration(...)` and `unwrap bytes(...)` values on the bare
+  parser metric path. Unit strings such as `15ms` or `1024B` were parsed as
+  plain floats, every sample was dropped and the query returned no series. All
+  raw-sample paths now share one conversion helper.
+- Keep Loki's `level` key on range operands grouped `by (level)`; the stats
+  path emits `detected_level`, so `on(level)` joined on an empty value and lost
+  the label on range queries while instant queries were already repaired.
+- Emit scalar timestamps in seconds (Loki encodes `model.Time` as seconds, not
+  milliseconds) and render sample values in Loki's fixed-point form
+  (`1234000`, `0.000016666666666666667`) instead of exponent notation. Extreme
+  magnitudes expand to exact fixed-point digits exactly as Loki renders them;
+  total response size stays bounded by the encoder's byte cap.
+- Charge the binary output label budget once per output series instead of once
+  per sample, so long single-series ranges no longer fail with "output label
+  budget exceeded" for results far below the encoded size limit.
+
 ## [1.67.0] - 2026-09-14
 
 ### Fixed

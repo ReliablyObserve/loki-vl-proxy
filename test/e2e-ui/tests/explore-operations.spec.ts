@@ -4,6 +4,7 @@ import {
   openExplore,
   runQuery,
   assertLogsVisible,
+  assertGraphVisible,
   assertNoErrors,
   installGrafanaGuards,
 } from "./helpers";
@@ -100,9 +101,11 @@ test.describe("Grafana Explore — Loki Operations Parity", () => {
     await openExplore(
       page,
       PROXY_DS,
-      'avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m])'
+      'avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app)',
+      { from: "now-5m", to: "now" }
     );
     await runQuery(page);
+    await assertGraphVisible(page);
     await assertNoErrors(page);
     await guards.assertClean();
   });

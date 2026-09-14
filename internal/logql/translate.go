@@ -2,6 +2,8 @@ package logql
 
 import (
 	"errors"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/logsql"
@@ -213,14 +215,15 @@ func translateMatcher(m LabelMatcher, opts TranslateOptions) (string, error) {
 // Loki |= is a substring match; VL's ~"text" is the closest equivalent.
 // Pattern filters (|> and !>) fall through to the string translator.
 func translateLineFilter(s *LineFilterStage) (string, error) {
+	if s.IP {
+		return "", errFallthrough
+	}
 	quoted := logsql.QuotePattern(s.Value)
 	switch s.Op {
 	case LineFilterContains:
-		// |= "text" → ~"text" (substring/regexp match in VL)
-		return "~" + quoted, nil
+		return "~" + strconv.Quote(regexp.QuoteMeta(s.Value)), nil
 	case LineFilterExcludes:
-		// != "text" → NOT ~"text"
-		return "NOT ~" + quoted, nil
+		return "NOT ~" + strconv.Quote(regexp.QuoteMeta(s.Value)), nil
 	case LineFilterMatchRe:
 		// |~ "re" → ~"re"
 		return "~" + quoted, nil

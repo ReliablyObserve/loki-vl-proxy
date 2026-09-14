@@ -219,12 +219,13 @@ test.describe("@comprehensive-ui Loki Explorer - Comprehensive UI Coverage", () 
     });
 
     test("should support unwrap operations", async ({ page }) => {
-      // unwrap is only valid inside a range aggregation; the dataset carries
-      // duration_ms (explore-regression uses the same expression).
+      // Exercise a bounded dashboard query. Bare JSON retains high-cardinality
+      // parsed labels; scanning the entire seven-day generator history turns
+      // this feature check into a resource-limit test covered by the API suite.
       const metricsQuery =
-        'avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m])';
+        'avg_over_time({app="api-gateway"} | json | unwrap duration_ms [5m]) by (app)';
 
-      await openExplore(page, PROXY_DS, metricsQuery);
+      await openExplore(page, PROXY_DS, metricsQuery, { from: "now-5m", to: "now" });
       await waitForGrafanaReady(page);
       const startTime = Date.now();
       await runQuery(page);

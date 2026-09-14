@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-const grafanaURL = "http://localhost:3002"
+var grafanaURL = envOr("GRAFANA_URL", "http://localhost:3002")
 
 var requiredDrilldownLimitKeys = []string{
 	"discover_log_levels",

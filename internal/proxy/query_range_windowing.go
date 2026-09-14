@@ -808,7 +808,8 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 
 	skipLogLineReconstruction := hasTextExtractionParser(originalQuery)
 	classifyAsParsed := hasParserStage(originalQuery, "json") || hasParserStage(originalQuery, "logfmt")
-	needsClassification := categorizedLabels && emitStructuredMetadata
+	captureFields := regexpCaptureFields(originalQuery)
+	needsClassification := categorizedLabels && emitStructuredMetadata || len(captureFields) > 0
 	dropConditions, keepConditions, bareDropFields, bareKeepFields := extractDropKeepFromAST(originalQuery)
 
 	scanBufPtr := scannerBufPool.Get().(*[]byte)
@@ -874,6 +875,7 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 		var sm, parsed map[string]string
 		if needsClassification {
 			structuredMetadata, parsedFields := p.classifyEntryMetadataFieldsFJ(fjObj, desc.rawLabels, classifyAsParsed, exposureCache, smBuf, pfBuf)
+			parsedFields = promoteRegexpCaptureFields(captureFields, structuredMetadata, parsedFields)
 			sm = metadataFieldMap(structuredMetadata)
 			parsed = metadataFieldMap(parsedFields)
 			if len(dropConditions) > 0 {
@@ -887,6 +889,10 @@ func (p *Proxy) vlLogsToLokiWindowEntriesStream(r io.Reader, originalQuery strin
 		streamKey, streamLabels := applyStreamLabelMutations(
 			desc, dropConditions, keepConditions, bareDropFields, bareKeepFields, p.labelTranslator,
 		)
+		streamLabels = mergeRegexpCaptureLabels(streamLabels, parsed, captureFields)
+		if len(captureFields) > 0 {
+			streamKey = canonicalLabelsKey(streamLabels)
+		}
 
 		entries = append(entries, queryRangeWindowEntry{
 			Stream: streamLabels,

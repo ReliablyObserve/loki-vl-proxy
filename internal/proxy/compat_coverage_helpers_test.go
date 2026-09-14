@@ -202,8 +202,9 @@ func TestCompatHelpers_AggregateManualWindow(t *testing.T) {
 	} else {
 		assertClose("stdvar", got, 2.0/3.0)
 	}
-	if got, ok := aggregateManualWindow("quantile", 0.5, samples, 0, 20, 20); !ok || got != 2 {
-		t.Fatalf("quantile: expected 2,true got %v,%v", got, ok)
+	// Loki excludes the sample exactly at the lower window boundary.
+	if got, ok := aggregateManualWindow("quantile", 0.5, samples, 0, 20, 20); !ok || got != 2.5 {
+		t.Fatalf("quantile: expected 2.5,true got %v,%v", got, ok)
 	}
 	if got, ok := aggregateManualWindow("first", 0, samples, 0, 20, 20); !ok || got != 1 {
 		t.Fatalf("first: expected 1,true got %v,%v", got, ok)

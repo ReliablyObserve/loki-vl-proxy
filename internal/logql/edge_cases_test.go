@@ -862,9 +862,9 @@ func TestEdge_IpFilter_PipelineIntegration(t *testing.T) {
 		t.Run(q, func(t *testing.T) { mustValidateV(t, q) })
 	}
 
-	// Loki 3.7.1 does not validate ip() argument syntax at parse time.
-	// Any string is accepted; runtime evaluation may fail instead.
-	syntacticallyInvalidButLokiAccepts := []string{
+	// Loki rejects these when it constructs the IP filter. Historical empty
+	// ranges can bypass pipeline construction and are not validation evidence.
+	invalid := []string{
 		`{app="a"} |= ip("999.999.999.999")`,
 		`{app="a"} |= ip("not-an-ip")`,
 		`{app="a"} |= ip("256.0.0.1/24")`,
@@ -872,8 +872,8 @@ func TestEdge_IpFilter_PipelineIntegration(t *testing.T) {
 		`{app="a"} |= ip("::gggg")`,
 		`{app="a"} |= ip("")`,
 	}
-	for _, q := range syntacticallyInvalidButLokiAccepts {
-		t.Run("loki_accepts:"+q, func(t *testing.T) { mustValidateV(t, q) })
+	for _, q := range invalid {
+		t.Run(q, func(t *testing.T) { mustRejectV(t, q) })
 	}
 }
 

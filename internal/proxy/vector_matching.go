@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -226,50 +227,109 @@ func applyWithoutMatrix(body []byte, exclude map[string]bool) []byte {
 	return out
 }
 
+type vectorMatchError string
+
+func (e vectorMatchError) Error() string { return string(e) }
+
 func validateVectorMatchCardinality(leftBody, rightBody []byte, onLabels []string, ignoringLabels []string, allowGroupLeft, allowGroupRight bool) error {
-	if allowGroupLeft || allowGroupRight {
-		return nil
-	}
+	return validateVectorMatchCardinalityContext(context.Background(), leftBody, rightBody, onLabels, ignoringLabels, allowGroupLeft, allowGroupRight)
+}
 
-	leftSeries := parseMetricSeries(leftBody)
-	rightSeries := parseMetricSeries(rightBody)
-	if len(leftSeries) == 0 || len(rightSeries) == 0 {
-		return nil
+func validateVectorMatchCardinalityContext(ctx context.Context, leftBody, rightBody []byte, onLabels []string, ignoringLabels []string, allowGroupLeft, allowGroupRight bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-
-	var keyFn func(map[string]string) string
-	if len(onLabels) > 0 {
-		keyFn = func(metric map[string]string) string {
-			return subsetKey(metric, onLabels)
+	// Loki checks each evaluation independently. Streams which never overlap
+	// must not create a false many-to-one error across the whole range.
+	type evaluationKey struct {
+		labels string
+		time   float64
+	}
+	var countErr error
+	counts := func(body []byte) map[evaluationKey]int {
+		var response struct {
+			Data struct {
+				Result []struct {
+					Metric map[string]string `json:"metric"`
+					Value  []interface{}     `json:"value"`
+					Values [][]interface{}   `json:"values"`
+				} `json:"result"`
+			} `json:"data"`
 		}
-	} else {
+		result := make(map[evaluationKey]int)
+		if countErr = ctx.Err(); countErr != nil {
+			return result
+		}
+		if json.Unmarshal(body, &response) != nil {
+			return result
+		}
 		ignore := make(map[string]bool, len(ignoringLabels))
 		for _, label := range ignoringLabels {
-			ignore[strings.TrimSpace(label)] = true
+			ignore[label] = true
 		}
-		keyFn = func(metric map[string]string) string {
-			return excludeKey(metric, ignore)
+		for _, series := range response.Data.Result {
+			if countErr = ctx.Err(); countErr != nil {
+				return result
+			}
+			labels := make(map[string]string, len(series.Metric))
+			if onLabels != nil {
+				for _, label := range onLabels {
+					if value := series.Metric[label]; value != "" {
+						labels[label] = value
+					}
+				}
+			} else {
+				for label, value := range series.Metric {
+					if !ignore[label] && value != "" {
+						labels[label] = value
+					}
+				}
+			}
+			encoded, _ := json.Marshal(labels)
+			key := string(encoded)
+			values := series.Values
+			if len(series.Value) == 2 {
+				values = append(values, series.Value)
+			}
+			for _, value := range values {
+				if countErr = ctx.Err(); countErr != nil {
+					return result
+				}
+				if len(value) != 2 {
+					continue
+				}
+				if ts, ok := value[0].(float64); ok {
+					result[evaluationKey{key, ts}]++
+				}
+			}
+		}
+		return result
+	}
+	leftCounts, rightCounts := counts(leftBody), counts(rightBody)
+	if countErr != nil {
+		return countErr
+	}
+	// The "one" side must be unique even without a matching sample.
+	oneSide, side := rightCounts, "right"
+	if allowGroupRight {
+		oneSide, side = leftCounts, "left"
+	}
+	for _, count := range oneSide {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if count > 1 {
+			return vectorMatchError(fmt.Sprintf("found duplicate series on the %s hand-side; many-to-many matching not allowed: matching labels must be unique on one side", side))
 		}
 	}
-
-	leftCounts := make(map[string]int)
-	rightCounts := make(map[string]int)
-	for _, series := range leftSeries {
-		leftCounts[keyFn(series.metric)]++
-	}
-	for _, series := range rightSeries {
-		rightCounts[keyFn(series.metric)]++
-	}
-
-	for key, leftCount := range leftCounts {
-		rightCount := rightCounts[key]
-		if rightCount == 0 {
-			continue
-		}
-		// Only many-to-many is truly ambiguous — Loki accepts many-to-one and
-		// one-to-many with ignoring() implicitly (group_left/right not required).
-		if leftCount > 1 && rightCount > 1 {
-			return fmt.Errorf("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
+	if !allowGroupLeft && !allowGroupRight {
+		for key, count := range leftCounts {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if count > 1 && rightCounts[key] > 0 {
+				return vectorMatchError("multiple matches for labels: many-to-one matching must be explicit (group_left/group_right)")
+			}
 		}
 	}
 	return nil

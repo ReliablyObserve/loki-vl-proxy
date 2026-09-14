@@ -57,17 +57,17 @@ func (p *Proxy) proxyStatsQueryRange(w http.ResponseWriter, r *http.Request, log
 		return
 	}
 
-	// For rate() with range==step: VL tumbling windows miss the pre-window data
-	// for the first evaluation point (Loki uses a sliding window [T0-W, T0];
-	// VL gives [T0, T0+W)). Shift start back by W, call the direct path, then
-	// trim the extra leading bucket from the response.
+	// Range == step: Loki's sample at T covers (T-W, T] while VL's bucket
+	// labelled T covers [T, T+W). Fetch from start-W and relabel every bucket
+	// to its Loki evaluation timestamp (relabelTumblingStatsQueryRange).
 	if origSpec, origStartNs, ok := statsRateRangeEqualsStepShift(originalLogql, r); ok {
 		buf := &bufferedResponseWriter{}
 		shiftedR := r.Clone(r.Context())
 		_ = shiftedR.ParseForm()
 		shiftedR.Form.Set("start", nanosToVLTimestamp(origStartNs-origSpec.Window.Nanoseconds()))
 		_ = p.proxyStatsQueryRangeDirect(buf, shiftedR, logsqlQuery)
-		body := trimStatsQueryRangeResponseFromStart(buf.body, origStartNs)
+		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
+		body := relabelTumblingStatsQueryRange(buf.body, origStartNs, endNs, origSpec.Window.Nanoseconds())
 		if hasTopK {
 			body = applyTopKToMatrix(body, topK, topKDesc)
 		}
@@ -2502,19 +2502,23 @@ func allRangeWindowsEqual(logql string) (time.Duration, bool) {
 }
 
 // statsRateRangeEqualsStepShift detects whether the query contains a rate() or
-// bytes_rate() with range==step so that the caller can apply the first-bucket
-// start shift. The check scans the full expression (not just the top-level
-// function) so outer aggregations like sum by(x)(rate(...)) are detected.
-// NOTE: binary metric expressions (e.g. rate({a}[1m]) / rate({b}[1m])) are
-// routed through proxyBinaryMetric before reaching this function; apply the
-// shift there independently (see proxyBinaryMetric / proxyBinaryMetricVM).
+// bytes_rate() with range==step so that the caller can fetch from start-W and
+// relabel buckets onto Loki's evaluation timestamps
+// (relabelTumblingStatsQueryRange). The check scans the full expression (not
+// just the top-level function) so outer aggregations like sum by(x)(rate(...))
+// are detected. count_over_time and bytes_over_time are relabelled only as an
+// ungrouped sum (isSumAllLogRange), the shape parser-free Explore queries and
+// the ordered JSON elision produce. Grouped counts are left alone: Drilldown
+// field histograms route them through the hits and hybrid paths below, which
+// own their axis handling.
+// NOTE: binary metric expressions are evaluated per operand through the normal
+// handlers; the legacy proxyBinaryMetric paths apply the shift independently.
 // Returns (spec, origStartNs, true) when shifting is needed.
 func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origSpec originalRangeMetricSpec, origStartNs int64, ok bool) {
 	spec, hasSpec := parseOriginalRangeMetricSpec(originalLogql)
 	if !hasSpec || spec.Window <= 0 {
 		return
 	}
-	// The tumbling-window first-bucket drift only affects rate() and bytes_rate().
 	// Search the full expression for these function calls — "rate(" is also present
 	// in "rate_counter(" and "rate_sum(", so exclude those explicitly.
 	lq := strings.ToLower(strings.TrimSpace(originalLogql))
@@ -2522,7 +2526,7 @@ func statsRateRangeEqualsStepShift(originalLogql string, r *http.Request) (origS
 	hasBareRate := strings.Contains(lq, "rate(") &&
 		!strings.Contains(lq, "rate_counter(") &&
 		!strings.Contains(lq, "rate_sum(")
-	if !hasBareRate && !hasBytesRate {
+	if !hasBareRate && !hasBytesRate && !isSumAllLogRange(originalLogql) {
 		return
 	}
 	step, stepOk := parsePositiveStepDuration(r.FormValue("step"))
@@ -2597,15 +2601,25 @@ func marshalFJ(buf *bytes.Buffer, v *fj.Value, scratch *[]byte) {
 	buf.Write(*scratch)
 }
 
-// trimStatsQueryRangeResponseFromStart removes points with timestamp < startNs.
-// Used when start was shifted back to include the pre-start bucket for rate().
-func trimStatsQueryRangeResponseFromStart(body []byte, startNs int64) []byte {
-	return trimStatsQRByTimeFJ(body, func(tsNs int64) bool { return tsNs >= startNs })
+// relabelTumblingStatsQueryRange maps VictoriaLogs stats_query_range buckets
+// onto Loki's evaluation timestamps for a range aggregation whose window equals
+// the step. VictoriaLogs labels each bucket by its start and the bucket covers
+// [T, T+step); Loki's sample at T covers (T-W, T]. The caller fetches from
+// start-W, every bucket label moves forward by W, and only points inside
+// [startNs, endNs] are kept. That also drops the partial buckets the shifted
+// fetch produces at either edge. endNs <= 0 disables the upper bound.
+func relabelTumblingStatsQueryRange(body []byte, startNs, endNs, windowNs int64) []byte {
+	return trimStatsQRByTimeFJShifted(body, func(tsNs int64) bool {
+		shifted := tsNs + windowNs
+		return shifted >= startNs && (endNs <= 0 || shifted <= endNs)
+	}, windowNs)
 }
 
 // trimStatsQRByTimeFJ filters stats_query_range point arrays using fastjson,
 // eliminating json.Unmarshal struct allocations and json.Marshal reflection.
-func trimStatsQRByTimeFJ(body []byte, keep func(int64) bool) []byte {
+// trimStatsQRByTimeFJShifted filters stats_query_range points and moves every
+// kept point's timestamp forward by shiftNs. keep receives the original timestamp.
+func trimStatsQRByTimeFJShifted(body []byte, keep func(int64) bool, shiftNs int64) []byte {
 	p := statsQRFJPool.Get()
 	defer statsQRFJPool.Put(p)
 
@@ -2653,7 +2667,7 @@ scanLoop:
 			}
 		}
 	}
-	if !needsTrim {
+	if !needsTrim && shiftNs == 0 {
 		return body
 	}
 
@@ -2686,7 +2700,7 @@ scanLoop:
 			buf.WriteByte(',')
 		}
 		buf.WriteString(`"result":`)
-		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, scratch)
+		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, shiftNs, scratch)
 		if stats := dataVal.Get("stats"); stats != nil {
 			buf.WriteString(`,"stats":`)
 			marshalFJ(buf, stats, scratch)
@@ -2697,7 +2711,7 @@ scanLoop:
 			buf.WriteByte(',')
 		}
 		buf.WriteString(`"results":`)
-		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, scratch)
+		writeFilteredStatsQRSeriesFJ(buf, seriesArr, keep, shiftNs, scratch)
 	}
 
 	buf.WriteByte('}')
@@ -2707,7 +2721,7 @@ scanLoop:
 	return result
 }
 
-func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep func(int64) bool, scratch *[]byte) {
+func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep func(int64) bool, shiftNs int64, scratch *[]byte) {
 	buf.WriteByte('[')
 	for si, series := range seriesArr {
 		if si > 0 {
@@ -2732,14 +2746,23 @@ func writeFilteredStatsQRSeriesFJ(buf *bytes.Buffer, seriesArr []*fj.Value, keep
 				if len(pts) == 0 {
 					continue
 				}
-				if !keep(statsQRFJPointNano(pts[0])) {
+				tsNs := statsQRFJPointNano(pts[0])
+				if !keep(tsNs) {
 					continue
 				}
 				if !firstPoint {
 					buf.WriteByte(',')
 				}
 				firstPoint = false
-				marshalFJ(buf, point, scratch)
+				if shiftNs == 0 || len(pts) < 2 {
+					marshalFJ(buf, point, scratch)
+					continue
+				}
+				buf.WriteByte('[')
+				buf.WriteString(strconv.FormatFloat(float64(tsNs+shiftNs)/float64(time.Second), 'f', -1, 64))
+				buf.WriteByte(',')
+				marshalFJ(buf, pts[1], scratch)
+				buf.WriteByte(']')
 			}
 			buf.WriteByte(']')
 		}
@@ -3325,8 +3348,12 @@ func (p *Proxy) proxyBinaryMetricQueryVM(w http.ResponseWriter, r *http.Request,
 }
 
 func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, leftQL, rightQL, vlEndpoint, resultType string, vm *translator.VectorMatchInfo) {
+	if expr := binaryExprForRequest(r); expr != nil {
+		p.proxyBinaryLogQL(w, r, expr, resultType)
+		return
+	}
 	// If no vector matching, fall back to default behavior
-	if vm == nil || (len(vm.On) == 0 && len(vm.Ignoring) == 0 && len(vm.GroupLeft) == 0 && len(vm.GroupRight) == 0) {
+	if vm == nil || (!vm.MatchOn && vm.GroupSide == "" && len(vm.On) == 0 && len(vm.Ignoring) == 0 && len(vm.GroupLeft) == 0 && len(vm.GroupRight) == 0) {
 		p.proxyBinaryMetric(w, r, op, leftQL, rightQL, vlEndpoint, resultType)
 		return
 	}
@@ -3379,83 +3406,35 @@ func (p *Proxy) proxyBinaryMetricVM(w http.ResponseWriter, r *http.Request, op, 
 
 	var leftBody, rightBody []byte
 	var leftErr, rightErr error
-
-	// Run both non-scalar VL fetches concurrently.
-	if !leftIsScalar && !rightIsScalar {
-		var wg sync.WaitGroup
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
-			if e != nil {
-				leftErr = e
-				return
-			}
-			defer resp.Body.Close()
-			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-		}()
-		go func() {
-			defer wg.Done()
-			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
-			if e != nil {
-				rightErr = e
-				return
-			}
-			defer resp.Body.Close()
-			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-		}()
-		wg.Wait()
-		if leftErr != nil {
-			p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
-			return
-		}
-		if rightErr != nil {
-			p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
-			return
-		}
-	} else {
-		if leftIsScalar {
-			leftBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + leftQL + `"]}}`)
-		} else {
-			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(leftQL))
-			if e != nil {
-				p.writeError(w, statusFromUpstreamErr(e), "left query: "+e.Error())
-				return
-			}
-			defer resp.Body.Close()
-			leftBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-		}
-
-		if rightIsScalar {
-			rightBody = []byte(`{"status":"success","data":{"resultType":"scalar","result":[0,"` + rightQL + `"]}}`)
-		} else {
-			resp, e := p.vlPost(r.Context(), "/select/logsql/"+vlEndpoint, buildParams(rightQL))
-			if e != nil {
-				p.writeError(w, statusFromUpstreamErr(e), "right query: "+e.Error())
-				return
-			}
-			defer resp.Body.Close()
-			rightBody, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
-		}
+	// Nested marker operands share the request's bounded work budget.
+	leftBody, _, leftErr = p.resolveBinOpBody(r, leftQL, vlEndpoint, resultType, buildParams)
+	if leftErr == nil {
+		rightBody, _, rightErr = p.resolveBinOpBody(r, rightQL, vlEndpoint, resultType, buildParams)
+	}
+	if leftErr != nil {
+		p.writeError(w, statusFromUpstreamErr(leftErr), "left query: "+leftErr.Error())
+		return
+	}
+	if rightErr != nil {
+		p.writeError(w, statusFromUpstreamErr(rightErr), "right query: "+rightErr.Error())
+		return
 	}
 
-	// Apply vector matching: on(), ignoring(), group_left(), group_right()
 	var result []byte
-	if len(vm.On) > 0 {
-		result = applyOnMatching(leftBody, rightBody, op, vm.On, resultType)
-	} else if len(vm.Ignoring) > 0 {
-		if err := validateVectorMatchCardinality(leftBody, rightBody, nil, vm.Ignoring, len(vm.GroupLeft) > 0, len(vm.GroupRight) > 0); err != nil {
+	if leftIsScalar || rightIsScalar {
+		result = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
+	} else {
+		var err error
+		result, err = matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, op, resultType, vm, false)
+		if err != nil {
 			p.writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		result = applyIgnoringMatching(leftBody, rightBody, op, vm.Ignoring, resultType)
-	} else {
-		// group_left/group_right without on/ignoring — use default matching
-		result = combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
 	}
 
 	if origStartNs > 0 {
-		result = trimStatsQueryRangeResponseFromStart(result, origStartNs)
+		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
+		result = relabelTumblingStatsQueryRange(result, origStartNs, endNs, shiftNs)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -3584,7 +3563,8 @@ func (p *Proxy) proxyBinaryMetric(w http.ResponseWriter, r *http.Request, op, le
 	// Combine results with arithmetic at proxy level
 	result := combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftIsScalar, rightIsScalar, leftQL, rightQL)
 	if origStartNs > 0 {
-		result = trimStatsQueryRangeResponseFromStart(result, origStartNs)
+		endNs, _ := parseLokiTimeToUnixNano(r.FormValue("end"))
+		result = relabelTumblingStatsQueryRange(result, origStartNs, endNs, shiftNs)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -3606,12 +3586,23 @@ func (p *Proxy) resolveBinOpBody(r *http.Request, query, vlEndpoint, resultType 
 		return nil, false, e
 	}
 	defer resp.Body.Close()
-	body, _ = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	body, err = readBodyLimited(resp.Body, maxBufferedBackendBodyBytes)
+	if err != nil {
+		return nil, false, err
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, false, fmt.Errorf("binary operand backend returned status %d: %s", resp.StatusCode, p.redactBackendError(body))
+	}
 	return body, false, nil
 }
 
 // evalBinaryMarker recursively evaluates a __binary__: expression marker.
 func (p *Proxy) evalBinaryMarker(r *http.Request, marker, vlEndpoint, resultType string, buildParams func(string) url.Values) ([]byte, error) {
+	var err error
+	r, err = nextBinaryEvaluation(r)
+	if err != nil {
+		return nil, err
+	}
 	op, left, right, vm, ok := translator.ParseBinaryMetricExprFull(marker)
 	if !ok {
 		return nil, fmt.Errorf("invalid binary expression marker")
@@ -3626,11 +3617,8 @@ func (p *Proxy) evalBinaryMarker(r *http.Request, marker, vlEndpoint, resultType
 		return nil, err
 	}
 
-	if vm != nil && len(vm.On) > 0 {
-		return applyOnMatching(leftBody, rightBody, op, vm.On, resultType), nil
-	}
-	if vm != nil && len(vm.Ignoring) > 0 {
-		return applyIgnoringMatching(leftBody, rightBody, op, vm.Ignoring, resultType), nil
+	if !leftScalar && !rightScalar {
+		return matchBinaryMetricResultsContext(r.Context(), leftBody, rightBody, op, resultType, vm, false)
 	}
 	return combineBinaryMetricResults(leftBody, rightBody, op, resultType, leftScalar, rightScalar, left, right), nil
 }

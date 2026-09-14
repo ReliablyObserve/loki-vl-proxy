@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -382,7 +383,7 @@ func (p *Proxy) handleStatsCompatRange(w http.ResponseWriter, r *http.Request, o
 	// VL's count-all semantics (parse failures counted). Use origSpec.BaseQuery — the inner
 	// pipeline without outer aggregation or range brackets — so hasDropErrorOnlyPostParserStage
 	// can correctly identify the drop-error clause.
-	if noSlidingOverlap && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
+	if manualFunc != "quantile" && noSlidingOverlap && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
 		return false
 	}
 	if !shouldUseManualRangeMetricCompat(spec.BaseQuery, manualFunc, noSlidingOverlap) {
@@ -423,7 +424,7 @@ func (p *Proxy) handleStatsCompatInstant(w http.ResponseWriter, r *http.Request,
 	// Instant queries with parser stages and explicit drop-error: use native VL stats.
 	// VL correctly evaluates [time-range, time] for instant queries; the drop-error opt-in
 	// means parse-failed lines are intentionally excluded — count-all semantics are acceptable.
-	if queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
+	if manualFunc != "quantile" && queryUsesParserStages(spec.BaseQuery) && hasOrigSpec && hasDropErrorOnlyPostParserStage(origSpec.BaseQuery) {
 		return false
 	}
 	// Instant queries have no step: the range window is the entire lookback interval,
@@ -515,7 +516,10 @@ func parseTopKWrapper(logql string) (k int, descending bool, ok bool) {
 // sliding-window manual path for cases where range != step.
 func shouldUseManualRangeMetricCompat(baseQuery, manualFunc string, rangeEqualsStep bool) bool {
 	manualFunc = strings.TrimSpace(manualFunc)
-	if manualFunc == "rate_counter" {
+	// Loki interpolates between adjacent ranked samples. VL's quantile uses a
+	// different rank selection, and its range endpoint uses tumbling buckets.
+	// Use the existing exact sample evaluator for both instant and range queries.
+	if manualFunc == "rate_counter" || manualFunc == "quantile" {
 		return true
 	}
 
@@ -552,6 +556,13 @@ func (p *Proxy) proxyManualRangeMetricRange(w http.ResponseWriter, r *http.Reque
 // Ranking must preserve absent evaluations: chart zero-fill would turn an
 // absent series into a candidate that can win topk/bottomk before it has data.
 func (p *Proxy) proxyManualRangeMetricRangeWithFill(w http.ResponseWriter, r *http.Request, spec statsCompatSpec, origSpec originalRangeMetricSpec, manualFunc string, fillMissing bool) bool {
+	// The first translated stats clause may group by stream before the outer
+	// sum. For additive log metrics, combine the raw counts/bytes before window
+	// evaluation and keep the native stats fast path for aggregate-all queries.
+	if isSumAllLogRange(r.FormValue("query")) {
+		spec.GroupBy, spec.OrigGroupBy = nil, nil
+		spec.ByExplicit = true
+	}
 	startTS, err := parseTimestamp(r.FormValue("start"))
 	if err != nil {
 		p.writeError(w, http.StatusBadRequest, "invalid start timestamp: "+err.Error())
@@ -638,15 +649,54 @@ func (p *Proxy) proxyManualRangeMetricRangeWithFill(w http.ResponseWriter, r *ht
 		return true
 	}
 
-	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), endTS)
+	fetchEnd := endTS
+	if manualFunc == "quantile" {
+		// VL's raw-query end is exclusive; Loki includes the evaluation time.
+		fetchEnd = fetchEnd.Add(time.Nanosecond)
+	}
+	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, startTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return true
 	}
 
-	result := buildManualRangeMetricMatrix(manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.resolvedMaxStatsQuerySeries())
+	result, err := buildManualRangeMetricMatrixContext(r.Context(), manualFunc, quantile, series, startTS, endTS, step, origSpec.Window, p.resolvedMaxStatsQuerySeries())
+	if err != nil {
+		p.writeError(w, http.StatusServiceUnavailable, err.Error())
+		return true
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
+	return true
+}
+
+func isSumAllLogRange(query string) bool {
+	expr, err := logqlpkg.Parse(query)
+	if err != nil {
+		return false
+	}
+	agg, ok := expr.(*logqlpkg.VectorAggregation)
+	if !ok || agg.Op != logqlpkg.VectorSum || (agg.Grouping != nil && (agg.Grouping.Without || len(agg.Grouping.Labels) != 0)) {
+		return false
+	}
+	ra, ok := agg.Inner.(*logqlpkg.RangeAggregation)
+	if !ok {
+		return false
+	}
+	switch ra.Op {
+	case logqlpkg.RangeRate, logqlpkg.RangeCountOverTime, logqlpkg.RangeBytesRate, logqlpkg.RangeBytesOverTime:
+	default:
+		return false
+	}
+	lq, ok := ra.Inner.(*logqlpkg.LogQuery)
+	if !ok {
+		return false
+	}
+	for _, stage := range lq.Pipeline {
+		if _, ok := stage.(*logqlpkg.UnwrapStage); ok {
+			return false
+		}
+	}
 	return true
 }
 
@@ -665,13 +715,21 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), evalTS)
+	fetchEnd := evalTS
+	if manualFunc == "quantile" {
+		fetchEnd = fetchEnd.Add(time.Nanosecond)
+	}
+	series, err := p.collectRangeMetricSamples(r.Context(), spec.BaseQuery, spec.GroupBy, spec.OrigGroupBy, spec.ByExplicit, field, origSpec.UnwrapConv, evalTS.Add(-origSpec.Window), fetchEnd)
 	if err != nil {
 		p.writeError(w, http.StatusBadGateway, err.Error())
 		return true
 	}
 
-	result := buildManualRangeMetricVector(manualFunc, quantile, series, evalTS, origSpec.Window)
+	result, err := buildManualRangeMetricVectorContext(r.Context(), manualFunc, quantile, series, evalTS, origSpec.Window, p.resolvedMaxStatsQuerySeries())
+	if err != nil {
+		p.writeError(w, http.StatusServiceUnavailable, err.Error())
+		return true
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter -- Content-Type set above; proxy returns pre-built JSON
 	return true
@@ -948,16 +1006,18 @@ type metricSeriesCacheEntry struct {
 
 func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string, groupBy, origGroupBy []string, byExplicit bool, field, unwrapConv string, start, end time.Time) (map[string]manualSeriesSamples, error) {
 	params := url.Values{}
-	params.Set("query", baseQuery)
 	params.Set("start", formatVLTimestamp(start.UTC().Format(time.RFC3339Nano)))
 	params.Set("end", formatVLTimestamp(end.UTC().Format(time.RFC3339Nano)))
-	// Keep this high to avoid truncating series for compatibility stats functions.
-	// Configurable via -manual-range-metric-row-limit; default 1,000,000.
-	rowLimit := p.rangeMetricRowLimit
-	if rowLimit <= 0 {
-		rowLimit = 1_000_000
+	// Fetch one extra row to distinguish a complete response at the configured
+	// limit from truncated input. Partial samples cannot produce valid metrics.
+	rowLimit, err := p.manualMetricRowBudget()
+	if err != nil {
+		return nil, err
 	}
-	params.Set("limit", strconv.Itoa(rowLimit))
+	// A limit query argument makes VL sort all candidates by timestamp. The
+	// limit pipe streams an arbitrary subset instead; successful responses are
+	// complete because overflow is rejected, and samples are sorted below.
+	params.Set("query", baseQuery+" | limit "+strconv.Itoa(rowLimit+1))
 
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
@@ -981,14 +1041,23 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	defer vlFJParserPool.Put(fjp)
 
 	// Stream the response line by line — avoids io.ReadAll + bytes.Split which
-	// would buffer the entire VL response (up to limit=1000000 lines) in memory.
-	scanner := bufio.NewScanner(resp.Body)
+	// would buffer the entire configured row budget plus overflow probe in memory.
+	limited := &io.LimitedReader{R: resp.Body, N: maxBufferedBackendBodyBytes + 1}
+	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 
+	rows := 0
 	for scanner.Scan() {
+		if err := checkManualMetricRead(ctx, limited); err != nil {
+			return nil, err
+		}
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
+		}
+		rows++
+		if rows > rowLimit {
+			return nil, fmt.Errorf("manual range metric row limit exceeded (%d); narrow the query or increase -manual-range-metric-row-limit", rowLimit)
 		}
 
 		v, parseErr := fjp.ParseBytes(line)
@@ -1062,6 +1131,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 		current := seriesMap[seriesEntry.key]
 		if current.Metric == nil {
+			if len(seriesMap) >= p.resolvedMaxStatsQuerySeries() {
+				return nil, fmt.Errorf("maximum metric series exceeded (%d)", p.resolvedMaxStatsQuerySeries())
+			}
 			current.Metric = seriesEntry.translated
 		}
 		current.Samples = append(current.Samples, rangeMetricSample{ts: ts, value: sampleValue})
@@ -1070,8 +1142,14 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	if scanErr := scanner.Err(); scanErr != nil {
 		return nil, fmt.Errorf("scanning VL response: %w", scanErr)
 	}
+	if err := checkManualMetricRead(ctx, limited); err != nil {
+		return nil, err
+	}
 
 	for key, series := range seriesMap {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		sort.Slice(series.Samples, func(i, j int) bool { return series.Samples[i].ts < series.Samples[j].ts })
 		seriesMap[key] = series
 	}
@@ -1170,22 +1248,14 @@ func (p *Proxy) extractManualSampleValueFJ(v *fj.Value, field, unwrapConv string
 		return 0, false
 	}
 
-	switch unwrapConv {
-	case "duration":
-		s, ok := stringifyFJValue(raw)
-		if !ok {
-			return 0, false
-		}
-		return parseDuration(s)
-	case "bytes":
-		s, ok := stringifyFJValue(raw)
-		if !ok {
-			return 0, false
-		}
-		return parseBytes(s)
-	default:
+	if unwrapConv == "" {
 		return parseFloatValueFJ(raw)
 	}
+	s, ok := stringifyFJValue(raw)
+	if !ok {
+		return 0, false
+	}
+	return convertUnwrapValue(s, unwrapConv)
 }
 
 // lookupFJField returns the first non-nil field from v matching any key in keys.
@@ -1501,12 +1571,29 @@ func capSeriesByTotalCount(series map[string]manualSeriesSamples, maxSeries int)
 }
 
 func buildManualRangeMetricMatrix(functionName string, quantile float64, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxSeries int) []byte {
+	// Legacy callers explicitly requested busiest-series truncation. Production
+	// uses the error-returning Context entrypoint and must never silently truncate.
 	series = capSeriesByTotalCount(series, maxSeries)
+	result, _ := buildManualRangeMetricMatrixContext(context.Background(), functionName, quantile, series, start, end, step, window, maxSeries)
+	return result
+}
+
+func buildManualRangeMetricMatrixContext(ctx context.Context, functionName string, quantile float64, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxSeries int) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if maxSeries > 0 && len(series) > maxSeries {
+		return nil, fmt.Errorf("manual metric series limit exceeded (%d); narrow the query", maxSeries)
+	}
+	ctx = binaryEvaluationContext(ctx)
 	if end.Before(start) {
-		return marshalManualMetricResponse("matrix", []map[string]interface{}{})
+		return encodeBinarySeriesContext(ctx, nil, "matrix", maxBufferedBackendBodyBytes)
+	}
+	if step <= 0 || end.Sub(start)/step >= 1000000 {
+		return nil, fmt.Errorf("invalid or excessive manual metric evaluation points")
 	}
 
-	perSeries := make(map[string]map[string]interface{}, len(series))
+	perSeries := make(map[string]*binaryMatchedSeries)
 	keys := make([]string, 0, len(series))
 	for key := range series {
 		keys = append(keys, key)
@@ -1514,37 +1601,38 @@ func buildManualRangeMetricMatrix(functionName string, quantile float64, series 
 	sort.Strings(keys)
 
 	for t := start; !t.After(end); t = t.Add(step) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		windowStart := t.Add(-window).UnixNano()
 		windowEnd := t.UnixNano()
 		for _, key := range keys {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			seriesEntry := series[key]
 			value, ok := aggregateManualWindow(functionName, quantile, seriesEntry.Samples, windowStart, windowEnd, window.Seconds())
 			if !ok {
 				continue
 			}
+			if err := checkBinaryOutputSample(ctx); err != nil {
+				return nil, err
+			}
 
 			dst := perSeries[key]
 			if dst == nil {
-				dst = map[string]interface{}{
-					"metric": seriesEntry.Metric,
-					"values": make([][]interface{}, 0, 16),
+				if err := checkBinaryOutputLabels(ctx, seriesEntry.Metric); err != nil {
+					return nil, err
 				}
+				dst = &binaryMatchedSeries{labels: seriesEntry.Metric}
 				perSeries[key] = dst
 			}
 
-			points := dst["values"].([][]interface{})
-			points = append(points, []interface{}{float64(t.Unix()), strconv.FormatFloat(value, 'f', -1, 64)})
-			dst["values"] = points
+			dst.points = append(dst.points, []any{float64(t.Unix()), strconv.FormatFloat(value, 'f', -1, 64)})
 		}
 	}
 
-	results := make([]map[string]interface{}, 0, len(perSeries))
-	for _, key := range keys {
-		if seriesResult, ok := perSeries[key]; ok {
-			results = append(results, seriesResult)
-		}
-	}
-	return marshalManualMetricResponse("matrix", results)
+	return encodeBinarySeriesContext(ctx, perSeries, "matrix", maxBufferedBackendBodyBytes)
 }
 
 // buildHitsRangeMetricMatrix builds a Prometheus matrix response from pre-bucketed
@@ -1660,6 +1748,18 @@ func buildHitsRangeMetricMatrixWithFill(manualFunc string, series map[string]man
 }
 
 func buildManualRangeMetricVector(functionName string, quantile float64, series map[string]manualSeriesSamples, evalTime time.Time, window time.Duration) []byte {
+	result, _ := buildManualRangeMetricVectorContext(context.Background(), functionName, quantile, series, evalTime, window)
+	return result
+}
+
+func buildManualRangeMetricVectorContext(ctx context.Context, functionName string, quantile float64, series map[string]manualSeriesSamples, evalTime time.Time, window time.Duration, maxSeries ...int) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(maxSeries) > 0 && maxSeries[0] > 0 && len(series) > maxSeries[0] {
+		return nil, fmt.Errorf("manual metric series limit exceeded (%d); narrow the query", maxSeries[0])
+	}
+	ctx = binaryEvaluationContext(ctx)
 	keys := make([]string, 0, len(series))
 	for key := range series {
 		keys = append(keys, key)
@@ -1668,21 +1768,27 @@ func buildManualRangeMetricVector(functionName string, quantile float64, series 
 
 	windowStart := evalTime.Add(-window).UnixNano()
 	windowEnd := evalTime.UnixNano()
-	results := make([]map[string]interface{}, 0, len(series))
+	results := make(map[string]*binaryMatchedSeries)
 
 	for _, key := range keys {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		seriesEntry := series[key]
 		value, ok := aggregateManualWindow(functionName, quantile, seriesEntry.Samples, windowStart, windowEnd, window.Seconds())
 		if !ok {
 			continue
 		}
-		results = append(results, map[string]interface{}{
-			"metric": seriesEntry.Metric,
-			"value":  []interface{}{float64(evalTime.Unix()), strconv.FormatFloat(value, 'f', -1, 64)},
-		})
+		if err := checkBinaryOutputSample(ctx); err != nil {
+			return nil, err
+		}
+		if err := checkBinaryOutputLabels(ctx, seriesEntry.Metric); err != nil {
+			return nil, err
+		}
+		results[key] = &binaryMatchedSeries{labels: seriesEntry.Metric, points: [][]any{{float64(evalTime.Unix()), strconv.FormatFloat(value, 'f', -1, 64)}}}
 	}
 
-	return marshalManualMetricResponse("vector", results)
+	return encodeBinarySeriesContext(ctx, results, "vector", maxBufferedBackendBodyBytes)
 }
 
 func marshalManualMetricResponse(resultType string, result []map[string]interface{}) []byte {
@@ -1699,17 +1805,23 @@ func marshalManualMetricResponse(resultType string, result []map[string]interfac
 	return payload
 }
 
+func manualWindowValues(samples []rangeMetricSample, windowStart, windowEnd int64, excludeStart bool) []float64 {
+	values := make([]float64, 0, len(samples))
+	for _, sample := range samples {
+		if sample.ts < windowStart || sample.ts > windowEnd || (excludeStart && sample.ts == windowStart) {
+			continue
+		}
+		values = append(values, sample.value)
+	}
+	return values
+}
+
 func aggregateManualWindow(functionName string, quantile float64, samples []rangeMetricSample, windowStart, windowEnd int64, windowSeconds float64) (float64, bool) {
 	// Slice-dependent functions: build filtered slice, then aggregate.
 	switch functionName {
 	case "quantile", "stddev", "stdvar", "rate_counter":
-		values := make([]float64, 0, len(samples))
-		for _, sample := range samples {
-			if sample.ts < windowStart || sample.ts > windowEnd {
-				continue
-			}
-			values = append(values, sample.value)
-		}
+		// Loki quantile range vectors exclude the lower boundary and include the end.
+		values := manualWindowValues(samples, windowStart, windowEnd, functionName == "quantile")
 		if len(values) == 0 {
 			return 0, false
 		}

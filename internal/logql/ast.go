@@ -2,6 +2,7 @@ package logql
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -46,7 +47,7 @@ func (m LabelMatcher) String() string {
 	case MatchNotRe:
 		op = "!~"
 	}
-	return fmt.Sprintf(`%s%s"%s"`, m.Name, op, m.Value)
+	return m.Name + op + strconv.Quote(m.Value)
 }
 
 // StreamSelector is the {label="value",...} part of a log query.
@@ -81,6 +82,7 @@ const (
 type LineFilterStage struct {
 	Op    LineFilterOp
 	Value string
+	IP    bool // Distinguishes ip("address") from the literal "ip(address)".
 }
 
 func (s *LineFilterStage) String() string {
@@ -99,7 +101,10 @@ func (s *LineFilterStage) String() string {
 	case LineFilterExcludePat:
 		op = "!>"
 	}
-	return fmt.Sprintf(`%s "%s"`, op, s.Value)
+	if s.IP {
+		return op + " ip(" + strconv.Quote(s.Value) + ")"
+	}
+	return op + " " + strconv.Quote(s.Value)
 }
 
 func (s *LineFilterStage) stage() {}
@@ -124,13 +129,13 @@ type ParserStage struct {
 func (s *ParserStage) String() string {
 	switch s.Type {
 	case ParserJSON:
-		return "| json"
+		return strings.TrimSpace("| json " + s.Param)
 	case ParserLogfmt:
-		return "| logfmt"
+		return strings.TrimSpace("| logfmt " + s.Param)
 	case ParserRegexp:
-		return fmt.Sprintf("| regexp `%s`", s.Param)
+		return "| regexp " + quoteParserArgument(s.Param)
 	case ParserPattern:
-		return fmt.Sprintf("| pattern `%s`", s.Param)
+		return "| pattern " + quoteParserArgument(s.Param)
 	case ParserUnpack:
 		return "| unpack"
 	}
@@ -138,6 +143,13 @@ func (s *ParserStage) String() string {
 }
 
 func (s *ParserStage) stage() {}
+
+func quoteParserArgument(value string) string {
+	if strconv.CanBackquote(value) {
+		return "`" + value + "`"
+	}
+	return strconv.Quote(value)
+}
 
 // LabelFilterStage is a `| level="error"` stage (raw expression).
 type LabelFilterStage struct {
@@ -158,7 +170,7 @@ type DropMatcher struct {
 }
 
 func (m DropMatcher) String() string {
-	return fmt.Sprintf(`%s%s"%s"`, m.Name, m.Op, m.Value)
+	return m.Name + m.Op + strconv.Quote(m.Value)
 }
 
 // DropStage is a `| drop label1, label2` or `| drop level="debug"` stage.
@@ -222,15 +234,7 @@ type LineFormatStage struct {
 }
 
 func (s *LineFormatStage) String() string {
-	// Re-escape control characters so the output is a valid quoted string
-	// (the scanner decoded \n → newline etc.; we must reverse that here).
-	escaped := strings.NewReplacer(
-		`\`, `\\`,
-		`"`, `\"`,
-		"\n", `\n`,
-		"\t", `\t`,
-	).Replace(s.Template)
-	return `| line_format "` + escaped + `"`
+	return "| line_format " + strconv.Quote(s.Template)
 }
 
 func (s *LineFormatStage) stage() {}
@@ -271,9 +275,6 @@ type Grouping struct {
 }
 
 func (g *Grouping) String() string {
-	if len(g.Labels) == 0 {
-		return ""
-	}
 	kw := "by"
 	if g.Without {
 		kw = "without"
@@ -416,15 +417,26 @@ func (vm *VectorMatching) String() string {
 type BinOpExpr struct {
 	Left, Right    Expr
 	Op             string
+	ReturnBool     bool
 	VectorMatching *VectorMatching
 }
 
 func (b *BinOpExpr) String() string {
-	s := b.Left.String() + " " + b.Op
+	left, right := b.Left.String(), b.Right.String()
+	if _, ok := b.Left.(*BinOpExpr); ok {
+		left = "(" + left + ")"
+	}
+	if _, ok := b.Right.(*BinOpExpr); ok {
+		right = "(" + right + ")"
+	}
+	s := left + " " + b.Op
+	if b.ReturnBool {
+		s += " bool"
+	}
 	if vm := b.VectorMatching.String(); vm != "" {
 		s += " " + vm
 	}
-	s += " " + b.Right.String()
+	s += " " + right
 	return s
 }
 

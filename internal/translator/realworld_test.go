@@ -57,7 +57,7 @@ func TestRealWorld_NegativeLineFilters(t *testing.T) {
 		{
 			name:  "kafka exclude replica manager noise",
 			logql: `{instance=~"kafka-[23]",name="kafka"} != "kafka.server:type=ReplicaManager"`,
-			want:  `instance:~"kafka-[23]" name:="kafka" NOT ~"kafka.server:type=ReplicaManager"`,
+			want:  `instance:~"kafka-[23]" name:="kafka" NOT ~"kafka\\.server:type=ReplicaManager"`,
 		},
 		{
 			name:  "case insensitive regex match",
@@ -122,7 +122,7 @@ func TestRealWorld_MultiStage(t *testing.T) {
 		{
 			name:  "logfmt filter compound or",
 			logql: `{job="loki-dev/query-frontend"} |= "metrics.go" != "out of order" | logfmt | duration > "30s"`,
-			want:  `job:="loki-dev/query-frontend" ~"metrics.go" NOT ~"out of order" | unpack_logfmt | filter duration:>30s`,
+			want:  `job:="loki-dev/query-frontend" ~"metrics\\.go" NOT ~"out of order" | unpack_logfmt | filter duration:>30s`,
 		},
 		{
 			name:  "json then label_format then line_format",

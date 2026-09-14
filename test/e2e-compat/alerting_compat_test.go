@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const vmalertURL = "http://localhost:18880"
+var vmalertURL = envOr("VMALERT_URL", "http://localhost:18880")
 
 func TestAlertingCompat_PrometheusRulesAndAlerts(t *testing.T) {
 	ensureDataIngested(t)
