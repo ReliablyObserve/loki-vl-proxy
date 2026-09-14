@@ -108,7 +108,8 @@ func TestGrouping_String(t *testing.T) {
 	}{
 		{&logql.Grouping{Labels: []string{"app", "env"}}, "by (app, env)"},
 		{&logql.Grouping{Without: true, Labels: []string{"host"}}, "without (host)"},
-		{&logql.Grouping{}, ""},
+		{&logql.Grouping{}, "by ()"},
+		{&logql.Grouping{Without: true}, "without ()"},
 	}
 	for _, tc := range tests {
 		if got := tc.g.String(); got != tc.want {

@@ -1425,6 +1425,10 @@ func parseStreamLabelsUncached(s string) map[string]string {
 	start := 0
 	for i := 0; i < len(s); i++ {
 		c := s[i]
+		if inQuote && c == '\\' && i+1 < len(s) {
+			i++
+			continue
+		}
 		if c == '"' {
 			inQuote = !inQuote
 		}
@@ -1446,7 +1450,11 @@ func appendLabelPair(pair string, dst map[string]string) {
 	}
 	k := strings.TrimSpace(pair[:eq])
 	v := strings.TrimSpace(pair[eq+1:])
-	v = strings.Trim(v, `"`)
+	if decoded, err := strconv.Unquote(v); err == nil {
+		v = decoded
+	} else {
+		v = strings.Trim(v, `"`)
+	}
 	dst[k] = v
 }
 
@@ -1728,6 +1736,10 @@ func isStatsQuery(logsqlQuery string) bool {
 func isStatsQueryHeuristic(logsqlQuery string) bool {
 	inQuote := false
 	for i := 0; i < len(logsqlQuery); i++ {
+		if inQuote && logsqlQuery[i] == '\\' && i+1 < len(logsqlQuery) {
+			i++
+			continue
+		}
 		if logsqlQuery[i] == '"' {
 			inQuote = !inQuote
 			continue

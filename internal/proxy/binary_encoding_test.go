@@ -106,3 +106,38 @@ func TestBinaryGroupingRepairPreflightAndBoundedRewrite(t *testing.T) {
 		t.Fatalf("existing distinct grouping values changed: %s %v", repaired, err)
 	}
 }
+
+func TestBinaryGroupingRepairKeepsJSONResponseContract(t *testing.T) {
+	expr, err := logqlpkg.Parse(`sum by(level)(count_over_time({app="a"}[5m]))`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := `<img src=x onerror="alert(1)">'` + "\n"
+	body, err := json.Marshal(map[string]any{"data": map[string]any{"result": []any{
+		map[string]any{"metric": map[string]string{"detected_level": payload}, "value": []any{1, "2"}},
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := binaryEvaluationContext(context.Background())
+	w := &binaryOperandResponse{header: make(http.Header), ctx: ctx, budget: ctx.Value(binaryEvaluationKey{}).(binaryEvaluationState).budget, limit: 4096}
+	if _, err := w.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	p := newTestProxy(t, "http://127.0.0.1:1")
+	p.restoreBinaryOperandResponse(w, expr)
+	if w.status != http.StatusOK || w.Header().Get("Content-Type") != "application/json" {
+		t.Fatalf("rewritten metric must remain JSON: status=%d headers=%v", w.status, w.Header())
+	}
+	var response struct {
+		Data struct {
+			Result []struct{ Metric map[string]string }
+		}
+	}
+	if err := json.Unmarshal(w.body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Data.Result) != 1 || response.Data.Result[0].Metric["level"] != payload {
+		t.Fatalf("label value must remain inert JSON data: %s", w.body.String())
+	}
+}

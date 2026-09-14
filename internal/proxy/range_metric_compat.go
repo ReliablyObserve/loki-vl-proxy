@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -724,7 +725,7 @@ func (p *Proxy) proxyManualRangeMetricInstant(w http.ResponseWriter, r *http.Req
 		return true
 	}
 
-	result, err := buildManualRangeMetricVectorContext(r.Context(), manualFunc, quantile, series, evalTS, origSpec.Window)
+	result, err := buildManualRangeMetricVectorContext(r.Context(), manualFunc, quantile, series, evalTS, origSpec.Window, p.resolvedMaxStatsQuerySeries())
 	if err != nil {
 		p.writeError(w, http.StatusServiceUnavailable, err.Error())
 		return true
@@ -1009,12 +1010,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	params.Set("end", formatVLTimestamp(end.UTC().Format(time.RFC3339Nano)))
 	// Fetch one extra row to distinguish a complete response at the configured
 	// limit from truncated input. Partial samples cannot produce valid metrics.
-	rowLimit := p.rangeMetricRowLimit
-	if rowLimit <= 0 {
-		rowLimit = 1_000_000
-	}
-	if rowLimit == math.MaxInt {
-		return nil, fmt.Errorf("manual range metric row limit is too large")
+	rowLimit, err := p.manualMetricRowBudget()
+	if err != nil {
+		return nil, err
 	}
 	// A limit query argument makes VL sort all candidates by timestamp. The
 	// limit pipe streams an arbitrary subset instead; successful responses are
@@ -1044,12 +1042,13 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 	// Stream the response line by line — avoids io.ReadAll + bytes.Split which
 	// would buffer the entire configured row budget plus overflow probe in memory.
-	scanner := bufio.NewScanner(resp.Body)
+	limited := &io.LimitedReader{R: resp.Body, N: maxBufferedBackendBodyBytes + 1}
+	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 64*1024), 8*1024*1024)
 
 	rows := 0
 	for scanner.Scan() {
-		if err := ctx.Err(); err != nil {
+		if err := checkManualMetricRead(ctx, limited); err != nil {
 			return nil, err
 		}
 		line := scanner.Bytes()
@@ -1132,6 +1131,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 
 		current := seriesMap[seriesEntry.key]
 		if current.Metric == nil {
+			if len(seriesMap) >= p.resolvedMaxStatsQuerySeries() {
+				return nil, fmt.Errorf("maximum metric series exceeded (%d)", p.resolvedMaxStatsQuerySeries())
+			}
 			current.Metric = seriesEntry.translated
 		}
 		current.Samples = append(current.Samples, rangeMetricSample{ts: ts, value: sampleValue})
@@ -1139,6 +1141,9 @@ func (p *Proxy) collectRangeMetricSamples(ctx context.Context, baseQuery string,
 	}
 	if scanErr := scanner.Err(); scanErr != nil {
 		return nil, fmt.Errorf("scanning VL response: %w", scanErr)
+	}
+	if err := checkManualMetricRead(ctx, limited); err != nil {
+		return nil, err
 	}
 
 	for key, series := range seriesMap {
@@ -1574,6 +1579,9 @@ func capSeriesByTotalCount(series map[string]manualSeriesSamples, maxSeries int)
 }
 
 func buildManualRangeMetricMatrix(functionName string, quantile float64, series map[string]manualSeriesSamples, start, end time.Time, step, window time.Duration, maxSeries int) []byte {
+	// Legacy callers explicitly requested busiest-series truncation. Production
+	// uses the error-returning Context entrypoint and must never silently truncate.
+	series = capSeriesByTotalCount(series, maxSeries)
 	result, _ := buildManualRangeMetricMatrixContext(context.Background(), functionName, quantile, series, start, end, step, window, maxSeries)
 	return result
 }
@@ -1582,12 +1590,18 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	series = capSeriesByTotalCount(series, maxSeries)
+	if maxSeries > 0 && len(series) > maxSeries {
+		return nil, fmt.Errorf("manual metric series limit exceeded (%d); narrow the query", maxSeries)
+	}
+	ctx = binaryEvaluationContext(ctx)
 	if end.Before(start) {
-		return marshalManualMetricResponse("matrix", []map[string]interface{}{}), nil
+		return encodeBinarySeriesContext(ctx, nil, "matrix", maxBufferedBackendBodyBytes)
+	}
+	if step <= 0 || end.Sub(start)/step >= 1000000 {
+		return nil, fmt.Errorf("invalid or excessive manual metric evaluation points")
 	}
 
-	perSeries := make(map[string]map[string]interface{}, len(series))
+	perSeries := make(map[string]*binaryMatchedSeries)
 	keys := make([]string, 0, len(series))
 	for key := range series {
 		keys = append(keys, key)
@@ -1609,29 +1623,24 @@ func buildManualRangeMetricMatrixContext(ctx context.Context, functionName strin
 			if !ok {
 				continue
 			}
+			if err := checkBinaryOutputSample(ctx); err != nil {
+				return nil, err
+			}
 
 			dst := perSeries[key]
 			if dst == nil {
-				dst = map[string]interface{}{
-					"metric": seriesEntry.Metric,
-					"values": make([][]interface{}, 0, 16),
+				if err := checkBinaryOutputLabels(ctx, seriesEntry.Metric); err != nil {
+					return nil, err
 				}
+				dst = &binaryMatchedSeries{labels: seriesEntry.Metric}
 				perSeries[key] = dst
 			}
 
-			points := dst["values"].([][]interface{})
-			points = append(points, []interface{}{float64(t.Unix()), strconv.FormatFloat(value, 'f', -1, 64)})
-			dst["values"] = points
+			dst.points = append(dst.points, []any{float64(t.Unix()), strconv.FormatFloat(value, 'g', -1, 64)})
 		}
 	}
 
-	results := make([]map[string]interface{}, 0, len(perSeries))
-	for _, key := range keys {
-		if seriesResult, ok := perSeries[key]; ok {
-			results = append(results, seriesResult)
-		}
-	}
-	return marshalManualMetricResponse("matrix", results), nil
+	return encodeBinarySeriesContext(ctx, perSeries, "matrix", maxBufferedBackendBodyBytes)
 }
 
 // buildHitsRangeMetricMatrix builds a Prometheus matrix response from pre-bucketed
@@ -1751,10 +1760,14 @@ func buildManualRangeMetricVector(functionName string, quantile float64, series 
 	return result
 }
 
-func buildManualRangeMetricVectorContext(ctx context.Context, functionName string, quantile float64, series map[string]manualSeriesSamples, evalTime time.Time, window time.Duration) ([]byte, error) {
+func buildManualRangeMetricVectorContext(ctx context.Context, functionName string, quantile float64, series map[string]manualSeriesSamples, evalTime time.Time, window time.Duration, maxSeries ...int) ([]byte, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if len(maxSeries) > 0 && maxSeries[0] > 0 && len(series) > maxSeries[0] {
+		return nil, fmt.Errorf("manual metric series limit exceeded (%d); narrow the query", maxSeries[0])
+	}
+	ctx = binaryEvaluationContext(ctx)
 	keys := make([]string, 0, len(series))
 	for key := range series {
 		keys = append(keys, key)
@@ -1763,7 +1776,7 @@ func buildManualRangeMetricVectorContext(ctx context.Context, functionName strin
 
 	windowStart := evalTime.Add(-window).UnixNano()
 	windowEnd := evalTime.UnixNano()
-	results := make([]map[string]interface{}, 0, len(series))
+	results := make(map[string]*binaryMatchedSeries)
 
 	for _, key := range keys {
 		if err := ctx.Err(); err != nil {
@@ -1774,13 +1787,16 @@ func buildManualRangeMetricVectorContext(ctx context.Context, functionName strin
 		if !ok {
 			continue
 		}
-		results = append(results, map[string]interface{}{
-			"metric": seriesEntry.Metric,
-			"value":  []interface{}{float64(evalTime.Unix()), strconv.FormatFloat(value, 'f', -1, 64)},
-		})
+		if err := checkBinaryOutputSample(ctx); err != nil {
+			return nil, err
+		}
+		if err := checkBinaryOutputLabels(ctx, seriesEntry.Metric); err != nil {
+			return nil, err
+		}
+		results[key] = &binaryMatchedSeries{labels: seriesEntry.Metric, points: [][]any{{float64(evalTime.Unix()), strconv.FormatFloat(value, 'g', -1, 64)}}}
 	}
 
-	return marshalManualMetricResponse("vector", results), nil
+	return encodeBinarySeriesContext(ctx, results, "vector", maxBufferedBackendBodyBytes)
 }
 
 func marshalManualMetricResponse(resultType string, result []map[string]interface{}) []byte {

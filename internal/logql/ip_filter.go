@@ -43,6 +43,9 @@ func (p *parser) parseLineFilterStage() (Stage, error) {
 	if err != nil {
 		return nil, err
 	}
+	if isIP {
+		value = strings.TrimSuffix(strings.TrimPrefix(value, "ip("), ")")
+	}
 	op := LineFilterContains
 	switch tok.Typ {
 	case TokBangEq:
@@ -56,5 +59,5 @@ func (p *parser) parseLineFilterStage() (Stage, error) {
 	case TokBangGt:
 		op = LineFilterExcludePat
 	}
-	return &LineFilterStage{Op: op, Value: value}, nil
+	return &LineFilterStage{Op: op, Value: value, IP: isIP}, nil
 }

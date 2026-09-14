@@ -2286,6 +2286,10 @@ func (p *Proxy) handleQuery(w http.ResponseWriter, r *http.Request) {
 
 	logqlQuery = resolveGrafanaRangeTemplateTokens(logqlQuery, r.FormValue("start"), r.FormValue("end"), r.FormValue("step"))
 
+	if p.handleEmptySumWithout(w, r, logqlQuery) {
+		return
+	}
+
 	// Extract and apply LogQL offset: strip the offset clause and shift the eval
 	// time backward so preferWorkingParser probes the historical window where the
 	// offset data actually lives. All downstream dispatch paths see the shifted time.

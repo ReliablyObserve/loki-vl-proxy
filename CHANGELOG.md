@@ -7,20 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Bound exact raw metric collection and rendering, including bare-parser unwrap
+  queries that bypassed the existing manual evaluator. Enforce configured raw
+  row and series limits, 64 MiB input/output limits and one million output
+  samples, with cancellation and explicit errors instead of truncation or
+  oversized successful responses. Valid queries exceeding these limits can now
+  fail; narrow their selector/range or reduce grouping cardinality.
+- Bound nested binary evaluation across child requests and output construction:
+  64 levels, 1,024 child evaluations, 256 MiB captured child responses, two
+  million decoded arrays, one million constructed samples and 64 MiB of label
+  work. Encode each result within 64 MiB before allocating escaped strings.
+
 ### Fixed
 
 - Reject malformed IP line-filter arguments and implicit many-to-one metric
   matches consistently with Loki. Preserve empty grouping modifiers and check
   cardinality at each evaluation, without conflating disjoint streams.
+- Preserve binary operator precedence, parentheses, comparison filtering versus
+  `bool`, extraction aliases and grouped output labels. Evaluate operands through
+  the existing scoped handlers so range joins use trailing windows and retain
+  parser errors; preserve undefined arithmetic as Loki-compatible values.
+- Preserve escaped selector/pipeline literals, IP calls versus quoted text,
+  templates and explicit empty grouping when executing parsed child queries.
 - Escape literal substring filters before regex translation and preserve
   query-created regexp capture names independently of stored-field mappings.
 - Preserve quantile grouping and use interpolated values over exact trailing
-  windows, including samples at the evaluation timestamp. Existing raw-sample
-  limits apply; parser-error compatibility remains blocked in draft coverage.
+  windows, including samples at the evaluation timestamp. Ungrouped additive
+  sums aggregate all streams instead of leaking intermediate backend groups.
+- Execute supported JSON count/rate/byte metric pipelines in order, preserving
+  parser errors, drop/keep behavior, extraction hints and metadata collisions.
+  Retain native aggregation when parsing cannot affect its result. Explicit
+  extraction, mixed parsers and unwrap remain on their existing execution paths.
 - Reject raw metric scans beyond the configured row limit instead of computing
   successful partial results; check cancellation during sample collection and
   between metric evaluations. Oversized requests now fail explicitly.
-
+- Stream capped raw metric input without VictoriaLogs' implicit timestamp sort;
+  sort complete samples locally before evaluating windows. Replace the obsolete
+  100% LogQL compatibility claim with measured findings and documented limits.
+- Wait for visible Drilldown label options instead of treating its asynchronous
+  loading state as an empty result; run this regression in the core UI CI shard.
 - Correct exhaustive compatibility timestamps to address real Loki data;
   expose previously hidden runtime and result-parity gaps for follow-up fixes.
 

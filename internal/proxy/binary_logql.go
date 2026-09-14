@@ -139,6 +139,7 @@ func (p *Proxy) restoreBinaryOperandResponse(w *binaryOperandResponse, expr logq
 		w.err = err
 	} else if changed {
 		w.body.Reset()
+		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(body)
 	}
 	p.finishBinaryOperandResponse(w)

@@ -6,6 +6,7 @@ import (
 	"context"
 	stdjson "encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"net/http"
@@ -1028,15 +1029,22 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	}
 
 	params := url.Values{}
-	params.Set("query", logsqlQuery+" "+logsql.PipeSort{By: []logsql.SortField{{Field: "_time"}}}.String())
+	rowLimit, err := p.manualMetricRowBudget()
+	if err != nil {
+		return nil, err
+	}
+	// Stream complete bounded input; sorting at VL retains every candidate row.
+	params.Set("query", logsqlQuery+" | limit "+strconv.Itoa(rowLimit+1))
 	if start != "" {
 		params.Set("start", formatVLTimestamp(start))
 	}
 	if end != "" {
-		params.Set("end", formatVLTimestamp(end))
+		if endNanos, ok := parseFlexibleUnixNanos(end); ok {
+			params.Set("end", time.Unix(0, endNanos).Add(time.Nanosecond).UTC().Format(time.RFC3339Nano))
+		} else {
+			params.Set("end", formatVLTimestamp(end))
+		}
 	}
-	// Keep consistent with collectRangeMetricSamples to avoid unbounded reads.
-	params.Set("limit", "1000000")
 
 	resp, err := p.vlPost(ctx, "/select/logsql/query", params)
 	if err != nil {
@@ -1049,7 +1057,8 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		return nil, &vlAPIError{status: resp.StatusCode, body: msg}
 	}
 
-	scanner := bufio.NewScanner(resp.Body)
+	limited := &io.LimitedReader{R: resp.Body, N: maxBufferedBackendBodyBytes + 1}
+	scanner := bufio.NewScanner(limited)
 	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
 	seriesByKey := make(map[string]*bareParserMetricSeries, 16)
 	streamLabelCache := make(map[string]map[string]string, 16)
@@ -1077,10 +1086,18 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	// of the series identity (as in Loki).
 	includeParsedInMetric := hasPostParserPipeStage(spec.baseQuery)
 
+	rows := 0
 	for scanner.Scan() {
+		if err := checkManualMetricRead(ctx, limited); err != nil {
+			return nil, err
+		}
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
 			continue
+		}
+		rows++
+		if rows > rowLimit {
+			return nil, fmt.Errorf("manual range metric row limit exceeded (%d)", rowLimit)
 		}
 
 		entry := vlEntryPool.Get().(map[string]interface{})
@@ -1097,7 +1114,11 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 			vlEntryPool.Put(entry)
 			continue
 		}
-		msg, _ := stringifyEntryValue(entry["_msg"])
+		weight, ok := bareParserRawSampleWeight(entry, spec)
+		if !ok {
+			vlEntryPool.Put(entry)
+			continue
+		}
 		desc := p.logQueryStreamDescriptor(asString(entry["_stream"]), asString(entry["level"]), streamLabelCache, streamDescriptorCache)
 		metric := cloneStringMap(desc.translatedLabels)
 		if includeParsedInMetric {
@@ -1112,27 +1133,15 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 		seriesKey := canonicalLabelsKey(metric)
 		series, ok := seriesByKey[seriesKey]
 		if !ok {
+			if len(seriesByKey) >= p.resolvedMaxStatsQuerySeries() {
+				vlEntryPool.Put(entry)
+				return nil, fmt.Errorf("maximum metric series exceeded (%d)", p.resolvedMaxStatsQuerySeries())
+			}
 			series = &bareParserMetricSeries{
 				metric:  metric,
 				samples: make([]bareParserMetricSample, 0, 8),
 			}
 			seriesByKey[seriesKey] = series
-		}
-		weight := 1.0
-		if spec.unwrapField != "" {
-			rawValue, ok := stringifyEntryValue(entry[spec.unwrapField])
-			if !ok {
-				vlEntryPool.Put(entry)
-				continue
-			}
-			parsedValue, err := strconv.ParseFloat(rawValue, 64)
-			if err != nil {
-				vlEntryPool.Put(entry)
-				continue
-			}
-			weight = parsedValue
-		} else if spec.funcName == "bytes_over_time" || spec.funcName == "bytes_rate" {
-			weight = float64(len(msg))
 		}
 		series.samples = append(series.samples, bareParserMetricSample{tsNanos: tsNanos, value: weight})
 		vlEntryPool.Put(entry)
@@ -1140,9 +1149,16 @@ func (p *Proxy) fetchBareParserMetricSeries(ctx context.Context, originalQuery s
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
+	if err := checkManualMetricRead(ctx, limited); err != nil {
+		return nil, err
+	}
 
 	result := make([]bareParserMetricSeries, 0, len(seriesByKey))
 	for _, series := range seriesByKey {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		sort.Slice(series.samples, func(i, j int) bool { return series.samples[i].tsNanos < series.samples[j].tsNanos })
 		result = append(result, *series)
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -2103,11 +2119,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 					startNanos, endNanos, stepNanos,
 				)
 				if hitsErr == nil {
-					w.Header().Set("Content-Type", "application/json")
-					marshalJSON(w, buildBareParserMetricMatrix(series, startNanos, endNanos, stepNanos, spec))
-					elapsed := time.Since(start)
-					p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
-					p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+					p.writeBoundedBareParserMetric(w, r, start, originalQuery, series, startNanos, endNanos, stepNanos, spec, true)
 					return
 				}
 				slog.WarnContext(r.Context(), "hits-based metric path failed, falling back to stats",
@@ -2129,7 +2141,11 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 				endT := time.Unix(0, endNanos)
 				stepD := time.Duration(stepNanos)
 				// statsSeries already capped to top-N in fetchBareParserCountBytesViaStats; pass 0 to avoid double-capping.
-				result := buildManualRangeMetricMatrix(statsAggFn, 0, statsSeries, startT, endT, stepD, spec.rangeWindow, 0)
+				result, err := buildManualRangeMetricMatrixContext(r.Context(), statsAggFn, 0, statsSeries, startT, endT, stepD, spec.rangeWindow, 0)
+				if err != nil {
+					p.writeError(w, statusFromUpstreamErr(err), err.Error())
+					return
+				}
 				w.Header().Set("Content-Type", "application/json")
 				_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
 				elapsed := time.Since(start)
@@ -2149,7 +2165,9 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, r.FormValue("start"), r.FormValue("end"))
+	// Loki's first evaluation includes the complete preceding range window.
+	fetchStart := time.Unix(0, startNanos).Add(-spec.rangeWindow).UTC().Format(time.RFC3339Nano)
+	series, err := p.fetchBareParserMetricSeries(r.Context(), originalQuery, spec, fetchStart, r.FormValue("end"))
 	if err != nil {
 		status := statusFromUpstreamErr(err)
 		p.writeError(w, status, err.Error())
@@ -2157,11 +2175,7 @@ func (p *Proxy) proxyBareParserMetricQueryRange(w http.ResponseWriter, r *http.R
 		p.queryTracker.Record("query_range", originalQuery, time.Since(start), true)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	marshalJSON(w, buildBareParserMetricMatrix(series, startNanos, endNanos, stepNanos, spec))
-	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query_range", http.StatusOK, elapsed)
-	p.queryTracker.Record("query_range", originalQuery, elapsed, false)
+	p.writeBoundedBareParserMetric(w, r, start, originalQuery, series, startNanos, endNanos, stepNanos, spec, true)
 }
 
 // tryUnwrapViaStatsFastPath attempts to satisfy an unwrap range aggregation using
@@ -2197,8 +2211,14 @@ func (p *Proxy) tryUnwrapViaStatsFastPath(w http.ResponseWriter, r *http.Request
 	startT := time.Unix(0, startNanos)
 	endT := time.Unix(0, endNanos)
 	stepD := time.Duration(stepNanos)
-	// Unwrap stats path is not capped upstream; bound it here at the matrix boundary.
-	result := buildManualRangeMetricMatrix(aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow, p.resolvedMaxStatsQuerySeries())
+	// Retain the established top-N behavior for pre-aggregated stats, while
+	// propagating byte/sample budget failures instead of returning empty success.
+	uwSeries = capSeriesByTotalCount(uwSeries, p.resolvedMaxStatsQuerySeries())
+	result, err := buildManualRangeMetricMatrixContext(r.Context(), aggFunc, 0, uwSeries, startT, endT, stepD, spec.rangeWindow, p.resolvedMaxStatsQuerySeries())
+	if err != nil {
+		p.writeError(w, statusFromUpstreamErr(err), err.Error())
+		return true
+	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(result) // nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter
 	elapsed := time.Since(start)
@@ -2222,11 +2242,7 @@ func (p *Proxy) proxyBareParserMetricQuery(w http.ResponseWriter, r *http.Reques
 		p.queryTracker.Record("query", originalQuery, time.Since(start), true)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
-	marshalJSON(w, buildBareParserMetricVector(series, evalNanos, spec))
-	elapsed := time.Since(start)
-	p.metrics.RecordRequest("query", http.StatusOK, elapsed)
-	p.queryTracker.Record("query", originalQuery, elapsed, false)
+	p.writeBoundedBareParserMetric(w, r, start, originalQuery, series, evalNanos, evalNanos, int64(time.Second), spec, false)
 }
 
 // statsTranslateFJPool pools fastjson.Parser for translateStatsResponseLabels.

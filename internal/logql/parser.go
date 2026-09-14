@@ -730,9 +730,9 @@ func isAlphanumeric(c byte) bool {
 func tokenRaw(tok Token) string {
 	switch tok.Typ {
 	case TokString:
-		return `"` + tok.Val + `"`
+		return strconv.Quote(tok.Val)
 	case TokRawString:
-		return "`" + tok.Val + "`"
+		return quoteParserArgument(tok.Val)
 	case TokEq:
 		return "="
 	case TokNeq, TokBangEq:

@@ -16,9 +16,9 @@ export const LOKI_DS = "Loki (direct)";
 /**
  * Navigate to Grafana Explore with a specific datasource selected.
  */
-export async function openExplore(page: Page, datasource: string, expr = "") {
+export async function openExplore(page: Page, datasource: string, expr = "", range?: { from: string; to: string }) {
   const uid = await resolveDatasourceUid(page, datasource);
-  await page.goto(buildExploreUrl(uid, expr));
+  await page.goto(buildExploreUrl(uid, expr, range));
   await waitForGrafanaReady(page);
   await expect(exploreQueryEditor(page)).toBeVisible({ timeout: 15_000 });
 }

@@ -20,6 +20,30 @@ var (
 	vectorBinaryRE  = regexp.MustCompile(`^\s*vector\(\s*([^)]+?)\s*\)\s*([+\-*/])\s*vector\(\s*([^)]+?)\s*\)\s*$`)
 )
 
+// unwrapEmptySumWithout preserves every series for an explicit sum without().
+// Its grouping keeps all labels except __name__. An absent grouping or by()
+// instead reduces all labels. Evaluate the operand once, retaining the number
+// of wrappers because removing empty labels can merge groups on a later pass.
+func unwrapEmptySumWithout(query string) (logqlpkg.Expr, int) {
+	expr, err := logqlpkg.Parse(query)
+	if err != nil {
+		return nil, 0
+	}
+	count := 0
+	for {
+		agg, ok := expr.(*logqlpkg.VectorAggregation)
+		if !ok || agg.Op != logqlpkg.VectorSum || agg.Grouping == nil || !agg.Grouping.Without || len(agg.Grouping.Labels) != 0 {
+			break
+		}
+		expr = agg.Inner
+		count++
+	}
+	if count == 0 {
+		return nil, 0
+	}
+	return expr, count
+}
+
 func evaluateConstantInstantVectorQuery(expr, timeParam string) ([]byte, bool) {
 	expr = strings.TrimSpace(expr)
 	if expr == "" {

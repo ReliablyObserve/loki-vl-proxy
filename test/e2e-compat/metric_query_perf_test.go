@@ -2,14 +2,15 @@
 
 // Metric query performance regression and chaining compatibility tests.
 // Verifies that:
-//   - bare rate()/count_over_time() with | json and range==step use the fast
-//     VL stats path (not the full log-fetch path)
+//   - aggregate-all metrics retain the native VL stats path when parser hints
+//     permit it, while bare JSON metrics preserve parsed labels and errors
 //   - sliding-window queries (range > step) still return correct results
 //   - parser + filter chains work end-to-end
 //   - complex multi-step chains produce valid matrix/vector results
 package e2e_compat
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -372,50 +373,85 @@ func TestChaining_MetricQueryComplexMultiStepChains(t *testing.T) {
 	}
 }
 
-// TestChaining_MetricQueryPerformanceNotRegressed verifies that bare rate()
-// with range==step is meaningfully faster than Loki's naive log scan, and
-// that both proxy and Loki return matrix results.
+// TestChaining_MetricQueryPerformanceNotRegressed bounds query latency for
+// native aggregate-all metrics and label-preserving JSON metrics. Mixed-format
+// input is valid only when Loki's parser hints skip extraction.
 func TestChaining_MetricQueryPerformanceNotRegressed(t *testing.T) {
-	ensureDataIngested(t)
-
-	now := time.Now()
-	start := strconv.FormatInt(now.Add(-5*time.Minute).UnixNano(), 10)
-	end := strconv.FormatInt(now.UnixNano(), 10)
+	service := fmt.Sprintf("metric-performance-%d", time.Now().UnixNano())
+	evaluation := time.Now().Add(-4 * time.Minute).Truncate(time.Minute)
+	for i, fixture := range []struct{ format, level, line string }{
+		{"json", "info", `{"method":"GET","status":200}`},
+		{"json", "error", `{"method":"POST","status":500}`},
+		{"logfmt", "warn", `method=GET status=200`},
+	} {
+		stamp := evaluation.Add(time.Duration(-30+i) * time.Second)
+		labels := map[string]string{"service_name": service, "format": fixture.format, "level": fixture.level}
+		payload, _ := json.Marshal(map[string]any{"streams": []any{map[string]any{"stream": labels, "values": [][]string{{strconv.FormatInt(stamp.UnixNano(), 10), fixture.line}}}}})
+		status, body := hardeningRequest(t, http.MethodPost, lokiURL+"/loki/api/v1/push", string(payload), map[string]string{"Content-Type": "application/json"})
+		if status != http.StatusNoContent {
+			t.Fatalf("Loki ingest: %d %s", status, body)
+		}
+		row, _ := json.Marshal(map[string]string{"service_name": service, "format": fixture.format, "level": fixture.level, "_time": stamp.UTC().Format(time.RFC3339Nano), "_msg": fixture.line})
+		status, body = hardeningRequest(t, http.MethodPost, vlURL+"/insert/jsonline?_stream_fields=service_name,format,level", string(row)+"\n", map[string]string{"Content-Type": "application/stream+json"})
+		if status != http.StatusOK {
+			t.Fatalf("VL ingest: %d %s", status, body)
+		}
+	}
+	forceVLFlush(t)
+	selector := `{service_name="` + service + `"}`
+	jsonSelector := `{service_name="` + service + `",format="json"}`
+	waitForParserErrorCanaryMetrics(t, jsonSelector, evaluation)
 
 	queries := []struct {
-		name  string
-		logql string
-		step  string
+		name       string
+		logql      string
+		step       string
+		wantSeries int
+		wantValue  float64
 	}{
-		{"rate_json_tumbling", `rate({cluster="us-east-1"} | json [1m])`, "60"},
-		{"count_json_tumbling", `count_over_time({cluster="us-east-1"} | json [1m])`, "60"},
-		{"sum_by_level_rate", `sum by (level) (rate({cluster="us-east-1"} | json [5m]))`, "60"},
+		{"native_sum_rate_json_tumbling", `sum(rate(` + selector + ` | json [1m]))`, "60", 1, 3.0 / 60},
+		{"native_sum_count_json_tumbling", `sum(count_over_time(` + selector + ` | json [1m]))`, "60", 1, 3},
+		{"rate_json_tumbling", `rate(` + jsonSelector + ` | json [1m])`, "60", 2, 1.0 / 60},
+		{"count_json_tumbling", `count_over_time(` + jsonSelector + ` | json [1m])`, "60", 2, 1},
+		{"sum_by_level_rate", `sum by (level) (rate(` + jsonSelector + ` | json [5m]))`, "60", 2, 1.0 / 300},
 	}
 
 	for _, tc := range queries {
 		t.Run(tc.name, func(t *testing.T) {
 			params := url.Values{}
 			params.Set("query", tc.logql)
-			params.Set("start", start)
-			params.Set("end", end)
+			params.Set("start", evaluation.UTC().Format(time.RFC3339Nano))
+			params.Set("end", evaluation.Add(time.Minute).UTC().Format(time.RFC3339Nano))
 			params.Set("step", tc.step)
 
-			proxyLatency, err := measureQueryLatency(proxyURL, params)
-			if err != nil {
-				t.Fatalf("proxy request failed: %v", err)
+			for _, backend := range []struct{ name, base string }{{"proxy", proxyURL}, {"loki", lokiURL}} {
+				started := time.Now()
+				status, body, _ := queryRangeGET(t, backend.base, params, nil)
+				latency := time.Since(started)
+				t.Logf("%s: latency=%v params=%s status=%d body=%s", backend.name, latency, params.Encode(), status, body)
+				var response parserErrorMetricResponse
+				if status != http.StatusOK || json.Unmarshal([]byte(body), &response) != nil || response.Data.ResultType != "matrix" || len(response.Data.Result) != tc.wantSeries {
+					t.Fatalf("%s: expected populated matrix: %d %s", backend.name, status, body)
+				}
+				for _, series := range response.Data.Result {
+					if len(series.Values) == 0 {
+						t.Fatalf("%s: metric series has no samples: %s", backend.name, body)
+					}
+					assertParserErrorMetricPoint(t, series.Values[0], evaluation.Unix(), tc.wantValue)
+				}
+				if backend.name == "proxy" && latency > 10*time.Second {
+					t.Errorf("proxy too slow for %s: %v (regression threshold: 10s)", tc.name, latency)
+				}
 			}
-			lokiLatency, err := measureQueryLatency(lokiURL, params)
-			if err != nil {
-				t.Logf("loki request failed (non-fatal): %v", err)
-			}
-
-			t.Logf("%s: proxy=%v loki=%v", tc.name, proxyLatency, lokiLatency)
-
-			// Proxy must respond within 10 seconds for these metric queries.
-			// Pre-fix: these queries took > 2s due to full log scan.
-			// Post-fix: tumbling window queries use native VL stats < 100ms typical.
-			if proxyLatency > 10*time.Second {
-				t.Errorf("proxy too slow for %s: %v (regression threshold: 10s)", tc.name, proxyLatency)
+		})
+	}
+	for _, backend := range []struct{ name, base string }{{"proxy", proxyURL}, {"loki", lokiURL}} {
+		t.Run("mixed_json_error/"+backend.name, func(t *testing.T) {
+			params := parserErrorQueryParams("rate("+selector+" | json [5m])", evaluation, "query")
+			status, body := hardeningRequest(t, http.MethodGet, backend.base+"/loki/api/v1/query?"+params.Encode(), "", nil)
+			t.Logf("params=%s status=%d body=%s", params.Encode(), status, body)
+			if status != http.StatusBadRequest || !strings.Contains(string(body), "JSONParserErr") {
+				t.Fatalf("expected Loki JSON parser error: %d %s", status, body)
 			}
 		})
 	}

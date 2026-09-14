@@ -386,7 +386,7 @@ func splitDropItems(s string) []string {
 			cur.Reset()
 			continue
 		}
-		cur.WriteRune(c)
+		cur.WriteByte(s[i])
 	}
 	if cur.Len() > 0 {
 		items = append(items, cur.String())
@@ -1202,9 +1202,9 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				}
 			}
 
-			value = strings.Trim(value, "\"`")
-
 			// ip() CIDR filter: label = ip("cidr") or label != ip("cidr")
+			// Detect calls before decoding a quoted exact value which may itself
+			// contain the literal text ip("...").
 			if strings.HasPrefix(value, `ip("`) && strings.HasSuffix(value, `")`) {
 				cidr := value[4 : len(value)-2]
 				filter := logsql.NewBuilder(caps).BestIPv4Range(label, cidr)
@@ -1214,6 +1214,8 @@ func translateSingleLabelFilter(stage string, labelFn LabelTranslateFunc, caps l
 				}
 				return filter.String(), true
 			}
+
+			value = streamMatcherValue(value, entry.entry.isRe || entry.entry.isComp)
 
 			// VL requires quoting for dotted field names (e.g. "service.name"):
 			// quote the label before passing it to FieldFilter so the output is
@@ -1488,7 +1490,7 @@ func translateLabelFormat(expr string) string {
 		// convertGoTemplate returns a quoted string like "<label>"; strip the
 		// outer quotes before passing to PipeFormat, which re-applies %q quoting.
 		converted := convertGoTemplate(template)
-		unquoted := strings.Trim(converted, `"`)
+		unquoted, _ := strconv.Unquote(converted)
 		pipes = append(pipes, logsql.PipeFormat{Template: unquoted, ResultField: labelName}.String())
 	}
 	if len(pipes) == 0 {
@@ -1499,26 +1501,7 @@ func translateLabelFormat(expr string) string {
 
 // splitLabelFormatAssignments splits "a=X, b=Y" respecting quoted values.
 func splitLabelFormatAssignments(s string) []string {
-	var result []string
-	inQuote := false
-	start := 0
-	for i, c := range s {
-		if c == '"' {
-			inQuote = !inQuote
-		}
-		if c == ',' && !inQuote {
-			part := strings.TrimSpace(s[start:i])
-			if part != "" {
-				result = append(result, part)
-			}
-			start = i + 1
-		}
-	}
-	part := strings.TrimSpace(s[start:])
-	if part != "" {
-		result = append(result, part)
-	}
-	return result
+	return splitDropItems(s)
 }
 
 // convertGoTemplate converts Go template syntax {{.label}} to LogsQL <label> syntax.
@@ -2667,7 +2650,12 @@ func splitStreamMatchers(s string) []string {
 	var matchers []string
 	var quote rune
 	start := 0
-	for i, c := range s {
+	for i := 0; i < len(s); i++ {
+		c := rune(s[i])
+		if c == '\\' && quote == '"' && i+1 < len(s) {
+			i++
+			continue
+		}
 		if (c == '"' || c == '`') && (quote == 0 || quote == c) {
 			if quote == 0 {
 				quote = c
@@ -2748,7 +2736,7 @@ func streamMatcherToFieldFilter(matcher string, labelFn LabelTranslateFunc) stri
 				label = `"` + label + `"`
 			}
 
-			value = strings.Trim(value, "\"`")
+			value = streamMatcherValue(value, op.isRe)
 
 			if value == "" && !op.isRe {
 				// detected_level="" in the stream selector means "no level detected":
@@ -2821,8 +2809,23 @@ var syntheticServiceNameFields = []string{
 	"k8s_job_name",
 }
 
+func streamMatcherValue(value string, isRegex bool) string {
+	value = strings.TrimSpace(value)
+	if !isRegex {
+		// Loki's raw literals retain carriage returns; strconv.Unquote applies
+		// Go source's CR removal rule to backquoted strings instead.
+		if len(value) >= 2 && value[0] == '`' && value[len(value)-1] == '`' {
+			return value[1 : len(value)-1]
+		}
+		if decoded, err := strconv.Unquote(value); err == nil {
+			return decoded
+		}
+	}
+	return strings.Trim(value, "\"`")
+}
+
 func serviceNameMatcherFilter(op, value string, neg, isRegex bool) string {
-	value = strings.TrimSpace(strings.Trim(value, "\"`"))
+	value = streamMatcherValue(value, isRegex)
 	parts := make([]string, 0, len(syntheticServiceNameFields))
 	for _, field := range syntheticServiceNameFields {
 		// Quote dotted field names so VL can parse them.

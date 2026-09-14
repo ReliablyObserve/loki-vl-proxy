@@ -57,6 +57,9 @@ func (p *Proxy) handleOrderedJSONMetric(w http.ResponseWriter, r *http.Request, 
 	if !ok {
 		return false
 	}
+	if isRange && plan.isNativeDrilldownHistogram(r) && p.orderedJSONNativeGroupingIsExact(plan) {
+		return false
+	}
 	if plan.withoutJSON != "" && p.orderedJSONNativeGroupingIsExact(plan) {
 		// The compiled plan proves that JSON and label-only stages cannot
 		// affect this aggregation. Retain line filters and reuse the
@@ -111,6 +114,52 @@ func (p *Proxy) orderedJSONNativeGroupingIsExact(plan *orderedJSONMetricPlan) bo
 		}
 	}
 	return true
+}
+
+// Drilldown's field histogram intentionally returns the most frequent bounded
+// set of values. Preserve the existing native stats/hits route for that precise
+// UI query; ordinary exact metrics still use the fail-closed local evaluator.
+func (plan *orderedJSONMetricPlan) isNativeDrilldownHistogram(r *http.Request) bool {
+	if !isGrafanaDrilldownRequest(r) || !plan.aggregated || plan.function != "count_over_time" ||
+		plan.grouping == nil || plan.grouping.Without || len(plan.grouping.Labels) != 1 {
+		return false
+	}
+	step, ok := parsePositiveStepDuration(r.FormValue("step"))
+	if !ok || step != plan.window {
+		return false
+	}
+	field := plan.grouping.Labels[0]
+	if strings.HasPrefix(field, "__") {
+		return false
+	}
+	errorCleared, existsFilter, parsed := false, false, false
+	for _, stage := range plan.stages {
+		switch {
+		case stage.parser:
+			if parsed {
+				return false
+			}
+			parsed = true
+			errorCleared = false
+		case stage.line != nil:
+			continue
+		case stage.filter != nil:
+			if !parsed || !errorCleared || stage.filter.Field != field || stage.filter.Op != "!=" || stage.filter.Value != "" {
+				return false
+			}
+			existsFilter = true
+		case stage.keep || len(stage.match) != 0:
+			return false
+		default:
+			for name := range stage.fields {
+				if name != "__error__" && name != "__error_details__" {
+					return false
+				}
+			}
+			errorCleared = errorCleared || stage.fields["__error__"]
+		}
+	}
+	return parsed && errorCleared && existsFilter
 }
 
 func orderedJSONMetricTimes(r *http.Request, isRange bool) (time.Time, time.Time, time.Duration, error) {
@@ -303,6 +352,9 @@ func compileOrderedJSONStage(stage logqlpkg.Stage) (orderedJSONStage, bool) {
 }
 
 func orderedJSONLineFilter(stage *logqlpkg.LineFilterStage) (func(string) bool, error) {
+	if stage.IP {
+		return nil, fmt.Errorf("IP filter requires the native pipeline path")
+	}
 	switch stage.Op {
 	case logqlpkg.LineFilterContains:
 		return func(line string) bool { return strings.Contains(line, stage.Value) }, nil
@@ -672,7 +724,7 @@ func (p *Proxy) collectOrderedJSONMetric(ctx context.Context, plan *orderedJSONM
 			continue
 		}
 		if labels["__error__"] != "" && labels["__preserve_error__"] != "true" {
-			return nil, &orderedJSONPipelineError{"pipeline error: '" + labels["__error__"] + "'; filter errors with __error__=\"\" or explicitly drop __error__"}
+			return nil, &orderedJSONPipelineError{fmt.Sprintf("pipeline error: %q; filter errors with __error__=\"\" or explicitly drop __error__", labels["__error__"])}
 		}
 		labels = plan.groupLabels(labels)
 		key := canonicalLabelsKey(labels)

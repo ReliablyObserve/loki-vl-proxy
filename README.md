@@ -21,7 +21,7 @@
 [![Test Code](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/ReliablyObserve/Loki-VL-proxy/badges/.github/badges/loc-tests.json)](https://github.com/ReliablyObserve/Loki-VL-proxy)
 [![Tests](https://img.shields.io/badge/tests-4832%20passed-brightgreen)](#tests)
 [![Coverage](https://img.shields.io/badge/coverage-89.5%25-green)](#tests)
-[![LogQL Coverage](https://img.shields.io/badge/LogQL%20coverage-100%25-brightgreen)](#logql-compatibility)
+[![LogQL Compatibility](https://img.shields.io/badge/LogQL%20compatibility-tested-blue)](#logql-compatibility)
 [![License](https://img.shields.io/github/license/ReliablyObserve/Loki-VL-proxy)](LICENSE)
 [![CodeQL](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml/badge.svg?branch=main&event=push)](https://github.com/ReliablyObserve/Loki-VL-proxy/actions/workflows/codeql.yaml)
 
@@ -243,11 +243,11 @@ Non-Kubernetes examples (static, Consul, Prometheus SD, CoreDNS) are in [`exampl
 
 - Grafana Explore — log browsing, filtering, live tail
 - Grafana Logs Drilldown — patterns, service view, field breakdown
-- Dashboards — all LogQL panel types
+- Dashboards — supported Loki log and metric queries
 - Multi-tenant — `X-Scope-OrgID` isolation with per-tenant rate limits
 - Live tail — native WebSocket tail or synthetic polling fallback
 - Rules and alerts — read bridge to vmalert (no write lifecycle)
-- LogQL — 100% coverage: stream selectors, filters, parsers, metric queries, range functions, vector operators
+- LogQL — stream selectors, filters, parsers, metric queries, range functions and vector operators, with measured compatibility and documented limitations
 - OTel labels — dotted structured metadata exposed correctly in detected fields, underscore-safe in stream labels
 
 ---
@@ -324,9 +324,9 @@ Default flags: `-label-style=underscores`, `-metadata-field-mode=translated`. Gr
 
 ### LogQL Compatibility
 
-Stream selectors, filters, parser pipelines, metric queries, range functions, scalar bool comparisons, vector set operators, and invalid LogQL error forms are all covered and machine-validated in CI against a real Loki oracle. The suite spans 316 exhaustive LogQL parity test cases with machine-validated compatibility scores.
+CI compares supported LogQL operations with a real Loki oracle. Strict populated-fixture regressions check labels, values, timestamps and errors in addition to the broader syntax/status suite. Correcting the exhaustive helper's timestamp units exposed gaps that its earlier scores missed; passing status or nonempty results does not establish complete LogQL parity. See the [measured findings and remaining limits](docs/real-window-compatibility-gaps.md).
 
-**Typed LogQL parser:** The proxy includes a fully typed recursive-descent LogQL parser (`internal/logql`) that produces a structured AST for query validation, structural routing, and drop/keep extraction — replacing the previous regex-based approach. The parser enforces Loki-compatible semantic constraints (missing `| unwrap` in `rate_counter`, invalid `ip()` filter addresses, unclosed template delimiters, etc.) and generates the exact error messages Loki 3.x returns, so Grafana datasource clients receive the expected error shape.
+**Typed LogQL parser:** The recursive-descent parser (`internal/logql`) produces a structured AST for validation, routing, and drop/keep extraction. It validates supported semantic constraints, including missing unwrap stages, invalid IP filter arguments and unclosed template delimiters. Grafana receives Loki-style error responses; the compatibility register records remaining syntax and runtime differences.
 
 For full detail: [Loki Compatibility](docs/compatibility-loki.md), [Translation Reference](docs/translation-reference.md), [LogQL Parser](docs/logql-parser.md), [Known Issues](docs/KNOWN_ISSUES.md)
 
