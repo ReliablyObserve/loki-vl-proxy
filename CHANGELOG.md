@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.69.0] - 2026-09-14
+
 ### Changed
 
 - Correct Helm chart `values.yaml` comments and chart README to match the
