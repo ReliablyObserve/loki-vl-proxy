@@ -948,8 +948,8 @@ func TestTenant_QueryRangeCacheKeyUsesRawQueryWhenAvailable(t *testing.T) {
 	if !strings.Contains(got, url.QueryEscape(`{app="nginx"}`)) {
 		t.Fatalf("queryRangeCacheKey() missing logql query: %q", got)
 	}
-	// Raw end=1716571230 must NOT appear in the key (it should be bucketed)
-	if strings.Contains(got, "end="+url.QueryEscape("1716571230")) {
-		t.Fatalf("queryRangeCacheKey() contains unbucketed end timestamp: %q", got)
+	// Final responses retain exact bounds; aligned-window caches own coarse reuse.
+	if !strings.Contains(got, "end="+url.QueryEscape("1716571230")) {
+		t.Fatalf("queryRangeCacheKey() must preserve exact end timestamp: %q", got)
 	}
 }

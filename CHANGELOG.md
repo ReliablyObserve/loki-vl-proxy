@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep exact Loki query time bounds and negotiated response profiles in final
+  cache keys, preventing cross-window and 2-tuple/3-tuple response collisions.
+  Correct the cold-miss performance benchmark to verify real backend misses.
+
 - Preserve tenant routing and forwarded identity across cache hits, tenant-map
   reloads, cold reads, coalesced Drilldown queries, and background refreshes.
   Scope persisted/shared cache keys and label indexes accordingly; enforce

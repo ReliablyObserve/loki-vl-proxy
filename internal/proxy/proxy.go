@@ -2240,44 +2240,20 @@ func queryRangeBucket(r *http.Request) time.Duration {
 }
 
 func (p *Proxy) queryRangeCacheKey(r *http.Request, logqlQuery string) string {
-	// Build a stable key by bucketing both `start` and `end` to the step granularity.
-	// Grafana's sliding time window ("from=now-2d&to=now") resolves to absolute
-	// nanosecond timestamps that advance every second, so both start and end change on
-	// every panel refresh. Bucketing only `end` (the previous behaviour) still produced
-	// a unique key on each tick because the raw `start` value was included verbatim.
-	//
-	// With both endpoints bucketed to max(5min, step), the cache key is stable for the
-	// full bucket duration. A 2-day window with step=1h now produces one VL call per
-	// field per hour instead of one per 10 seconds (~360x fewer upstream calls).
-	bucket := queryRangeBucket(r)
-	startBucketed := bucketTimestampString(r.FormValue("start"), bucket)
-	endBucketed := bucketTimestampString(r.FormValue("end"), bucket)
-
-	var b strings.Builder
-	b.Grow(len(logqlQuery) + 128)
-	b.WriteString("query=")
-	b.WriteString(url.QueryEscape(logqlQuery))
-	for _, key := range []string{"step", "limit", "direction"} {
+	params := url.Values{"query": {logqlQuery}}
+	for _, key := range []string{"start", "end", "step", "limit", "direction", "interval", "since", "time"} {
 		if value := r.FormValue(key); value != "" {
-			b.WriteByte('&')
-			b.WriteString(key)
-			b.WriteByte('=')
-			b.WriteString(url.QueryEscape(value))
+			params.Set(key, value)
 		}
 	}
-	if startBucketed != "" {
-		b.WriteString("&start=")
-		b.WriteString(url.QueryEscape(startBucketed))
-	}
-	if endBucketed != "" {
-		b.WriteString("&end=")
-		b.WriteString(url.QueryEscape(endBucketed))
-	}
-	key := "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + b.String() + ":" + p.tupleModeCacheKey(r)
-	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
-		key += ":auth:" + fp
-	}
-	return key
+	return "query_range:" + r.Header.Get("X-Scope-OrgID") + ":" + params.Encode() + ":profile:" + p.responseProfileCacheKey(r) + ":auth:" + p.fingerprintFromCtx(r.Context(), r)
+}
+
+// responseProfileCacheKey covers negotiated tuple shape and the Grafana profile
+// used by query dispatch. Content compression varies independently.
+func (p *Proxy) responseProfileCacheKey(r *http.Request) string {
+	profile := detectGrafanaClientProfile(r, "", r.URL.Path)
+	return strings.Join([]string{p.tupleModeCacheKey(r), profile.surface, profile.runtimeFamily, profile.drilldownProfile}, "/")
 }
 
 // handleQuery translates Loki instant queries.

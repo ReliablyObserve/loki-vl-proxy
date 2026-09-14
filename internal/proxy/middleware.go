@@ -334,42 +334,10 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 	if !p.shouldUseCompatCache(endpoint, r) {
 		return "", false
 	}
-	// Bucket both `start` and `end` to a stable granularity. Grafana's sliding
-	// "now-12h to now" window drifts both by a few seconds on every panel refresh,
-	// producing a unique cache key every time even when the logical query is identical.
-	// query_range/query: 5-minute bucket (or step, whichever is larger).
-	// detected_*: 30-second bucket matching fieldNamesCacheBucket used internally.
+	// Only metadata has a deliberately approximate time policy. Final query
+	// responses must preserve exact bounds and the evaluation grid.
 	rawQuery := r.URL.RawQuery
 	switch endpoint {
-	case "query_range", "query":
-		endRaw := r.FormValue("end")
-		startRaw := r.FormValue("start")
-		if endRaw != "" || startRaw != "" {
-			stepRaw := r.FormValue("step")
-			bucket := 5 * time.Minute
-			if stepRaw != "" {
-				if d, ok := parsePositiveStepDuration(stepRaw); ok && d > bucket {
-					bucket = d
-				}
-			}
-			q := r.URL.Query()
-			changed := false
-			if endRaw != "" {
-				if endB := bucketTimestampString(endRaw, bucket); endB != endRaw {
-					q.Set("end", endB)
-					changed = true
-				}
-			}
-			if startRaw != "" {
-				if startB := bucketTimestampString(startRaw, bucket); startB != startRaw {
-					q.Set("start", startB)
-					changed = true
-				}
-			}
-			if changed {
-				rawQuery = q.Encode()
-			}
-		}
 	case "labels", "label_values", "detected_fields", "detected_field_values", "detected_labels":
 		endRaw := r.FormValue("end")
 		startRaw := r.FormValue("start")
@@ -393,10 +361,11 @@ func (p *Proxy) compatCacheKey(endpoint string, r *http.Request) (string, bool) 
 			}
 		}
 	}
-	key := "compat:v1:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + rawQuery
+	key := "compat:v2:" + endpoint + ":" + r.Header.Get("X-Scope-OrgID") + ":" + r.URL.Path + "?" + rawQuery
 	if fp := p.fingerprintFromCtx(r.Context(), r); fp != "" {
 		key += ":auth:" + fp
 	}
+	key += ":profile:" + p.responseProfileCacheKey(r)
 	return key, true
 }
 

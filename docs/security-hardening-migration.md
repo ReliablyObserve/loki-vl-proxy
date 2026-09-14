@@ -59,3 +59,17 @@ The fallback field batcher and active Drilldown burst coalescer retain request
 identity when decoupling their cancellation lifetime, and cannot combine work
 from different authorization scopes. This does not change which Drilldown path
 is selected or remove progressive metadata/window caching.
+
+## Exact response cache keys
+
+Final query responses now vary by exact time bounds, step, limit, direction,
+interval, and negotiated tuple/Grafana profile. Moving a time range inside a
+five-minute bucket can now trigger a new final-response lookup instead of
+returning another range's logs or evaluation grid. Metadata's progressive policy
+and aligned-window reuse remain available. This corrects Loki semantics but can
+increase backend work for drifting historical metric windows; size and observe
+the rollout using actual backend-call counts. Tier0 entries use a new version.
+
+The delayed cold-miss benchmark disables caches/coalescing and asserts both
+successful content and one upstream call per timed operation. Its numbers are
+not comparable to older runs that mostly measured primary-cache hits.
