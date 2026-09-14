@@ -3,15 +3,17 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"math"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ReliablyObserve/Loki-VL-proxy/internal/translator"
@@ -38,19 +40,30 @@ func (p *Proxy) proxySubqueryRange(w http.ResponseWriter, r *http.Request, outer
 
 	subRange := parseLokiDuration(rng)
 	subStep := parseLokiDuration(step)
-	if subRange == 0 || subStep == 0 {
+	if subRange <= 0 || subStep <= 0 {
 		p.writeError(w, http.StatusBadRequest, "invalid subquery range or step")
 		return
 	}
 
 	// For each point in [startTS, endTS] at the request step, evaluate the subquery
 	outerStep := parseLokiDuration(formatVLStep(reqStep))
-	if outerStep == 0 {
+	if outerStep <= 0 {
 		outerStep = subStep // fallback
 	}
 
+	outerPoints, err := subqueryPointCount(startTS, endTS, outerStep)
+	if err != nil {
+		p.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	innerPoints, err := subqueryPointCount(endTS.Add(-subRange), endTS, subStep)
+	if err != nil || outerPoints > maxSubqueryEvaluations/innerPoints {
+		p.writeError(w, http.StatusBadRequest, "subquery exceeds total evaluation limit (10000)")
+		return
+	}
+	var resultSamples int
 	var resultSeries []subquerySeriesResult
-	ctx := r.Context()
+	ctx := context.WithValue(r.Context(), subqueryBudgetKey{}, &subqueryBudget{})
 
 	// Walk through the outer time range
 	for t := startTS; !t.After(endTS); t = t.Add(outerStep) {
@@ -64,11 +77,16 @@ func (p *Proxy) proxySubqueryRange(w http.ResponseWriter, r *http.Request, outer
 		// For this time point, evaluate inner query over [t-subRange, t] at subStep intervals
 		values, seriesKey, err := p.evaluateSubqueryWindow(ctx, innerQuery, t.Add(-subRange), t, subStep, reqStep)
 		if err != nil {
-			p.log.Debug("subquery inner query error", "error", err)
-			continue
+			p.writeSubqueryError(w, err)
+			return
 		}
 
 		// Apply outer aggregation
+		resultSamples += len(values)
+		if resultSamples > maxSubquerySamples {
+			p.writeError(w, http.StatusBadRequest, "subquery exceeds sample limit")
+			return
+		}
 		for key, vals := range values {
 			aggValue := subqueryAggregate(outerFunc, vals)
 			resultSeries = appendSubquerySeries(resultSeries, key, seriesKey[key], t, aggValue)
@@ -91,7 +109,7 @@ func (p *Proxy) proxySubquery(w http.ResponseWriter, r *http.Request, outerFunc,
 
 	subRange := parseLokiDuration(rng)
 	subStep := parseLokiDuration(step)
-	if subRange == 0 || subStep == 0 {
+	if subRange <= 0 || subStep <= 0 {
 		p.writeError(w, http.StatusBadRequest, "invalid subquery range or step")
 		return
 	}
@@ -100,12 +118,12 @@ func (p *Proxy) proxySubquery(w http.ResponseWriter, r *http.Request, outerFunc,
 
 	values, seriesKey, err := p.evaluateSubqueryWindow(r.Context(), innerQuery, startTS, endTS, subStep, step)
 	if err != nil {
-		p.writeError(w, http.StatusBadGateway, err.Error())
+		p.writeSubqueryError(w, err)
 		return
 	}
 
 	// Build instant (vector) result
-	var vectorResult []map[string]interface{}
+	vectorResult := make([]map[string]interface{}, 0, len(values))
 	for key, vals := range values {
 		aggValue := subqueryAggregate(outerFunc, vals)
 		vectorResult = append(vectorResult, map[string]interface{}{
@@ -128,60 +146,106 @@ func (p *Proxy) proxySubquery(w http.ResponseWriter, r *http.Request, outerFunc,
 // evaluateSubqueryWindow runs the inner query at each sub-step within [start, end].
 // Returns a map from series key → collected values, and series key → metric labels.
 func (p *Proxy) evaluateSubqueryWindow(ctx context.Context, innerQuery string, start, end time.Time, subStep time.Duration, stepStr string) (map[string][]float64, map[string]map[string]string, error) {
-	type subStepResult struct {
-		ts   time.Time
-		body []byte
-		err  error
+	points, err := subqueryPointCount(start, end, subStep)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	// Calculate sub-step time points
-	var timePoints []time.Time
-	for t := start; !t.After(end); t = t.Add(subStep) {
-		timePoints = append(timePoints, t)
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
 	}
-
-	// Execute all sub-step queries concurrently (bounded)
-	maxConcurrency := 10
-	sem := make(chan struct{}, maxConcurrency)
-	results := make([]subStepResult, len(timePoints))
-	var wg sync.WaitGroup
-
-	for i, tp := range timePoints {
-		// Bail early if context is already done before spawning more goroutines.
-		select {
-		case <-ctx.Done():
-			wg.Wait()
-			return nil, nil, ctx.Err()
-		default:
-		}
-		wg.Add(1)
-		go func(idx int, t time.Time) {
-			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
-
-			body, err := p.executeSubqueryStepQuery(ctx, innerQuery, t)
-			if err != nil {
-				results[idx] = subStepResult{ts: t, err: err}
-				return
+	type stepResult struct {
+		values map[string][]float64
+		labels map[string]map[string]string
+	}
+	results := make([]stepResult, points)
+	var next atomic.Int64
+	budget, _ := ctx.Value(subqueryBudgetKey{}).(*subqueryBudget)
+	if budget == nil {
+		budget = &subqueryBudget{}
+	}
+	group, callCtx := errgroup.WithContext(ctx)
+	for worker := 0; worker < min(points, 10); worker++ {
+		group.Go(func() error {
+			for {
+				if err := callCtx.Err(); err != nil {
+					return err
+				}
+				i := int(next.Add(1) - 1)
+				if i >= points {
+					return nil
+				}
+				body, err := p.executeSubqueryStepQuery(callCtx, innerQuery, start.Add(time.Duration(i)*subStep))
+				if err != nil {
+					return err
+				}
+				if budget.bytes.Add(int64(len(body))) > 64<<20 {
+					return errSubqueryBudget
+				}
+				values, labels := make(map[string][]float64), make(map[string]map[string]string)
+				if err := extractValuesFromStatsResult(body, values, labels); err != nil {
+					return err
+				}
+				var count int64
+				for _, samples := range values {
+					count += int64(len(samples))
+				}
+				if budget.samples.Add(count) > maxSubquerySamples {
+					return errSubqueryBudget
+				}
+				results[i] = stepResult{values, labels}
 			}
-			results[idx] = subStepResult{ts: t, body: body}
-		}(i, tp)
+		})
 	}
-	wg.Wait()
-
-	// Collect values per series
-	seriesValues := make(map[string][]float64)
-	seriesLabels := make(map[string]map[string]string)
-
-	for _, res := range results {
-		if res.err != nil {
-			continue
+	if err := group.Wait(); err != nil {
+		return nil, nil, err
+	}
+	values, labels := make(map[string][]float64), make(map[string]map[string]string)
+	for _, result := range results {
+		for key, samples := range result.values {
+			values[key] = append(values[key], samples...)
+			labels[key] = result.labels[key]
 		}
-		extractValuesFromStatsResult(res.body, seriesValues, seriesLabels)
 	}
+	return values, labels, nil
+}
 
-	return seriesValues, seriesLabels, nil
+const maxSubqueryEvaluations = 10000
+const maxSubquerySamples = 1000000
+
+type subqueryBudgetKey struct{}
+type subqueryBudget struct{ bytes, samples atomic.Int64 }
+
+var errSubqueryBudget = errors.New("subquery exceeds evaluation, sample or decoded-byte limit")
+
+func subqueryPointCount(start, end time.Time, step time.Duration) (int, error) {
+	if step <= 0 || end.Before(start) {
+		return 0, fmt.Errorf("invalid subquery bounds or step")
+	}
+	distance := end.Sub(start)
+	if distance == time.Duration(1<<63-1) || distance/step >= maxSubqueryEvaluations {
+		return 0, errSubqueryBudget
+	}
+	return int(distance/step) + 1, nil
+}
+func (p *Proxy) writeSubqueryError(w http.ResponseWriter, err error) {
+	status := statusFromUpstreamErr(err)
+	if errors.Is(err, errSubqueryBudget) {
+		status = http.StatusBadRequest
+	}
+	p.writeError(w, status, err.Error())
+}
+
+func (p *Proxy) readSubqueryResponse(resp *http.Response) ([]byte, error) {
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := readBodyLimited(resp.Body, maxUpstreamErrorBodyBytes)
+		return nil, p.redactedBackendStatusError("subquery", resp.StatusCode, body)
+	}
+	const limit = 8 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if len(body) > limit {
+		return nil, errSubqueryBudget
+	}
+	return body, err
 }
 
 func (p *Proxy) executeSubqueryStepQuery(ctx context.Context, query string, ts time.Time) ([]byte, error) {
@@ -200,7 +264,7 @@ func (p *Proxy) executeSubqueryStepQuery(ctx context.Context, query string, ts t
 				return nil, err
 			}
 			defer resp.Body.Close()
-			body, err := io.ReadAll(resp.Body)
+			body, err := p.readSubqueryResponse(resp)
 			if err != nil {
 				return nil, err
 			}
@@ -264,7 +328,7 @@ func (p *Proxy) executeSubqueryStepQuery(ctx context.Context, query string, ts t
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := p.readSubqueryResponse(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +336,7 @@ func (p *Proxy) executeSubqueryStepQuery(ctx context.Context, query string, ts t
 }
 
 // extractValuesFromStatsResult parses a VL stats_query response and adds values to the maps.
-func extractValuesFromStatsResult(body []byte, values map[string][]float64, labels map[string]map[string]string) {
+func extractValuesFromStatsResult(body []byte, values map[string][]float64, labels map[string]map[string]string) error {
 	var resp struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -284,7 +348,10 @@ func extractValuesFromStatsResult(body []byte, values map[string][]float64, labe
 	}
 
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return
+		return fmt.Errorf("invalid subquery response: %w", err)
+	}
+	if resp.Status != "success" || resp.Data.Result == nil {
+		return fmt.Errorf("invalid subquery result status or array")
 	}
 
 	for _, series := range resp.Data.Result {
@@ -293,34 +360,30 @@ func extractValuesFromStatsResult(body []byte, values map[string][]float64, labe
 			labels[key] = series.Metric
 		}
 
-		if len(series.Value) >= 2 {
-			val := parseValueToFloat(series.Value[1])
+		if len(series.Value) != 2 {
+			return fmt.Errorf("invalid subquery sample tuple")
+		}
+		if len(series.Value) == 2 {
+			raw, ok := series.Value[1].(string)
+			if !ok {
+				return fmt.Errorf("invalid subquery sample value")
+			}
+			val, err := strconv.ParseFloat(raw, 64)
+			if err != nil {
+				return fmt.Errorf("invalid subquery sample number")
+			}
 			values[key] = append(values[key], val)
 		}
 	}
+	return nil
 }
 
 func seriesKeyFromMetric(metric map[string]string) string {
 	if len(metric) == 0 {
 		return "{}"
 	}
-	keys := make([]string, 0, len(metric))
-	for k := range metric {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var b strings.Builder
-	b.WriteByte('{')
-	for i, k := range keys {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(k)
-		b.WriteByte('=')
-		b.WriteString(metric[k])
-	}
-	b.WriteByte('}')
-	return b.String()
+	data, _ := json.Marshal(metric)
+	return string(data)
 }
 
 func parseValueToFloat(v interface{}) float64 {

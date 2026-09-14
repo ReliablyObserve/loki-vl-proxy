@@ -290,7 +290,10 @@ func (p *Proxy) proxyLogQueryWindowed(w http.ResponseWriter, r *http.Request, lo
 		decolorizeStreams(streams)
 	}
 	if tmpl := extractLineFormatTemplate(originalQuery); tmpl != "" {
-		applyLineFormatTemplate(streams, tmpl)
+		if err := applyLineFormatTemplateWithContext(r.Context(), streams, tmpl); err != nil {
+			p.writeError(w, http.StatusBadRequest, err.Error())
+			return true
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

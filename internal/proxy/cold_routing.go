@@ -257,10 +257,10 @@ func (cr *ColdRouter) ColdGet(ctx context.Context, path string, params url.Value
 }
 
 func (cr *ColdRouter) ColdPost(ctx context.Context, path string, params url.Values) (*http.Response, error) {
-	return cr.coldRequest(ctx, http.MethodPost, path, params, nil)
+	return cr.coldRequest(ctx, http.MethodPost, path, params, nil, nil)
 }
 
-func (cr *ColdRouter) coldRequest(ctx context.Context, method, path string, params url.Values, headers func(*http.Request)) (*http.Response, error) {
+func (cr *ColdRouter) coldRequest(ctx context.Context, method, path string, params url.Values, headers func(*http.Request), do func(*http.Request, *http.Client) (*http.Response, error)) (*http.Response, error) {
 	u := *cr.coldBackend
 	u.Path = path
 
@@ -272,6 +272,9 @@ func (cr *ColdRouter) coldRequest(ctx context.Context, method, path string, para
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if headers != nil {
 		headers(req)
+	}
+	if do != nil {
+		return do(req, cr.client)
 	}
 	return cr.client.Do(req)
 }

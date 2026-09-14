@@ -45,6 +45,7 @@ type DiskCache struct {
 	flushSize   int // flush buffer after this many entries
 	minTTL      time.Duration
 	maxBytes    int64
+	sweepCursor []byte // accessed only inside serialized bbolt write transactions
 	log         *slog.Logger
 	done        chan struct{} // signals background flusher to stop
 
@@ -226,15 +227,11 @@ func (dc *DiskCache) Set(key string, value []byte, ttl time.Duration) {
 // Flush writes buffered entries to disk in a single batch transaction.
 func (dc *DiskCache) Flush() {
 	dc.writeMu.Lock()
-	if len(dc.writeBuf) == 0 {
-		dc.writeMu.Unlock()
-		return
-	}
 	buf := dc.writeBuf
 	dc.writeBuf = make(map[string]diskEntry)
 	dc.writeMu.Unlock()
 
-	_ = dc.db.Update(func(tx *bolt.Tx) error {
+	err := dc.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(dataBucket)
 
 		// Use LeafInuse (actual stored key+value bytes in leaf pages) rather
@@ -244,6 +241,10 @@ func (dc *DiskCache) Flush() {
 		currentBytes := int64(0)
 		if dc.maxBytes > 0 {
 			currentBytes = int64(b.Stats().LeafInuse)
+		}
+		currentBytes -= dc.sweepExpired(b)
+		if currentBytes < 0 {
+			currentBytes = 0
 		}
 
 		for key, entry := range buf {
@@ -261,25 +262,78 @@ func (dc *DiskCache) Flush() {
 				}
 			}
 			if dc.maxBytes > 0 {
+				candidateBytes := currentBytes
 				// Deduct the old entry size on overwrites so the cap reflects
 				// net content bytes rather than cumulative write volume.
 				if existing := b.Get([]byte(key)); existing != nil {
-					currentBytes -= int64(len(existing))
+					candidateBytes -= int64(len(existing))
 				}
-				if currentBytes+int64(len(encoded)) > dc.maxBytes {
+				if candidateBytes+int64(len(encoded)) > dc.maxBytes {
 					dc.Evictions.Add(1)
 					continue
 				}
+				currentBytes = candidateBytes
 			}
 
-			_ = b.Put([]byte(key), encoded)
+			if err := b.Put([]byte(key), encoded); err != nil {
+				return err
+			}
 			dc.Writes.Add(1)
 			currentBytes += int64(len(encoded))
 		}
 		return nil
 	})
+	if err != nil {
+		dc.log.Warn("disk cache flush failed", "error", err)
+	}
 
 	dc.FlushCount.Add(1)
+}
+
+// Scan a bounded slice on every flush, even when there are no pending writes.
+// Reading only the expiry header avoids inflating an entire compressed value.
+// Repeated ticks eventually visit unread keys from past sliding time windows.
+func (dc *DiskCache) sweepExpired(b *bolt.Bucket) int64 {
+	cursor := b.Cursor()
+	key, value := cursor.First()
+	if len(dc.sweepCursor) > 0 {
+		key, value = cursor.Seek(dc.sweepCursor)
+		if key == nil {
+			key, value = cursor.First()
+		}
+	}
+	now := time.Now().UnixNano()
+	deadline := time.Now().Add(10 * time.Millisecond)
+	var reclaimed int64
+	for scanned := 0; key != nil && scanned < 1024; scanned++ {
+		var header [8]byte
+		valid := false
+		if dc.compression {
+			reader, err := gzip.NewReader(bytes.NewReader(value))
+			if err == nil {
+				_, err = io.ReadFull(reader, header[:])
+				valid = err == nil
+				_ = reader.Close()
+			}
+		} else if len(value) >= 8 {
+			copy(header[:], value[:8])
+			valid = true
+		}
+		if !valid || int64(binary.BigEndian.Uint64(header[:])) <= now {
+			reclaimed += int64(len(key) + len(value))
+			if err := cursor.Delete(); err != nil {
+				dc.log.Warn("disk cache expiry delete failed", "error", err)
+				break
+			}
+			dc.Evictions.Add(1)
+		}
+		key, value = cursor.Next()
+		if time.Now().After(deadline) {
+			break
+		}
+	}
+	dc.sweepCursor = append(dc.sweepCursor[:0], key...)
+	return reclaimed
 }
 
 func encodeDiskEntry(entry diskEntry) ([]byte, bool) {

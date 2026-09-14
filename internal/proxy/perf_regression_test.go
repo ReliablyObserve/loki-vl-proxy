@@ -489,7 +489,7 @@ func TestSeriesKeyFromMetric_Empty(t *testing.T) {
 
 func TestSeriesKeyFromMetric_SingleEntry(t *testing.T) {
 	got := seriesKeyFromMetric(map[string]string{"app": "nginx"})
-	if got != "{app=nginx}" {
+	if got != `{"app":"nginx"}` {
 		t.Fatalf("single entry: expected {app=nginx}, got %q", got)
 	}
 }
@@ -507,7 +507,7 @@ func TestSeriesKeyFromMetric_Deterministic(t *testing.T) {
 
 func TestSeriesKeyFromMetric_Sorted(t *testing.T) {
 	got := seriesKeyFromMetric(map[string]string{"z": "3", "a": "1", "m": "2"})
-	if got != "{a=1,m=2,z=3}" {
+	if got != `{"a":"1","m":"2","z":"3"}` {
 		t.Fatalf("expected alphabetically sorted keys, got %q", got)
 	}
 }
@@ -515,7 +515,7 @@ func TestSeriesKeyFromMetric_Sorted(t *testing.T) {
 func TestSeriesKeyFromMetric_ValueWithEquals(t *testing.T) {
 	// Ensure values containing "=" don't corrupt sort order.
 	got := seriesKeyFromMetric(map[string]string{"b": "x=y", "a": "z"})
-	if got != "{a=z,b=x=y}" {
+	if got != `{"a":"z","b":"x=y"}` {
 		t.Fatalf("value with '=': expected {a=z,b=x=y}, got %q", got)
 	}
 }
@@ -797,7 +797,7 @@ func TestSeriesKeyFromMetric_StableAcrossIterations(t *testing.T) {
 	parts := strings.Split(inner, ",")
 	keys := make([]string, len(parts))
 	for i, p := range parts {
-		eq := strings.Index(p, "=")
+		eq := strings.Index(p, ":")
 		if eq < 0 {
 			t.Fatalf("unexpected part format: %q", p)
 		}

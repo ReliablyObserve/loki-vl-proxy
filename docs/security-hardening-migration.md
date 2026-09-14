@@ -73,3 +73,29 @@ the rollout using actual backend-call counts. Tier0 entries use a new version.
 The delayed cold-miss benchmark disables caches/coalescing and asserts both
 successful content and one upstream call per timed operation. Its numbers are
 not comparable to older runs that mostly measured primary-cache hits.
+
+## Execution and storage limits
+
+- `max-concurrent` now also bounds actual hot/cold/alerting backend operations,
+  including fanout, until their response bodies are consumed or closed. Waiting
+  children respect cancellation. The existing outer HTTP admission limit remains
+  separate; zero still means unlimited. Native tail streams retain their
+  dedicated streaming client, and readiness/peer control requests remain separate.
+- Subqueries reject more than 10,000 total inner evaluations, counting outer
+  points × inner points, before allocating work. At most ten workers run per
+  subquery window. Decoded results are limited to 8 MiB per step, 64 MiB across
+  the evaluation, and one million samples. Excess work returns a limit error;
+  invalid or failed upstream results return an error, not successful empty data.
+- `line_format` permits 64 KiB output per line and 16 MiB per response, with
+  bounded intermediate formatting, input, template depth and execution work.
+  Exceeding these limits returns HTTP 400. Normal printf, control flow, string
+  operations and both quoted/backtick template literals remain supported.
+- Coalesced bodies exceeding 256 MiB now return an error instead of being
+  silently truncated. Scratch buffers above 1 MiB are not retained in the pool.
+- Disk expiry reclamation runs incrementally even with no new writes. This
+  restores admission during sliding-window churn. Disk limits still describe
+  logical stored content, not a promise that the bbolt file physically shrinks.
+
+These protective limits are intentional behavior changes for unusually large
+workloads. Validate representative queries and watch rejection rates before
+rollout; do not interpret a rejected query as absence of logs or healthy alerts.

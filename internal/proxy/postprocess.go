@@ -3,11 +3,14 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"context"
 	stdjson "encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -127,15 +130,28 @@ func parseIPFilter(query string) (label, cidr string, ok bool) {
 // applyLineFormatTemplate applies a Go text/template to log line values.
 // Implements Loki's `| line_format "{{.status}} {{.method | ToUpper}}"` with full template support.
 // TODO: Remove when VL adds equivalent template formatting.
-func applyLineFormatTemplate(streams []map[string]interface{}, tmplStr string) {
-	tmplStr = strings.Trim(tmplStr, `"`)
+func applyLineFormatTemplate(streams []map[string]interface{}, tmplStr string) error {
+	return applyLineFormatTemplateWithContext(context.Background(), streams, tmplStr)
+}
+
+func applyLineFormatTemplateWithContext(ctx context.Context, streams []map[string]interface{}, tmplStr string) error {
 
 	// Register Loki-compatible template functions
 	funcMap := template.FuncMap{
-		"ToUpper":    strings.ToUpper,
-		"ToLower":    strings.ToLower,
-		"Title":      titleCase,
-		"Replace":    strings.Replace,
+		"printf": boundedTemplatePrintf,
+		"print": func(args ...any) (string, error) {
+			return boundedTemplatePrint(false, args...)
+		},
+		"println": func(args ...any) (string, error) {
+			return boundedTemplatePrint(true, args...)
+		},
+		"html":       boundedTemplateEscape(template.HTMLEscapeString),
+		"js":         boundedTemplateEscape(template.JSEscapeString),
+		"urlquery":   boundedTemplateEscape(func(s string) string { return template.URLQueryEscaper(s) }),
+		"ToUpper":    boundedTemplateString(strings.ToUpper),
+		"ToLower":    boundedTemplateString(strings.ToLower),
+		"Title":      boundedTemplateString(titleCase),
+		"Replace":    boundedTemplateReplace,
 		"TrimSpace":  strings.TrimSpace,
 		"TrimPrefix": strings.TrimPrefix,
 		"TrimSuffix": strings.TrimSuffix,
@@ -153,9 +169,13 @@ func applyLineFormatTemplate(streams []map[string]interface{}, tmplStr string) {
 
 	tmpl, err := template.New("line_format").Option("missingkey=zero").Funcs(funcMap).Parse(tmplStr)
 	if err != nil {
-		return // invalid template, leave lines unchanged
+		return fmt.Errorf("invalid line_format: %w", err)
 	}
 
+	if err := instrumentTemplateBudget(tmpl, ctx); err != nil {
+		return err
+	}
+	total := 0
 	for _, stream := range streams {
 		labels, _ := stream["stream"].(map[string]string)
 		if labels == nil {
@@ -172,6 +192,13 @@ func applyLineFormatTemplate(streams []map[string]interface{}, tmplStr string) {
 				continue
 			}
 
+			inputBytes := len(val[1])
+			for k, v := range labels {
+				inputBytes += len(k) + len(v)
+			}
+			if inputBytes > 1<<20 {
+				return fmt.Errorf("line_format input limit exceeded")
+			}
 			// Build template data from labels + line
 			data := make(map[string]string, safeAddCap(len(labels), 1))
 			for k, v := range labels {
@@ -179,23 +206,31 @@ func applyLineFormatTemplate(streams []map[string]interface{}, tmplStr string) {
 			}
 			data["_line"] = val[1]
 
-			var buf strings.Builder
-			if err := tmpl.Execute(&buf, data); err == nil {
-				values[i][1] = buf.String()
+			buf := &templateOutput{remaining: min(maxFormattedLineBytes, maxFormattedResponseBytes-total)}
+			if err := tmpl.Execute(buf, data); err != nil {
+				return fmt.Errorf("line_format: %w", err)
 			}
+			total += buf.Len()
+			values[i][1] = buf.String()
 		}
 	}
+	return nil
 }
 
 // extractLineFormatTemplate extracts the template string from a line_format query.
 // Returns empty string if not found.
+var lineFormatTemplateRE = regexp.MustCompile("\\|\\s*line_format\\s+(\"(?:[^\"\\\\]|\\\\.)*\"|`[^`]*`)")
+
 func extractLineFormatTemplate(query string) string {
-	re := regexp.MustCompile(`\|\s*line_format\s+"((?:[^"\\]|\\.)*)"`)
-	m := re.FindStringSubmatch(query)
-	if m != nil {
-		return m[1]
+	match := lineFormatTemplateRE.FindStringSubmatch(query)
+	if len(match) != 2 {
+		return ""
 	}
-	return ""
+	value, err := strconv.Unquote(match[1])
+	if err != nil {
+		return ""
+	}
+	return value
 }
 
 // extractLogPatterns implements Loki-style Drain-inspired pattern extraction.

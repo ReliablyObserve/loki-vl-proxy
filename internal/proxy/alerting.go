@@ -189,7 +189,7 @@ func (p *Proxy) alertingBackendGetWithParams(r *http.Request, backend *url.URL, 
 	p.forwardTenantHeaders(req)
 	p.applyAlertingBackendHeaders(req)
 	start := time.Now()
-	resp, err := p.client.Do(req)
+	resp, err := p.doBackendRequest(req, p.client)
 	duration := time.Since(start)
 	serverPort, _ := strconv.Atoi(u.Port())
 	if err != nil {

@@ -33,14 +33,20 @@ var coalescerBodyPool = sync.Pool{
 func readBodyPooled(r io.Reader, limit int64) ([]byte, error) {
 	buf := coalescerBodyPool.Get().(*bytes.Buffer)
 	buf.Reset()
-	_, err := io.Copy(buf, io.LimitReader(r, limit))
+	defer func() {
+		if buf.Cap() <= 1<<20 {
+			coalescerBodyPool.Put(buf)
+		}
+	}()
+	_, err := io.Copy(buf, io.LimitReader(r, limit+1))
 	if err != nil {
-		coalescerBodyPool.Put(buf)
 		return nil, err
+	}
+	if int64(buf.Len()) > limit {
+		return nil, fmt.Errorf("upstream response exceeds %d bytes", limit)
 	}
 	result := make([]byte, buf.Len())
 	copy(result, buf.Bytes())
-	coalescerBodyPool.Put(buf)
 	return result, nil
 }
 

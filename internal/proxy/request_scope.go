@@ -151,5 +151,5 @@ func (p *Proxy) scopedIndexOrg(r *http.Request, orgID string) string {
 func (p *Proxy) coldPost(ctx context.Context, path string, params url.Values) (*http.Response, error) {
 	routing := p.routingForContext(ctx)
 	ctx = context.WithValue(ctx, requestRoutingKey{}, routing)
-	return p.coldRouter.coldRequest(ctx, http.MethodPost, path, p.scopedTenantParams(ctx, params), func(req *http.Request) { p.setResolvedTenantHeaders(req, true) })
+	return p.coldRouter.coldRequest(ctx, http.MethodPost, path, p.scopedTenantParams(ctx, params), func(req *http.Request) { p.setResolvedTenantHeaders(req, true) }, p.doBackendRequest)
 }

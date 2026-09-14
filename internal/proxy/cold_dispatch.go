@@ -429,7 +429,10 @@ func (p *Proxy) processLogQueryResponse(w http.ResponseWriter, r *http.Request, 
 		decolorizeStreams(streams)
 	}
 	if tmpl := extractLineFormatTemplate(logqlQuery); tmpl != "" {
-		applyLineFormatTemplate(streams, tmpl)
+		if err := applyLineFormatTemplateWithContext(r.Context(), streams, tmpl); err != nil {
+			p.writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	p.writeJSON(w, map[string]interface{}{

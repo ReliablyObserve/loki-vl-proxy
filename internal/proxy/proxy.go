@@ -437,6 +437,7 @@ type Proxy struct {
 	rulerBackend                          *url.URL
 	alertsBackend                         *url.URL
 	client                                *http.Client
+	backendBudget                         chan struct{}
 	tailClient                            *http.Client
 	cache                                 *cache.Cache
 	compatCache                           *cache.Cache
@@ -1061,6 +1062,7 @@ func New(cfg Config) (*Proxy, error) {
 		queryTracker:                          metrics.NewQueryTracker(10000),
 		coalescer:                             newCoalescer(cfg.CoalescerDisabled),
 		limiter:                               mw.NewRateLimiter(maxConcurrent, ratePerSec, rateBurst),
+		backendBudget:                         newBackendBudget(maxConcurrent),
 		breaker:                               mw.NewCircuitBreaker(cbFail, 3, cbOpen, cbWindow),
 		tenantMap:                             maps.Clone(cfg.TenantMap),
 		tenantLabel:                           cfg.TenantLabel,

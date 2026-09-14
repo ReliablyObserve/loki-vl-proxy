@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Bound subquery evaluation, formatting and actual backend fanout; surface
+  failed subqueries instead of successful empty results. Reject oversized
+  coalesced responses and reclaim unread expired disk entries. See the security
+  hardening migration guide for the new resource limits and rejection behavior.
+
 - Keep exact Loki query time bounds and negotiated response profiles in final
   cache keys, preventing cross-window and 2-tuple/3-tuple response collisions.
   Correct the cold-miss performance benchmark to verify real backend misses.
